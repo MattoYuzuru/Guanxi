@@ -5,6 +5,9 @@ import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
+import type { ModelService } from '../src/models/service.ts'
+import type { OllamaClient } from '../src/ollama/client.ts'
+import type { OllamaChatChunk } from '../src/ollama/types.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
 import { SettingsStore } from '../src/store/settings.ts'
@@ -24,7 +27,9 @@ const HARDWARE: HardwareInfo = {
   freeDiskBytes: null,
 }
 
-function testContext(): AppContext {
+function testContext(
+  overrides: Partial<Pick<AppContext, 'ollama' | 'models'>> = {},
+): AppContext {
   const db = openDb(':memory:')
   const settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
 
@@ -39,13 +44,67 @@ function testContext(): AppContext {
     hardware: HARDWARE,
     appVersion: 'test',
     activeTurns: new Map(),
-    ollama: () => {
-      throw new Error('Ollama не должна вызываться в этом тесте')
-    },
-    models: () => {
-      throw new Error('ModelService не должен вызываться в этом тесте')
-    },
+    ollama:
+      overrides.ollama ??
+      (() => {
+        throw new Error('Ollama не должна вызываться в этом тесте')
+      }),
+    models:
+      overrides.models ??
+      (() => {
+        throw new Error('ModelService не должен вызываться в этом тесте')
+      }),
   }
+}
+
+function terminalChunk(content: string): OllamaChatChunk {
+  return {
+    model: 'qwen',
+    created_at: '2026-08-02T12:00:00.000Z',
+    message: { role: 'assistant', content },
+    done: true,
+    done_reason: 'stop',
+    prompt_eval_count: 12,
+    prompt_eval_duration: 500_000_000,
+    eval_count: 3,
+    eval_duration: 100_000_000,
+    total_duration: 600_000_000,
+  }
+}
+
+function streamingContext(
+  stream: (signal: AbortSignal) => AsyncGenerator<OllamaChatChunk>,
+): AppContext {
+  return testContext({
+    ollama: () =>
+      ({
+        chatStream(_request: unknown, signal: AbortSignal) {
+          return stream(signal)
+        },
+      }) as unknown as OllamaClient,
+    models: () =>
+      ({
+        supportsTools: async () => false,
+      }) as unknown as ModelService,
+  })
+}
+
+function parseSse(text: string): Array<Record<string, unknown>> {
+  return text
+    .split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>)
+}
+
+async function createChat(context: AppContext): Promise<string> {
+  const thread = context.threads.create({
+    title: 'route turn',
+    mode: 'chat',
+    model: 'qwen',
+    workspaceId: null,
+    options: { numCtx: 4_096, temperature: 0, think: 'off' },
+  })
+  return thread.id
 }
 
 describe('thread routes', () => {
@@ -89,6 +148,200 @@ describe('thread routes', () => {
     const loaded = await app.request(`/api/threads/${thread.id}`)
     assert.equal(loaded.status, 200)
     assert.equal(((await loaded.json()) as { thread: { id: string } }).thread.id, thread.id)
+    context.db.close()
+  })
+
+  it('streams a persisted completed outcome and reloads the same projection', async () => {
+    const context = streamingContext(() =>
+      (async function* () {
+        yield terminalChunk('route success')
+      })(),
+    )
+    const app = createApp(context)
+    const threadId = await createChat(context)
+
+    const response = await app.request(`/api/threads/${threadId}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'hello' }),
+    })
+    const events = parseSse(await response.text())
+    const done = events.find((event) => event['type'] === 'done')
+    assert.equal((done?.['data'] as { outcome?: string }).outcome, 'completed')
+
+    const loaded = await app.request(`/api/threads/${threadId}`)
+    const body = (await loaded.json()) as {
+      messages: Array<{
+        role: string
+        content: string
+        turnStatus: string | null
+        turnError: unknown
+        stopReason: string | null
+      }>
+    }
+    const assistant = body.messages.at(-1)
+    assert.equal(assistant?.role, 'assistant')
+    assert.equal(assistant?.content, 'route success')
+    assert.equal(assistant?.turnStatus, 'completed')
+    assert.equal(assistant?.turnError, null)
+    assert.equal(assistant?.stopReason, 'stop')
+    context.db.close()
+  })
+
+  it('reloads pending, failed, cancelled, and legacy-ambiguous rows distinctly', async () => {
+    const context = testContext()
+    const app = createApp(context)
+    const threadId = await createChat(context)
+
+    context.threads.addMessage({
+      threadId,
+      role: 'assistant',
+      content: 'pending partial',
+    })
+    const failed = context.threads.addMessage({
+      threadId,
+      role: 'assistant',
+      content: '',
+    })
+    context.threads.terminalizeMessage(failed.id, {
+      outcome: 'failed',
+      error: {
+        code: 'runtime_protocol',
+        message: 'Ollama ended the stream without the required terminal chunk',
+      },
+      stopReason: 'protocol_error',
+      content: 'failed partial',
+      thinking: null,
+      toolCalls: [],
+      usage: null,
+    })
+    const cancelled = context.threads.addMessage({
+      threadId,
+      role: 'assistant',
+      content: '',
+    })
+    context.threads.terminalizeMessage(cancelled.id, {
+      outcome: 'cancelled',
+      error: null,
+      stopReason: 'stopped_by_user',
+      content: 'cancelled partial',
+      thinking: null,
+      toolCalls: [],
+      usage: null,
+    })
+    context.db
+      .prepare(
+        `INSERT INTO messages (
+           id, thread_id, seq, role, content, thinking, tool_calls, usage,
+           is_compaction, created_at, turn_status, turn_error, stop_reason
+         )
+         VALUES ('legacy-row', ?, 3, 'assistant', '', NULL, '[]', NULL, 0, ?, NULL, NULL, NULL)`,
+      )
+      .run(threadId, '2026-08-02T12:00:00.000Z')
+
+    const loaded = await app.request(`/api/threads/${threadId}`)
+    const body = (await loaded.json()) as {
+      messages: Array<{
+        turnStatus: string | null
+        turnError: { code: string; message: string } | null
+        stopReason: string | null
+      }>
+    }
+    assert.deepEqual(
+      body.messages.map((message) => ({
+        status: message.turnStatus,
+        error: message.turnError?.code ?? null,
+        reason: message.stopReason,
+      })),
+      [
+        { status: 'pending', error: null, reason: null },
+        { status: 'failed', error: 'runtime_protocol', reason: 'protocol_error' },
+        { status: 'cancelled', error: null, reason: 'stopped_by_user' },
+        { status: null, error: null, reason: null },
+      ],
+    )
+    context.db.close()
+  })
+
+  it('persists explicit Stop as cancelled before the stream closes', async () => {
+    const context = streamingContext((signal) =>
+      (async function* () {
+        yield {
+          model: 'qwen',
+          created_at: '2026-08-02T12:00:00.000Z',
+          message: { role: 'assistant', content: 'partial' },
+          done: false,
+        }
+        await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+      })(),
+    )
+    const app = createApp(context)
+    const threadId = await createChat(context)
+    const response = await app.request(`/api/threads/${threadId}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'hello' }),
+    })
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let streamText = ''
+    streamText += decoder.decode((await reader.read()).value)
+    streamText += decoder.decode((await reader.read()).value)
+
+    const stopped = await app.request(`/api/threads/${threadId}/stop`, { method: 'POST' })
+    assert.equal(stopped.status, 200)
+
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      streamText += decoder.decode(next.value)
+    }
+
+    const done = parseSse(streamText).find((event) => event['type'] === 'done')
+    assert.deepEqual(done?.['data'], {
+      messageId: context.threads.messages(threadId).at(-1)?.id,
+      outcome: 'cancelled',
+      stopReason: 'stopped_by_user',
+      terminalStopReason: 'stopped_by_user',
+      steps: 1,
+    })
+    assert.equal(context.threads.messages(threadId).at(-1)?.turnStatus, 'cancelled')
+    context.db.close()
+  })
+
+  it('persists response-body cancellation as connection_aborted for reload', async () => {
+    const context = streamingContext((signal) =>
+      (async function* () {
+        yield {
+          model: 'qwen',
+          created_at: '2026-08-02T12:00:00.000Z',
+          message: { role: 'assistant', content: 'partial' },
+          done: false,
+        }
+        await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+      })(),
+    )
+    const app = createApp(context)
+    const threadId = await createChat(context)
+    const response = await app.request(`/api/threads/${threadId}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'hello' }),
+    })
+    const reader = response.body!.getReader()
+    await reader.read()
+    await reader.read()
+    await reader.cancel()
+
+    for (let attempt = 0; attempt < 20 && context.activeTurns.has(threadId); attempt++) {
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+
+    const assistant = context.threads.messages(threadId).at(-1)
+    assert.equal(context.activeTurns.has(threadId), false)
+    assert.equal(assistant?.content, 'partial')
+    assert.equal(assistant?.turnStatus, 'cancelled')
+    assert.equal(assistant?.stopReason, 'connection_aborted')
     context.db.close()
   })
 })

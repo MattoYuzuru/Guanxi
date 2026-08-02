@@ -85,4 +85,53 @@ describe('SQLite stores', () => {
     })
     db.close()
   })
+
+  it('terminalizes an assistant once and never overwrites failure with completed', () => {
+    const db = openDb(':memory:')
+    const threads = new ThreadStore(db)
+    const thread = threads.create({
+      title: 'terminal invariant',
+      mode: 'chat',
+      model: 'qwen',
+      workspaceId: null,
+      options: { numCtx: 4_096, temperature: 0, think: 'off' },
+    })
+    const assistant = threads.addMessage({
+      threadId: thread.id,
+      role: 'assistant',
+      content: '',
+    })
+
+    assert.equal(assistant.turnStatus, 'pending')
+
+    const failed = threads.terminalizeMessage(assistant.id, {
+      outcome: 'failed',
+      error: {
+        code: 'runtime_protocol',
+        message: 'Ollama ended the stream without the required terminal chunk',
+      },
+      stopReason: 'protocol_error',
+      content: 'partial',
+      thinking: 'partial thought',
+      toolCalls: [],
+      usage: null,
+    })
+    const lateSuccess = threads.terminalizeMessage(assistant.id, {
+      outcome: 'completed',
+      error: null,
+      stopReason: 'stop',
+      content: 'late success',
+      thinking: null,
+      toolCalls: [],
+      usage: null,
+    })
+
+    assert.equal(failed.applied, true)
+    assert.equal(lateSuccess.applied, false)
+    assert.deepEqual(threads.getMessage(assistant.id), failed.message)
+    assert.equal(lateSuccess.message.turnStatus, 'failed')
+    assert.equal(lateSuccess.message.content, 'partial')
+    assert.equal(lateSuccess.message.stopReason, 'protocol_error')
+    db.close()
+  })
 })

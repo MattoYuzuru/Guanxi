@@ -92,6 +92,9 @@ test('create Chat redirects and survives the first multi-phase stream render', a
         usage: null,
         createdAt: observedAt,
         isCompaction: false,
+        turnStatus: null,
+        turnError: null,
+        stopReason: null,
       },
       {
         id: 'assistant-1',
@@ -103,6 +106,9 @@ test('create Chat redirects and survives the first multi-phase stream render', a
         usage: null,
         createdAt: observedAt,
         isCompaction: false,
+        turnStatus: 'completed',
+        turnError: null,
+        stopReason: 'stop',
       },
     ]
 
@@ -171,7 +177,12 @@ test('create Chat redirects and survives the first multi-phase stream render', a
           {
             type: 'done',
             seq: 5,
-            data: { messageId: 'assistant-1', stopReason: 'stop', steps: 1 },
+            data: {
+              messageId: 'assistant-1',
+              outcome: 'completed',
+              stopReason: 'stop',
+              steps: 1,
+            },
           },
         ]
         const body = new ReadableStream({

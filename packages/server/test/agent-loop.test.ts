@@ -4,9 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { it } from 'node:test'
 import { ApprovalGate } from '../src/agent/approvals.ts'
-import { runTurn } from '../src/agent/loop.ts'
+import { runTurn, TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
-import { OllamaError, type OllamaClient } from '../src/ollama/client.ts'
+import {
+  OllamaError,
+  OllamaUnavailableError,
+  type OllamaClient,
+} from '../src/ollama/client.ts'
 import type {
   OllamaChatChunk,
   OllamaChatRequest,
@@ -164,6 +168,299 @@ it('сохраняет частичный ответ при upstream-ошибк�
   }
 
   const error = events.find((event) => event.type === 'error')
+  const done = events.find((event) => event.type === 'done')
+  const persisted = store.messages(thread.id).at(-1)
   assert.equal(error?.type === 'error' ? error.data.code : null, 'upstream_error')
-  assert.equal(store.messages(thread.id).at(-1)?.content, 'Частичный ответ')
+  assert.equal(error?.type === 'error' ? error.data.message.includes('модель исчезла') : true, false)
+  assert.equal(done?.type === 'done' ? done.data.outcome : null, 'failed')
+  assert.equal(persisted?.content, 'Частичный ответ')
+  assert.equal(persisted?.turnStatus, 'failed')
+  assert.equal(persisted?.turnError?.code, 'upstream_error')
+  assert.equal(persisted?.stopReason, 'provider_error')
+})
+
+it('persists completed only after an observed terminal Ollama chunk', async (test) => {
+  const db = openDb(':memory:')
+  test.after(() => db.close())
+  const store = new ThreadStore(db)
+  const thread = store.create({
+    title: 'success',
+    mode: 'chat',
+    model: 'qwen',
+    workspaceId: null,
+    options: { numCtx: 4_096, temperature: 0, think: 'off' },
+  })
+  store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
+
+  const fakeClient = {
+    chatStream() {
+      return (async function* () {
+        yield chunk('Готово', 21)
+      })()
+    },
+  } as unknown as OllamaClient
+
+  const events = []
+  for await (const event of runTurn({
+    thread,
+    workspace: null,
+    client: fakeClient,
+    store,
+    registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
+    approvals: new ApprovalGate(),
+    tracker: new PrefillTracker(),
+    modelSupportsTools: false,
+    autoApprove: false,
+    enableBash: false,
+    signal: new AbortController().signal,
+  })) {
+    events.push(event)
+  }
+
+  const assistant = store.messages(thread.id).at(-1)
+  const done = events.find((event) => event.type === 'done')
+  assert.equal(assistant?.turnStatus, 'completed')
+  assert.equal(assistant?.turnError, null)
+  assert.equal(assistant?.stopReason, 'stop')
+  assert.equal(done?.type === 'done' ? done.data.outcome : null, 'completed')
+})
+
+it('persists unavailable-before-first-chunk as failed instead of empty success', async (test) => {
+  const db = openDb(':memory:')
+  test.after(() => db.close())
+  const store = new ThreadStore(db)
+  const thread = store.create({
+    title: 'offline',
+    mode: 'chat',
+    model: 'qwen',
+    workspaceId: null,
+    options: { numCtx: 4_096, temperature: 0, think: 'off' },
+  })
+  store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
+
+  const fakeClient = {
+    chatStream() {
+      return (async function* () {
+        throw new OllamaUnavailableError('http://user:secret@127.0.0.1:11434')
+      })()
+    },
+  } as unknown as OllamaClient
+
+  const events = []
+  for await (const event of runTurn({
+    thread,
+    workspace: null,
+    client: fakeClient,
+    store,
+    registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
+    approvals: new ApprovalGate(),
+    tracker: new PrefillTracker(),
+    modelSupportsTools: false,
+    autoApprove: false,
+    enableBash: false,
+    signal: new AbortController().signal,
+  })) {
+    events.push(event)
+  }
+
+  const assistant = store.messages(thread.id).at(-1)
+  const error = events.find((event) => event.type === 'error')
+  assert.equal(assistant?.content, '')
+  assert.equal(assistant?.turnStatus, 'failed')
+  assert.equal(assistant?.turnError?.code, 'ollama_unavailable')
+  assert.equal(assistant?.turnError?.message.includes('secret'), false)
+  assert.equal(error?.type === 'error' ? error.data.message.includes('secret') : true, false)
+})
+
+it('treats EOF without done:true as protocol failure and keeps partial channels', async (test) => {
+  const db = openDb(':memory:')
+  test.after(() => db.close())
+  const store = new ThreadStore(db)
+  const thread = store.create({
+    title: 'protocol',
+    mode: 'chat',
+    model: 'qwen',
+    workspaceId: null,
+    options: { numCtx: 4_096, temperature: 0, think: 'high' },
+  })
+  store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
+
+  const fakeClient = {
+    chatStream() {
+      return (async function* () {
+        yield {
+          model: 'qwen',
+          created_at: new Date().toISOString(),
+          message: {
+            role: 'assistant' as const,
+            thinking: 'partial thought',
+            content: 'partial answer',
+          },
+          done: false,
+        }
+      })()
+    },
+  } as unknown as OllamaClient
+
+  const events = []
+  for await (const event of runTurn({
+    thread,
+    workspace: null,
+    client: fakeClient,
+    store,
+    registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
+    approvals: new ApprovalGate(),
+    tracker: new PrefillTracker(),
+    modelSupportsTools: false,
+    autoApprove: false,
+    enableBash: false,
+    signal: new AbortController().signal,
+  })) {
+    events.push(event)
+  }
+
+  const assistant = store.messages(thread.id).at(-1)
+  const done = events.find((event) => event.type === 'done')
+  assert.equal(assistant?.content, 'partial answer')
+  assert.equal(assistant?.thinking, 'partial thought')
+  assert.equal(assistant?.turnStatus, 'failed')
+  assert.equal(assistant?.turnError?.code, 'runtime_protocol')
+  assert.equal(assistant?.stopReason, 'protocol_error')
+  assert.equal(done?.type === 'done' ? done.data.outcome : null, 'failed')
+  assert.equal(
+    done?.type === 'done' ? done.data.terminalStopReason : null,
+    'protocol_error',
+  )
+  assert.equal(
+    events.some((event) => event.type === 'done' && event.data.outcome === 'completed'),
+    false,
+  )
+})
+
+for (const cancellation of [
+  {
+    name: 'explicit Stop',
+    abortReason: TURN_ABORT_REASON.explicitStop,
+    stopReason: 'stopped_by_user',
+  },
+  {
+    name: 'connection abort',
+    abortReason: TURN_ABORT_REASON.connectionAbort,
+    stopReason: 'connection_aborted',
+  },
+] as const) {
+  it(`persists ${cancellation.name} as cancelled with partial output`, async (test) => {
+    const db = openDb(':memory:')
+    test.after(() => db.close())
+    const store = new ThreadStore(db)
+    const thread = store.create({
+      title: cancellation.name,
+      mode: 'chat',
+      model: 'qwen',
+      workspaceId: null,
+      options: { numCtx: 4_096, temperature: 0, think: 'off' },
+    })
+    store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
+    const controller = new AbortController()
+
+    const fakeClient = {
+      chatStream() {
+        return (async function* () {
+          yield {
+            model: 'qwen',
+            created_at: new Date().toISOString(),
+            message: { role: 'assistant' as const, content: 'partial' },
+            done: false,
+          }
+          controller.abort(cancellation.abortReason)
+        })()
+      },
+    } as unknown as OllamaClient
+
+    const events = []
+    for await (const event of runTurn({
+      thread,
+      workspace: null,
+      client: fakeClient,
+      store,
+      registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
+      approvals: new ApprovalGate(),
+      tracker: new PrefillTracker(),
+      modelSupportsTools: false,
+      autoApprove: false,
+      enableBash: false,
+      signal: controller.signal,
+    })) {
+      events.push(event)
+    }
+
+    const assistant = store.messages(thread.id).at(-1)
+    const done = events.find((event) => event.type === 'done')
+    assert.equal(assistant?.content, 'partial')
+    assert.equal(assistant?.turnStatus, 'cancelled')
+    assert.equal(assistant?.stopReason, cancellation.stopReason)
+    assert.equal(done?.type === 'done' ? done.data.outcome : null, 'cancelled')
+  })
+}
+
+it('does not emit completed when the terminal DB update fails', async (test) => {
+  class FailingTerminalStore extends ThreadStore {
+    override terminalizeMessage(): never {
+      throw new Error('injected terminal update failure')
+    }
+  }
+
+  const db = openDb(':memory:')
+  test.after(() => db.close())
+  const store = new FailingTerminalStore(db)
+  const thread = store.create({
+    title: 'storage failure',
+    mode: 'chat',
+    model: 'qwen',
+    workspaceId: null,
+    options: { numCtx: 4_096, temperature: 0, think: 'off' },
+  })
+  store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
+
+  const fakeClient = {
+    chatStream() {
+      return (async function* () {
+        yield chunk('would have completed', 21)
+      })()
+    },
+  } as unknown as OllamaClient
+
+  const events = []
+  for await (const event of runTurn({
+    thread,
+    workspace: null,
+    client: fakeClient,
+    store,
+    registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
+    approvals: new ApprovalGate(),
+    tracker: new PrefillTracker(),
+    modelSupportsTools: false,
+    autoApprove: false,
+    enableBash: false,
+    signal: new AbortController().signal,
+  })) {
+    events.push(event)
+  }
+
+  const error = events.find((event) => event.type === 'error')
+  const done = events.find((event) => event.type === 'done')
+  const assistant = store.messages(thread.id).at(-1)
+  assert.equal(error?.type === 'error' ? error.data.code : null, 'internal_error')
+  assert.equal(error?.type === 'error' ? error.data.turnError?.code : null, 'storage_error')
+  assert.equal(done?.type === 'done' ? done.data.outcome : null, 'failed')
+  assert.equal(done?.type === 'done' ? done.data.stopReason : null, 'error')
+  assert.equal(
+    done?.type === 'done' ? done.data.terminalStopReason : null,
+    'storage_error',
+  )
+  assert.equal(
+    events.some((event) => event.type === 'done' && event.data.outcome === 'completed'),
+    false,
+  )
+  assert.equal(assistant?.turnStatus, 'pending')
 })
