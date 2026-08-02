@@ -33,15 +33,19 @@ exit gate ROADMAP проверен целиком.
 | P1-C Public Job HTTP API/SSE/cancel     | independently verified | `4b9d96a`, `0a06ea6`; 44 targeted, 10x races, all required gates  |
 | P1-D Durable Chat execution/reattach    | independently verified | `da70576`, `08b3516`, `f33d5b9`; 57 targeted, 10x race, all gates |
 | P1-E Startup recovery/reconciliation    | independently verified | `22a1aff`, `6c748de`; 66 targeted, 10x recovery, all gates        |
+| P1-F Resource Governor foundation       | independently verified | `a0bc047`, `ff96dc0`; 72 targeted, 10x cleanup, all gates         |
 
-P1-A–P1-E реализуют additive contract, migrations 4–5, canonical state CAS,
+P1-A–P1-F реализуют additive contract, migrations 4–5, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
 до HTTP listen bounded-страницами reconciles unsafe Chat execution в
 `interrupted`, подтверждает persisted cancellation и запускает только untouched
-queued Chat. Resource Governor/leases/Runtime Bar ещё не реализованы; Phase 1
-остаётся `in progress`.
+queued Chat. P1-F заменяет anonymous mutex одним typed process-local
+`ResourceGovernor`: Chat, compaction и warm/load получают FIFO ticket/lease,
+unload защищён active owner, close прекращает admission и освобождает live state.
+`/api/ps` reconciliation, telemetry/fit, prewarm и Runtime Bar ещё не
+реализованы; Phase 1 остаётся `in progress`.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -50,6 +54,21 @@ malformed/failure retry и pre-listen rejection; recovery terminal truth
 19 runtime/provider, 182 server/CLI, 17 Web component и 9 mocked Chromium tests,
 а также typecheck, build, markdownlint и diff check. Live Ollama/hardware,
 external clients и multi-process ownership не проверялись.
+
+P1-F evidence: immutable admission request фиксирует canonical Chat `jobId` либо
+process-local operation UUID, operation, exact Ollama model, requested context,
+единственный priority `normal` и enqueue time. Ticket/lease transitions —
+`queued → active → released` либо `queued → cancelled`; release, cancel и close
+идемпотентны. Локально прошли 72/72 Job/Governor, 28/28 route/concurrency,
+19/19 runtime/provider, 190/190 server/CLI, 17/17 Web component и 9/9 mocked
+Chromium tests. Matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
+Chat ↔ warm/load, compaction ↔ warm/load, waiting/active cancel, все current
+timeout/failure/release paths, exact/conservative unload conflict, stable P1-E
+recovery order, 1000 acquire/release без роста live diagnostics и 10 повторов
+release/cancel/close. Migration 6 не добавлена: queue intent уже durable Job, а
+lease process-local. `/api/ps`, live Ollama/hardware, external clients и
+multi-process ownership не проверялись и не реализованы; browser gate проверяет
+только существующие mocked P0/P1-D flows без Governor UI.
 
 ## Later phases
 

@@ -59,12 +59,13 @@ npm run link:cli
   native field и JSON/text fallback; сохраняйте оба пути и тесты при изменениях.
 - Current agent turn отправляет `keep_alive=10m`; это известный lifecycle risk, а
   не рекомендуемый target default.
-- Current P0-C bridge сериализует Chat turn, compaction и explicit model
-  warm/load одним process-local permit. С P1-D Chat waiter имеет durable Job,
-  но admission/permit остаётся process-local и не является Resource Governor.
+- Current P1-F `ResourceGovernor` сериализует Chat turn, compaction и explicit
+  model warm/load одной typed process-local lease. Durable Chat использует
+  canonical `jobId`; compatibility operations — UUID operation owner. FIFO имеет
+  только priority `normal`; hardware fit и `/api/ps` ещё не участвуют.
 - Current P0-D adapter различает connect, load и stream-idle deadlines.
   Explicit Stop имеет приоритет; subscriber disconnect не отменяет Chat Job, а
-  timeout/provider/explicit abort освобождает P0-C permit.
+  timeout/provider/explicit abort освобождает P1-F lease.
 - Health/catalog/running facts — sampled observations с source/time. Installed
   models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
   использует stale local cache или dated bundled fallback без remote endpoint.
@@ -94,8 +95,9 @@ npm run link:cli
 
 - `app.ts` — routes/composition/static serving;
 - `context.ts` — зависимости, один `JobStore` + `JobService` +
-  `ChatJobExecutionOwner` и process-local bridge owner;
-- `runtime/exclusive-inference.ts` — временный process-local FIFO permit;
+  `ChatJobExecutionOwner` и один process-local `ResourceGovernor`;
+- `runtime/resource-governor.ts` — typed FIFO admission, active lease,
+  snapshot/explanation, unload guard и close boundary;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details и sourced catalog fallback;
 - `hardware/` — host probe и fit;
@@ -139,7 +141,7 @@ npm run link:cli
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E projection regression;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая degraded Runtime/catalog state.
-- server tests — deterministic P0-C mutex, cross-thread turn/compaction/warm,
+- server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
   health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и
   worker-thread connections проверяют migration, atomicity, idempotency,
@@ -148,7 +150,9 @@ npm run link:cli
   проверяет migration 5, duplicate command, detached execution/reattach,
   cancellation races, private-output redaction и atomic Message/Job terminal;
   P1-E — closed/reopened DB recovery, all non-terminal Chat states, bounded
-  pages, partial projection, fail-closed startup и truthful shutdown.
+  pages, partial projection, fail-closed startup и truthful shutdown; P1-F —
+  typed request/ticket/lease, FIFO/cancellation/close, bounded diagnostics,
+  unload conflict и полная current Chat/compaction/warm matrix.
 
 ### CLI
 

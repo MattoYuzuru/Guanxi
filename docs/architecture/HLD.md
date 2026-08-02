@@ -44,9 +44,10 @@ SQLite хранит settings, threads/messages, workspaces, tool journal, calibr
 Job API читает canonical records, replay-ит persisted events через GET SSE и
 выполняет explicit cancel поверх одного `JobService`. Chat execution подключён
 к тому же service через один application `ChatJobExecutionOwner`; controller,
-subscriber wake-ups, exclusive inference bridge и approvals остаются в памяти,
-но command intent, lifecycle и replay output находятся в SQLite. P1-E startup
-coordinator bounded-страницами reconciles v5 Chat associations до HTTP listen.
+subscriber wake-ups, typed Resource Governor tickets/leases и approvals остаются
+в памяти, но command intent, lifecycle и replay output находятся в SQLite. P1-E
+startup coordinator bounded-страницами reconciles v5 Chat associations до HTTP
+listen.
 
 ### As-is execution boundary
 
@@ -58,11 +59,12 @@ coordinator bounded-страницами reconciles v5 Chat associations до HT
 3. передаёт Job application execution owner, который один владеет controller;
 4. возвращает compatibility SSE subscription на persisted Job events.
 
-Owner проходит canonical states, ждёт один process-local inference permit,
-запускает Ollama stream и сначала persist-ит каждый private output event. Тот же
-permit оборачивает compaction и explicit model warm/load. Второй Chat Job имеет
-durable ID/events и продолжает работу после subscriber disconnect, но очередь
-исполнителей и permit всё ещё process-local и не восстанавливаются при restart.
+Owner проходит canonical states, создаёт immutable admission request и ждёт
+одну process-local Resource Governor lease, запускает Ollama stream и сначала
+persist-ит каждый private output event. Тот же `context.governor` выдаёт lease
+для compaction и explicit model warm/load. Второй Chat Job имеет durable
+ID/events и продолжает работу после subscriber disconnect, но tickets/leases
+всё ещё process-local и не восстанавливаются при restart.
 
 Browser disconnect/route change закрывает только subscription. При возврате Web
 находит `jobId` в pending assistant, читает canonical Job и replay-ит ordered
@@ -81,7 +83,7 @@ association/output или storage failure закрывает DB и не начи
 
 Provider adapter ограничивает connect, load и stream-idle отдельно. Валидный
 stream progress обновляет только idle deadline; timeout сохраняет failed partial
-outcome и освобождает exclusive permit. Caller-owned Stop/disconnect имеет
+outcome и освобождает active lease. Caller-owned Stop/disconnect имеет
 приоритет над совпавшим deadline.
 
 Application shell остаётся доступным при degraded Ollama. `/api/version`,
@@ -110,7 +112,7 @@ loaded rows — только из `/api/ps`.
 | Job HTTP subscription listeners      | application `JobService`                | process memory, events в DB |
 | Tool run record                      | SQLite                                  | persistent после выполнения |
 | Active/waiting Chat controller       | `ChatJobExecutionOwner`                 | process memory              |
-| Exclusive inference bridge           | application `ExclusiveInferenceBridge`  | process memory              |
+| Resource admission/active lease      | application `ResourceGovernor`          | process memory              |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -120,10 +122,11 @@ loaded rows — только из `/api/ps`.
 
 ### Основные current risks
 
-1. Process-local bridge не координирует внешний Ollama client или второй Alamo
-   process и не сверяется с фактическими loaded instances.
-2. FIFO wait не имеет priority/backpressure; bounded timeout освобождает request,
-   но не координирует provider вне этого application process.
+1. Process-local Governor не координирует внешний Ollama client или второй Alamo
+   process и ещё не сверяется с фактическими loaded instances.
+2. P1-F поддерживает только один `normal` FIFO lane без priority/backpressure;
+   bounded timeout освобождает request, но не координирует provider вне этого
+   application process.
 3. `keep_alive: 10m` удерживает модели после turn; route не является unload.
 4. P1-E восстанавливает single-process Chat truth после restart, но не даёт
    checkpoint/resume executing inference и не координирует второй process.

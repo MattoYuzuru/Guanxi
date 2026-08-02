@@ -7,7 +7,7 @@
 
 На 2026-08-03:
 
-- `npm test`: 182/182 server/CLI и 17/17 web component/parser tests;
+- `npm test`: 190/190 server/CLI и 17/17 web component/parser tests;
 - `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -24,10 +24,15 @@
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
-- deterministic P0-C tests покрывают FIFO/idempotent permit, cross-thread turns,
-  same/cross-thread turn-compaction, две compaction, warm/load, cancelled waiter,
-  provider/protocol/storage failures, Stop/body cancel/generator return и
-  repeated compaction с next-turn context;
+- deterministic P1-F tests покрывают immutable typed request/ticket/lease,
+  canonical Job и process-local operation owners, single-permit FIFO,
+  snapshot/explanation, waiting/active cancellation, exact/conservative unload
+  guard, bounded live diagnostics после 1000 releases и 10 repeats
+  release/cancel/close;
+- integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
+  Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
+  cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
+  Stop/body cancel/generator return и repeated compaction с next-turn context;
 - deterministic P0-D tests покрывают sourced application/Ollama/catalog health,
   malformed/slow/unavailable provider, stale cache/bundled fallback, empty/error
   `/api/ps`, connect/load/idle deadlines, continuous progress, missing terminal,
@@ -61,9 +66,11 @@
   tool-step preservation, atomic trigger rollback, malformed association/output,
   redacted failure before listen, три startup attempts после injected failures,
   same-thread/cross-thread one-lane scheduling и truthful graceful shutdown;
-- exact P1-A/P1-B/P1-C/P1-D/P1-E files дают 66/66; 15-test store race suite ранее
-  повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10 repeats, а
-  terminal P1-E recovery повторяется 10 раз без новых sequence/output;
+- exact P1-A/P1-B/P1-C/P1-D/P1-E/P1-F files дают 72/72; routes/Governor/
+  concurrency дают 28/28; runtime/provider — 19/19; 15-test store race suite
+  ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
+  repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
+  P1-F release/cancel/close — 10 repeats без duplicate transfer/live state;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -71,11 +78,11 @@
   P1-D navigation/detach/reload gate.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E и
-P1-A–P1-E на временной SQLite, управляемом fake `OllamaClient` transport и
-mocked browser REST/SSE. P0-C
-доказывает one-lane admission только для участвующих entry points одного
-application composition; он не подтверждает hardware fit, Ollama scheduler,
-multi-process/external-client safety или production use. P1-E доказывает
+P1-A–P1-F на временной SQLite, управляемом fake `OllamaClient` transport и
+mocked browser REST/SSE. P1-F доказывает typed one-lane admission только для
+Chat, compaction и warm/load одного application composition; он не подтверждает
+hardware fit, Ollama scheduler, `/api/ps` ownership, multi-process/
+external-client safety или production use. P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
 проверяет live Ollama, реальное железо или публичную сеть.
@@ -83,8 +90,9 @@ process lock. P0-D health остаётся sampled observation; обязател
 ### Current residual risks
 
 - health и `/api/ps` — sampled observations, а не непрерывная истина;
-- process-local exclusive bridge не является Resource Governor;
-- Chat execution durable/replayable, но owner и admission остаются process-local;
+- P1-F Resource Governor и leases process-local и не reconciles `/api/ps`;
+- Chat execution durable/replayable, но execution owner и lease остаются
+  process-local;
 - generic public Job без Chat adapter остаётся queued; live wake-up предполагает
   mutation через один service instance;
 - startup recovery не координирует второй writer и не resume-ит executing side
@@ -110,7 +118,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 | React render/navigation            | P0-A/P0-B/P0-D/P0-E component      |
 | Browser streaming/reload           | P0-A/P0-B/P0-E mocked flows        |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
-| Global concurrency/model lifecycle | P0-C one-lane fake routes          |
+| Global concurrency/model lifecycle | P1-F typed one-lane fake routes    |
 | Job replay/reattach                | HTTP SSE; browser durable replay   |
 | Chat startup recovery              | reopened SQLite, fail-closed pages |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |

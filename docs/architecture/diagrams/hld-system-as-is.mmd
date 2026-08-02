@@ -8,6 +8,7 @@ flowchart LR
         Contract[Zod contract]
         Context[AppContext]
         Memory[activeTurns and approvals]
+        Governor[Typed process local Resource Governor]
         Recovery[Pre-listen Chat recovery]
         DB[(SQLite)]
         Files[Workspace filesystem]
@@ -18,9 +19,13 @@ flowchart LR
         Server -. validates .-> Contract
         Server --> Context
         Context --> Memory
+        Context --> Governor
         Context --> DB
         Context --> Recovery
         Recovery --> DB
+        Recovery --> Governor
+        Server --> Governor
+        Governor --> Ollama
         Server --> Files
         Server --> Shell
     end

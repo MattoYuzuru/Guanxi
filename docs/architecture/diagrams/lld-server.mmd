@@ -8,6 +8,7 @@ flowchart TB
     Agent[Agent loop and approvals]
     Jobs[Job service and Chat execution owner]
     Recovery[Pre-listen Chat recovery]
+    Governor[Resource governor FIFO tickets and leases]
     Tools[Tool registry jail fs bash]
     Ollama[Ollama client]
     Static[Built web assets]
@@ -24,8 +25,12 @@ flowchart TB
     Context --> Tools
     Context --> Agent
     Context --> Recovery
+    Context --> Governor
     Recovery --> Jobs
     Recovery --> Stores
+    Jobs --> Governor
+    Routes --> Governor
+    Governor --> Ollama
     Jobs --> Agent
     Jobs --> Stores
     Models --> Ollama

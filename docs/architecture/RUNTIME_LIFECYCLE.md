@@ -13,13 +13,13 @@
 UI POST /threads/:id/messages + idempotency key
 → one transaction: queued Job + initial event + private input + Message pair
 → application ChatJobExecutionOwner starts once per Job
-→ queued → reserving → wait for process-local exclusive inference permit
+→ queued → reserving → typed Resource Governor ticket → active lease
 → loading/prefill/thinking/generating/tool phases
 → Ollama /api/chat keep_alive=10m
 → persist each private Chat output before subscriber wake-up
 → finalizing
 → one transaction: assistant projection + terminal Job + terminal event/output
-→ release permit
+→ idempotent lease release
 → GET /jobs/:id/events may replay from any persisted sequence
 ```
 
@@ -28,10 +28,12 @@ P1-D добавил один `ChatJobExecutionOwner` в application composition.
 Message association. `activeTurns` остаётся только compatibility mirror для
 старых внутренних проверок; route и React component больше не владеют работой.
 
-P0-C `ExclusiveInferenceBridge` по-прежнему один и process-local. Durable Chat
-Jobs разных threads ждут его FIFO вместе с compaction и explicit model
-warm/load, поэтому участвующие entry points одного application process не входят
-в Ollama inference одновременно. Это ещё не host-wide Resource Governor.
+P1-F заменил `ExclusiveInferenceBridge` одним application
+`ResourceGovernor`. Durable Chat Jobs разных threads ждут его FIFO вместе с
+compaction и explicit model warm/load, поэтому участвующие entry points одного
+application process не входят в Ollama inference одновременно. Chat request
+владеет canonical `jobId`, compatibility operations — process-local UUID. Это
+ещё не host-wide координация внешних clients или второго Alamo process.
 
 На route/thread change `useChat` закрывает только subscription. Job продолжает
 выполнение, а возвращение в Chat находит `jobId` в pending Message, читает
@@ -109,24 +111,29 @@ non-abort ошибки чтения provider body нормализует в бе
 history не удалось, Web удерживает live partial buffer с отдельной
 неподтверждённой меткой и alert.
 
-### P0-C exclusive inference bridge
+### P1-F Resource Governor foundation
 
-Bridge имеет ровно один process-local owner и FIFO waiters. Permit держится весь
-turn, включая tool/approval phases, как консервативная временная граница;
-compaction и warm/load держат его до завершения route operation. С P1-D permit
-Chat turn принадлежит execution owner, а не SSE request. Идемпотентный release
-находится в `finally`, поэтому provider/protocol/storage error, Stop и generator
-return не блокируют следующий request.
+Governor имеет ровно один process-local accelerator permit и `normal` FIFO.
+Immutable admission request содержит owner, operation, exact Ollama model,
+requested context, priority и enqueue time. Ticket проходит `queued → active →
+released` либо `queued → cancelled`; active lease фиксирует acquire/release time
+и освобождается идемпотентно. Lease держится весь turn, включая tool/approval
+phases, как консервативная граница; compaction и warm/load держат её до завершения
+route operation. Chat lease принадлежит execution owner, а не SSE request.
+Release находится в `finally`, поэтому provider/protocol/storage error, Stop,
+timeout и generator return не блокируют следующий request.
 
 Compaction выбирает prefix после admission и получает boundary из реального
 persisted `messages.seq`. После предыдущего summary следующая compaction больше
 не использует array index, не оставляет уже суммированные rows в tail и передаёт
 следующему turn упорядоченный context.
 
-Bridge не защищает внешний Ollama client или второй application process, не
-наблюдает `/api/ps`, не управляет leases/model eviction и не допускает measured
-parallelism. Bounded provider deadlines освобождают участвующий request, но не
-превращают bridge в host-wide Resource Governor.
+Governor snapshot/explanation содержит только live queue, active lease, последнюю
+decision, observation time и policy basis; released state не растёт без границ.
+Explicit unload получает controlled conflict до Ollama call при exact active
+model и при любом другом current owner консервативного lane. Governor не защищает
+внешний Ollama client или второй application process, не reconciles `/api/ps`,
+не знает hardware fit/residency и не допускает measured parallelism.
 
 ### P0-D sampled health и provider deadlines
 
@@ -170,7 +177,7 @@ stable `ollama_*_timeout` category, сохраняет partial assistant как 
 Caller-owned explicit Stop имеет приоритет, включая гонку с deadline: результат
 остаётся `cancelled/stopped_by_user`. P1-D subscriber disconnect больше не
 передаётся provider как abort. Любой timeout/provider/explicit-abort path выходит
-через идемпотентный release P0-C permit и допускает следующего waiter.
+через идемпотентный release P1-F lease и допускает следующего waiter.
 
 ### P1-A durable persistence foundation
 
@@ -321,8 +328,9 @@ internal shutdown abort reason и reconciles active Chat как `interrupted` л
 уже persisted cancellation. Он не записывает `user_requested/stopped_by_user`
 для внутреннего shutdown и закрывает subscribers/SQLite после owner cleanup.
 
-P1-E не реализует checkpoint resume, multi-process locking, daemon/service,
-Resource Governor, lease journal или `/api/ps` reconciliation.
+P1-E не реализует checkpoint resume, multi-process locking или daemon/service.
+P1-F добавил transient Resource Governor tickets/leases без lease journal и
+`/api/ps` reconciliation.
 
 ## Target Job lifecycle
 
@@ -374,6 +382,19 @@ WebSocket нужен только если duplex live-audio latency это по
 и token streams остаются HTTP+SSE.
 
 ## Resource Governor
+
+### Current P1-F policy
+
+- один active process-local accelerator lease;
+- один supported priority `normal`, FIFO без preemption;
+- Chat, compaction и explicit warm/load используют один `context.governor`;
+- waiting abort удаляет только свой ticket, active abort принадлежит execution
+  owner;
+- unload блокируется active lease/conservative current owner;
+- close прекращает admission, abort-ит owners и ждёт release;
+- queue intent остаётся в durable Job, а tickets/leases process-local, поэтому
+  migration 6 не вводилась;
+- `/api/ps`, telemetry, fit, external ownership и multi-process lock отсутствуют.
 
 ### Default policy
 
@@ -669,6 +690,8 @@ answer.
 - перестаёт принимать новые Jobs;
 - сохраняет queue;
 - уведомляет active Jobs отдельной internal shutdown reason;
+- закрывает Governor admission, abort-ит current operation owners и ждёт
+  идемпотентный release active lease;
 - current Chat owner abort-ит adapter и сохраняет `interrupted`, а уже persisted
   cancellation подтверждает как `cancelled`;
 - закрывает subscribers;
@@ -686,8 +709,9 @@ Current P1-E recovery scan:
 - только доказанно untouched typed Chat `queued` возвращаются owner;
 - unsafe typed Chat executing states становятся `interrupted`;
 - persisted typed Chat `cancelling` становится `cancelled`;
-- generic Jobs, pending approvals, `/api/ps` и stale leases остаются будущей
-  adapter/Governor recovery работой.
+- generic Jobs, pending approvals, `/api/ps` и external/stale runtime instances
+  остаются будущей adapter/Governor recovery работой; transient P1-F leases после
+  process death не восстанавливаются.
 
 Checkpoint resume, opt-in login autostart и обнаружение одновременно запущенного
 второго application writer остаются target более поздних slices.
@@ -732,7 +756,9 @@ failure/reload regression из пункта 8. P0-C реализовал пун�
 warm/load boundary и повторную compaction по persisted `seq`.
 P0-D реализовал пункт 6 как минимальную sampled Chat/Runtime projection,
 правдивые health/catalog sources и bounded connect/load/stream-idle deadlines.
-P1-D добавил durable Chat execution/detach/reattach, а P1-E — bounded startup
-reconciliation. Полный Runtime Bar, Governor и leases остаются target.
+P1-D добавил durable Chat execution/detach/reattach, P1-E — bounded startup
+reconciliation, P1-F — typed process-local Governor admission/lease foundation.
+Полные `/api/ps` reconciliation, telemetry/fit, Runtime Bar и resource UX
+остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

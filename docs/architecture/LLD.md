@@ -37,9 +37,10 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 
 - `app.ts`: Hono composition, health, routes, SPA;
 - `context.ts`: Ollama client, stores, tools, approvals, один
-  `ExclusiveInferenceBridge` и один `ChatJobExecutionOwner`;
-- `runtime/exclusive-inference.ts`: process-local one-owner FIFO admission без
-  durability/priority/recovery;
+  `ResourceGovernor` и один `ChatJobExecutionOwner`;
+- `runtime/resource-governor.ts`: typed immutable request/ticket, один
+  process-local FIFO permit, active lease, bounded live snapshot/explanation,
+  unload guard и graceful close;
 - `http/models-routes.ts`: list/show/pull/delete/warm/unload/running;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
   compact;
@@ -76,9 +77,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
-mirror, но routes не используют его как lifecycle owner. Host-wide exclusion
-принадлежит отдельному bridge. Его permit совместно используют turn, compaction
-и explicit model warm/load; waiters, `ApprovalGate` и controllers не durable.
+mirror, но routes не используют его как lifecycle owner. Application-wide
+exclusion принадлежит одному `context.governor`. Его lease используют Chat,
+compaction и explicit model warm/load; unload отклоняется при exact active lease
+и консервативно при любом другом active single-lane owner. Tickets, leases,
+`ApprovalGate` и controllers не durable.
 
 Один `JobStore`, `JobService` и `ChatJobExecutionOwner` входят в application
 context; public Job и Chat routes используют один service. Store синхронно
@@ -154,12 +157,13 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 CLI parses port/host/no-open, проверяет existing health, запускает server в
 foreground и открывает browser. Durable service lifecycle/TUI/API client нет.
 
-## Current sequence и bridge limits
+## Current sequence и Governor limits
 
 1. Chat command атомарно создаёт queued Job, initial event, private input и
    Message pair до начала execution.
-2. Application owner резервирует per-thread controller и ждёт process-local
-   permit; Chat, compaction и model warm/load выполняются в одной FIFO lane.
+2. Application owner резервирует per-thread controller, переводит Job в
+   `reserving` и ждёт typed process-local lease; Chat, compaction и model
+   warm/load выполняются в одной `normal` FIFO lane.
 3. Lifecycle и private output persist-first; HTTP subscribers читают SQLite по
    sequence и не владеют execution.
 4. Client crash/navigation только disconnect-ит subscriber; remount/hard reload
@@ -171,7 +175,7 @@ foreground и открывает browser. Durable service lifecycle/TUI/API clie
 7. Connect заканчивается при response headers; load ждёт первый валидный stream
    event или non-stream model response; idle обновляется каждым валидным event.
 8. Timeout сохраняет точный safe error, а explicit Stop остаётся authoritative
-   cancellation; permit освобождается в обоих случаях.
+   cancellation; lease освобождается в обоих случаях.
 
 `OllamaClient` пробрасывает signal abort для cancellation classification и
 оборачивает прочие ошибки чтения body как provider failure. Если terminal
@@ -185,7 +189,7 @@ backfill-ит как `completed/legacy_terminal_chunk`. Terminal update меня
 остаётся наблюдаемым recovery state.
 
 P0-A по-прежнему отвечает за безопасный effect и root/Chat Error Boundaries.
-P0-C permit освобождается после terminal/error/abort/generator return. Повторная
+P1-F lease освобождается после terminal/error/abort/generator return. Повторная
 compaction выбирает prefix после admission и использует реальный persisted
 `seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership, lease или
 доказательство unload между observations.
@@ -198,9 +202,20 @@ waiting_tool/waiting_approval/finalizing` получают recovery-only
 `interrupted`, `cancelling` — `cancelled`; untouched `queued` schedule-ится
 существующим owner после полного reconciliation pass.
 
-Bridge не является Resource Governor: нет durable queue, leases, priorities,
-continuous `/api/ps` reconciliation или measured parallelism. Recovery остаётся
+P1-F является консервативным Resource Governor foundation, но не полным
+host-level control plane: queue intent остаётся durable Job state, а tickets и
+leases process-local; нет `/api/ps` reconciliation, telemetry/fit, target
+priorities, prewarm, lease journal или measured parallelism. Recovery остаётся
 single-process startup reconciliation без checkpoint resume и process lock.
+
+Current admission request фиксирует owner (`jobId` либо process-local operation
+ID), `chat | compaction | model_warm`, exact Ollama model name, requested context,
+priority `normal` и enqueue time. Ticket проходит `queued → active → released`
+либо `queued → cancelled`; release/cancel/close идемпотентны. Snapshot хранит
+только live queue, одну active lease и одну последнюю decision, поэтому
+diagnostics не растут с числом завершённых operations. Migration 6 для P1-F не
+нужна: canonical queue intent уже находится в Job, а transient lease journal не
+вводился.
 
 ## Target module boundaries
 
