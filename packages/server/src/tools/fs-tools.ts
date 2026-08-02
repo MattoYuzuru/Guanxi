@@ -9,7 +9,7 @@
  * жёсткие лимиты, а урезание всегда обозначается явно, чтобы модель понимала,
  * что видит не весь файл.
  */
-import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises'
+import { open, readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { relativeToWorkspace, resolveInWorkspace } from './jail.ts'
 import {
@@ -44,12 +44,32 @@ const IGNORED_DIRS = new Set([
 ])
 
 async function isBinary(path: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | null = null
   try {
-    const handle = await readFile(path, { encoding: null })
+    handle = await open(path, 'r')
+    const prefix = Buffer.alloc(1024)
+    const { bytesRead } = await handle.read(prefix, 0, prefix.length, 0)
     // Нулевой байт в первом килобайте — надёжный признак двоичного файла.
-    return handle.subarray(0, 1024).includes(0)
+    return prefix.subarray(0, bytesRead).includes(0)
   } catch {
     return false
+  } finally {
+    await handle?.close().catch(() => {})
+  }
+}
+
+/** Читает не больше лимита даже для огромного файла. */
+async function readPrefix(path: string, maxBytes: number): Promise<{
+  text: string
+  bytesRead: number
+}> {
+  const handle = await open(path, 'r')
+  try {
+    const buffer = Buffer.alloc(maxBytes)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    return { text: buffer.subarray(0, bytesRead).toString('utf8'), bytesRead }
+  } finally {
+    await handle.close()
   }
 }
 
@@ -121,23 +141,29 @@ export const readFileTool: ToolDefinition = {
     if (info.isDirectory()) throw new ToolError(`${shown} — это директория, а не файл`)
     if (await isBinary(target)) throw new ToolError(`${shown} — двоичный файл, прочитать нельзя`)
 
-    const raw = await readFile(target, 'utf8')
+    const { text: raw, bytesRead } = await readPrefix(target, MAX_READ_BYTES)
     const allLines = raw.split('\n')
 
-    const offset = Math.max(1, optionalNumber(args, 'offset') ?? 1)
-    const limit = Math.min(optionalNumber(args, 'limit') ?? MAX_READ_LINES, MAX_READ_LINES)
+    const offset = Math.max(1, Math.floor(optionalNumber(args, 'offset') ?? 1))
+    const limit = Math.max(
+      1,
+      Math.min(Math.floor(optionalNumber(args, 'limit') ?? MAX_READ_LINES), MAX_READ_LINES),
+    )
     const slice = allLines.slice(offset - 1, offset - 1 + limit)
 
     const numbered = slice.map((line, index) => `${offset + index}\t${line}`).join('\n')
-    const body = numbered.length > MAX_READ_BYTES ? numbered.slice(0, MAX_READ_BYTES) : numbered
-
     const shownUpTo = offset - 1 + slice.length
-    const truncated = shownUpTo < allLines.length || body.length < numbered.length
-    const footer = truncated
-      ? `\n… показаны строки ${offset}-${shownUpTo} из ${allLines.length}; следующая строка: offset=${shownUpTo + 1}`
-      : ''
+    const sourceTruncated = info.size > bytesRead
+    const linesTruncated = shownUpTo < allLines.length
+    const footer =
+      sourceTruncated || linesTruncated
+        ? `\n… показаны строки ${offset}-${shownUpTo}; следующая строка: offset=${shownUpTo + 1}` +
+          (sourceTruncated
+            ? `; файл больше безопасного лимита чтения ${MAX_READ_BYTES} Б`
+            : ` из ${allLines.length}`)
+        : ''
 
-    return { content: `${shown}\n${body}${footer}` }
+    return { content: `${shown}\n${numbered}${footer}` }
   },
 }
 
