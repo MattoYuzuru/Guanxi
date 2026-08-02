@@ -68,11 +68,11 @@ npm run link:cli
 - Health/catalog/running facts — sampled observations с source/time. Installed
   models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
   использует stale local cache или dated bundled fallback без remote endpoint.
-- P1-B `JobService` поверх migration 4/`JobStore` владеет canonical state
-  transitions и persisted-first in-process subscription. SQLite event sequence
+- P1-C `JobService` поверх migration 4/`JobStore` владеет canonical state
+  transitions, cancel и persisted-first subscription. SQLite event sequence
   остаётся источником replay; live listeners хранят только wake-up signal.
-  Service не подключён к current Chat POST/SSE, public Job API, worker или
-  recovery.
+  Public Job create/query/GET SSE/cancel routes используют этот service, но он
+  не подключён к current Chat POST/SSE, worker или recovery.
 
 ## Карта current-state
 
@@ -82,8 +82,8 @@ npm run link:cli
 - `api.ts` — route constants и request/response schemas;
 - `events.ts` — SSE event union;
 - `index.ts` — public exports.
-- Durable Job record/state/error/outcome и event envelope экспортируются из
-  `schemas.ts`; public Job HTTP/SSE command contract ещё отсутствует.
+- Durable Job record/state/error/outcome, event envelope и P1-C public
+  create/query/cancel/cursor/SSE schemas экспортируются из contract.
 - Message terminal bridge использует additive/defaulted fields; точные новые SSE
   terminal details остаются optional для старого strict client.
 
@@ -105,7 +105,10 @@ npm run link:cli
   terminal CAS;
 - `jobs/lifecycle.ts` фиксирует transitions из canonical diagram;
   `jobs/service.ts` валидирует terminal edges и читает bounded SQLite pages при
-  replay/live subscription без in-memory event queue;
+  replay/live subscription без in-memory event queue, закрывает terminal tail и
+  владеет cancel transitions;
+- `http/jobs-routes.ts` предоставляет strict public command/query/GET SSE/cancel
+  API с server-owned idempotency scope и bounded HTTP backpressure;
 - `agent/` — turn loop, prompts, approvals и parser;
 - `tools/` — registry, filesystem, shell и jail.
 
@@ -127,9 +130,10 @@ npm run link:cli
   и boundary smoke, включая degraded Runtime/catalog state.
 - server tests — deterministic P0-C mutex, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
-  health/catalog/running/timeout envelope; P1-A/P1-B temporary SQLite и
+  health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и
   worker-thread connections проверяют migration, atomicity, idempotency,
-  transition races, persisted-first replay/live handoff, cleanup и restart.
+  transition races, public command/query/cancel, persisted-first replay/live
+  handoff, HTTP cleanup/backpressure, terminal close и restart replay.
 
 ### CLI
 

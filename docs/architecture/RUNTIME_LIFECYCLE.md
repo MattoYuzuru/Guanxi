@@ -204,9 +204,43 @@ cursor; wake-up не содержит event payload. Поэтому replay/live 
 только listener и не меняет Job.
 
 Новый service instance после restart теряет listeners, но воспроизводит durable
-tail из SQLite. Это internal `AsyncIterable`, не HTTP SSE и не durable execution:
-public create/query/replay/cancel routes, Chat bridge, worker, startup recovery,
-Governor и route-safe execution ещё не реализованы.
+tail из SQLite. На handoff P1-B это был только internal `AsyncIterable`; durable
+execution, Chat bridge, worker, startup recovery и Governor не были реализованы.
+
+### P1-C public command/query/replay/cancel API
+
+Additive contract и Hono composition теперь предоставляют:
+
+- `POST /api/jobs` с strict `kind`/`operation`/`idempotencyKey`, server-owned
+  scope `local-api:v1`, `202` для нового и `200` для duplicate Job;
+- `GET /api/jobs/:jobId` как canonical persisted projection;
+- `GET /api/jobs/:jobId/events` как replayable SSE по `after` либо
+  `Last-Event-ID`;
+- `POST /api/jobs/:jobId/cancel` с единственной public safe reason
+  `user_requested`.
+
+Каждый Job SSE frame несёт полный typed persisted event, а `id` точно равен его
+positive integer `sequence`. Handler до заголовков проверяет Job и первый bounded
+replay page, затем использует `JobService.subscribe`: SQLite остаётся источником
+replay/live order. Pull-based HTTP stream буферизует не более одного frame;
+producer не ждёт медленного reader. Disconnect/AbortSignal удаляет только
+subscriber и не меняет Job.
+
+Terminal event доставляется последним, после чего subscription закрывается;
+reconnect уже на terminal tail закрывается без зависания. Одинаковые `after` и
+`Last-Event-ID` дают один cursor, разные либо malformed/negative/fractional/
+unsafe integer значения отклоняются до subscription.
+
+Cancellation принадлежит application service. Terminal и уже `cancelling` Job
+возвращаются идемпотентно. `queued` проходит persisted
+`cancelling → cancelled`, потому что executor ещё не запускал side effect.
+Активный cancellable state переходит только в `cancelling`; будущий execution
+owner должен подтвердить остановку перед `cancelled`. State без canonical edge
+возвращает controlled conflict без event.
+
+P1-C создаёт API durable records, но не Job executor. Новый Job правдиво остаётся
+`queued`; current Chat POST/SSE по-прежнему connection-owned и не использует эти
+routes.
 
 ## Target Job lifecycle
 

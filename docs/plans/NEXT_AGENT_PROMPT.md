@@ -2,29 +2,32 @@
 
 **Статус:** ready
 **Проверено:** 2026-08-03
-**Назначение:** Phase 1, slice P1-C — public Job command/query/replay/cancel API
+**Назначение:** Phase 1, slice P1-D — durable Chat execution owner и compatibility bridge
 
 Скопируйте текст ниже в новую агентскую сессию.
 
 ---
 
 Работай в репозитории Alamo UI. Phase 0 прошла bounded deterministic exit gate,
-P1-A независимо проверил durable Job/event-store foundation, а P1-B — canonical
-state transitions и internal persisted-first subscription. Реализуй только slice
-`P1-C public Job command/query/replay/cancel API`.
+P1-A реализовал durable Job/event store, P1-B — canonical transitions и
+persisted-first subscription, P1-C — public create/query/replay/cancel API.
+Реализуй только slice `P1-D durable Chat execution owner and compatibility
+bridge`.
 
 Проверенные commits:
 
 - Phase 0: `f038b5c`..`b2b3088`, evidence сохранено в `PHASE_STATUS.md`;
 - P1-A contract/store: `138fb5e`, `91cb21f`, `92b68f0`;
-- P1-B store/service: `56b2200`;
-- P1-B tests: `55351bc`;
-- P1-B docs/status: возьми commit из текущего `git log` после handoff.
+- P1-B store/service/tests: `56b2200`, `55351bc`;
+- P1-C public API: `4b9d96a`, `0a06ea6`;
+- P1-C docs/status: возьми commit из текущего `git log` после handoff.
 
 Не откатывай Error Boundaries, truthful Message terminal CAS, process-local
 exclusive inference bridge, persisted compaction fix, sampled runtime
-health/timeouts, SQLite migration 4, scoped Job idempotency, per-Job sequence,
-canonical transition CAS или persisted-first `JobService` subscription.
+health/timeouts, SQLite migrations 1–4, scoped Job idempotency, canonical state
+CAS, persisted-first subscription, strict public Job schemas, server-owned
+`local-api:v1`, pull-based HTTP backpressure, terminal SSE close или cancel
+semantics.
 
 Обязательный порядок:
 
@@ -36,108 +39,137 @@ canonical transition CAS или persisted-first `JobService` subscription.
 2. Проверь Git status и сохрани unrelated/untracked user files. Не изменяй
    `.idea`, пользовательскую `~/.alamo`, workspace-файлы или реальные Ollama
    models.
-3. Используй:
-   - `sde-agent:implementation-planning` и `sde-agent:sde-agent` как owner;
-   - `architecture-agent:architecture-agent` для HTTP/application boundary;
-   - `sre-agent:verification-strategy` для command/query/SSE matrix;
-   - `sre-agent:reliability-testing` для reconnect, backpressure и disconnect;
-   - `sre-agent:finding-validation` и `sde-agent:implementation-evidence` для
-     независимой проверки.
-4. До правок воспроизведи current state: exact P1-A/P1-B files дают 30/30,
-   internal subscription replay-ит SQLite и продолжает live tail, но Job
-   request/response schemas, public routes, HTTP SSE и cancel command
-   отсутствуют. Current Chat POST/SSE остаётся connection-owned.
-5. До кода составь bounded plan с route/schema table, idempotency scope,
-   status/error mapping, Last-Event-ID/`after` policy, SSE framing,
-   terminal-close behavior, cancellation state ownership, disconnect cleanup,
-   compatibility, failure injection и точными validation commands.
+3. Используй `sde-agent:implementation-planning`, `sde-agent:sde-agent`,
+   `architecture-agent:architecture-agent`, `sre-agent:verification-strategy`,
+   `sre-agent:reliability-testing`, `sre-agent:finding-validation` и
+   `sde-agent:implementation-evidence` без обязательного делегирования.
+4. До правок воспроизведи current state: exact P1-A/P1-B/P1-C files дают 44/44,
+   public Job SSE replayable и disconnect-safe, но новый public Job остаётся
+   `queued`; current Chat POST/SSE всё ещё connection-owned и navigation abort
+   terminalize-ит Message как `cancelled/connection_aborted`.
+5. До кода составь bounded plan с data/transaction table, Job↔Message ownership,
+   idempotency/fingerprint policy, lifecycle mapping, output-event privacy,
+   compatibility flow, cancellation races, disconnect/reconnect, failure
+   injection и точными validation commands.
 
-Scope P1-C:
+Scope P1-D:
 
-- добавить additive contract schemas/paths для:
-  - `POST /api/jobs` — validated create command;
-  - `GET /api/jobs/:jobId` — canonical Job query;
-  - `GET /api/jobs/:jobId/events` — replayable GET SSE;
-  - `POST /api/jobs/:jobId/cancel` — explicit cancel command;
-- create принимает только существующие safe Job foundation fields: `kind`,
-  `operation`, non-empty `idempotencyKey`; public caller не задаёт произвольный
-  storage scope — server использует один документированный local API scope;
-- duplicate create с тем же key возвращает тот же Job и не создаёт второй event;
-  response правдиво сообщает `created` и stable events URL;
-- validation выполняется до Job create; schema/path/error shapes остаются typed
-  через `packages/contract`, без ad-hoc JSON;
-- GET unknown Job возвращает controlled 404; malformed params/body/sequence —
-  controlled 400; storage/malformed persisted data — safe 5xx без raw DB/content;
-- event route принимает non-negative integer `after` и reconnect header
-  `Last-Event-ID`; если заданы оба разных значения, возвращает controlled 400,
-  а одинаковые значения не меняют sequence;
-- SSE использует persisted Job event sequence как `id`, отдаёт typed event data
-  в ascending order и сначала replay-ит `after+1..M`, затем live `M+1`;
-- HTTP handler использует существующий `JobService.subscribe`; не создаёт свою
-  in-memory event history и не broadcast-ит до commit;
-- terminal Job subscription закрывается после последнего persisted terminal
-  event; reconnect после terminal tail не зависает;
-- slow HTTP client не блокирует Job mutation: handler уважает response
-  backpressure, а service продолжает bounded SQLite page replay;
-- client disconnect/AbortSignal освобождает только HTTP subscriber и никогда не
-  меняет Job status;
-- добавить application cancel operation с canonical diagram semantics:
-  - terminal Job возвращается идемпотентно без нового event;
-  - `queued` проходит `cancelling → cancelled`, потому что side effect ещё не
-    стартовал;
-  - cancellable active state переходит только в `cancelling`; terminal
-    `cancelled` остаётся будущему execution owner после подтверждённого stop;
-  - уже `cancelling` возвращается идемпотентно;
-  - state без canonical cancel edge даёт controlled conflict без записи;
-- cancel reason остаётся safe metadata/stop reason, без prompt, reasoning,
-  provider body, secret или workspace content;
-- подключить routes в Hono composition и использовать один `context.jobService`;
-- обновить contract/route/service tests и current-state docs только в пределах
-  public API foundation.
+- добавить один application-level Chat Job execution owner в server composition;
+  task/AbortController принадлежат ему по `jobId`, а не HTTP handler, React route
+  или SSE subscriber;
+- current Chat dispatch создаёт durable Job до исполнения и запускает его ровно
+  один раз в текущем application process;
+- public P1-C generic `POST /api/jobs` не должен сам изображать runnable command:
+  без typed Chat input он остаётся queued;
+- bridge current `POST /api/threads/:threadId/messages` к create + attach semantics
+  с additive compatibility. Новый Web client передаёт stable idempotency key;
+  повтор того же submit не создаёт второй Job, user Message, assistant Message или
+  Ollama call;
+- server определяет Chat idempotency scope из thread/operation; client не задаёт
+  storage scope;
+- добавить только необходимую additive migration 5 для durable Job↔Message/input/
+  projection association. Не переписывать migrations 1–4. Fresh, v4→v5,
+  interrupted migration/reopen и legacy rows обязательны;
+- private prompt, reasoning, tool/provider body, secret и workspace content не
+  помещать в `safeJobMetadata`. Если replay требует output payload, ввести
+  отдельный typed contract/storage boundary с явной privacy classification и
+  backward-compatible `null`/legacy form;
+- Job event/output сначала сохраняется в SQLite, затем становится доступен live
+  subscriber. Reconnect по sequence восстанавливает gap без duplicate output;
+- terminal Job + terminal Message projection должны быть согласованы одной
+  transaction либо иметь доказанный recovery-safe protocol, который никогда не
+  показывает completed Job с pending/false-success Message;
+- execution owner, а не subscriber, ждёт существующий P0-C exclusive inference
+  permit и освобождает его на completed/provider/protocol/storage/cancel path;
+- отобразить current Chat phases на canonical Job states без skipped/reverse edge.
+  Новый Job начинает `queued`; admission/load/prefill/generation/finalization и
+  terminal event остаются правдивыми, provider phase может жить отдельно;
+- browser disconnect, route change и отмена GET SSE освобождают только subscriber.
+  Inference продолжает выполняться, пока Job не terminal либо не получен explicit
+  cancel;
+- current `/threads/:id/stop` и новый Job cancel сходятся в один cancel owner.
+  Cancel до admission не вызывает Ollama; active cancel сначала фиксирует
+  `cancelling`, затем abort-ит adapter и только после подтверждённой остановки
+  terminalize-ит `cancelled`; repeated cancel не добавляет event;
+- reconnect/reload должен найти Job через persisted Thread/Message projection,
+  attach к public GET SSE после last applied sequence и сверить terminal Job +
+  Message через canonical GET. Не хранить canonical active Job только в React или
+  localStorage;
+- сохранить legacy Thread/history compatibility: pre-v5 rows читаются, старые
+  clients не получают ad-hoc shape, а новый `jobId` additive/defaulted;
+- использовать один `context.jobService` и один execution owner; не создавать
+  route-local JobService/store/history/broadcast queue;
+- bounded output buffering не должен превращать SQLite/event loop в unbounded
+  token queue. Зафиксируй выбранный chunk/page policy и проверь ordered replay;
+- обновить contract/server/web и deterministic component/browser fixtures только
+  в пределах current Chat bridge.
 
-Этот slice создаёт API для durable records, но не executor. Новый Job правдиво
-остаётся `queued`, пока следующий slice не добавит execution owner. Не называй
-`202`, SSE или background-looking route доказательством, что Job уже выполняется.
+Lifecycle result P1-D:
+
+```text
+POST Chat submit with idempotency key
+→ atomic/recovery-safe Job + Message association
+→ execution owner starts once
+→ persisted Job events → public GET SSE
+→ POST compatibility subscriber may detach
+→ execution continues
+→ terminal Job + Message projection
+→ reload discovers jobId and reattaches/rehydrates
+```
+
+Этот slice отделяет Chat execution от browser connection только пока жив
+application process. Startup recovery non-terminal Jobs остаётся следующим
+slice, если не требуется минимальная interrupted marking для честного чтения.
+Не называй P1-D background Application Service: CLI process пока foreground и
+закрытие server process прекращает execution.
 
 Required deterministic evidence:
 
-- contract round-trip и malformed fixtures для create/query/cancel/event path;
-- duplicate POST возвращает один Job и один initial event;
-- GET возвращает canonical persisted projection и controlled 404/invalid-data;
-- SSE after `N` отдаёт persisted `N+1..M`, затем committed live `M+1` без gap и
-  duplicate; каждый frame имеет exact numeric `id`;
+- fresh/v4→v5/reopen/failed migration сохраняет legacy threads/messages и Job
+  schema;
+- duplicate Chat submit с одним key даёт один Job, один initial event, одну пару
+  Messages и один adapter call;
+- malformed body/key/thread rejected до Job/Message mutation;
+- Job association доступна после reload без localStorage как source of truth;
+- disconnect после start очищает только subscriber, Job продолжает transitions и
+  Message становится terminal;
+- route navigation и hard reload reattach по persisted sequence без gap,
+  duplicate token/tool/usage или второго inference;
 - event, committed во время replay/live handoff, наблюдается ровно один раз;
-- reconnect через `Last-Event-ID` продолжает с next sequence;
-- conflicting `after`/`Last-Event-ID`, negative/fractional/overflow input и
-  malformed body отклоняются до mutation/subscription;
-- rolled-back mutation не создаёт SSE frame;
-- два SSE clients получают одну canonical ordered sequence;
-- terminal replay закрывает stream, включая reconnect уже после terminal tail;
-- disconnect очищает subscriber без Job state change;
-- slow reader не блокирует producer и восстанавливает gap из SQLite;
-- cancel queued даёт canonical `cancelling → cancelled`; repeated cancel не
-  добавляет event; active cancel остаётся `cancelling`; invalid edge не пишет;
-- route/service errors не раскрывают DB SQL, prompt/reasoning/secrets или user
-  filesystem paths;
-- P1-A/P1-B migration/idempotency/append/transition/terminal races и
-  P0-C/P0-D/P0-E gates остаются зелёными.
+- slow/reconnecting client не блокирует producer и дочитывает SQLite tail;
+- explicit cancel до admission не вызывает provider; active cancel даёт
+  `cancelling → cancelled` после abort confirmation; repeated cancel не пишет;
+- disconnect/cancel/terminal race имеет ровно один terminal Job event и одну
+  terminal Message projection;
+- provider error, missing `done:true`, load/idle timeout и storage injection
+  terminalize-ят Job/Message правдиво и освобождают P0-C permit;
+- terminal persistence failure никогда не публикует completed и имеет безопасный
+  observable recovery state;
+- два threads по-прежнему не выполняют local inference одновременно;
+- output event/storage/HTTP errors не попадают в logs/error metadata и не
+  раскрывают prompt, reasoning, provider body, secret или filesystem path;
+- P1-A/P1-B/P1-C route/store/subscription/races и P0-C/P0-D/P0-E gates остаются
+  зелёными;
+- обновлённый Chromium test детерминированно доказывает
+  `send → detach/navigation → Job continues → reattach/reload → terminal output`.
 
 Non-goals:
 
-- не подключать current Chat execution/messages к Job API;
-- не добавлять worker, scheduler, queue admission, Resource Governor, leases,
-  prewarm, unload или measured parallelism;
-- не изображать queued Job как running/background execution;
-- не реализовывать startup recovery non-terminal Jobs;
-- не менять connection ownership текущего Chat POST/SSE;
-- не добавлять web Job client, Runtime Bar, Jobs UI или notification flow;
-- не менять model catalog/capabilities, Agent/MCP/Skills, retention, branding,
-  locale или product IA;
-- не добавлять migration 5 без нового persistence requirement;
-- не переписывать SQLite migrations 1–4;
-- не использовать live Ollama, реальную модель, public network или user DB.
+- не добавлять generic worker registry, scheduler priority или arbitrary public
+  operation execution;
+- не реализовывать startup recovery/resume всех non-terminal Jobs сверх честного
+  state, необходимого для P1-D consistency;
+- не добавлять Resource Governor, leases, `/api/ps` reconciliation, prewarm,
+  unload или measured parallelism;
+- не добавлять Runtime Bar, Jobs screen, notification flow или новый product IA;
+- не добавлять Project/Recipe/Artifact service, retention, Agent/MCP/Skills,
+  model catalog/capabilities, branding или locale work;
+- не добавлять background daemon, CLI/TUI Job commands или multi-process lock;
+- не использовать live Ollama, реальную модель, public network или user DB в
+  deterministic suite;
+- не называть mocked Hono/Chromium fixture production restart recovery.
 
-Validation:
+Validation (уточни новые exact filenames в плане):
 
 ```bash
 npm run typecheck
@@ -145,14 +177,15 @@ node --test packages/server/test/job-contract.test.ts \
   packages/server/test/job-migration.test.ts \
   packages/server/test/job-store.test.ts \
   packages/server/test/job-service.test.ts \
-  packages/server/test/job-routes.test.ts
-node --test packages/server/test/exclusive-inference.test.ts \
+  packages/server/test/job-routes.test.ts \
+  packages/server/test/chat-job-execution.test.ts
+node --test packages/server/test/routes.test.ts \
+  packages/server/test/exclusive-inference.test.ts \
   packages/server/test/inference-concurrency.test.ts
 node --test packages/server/test/catalog.test.ts \
   packages/server/test/runtime-contract.test.ts \
   packages/server/test/runtime-routes.test.ts \
-  packages/server/test/ollama-client.test.ts \
-  packages/server/test/inference-concurrency.test.ts
+  packages/server/test/ollama-client.test.ts
 npm test --workspace @alamo/web
 npm run test:web:browser
 npm test
@@ -161,24 +194,27 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-В финальном evidence укажи exact test counts, HTTP/SSE fixtures, disconnect и
-reconnect envelope, а также число повторений race tests. Не называй mocked Hono
-SSE полноценным browser reattach и не называй API durable Job Engine.
+В финальном evidence укажи exact test counts, migration fixtures, число повторов
+duplicate/cancel/terminal races, Job↔Message transaction boundary, detach/
+reattach envelope и какие browser actions реально проверены. Не называй fake
+Ollama hardware validation и не называй process-local owner background service.
 
 После успешной независимой проверки:
 
-- обнови current-state runtime/HLD/LLD/testing docs;
-- в `PHASE_STATUS.md` сохрани Phase 0/P1-A/P1-B evidence, добавь только P1-C;
+- обнови current-state runtime/HLD/LLD/development/testing docs;
+- в `PHASE_STATUS.md` сохрани Phase 0/P1-A/P1-B/P1-C evidence и добавь только
+  P1-D;
 - не отмечай всю Phase 1 завершённой;
-- полностью перепиши `NEXT_AGENT_PROMPT.md` под P1-D durable execution owner и
-  Chat bridge либо оставь P1-C с blocker/recovery;
-- сделай небольшие conventional commits для contract/routes, tests и docs.
+- полностью перепиши `NEXT_AGENT_PROMPT.md` под P1-E startup recovery и
+  interrupted reconciliation либо оставь P1-D с blocker/recovery;
+- сделай небольшие conventional commits для contract/storage/execution, tests и
+  docs.
 
-Если public idempotency scope, active cancel ownership, SSE terminal-close или
-HTTP error semantics конфликтуют с принятым contract/ADR и требуют нового
-product decision, не угадывай. Оставь P1-C blocked, укажи конфликтующие
-источники, failing test/command и безопасные recovery steps.
+Если atomic Job↔Message terminalization, persisted output privacy или backward-
+compatible Chat idempotency требуют нового product decision, не угадывай. Оставь
+P1-D blocked, укажи конфликтующие sources, failing fixture и безопасные recovery
+steps.
 
-В финале сообщи status `successful` либо `blocked`, commits, command/query/cancel
-invariants, HTTP replay/live evidence, exact tests, failures, residual risks и
-что `NEXT_AGENT_PROMPT.md` полностью переписан.
+В финале сообщи status `successful` либо `blocked`, commits, ownership/
+idempotency/cancel invariants, detach/reattach evidence, exact tests, failures,
+residual risks и что `NEXT_AGENT_PROMPT.md` полностью переписан.

@@ -24,8 +24,9 @@ source/time health, catalog freshness, sampled running rows и stable
 connect/load/stream-idle error categories.
 
 P1-A добавил canonical Job states, terminal states, kind, safe structured
-error/outcome metadata и persisted event envelope. Это additive storage contract,
-а не HTTP create command или новый SSE route.
+error/outcome metadata и persisted event envelope. P1-C добавил strict public
+create/query/cancel/path/cursor schemas, Job route constants, response schemas и
+typed Job SSE event data. Public caller не передаёт storage scope.
 
 ### `packages/server`
 
@@ -54,7 +55,10 @@ error/outcome metadata и persisted event envelope. Это additive storage cont
   state + event CAS;
 - `jobs/lifecycle.ts`: exact non-terminal/terminal edges из canonical diagram;
 - `jobs/service.ts`: application create/get/transition/append/terminal boundary и
-  persisted-first `AsyncIterable` subscription с bounded SQLite pages;
+  persisted-first `AsyncIterable` subscription с bounded SQLite pages, terminal
+  close и canonical cancel operation;
+- `http/jobs-routes.ts`: public create/query/replay/cancel boundary, server-owned
+  idempotency scope, controlled error mapping и pull-based Job SSE;
 - `store/threads.ts`: atomic pending-to-terminal compare-and-set и compaction
   boundary по persisted `seq`;
 - `tools/*`: jail, filesystem и bash.
@@ -64,8 +68,8 @@ controllers, включая ожидающий turn. Host-wide exclusion при�
 bridge. Его permit совместно используют turn, compaction и explicit model
 warm/load; waiters, `ApprovalGate` и active controllers не durable.
 
-Один `JobStore` и `JobService` входят в application context и public server
-export, но current Chat routes их не вызывают. Store синхронно сериализует
+Один `JobStore` и `JobService` входят в application context и public Job routes;
+current Chat routes их не вызывают. Store синхронно сериализует
 writers через SQLite `BEGIN IMMEDIATE`; Job create и terminalization
 откатываются целиком, если event insert не состоялся; то же верно для
 non-terminal transition, включая `startedAt`. Первый успешный выход из `queued`
@@ -78,6 +82,19 @@ secrets или workspace content.
 process-local wake-up до replay, но всегда отдаёт сами events из SQLite по
 sequence. Wake-ups coalesced, поэтому slow subscriber не блокирует writer и не
 накапливает unbounded event queue; AbortSignal удаляет только listener.
+
+Job HTTP handler валидирует UUID и decimal safe-integer cursor до subscription.
+`after` и `Last-Event-ID` могут совпадать, но conflict даёт `400`. Каждый SSE
+frame получает `id`, равный persisted sequence, и полный `jobEventSchema` в
+`data`. `ReadableStream.pull` ограничивает буфер одним frame. Terminal replay
+закрывает stream, включая reattach после terminal tail; cancel/disconnect stream
+не вызывает Job cancel command.
+
+Public create всегда использует `local-api:v1`: duplicate key возвращает тот же
+Job без второго initial event. Public cancel reason ограничена
+`user_requested`. Queued cancel фиксирует `cancelling → cancelled`; active Job
+остаётся `cancelling` до будущего execution-owner acknowledgement; terminal и
+уже cancelling ответы идемпотентны.
 
 ### `packages/web`
 
@@ -143,10 +160,10 @@ admission, а permit освобождается после terminal/error/abort/
 persisted `seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership,
 lease или доказательство unload между observations.
 
-P1-B добавляет internal service/replay foundation, но не меняет current Chat
+P1-C добавляет public Job records/replay/cancel, но не меняет current Chat
 sequence: `POST /threads/:id/messages` не создаёт Job, current SSE не replayable,
-disconnect по-прежнему отменяет generation, а public Job routes,
-recovery/worker и execution отсутствуют.
+disconnect по-прежнему отменяет generation, а recovery/worker и durable
+execution отсутствуют. Public create остаётся `queued` до следующего slice.
 
 Bridge не является Resource Governor: нет durable queue, leases, priorities,
 continuous `/api/ps` reconciliation, restart recovery или measured parallelism.
@@ -155,7 +172,8 @@ continuous `/api/ps` reconciliation, restart recovery или measured parallelis
 
 ### Application command/query API
 
-Ниже logical API. Имена routes остаются proposed до ADR/API review.
+Первые четыре Job routes ниже implemented в P1-C. Остальные route names остаются
+proposed до соответствующего ADR/API review.
 
 ```text
 POST /api/jobs

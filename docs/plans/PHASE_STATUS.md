@@ -30,11 +30,12 @@ exit gate ROADMAP проверен целиком.
 | --------------------------------------- | ---------------------- | ---------------------------------------------------------------- |
 | P1-A Durable Job/event-store foundation | independently verified | `138fb5e`, `91cb21f`, `92b68f0`; 15 targeted, all required gates |
 | P1-B Job transitions/subscription       | independently verified | `56b2200`, `55351bc`; 30 targeted, 10x races, all required gates |
+| P1-C Public Job HTTP API/SSE/cancel     | independently verified | `4b9d96a`, `0a06ea6`; 44 targeted, 10x races, all required gates |
 
-P1-A/P1-B реализуют additive contract, migration 4, canonical state CAS и
-internal persisted-first `JobService` subscription. Current Chat execution,
-public HTTP Job API/SSE, recovery и Governor не реализованы; Phase 1 остаётся
-`in progress`.
+P1-A/P1-B/P1-C реализуют additive contract, migration 4, canonical state CAS,
+persisted-first `JobService` и public create/query/replay/cancel API. Новый Job
+остаётся queued: current Chat execution, durable execution owner, recovery и
+Governor не реализованы; Phase 1 остаётся `in progress`.
 
 ## Later phases
 
