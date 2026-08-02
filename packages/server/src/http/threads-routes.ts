@@ -17,6 +17,7 @@ import { runTurn, TURN_ABORT_REASON } from '../agent/loop.ts'
 import { COMPACTION_PROMPT } from '../agent/prompts.ts'
 import { buildContextState, estimateTokens } from '../context/usage.ts'
 import type { AppContext } from '../context.ts'
+import type { InferencePermit } from '../runtime/exclusive-inference.ts'
 import { ToolRegistry } from '../tools/registry.ts'
 import { fail, notFound } from './errors.ts'
 import { lastEventId, sseResponse } from './sse.ts'
@@ -91,7 +92,6 @@ export function threadsRoutes(app: AppContext): Hono {
     if (!parsed.success) {
       return context.json({ code: 'validation_failed', message: 'Некорректное тело', details: null }, 400)
     }
-
     const id = context.req.param('id')
     const existing = app.threads.get(id)
     if (!existing) return notFound(context, 'thread_not_found', 'Тред не найден')
@@ -163,6 +163,7 @@ export function threadsRoutes(app: AppContext): Hono {
     if (!parsed.success) {
       return context.json({ code: 'validation_failed', message: 'Некорректное тело', details: null }, 400)
     }
+    const sendBody = parsed.data
 
     // Второй ход в тот же тред не запускаем: модель одна, очередь одна.
     if (app.activeTurns.has(threadId)) {
@@ -178,12 +179,6 @@ export function threadsRoutes(app: AppContext): Hono {
     }
     if (workspace) app.workspaces.touch(workspace.id)
 
-    if (app.threads.messages(threadId).length === 0) {
-      app.threads.update(threadId, { title: deriveTitle(parsed.data.content) })
-    }
-
-    app.threads.addMessage({ threadId, role: 'user', content: parsed.data.content })
-
     const settings = app.settings.get()
     const registry = new ToolRegistry({
       hasWorkspace: thread.mode === 'agent' && workspace !== null,
@@ -196,7 +191,20 @@ export function threadsRoutes(app: AppContext): Hono {
     const modelSupportsTools = await app.models().supportsTools(thread.model).catch(() => false)
 
     async function* stream(): AsyncGenerator<ChatStreamEvent> {
+      let permit: InferencePermit | undefined
       try {
+        permit = await app.inference.acquire(controller.signal)
+        if (controller.signal.aborted) return
+
+        /*
+         * Admission precedes persistence: a request cancelled while waiting
+         * leaves neither a user-only attempt nor an ambiguous assistant row.
+         */
+        if (app.threads.messages(threadId).length === 0) {
+          app.threads.update(threadId, { title: deriveTitle(sendBody.content) })
+        }
+        app.threads.addMessage({ threadId, role: 'user', content: sendBody.content })
+
         yield* runTurn({
           thread: app.threads.get(threadId)!,
           workspace,
@@ -206,12 +214,17 @@ export function threadsRoutes(app: AppContext): Hono {
           approvals: app.approvals,
           tracker: app.tracker,
           modelSupportsTools,
-          autoApprove: parsed.success && parsed.data.autoApprove === true ? true : settings.autoApproveTools,
+          autoApprove: sendBody.autoApprove === true ? true : settings.autoApproveTools,
           enableBash: settings.enableBash,
           signal: controller.signal,
         })
+      } catch (error) {
+        if (!controller.signal.aborted) throw error
       } finally {
-        app.activeTurns.delete(threadId)
+        permit?.release()
+        if (app.activeTurns.get(threadId) === controller) {
+          app.activeTurns.delete(threadId)
+        }
       }
     }
 
@@ -229,34 +242,49 @@ export function threadsRoutes(app: AppContext): Hono {
 
   routes.post('/:id/compact', async (context) => {
     const threadId = context.req.param('id')
-    const thread = app.threads.get(threadId)
-    if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
-
-    const messages = app.threads.messages(threadId)
-    // Хвост оставляем нетронутым: именно он нужен модели для продолжения разговора.
-    const keepTail = 4
-    if (messages.length <= keepTail + 1) {
-      return context.json(
-        { code: 'validation_failed', message: 'Сворачивать нечего — диалог слишком короткий', details: null },
-        400,
-      )
+    if (!app.threads.get(threadId)) {
+      return notFound(context, 'thread_not_found', 'Тред не найден')
     }
 
-    const toCompact = messages.slice(0, messages.length - keepTail)
-    const transcript = toCompact
-      .map((message) => `[${message.role}] ${message.content}`)
-      .join('\n\n')
-      .slice(0, 60_000)
-
+    let permit: InferencePermit | undefined
     try {
-      const response = await app.ollama().chat({
-        model: thread.model,
-        messages: [
-          { role: 'system', content: COMPACTION_PROMPT },
-          { role: 'user', content: transcript },
-        ],
-        options: { num_ctx: thread.options.numCtx, temperature: 0 },
-      })
+      permit = await app.inference.acquire(context.req.raw.signal)
+      if (context.req.raw.signal.aborted) {
+        return context.json(
+          { code: 'validation_failed', message: 'Компакция отменена до запуска', details: null },
+          409,
+        )
+      }
+
+      // A queued compaction must plan from state observed after admission.
+      const thread = app.threads.get(threadId)
+      if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
+
+      // Хвост оставляем нетронутым: именно он нужен модели для продолжения разговора.
+      const selection = app.threads.compactionCandidates(threadId, 4)
+      if (!selection) {
+        return context.json(
+          { code: 'validation_failed', message: 'Сворачивать нечего — диалог слишком короткий', details: null },
+          400,
+        )
+      }
+
+      const transcript = selection.messages
+        .map((message) => `[${message.role}] ${message.content}`)
+        .join('\n\n')
+        .slice(0, 60_000)
+
+      const response = await app.ollama().chat(
+        {
+          model: thread.model,
+          messages: [
+            { role: 'system', content: COMPACTION_PROMPT },
+            { role: 'user', content: transcript },
+          ],
+          options: { num_ctx: thread.options.numCtx, temperature: 0 },
+        },
+        context.req.raw.signal,
+      )
 
       const summary = response.message?.content?.trim()
       if (!summary) {
@@ -266,12 +294,14 @@ export function threadsRoutes(app: AppContext): Hono {
         )
       }
 
-      const compactedTokens = toCompact.reduce((sum, message) => sum + estimateTokens(message.content), 0)
-      const lastSeq = toCompact.length - 1
+      const compactedTokens = selection.messages.reduce(
+        (sum, message) => sum + estimateTokens(message.content),
+        0,
+      )
 
       const message = app.threads.replaceWithSummary(
         threadId,
-        lastSeq,
+        selection.upToSeq,
         `Сводка предыдущей части диалога:\n\n${summary}`,
         null,
       )
@@ -297,7 +327,15 @@ export function threadsRoutes(app: AppContext): Hono {
         estimatedRepefillMs: app.tracker.estimateColdPrefillMs(thread.model, usedTokens),
       })
     } catch (error) {
+      if (context.req.raw.signal.aborted) {
+        return context.json(
+          { code: 'validation_failed', message: 'Компакция отменена', details: null },
+          409,
+        )
+      }
       return fail(context, error)
+    } finally {
+      permit?.release()
     }
   })
 

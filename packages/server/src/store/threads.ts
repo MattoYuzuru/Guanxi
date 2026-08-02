@@ -101,6 +101,12 @@ export interface TerminalMessageResult {
   message: Message
 }
 
+export interface CompactionCandidates {
+  messages: Message[]
+  /** Actual persisted sequence of the last message included in the summary. */
+  upToSeq: number
+}
+
 export class ThreadStore {
   private readonly db: Db
 
@@ -221,6 +227,28 @@ export class ThreadStore {
       .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq')
       .all(threadId) as unknown as MessageRow[]
     return rows.map(toMessage)
+  }
+
+  /**
+   * Selects the prefix for compaction and preserves its real persisted boundary.
+   *
+   * Array indexes stop matching `seq` after the first summary replaces a
+   * prefix, so callers must never derive the delete boundary from length.
+   */
+  compactionCandidates(threadId: string, keepTail: number): CompactionCandidates | null {
+    const rows = this.db
+      .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq')
+      .all(threadId) as unknown as MessageRow[]
+
+    if (rows.length <= keepTail + 1) return null
+    const candidates = rows.slice(0, rows.length - keepTail)
+    const boundary = candidates.at(-1)
+    if (!boundary) return null
+
+    return {
+      messages: candidates.map(toMessage),
+      upToSeq: boundary.seq,
+    }
   }
 
   private nextSeq(threadId: string): number {

@@ -12,6 +12,7 @@ import {
 import type { AppContext } from '../context.ts'
 import { getCatalog } from '../models/catalog.ts'
 import { OllamaUnavailableError } from '../ollama/client.ts'
+import type { InferencePermit } from '../runtime/exclusive-inference.ts'
 import { sseResponse } from './sse.ts'
 import { fail } from './errors.ts'
 
@@ -96,8 +97,17 @@ export function modelsRoutes(app: AppContext): Hono {
     const body = warmModelBody.safeParse(await context.req.json().catch(() => ({})))
     const contextLength = body.success ? body.data.contextLength : DEFAULT_NUM_CTX
 
+    let permit: InferencePermit | undefined
     try {
-      const result = await app.models().warm(name, contextLength)
+      permit = await app.inference.acquire(context.req.raw.signal)
+      if (context.req.raw.signal.aborted) {
+        return context.json(
+          { code: 'validation_failed', message: 'Прогрев отменён до запуска', details: null },
+          409,
+        )
+      }
+
+      const result = await app.models().warm(name, contextLength, context.req.raw.signal)
       if (!result) {
         return context.json(
           { code: 'model_not_found', message: `Модель ${name} не загрузилась`, details: null },
@@ -106,7 +116,15 @@ export function modelsRoutes(app: AppContext): Hono {
       }
       return context.json(result)
     } catch (error) {
+      if (context.req.raw.signal.aborted) {
+        return context.json(
+          { code: 'validation_failed', message: 'Прогрев отменён', details: null },
+          409,
+        )
+      }
       return fail(context, error)
+    } finally {
+      permit?.release()
     }
   })
 

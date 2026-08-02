@@ -58,12 +58,15 @@ export class OllamaClient {
     const controller = new AbortController()
     const timeoutMs = init?.timeoutMs ?? this.requestTimeoutMs
     const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, controller.signal])
+      : controller.signal
 
     let response: Response
     try {
       response = await fetch(`${this.host}${path}`, {
         ...init,
-        signal: init?.signal ?? controller.signal,
+        signal,
         headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
       })
     } catch (error) {
@@ -208,7 +211,12 @@ export class OllamaClient {
    * Загружает модель в память с нужным окном, ничего не генерируя.
    * Пустой список сообщений — штатный способ прогрева в Ollama.
    */
-  async warm(name: string, numCtx: number, keepAlive = '10m'): Promise<void> {
+  async warm(
+    name: string,
+    numCtx: number,
+    keepAlive = '10m',
+    signal?: AbortSignal,
+  ): Promise<void> {
     await this.request<unknown>('/api/chat', {
       method: 'POST',
       body: JSON.stringify({
@@ -220,6 +228,7 @@ export class OllamaClient {
       }),
       // Холодная загрузка 7B заняла 6 секунд, крупные модели — заметно дольше.
       timeoutMs: 300_000,
+      ...(signal ? { signal } : {}),
     })
   }
 

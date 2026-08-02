@@ -11,6 +11,7 @@ import { PrefillTracker } from './context/usage.ts'
 import { probeHardware } from './hardware/probe.ts'
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
+import { ExclusiveInferenceBridge } from './runtime/exclusive-inference.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { openDb, type Db } from './store/db.ts'
 import { SettingsStore } from './store/settings.ts'
@@ -36,8 +37,13 @@ export interface AppContext {
   tracker: PrefillTracker
   hardware: HardwareInfo
   appVersion: string
-  /** Идущие прямо сейчас ходы — по ним работает кнопка «Стоп». */
+  /**
+   * Current connection-owned turn requests, including admission waiters.
+   * This map powers Stop; host-wide exclusion belongs to `inference`.
+   */
   activeTurns: Map<string, AbortController>
+  /** Temporary process-local one-lane bridge for every current local inference entry point. */
+  inference: ExclusiveInferenceBridge
   ollama(): OllamaClient
   models(): ModelService
 }
@@ -83,6 +89,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     hardware,
     appVersion: options.appVersion,
     activeTurns: new Map(),
+    inference: new ExclusiveInferenceBridge(),
     ollama,
     models,
   }

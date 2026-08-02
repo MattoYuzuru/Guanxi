@@ -188,8 +188,12 @@ export class ModelService {
    * Загружает модель с нужным окном и возвращает факт: сколько заняла и не ушла ли
    * часть на CPU. Заодно записывает точку калибровки.
    */
-  async warm(name: string, contextLength: number): Promise<{ running: RunningModel; fit: LocalModel['fit'] } | null> {
-    await this.client.warm(name, contextLength)
+  async warm(
+    name: string,
+    contextLength: number,
+    signal?: AbortSignal,
+  ): Promise<{ running: RunningModel; fit: LocalModel['fit'] } | null> {
+    await this.client.warm(name, contextLength, '10m', signal)
 
     const running = (await this.ps()).find((entry) => entry.name === name)
     if (!running) return null
