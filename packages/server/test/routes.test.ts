@@ -8,6 +8,7 @@ import { PrefillTracker } from '../src/context/usage.ts'
 import type { ModelService } from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
+import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
 import { SettingsStore } from '../src/store/settings.ts'
@@ -44,6 +45,7 @@ function testContext(
     hardware: HARDWARE,
     appVersion: 'test',
     activeTurns: new Map(),
+    inference: new ExclusiveInferenceBridge(),
     ollama:
       overrides.ollama ??
       (() => {

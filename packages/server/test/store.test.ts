@@ -134,4 +134,48 @@ describe('SQLite stores', () => {
     assert.equal(lateSuccess.message.stopReason, 'protocol_error')
     db.close()
   })
+
+  it('selects repeated compaction boundaries from persisted seq instead of array indexes', () => {
+    const db = openDb(':memory:')
+    const threads = new ThreadStore(db)
+    const thread = threads.create({
+      title: 'repeated compaction',
+      mode: 'chat',
+      model: 'qwen',
+      workspaceId: null,
+      options: { numCtx: 4_096, temperature: 0, think: 'off' },
+    })
+
+    for (let index = 0; index < 9; index += 1) {
+      threads.addMessage({ threadId: thread.id, role: 'user', content: `message-${index}` })
+    }
+    const first = threads.compactionCandidates(thread.id, 4)
+    assert.equal(first?.upToSeq, 4)
+    threads.replaceWithSummary(thread.id, first!.upToSeq, 'summary-1', null)
+
+    for (let index = 9; index < 15; index += 1) {
+      threads.addMessage({ threadId: thread.id, role: 'user', content: `message-${index}` })
+    }
+    const second = threads.compactionCandidates(thread.id, 4)
+
+    assert.equal(second?.upToSeq, 10)
+    assert.deepEqual(
+      second?.messages.map((message) => message.content),
+      ['summary-1', 'message-5', 'message-6', 'message-7', 'message-8', 'message-9', 'message-10'],
+    )
+
+    threads.replaceWithSummary(thread.id, second!.upToSeq, 'summary-2', null)
+    const rows = db
+      .prepare('SELECT seq, content FROM messages WHERE thread_id = ? ORDER BY seq')
+      .all(thread.id) as Array<{ seq: number; content: string }>
+    assert.deepEqual(rows.map((row) => ({ ...row })), [
+      { seq: 10, content: 'summary-2' },
+      { seq: 11, content: 'message-11' },
+      { seq: 12, content: 'message-12' },
+      { seq: 13, content: 'message-13' },
+      { seq: 14, content: 'message-14' },
+    ])
+
+    db.close()
+  })
 })
