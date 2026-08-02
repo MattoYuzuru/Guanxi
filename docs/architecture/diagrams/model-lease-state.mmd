@@ -1,0 +1,18 @@
+stateDiagram-v2
+    [*] --> absent
+    absent --> requested: acquire lease
+    requested --> evicting: incompatible idle model
+    evicting --> loading
+    requested --> loading: capacity available
+    loading --> ready
+    ready --> in_use: job admitted
+    in_use --> ready: job finished and leases remain
+    ready --> idle_grace: last lease released
+    idle_grace --> ready: new lease
+    idle_grace --> unloading: ttl or pressure
+    unloading --> absent
+    loading --> error
+    in_use --> error
+    unloading --> error
+    error --> absent: reconciled
+

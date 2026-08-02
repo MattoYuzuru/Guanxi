@@ -1,0 +1,16 @@
+flowchart TB
+    Schemas[schemas.ts domain Zod]
+    API[api.ts REST paths and schemas]
+    Events[events.ts SSE union]
+    Index[index.ts public exports]
+
+    Schemas --> API
+    Schemas --> Events
+    API --> Index
+    Events --> Index
+    Schemas --> Index
+
+    Index --> Server[Server validation]
+    Index --> Web[Web client validation]
+    Index --> CLI[CLI client future]
+

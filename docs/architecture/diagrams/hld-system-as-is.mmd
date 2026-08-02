@@ -1,0 +1,27 @@
+flowchart LR
+    User[User] --> CLI[CLI foreground launcher]
+    CLI --> Server
+
+    subgraph AppHost[Application host]
+        Browser[React SPA]
+        Server[Node and Hono server]
+        Contract[Zod contract]
+        Context[AppContext]
+        Memory[activeTurns and approvals]
+        DB[(SQLite)]
+        Files[Workspace filesystem]
+        Shell[Local shell]
+
+        Browser <-->|REST and POST SSE| Server
+        Browser -. validates .-> Contract
+        Server -. validates .-> Contract
+        Server --> Context
+        Context --> Memory
+        Context --> DB
+        Server --> Files
+        Server --> Shell
+    end
+
+    Server <-->|HTTP and NDJSON| Ollama[Ollama runtime]
+    Server --> Catalog[Remote local or bundled catalog data]
+

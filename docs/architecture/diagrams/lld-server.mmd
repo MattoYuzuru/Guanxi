@@ -1,0 +1,28 @@
+flowchart TB
+    App[app.ts composition]
+    Context[context.ts dependencies]
+    Routes[HTTP routes]
+    Stores[SQLite stores]
+    Models[Model and catalog services]
+    Hardware[Hardware probe and fit]
+    Agent[Agent loop and approvals]
+    Tools[Tool registry jail fs bash]
+    Ollama[Ollama client]
+    Static[Built web assets]
+
+    App --> Context
+    App --> Routes
+    App --> Static
+    Routes --> Stores
+    Routes --> Models
+    Routes --> Agent
+    Context --> Stores
+    Context --> Ollama
+    Context --> Tools
+    Context --> Agent
+    Models --> Ollama
+    Models --> Hardware
+    Agent --> Ollama
+    Agent --> Tools
+    Agent --> Stores
+

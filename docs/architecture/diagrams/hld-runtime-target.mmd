@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant Client
+    participant API
+    participant Jobs as Job Engine
+    participant Events as Event Store
+    participant Gov as Resource Governor
+    participant Adapter
+    participant Ollama
+
+    Client->>API: POST job with idempotency key
+    API->>Jobs: create command
+    Jobs->>Events: transaction job plus queued event
+    Jobs-->>Client: 202 jobId
+    Client->>API: GET job events after sequence
+    API->>Events: replay and subscribe
+    Jobs->>Gov: enqueue admission request
+    Gov->>Ollama: reconcile running models
+    Gov-->>Jobs: resource lease
+    Jobs->>Adapter: execute immutable job snapshot
+    Adapter->>Ollama: provider request
+    loop Normalized stream
+        Ollama-->>Adapter: provider chunk
+        Adapter->>Events: append durable event
+        Events-->>Client: SSE event
+    end
+    Adapter->>Jobs: final result
+    Jobs->>Events: transaction terminal state and event
+    Jobs->>Gov: release lease
+    Events-->>Client: terminal event
+

@@ -1,0 +1,16 @@
+flowchart LR
+    Args[Parse CLI arguments]
+    Probe[Probe existing health]
+    Start[Start server foreground]
+    Open[Open browser]
+    Reuse[Reuse existing server]
+
+    Args --> Probe
+    Probe -->|healthy| Reuse
+    Probe -->|not found| Start
+    Start --> Open
+    Reuse --> Open
+
+    Future[Target shared API client and service controller]
+    Future -. not implemented .-> Args
+

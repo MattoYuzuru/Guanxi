@@ -1,0 +1,17 @@
+erDiagram
+    PROJECT ||--o{ CHAT : contains
+    PROJECT ||--o{ RECIPE : owns
+    PROJECT ||--o{ JOB : scopes
+    PROJECT ||--o{ ARTIFACT : stores
+    CHAT ||--o{ JOB : creates
+    RECIPE ||--o{ JOB : configures
+    JOB ||--o{ JOB_EVENT : emits
+    JOB ||--o{ ARTIFACT : produces
+    JOB ||--o{ RESOURCE_LEASE : acquires
+    MODEL_VARIANT ||--o{ CAPABILITY_EVIDENCE : has
+    MODEL_VARIANT ||--o{ MODEL_INSTALLATION : installs
+    MODEL_INSTALLATION ||--o{ RUNTIME_INSTANCE : loads
+    RUNTIME_INSTANCE ||--o{ RESOURCE_LEASE : held_by
+    PROJECT ||--o{ INTEGRATION_BINDING : configures
+    RECIPE ||--o{ INTEGRATION_BINDING : narrows
+

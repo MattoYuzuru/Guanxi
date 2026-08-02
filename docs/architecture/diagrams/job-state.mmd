@@ -1,0 +1,44 @@
+stateDiagram-v2
+    [*] --> queued
+    queued --> reserving
+    reserving --> loading
+    loading --> prefill
+    prefill --> thinking
+    prefill --> generating
+    thinking --> generating
+    generating --> waiting_tool
+    waiting_tool --> waiting_approval
+    waiting_approval --> waiting_tool
+    waiting_tool --> prefill
+    generating --> finalizing
+    finalizing --> completed
+
+    queued --> cancelling
+    reserving --> cancelling
+    loading --> cancelling
+    prefill --> cancelling
+    thinking --> cancelling
+    generating --> cancelling
+    waiting_tool --> cancelling
+    waiting_approval --> cancelling
+    cancelling --> cancelled
+
+    reserving --> failed
+    loading --> failed
+    prefill --> failed
+    thinking --> failed
+    generating --> failed
+    waiting_tool --> failed
+    finalizing --> failed
+
+    loading --> interrupted
+    prefill --> interrupted
+    thinking --> interrupted
+    generating --> interrupted
+    waiting_tool --> interrupted
+
+    completed --> [*]
+    failed --> [*]
+    cancelled --> [*]
+    interrupted --> [*]
+

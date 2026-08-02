@@ -1,0 +1,49 @@
+flowchart TB
+    subgraph Clients
+        Web[Web client]
+        CLI[Scriptable CLI]
+        TUI[Interactive TUI]
+    end
+
+    subgraph Application[Local modular monolith]
+        API[Command query and event API]
+        Projects[Project Chat Recipe services]
+        Jobs[Durable Job Engine]
+        Events[(Job Event Store)]
+        Governor[Resource Governor]
+        Capabilities[Capability Registry]
+        Adapters[Adapter Registry]
+        Catalog[Catalog Service]
+        Policy[Integration Policy]
+        Artifacts[Artifact Service]
+        DB[(SQLite)]
+        Blob[(Content addressed files)]
+
+        API --> Projects
+        API --> Jobs
+        API --> Governor
+        API --> Capabilities
+        Jobs --> Events
+        Jobs --> Governor
+        Jobs --> Adapters
+        Jobs --> Policy
+        Jobs --> Artifacts
+        Projects --> DB
+        Events --> DB
+        Governor --> DB
+        Capabilities --> DB
+        Catalog --> DB
+        Policy --> DB
+        Artifacts --> DB
+        Artifacts --> Blob
+    end
+
+    Web --> API
+    CLI --> API
+    TUI --> API
+    Adapters --> Ollama[Ollama runtime]
+    Governor <--> Ollama
+    Governor --> Telemetry[Host telemetry adapters]
+    Catalog --> Providers[Allowed catalog providers]
+    Policy --> Integrations[Tools MCP and Skills]
+

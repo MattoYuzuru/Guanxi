@@ -1,0 +1,22 @@
+flowchart TB
+    Main[main.tsx]
+    App[App health and navigation]
+    Router[History router]
+    API[REST client]
+    SSE[POST SSE parser]
+    Async[Async state helpers]
+    Pages[Models Chat Settings]
+    Chat[useChat and StreamBuffer]
+    UI[UI primitives and Markdown]
+
+    Main --> App
+    App --> Router
+    App --> Pages
+    Pages --> API
+    Pages --> Async
+    Pages --> UI
+    Pages --> Chat
+    Chat --> API
+    Chat --> SSE
+    Chat --> UI
+
