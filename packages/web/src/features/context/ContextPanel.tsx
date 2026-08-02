@@ -1,0 +1,349 @@
+/**
+ * Панель контекста.
+ *
+ * Здесь два сюжета, и оба про ожидание:
+ *
+ * 1. KV-кэш. Попадание — ответ начинается мгновенно, промах — десятки секунд
+ *    тишины. На целевом железе замерено: 41.8 с против 0.3 с на тех же 7.8k
+ *    токенов. Это надо показывать не сноской, а крупно.
+ *
+ * 2. Компакция. Она не бесплатная оптимизация, а размен: место в окне сейчас
+ *    в обмен на длинный prefill следующего хода. Цену (`estimatedRepefillMs`)
+ *    показываем ДО нажатия, а не после.
+ */
+import { useState } from 'react'
+import type { ContextState, Usage } from '@alamo/contract'
+import { Badge, Button, Meter, Stat, cx } from '../../components/ui.tsx'
+import { formatDuration, formatPercent, formatTokens, formatTokensPerSecond } from '../../lib/format.ts'
+
+/** Замер с целевого железа — им объясняем, почему кэш важен. */
+const CACHE_MISS_REFERENCE_MS = 41_800
+const CACHE_HIT_REFERENCE_MS = 300
+
+export function ContextPanel({
+  context,
+  usage,
+  compacting,
+  onCompact,
+  disabled,
+}: {
+  context: ContextState | null
+  usage: Usage | null
+  compacting: boolean
+  onCompact: () => void
+  disabled?: boolean
+}) {
+  const [confirming, setConfirming] = useState(false)
+
+  if (!context) {
+    return (
+      <div className="p-3 text-2xs text-[var(--fg-subtle)]">
+        Данные о контексте появятся после первого хода.
+      </div>
+    )
+  }
+
+  const fraction = context.allocatedTokens > 0 ? context.usedTokens / context.allocatedTokens : 0
+  const tone =
+    context.percent >= 90
+      ? 'var(--color-fit-red)'
+      : context.percent >= 70
+        ? 'var(--color-fit-yellow)'
+        : 'var(--accent)'
+
+  return (
+    <div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
+      {/* Окно */}
+      <section>
+        <div className="mb-1.5 flex items-baseline justify-between gap-2">
+          <h3 className="text-xs font-semibold">Окно контекста</h3>
+          <span className="font-mono text-xs tabular-nums" style={{ color: tone }}>
+            {formatPercent(context.percent, context.percent < 10 ? 1 : 0)}
+          </span>
+        </div>
+
+        <Meter value={fraction} tone={tone} height={7} label="Заполнение окна контекста" />
+
+        <div className="mt-1.5 flex items-center justify-between font-mono text-2xs text-[var(--fg-subtle)] tabular-nums">
+          <span>{formatTokens(context.usedTokens)} использовано</span>
+          <span>из {formatTokens(context.allocatedTokens)}</span>
+        </div>
+
+        {context.percent >= 90 && (
+          <p className="mt-1.5 text-2xs text-[var(--color-fit-red)]">
+            Окно почти заполнено. Дальше модель начнёт терять начало диалога.
+          </p>
+        )}
+      </section>
+
+      {/* KV-кэш */}
+      <CacheIndicator context={context} usage={usage} />
+
+      {/* Скорость */}
+      {usage && <SpeedSection usage={usage} />}
+
+      {/* Компакция */}
+      <section className="mt-auto border-t border-[var(--border)] pt-3">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <h3 className="text-xs font-semibold">Свернуть контекст</h3>
+          {!context.compactable && <Badge tone="neutral">нечего сворачивать</Badge>}
+        </div>
+
+        {/* Цена — до нажатия, а не после */}
+        <div className="mb-2 rounded-md border border-[var(--color-fit-yellow)]/35 bg-[var(--color-fit-yellow)]/8 px-2 py-1.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-2xs text-[var(--fg-muted)]">Следующий ход подорожает на</span>
+            <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-fit-yellow)]">
+              +{formatDuration(context.estimatedRepefillMs)}
+            </span>
+          </div>
+          <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+            Свёрнутая история ломает KV-кэш: следующий промпт придётся считать заново.
+            Это размен, а не бесплатная оптимизация.
+          </p>
+        </div>
+
+        {confirming ? (
+          <div className="space-y-1.5">
+            <p className="text-2xs text-[var(--fg-muted)]">
+              Свернуть историю и заплатить {formatDuration(context.estimatedRepefillMs)} на
+              следующем ходе?
+            </p>
+            <div className="flex gap-1.5">
+              <Button
+                variant="primary"
+                size="sm"
+                className="flex-1"
+                loading={compacting}
+                onClick={async () => {
+                  await onCompact()
+                  setConfirming(false)
+                }}
+              >
+                Да, свернуть
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Отмена
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="secondary"
+            size="md"
+            className="w-full"
+            disabled={!context.compactable || disabled || compacting}
+            loading={compacting}
+            onClick={() => setConfirming(true)}
+          >
+            Свернуть контекст
+          </Button>
+        )}
+      </section>
+    </div>
+  )
+}
+
+/* ────────────────────────────── KV-кэш ─────────────────────────────────── */
+
+function CacheIndicator({ context, usage }: { context: ContextState; usage: Usage | null }) {
+  const hit = context.cacheHit
+  const color = hit ? 'var(--color-fit-green)' : 'var(--color-fit-yellow)'
+
+  // Доля префикса, которую не пришлось считать заново.
+  const cachedFraction =
+    context.usedTokens > 0 ? Math.min(1, context.cachedTokens / context.usedTokens) : 0
+
+  const actualPrefill = usage?.promptEvalDurationMs ?? null
+
+  return (
+    <section
+      className="rounded-lg border px-2.5 py-2"
+      style={{ borderColor: `${color}55`, background: `${color}12` }}
+    >
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold" style={{ color }}>
+          {hit ? 'Кэш попал' : 'Кэш промахнулся'}
+        </h3>
+        <span className="font-mono text-2xs tabular-nums" style={{ color }}>
+          {formatTokens(context.cachedTokens)} из кэша
+        </span>
+      </div>
+
+      <Meter
+        value={cachedFraction}
+        tone={color}
+        height={4}
+        label={`Доля префикса из KV-кэша: ${formatPercent(cachedFraction * 100)}`}
+      />
+
+      <p className="mt-1.5 text-2xs text-[var(--fg-muted)]">
+        {hit
+          ? 'Префикс переиспользован — модель начала отвечать почти сразу.'
+          : 'Префикс пересчитан с нуля — отсюда долгая пауза перед первым токеном.'}
+      </p>
+
+      {/* Наглядное сравнение: цифры с реального железа */}
+      <div className="mt-2 space-y-1">
+        <CacheBar
+          label="Попадание"
+          ms={CACHE_HIT_REFERENCE_MS}
+          maxMs={CACHE_MISS_REFERENCE_MS}
+          color="var(--color-fit-green)"
+          active={hit}
+        />
+        <CacheBar
+          label="Промах"
+          ms={CACHE_MISS_REFERENCE_MS}
+          maxMs={CACHE_MISS_REFERENCE_MS}
+          color="var(--color-fit-yellow)"
+          active={!hit}
+        />
+      </div>
+
+      <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+        Замер на 7.8k токенов, это железо.
+        {actualPrefill !== null && (
+          <>
+            {' '}
+            Текущий ход: <span className="font-mono">{formatDuration(actualPrefill)}</span>.
+          </>
+        )}
+      </p>
+    </section>
+  )
+}
+
+function CacheBar({
+  label,
+  ms,
+  maxMs,
+  color,
+  active,
+}: {
+  label: string
+  ms: number
+  maxMs: number
+  color: string
+  active: boolean
+}) {
+  return (
+    <div className={cx('flex items-center gap-2', !active && 'opacity-45')}>
+      <span className="w-16 shrink-0 text-2xs">{label}</span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--bg-inset)]">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${Math.max(2, (ms / maxMs) * 100)}%`, background: color }}
+        />
+      </div>
+      <span className="w-12 shrink-0 text-right font-mono text-2xs tabular-nums">
+        {formatDuration(ms)}
+      </span>
+      {active && (
+        <span className="shrink-0 text-2xs font-semibold" style={{ color }}>
+          ←
+        </span>
+      )}
+    </div>
+  )
+}
+
+/* ────────────────────────────── Скорость ───────────────────────────────── */
+
+function SpeedSection({ usage }: { usage: Usage }) {
+  return (
+    <section>
+      <h3 className="mb-1.5 text-xs font-semibold">Последний ход</h3>
+
+      {/* Prefill и генерация — разные вещи, и ждать приходится по-разному */}
+      <div className="mb-2 flex h-5 overflow-hidden rounded border border-[var(--border)]">
+        <PhaseSegment
+          label="prefill"
+          ms={usage.promptEvalDurationMs}
+          total={usage.totalDurationMs}
+          color="var(--color-fit-yellow)"
+        />
+        <PhaseSegment
+          label="генерация"
+          ms={usage.evalDurationMs}
+          total={usage.totalDurationMs}
+          color="var(--accent)"
+        />
+        <PhaseSegment
+          label="загрузка"
+          ms={usage.loadDurationMs}
+          total={usage.totalDurationMs}
+          color="var(--fg-subtle)"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        <Stat
+          label="Обработка промпта"
+          value={formatDuration(usage.promptEvalDurationMs)}
+          hint={`${formatTokens(usage.promptTokens)} токенов на входе`}
+        />
+        <Stat
+          label="Генерация"
+          value={formatDuration(usage.evalDurationMs)}
+          hint={`${formatTokens(usage.evalTokens)} токенов на выходе`}
+        />
+        <Stat label="Скорость" value={formatTokensPerSecond(usage.tokensPerSecond)} />
+        <Stat label="Всего" value={formatDuration(usage.totalDurationMs)} />
+      </div>
+    </section>
+  )
+}
+
+function PhaseSegment({
+  label,
+  ms,
+  total,
+  color,
+}: {
+  label: string
+  ms: number
+  total: number
+  color: string
+}) {
+  if (ms <= 0 || total <= 0) return null
+  const percent = (ms / total) * 100
+  if (percent < 0.5) return null
+
+  return (
+    <div
+      className="flex items-center justify-center overflow-hidden text-2xs whitespace-nowrap"
+      style={{ width: `${percent}%`, background: `${color}33`, color }}
+      title={`${label}: ${formatDuration(ms)} (${formatPercent(percent)})`}
+    >
+      {percent > 18 && <span className="px-1">{label}</span>}
+    </div>
+  )
+}
+
+/** Компактная строка контекста для узких мест (шапка треда). */
+export function ContextChip({ context }: { context: ContextState | null }) {
+  if (!context) return null
+
+  const tone =
+    context.percent >= 90
+      ? 'var(--color-fit-red)'
+      : context.percent >= 70
+        ? 'var(--color-fit-yellow)'
+        : 'var(--fg-muted)'
+
+  return (
+    <span
+      className="flex items-center gap-1.5 font-mono text-2xs tabular-nums"
+      style={{ color: tone }}
+      title={`${formatTokens(context.usedTokens)} из ${formatTokens(context.allocatedTokens)} токенов`}
+    >
+      <span
+        className="inline-block h-1.5 w-1.5 rounded-full"
+        style={{ background: context.cacheHit ? 'var(--color-fit-green)' : 'var(--color-fit-yellow)' }}
+        title={context.cacheHit ? 'Кэш попал' : 'Кэш промахнулся'}
+      />
+      {formatPercent(context.percent)}
+    </span>
+  )
+}
