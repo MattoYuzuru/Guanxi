@@ -120,6 +120,62 @@ const MIGRATIONS: readonly string[] = [
   WHERE role = 'assistant'
     AND usage IS NOT NULL;
   `,
+  // 4 — durable Job/event-store foundation. Current Chat routes do not use it yet.
+  `
+  CREATE TABLE jobs (
+    id                    TEXT PRIMARY KEY,
+    kind                  TEXT NOT NULL
+      CHECK (kind IN ('inference','agent','tool','pipeline')),
+    operation             TEXT NOT NULL,
+    status                TEXT NOT NULL
+      CHECK (status IN (
+        'queued','reserving','loading','prefill','thinking','generating',
+        'waiting_tool','waiting_approval','finalizing','cancelling',
+        'completed','failed','cancelled','interrupted'
+      )),
+    phase                 TEXT,
+    idempotency_scope     TEXT NOT NULL,
+    idempotency_key       TEXT NOT NULL,
+    created_at            TEXT NOT NULL,
+    started_at            TEXT,
+    finished_at           TEXT,
+    error                 TEXT CHECK (error IS NULL OR json_valid(error)),
+    outcome               TEXT CHECK (outcome IS NULL OR json_valid(outcome)),
+    stop_reason           TEXT,
+    last_event_sequence   INTEGER NOT NULL CHECK (last_event_sequence >= 1),
+    UNIQUE (idempotency_scope, idempotency_key),
+    CHECK (
+      (status IN ('completed','failed','cancelled','interrupted') AND finished_at IS NOT NULL)
+      OR
+      (status NOT IN ('completed','failed','cancelled','interrupted') AND finished_at IS NULL)
+    )
+  );
+
+  CREATE TABLE job_events (
+    id          TEXT PRIMARY KEY,
+    job_id      TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    sequence    INTEGER NOT NULL CHECK (sequence >= 1),
+    type        TEXT NOT NULL
+      CHECK (type IN (
+        'lifecycle','output','tool','resource','usage','warning','error','checkpoint'
+      )),
+    state       TEXT NOT NULL
+      CHECK (state IN (
+        'queued','reserving','loading','prefill','thinking','generating',
+        'waiting_tool','waiting_approval','finalizing','cancelling',
+        'completed','failed','cancelled','interrupted'
+      )),
+    phase       TEXT,
+    metadata    TEXT NOT NULL CHECK (json_valid(metadata)),
+    created_at  TEXT NOT NULL,
+    UNIQUE (job_id, sequence)
+  );
+
+  CREATE INDEX idx_job_events_replay ON job_events(job_id, sequence);
+  CREATE UNIQUE INDEX idx_job_events_terminal
+    ON job_events(job_id)
+    WHERE state IN ('completed','failed','cancelled','interrupted');
+  `,
 ]
 
 export function openDb(path: string): Db {
@@ -127,10 +183,11 @@ export function openDb(path: string): Db {
 
   const db = new DatabaseSync(path)
 
+  // Concurrent application connections must wait even while negotiating WAL.
+  db.exec('PRAGMA busy_timeout = 5000')
   // WAL держит чтение неблокирующим, пока идёт запись стрима сообщений.
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA foreign_keys = ON')
-  db.exec('PRAGMA busy_timeout = 5000')
 
   try {
     migrate(db)

@@ -14,6 +14,7 @@ import { ModelService } from './models/service.ts'
 import { ExclusiveInferenceBridge } from './runtime/exclusive-inference.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { openDb, type Db } from './store/db.ts'
+import { JobStore } from './store/jobs.ts'
 import { SettingsStore } from './store/settings.ts'
 import { ThreadStore } from './store/threads.ts'
 import { WorkspaceStore } from './store/workspaces.ts'
@@ -29,6 +30,7 @@ function normalizeHost(host: string): string {
 
 export interface AppContext {
   db: Db
+  jobs: JobStore
   threads: ThreadStore
   workspaces: WorkspaceStore
   settings: SettingsStore
@@ -80,6 +82,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
   return {
     db,
+    jobs: new JobStore(db),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,

@@ -41,7 +41,7 @@ function insertVersion2Message(
 }
 
 describe('SQLite turn-state migration', () => {
-  it('creates schema version 3 on a fresh temporary database', async (test) => {
+  it('keeps the v3 turn-state bridge on a fresh current database', async (test) => {
     const root = await mkdtemp(join(tmpdir(), 'alamo-migration-fresh-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
@@ -51,7 +51,7 @@ describe('SQLite turn-state migration', () => {
 
     const version = db.prepare('PRAGMA user_version').get() as { user_version: number }
     const columns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
-    assert.equal(version.user_version, 3)
+    assert.equal(version.user_version, 4)
     assert.deepEqual(
       columns
         .map((column) => column.name)
@@ -160,7 +160,7 @@ describe('SQLite turn-state migration', () => {
 
     const recovered = openDb(path)
     const version = recovered.prepare('PRAGMA user_version').get() as { user_version: number }
-    assert.equal(version.user_version, 3)
+    assert.equal(version.user_version, 4)
     recovered.close()
   })
 })

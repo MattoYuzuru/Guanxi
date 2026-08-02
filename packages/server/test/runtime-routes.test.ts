@@ -10,6 +10,7 @@ import { OllamaClient } from '../src/ollama/client.ts'
 import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
+import { JobStore } from '../src/store/jobs.ts'
 import { SettingsStore } from '../src/store/settings.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 import { WorkspaceStore } from '../src/store/workspaces.ts'
@@ -35,6 +36,7 @@ function testContext(client: OllamaClient): AppContext {
 
   return {
     db,
+    jobs: new JobStore(db),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,

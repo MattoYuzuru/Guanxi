@@ -14,6 +14,16 @@ import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { defaultDbPath } from './store/db.ts'
 
+export { JobStore, JobStoreError } from './store/jobs.ts'
+export type {
+  AppendJobEventInput,
+  CreateJobInput,
+  CreateJobResult,
+  JobStoreErrorCode,
+  TerminalizeJobInput,
+  TerminalizeJobResult,
+} from './store/jobs.ts'
+
 const APP_VERSION = '0.1.0'
 export const DEFAULT_PORT = 4310
 
