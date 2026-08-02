@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P0-D с mocked REST/SSE  |
+| `test:web:browser` | deterministic Chromium P0-A–P0-E с mocked REST/SSE  |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -108,9 +108,9 @@ npm run link:cli
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
-- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D projection regression;
-- `test/browser` — Playwright Chromium first-stream, failure/reload и boundary
-  smoke, включая degraded Runtime/catalog state.
+- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E projection regression;
+- `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
+  и boundary smoke, включая degraded Runtime/catalog state.
 - server tests — deterministic P0-C mutex, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
   health/catalog/running/timeout envelope.

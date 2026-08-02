@@ -7,16 +7,20 @@
 
 На 2026-08-02:
 
-- `npm test`: 116/116 server/CLI и 16/16 web component/parser tests;
-- `npm run test:web:browser`: 6/6 deterministic Chromium tests с mocked
+- `npm test`: 116/116 server/CLI и 17/17 web component/parser tests;
+- `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
   проверяет документацию с repository config;
-- web automation покрывает P0-A streaming cleanup/Error Boundaries и P0-B
-  failed-partial reload, unreconciled live partial и
-  `Stop → cancelled → reload`: `create → redirect → first stream`,
-  keyboard/focus, narrow viewport, 200% boundary scaling и reduced motion;
+- web automation покрывает единый P0-E
+  `health → installed → create → redirect → send → multi-phase stream → done →
+  hard reload` с persisted terminal projection, а также P0-A Error Boundaries,
+  P0-B failed-partial/unreconciled/Stop reload, connect timeout, missing
+  `done:true` и connection-owned navigation abort;
+- browser assertions управляют mocked headers/chunks без произвольных sleeps и
+  проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
+  horizontal overflow, 200% scaling и reduced motion;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
@@ -32,8 +36,8 @@
 - живой Ollama, durable/replayable Job flow, второй application process и внешние
   Ollama clients не входят в regression suite.
 
-Baseline локально подтверждает P0-A/P0-B/P0-C/P0-D bridges на временной SQLite,
-управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
+Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E на временной
+SQLite, управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
 доказывает one-lane admission только для участвующих entry points одного
 application composition; он не подтверждает hardware fit, Ollama scheduler,
 multi-process/external-client safety, restart recovery или production use.
@@ -62,13 +66,13 @@ Ollama, реальное железо или публичную сеть.
 | Context usage                      | tests                              |
 | Static web serving                 | test                               |
 | CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/P0-B/P0-D component cases     |
-| Browser streaming/reload           | P0-A/P0-B mocked stream            |
+| React render/navigation            | P0-A/P0-B/P0-D/P0-E component      |
+| Browser streaming/reload           | P0-A/P0-B/P0-E mocked flows        |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P0-C one-lane fake routes          |
 | SSE replay/restart                 | нет                                |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |
-| Accessibility/responsive           | P0-A/B + P0-D degraded smoke       |
+| Accessibility/responsive           | P0-A/B/D/E Chromium smoke          |
 
 ## Обязательная target matrix
 
