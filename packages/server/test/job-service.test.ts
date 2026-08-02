@@ -157,6 +157,42 @@ describe('JobService lifecycle', () => {
     }
     db.close()
   })
+
+  it('owns queued, active, repeated, terminal and conflicting cancellation semantics', () => {
+    const db = openDb(':memory:')
+    const store = new JobStore(db)
+    const service = new JobService(store)
+
+    const queued = createJob(service, 'cancel-queued')
+    const cancelled = service.cancel(queued.id, 'user_requested')
+    assert.equal(cancelled.status, 'cancelled')
+    assert.equal(cancelled.stopReason, 'user_requested')
+    assert.deepEqual(
+      store.eventsAfter(queued.id, 0).map((event) => event.state),
+      ['queued', 'cancelling', 'cancelled'],
+    )
+    assert.equal(service.cancel(queued.id, 'user_requested').lastEventSequence, 3)
+
+    const active = advanceTo(service, createJob(service, 'cancel-active'), 'generating')
+    const cancelling = service.cancel(active.id, 'user_requested')
+    assert.equal(cancelling.status, 'cancelling')
+    assert.equal(cancelling.lastEventSequence, active.lastEventSequence + 1)
+    assert.equal(
+      service.cancel(active.id, 'user_requested').lastEventSequence,
+      cancelling.lastEventSequence,
+    )
+
+    const finalizing = advanceTo(service, createJob(service, 'cancel-conflict'), 'finalizing')
+    assert.throws(
+      () => service.cancel(finalizing.id, 'user_requested'),
+      assertServiceError('invalid_transition'),
+    )
+    assert.deepEqual(service.get(finalizing.id), finalizing)
+
+    const completed = service.terminalize(terminalInput(finalizing, 'completed')).job
+    assert.deepEqual(service.cancel(completed.id, 'user_requested'), completed)
+    db.close()
+  })
 })
 
 describe('JobService persisted-first subscription', () => {
@@ -428,6 +464,31 @@ describe('JobService persisted-first subscription', () => {
       (error) => error instanceof JobStoreError && error.code === 'stored_data_invalid',
     )
     assert.equal(service.subscriberCount(created.id), 0)
+    db.close()
+  })
+
+  it('closes after the persisted terminal event, including reconnect at terminal tail', async () => {
+    const db = openDb(':memory:')
+    const service = new JobService(new JobStore(db), { replayPageSize: 1 })
+    const source = advanceTo(service, createJob(service, 'terminal-close'), 'reserving')
+    const terminal = service.terminalize(terminalInput(source, 'failed')).job
+
+    const replayed: JobEvent[] = []
+    for await (const event of service.subscribe(
+      terminal.id,
+      0,
+      new AbortController().signal,
+    )) {
+      replayed.push(event)
+    }
+    assert.deepEqual(replayed.map((event) => event.sequence), [1, 2, 3])
+    assert.equal(replayed.at(-1)?.state, 'failed')
+
+    const tail = service
+      .subscribe(terminal.id, terminal.lastEventSequence, new AbortController().signal)
+      [Symbol.asyncIterator]()
+    assert.equal((await tail.next()).done, true)
+    assert.equal(service.subscriberCount(terminal.id), 0)
     db.close()
   })
 })

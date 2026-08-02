@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  ROUTES,
+  cancelJobBody,
+  createJobBody,
+  createJobResponse,
+  getJobResponse,
+  jobEventCursorText,
   jobEventSchema,
+  jobEventsQuery,
+  jobPathParams,
   jobSchema,
   jobStateSchema,
   jobTerminalStateSchema,
@@ -90,5 +98,61 @@ describe('durable Job contract', () => {
       }).success,
       false,
     )
+  })
+
+  it('round-trips public create, query and cancel shapes without exposing storage scope', () => {
+    const body = createJobBody.parse({
+      kind: 'inference',
+      operation: ' chat ',
+      idempotencyKey: ' submit-1 ',
+    })
+    const job = jobSchema.parse({
+      id: 'job-1',
+      kind: body.kind,
+      operation: body.operation,
+      status: 'queued',
+      phase: null,
+      idempotencyScope: 'local-api:v1',
+      idempotencyKey: body.idempotencyKey,
+      createdAt: '2026-08-03T00:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+      error: null,
+      outcome: null,
+      stopReason: null,
+      lastEventSequence: 1,
+    })
+
+    assert.deepEqual(body, {
+      kind: 'inference',
+      operation: 'chat',
+      idempotencyKey: 'submit-1',
+    })
+    assert.equal(
+      createJobResponse.parse({ created: true, job, eventsUrl: ROUTES.jobEvents(job.id) })
+        .eventsUrl,
+      '/api/jobs/job-1/events',
+    )
+    assert.equal(getJobResponse.parse({ job }).job.id, job.id)
+    assert.deepEqual(cancelJobBody.parse({}), { reason: 'user_requested' })
+    assert.equal(
+      createJobBody.safeParse({ ...body, idempotencyScope: 'caller-controlled' }).success,
+      false,
+    )
+  })
+
+  it('validates Job path and replay cursors at the contract boundary', () => {
+    assert.equal(
+      jobPathParams.safeParse({ jobId: '00000000-0000-4000-8000-000000000000' }).success,
+      true,
+    )
+    assert.equal(jobPathParams.safeParse({ jobId: '../private' }).success, false)
+    assert.deepEqual(jobEventsQuery.parse({ after: '12' }), { after: 12 })
+    assert.equal(jobEventCursorText.safeParse('0').success, true)
+
+    for (const malformed of ['-1', '1.5', '1e3', '', '9007199254740992']) {
+      assert.equal(jobEventCursorText.safeParse(malformed).success, false, malformed)
+    }
+    assert.equal(cancelJobBody.safeParse({ reason: 'private prompt or path' }).success, false)
   })
 })
