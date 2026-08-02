@@ -27,7 +27,7 @@ import { start } from '../src/index.ts'
 import type { ModelService } from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
-import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
+import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb, type Db } from '../src/store/db.ts'
 import {
@@ -170,7 +170,7 @@ function runtimeFixture(
     hardware: HARDWARE,
     appVersion: 'recovery-fixture',
     activeTurns: new Map<string, AbortController>(),
-    inference: new ExclusiveInferenceBridge(),
+    governor: new ResourceGovernor(),
     ollama: () =>
       ({
         chatStream(_request: unknown, signal: AbortSignal) {
@@ -354,6 +354,8 @@ describe('durable Chat startup recovery', () => {
     assert.equal(report.queuedScheduled, 0)
     assert.ok(report.outputPages > report.scanPages)
     assert.equal(runtime.calls(), 0)
+    assert.equal(runtime.context.governor.snapshot().activeLease, null)
+    assert.deepEqual(runtime.context.governor.snapshot().queued, [])
     for (const [state, association] of fixtures) {
       const job = runtime.context.jobService.get(association.job.id)!
       const message = runtime.context.threads.latestPendingAssistantForJob(job.id)
@@ -735,9 +737,17 @@ describe('durable Chat startup recovery', () => {
     const report = await recoverChatJobs(runtime.context, recoveryOptions({ scanPageSize: 1 }))
     assert.equal(report.queuedScheduled, 3)
     await waitFor(
-      () => activeProviders === 1 && runtime.context.inference.waiting === 2,
+      () => activeProviders === 1 && runtime.context.governor.waiting === 2,
       'Recovered queued Jobs did not enter one FIFO lane',
     )
+    const governor = runtime.context.governor.snapshot()
+    assert.deepEqual(governor.activeLease?.owner, { kind: 'job', jobId: jobs[0]!.job.id })
+    assert.deepEqual(
+      governor.queued.map((entry) => entry.owner),
+      jobs.slice(1).map((job) => ({ kind: 'job' as const, jobId: job.job.id })),
+    )
+    assert.equal(governor.activeLease?.operation, 'chat')
+    assert.equal(governor.queued.every((entry) => entry.operation === 'chat'), true)
     for (let index = 0; index < gates.length; index += 1) {
       gates[index]!.resolve()
       await waitFor(
@@ -751,7 +761,7 @@ describe('durable Chat startup recovery', () => {
     )
     assert.equal(runtime.calls(), 3)
     assert.equal(maximumProviders, 1)
-    assert.equal(runtime.context.inference.active, false)
+    assert.equal(runtime.context.governor.active, false)
     restarted.close()
   })
 
@@ -793,8 +803,8 @@ describe('durable Chat startup recovery', () => {
     assert.equal(message.turnStatus, 'failed')
     assert.equal(message.stopReason, 'internal_error')
     assert.equal(message.content, 'shutdown partial')
-    assert.equal(runtime.context.inference.active, false)
-    assert.equal(runtime.context.inference.waiting, 0)
+    assert.equal(runtime.context.governor.active, false)
+    assert.equal(runtime.context.governor.waiting, 0)
     assert.equal(runtime.context.activeTurns.size, 0)
     assert.doesNotMatch(
       JSON.stringify(runtime.context.jobs.eventsAfter(job.id, 0)),

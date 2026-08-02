@@ -10,7 +10,7 @@ import { JobService } from '../src/jobs/service.ts'
 import type { ModelService } from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
-import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
+import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
@@ -84,7 +84,7 @@ function fixture(
     hardware: HARDWARE,
     appVersion: 'chat-job-fixture',
     activeTurns: new Map<string, AbortController>(),
-    inference: new ExclusiveInferenceBridge(),
+    governor: new ResourceGovernor(),
     ollama: () =>
       ({
         chatStream(_request: unknown, signal: AbortSignal) {
@@ -311,7 +311,15 @@ describe('durable Chat Job execution owner', () => {
         yield terminalChunk('must not run')
       })(),
     )
-    const blocker = await context.inference.acquire()
+    const blockerTicket = context.governor.enqueue({
+      owner: { kind: 'operation', operationId: 'test:blocker' },
+      operation: 'model_warm',
+      model: { provider: 'ollama', name: 'fixture-blocker' },
+      requestedContext: 4_096,
+      priority: 'normal',
+      enqueuedAt: '2026-08-03T10:00:00.000Z',
+    })
+    const blocker = await context.governor.acquire(blockerTicket)
     const threadId = createThread(context)
     const response = await submit(app, threadId, {
       content: 'cancel in queue',
@@ -434,7 +442,7 @@ describe('durable Chat Job execution owner', () => {
       derivedTitle: 'private prompt',
     })
     await waitFor(
-      () => context.jobService.get(created.job.id)?.status === 'finalizing' && !context.inference.active,
+      () => context.jobService.get(created.job.id)?.status === 'finalizing' && !context.governor.active,
       'Owner did not expose finalizing recovery state and release the inference permit',
     )
 
@@ -447,7 +455,7 @@ describe('durable Chat Job execution owner', () => {
       .join('\n')
     assert.doesNotMatch(serializedSafeMetadata, /private prompt|secret|\/tmp\/private/)
     assert.equal(context.jobs.eventsAfter(job.id, 0).some((event) => event.state === 'completed'), false)
-    assert.equal(context.inference.active, false)
+    assert.equal(context.governor.active, false)
     context.db.close()
   })
 
@@ -478,7 +486,7 @@ describe('durable Chat Job execution owner', () => {
       snapshot: { content: 'second', attachments: [], autoApprove: null },
       derivedTitle: 'second',
     })
-    await waitFor(() => activeProviders === 1 && context.inference.waiting === 1, 'Second Job did not queue')
+    await waitFor(() => activeProviders === 1 && context.governor.waiting === 1, 'Second Job did not queue')
     releases[0]!.resolve()
     await waitFor(() => context.jobService.get(first.job.id)?.status === 'completed', 'First Job did not finish')
     await waitFor(() => activeProviders === 1, 'Second provider did not start')

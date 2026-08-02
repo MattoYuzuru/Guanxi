@@ -11,7 +11,7 @@ import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import type { ModelService } from '../src/models/service.ts'
 import { OllamaClient, OllamaError } from '../src/ollama/client.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../src/ollama/types.ts'
-import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
+import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
@@ -125,7 +125,7 @@ function testContext(options: {
     hardware: HARDWARE,
     appVersion: 'inference-fixture',
     activeTurns: new Map(),
-    inference: new ExclusiveInferenceBridge(),
+    governor: new ResourceGovernor(),
     ollama: () => options.client as OllamaClient,
     models: () =>
       ({
@@ -268,7 +268,7 @@ async function assertTurnCompactionSerialized(sameThread: boolean): Promise<void
     const compactResponsePromise = app.request(`/api/threads/${compactThread.id}/compact`, {
       method: 'POST',
     })
-    await waitFor(() => context.inference.waiting === 1, 'compaction never waited for the turn')
+    await waitFor(() => context.governor.waiting === 1, 'compaction never waited for the turn')
 
     assert.equal(compactionCalls, 0)
     assert.equal(maxActive, 1)
@@ -281,7 +281,7 @@ async function assertTurnCompactionSerialized(sameThread: boolean): Promise<void
     assert.equal(compactionCalls, 1)
     assert.equal(maxActive, 1)
     assert.ok(events.indexOf('turn-exit') < events.indexOf('compaction-enter'))
-    assert.equal(context.inference.active, false)
+    assert.equal(context.governor.active, false)
   } finally {
     context.db.close()
   }
@@ -301,13 +301,23 @@ describe('exclusive inference routes', () => {
       await waitFor(() => probe.calls.length === 1, 'first turn never entered fake Ollama')
 
       const secondResponse = await send(app, second.id, 'second')
-      await waitFor(() => context.inference.waiting === 1, 'second turn never waited')
+      await waitFor(() => context.governor.waiting === 1, 'second turn never waited')
 
       assert.deepEqual(probe.calls.map((call) => call.model), ['model-a'])
       assert.equal(probe.maxActive, 1)
       assert.equal(context.threads.messages(second.id).length, 2)
       assert.equal(context.threads.messages(second.id).at(-1)?.turnStatus, 'pending')
-      assert.equal(context.jobs.activeChatJobForThread(second.id)?.job.status, 'reserving')
+      const firstJob = context.jobs.activeChatJobForThread(first.id)!.job
+      const secondJob = context.jobs.activeChatJobForThread(second.id)!.job
+      assert.equal(secondJob.status, 'reserving')
+      const governor = context.governor.snapshot()
+      assert.deepEqual(governor.activeLease?.owner, { kind: 'job', jobId: firstJob.id })
+      assert.equal(governor.activeLease?.operation, 'chat')
+      assert.deepEqual(governor.activeLease?.model, { provider: 'ollama', name: 'model-a' })
+      assert.equal(governor.activeLease?.requestedContext, 4_096)
+      assert.deepEqual(governor.queued.map((entry) => entry.owner), [
+        { kind: 'job', jobId: secondJob.id },
+      ])
 
       probe.calls[0]!.release.resolve()
       const firstEvents = parseSse(await firstResponse.text())
@@ -327,8 +337,8 @@ describe('exclusive inference routes', () => {
         (secondEvents.find((event) => event['type'] === 'done')?.['data'] as { outcome: string }).outcome,
         'completed',
       )
-      assert.equal(context.inference.active, false)
-      assert.equal(context.inference.waiting, 0)
+      assert.equal(context.governor.active, false)
+      assert.equal(context.governor.waiting, 0)
     } finally {
       context.db.close()
     }
@@ -372,7 +382,7 @@ describe('exclusive inference routes', () => {
       const firstResponsePromise = app.request(`/api/threads/${first.id}/compact`, { method: 'POST' })
       await waitFor(() => calls.length === 1, 'first compaction never entered fake Ollama')
       const secondResponsePromise = app.request(`/api/threads/${second.id}/compact`, { method: 'POST' })
-      await waitFor(() => context.inference.waiting === 1, 'second compaction never waited')
+      await waitFor(() => context.governor.waiting === 1, 'second compaction never waited')
 
       assert.deepEqual(calls.map((call) => call.model), ['compact-a'])
       assert.equal(maxActive, 1)
@@ -384,7 +394,7 @@ describe('exclusive inference routes', () => {
       calls[1]!.release.resolve()
       assert.equal((await secondResponsePromise).status, 200)
       assert.equal(maxActive, 1)
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -414,7 +424,7 @@ describe('exclusive inference routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ contextLength: 4_096 }),
       })
-      await waitFor(() => context.inference.waiting === 1, 'warm request never waited')
+      await waitFor(() => context.governor.waiting === 1, 'warm request never waited')
       assert.equal(warmCalls.length, 0)
 
       probe.calls[0]!.release.resolve()
@@ -424,7 +434,127 @@ describe('exclusive inference routes', () => {
       assert.equal(warmResponse.status, 404)
       assert.equal(warmCalls.length, 1)
       assert.equal(warmCalls[0]?.name, 'other-model')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
+    } finally {
+      context.db.close()
+    }
+  })
+
+  it('serializes compaction and warm/load in both admission directions', async () => {
+    for (const firstOperation of ['compaction', 'model_warm'] as const) {
+      const releaseFirst = deferred()
+      const events: string[] = []
+      let active = 0
+      let maximumActive = 0
+      const enter = async (operation: string): Promise<void> => {
+        active += 1
+        maximumActive = Math.max(maximumActive, active)
+        events.push(`${operation}:enter`)
+        if (events.length === 1) await releaseFirst.promise
+        active -= 1
+        events.push(`${operation}:exit`)
+      }
+      const context = testContext({
+        client: {
+          async chat() {
+            await enter('compaction')
+            return terminalChunk('summary')
+          },
+        },
+        models: {
+          async warm() {
+            await enter('model_warm')
+            return null
+          },
+        },
+      })
+
+      try {
+        const app = createApp(context)
+        const thread = createThread(context, `matrix-${firstOperation}`)
+        seedMessages(context, thread.id, 0, 6)
+        const compact = () => app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })
+        const warm = () =>
+          app.request('/api/models/matrix-model/warm', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ contextLength: 4_096 }),
+          })
+
+        const first = firstOperation === 'compaction' ? compact() : warm()
+        await waitFor(() => active === 1, `${firstOperation} did not enter fake Ollama`)
+        const second = firstOperation === 'compaction' ? warm() : compact()
+        await waitFor(() => context.governor.waiting === 1, 'matrix waiter was not queued')
+        assert.equal(active, 1)
+        assert.equal(events.length, 1)
+
+        releaseFirst.resolve()
+        const [firstResponse, secondResponse] = await Promise.all([first, second])
+        assert.deepEqual(
+          [firstResponse.status, secondResponse.status].sort((left, right) => left - right),
+          [200, 404],
+        )
+        assert.equal(maximumActive, 1)
+        assert.deepEqual(
+          events.filter((event) => event.endsWith(':enter')),
+          [
+            `${firstOperation}:enter`,
+            `${firstOperation === 'compaction' ? 'model_warm' : 'compaction'}:enter`,
+          ],
+        )
+        assert.equal(context.governor.active, false)
+        assert.equal(context.governor.waiting, 0)
+      } finally {
+        context.db.close()
+      }
+    }
+  })
+
+  it('rejects exact and conservative unload conflicts before Ollama, then unloads after release', async () => {
+    const probe = heldTurnClient()
+    const unloadCalls: string[] = []
+    const privateModel = 'model-private-prompt-secret-path'
+    const context = testContext({
+      client: {
+        ...probe.client,
+        async unload(name) {
+          unloadCalls.push(name)
+        },
+      },
+    })
+
+    try {
+      const app = createApp(context)
+      const thread = createThread(context, privateModel)
+      const response = await send(app, thread.id)
+      await waitFor(() => probe.calls.length === 1, 'active Chat did not acquire its lease')
+
+      for (const fixture of [
+        { name: privateModel, reason: 'unload_active_model' },
+        { name: 'other-model', reason: 'unload_conservative_active_owner' },
+      ]) {
+        const stopped = await app.request(`/api/models/${encodeURIComponent(fixture.name)}/stop`, {
+          method: 'POST',
+        })
+        const body = (await stopped.json()) as {
+          code: string
+          message: string
+          details: { reason: string }
+        }
+        assert.equal(stopped.status, 409)
+        assert.equal(body.code, 'job_conflict')
+        assert.equal(body.details.reason, fixture.reason)
+        assert.doesNotMatch(JSON.stringify(body), /private-prompt|secret|\/tmp|provider body/)
+        assert.equal(unloadCalls.length, 0)
+      }
+
+      probe.calls[0]!.release.resolve()
+      await response.text()
+      const stopped = await app.request(`/api/models/${encodeURIComponent(privateModel)}/stop`, {
+        method: 'POST',
+      })
+      assert.equal(stopped.status, 200)
+      assert.deepEqual(unloadCalls, [privateModel])
     } finally {
       context.db.close()
     }
@@ -443,19 +573,19 @@ describe('exclusive inference routes', () => {
       const ownerResponse = await send(app, ownerThread.id, 'owner')
       await waitFor(() => probe.calls.length === 1, 'owner never entered fake Ollama')
       const waitingResponse = await send(app, waitingThread.id, 'waiter')
-      await waitFor(() => context.inference.waiting === 1, 'waiting turn was not queued')
+      await waitFor(() => context.governor.waiting === 1, 'waiting turn was not queued')
 
       await waitingResponse.body!.cancel()
-      assert.equal(context.inference.waiting, 1)
+      assert.equal(context.governor.waiting, 1)
       assert.equal(context.threads.messages(waitingThread.id).length, 2)
       await app.request(`/api/threads/${waitingThread.id}/stop`, { method: 'POST' })
       await waitFor(
-        () => context.inference.waiting === 0 && !context.activeTurns.has(waitingThread.id),
+        () => context.governor.waiting === 0 && !context.activeTurns.has(waitingThread.id),
         'explicitly cancelled waiter was not removed',
       )
 
       assert.equal(probe.calls[0]?.signal.aborted, false)
-      assert.equal(context.inference.active, true)
+      assert.equal(context.governor.active, true)
       assert.equal(context.threads.messages(waitingThread.id).at(-1)?.turnStatus, 'cancelled')
 
       probe.calls[0]!.release.resolve()
@@ -467,8 +597,8 @@ describe('exclusive inference routes', () => {
       await nextResponse.text()
 
       assert.equal(context.threads.messages(nextThread.id).at(-1)?.turnStatus, 'completed')
-      assert.equal(context.inference.active, false)
-      assert.equal(context.inference.waiting, 0)
+      assert.equal(context.governor.active, false)
+      assert.equal(context.governor.waiting, 0)
     } finally {
       context.db.close()
     }
@@ -547,7 +677,7 @@ describe('exclusive inference routes', () => {
         await waitFor(() => calls === 1, `${timeoutCase.phase} owner never entered`)
         const waiterResponse = await send(app, waiter.id, 'waiter')
         await waitFor(
-          () => context.inference.waiting === 1,
+          () => context.governor.waiting === 1,
           `${timeoutCase.phase} waiter never queued`,
         )
 
@@ -576,8 +706,8 @@ describe('exclusive inference routes', () => {
           assert.equal(persistedOwner?.content, 'timed partial')
         }
         assert.equal(maxActive, 1)
-        assert.equal(context.inference.active, false)
-        assert.equal(context.inference.waiting, 0)
+        assert.equal(context.governor.active, false)
+        assert.equal(context.governor.waiting, 0)
       } finally {
         context.db.close()
       }
@@ -637,7 +767,7 @@ describe('exclusive inference routes', () => {
       await waitFor(() => modelCalls === 1, 'cold warm never entered fake Ollama')
 
       const nextResponse = await send(app, next.id, 'wait after warm')
-      await waitFor(() => context.inference.waiting === 1, 'turn did not wait for cold warm')
+      await waitFor(() => context.governor.waiting === 1, 'turn did not wait for cold warm')
 
       const warmResponse = await warmResponsePromise
       assert.equal(warmResponse.status, 504)
@@ -650,7 +780,7 @@ describe('exclusive inference routes', () => {
 
       assert.equal(context.threads.messages(next.id).at(-1)?.turnStatus, 'completed')
       assert.equal(maxActive, 1)
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -685,7 +815,7 @@ describe('exclusive inference routes', () => {
       })
       await waitFor(() => modelCalls === 1, 'compaction never entered fake Ollama')
       const nextResponse = await send(app, nextThread.id, 'wait after compaction')
-      await waitFor(() => context.inference.waiting === 1, 'turn did not wait for compaction')
+      await waitFor(() => context.governor.waiting === 1, 'turn did not wait for compaction')
 
       const compactResponse = await compactResponsePromise
       assert.equal(compactResponse.status, 504)
@@ -697,7 +827,7 @@ describe('exclusive inference routes', () => {
       await nextResponse.text()
 
       assert.equal(context.threads.messages(nextThread.id).at(-1)?.turnStatus, 'completed')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -757,7 +887,7 @@ describe('exclusive inference routes', () => {
           failureCase.expected,
           failureCase.name,
         )
-        assert.equal(context.inference.active, false, failureCase.name)
+        assert.equal(context.governor.active, false, failureCase.name)
 
         const nextEvents = parseSse(await (await send(app, next.id)).text())
         assert.equal(
@@ -765,7 +895,7 @@ describe('exclusive inference routes', () => {
           'completed',
           failureCase.name,
         )
-        assert.equal(context.inference.active, false, failureCase.name)
+        assert.equal(context.governor.active, false, failureCase.name)
       } finally {
         context.db.close()
       }
@@ -792,7 +922,7 @@ describe('exclusive inference routes', () => {
       const stopped = context.threads.messages(stoppedThread.id).at(-1)
       assert.equal(stopped?.turnStatus, 'cancelled')
       assert.equal(stopped?.stopReason, 'stopped_by_user')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
 
       const nextResponse = await send(app, nextThread.id)
       await waitFor(() => probe.calls.length === 2, 'next turn never acquired after Stop')
@@ -800,7 +930,7 @@ describe('exclusive inference routes', () => {
       await nextResponse.text()
 
       assert.equal(context.threads.messages(nextThread.id).at(-1)?.turnStatus, 'completed')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -837,7 +967,7 @@ describe('exclusive inference routes', () => {
       assert.equal(persisted?.turnStatus, 'cancelled')
       assert.equal(persisted?.turnError, null)
       assert.equal(persisted?.stopReason, 'stopped_by_user')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -863,7 +993,7 @@ describe('exclusive inference routes', () => {
       assert.match(observed, /"type":"token"/)
       await reader.cancel()
 
-      assert.equal(context.inference.active, true)
+      assert.equal(context.governor.active, true)
       assert.equal(context.threads.messages(abortedThread.id).at(-1)?.turnStatus, 'pending')
       probe.calls[0]!.release.resolve()
       await waitFor(
@@ -877,7 +1007,7 @@ describe('exclusive inference routes', () => {
       await nextResponse.text()
 
       assert.equal(context.threads.messages(nextThread.id).at(-1)?.turnStatus, 'completed')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -921,7 +1051,7 @@ describe('exclusive inference routes', () => {
         0,
       )
       assert.equal(calls, 0)
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
 
       context.db.exec('DROP TRIGGER fail_chat_user_insert')
       const nextEvents = parseSse(await (await send(app, nextThread.id)).text())
@@ -930,7 +1060,7 @@ describe('exclusive inference routes', () => {
         'completed',
       )
       assert.equal(context.threads.messages(nextThread.id).at(-1)?.turnStatus, 'completed')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -962,7 +1092,7 @@ describe('exclusive inference routes', () => {
       await waitFor(
         () =>
           context.jobs.activeChatJobForThread(failedThread.id)?.job.status === 'finalizing' &&
-          !context.inference.active,
+          !context.governor.active,
         'terminal failure did not expose recovery state and release permit',
       )
       const failedJob = context.jobs.activeChatJobForThread(failedThread.id)?.job
@@ -972,7 +1102,7 @@ describe('exclusive inference routes', () => {
         false,
       )
       assert.equal(context.threads.messages(failedThread.id).at(-1)?.turnStatus, 'pending')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
 
       context.db.exec('DROP TRIGGER fail_chat_terminal')
       const nextEvents = parseSse(await (await send(app, nextThread.id)).text())
@@ -980,7 +1110,7 @@ describe('exclusive inference routes', () => {
         (nextEvents.find((event) => event['type'] === 'done')?.['data'] as { outcome: string }).outcome,
         'completed',
       )
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }
@@ -1010,12 +1140,12 @@ describe('exclusive inference routes', () => {
 
       const failed = await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })
       assert.equal(failed.status, 500)
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
       assert.equal(context.threads.messages(thread.id).some((message) => message.isCompaction), false)
 
       const recovered = await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })
       assert.equal(recovered.status, 200)
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
       assert.equal(context.threads.messages(thread.id).filter((message) => message.isCompaction).length, 1)
     } finally {
       context.db.close()
@@ -1090,7 +1220,7 @@ describe('exclusive inference routes', () => {
         'original-15',
       ])
       assert.equal(context.threads.messages(thread.id).at(-1)?.turnStatus, 'completed')
-      assert.equal(context.inference.active, false)
+      assert.equal(context.governor.active, false)
     } finally {
       context.db.close()
     }

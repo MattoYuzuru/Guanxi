@@ -9,7 +9,7 @@ import { JobService } from '../src/jobs/service.ts'
 import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import { ModelService } from '../src/models/service.ts'
 import { OllamaClient } from '../src/ollama/client.ts'
-import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
+import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
@@ -50,7 +50,7 @@ function testContext(client: OllamaClient): AppContext {
     hardware: HARDWARE,
     appVersion: 'runtime-fixture',
     activeTurns: new Map(),
-    inference: new ExclusiveInferenceBridge(),
+    governor: new ResourceGovernor(),
     ollama: () => client,
     models: () => models,
   }

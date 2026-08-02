@@ -12,12 +12,40 @@ import {
   OllamaTimeoutError,
   OllamaUnavailableError,
 } from '../ollama/client.ts'
+import { ResourceGovernorError } from '../runtime/resource-governor.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
 import { ToolError } from '../tools/types.ts'
 
-type StatusCode = 400 | 403 | 404 | 500 | 502 | 503 | 504
+type StatusCode = 400 | 403 | 404 | 409 | 500 | 502 | 503 | 504
 
 function classify(error: unknown): { status: StatusCode; body: ApiError } {
+  if (error instanceof ResourceGovernorError) {
+    if (
+      error.code === 'unload_active_model' ||
+      error.code === 'unload_conservative_active_owner'
+    ) {
+      return {
+        status: 409,
+        body: {
+          code: 'job_conflict',
+          message: 'Model unload is blocked by active resource ownership',
+          details: { reason: error.code },
+        },
+      }
+    }
+    return {
+      status: error.code === 'admission_closed' ? 503 : 500,
+      body: {
+        code: 'internal_error',
+        message:
+          error.code === 'admission_closed'
+            ? 'Resource admission is closed during application shutdown'
+            : 'Resource admission failed',
+        details: null,
+      },
+    }
+  }
+
   if (error instanceof OllamaTimeoutError) {
     const code: ApiError['code'] =
       error.phase === 'connect'

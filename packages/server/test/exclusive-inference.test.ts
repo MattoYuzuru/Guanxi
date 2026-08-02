@@ -1,73 +1,96 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
+import {
+  ResourceGovernor,
+  type AdmissionRequest,
+} from '../src/runtime/resource-governor.ts'
 
-describe('ExclusiveInferenceBridge', () => {
-  it('admits one owner and hands the permit to waiters in FIFO order', async () => {
-    const bridge = new ExclusiveInferenceBridge()
-    const first = await bridge.acquire()
+function request(operationId: string, model = operationId): AdmissionRequest {
+  return {
+    owner: { kind: 'operation', operationId },
+    operation: 'model_warm',
+    model: { provider: 'ollama', name: model },
+    requestedContext: 4_096,
+    priority: 'normal',
+    enqueuedAt: '2026-08-03T10:00:00.000Z',
+  }
+}
+
+describe('ResourceGovernor single-permit compatibility gate', () => {
+  it('admits one typed owner and hands leases to waiters in FIFO order', async () => {
+    const governor = new ResourceGovernor()
+    const firstTicket = governor.enqueue(request('first'))
+    const first = await governor.acquire(firstTicket)
     const order: string[] = []
 
-    const secondPromise = bridge.acquire().then((permit) => {
+    const secondTicket = governor.enqueue(request('second'))
+    const secondPromise = governor.acquire(secondTicket).then((lease) => {
       order.push('second')
-      return permit
+      return lease
     })
-    const thirdPromise = bridge.acquire().then((permit) => {
+    const thirdTicket = governor.enqueue(request('third'))
+    const thirdPromise = governor.acquire(thirdTicket).then((lease) => {
       order.push('third')
-      return permit
+      return lease
     })
 
-    assert.equal(bridge.active, true)
-    assert.equal(bridge.waiting, 2)
+    assert.equal(governor.active, true)
+    assert.equal(governor.waiting, 2)
 
     first.release()
     const second = await secondPromise
     assert.deepEqual(order, ['second'])
-    assert.equal(bridge.waiting, 1)
+    assert.equal(governor.waiting, 1)
 
     // Duplicate cleanup cannot release the current owner.
     first.release()
-    assert.equal(bridge.active, true)
-    assert.equal(bridge.waiting, 1)
+    assert.equal(governor.active, true)
+    assert.equal(governor.waiting, 1)
 
     second.release()
     const third = await thirdPromise
     assert.deepEqual(order, ['second', 'third'])
-    assert.equal(bridge.waiting, 0)
+    assert.equal(governor.waiting, 0)
 
     third.release()
-    assert.equal(bridge.active, false)
+    assert.equal(governor.active, false)
   })
 
-  it('removes an aborted waiter without cancelling the owner or leaking a permit', async () => {
-    const bridge = new ExclusiveInferenceBridge()
-    const owner = await bridge.acquire()
+  it('removes an aborted ticket without cancelling the owner or leaking a lease', async () => {
+    const governor = new ResourceGovernor()
+    const ownerTicket = governor.enqueue(request('owner'))
+    const owner = await governor.acquire(ownerTicket)
     const waitingController = new AbortController()
-    const waiting = bridge.acquire(waitingController.signal)
+    const waitingTicket = governor.enqueue(request('waiting'))
+    const waiting = governor.acquire(waitingTicket, { signal: waitingController.signal })
 
-    assert.equal(bridge.waiting, 1)
+    assert.equal(governor.waiting, 1)
     waitingController.abort()
 
     await assert.rejects(waiting, { name: 'AbortError' })
-    assert.equal(bridge.active, true)
-    assert.equal(bridge.waiting, 0)
+    assert.equal(governor.active, true)
+    assert.equal(governor.waiting, 0)
 
-    const nextPromise = bridge.acquire()
+    const nextTicket = governor.enqueue(request('next'))
+    const nextPromise = governor.acquire(nextTicket)
     owner.release()
     const next = await nextPromise
-    assert.equal(bridge.active, true)
+    assert.equal(governor.active, true)
 
     next.release()
-    assert.equal(bridge.active, false)
+    assert.equal(governor.active, false)
   })
 
   it('rejects an already-aborted request without taking ownership', async () => {
-    const bridge = new ExclusiveInferenceBridge()
+    const governor = new ResourceGovernor()
     const controller = new AbortController()
     controller.abort()
+    const ticket = governor.enqueue(request('aborted'))
 
-    await assert.rejects(bridge.acquire(controller.signal), { name: 'AbortError' })
-    assert.equal(bridge.active, false)
-    assert.equal(bridge.waiting, 0)
+    await assert.rejects(governor.acquire(ticket, { signal: controller.signal }), {
+      name: 'AbortError',
+    })
+    assert.equal(governor.active, false)
+    assert.equal(governor.waiting, 0)
   })
 })

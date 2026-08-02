@@ -12,7 +12,12 @@ import {
 import type { AppContext } from '../context.ts'
 import { getCatalog } from '../models/catalog.ts'
 import { OllamaUnavailableError } from '../ollama/client.ts'
-import type { InferencePermit } from '../runtime/exclusive-inference.ts'
+import {
+  RESOURCE_GOVERNOR_CLOSE_REASON,
+  operationOwner,
+  type AdmissionTicket,
+  type ResourceLease,
+} from '../runtime/resource-governor.ts'
 import { sseResponse } from './sse.ts'
 import { fail } from './errors.ts'
 
@@ -101,17 +106,33 @@ export function modelsRoutes(app: AppContext): Hono {
     const body = warmModelBody.safeParse(await context.req.json().catch(() => ({})))
     const contextLength = body.success ? body.data.contextLength : DEFAULT_NUM_CTX
 
-    let permit: InferencePermit | undefined
+    const ownerController = new AbortController()
+    const abortFromRequest = () => ownerController.abort(context.req.raw.signal.reason)
+    if (context.req.raw.signal.aborted) abortFromRequest()
+    else context.req.raw.signal.addEventListener('abort', abortFromRequest, { once: true })
+    let ticket: AdmissionTicket | undefined
+    let lease: ResourceLease | undefined
     try {
-      permit = await app.inference.acquire(context.req.raw.signal)
-      if (context.req.raw.signal.aborted) {
+      ticket = app.governor.enqueue({
+        owner: operationOwner('model_warm'),
+        operation: 'model_warm',
+        model: { provider: 'ollama', name },
+        requestedContext: contextLength,
+        priority: 'normal',
+        enqueuedAt: new Date().toISOString(),
+      })
+      lease = await app.governor.acquire(ticket, {
+        signal: ownerController.signal,
+        abortOwner: () => ownerController.abort(RESOURCE_GOVERNOR_CLOSE_REASON),
+      })
+      if (ownerController.signal.aborted) {
         return context.json(
           { code: 'validation_failed', message: 'Прогрев отменён до запуска', details: null },
           409,
         )
       }
 
-      const result = await app.models().warm(name, contextLength, context.req.raw.signal)
+      const result = await app.models().warm(name, contextLength, ownerController.signal)
       if (!result) {
         return context.json(
           { code: 'model_not_found', message: `Модель ${name} не загрузилась`, details: null },
@@ -120,7 +141,7 @@ export function modelsRoutes(app: AppContext): Hono {
       }
       return context.json(result)
     } catch (error) {
-      if (context.req.raw.signal.aborted) {
+      if (ownerController.signal.aborted && app.governor.snapshot().accepting) {
         return context.json(
           { code: 'validation_failed', message: 'Прогрев отменён', details: null },
           409,
@@ -128,13 +149,16 @@ export function modelsRoutes(app: AppContext): Hono {
       }
       return fail(context, error)
     } finally {
-      permit?.release()
+      context.req.raw.signal.removeEventListener('abort', abortFromRequest)
+      lease?.release()
+      if (!lease && ticket) app.governor.cancel(ticket)
     }
   })
 
   routes.post('/:name{.+}/stop', async (context) => {
     const name = decodeURIComponent(context.req.param('name'))
     try {
+      app.governor.assertCanUnload({ provider: 'ollama', name })
       await app.ollama().unload(name)
       return context.json({ ok: true })
     } catch (error) {

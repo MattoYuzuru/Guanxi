@@ -17,7 +17,12 @@ import {
 import { COMPACTION_PROMPT } from '../agent/prompts.ts'
 import { buildContextState, estimateTokens } from '../context/usage.ts'
 import type { AppContext } from '../context.ts'
-import type { InferencePermit } from '../runtime/exclusive-inference.ts'
+import {
+  RESOURCE_GOVERNOR_CLOSE_REASON,
+  operationOwner,
+  type AdmissionTicket,
+  type ResourceLease,
+} from '../runtime/resource-governor.ts'
 import { JobStoreError } from '../store/jobs.ts'
 import { fail, notFound } from './errors.ts'
 import { lastEventId, sseResponse } from './sse.ts'
@@ -247,10 +252,28 @@ export function threadsRoutes(app: AppContext): Hono {
       return notFound(context, 'thread_not_found', 'Тред не найден')
     }
 
-    let permit: InferencePermit | undefined
+    const ownerController = new AbortController()
+    const abortFromRequest = () => ownerController.abort(context.req.raw.signal.reason)
+    if (context.req.raw.signal.aborted) abortFromRequest()
+    else context.req.raw.signal.addEventListener('abort', abortFromRequest, { once: true })
+    let ticket: AdmissionTicket | undefined
+    let lease: ResourceLease | undefined
     try {
-      permit = await app.inference.acquire(context.req.raw.signal)
-      if (context.req.raw.signal.aborted) {
+      const admissionThread = app.threads.get(threadId)
+      if (!admissionThread) return notFound(context, 'thread_not_found', 'Тред не найден')
+      ticket = app.governor.enqueue({
+        owner: operationOwner('compaction'),
+        operation: 'compaction',
+        model: { provider: 'ollama', name: admissionThread.model },
+        requestedContext: admissionThread.options.numCtx,
+        priority: 'normal',
+        enqueuedAt: new Date().toISOString(),
+      })
+      lease = await app.governor.acquire(ticket, {
+        signal: ownerController.signal,
+        abortOwner: () => ownerController.abort(RESOURCE_GOVERNOR_CLOSE_REASON),
+      })
+      if (ownerController.signal.aborted) {
         return context.json(
           { code: 'validation_failed', message: 'Компакция отменена до запуска', details: null },
           409,
@@ -260,6 +283,19 @@ export function threadsRoutes(app: AppContext): Hono {
       // A queued compaction must plan from state observed after admission.
       const thread = app.threads.get(threadId)
       if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
+      if (
+        thread.model !== lease.model.name ||
+        thread.options.numCtx !== lease.requestedContext
+      ) {
+        return context.json(
+          {
+            code: 'job_conflict',
+            message: 'Параметры треда изменились во время ожидания компакции',
+            details: null,
+          },
+          409,
+        )
+      }
 
       // Хвост оставляем нетронутым: именно он нужен модели для продолжения разговора.
       const selection = app.threads.compactionCandidates(threadId, 4)
@@ -284,7 +320,7 @@ export function threadsRoutes(app: AppContext): Hono {
           ],
           options: { num_ctx: thread.options.numCtx, temperature: 0 },
         },
-        context.req.raw.signal,
+        ownerController.signal,
       )
 
       const summary = response.message?.content?.trim()
@@ -328,7 +364,7 @@ export function threadsRoutes(app: AppContext): Hono {
         estimatedRepefillMs: app.tracker.estimateColdPrefillMs(thread.model, usedTokens),
       })
     } catch (error) {
-      if (context.req.raw.signal.aborted) {
+      if (ownerController.signal.aborted && app.governor.snapshot().accepting) {
         return context.json(
           { code: 'validation_failed', message: 'Компакция отменена', details: null },
           409,
@@ -336,7 +372,9 @@ export function threadsRoutes(app: AppContext): Hono {
       }
       return fail(context, error)
     } finally {
-      permit?.release()
+      context.req.raw.signal.removeEventListener('abort', abortFromRequest)
+      lease?.release()
+      if (!lease && ticket) app.governor.cancel(ticket)
     }
   })
 

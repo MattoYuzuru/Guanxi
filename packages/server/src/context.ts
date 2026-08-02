@@ -14,7 +14,7 @@ import { ModelService } from './models/service.ts'
 import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
-import { ExclusiveInferenceBridge } from './runtime/exclusive-inference.ts'
+import { ResourceGovernor } from './runtime/resource-governor.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { openDb, type Db } from './store/db.ts'
 import { JobStore } from './store/jobs.ts'
@@ -46,11 +46,11 @@ export interface AppContext {
   appVersion: string
   /**
    * Compatibility mirror for active Chat controllers. ChatJobExecutionOwner
-   * owns lifecycle/Stop; process-local exclusion belongs to `inference`.
+   * owns lifecycle/Stop; process-local admission belongs to `governor`.
    */
   activeTurns: Map<string, AbortController>
-  /** Temporary process-local one-lane bridge for every current local inference entry point. */
-  inference: ExclusiveInferenceBridge
+  /** Canonical process-local admission/lease owner for local model-affecting entry points. */
+  governor: ResourceGovernor
   ollama(): OllamaClient
   models(): ModelService
 }
@@ -89,7 +89,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     const jobs = new JobStore(db)
 
     const activeTurns = new Map<string, AbortController>()
-    const inference = new ExclusiveInferenceBridge()
+    const governor = new ResourceGovernor()
     const jobService = new JobService(jobs)
     const base = {
       db,
@@ -104,7 +104,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       hardware,
       appVersion: options.appVersion,
       activeTurns,
-      inference,
+      governor,
       ollama,
       models,
     }

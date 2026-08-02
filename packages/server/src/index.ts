@@ -17,6 +17,26 @@ import { defaultDbPath } from './store/db.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { JobService, JobServiceError } from './jobs/service.ts'
 export {
+  RESOURCE_GOVERNOR_CLOSE_REASON,
+  SINGLE_PERMIT_POLICY_BASIS,
+  ResourceGovernor,
+  ResourceGovernorError,
+  operationOwner,
+} from './runtime/resource-governor.ts'
+export type {
+  AdmissionExplanation,
+  AdmissionPriority,
+  AdmissionRequest,
+  AdmissionTicket,
+  AdmissionTicketState,
+  GovernorDecisionCode,
+  ModelResourceRequest,
+  ResourceGovernorSnapshot,
+  ResourceLease,
+  ResourceOperation,
+  ResourceOwner,
+} from './runtime/resource-governor.ts'
+export {
   CHAT_JOB_OPERATION,
   CHAT_OUTPUT_CHUNK_BYTES,
   ChatJobExecutionOwner,

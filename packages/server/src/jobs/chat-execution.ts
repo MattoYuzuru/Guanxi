@@ -16,7 +16,12 @@ import type { ApprovalGate } from '../agent/approvals.ts'
 import type { PrefillTracker } from '../context/usage.ts'
 import type { ModelService } from '../models/service.ts'
 import type { OllamaClient } from '../ollama/client.ts'
-import type { ExclusiveInferenceBridge, InferencePermit } from '../runtime/exclusive-inference.ts'
+import {
+  RESOURCE_GOVERNOR_CLOSE_REASON,
+  type AdmissionTicket,
+  type ResourceGovernor,
+  type ResourceLease,
+} from '../runtime/resource-governor.ts'
 import type { JobStore, ChatJobAssociation, CreateChatJobResult } from '../store/jobs.ts'
 import type { SettingsStore } from '../store/settings.ts'
 import type {
@@ -42,7 +47,7 @@ export interface ChatExecutionDependencies {
   settings: SettingsStore
   approvals: ApprovalGate
   tracker: PrefillTracker
-  inference: ExclusiveInferenceBridge
+  governor: ResourceGovernor
   /** Compatibility mirror only; controllers remain owned by this class by jobId. */
   activeTurns: Map<string, AbortController>
   ollama(): OllamaClient
@@ -235,7 +240,9 @@ export class ChatJobExecutionOwner {
     for (const execution of executions) {
       execution.controller.abort(TURN_ABORT_REASON.applicationShutdown)
     }
+    const governorClosed = this.dependencies.governor.close()
     await Promise.all(executions.map((execution) => execution.task))
+    await governorClosed
     await recoverChatJobs(
       {
         jobs: this.dependencies.jobs,
@@ -251,17 +258,21 @@ export class ChatJobExecutionOwner {
     association: ChatJobAssociation,
     controller: AbortController,
   ): Promise<void> {
-    let permit: InferencePermit | undefined
+    let ticket: AdmissionTicket | undefined
+    let lease: ResourceLease | undefined
     let deferred: DeferredTerminal | null = null
     let terminalOutput: ChatJobOutput | null = null
 
     try {
       if (controller.signal.aborted) return
+      const thread = this.dependencies.threads.get(association.threadId)
+      if (!thread) throw new Error('The Chat thread was removed before execution')
+
       const reserved = this.dependencies.jobService.transition({
         jobId: association.job.id,
         expectedStatus: 'queued',
         status: 'reserving',
-        phase: 'exclusive_inference_wait',
+        phase: 'resource_admission',
         metadata: { threadId: association.threadId },
       })
       if (!reserved.applied) {
@@ -271,7 +282,18 @@ export class ChatJobExecutionOwner {
         return
       }
 
-      permit = await this.dependencies.inference.acquire(controller.signal)
+      ticket = this.dependencies.governor.enqueue({
+        owner: { kind: 'job', jobId: association.job.id },
+        operation: 'chat',
+        model: { provider: 'ollama', name: thread.model },
+        requestedContext: thread.options.numCtx,
+        priority: 'normal',
+        enqueuedAt: new Date().toISOString(),
+      })
+      lease = await this.dependencies.governor.acquire(ticket, {
+        signal: controller.signal,
+        abortOwner: () => controller.abort(RESOURCE_GOVERNOR_CLOSE_REASON),
+      })
       if (controller.signal.aborted) {
         this.confirmCancellation(association, 'user_requested')
         return
@@ -291,8 +313,6 @@ export class ChatJobExecutionOwner {
         return
       }
 
-      const thread = this.dependencies.threads.get(association.threadId)
-      if (!thread) throw new Error('The Chat thread was removed before execution')
       const workspace = thread.workspaceId
         ? this.dependencies.workspaces.get(thread.workspaceId)
         : null
@@ -352,7 +372,8 @@ export class ChatJobExecutionOwner {
     } catch {
       this.finishUnexpectedFailure(association, controller.signal)
     } finally {
-      permit?.release()
+      lease?.release()
+      if (!lease && ticket) this.dependencies.governor.cancel(ticket)
     }
   }
 
@@ -568,7 +589,10 @@ export class ChatJobExecutionOwner {
   private finishUnexpectedFailure(association: ChatJobAssociation, signal: AbortSignal): void {
     const current = this.dependencies.jobService.get(association.job.id)
     if (!current || TERMINAL.has(current.status)) return
-    if (signal.reason === TURN_ABORT_REASON.applicationShutdown) {
+    if (
+      signal.reason === TURN_ABORT_REASON.applicationShutdown ||
+      signal.reason === RESOURCE_GOVERNOR_CLOSE_REASON
+    ) {
       reconcileLostChatExecution(this.dependencies, association)
       return
     }
