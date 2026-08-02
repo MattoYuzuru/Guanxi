@@ -1,0 +1,330 @@
+/**
+ * Alamo UI — доменные схемы.
+ *
+ * Это единственный источник правды между сервером и вебом. Обе стороны импортируют
+ * отсюда типы и валидаторы; расходиться им физически негде.
+ *
+ * Правило: менять этот файл можно только согласованно. Любое поле, которое читает
+ * фронт, обязано быть описано здесь, а не «подразумеваться».
+ */
+import { z } from 'zod'
+
+/* ─────────────────────────── Железо и влезаемость ────────────────────────── */
+
+export const acceleratorSchema = z.enum(['metal', 'cuda', 'rocm', 'cpu'])
+export type Accelerator = z.infer<typeof acceleratorSchema>
+
+export const hardwareInfoSchema = z.object({
+  platform: z.string(), // darwin | linux | win32
+  arch: z.string(), // arm64 | x64
+  cpuModel: z.string(),
+  cpuCores: z.number().int(),
+  totalMemoryBytes: z.number().int(),
+  /** Сколько реально доступно ускорителю. На Apple Silicon это доля unified memory. */
+  usableMemoryBytes: z.number().int(),
+  accelerator: acceleratorSchema,
+  acceleratorName: z.string().nullable(),
+  /** true — память общая между CPU и GPU (Apple Silicon). Влияет на расчёт влезаемости. */
+  unifiedMemory: z.boolean(),
+  freeDiskBytes: z.number().int().nullable(),
+})
+export type HardwareInfo = z.infer<typeof hardwareInfoSchema>
+
+export const fitLevelSchema = z.enum(['green', 'yellow', 'red', 'unknown'])
+export type FitLevel = z.infer<typeof fitLevelSchema>
+
+/**
+ * Вердикт «потянет ли железо». Всегда содержит разбор, чтобы UI мог показать
+ * не только цвет, но и почему именно такой цвет.
+ */
+export const fitVerdictSchema = z.object({
+  level: fitLevelSchema,
+  /** Короткая формулировка для карточки, на русском. */
+  summary: z.string(),
+  /** При каком размере окна считали. */
+  contextLength: z.number().int(),
+  modelBytes: z.number().int(),
+  kvCacheBytes: z.number().int(),
+  requiredBytes: z.number().int(),
+  usableBytes: z.number().int(),
+  /** Заполненность памяти, 0..1+. Больше 1 — не влезает. */
+  utilization: z.number(),
+  /** Прогноз посчитан по формуле, либо взят из факта после загрузки модели. */
+  basis: z.enum(['estimate', 'measured', 'vendor_hint']),
+  /** Заполняется после реального прогрева: что показал ollama ps. */
+  measured: z
+    .object({
+      sizeBytes: z.number().int(),
+      gpuPercent: z.number().int(),
+      processorLabel: z.string(),
+    })
+    .nullable(),
+})
+export type FitVerdict = z.infer<typeof fitVerdictSchema>
+
+/* ──────────────────────────────── Модели ─────────────────────────────────── */
+
+export const modelCapabilitySchema = z.enum([
+  'completion',
+  'tools',
+  'vision',
+  'insert',
+  'thinking',
+  'embedding',
+])
+export type ModelCapability = z.infer<typeof modelCapabilitySchema>
+
+export const localModelSchema = z.object({
+  name: z.string(),
+  digest: z.string(),
+  sizeBytes: z.number().int(),
+  modifiedAt: z.string(), // ISO
+  family: z.string(),
+  parameterSize: z.string(), // "7.6B"
+  quantization: z.string(), // "Q4_K_M"
+  /** Максимум, который поддерживает модель. Не путать с выделенным при загрузке. */
+  contextLength: z.number().int(),
+  capabilities: z.array(modelCapabilitySchema),
+  /** true — модель считается в облаке Ollama, локальная память не тратится. */
+  isCloud: z.boolean(),
+  fit: fitVerdictSchema,
+})
+export type LocalModel = z.infer<typeof localModelSchema>
+
+export const catalogModelSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  /** Доступные теги-размеры: 7b, 14b, 27b-q4 и т.п. */
+  variants: z.array(
+    z.object({
+      tag: z.string(),
+      sizeBytes: z.number().int().nullable(),
+      parameterSize: z.string().nullable(),
+    }),
+  ),
+  contextLength: z.number().int().nullable(),
+  capabilities: z.array(modelCapabilitySchema),
+  /** Подсказка вендора по требуемой видеопамяти, если есть. */
+  vramBytes: z.number().int().nullable(),
+  isCloud: z.boolean(),
+  requiredPlan: z.enum(['free', 'pro']).nullable(),
+  installed: z.boolean(),
+  fit: fitVerdictSchema,
+  /** Откуда карточка: живой каталог ollama.com или встроенный офлайн-снимок. */
+  source: z.enum(['remote', 'bundled']),
+})
+export type CatalogModel = z.infer<typeof catalogModelSchema>
+
+export const runningModelSchema = z.object({
+  name: z.string(),
+  sizeBytes: z.number().int(),
+  /** Сколько ушло на ускоритель. */
+  sizeVramBytes: z.number().int(),
+  gpuPercent: z.number().int(),
+  processorLabel: z.string(), // "100% GPU" | "43%/57% CPU/GPU"
+  contextLength: z.number().int(),
+  expiresAt: z.string().nullable(),
+})
+export type RunningModel = z.infer<typeof runningModelSchema>
+
+export const modelDetailSchema = localModelSchema.extend({
+  /** Сырой блок из /api/show — архитектурные параметры. */
+  modelInfo: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  template: z.string().nullable(),
+  systemPrompt: z.string().nullable(),
+  license: z.string().nullable(),
+  /** Вердикт при разных размерах окна — для слайдера в профиле модели. */
+  fitByContext: z.array(fitVerdictSchema),
+})
+export type ModelDetail = z.infer<typeof modelDetailSchema>
+
+/* ─────────────────────────── Треды и сообщения ───────────────────────────── */
+
+export const threadModeSchema = z.enum(['chat', 'agent'])
+export type ThreadMode = z.infer<typeof threadModeSchema>
+
+export const threadOptionsSchema = z.object({
+  numCtx: z.number().int().min(512).max(1_048_576),
+  temperature: z.number().min(0).max(2),
+  /** Режим размышления для моделей, которые его поддерживают. */
+  think: z.enum(['off', 'low', 'medium', 'high']),
+})
+export type ThreadOptions = z.infer<typeof threadOptionsSchema>
+
+export const threadSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  mode: threadModeSchema,
+  model: z.string(),
+  workspaceId: z.string().nullable(),
+  options: threadOptionsSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  messageCount: z.number().int(),
+})
+export type Thread = z.infer<typeof threadSchema>
+
+export const toolCallStatusSchema = z.enum([
+  'pending_approval',
+  'running',
+  'ok',
+  'error',
+  'denied',
+  'cancelled',
+])
+export type ToolCallStatus = z.infer<typeof toolCallStatusSchema>
+
+export const toolCallSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  arguments: z.record(z.unknown()),
+  status: toolCallStatusSchema,
+  /** Текстовый результат, который ушёл обратно в модель. */
+  result: z.string().nullable(),
+  error: z.string().nullable(),
+  durationMs: z.number().int().nullable(),
+  source: z.enum(['builtin', 'mcp']),
+  /**
+   * Как распознали вызов. 'content_json' означает, что модель не отдала
+   * структурный tool_calls и мы вытащили JSON из текста — это норма для 7B.
+   */
+  parsedFrom: z.enum(['native', 'content_json']),
+  /** Для write/edit — предпросмотр диффа, чтобы подтверждать осознанно. */
+  diff: z
+    .object({
+      path: z.string(),
+      before: z.string(),
+      after: z.string(),
+    })
+    .nullable(),
+})
+export type ToolCall = z.infer<typeof toolCallSchema>
+
+/** Метрики хода. Из них же считается индикатор кэша. */
+export const usageSchema = z.object({
+  promptTokens: z.number().int(),
+  evalTokens: z.number().int(),
+  promptEvalDurationMs: z.number().int(),
+  evalDurationMs: z.number().int(),
+  loadDurationMs: z.number().int(),
+  totalDurationMs: z.number().int(),
+  tokensPerSecond: z.number(),
+  /** true — префикс переиспользован из KV-кэша (prefill был аномально быстрым). */
+  cacheHit: z.boolean(),
+  /** Оценка числа токенов, не пересчитанных заново. */
+  cachedTokens: z.number().int(),
+})
+export type Usage = z.infer<typeof usageSchema>
+
+export const messageSchema = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  role: z.enum(['user', 'assistant', 'system', 'tool']),
+  content: z.string(),
+  thinking: z.string().nullable(),
+  toolCalls: z.array(toolCallSchema),
+  usage: usageSchema.nullable(),
+  createdAt: z.string(),
+  /** Сообщение — результат компакции, свернувшей N предыдущих. */
+  isCompaction: z.boolean(),
+})
+export type Message = z.infer<typeof messageSchema>
+
+/** Состояние окна контекста — питает шкалу в UI. */
+export const contextStateSchema = z.object({
+  usedTokens: z.number().int(),
+  allocatedTokens: z.number().int(),
+  percent: z.number(),
+  cacheHit: z.boolean(),
+  cachedTokens: z.number().int(),
+  /** Есть ли что сворачивать. */
+  compactable: z.boolean(),
+  /** Честная цена компакции: следующий ход подорожает примерно на столько. */
+  estimatedRepefillMs: z.number().int(),
+})
+export type ContextState = z.infer<typeof contextStateSchema>
+
+/* ──────────────────────────────── Воркспейсы ─────────────────────────────── */
+
+export const workspaceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  rootPath: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+  /** Существует ли директория прямо сейчас. */
+  exists: z.boolean(),
+})
+export type Workspace = z.infer<typeof workspaceSchema>
+
+/* ──────────────────────────────── Настройки ──────────────────────────────── */
+
+export const webSearchProviderSchema = z.enum(['none', 'ollama', 'searxng', 'brave', 'tavily'])
+export type WebSearchProvider = z.infer<typeof webSearchProviderSchema>
+
+export const settingsSchema = z.object({
+  ollamaHost: z.string(),
+  defaultModel: z.string().nullable(),
+  defaultNumCtx: z.number().int(),
+  /** Выполнять инструменты без подтверждения. По умолчанию выключено. */
+  autoApproveTools: z.boolean(),
+  /** Инструмент bash. Выключен по умолчанию и всегда выключен в удалённом режиме. */
+  enableBash: z.boolean(),
+  webSearch: z.object({
+    provider: webSearchProviderSchema,
+    baseUrl: z.string().nullable(),
+    /** Наружу не отдаётся — только признак наличия. */
+    hasApiKey: z.boolean(),
+  }),
+  theme: z.enum(['light', 'dark', 'system']),
+})
+export type Settings = z.infer<typeof settingsSchema>
+
+/* ─────────────────────────────── Состояние сервиса ───────────────────────── */
+
+export const ollamaStatusSchema = z.object({
+  installed: z.boolean(),
+  running: z.boolean(),
+  version: z.string().nullable(),
+  host: z.string(),
+  /** Инструкция по установке под текущую ОС, если не установлено. */
+  installHint: z
+    .object({
+      command: z.string(),
+      docsUrl: z.string(),
+    })
+    .nullable(),
+})
+export type OllamaStatus = z.infer<typeof ollamaStatusSchema>
+
+export const healthSchema = z.object({
+  ok: z.boolean(),
+  appVersion: z.string(),
+  ollama: ollamaStatusSchema,
+  hardware: hardwareInfoSchema,
+  /** Доступность внешней сети — определяет, живой каталог или офлайн-снимок. */
+  network: z.object({
+    ollamaComReachable: z.boolean(),
+    checkedAt: z.string(),
+  }),
+})
+export type Health = z.infer<typeof healthSchema>
+
+/* ─────────────────────────────── Ошибки ──────────────────────────────────── */
+
+export const apiErrorSchema = z.object({
+  code: z.enum([
+    'ollama_unavailable',
+    'model_not_found',
+    'thread_not_found',
+    'workspace_not_found',
+    'path_outside_workspace',
+    'tool_disabled',
+    'validation_failed',
+    'upstream_error',
+    'internal_error',
+  ]),
+  message: z.string(),
+  details: z.record(z.unknown()).nullable(),
+})
+export type ApiError = z.infer<typeof apiErrorSchema>
