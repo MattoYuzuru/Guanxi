@@ -6,6 +6,7 @@ import {
 } from '@alamo/contract'
 import {
   isCanonicalNonTerminalTransition,
+  isCanonicalRecoveryTerminalTransition,
   isCanonicalTerminalTransition,
 } from './lifecycle.ts'
 import {
@@ -81,6 +82,7 @@ export class JobService {
   private readonly subscribers = new Map<string, Set<SubscriptionWake>>()
   private readonly replayPageSize: number
   private readonly store: JobStore
+  private closing = false
 
   constructor(store: JobStore, options: JobServiceOptions = {}) {
     this.store = store
@@ -190,6 +192,18 @@ export class JobService {
     return result
   }
 
+  terminalizeRecoveredChat(input: TerminalizeChatJobInput): TerminalizeJobResult {
+    if (!isCanonicalRecoveryTerminalTransition(input.expectedStatus, input.status)) {
+      throw new JobServiceError(
+        'invalid_transition',
+        `Job recovery transition ${input.expectedStatus} -> ${input.status} is not canonical`,
+      )
+    }
+    const result = this.store.terminalizeChat(input)
+    if (result.applied) this.publish(input.jobId)
+    return result
+  }
+
   async *subscribe(
     jobId: string,
     afterSequence: number,
@@ -202,7 +216,7 @@ export class JobService {
     let cursor = afterSequence
 
     try {
-      while (!signal.aborted) {
+      while (!signal.aborted && !this.closing) {
         const observedVersion = wake.version
         const page = this.store.eventsAfter(jobId, cursor, this.replayPageSize)
         if (page.length === 0) {
@@ -232,6 +246,13 @@ export class JobService {
     let count = 0
     for (const subscribers of this.subscribers.values()) count += subscribers.size
     return count
+  }
+
+  closeSubscriptions(): void {
+    this.closing = true
+    for (const subscribers of this.subscribers.values()) {
+      for (const subscriber of subscribers) subscriber.notify()
+    }
   }
 
   private publish(jobId: string): void {

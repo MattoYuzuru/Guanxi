@@ -26,6 +26,7 @@ import type {
 } from '../store/threads.ts'
 import type { WorkspaceStore } from '../store/workspaces.ts'
 import { ToolRegistry } from '../tools/registry.ts'
+import { recoverChatJobs, reconcileLostChatExecution } from './chat-recovery.ts'
 import { JobService } from './service.ts'
 
 export const CHAT_JOB_OPERATION = 'chat'
@@ -131,6 +132,7 @@ function splitUtf8(value: string, maxBytes: number): string[] {
 export class ChatJobExecutionOwner {
   private readonly active = new Map<string, ActiveExecution>()
   private readonly dependencies: ChatExecutionDependencies
+  private shuttingDown = false
 
   constructor(dependencies: ChatExecutionDependencies) {
     this.dependencies = dependencies
@@ -156,9 +158,13 @@ export class ChatJobExecutionOwner {
   }
 
   ensureStarted(jobId: string): void {
-    if (this.active.has(jobId)) return
+    if (this.shuttingDown || this.active.has(jobId)) return
     const association = this.dependencies.jobs.chatInput(jobId)
-    if (!association || TERMINAL.has(association.job.status) || association.job.status === 'cancelling') {
+    if (
+      !association ||
+      association.job.status !== 'queued' ||
+      association.job.startedAt !== null
+    ) {
       return
     }
 
@@ -224,9 +230,21 @@ export class ChatJobExecutionOwner {
   }
 
   async shutdown(): Promise<void> {
-    const jobs = [...this.active.keys()]
-    await Promise.all(jobs.map((jobId) => this.cancel(jobId, 'user_requested').catch(() => null)))
-    await Promise.all([...this.active.values()].map((execution) => execution.task))
+    this.shuttingDown = true
+    const executions = [...this.active.values()]
+    for (const execution of executions) {
+      execution.controller.abort(TURN_ABORT_REASON.applicationShutdown)
+    }
+    await Promise.all(executions.map((execution) => execution.task))
+    await recoverChatJobs(
+      {
+        jobs: this.dependencies.jobs,
+        jobService: this.dependencies.jobService,
+        threads: this.dependencies.threads,
+        chatExecution: this,
+      },
+      { scheduleQueued: false },
+    )
   }
 
   private async execute(
@@ -238,6 +256,7 @@ export class ChatJobExecutionOwner {
     let terminalOutput: ChatJobOutput | null = null
 
     try {
+      if (controller.signal.aborted) return
       const reserved = this.dependencies.jobService.transition({
         jobId: association.job.id,
         expectedStatus: 'queued',
@@ -325,9 +344,13 @@ export class ChatJobExecutionOwner {
       if (!deferred || !terminalOutput || terminalOutput.type !== 'done') {
         throw new Error('The Chat execution ended without a terminal projection')
       }
+      if (controller.signal.reason === TURN_ABORT_REASON.applicationShutdown) {
+        reconcileLostChatExecution(this.dependencies, association)
+        return
+      }
       this.finish(association, deferred, terminalOutput)
     } catch {
-      this.finishUnexpectedFailure(association, controller.signal.aborted)
+      this.finishUnexpectedFailure(association, controller.signal)
     } finally {
       permit?.release()
     }
@@ -542,10 +565,14 @@ export class ChatJobExecutionOwner {
     )
   }
 
-  private finishUnexpectedFailure(association: ChatJobAssociation, aborted: boolean): void {
+  private finishUnexpectedFailure(association: ChatJobAssociation, signal: AbortSignal): void {
     const current = this.dependencies.jobService.get(association.job.id)
     if (!current || TERMINAL.has(current.status)) return
-    if (current.status === 'cancelling' || aborted) {
+    if (signal.reason === TURN_ABORT_REASON.applicationShutdown) {
+      reconcileLostChatExecution(this.dependencies, association)
+      return
+    }
+    if (current.status === 'cancelling' || signal.aborted) {
       if (current.status !== 'cancelling') {
         try {
           this.dependencies.jobService.cancel(association.job.id, 'user_requested')

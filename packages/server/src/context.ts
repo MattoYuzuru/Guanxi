@@ -13,6 +13,7 @@ import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
+import { recoverChatJobs } from './jobs/chat-recovery.ts'
 import { ExclusiveInferenceBridge } from './runtime/exclusive-inference.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { openDb, type Db } from './store/db.ts'
@@ -61,53 +62,60 @@ export interface CreateContextOptions {
 
 export async function createAppContext(options: CreateContextOptions): Promise<AppContext> {
   const db = openDb(options.dbPath)
-  const hardware = await probeHardware()
+  try {
+    const hardware = await probeHardware()
 
-  const settings = new SettingsStore(db, { ollamaHost: DEFAULT_OLLAMA_HOST })
-  const calibration = new CalibrationStore(db)
+    const settings = new SettingsStore(db, { ollamaHost: DEFAULT_OLLAMA_HOST })
+    const calibration = new CalibrationStore(db)
 
-  let client: OllamaClient | null = null
-  let modelService: ModelService | null = null
+    let client: OllamaClient | null = null
+    let modelService: ModelService | null = null
 
-  const ollama = (): OllamaClient => {
-    const host = normalizeHost(settings.get().ollamaHost)
-    if (!client || client.host !== host.replace(/\/+$/, '')) {
-      client = new OllamaClient({ host })
-      modelService = null
+    const ollama = (): OllamaClient => {
+      const host = normalizeHost(settings.get().ollamaHost)
+      if (!client || client.host !== host.replace(/\/+$/, '')) {
+        client = new OllamaClient({ host })
+        modelService = null
+      }
+      return client
     }
-    return client
-  }
 
-  const models = (): ModelService => {
-    const current = ollama()
-    if (!modelService) modelService = new ModelService(current, calibration, hardware)
-    return modelService
-  }
+    const models = (): ModelService => {
+      const current = ollama()
+      if (!modelService) modelService = new ModelService(current, calibration, hardware)
+      return modelService
+    }
 
-  const jobs = new JobStore(db)
+    const jobs = new JobStore(db)
 
-  const activeTurns = new Map<string, AbortController>()
-  const inference = new ExclusiveInferenceBridge()
-  const jobService = new JobService(jobs)
-  const base = {
-    db,
-    jobs,
-    jobService,
-    threads: new ThreadStore(db),
-    workspaces: new WorkspaceStore(db),
-    settings,
-    calibration,
-    approvals: new ApprovalGate(),
-    tracker: new PrefillTracker(),
-    hardware,
-    appVersion: options.appVersion,
-    activeTurns,
-    inference,
-    ollama,
-    models,
-  }
-  return {
-    ...base,
-    chatExecution: new ChatJobExecutionOwner(base),
+    const activeTurns = new Map<string, AbortController>()
+    const inference = new ExclusiveInferenceBridge()
+    const jobService = new JobService(jobs)
+    const base = {
+      db,
+      jobs,
+      jobService,
+      threads: new ThreadStore(db),
+      workspaces: new WorkspaceStore(db),
+      settings,
+      calibration,
+      approvals: new ApprovalGate(),
+      tracker: new PrefillTracker(),
+      hardware,
+      appVersion: options.appVersion,
+      activeTurns,
+      inference,
+      ollama,
+      models,
+    }
+    const context = {
+      ...base,
+      chatExecution: new ChatJobExecutionOwner(base),
+    }
+    await recoverChatJobs(context)
+    return context
+  } catch (error) {
+    db.close()
+    throw error
   }
 }

@@ -371,6 +371,17 @@ export class ThreadStore {
     return row ? toMessage(row) : null
   }
 
+  pendingAssistantsForJob(jobId: string): Message[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM messages
+         WHERE job_id = ? AND role = 'assistant' AND turn_status = 'pending'
+         ORDER BY seq ASC`,
+      )
+      .all(jobId) as unknown as MessageRow[]
+    return rows.map(toMessage)
+  }
+
   /**
    * Atomically commits the final projection and terminal outcome.
    *

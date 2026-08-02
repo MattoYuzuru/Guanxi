@@ -89,6 +89,17 @@ interface ChatJobInputRow {
   created_at: string
 }
 
+interface ChatRecoveryRow {
+  job_id: string
+  input_job_id: string | null
+  thread_id: string | null
+  user_message_id: string | null
+  assistant_message_id: string | null
+  request_fingerprint: string | null
+  input_json: string | null
+  input_created_at: string | null
+}
+
 export interface CreateJobInput {
   kind: JobKind
   operation: string
@@ -110,6 +121,11 @@ export interface ChatJobAssociation {
   requestFingerprint: string
   input: ChatJobInputSnapshot
   createdAt: string
+}
+
+export interface ChatRecoveryCursor {
+  createdAt: string
+  jobId: string
 }
 
 export interface CreateChatJobInput {
@@ -451,6 +467,72 @@ export class JobStore {
       )
       .get(threadId) as unknown as ChatJobInputRow | undefined
     return row ? this.toChatInput(row) : null
+  }
+
+  /**
+   * Stable bounded startup scan for typed Chat commands only.
+   *
+   * A missing association for a server-owned Chat scope is returned as a
+   * controlled storage failure instead of being skipped as a generic Job.
+   */
+  chatRecoveryPage(
+    after: ChatRecoveryCursor | null,
+    limit: number,
+  ): ChatJobAssociation[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) {
+      throw new JobStoreError('invalid_input', 'limit must be an integer from 1 to 1000')
+    }
+    const cursorCreatedAt = after?.createdAt ?? ''
+    const cursorJobId = after?.jobId ?? ''
+    const rows = this.db
+      .prepare(
+         `SELECT
+           job.id AS job_id,
+           input.job_id AS input_job_id,
+           input.thread_id AS thread_id,
+           input.user_message_id AS user_message_id,
+           input.assistant_message_id AS assistant_message_id,
+           input.request_fingerprint AS request_fingerprint,
+           input.input_json AS input_json,
+           input.created_at AS input_created_at
+         FROM jobs job
+         LEFT JOIN chat_job_inputs input ON input.job_id = job.id
+         WHERE job.status NOT IN ('completed','failed','cancelled','interrupted')
+           AND (input.job_id IS NOT NULL OR job.idempotency_scope GLOB 'chat:*:send:v1')
+           AND (
+             job.created_at > ?
+             OR (job.created_at = ? AND job.id > ?)
+           )
+         ORDER BY job.created_at ASC, job.id ASC
+         LIMIT ?`,
+      )
+      .all(cursorCreatedAt, cursorCreatedAt, cursorJobId, limit) as unknown as ChatRecoveryRow[]
+
+    return rows.map((row) => {
+      if (
+        row.input_job_id === null ||
+        row.thread_id === null ||
+        row.user_message_id === null ||
+        row.assistant_message_id === null ||
+        row.request_fingerprint === null ||
+        row.input_json === null ||
+        row.input_created_at === null
+      ) {
+        throw new JobStoreError(
+          'stored_data_invalid',
+          'A non-terminal Chat Job contains an incomplete durable association',
+        )
+      }
+      return this.toChatInput({
+        job_id: row.input_job_id,
+        thread_id: row.thread_id,
+        user_message_id: row.user_message_id,
+        assistant_message_id: row.assistant_message_id,
+        request_fingerprint: row.request_fingerprint,
+        input_json: row.input_json,
+        created_at: row.input_created_at,
+      })
+    })
   }
 
   get(jobId: string): Job | null {

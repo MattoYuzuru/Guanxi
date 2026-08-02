@@ -23,6 +23,18 @@ export {
   chatIdempotencyScope,
   chatRequestFingerprint,
 } from './jobs/chat-execution.ts'
+export {
+  ChatRecoveryError,
+  DEFAULT_CHAT_RECOVERY_OUTPUT_PAGE_SIZE,
+  DEFAULT_CHAT_RECOVERY_SCAN_PAGE_SIZE,
+  reconcileLostChatExecution,
+  recoverChatJobs,
+} from './jobs/chat-recovery.ts'
+export type {
+  ChatRecoveryCheckpoint,
+  ChatRecoveryOptions,
+  ChatRecoveryReport,
+} from './jobs/chat-recovery.ts'
 export type { JobServiceErrorCode, JobServiceOptions } from './jobs/service.ts'
 export { PUBLIC_JOB_IDEMPOTENCY_SCOPE } from './http/jobs-routes.ts'
 export type {
@@ -76,34 +88,56 @@ export async function start(options: StartOptions = {}) {
   mountWeb(server, options.webDir ?? resolve(here, '../../web/dist'))
 
   let instance!: ReturnType<typeof serve>
-  const actualPort = await new Promise<number>((resolvePort, reject) => {
-    const onError = (error: Error) => reject(error)
-    instance = serve({ fetch: server.fetch, port, hostname: host }, (address) => {
-      instance.off('error', onError)
-      resolvePort(address.port)
+  let actualPort: number
+  try {
+    actualPort = await new Promise<number>((resolvePort, reject) => {
+      const onError = (error: Error) => reject(error)
+      instance = serve({ fetch: server.fetch, port, hostname: host }, (address) => {
+        instance.off('error', onError)
+        resolvePort(address.port)
+      })
+      instance.once('error', onError)
     })
-    instance.once('error', onError)
-  })
+  } catch (error) {
+    await context.chatExecution.shutdown().catch(() => undefined)
+    context.jobService.closeSubscriptions()
+    context.db.close()
+    throw error
+  }
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const url = `http://${browserHost}:${actualPort}`
 
   let closing: Promise<void> | null = null
   const close = (): Promise<void> => {
     if (closing) return closing
-    closing = context.chatExecution.shutdown().then(
-      () =>
-        new Promise((resolveClose) => {
-          instance.close(() => {
-            context.db.close()
-            resolveClose()
-          })
-        }),
-    )
+    closing = (async () => {
+      // Stop accepting commands first; existing Chat streams stay alive long
+      // enough to observe their truthful internal-shutdown terminal event.
+      const listenerClosed = new Promise<void>((resolveClose) => {
+        instance.close(() => resolveClose())
+      })
+      let shutdownError: unknown = null
+      try {
+        await context.chatExecution.shutdown()
+      } catch (error) {
+        shutdownError = error
+      } finally {
+        context.jobService.closeSubscriptions()
+        await listenerClosed
+        context.db.close()
+        process.removeListener('SIGINT', shutdown)
+        process.removeListener('SIGTERM', shutdown)
+      }
+      if (shutdownError) throw shutdownError
+    })()
     return closing
   }
 
   const shutdown = () => {
-    void close().finally(() => process.exit(0))
+    void close().then(
+      () => process.exit(0),
+      () => process.exit(1),
+    )
   }
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)

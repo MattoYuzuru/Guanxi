@@ -66,6 +66,7 @@ export interface RunTurnParams {
 export const TURN_ABORT_REASON = {
   explicitStop: 'alamo:explicit-stop',
   connectionAbort: 'alamo:connection-abort',
+  applicationShutdown: 'alamo:application-shutdown',
 } as const
 
 class RuntimeProtocolError extends Error {
