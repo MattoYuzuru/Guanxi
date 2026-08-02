@@ -42,7 +42,17 @@ function toOllamaMessages(messages: readonly Message[]): OllamaChatMessage[] {
   const result: OllamaChatMessage[] = []
 
   for (const message of messages) {
-    result.push({ role: message.role, content: message.content })
+    result.push({
+      role: message.role,
+      content: message.content,
+      ...(message.role === 'assistant' && message.toolCalls.length > 0
+        ? {
+            tool_calls: message.toolCalls.map((call) => ({
+              function: { name: call.name, arguments: call.arguments },
+            })),
+          }
+        : {}),
+    })
 
     // Результаты инструментов должны переживать следующий пользовательский ход.
     // В базе они лежат внутри assistant-сообщения, а Ollama ожидает отдельные
@@ -221,6 +231,17 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
       /* ── Есть вызовы инструментов ── */
       const executed: ToolCall[] = []
 
+      // Протокол Ollama требует строгий порядок:
+      // assistant(tool_calls) → tool(result). Даже если вызов был JSON-текстом,
+      // синтезируем структурное поле — иначе шаблон Qwen игнорирует результат.
+      working.push({
+        role: 'assistant',
+        content: parsed.cleanedContent,
+        tool_calls: parsed.calls.map((call) => ({
+          function: { name: call.name, arguments: call.arguments },
+        })),
+      })
+
       for (const call of parsed.calls) {
         const tool = registry.get(call.name)
         const toolCall: ToolCall = {
@@ -290,10 +311,18 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
           toolCall.status = 'pending_approval'
           store.recordToolRun(thread.id, assistantMessage.id, toolCall)
+          // Зарегистрировать ожидание нужно до SSE-события: быстрый UI может
+          // отправить решение сразу после кадра.
+          const decisionPromise = approvals.request(
+            toolCall.id,
+            thread.id,
+            tool.name,
+            signal,
+          )
           yield event('tool_call', toolCall)
           yield event('tool_approval_required', { toolCall, timeoutMs: APPROVAL_TIMEOUT_MS })
 
-          const decision = await approvals.request(toolCall.id, thread.id, tool.name, signal)
+          const decision = await decisionPromise
 
           if (decision !== 'approve') {
             toolCall.status = decision === 'deny' ? 'denied' : 'cancelled'
@@ -377,9 +406,6 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         toolCalls: executed,
         usage,
       })
-
-      // Ответ модели тоже уходит в историю запроса, иначе она забудет свой же вызов.
-      working.push({ role: 'assistant', content: gate.content })
 
       if (usage) yield event('usage', usage)
       yield event(

@@ -134,7 +134,7 @@ export const readFileTool: ToolDefinition = {
     const shownUpTo = offset - 1 + slice.length
     const truncated = shownUpTo < allLines.length || body.length < numbered.length
     const footer = truncated
-      ? `\n… показаны строки ${offset}-${shownUpTo} из ${allLines.length}. Читай дальше с offset=${shownUpTo + 1}`
+      ? `\n… показаны строки ${offset}-${shownUpTo} из ${allLines.length}; следующая строка: offset=${shownUpTo + 1}`
       : ''
 
     return { content: `${shown}\n${body}${footer}` }
