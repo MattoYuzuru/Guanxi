@@ -5,6 +5,7 @@ import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
+import { JobService } from '../src/jobs/service.ts'
 import { ModelService } from '../src/models/service.ts'
 import { OllamaClient } from '../src/ollama/client.ts'
 import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
@@ -33,10 +34,12 @@ function testContext(client: OllamaClient): AppContext {
   const settings = new SettingsStore(db, { ollamaHost: client.host })
   const calibration = new CalibrationStore(db)
   const models = new ModelService(client, calibration, HARDWARE)
+  const jobs = new JobStore(db)
 
   return {
     db,
-    jobs: new JobStore(db),
+    jobs,
+    jobService: new JobService(jobs),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,

@@ -19,6 +19,7 @@ import {
   type JobTerminalState,
   type SafeJobMetadata,
 } from '@alamo/contract'
+import { isCanonicalNonTerminalTransition } from '../jobs/lifecycle.ts'
 import type { Db } from './db.ts'
 
 const TERMINAL_STATES = new Set<JobState>(jobTerminalStateSchema.options)
@@ -26,6 +27,7 @@ const TERMINAL_STATES = new Set<JobState>(jobTerminalStateSchema.options)
 export type JobStoreErrorCode =
   | 'job_not_found'
   | 'job_terminal'
+  | 'invalid_transition'
   | 'sequence_conflict'
   | 'stored_data_invalid'
   | 'invalid_input'
@@ -95,6 +97,20 @@ export interface TerminalizeJobInput {
   error?: JobError | null
   outcome?: JobOutcome | null
   stopReason?: string | null
+}
+
+export interface TransitionJobInput {
+  jobId: string
+  expectedStatus: JobState
+  status: JobState
+  phase?: string | null
+  metadata?: SafeJobMetadata
+}
+
+export interface TransitionJobResult {
+  /** false means the expected state lost a compare-and-set; no event was appended. */
+  applied: boolean
+  job: Job
 }
 
 export interface TerminalizeJobResult {
@@ -300,6 +316,77 @@ export class JobStore {
       }
       this.insertEvent(event)
       return event
+    })
+  }
+
+  transition(input: TransitionJobInput): TransitionJobResult {
+    const expectedStatus = parseInput(input.expectedStatus, jobStateSchema, 'expectedStatus')
+    const status = parseInput(input.status, jobStateSchema, 'status')
+    if (TERMINAL_STATES.has(expectedStatus) || TERMINAL_STATES.has(status)) {
+      throw new JobStoreError(
+        'invalid_transition',
+        'transition only accepts canonical non-terminal states',
+      )
+    }
+    if (!isCanonicalNonTerminalTransition(expectedStatus, status)) {
+      throw new JobStoreError(
+        'invalid_transition',
+        `Job transition ${expectedStatus} -> ${status} is not canonical`,
+      )
+    }
+    const phase = input.phase === undefined || input.phase === null
+      ? null
+      : nonEmpty(input.phase, 'phase')
+    const metadata = parseInput(input.metadata ?? {}, safeJobMetadataSchema, 'metadata')
+
+    return this.transaction(() => {
+      const existing = this.requireJob(input.jobId)
+      if (TERMINAL_STATES.has(existing.status)) {
+        throw new JobStoreError('job_terminal', `Job ${input.jobId} is already terminal`)
+      }
+      if (existing.status !== expectedStatus) {
+        return { applied: false, job: existing }
+      }
+
+      const createdAt = new Date().toISOString()
+      const nextSequence = existing.lastEventSequence + 1
+      const updated = this.db
+        .prepare(
+          `UPDATE jobs
+           SET status = ?, phase = ?,
+               started_at = CASE
+                 WHEN status = 'queued' AND started_at IS NULL THEN ?
+                 ELSE started_at
+               END,
+               last_event_sequence = ?
+           WHERE id = ? AND status = ? AND last_event_sequence = ?
+             AND finished_at IS NULL`,
+        )
+        .run(
+          status,
+          phase,
+          createdAt,
+          nextSequence,
+          input.jobId,
+          expectedStatus,
+          existing.lastEventSequence,
+        )
+      if (updated.changes !== 1) {
+        return { applied: false, job: this.requireJob(input.jobId) }
+      }
+
+      this.insertEvent({
+        id: randomUUID(),
+        jobId: input.jobId,
+        sequence: nextSequence,
+        type: 'lifecycle',
+        state: status,
+        phase,
+        metadata,
+        createdAt,
+      })
+
+      return { applied: true, job: this.requireJob(input.jobId) }
     })
   }
 

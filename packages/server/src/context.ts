@@ -11,6 +11,7 @@ import { PrefillTracker } from './context/usage.ts'
 import { probeHardware } from './hardware/probe.ts'
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
+import { JobService } from './jobs/service.ts'
 import { ExclusiveInferenceBridge } from './runtime/exclusive-inference.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { openDb, type Db } from './store/db.ts'
@@ -31,6 +32,7 @@ function normalizeHost(host: string): string {
 export interface AppContext {
   db: Db
   jobs: JobStore
+  jobService: JobService
   threads: ThreadStore
   workspaces: WorkspaceStore
   settings: SettingsStore
@@ -80,9 +82,12 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     return modelService
   }
 
+  const jobs = new JobStore(db)
+
   return {
     db,
-    jobs: new JobStore(db),
+    jobs,
+    jobService: new JobService(jobs),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,

@@ -5,6 +5,7 @@ import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
+import { JobService } from '../src/jobs/service.ts'
 import type { ModelService } from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
@@ -34,10 +35,12 @@ function testContext(
 ): AppContext {
   const db = openDb(':memory:')
   const settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
+  const jobs = new JobStore(db)
 
   return {
     db,
-    jobs: new JobStore(db),
+    jobs,
+    jobService: new JobService(jobs),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,

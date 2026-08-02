@@ -15,6 +15,8 @@ import { createAppContext } from './context.ts'
 import { defaultDbPath } from './store/db.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
+export { JobService, JobServiceError } from './jobs/service.ts'
+export type { JobServiceErrorCode, JobServiceOptions } from './jobs/service.ts'
 export type {
   AppendJobEventInput,
   CreateJobInput,
@@ -22,6 +24,8 @@ export type {
   JobStoreErrorCode,
   TerminalizeJobInput,
   TerminalizeJobResult,
+  TransitionJobInput,
+  TransitionJobResult,
 } from './store/jobs.ts'
 
 const APP_VERSION = '0.1.0'

@@ -6,6 +6,7 @@ import { TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
+import { JobService } from '../src/jobs/service.ts'
 import type { ModelService } from '../src/models/service.ts'
 import { OllamaClient, OllamaError } from '../src/ollama/client.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../src/ollama/types.ts'
@@ -108,10 +109,12 @@ function testContext(options: {
 }): AppContext {
   const db = openDb(':memory:')
   const settings = new SettingsStore(db, { ollamaHost: 'http://fixture.invalid' })
+  const jobs = new JobStore(db)
 
   return {
     db,
-    jobs: new JobStore(db),
+    jobs,
+    jobService: new JobService(jobs),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,
