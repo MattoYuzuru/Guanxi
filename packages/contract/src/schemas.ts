@@ -592,6 +592,9 @@ export const apiErrorSchema = z.object({
   code: z.enum([
     'ollama_unavailable',
     'model_not_found',
+    'job_not_found',
+    'job_conflict',
+    'storage_error',
     'thread_not_found',
     'workspace_not_found',
     'path_outside_workspace',

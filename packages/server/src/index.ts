@@ -17,6 +17,7 @@ import { defaultDbPath } from './store/db.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { JobService, JobServiceError } from './jobs/service.ts'
 export type { JobServiceErrorCode, JobServiceOptions } from './jobs/service.ts'
+export { PUBLIC_JOB_IDEMPOTENCY_SCOPE } from './http/jobs-routes.ts'
 export type {
   AppendJobEventInput,
   CreateJobInput,

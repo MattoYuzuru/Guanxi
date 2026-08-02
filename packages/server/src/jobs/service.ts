@@ -1,7 +1,16 @@
-import type { Job, JobEvent } from '@alamo/contract'
-import { isCanonicalTerminalTransition } from './lifecycle.ts'
+import {
+  jobTerminalStateSchema,
+  type Job,
+  type JobCancelReason,
+  type JobEvent,
+} from '@alamo/contract'
+import {
+  isCanonicalNonTerminalTransition,
+  isCanonicalTerminalTransition,
+} from './lifecycle.ts'
 import {
   JobStore,
+  JobStoreError,
   type AppendJobEventInput,
   type CreateJobInput,
   type CreateJobResult,
@@ -12,6 +21,7 @@ import {
 } from '../store/jobs.ts'
 
 const DEFAULT_REPLAY_PAGE_SIZE = 100
+const TERMINAL_STATES = new Set<Job['status']>(jobTerminalStateSchema.options)
 
 export type JobServiceErrorCode = 'invalid_transition'
 
@@ -88,6 +98,48 @@ export class JobService {
     return this.store.get(jobId)
   }
 
+  /**
+   * Owns the public cancellation state change without owning execution yet.
+   * A queued Job has no started side effect, so this service can confirm its
+   * cancellation immediately. Active execution remains cancelling until its
+   * future execution owner confirms that the side effect stopped.
+   */
+  cancel(jobId: string, reason: JobCancelReason): Job {
+    let current = this.store.get(jobId)
+    if (!current) throw new JobStoreError('job_not_found', `Job ${jobId} was not found`)
+
+    while (true) {
+      if (TERMINAL_STATES.has(current.status) || current.status === 'cancelling') {
+        return current
+      }
+      if (!isCanonicalNonTerminalTransition(current.status, 'cancelling')) {
+        throw new JobServiceError(
+          'invalid_transition',
+          `Job transition ${current.status} -> cancelling is not canonical`,
+        )
+      }
+
+      const transitioned = this.transition({
+        jobId,
+        expectedStatus: current.status,
+        status: 'cancelling',
+        metadata: { stopReason: reason },
+      })
+      if (!transitioned.applied) {
+        current = transitioned.job
+        continue
+      }
+      if (current.status !== 'queued') return transitioned.job
+
+      return this.terminalize({
+        jobId,
+        expectedStatus: 'cancelling',
+        status: 'cancelled',
+        stopReason: reason,
+      }).job
+    }
+  }
+
   transition(input: TransitionJobInput): TransitionJobResult {
     const result = this.store.transition(input)
     if (result.applied) this.publish(input.jobId)
@@ -98,6 +150,11 @@ export class JobService {
     const event = this.store.appendEvent(input)
     this.publish(input.jobId)
     return event
+  }
+
+  /** Validate the first bounded replay page before HTTP commits SSE headers. */
+  validateSubscription(jobId: string, afterSequence: number): void {
+    this.store.eventsAfter(jobId, afterSequence, this.replayPageSize)
   }
 
   terminalize(input: TerminalizeJobInput): TerminalizeJobResult {
@@ -128,6 +185,8 @@ export class JobService {
         const observedVersion = wake.version
         const page = this.store.eventsAfter(jobId, cursor, this.replayPageSize)
         if (page.length === 0) {
+          const job = this.store.get(jobId)
+          if (job && TERMINAL_STATES.has(job.status) && cursor >= job.lastEventSequence) return
           await wake.waitForChange(observedVersion, signal)
           continue
         }
@@ -137,6 +196,7 @@ export class JobService {
           if (event.sequence <= cursor) continue
           cursor = event.sequence
           yield event
+          if (TERMINAL_STATES.has(event.state)) return
         }
       }
     } finally {

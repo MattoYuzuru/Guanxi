@@ -7,6 +7,7 @@
 import { z } from 'zod'
 import {
   contextStateSchema,
+  jobEventSchema,
   toolCallSchema,
   usageSchema,
   apiErrorSchema,
@@ -15,6 +16,12 @@ import {
   turnStopReasonSchema,
   turnTerminalOutcomeSchema,
 } from './schemas.ts'
+
+/* ─────────────────────── Стрим Job events: GET /api/jobs ────────────────── */
+
+/** The SSE `id` is this persisted event's exact `sequence`. */
+export const jobStreamEventSchema = jobEventSchema
+export type JobStreamEvent = z.infer<typeof jobStreamEventSchema>
 
 /* ────────────────────── Стрим ответа: /api/threads/:id/messages ──────────── */
 
@@ -159,6 +166,9 @@ export type PullStreamEvent = z.infer<typeof pullStreamEventSchema>
 
 /** Имя SSE-события в поле `event:`. Клиент может слушать и точечно, и через onmessage. */
 export const SSE_EVENT_NAME = 'alamo' as const
+
+/** Typed failure frame used only after an HTTP Job event stream has started. */
+export const SSE_ERROR_EVENT_NAME = 'alamo-error' as const
 
 /** Заголовок для возобновления стрима после обрыва. */
 export const SSE_LAST_EVENT_ID_HEADER = 'Last-Event-ID' as const

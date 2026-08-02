@@ -10,6 +10,8 @@ import {
   catalogSourceHealthSchema,
   contextStateSchema,
   healthSchema,
+  jobKindSchema,
+  jobSchema,
   localModelSchema,
   messageSchema,
   modelDetailSchema,
@@ -25,6 +27,11 @@ import {
 
 export const ROUTES = {
   health: () => '/api/health',
+
+  jobs: () => '/api/jobs',
+  job: (jobId: string) => `/api/jobs/${encodeURIComponent(jobId)}`,
+  jobEvents: (jobId: string) => `/api/jobs/${encodeURIComponent(jobId)}/events`,
+  jobCancel: (jobId: string) => `/api/jobs/${encodeURIComponent(jobId)}/cancel`,
 
   models: () => '/api/models',
   modelsCatalog: () => '/api/models/catalog',
@@ -54,6 +61,63 @@ export const ROUTES = {
 
 export const getHealthResponse = healthSchema
 export type GetHealthResponse = z.infer<typeof getHealthResponse>
+
+/* ───────────────────────────── Durable Jobs ─────────────────────────────── */
+
+export const jobPathParams = z
+  .object({
+    jobId: z.string().uuid(),
+  })
+  .strict()
+export type JobPathParams = z.infer<typeof jobPathParams>
+
+export const createJobBody = z
+  .object({
+    kind: jobKindSchema,
+    operation: z.string().trim().min(1),
+    idempotencyKey: z.string().trim().min(1),
+  })
+  .strict()
+export type CreateJobBody = z.infer<typeof createJobBody>
+
+export const createJobResponse = z
+  .object({
+    created: z.boolean(),
+    job: jobSchema,
+    eventsUrl: z.string().min(1),
+  })
+  .strict()
+export type CreateJobResponse = z.infer<typeof createJobResponse>
+
+export const getJobResponse = z.object({ job: jobSchema }).strict()
+export type GetJobResponse = z.infer<typeof getJobResponse>
+
+/** Decimal transport form for an already-persisted Job event sequence. */
+export const jobEventCursorText = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .refine(Number.isSafeInteger, 'sequence must be a safe integer')
+
+export const jobEventsQuery = z
+  .object({
+    after: jobEventCursorText.optional(),
+  })
+  .strict()
+export type JobEventsQuery = z.infer<typeof jobEventsQuery>
+
+export const jobCancelReasonSchema = z.enum(['user_requested'])
+export type JobCancelReason = z.infer<typeof jobCancelReasonSchema>
+
+export const cancelJobBody = z
+  .object({
+    reason: jobCancelReasonSchema.optional().default('user_requested'),
+  })
+  .strict()
+export type CancelJobBody = z.infer<typeof cancelJobBody>
+
+export const cancelJobResponse = z.object({ job: jobSchema }).strict()
+export type CancelJobResponse = z.infer<typeof cancelJobResponse>
 
 /* ──────────────────────────────── Модели ─────────────────────────────────── */
 
