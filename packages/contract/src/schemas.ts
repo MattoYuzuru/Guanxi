@@ -335,6 +335,124 @@ export const messageSchema = z.object({
 })
 export type Message = z.infer<typeof messageSchema>
 
+/* ───────────────────────────── Durable Jobs ─────────────────────────────── */
+
+/**
+ * Accepted lifecycle states from ADR-0004 and the canonical runtime diagram.
+ * These are Job states, not provider-specific streaming phases.
+ */
+export const jobStateSchema = z.enum([
+  'queued',
+  'reserving',
+  'loading',
+  'prefill',
+  'thinking',
+  'generating',
+  'waiting_tool',
+  'waiting_approval',
+  'finalizing',
+  'cancelling',
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+])
+export type JobState = z.infer<typeof jobStateSchema>
+
+export const jobTerminalStateSchema = z.enum(['completed', 'failed', 'cancelled', 'interrupted'])
+export type JobTerminalState = z.infer<typeof jobTerminalStateSchema>
+
+export const jobKindSchema = z.enum(['inference', 'agent', 'tool', 'pipeline'])
+export type JobKind = z.infer<typeof jobKindSchema>
+
+export const jobErrorCategorySchema = z.enum([
+  'validation',
+  'admission',
+  'resource',
+  'runtime_unavailable',
+  'runtime_protocol',
+  'cancelled',
+  'tool_denied',
+  'tool_failed',
+  'storage',
+  'internal',
+])
+export type JobErrorCategory = z.infer<typeof jobErrorCategorySchema>
+
+/** Safe summary only: raw provider bodies, prompts, reasoning and file content are excluded. */
+export const jobErrorSchema = z.object({
+  category: jobErrorCategorySchema,
+  code: z.string().min(1),
+  message: z.string().min(1),
+  retryable: z.boolean(),
+})
+export type JobError = z.infer<typeof jobErrorSchema>
+
+/**
+ * Metadata is deliberately flat and JSON-scalar-only. Callers may persist IDs,
+ * counts, codes and measurements here, never private input or generated content.
+ */
+export const safeJobMetadataValueSchema = z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+])
+export const safeJobMetadataSchema = z.record(safeJobMetadataValueSchema)
+export type SafeJobMetadata = z.infer<typeof safeJobMetadataSchema>
+
+export const jobOutcomeSchema = z.object({
+  code: z.string().min(1),
+  metadata: safeJobMetadataSchema,
+})
+export type JobOutcome = z.infer<typeof jobOutcomeSchema>
+
+export const jobSchema = z.object({
+  id: z.string().min(1),
+  kind: jobKindSchema,
+  operation: z.string().min(1),
+  status: jobStateSchema,
+  /** Provider/adapter detail inside a stable state; null until a Job Engine sets it. */
+  phase: z.string().min(1).nullable(),
+  idempotencyScope: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  createdAt: z.string().datetime(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  error: jobErrorSchema.nullable(),
+  outcome: jobOutcomeSchema.nullable(),
+  stopReason: z.string().min(1).nullable(),
+  /** Sequence of the last event committed in the same SQLite store. */
+  lastEventSequence: z.number().int().positive(),
+})
+export type Job = z.infer<typeof jobSchema>
+
+export const jobEventTypeSchema = z.enum([
+  'lifecycle',
+  'output',
+  'tool',
+  'resource',
+  'usage',
+  'warning',
+  'error',
+  'checkpoint',
+])
+export type JobEventType = z.infer<typeof jobEventTypeSchema>
+
+/** Persisted replay envelope. Sequence is monotonic and unique inside one Job. */
+export const jobEventSchema = z.object({
+  id: z.string().min(1),
+  jobId: z.string().min(1),
+  sequence: z.number().int().positive(),
+  type: jobEventTypeSchema,
+  /** Canonical Job state observed atomically with this event. */
+  state: jobStateSchema,
+  phase: z.string().min(1).nullable(),
+  metadata: safeJobMetadataSchema,
+  createdAt: z.string().datetime(),
+})
+export type JobEvent = z.infer<typeof jobEventSchema>
+
 /** Состояние окна контекста — питает шкалу в UI. */
 export const contextStateSchema = z.object({
   usedTokens: z.number().int(),
