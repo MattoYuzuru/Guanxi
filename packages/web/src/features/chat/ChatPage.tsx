@@ -13,7 +13,15 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react'
-import type { Health, Message, ThreadMode, Workspace } from '@alamo/contract'
+import type {
+  Health,
+  Message,
+  ThreadMode,
+  TurnErrorCode,
+  TurnStatus,
+  TurnStopReason,
+  Workspace,
+} from '@alamo/contract'
 import {
   DEFAULT_AGENT_TEMPERATURE,
   DEFAULT_CHAT_NUM_CTX,
@@ -34,6 +42,7 @@ import {
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatRelativeTime, formatTime } from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
 import { Link, paths, useNavigate } from '../../lib/router.tsx'
 import { useAsync, useLocalStorage } from '../../lib/useAsync.ts'
 import { ApprovalPrompt } from '../agent/ApprovalPrompt.tsx'
@@ -463,7 +472,7 @@ function MessageTimeline({
   )
 }
 
-function MessageView({ message }: { message: Message }) {
+export function MessageView({ message }: { message: Message }) {
   if (message.role === 'system') {
     return (
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2">
@@ -494,6 +503,11 @@ function MessageView({ message }: { message: Message }) {
           <span>{user ? 'Вы' : message.role === 'assistant' ? 'Alamo' : 'Инструмент'}</span>
           <span>{formatTime(message.createdAt)}</span>
           {message.usage?.cacheHit && <Badge tone="green">KV-кэш</Badge>}
+          {message.role === 'assistant' && (
+            <Badge tone={turnStatusTone(message.turnStatus)}>
+              {turnStatusLabel(message.turnStatus)}
+            </Badge>
+          )}
         </div>
 
         {message.thinking && (
@@ -516,9 +530,165 @@ function MessageView({ message }: { message: Message }) {
             ))}
           </div>
         )}
+
+        {message.role === 'assistant' && <TurnOutcomeView message={message} />}
       </div>
     </article>
   )
+}
+
+function TurnOutcomeView({ message }: { message: Message }) {
+  const hasVisibleOutput =
+    message.content.length > 0 || Boolean(message.thinking) || message.toolCalls.length > 0
+  const reason = message.stopReason ? turnStopReasonLabel(message.stopReason) : null
+
+  if (message.turnStatus === 'completed') {
+    if (!hasVisibleOutput) {
+      return (
+        <div className="mt-2" role="status" aria-live="polite">
+          <Callout tone="info" title={translate('chat.turn.completedEmpty.title')}>
+            {translate('chat.turn.completedEmpty.summary')}
+            {reason && (
+              <span className="mt-1 block">
+                {translate('chat.turn.reason')}: {reason}
+              </span>
+            )}
+          </Callout>
+        </div>
+      )
+    }
+
+    return (
+      <p className="mt-1.5 text-2xs text-[var(--fg-subtle)]" role="status">
+        {translate('chat.turn.status.completed')}
+        {reason ? ` · ${translate('chat.turn.reason')}: ${reason}` : ''}
+      </p>
+    )
+  }
+
+  if (message.turnStatus === 'failed') {
+    return (
+      <div className="mt-2" role="alert">
+        <Callout tone="danger" title={translate('chat.turn.failed.title')}>
+          {message.turnError
+            ? turnErrorLabel(message.turnError.code)
+            : translate('chat.turn.error.internal_error')}
+          {reason && (
+            <span className="mt-1 block">
+              {translate('chat.turn.reason')}: {reason}
+            </span>
+          )}
+        </Callout>
+      </div>
+    )
+  }
+
+  if (message.turnStatus === 'cancelled') {
+    return (
+      <div className="mt-2" role="status" aria-live="polite">
+        <Callout tone="warning" title={translate('chat.turn.cancelled.title')}>
+          {reason && (
+            <span>
+              {translate('chat.turn.reason')}: {reason}
+            </span>
+          )}
+        </Callout>
+      </div>
+    )
+  }
+
+  if (message.turnStatus === 'pending') {
+    return (
+      <div className="mt-2" role="status" aria-live="polite">
+        <Callout tone="warning" title={translate('chat.turn.pending.title')}>
+          {translate('chat.turn.pending.summary')}
+        </Callout>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2" role="status">
+      <Callout tone="neutral" title={translate('chat.turn.legacy.title')}>
+        {translate('chat.turn.legacy.summary')}
+      </Callout>
+    </div>
+  )
+}
+
+function turnStatusTone(
+  status: TurnStatus | null,
+): 'green' | 'yellow' | 'red' | 'neutral' {
+  switch (status) {
+    case 'completed':
+      return 'green'
+    case 'pending':
+    case 'cancelled':
+      return 'yellow'
+    case 'failed':
+      return 'red'
+    default:
+      return 'neutral'
+  }
+}
+
+function turnStatusLabel(status: TurnStatus | null): string {
+  switch (status) {
+    case 'pending':
+      return translate('chat.turn.status.pending')
+    case 'completed':
+      return translate('chat.turn.status.completed')
+    case 'failed':
+      return translate('chat.turn.status.failed')
+    case 'cancelled':
+      return translate('chat.turn.status.cancelled')
+    default:
+      return translate('chat.turn.status.legacy')
+  }
+}
+
+function turnErrorLabel(code: TurnErrorCode): string {
+  switch (code) {
+    case 'ollama_unavailable':
+      return translate('chat.turn.error.ollama_unavailable')
+    case 'upstream_error':
+      return translate('chat.turn.error.upstream_error')
+    case 'runtime_protocol':
+      return translate('chat.turn.error.runtime_protocol')
+    case 'storage_error':
+      return translate('chat.turn.error.storage_error')
+    case 'internal_error':
+      return translate('chat.turn.error.internal_error')
+  }
+}
+
+function turnStopReasonLabel(reason: TurnStopReason): string {
+  switch (reason) {
+    case 'stop':
+      return translate('chat.turn.reason.stop')
+    case 'length':
+      return translate('chat.turn.reason.length')
+    case 'tool_calls':
+      return translate('chat.turn.reason.tool_calls')
+    case 'tool_limit':
+      return translate('chat.turn.reason.tool_limit')
+    case 'stopped_by_user':
+      return translate('chat.turn.reason.stopped_by_user')
+    case 'connection_aborted':
+      return translate('chat.turn.reason.connection_aborted')
+    case 'provider_error':
+      return translate('chat.turn.reason.provider_error')
+    case 'protocol_error':
+      return translate('chat.turn.reason.protocol_error')
+    case 'storage_error':
+      return translate('chat.turn.reason.storage_error')
+    case 'internal_error':
+      return translate('chat.turn.reason.internal_error')
+    case 'legacy_terminal_chunk':
+      return translate('chat.turn.reason.legacy_terminal_chunk')
+    case 'error':
+      return translate('chat.turn.reason.error')
+  }
 }
 
 export function StreamingMessage({

@@ -7,11 +7,21 @@
  * агентами — значит только добавлять накладные расходы.
  */
 import { randomUUID } from 'node:crypto'
-import type { ChatStreamEvent, Message, Thread, ToolCall, Workspace } from '@alamo/contract'
+import type {
+  ChatStreamEvent,
+  Message,
+  Thread,
+  ToolCall,
+  TurnError,
+  TurnStopReason,
+  TurnTerminalOutcome,
+  Usage,
+  Workspace,
+} from '@alamo/contract'
 import { MAX_AGENT_STEPS, APPROVAL_TIMEOUT_MS } from '@alamo/contract'
-import { buildContextState, buildUsage, estimateTokens, type PrefillTracker } from '../context/usage.ts'
+import { buildContextState, buildUsage, type PrefillTracker } from '../context/usage.ts'
 import { OllamaError, OllamaUnavailableError, type OllamaClient } from '../ollama/client.ts'
-import type { OllamaChatMessage } from '../ollama/types.ts'
+import type { OllamaChatChunk, OllamaChatMessage } from '../ollama/types.ts'
 import type { ThreadStore } from '../store/threads.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
 import type { ToolRegistry } from '../tools/registry.ts'
@@ -36,6 +46,89 @@ export interface RunTurnParams {
   /** Разрешено ли выполнение команд оболочки. */
   enableBash: boolean
   signal: AbortSignal
+}
+
+export const TURN_ABORT_REASON = {
+  explicitStop: 'alamo:explicit-stop',
+  connectionAbort: 'alamo:connection-abort',
+} as const
+
+class RuntimeProtocolError extends Error {
+  constructor() {
+    super('Ollama stream ended without a terminal chunk')
+    this.name = 'RuntimeProtocolError'
+  }
+}
+
+class TerminalPersistenceError extends Error {
+  readonly reason: unknown
+
+  constructor(reason: unknown) {
+    super('Turn terminal state could not be persisted')
+    this.name = 'TerminalPersistenceError'
+    this.reason = reason
+  }
+}
+
+function cancellationReason(signal: AbortSignal): TurnStopReason {
+  return signal.reason === TURN_ABORT_REASON.connectionAbort
+    ? 'connection_aborted'
+    : 'stopped_by_user'
+}
+
+function safeTurnFailure(error: unknown): { error: TurnError; stopReason: TurnStopReason } {
+  if (error instanceof TerminalPersistenceError) {
+    return {
+      error: {
+        code: 'storage_error',
+        message: 'The final response state could not be saved',
+      },
+      stopReason: 'storage_error',
+    }
+  }
+  if (error instanceof RuntimeProtocolError) {
+    return {
+      error: {
+        code: 'runtime_protocol',
+        message: 'Ollama ended the stream without the required terminal chunk',
+      },
+      stopReason: 'protocol_error',
+    }
+  }
+  if (error instanceof OllamaUnavailableError) {
+    return {
+      error: { code: 'ollama_unavailable', message: 'Ollama is unavailable' },
+      stopReason: 'provider_error',
+    }
+  }
+  if (error instanceof OllamaError) {
+    return {
+      error: { code: 'upstream_error', message: 'Ollama ended the response with an error' },
+      stopReason: 'provider_error',
+    }
+  }
+  return {
+    error: { code: 'internal_error', message: 'The response could not be finalized' },
+    stopReason: 'internal_error',
+  }
+}
+
+function streamErrorData(
+  error: TurnError,
+): Extract<ChatStreamEvent, { type: 'error' }>['data'] {
+  const code =
+    error.code === 'runtime_protocol'
+      ? 'upstream_error'
+      : error.code === 'storage_error'
+        ? 'internal_error'
+        : error.code
+
+  return {
+    code,
+    message: error.message,
+    details: null,
+    turnError: error,
+  }
 }
 
 function toOllamaMessages(messages: readonly Message[]): OllamaChatMessage[] {
@@ -123,14 +216,68 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
   let activeMessageId: string | null = null
   let activeContent = ''
   let activeThinking = ''
+  let activeToolCalls: ToolCall[] = []
+  let activeUsage: Usage | null = null
+  let unresolvedFailure: { error: TurnError; stopReason: TurnStopReason } | null = null
+
+  const terminalizeActive = (
+    outcome: TurnTerminalOutcome,
+    error: TurnError | null,
+    stopReason: TurnStopReason,
+  ): Message | null => {
+    if (!activeMessageId) return null
+
+    let result
+    try {
+      result = store.terminalizeMessage(activeMessageId, {
+        outcome,
+        error,
+        stopReason,
+        content: activeContent,
+        thinking: activeThinking || null,
+        toolCalls: activeToolCalls,
+        usage: activeUsage,
+      })
+    } catch (cause) {
+      throw new TerminalPersistenceError(cause)
+    }
+
+    activeMessageId = null
+    return result.message
+  }
+
+  const doneData = (
+    message: Message | null,
+    fallback: { outcome: TurnTerminalOutcome; stopReason: TurnStopReason },
+    steps: number,
+  ): Extract<ChatStreamEvent, { type: 'done' }>['data'] => {
+    const persistedOutcome =
+      message?.turnStatus === 'completed' ||
+      message?.turnStatus === 'failed' ||
+      message?.turnStatus === 'cancelled'
+        ? message.turnStatus
+        : fallback.outcome
+    const terminalStopReason = message?.stopReason ?? fallback.stopReason
+    const stopReason =
+      terminalStopReason === 'stop' || terminalStopReason === 'length'
+        ? terminalStopReason
+        : terminalStopReason === 'tool_limit'
+          ? 'tool_limit'
+          : persistedOutcome === 'cancelled'
+            ? 'stopped_by_user'
+            : 'error'
+
+    return {
+      messageId: message?.id ?? activeMessageId ?? '',
+      outcome: persistedOutcome,
+      stopReason,
+      terminalStopReason,
+      steps,
+    }
+  }
 
   try {
     while (step < MAX_AGENT_STEPS) {
-      if (signal.aborted) {
-        yield event('done', { messageId: '', stopReason: 'stopped_by_user', steps: step })
-        return
-      }
-
       const assistantMessage = store.addMessage({
         threadId: thread.id,
         role: 'assistant',
@@ -139,12 +286,26 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
       activeMessageId = assistantMessage.id
       activeContent = ''
       activeThinking = ''
+      activeToolCalls = []
+      activeUsage = null
 
-      yield event('start', { messageId: assistantMessage.id, model: thread.model, step })
+      yield event('start', {
+        messageId: assistantMessage.id,
+        model: thread.model,
+        step,
+        status: 'pending',
+      })
+
+      if (signal.aborted) {
+        const stopReason = cancellationReason(signal)
+        const terminal = terminalizeActive('cancelled', null, stopReason)
+        yield event('done', doneData(terminal, { outcome: 'cancelled', stopReason }, step))
+        return
+      }
 
       const gate = new ContentGate()
       let thinking = ''
-      let finalChunk: Awaited<ReturnType<typeof client.chat>> | null = null
+      let finalChunk: OllamaChatChunk | null = null
       let nativeToolCalls: NonNullable<OllamaChatMessage['tool_calls']> | undefined
 
       const stream = client.chatStream(
@@ -183,19 +344,20 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
       }
 
       if (signal.aborted) {
-        store.updateMessage(assistantMessage.id, { content: gate.content })
-        activeMessageId = null
-        yield event('done', {
-          messageId: assistantMessage.id,
-          stopReason: 'stopped_by_user',
-          steps: step + 1,
-        })
+        activeContent = gate.content
+        activeThinking = thinking
+        const stopReason = cancellationReason(signal)
+        const terminal = terminalizeActive('cancelled', null, stopReason)
+        yield event(
+          'done',
+          doneData(terminal, { outcome: 'cancelled', stopReason }, step + 1),
+        )
         return
       }
 
-      const usage = finalChunk
-        ? buildUsage(finalChunk, tracker, thread.model, expectedPrefixTokens)
-        : null
+      if (!finalChunk) throw new RuntimeProtocolError()
+
+      const usage = buildUsage(finalChunk, tracker, thread.model, expectedPrefixTokens)
 
       const parsed = parseToolCalls(nativeToolCalls, gate.content, { knownTools })
 
@@ -212,34 +374,37 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
       /* ── Ответ без инструментов: ход закончен ── */
       if (parsed.calls.length === 0) {
-        store.updateMessage(assistantMessage.id, {
-          content: visibleContent,
-          thinking: thinking || null,
-          usage,
-        })
-        activeMessageId = null
+        activeContent = visibleContent
+        activeThinking = thinking
+        activeUsage = usage
 
-        if (usage) yield event('usage', usage)
+        const stopReason: TurnStopReason =
+          finalChunk.done_reason === 'length' ? 'length' : 'stop'
+        const terminal = terminalizeActive('completed', null, stopReason)
+
+        yield event('usage', usage)
         yield event(
           'context',
           buildContextState({
-            usedTokens: usage?.promptTokens ?? estimateTokens(visibleContent),
+            usedTokens: usage.promptTokens,
             allocatedTokens: thread.options.numCtx,
             usage,
             model: thread.model,
             tracker,
           }),
         )
-        yield event('done', {
-          messageId: assistantMessage.id,
-          stopReason: finalChunk?.done_reason === 'length' ? 'length' : 'stop',
-          steps: step + 1,
-        })
+        yield event(
+          'done',
+          doneData(terminal, { outcome: 'completed', stopReason }, step + 1),
+        )
         return
       }
 
       /* ── Есть вызовы инструментов ── */
       const executed: ToolCall[] = []
+      activeContent = visibleContent
+      activeThinking = thinking
+      activeUsage = usage
 
       // Протокол Ollama требует строгий порядок:
       // assistant(tool_calls) → tool(result). Даже если вызов был JSON-текстом,
@@ -271,6 +436,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
           toolCall.status = 'error'
           toolCall.error = `Инструмент «${call.name}» недоступен`
           executed.push(toolCall)
+          activeToolCalls = executed.slice()
           store.recordToolRun(thread.id, assistantMessage.id, toolCall)
           yield event('tool_call', toolCall)
           yield event('tool_result', {
@@ -301,6 +467,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
               toolCall.error = describeError(error)
               toolCall.durationMs = 0
               executed.push(toolCall)
+              activeToolCalls = executed.slice()
               store.recordToolRun(thread.id, assistantMessage.id, toolCall)
               yield event('tool_call', toolCall)
               yield event('tool_result', {
@@ -344,6 +511,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
                   : 'Выполнение прервано'
 
             executed.push(toolCall)
+            activeToolCalls = executed.slice()
             store.recordToolRun(thread.id, assistantMessage.id, toolCall)
             yield event('tool_result', {
               toolCallId: toolCall.id,
@@ -355,15 +523,12 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
             working.push({ role: 'tool', content: toolCall.error, tool_name: tool.name })
 
             if (decision === 'cancelled') {
-              store.updateMessage(assistantMessage.id, {
-                content: visibleContent,
-                toolCalls: executed,
-              })
-              yield event('done', {
-                messageId: assistantMessage.id,
-                stopReason: 'stopped_by_user',
-                steps: step + 1,
-              })
+              const stopReason = cancellationReason(signal)
+              const terminal = terminalizeActive('cancelled', null, stopReason)
+              yield event(
+                'done',
+                doneData(terminal, { outcome: 'cancelled', stopReason }, step + 1),
+              )
               return
             }
             continue
@@ -400,6 +565,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         }
 
         executed.push(toolCall)
+        activeToolCalls = executed.slice()
         store.recordToolRun(thread.id, assistantMessage.id, toolCall)
         yield event('tool_result', {
           toolCallId: toolCall.id,
@@ -410,19 +576,37 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         })
       }
 
-      store.updateMessage(assistantMessage.id, {
-        content: visibleContent,
-        thinking: thinking || null,
-        toolCalls: executed,
-        usage,
-      })
-      activeMessageId = null
+      if (signal.aborted) {
+        const stopReason = cancellationReason(signal)
+        const terminal = terminalizeActive('cancelled', null, stopReason)
+        yield event(
+          'done',
+          doneData(terminal, { outcome: 'cancelled', stopReason }, step + 1),
+        )
+        return
+      }
 
-      if (usage) yield event('usage', usage)
+      if (step + 1 >= MAX_AGENT_STEPS) {
+        const limitError: TurnError = {
+          code: 'internal_error',
+          message: 'The agent turn reached its step limit',
+        }
+        const terminal = terminalizeActive('failed', limitError, 'tool_limit')
+        yield event('error', streamErrorData(limitError))
+        yield event(
+          'done',
+          doneData(terminal, { outcome: 'failed', stopReason: 'tool_limit' }, step + 1),
+        )
+        return
+      }
+
+      terminalizeActive('completed', null, 'tool_calls')
+
+      yield event('usage', usage)
       yield event(
         'context',
         buildContextState({
-          usedTokens: usage?.promptTokens ?? 0,
+          usedTokens: usage.promptTokens,
           allocatedTokens: thread.options.numCtx,
           usage,
           model: thread.model,
@@ -430,28 +614,64 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         }),
       )
 
-      if (usage) expectedPrefixTokens = usage.promptTokens + usage.evalTokens
+      expectedPrefixTokens = usage.promptTokens + usage.evalTokens
       step++
     }
 
-    yield event('done', { messageId: '', stopReason: 'tool_limit', steps: step })
-  } catch (error) {
-    if (activeMessageId) {
-      store.updateMessage(activeMessageId, {
-        content: activeContent,
-        thinking: activeThinking || null,
-      })
+    const limitError: TurnError = {
+      code: 'internal_error',
+      message: 'The agent turn reached its step limit',
     }
-    yield event('error', {
-      code:
-        error instanceof OllamaUnavailableError
-          ? 'ollama_unavailable'
-          : error instanceof OllamaError
-            ? 'upstream_error'
-            : 'internal_error',
-      message: describeError(error),
-      details: null,
+    yield event('error', streamErrorData(limitError))
+    yield event('done', {
+      messageId: '',
+      outcome: 'failed',
+      stopReason: 'tool_limit',
+      terminalStopReason: 'tool_limit',
+      steps: step,
     })
-    yield event('done', { messageId: '', stopReason: 'error', steps: step })
+  } catch (caught) {
+    let failure = safeTurnFailure(caught)
+    let terminal: Message | null = null
+
+    if (activeMessageId && !(caught instanceof TerminalPersistenceError)) {
+      try {
+        terminal = terminalizeActive('failed', failure.error, failure.stopReason)
+      } catch (terminalError) {
+        failure = safeTurnFailure(terminalError)
+      }
+    }
+    if (activeMessageId) unresolvedFailure = failure
+
+    yield event('error', streamErrorData(failure.error))
+    yield event(
+      'done',
+      doneData(
+        terminal,
+        { outcome: 'failed', stopReason: failure.stopReason },
+        activeMessageId ? step + 1 : step,
+      ),
+    )
+  } finally {
+    if (activeMessageId) {
+      const stopReason: TurnStopReason = signal.aborted
+        ? cancellationReason(signal)
+        : (unresolvedFailure?.stopReason ?? 'internal_error')
+      const outcome: TurnTerminalOutcome = signal.aborted ? 'cancelled' : 'failed'
+      const error: TurnError | null =
+        outcome === 'failed'
+          ? (unresolvedFailure?.error ?? {
+              code: 'internal_error',
+              message: 'The turn ended without a terminal event',
+            })
+          : null
+
+      try {
+        terminalizeActive(outcome, error, stopReason)
+      } catch {
+        // If the terminal write itself failed, pending is the only truthful
+        // durable state available to a later reload.
+      }
+    }
   }
 }

@@ -89,6 +89,37 @@ const MIGRATIONS: readonly string[] = [
   `
   CREATE UNIQUE INDEX idx_messages_thread_seq ON messages(thread_id, seq);
   `,
+  // 3 — additive bridge: truthful terminal outcome for current assistant turns.
+  `
+  ALTER TABLE messages ADD COLUMN turn_status TEXT
+    CHECK (turn_status IN ('pending','completed','failed','cancelled'));
+  ALTER TABLE messages ADD COLUMN turn_error TEXT;
+  ALTER TABLE messages ADD COLUMN stop_reason TEXT
+    CHECK (stop_reason IN (
+      'stop',
+      'length',
+      'tool_calls',
+      'tool_limit',
+      'stopped_by_user',
+      'connection_aborted',
+      'provider_error',
+      'protocol_error',
+      'storage_error',
+      'internal_error',
+      'legacy_terminal_chunk',
+      'error'
+    ));
+
+  -- Before P0-B, usage was only produced from an observed terminal Ollama chunk.
+  -- That is sufficient evidence for completed, but the exact old done_reason was
+  -- not stored. Rows without usage remain NULL/legacy-unknown, especially empty
+  -- assistants left by aborts and protocol failures.
+  UPDATE messages
+  SET turn_status = 'completed',
+      stop_reason = 'legacy_terminal_chunk'
+  WHERE role = 'assistant'
+    AND usage IS NOT NULL;
+  `,
 ]
 
 export function openDb(path: string): Db {
@@ -101,7 +132,12 @@ export function openDb(path: string): Db {
   db.exec('PRAGMA foreign_keys = ON')
   db.exec('PRAGMA busy_timeout = 5000')
 
-  migrate(db)
+  try {
+    migrate(db)
+  } catch (error) {
+    db.close()
+    throw error
+  }
   return db
 }
 

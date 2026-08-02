@@ -11,6 +11,9 @@ import {
   usageSchema,
   apiErrorSchema,
   toolCallStatusSchema,
+  turnErrorSchema,
+  turnStopReasonSchema,
+  turnTerminalOutcomeSchema,
 } from './schemas.ts'
 
 /* ────────────────────── Стрим ответа: /api/threads/:id/messages ──────────── */
@@ -25,6 +28,8 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
       model: z.string(),
       /** Номер шага агентного цикла, для чата всегда 0. */
       step: z.number().int(),
+      /** Additive bridge field; omitted frames from older servers remain readable. */
+      status: z.literal('pending').optional(),
     }),
   }),
 
@@ -96,7 +101,12 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     seq: z.number().int(),
     data: z.object({
       messageId: z.string(),
+      /** Compatibility value understood by pre-P0-B clients. */
       stopReason: z.enum(['stop', 'length', 'tool_limit', 'stopped_by_user', 'error']),
+      /** Older frames omit outcome; persisted Message remains the reload source of truth. */
+      outcome: turnTerminalOutcomeSchema.optional(),
+      /** Precise additive reason; old clients ignore this unknown optional field. */
+      terminalStopReason: turnStopReasonSchema.optional(),
       /** Сколько шагов агентного цикла прошло. */
       steps: z.number().int(),
     }),
@@ -105,7 +115,10 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('error'),
     seq: z.number().int(),
-    data: apiErrorSchema,
+    data: apiErrorSchema.extend({
+      /** Precise additive error; `code` above stays compatible with old clients. */
+      turnError: turnErrorSchema.optional(),
+    }),
   }),
 ])
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>

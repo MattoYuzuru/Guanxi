@@ -4,7 +4,7 @@
  *
  * Своих описаний формы данных здесь нет и быть не должно.
  */
-import type { ZodType } from 'zod'
+import type { output, ZodTypeAny } from 'zod'
 import {
   ROUTES,
   apiErrorSchema,
@@ -100,11 +100,11 @@ function withQuery(path: string, query: RequestInitLike['query']): string {
   return qs ? `${path}?${qs}` : path
 }
 
-async function request<T>(
+async function request<Schema extends ZodTypeAny>(
   path: string,
-  schema: ZodType<T>,
+  schema: Schema,
   init: RequestInitLike = {},
-): Promise<T> {
+): Promise<output<Schema>> {
   const url = withQuery(path, init.query)
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (init.body !== undefined) headers['Content-Type'] = 'application/json'

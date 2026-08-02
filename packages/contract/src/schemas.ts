@@ -216,6 +216,51 @@ export const usageSchema = z.object({
 })
 export type Usage = z.infer<typeof usageSchema>
 
+/**
+ * Phase 0 compatibility bridge for the current connection-owned turn.
+ *
+ * `null` on a Message means that the row predates the bridge (or is not an
+ * assistant turn at all). It must not be interpreted as completed.
+ */
+export const turnStatusSchema = z.enum(['pending', 'completed', 'failed', 'cancelled'])
+export type TurnStatus = z.infer<typeof turnStatusSchema>
+
+export const turnTerminalOutcomeSchema = z.enum(['completed', 'failed', 'cancelled'])
+export type TurnTerminalOutcome = z.infer<typeof turnTerminalOutcomeSchema>
+
+export const turnStopReasonSchema = z.enum([
+  'stop',
+  'length',
+  'tool_calls',
+  'tool_limit',
+  'stopped_by_user',
+  'connection_aborted',
+  'provider_error',
+  'protocol_error',
+  'storage_error',
+  'internal_error',
+  'legacy_terminal_chunk',
+  // Kept for compatible reading of the original SSE contract.
+  'error',
+])
+export type TurnStopReason = z.infer<typeof turnStopReasonSchema>
+
+export const turnErrorCodeSchema = z.enum([
+  'ollama_unavailable',
+  'upstream_error',
+  'runtime_protocol',
+  'storage_error',
+  'internal_error',
+])
+export type TurnErrorCode = z.infer<typeof turnErrorCodeSchema>
+
+export const turnErrorSchema = z.object({
+  code: turnErrorCodeSchema,
+  /** Safe user-facing summary; raw provider bodies and private content are excluded. */
+  message: z.string(),
+})
+export type TurnError = z.infer<typeof turnErrorSchema>
+
 export const messageSchema = z.object({
   id: z.string(),
   threadId: z.string(),
@@ -227,6 +272,13 @@ export const messageSchema = z.object({
   createdAt: z.string(),
   /** Сообщение — результат компакции, свернувшей N предыдущих. */
   isCompaction: z.boolean(),
+  /**
+   * Additive fields accept an omitted legacy shape. The parsed projection uses
+   * null so current clients always distinguish unknown legacy state from success.
+   */
+  turnStatus: turnStatusSchema.nullish().default(null),
+  turnError: turnErrorSchema.nullish().default(null),
+  stopReason: turnStopReasonSchema.nullish().default(null),
 })
 export type Message = z.infer<typeof messageSchema>
 

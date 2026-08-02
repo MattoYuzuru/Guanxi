@@ -14,9 +14,11 @@ import type {
   Message,
   Thread,
   ToolCall,
+  TurnTerminalOutcome,
   Usage,
 } from '@alamo/contract'
 import { api, errorMessage, streamChat } from '../../lib/api.ts'
+import { translate } from '../../lib/locale.ts'
 import { StreamBuffer } from './streamBuffer.ts'
 
 /** Фаза хода — по ней рисуется индикатор ожидания. */
@@ -53,6 +55,7 @@ export type ChatState = {
   usage: Usage | null
   streamError: ApiError | { code: 'transport'; message: string } | null
   stopReason: string | null
+  turnOutcome: TurnTerminalOutcome | null
   /** Когда начался ход — для «идёт N с». */
   turnStartedAt: number | null
   /** Когда пришёл первый токен — граница prefill и генерации. */
@@ -145,6 +148,9 @@ export function useChat(threadId: string | null) {
             usage: null,
             createdAt: new Date().toISOString(),
             isCompaction: false,
+            turnStatus: null,
+            turnError: null,
+            stopReason: null,
           },
         ],
         phase: 'sending',
@@ -153,6 +159,7 @@ export function useChat(threadId: string | null) {
         usage: null,
         streamError: null,
         stopReason: null,
+        turnOutcome: null,
         turnStartedAt: Date.now(),
         firstTokenAt: null,
         reconnecting: false,
@@ -164,6 +171,7 @@ export function useChat(threadId: string | null) {
         ...(options?.autoApprove !== undefined ? { autoApprove: options.autoApprove } : {}),
       }
 
+      let terminalObserved = false
       const { finished } = streamChat(id, body, {
         signal: controller.signal,
         onReconnect: () => setState((previous) => ({ ...previous, reconnecting: true })),
@@ -171,7 +179,10 @@ export function useChat(threadId: string | null) {
           // Кадр не по контракту — стрим продолжается, но это стоит увидеть.
           console.warn('[alamo] кадр SSE не прошёл схему контракта:', raw)
         },
-        onEvent: (event) => handleEvent(event, buffer, setState),
+        onEvent: (event) => {
+          if (event.type === 'done') terminalObserved = true
+          handleEvent(event, buffer, setState)
+        },
         onError: (error) => {
           setState((previous) => ({
             ...previous,
@@ -186,6 +197,17 @@ export function useChat(threadId: string | null) {
 
       // Стрим закончился (штатно, ошибкой или отменой) — синхронизируемся с базой.
       if (threadIdRef.current !== id) return
+      if (!terminalObserved && !controller.signal.aborted) {
+        setState((previous) => ({
+          ...previous,
+          streamError:
+            previous.streamError ??
+            {
+              code: 'transport',
+              message: translate('chat.turn.streamMissingTerminal'),
+            },
+        }))
+      }
       setState((previous) => ({
         ...previous,
         phase: previous.phase === 'idle' ? 'idle' : 'finalizing',
@@ -232,6 +254,7 @@ export function useChat(threadId: string | null) {
       phase: 'idle',
       approval: null,
       stopReason: 'stopped_by_user',
+      turnOutcome: 'cancelled',
     }))
   }, [])
 
@@ -395,7 +418,8 @@ function handleEvent(
       setState((previous) => ({
         ...previous,
         phase: 'finalizing',
-        stopReason: event.data.stopReason,
+        stopReason: event.data.terminalStopReason ?? event.data.stopReason,
+        turnOutcome: event.data.outcome ?? null,
         approval: null,
       }))
       break
@@ -406,6 +430,7 @@ function handleEvent(
         ...previous,
         phase: 'idle',
         streamError: event.data,
+        turnOutcome: 'failed',
         approval: null,
       }))
       break
@@ -436,6 +461,7 @@ function initialState(): ChatState {
     usage: null,
     streamError: null,
     stopReason: null,
+    turnOutcome: null,
     turnStartedAt: null,
     firstTokenAt: null,
     reconnecting: false,

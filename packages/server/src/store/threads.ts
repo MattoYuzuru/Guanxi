@@ -5,7 +5,19 @@
  * при стриминге несколько сообщений могут получить одинаковую метку времени.
  */
 import { randomUUID } from 'node:crypto'
-import type { Message, Thread, ThreadMode, ThreadOptions, ToolCall, Usage } from '@alamo/contract'
+import {
+  turnErrorSchema,
+  type Message,
+  type Thread,
+  type ThreadMode,
+  type ThreadOptions,
+  type ToolCall,
+  type TurnError,
+  type TurnStatus,
+  type TurnStopReason,
+  type TurnTerminalOutcome,
+  type Usage,
+} from '@alamo/contract'
 import type { Db } from './db.ts'
 
 interface ThreadRow {
@@ -33,6 +45,9 @@ interface MessageRow {
   usage: string | null
   is_compaction: number
   created_at: string
+  turn_status: string | null
+  turn_error: string | null
+  stop_reason: string | null
 }
 
 function toThread(row: ThreadRow): Thread {
@@ -64,7 +79,26 @@ function toMessage(row: MessageRow): Message {
     usage: row.usage ? (JSON.parse(row.usage) as Usage) : null,
     createdAt: row.created_at,
     isCompaction: row.is_compaction === 1,
+    turnStatus: row.turn_status as TurnStatus | null,
+    turnError: row.turn_error ? turnErrorSchema.parse(JSON.parse(row.turn_error)) : null,
+    stopReason: row.stop_reason as TurnStopReason | null,
   }
+}
+
+export interface TerminalMessageUpdate {
+  outcome: TurnTerminalOutcome
+  error: TurnError | null
+  stopReason: TurnStopReason
+  content: string
+  thinking: string | null
+  toolCalls: ToolCall[]
+  usage: Usage | null
+}
+
+export interface TerminalMessageResult {
+  /** false means another terminal outcome won; the existing outcome is unchanged. */
+  applied: boolean
+  message: Message
 }
 
 export class ThreadStore {
@@ -204,6 +238,9 @@ export class ThreadStore {
     toolCalls?: ToolCall[]
     usage?: Usage | null
     isCompaction?: boolean
+    turnStatus?: TurnStatus | null
+    turnError?: TurnError | null
+    stopReason?: TurnStopReason | null
     /** Явная позиция в треде. Нужна компакции, чтобы резюме встало в начало, а не в конец. */
     seq?: number
   }): Message {
@@ -213,8 +250,11 @@ export class ThreadStore {
 
     this.db
       .prepare(
-        `INSERT INTO messages (id, thread_id, seq, role, content, thinking, tool_calls, usage, is_compaction, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (
+           id, thread_id, seq, role, content, thinking, tool_calls, usage,
+           is_compaction, created_at, turn_status, turn_error, stop_reason
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -227,6 +267,9 @@ export class ThreadStore {
         input.usage ? JSON.stringify(input.usage) : null,
         input.isCompaction ? 1 : 0,
         now,
+        input.turnStatus ?? (input.role === 'assistant' ? 'pending' : null),
+        input.turnError ? JSON.stringify(input.turnError) : null,
+        input.stopReason ?? null,
       )
 
     this.touch(input.threadId)
@@ -241,6 +284,9 @@ export class ThreadStore {
       usage: input.usage ?? null,
       createdAt: now,
       isCompaction: input.isCompaction ?? false,
+      turnStatus: input.turnStatus ?? (input.role === 'assistant' ? 'pending' : null),
+      turnError: input.turnError ?? null,
+      stopReason: input.stopReason ?? null,
     }
   }
 
@@ -278,6 +324,43 @@ export class ThreadStore {
       | MessageRow
       | undefined
     return row ? toMessage(row) : null
+  }
+
+  /**
+   * Atomically commits the final projection and terminal outcome.
+   *
+   * The compare-and-set predicate is the bridge invariant: once a message is
+   * failed or cancelled, a late success path cannot rewrite it to completed.
+   */
+  terminalizeMessage(id: string, update: TerminalMessageUpdate): TerminalMessageResult {
+    const result = this.db
+      .prepare(
+        `UPDATE messages
+         SET content = ?,
+             thinking = ?,
+             tool_calls = ?,
+             usage = ?,
+             turn_status = ?,
+             turn_error = ?,
+             stop_reason = ?
+         WHERE id = ?
+           AND role = 'assistant'
+           AND turn_status = 'pending'`,
+      )
+      .run(
+        update.content,
+        update.thinking,
+        JSON.stringify(update.toolCalls),
+        update.usage ? JSON.stringify(update.usage) : null,
+        update.outcome,
+        update.error ? JSON.stringify(update.error) : null,
+        update.stopReason,
+        id,
+      )
+
+    const message = this.getMessage(id)
+    if (!message) throw new Error(`Assistant message ${id} was not found during terminalization`)
+    return { applied: result.changes > 0, message }
   }
 
   /**

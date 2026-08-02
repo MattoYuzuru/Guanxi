@@ -13,7 +13,7 @@ import {
   type ChatStreamEvent,
   type ThreadOptions,
 } from '@alamo/contract'
-import { runTurn } from '../agent/loop.ts'
+import { runTurn, TURN_ABORT_REASON } from '../agent/loop.ts'
 import { COMPACTION_PROMPT } from '../agent/prompts.ts'
 import { buildContextState, estimateTokens } from '../context/usage.ts'
 import type { AppContext } from '../context.ts'
@@ -118,7 +118,7 @@ export function threadsRoutes(app: AppContext): Hono {
 
   routes.delete('/:id', (context) => {
     const id = context.req.param('id')
-    app.activeTurns.get(id)?.abort()
+    app.activeTurns.get(id)?.abort(TURN_ABORT_REASON.explicitStop)
     app.approvals.forgetThread(id)
 
     if (!app.threads.delete(id)) return notFound(context, 'thread_not_found', 'Тред не найден')
@@ -148,7 +148,7 @@ export function threadsRoutes(app: AppContext): Hono {
     const id = context.req.param('id')
     const controller = app.activeTurns.get(id)
     app.approvals.cancelThread(id)
-    controller?.abort()
+    controller?.abort(TURN_ABORT_REASON.explicitStop)
     return context.json({ ok: controller !== undefined })
   })
 
@@ -216,7 +216,11 @@ export function threadsRoutes(app: AppContext): Hono {
     }
 
     return sseResponse(stream(), {
-      onAbort: () => controller.abort(),
+      onAbort: () => {
+        if (!controller.signal.aborted) {
+          controller.abort(TURN_ABORT_REASON.connectionAbort)
+        }
+      },
       skipUntilSeq: lastEventId(context.req.header('Last-Event-ID')),
     })
   })
