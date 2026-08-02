@@ -16,6 +16,7 @@ import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
 import { JobService } from '../src/jobs/service.ts'
+import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import { ModelService } from '../src/models/service.ts'
 import { OllamaClient } from '../src/ollama/client.ts'
 import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
@@ -46,7 +47,7 @@ function fixture(): { app: ReturnType<typeof createApp>; context: AppContext } {
   const calibration = new CalibrationStore(db)
   const models = new ModelService(client, calibration, HARDWARE)
   const jobs = new JobStore(db)
-  const context: AppContext = {
+  const base = {
     db,
     jobs,
     jobService: new JobService(jobs, { replayPageSize: 2 }),
@@ -62,6 +63,10 @@ function fixture(): { app: ReturnType<typeof createApp>; context: AppContext } {
     inference: new ExclusiveInferenceBridge(),
     ollama: () => client,
     models: () => models,
+  }
+  const context: AppContext = {
+    ...base,
+    chatExecution: new ChatJobExecutionOwner(base),
   }
   return { app: createApp(context), context }
 }

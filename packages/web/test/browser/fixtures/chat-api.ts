@@ -4,7 +4,7 @@ export type ChatFixtureScenario =
   | 'completed'
   | 'connect_timeout'
   | 'runtime_protocol'
-  | 'navigation_abort'
+  | 'durable_navigation'
 
 export type ChatFixtureAction = 'releaseHeaders' | 'releaseNext'
 
@@ -22,7 +22,7 @@ const THREAD_IDS: Record<ChatFixtureScenario, string> = {
   completed: 'thread-p0-e-full',
   connect_timeout: 'thread-p0-e-connect-timeout',
   runtime_protocol: 'thread-p0-e-runtime-protocol',
-  navigation_abort: 'thread-p0-e-navigation-abort',
+  durable_navigation: 'thread-p1-d-durable-navigation',
 }
 
 export function chatFixtureThreadId(scenario: ChatFixtureScenario): string {
@@ -54,24 +54,26 @@ export async function installChatApiFixture(
         completed: 'thread-p0-e-full',
         connect_timeout: 'thread-p0-e-connect-timeout',
         runtime_protocol: 'thread-p0-e-runtime-protocol',
-        navigation_abort: 'thread-p0-e-navigation-abort',
+        durable_navigation: 'thread-p1-d-durable-navigation',
       } as const
       const scenarioTitles = {
         completed: 'P0-E release gate',
         connect_timeout: 'P0-E connect timeout',
         runtime_protocol: 'P0-E missing terminal',
-        navigation_abort: 'P0-E navigation abort',
+        durable_navigation: 'P1-D durable navigation',
       } as const
       const scenarioPrompts = {
         completed: 'Run the P0-E release flow',
         connect_timeout: 'Trigger connect timeout',
         runtime_protocol: 'Trigger missing terminal',
-        navigation_abort: 'Navigate away during generation',
+        durable_navigation: 'Navigate away during durable generation',
       } as const
 
       const encoder = new TextEncoder()
       const observedAt = '2026-08-02T12:00:00.000Z'
       const threadId = scenarioIds[fixtureScenario]
+      const jobId = '11111111-1111-4111-8111-111111111111'
+      const idempotencyKey = '22222222-2222-4222-8222-222222222222'
       const storagePrefix = `alamo:p0e:${fixtureScenario}`
       const stateKey = `${storagePrefix}:state`
       const readsKey = `${storagePrefix}:detailReads`
@@ -97,7 +99,11 @@ export async function installChatApiFixture(
         options: { numCtx: 8192, temperature: 0.7, think: 'off' },
         createdAt: observedAt,
         updatedAt: observedAt,
-        messageCount: readState() === 'terminal' ? 2 : 0,
+        messageCount:
+          readState() === 'terminal' ||
+          (fixtureScenario === 'durable_navigation' && readState() === 'running')
+            ? 2
+            : 0,
       }
       const emptyContext = {
         usedTokens: 0,
@@ -215,18 +221,19 @@ export async function installChatApiFixture(
           },
           stopReason: 'protocol_error',
         },
-        navigation_abort: {
-          content: 'Persisted partial before navigation',
+        durable_navigation: {
+          content: 'Persisted answer after navigation',
           thinking: null,
-          turnStatus: 'cancelled',
+          turnStatus: 'completed',
           turnError: null,
-          stopReason: 'connection_aborted',
+          stopReason: 'stop',
         },
       } as const
       const messages = [
         {
           id: `user-${fixtureScenario}`,
           threadId,
+          jobId: fixtureScenario === 'durable_navigation' ? jobId : null,
           role: 'user',
           content: scenarioPrompts[fixtureScenario],
           thinking: null,
@@ -241,6 +248,7 @@ export async function installChatApiFixture(
         {
           id: `assistant-${fixtureScenario}`,
           threadId,
+          jobId: fixtureScenario === 'durable_navigation' ? jobId : null,
           role: 'assistant',
           ...terminalAssistant[fixtureScenario],
           toolCalls: [],
@@ -249,6 +257,18 @@ export async function installChatApiFixture(
           isCompaction: false,
         },
       ]
+      const pendingMessages = messages.map((message) =>
+        message.role === 'assistant'
+          ? {
+              ...message,
+              content: '',
+              thinking: null,
+              turnStatus: 'pending',
+              turnError: null,
+              stopReason: null,
+            }
+          : message,
+      )
 
       const events = {
         completed: [
@@ -350,26 +370,85 @@ export async function installChatApiFixture(
             },
           },
         ],
-        navigation_abort: [
+        durable_navigation: [
           {
             type: 'start',
             seq: 0,
             data: {
-              messageId: 'assistant-navigation_abort',
+              messageId: 'assistant-durable_navigation',
               model: model.name,
               step: 0,
               status: 'pending',
+              jobId,
             },
           },
           { type: 'token', seq: 1, data: { delta: 'Live partial before navigation' } },
+          { type: 'token', seq: 2, data: { delta: ' and after reattach' } },
+          {
+            type: 'done',
+            seq: 3,
+            data: {
+              messageId: 'assistant-durable_navigation',
+              outcome: 'completed',
+              stopReason: 'stop',
+              terminalStopReason: 'stop',
+              steps: 1,
+            },
+          },
         ],
       } as const
 
       let responseResolver: ((response: Response) => void) | null = null
       let streamController: ReadableStreamDefaultController<Uint8Array> | null = null
+      let streamMode: 'compatibility' | 'job' | null = null
       let emittedEvents = 0
 
       const persistTerminal = () => writeState('terminal')
+      const jobEvent = (index: number) => {
+        const event = events[fixtureScenario][index]
+        if (!event) throw new Error('No fixture event remains')
+        const sequence = index + 3
+        const terminal = event.type === 'done'
+        const state = terminal
+          ? 'completed'
+          : event.type === 'token'
+            ? 'generating'
+            : 'loading'
+        const { seq: _compatibilitySequence, ...output } = event
+        return {
+          id: `job-event-${sequence}`,
+          jobId,
+          sequence,
+          type: terminal ? 'lifecycle' : 'output',
+          state,
+          phase: state,
+          metadata: { channel: event.type },
+          output: {
+            privacyClassification: 'private_chat',
+            event: output,
+          },
+          createdAt: observedAt,
+        }
+      }
+      const job = () => ({
+        id: jobId,
+        kind: 'inference',
+        operation: 'chat',
+        status: readState() === 'terminal' ? 'completed' : 'generating',
+        phase: readState() === 'terminal' ? 'generating' : 'generating',
+        idempotencyScope: `chat:${threadId}:send:v1`,
+        idempotencyKey,
+        createdAt: observedAt,
+        startedAt: observedAt,
+        finishedAt: readState() === 'terminal' ? observedAt : null,
+        error: null,
+        outcome:
+          readState() === 'terminal'
+            ? { code: 'chat_completed', metadata: { messageId: `assistant-${fixtureScenario}` } }
+            : null,
+        stopReason: readState() === 'terminal' ? 'stop' : null,
+        lastEventSequence: Math.max(1, emittedEvents + 2),
+      })
       const json = (body: unknown, status = 200) =>
         new Response(JSON.stringify(body), {
           status,
@@ -389,6 +468,7 @@ export async function installChatApiFixture(
           const body = new ReadableStream<Uint8Array>({
             start(controller) {
               streamController = controller
+              streamMode = 'compatibility'
             },
           })
           const resolve = responseResolver
@@ -409,12 +489,12 @@ export async function installChatApiFixture(
           if (!event) throw new Error('No fixture event remains')
           emittedEvents += 1
           if (event.type === 'done') persistTerminal()
-          streamController.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-          if (
-            emittedEvents === events[fixtureScenario].length &&
-            fixtureScenario !== 'navigation_abort'
-          ) {
+          const payload = streamMode === 'job' ? jobEvent(emittedEvents - 1) : event
+          streamController.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
+          if (emittedEvents === events[fixtureScenario].length) {
             streamController.close()
+            streamController = null
+            streamMode = null
           }
         },
         snapshot() {
@@ -471,21 +551,61 @@ export async function installChatApiFixture(
           return json(thread)
         }
         if (url.pathname === '/api/threads' && method === 'GET') {
+          const hasMessages =
+            readState() === 'terminal' ||
+            (fixtureScenario === 'durable_navigation' && readState() === 'running')
           return json({
             threads:
               readState() === 'new'
                 ? []
-                : [{ ...thread, messageCount: readState() === 'terminal' ? 2 : 0 }],
+                : [{ ...thread, messageCount: hasMessages ? 2 : 0 }],
           })
         }
         if (url.pathname === `/api/threads/${threadId}` && method === 'GET') {
           const reads = Number(sessionStorage.getItem(readsKey) ?? '0') + 1
           sessionStorage.setItem(readsKey, String(reads))
           const terminal = readState() === 'terminal'
+          const durableRunning =
+            fixtureScenario === 'durable_navigation' && readState() === 'running'
           return json({
-            thread: { ...thread, messageCount: terminal ? messages.length : 0 },
-            messages: terminal ? messages : [],
+            thread: {
+              ...thread,
+              messageCount: terminal || durableRunning ? messages.length : 0,
+            },
+            messages: terminal ? messages : durableRunning ? pendingMessages : [],
             context: terminal ? terminalContext : emptyContext,
+          })
+        }
+        if (url.pathname === `/api/jobs/${jobId}` && method === 'GET') {
+          return json({ job: job() })
+        }
+        if (url.pathname === `/api/jobs/${jobId}/events` && method === 'GET') {
+          const requestHeaders = new Headers(
+            init?.headers ?? (typeof input === 'string' ? undefined : input.headers),
+          )
+          const after = Number(requestHeaders.get('Last-Event-ID') ?? '0')
+          const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+              for (let index = 0; index < emittedEvents; index += 1) {
+                const persisted = jobEvent(index)
+                if (persisted.sequence <= after) continue
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(persisted)}\n\n`))
+              }
+              if (readState() === 'terminal') {
+                controller.close()
+                return
+              }
+              streamController = controller
+              streamMode = 'job'
+            },
+            cancel() {
+              streamController = null
+              streamMode = null
+            },
+          })
+          return new Response(body, {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
           })
         }
         if (url.pathname === `/api/threads/${threadId}/messages` && method === 'POST') {
@@ -494,12 +614,13 @@ export async function installChatApiFixture(
           init?.signal?.addEventListener(
             'abort',
             () => {
-              if (fixtureScenario === 'navigation_abort') persistTerminal()
               try {
                 streamController?.error(new DOMException('aborted', 'AbortError'))
               } catch {
                 // The stream may already be closed by a terminal fixture event.
               }
+              streamController = null
+              streamMode = null
             },
             { once: true },
           )

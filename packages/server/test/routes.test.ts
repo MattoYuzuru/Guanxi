@@ -6,6 +6,7 @@ import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
 import { JobService } from '../src/jobs/service.ts'
+import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import type { ModelService } from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
@@ -37,7 +38,7 @@ function testContext(
   const settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
   const jobs = new JobStore(db)
 
-  return {
+  const base = {
     db,
     jobs,
     jobService: new JobService(jobs),
@@ -62,6 +63,7 @@ function testContext(
         throw new Error('ModelService не должен вызываться в этом тесте')
       }),
   }
+  return { ...base, chatExecution: new ChatJobExecutionOwner(base) }
 }
 
 function terminalChunk(content: string): OllamaChatChunk {
@@ -316,8 +318,12 @@ describe('thread routes', () => {
     context.db.close()
   })
 
-  it('persists response-body cancellation as connection_aborted for reload', async () => {
-    const context = streamingContext((signal) =>
+  it('keeps the durable Job running after response-body cancellation', async () => {
+    let release!: () => void
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const context = streamingContext(() =>
       (async function* () {
         yield {
           model: 'qwen',
@@ -325,7 +331,8 @@ describe('thread routes', () => {
           message: { role: 'assistant', content: 'partial' },
           done: false,
         }
-        await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+        await released
+        yield terminalChunk(' completed')
       })(),
     )
     const app = createApp(context)
@@ -340,15 +347,20 @@ describe('thread routes', () => {
     await reader.read()
     await reader.cancel()
 
-    for (let attempt = 0; attempt < 20 && context.activeTurns.has(threadId); attempt++) {
+    const pending = context.threads.messages(threadId).at(-1)
+    assert.equal(context.activeTurns.has(threadId), true)
+    assert.equal(pending?.turnStatus, 'pending')
+
+    release()
+    for (let attempt = 0; attempt < 100 && context.activeTurns.has(threadId); attempt++) {
       await new Promise((resolve) => setImmediate(resolve))
     }
 
     const assistant = context.threads.messages(threadId).at(-1)
     assert.equal(context.activeTurns.has(threadId), false)
-    assert.equal(assistant?.content, 'partial')
-    assert.equal(assistant?.turnStatus, 'cancelled')
-    assert.equal(assistant?.stopReason, 'connection_aborted')
+    assert.equal(assistant?.content, 'partial completed')
+    assert.equal(assistant?.turnStatus, 'completed')
+    assert.equal(assistant?.stopReason, 'stop')
     context.db.close()
   })
 })

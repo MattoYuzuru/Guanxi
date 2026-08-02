@@ -85,12 +85,12 @@ test('provider EOF reloads the failed partial as runtime_protocol', async ({ pag
   expect(pageErrors).toEqual([])
 })
 
-test('navigation abort reloads as connection-owned cancellation, not provider failure', async ({
+test('navigation detaches while durable Job continues and reload reattaches terminal output', async ({
   page,
 }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
-  await openAndSend(page, 'navigation_abort', 'Navigate away during generation')
+  await openAndSend(page, 'durable_navigation', 'Navigate away during durable generation')
 
   await advanceChatFixture(page, 'releaseNext')
   await advanceChatFixture(page, 'releaseNext')
@@ -98,23 +98,21 @@ test('navigation abort reloads as connection-owned cancellation, not provider fa
 
   await page.getByRole('link', { name: 'Настройки' }).click()
   await expect(page).toHaveURL(/\/settings$/)
-  await expect.poll(async () => (await readChatFixture(page)).state).toBe('terminal')
+  await expect.poll(async () => (await readChatFixture(page)).state).toBe('running')
 
   await page.goBack()
-  await expect(page).toHaveURL(/\/chat\/thread-p0-e-navigation-abort$/)
-  await expect(
-    page.getByText('Persisted partial before navigation', { exact: true }),
-  ).toBeVisible()
-  await expect(page.getByText('Генерация отменена')).toBeVisible()
-  await expect(page.getByText(/соединение закрыто/)).toBeVisible()
-  await expect(page.getByText(/ошибка provider/)).toHaveCount(0)
-  await assertNoEmptySuccess(page)
+  await expect(page).toHaveURL(/\/chat\/thread-p1-d-durable-navigation$/)
+  await expect(page.getByText('Live partial before navigation', { exact: true })).toBeVisible()
+
+  await advanceChatFixture(page, 'releaseNext')
+  await expect(page.getByText('Live partial before navigation and after reattach', { exact: true })).toBeVisible()
+  await advanceChatFixture(page, 'releaseNext')
+  await expect(page.getByText('Persisted answer after navigation', { exact: true })).toBeVisible()
+  await expect.poll(async () => (await readChatFixture(page)).state).toBe('terminal')
 
   await page.reload()
-  await expect(
-    page.getByText('Persisted partial before navigation', { exact: true }),
-  ).toBeVisible()
-  await expect(page.getByText(/соединение закрыто/)).toBeVisible()
+  await expect(page.getByText('Persisted answer after navigation', { exact: true })).toBeVisible()
+  await expect(page.getByText(/соединение закрыто/)).toHaveCount(0)
   await expect(page.getByText(/ошибка provider/)).toHaveCount(0)
   await assertNoEmptySuccess(page)
   await assertNoHorizontalOverflow(page)

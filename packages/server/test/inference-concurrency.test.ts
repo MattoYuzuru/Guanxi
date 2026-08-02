@@ -7,6 +7,7 @@ import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
 import { JobService } from '../src/jobs/service.ts'
+import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import type { ModelService } from '../src/models/service.ts'
 import { OllamaClient, OllamaError } from '../src/ollama/client.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../src/ollama/types.ts'
@@ -111,7 +112,7 @@ function testContext(options: {
   const settings = new SettingsStore(db, { ollamaHost: 'http://fixture.invalid' })
   const jobs = new JobStore(db)
 
-  return {
+  const base = {
     db,
     jobs,
     jobService: new JobService(jobs),
@@ -132,6 +133,7 @@ function testContext(options: {
         ...options.models,
       }) as ModelService,
   }
+  return { ...base, chatExecution: new ChatJobExecutionOwner(base) }
 }
 
 function createThread(context: AppContext, model: string) {
@@ -286,7 +288,7 @@ async function assertTurnCompactionSerialized(sameThread: boolean): Promise<void
 }
 
 describe('exclusive inference routes', () => {
-  it('serializes Chat turns across threads and leaves a waiter unpersisted until admission', async () => {
+  it('serializes durable Chat Jobs across threads and persists the queued projection', async () => {
     const probe = heldTurnClient()
     const context = testContext({ client: probe.client })
 
@@ -303,7 +305,9 @@ describe('exclusive inference routes', () => {
 
       assert.deepEqual(probe.calls.map((call) => call.model), ['model-a'])
       assert.equal(probe.maxActive, 1)
-      assert.deepEqual(context.threads.messages(second.id), [])
+      assert.equal(context.threads.messages(second.id).length, 2)
+      assert.equal(context.threads.messages(second.id).at(-1)?.turnStatus, 'pending')
+      assert.equal(context.jobs.activeChatJobForThread(second.id)?.job.status, 'reserving')
 
       probe.calls[0]!.release.resolve()
       const firstEvents = parseSse(await firstResponse.text())
@@ -426,7 +430,7 @@ describe('exclusive inference routes', () => {
     }
   })
 
-  it('removes a cancelled waiting turn without cancelling the owner or persisting rows', async () => {
+  it('detaches a waiting subscriber, then explicit Stop cancels only that durable waiter', async () => {
     const probe = heldTurnClient()
     const context = testContext({ client: probe.client })
 
@@ -442,14 +446,17 @@ describe('exclusive inference routes', () => {
       await waitFor(() => context.inference.waiting === 1, 'waiting turn was not queued')
 
       await waitingResponse.body!.cancel()
+      assert.equal(context.inference.waiting, 1)
+      assert.equal(context.threads.messages(waitingThread.id).length, 2)
+      await app.request(`/api/threads/${waitingThread.id}/stop`, { method: 'POST' })
       await waitFor(
         () => context.inference.waiting === 0 && !context.activeTurns.has(waitingThread.id),
-        'cancelled waiter was not removed',
+        'explicitly cancelled waiter was not removed',
       )
 
       assert.equal(probe.calls[0]?.signal.aborted, false)
       assert.equal(context.inference.active, true)
-      assert.deepEqual(context.threads.messages(waitingThread.id), [])
+      assert.equal(context.threads.messages(waitingThread.id).at(-1)?.turnStatus, 'cancelled')
 
       probe.calls[0]!.release.resolve()
       await ownerResponse.text()
@@ -836,7 +843,7 @@ describe('exclusive inference routes', () => {
     }
   })
 
-  it('releases after response-body cancellation/client generator return', async () => {
+  it('keeps execution after response-body cancellation and releases after terminal provider output', async () => {
     const probe = heldTurnClient({ partial: true })
     const context = testContext({ client: probe.client })
 
@@ -856,14 +863,13 @@ describe('exclusive inference routes', () => {
       assert.match(observed, /"type":"token"/)
       await reader.cancel()
 
+      assert.equal(context.inference.active, true)
+      assert.equal(context.threads.messages(abortedThread.id).at(-1)?.turnStatus, 'pending')
+      probe.calls[0]!.release.resolve()
       await waitFor(
-        () => !context.inference.active && !context.activeTurns.has(abortedThread.id),
-        'connection-aborted turn did not release',
+        () => context.threads.messages(abortedThread.id).at(-1)?.turnStatus === 'completed',
+        'detached turn did not complete',
       )
-
-      const aborted = context.threads.messages(abortedThread.id).at(-1)
-      assert.equal(aborted?.turnStatus, 'cancelled')
-      assert.equal(aborted?.stopReason, 'connection_aborted')
 
       const nextResponse = await send(app, nextThread.id)
       await waitFor(() => probe.calls.length === 2, 'next turn never acquired after body cancel')
@@ -877,7 +883,7 @@ describe('exclusive inference routes', () => {
     }
   })
 
-  it('releases after injected pre-assistant persistence failure without an ambiguous row', async () => {
+  it('rolls back atomic create after injected Message persistence failure', async () => {
     let calls = 0
     const client: Partial<OllamaClient> = {
       chatStream() {
@@ -893,22 +899,31 @@ describe('exclusive inference routes', () => {
       const app = createApp(context)
       const failedThread = createThread(context, 'storage-failure')
       const nextThread = createThread(context, 'next-model')
-      const originalAdd = context.threads.addMessage.bind(context.threads)
-      let failUserInsert = true
-      context.threads.addMessage = (input) => {
-        if (failUserInsert && input.role === 'user') {
-          failUserInsert = false
-          throw new Error('injected user persistence failure')
-        }
-        return originalAdd(input)
-      }
+      context.db.exec(`
+        CREATE TRIGGER fail_chat_user_insert
+        BEFORE INSERT ON messages
+        WHEN NEW.role = 'user'
+        BEGIN SELECT RAISE(ABORT, 'injected user persistence failure'); END;
+      `)
 
-      const failedEvents = parseSse(await (await send(app, failedThread.id)).text())
-      assert.equal(failedEvents.at(-1)?.['type'], 'error')
+      const failedResponse = await send(app, failedThread.id)
+      assert.equal(failedResponse.status, 500)
+      const failedBody = await failedResponse.json()
+      assert.deepEqual(failedBody, {
+        code: 'storage_error',
+        message: 'Chat-команда не была сохранена',
+        details: null,
+      })
+      assert.doesNotMatch(JSON.stringify(failedBody), /injected user persistence failure/)
       assert.deepEqual(context.threads.messages(failedThread.id), [])
+      assert.equal(
+        (context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count,
+        0,
+      )
       assert.equal(calls, 0)
       assert.equal(context.inference.active, false)
 
+      context.db.exec('DROP TRIGGER fail_chat_user_insert')
       const nextEvents = parseSse(await (await send(app, nextThread.id)).text())
       assert.equal(
         (nextEvents.find((event) => event['type'] === 'done')?.['data'] as { outcome: string }).outcome,
@@ -935,28 +950,31 @@ describe('exclusive inference routes', () => {
       const app = createApp(context)
       const failedThread = createThread(context, 'terminal-storage-failure')
       const nextThread = createThread(context, 'next-model')
-      const originalTerminalize = context.threads.terminalizeMessage.bind(context.threads)
-      context.threads.terminalizeMessage = () => {
-        throw new Error('injected terminal persistence failure')
-      }
+      context.db.exec(`
+        CREATE TRIGGER fail_chat_terminal
+        BEFORE INSERT ON job_events
+        WHEN NEW.state IN ('completed','failed','cancelled','interrupted')
+        BEGIN SELECT RAISE(ABORT, 'injected terminal persistence failure'); END;
+      `)
 
-      const failedEvents = parseSse(await (await send(app, failedThread.id)).text())
-      assert.equal(
-        failedEvents.some(
-          (event) =>
-            event['type'] === 'done' &&
-            (event['data'] as { outcome?: string }).outcome === 'completed',
-        ),
-        false,
+      const failedResponse = await send(app, failedThread.id)
+      await failedResponse.body?.cancel()
+      await waitFor(
+        () =>
+          context.jobs.activeChatJobForThread(failedThread.id)?.job.status === 'finalizing' &&
+          !context.inference.active,
+        'terminal failure did not expose recovery state and release permit',
       )
+      const failedJob = context.jobs.activeChatJobForThread(failedThread.id)?.job
+      assert.equal(failedJob?.status, 'finalizing')
       assert.equal(
-        (failedEvents.find((event) => event['type'] === 'done')?.['data'] as { outcome: string }).outcome,
-        'failed',
+        context.jobs.eventsAfter(failedJob!.id, 0).some((event) => event.state === 'completed'),
+        false,
       )
       assert.equal(context.threads.messages(failedThread.id).at(-1)?.turnStatus, 'pending')
       assert.equal(context.inference.active, false)
 
-      context.threads.terminalizeMessage = originalTerminalize
+      context.db.exec('DROP TRIGGER fail_chat_terminal')
       const nextEvents = parseSse(await (await send(app, nextThread.id)).text())
       assert.equal(
         (nextEvents.find((event) => event['type'] === 'done')?.['data'] as { outcome: string }).outcome,

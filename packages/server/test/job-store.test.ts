@@ -122,6 +122,7 @@ describe('durable Job store', () => {
         state: 'queued',
         phase: null,
         metadata: {},
+        output: null,
         createdAt: first.job.createdAt,
       },
     ])
@@ -269,6 +270,7 @@ describe('durable Job store', () => {
           state: status,
           phase: `phase-${index}`,
           metadata: { edge: `${from}->${status}` },
+          output: null,
           createdAt: jobs.eventsAfter(created.id, source.lastEventSequence)[0]!.createdAt,
         },
       ])

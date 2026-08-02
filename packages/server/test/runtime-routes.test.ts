@@ -6,6 +6,7 @@ import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
 import { JobService } from '../src/jobs/service.ts'
+import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import { ModelService } from '../src/models/service.ts'
 import { OllamaClient } from '../src/ollama/client.ts'
 import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
@@ -36,7 +37,7 @@ function testContext(client: OllamaClient): AppContext {
   const models = new ModelService(client, calibration, HARDWARE)
   const jobs = new JobStore(db)
 
-  return {
+  const base = {
     db,
     jobs,
     jobService: new JobService(jobs),
@@ -53,6 +54,7 @@ function testContext(client: OllamaClient): AppContext {
     ollama: () => client,
     models: () => models,
   }
+  return { ...base, chatExecution: new ChatJobExecutionOwner(base) }
 }
 
 function clientWith(fetchImpl: typeof fetch): OllamaClient {
