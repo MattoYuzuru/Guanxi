@@ -1,6 +1,8 @@
 flowchart TB
     Main[main.tsx]
+    RootBoundary[Root Error Boundary]
     App[App health and navigation]
+    ChatBoundary[Chat feature Error Boundary]
     Router[History router]
     API[REST client]
     SSE[POST SSE parser]
@@ -8,10 +10,16 @@ flowchart TB
     Pages[Models Chat Settings]
     Chat[useChat and StreamBuffer]
     UI[UI primitives and Markdown]
+    Locale[Boundary locale keys]
 
-    Main --> App
+    Main --> RootBoundary
+    RootBoundary --> App
+    RootBoundary --> Locale
     App --> Router
     App --> Pages
+    App --> ChatBoundary
+    ChatBoundary --> Chat
+    ChatBoundary --> Locale
     Pages --> API
     Pages --> Async
     Pages --> UI
@@ -19,4 +27,3 @@ flowchart TB
     Chat --> API
     Chat --> SSE
     Chat --> UI
-

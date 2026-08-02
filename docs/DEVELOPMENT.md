@@ -31,18 +31,20 @@ npm run dev:server
 npm run dev:web
 npm run typecheck
 npm test
+npm run test:web:browser
 npm run build
 npm run link:cli
 ```
 
-| Команда      | Фактическая область                              |
-| ------------ | ------------------------------------------------ |
-| `dev:server` | Node/Hono на loopback:4310                       |
-| `dev:web`    | Vite:5173 с API proxy                            |
-| `typecheck`  | TypeScript workspaces                            |
-| `test`       | server + CLI tests; web не покрыт                |
-| `build`      | contract, web, server и CLI production artifacts |
-| `link:cli`   | глобальная локальная ссылка `alamo-ui`           |
+| Команда            | Фактическая область                                 |
+| ------------------ | --------------------------------------------------- |
+| `dev:server`       | Node/Hono на loopback:4310                          |
+| `dev:web`          | Vite:5173 с API proxy                               |
+| `typecheck`        | TypeScript workspaces                               |
+| `test`             | server + CLI + узкие web component regression tests |
+| `test:web:browser` | deterministic Chromium P0-A с mocked REST/SSE       |
+| `build`            | contract, web, server и CLI production artifacts    |
+| `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
 `packages/web` содержит script `dev:mock`, но целевой `mock/server.mjs` отсутствует.
 Считайте команду неработающей до отдельного решения: восстановить fixture server
@@ -82,14 +84,18 @@ npm run link:cli
 ### Web
 
 - `App.tsx` — current three-tab IA;
+- `components/ErrorBoundary.tsx` — root/Chat containment и safe diagnostics;
 - `lib/router.tsx` — History API router;
 - `lib/api.ts` — typed API calls;
 - `lib/sse.ts` — POST/SSE parser;
+- `lib/locale.ts` — English fallback и curated Russian для новых boundary strings;
 - `features/launcher` и `features/models` — installed/catalog/profile;
 - `features/chat` — creation, timeline, composer и stream state;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
+- `test/component` — Vitest/jsdom P0-A regression;
+- `test/browser` — Playwright Chromium fixtures и first-stream smoke.
 
 ### CLI
 

@@ -44,9 +44,11 @@ controllers не durable.
 Исходник: [lld-web.mmd](diagrams/lld-web.mmd).
 
 - `App.tsx`: health gate и Models/Chat/Settings;
+- `components/ErrorBoundary.tsx`: root и keyed Chat containment с diagnostics;
 - `lib/router.tsx`: custom History API routing;
 - `lib/api.ts`: REST + current POST/SSE;
 - `lib/sse.ts`: frame parser;
+- `lib/locale.ts`: locale keys для boundary с English fallback/Russian;
 - `features/chat/useChat.ts`: page-owned turn state;
 - `features/chat/streamBuffer.ts`: rAF-buffered content/thinking;
 - `features/chat/ChatPage.tsx`: create, timeline, composer, context/tool UI;
@@ -54,6 +56,8 @@ controllers не durable.
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields.
+- `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream
+  regression; browser использует deterministic mocked REST/SSE.
 
 ### `packages/cli`
 
@@ -73,6 +77,11 @@ foreground и открывает browser. Durable service lifecycle/TUI/API clie
 Кроме того, EOF без terminal Ollama chunk может пройти как успешный stop.
 Повторная compaction вычисляет boundary по array length, а не реальному message
 sequence. Это P0 defects, а не target semantics.
+
+P0-A исправил только client cleanup: effect больше не возвращает результат
+`scrollIntoView`. Root boundary и Chat feature boundary заменяют white screen
+диагностическим fallback. Они не меняют connection-owned turn и не исправляют
+empty assistant/status defects выше.
 
 ## Target module boundaries
 

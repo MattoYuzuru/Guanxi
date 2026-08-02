@@ -13,13 +13,13 @@
 
 ## Phase 0
 
-| Slice                             | Статус      | Outcome                                                 |
-| --------------------------------- | ----------- | ------------------------------------------------------- |
-| P0-A Web crash containment        | not started | correct effect, root Error Boundary, diagnostics        |
-| P0-B Truthful turn terminal state | not started | no ambiguous empty assistant; error/stop persisted      |
-| P0-C Exclusive inference bridge   | not started | global mutex; compaction conflict/sequence fixed        |
-| P0-D Runtime/catalog health       | not started | real health, no dead endpoint, running models, timeouts |
-| P0-E Browser regression gate      | not started | create/send/stream/done/reload and failure E2E          |
+| Slice                             | Статус                 | Outcome                                                  |
+| --------------------------------- | ---------------------- | -------------------------------------------------------- |
+| P0-A Web crash containment        | independently verified | `f038b5c`/`d05a906`; 3 component, 2 Chromium; all checks |
+| P0-B Truthful turn terminal state | not started            | no ambiguous empty assistant; error/stop persisted       |
+| P0-C Exclusive inference bridge   | not started            | global mutex; compaction conflict/sequence fixed         |
+| P0-D Runtime/catalog health       | not started            | real health, no dead endpoint, running models, timeouts  |
+| P0-E Browser regression gate      | not started            | create/send/stream/done/reload and failure E2E           |
 
 Phase 0 становится `independently verified`, только когда все slices выполнены и
 exit gate ROADMAP проверен целиком.

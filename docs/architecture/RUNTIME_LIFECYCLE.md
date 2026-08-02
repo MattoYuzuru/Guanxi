@@ -28,9 +28,9 @@ Lock запрещает только второй turn в том же thread. Д
 AbortController. Generation прекращается, но модель может оставаться в Ollama
 до `keep_alive` expiry. Это одновременно теряет работу и не освобождает память.
 
-### Точная причина белого экрана
+### Исправленная в P0-A причина белого экрана
 
-В `ChatPage.tsx` streaming child вызывает:
+До P0-A `ChatPage.tsx` streaming child вызывал:
 
 ```ts
 useEffect(onChange, [snapshot.version, toolCalls.length, onChange]);
@@ -44,9 +44,9 @@ Chrome он возвращает Promise; React принимает return эфф
 TypeError: T is not a function
 ```
 
-Root Error Boundary отсутствует, поэтому React root становится белым.
+Root Error Boundary отсутствовал, поэтому React root становился белым.
 
-Безопасная форма, запланированная в P0:
+P0-A реализовал безопасную форму:
 
 ```ts
 useEffect(() => {
@@ -54,12 +54,18 @@ useEffect(() => {
 }, [snapshot.version, toolCalls.length, onChange]);
 ```
 
-Это ещё не исправлено текущим docs-only изменением.
+Root boundary теперь сохраняет Reload, безопасную навигацию, correlation ID,
+время/route/error и component stack. Отдельный keyed Chat boundary сохраняет
+application shell при падении feature. Поведение локально подтверждено component
+test с Promise-returning `scrollIntoView` и deterministic Chromium flow с
+несколькими streaming phases.
 
 ### Почему reload показывает пустой assistant
 
-Пустой assistant уже сохранён до Ollama request. Crash закрывает stream, abort
-проходит до начала runtime generation, а status/error не персистятся. Локально
+Пустой assistant уже сохраняется до Ollama request. До P0-A наблюдавшийся React
+crash закрывал stream, abort проходил до начала runtime generation, а
+status/error не персистились. P0-A устранил эту конкретную client-причину, но
+любой другой disconnect/abort всё ещё способен оставить ambiguous row. Локально
 наблюдавшийся проблемный thread имел четыре пустых assistant rows с `usage:null`;
 в Ollama log в эти моменты не было `POST /api/chat`.
 
@@ -469,5 +475,9 @@ private prompt/thinking/secrets по default.
 6. сделать реальный running-model panel;
 7. убрать page unmount cancellation либо явно сохранить `cancelled`;
 8. добавить deterministic first-turn/navigation tests.
+
+P0-A локально реализовал пункт 1 и узкий first-stream regression из пункта 8.
+Turn terminal persistence, disconnect semantics и остальные bridge items не
+изменены.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

@@ -373,6 +373,11 @@ licenses требуют явного user action.
 
 Export выполняется только пользователем и показывает preview/redaction.
 
+Current P0-A Web уже создаёт локальный client correlation ID и показывает
+timestamp, route, error type и component stack в root/Chat Error Boundary.
+Автоматический diagnostics bundle/export и корреляция с будущим `jobId` ещё не
+реализованы.
+
 ## Evolution
 
 Переход выполняется вертикальными slices, а не big-bang:

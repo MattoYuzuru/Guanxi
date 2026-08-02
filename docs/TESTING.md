@@ -7,16 +7,20 @@
 
 На 2026-08-02:
 
-- `npm test`: 59/59 server и CLI tests;
+- `npm test`: 59/59 server/CLI и 3/3 web component tests;
+- `npm run test:web:browser`: 2/2 deterministic Chromium tests с mocked
+  REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
   проверяет документацию с repository config;
-- web unit/component/E2E/a11y tests отсутствуют;
+- web automation покрывает только P0-A: streaming cleanup, Error Boundary,
+  `create → redirect → first stream`, keyboard/focus, narrow viewport, 200%
+  text scaling и reduced motion;
 - CI/lint/formatter commands отсутствуют;
-- живой первый Chat turn не входит в regression suite.
+- живой Ollama и полный first-turn persistence flow не входят в regression suite.
 
-Baseline подтверждает существующие server/CLI unit и route cases, но не
-пользовательский Web flow и не resource safety.
+Baseline подтверждает существующие server/CLI unit и route cases и узкий mocked
+Web flow P0-A, но не P0-B terminal persistence, resource safety или живой runtime.
 
 ## Существующее покрытие
 
@@ -31,12 +35,12 @@ Baseline подтверждает существующие server/CLI unit и ro
 | Context usage                      | tests                   |
 | Static web serving                 | test                    |
 | CLI existing-server logic          | tests                   |
-| React render/navigation            | нет                     |
-| Browser streaming                  | нет                     |
+| React render/navigation            | P0-A component cases    |
+| Browser streaming                  | P0-A mocked stream      |
 | Catalog provider/cache             | нет                     |
 | Global concurrency/model lifecycle | нет                     |
 | SSE replay/restart                 | нет                     |
-| Accessibility/responsive           | нет                     |
+| Accessibility/responsive           | P0-A boundary smoke     |
 
 ## Обязательная target matrix
 

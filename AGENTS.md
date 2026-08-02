@@ -72,11 +72,14 @@ npm run dev:server
 npm run dev:web
 npm run typecheck
 npm test
+npm run test:web:browser
 npm run build
 ```
 
-`npm test` сейчас проверяет только server и CLI. У web нет автоматических
-component/E2E/accessibility тестов; не называйте root test полным regression suite.
+`npm test` проверяет server, CLI и узкий набор web component regression tests.
+Deterministic Chromium tests P0-A запускаются отдельно через
+`npm run test:web:browser`. Они покрывают только crash containment и первый
+mocked stream; не называйте root test или этот smoke полным regression suite.
 
 ## Границы изменений
 
