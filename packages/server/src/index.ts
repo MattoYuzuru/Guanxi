@@ -15,7 +15,7 @@ import { createAppContext } from './context.ts'
 import { defaultDbPath } from './store/db.ts'
 
 const APP_VERSION = '0.1.0'
-const DEFAULT_PORT = 4310
+export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -47,20 +47,7 @@ export async function start(options: StartOptions = {}) {
     c.json({ code: 'internal_error', message: 'API-маршрут не найден', details: null }, 404),
   )
 
-  // Собранный фронт раздаётся тем же процессом: одна команда, один порт.
-  const webDir = options.webDir ?? resolve(here, '../../web/dist')
-  if (existsSync(webDir)) {
-    server.use('/*', serveStatic({ root: webDir }))
-    // Роутинг на стороне клиента: всё неизвестное отдаём в index.html.
-    server.get('*', serveStatic({ path: 'index.html', root: webDir }))
-  } else {
-    server.get('/', (c) =>
-      c.text(
-        `Alamo UI ${APP_VERSION}\n\nСборка фронта не найдена (${webDir}).\n` +
-          `Для разработки запусти: npm run dev:web\nAPI доступен на /api/health\n`,
-      ),
-    )
-  }
+  mountWeb(server, options.webDir ?? resolve(here, '../../web/dist'))
 
   let instance!: ReturnType<typeof serve>
   const actualPort = await new Promise<number>((resolvePort, reject) => {
@@ -94,4 +81,30 @@ export async function start(options: StartOptions = {}) {
   process.once('SIGTERM', shutdown)
 
   return { url, port: actualPort, host, context, close }
+}
+
+/**
+ * Раздаёт production-сборку, даже если она появилась уже после запуска сервера.
+ *
+ * Это важно для разработки: backend часто стартует раньше первого `vite build`.
+ * `serveStatic` проверяет файл на каждом запросе, поэтому после сборки не нужен
+ * рестарт процесса.
+ */
+export function mountWeb(server: ReturnType<typeof createApp>, webDir: string): void {
+  // Собранный фронт раздаётся тем же процессом: одна команда, один порт.
+  const serveFiles = serveStatic({ root: webDir })
+  const serveIndex = serveStatic({ path: 'index.html', root: webDir })
+
+  server.use('/*', serveFiles)
+  // Роутинг на стороне клиента: всё неизвестное отдаём в index.html.
+  server.get('*', async (context, next) => {
+    if (existsSync(join(webDir, 'index.html'))) {
+      return serveIndex(context, next)
+    }
+
+    return context.text(
+      `Alamo UI ${APP_VERSION}\n\nСборка фронта не найдена (${webDir}).\n` +
+        `Для разработки запусти: npm run dev:web\nAPI доступен на /api/health\n`,
+    )
+  })
 }
