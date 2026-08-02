@@ -71,4 +71,24 @@ describe('streaming Chat rendering', () => {
     expect(screen.getByText('partial output не подтверждён')).toBeTruthy()
     expect(screen.queryByText('готов')).toBeNull()
   })
+
+  it('does not claim active progress for a retained thinking-only failure', () => {
+    const buffer = new StreamBuffer()
+    buffer.appendThinking('Only buffered thought survived')
+    buffer.flushNow()
+
+    render(
+      <StreamingMessage
+        buffer={buffer}
+        phase="idle"
+        retainedAfterFailure
+        toolCalls={[]}
+        onChange={() => undefined}
+      />,
+    )
+
+    expect(screen.getByText('Only buffered thought survived')).toBeTruthy()
+    expect(screen.getByText('Текст ответа не был сохранён в live buffer.')).toBeTruthy()
+    expect(screen.queryByText('Готовит ответ…')).toBeNull()
+  })
 })

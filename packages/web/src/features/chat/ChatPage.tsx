@@ -740,6 +740,10 @@ export function StreamingMessage({
 
       {snapshot.content ? (
         <Markdown source={snapshot.content} className={phase === 'generating' ? 'stream-caret' : ''} />
+      ) : retainedAfterFailure ? (
+        <p className="text-xs text-[var(--fg-muted)]">
+          {translate('chat.turn.livePartial.noContent')}
+        </p>
       ) : (
         <p className="anim-pulse-soft text-xs text-[var(--fg-muted)]">
           {phase === 'prefill' ? 'Обрабатывает контекст…' : 'Готовит ответ…'}

@@ -36,6 +36,7 @@ const english = {
   'chat.turn.reason': 'Stop reason',
   'chat.turn.streamMissingTerminal':
     'The response stream ended without a terminal event. Reloaded history is the source of truth.',
+  'chat.turn.livePartial.noContent': 'No response text was retained.',
   'chat.turn.error.ollama_unavailable': 'Ollama was unavailable before the response completed.',
   'chat.turn.error.upstream_error': 'Ollama ended the response with an error.',
   'chat.turn.error.runtime_protocol':
@@ -97,6 +98,7 @@ const russian: Messages = {
   'chat.turn.reason': 'Причина остановки',
   'chat.turn.streamMissingTerminal':
     'Поток ответа завершился без terminal event. Источником истины остаётся перечитанная история.',
+  'chat.turn.livePartial.noContent': 'Текст ответа не был сохранён в live buffer.',
   'chat.turn.error.ollama_unavailable': 'Ollama была недоступна до завершения ответа.',
   'chat.turn.error.upstream_error': 'Ollama завершила ответ ошибкой.',
   'chat.turn.error.runtime_protocol':
