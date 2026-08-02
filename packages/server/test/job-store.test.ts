@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { Worker } from 'node:worker_threads'
-import type { Job } from '@alamo/contract'
+import type { Job, JobState } from '@alamo/contract'
 import { openDb } from '../src/store/db.ts'
 import {
   JobStore,
@@ -12,11 +12,13 @@ import {
   type AppendJobEventInput,
   type CreateJobInput,
   type TerminalizeJobInput,
+  type TransitionJobInput,
 } from '../src/store/jobs.ts'
 
 type WorkerTask =
   | { operation: 'create'; input: CreateJobInput }
   | { operation: 'append'; input: AppendJobEventInput }
+  | { operation: 'transition'; input: TransitionJobInput }
   | { operation: 'terminalize'; input: TerminalizeJobInput }
 
 interface WorkerSuccess<T> {
@@ -53,6 +55,41 @@ async function runConcurrent<T>(dbPath: string, tasks: WorkerTask[]): Promise<Wo
 
 function assertStoreError(code: JobStoreError['code']): (error: unknown) => boolean {
   return (error) => error instanceof JobStoreError && error.code === code
+}
+
+const PATHS_TO_STATE: Partial<Record<JobState, JobState[]>> = {
+  queued: [],
+  reserving: ['reserving'],
+  loading: ['reserving', 'loading'],
+  prefill: ['reserving', 'loading', 'prefill'],
+  thinking: ['reserving', 'loading', 'prefill', 'thinking'],
+  generating: ['reserving', 'loading', 'prefill', 'generating'],
+  waiting_tool: ['reserving', 'loading', 'prefill', 'generating', 'waiting_tool'],
+  waiting_approval: [
+    'reserving',
+    'loading',
+    'prefill',
+    'generating',
+    'waiting_tool',
+    'waiting_approval',
+  ],
+  finalizing: ['reserving', 'loading', 'prefill', 'generating', 'finalizing'],
+  cancelling: ['cancelling'],
+}
+
+function advanceTo(jobs: JobStore, job: Job, target: JobState): Job {
+  let current = job
+  for (const status of PATHS_TO_STATE[target] ?? []) {
+    const result = jobs.transition({
+      jobId: job.id,
+      expectedStatus: current.status,
+      status,
+    })
+    assert.equal(result.applied, true)
+    current = result.job
+  }
+  assert.equal(current.status, target)
+  return current
 }
 
 describe('durable Job store', () => {
@@ -175,6 +212,199 @@ describe('durable Job store', () => {
       assertStoreError('sequence_conflict'),
     )
     assert.equal(jobs.get(created.id)?.lastEventSequence, 4)
+    db.close()
+  })
+
+  it('commits every canonical non-terminal state edge with one lifecycle event', () => {
+    const edges: Array<readonly [JobState, JobState]> = [
+      ['queued', 'reserving'],
+      ['queued', 'cancelling'],
+      ['reserving', 'loading'],
+      ['reserving', 'cancelling'],
+      ['loading', 'prefill'],
+      ['loading', 'cancelling'],
+      ['prefill', 'thinking'],
+      ['prefill', 'generating'],
+      ['prefill', 'cancelling'],
+      ['thinking', 'generating'],
+      ['thinking', 'cancelling'],
+      ['generating', 'waiting_tool'],
+      ['generating', 'finalizing'],
+      ['generating', 'cancelling'],
+      ['waiting_tool', 'waiting_approval'],
+      ['waiting_tool', 'prefill'],
+      ['waiting_tool', 'cancelling'],
+      ['waiting_approval', 'waiting_tool'],
+      ['waiting_approval', 'cancelling'],
+    ]
+    const db = openDb(':memory:')
+    const jobs = new JobStore(db)
+
+    edges.forEach(([from, status], index) => {
+      const created = jobs.create({
+        kind: 'inference',
+        operation: 'canonical-transition',
+        idempotencyScope: 'transition-matrix',
+        idempotencyKey: String(index),
+      }).job
+      const source = advanceTo(jobs, created, from)
+      const result = jobs.transition({
+        jobId: created.id,
+        expectedStatus: from,
+        status,
+        phase: `phase-${index}`,
+        metadata: { edge: `${from}->${status}` },
+      })
+
+      assert.equal(result.applied, true)
+      assert.equal(result.job.status, status)
+      assert.equal(result.job.phase, `phase-${index}`)
+      assert.equal(result.job.lastEventSequence, source.lastEventSequence + 1)
+      assert.deepEqual(jobs.eventsAfter(created.id, source.lastEventSequence), [
+        {
+          id: jobs.eventsAfter(created.id, source.lastEventSequence)[0]!.id,
+          jobId: created.id,
+          sequence: source.lastEventSequence + 1,
+          type: 'lifecycle',
+          state: status,
+          phase: `phase-${index}`,
+          metadata: { edge: `${from}->${status}` },
+          createdAt: jobs.eventsAfter(created.id, source.lastEventSequence)[0]!.createdAt,
+        },
+      ])
+    })
+
+    db.close()
+  })
+
+  it('rejects invalid edges and stale state without changing state, sequence or events', () => {
+    const db = openDb(':memory:')
+    const jobs = new JobStore(db)
+    const created = jobs.create({
+      kind: 'inference',
+      operation: 'invalid-transition',
+      idempotencyScope: 'transition',
+      idempotencyKey: 'invalid-and-stale',
+    }).job
+
+    for (const [from, status] of [
+      ['queued', 'loading'],
+      ['reserving', 'queued'],
+      ['generating', 'prefill'],
+    ] as Array<readonly [JobState, JobState]>) {
+      assert.throws(
+        () => jobs.transition({ jobId: created.id, expectedStatus: from, status }),
+        assertStoreError('invalid_transition'),
+      )
+    }
+    assert.deepEqual(jobs.get(created.id), created)
+    assert.deepEqual(jobs.eventsAfter(created.id, 0).map((event) => event.sequence), [1])
+
+    const reserving = jobs.transition({
+      jobId: created.id,
+      expectedStatus: 'queued',
+      status: 'reserving',
+    }).job
+    const stale = jobs.transition({
+      jobId: created.id,
+      expectedStatus: 'queued',
+      status: 'cancelling',
+    })
+    assert.equal(stale.applied, false)
+    assert.deepEqual(stale.job, reserving)
+    assert.deepEqual(jobs.eventsAfter(created.id, 0).map((event) => event.sequence), [1, 2])
+    db.close()
+  })
+
+  it('sets startedAt once on the first successful exit from queued', () => {
+    const db = openDb(':memory:')
+    const jobs = new JobStore(db)
+    const created = jobs.create({
+      kind: 'inference',
+      operation: 'started-at',
+      idempotencyScope: 'transition',
+      idempotencyKey: 'started-at',
+    }).job
+
+    const reserving = jobs.transition({
+      jobId: created.id,
+      expectedStatus: 'queued',
+      status: 'reserving',
+    }).job
+    assert.notEqual(reserving.startedAt, null)
+    const loading = jobs.transition({
+      jobId: created.id,
+      expectedStatus: 'reserving',
+      status: 'loading',
+    }).job
+    assert.equal(loading.startedAt, reserving.startedAt)
+    db.close()
+  })
+
+  it('rolls back transition state, startedAt and sequence when its event insert fails', () => {
+    const db = openDb(':memory:')
+    const jobs = new JobStore(db)
+    const created = jobs.create({
+      kind: 'inference',
+      operation: 'atomic-transition',
+      idempotencyScope: 'transition',
+      idempotencyKey: 'event-failure',
+    }).job
+    db.exec(`
+      CREATE TRIGGER fail_transition_job_event
+      BEFORE INSERT ON job_events
+      WHEN NEW.state = 'reserving'
+      BEGIN
+        SELECT RAISE(ABORT, 'injected transition event failure');
+      END;
+    `)
+
+    assert.throws(
+      () =>
+        jobs.transition({
+          jobId: created.id,
+          expectedStatus: 'queued',
+          status: 'reserving',
+        }),
+      /injected transition event failure/,
+    )
+    assert.deepEqual(jobs.get(created.id), created)
+    assert.equal(jobs.get(created.id)?.startedAt, null)
+    assert.deepEqual(jobs.eventsAfter(created.id, 0).map((event) => event.sequence), [1])
+    db.close()
+  })
+
+  it('rejects non-terminal transitions after the Job is terminal', () => {
+    const db = openDb(':memory:')
+    const jobs = new JobStore(db)
+    const created = jobs.create({
+      kind: 'inference',
+      operation: 'terminal-transition',
+      idempotencyScope: 'transition',
+      idempotencyKey: 'terminal',
+    }).job
+    jobs.terminalize({
+      jobId: created.id,
+      expectedStatus: 'queued',
+      status: 'failed',
+      error: {
+        category: 'internal',
+        code: 'fixture_failure',
+        message: 'safe fixture failure',
+        retryable: false,
+      },
+    })
+
+    assert.throws(
+      () =>
+        jobs.transition({
+          jobId: created.id,
+          expectedStatus: 'queued',
+          status: 'reserving',
+        }),
+      assertStoreError('job_terminal'),
+    )
+    assert.equal(jobs.eventsAfter(created.id, 0).length, 2)
     db.close()
   })
 
@@ -449,6 +679,54 @@ describe('durable Job store', () => {
       ).count,
       1,
     )
+    verified.close()
+  })
+
+  it('allows exactly one concurrent non-terminal compare-and-set transition', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-job-transition-race-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const path = join(root, 'alamo.db')
+    const db = openDb(path)
+    const created = new JobStore(db).create({
+      kind: 'inference',
+      operation: 'chat',
+      idempotencyScope: 'chat:race',
+      idempotencyKey: 'transition-submit',
+    }).job
+    db.close()
+
+    const results = await runConcurrent<{ applied: boolean; job: Job }>(path, [
+      {
+        operation: 'transition',
+        input: {
+          jobId: created.id,
+          expectedStatus: 'queued',
+          status: 'reserving',
+        },
+      },
+      {
+        operation: 'transition',
+        input: {
+          jobId: created.id,
+          expectedStatus: 'queued',
+          status: 'cancelling',
+        },
+      },
+    ])
+    assert.equal(results.every((result) => result.ok), true)
+    const successes = results.filter(
+      (result): result is WorkerSuccess<{ applied: boolean; job: Job }> => result.ok,
+    )
+    assert.deepEqual(
+      successes.map((result) => result.result.applied).sort(),
+      [false, true],
+    )
+    assert.equal(new Set(successes.map((result) => result.result.job.status)).size, 1)
+
+    const verified = openDb(path)
+    const jobs = new JobStore(verified)
+    assert.equal(jobs.get(created.id)?.lastEventSequence, 2)
+    assert.deepEqual(jobs.eventsAfter(created.id, 0).map((event) => event.sequence), [1, 2])
     verified.close()
   })
 })
