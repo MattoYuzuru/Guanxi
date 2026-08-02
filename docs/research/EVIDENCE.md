@@ -41,16 +41,19 @@ sorting и capability filters, но не является documented public cata
 
 [Ollama Terms of Service](https://ollama.com/terms), обновлённые в мае 2026,
 запрещают automated access без разрешения и использование сервиса для разработки
-competing products. Вывод: не scrape-ить human HTML/undocumented registry; запросить
-разрешение либо использовать официальный будущий API.
+competing products. Вывод проекта: не scrape-ить human HTML/undocumented
+registry, включая one-time snapshot job.
 
 Допустимый interim:
 
 - documented local APIs для installed/running/show;
 - внешний link на официальный каталог;
 - version-gated local experimental recommendations с label;
-- dated bundled snapshot;
-- Hugging Face public API как discovery hints.
+- вручную поддерживаемый dated bundled snapshot;
+- manual user-supplied Ollama model name/page reference;
+- Hugging Face public API как discovery и exact-file download.
+
+Решение владельца: permission не запрашивать и live catalog не реализовывать.
 
 ## Hugging Face
 
@@ -58,6 +61,10 @@ competing products. Вывод: не scrape-ить human HTML/undocumented regis
   поддерживает search, filters, tags, pipeline metadata, files и gated state.
 - [Model Cards](https://huggingface.co/docs/hub/model-cards) дают intended use,
   license и author metadata.
+- [Hub download](https://huggingface.co/docs/huggingface_hub/en/guides/download)
+  поддерживает exact file/revision, local cache и dry-run.
+- [Ollama import](https://docs.ollama.com/import) официально импортирует local
+  GGUF через `Modelfile FROM /path/file.gguf` и `ollama create`.
 
 Ограничения:
 
@@ -66,6 +73,9 @@ competing products. Вывод: не scrape-ить human HTML/undocumented regis
 - GGUF variants имеют разный fit;
 - gated model требует token/acceptance;
 - intended task/language/quality требуют runtime/semantic validation.
+
+Следствие для UI: HF URL нельзя обещать как direct `ollama pull`. Нужен pipeline
+metadata → exact GGUF → download/checksum → local Ollama import → probe.
 
 ## Что можно и нельзя autodetect
 

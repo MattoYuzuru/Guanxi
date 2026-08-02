@@ -1,204 +1,135 @@
 # Открытые продуктовые решения
 
-**Статус:** proposed  
-**Проверено:** 2026-08-02  
-**Назначение:** вопросы для следующего обсуждения, не блокирующие документацию
+**Статус:** proposed question register after iteration 2026-08-02
 
-Для каждого вопроса указан рекомендуемый default. Подтверждение пользователя
-переводит связанный ADR/требование в `accepted`.
+**Проверено:** 2026-08-02
 
-## Решить до Phase 1
+Ответы Q-01–Q-21 зафиксированы в
+[decision log](../decisions/2026-08-02-product-decisions.md). Ни один исходный
+вопрос больше не блокирует документирование архитектуры.
 
-### Q-01. Главный продуктовый приоритет
+## Resolution Q-01–Q-21
 
-**Рекомендация:** resource-aware workbench/control plane; generic chat parity —
-необходимая основа, но не differentiator.
+| Вопрос | Результат                                                       |
+| ------ | --------------------------------------------------------------- |
+| Q-01   | accepted: собственный resource-aware workbench                  |
+| Q-02   | accepted: Job продолжает работу при навигации                   |
+| Q-03   | accepted: single lane default, measured parallel later          |
+| Q-04   | accepted: Alamo service и Ollama daemon разделены               |
+| Q-05   | resolved: no permission/no live scrape; manual references       |
+| Q-06   | accepted: HF discovery и direct valid GGUF import               |
+| Q-07   | accepted: macOS Apple Silicon + Linux NVIDIA                    |
+| Q-08   | accepted: logical Project с filesystem bindings                 |
+| Q-09   | partially accepted: three retention modes; default/trigger open |
+| Q-10   | accepted: live reasoning + diagnostic retention 7 days          |
+| Q-11   | accepted: English + curated Russian + glossary                  |
+| Q-12   | accepted: full text foundation before STT                       |
+| Q-13   | accepted: browser capture first, hotkey later                   |
+| Q-14   | accepted: native STT и LLM post-processing разделены            |
+| Q-15   | accepted: video deferred indefinitely                           |
+| Q-16   | accepted with changed direction: first-party coding agent       |
+| Q-17   | accepted: deliberate long-run profile; exact watchdog open      |
+| Q-18   | accepted: MCP/Skills off by default and Project-scoped          |
+| Q-19   | accepted: background service, shared settings, opt-in autostart |
+| Q-20   | open: новое имя пока не выбрано                                 |
+| Q-21   | accepted: JetBrains technical UI + document font                |
 
-Альтернатива: сначала копировать весь Open WebUI/LM Studio surface.
+## Блокируют retention implementation
 
-Почему важно: определяет, инвестируем ли первые месяцы в Governor/Jobs/provenance
-или в большое число видимых features. Поздняя смена создаёт архитектурный долг.
+### Q-22. Какой Chat retention является default?
 
-### Q-02. Что делать Job при навигации
+В ответе прозвучали оба варианта: полное сохранение и временное удаление.
 
-**Рекомендация:** всегда продолжать в background; спрашивать только при запуске
-конфликтующей работы.
+**Рекомендация:** `7 days` как default для нового обычного Chat, `Keep` для Chat,
+созданного внутри Project, и запоминание последнего выбора пользователя.
 
-Альтернатива: предупреждать при каждом уходе и останавливать по подтверждению.
+Альтернатива: всегда `Keep`.
 
-Почему важно: первая модель делает UI route независимым и лучше соответствует
-долгим задачам.
+Нужно одно прямое решение до DB default/migration.
 
-### Q-03. Default concurrency
+### Q-23. Когда заканчивается `Session` Chat?
 
-**Рекомендация:** один accelerator Job, очередь; safe parallel только advanced
-после measured fit.
+**Рекомендация:** пометить на удаление, когда пользователь покинул Chat, Job стал
+terminal и был открыт другой Chat/Quick Run. Page reload/reconnect не завершает
+session. Фактическое удаление идёт в Trash на 24 часа.
 
-Альтернатива: доверять очереди Ollama и разрешать все submits.
+Альтернатива: удалять только при закрытии Alamo Service.
 
-Почему важно: определяет safety promise на 16 GB Mac и простоту scheduler.
+Нужно подтвердить trigger и нужен ли 24-hour recovery grace.
 
-### Q-04. Кто владеет Ollama daemon
+### Q-24. TTL продлевается от создания или последней активности?
 
-**Рекомендация:** Alamo управляет своим service и loaded models, но не завершает
-внешний Ollama daemon без отдельной явной команды.
+**Рекомендация:** rolling TTL от последней user activity, а не от model/tool
+events. UI показывает exact expiry.
 
-Альтернатива: считать Ollama дочерним процессом Alamo.
+Это влияет на cleanup index и ожидания пользователя.
 
-Почему важно: Ollama может использоваться другими приложениями; `Exit` не должен
-ломать их.
+## Блокируют первый import slice
 
-## Решить до Phase 2
+### Q-25. Какие форматы импортировать с Hugging Face первыми?
 
-### Q-05. Full Ollama Marketplace
+**Рекомендация:** только exact GGUF file/revision. Safetensors conversion и GGUF
+adapters — отдельные поздние capabilities.
 
-**Рекомендация:** запросить permission/официальный API; до этого local + HF hints
+Пользователь сообщил, что обычно выбирает проверенные GGUF; это делает первый
+slice безопаснее и понятнее.
 
-- dated snapshot + external link, без scraping.
+### Q-26. Что принимать в поле «Add from Ollama»?
 
-Нужное действие пользователя: решить, готов ли проект обращаться к Ollama за
-разрешением и позиционировать ли себя потенциально competing product.
+**Рекомендация:** model name (`qwen3:8b`) и URL официальной model page. Preview
+показывает нормализованное имя; pull начинается только после подтверждения.
 
-Почему важно: текущие Terms — blocker автоматического human-catalog access.
+Произвольный URL не передаётся Ollama и не используется для server-side fetch.
 
-### Q-06. Direct Hugging Face import
+## Блокируют autonomous agent safety
 
-**Рекомендация:** сначала discovery и ссылки; прямой import только для
-проверенного GGUF/Ollama adapter и отдельного gated-token flow.
+### Q-27. Какие watchdog limits нужны long-running Agent Run?
 
-Альтернатива: считать любой `apps=ollama` result installable.
+Это не денежный budget. Нужно предотвратить бесконечный одинаковый loop.
 
-Почему важно: license, gated models, variants и runtime compatibility.
+**Рекомендация:**
 
-### Q-07. Первая поддерживаемая platform matrix
+- user-configurable expected duration;
+- hard wall-clock ceiling;
+- repeated-failure/no-progress threshold;
+- disk/output ceiling;
+- pause on unavailable dependency;
+- explicit `No time target`, но не `No safety limits`.
 
-**Рекомендация:** macOS Apple Silicon как verified tier; NVIDIA PC как второй
-prototype/verified tier после уточнения OS.
+Точные значения следует выбрать после 4–6-hour benchmark.
 
-Нужно уточнить: NVIDIA-компьютер работает под Linux, Windows/WSL или обеими
-средами?
+### Q-28. Что auto mode всё равно никогда не делает без подтверждения?
 
-Почему важно: telemetry, packaging, process control и filesystem security
-существенно различаются.
+**Рекомендация:** выход за allowed roots, credential access, изменение service/
+login configuration, irreversible delete, push/publish/deploy и расширение
+network allowlist.
 
-## Решить до Phase 3
+Даже для личного MCP это защищает от ошибки модели, а не от недоверия к автору
+MCP.
 
-### Q-08. Project и filesystem
+## Не блокируют ранние фазы
 
-**Рекомендация:** Project — логический контейнер; filesystem root — отдельная
-привязка с permission.
+### Q-29. Completion sound default
 
-Альтернатива: каждый Project обязан быть одной папкой.
+**Рекомендация:** in-app notification включено; sound включён только для
+background Job и выключен, когда Job открыт. Global + per-Chat override.
 
-Почему важно: voice/image personal projects не обязаны иметь source tree, а agent
-должен иметь явную границу.
+Нужно выбрать/создать короткий лицензированный sound и проверить reduced-motion/
+sensory preferences.
 
-### Q-09. Retention Quick Run
+### Q-30. Русская метка `Recipe`
 
-**Рекомендация:** история выключена, временные assets удаляются по TTL; кнопка
-Save создаёт Artifact/Chat entry.
+**Рекомендация:** `Сценарий`; в glossary объяснить, что это сохранённая настройка
+задачи.
 
-Альтернатива: локальная история всех диктовок по default, как в специальных apps.
+Альтернативы: `Профиль`, `Шаблон`. Нельзя использовать все три как разные
+сущности.
 
-Нужно уточнить: важнее приватность/чистота или удобная automatic history?
+### Q-31. Новое название
 
-### Q-10. Thinking storage/privacy
+Остаётся открытым без влияния на ранние фазы. До выбора действует ADR-0007.
 
-**Рекомендация:** показывать live при наличии отдельного channel; сохранять только
-по явной global/Project policy, экспортировать отдельно.
+### Q-32. Custom Project icons
 
-Альтернатива: всегда сохранять рядом с answer.
-
-Почему важно: thinking может быть большим, приватным и не предназначенным для
-долгого хранения.
-
-### Q-11. Названия сущностей
-
-**Рекомендация:** UI: Quick Run, Chat, Project, Recipe, Agent Run, Artifact.
-
-Нужно проверить русские/английские labels и понять, подходит ли слово `Recipe`.
-Возможная альтернатива: Preset/Profile, но нельзя одновременно использовать все
-три как разные сущности.
-
-## Решить до Audio/Media
-
-### Q-12. Первый specialized adapter
-
-**Рекомендация:** STT/Dictation после text foundation: он проверяет upload,
-stream/progress, vocabulary, pipeline и resource switching.
-
-Альтернатива: image generation как более визуальный showcase.
-
-### Q-13. Voice capture surface
-
-**Рекомендация:** сначала browser record/upload; global OS hotkey — отдельная
-desktop integration phase.
-
-Почему важно: настоящий system-wide hotkey ненадёжен в обычном browser.
-
-### Q-14. Cleanup и summary transcript
-
-**Рекомендация:** raw transcription, cleanup и summary — отдельные видимые stages
-Recipe pipeline.
-
-Альтернатива: speech model silently возвращает «улучшенный» текст.
-
-Почему важно: сохраняет provenance и не приписывает STT capability того, что
-сделал LLM.
-
-### Q-15. Video
-
-**Рекомендация:** оставить P3/experimental до реального stable adapter/provider.
-
-Нужно уточнить, является ли video личным приоритетом или лишь требованием не
-закрывать архитектуру.
-
-## Решить до Agent/CLI
-
-### Q-16. Собственный agent harness
-
-**Рекомендация:** сначала запуск/interop Claude Code, Codex, OpenCode через
-совместимый локальный endpoint; свой harness — только ради durable deliberate
-mode.
-
-Нужно уточнить: какой первый agent use case — coding, deep research, file
-automation или general assistant?
-
-### Q-17. Weak-model deliberate mode
-
-**Рекомендация:** явный execution profile с budget/checkpoints/verifier.
-
-Нужно определить benchmark: одна реальная ночная coding/research задача, критерии
-качества, максимальное время и разрешённые tools.
-
-### Q-18. MCP/Skills default
-
-**Рекомендация:** deny-by-default для mutating/network/secret effects; bindings
-на Project/Recipe; Chat/Job может только сузить или запросить расширение.
-
-Нужно уточнить, какие MCP должны быть first-party в первой версии.
-
-### Q-19. TUI и service autostart
-
-**Рекомендация:** no-args TUI; `start --detach` явный; autostart/login item
-выключен до opt-in.
-
-Нужно уточнить, должен ли service переживать закрытие terminal и автоматически
-стартовать после login.
-
-## Naming/visual
-
-### Q-20. Новое название
-
-**Рекомендация:** сначала centralize и migration-ready boundaries, затем branding
-exercise; не переименовывать packages/data path в середине runtime rewrite.
-
-Нужно получить short list названий, tone и требования к домену/trademark.
-
-### Q-21. Font
-
-**Рекомендация:** JetBrains Mono для technical UI, readable sans для длинного
-content; full-mono как настройка.
-
-Нужно подтвердить, хочет ли пользователь JetBrains Mono абсолютно везде даже для
-длинных Markdown-документов.
+**Рекомендация:** сначала большая встроенная searchable icon library и accessible
+palette. Upload custom SVG/image — поздняя функция с sanitation/storage risks.

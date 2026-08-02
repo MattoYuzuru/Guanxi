@@ -1,6 +1,7 @@
 # ADR-0006: Catalog providers, provenance и compliance
 
-**Статус:** proposed  
+**Статус:** accepted
+
 **Дата:** 2026-08-02
 
 ## Context
@@ -18,17 +19,18 @@
 2. running state: `/api/ps`;
 3. локальный version-gated recommendations cache — только как optional curated
    source с experimental label;
-4. Hugging Face public API — discovery hints/provenance;
-5. bundled dated snapshot — offline fallback;
-6. Ollama full live catalog — только после разрешения или официального API;
-7. официальный human catalog пока открывается внешней ссылкой.
+4. Hugging Face public API — discovery, exact GGUF download и provenance;
+5. bundled/manual dated snapshot — offline fallback;
+6. user-supplied Ollama model name/page URL → normalized reference → local pull;
+7. Ollama full live catalog и scraping не реализуются;
+8. официальный human catalog открывается внешней ссылкой.
 
 Каждая запись показывает source, fetchedAt, stale state, installability и
 runtime-verification отдельно.
 
 ## Invariants
 
-- никакого HTML/undocumented endpoint scraping без разрешения;
+- никакого HTML/undocumented endpoint scraping, включая one-time snapshot job;
 - catalog claim не равен pull compatibility;
 - stale provider не ломает installed list;
 - provider response schema validated;
@@ -46,7 +48,7 @@ runtime-verification отдельно.
 
 Минусы:
 
-- полный Ollama catalog может временно отсутствовать;
+- полный Ollama catalog отсутствует, пока upstream не даст разрешённый API;
 - HF results требуют deduplication и verification;
 - provider maintenance остаётся.
 

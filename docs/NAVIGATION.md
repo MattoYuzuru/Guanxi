@@ -9,6 +9,7 @@
 | Задача                             | Читать                                                                                                   |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Понять продукт                     | [PRODUCT](PRODUCT.md) → [DOMAIN_MODEL](DOMAIN_MODEL.md)                                                  |
+| Понять термины UI                  | [GLOSSARY](GLOSSARY.md)                                                                                  |
 | Спроектировать экран или flow      | [UX_IA](UX_IA.md) → [PRODUCT](PRODUCT.md)                                                                |
 | Изменить API или storage           | [HLD](architecture/HLD.md) → [LLD](architecture/LLD.md)                                                  |
 | Работать со streaming/jobs         | [RUNTIME_LIFECYCLE](architecture/RUNTIME_LIFECYCLE.md)                                                   |
@@ -17,27 +18,34 @@
 | Добавить MCP/tool/agent            | [PRODUCT](PRODUCT.md) → [LLD](architecture/LLD.md) → [ROADMAP](plans/ROADMAP.md)                         |
 | Настроить окружение                | [DEVELOPMENT](DEVELOPMENT.md)                                                                            |
 | Проверить изменение                | [TESTING](TESTING.md)                                                                                    |
-| Выбрать следующую фазу             | [ROADMAP](plans/ROADMAP.md) → [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md)                                  |
+| Продолжить реализацию              | [PHASE_STATUS](plans/PHASE_STATUS.md) → [WORKFLOW](plans/WORKFLOW.md) → [ROADMAP](plans/ROADMAP.md)      |
+| Передать следующему агенту         | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md)                                                          |
+| Проверить принятые решения         | [Product decisions](decisions/2026-08-02-product-decisions.md) → [ADR](decisions/README.md)              |
 | Понять внешние ограничения         | [EVIDENCE](research/EVIDENCE.md)                                                                         |
 
 ## Канонические документы
 
-| Документ                                               | Статус            | Владеет                                    |
-| ------------------------------------------------------ | ----------------- | ------------------------------------------ |
-| [README](../README.md)                                 | implemented       | текущее пользовательское введение и запуск |
-| [AGENTS](../AGENTS.md)                                 | implemented       | краткие правила работы агента              |
-| [PRODUCT](PRODUCT.md)                                  | proposed          | vision, границы, требования и outcomes     |
-| [DOMAIN_MODEL](DOMAIN_MODEL.md)                        | proposed          | понятия, ownership и инварианты            |
-| [UX_IA](UX_IA.md)                                      | proposed          | навигация, workbenches, визуальная система |
-| [DEVELOPMENT](DEVELOPMENT.md)                          | implemented       | структура, команды и change protocol       |
-| [TESTING](TESTING.md)                                  | implemented       | фактическое покрытие и целевая матрица     |
-| [HLD](architecture/HLD.md)                             | mixed             | текущая и целевая архитектура              |
-| [LLD](architecture/LLD.md)                             | mixed             | компоненты, контракты и данные             |
-| [RUNTIME_LIFECYCLE](architecture/RUNTIME_LIFECYCLE.md) | mixed             | jobs, leases, память и recovery            |
-| [ADR index](decisions/README.md)                       | proposed          | архитектурные решения и их статус          |
-| [ROADMAP](plans/ROADMAP.md)                            | proposed          | фазы, зависимости и exit gates             |
-| [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md)              | proposed          | решения, требующие подтверждения           |
-| [EVIDENCE](research/EVIDENCE.md)                       | locally validated | внешние факты, риски и источники           |
+| Документ                                                       | Статус            | Владеет                                     |
+| -------------------------------------------------------------- | ----------------- | ------------------------------------------- |
+| [README](../README.md)                                         | implemented       | текущее пользовательское введение и запуск  |
+| [AGENTS](../AGENTS.md)                                         | implemented       | краткие правила работы агента               |
+| [PRODUCT](PRODUCT.md)                                          | mixed             | vision, границы, требования и outcomes      |
+| [DOMAIN_MODEL](DOMAIN_MODEL.md)                                | accepted target   | понятия, ownership и инварианты             |
+| [GLOSSARY](GLOSSARY.md)                                        | proposed copy     | user-facing English/Russian vocabulary      |
+| [UX_IA](UX_IA.md)                                              | accepted target   | навигация, workbenches, визуальная система  |
+| [DEVELOPMENT](DEVELOPMENT.md)                                  | implemented       | структура, команды и change protocol        |
+| [TESTING](TESTING.md)                                          | implemented       | фактическое покрытие и целевая матрица      |
+| [HLD](architecture/HLD.md)                                     | mixed             | текущая и целевая архитектура               |
+| [LLD](architecture/LLD.md)                                     | mixed             | компоненты, контракты и данные              |
+| [RUNTIME_LIFECYCLE](architecture/RUNTIME_LIFECYCLE.md)         | mixed             | jobs, leases, память и recovery             |
+| [ADR index](decisions/README.md)                               | mixed             | архитектурные решения и их статус           |
+| [Product decisions](decisions/2026-08-02-product-decisions.md) | accepted          | ответы владельца и разрешённые противоречия |
+| [ROADMAP](plans/ROADMAP.md)                                    | accepted          | фазы, зависимости и exit gates              |
+| [PHASE_STATUS](plans/PHASE_STATUS.md)                          | implemented       | mutable tracker текущего slice              |
+| [WORKFLOW](plans/WORKFLOW.md)                                  | accepted          | протокол реализации и review                |
+| [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md)                | ready             | bounded prompt для P0-A                     |
+| [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md)                      | proposed          | решения, требующие подтверждения            |
+| [EVIDENCE](research/EVIDENCE.md)                               | locally validated | внешние факты, риски и источники            |
 
 ## Диаграммы
 
@@ -51,9 +59,12 @@
 - [server LLD](architecture/diagrams/lld-server.mmd);
 - [web LLD](architecture/diagrams/lld-web.mmd);
 - [CLI LLD](architecture/diagrams/lld-cli.mmd);
+- [target Agent LLD](architecture/diagrams/lld-agent-target.mmd);
+- [target Service LLD](architecture/diagrams/lld-service-target.mmd);
 - [domain ER](architecture/diagrams/domain-er.mmd);
 - [job states](architecture/diagrams/job-state.mmd);
-- [model lease states](architecture/diagrams/model-lease-state.mmd).
+- [model lease states](architecture/diagrams/model-lease-state.mmd);
+- [retention states](architecture/diagrams/retention-state.mmd).
 
 ## Правило актуализации
 

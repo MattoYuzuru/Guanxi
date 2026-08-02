@@ -1,7 +1,12 @@
 # ADR-0008: Durable bounded agents и scoped integrations
 
-**Статус:** proposed  
+**Статус:** superseded by ADR-0010
+
 **Дата:** 2026-08-02
+
+Предложение `external-agent-first` отклонено владельцем проекта. Общие требования
+к durable bounded execution и scoped integrations сохранены и уточнены в
+[ADR-0010](0010-first-party-coding-agent.md).
 
 ## Context
 

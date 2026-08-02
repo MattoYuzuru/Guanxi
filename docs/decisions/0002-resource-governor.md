@@ -1,6 +1,7 @@
 # ADR-0002: Global Resource Governor и model leases
 
-**Статус:** proposed  
+**Статус:** accepted
+
 **Дата:** 2026-08-02
 
 ## Context
@@ -18,7 +19,8 @@ Default — один accelerator permit. Governor владеет queue/admission
 
 Типы leases: active Job, pipeline, pinned и prewarm. Navigation никогда не
 освобождает lease напрямую. Parallel inference доступен только как advanced policy
-после измеренного fit.
+после измеренного joint fit. Так Governor в будущем может допустить короткий STT
+рядом с LLM Job на high-memory host.
 
 ## Invariants
 
@@ -28,6 +30,7 @@ Default — один accelerator permit. Governor владеет queue/admission
 - estimate всегда содержит confidence/basis;
 - remote runtime использует remote hardware profile;
 - release/cancel идемпотентны.
+- parallel admission использует fresh joint reservation всех runtime instances.
 
 ## Consequences
 

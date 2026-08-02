@@ -1,6 +1,7 @@
 # Доменная модель
 
-**Статус:** proposed  
+**Статус:** accepted target model, not implemented
+
 **Проверено:** 2026-08-02  
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
@@ -13,24 +14,27 @@
 
 ### Quick Run
 
-Одноразовый запуск operation без обязательной истории. Примеры: диктовка,
-транскрибация файла, один OCR, генерация изображения. Результат можно скопировать,
-экспортировать либо явно сохранить в Project.
+Одноразовый запуск operation без обязательного диалога. Примеры: диктовка,
+транскрибация файла, один OCR, генерация изображения. Result/Artifact можно
+скопировать, экспортировать или связать с Project.
 
-Default retention: metadata и временные файлы удаляются после ограниченного TTL,
-если пользователь не выбрал `Save`. Окончательная policy требует решения
-`Q-05`.
+Quick Run использует тот же трёхрежимный Retention Policy, что Chat. Отдельная
+кнопка `Save` не создаёт новый тип данных.
 
 ### Chat
 
 Сохраняемая multi-turn Conversation с ordered entries. Chat может использовать
 разные Jobs и typed Artifacts, но имеет один active context policy в момент хода.
 Thinking хранится отдельно от visible answer и имеет отдельную privacy policy.
+Chat содержит editable `retentionPolicy` и `notificationPolicy`.
 
 ### Project
 
 Пользовательский контейнер для Chats, Agent Runs, Recipes, Artifacts, files,
 vocabulary и scoped permissions. Project не обязан соответствовать одной папке.
+
+Presentation metadata: локализуемое display name, icon key и accessible color
+token. Они не влияют на identity, routing или permissions.
 
 Текущая code-сущность `Workspace` означает разрешённый filesystem root для agent
 tools. В target model это **Filesystem Binding** внутри Project, а не синоним
@@ -55,9 +59,12 @@ Project. Переименование требует миграции API/DB/UI,
 
 ### Agent Run
 
-Специализация durable Job для многошаговой работы. Содержит plan, checkpoints,
-budgets, approvals, verification gates и artifacts. Может использовать Chat или
-Project как контекст, но имеет собственный lifecycle.
+Специализация durable Job для многошаговой coding-first работы. Содержит plan,
+checkpoints, watchdog limits, approval mode, verification gates и artifacts.
+Может использовать Chat или Project как контекст, но имеет собственный lifecycle.
+
+Approval mode: `manual` или `auto_within_policy`. Effective policy фиксируется
+snapshot в Run.
 
 ## Исполняемые сущности
 
@@ -160,6 +167,10 @@ structured operation без новой top-level пользовательско�
 `summarizeTranscript` обычно является Pipeline (`transcribe → summarize`), а не
 нативной capability speech-модели.
 
+Speech adapter может отдельно доказать native operation/mode `raw`,
+`normalized` или `modelNativeSummary`. Это не позволяет автоматически приписать
+модели произвольный cleanup.
+
 ### Capability Evidence
 
 Каждый claim хранит:
@@ -187,8 +198,8 @@ fingerprint Job.
 
 ### Artifact
 
-Typed result: `text`, `transcript`, `audio`, `image`, `video`, `document`,
-`structured`, `embedding`, `file`, `checkpoint` или `report`.
+Typed result: `text`, `reasoning`, `transcript`, `audio`, `image`, `video`,
+`document`, `structured`, `embedding`, `file`, `checkpoint` или `report`.
 
 Artifact хранит media type, size, checksum, source Job, derivation chain,
 storage reference, preview metadata и export options. Большие бинарные данные
@@ -205,26 +216,72 @@ Scope наследуется `Global → Project → Recipe → Job`, а effecti
 видим. Более узкий scope может запретить, но не должен бесшумно расширять
 permission без подтверждения.
 
+MCP/Skills выключены по default. Job может запросить дополнительный binding через
+явное user action; это создаёт новый policy snapshot.
+
 ### Vocabulary
 
 Список терминов/замен/языковых hints для transcription Recipe или Project.
 Vocabulary не копируется в каждый Chat. Job сохраняет snapshot/version, чтобы
 результат был воспроизводим.
 
+### Retention Policy
+
+```ts
+type RetentionPolicy =
+  | { mode: "keep" }
+  | {
+      mode: "ttl";
+      expiresAfterDays: 7;
+      refreshOn: "created" | "user_activity";
+    }
+  | { mode: "session" };
+```
+
+Точные defaults/Session trigger/TTL refresh остаются Q-22/Q-24. Policy можно
+изменить до окончательной очистки. Она управляет stored Chat/Artifacts, но не
+model weights, loaded instance или transient KV cache.
+
+### Maintenance Job
+
+Системная Job operation:
+
+- запускается при старте и периодически;
+- выбирает expired records по индексу;
+- сначала переводит их в Trash/tombstone;
+- после grace удаляет blobs без живых references;
+- пишет audit summary;
+- идемпотентна и продолжает bounded batches после restart.
+
+Maintenance не удаляет active Chat/Job и не обновляет user-activity TTL от своих
+событий.
+
+### Notification Policy
+
+```ts
+type NotificationPolicy = "off" | "when_background" | "always";
+```
+
+Global default наследуется Chat/Agent Run и может быть переопределён. Terminal
+Job создаёт notification record; client решает, можно ли воспроизвести sound по
+focus/permission/accessibility state. Доставка идемпотентна по Job и channel.
+
 ## Persistence matrix
 
-| Сущность              | Default                  | Retention/owner           |
-| --------------------- | ------------------------ | ------------------------- |
-| Project               | persistent               | пользователь              |
-| Recipe                | persistent               | пользователь              |
-| Chat                  | persistent               | до удаления/архива        |
-| Quick Run             | ephemeral                | TTL, если не сохранён     |
-| Job metadata/events   | persistent audit window  | policy проекта/настроек   |
-| Agent Run/checkpoints | persistent               | до явного удаления        |
-| Artifact              | по policy Recipe/Project | content-addressed store   |
-| Capability evidence   | cache                    | fingerprint + freshness   |
-| Resource lease        | transient + journal      | governor                  |
-| Secrets               | protected store          | connection/settings owner |
+| Сущность              | Default                      | Retention/owner            |
+| --------------------- | ---------------------------- | -------------------------- |
+| Project               | persistent                   | пользователь               |
+| Recipe                | persistent                   | пользователь               |
+| Chat                  | Q-22                         | Keep/TTL/Session           |
+| Quick Run             | explicit retention           | Keep/TTL/Session           |
+| Reasoning Artifact    | TTL 7 days                   | shorter parent policy wins |
+| Job metadata/events   | persistent audit window      | policy проекта/настроек    |
+| Agent Run/checkpoints | persistent until terminal GC | explicit/run policy        |
+| Artifact              | parent/Recipe policy         | content-addressed store    |
+| Notification          | local read/unread window     | settings policy            |
+| Capability evidence   | cache                        | fingerprint + freshness    |
+| Resource lease        | transient + journal          | governor                   |
+| Secrets               | protected store              | connection/settings owner  |
 
 ## Связи
 
@@ -256,7 +313,10 @@ Model Variant ── has ──> Capability Evidence
 7. Prewarm lease никогда не вытесняет active Job.
 8. Capability claim без provenance не попадает в пользовательский факт.
 9. Recipe snapshot фиксируется в Job; позднее изменение Recipe не меняет историю.
-10. Quick Run становится persistent только через явное сохранение.
+10. Quick Run и Chat подчиняются явной Retention Policy, а не кнопке Save.
 11. Project deletion и Artifact garbage collection требуют preview и recoverable
     policy.
 12. Brand name не является identity ключом доменной сущности.
+13. Stored history и transient KV cache — разные данные и lifecycle.
+14. Maintenance Job не удаляет active/non-terminal work.
+15. Notification delivery не меняет terminal state Job и не раскрывает content.

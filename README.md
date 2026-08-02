@@ -95,6 +95,10 @@ alamo-ui
 - [LLD](docs/architecture/LLD.md);
 - [runtime и память](docs/architecture/RUNTIME_LIFECYCLE.md);
 - [поэтапный roadmap](docs/plans/ROADMAP.md);
+- [текущий phase status](docs/plans/PHASE_STATUS.md);
+- [как работать по фазам](docs/plans/WORKFLOW.md);
+- [готовый prompt следующему агенту](docs/plans/NEXT_AGENT_PROMPT.md);
+- [принятые продуктовые решения](docs/decisions/2026-08-02-product-decisions.md);
 - [открытые продуктовые решения](docs/plans/OPEN_QUESTIONS.md).
 
 ## Лицензия

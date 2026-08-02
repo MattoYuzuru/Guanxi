@@ -1,6 +1,7 @@
 # ADR-0001: Local-first modular monolith
 
-**Статус:** proposed  
+**Статус:** accepted
+
 **Дата:** 2026-08-02
 
 ## Context

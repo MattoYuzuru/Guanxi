@@ -3,12 +3,14 @@ flowchart TB
         Web[Web client]
         CLI[Scriptable CLI]
         TUI[Interactive TUI]
+        AgentCLI[First party Agent CLI]
     end
 
-    subgraph Application[Local modular monolith]
+    subgraph Application[Background Application Service]
         API[Command query and event API]
         Projects[Project Chat Recipe services]
         Jobs[Durable Job Engine]
+        Agent[First party Agent Engine]
         Events[(Job Event Store)]
         Governor[Resource Governor]
         Capabilities[Capability Registry]
@@ -16,18 +18,27 @@ flowchart TB
         Catalog[Catalog Service]
         Policy[Integration Policy]
         Artifacts[Artifact Service]
+        Maintenance[Maintenance Jobs]
+        Notifications[Notification Service]
         DB[(SQLite)]
         Blob[(Content addressed files)]
 
         API --> Projects
         API --> Jobs
+        API --> Agent
         API --> Governor
         API --> Capabilities
+        Agent --> Jobs
+        Agent --> Policy
+        Agent --> Artifacts
         Jobs --> Events
         Jobs --> Governor
         Jobs --> Adapters
         Jobs --> Policy
         Jobs --> Artifacts
+        Jobs --> Notifications
+        Maintenance --> Jobs
+        Maintenance --> Artifacts
         Projects --> DB
         Events --> DB
         Governor --> DB
@@ -35,15 +46,17 @@ flowchart TB
         Catalog --> DB
         Policy --> DB
         Artifacts --> DB
+        Notifications --> DB
         Artifacts --> Blob
     end
 
     Web --> API
     CLI --> API
     TUI --> API
+    AgentCLI --> API
     Adapters --> Ollama[Ollama runtime]
     Governor <--> Ollama
     Governor --> Telemetry[Host telemetry adapters]
     Catalog --> Providers[Allowed catalog providers]
     Policy --> Integrations[Tools MCP and Skills]
-
+    Startup[macOS and Linux service adapters] --> Application

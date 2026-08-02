@@ -1,0 +1,30 @@
+flowchart TB
+    Client[Agent CLI or Web]
+    API[Agent command API]
+    Engine[First party Agent Engine]
+    Planner[Plan and step controller]
+    Context[Context reconstruction]
+    Policy[Approval and policy service]
+    Skills[Skill registry]
+    MCP[MCP registry]
+    Tools[Coding tool registry]
+    Verify[Verification gates]
+    Jobs[Durable Job Engine]
+    Artifacts[Artifact store]
+
+    Client --> API
+    API --> Engine
+    Engine --> Planner
+    Engine --> Context
+    Engine --> Policy
+    Engine --> Verify
+    Engine --> Jobs
+    Engine --> Artifacts
+    Policy --> Skills
+    Policy --> MCP
+    Policy --> Tools
+    Planner --> Jobs
+    Context --> Artifacts
+    Verify --> Tools
+    Verify --> Artifacts
+

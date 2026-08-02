@@ -1,0 +1,20 @@
+flowchart LR
+    Login[Login autostart adapter]
+    CLI[CLI and TUI]
+    Web[Web UI]
+    Control[Service control API]
+    Identity[Single instance identity]
+    Service[Background Application Service]
+    Settings[(Shared settings)]
+    Jobs[(Durable jobs and events)]
+    Ollama[External Ollama daemon]
+
+    Login --> Control
+    CLI --> Control
+    Web --> Control
+    Control --> Identity
+    Identity --> Service
+    Service --> Settings
+    Service --> Jobs
+    Service --> Ollama
+

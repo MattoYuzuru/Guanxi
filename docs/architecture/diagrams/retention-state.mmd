@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> active
+    active --> active: user activity refreshes TTL
+    active --> expiring: TTL or Session trigger
+    expiring --> active: policy changed or work active
+    expiring --> trash: maintenance tombstone
+    trash --> active: user restores during grace
+    trash --> deleting: grace expires
+    deleting --> deleted: metadata removed
+    deleted --> collected: no live blob references
+    collected --> [*]
+

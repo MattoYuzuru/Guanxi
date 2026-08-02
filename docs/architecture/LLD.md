@@ -1,6 +1,7 @@
 # Low-level design
 
-**Статус:** mixed — current components implemented, target contracts proposed  
+**Статус:** mixed — current implemented, target accepted/not implemented
+
 **Проверено:** 2026-08-02
 
 ## Current package design
@@ -100,6 +101,15 @@ CRUD /api/projects
 CRUD /api/chats
 CRUD /api/recipes
 GET  /api/artifacts/:id
+
+POST /api/models/imports/ollama-reference
+POST /api/models/imports/hugging-face
+GET  /api/models/imports/:jobId
+
+GET  /api/service
+POST /api/service/restart
+GET  /api/notifications
+POST /api/notifications/:id/read
 ```
 
 Create Job принимает:
@@ -116,6 +126,7 @@ type CreateJobCommand = {
   inputs: ArtifactInput[];
   parameters: Record<string, unknown>;
   retention: RetentionPolicy;
+  notificationPolicy?: NotificationPolicy;
 };
 ```
 
@@ -243,7 +254,45 @@ schema version и pagination. Aggregator:
 - отдаёт stale cache при сбое;
 - никогда не блокирует installed list.
 
-До разрешённого API Ollama Marketplace provider не scrape-ит human HTML.
+Ollama Marketplace provider не scrape-ит human HTML.
+
+#### Ollama reference import
+
+Input принимает только:
+
+- canonical model name;
+- URL официальной model page, из которого parser локально извлекает canonical
+  name.
+
+Server не fetch-ит произвольный URL. После preview/confirmation Job вызывает
+documented local pull. Recent reference может стать локальной catalog entry.
+
+#### Hugging Face GGUF import
+
+```ts
+type HuggingFaceImportRequest = {
+  repoId: string;
+  revision: string;
+  filename: string;
+  targetModelName: string;
+};
+```
+
+Pipeline:
+
+1. resolve official HF metadata;
+2. validate immutable revision и exact file;
+3. dry-run size/cache/fit;
+4. show license/gated status;
+5. resumable download в managed staging;
+6. checksum и GGUF format inspection;
+7. generate internal Modelfile with staged local path;
+8. create model through Ollama adapter;
+9. probe/descriptor;
+10. remove staging согласно cache policy.
+
+Path не принимается напрямую от remote metadata. Gated token хранится в protected
+secret adapter и не попадает в Job Events.
 
 ### Artifact Service
 
@@ -280,6 +329,78 @@ interface PolicyService {
 Approval имеет durable status, scope, requester, input digest, preview, decision,
 time и executor result. Изменившийся input digest требует нового approval.
 
+### First-party Agent Engine
+
+Компоненты: [lld-agent-target.mmd](diagrams/lld-agent-target.mmd).
+
+```ts
+type AgentApprovalMode = "manual" | "auto_within_policy";
+
+interface AgentEngine {
+  start(command: StartAgentRunCommand): Promise<Job>;
+  resume(checkpointId: string, overrides: RunOverrides): Promise<Job>;
+  compact(runId: string): Promise<Artifact>;
+  verify(runId: string, gate: VerificationGate): Promise<VerificationResult>;
+}
+```
+
+Agent step сохраняет expected plan/checkpoint version до tool dispatch. Mutating
+tool получает idempotency/effect record; после crash recovery effect не
+повторяется без подтверждённого result.
+
+Auto mode проверяет immutable policy snapshot на каждом tool call. Подключение
+нового MCP/Skill создаёт новое user decision и snapshot version.
+
+### Retention и Maintenance
+
+Lifecycle: [retention-state.mmd](diagrams/retention-state.mmd).
+
+Chat/Quick Run metadata:
+
+```ts
+type RetentionPolicy =
+  | { mode: "keep" }
+  | {
+      mode: "ttl";
+      expiresAt: string;
+      refreshOn: "created" | "user_activity";
+    }
+  | { mode: "session"; sessionId: string };
+```
+
+Нужны indexes по `expires_at`, `deleted_at` и live references. Maintenance Job
+работает bounded batches:
+
+```text
+eligible → tombstoned → trash grace → metadata delete → orphan blob GC
+```
+
+User activity обновляет TTL; model/tool/maintenance events — нет. Active/
+non-terminal Job блокирует tombstone. Policy change до hard delete снимает
+tombstone.
+
+Reasoning Artifact получает default `expires_at = created_at + 7 days`; shorter
+parent retention wins.
+
+### Notifications
+
+Terminal Job transaction создаёт deduplicated notification row:
+
+```ts
+type Notification = {
+  id: string;
+  jobId: string;
+  outcome: "completed" | "failed" | "cancelled" | "interrupted";
+  policy: "off" | "when_background" | "always";
+  createdAt: string;
+  readAt?: string;
+};
+```
+
+Client-local delivery state отдельно отмечает visual/sound channel. Повторный
+SSE/reload не воспроизводит sound второй раз. Notification payload не содержит
+prompt, reasoning или output content.
+
 ## Proposed persistence
 
 Точные DDL и migration order определяются в implementation plan. Логические
@@ -302,6 +423,9 @@ time и executor result. Изменившийся input digest требует н
 | `integrations`          | MCP/skill/tool metadata without exposed secret    |
 | `bindings`              | scoped enablement/policy                          |
 | `approvals`             | durable effect decision                           |
+| `notifications`         | terminal Job notification/read state              |
+| `maintenance_runs`      | cleanup cursor/count/error evidence               |
+| `service_state`         | install/schema metadata, не PID source of truth   |
 
 Current `threads/messages/workspaces` нельзя просто удалить:
 
@@ -373,6 +497,8 @@ Thinking renderer получает отдельную policy и Markdown sanitiz
 
 ## CLI/service design
 
+Компоненты: [lld-service-target.mmd](diagrams/lld-service-target.mmd).
+
 Stable non-interactive primitives предшествуют TUI:
 
 ```text
@@ -385,11 +511,21 @@ alamo jobs list|show|cancel|events
 alamo chat
 alamo agent
 alamo config get|set
+alamo service autostart enable|disable|status
 ```
 
-No-args TUI вызывает их через shared client library. Application service state
-определяется health/control API + process identity, не только открытым портом.
-Stop Alamo не останавливает external Ollama по default.
+No-args TUI вызывает их через shared client library. First-party `alamo agent`
+создаёт Agent Run через тот же Job API и поддерживает slash command discovery.
+Application service state определяется health/control API + process identity, не
+только открытым портом. Stop Alamo не останавливает external Ollama по default.
+
+Service control и settings:
+
+- Web/CLI/TUI читают одну canonical store;
+- restart-sensitive patch возвращает preview;
+- controlled restart перестаёт принимать Jobs, checkpoint/cancel по policy,
+  закрывает DB, перезапускает process и проходит health verification;
+- macOS/Linux autostart adapters opt-in и имеют uninstall/rollback.
 
 ## Versioning
 

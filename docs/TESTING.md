@@ -94,6 +94,63 @@ Baseline подтверждает существующие server/CLI unit и ro
 - Apple unified memory и NVIDIA discrete profile fixtures;
 - voice STT → chat pipeline without simultaneous unsafe residency.
 
+### Model import
+
+- Ollama canonical name и official page URL normalization;
+- arbitrary URL rejected without server-side fetch;
+- HF exact repo/revision/file selection;
+- dry-run size/fit и disk-space failure;
+- resumable/cancelled download;
+- checksum и invalid/non-GGUF file;
+- gated token redaction;
+- local Ollama import failure/rollback;
+- provenance survives restart;
+- no human catalog scraping request.
+
+### Retention и Maintenance
+
+- Keep never selected by expiry query;
+- rolling TTL updates only on user activity;
+- Session trigger after Q-23;
+- active/non-terminal Job prevents tombstone;
+- reasoning expires without final answer;
+- Trash restore before grace;
+- referenced blob never collected;
+- startup catch-up и bounded periodic batches;
+- interrupted cleanup resumes idempotently;
+- exact expiry localized in UI.
+
+### Application Service
+
+- single instance/stale identity;
+- terminal closes without service exit;
+- start/status/stop/restart exit codes and JSON;
+- shared settings Web/CLI/TUI;
+- controlled restart with active/queued Jobs;
+- macOS/Linux autostart opt-in/disable/uninstall;
+- stopping Alamo does not stop Ollama.
+
+### First-party Agent
+
+- Manual и Auto-within-policy modes;
+- allowed root/command/network enforcement;
+- MCP/Skills default off и Project inheritance;
+- per-Run policy snapshot;
+- crash after mutating effect does not duplicate it;
+- checkpoint/restart/resume;
+- test/build/evidence capture;
+- repeated no-progress detection;
+- 4–6+ hour benchmark in an explicit isolated envelope.
+
+### Notifications
+
+- one terminal Job → one notification;
+- reload/replay does not duplicate sound;
+- `when_background` respects active Job view;
+- permission denied still leaves visual badge;
+- no prompt/reasoning/result in payload;
+- per-Chat override and localized accessible announcement.
+
 ### Web component/integration
 
 - Error Boundary вместо white screen;

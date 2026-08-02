@@ -1,14 +1,15 @@
 # High-level architecture
 
-**Статус:** mixed — as-is implemented/locally validated, target proposed  
+**Статус:** mixed — as-is implemented/locally validated, target accepted
+
 **Проверено:** 2026-08-02  
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
 
 - **As-is** — поведение, подтверждённое кодом и локальным аудитом.
-- **Target** — предлагаемая архитектура; её компоненты нельзя импортировать или
-  использовать как существующие.
+- **Target** — принятая архитектура; её компоненты ещё нельзя считать
+  реализованными.
 - **Ollama host** — процесс/runtime Ollama; может быть локальным или удалённым.
 - **Application host** — процесс Alamo server/daemon.
 
@@ -99,17 +100,19 @@ Browser disconnect/route change abort-ит server generation. После UI relo
 application modules с явными контрактами:
 
 ```text
-Web / CLI / TUI
+Web / CLI / TUI / Agent CLI
        │
 API + event subscriptions
        │
-Application services
+Background Application Service
 ├── Project / Chat / Recipe
 ├── Job Engine + Event Store
 ├── Resource Governor
 ├── Capability Registry
 ├── Adapter Registry
 ├── Catalog Service
+├── Agent Engine
+├── Maintenance / Notifications
 ├── Integration Policy
 └── Artifact Service
        │
@@ -170,6 +173,17 @@ single-user scale. Модульные границы нужны для correctne
 - хранит cache/freshness/provenance;
 - использует stale-while-revalidate;
 - отделяет discovery claim от installability/runtime verification.
+- нормализует user-supplied Ollama name/page URL;
+- ищет и скачивает exact Hugging Face GGUF через официальный API;
+- не выполняет Ollama catalog scraping.
+
+#### Agent Engine
+
+- предоставляет независимый coding-first API/CLI;
+- ведёт plan, bounded steps, checkpoints и verification;
+- исполняет Manual или Auto-within-policy runs;
+- использует Project filesystem/MCP/Skills bindings;
+- не зависит от Claude Code/Codex executable или protocol identity.
 
 #### Artifact Service
 
@@ -185,12 +199,20 @@ single-user scale. Модульные границы нужны для correctne
 - персистит approvals/audit;
 - разделяет local и remote security profiles.
 
+#### Maintenance и Notifications
+
+- Maintenance Job применяет Chat/Artifact expiry при startup и по расписанию;
+- Trash/grace отделяет expiry от окончательного удаления blobs;
+- terminal Job создаёт local notification record;
+- Web/TUI решают visual/sound delivery по policy и permissions.
+
 ### Clients
 
-Web, non-interactive CLI и TUI используют один API и одни application semantics.
-TUI не управляет процессом через scraping stdout. Background service имеет
-control surface для `start/status/stop/open`; Ollama service остаётся отдельной
-сущностью.
+Web, non-interactive CLI, TUI и first-party Agent CLI используют один API и одни
+application semantics. TUI не управляет процессом через scraping stdout.
+Background Application Service имеет control surface для
+`start/status/stop/restart/open`, переживает закрытие terminal и опционально
+стартует при login. Ollama service остаётся отдельной сущностью.
 
 ## Ключевые flows
 
@@ -225,6 +247,31 @@ Audio Artifact
 Governor может выгрузить speech model перед Chat model; Workbench показывает
 pipeline progress, не притворяясь одним непрерывным model call.
 
+### Import GGUF из Hugging Face
+
+```text
+HF URL/search
+  → metadata + revision + file list
+  → user selects GGUF
+  → dry-run size/fit/license preview
+  → resumable download
+  → checksum/format inspection
+  → local Ollama GGUF import
+  → capability probe
+  → installed descriptor with provenance
+```
+
+Никакой remote model code не исполняется. Safetensors conversion и adapters
+требуют отдельных capabilities.
+
+### Retention cleanup
+
+1. Startup/periodic trigger создаёт bounded Maintenance Job.
+2. Job выбирает expired Chat/Artifacts, исключая active work.
+3. Records получают tombstone/Trash timestamp.
+4. После grace удаляются только blobs без живых references.
+5. Audit event фиксирует count/bytes/errors; retry идемпотентен.
+
 ## Consistency и availability
 
 Single process + SQLite даёт простую strongly consistent application state в
@@ -254,7 +301,9 @@ installed models.
 - host reserve и текущая pressure;
 - media artifacts и stream buffers.
 
-Default — один local accelerator Job. Масштабирование означает не высокий RPS, а:
+Default — один local accelerator Job. Measured parallelism является accepted
+поздней policy: Governor может допустить второй Job только по fresh joint
+reservation. Масштабирование означает не высокий RPS, а:
 
 - больше installed descriptors;
 - более длинные contexts;
@@ -262,8 +311,18 @@ Default — один local accelerator Job. Масштабирование оз�
 - очередь долгих Jobs;
 - второй inference host в будущем.
 
-Multi-device scheduler не проектируется до реального второго host и измеренных
-требований. `Remote Ollama` использует telemetry удалённого host, а не Mac клиента.
+Один high-memory host может иметь несколько devices и не получает искусственных
+UI limits. Multi-host scheduler не проектируется до реального второго host и
+измеренных требований. `Remote Ollama` использует telemetry удалённого host, а
+не Mac клиента.
+
+## Supported deployment tiers
+
+- Tier 1: macOS Apple Silicon;
+- Tier 2: Linux/NVIDIA, Ubuntu и Fedora family;
+- Deferred: Windows/WSL;
+- Application Service и autostart используют platform adapters;
+- Ollama daemon остаётся externally managed на каждом tier.
 
 ## Security boundaries
 
@@ -273,7 +332,7 @@ Multi-device scheduler не проектируется до реального �
 - origin/CSRF checks для state-changing API;
 - allowed filesystem roots;
 - tool effect classification;
-- explicit approvals;
+- Manual и Auto-within-policy approvals;
 - secrets не возвращаются client;
 - reasoning и file content редактируются в logs.
 
@@ -323,8 +382,10 @@ Export выполняется только пользователем и пок�
 3. поставить Resource Governor перед Chat;
 4. перенести current events на replay subscription;
 5. добавить Capability Registry/installed models;
-6. только после этого строить новые workbenches;
-7. CLI/TUI используют готовые application primitives;
-8. remote/multi-host — отдельные поздние решения.
+6. ввести background service и scriptable CLI primitives;
+7. построить first-party coding Agent MVP;
+8. только после text/agent foundation добавлять STT, затем image;
+9. long-running deliberate profile проходит отдельный benchmark;
+10. remote/multi-host — отдельные поздние решения.
 
 См. [ROADMAP](../plans/ROADMAP.md) и [ADR index](../decisions/README.md).

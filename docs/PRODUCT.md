@@ -1,8 +1,12 @@
 # Product brief и требования
 
-**Статус:** proposed  
+**Статус:** mixed — direction/ADRs accepted, requirements not implemented
+
 **Проверено:** 2026-08-02  
 **Горизонт:** от стабилизации alpha до локальной model workbench platform
+
+Принятые ответы владельца проекта:
+[decision iteration 2026-08-02](decisions/2026-08-02-product-decisions.md).
 
 ## Vision
 
@@ -26,7 +30,8 @@ experience, но не определяет всю предметную моде�
 
 ### Основной пользователь
 
-Технически уверенный владелец Mac или PC с локальным Ollama, который:
+Технически уверенный владелец Mac на Apple Silicon или Linux/NVIDIA workstation
+с локальным Ollama, который:
 
 - пробует разные quantization и modality;
 - хочет избежать OOM, swap и скрыто загруженных моделей;
@@ -44,6 +49,8 @@ experience, но не определяет всю предметную моде�
 6. Запустить длительную agent-задачу, уйти со страницы и безопасно продолжить.
 7. Превратить audio/image/document input в удобный typed output.
 8. Управлять тем же приложением через стабильный CLI и интерактивный TUI.
+9. Использовать независимого coding agent без Claude Code/Codex dependency.
+10. Получить ненавязчивое уведомление, когда долгая работа закончилась.
 
 ## Продуктовые принципы
 
@@ -81,7 +88,10 @@ experience, но не определяет всю предметную моде�
 - text/thinking/Markdown, attachments и document work;
 - последовательное добавление STT/TTS, vision/OCR и image operations;
 - CLI commands и TUI поверх общего API;
+- first-party coding Agent API/CLI;
 - локальные MCP, skills и tools с permissions.
+- English и curated Russian UI с glossary.
+- in-app и optional sound completion notifications.
 
 ### Не является ближайшей целью
 
@@ -93,6 +103,8 @@ experience, но не определяет всю предметную моде�
 - бесконтрольный автономный агент без budgets, approvals и audit;
 - scraping закрытых или запрещающих автоматизацию каталогов;
 - одновременный feature parity с LM Studio, Open WebUI, Jan и AnythingLLM.
+- video workbench до отдельного нового product decision.
+- Windows/WSL support без реального пользователя.
 
 ## Outcome metrics
 
@@ -108,6 +120,8 @@ experience, но не определяет всю предметную моде�
 | Быстрый common path              | действия до запуска Quick Run/Chat/STT                         |
 | Каталожное доверие               | доля claims с provenance и freshness                           |
 | Agent safety                     | tool calls с известным policy decision и audit record          |
+| Long-run progress                | checkpoints с новым evidence и отсутствие repeated no-progress |
+| Background awareness             | завершённые Jobs с доставленным локальным notification state   |
 
 Телеметрия по умолчанию остаётся локальной. Экспорт или отправка наружу требует
 явного opt-in.
@@ -147,28 +161,34 @@ experience, но не определяет всю предметную моде�
 
 ### Models и Marketplace
 
-| ID      | Pri | Требование                                                                                          |
-| ------- | --: | --------------------------------------------------------------------------------------------------- |
-| MOD-001 |  P0 | Installed Models отделены от Marketplace и дают inspect/load/unload/delete.                         |
-| MOD-002 |  P1 | Variant выбирается до install; fit считается для выбранного digest/quantization.                    |
-| MOD-003 |  P1 | Capability claim содержит source, confidence, observed time и runtime fingerprint.                  |
-| MOD-004 |  P1 | Поиск фильтрует task, modality, capability, context, memory, fit, installed/cloud/source и license. |
-| MOD-005 |  P1 | Пользователь видит stale/offline/claimed/runtime-verified состояние источника.                      |
-| MOD-006 |  P1 | Неизвестные capabilities не интерпретируются как unsupported.                                       |
-| MOD-007 |  P2 | Controlled probes можно запустить вручную или по safe policy; результат кэшируется по fingerprint.  |
-| MOD-008 |  P2 | User override видим, экспортируем и не маскируется под автоматическое определение.                  |
+| ID      | Pri | Требование                                                                                                                |
+| ------- | --: | ------------------------------------------------------------------------------------------------------------------------- |
+| MOD-001 |  P0 | Installed Models отделены от Marketplace и дают inspect/load/unload/delete.                                               |
+| MOD-002 |  P1 | Variant выбирается до install; fit считается для выбранного digest/quantization.                                          |
+| MOD-003 |  P1 | Capability claim содержит source, confidence, observed time и runtime fingerprint.                                        |
+| MOD-004 |  P1 | Поиск фильтрует task, modality, capability, context, memory, fit, installed/cloud/source и license.                       |
+| MOD-005 |  P1 | Пользователь видит stale/offline/claimed/runtime-verified состояние источника.                                            |
+| MOD-006 |  P1 | Неизвестные capabilities не интерпретируются как unsupported.                                                             |
+| MOD-007 |  P2 | Controlled probes можно запустить вручную или по safe policy; результат кэшируется по fingerprint.                        |
+| MOD-008 |  P2 | User override видим, экспортируем и не маскируется под автоматическое определение.                                        |
+| MOD-009 |  P1 | `Add from Ollama` принимает model name/page URL, показывает normalized preview и запускает local pull после confirmation. |
+| MOD-010 |  P1 | HF import позволяет выбрать exact GGUF/revision, увидеть license/size/fit, скачать и импортировать с provenance.          |
 
 ### Рабочие сущности
 
-| ID       | Pri | Требование                                                                           |
-| -------- | --: | ------------------------------------------------------------------------------------ |
-| WORK-001 |  P1 | Quick Run не сохраняет историю по умолчанию, но результат можно сохранить.           |
-| WORK-002 |  P1 | Chat хранит multi-turn history, typed artifacts и Markdown.                          |
-| WORK-003 |  P1 | Project группирует Chats, Jobs, Recipes, files, vocabulary и permissions.            |
-| WORK-004 |  P1 | Recipe хранит operation, routing, defaults, prompt, schema и persistence policy.     |
-| WORK-005 |  P1 | Artifact имеет type, provenance, storage reference, preview и export actions.        |
-| WORK-006 |  P1 | Chats можно искать, переименовывать, архивировать и группировать внутри Project.     |
-| WORK-007 |  P2 | Context compaction создаёт видимый checkpoint/summary и не стирает исходную историю. |
+| ID       | Pri | Требование                                                                                              |
+| -------- | --: | ------------------------------------------------------------------------------------------------------- |
+| WORK-001 |  P1 | Quick Run использует явную retention policy и не требует отдельной кнопки Save.                         |
+| WORK-002 |  P1 | Chat хранит multi-turn history, typed artifacts и Markdown.                                             |
+| WORK-003 |  P1 | Project группирует Chats, Jobs, Recipes, files, vocabulary и permissions.                               |
+| WORK-004 |  P1 | Recipe хранит operation, routing, defaults, prompt, schema и persistence policy.                        |
+| WORK-005 |  P1 | Artifact имеет type, provenance, storage reference, preview и export actions.                           |
+| WORK-006 |  P1 | Chats можно искать, переименовывать, архивировать и группировать внутри Project.                        |
+| WORK-007 |  P2 | Context compaction создаёт видимый checkpoint/summary и не стирает исходную историю.                    |
+| WORK-008 |  P1 | Chat Info даёт трёхпозиционный retention control: Keep, 7 days, Session.                                |
+| WORK-009 |  P1 | Maintenance Job применяет expiry при startup и периодически, используя Trash/grace перед blob deletion. |
+| WORK-010 |  P1 | Thinking хранится отдельным diagnostic Artifact 7 дней и удаляется независимо от final answer.          |
+| WORK-011 |  P2 | Project имеет редактируемые name, searchable icon и accessible color.                                   |
 
 ### Workbench и modalities
 
@@ -182,32 +202,60 @@ experience, но не определяет всю предметную моде�
 | WB-006 |  P2 | TTS выдаёт audio artifact с play/seek/speed/download.                                                                                   |
 | WB-007 |  P2 | Vision/OCR принимают image/document, показывают extracted typed output и provenance.                                                    |
 | WB-008 |  P2 | Image generation показывает count/seed/size/progress/gallery/download, если adapter это подтверждает.                                   |
-| WB-009 |  P3 | Video renderer появляется только после стабильного adapter contract и реального provider.                                               |
+| WB-009 |  P3 | Video остаётся deferred и не получает implementation phase без нового product decision.                                                 |
 | WB-010 |  P3 | Forecasting, ranking/recommendation и другой long tail используют versioned adapter и structured Artifact без новой top-level taxonomy. |
+| WB-011 |  P2 | STT Workbench разделяет model-native raw/normalized modes и LLM cleanup/summary stages.                                                 |
+| WB-012 |  P3 | System-wide voice hotkey поддерживает toggle и hold-to-talk через platform integration.                                                 |
 
 ### Agent, tools, MCP и skills
 
-| ID      | Pri | Требование                                                                                         |
-| ------- | --: | -------------------------------------------------------------------------------------------------- |
-| AGT-001 |  P1 | Tool/MCP/Skill bindings задаются global → Project → Recipe → Job с видимым effective policy.       |
-| AGT-002 |  P1 | Mutating action имеет allow/deny/remember scope, durable audit и cancellation semantics.           |
-| AGT-003 |  P2 | Agent Run хранит plan, checkpoints, artifacts, budgets, approvals и verification status.           |
-| AGT-004 |  P2 | Deliberate weak-model strategy выбирается явно, а не выводится из parameter count.                 |
-| AGT-005 |  P2 | Долгий Agent Run переживает уход со страницы и безопасно восстанавливается.                        |
-| AGT-006 |  P2 | Tools работают в allowed roots; remote profile не наследует local shell permissions.               |
-| AGT-007 |  P2 | Сначала поддерживается interop с внешними agents; собственный harness требует отдельной валидации. |
+| ID      | Pri | Требование                                                                                          |
+| ------- | --: | --------------------------------------------------------------------------------------------------- |
+| AGT-001 |  P1 | Tool/MCP/Skill bindings задаются global → Project → Recipe → Job с видимым effective policy.        |
+| AGT-002 |  P1 | Mutating action имеет allow/deny/remember scope, durable audit и cancellation semantics.            |
+| AGT-003 |  P2 | Agent Run хранит plan, checkpoints, artifacts, budgets, approvals и verification status.            |
+| AGT-004 |  P2 | Deliberate weak-model strategy выбирается явно, а не выводится из parameter count.                  |
+| AGT-005 |  P2 | Долгий Agent Run переживает уход со страницы и безопасно восстанавливается.                         |
+| AGT-006 |  P2 | Tools работают в allowed roots; remote profile не наследует local shell permissions.                |
+| AGT-007 |  P1 | Alamo предоставляет независимый first-party coding Agent API/CLI без branded external dependency.   |
+| AGT-008 |  P1 | Coding agent читает/изменяет code/config/docs, запускает commands/tests и сохраняет evidence.       |
+| AGT-009 |  P1 | Agent Run выбирает Manual approvals или Auto within explicit policy.                                |
+| AGT-010 |  P2 | MCP/Skills выключены по default, включаются на Project и могут временно меняться на конкретном Run. |
+| AGT-011 |  P2 | Deliberate profile оптимизирует 4–6+ hour run по качеству с checkpoints, review и watchdog.         |
 
 ### CLI, service и branding
 
-| ID      | Pri | Требование                                                                                          |
-| ------- | --: | --------------------------------------------------------------------------------------------------- |
-| CLI-001 |  P1 | Существуют scriptable `start/status/stop/open` с exit codes и JSON output.                          |
-| CLI-002 |  P1 | Alamo service, Ollama service и loaded model — разные объекты управления.                           |
-| CLI-003 |  P2 | No-args TUI вызывает те же команды и показывает текущий service state.                              |
-| CLI-004 |  P2 | CLI поддерживает models, jobs, chat, agent и config без зависимости от browser.                     |
-| CLI-005 |  P2 | UI Exit завершает только Alamo service; остановка внешнего Ollama требует отдельного подтверждения. |
-| BRD-001 |  P0 | Новые UI/package/storage identifiers не размножают рабочее название.                                |
-| BRD-002 |  P2 | Rename использует manifest, aliases и data migration, сохраняя старые installs.                     |
+| ID      | Pri | Требование                                                                                            |
+| ------- | --: | ----------------------------------------------------------------------------------------------------- |
+| CLI-001 |  P1 | Существуют scriptable `start/status/stop/open` с exit codes и JSON output.                            |
+| CLI-002 |  P1 | Alamo service, Ollama service и loaded model — разные объекты управления.                             |
+| CLI-003 |  P2 | No-args TUI вызывает те же команды и показывает текущий service state.                                |
+| CLI-004 |  P2 | CLI поддерживает models, jobs, chat, agent и config без зависимости от browser.                       |
+| CLI-005 |  P2 | UI Exit завершает только Alamo service; остановка внешнего Ollama требует отдельного подтверждения.   |
+| CLI-006 |  P1 | Background service переживает закрытие terminal и поддерживает opt-in login autostart на macOS/Linux. |
+| CLI-007 |  P1 | Web/CLI/TUI используют одну settings store и controlled restart для restart-sensitive changes.        |
+| BRD-001 |  P0 | Новые UI/package/storage identifiers не размножают рабочее название.                                  |
+| BRD-002 |  P2 | Rename использует manifest, aliases и data migration, сохраняя старые installs.                       |
+
+### Localization, glossary и notifications
+
+| ID       | Pri | Требование                                                                                       |
+| -------- | --: | ------------------------------------------------------------------------------------------------ |
+| I18N-001 |  P1 | English является primary locale; Russian — curated human-authored locale.                        |
+| I18N-002 |  P1 | User-facing strings не hardcoded и имеют locale key/fallback.                                    |
+| I18N-003 |  P1 | Settings содержит searchable glossary с простыми примерами.                                      |
+| NOT-001  |  P1 | Terminal Job создаёт in-app notification и badge со ссылкой на Job.                              |
+| NOT-002  |  P2 | Optional short sound срабатывает по global/per-Chat policy.                                      |
+| NOT-003  |  P2 | Policy поддерживает Off, When background и Always.                                               |
+| NOT-004  |  P2 | Notification не раскрывает prompt/result и уважает browser permission/accessibility preferences. |
+
+### Platform support
+
+| ID       | Pri | Требование                                                   |
+| -------- | --: | ------------------------------------------------------------ |
+| PLAT-001 |  P1 | macOS Apple Silicon — первый verified tier.                  |
+| PLAT-002 |  P2 | Linux/NVIDIA на Ubuntu/Fedora family — второй verified tier. |
+| PLAT-003 |  P3 | Windows/WSL остаётся out of scope до появления требования.   |
 
 ## Критические acceptance examples
 
@@ -255,13 +303,39 @@ And не обещает tools/thinking/media
 And позволяет безопасный probe или user override
 ```
 
+### Retention и model context
+
+```gherkin
+Given Chat имеет retention 7 days
+When пользователь выгружает модель
+Then сохранённая Chat history остаётся на диске
+And transient KV cache может быть потерян
+And следующий Job может заново собрать context из истории
+And UI не обещает побитно тот же stochastic output
+And maintenance показывает exact expiry до удаления
+```
+
+### Background notification
+
+```gherkin
+Given Job выполняется в другом Chat
+And его notification policy равна When background
+When Job становится terminal
+Then Runtime Bar и Chat получают badge
+And разрешённый короткий sound воспроизводится один раз
+And notification не содержит private prompt или answer
+```
+
 ## Зависимости и границы решения
 
-- Полный live-каталог Ollama зависит от разрешённого официального API или
-  письменного разрешения; scraping не является планом.
+- Полный live-каталог Ollama не входит в план; используются manual references,
+  local data, HF API и curated snapshot без scraping.
+- HF GGUF import — download/inspect/local import pipeline, а не гарантированный
+  direct `ollama pull` по любой ссылке.
 - Media UI зависит от adapter, который даёт operation и parameter schema.
 - Background jobs требуют Run Engine до нового navigation behavior.
 - Prewarm требует Governor; нельзя добавлять его отдельным UI-effect.
-- Agent overnight mode требует durable events, checkpoints, security и budgets.
+- Agent overnight mode требует durable events, checkpoints, security и watchdog
+  limits; внешние branded agents не являются foundation.
 - TUI строится после scriptable lifecycle commands, а не вместо них.
 - Remote mode требует отдельного security design и не включается обычным bind.

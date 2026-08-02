@@ -4,9 +4,11 @@ erDiagram
     PROJECT ||--o{ JOB : scopes
     PROJECT ||--o{ ARTIFACT : stores
     CHAT ||--o{ JOB : creates
+    CHAT ||--o{ NOTIFICATION : configures
     RECIPE ||--o{ JOB : configures
     JOB ||--o{ JOB_EVENT : emits
     JOB ||--o{ ARTIFACT : produces
+    JOB ||--o| NOTIFICATION : completes_with
     JOB ||--o{ RESOURCE_LEASE : acquires
     MODEL_VARIANT ||--o{ CAPABILITY_EVIDENCE : has
     MODEL_VARIANT ||--o{ MODEL_INSTALLATION : installs
@@ -14,4 +16,6 @@ erDiagram
     RUNTIME_INSTANCE ||--o{ RESOURCE_LEASE : held_by
     PROJECT ||--o{ INTEGRATION_BINDING : configures
     RECIPE ||--o{ INTEGRATION_BINDING : narrows
+    CHAT ||--o| RETENTION_POLICY : governed_by
+    ARTIFACT ||--o| RETENTION_POLICY : governed_by
 

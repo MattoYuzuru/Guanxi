@@ -1,6 +1,7 @@
 # UX и информационная архитектура
 
-**Статус:** proposed  
+**Статус:** accepted direction, not implemented
+
 **Проверено:** 2026-08-02  
 **Направление:** Warm Instrument Panel
 
@@ -74,7 +75,10 @@ Provider `template`/`Modelfile` показываются как техничес
 - filter chips можно комбинировать и сохранить;
 - compare variants до install;
 - неизвестный fit не скрывается как «не подходит»;
-- при недоступном live provider остаются stale cache и внешний официальный link.
+- Ollama full catalog не scrape-ится: доступны local/curated data и внешний link;
+- `Add from Ollama` принимает model name/page URL и показывает normalized preview;
+- `Add from Hugging Face` позволяет выбрать exact GGUF/revision, license, size,
+  fit и import progress.
 
 Для сотен моделей используется pagination/virtualization, а не бесконечная
 carousel с dot на каждую карточку.
@@ -88,10 +92,21 @@ carousel с dot на каждую карточку.
 - inputs и Artifacts в timeline;
 - status каждого turn восстанавливается после reload;
 - sidebar/drawer доступен на mobile.
+- Chat Info объединяет rename/delete, retention, notification policy, generated
+  answers и reasoning Artifacts.
 
 Thinking рендерится как отдельно очищенный Markdown. На desktop его можно открыть
 в side inspector, на mobile — в sheet. UI явно показывает, сохраняется ли этот
-channel по текущей privacy policy.
+channel и когда истекает его default 7-day diagnostic retention.
+
+Retention control — простой segmented switch:
+
+```text
+[ Keep | 7 days | Session ]
+```
+
+Exact expiry видим рядом. Policy меняется без отдельной Save-кнопки; pending
+cleanup можно отменить до окончания Trash/grace.
 
 ### Projects
 
@@ -107,6 +122,15 @@ channel по текущей privacy policy.
 
 Project не обязан быть папкой на диске. Привязка filesystem имеет отдельный
 allowed root и security state.
+
+Project header имеет editable name, icon и color. Icon picker:
+
+- одна визуально согласованная библиотека;
+- search и categories;
+- compact grid;
+- небольшая pagination вместо длинного linear scroll;
+- keyboard navigation и accessible names;
+- color palette с проверенным contrast.
 
 ### Recipes
 
@@ -126,9 +150,11 @@ Gallery встроенных и пользовательских задач:
 ### Agent
 
 - queue и история Agent Runs;
+- first-party coding Agent Chat/CLI, не wrapper branded external agent;
 - plan/checkpoint timeline;
 - current step и compacted context summary;
-- tool calls, approvals и budgets;
+- file/config/docs changes и command/test evidence;
+- tool calls, `Manual`/`Auto within policy` и watchdog limits;
 - artifacts и verification;
 - pause/cancel/resume только там, где adapter поддерживает semantics;
 - explicit `Checkpointed deliberate` execution profile для слабой модели.
@@ -142,8 +168,10 @@ Gallery встроенных и пользовательских задач:
 - model routing;
 - global MCP/Skills/Tools;
 - voice input default Recipe;
-- service/CLI lifecycle;
+- service/CLI lifecycle и opt-in login autostart;
 - storage/retention/export;
+- global completion notification/sound policy;
+- Language: English/Russian и searchable Glossary;
 - security profile;
 - theme, font density, reduced motion и accessibility.
 
@@ -153,12 +181,13 @@ Gallery встроенных и пользовательских задач:
 
 1. `New` → `Chat`.
 2. Выбор Recipe или operation.
-3. Model selector показывает installed compatible models и fit basis.
-4. При выборе idle модели Governor после debounce может запросить prewarm lease.
-5. `Send` создаёт Job, после чего route и event subscription независимы.
-6. UI последовательно показывает `Queued → Loading → Prefill → Thinking /
+3. Выбор retention через `Keep / 7 days / Session`.
+4. Model selector показывает installed compatible models и fit basis.
+5. При выборе idle модели Governor после debounce может запросить prewarm lease.
+6. `Send` создаёт Job, после чего route и event subscription независимы.
+7. UI последовательно показывает `Queued → Loading → Prefill → Thinking /
 Generating → Finalizing`.
-7. Reload восстанавливает projection из Job и events.
+8. Reload восстанавливает projection из Job и events.
 
 ### Переход во время генерации
 
@@ -175,7 +204,7 @@ Job диалог объясняет причину:
 ### Voice input в Chat
 
 1. Микрофон использует выбранную global/Project transcription Recipe.
-2. Capture создаёт локальный audio draft.
+2. Capture показывает понятную waveform/level animation и создаёт audio draft.
 3. STT Job получает accelerator lease.
 4. При конфликте Chat model можно временно выгрузить только по Governor policy.
 5. Transcript появляется в composer как редактируемый input, а не отправляется
@@ -184,18 +213,22 @@ Job диалог объясняет причину:
 
 ### Dictation Quick Run
 
-Default view: record или upload → progress → transcript → copy/save/export.
+Default view: record или upload → progress → transcript → copy/export.
 
 Advanced:
 
 - language/hints;
 - vocabulary;
 - timestamps/speakers, если подтверждены adapter;
-- raw/cleaned output;
+- подтверждённые model-native raw/normalized modes;
+- cleanup/filler removal как отдельная видимая LLM stage;
 - последующий summary как отдельный pipeline stage.
 
-History выключена по умолчанию до решения retention policy. Сохранённый результат
-становится Artifact в Project.
+Quick Run использует выбранный retention mode. Отдельная кнопка Save не меняет
+тип сессии; связь Artifact с Project — отдельное действие.
+
+System-wide hotkey откладывается до platform integration и поддерживает два
+режима: toggle recording и hold-to-talk.
 
 ### TTS
 
@@ -208,6 +241,16 @@ Input dock принимает поддержанные media types. Output canva
 seed/size/variant, progress и download. OCR возвращает text/structured Artifact;
 image generation — gallery Artifacts.
 
+Video Workbench не входит в активный roadmap до нового product decision.
+
+### Completion notification
+
+1. Terminal Job создаёт in-app notification и badge.
+2. Если policy `When background`, client проверяет, открыт ли этот Job.
+3. После ранее полученного user permission воспроизводится один короткий sound.
+4. Notification ведёт к Job/Chat, не раскрывая prompt/result.
+5. Global policy наследуется Chat/Agent Run и может быть изменена в Chat Info.
+
 ## Capability-driven Workbench
 
 Workbench не хранится как доменная сущность. Shell состоит из:
@@ -218,7 +261,7 @@ Workbench не хранится как доменная сущность. Shell 
 ├ task canvas / conversation / media preview ────────┤
 │ artifact timeline / outputs                        │
 ├ Advanced parameters ───────── Resource inspector ──┤
-└ actions: run · queue · cancel · save · export ─────┘
+└ actions: run · queue · cancel · retain · export ────┘
 ```
 
 Renderer выбирается adapter:
@@ -247,7 +290,7 @@ Sunset Atlas можно использовать в Marketplace для discovery
 ### Типографика
 
 - JetBrains Mono: brand, model names, metrics, status labels, shortcuts, code;
-- читаемый sans: длинные ответы, документация и описания;
+- оптимальный читаемый document font: длинные ответы, Markdown и документация;
 - full-mono body — пользовательская настройка, а не обязательный default.
 
 Рабочее название и font задаются theme/brand tokens, а не размножаются в
@@ -292,6 +335,19 @@ Root Error Boundary всегда сохраняет navigation/reload/diagnostic
 - tablist используется только с корректными tabpanel/aria-controls;
 - contrast проверяется для всех semantic token combinations;
 - Thinking/stream pause доступны screen reader и reduced-motion users.
+- completion sound имеет visual equivalent, preview/off и не является единственным
+  сигналом.
+
+## Localization
+
+- English locale — source copy и fallback;
+- Russian — curated translation с product review;
+- locale switch не требует restart;
+- technical IDs/model names/commands не переводятся;
+- даты, числа, memory и plural forms используют locale formatting;
+- Glossary доступен из Settings и contextual help;
+- неизвестный locale key заметен в development, а production использует English
+  fallback без raw key.
 
 ## Responsive
 

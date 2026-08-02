@@ -1,6 +1,7 @@
 # ADR-0003: Capability evidence и task adapters
 
-**Статус:** proposed  
+**Статус:** accepted
+
 **Дата:** 2026-08-02
 
 ## Context
@@ -19,6 +20,10 @@ Metadata неоднородна: runtime declarations, provider tags и model ca
 3. appendable `CapabilityEvidence` с provenance/confidence/fingerprint;
 4. `TaskAdapter` для provider protocol и Artifact mapping;
 5. specialized Workbench для common operations и JSON-Schema fallback.
+
+Нативные speech modes (`raw`, `normalized`, model-native summary) являются
+отдельными доказуемыми operations/modes. LLM cleanup/filler removal/summary
+моделируются отдельными pipeline Jobs.
 
 Статусы: verified, declared, claimed, degraded, unknown, overridden. Absence
 metadata остаётся unknown.

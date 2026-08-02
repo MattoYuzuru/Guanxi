@@ -1,6 +1,7 @@
 # Runtime, Jobs и память
 
-**Статус:** mixed — diagnosis locally validated, lifecycle target proposed  
+**Статус:** mixed — diagnosis locally validated, lifecycle target accepted
+
 **Проверено:** 2026-08-02  
 **Критичность:** основной correctness и safety boundary
 
@@ -148,6 +149,22 @@ AdmissionExplanation содержит:
 - queue reason;
 - возможные действия: wait, smaller variant, lower context, stop active, override.
 
+### Measured parallelism
+
+Поздний advanced mode может допустить второй accelerator Job, например короткий
+STT во время долгого LLM Job. Governor считает joint reservation для всех
+instances, KV caches, parallelism и host reserve. Admission требует:
+
+- fresh host/runtime observation;
+- exact digest/configuration каждого Job;
+- safety margin после совместного размещения;
+- отсутствие critical pressure;
+- user-enabled measured-parallel policy.
+
+Если load observation хуже estimate, второй Job возвращается в queue либо
+останавливается до влияния на active Job. UI не предлагает parallel на основании
+общего объёма памяти без этой проверки.
+
 ### Model lease lifecycle
 
 Исходник: [model-lease-state.mmd](diagrams/model-lease-state.mmd).
@@ -229,6 +246,24 @@ UI fit:
 - `Does not fit policy` — governor отказал при текущих limits;
 - `May run with offload` — отдельное состояние, не зелёный fit.
 
+## История, context и KV cache
+
+Эти lifecycle независимы:
+
+- **model weights** — установленный artifact; обычный Chat их не изменяет;
+- **loaded instance** — weights/runtime buffers в RAM/VRAM;
+- **KV cache** — transient результат обработки текущего prompt/context;
+- **Chat history** — persistent messages/Artifacts на диске;
+- **context window** — выбранная часть истории, переданная конкретному Job.
+
+Unload обычно теряет loaded instance и KV cache, но не Chat history. Следующий Job
+может заново собрать и отправить историю. Это восстанавливает смысловой контекст,
+но не гарантирует тот же output из-за sampling, runtime/model version и другой
+compaction.
+
+Chat retention экономит disk и ограничивает privacy; он не освобождает VRAM сам
+по себе. Model unload освобождает runtime memory; он не удаляет Chat.
+
 ## Navigation и concurrency UX
 
 ### Navigation
@@ -263,8 +298,9 @@ Server state canonical. Каждая вкладка подписывается �
 4. пользователь редактирует transcript;
 5. Chat Job получает LLM lease.
 
-Если достаточно памяти и policy measured, same-device overlap возможен позже, но
-не является default.
+Если joint reservation и fresh telemetry достаточны, measured-parallel policy
+может выполнить короткий STT одновременно с LLM Job. Это accepted future mode,
+но не default.
 
 ### Long document
 
@@ -273,14 +309,14 @@ Upload → parse/OCR Jobs → chunk/index Artifacts → Chat/Agent Jobs. Каж�
 
 ### Agent
 
-Agent Run состоит из bounded steps. Между ними сохраняются:
+First-party coding Agent Run состоит из bounded steps. Между ними сохраняются:
 
 - plan/checkpoint;
 - compacted context artifact;
 - tool audit;
 - unresolved approvals;
 - verification record;
-- budget usage.
+- watchdog/usage state.
 
 `Checkpointed deliberate` profile:
 
@@ -289,9 +325,55 @@ Agent Run состоит из bounded steps. Между ними сохраня�
 - перечитывает plan/artifacts;
 - выполняет verifier step;
 - может освободить model lease между длинными waits;
-- прекращается по time/iteration/token/tool budget.
+- останавливается по watchdog, repeated-failure или user cancel.
 
 Размер модели не включает этот режим автоматически.
+
+Approval mode:
+
+- `manual` ждёт решения на effectful boundary;
+- `auto_within_policy` выполняет только actions, входящие в immutable Run policy;
+- новое root/network/MCP/Skill расширение требует новую user decision;
+- все tool effects сохраняют audit/evidence.
+
+Expected benchmark — coding/research work продолжительностью 4–6 часов и более.
+Качество важнее latency, но «нет денежного budget» не означает бесконечный
+no-progress loop.
+
+## Retention lifecycle
+
+Исходник: [retention-state.mmd](diagrams/retention-state.mmd).
+
+```text
+active
+  → expiring
+  → tombstoned in Trash
+  → grace
+  → metadata deleted
+  → unreferenced blobs collected
+```
+
+- `Keep` не получает automatic expiry.
+- `7 days` использует rolling TTL от user activity, если Q-24 подтверждён.
+- `Session` trigger определяется Q-23.
+- Reasoning Artifact по default истекает через 7 дней.
+- Active/non-terminal Job блокирует deletion.
+- Startup и periodic Maintenance Jobs обрабатывают bounded batches.
+- Policy change до hard deletion может восстановить record.
+- Cleanup event не продлевает user TTL.
+
+## Completion notifications
+
+Terminal transaction создаёт один notification record на Job. Web/TUI:
+
+1. применяют global → Chat/Agent Run policy;
+2. проверяют, открыт ли Job для `when_background`;
+3. показывают badge/in-app notification;
+4. после user permission воспроизводят короткий sound не более одного раза;
+5. хранят channel delivery marker отдельно от Job.
+
+Notification failure не меняет успешный terminal state. Payload не содержит
+prompt, reasoning или result content.
 
 ## Cancellation, timeout и shutdown
 
@@ -302,7 +384,7 @@ Agent Run состоит из bounded steps. Между ними сохраня�
 - provider connect timeout;
 - model load timeout;
 - stream idle timeout;
-- total Job budget;
+- total Job watchdog;
 - tool execution timeout;
 - approval timeout;
 - graceful cancel deadline.
@@ -332,6 +414,9 @@ answer.
 - закрывает SQLite;
 - не останавливает external Ollama daemon по умолчанию.
 
+Background Application Service переживает закрытие terminal. Обычное закрытие
+browser/TUI не запускает shutdown sequence.
+
 ### Restart
 
 Recovery scan:
@@ -343,6 +428,10 @@ Recovery scan:
 - pending approvals восстанавливаются;
 - `/api/ps` reconciles remaining instances;
 - stale leases закрываются journaled recovery event.
+
+Opt-in login autostart после recovery scan поднимает тот же canonical service и
+settings store. Одновременно запущенный второй writer обнаруживается до открытия
+SQLite на запись.
 
 ## Observability contract
 

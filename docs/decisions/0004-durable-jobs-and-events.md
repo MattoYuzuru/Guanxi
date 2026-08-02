@@ -1,6 +1,7 @@
 # ADR-0004: Durable Job и replayable events
 
-**Статус:** proposed  
+**Статус:** accepted
+
 **Дата:** 2026-08-02
 
 ## Context

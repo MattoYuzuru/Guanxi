@@ -1,6 +1,7 @@
 # ADR-0005: Ограниченный набор рабочих сущностей
 
-**Статус:** proposed  
+**Статус:** accepted
+
 **Дата:** 2026-08-02
 
 ## Context
@@ -12,7 +13,7 @@ agent и template легко превратить в десятки несовм
 
 Использовать шесть пользовательских понятий:
 
-- Quick Run — ephemeral one-shot;
+- Quick Run — one-shot с явной retention policy;
 - Chat — persistent conversation;
 - Project — контейнер work/context/permissions;
 - Recipe — reusable operation configuration;
@@ -20,13 +21,14 @@ agent и template легко превратить в десятки несовм
 - Artifact — typed input/output.
 
 Job остаётся внутренней универсальной execution entity. Workbench — renderer, не
-данные. Current filesystem Workspace мигрирует в Project binding.
+данные. Current filesystem Workspace мигрирует в Project binding. Project имеет
+presentation metadata: display name, icon key и color token.
 
 ## Invariants
 
 - Recipe не хранит conversation history;
 - Job snapshot сохраняет версию Recipe;
-- Quick Run persistent только после Save;
+- Quick Run и Chat используют Keep/TTL/Session, а не type-changing Save;
 - dictionary принадлежит Recipe/Project;
 - Project не обязан быть filesystem directory;
 - media result — Artifact, не special message blob.
@@ -44,7 +46,7 @@ Job остаётся внутренней универсальной execution e
 
 - пользователю нужно объяснить Recipe;
 - current Workspace/Thread terminology потребует migration;
-- граница Quick Run history требует product decision.
+- exact default/Session trigger требует Q-22/Q-23.
 
 ## Alternatives
 
@@ -58,3 +60,4 @@ Job остаётся внутренней универсальной execution e
   entity;
 - user testing различает Quick Run/Chat/Project/Recipe;
 - retention каждого flow предсказуем.
+- user glossary различает сущности на English и curated Russian.

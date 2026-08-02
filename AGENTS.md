@@ -14,8 +14,11 @@ Alamo UI — ранний local-first интерфейс и runtime-control laye
 3. Для изменения кода прочитайте `DEVELOPMENT.md`, `TESTING.md`, HLD и LLD.
 4. Для streaming, памяти, очередей и моделей обязательно прочитайте
    `architecture/RUNTIME_LIFECYCLE.md` и связанные ADR.
-5. Для запланированной работы прочитайте `plans/ROADMAP.md`; открытые решения не
-   закрывайте молча — сверяйтесь с `plans/OPEN_QUESTIONS.md`.
+5. Для запланированной работы прочитайте `plans/PHASE_STATUS.md`, затем
+   `plans/ROADMAP.md`; открытые решения не закрывайте молча — сверяйтесь с
+   `plans/OPEN_QUESTIONS.md`.
+6. Принятые ответы владельца находятся в
+   `decisions/2026-08-02-product-decisions.md`; они выше старого proposal.
 
 ## Статусы знаний
 
@@ -53,6 +56,10 @@ Alamo UI — ранний local-first интерфейс и runtime-control laye
   объясняются; safe default не становится скрытым hard cap.
 - Не добавляйте новые жёстко прошитые варианты имени продукта. Используйте
   централизуемый brand/config boundary согласно ADR-0007.
+- MCP/Skills выключены по default. Auto agent mode действует только внутри
+  immutable Project/Run policy и не равен unrestricted host access.
+- User-facing strings проходят locale keys: English source/fallback и curated
+  Russian. Не добавляйте новый bilingual hardcode прямо в component.
 
 ## Команды
 
