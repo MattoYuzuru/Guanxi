@@ -14,19 +14,22 @@ UI POST/SSE
 → INSERT user
 → activeTurns.set(threadId)
 → inspect capabilities
-→ INSERT empty assistant
+→ INSERT empty assistant, turn_status=pending
 → Ollama /api/chat keep_alive=10m
 → stream thinking/content/tools
-→ UPDATE assistant
-→ done
+→ one CAS UPDATE with output + completed/failed/cancelled + error/stop reason
+→ terminal SSE done
 ```
 
 Lock запрещает только второй turn в том же thread. Другой thread может начать
 параллельный inference.
 
 На route/thread change `useChat` abort-ит stream; server связывает disconnect с
-AbortController. Generation прекращается, но модель может оставаться в Ollama
-до `keep_alive` expiry. Это одновременно теряет работу и не освобождает память.
+AbortController. P0-B различает explicit Stop (`stopped_by_user`) и закрытие
+соединения (`connection_aborted`) и сохраняет `cancelled` с partial output.
+Generation всё равно прекращается, а модель может оставаться в Ollama до
+`keep_alive` expiry. Это по-прежнему одновременно теряет работу и не освобождает
+память.
 
 ### Исправленная в P0-A причина белого экрана
 
@@ -60,17 +63,41 @@ application shell при падении feature. Поведение локаль
 test с Promise-returning `scrollIntoView` и deterministic Chromium flow с
 несколькими streaming phases.
 
-### Почему reload показывает пустой assistant
+### P0-B truthful terminal bridge
 
-Пустой assistant уже сохраняется до Ollama request. До P0-A наблюдавшийся React
-crash закрывал stream, abort проходил до начала runtime generation, а
-status/error не персистились. P0-A устранил эту конкретную client-причину, но
-любой другой disconnect/abort всё ещё способен оставить ambiguous row. Локально
-наблюдавшийся проблемный thread имел четыре пустых assistant rows с `usage:null`;
-в Ollama log в эти моменты не было `POST /api/chat`.
+P0-B добавил additive Message-проекцию:
 
-Дополнительный current defect: EOF без final Ollama chunk может интерпретироваться
-как успешный empty stop.
+```text
+legacy unknown (NULL)
+pending
+  ├─ completed
+  ├─ failed
+  └─ cancelled
+```
+
+Terminal update использует compare-and-set только из `pending` и одной SQL
+операцией сохраняет partial/final content, thinking, tools, usage, safe error и
+stop reason. Поздняя повторная terminalization не меняет failure/cancel на
+completed. `completed` требует наблюдавшийся Ollama chunk с `done:true`; EOF без
+него становится `failed/runtime_protocol`.
+
+SQLite migration 3 backfill-ит `completed/legacy_terminal_chunk` только для
+старых assistant rows с `usage IS NOT NULL`: до P0-B usage строился только из
+terminal Ollama chunk. Старые empty/partial rows без usage остаются `NULL`, и Web
+показывает их как legacy outcome unknown, а не success.
+
+Provider error до первого chunk, partial provider error, explicit Stop и
+connection abort сохраняют terminal outcome. Если terminal DB update не удался,
+stream не эмитит completed; row остаётся `pending` либо повторная финализация
+фиксирует `failed/storage_error`. Это наблюдаемый storage failure, а не пустой
+success.
+
+Adapter сохраняет abort identity для authoritative cancellation reason, а
+non-abort ошибки чтения provider body нормализует в безопасный
+`upstream_error/provider_error`. Graceful EOF без `done:true` по-прежнему
+отличается как `runtime_protocol/protocol_error`. Если перечитать terminal
+history не удалось, Web удерживает live partial buffer с отдельной
+неподтверждённой меткой и alert.
 
 ## Target Job lifecycle
 
@@ -477,7 +504,9 @@ private prompt/thinking/secrets по default.
 8. добавить deterministic first-turn/navigation tests.
 
 P0-A локально реализовал пункт 1 и узкий first-stream regression из пункта 8.
-Turn terminal persistence, disconnect semantics и остальные bridge items не
-изменены.
+P0-B реализовал пункты 2–3, truthful connection cancellation из пункта 7 и
+failure/reload regression из пункта 8. Navigation всё ещё отменяет current turn,
+потому что durable Job/reattach не входит в bridge. Global mutex, compaction
+sequencing и runtime/catalog health остаются следующими P0 slices.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

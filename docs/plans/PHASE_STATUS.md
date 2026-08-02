@@ -16,7 +16,7 @@
 | Slice                             | Статус                 | Outcome                                                  |
 | --------------------------------- | ---------------------- | -------------------------------------------------------- |
 | P0-A Web crash containment        | independently verified | `f038b5c`/`d05a906`; 3 component, 2 Chromium; all checks |
-| P0-B Truthful turn terminal state | not started            | no ambiguous empty assistant; error/stop persisted       |
+| P0-B Truthful turn terminal state | independently verified | `c673227..7721ca0`; 23 targeted, 76+10 root, 5 Chromium  |
 | P0-C Exclusive inference bridge   | not started            | global mutex; compaction conflict/sequence fixed         |
 | P0-D Runtime/catalog health       | not started            | real health, no dead endpoint, running models, timeouts  |
 | P0-E Browser regression gate      | not started            | create/send/stream/done/reload and failure E2E           |

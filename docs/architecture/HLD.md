@@ -39,7 +39,8 @@ Contract package ─ Zod types ─ browser + server
 
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
 SQLite хранит settings, threads/messages, workspaces, tool journal и calibration.
-Active turns, approvals и часть streaming state существуют только в памяти.
+Message bridge также хранит `pending/completed/failed/cancelled`, safe error и
+stop reason. Active turns, approvals и SSE events существуют только в памяти.
 
 ### As-is execution boundary
 
@@ -47,13 +48,16 @@ Active turns, approvals и часть streaming state существуют то�
 
 1. сохраняет user message;
 2. захватывает in-memory lock только данного thread;
-3. создаёт пустой assistant;
+3. создаёт empty assistant с `turnStatus=pending`;
 4. запускает Ollama stream;
 5. владеет SSE connection;
-6. обновляет assistant после окончания.
+6. одной compare-and-set записью terminalize-ит assistant;
+7. отдаёт terminal outcome через совместимый additive SSE bridge.
 
-Browser disconnect/route change abort-ит server generation. После UI reload
-потерянную phase/error восстановить нельзя. SSE event history отсутствует.
+Browser disconnect/route change всё ещё abort-ит server generation, но P0-B
+сохраняет его как `cancelled/connection_aborted`; explicit Stop сохраняется как
+`cancelled/stopped_by_user`. После reload доступны persisted outcome/error/reason
+и partial output. Live phase и SSE event history не восстанавливаются.
 
 ### As-is deployment
 
@@ -68,6 +72,7 @@ Browser disconnect/route change abort-ит server generation. После UI relo
 | Состояние                            | Владелец                                | Durability                  |
 | ------------------------------------ | --------------------------------------- | --------------------------- |
 | Threads/messages/settings/workspaces | SQLite stores                           | persistent                  |
+| Message terminal bridge              | SQLite `messages` v3 columns            | persistent                  |
 | Tool run record                      | SQLite                                  | persistent после выполнения |
 | Active turn                          | server `Map<threadId, AbortController>` | process memory              |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
@@ -82,8 +87,9 @@ Browser disconnect/route change abort-ит server generation. После UI relo
 1. Разные threads могут одновременно запустить разные модели.
 2. `keep_alive: 10m` удерживает модели после turn; route не является unload.
 3. UI route владеет работой, поэтому navigation destructive.
-4. Пустой assistant создаётся до первого runtime event и не имеет status/error.
-5. Current SSE не replayable, хотя типы создают такое впечатление.
+4. P0-B Message bridge не является durable Job: DB failure может оставить
+   observable `pending`, а restart recovery отсутствует.
+5. Current SSE не replayable; additive terminal fields не меняют ownership.
 6. Remote bind открывает filesystem/shell boundaries без реальной authentication.
 7. Fit не описывает совместное размещение, current pressure и remote hardware.
 8. Catalog upstream endpoint больше не является рабочим API.
@@ -377,6 +383,12 @@ Current P0-A Web уже создаёт локальный client correlation ID 
 timestamp, route, error type и component stack в root/Chat Error Boundary.
 Автоматический diagnostics bundle/export и корреляция с будущим `jobId` ещё не
 реализованы.
+
+P0-B Web показывает persisted Message outcome/error/stop reason, включая
+partial failure, cancellation, pending и legacy unknown. Raw provider body и
+endpoint credentials в persisted error не попадают. Если terminal rehydrate
+не удался, live partial buffer остаётся видимым как неподтверждённый и не
+изображается сохранённым success.
 
 ## Evolution
 

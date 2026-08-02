@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A с mocked REST/SSE       |
+| `test:web:browser` | deterministic Chromium P0-A/P0-B с mocked REST/SSE  |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -68,6 +68,8 @@ npm run link:cli
 - `api.ts` — route constants и request/response schemas;
 - `events.ts` — SSE event union;
 - `index.ts` — public exports.
+- Message terminal bridge использует additive/defaulted fields; точные новые SSE
+  terminal details остаются optional для старого strict client.
 
 ### Server
 
@@ -78,6 +80,8 @@ npm run link:cli
 - `hardware/` — host probe и fit;
 - `http/` — models, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
+- migration 3 добавляет nullable `turn_status/turn_error/stop_reason` и не
+  переписывает старые migrations;
 - `agent/` — turn loop, prompts, approvals и parser;
 - `tools/` — registry, filesystem, shell и jail.
 
@@ -94,8 +98,9 @@ npm run link:cli
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
-- `test/component` — Vitest/jsdom P0-A regression;
-- `test/browser` — Playwright Chromium fixtures и first-stream smoke.
+- `test/component` — Vitest/jsdom P0-A и P0-B projection/parser regression;
+- `test/browser` — Playwright Chromium first-stream, failure/reload и boundary
+  smoke.
 
 ### CLI
 

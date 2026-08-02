@@ -17,8 +17,9 @@
 - `index.ts`: public exports.
 
 Current capability enum: completion, tools, vision, insert, thinking, embedding.
-Current thread mode: chat или agent. Message содержит content/thinking/tools/usage,
-но не durable execution status/run id/error.
+Current thread mode: chat или agent. Message содержит content/thinking/tools/usage
+и P0-B bridge fields `turnStatus/turnError/stopReason`. Эти поля описывают
+connection-owned turn projection, но не durable Job/run id.
 
 ### `packages/server`
 
@@ -34,6 +35,8 @@ Current thread mode: chat или agent. Message содержит content/thinkin
 - `hardware/*`: local host probe и static fit model;
 - `agent/loop.ts`: ordered turn/tool loop;
 - `store/db.ts`: `node:sqlite` migrations;
+- migration 3: nullable Message terminal bridge с evidence-based legacy backfill;
+- `store/threads.ts`: atomic pending-to-terminal compare-and-set;
 - `tools/*`: jail, filesystem и bash.
 
 `activeTurns` ограничивает только одинаковый thread. `ApprovalGate` и active
@@ -56,8 +59,9 @@ controllers не durable.
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields.
-- `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream
-  regression; browser использует deterministic mocked REST/SSE.
+- `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream и P0-B
+  terminal/error/reload regression; browser использует deterministic mocked
+  REST/SSE.
 
 ### `packages/cli`
 
@@ -66,22 +70,32 @@ controllers не durable.
 CLI parses port/host/no-open, проверяет existing health, запускает server в
 foreground и открывает browser. Durable service lifecycle/TUI/API client нет.
 
-## Current sequence defects
+## Current sequence и bridge limits
 
 1. User row сохраняется до inference.
-2. Empty assistant row создаётся до Ollama `POST /api/chat`.
-3. Client crash/disconnect вызывает abort.
-4. Abort сохраняет empty assistant без error/status.
-5. Reload показывает пустой ответ.
+2. Empty assistant row создаётся до Ollama `POST /api/chat`, теперь со status
+   `pending`.
+3. Client crash/disconnect вызывает abort и P0-B сохраняет
+   `cancelled/connection_aborted`.
+4. Provider error и EOF без terminal chunk сохраняются как `failed`; partial
+   content/thinking остаются в той же atomic terminal projection.
+5. Reload показывает pending/completed/failed/cancelled либо legacy unknown.
 
-Кроме того, EOF без terminal Ollama chunk может пройти как успешный stop.
-Повторная compaction вычисляет boundary по array length, а не реальному message
-sequence. Это P0 defects, а не target semantics.
+`OllamaClient` пробрасывает signal abort для cancellation classification и
+оборачивает прочие ошибки чтения body как provider failure. Если terminal
+rehydrate падает, `useChat` сохраняет live partial buffer в idle state с явной
+неподтверждённой меткой и accessible alert.
 
-P0-A исправил только client cleanup: effect больше не возвращает результат
-`scrollIntoView`. Root boundary и Chat feature boundary заменяют white screen
-диагностическим fallback. Они не меняют connection-owned turn и не исправляют
-empty assistant/status defects выше.
+Migration 3 оставляет старые rows без usage в `NULL`, а usage-backed rows
+backfill-ит как `completed/legacy_terminal_chunk`. Terminal update меняет только
+`pending`, поэтому повторный late completion не перезаписывает failure/cancel.
+Если запись terminal state падает, completed SSE не отправляется; `pending`
+остаётся наблюдаемым recovery state.
+
+P0-A по-прежнему отвечает за безопасный effect и root/Chat Error Boundaries.
+P0-B не отделяет execution от POST/SSE connection: navigation всё ещё может
+cancel. Повторная compaction вычисляет boundary по array length, а не реальному
+message sequence; global inference mutex также ещё не реализован.
 
 ## Target module boundaries
 

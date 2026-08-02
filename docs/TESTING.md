@@ -7,40 +7,48 @@
 
 На 2026-08-02:
 
-- `npm test`: 59/59 server/CLI и 3/3 web component tests;
-- `npm run test:web:browser`: 2/2 deterministic Chromium tests с mocked
+- `npm test`: 76/76 server/CLI и 10/10 web component/parser tests;
+- `npm run test:web:browser`: 5/5 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
   проверяет документацию с repository config;
-- web automation покрывает только P0-A: streaming cleanup, Error Boundary,
-  `create → redirect → first stream`, keyboard/focus, narrow viewport, 200%
-  text scaling и reduced motion;
+- web automation покрывает P0-A streaming cleanup/Error Boundaries и P0-B
+  failed-partial reload, unreconciled live partial и
+  `Stop → cancelled → reload`: `create → redirect → first stream`,
+  keyboard/focus, narrow viewport, 200% boundary scaling и reduced motion;
+- deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
+  compatibility, CAS terminalization, actual-adapter provider body failure,
+  protocol/storage failure, explicit Stop, connection abort и reload states;
 - CI/lint/formatter commands отсутствуют;
-- живой Ollama и полный first-turn persistence flow не входят в regression suite.
+- живой Ollama, durable/replayable Job flow и global inference concurrency не
+  входят в regression suite.
 
-Baseline подтверждает существующие server/CLI unit и route cases и узкий mocked
-Web flow P0-A, но не P0-B terminal persistence, resource safety или живой runtime.
+Baseline локально подтверждает P0-A и P0-B bridge на временной SQLite,
+управляемом `OllamaClient` transport и mocked browser REST/SSE. Он не
+подтверждает resource safety, restart recovery, живой runtime или production
+use.
 
 ## Существующее покрытие
 
-| Область                            | Есть                    |
-| ---------------------------------- | ----------------------- |
-| Agent loop                         | unit cases              |
-| Hardware fit                       | unit cases              |
-| Filesystem tools/jail              | unit cases              |
-| Server routes                      | integration-style tests |
-| SQLite stores                      | tests                   |
-| Tool parser                        | tests                   |
-| Context usage                      | tests                   |
-| Static web serving                 | test                    |
-| CLI existing-server logic          | tests                   |
-| React render/navigation            | P0-A component cases    |
-| Browser streaming                  | P0-A mocked stream      |
-| Catalog provider/cache             | нет                     |
-| Global concurrency/model lifecycle | нет                     |
-| SSE replay/restart                 | нет                     |
-| Accessibility/responsive           | P0-A boundary smoke     |
+| Область                            | Есть                               |
+| ---------------------------------- | ---------------------------------- |
+| Agent loop                         | unit cases                         |
+| Hardware fit                       | unit cases                         |
+| Filesystem tools/jail              | unit cases                         |
+| Server routes                      | integration-style tests            |
+| SQLite stores/migration v3         | fresh + v2 upgrade                 |
+| Turn terminal contract/CAS         | compatibility + failures           |
+| Tool parser                        | tests                              |
+| Context usage                      | tests                              |
+| Static web serving                 | test                               |
+| CLI existing-server logic          | tests                              |
+| React render/navigation            | P0-A/P0-B component cases          |
+| Browser streaming/reload           | P0-A/P0-B mocked stream            |
+| Catalog provider/cache             | нет                                |
+| Global concurrency/model lifecycle | нет                                |
+| SSE replay/restart                 | нет                                |
+| Accessibility/responsive           | P0-A boundary + P0-B failure smoke |
 
 ## Обязательная target matrix
 
