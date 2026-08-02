@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { HardwareInfo } from '@alamo/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
+import { TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
 import type { ModelService } from '../src/models/service.ts'
-import { OllamaError, type OllamaClient } from '../src/ollama/client.ts'
+import { OllamaClient, OllamaError } from '../src/ollama/client.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../src/ollama/types.ts'
 import { ExclusiveInferenceBridge } from '../src/runtime/exclusive-inference.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
@@ -71,6 +72,33 @@ function partialChunk(content: string): OllamaChatChunk {
     message: { role: 'assistant', content },
     done: false,
   }
+}
+
+function stalledNdjsonResponse(
+  signal: AbortSignal | null | undefined,
+  firstChunk?: OllamaChatChunk,
+  onAbort?: () => void,
+): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (firstChunk) {
+        controller.enqueue(new TextEncoder().encode(`${JSON.stringify(firstChunk)}\n`))
+      }
+      signal?.addEventListener(
+        'abort',
+        () => {
+          onAbort?.()
+          controller.error(new DOMException('Aborted', 'AbortError'))
+        },
+        { once: true },
+      )
+    },
+  })
+  return new Response(body, { status: 200 })
+}
+
+function terminalNdjsonResponse(content: string): Response {
+  return new Response(`${JSON.stringify(terminalChunk(content))}\n`, { status: 200 })
 }
 
 function testContext(options: {
@@ -434,6 +462,235 @@ describe('exclusive inference routes', () => {
     }
   })
 
+  it('releases connect, load, and stream-idle timed-out owners to a cross-thread waiter', async () => {
+    const cases = [
+      {
+        phase: 'connect',
+        errorCode: 'ollama_connect_timeout',
+        stopReason: 'provider_error',
+      },
+      {
+        phase: 'load',
+        errorCode: 'ollama_load_timeout',
+        stopReason: 'provider_error',
+      },
+      {
+        phase: 'stream_idle',
+        errorCode: 'ollama_stream_idle_timeout',
+        stopReason: 'provider_error',
+      },
+    ] as const
+
+    for (const timeoutCase of cases) {
+      let calls = 0
+      let active = 0
+      let maxActive = 0
+      const client = new OllamaClient({
+        host: 'http://fixture.invalid',
+        connectTimeoutMs: 20,
+        loadTimeoutMs: 20,
+        streamIdleTimeoutMs: 20,
+        fetch: (_input, init) => {
+          calls += 1
+          active += 1
+          maxActive = Math.max(maxActive, active)
+
+          if (calls > 1) {
+            active -= 1
+            return Promise.resolve(terminalNdjsonResponse('waiter completed'))
+          }
+
+          if (timeoutCase.phase === 'connect') {
+            return new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener(
+                'abort',
+                () => {
+                  active -= 1
+                  reject(new DOMException('Aborted', 'AbortError'))
+                },
+                { once: true },
+              )
+            })
+          }
+
+          return Promise.resolve(
+            stalledNdjsonResponse(
+              init?.signal,
+              timeoutCase.phase === 'stream_idle' ? partialChunk('timed partial') : undefined,
+              () => {
+                active -= 1
+              },
+            ),
+          )
+        },
+      })
+      const context = testContext({ client })
+
+      try {
+        const app = createApp(context)
+        const owner = createThread(context, `${timeoutCase.phase}-owner`)
+        const waiter = createThread(context, `${timeoutCase.phase}-waiter`)
+
+        const ownerResponse = await send(app, owner.id, 'owner')
+        await waitFor(() => calls === 1, `${timeoutCase.phase} owner never entered`)
+        const waiterResponse = await send(app, waiter.id, 'waiter')
+        await waitFor(
+          () => context.inference.waiting === 1,
+          `${timeoutCase.phase} waiter never queued`,
+        )
+
+        const ownerEvents = parseSse(await ownerResponse.text())
+        const ownerDone = ownerEvents.find((event) => event['type'] === 'done')
+        assert.equal(
+          (ownerDone?.['data'] as { outcome: string }).outcome,
+          'failed',
+          timeoutCase.phase,
+        )
+        await waitFor(() => calls === 2, `${timeoutCase.phase} waiter was not admitted`)
+        const waiterEvents = parseSse(await waiterResponse.text())
+
+        assert.equal(
+          (waiterEvents.find((event) => event['type'] === 'done')?.['data'] as {
+            outcome: string
+          }).outcome,
+          'completed',
+          timeoutCase.phase,
+        )
+        const persistedOwner = context.threads.messages(owner.id).at(-1)
+        assert.equal(persistedOwner?.turnStatus, 'failed')
+        assert.equal(persistedOwner?.turnError?.code, timeoutCase.errorCode)
+        assert.equal(persistedOwner?.stopReason, timeoutCase.stopReason)
+        if (timeoutCase.phase === 'stream_idle') {
+          assert.equal(persistedOwner?.content, 'timed partial')
+        }
+        assert.equal(maxActive, 1)
+        assert.equal(context.inference.active, false)
+        assert.equal(context.inference.waiting, 0)
+      } finally {
+        context.db.close()
+      }
+    }
+  })
+
+  it('aborts a cold warm at the load deadline and admits the waiting turn', async () => {
+    let modelCalls = 0
+    let active = 0
+    let maxActive = 0
+    const client = new OllamaClient({
+      host: 'http://fixture.invalid',
+      connectTimeoutMs: 20,
+      loadTimeoutMs: 20,
+      streamIdleTimeoutMs: 20,
+      fetch: async (input, init) => {
+        if (new URL(String(input)).pathname === '/api/version') {
+          return new Response(JSON.stringify({ version: 'fixture' }), { status: 200 })
+        }
+        modelCalls += 1
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        if (modelCalls === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              'abort',
+              () => {
+                active -= 1
+                reject(new DOMException('Aborted', 'AbortError'))
+              },
+              { once: true },
+            )
+          })
+        }
+        active -= 1
+        return terminalNdjsonResponse('turn after warm')
+      },
+    })
+    const context = testContext({
+      client,
+      models: {
+        async warm(name, contextLength, signal) {
+          await client.warm(name, contextLength, '10m', signal)
+          return null
+        },
+      },
+    })
+
+    try {
+      const app = createApp(context)
+      const next = createThread(context, 'next-after-warm')
+      const warmResponsePromise = app.request('/api/models/cold-model/warm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contextLength: 4_096 }),
+      })
+      await waitFor(() => modelCalls === 1, 'cold warm never entered fake Ollama')
+
+      const nextResponse = await send(app, next.id, 'wait after warm')
+      await waitFor(() => context.inference.waiting === 1, 'turn did not wait for cold warm')
+
+      const warmResponse = await warmResponsePromise
+      assert.equal(warmResponse.status, 504)
+      assert.equal(
+        ((await warmResponse.json()) as { code: string }).code,
+        'ollama_load_timeout',
+      )
+      await waitFor(() => modelCalls === 2, 'turn was not admitted after warm timeout')
+      await nextResponse.text()
+
+      assert.equal(context.threads.messages(next.id).at(-1)?.turnStatus, 'completed')
+      assert.equal(maxActive, 1)
+      assert.equal(context.inference.active, false)
+    } finally {
+      context.db.close()
+    }
+  })
+
+  it('releases a compaction load timeout to the waiting turn', async () => {
+    let modelCalls = 0
+    const client = new OllamaClient({
+      host: 'http://fixture.invalid',
+      connectTimeoutMs: 20,
+      loadTimeoutMs: 20,
+      streamIdleTimeoutMs: 20,
+      fetch: async (input, init) => {
+        if (new URL(String(input)).pathname === '/api/version') {
+          return new Response(JSON.stringify({ version: 'fixture' }), { status: 200 })
+        }
+        modelCalls += 1
+        if (modelCalls === 1) return stalledNdjsonResponse(init?.signal)
+        return terminalNdjsonResponse('turn after compact timeout')
+      },
+    })
+    const context = testContext({ client })
+
+    try {
+      const app = createApp(context)
+      const compactThread = createThread(context, 'compact-timeout')
+      const nextThread = createThread(context, 'next-after-compact')
+      seedMessages(context, compactThread.id, 0, 6)
+
+      const compactResponsePromise = app.request(`/api/threads/${compactThread.id}/compact`, {
+        method: 'POST',
+      })
+      await waitFor(() => modelCalls === 1, 'compaction never entered fake Ollama')
+      const nextResponse = await send(app, nextThread.id, 'wait after compaction')
+      await waitFor(() => context.inference.waiting === 1, 'turn did not wait for compaction')
+
+      const compactResponse = await compactResponsePromise
+      assert.equal(compactResponse.status, 504)
+      assert.equal(
+        ((await compactResponse.json()) as { code: string }).code,
+        'ollama_load_timeout',
+      )
+      await waitFor(() => modelCalls === 2, 'turn was not admitted after compaction timeout')
+      await nextResponse.text()
+
+      assert.equal(context.threads.messages(nextThread.id).at(-1)?.turnStatus, 'completed')
+      assert.equal(context.inference.active, false)
+    } finally {
+      context.db.close()
+    }
+  })
+
   it('releases after completed, provider-error, and missing-terminal turns', async () => {
     const cases: Array<{
       name: string
@@ -531,6 +788,43 @@ describe('exclusive inference routes', () => {
       await nextResponse.text()
 
       assert.equal(context.threads.messages(nextThread.id).at(-1)?.turnStatus, 'completed')
+      assert.equal(context.inference.active, false)
+    } finally {
+      context.db.close()
+    }
+  })
+
+  it('keeps an explicit cancellation authoritative when observed with the idle deadline', async () => {
+    let context: AppContext
+    let threadId = ''
+    const client = new OllamaClient({
+      host: 'http://fixture.invalid',
+      connectTimeoutMs: 20,
+      loadTimeoutMs: 20,
+      streamIdleTimeoutMs: 20,
+      fetch: async (_input, init) =>
+        stalledNdjsonResponse(init?.signal, partialChunk('simultaneous partial'), () => {
+          context.activeTurns.get(threadId)?.abort(TURN_ABORT_REASON.explicitStop)
+        }),
+    })
+    context = testContext({ client })
+
+    try {
+      const app = createApp(context)
+      const thread = createThread(context, 'simultaneous-stop')
+      threadId = thread.id
+      const events = parseSse(await (await send(app, thread.id)).text())
+      const done = events.find((event) => event['type'] === 'done')
+      const persisted = context.threads.messages(thread.id).at(-1)
+
+      assert.equal((done?.['data'] as { outcome: string }).outcome, 'cancelled')
+      assert.equal(
+        (done?.['data'] as { terminalStopReason: string }).terminalStopReason,
+        'stopped_by_user',
+      )
+      assert.equal(persisted?.turnStatus, 'cancelled')
+      assert.equal(persisted?.turnError, null)
+      assert.equal(persisted?.stopReason, 'stopped_by_user')
       assert.equal(context.inference.active, false)
     } finally {
       context.db.close()

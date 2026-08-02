@@ -93,6 +93,28 @@ describe('persisted turn projection', () => {
     expect(screen.getByText(/Причина остановки: остановка provider/)).toBeTruthy()
   })
 
+  it('keeps partial output failed with a stable stream-idle timeout message', () => {
+    render(
+      <MessageView
+        message={assistant({
+          content: 'partial before stall',
+          turnStatus: 'failed',
+          turnError: {
+            code: 'ollama_stream_idle_timeout',
+            message: 'safe persisted timeout',
+          },
+          stopReason: 'provider_error',
+        })}
+      />,
+    )
+
+    expect(screen.getByText('partial before stall')).toBeTruthy()
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain('stream idle deadline')
+    expect(alert.textContent).toContain('Причина остановки: ошибка provider')
+    expect(screen.queryByText('завершён')).toBeNull()
+  })
+
   it('uses the English source copy as fallback', () => {
     document.documentElement.lang = 'en'
     render(

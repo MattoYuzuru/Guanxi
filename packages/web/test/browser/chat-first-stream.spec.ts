@@ -129,6 +129,9 @@ test('create Chat redirects and survives the first multi-phase stream render', a
         })
 
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/models/running') {
+        return json({ models: [], observedAt })
+      }
       if (url.pathname === '/api/models') return json({ models: [model] })
       if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
       if (url.pathname === '/api/settings') {

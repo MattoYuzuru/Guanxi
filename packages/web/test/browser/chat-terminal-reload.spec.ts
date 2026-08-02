@@ -103,6 +103,9 @@ test('failed partial response and stop reason remain truthful after reload', asy
         })
 
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/models/running') {
+        return json({ models: [], observedAt })
+      }
       if (url.pathname === '/api/threads' && method === 'GET') {
         return json({ threads: [thread] })
       }
@@ -220,6 +223,9 @@ test('live partial output remains visible when terminal history cannot be reload
         (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET').toUpperCase()
 
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/models/running') {
+        return json({ models: [], observedAt })
+      }
       if (url.pathname === '/api/threads' && method === 'GET') {
         return json({ threads: [thread] })
       }
@@ -408,6 +414,9 @@ test('explicit Stop reloads the persisted cancelled partial outcome', async ({ p
         (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET').toUpperCase()
 
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/models/running') {
+        return json({ models: [], observedAt })
+      }
       if (url.pathname === '/api/threads' && method === 'GET') {
         return json({ threads: [thread] })
       }
