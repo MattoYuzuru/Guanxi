@@ -110,22 +110,72 @@ export const catalogModelSchema = z.object({
   requiredPlan: z.enum(['free', 'pro']).nullable(),
   installed: z.boolean(),
   fit: fitVerdictSchema,
-  /** Откуда карточка: живой каталог ollama.com или встроенный офлайн-снимок. */
-  source: z.enum(['remote', 'bundled']),
+  /** Provider provenance. `remote` remains for a future documented provider. */
+  source: z.enum(['remote', 'local_cache', 'bundled']),
+  /** Additive P0-D freshness fields; absent values are legacy/unknown. */
+  freshness: z.enum(['fresh', 'stale', 'fallback', 'unknown']).optional().default('unknown'),
+  sourceObservedAt: z.string().nullable().optional().default(null),
+  sourceFetchedAt: z.string().nullable().optional().default(null),
 })
 export type CatalogModel = z.infer<typeof catalogModelSchema>
 
 export const runningModelSchema = z.object({
   name: z.string(),
+  digest: z.string().nullable().optional().default(null),
   sizeBytes: z.number().int(),
   /** Сколько ушло на ускоритель. */
-  sizeVramBytes: z.number().int(),
-  gpuPercent: z.number().int(),
-  processorLabel: z.string(), // "100% GPU" | "43%/57% CPU/GPU"
-  contextLength: z.number().int(),
+  sizeVramBytes: z.number().int().nullable(),
+  /** Legacy derived fields; current `/api/ps` projection leaves them null. */
+  gpuPercent: z.number().int().nullable(),
+  processorLabel: z.string().nullable(), // "100% GPU" | "43%/57% CPU/GPU"
+  contextLength: z.number().int().nullable(),
   expiresAt: z.string().nullable(),
+  source: z.literal('ollama_api_ps').nullable().optional().default(null),
+  observedAt: z.string().nullable().optional().default(null),
 })
 export type RunningModel = z.infer<typeof runningModelSchema>
+
+export const catalogSourceStateSchema = z.enum([
+  'fresh_remote',
+  'stale_cache',
+  'bundled_fallback',
+  'unavailable',
+  'unknown',
+])
+export type CatalogSourceState = z.infer<typeof catalogSourceStateSchema>
+
+const catalogSourceObservationSchema = z.object({
+  observedAt: z.string(),
+})
+
+export const catalogSourceHealthSchema = z.discriminatedUnion('state', [
+  catalogSourceObservationSchema.extend({
+    state: z.literal('fresh_remote'),
+    source: z.literal('documented_remote'),
+    fetchedAt: z.string(),
+  }),
+  catalogSourceObservationSchema.extend({
+    state: z.literal('stale_cache'),
+    source: z.literal('ollama_recommendations_cache'),
+    fetchedAt: z.string(),
+  }),
+  catalogSourceObservationSchema.extend({
+    state: z.literal('bundled_fallback'),
+    source: z.literal('bundled_snapshot'),
+    fetchedAt: z.string(),
+  }),
+  catalogSourceObservationSchema.extend({
+    state: z.literal('unavailable'),
+    source: z.literal('none'),
+    fetchedAt: z.null(),
+  }),
+  catalogSourceObservationSchema.extend({
+    state: z.literal('unknown'),
+    source: z.literal('none'),
+    fetchedAt: z.null(),
+  }),
+])
+export type CatalogSourceHealth = z.infer<typeof catalogSourceHealthSchema>
 
 export const modelDetailSchema = localModelSchema.extend({
   /** Сырой блок из /api/show — архитектурные параметры. */
@@ -247,6 +297,9 @@ export type TurnStopReason = z.infer<typeof turnStopReasonSchema>
 
 export const turnErrorCodeSchema = z.enum([
   'ollama_unavailable',
+  'ollama_connect_timeout',
+  'ollama_load_timeout',
+  'ollama_stream_idle_timeout',
   'upstream_error',
   'runtime_protocol',
   'storage_error',
@@ -336,7 +389,16 @@ export type Settings = z.infer<typeof settingsSchema>
 
 export const ollamaStatusSchema = z.object({
   installed: z.boolean(),
+  installSource: z
+    .enum(['runtime_response', 'local_binary_path'])
+    .nullable()
+    .optional()
+    .default(null),
   running: z.boolean(),
+  /** Current server responses always provide this; omission is a legacy response. */
+  state: z.enum(['reachable', 'unavailable', 'incompatible']).optional(),
+  source: z.literal('ollama_api_version').nullable().optional().default(null),
+  observedAt: z.string().nullable().optional().default(null),
   version: z.string().nullable(),
   host: z.string(),
   /** Инструкция по установке под текущую ОС, если не установлено. */
@@ -352,12 +414,24 @@ export type OllamaStatus = z.infer<typeof ollamaStatusSchema>
 export const healthSchema = z.object({
   ok: z.boolean(),
   appVersion: z.string(),
+  application: z
+    .object({
+      state: z.literal('reachable'),
+      source: z.literal('application_http'),
+      observedAt: z.string(),
+    })
+    .optional(),
   ollama: ollamaStatusSchema,
   hardware: hardwareInfoSchema,
-  /** Доступность внешней сети — определяет, живой каталог или офлайн-снимок. */
+  /**
+   * Legacy network slot. P0-D no longer probes the undocumented catalog URL, so
+   * current responses explicitly report an unknown/not-checked observation.
+   */
   network: z.object({
-    ollamaComReachable: z.boolean(),
-    checkedAt: z.string(),
+    ollamaComReachable: z.boolean().nullable(),
+    checkedAt: z.string().nullable(),
+    status: z.literal('unknown').optional(),
+    source: z.literal('not_checked').optional(),
   }),
 })
 export type Health = z.infer<typeof healthSchema>
@@ -373,6 +447,10 @@ export const apiErrorSchema = z.object({
     'path_outside_workspace',
     'tool_disabled',
     'validation_failed',
+    'ollama_connect_timeout',
+    'ollama_load_timeout',
+    'ollama_stream_idle_timeout',
+    'runtime_protocol',
     'upstream_error',
     'internal_error',
   ]),

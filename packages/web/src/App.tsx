@@ -6,13 +6,14 @@ import { api } from './lib/api.ts'
 import { useAsync } from './lib/useAsync.ts'
 import { Link, paths, useRoute } from './lib/router.tsx'
 import { useTheme } from './lib/theme.tsx'
-import { Button, Callout, EmptyState, cx } from './components/ui.tsx'
+import { Button, EmptyState, cx } from './components/ui.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import {
   HealthLoading,
   HealthUnreachable,
-  OllamaUnavailable,
+  OllamaHealthNotice,
 } from './features/health/HealthGate.tsx'
+import { RuntimeStatus } from './features/health/RuntimeStatus.tsx'
 import { LauncherPage } from './features/launcher/LauncherPage.tsx'
 import { ModelPage } from './features/models/ModelPage.tsx'
 import { ChatPage } from './features/chat/ChatPage.tsx'
@@ -37,32 +38,16 @@ export function App() {
 
   const { data } = health
 
-  const ollamaUnavailable = !data.ollama.installed || !data.ollama.running
-
-  // Каталог без Ollama бесполезен, но история и настройки должны оставаться доступны.
-  if (ollamaUnavailable && route.name !== 'chat' && route.name !== 'settings') {
-    return <OllamaUnavailable health={data} onRetry={retry} retrying={retrying} />
-  }
-
   return (
-    <div className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden">
+    <div className="flex h-dvh min-w-0 flex-col overflow-hidden">
       <TopBar />
-      <main className="min-w-0 flex-1">
-        {ollamaUnavailable && route.name === 'settings' && (
-          <div className="px-3 pt-3">
-            <Callout
-              tone="warning"
-              title={data.ollama.installed ? 'Ollama не запущена' : 'Ollama не установлена'}
-              action={
-                <Button size="sm" onClick={retry} loading={retrying}>
-                  Проверить
-                </Button>
-              }
-            >
-              История и настройки доступны, генерация временно выключена.
-            </Callout>
-          </div>
-        )}
+      <OllamaHealthNotice
+        health={data}
+        onRetry={retry}
+        retrying={retrying}
+      />
+      <RuntimeStatus />
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         {route.name === 'launcher' && <LauncherPage health={data} />}
         {route.name === 'model' && <ModelPage name={route.modelName} health={data} />}
         {route.name === 'chat' && (

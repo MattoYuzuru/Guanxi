@@ -6,13 +6,35 @@
  */
 import type { Context } from 'hono'
 import type { ApiError } from '@alamo/contract'
-import { OllamaError, OllamaUnavailableError } from '../ollama/client.ts'
+import {
+  OllamaError,
+  OllamaProtocolError,
+  OllamaTimeoutError,
+  OllamaUnavailableError,
+} from '../ollama/client.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
 import { ToolError } from '../tools/types.ts'
 
-type StatusCode = 400 | 403 | 404 | 500 | 502 | 503
+type StatusCode = 400 | 403 | 404 | 500 | 502 | 503 | 504
 
 function classify(error: unknown): { status: StatusCode; body: ApiError } {
+  if (error instanceof OllamaTimeoutError) {
+    const code: ApiError['code'] =
+      error.phase === 'connect'
+        ? 'ollama_connect_timeout'
+        : error.phase === 'load'
+          ? 'ollama_load_timeout'
+          : 'ollama_stream_idle_timeout'
+    return {
+      status: 504,
+      body: {
+        code,
+        message: error.message,
+        details: { phase: error.phase, timeoutMs: error.timeoutMs },
+      },
+    }
+  }
+
   if (error instanceof OllamaUnavailableError) {
     return {
       status: 503,
@@ -20,6 +42,17 @@ function classify(error: unknown): { status: StatusCode; body: ApiError } {
         code: 'ollama_unavailable',
         message: error.message,
         details: { hint: 'Запусти Ollama командой `ollama serve` или проверь адрес в настройках' },
+      },
+    }
+  }
+
+  if (error instanceof OllamaProtocolError) {
+    return {
+      status: 502,
+      body: {
+        code: 'runtime_protocol',
+        message: 'Ollama returned an incompatible response',
+        details: { endpoint: error.endpoint },
       },
     }
   }

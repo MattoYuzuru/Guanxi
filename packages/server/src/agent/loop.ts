@@ -20,7 +20,12 @@ import type {
 } from '@alamo/contract'
 import { MAX_AGENT_STEPS, APPROVAL_TIMEOUT_MS } from '@alamo/contract'
 import { buildContextState, buildUsage, type PrefillTracker } from '../context/usage.ts'
-import { OllamaError, OllamaUnavailableError, type OllamaClient } from '../ollama/client.ts'
+import {
+  OllamaError,
+  OllamaTimeoutError,
+  OllamaUnavailableError,
+  type OllamaClient,
+} from '../ollama/client.ts'
 import type { OllamaChatChunk, OllamaChatMessage } from '../ollama/types.ts'
 import type { ThreadStore } from '../store/threads.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
@@ -95,6 +100,33 @@ function safeTurnFailure(error: unknown): { error: TurnError; stopReason: TurnSt
       stopReason: 'protocol_error',
     }
   }
+  if (error instanceof OllamaTimeoutError) {
+    if (error.phase === 'connect') {
+      return {
+        error: {
+          code: 'ollama_connect_timeout',
+          message: 'Ollama did not accept the connection before the deadline',
+        },
+        stopReason: 'provider_error',
+      }
+    }
+    if (error.phase === 'load') {
+      return {
+        error: {
+          code: 'ollama_load_timeout',
+          message: 'Ollama did not produce initial model progress before the load deadline',
+        },
+        stopReason: 'provider_error',
+      }
+    }
+    return {
+      error: {
+        code: 'ollama_stream_idle_timeout',
+        message: 'Ollama stopped producing stream progress before the idle deadline',
+      },
+      stopReason: 'provider_error',
+    }
+  }
   if (error instanceof OllamaUnavailableError) {
     return {
       error: { code: 'ollama_unavailable', message: 'Ollama is unavailable' },
@@ -117,7 +149,10 @@ function streamErrorData(
   error: TurnError,
 ): Extract<ChatStreamEvent, { type: 'error' }>['data'] {
   const code =
-    error.code === 'runtime_protocol'
+    error.code === 'runtime_protocol' ||
+    error.code === 'ollama_connect_timeout' ||
+    error.code === 'ollama_load_timeout' ||
+    error.code === 'ollama_stream_idle_timeout'
       ? 'upstream_error'
       : error.code === 'storage_error'
         ? 'internal_error'

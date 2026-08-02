@@ -38,6 +38,12 @@ const english = {
     'The response stream ended without a terminal event. Reloaded history is the source of truth.',
   'chat.turn.livePartial.noContent': 'No response text was retained.',
   'chat.turn.error.ollama_unavailable': 'Ollama was unavailable before the response completed.',
+  'chat.turn.error.ollama_connect_timeout':
+    'Ollama did not accept the connection before the deadline.',
+  'chat.turn.error.ollama_load_timeout':
+    'Ollama did not produce initial model progress before the load deadline.',
+  'chat.turn.error.ollama_stream_idle_timeout':
+    'Ollama stopped producing stream progress before the idle deadline.',
   'chat.turn.error.upstream_error': 'Ollama ended the response with an error.',
   'chat.turn.error.runtime_protocol':
     'Ollama ended the stream without the required terminal chunk.',
@@ -55,6 +61,45 @@ const english = {
   'chat.turn.reason.internal_error': 'internal failure',
   'chat.turn.reason.legacy_terminal_chunk': 'legacy terminal chunk',
   'chat.turn.reason.error': 'error',
+  'health.ollama.unavailable.title': 'Ollama is unavailable',
+  'health.ollama.unavailable.summary':
+    'History and settings remain available. New runtime operations are disabled.',
+  'health.ollama.incompatible.title': 'Ollama returned an incompatible response',
+  'health.ollama.incompatible.summary':
+    'The runtime answered, but its version response did not match the supported protocol.',
+  'health.retry': 'Check again',
+  'health.observedAt': 'Observed at',
+  'health.source': 'Source',
+  'runtime.title': 'Loaded models',
+  'runtime.checking': 'Checking the current /api/ps sample…',
+  'runtime.error.title': 'Running models are unavailable',
+  'runtime.error.summary':
+    'No loaded-model state is inferred while the Ollama sample is unavailable.',
+  'runtime.retry': 'Retry runtime check',
+  'runtime.empty.title': 'No loaded models were observed',
+  'runtime.empty.summary':
+    'This is one sampled /api/ps observation; it does not prove what happened between samples.',
+  'runtime.sampled': 'Sampled from Ollama /api/ps',
+  'runtime.size': 'Runtime size',
+  'runtime.acceleratorSize': 'Accelerator bytes',
+  'runtime.context': 'Context',
+  'runtime.expiry': 'Expires',
+  'runtime.unknown': 'Unknown',
+  'catalog.source.fresh.title': 'Fresh remote catalog',
+  'catalog.source.fresh.summary': 'The displayed provider sample is current.',
+  'catalog.source.stale.title': 'Stale local catalog cache',
+  'catalog.source.stale.summary':
+    'Cached recommendations may be out of date; bundled entries can supplement them.',
+  'catalog.source.bundled.title': 'Bundled catalog fallback',
+  'catalog.source.bundled.summary':
+    'No allowed live provider was queried. This dated bundled snapshot may be out of date.',
+  'catalog.source.unavailable.title': 'Catalog source unavailable',
+  'catalog.source.unavailable.summary':
+    'No allowed catalog source returned data. Installed models remain separate.',
+  'catalog.source.unknown.title': 'Catalog freshness is unknown',
+  'catalog.source.unknown.summary': 'No source observation is available yet.',
+  'catalog.source.observedAt': 'Checked',
+  'catalog.source.fetchedAt': 'Source timestamp',
 } as const
 
 type LocaleKey = keyof typeof english
@@ -100,6 +145,12 @@ const russian: Messages = {
     'Поток ответа завершился без terminal event. Источником истины остаётся перечитанная история.',
   'chat.turn.livePartial.noContent': 'Текст ответа не был сохранён в live buffer.',
   'chat.turn.error.ollama_unavailable': 'Ollama была недоступна до завершения ответа.',
+  'chat.turn.error.ollama_connect_timeout':
+    'Ollama не приняла соединение до истечения connect deadline.',
+  'chat.turn.error.ollama_load_timeout':
+    'Ollama не показала первый progress модели до истечения load deadline.',
+  'chat.turn.error.ollama_stream_idle_timeout':
+    'Ollama перестала отдавать progress до истечения stream idle deadline.',
   'chat.turn.error.upstream_error': 'Ollama завершила ответ ошибкой.',
   'chat.turn.error.runtime_protocol':
     'Ollama завершила поток без обязательного terminal chunk.',
@@ -117,6 +168,45 @@ const russian: Messages = {
   'chat.turn.reason.internal_error': 'внутренняя ошибка',
   'chat.turn.reason.legacy_terminal_chunk': 'старый terminal chunk',
   'chat.turn.reason.error': 'ошибка',
+  'health.ollama.unavailable.title': 'Ollama недоступна',
+  'health.ollama.unavailable.summary':
+    'История и настройки остаются доступны. Новые runtime-операции выключены.',
+  'health.ollama.incompatible.title': 'Ollama вернула несовместимый ответ',
+  'health.ollama.incompatible.summary':
+    'Runtime ответил, но version response не соответствует поддерживаемому протоколу.',
+  'health.retry': 'Проверить снова',
+  'health.observedAt': 'Время наблюдения',
+  'health.source': 'Источник',
+  'runtime.title': 'Загруженные модели',
+  'runtime.checking': 'Проверяем текущий sample /api/ps…',
+  'runtime.error.title': 'Состояние загруженных моделей недоступно',
+  'runtime.error.summary':
+    'Пока sample Ollama недоступен, состояние загруженных моделей не предполагается.',
+  'runtime.retry': 'Повторить runtime-проверку',
+  'runtime.empty.title': 'Загруженные модели не наблюдались',
+  'runtime.empty.summary':
+    'Это один sample /api/ps; он не доказывает, что происходило между наблюдениями.',
+  'runtime.sampled': 'Sample из Ollama /api/ps',
+  'runtime.size': 'Размер runtime',
+  'runtime.acceleratorSize': 'Байты на ускорителе',
+  'runtime.context': 'Контекст',
+  'runtime.expiry': 'Истекает',
+  'runtime.unknown': 'Неизвестно',
+  'catalog.source.fresh.title': 'Свежий удалённый каталог',
+  'catalog.source.fresh.summary': 'Показанный provider sample актуален.',
+  'catalog.source.stale.title': 'Устаревший локальный cache каталога',
+  'catalog.source.stale.summary':
+    'Рекомендации из cache могут отставать; встроенные записи дополняют их.',
+  'catalog.source.bundled.title': 'Встроенный fallback каталога',
+  'catalog.source.bundled.summary':
+    'Разрешённый live provider не запрашивался. Датированный snapshot может отставать.',
+  'catalog.source.unavailable.title': 'Источник каталога недоступен',
+  'catalog.source.unavailable.summary':
+    'Ни один разрешённый источник не вернул данные. Установленные модели остаются отдельными.',
+  'catalog.source.unknown.title': 'Свежесть каталога неизвестна',
+  'catalog.source.unknown.summary': 'Наблюдения источника пока нет.',
+  'catalog.source.observedAt': 'Проверено',
+  'catalog.source.fetchedAt': 'Время источника',
 }
 
 export function translate(key: LocaleKey): string {

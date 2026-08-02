@@ -14,7 +14,7 @@ import type {
 } from '@alamo/contract'
 import { computeFit } from '../hardware/fit.ts'
 import type { OllamaClient } from '../ollama/client.ts'
-import type { OllamaPsEntry, OllamaTagsEntry } from '../ollama/types.ts'
+import type { OllamaTagsEntry } from '../ollama/types.ts'
 import type { CalibrationStore } from '../store/calibration.ts'
 
 const KNOWN_CAPABILITIES = new Set<ModelCapability>([
@@ -77,11 +77,23 @@ export class ModelService {
    * уточняется сам, без отдельного действия пользователя.
    */
   async listLocal(contextLength: number): Promise<LocalModel[]> {
-    const [tags, running] = await Promise.all([this.client.tags(), this.ps()])
+    const [tags, running] = await Promise.all([
+      this.client.tags(),
+      // Installed state belongs to /api/tags. A failed /api/ps sample removes
+      // optional loaded-instance calibration, but must not erase installed rows.
+      this.ps().catch(() => []),
+    ])
     const loadedByName = new Map(running.map((entry) => [entry.name, entry]))
 
     for (const entry of running) {
-      this.calibration.record(entry.name, entry.contextLength, entry.sizeBytes, entry.sizeVramBytes)
+      if (entry.contextLength !== null && entry.sizeVramBytes !== null) {
+        this.calibration.record(
+          entry.name,
+          entry.contextLength,
+          entry.sizeBytes,
+          entry.sizeVramBytes,
+        )
+      }
     }
 
     const samplesByModel = this.calibration.allSamples()
@@ -112,7 +124,9 @@ export class ModelService {
             calibrationSamples: samplesByModel.get(entry.name) ?? [],
             // Факт учитываем, только если модель загружена именно с этим окном.
             loaded:
-              loaded && loaded.contextLength === contextLength
+              loaded &&
+                loaded.contextLength === contextLength &&
+                loaded.sizeVramBytes !== null
                 ? { sizeBytes: loaded.sizeBytes, sizeVramBytes: loaded.sizeVramBytes }
                 : null,
           }),
@@ -165,21 +179,25 @@ export class ModelService {
   }
 
   async ps(): Promise<RunningModel[]> {
-    const response = await this.client.ps().catch(() => ({ models: [] as OllamaPsEntry[] }))
+    const observedAt = new Date().toISOString()
+    const response = await this.client.ps()
 
     return response.models.map((entry) => {
-      const sizeVram = entry.size_vram ?? 0
-      const gpuPercent = entry.size > 0 ? Math.round((sizeVram / entry.size) * 100) : 0
+      const sizeVram = entry.size_vram ?? null
 
       return {
         name: entry.name,
+        digest: entry.digest,
         sizeBytes: entry.size,
         sizeVramBytes: sizeVram,
-        gpuPercent,
-        processorLabel:
-          gpuPercent >= 99 ? '100% GPU' : gpuPercent === 0 ? '100% CPU' : `${gpuPercent}% GPU / ${100 - gpuPercent}% CPU`,
-        contextLength: entry.context_length ?? 0,
+        // Retained nullable compatibility fields. `/api/ps` does not provide
+        // these labels, so the running-source projection does not invent them.
+        gpuPercent: null,
+        processorLabel: null,
+        contextLength: entry.context_length ?? null,
         expiresAt: entry.expires_at ?? null,
+        source: 'ollama_api_ps' as const,
+        observedAt,
       }
     })
   }
@@ -198,7 +216,14 @@ export class ModelService {
     const running = (await this.ps()).find((entry) => entry.name === name)
     if (!running) return null
 
-    this.calibration.record(name, running.contextLength, running.sizeBytes, running.sizeVramBytes)
+    if (running.contextLength !== null && running.sizeVramBytes !== null) {
+      this.calibration.record(
+        name,
+        running.contextLength,
+        running.sizeBytes,
+        running.sizeVramBytes,
+      )
+    }
 
     const tags = await this.client.tags()
     const entry = tags.models.find((model) => model.name === name)
@@ -206,11 +231,14 @@ export class ModelService {
     return {
       running,
       fit: computeFit({
-        contextLength: running.contextLength || contextLength,
+        contextLength: running.contextLength ?? contextLength,
         hardware: this.hardware,
         modelBytes: entry?.size ?? running.sizeBytes,
         isCloud: isCloudModel(name),
-        loaded: { sizeBytes: running.sizeBytes, sizeVramBytes: running.sizeVramBytes },
+        loaded:
+          running.sizeVramBytes === null
+            ? null
+            : { sizeBytes: running.sizeBytes, sizeVramBytes: running.sizeVramBytes },
       }),
     }
   }

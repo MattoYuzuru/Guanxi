@@ -276,7 +276,7 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
 
   if (chat.loading) {
     return (
-      <div className="grid h-[calc(100dvh-44px)] md:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="grid h-full md:grid-cols-[240px_minmax(0,1fr)]">
         <ThreadSidebar currentId={threadId} />
         <div className="space-y-3 p-5">
           <Skeleton className="h-8 w-72" />
@@ -306,7 +306,7 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
   }
 
   return (
-    <div className="grid h-[calc(100dvh-44px)] min-h-0 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]">
+    <div className="grid h-full min-h-0 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]">
       <ThreadSidebar currentId={threadId} />
 
       <section className="flex min-h-0 min-w-0 flex-col border-l border-[var(--border)]">
@@ -336,12 +336,6 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
             </Link>
           </div>
         </header>
-
-        {!health.ollama.running && (
-          <Callout tone="warning" title="Ollama не запущена">
-            Историю можно читать, но новый ответ не сгенерируется, пока сервис недоступен.
-          </Callout>
-        )}
 
         <MessageTimeline
           messages={chat.messages}
@@ -657,6 +651,12 @@ function turnErrorLabel(code: TurnErrorCode): string {
   switch (code) {
     case 'ollama_unavailable':
       return translate('chat.turn.error.ollama_unavailable')
+    case 'ollama_connect_timeout':
+      return translate('chat.turn.error.ollama_connect_timeout')
+    case 'ollama_load_timeout':
+      return translate('chat.turn.error.ollama_load_timeout')
+    case 'ollama_stream_idle_timeout':
+      return translate('chat.turn.error.ollama_stream_idle_timeout')
     case 'upstream_error':
       return translate('chat.turn.error.upstream_error')
     case 'runtime_protocol':

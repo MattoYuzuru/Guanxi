@@ -3,25 +3,25 @@
  *
  * В локальном API Ollama поиска по библиотеке нет — это проверено по OpenAPI-спеке,
  * там только generate/chat/embed/tags/ps/show/create/copy/pull/push/delete/version.
- * Живой каталог живёт на ollama.com, а он доступен не всегда: в корпоративной сети
- * домен может быть заблокирован целиком.
+ * Human catalog живёт на ollama.com, но не является документированным API.
  *
- * Поэтому источников три, по убыванию свежести:
- *   1. ollama.com — если достучались;
- *   2. ~/.ollama/cache/model-recommendations.json — Ollama сама кладёт туда
- *      рекомендации с полем vram_bytes, это настоящие данные вендора на машине;
- *   3. встроенный снимок — чтобы экран каталога не был пустым офлайн.
- *
- * Признак `live` уходит в ответ: интерфейс обязан честно сказать, что показывает
- * снимок, а не актуальный список.
+ * P0-D intentionally has no live Ollama catalog provider: the previous
+ * remote search call was undocumented and returned 404. Discovery uses a local
+ * recommendations cache when present and a dated bundled snapshot.
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { CatalogModel, HardwareInfo, ModelCapability } from '@alamo/contract'
+import type {
+  CatalogModel,
+  CatalogSourceHealth,
+  HardwareInfo,
+  ModelCapability,
+} from '@alamo/contract'
+import { z } from 'zod'
 import { computeFit } from '../hardware/fit.ts'
 
-interface CatalogSeed {
+export interface CatalogSeed {
   name: string
   description: string
   variants: { tag: string; sizeBytes: number | null; parameterSize: string | null }[]
@@ -31,6 +31,8 @@ interface CatalogSeed {
   isCloud: boolean
   requiredPlan: 'free' | 'pro' | null
 }
+
+const BUNDLED_FETCHED_AT = '2026-08-02T00:00:00.000Z'
 
 /**
  * Встроенный снимок. Намеренно короткий: это не попытка повторить библиотеку
@@ -87,24 +89,35 @@ const BUNDLED: readonly CatalogSeed[] = [
   },
 ]
 
-interface RecommendationEntry {
-  model: string
-  description?: string
-  context_length?: number
-  max_output_tokens?: number
-  required_plan?: 'free' | 'pro'
-  vram_bytes?: number
+const recommendationsSchema = z.object({
+  recommendations: z
+    .array(
+      z.object({
+        model: z.string().min(1),
+        description: z.string().optional(),
+        context_length: z.number().int().positive().optional(),
+        required_plan: z.enum(['free', 'pro']).optional(),
+        vram_bytes: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .optional(),
+})
+
+export interface LocalRecommendations {
+  seeds: CatalogSeed[]
+  fetchedAt: string
 }
 
 /** Читает рекомендации, которые Ollama складывает у себя в кэш. */
-async function loadLocalRecommendations(): Promise<CatalogSeed[]> {
+async function loadLocalRecommendations(): Promise<LocalRecommendations | null> {
   const path = join(homedir(), '.ollama', 'cache', 'model-recommendations.json')
 
   try {
-    const raw = await readFile(path, 'utf8')
-    const parsed = JSON.parse(raw) as { recommendations?: RecommendationEntry[] }
+    const [raw, metadata] = await Promise.all([readFile(path, 'utf8'), stat(path)])
+    const parsed = recommendationsSchema.safeParse(JSON.parse(raw))
+    if (!parsed.success) return null
 
-    return (parsed.recommendations ?? []).map((entry) => {
+    const seeds = (parsed.data.recommendations ?? []).map((entry) => {
       const isCloud = entry.model.endsWith(':cloud')
       const [base, tag] = entry.model.split(':')
 
@@ -113,59 +126,23 @@ async function loadLocalRecommendations(): Promise<CatalogSeed[]> {
         description: entry.description ?? '',
         variants: [{ tag: tag ?? 'latest', sizeBytes: null, parameterSize: null }],
         contextLength: entry.context_length ?? null,
-        capabilities: ['completion', 'tools'] as ModelCapability[],
+        // The cache entry has no capability evidence. Absence remains unknown.
+        capabilities: [],
         vramBytes: entry.vram_bytes ?? null,
         isCloud,
         requiredPlan: entry.required_plan ?? null,
       }
     })
-  } catch {
-    return []
-  }
-}
-
-/** Пробует живой каталог. Короткий таймаут: за прокси запрос обычно просто виснет. */
-async function fetchRemote(query: string | undefined): Promise<CatalogSeed[] | null> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 4_000)
-
-  try {
-    const url = new URL('https://ollama.com/api/search')
-    if (query) url.searchParams.set('q', query)
-
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { accept: 'application/json' },
-    })
-    if (!response.ok) return null
-
-    const contentType = response.headers.get('content-type') ?? ''
-    // Прокси-заглушка отдаёт HTML со статусом 200 — на это нельзя попасться.
-    if (!contentType.includes('application/json')) return null
-
-    const parsed = (await response.json()) as { models?: RecommendationEntry[] }
-    if (!Array.isArray(parsed.models)) return null
-
-    return parsed.models.map((entry) => ({
-      name: entry.model,
-      description: entry.description ?? '',
-      variants: [{ tag: 'latest', sizeBytes: null, parameterSize: null }],
-      contextLength: entry.context_length ?? null,
-      capabilities: ['completion'] as ModelCapability[],
-      vramBytes: entry.vram_bytes ?? null,
-      isCloud: entry.model.endsWith(':cloud'),
-      requiredPlan: entry.required_plan ?? null,
-    }))
+    return { seeds, fetchedAt: metadata.mtime.toISOString() }
   } catch {
     return null
-  } finally {
-    clearTimeout(timer)
   }
 }
 
 export interface CatalogResult {
   models: CatalogModel[]
   live: boolean
+  source: CatalogSourceHealth
 }
 
 export interface CatalogInput {
@@ -176,27 +153,79 @@ export interface CatalogInput {
   installed: ReadonlySet<string>
 }
 
-export async function getCatalog(input: CatalogInput): Promise<CatalogResult> {
-  const remote = await fetchRemote(input.query)
-  const local = await loadLocalRecommendations()
+export interface CatalogDependencies {
+  loadLocalRecommendations?: () => Promise<LocalRecommendations | null>
+  bundled?: readonly CatalogSeed[]
+  now?: () => Date
+}
 
-  const live = remote !== null
-  const seeds = remote ?? [...local, ...BUNDLED]
+interface SourcedSeed {
+  seed: CatalogSeed
+  source: CatalogModel['source']
+  freshness: CatalogModel['freshness']
+  fetchedAt: string | null
+}
+
+export async function getCatalog(
+  input: CatalogInput,
+  dependencies: CatalogDependencies = {},
+): Promise<CatalogResult> {
+  const observedAt = (dependencies.now ?? (() => new Date()))().toISOString()
+  const local = await (
+    dependencies.loadLocalRecommendations ?? loadLocalRecommendations
+  )()
+  const bundled = dependencies.bundled ?? BUNDLED
+  const sourcedSeeds: SourcedSeed[] = [
+    ...(local?.seeds ?? []).map((seed) => ({
+      seed,
+      source: 'local_cache' as const,
+      freshness: 'stale' as const,
+      fetchedAt: local?.fetchedAt ?? null,
+    })),
+    ...bundled.map((seed) => ({
+      seed,
+      source: 'bundled' as const,
+      freshness: 'fallback' as const,
+      fetchedAt: BUNDLED_FETCHED_AT,
+    })),
+  ]
+
+  const source: CatalogSourceHealth =
+    local && local.seeds.length > 0
+      ? {
+          state: 'stale_cache',
+          source: 'ollama_recommendations_cache',
+          observedAt,
+          fetchedAt: local.fetchedAt,
+        }
+      : bundled.length > 0
+        ? {
+            state: 'bundled_fallback',
+            source: 'bundled_snapshot',
+            observedAt,
+            fetchedAt: BUNDLED_FETCHED_AT,
+          }
+        : {
+            state: 'unavailable',
+            source: 'none',
+            observedAt,
+            fetchedAt: null,
+          }
 
   // Рекомендации вендора и встроенный список могут пересекаться — оставляем первое вхождение.
-  const unique = new Map<string, CatalogSeed>()
-  for (const seed of seeds) {
-    if (!unique.has(seed.name)) unique.set(seed.name, seed)
+  const unique = new Map<string, SourcedSeed>()
+  for (const sourced of sourcedSeeds) {
+    if (!unique.has(sourced.seed.name)) unique.set(sourced.seed.name, sourced)
   }
 
   const query = input.query?.trim().toLowerCase()
 
   const models: CatalogModel[] = [...unique.values()]
-    .filter((seed) => {
+    .filter(({ seed }) => {
       if (!query) return true
       return seed.name.toLowerCase().includes(query) || seed.description.toLowerCase().includes(query)
     })
-    .map((seed) => {
+    .map(({ seed, source: modelSource, freshness, fetchedAt }) => {
       const installed = [...input.installed].some(
         (name) => name === seed.name || name.startsWith(`${seed.name}:`),
       )
@@ -223,9 +252,12 @@ export async function getCatalog(input: CatalogInput): Promise<CatalogResult> {
           vramHintBytes: seed.vramBytes,
           isCloud: seed.isCloud,
         }),
-        source: live ? ('remote' as const) : ('bundled' as const),
+        source: modelSource,
+        freshness,
+        sourceObservedAt: observedAt,
+        sourceFetchedAt: fetchedAt,
       }
     })
 
-  return { models, live }
+  return { models, live: false, source }
 }

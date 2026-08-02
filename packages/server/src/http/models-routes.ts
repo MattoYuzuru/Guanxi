@@ -57,7 +57,11 @@ export function modelsRoutes(app: AppContext): Hono {
 
   routes.get('/running', async (context) => {
     try {
-      return context.json({ models: await app.models().ps() })
+      const models = await app.models().ps()
+      return context.json({
+        models,
+        observedAt: models[0]?.observedAt ?? new Date().toISOString(),
+      })
     } catch (error) {
       return fail(context, error)
     }

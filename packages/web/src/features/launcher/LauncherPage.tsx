@@ -7,7 +7,7 @@
  * половину карточек показывать пустыми.
  */
 import { useCallback, useMemo, useState } from 'react'
-import type { Health } from '@alamo/contract'
+import type { CatalogSourceHealth, Health } from '@alamo/contract'
 import { DEFAULT_NUM_CTX } from '@alamo/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync, useDebounced } from '../../lib/useAsync.ts'
@@ -19,11 +19,16 @@ import {
   Select,
   Skeleton,
   Stat,
-  cx,
 } from '../../components/ui.tsx'
 import { ModelCarousel, type CarouselItem } from '../models/ModelCarousel.tsx'
 import { ModelCard } from '../models/ModelCard.tsx'
-import { formatBytes, formatContextLength, formatCount } from '../../lib/format.ts'
+import {
+  formatBytes,
+  formatContextLength,
+  formatCount,
+  formatDateTime,
+} from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
 
 /** Окна, под которые пересчитываем вердикт прямо на лончере. */
 const CONTEXT_CHOICES = [4096, 8192, 16384, 32768, 65536, 131072]
@@ -185,16 +190,9 @@ export function LauncherPage({ health }: { health: Health }) {
           }
         />
 
-        {/* Честно про офлайн-снимок: у пользователя корпоративная сеть режет ollama.com */}
-        {catalog.data && !catalog.data.live && (
-          <Callout tone="warning" title="Каталог показан из офлайн-снимка">
-            ollama.com сейчас недоступен
-            {health.network.checkedAt && ' (проверено при запуске)'}, поэтому список моделей
-            встроенный и может отставать. Установка уже скачанных моделей работает как обычно.
-          </Callout>
-        )}
+        {catalog.data && <CatalogSourceNotice source={catalog.data.source ?? null} />}
 
-        <div className={cx(catalog.data && !catalog.data.live && 'mt-3')}>
+        <div className={catalog.data ? 'mt-3' : ''}>
           {catalog.loading ? (
             <CarouselSkeleton />
           ) : catalog.error ? (
@@ -228,6 +226,68 @@ export function LauncherPage({ health }: { health: Health }) {
           )}
         </div>
       </section>
+    </div>
+  )
+}
+
+export function CatalogSourceNotice({
+  source,
+}: {
+  source: CatalogSourceHealth | null
+}) {
+  const state = source?.state ?? 'unknown'
+  const copy =
+    state === 'fresh_remote'
+      ? {
+          title: translate('catalog.source.fresh.title'),
+          summary: translate('catalog.source.fresh.summary'),
+          tone: 'info' as const,
+        }
+      : state === 'stale_cache'
+        ? {
+            title: translate('catalog.source.stale.title'),
+            summary: translate('catalog.source.stale.summary'),
+            tone: 'warning' as const,
+          }
+        : state === 'bundled_fallback'
+          ? {
+              title: translate('catalog.source.bundled.title'),
+              summary: translate('catalog.source.bundled.summary'),
+              tone: 'warning' as const,
+            }
+          : state === 'unavailable'
+            ? {
+                title: translate('catalog.source.unavailable.title'),
+                summary: translate('catalog.source.unavailable.summary'),
+                tone: 'danger' as const,
+              }
+            : {
+                title: translate('catalog.source.unknown.title'),
+                summary: translate('catalog.source.unknown.summary'),
+                tone: 'neutral' as const,
+              }
+
+  return (
+    <div
+      role={state === 'unavailable' ? 'alert' : 'status'}
+      aria-live="polite"
+    >
+      <Callout tone={copy.tone} title={copy.title}>
+        <p>{copy.summary}</p>
+        {source && (
+          <p className="mt-1 text-2xs">
+            {source.source}
+            {' · '}
+            {translate('catalog.source.observedAt')}: {formatDateTime(source.observedAt)}
+            {source.fetchedAt && (
+              <>
+                {' · '}
+                {translate('catalog.source.fetchedAt')}: {formatDateTime(source.fetchedAt)}
+              </>
+            )}
+          </p>
+        )}
+      </Callout>
     </div>
   )
 }

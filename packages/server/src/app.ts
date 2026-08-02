@@ -15,10 +15,13 @@ import { fail } from './http/errors.ts'
 import { modelsRoutes } from './http/models-routes.ts'
 import { threadsRoutes } from './http/threads-routes.ts'
 import { workspacesRoutes } from './http/workspaces-routes.ts'
+import type { OllamaStatusOptions } from './ollama/status.ts'
 
 export interface CreateAppOptions {
   /** Разрешить обращения с dev-сервера Vite. */
   devOrigins?: string[]
+  /** Deterministic health probe boundary for tests. */
+  ollamaStatus?: OllamaStatusOptions
 }
 
 export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono {
@@ -38,18 +41,27 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   })
 
   server.get('/api/health', async (context) => {
+    const observedAt = new Date().toISOString()
     const client = app.ollama()
-    const ollama = await getOllamaStatus(client)
+    const ollama = await getOllamaStatus(client, options.ollamaStatus)
 
     return context.json({
       ok: true,
       appVersion: app.appVersion,
+      application: {
+        state: 'reachable',
+        source: 'application_http',
+        observedAt,
+      },
       ollama,
       hardware: app.hardware,
       network: {
-        // Каталог сам разберётся с доступностью; здесь только признак для интерфейса.
-        ollamaComReachable: false,
-        checkedAt: new Date().toISOString(),
+        // P0-D removed the undocumented ollama.com endpoint. Catalog provenance
+        // is sampled by its own route instead of inferred here.
+        ollamaComReachable: null,
+        checkedAt: null,
+        status: 'unknown',
+        source: 'not_checked',
       },
     })
   })

@@ -7,6 +7,7 @@
 import { z } from 'zod'
 import {
   catalogModelSchema,
+  catalogSourceHealthSchema,
   contextStateSchema,
   healthSchema,
   localModelSchema,
@@ -72,8 +73,9 @@ export const listCatalogQuery = z.object({
 })
 export const listCatalogResponse = z.object({
   models: z.array(catalogModelSchema),
-  /** false — ollama.com недоступен, показан встроенный снимок. UI должен это сообщить. */
+  /** Legacy compatibility projection; P0-D does not call an undocumented remote endpoint. */
   live: z.boolean(),
+  source: catalogSourceHealthSchema.optional(),
 })
 export type ListCatalogResponse = z.infer<typeof listCatalogResponse>
 
@@ -82,6 +84,7 @@ export type GetModelResponse = z.infer<typeof getModelResponse>
 
 export const listRunningResponse = z.object({
   models: z.array(runningModelSchema),
+  observedAt: z.string().nullable().optional().default(null),
 })
 export type ListRunningResponse = z.infer<typeof listRunningResponse>
 

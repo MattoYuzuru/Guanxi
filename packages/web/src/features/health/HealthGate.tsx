@@ -7,7 +7,12 @@
 import type { Health } from '@alamo/contract'
 import { Button, Callout, CopyButton, Spinner, Stat } from '../../components/ui.tsx'
 import { errorMessage } from '../../lib/api.ts'
-import { formatBytes } from '../../lib/format.ts'
+import { formatBytes, formatDateTime } from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
+
+export function ollamaHealthState(health: Health): 'reachable' | 'unavailable' | 'incompatible' {
+  return health.ollama.state ?? (health.ollama.running ? 'reachable' : 'unavailable')
+}
 
 export function HealthLoading() {
   return (
@@ -42,6 +47,57 @@ export function HealthUnreachable({ error, onRetry }: { error: unknown; onRetry:
         </Button>
       </div>
     </Centered>
+  )
+}
+
+export function OllamaHealthNotice({
+  health,
+  onRetry,
+  retrying,
+}: {
+  health: Health
+  onRetry: () => void
+  retrying: boolean
+}) {
+  const state = ollamaHealthState(health)
+  if (state === 'reachable') return null
+
+  const incompatible = state === 'incompatible'
+  return (
+    <div className="px-3 pt-3" role={incompatible ? 'alert' : 'status'} aria-live="polite">
+      <Callout
+        tone={incompatible ? 'danger' : 'warning'}
+        title={translate(
+          incompatible
+            ? 'health.ollama.incompatible.title'
+            : 'health.ollama.unavailable.title',
+        )}
+        action={
+          <Button
+            size="sm"
+            onClick={onRetry}
+            loading={retrying}
+            className="min-h-11 sm:min-h-0"
+          >
+            {translate('health.retry')}
+          </Button>
+        }
+      >
+        <p>
+          {translate(
+            incompatible
+              ? 'health.ollama.incompatible.summary'
+              : 'health.ollama.unavailable.summary',
+          )}
+        </p>
+        <p className="mt-1 text-2xs">
+          {translate('health.source')}: {health.ollama.source ?? '—'}
+          {' · '}
+          {translate('health.observedAt')}:{' '}
+          {health.ollama.observedAt ? formatDateTime(health.ollama.observedAt) : '—'}
+        </p>
+      </Callout>
+    </div>
   )
 }
 

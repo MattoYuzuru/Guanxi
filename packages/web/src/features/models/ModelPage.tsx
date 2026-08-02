@@ -242,11 +242,22 @@ function ModelProfile({
             <Panel title="Сейчас в памяти">
               <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                 <Stat label="Занято" value={formatBytes(warmed.running.sizeBytes)} />
-                <Stat label="На ускорителе" value={formatBytes(warmed.running.sizeVramBytes)} />
-                <Stat label="Раскладка" value={warmed.running.processorLabel} />
+                <Stat
+                  label="На ускорителе"
+                  value={
+                    warmed.running.sizeVramBytes === null
+                      ? '—'
+                      : formatBytes(warmed.running.sizeVramBytes)
+                  }
+                />
+                <Stat label="Раскладка" value={warmed.running.processorLabel ?? '—'} />
                 <Stat
                   label="Окно"
-                  value={formatContextLength(warmed.running.contextLength)}
+                  value={
+                    warmed.running.contextLength === null
+                      ? '—'
+                      : formatContextLength(warmed.running.contextLength)
+                  }
                 />
                 {warmed.running.expiresAt && (
                   <div className="col-span-2">

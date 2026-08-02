@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process'
 import os from 'node:os'
 import { promisify } from 'node:util'
 import type { OllamaStatus } from '@alamo/contract'
-import type { OllamaClient } from './client.ts'
+import { OllamaProtocolError, type OllamaClient } from './client.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -38,23 +38,48 @@ function installHint(): { command: string; docsUrl: string } {
   }
 }
 
-export async function getOllamaStatus(client: OllamaClient): Promise<OllamaStatus> {
+export interface OllamaStatusOptions {
+  binaryInstalled?: () => Promise<boolean>
+  now?: () => Date
+}
+
+export async function getOllamaStatus(
+  client: OllamaClient,
+  options: OllamaStatusOptions = {},
+): Promise<OllamaStatus> {
+  const observedAt = (options.now ?? (() => new Date()))().toISOString()
   let version: string | null = null
+  let incompatible = false
   try {
     version = await client.version()
-  } catch {
+  } catch (error) {
+    incompatible = error instanceof OllamaProtocolError
     version = null
   }
 
   // Отвечает по HTTP — значит и установлена, и запущена, проверять бинарь незачем.
   if (version !== null) {
-    return { installed: true, running: true, version, host: client.host, installHint: null }
+    return {
+      installed: true,
+      installSource: 'runtime_response',
+      running: true,
+      state: 'reachable',
+      source: 'ollama_api_version',
+      observedAt,
+      version,
+      host: client.host,
+      installHint: null,
+    }
   }
 
-  const installed = await binaryOnPath()
+  const installed = await (options.binaryInstalled ?? binaryOnPath)()
   return {
     installed,
+    installSource: 'local_binary_path',
     running: false,
+    state: incompatible ? 'incompatible' : 'unavailable',
+    source: 'ollama_api_version',
+    observedAt,
     version: null,
     host: client.host,
     installHint: installed ? { command: 'ollama serve', docsUrl: 'https://docs.ollama.com/cli' } : installHint(),
