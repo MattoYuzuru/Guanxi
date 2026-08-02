@@ -6,7 +6,7 @@ import { it } from 'node:test'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { runTurn } from '../src/agent/loop.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
-import type { OllamaClient } from '../src/ollama/client.ts'
+import { OllamaError, type OllamaClient } from '../src/ollama/client.ts'
 import type {
   OllamaChatChunk,
   OllamaChatRequest,
@@ -117,4 +117,53 @@ it('показывает diff до подтверждения и соблюда�
   const persisted = store.messages(thread.id)
   assert.equal(persisted.at(-1)?.content, 'Готово')
   assert.equal(persisted[1]?.toolCalls[0]?.status, 'ok')
+})
+
+it('сохраняет частичный ответ при upstream-ошибке Ollama', async (test) => {
+  const db = openDb(':memory:')
+  test.after(() => db.close())
+  const store = new ThreadStore(db)
+  const thread = store.create({
+    title: 'partial',
+    mode: 'chat',
+    model: 'qwen',
+    workspaceId: null,
+    options: { numCtx: 4_096, temperature: 0, think: 'off' },
+  })
+  store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
+
+  const fakeClient = {
+    chatStream() {
+      return (async function* () {
+        yield {
+          model: 'qwen',
+          created_at: new Date().toISOString(),
+          message: { role: 'assistant' as const, content: 'Частичный ответ' },
+          done: false,
+        }
+        throw new OllamaError('модель исчезла', 404)
+      })()
+    },
+  } as unknown as OllamaClient
+
+  const events = []
+  for await (const event of runTurn({
+    thread,
+    workspace: null,
+    client: fakeClient,
+    store,
+    registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
+    approvals: new ApprovalGate(),
+    tracker: new PrefillTracker(),
+    modelSupportsTools: false,
+    autoApprove: false,
+    enableBash: false,
+    signal: new AbortController().signal,
+  })) {
+    events.push(event)
+  }
+
+  const error = events.find((event) => event.type === 'error')
+  assert.equal(error?.type === 'error' ? error.data.code : null, 'upstream_error')
+  assert.equal(store.messages(thread.id).at(-1)?.content, 'Частичный ответ')
 })

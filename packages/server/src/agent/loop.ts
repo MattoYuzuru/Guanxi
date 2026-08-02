@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChatStreamEvent, Message, Thread, ToolCall, Workspace } from '@alamo/contract'
 import { MAX_AGENT_STEPS, APPROVAL_TIMEOUT_MS } from '@alamo/contract'
 import { buildContextState, buildUsage, estimateTokens, type PrefillTracker } from '../context/usage.ts'
-import { OllamaError, type OllamaClient } from '../ollama/client.ts'
+import { OllamaError, OllamaUnavailableError, type OllamaClient } from '../ollama/client.ts'
 import type { OllamaChatMessage } from '../ollama/types.ts'
 import type { ThreadStore } from '../store/threads.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
@@ -120,6 +120,9 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
   let step = 0
   let expectedPrefixTokens = reusablePrefixTokens(persistedMessages)
+  let activeMessageId: string | null = null
+  let activeContent = ''
+  let activeThinking = ''
 
   try {
     while (step < MAX_AGENT_STEPS) {
@@ -133,6 +136,9 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         role: 'assistant',
         content: '',
       })
+      activeMessageId = assistantMessage.id
+      activeContent = ''
+      activeThinking = ''
 
       yield event('start', { messageId: assistantMessage.id, model: thread.model, step })
 
@@ -159,6 +165,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
       for await (const chunk of stream) {
         if (chunk.message?.thinking) {
           thinking += chunk.message.thinking
+          activeThinking = thinking
           yield event('thinking', { delta: chunk.message.thinking })
         }
 
@@ -168,6 +175,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
         if (chunk.message?.content) {
           const safe = gate.push(chunk.message.content)
+          activeContent = gate.content
           if (safe) yield event('token', { delta: safe })
         }
 
@@ -176,6 +184,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
       if (signal.aborted) {
         store.updateMessage(assistantMessage.id, { content: gate.content })
+        activeMessageId = null
         yield event('done', {
           messageId: assistantMessage.id,
           stopReason: 'stopped_by_user',
@@ -208,6 +217,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
           thinking: thinking || null,
           usage,
         })
+        activeMessageId = null
 
         if (usage) yield event('usage', usage)
         yield event(
@@ -406,6 +416,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         toolCalls: executed,
         usage,
       })
+      activeMessageId = null
 
       if (usage) yield event('usage', usage)
       yield event(
@@ -425,8 +436,19 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
     yield event('done', { messageId: '', stopReason: 'tool_limit', steps: step })
   } catch (error) {
+    if (activeMessageId) {
+      store.updateMessage(activeMessageId, {
+        content: activeContent,
+        thinking: activeThinking || null,
+      })
+    }
     yield event('error', {
-      code: error instanceof OllamaError ? 'ollama_unavailable' : 'internal_error',
+      code:
+        error instanceof OllamaUnavailableError
+          ? 'ollama_unavailable'
+          : error instanceof OllamaError
+            ? 'upstream_error'
+            : 'internal_error',
       message: describeError(error),
       details: null,
     })
