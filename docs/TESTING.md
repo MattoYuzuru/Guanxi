@@ -7,7 +7,7 @@
 
 На 2026-08-03:
 
-- `npm test`: 131/131 server/CLI и 17/17 web component/parser tests;
+- `npm test`: 146/146 server/CLI и 17/17 web component/parser tests;
 - `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -35,10 +35,17 @@
 - deterministic P1-A tests покрывают exact Job contract, fresh/v3→v4/reopen/
   recovery migration, atomic create/terminal rollback, scoped idempotency,
   ordered replay, malformed storage и двухconnection create/append/terminal
-  races; exact P1-A files дают 15/15, race suite повторён 10 раз;
+  races;
+- deterministic P1-B tests покрывают все 19 canonical non-terminal и 14 terminal
+  edges, stale/invalid/terminal rejection, atomic transition rollback,
+  write-once `startedAt`, двухconnection transition CAS и internal
+  persisted-first subscription: replay/live handoff, commit-during-handoff,
+  failed mutation, two subscribers, terminal deduplication, AbortSignal cleanup,
+  bounded-page slow consumer, reopened SQLite и malformed event; exact P1-A/P1-B
+  files дают 30/30, 15-test store race suite повторён 10 раз;
 - CI/lint/formatter commands отсутствуют;
-- живой Ollama, durable Job Engine/API/replay subscription, второй application
-  process и внешние Ollama clients не входят в regression suite.
+- живой Ollama, public Job API/HTTP SSE, durable execution/recovery, второй
+  application process и внешние Ollama clients не входят в regression suite.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E на временной
 SQLite, управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
@@ -53,7 +60,8 @@ Ollama, реальное железо или публичную сеть.
 - health и `/api/ps` — sampled observations, а не непрерывная истина;
 - process-local exclusive bridge не является Resource Governor;
 - текущий POST/SSE turn остаётся connection-owned и не replayable;
-- P1-A `jobs`/`job_events` не подключены к execution, routes или recovery;
+- P1-B `JobService` не подключён к execution, routes или recovery; live wake-up
+  остаётся process-local и предполагает mutation через один service instance;
 - restart recovery отсутствует;
 - обязательный suite не проверяет live hardware или live Ollama.
 
@@ -67,6 +75,7 @@ Ollama, реальное железо или публичную сеть.
 | Server routes                      | integration-style tests            |
 | SQLite stores/migrations v3/v4     | fresh + v2/v3 upgrade/recovery     |
 | Durable Job/event foundation       | atomicity + two-connection races   |
+| Internal Job transitions/service   | canonical matrix + replay/live     |
 | Turn terminal contract/CAS         | compatibility + failures           |
 | Tool parser                        | tests                              |
 | Context usage                      | tests                              |
@@ -76,7 +85,7 @@ Ollama, реальное железо или публичную сеть.
 | Browser streaming/reload           | P0-A/P0-B/P0-E mocked flows        |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P0-C one-lane fake routes          |
-| SSE replay/restart                 | нет                                |
+| Job replay/restart                 | internal service; HTTP SSE нет     |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |
 | Accessibility/responsive           | P0-A/B/D/E Chromium smoke          |
 

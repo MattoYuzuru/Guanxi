@@ -50,7 +50,11 @@ error/outcome metadata и persisted event envelope. Это additive storage cont
 - migration 4: additive `jobs`/`job_events`, scoped idempotency, per-Job sequence
   и unique terminal event constraint;
 - `store/jobs.ts`: atomic create + initial event, ordered replay page, event
-  sequence CAS и terminal state + event CAS;
+  sequence CAS, canonical non-terminal state + lifecycle event CAS и terminal
+  state + event CAS;
+- `jobs/lifecycle.ts`: exact non-terminal/terminal edges из canonical diagram;
+- `jobs/service.ts`: application create/get/transition/append/terminal boundary и
+  persisted-first `AsyncIterable` subscription с bounded SQLite pages;
 - `store/threads.ts`: atomic pending-to-terminal compare-and-set и compaction
   boundary по persisted `seq`;
 - `tools/*`: jail, filesystem и bash.
@@ -60,12 +64,20 @@ controllers, включая ожидающий turn. Host-wide exclusion при�
 bridge. Его permit совместно используют turn, compaction и explicit model
 warm/load; waiters, `ApprovalGate` и active controllers не durable.
 
-`JobStore` входит в application context и public server export, но current Chat
-routes его не вызывают. Store синхронно сериализует writers через SQLite
-`BEGIN IMMEDIATE`; Job create и terminalization откатываются целиком, если event
-insert не состоялся. Одинаковая пара `idempotency_scope/idempotency_key`
-возвращает canonical Job. Event metadata ограничена плоскими JSON scalars и не
-предназначена для prompt, reasoning, secrets или workspace content.
+Один `JobStore` и `JobService` входят в application context и public server
+export, но current Chat routes их не вызывают. Store синхронно сериализует
+writers через SQLite `BEGIN IMMEDIATE`; Job create и terminalization
+откатываются целиком, если event insert не состоялся; то же верно для
+non-terminal transition, включая `startedAt`. Первый успешный выход из `queued`
+задаёт `startedAt`, поздние transitions его сохраняют. Одинаковая пара
+`idempotency_scope/idempotency_key` возвращает canonical Job. Event metadata
+ограничена плоскими JSON scalars и не предназначена для prompt, reasoning,
+secrets или workspace content.
+
+`JobService` проверяет terminal edge до store CAS. Subscription регистрирует
+process-local wake-up до replay, но всегда отдаёт сами events из SQLite по
+sequence. Wake-ups coalesced, поэтому slow subscriber не блокирует writer и не
+накапливает unbounded event queue; AbortSignal удаляет только listener.
 
 ### `packages/web`
 
@@ -131,9 +143,10 @@ admission, а permit освобождается после terminal/error/abort/
 persisted `seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership,
 lease или доказательство unload между observations.
 
-P1-A добавляет durable persistence foundation, но не меняет этот sequence:
-`POST /threads/:id/messages` не создаёт Job, current SSE не replayable,
-disconnect по-прежнему отменяет generation, а Job recovery/worker отсутствуют.
+P1-B добавляет internal service/replay foundation, но не меняет current Chat
+sequence: `POST /threads/:id/messages` не создаёт Job, current SSE не replayable,
+disconnect по-прежнему отменяет generation, а public Job routes,
+recovery/worker и execution отсутствуют.
 
 Bridge не является Resource Governor: нет durable queue, leases, priorities,
 continuous `/api/ps` reconciliation, restart recovery или measured parallelism.

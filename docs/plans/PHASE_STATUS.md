@@ -29,10 +29,12 @@ exit gate ROADMAP проверен целиком.
 | Slice                                   | Статус                 | Outcome                                                          |
 | --------------------------------------- | ---------------------- | ---------------------------------------------------------------- |
 | P1-A Durable Job/event-store foundation | independently verified | `138fb5e`, `91cb21f`, `92b68f0`; 15 targeted, all required gates |
+| P1-B Job transitions/subscription       | independently verified | `56b2200`, `55351bc`; 30 targeted, 10x races, all required gates |
 
-P1-A реализует только additive contract, migration 4 и persistence primitives.
-Current Chat execution, HTTP Job API, replay subscription, recovery и Governor
-не реализованы; Phase 1 остаётся `in progress`.
+P1-A/P1-B реализуют additive contract, migration 4, canonical state CAS и
+internal persisted-first `JobService` subscription. Current Chat execution,
+public HTTP Job API/SSE, recovery и Governor не реализованы; Phase 1 остаётся
+`in progress`.
 
 ## Later phases
 

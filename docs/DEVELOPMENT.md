@@ -68,8 +68,11 @@ npm run link:cli
 - Health/catalog/running facts — sampled observations с source/time. Installed
   models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
   использует stale local cache или dated bundled fallback без remote endpoint.
-- P1-A `JobStore` и migration 4 дают durable Job/event persistence primitives,
-  но не подключены к current Chat POST/SSE, worker, API replay или recovery.
+- P1-B `JobService` поверх migration 4/`JobStore` владеет canonical state
+  transitions и persisted-first in-process subscription. SQLite event sequence
+  остаётся источником replay; live listeners хранят только wake-up signal.
+  Service не подключён к current Chat POST/SSE, public Job API, worker или
+  recovery.
 
 ## Карта current-state
 
@@ -87,8 +90,8 @@ npm run link:cli
 ### Server
 
 - `app.ts` — routes/composition/static serving;
-- `context.ts` — зависимости, `JobStore`, per-thread controllers и host-wide
-  bridge owner;
+- `context.ts` — зависимости, один `JobStore` + `JobService`, per-thread
+  controllers и host-wide bridge owner;
 - `runtime/exclusive-inference.ts` — временный process-local FIFO permit;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details и sourced catalog fallback;
@@ -98,7 +101,11 @@ npm run link:cli
 - migration 3 добавляет nullable `turn_status/turn_error/stop_reason` и не
   переписывает старые migrations;
 - migration 4 additive добавляет `jobs`/`job_events`; `store/jobs.ts` владеет
-  create/read/event page/sequence CAS/terminal CAS;
+  create/read/event page/sequence CAS, canonical non-terminal transition CAS и
+  terminal CAS;
+- `jobs/lifecycle.ts` фиксирует transitions из canonical diagram;
+  `jobs/service.ts` валидирует terminal edges и читает bounded SQLite pages при
+  replay/live subscription без in-memory event queue;
 - `agent/` — turn loop, prompts, approvals и parser;
 - `tools/` — registry, filesystem, shell и jail.
 
@@ -120,8 +127,9 @@ npm run link:cli
   и boundary smoke, включая degraded Runtime/catalog state.
 - server tests — deterministic P0-C mutex, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
-  health/catalog/running/timeout envelope; P1-A temporary SQLite и worker-thread
-  connections проверяют migration, atomicity, idempotency и races.
+  health/catalog/running/timeout envelope; P1-A/P1-B temporary SQLite и
+  worker-thread connections проверяют migration, atomicity, idempotency,
+  transition races, persisted-first replay/live handoff, cleanup и restart.
 
 ### CLI
 

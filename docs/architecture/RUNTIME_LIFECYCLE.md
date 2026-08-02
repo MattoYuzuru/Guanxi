@@ -185,9 +185,28 @@ SQLite migration 4 additive создаёт `jobs` и `job_events`, не меня
 - flat JSON-scalar metadata boundary без private input/output content.
 
 Create, append и terminal races проверены через независимые SQLite connections.
-Foundation входит в server composition, но current Chat turn его не использует:
-Job Engine, transitions, persisted-first broadcast, HTTP create/replay/cancel,
-worker, recovery, Governor и route-safe execution ещё не реализованы.
+Foundation входит в server composition, но current Chat turn его не использует.
+
+### P1-B transitions и persisted-first subscription
+
+`JobStore.transition` выполняет compare-and-set только для exact non-terminal
+edges canonical diagram. State, optional phase, write-once `startedAt`, next
+sequence и lifecycle event принадлежат одной `BEGIN IMMEDIATE` transaction.
+Invalid/reverse/skipped edge даёт controlled error; stale expected state не
+пишет ничего; terminal Job не возвращается в execution.
+
+Один application `JobService` поверх store владеет create/get, transition,
+safe event append, terminal edge validation и subscription. Mutation сначала
+полностью commit-ится, затем service отправляет process-local wake-up. Subscriber
+регистрируется до replay и читает SQLite bounded pages после собственного
+cursor; wake-up не содержит event payload. Поэтому replay/live handoff не теряет
+и не дублирует sequence, slow consumer не блокирует writer, а AbortSignal удаляет
+только listener и не меняет Job.
+
+Новый service instance после restart теряет listeners, но воспроизводит durable
+tail из SQLite. Это internal `AsyncIterable`, не HTTP SSE и не durable execution:
+public create/query/replay/cancel routes, Chat bridge, worker, startup recovery,
+Governor и route-safe execution ещё не реализованы.
 
 ## Target Job lifecycle
 
