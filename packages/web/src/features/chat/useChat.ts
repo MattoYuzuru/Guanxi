@@ -56,6 +56,8 @@ export type ChatState = {
   streamError: ApiError | { code: 'transport'; message: string } | null
   stopReason: string | null
   turnOutcome: TurnTerminalOutcome | null
+  /** Live partial remains visible if terminal history cannot be reloaded. */
+  liveOutputRetained: boolean
   /** Когда начался ход — для «идёт N с». */
   turnStartedAt: number | null
   /** Когда пришёл первый токен — граница prefill и генерации. */
@@ -81,6 +83,7 @@ export function useChat(threadId: string | null) {
     try {
       const data = await api.getThread(id, signal)
       if (signal.aborted) return
+      bufferRef.current.reset()
       setState((previous) => ({
         ...previous,
         thread: data.thread,
@@ -88,6 +91,7 @@ export function useChat(threadId: string | null) {
         context: data.context,
         loading: false,
         loadError: null,
+        liveOutputRetained: false,
       }))
     } catch (error) {
       if (signal.aborted) return
@@ -160,6 +164,7 @@ export function useChat(threadId: string | null) {
         streamError: null,
         stopReason: null,
         turnOutcome: null,
+        liveOutputRetained: false,
         turnStartedAt: Date.now(),
         firstTokenAt: null,
         reconnecting: false,
@@ -184,11 +189,15 @@ export function useChat(threadId: string | null) {
           handleEvent(event, buffer, setState)
         },
         onError: (error) => {
+          buffer.flushNow()
+          const live = buffer.peek()
           setState((previous) => ({
             ...previous,
             phase: 'idle',
             reconnecting: false,
             streamError: { code: 'transport', message: errorMessage(error) },
+            liveOutputRetained:
+              Boolean(live.content || live.thinking) || previous.liveToolCalls.length > 0,
           }))
         },
       })
@@ -226,10 +235,18 @@ export function useChat(threadId: string | null) {
           phase: 'idle',
           liveToolCalls: [],
           approval: null,
+          liveOutputRetained: false,
         }))
       } catch {
         // Перечитать не вышло — оставляем то, что уже показано, и снимаем фазу.
-        setState((previous) => ({ ...previous, phase: 'idle' }))
+        buffer.flushNow()
+        const live = buffer.peek()
+        setState((previous) => ({
+          ...previous,
+          phase: 'idle',
+          liveOutputRetained:
+            Boolean(live.content || live.thinking) || previous.liveToolCalls.length > 0,
+        }))
       }
     },
     [],
@@ -424,16 +441,20 @@ function handleEvent(
       }))
       break
 
-    case 'error':
+    case 'error': {
       buffer.flushNow()
+      const live = buffer.peek()
       setState((previous) => ({
         ...previous,
         phase: 'idle',
         streamError: event.data,
         turnOutcome: 'failed',
         approval: null,
+        liveOutputRetained:
+          Boolean(live.content || live.thinking) || previous.liveToolCalls.length > 0,
       }))
       break
+    }
 
     default:
       break
@@ -462,6 +483,7 @@ function initialState(): ChatState {
     streamError: null,
     stopReason: null,
     turnOutcome: null,
+    liveOutputRetained: false,
     turnStartedAt: null,
     firstTokenAt: null,
     reconnecting: false,

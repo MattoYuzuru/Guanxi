@@ -21,6 +21,7 @@ const english = {
   'chat.turn.status.failed': 'Failed',
   'chat.turn.status.cancelled': 'Cancelled',
   'chat.turn.status.legacy': 'Outcome unknown',
+  'chat.turn.status.livePartial': 'Partial output not reconciled',
   'chat.turn.pending.title': 'The response is still pending',
   'chat.turn.pending.summary':
     'No terminal outcome was persisted. The previous connection may have ended before finalization.',
@@ -81,6 +82,7 @@ const russian: Messages = {
   'chat.turn.status.failed': 'ошибка',
   'chat.turn.status.cancelled': 'отменён',
   'chat.turn.status.legacy': 'итог неизвестен',
+  'chat.turn.status.livePartial': 'partial output не подтверждён',
   'chat.turn.pending.title': 'Ответ всё ещё ожидает итогового состояния',
   'chat.turn.pending.summary':
     'Terminal outcome не был сохранён. Предыдущее соединение могло завершиться до финализации.',

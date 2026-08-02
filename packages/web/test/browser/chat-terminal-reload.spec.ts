@@ -147,3 +147,333 @@ test('failed partial response and stop reason remain truthful after reload', asy
   expect(overflow).toBeLessThanOrEqual(1)
   expect(pageErrors).toEqual([])
 })
+
+test('live partial output remains visible when terminal history cannot be reloaded', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  await page.addInitScript(() => {
+    const encoder = new TextEncoder()
+    const observedAt = '2026-08-02T12:00:00.000Z'
+    let turnSent = false
+    const thread = {
+      id: 'thread-p0-b-live',
+      title: 'P0-B live storage failure',
+      mode: 'chat',
+      model: 'fixture:latest',
+      workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'high' },
+      createdAt: observedAt,
+      updatedAt: observedAt,
+      messageCount: 0,
+    }
+    const context = {
+      usedTokens: 0,
+      allocatedTokens: 8192,
+      percent: 0,
+      cacheHit: false,
+      cachedTokens: 0,
+      compactable: false,
+      estimatedRepefillMs: 0,
+    }
+    const health = {
+      ok: true,
+      appVersion: 'test',
+      ollama: {
+        installed: true,
+        running: true,
+        version: 'test',
+        host: 'http://127.0.0.1:11434',
+        installHint: null,
+      },
+      hardware: {
+        platform: 'darwin',
+        arch: 'arm64',
+        cpuModel: 'fixture',
+        cpuCores: 8,
+        totalMemoryBytes: 16_000_000_000,
+        usableMemoryBytes: 12_000_000_000,
+        accelerator: 'metal',
+        acceleratorName: 'fixture',
+        unifiedMemory: true,
+        freeDiskBytes: 100_000_000_000,
+      },
+      network: { ollamaComReachable: false, checkedAt: observedAt },
+    }
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: () => undefined,
+    })
+
+    window.fetch = async (input, init) => {
+      const rawUrl = typeof input === 'string' ? input : input.url
+      const url = new URL(rawUrl, window.location.origin)
+      const method =
+        (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET').toUpperCase()
+
+      if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/threads' && method === 'GET') {
+        return json({ threads: [thread] })
+      }
+      if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
+      if (url.pathname === `/api/threads/${thread.id}` && method === 'GET') {
+        return !turnSent
+          ? json({ thread, messages: [], context })
+          : json(
+              {
+                code: 'internal_error',
+                message: 'injected terminal history read failure',
+                details: null,
+              },
+              500,
+            )
+      }
+      if (url.pathname === `/api/threads/${thread.id}/messages` && method === 'POST') {
+        turnSent = true
+        const events = [
+          {
+            type: 'start',
+            seq: 0,
+            data: {
+              messageId: 'assistant-live',
+              model: thread.model,
+              step: 0,
+              status: 'pending',
+            },
+          },
+          { type: 'thinking', seq: 1, data: { delta: 'Buffered live thought' } },
+          { type: 'token', seq: 2, data: { delta: 'Buffered live partial' } },
+          {
+            type: 'error',
+            seq: 3,
+            data: {
+              code: 'internal_error',
+              message: 'The final response state could not be saved',
+              details: null,
+              turnError: {
+                code: 'storage_error',
+                message: 'The final response state could not be saved',
+              },
+            },
+          },
+          {
+            type: 'done',
+            seq: 4,
+            data: {
+              messageId: 'assistant-live',
+              outcome: 'failed',
+              stopReason: 'error',
+              terminalStopReason: 'storage_error',
+              steps: 1,
+            },
+          },
+        ]
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              for (const event of events) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+              }
+              controller.close()
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+        )
+      }
+
+      return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
+    }
+  })
+
+  await page.goto('/chat/thread-p0-b-live')
+  const composer = page.getByRole('textbox', { name: 'Сообщение' })
+  await composer.fill('Trigger terminal storage failure')
+  await composer.press('Enter')
+
+  await expect(page.getByText('Buffered live partial')).toBeVisible()
+  await expect(page.getByText('Buffered live thought')).toBeVisible()
+  await expect(page.getByText('partial output не подтверждён')).toBeVisible()
+  await expect(page.getByText('готов', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('alert')).toContainText(
+    'The final response state could not be saved',
+  )
+  expect(pageErrors).toEqual([])
+})
+
+test('explicit Stop reloads the persisted cancelled partial outcome', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  await page.addInitScript(() => {
+    const encoder = new TextEncoder()
+    const observedAt = '2026-08-02T12:00:00.000Z'
+    let stopped = sessionStorage.getItem('p0bStopped') === '1'
+    const thread = {
+      id: 'thread-p0-b-stop',
+      title: 'P0-B explicit Stop',
+      mode: 'chat',
+      model: 'fixture:latest',
+      workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+      createdAt: observedAt,
+      updatedAt: observedAt,
+      messageCount: 0,
+    }
+    const context = {
+      usedTokens: 0,
+      allocatedTokens: 8192,
+      percent: 0,
+      cacheHit: false,
+      cachedTokens: 0,
+      compactable: false,
+      estimatedRepefillMs: 0,
+    }
+    const health = {
+      ok: true,
+      appVersion: 'test',
+      ollama: {
+        installed: true,
+        running: true,
+        version: 'test',
+        host: 'http://127.0.0.1:11434',
+        installHint: null,
+      },
+      hardware: {
+        platform: 'darwin',
+        arch: 'arm64',
+        cpuModel: 'fixture',
+        cpuCores: 8,
+        totalMemoryBytes: 16_000_000_000,
+        usableMemoryBytes: 12_000_000_000,
+        accelerator: 'metal',
+        acceleratorName: 'fixture',
+        unifiedMemory: true,
+        freeDiskBytes: 100_000_000_000,
+      },
+      network: { ollamaComReachable: false, checkedAt: observedAt },
+    }
+    const messages = [
+      {
+        id: 'user-stop',
+        threadId: thread.id,
+        role: 'user',
+        content: 'Stop this response',
+        thinking: null,
+        toolCalls: [],
+        usage: null,
+        createdAt: observedAt,
+        isCompaction: false,
+        turnStatus: null,
+        turnError: null,
+        stopReason: null,
+      },
+      {
+        id: 'assistant-stop',
+        threadId: thread.id,
+        role: 'assistant',
+        content: 'Partial before Stop',
+        thinking: null,
+        toolCalls: [],
+        usage: null,
+        createdAt: observedAt,
+        isCompaction: false,
+        turnStatus: 'cancelled',
+        turnError: null,
+        stopReason: 'stopped_by_user',
+      },
+    ]
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: () => undefined,
+    })
+
+    window.fetch = async (input, init) => {
+      const rawUrl = typeof input === 'string' ? input : input.url
+      const url = new URL(rawUrl, window.location.origin)
+      const method =
+        (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET').toUpperCase()
+
+      if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/threads' && method === 'GET') {
+        return json({ threads: [thread] })
+      }
+      if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
+      if (url.pathname === `/api/threads/${thread.id}` && method === 'GET') {
+        return json({
+          thread: { ...thread, messageCount: stopped ? messages.length : 0 },
+          messages: stopped ? messages : [],
+          context,
+        })
+      }
+      if (url.pathname === `/api/threads/${thread.id}/stop` && method === 'POST') {
+        stopped = true
+        sessionStorage.setItem('p0bStopped', '1')
+        return json({ ok: true })
+      }
+      if (url.pathname === `/api/threads/${thread.id}/messages` && method === 'POST') {
+        const events = [
+          {
+            type: 'start',
+            seq: 0,
+            data: {
+              messageId: 'assistant-stop',
+              model: thread.model,
+              step: 0,
+              status: 'pending',
+            },
+          },
+          { type: 'token', seq: 1, data: { delta: 'Partial before Stop' } },
+        ]
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              for (const event of events) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+              }
+              init?.signal?.addEventListener(
+                'abort',
+                () => controller.error(new DOMException('aborted', 'AbortError')),
+                { once: true },
+              )
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+        )
+      }
+
+      return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
+    }
+  })
+
+  await page.goto('/chat/thread-p0-b-stop')
+  const composer = page.getByRole('textbox', { name: 'Сообщение' })
+  await composer.fill('Stop this response')
+  await composer.press('Enter')
+  await expect(page.getByText('Partial before Stop')).toBeVisible()
+
+  const stopButton = page.getByRole('button', { name: /Остановить/ })
+  await stopButton.focus()
+  await expect(stopButton).toBeFocused()
+  await stopButton.click()
+
+  await expect(page.getByText('Генерация отменена')).toBeVisible()
+  await expect(page.getByText(/Причина остановки: явная остановка/)).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('Partial before Stop')).toBeVisible()
+  await expect(page.getByText('Генерация отменена')).toBeVisible()
+  expect(pageErrors).toEqual([])
+})

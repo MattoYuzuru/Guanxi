@@ -347,6 +347,7 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
           messages={chat.messages}
           buffer={chat.buffer}
           phase={chat.phase}
+          liveOutputRetained={chat.liveOutputRetained}
           liveToolCalls={chat.liveToolCalls}
           streamError={chat.streamError?.message ?? null}
         />
@@ -419,17 +420,19 @@ function MessageTimeline({
   messages,
   buffer,
   phase,
+  liveOutputRetained,
   liveToolCalls,
   streamError,
 }: {
   messages: Message[]
   buffer: StreamBuffer
   phase: TurnPhase
+  liveOutputRetained: boolean
   liveToolCalls: ReturnType<typeof useChat>['liveToolCalls']
   streamError: string | null
 }) {
   const endRef = useRef<HTMLDivElement>(null)
-  const showLive = phase !== 'idle'
+  const showLive = phase !== 'idle' || liveOutputRetained
   const scrollToEnd = useCallback(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [])
@@ -456,15 +459,18 @@ function MessageTimeline({
           <StreamingMessage
             buffer={buffer}
             phase={phase}
+            retainedAfterFailure={liveOutputRetained}
             toolCalls={liveToolCalls}
             onChange={scrollToEnd}
           />
         )}
 
         {streamError && (
-          <Callout tone="danger" title="Генерация прервалась">
-            {streamError}
-          </Callout>
+          <div role="alert">
+            <Callout tone="danger" title="Генерация прервалась">
+              {streamError}
+            </Callout>
+          </div>
         )}
         <div ref={endRef} />
       </div>
@@ -694,11 +700,13 @@ function turnStopReasonLabel(reason: TurnStopReason): string {
 export function StreamingMessage({
   buffer,
   phase,
+  retainedAfterFailure,
   toolCalls,
   onChange,
 }: {
   buffer: StreamBuffer
   phase: TurnPhase
+  retainedAfterFailure: boolean
   toolCalls: ReturnType<typeof useChat>['liveToolCalls']
   onChange: () => void
 }) {
@@ -713,7 +721,9 @@ export function StreamingMessage({
       <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
         <span>Alamo</span>
         <Badge tone={phase === 'awaiting_approval' ? 'yellow' : 'accent'}>
-          {phaseLabel(phase)}
+          {retainedAfterFailure
+            ? translate('chat.turn.status.livePartial')
+            : phaseLabel(phase)}
         </Badge>
       </div>
 

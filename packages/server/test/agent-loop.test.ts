@@ -6,11 +6,7 @@ import { it } from 'node:test'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { runTurn, TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
-import {
-  OllamaError,
-  OllamaUnavailableError,
-  type OllamaClient,
-} from '../src/ollama/client.ts'
+import { OllamaClient, OllamaUnavailableError } from '../src/ollama/client.ts'
 import type {
   OllamaChatChunk,
   OllamaChatRequest,
@@ -135,26 +131,38 @@ it('сохраняет частичный ответ при upstream-ошибк�
     options: { numCtx: 4_096, temperature: 0, think: 'off' },
   })
   store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
-
-  const fakeClient = {
-    chatStream() {
-      return (async function* () {
-        yield {
-          model: 'qwen',
-          created_at: new Date().toISOString(),
-          message: { role: 'assistant' as const, content: 'Частичный ответ' },
-          done: false,
-        }
-        throw new OllamaError('модель исчезла', 404)
-      })()
-    },
-  } as unknown as OllamaClient
+  const originalFetch = globalThis.fetch
+  test.after(() => {
+    globalThis.fetch = originalFetch
+  })
+  globalThis.fetch = (async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        streamController.enqueue(
+          new TextEncoder().encode(
+            `${JSON.stringify({
+              model: 'qwen',
+              created_at: new Date().toISOString(),
+              message: { role: 'assistant', content: 'Частичный ответ' },
+              done: false,
+            })}\n`,
+          ),
+        )
+        setTimeout(
+          () => streamController.error(new TypeError('injected provider body failure')),
+          0,
+        )
+      },
+    })
+    return new Response(body, { status: 200 })
+  }) as typeof fetch
+  const client = new OllamaClient({ host: 'http://fixture.invalid' })
 
   const events = []
   for await (const event of runTurn({
     thread,
     workspace: null,
-    client: fakeClient,
+    client,
     store,
     registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
     approvals: new ApprovalGate(),
@@ -362,26 +370,39 @@ for (const cancellation of [
     })
     store.addMessage({ threadId: thread.id, role: 'user', content: 'Ответь' })
     const controller = new AbortController()
-
-    const fakeClient = {
-      chatStream() {
-        return (async function* () {
-          yield {
-            model: 'qwen',
-            created_at: new Date().toISOString(),
-            message: { role: 'assistant' as const, content: 'partial' },
-            done: false,
-          }
-          controller.abort(cancellation.abortReason)
-        })()
-      },
-    } as unknown as OllamaClient
+    const originalFetch = globalThis.fetch
+    test.after(() => {
+      globalThis.fetch = originalFetch
+    })
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          streamController.enqueue(
+            new TextEncoder().encode(
+              `${JSON.stringify({
+                model: 'qwen',
+                created_at: new Date().toISOString(),
+                message: { role: 'assistant', content: 'partial' },
+                done: false,
+              })}\n`,
+            ),
+          )
+          init?.signal?.addEventListener(
+            'abort',
+            () => streamController.error(new DOMException('aborted', 'AbortError')),
+            { once: true },
+          )
+        },
+      })
+      return new Response(body, { status: 200 })
+    }) as typeof fetch
+    const client = new OllamaClient({ host: 'http://fixture.invalid' })
 
     const events = []
     for await (const event of runTurn({
       thread,
       workspace: null,
-      client: fakeClient,
+      client,
       store,
       registry: new ToolRegistry({ hasWorkspace: false, enableBash: false }),
       approvals: new ApprovalGate(),
@@ -392,6 +413,7 @@ for (const cancellation of [
       signal: controller.signal,
     })) {
       events.push(event)
+      if (event.type === 'token') controller.abort(cancellation.abortReason)
     }
 
     const assistant = store.messages(thread.id).at(-1)

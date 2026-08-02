@@ -12,6 +12,7 @@ describe('streaming Chat rendering', () => {
       <StreamingMessage
         buffer={buffer}
         phase="prefill"
+        retainedAfterFailure={false}
         toolCalls={[]}
         onChange={scrollToEnd}
       />,
@@ -25,6 +26,7 @@ describe('streaming Chat rendering', () => {
       <StreamingMessage
         buffer={buffer}
         phase="thinking"
+        retainedAfterFailure={false}
         toolCalls={[]}
         onChange={scrollToEnd}
       />,
@@ -38,6 +40,7 @@ describe('streaming Chat rendering', () => {
       <StreamingMessage
         buffer={buffer}
         phase="generating"
+        retainedAfterFailure={false}
         toolCalls={[]}
         onChange={scrollToEnd}
       />,
@@ -45,5 +48,27 @@ describe('streaming Chat rendering', () => {
 
     expect(screen.getByText('First answer token')).toBeTruthy()
     expect(scrollToEnd).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps an unreconciled partial buffer visible without claiming readiness', () => {
+    const buffer = new StreamBuffer()
+    buffer.appendThinking('Buffered thought')
+    buffer.appendToken('Buffered partial answer')
+    buffer.flushNow()
+
+    render(
+      <StreamingMessage
+        buffer={buffer}
+        phase="idle"
+        retainedAfterFailure
+        toolCalls={[]}
+        onChange={() => undefined}
+      />,
+    )
+
+    expect(screen.getByText('Buffered partial answer')).toBeTruthy()
+    expect(screen.getByText('Buffered thought')).toBeTruthy()
+    expect(screen.getByText('partial output не подтверждён')).toBeTruthy()
+    expect(screen.queryByText('готов')).toBeNull()
   })
 })

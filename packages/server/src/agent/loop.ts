@@ -631,10 +631,28 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
       steps: step,
     })
   } catch (caught) {
-    let failure = safeTurnFailure(caught)
     let terminal: Message | null = null
+    let failureCause = caught
 
-    if (activeMessageId && !(caught instanceof TerminalPersistenceError)) {
+    // fetch/ReadableStream rejects reader.read() with AbortError. Classify the
+    // authoritative signal reason before generic provider/error handling so
+    // explicit Stop and connection abort cannot become failed/internal_error.
+    if (signal.aborted && activeMessageId && !(caught instanceof TerminalPersistenceError)) {
+      const stopReason = cancellationReason(signal)
+      try {
+        terminal = terminalizeActive('cancelled', null, stopReason)
+        yield event(
+          'done',
+          doneData(terminal, { outcome: 'cancelled', stopReason }, step + 1),
+        )
+        return
+      } catch (terminalError) {
+        failureCause = terminalError
+      }
+    }
+
+    let failure = safeTurnFailure(failureCause)
+    if (activeMessageId && !(failureCause instanceof TerminalPersistenceError)) {
       try {
         terminal = terminalizeActive('failed', failure.error, failure.stopReason)
       } catch (terminalError) {

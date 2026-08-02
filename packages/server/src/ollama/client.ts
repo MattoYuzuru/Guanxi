@@ -136,6 +136,12 @@ export class OllamaClient {
 
       const tail = buffer.trim()
       if (tail) yield JSON.parse(tail) as T
+    } catch (error) {
+      // Preserve abort identity for runTurn's authoritative cancellation
+      // classification. Other body/read/parse failures came from the provider
+      // stream and must not be mistaken for an internal application failure.
+      if (signal?.aborted) throw error
+      throw new OllamaError('Ollama response stream failed', response.status, error)
     } finally {
       await reader.cancel().catch(() => {})
     }
