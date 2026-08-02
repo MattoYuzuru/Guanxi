@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-02
+**Проверено:** 2026-08-03
 
 ## Current package design
 
@@ -11,7 +11,7 @@
 Исходник: [lld-contract.mmd](diagrams/lld-contract.mmd).
 
 - `schemas.ts`: models, hardware fit, health, threads/messages, settings,
-  workspaces, tool calls и approvals;
+  workspaces, tool calls, approvals и durable Job/event records;
 - `api.ts`: route paths и request/response Zod;
 - `events.ts`: turn SSE union;
 - `index.ts`: public exports.
@@ -22,6 +22,10 @@ Current thread mode: chat или agent. Message содержит content/thinkin
 connection-owned turn projection, но не durable Job/run id. P0-D добавляет
 source/time health, catalog freshness, sampled running rows и stable
 connect/load/stream-idle error categories.
+
+P1-A добавил canonical Job states, terminal states, kind, safe structured
+error/outcome metadata и persisted event envelope. Это additive storage contract,
+а не HTTP create command или новый SSE route.
 
 ### `packages/server`
 
@@ -43,6 +47,10 @@ connect/load/stream-idle error categories.
 - `agent/loop.ts`: ordered turn/tool loop;
 - `store/db.ts`: `node:sqlite` migrations;
 - migration 3: nullable Message terminal bridge с evidence-based legacy backfill;
+- migration 4: additive `jobs`/`job_events`, scoped idempotency, per-Job sequence
+  и unique terminal event constraint;
+- `store/jobs.ts`: atomic create + initial event, ordered replay page, event
+  sequence CAS и terminal state + event CAS;
 - `store/threads.ts`: atomic pending-to-terminal compare-and-set и compaction
   boundary по persisted `seq`;
 - `tools/*`: jail, filesystem и bash.
@@ -51,6 +59,13 @@ connect/load/stream-idle error categories.
 controllers, включая ожидающий turn. Host-wide exclusion принадлежит отдельному
 bridge. Его permit совместно используют turn, compaction и explicit model
 warm/load; waiters, `ApprovalGate` и active controllers не durable.
+
+`JobStore` входит в application context и public server export, но current Chat
+routes его не вызывают. Store синхронно сериализует writers через SQLite
+`BEGIN IMMEDIATE`; Job create и terminalization откатываются целиком, если event
+insert не состоялся. Одинаковая пара `idempotency_scope/idempotency_key`
+возвращает canonical Job. Event metadata ограничена плоскими JSON scalars и не
+предназначена для prompt, reasoning, secrets или workspace content.
 
 ### `packages/web`
 
@@ -115,6 +130,10 @@ admission, а permit освобождается после terminal/error/abort/
 Повторная compaction выбирает prefix после admission и использует реальный
 persisted `seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership,
 lease или доказательство unload между observations.
+
+P1-A добавляет durable persistence foundation, но не меняет этот sequence:
+`POST /threads/:id/messages` не создаёт Job, current SSE не replayable,
+disconnect по-прежнему отменяет generation, а Job recovery/worker отсутствуют.
 
 Bridge не является Resource Governor: нет durable queue, leases, priorities,
 continuous `/api/ps` reconciliation, restart recovery или measured parallelism.
@@ -451,10 +470,13 @@ Client-local delivery state отдельно отмечает visual/sound chann
 SSE/reload не воспроизводит sound второй раз. Notification payload не содержит
 prompt, reasoning или output content.
 
-## Proposed persistence
+## Persistence status
 
-Точные DDL и migration order определяются в implementation plan. Логические
-таблицы:
+Migration 4 и `JobStore` реализуют только `jobs` и `job_events`. Остальные
+таблицы ниже остаются target/proposed. Legacy `threads/messages/workspaces`
+сохранены без destructive backfill или route cutover.
+
+Логические таблицы:
 
 | Table                   | Назначение                                        |
 | ----------------------- | ------------------------------------------------- |

@@ -1,8 +1,8 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-02  
-**Текущая фаза:** Phase 0 — Stabilize the truth
+**Проверено:** 2026-08-03
+**Текущая фаза:** Phase 1 — Durable Jobs и Resource Governor
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -24,11 +24,21 @@
 Phase 0 становится `independently verified`, только когда все slices выполнены и
 exit gate ROADMAP проверен целиком.
 
+## Phase 1
+
+| Slice                                   | Статус                 | Outcome                                                          |
+| --------------------------------------- | ---------------------- | ---------------------------------------------------------------- |
+| P1-A Durable Job/event-store foundation | independently verified | `138fb5e`, `91cb21f`, `92b68f0`; 15 targeted, all required gates |
+
+P1-A реализует только additive contract, migration 4 и persistence primitives.
+Current Chat execution, HTTP Job API, replay subscription, recovery и Governor
+не реализованы; Phase 1 остаётся `in progress`.
+
 ## Later phases
 
 | Phase                                   | Статус      |
 | --------------------------------------- | ----------- |
-| Phase 1 — Durable Jobs/Governor         | not started |
+| Phase 1 — Durable Jobs/Governor         | in progress |
 | Phase 2 — Models/Capability/import      | not started |
 | Phase 3 — Text/Projects/retention/i18n  | not started |
 | Phase 4 — Service/CLI/TUI               | not started |

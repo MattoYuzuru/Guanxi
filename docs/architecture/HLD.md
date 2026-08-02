@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-02  
+**Проверено:** 2026-08-03
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -38,10 +38,11 @@ Contract package ─ Zod types ─ browser + server
 | `cli`      | foreground launcher и reuse уже запущенного server |
 
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
-SQLite хранит settings, threads/messages, workspaces, tool journal и calibration.
-Message bridge также хранит `pending/completed/failed/cancelled`, safe error и
-stop reason. Active turns, exclusive inference bridge, approvals и SSE events
-существуют только в памяти.
+SQLite хранит settings, threads/messages, workspaces, tool journal, calibration
+и P1-A foundation-таблицы `jobs`/`job_events`. Message bridge также хранит
+`pending/completed/failed/cancelled`, safe error и stop reason. Durable Job store
+ещё не подключён к Chat execution или HTTP API; active turns, exclusive
+inference bridge, approvals и current Chat SSE events существуют только в памяти.
 
 ### As-is execution boundary
 
@@ -89,6 +90,7 @@ loaded rows — только из `/api/ps`.
 | ------------------------------------ | --------------------------------------- | --------------------------- |
 | Threads/messages/settings/workspaces | SQLite stores                           | persistent                  |
 | Message terminal bridge              | SQLite `messages` v3 columns            | persistent                  |
+| Job/event-store foundation           | SQLite `jobs`/`job_events` v4           | persistent, не исполняется  |
 | Tool run record                      | SQLite                                  | persistent после выполнения |
 | Active/waiting turn request          | server `Map<threadId, AbortController>` | process memory              |
 | Exclusive inference bridge           | application `ExclusiveInferenceBridge`  | process memory              |
@@ -107,8 +109,9 @@ loaded rows — только из `/api/ps`.
    но не координирует provider вне этого application process.
 3. `keep_alive: 10m` удерживает модели после turn; route не является unload.
 4. UI route владеет работой, поэтому navigation destructive.
-5. P0-B Message bridge не является durable Job: DB failure может оставить
-   observable `pending`, а restart recovery отсутствует.
+5. P1-A Job/event-store не подключён к P0-B Message bridge: current Chat DB
+   failure всё ещё может оставить observable `pending`, а restart recovery
+   отсутствует.
 6. Current SSE не replayable; additive terminal fields не меняют ownership.
 7. Remote bind открывает filesystem/shell boundaries без реальной authentication.
 8. Fit не описывает совместное размещение, current pressure и remote hardware.

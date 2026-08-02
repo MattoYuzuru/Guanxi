@@ -2,7 +2,7 @@
 
 **Статус:** mixed — diagnosis locally validated, lifecycle target accepted
 
-**Проверено:** 2026-08-02  
+**Проверено:** 2026-08-03
 **Критичность:** основной correctness и safety boundary
 
 ## Подтверждённое current behavior
@@ -170,6 +170,24 @@ Caller-owned Stop/connection abort имеет приоритет, включая
 результат остаётся `cancelled` с authoritative `stopped_by_user` либо
 `connection_aborted`. Любой timeout/provider/abort path выходит через
 идемпотентный release P0-C permit и допускает следующего waiter.
+
+### P1-A durable persistence foundation
+
+SQLite migration 4 additive создаёт `jobs` и `job_events`, не меняя migrations
+1–3 и legacy `threads/messages`. `JobStore` реализует:
+
+- scoped uniqueness пары `idempotency_scope/idempotency_key`;
+- atomic `Job(queued) + lifecycle event(sequence=1)`;
+- monotonic per-Job sequence через transaction/CAS и unique constraint;
+- ordered page `sequence > after`;
+- atomic terminal state + ровно один terminal lifecycle event;
+- controlled failure на unknown/malformed stored record;
+- flat JSON-scalar metadata boundary без private input/output content.
+
+Create, append и terminal races проверены через независимые SQLite connections.
+Foundation входит в server composition, но current Chat turn его не использует:
+Job Engine, transitions, persisted-first broadcast, HTTP create/replay/cancel,
+worker, recovery, Governor и route-safe execution ещё не реализованы.
 
 ## Target Job lifecycle
 

@@ -1,13 +1,13 @@
 # Стратегия проверки
 
 **Статус:** implemented для current-state, proposed для target matrix  
-**Проверено:** 2026-08-02
+**Проверено:** 2026-08-03
 
 ## Текущий baseline
 
-На 2026-08-02:
+На 2026-08-03:
 
-- `npm test`: 116/116 server/CLI и 17/17 web component/parser tests;
+- `npm test`: 131/131 server/CLI и 17/17 web component/parser tests;
 - `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -32,9 +32,13 @@
   malformed/slow/unavailable provider, stale cache/bundled fallback, empty/error
   `/api/ps`, connect/load/idle deadlines, continuous progress, missing terminal,
   cancellation race и release следующему waiter;
+- deterministic P1-A tests покрывают exact Job contract, fresh/v3→v4/reopen/
+  recovery migration, atomic create/terminal rollback, scoped idempotency,
+  ordered replay, malformed storage и двухconnection create/append/terminal
+  races; exact P1-A files дают 15/15, race suite повторён 10 раз;
 - CI/lint/formatter commands отсутствуют;
-- живой Ollama, durable/replayable Job flow, второй application process и внешние
-  Ollama clients не входят в regression suite.
+- живой Ollama, durable Job Engine/API/replay subscription, второй application
+  process и внешние Ollama clients не входят в regression suite.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E на временной
 SQLite, управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
@@ -44,11 +48,12 @@ multi-process/external-client safety, restart recovery или production use.
 P0-D health остаётся sampled observation; обязательный suite не проверяет live
 Ollama, реальное железо или публичную сеть.
 
-### P0-D residual risks
+### Current residual risks
 
 - health и `/api/ps` — sampled observations, а не непрерывная истина;
 - process-local exclusive bridge не является Resource Governor;
 - текущий POST/SSE turn остаётся connection-owned и не replayable;
+- P1-A `jobs`/`job_events` не подключены к execution, routes или recovery;
 - restart recovery отсутствует;
 - обязательный suite не проверяет live hardware или live Ollama.
 
@@ -60,7 +65,8 @@ Ollama, реальное железо или публичную сеть.
 | Hardware fit                       | unit cases                         |
 | Filesystem tools/jail              | unit cases                         |
 | Server routes                      | integration-style tests            |
-| SQLite stores/migration v3         | fresh + v2 upgrade                 |
+| SQLite stores/migrations v3/v4     | fresh + v2/v3 upgrade/recovery     |
+| Durable Job/event foundation       | atomicity + two-connection races   |
 | Turn terminal contract/CAS         | compatibility + failures           |
 | Tool parser                        | tests                              |
 | Context usage                      | tests                              |
