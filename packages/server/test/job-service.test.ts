@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import type { Job, JobEvent, JobState, JobTerminalState } from '@alamo/contract'
+import {
+  isCanonicalRecoveryTerminalTransition,
+  isCanonicalTerminalTransition,
+} from '../src/jobs/lifecycle.ts'
 import { JobService, JobServiceError } from '../src/jobs/service.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore, JobStoreError } from '../src/store/jobs.ts'
@@ -113,15 +117,10 @@ describe('JobService lifecycle', () => {
     const canonicalEdges: Array<readonly [JobState, JobTerminalState]> = [
       ['reserving', 'failed'],
       ['loading', 'failed'],
-      ['loading', 'interrupted'],
       ['prefill', 'failed'],
-      ['prefill', 'interrupted'],
       ['thinking', 'failed'],
-      ['thinking', 'interrupted'],
       ['generating', 'failed'],
-      ['generating', 'interrupted'],
       ['waiting_tool', 'failed'],
-      ['waiting_tool', 'interrupted'],
       ['finalizing', 'completed'],
       ['finalizing', 'failed'],
       ['cancelling', 'cancelled'],
@@ -146,6 +145,7 @@ describe('JobService lifecycle', () => {
       ['queued', 'completed'],
       ['waiting_approval', 'failed'],
       ['cancelling', 'interrupted'],
+      ['loading', 'interrupted'],
     ] as Array<readonly [JobState, JobTerminalState]>) {
       const source = advanceTo(service, createJob(service, `invalid-${from}-${status}`), from)
       assert.throws(
@@ -156,6 +156,32 @@ describe('JobService lifecycle', () => {
       assert.equal(store.eventsAfter(source.id, 0).length, source.lastEventSequence)
     }
     db.close()
+  })
+
+  it('keeps every interrupted edge recovery-only', () => {
+    const recoverySources: JobState[] = [
+      'reserving',
+      'loading',
+      'prefill',
+      'thinking',
+      'generating',
+      'waiting_tool',
+      'waiting_approval',
+      'finalizing',
+    ]
+    const nonTerminalStates: JobState[] = [
+      'queued',
+      ...recoverySources,
+      'cancelling',
+    ]
+
+    for (const state of nonTerminalStates) {
+      assert.equal(
+        isCanonicalRecoveryTerminalTransition(state, 'interrupted'),
+        recoverySources.includes(state),
+      )
+      assert.equal(isCanonicalTerminalTransition(state, 'interrupted'), false)
+    }
   })
 
   it('owns queued, active, repeated, terminal and conflicting cancellation semantics', () => {
