@@ -1,0 +1,23 @@
+{
+  "name": "alamo-ui-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev:server": "npm run dev --workspace @alamo/server",
+    "dev:web": "npm run dev --workspace @alamo/web",
+    "build": "npm run build --workspace @alamo/web && npm run build --workspace @alamo/server && npm run build --workspace alamo-ui",
+    "test": "node --test packages/server/test/**/*.test.ts",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.7.2"
+  }
+}

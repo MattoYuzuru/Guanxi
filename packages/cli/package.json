@@ -1,0 +1,25 @@
+{
+  "name": "alamo-ui",
+  "version": "0.1.0",
+  "description": "Локальный веб-интерфейс и агент для Ollama",
+  "type": "module",
+  "bin": {
+    "alamo-ui": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "node src/bin.ts"
+  },
+  "devDependencies": {
+    "@alamo/server": "*"
+  },
+  "license": "MIT"
+}
