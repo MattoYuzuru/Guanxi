@@ -6,6 +6,8 @@ flowchart TB
     Models[Model and catalog services]
     Hardware[Hardware probe and fit]
     Agent[Agent loop and approvals]
+    Jobs[Job service and Chat execution owner]
+    Recovery[Pre-listen Chat recovery]
     Tools[Tool registry jail fs bash]
     Ollama[Ollama client]
     Static[Built web assets]
@@ -16,13 +18,18 @@ flowchart TB
     Routes --> Stores
     Routes --> Models
     Routes --> Agent
+    Routes --> Jobs
     Context --> Stores
     Context --> Ollama
     Context --> Tools
     Context --> Agent
+    Context --> Recovery
+    Recovery --> Jobs
+    Recovery --> Stores
+    Jobs --> Agent
+    Jobs --> Stores
     Models --> Ollama
     Models --> Hardware
     Agent --> Ollama
     Agent --> Tools
     Agent --> Stores
-

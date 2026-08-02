@@ -72,8 +72,10 @@ npm run link:cli
   transitions, cancel и persisted-first subscription. SQLite event sequence
   остаётся источником replay; live listeners хранят только wake-up signal.
   Public Job и current Chat routes используют этот service. Один
-  `ChatJobExecutionOwner` продолжает Chat после subscriber disconnect, но
-  process restart recovery пока не реализован.
+  `ChatJobExecutionOwner` продолжает Chat после subscriber disconnect. P1-E
+  выполняет bounded Chat recovery после migration и до HTTP listen: unsafe
+  execution становится `interrupted`, persisted `cancelling` — `cancelled`, а
+  только untouched `queued` передаётся тому же owner.
 
 ## Карта current-state
 
@@ -113,6 +115,8 @@ npm run link:cli
   владеет cancel transitions;
 - `jobs/chat-execution.ts` владеет Chat controller, canonical phases,
   persist-first output, 16 KiB chunk boundary и cancellation acknowledgement;
+- `jobs/chat-recovery.ts` владеет recovery-only interrupted edges, stable
+  keyset scan, bounded private-output reducer и fail-closed startup policy;
 - `http/jobs-routes.ts` предоставляет strict public command/query/GET SSE/cancel
   API с server-owned idempotency scope и bounded HTTP backpressure;
 - `agent/` — turn loop, prompts, approvals и parser;
@@ -142,7 +146,9 @@ npm run link:cli
   transition races, public command/query/cancel, persisted-first replay/live
   handoff, HTTP cleanup/backpressure, terminal close и restart replay; P1-D
   проверяет migration 5, duplicate command, detached execution/reattach,
-  cancellation races, private-output redaction и atomic Message/Job terminal.
+  cancellation races, private-output redaction и atomic Message/Job terminal;
+  P1-E — closed/reopened DB recovery, all non-terminal Chat states, bounded
+  pages, partial projection, fail-closed startup и truthful shutdown.
 
 ### CLI
 

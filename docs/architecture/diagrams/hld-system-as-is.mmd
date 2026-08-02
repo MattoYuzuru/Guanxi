@@ -8,20 +8,22 @@ flowchart LR
         Contract[Zod contract]
         Context[AppContext]
         Memory[activeTurns and approvals]
+        Recovery[Pre-listen Chat recovery]
         DB[(SQLite)]
         Files[Workspace filesystem]
         Shell[Local shell]
 
-        Browser <-->|REST and POST SSE| Server
+        Browser <-->|REST and POST or GET SSE| Server
         Browser -. validates .-> Contract
         Server -. validates .-> Contract
         Server --> Context
         Context --> Memory
         Context --> DB
+        Context --> Recovery
+        Recovery --> DB
         Server --> Files
         Server --> Shell
     end
 
     Server <-->|HTTP and NDJSON| Ollama[Ollama runtime]
     Server --> Catalog[Remote local or bundled catalog data]
-

@@ -7,7 +7,7 @@
 
 На 2026-08-03:
 
-- `npm test`: 173/173 server/CLI и 17/17 web component/parser tests;
+- `npm test`: 182/182 server/CLI и 17/17 web component/parser tests;
 - `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -54,19 +54,31 @@
   cancel-before-admission, cancelling-before-abort acknowledgement, missing
   terminal provider output, atomic terminal rollback/redaction, cross-thread
   one-lane execution и 16 KiB UTF-8 chunking без truncation;
-- exact P1-A/P1-B/P1-C/P1-D files дают 57/57; 15-test store race suite ранее
-  повторён 10 раз, а P1-D disconnect/cancel/terminal race выполняет 10 repeats;
+- deterministic P1-E tests используют закрытую/reopened temporary SQLite как
+  fixture предыдущего process и покрывают все восемь executing Chat states,
+  persisted cancelling, untouched queued, terminal no-op, generic Job skip,
+  stable scan/output pages size 2, latest-pending partial reducer, earlier
+  tool-step preservation, atomic trigger rollback, malformed association/output,
+  redacted failure before listen, три startup attempts после injected failures,
+  same-thread/cross-thread one-lane scheduling и truthful graceful shutdown;
+- exact P1-A/P1-B/P1-C/P1-D/P1-E files дают 66/66; 15-test store race suite ранее
+  повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10 repeats, а
+  terminal P1-E recovery повторяется 10 раз без новых sequence/output;
 - CI/lint/formatter commands отсутствуют;
-- живой Ollama, startup execution recovery, второй application process и внешние
-  Ollama clients не входят в regression suite.
+- живой Ollama, второй application process и внешние Ollama clients не входят в
+  regression suite. Chromium P1-E server restart не моделирует: hard boundary
+  доказан server integration tests с закрытием/reopen SQLite, browser сохраняет
+  P1-D navigation/detach/reload gate.
 
-Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E на временной
-SQLite, управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
+Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E и
+P1-A–P1-E на временной SQLite, управляемом fake `OllamaClient` transport и
+mocked browser REST/SSE. P0-C
 доказывает one-lane admission только для участвующих entry points одного
 application composition; он не подтверждает hardware fit, Ollama scheduler,
-multi-process/external-client safety, restart recovery или production use.
-P0-D health остаётся sampled observation; обязательный suite не проверяет live
-Ollama, реальное железо или публичную сеть.
+multi-process/external-client safety или production use. P1-E доказывает
+single-process startup ordering/reconciliation, но не checkpoint resume или
+process lock. P0-D health остаётся sampled observation; обязательный suite не
+проверяет live Ollama, реальное железо или публичную сеть.
 
 ### Current residual risks
 
@@ -75,7 +87,8 @@ Ollama, реальное железо или публичную сеть.
 - Chat execution durable/replayable, но owner и admission остаются process-local;
 - generic public Job без Chat adapter остаётся queued; live wake-up предполагает
   mutation через один service instance;
-- startup scan/restart recovery и interrupted reconciliation отсутствуют;
+- startup recovery не координирует второй writer и не resume-ит executing side
+  effects; malformed typed Chat state намеренно блокирует healthy startup;
 - обязательный suite не проверяет live hardware или live Ollama.
 
 ## Существующее покрытие
@@ -99,6 +112,7 @@ Ollama, реальное железо или публичную сеть.
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P0-C one-lane fake routes          |
 | Job replay/reattach                | HTTP SSE; browser durable replay   |
+| Chat startup recovery              | reopened SQLite, fail-closed pages |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |
 | Accessibility/responsive           | P0-A/B/D/E Chromium smoke          |
 

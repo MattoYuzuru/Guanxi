@@ -31,14 +31,16 @@ stateDiagram-v2
     waiting_tool --> failed
     finalizing --> failed
 
-    loading --> interrupted
-    prefill --> interrupted
-    thinking --> interrupted
-    generating --> interrupted
-    waiting_tool --> interrupted
+    reserving --> interrupted: startup recovery only
+    loading --> interrupted: startup recovery only
+    prefill --> interrupted: startup recovery only
+    thinking --> interrupted: startup recovery only
+    generating --> interrupted: startup recovery only
+    waiting_tool --> interrupted: startup recovery only
+    waiting_approval --> interrupted: startup recovery only
+    finalizing --> interrupted: startup recovery only
 
     completed --> [*]
     failed --> [*]
     cancelled --> [*]
     interrupted --> [*]
-

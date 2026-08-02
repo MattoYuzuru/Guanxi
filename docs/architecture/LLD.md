@@ -66,6 +66,8 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `jobs/chat-execution.ts`: process-local Chat Job owner, request fingerprint,
   canonical state progression, persisted output/chunking и cancellation
   acknowledgement;
+- `jobs/chat-recovery.ts`: pre-listen recovery coordinator, stable keyset scan,
+  recovery-only terminal edges и bounded latest-pending Message reducer;
 - `http/jobs-routes.ts`: public create/query/replay/cancel boundary, server-owned
   idempotency scope, controlled error mapping и pull-based Job SSE;
 - `store/threads.ts`: atomic pending-to-terminal compare-and-set и compaction
@@ -190,11 +192,15 @@ compaction выбирает prefix после admission и использует 
 
 P1-D отделяет Chat execution от POST/SSE connection и подключает Message bridge
 к durable Job records/replay/cancel. Generic public create без Chat adapter
-остаётся `queued`. Process-local owner не сканирует non-terminal Jobs при startup:
-restart recovery/interrupted reconciliation и Resource Governor ещё отсутствуют.
+остаётся `queued`. P1-E сканирует только durable Chat associations после SQLite
+migration и до listen. `reserving/loading/prefill/thinking/generating/
+waiting_tool/waiting_approval/finalizing` получают recovery-only
+`interrupted`, `cancelling` — `cancelled`; untouched `queued` schedule-ится
+существующим owner после полного reconciliation pass.
 
 Bridge не является Resource Governor: нет durable queue, leases, priorities,
-continuous `/api/ps` reconciliation, restart recovery или measured parallelism.
+continuous `/api/ps` reconciliation или measured parallelism. Recovery остаётся
+single-process startup reconciliation без checkpoint resume и process lock.
 
 ## Target module boundaries
 
@@ -531,9 +537,10 @@ prompt, reasoning или output content.
 
 ## Persistence status
 
-Migration 4 и `JobStore` реализуют только `jobs` и `job_events`. Остальные
-таблицы ниже остаются target/proposed. Legacy `threads/messages/workspaces`
-сохранены без destructive backfill или route cutover.
+Migrations 4–5 и `JobStore` реализуют `jobs`, `job_events`, private
+`chat_job_inputs` и additive Message association. Остальные target tables ниже
+не реализованы. Legacy `threads/messages/workspaces` сохранены без destructive
+backfill или route cutover.
 
 Логические таблицы:
 
@@ -574,6 +581,12 @@ Canonical diagram: [job-state.mmd](diagrams/job-state.mmd).
 Terminal states: `completed`, `failed`, `cancelled`, `interrupted`.
 `waiting_approval` не держит accelerator lease, если adapter может безопасно
 checkpoint/release; иначе имеет timeout и явную resource cost.
+
+`interrupted` не является обычной runtime failure edge. Current P1-E разрешает
+её только recovery coordinator из `reserving/loading/prefill/thinking/
+generating/waiting_tool/waiting_approval/finalizing`; обычный
+`JobService.terminalize` эти edges отклоняет. Persisted `cancelling` остаётся
+отдельной принятой user command и завершается как `cancelled`.
 
 Недопустимо:
 

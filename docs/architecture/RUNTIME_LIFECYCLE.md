@@ -37,9 +37,9 @@ warm/load, поэтому участвующие entry points одного appli
 выполнение, а возвращение в Chat находит `jobId` в pending Message, читает
 canonical Job и replay-ит persisted output с sequence 0. Явные Thread Stop и Job
 cancel сходятся в owner: сначала durable `cancelling`, затем provider abort и
-одна подтверждённая terminal проекция. Restart recovery пока отсутствует:
-process-local owner не является daemon/worker и после падения сам не продолжает
-non-terminal Job.
+одна подтверждённая terminal проекция. P1-E после restart не продолжает unsafe
+side effect: process-local owner не является daemon/worker, поэтому startup
+reconciles execution в `interrupted` и запускает только untouched `queued`.
 
 ### Исправленная в P0-A причина белого экрана
 
@@ -278,8 +278,51 @@ navigation, remount и hard reload не требуют localStorage truth.
 P1-D локально проверен на mocked Ollama и temporary SQLite, включая duplicate
 delivery, create/terminal rollback, cancel-before-admission, disconnect/replay,
 oversized deltas, cross-thread one-lane admission и 10 повторов
-disconnect/cancel/terminal race. Он не доказывает live Ollama/hardware,
-multi-process coordination или restart recovery; startup reconciliation — P1-E.
+disconnect/cancel/terminal race. Сам P1-D не доказывал live Ollama/hardware,
+multi-process coordination или restart recovery; startup reconciliation добавил
+следующий P1-E.
+
+### P1-E startup recovery и interrupted reconciliation
+
+Application startup теперь выполняет одну границу после SQLite migration и до
+HTTP listen/healthy:
+
+```text
+bounded typed Chat scan
+→ validate immutable association + exactly one pending assistant
+→ reconcile every unsafe/cancelling row
+→ second bounded scan schedules only proven untouched queued
+→ HTTP listen
+```
+
+Keyset `(created_at, id)` и limits 50 Jobs/100 events по default ограничивают
+каждый read. Generic public Jobs без `chat_job_inputs` не запускаются. Chat scope
+с потерянной association, malformed input/Message/private output и permanent
+storage failure дают один redacted startup error, закрывают DB и оставляют rows
+для следующей попытки.
+
+`queued` считается safe только при `startedAt = null`, `phase = null`, одном
+pending assistant и полном отсутствии private output. Все rows проверяются до
+первого scheduling side effect. `reserving/loading/prefill/thinking/generating/
+waiting_tool/waiting_approval/finalizing` не replay-ят adapter и одной
+recovery-only CAS transaction становятся Job `interrupted` + Message
+`failed/internal_error` + terminal `private_chat` output. Это явная projection:
+canonical restart outcome остаётся `interrupted`, хотя v3 Message contract пока
+не имеет отдельного interrupted outcome. Persisted `cancelling` подтверждается
+как `cancelled/stopped_by_user` и не выдаётся за restart failure.
+
+Reducer читает ordered pages, сбрасывается только на `start.messageId` latest
+pending assistant и применяет последующие content/thinking/tool/usage channels.
+Ранее terminalized tool-step Messages не меняются. Transaction failure не
+публикует terminal event; следующий startup повторяет исходный non-terminal row.
+
+Graceful application close сначала прекращает HTTP accept, использует отдельную
+internal shutdown abort reason и reconciles active Chat как `interrupted` либо
+уже persisted cancellation. Он не записывает `user_requested/stopped_by_user`
+для внутреннего shutdown и закрывает subscribers/SQLite после owner cleanup.
+
+P1-E не реализует checkpoint resume, multi-process locking, daemon/service,
+Resource Governor, lease journal или `/api/ps` reconciliation.
 
 ## Target Job lifecycle
 
@@ -625,8 +668,9 @@ answer.
 
 - перестаёт принимать новые Jobs;
 - сохраняет queue;
-- уведомляет active Jobs;
-- bounded graceful cancel/checkpoint;
+- уведомляет active Jobs отдельной internal shutdown reason;
+- current Chat owner abort-ит adapter и сохраняет `interrupted`, а уже persisted
+  cancellation подтверждает как `cancelled`;
 - закрывает subscribers;
 - releases Alamo-owned leases согласно policy;
 - закрывает SQLite;
@@ -637,19 +681,16 @@ browser/TUI не запускает shutdown sequence.
 
 ### Restart
 
-Recovery scan:
+Current P1-E recovery scan:
 
-- `queued` возвращаются в очередь;
-- executing states становятся `interrupted`;
-- adapter с безопасным checkpoint может предложить explicit resume как новый
-  attempt;
-- pending approvals восстанавливаются;
-- `/api/ps` reconciles remaining instances;
-- stale leases закрываются journaled recovery event.
+- только доказанно untouched typed Chat `queued` возвращаются owner;
+- unsafe typed Chat executing states становятся `interrupted`;
+- persisted typed Chat `cancelling` становится `cancelled`;
+- generic Jobs, pending approvals, `/api/ps` и stale leases остаются будущей
+  adapter/Governor recovery работой.
 
-Opt-in login autostart после recovery scan поднимает тот же canonical service и
-settings store. Одновременно запущенный второй writer обнаруживается до открытия
-SQLite на запись.
+Checkpoint resume, opt-in login autostart и обнаружение одновременно запущенного
+второго application writer остаются target более поздних slices.
 
 ## Observability contract
 
@@ -687,11 +728,11 @@ private prompt/thinking/secrets по default.
 
 P0-A локально реализовал пункт 1 и узкий first-stream regression из пункта 8.
 P0-B реализовал пункты 2–3, truthful connection cancellation из пункта 7 и
-failure/reload regression из пункта 8. Navigation всё ещё отменяет current turn,
-потому что durable Job/reattach не входит в bridge. P0-C реализовал пункты 4–5,
-включая warm/load boundary и повторную compaction по persisted `seq`.
+failure/reload regression из пункта 8. P0-C реализовал пункты 4–5, включая
+warm/load boundary и повторную compaction по persisted `seq`.
 P0-D реализовал пункт 6 как минимальную sampled Chat/Runtime projection,
 правдивые health/catalog sources и bounded connect/load/stream-idle deadlines.
-Полный Runtime Bar, leases, durable execution и restart recovery остаются target.
+P1-D добавил durable Chat execution/detach/reattach, а P1-E — bounded startup
+reconciliation. Полный Runtime Bar, Governor и leases остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

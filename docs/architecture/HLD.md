@@ -45,7 +45,8 @@ Job API читает canonical records, replay-ит persisted events через 
 выполняет explicit cancel поверх одного `JobService`. Chat execution подключён
 к тому же service через один application `ChatJobExecutionOwner`; controller,
 subscriber wake-ups, exclusive inference bridge и approvals остаются в памяти,
-но command intent, lifecycle и replay output находятся в SQLite.
+но command intent, lifecycle и replay output находятся в SQLite. P1-E startup
+coordinator bounded-страницами reconciles v5 Chat associations до HTTP listen.
 
 ### As-is execution boundary
 
@@ -69,6 +70,14 @@ private output из SQLite. Explicit Stop и public cancel проходят че
 durable `cancelling`, provider abort, затем один `cancelled/stopped_by_user`.
 Assistant projection и terminal Job/event commit-ятся атомарно; injected failure
 не публикует completed.
+
+После открытия/migration SQLite, но до публикации HTTP health, startup recovery
+сначала сканирует все non-terminal typed Chat Jobs в стабильном порядке. Unsafe
+executing states становятся `interrupted`, persisted `cancelling` подтверждается
+как `cancelled`, и только untouched `queued` без execution/output evidence
+schedule-ится существующим owner. Partial Message собирается из ordered private
+output; Message, Job и terminal output commit-ятся одной transaction. Malformed
+association/output или storage failure закрывает DB и не начинает listen.
 
 Provider adapter ограничивает connect, load и stream-idle отдельно. Валидный
 stream progress обновляет только idle deadline; timeout сохраняет failed partial
@@ -97,6 +106,7 @@ loaded rows — только из `/api/ps`.
 | Job/event/output store               | SQLite `jobs`/`job_events` v5           | persistent                  |
 | Chat input/Message association       | SQLite `chat_job_inputs`/`messages`     | persistent                  |
 | Chat execution owner                 | application `ChatJobExecutionOwner`     | process memory, intent в DB |
+| Chat startup recovery                | application startup coordinator         | bounded scan, truth в DB    |
 | Job HTTP subscription listeners      | application `JobService`                | process memory, events в DB |
 | Tool run record                      | SQLite                                  | persistent после выполнения |
 | Active/waiting Chat controller       | `ChatJobExecutionOwner`                 | process memory              |
@@ -115,8 +125,8 @@ loaded rows — только из `/api/ps`.
 2. FIFO wait не имеет priority/backpressure; bounded timeout освобождает request,
    но не координирует provider вне этого application process.
 3. `keep_alive: 10m` удерживает модели после turn; route не является unload.
-4. Process-local execution owner не переживает restart; non-terminal Chat Job и
-   `pending` Message требуют startup reconciliation P1-E.
+4. P1-E восстанавливает single-process Chat truth после restart, но не даёт
+   checkpoint/resume executing inference и не координирует второй process.
 5. Generic public Job без Chat adapter остаётся queued и не исполняется.
 6. Private input/output находится в локальной SQLite без отдельного encryption
    boundary; plaintext settings уже остаются известным долгом.
