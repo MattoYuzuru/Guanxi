@@ -13,7 +13,10 @@
     "dev:web": "npm run dev --workspace @alamo/web",
     "build": "npm run build --workspace @alamo/web && npm run build --workspace @alamo/server && npm run build --workspace alamo-ui",
     "link:cli": "npm run build && npm link --workspace alamo-ui",
-    "test": "node --test packages/server/test/**/*.test.ts packages/cli/test/**/*.test.ts",
+    "test": "npm run test:core && npm run test:web",
+    "test:core": "node --test packages/server/test/**/*.test.ts packages/cli/test/**/*.test.ts",
+    "test:web": "npm test --workspace @alamo/web",
+    "test:web:browser": "npm run test:browser --workspace @alamo/web",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

@@ -1,0 +1,35 @@
+import { afterEach, beforeEach, vi } from 'vitest'
+import { cleanup } from '@testing-library/react'
+
+beforeEach(() => {
+  document.documentElement.lang = 'ru'
+})
+
+afterEach(() => {
+  cleanup()
+})
+
+Object.defineProperty(window, 'requestAnimationFrame', {
+  configurable: true,
+  value: (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0),
+})
+
+Object.defineProperty(window, 'cancelAnimationFrame', {
+  configurable: true,
+  value: (handle: number) => window.clearTimeout(handle),
+})
+
+Object.defineProperty(globalThis, 'requestAnimationFrame', {
+  configurable: true,
+  value: window.requestAnimationFrame,
+})
+
+Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+  configurable: true,
+  value: window.cancelAnimationFrame,
+})
+
+vi.stubGlobal('crypto', {
+  ...globalThis.crypto,
+  randomUUID: () => '00000000-0000-4000-8000-000000000001',
+})
