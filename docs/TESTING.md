@@ -7,8 +7,8 @@
 
 На 2026-08-02:
 
-- `npm test`: 93/93 server/CLI и 10/10 web component/parser tests;
-- `npm run test:web:browser`: 5/5 deterministic Chromium tests с mocked
+- `npm test`: 116/116 server/CLI и 16/16 web component/parser tests;
+- `npm run test:web:browser`: 6/6 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
@@ -24,15 +24,29 @@
   same/cross-thread turn-compaction, две compaction, warm/load, cancelled waiter,
   provider/protocol/storage failures, Stop/body cancel/generator return и
   repeated compaction с next-turn context;
+- deterministic P0-D tests покрывают sourced application/Ollama/catalog health,
+  malformed/slow/unavailable provider, stale cache/bundled fallback, empty/error
+  `/api/ps`, connect/load/idle deadlines, continuous progress, missing terminal,
+  cancellation race и release следующему waiter;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, durable/replayable Job flow, второй application process и внешние
   Ollama clients не входят в regression suite.
 
-Baseline локально подтверждает P0-A/P0-B/P0-C bridges на временной SQLite,
+Baseline локально подтверждает P0-A/P0-B/P0-C/P0-D bridges на временной SQLite,
 управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
 доказывает one-lane admission только для участвующих entry points одного
 application composition; он не подтверждает hardware fit, Ollama scheduler,
 multi-process/external-client safety, restart recovery или production use.
+P0-D health остаётся sampled observation; обязательный suite не проверяет live
+Ollama, реальное железо или публичную сеть.
+
+### P0-D residual risks
+
+- health и `/api/ps` — sampled observations, а не непрерывная истина;
+- process-local exclusive bridge не является Resource Governor;
+- текущий POST/SSE turn остаётся connection-owned и не replayable;
+- restart recovery отсутствует;
+- обязательный suite не проверяет live hardware или live Ollama.
 
 ## Существующее покрытие
 
@@ -48,12 +62,13 @@ multi-process/external-client safety, restart recovery или production use.
 | Context usage                      | tests                              |
 | Static web serving                 | test                               |
 | CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/P0-B component cases          |
+| React render/navigation            | P0-A/P0-B/P0-D component cases     |
 | Browser streaming/reload           | P0-A/P0-B mocked stream            |
-| Catalog provider/cache             | нет                                |
+| Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P0-C one-lane fake routes          |
 | SSE replay/restart                 | нет                                |
-| Accessibility/responsive           | P0-A boundary + P0-B failure smoke |
+| Runtime health/timeouts            | P0-D fake transport/routes/Web     |
+| Accessibility/responsive           | P0-A/B + P0-D degraded smoke       |
 
 ## Обязательная target matrix
 

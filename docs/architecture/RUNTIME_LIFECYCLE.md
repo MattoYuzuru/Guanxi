@@ -124,8 +124,52 @@ persisted `messages.seq`. После предыдущего summary следую
 
 Bridge не защищает внешний Ollama client или второй application process, не
 наблюдает `/api/ps`, не управляет leases/model eviction и не допускает measured
-parallelism. Без P0-D stream-idle timeout застрявший owner может удерживать lane
-неограниченно долго.
+parallelism. Bounded provider deadlines освобождают участвующий request, но не
+превращают bridge в host-wide Resource Governor.
+
+### P0-D sampled health и provider deadlines
+
+Application health подтверждается ответом собственного HTTP route и не зависит
+от Ollama или каталога. Ollama проверяется через валидированный `/api/version` и
+различает `reachable`, `unavailable` и доказанный malformed
+`incompatible` response. Наблюдение содержит `source` и `observedAt`; проверка
+наличия binary имеет отдельный `installSource`.
+
+Каталог больше не обращается к недокументированному
+`https://ollama.com/api/search`. Разрешённые current sources:
+
+1. локальный recommendations cache с filesystem `mtime`, всегда `stale_cache`;
+2. датированный bundled snapshot, `bundled_fallback`;
+3. `unavailable`, если данных нет.
+
+Контракт оставляет `fresh_remote` для будущего документированного provider, но
+current implementation его не публикует. Каждая catalog row также несёт
+provenance/freshness. Cached claims без поля-источника не превращаются в
+capability facts.
+
+`/api/tags` остаётся источником installed models, а `/api/ps` — отдельным
+sampled source для текущих loaded rows. Running projection показывает только
+полученные raw facts, nullable legacy-derived поля, source и `observedAt`.
+Пустой sample не доказывает unload между наблюдениями, а ошибка `/api/ps` не
+превращается в empty success и не удаляет installed rows.
+
+Timeout ownership:
+
+- connect deadline — получение HTTP response/headers;
+- load deadline — первый валидный NDJSON provider event либо весь non-stream
+  model request после bounded `/api/version` preflight;
+- stream-idle deadline — пауза после валидного provider event; каждый следующий
+  валидный event обновляет deadline, произвольные неполные байты — нет.
+
+Current defaults: 15 s connect, 300 s load и 30 s stream idle. Timeout получает
+stable `ollama_*_timeout` category, сохраняет partial assistant как `failed` и
+использует совместимый DB `provider_error` stop reason. Missing terminal
+`done:true` остаётся отдельным `runtime_protocol`.
+
+Caller-owned Stop/connection abort имеет приоритет, включая гонку с deadline:
+результат остаётся `cancelled` с authoritative `stopped_by_user` либо
+`connection_aborted`. Любой timeout/provider/abort path выходит через
+идемпотентный release P0-C permit и допускает следующего waiter.
 
 ## Target Job lifecycle
 
@@ -536,6 +580,8 @@ P0-B реализовал пункты 2–3, truthful connection cancellation �
 failure/reload regression из пункта 8. Navigation всё ещё отменяет current turn,
 потому что durable Job/reattach не входит в bridge. P0-C реализовал пункты 4–5,
 включая warm/load boundary и повторную compaction по persisted `seq`.
-Runtime/catalog health и timeouts остаются P0-D.
+P0-D реализовал пункт 6 как минимальную sampled Chat/Runtime projection,
+правдивые health/catalog sources и bounded connect/load/stream-idle deadlines.
+Полный Runtime Bar, leases, durable execution и restart recovery остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

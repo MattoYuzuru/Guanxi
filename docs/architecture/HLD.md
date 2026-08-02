@@ -65,6 +65,16 @@ Browser disconnect/route change всё ещё abort-ит server generation, но
 `cancelled/stopped_by_user`. После reload доступны persisted outcome/error/reason
 и partial output. Live phase и SSE event history не восстанавливаются.
 
+Provider adapter ограничивает connect, load и stream-idle отдельно. Валидный
+stream progress обновляет только idle deadline; timeout сохраняет failed partial
+outcome и освобождает exclusive permit. Caller-owned Stop/disconnect имеет
+приоритет над совпавшим deadline.
+
+Application shell остаётся доступным при degraded Ollama. `/api/version`,
+локальный catalog cache/bundled snapshot и `/api/ps` публикуются как раздельные
+sampled observations с source/time. Installed state приходит из `/api/tags`;
+loaded rows — только из `/api/ps`.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -86,15 +96,15 @@ Browser disconnect/route change всё ещё abort-ит server generation, но
 | SSE events                           | HTTP connection                         | не durable                  |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
 | Loaded model                         | Ollama                                  | external runtime            |
-| Catalog response                     | remote/local/bundled aggregation        | ограниченный fallback       |
+| Catalog response                     | stale local cache/bundled snapshot      | sampled fallback            |
 | Binary assets                        | отдельной canonical store нет           | partial/not implemented     |
 
 ### Основные current risks
 
 1. Process-local bridge не координирует внешний Ollama client или второй Alamo
    process и не сверяется с фактическими loaded instances.
-2. FIFO wait не имеет priority/backpressure/stream-idle timeout; застрявший owner
-   блокирует lane до connection abort или process stop.
+2. FIFO wait не имеет priority/backpressure; bounded timeout освобождает request,
+   но не координирует provider вне этого application process.
 3. `keep_alive: 10m` удерживает модели после turn; route не является unload.
 4. UI route владеет работой, поэтому navigation destructive.
 5. P0-B Message bridge не является durable Job: DB failure может оставить
@@ -102,7 +112,8 @@ Browser disconnect/route change всё ещё abort-ит server generation, но
 6. Current SSE не replayable; additive terminal fields не меняют ownership.
 7. Remote bind открывает filesystem/shell boundaries без реальной authentication.
 8. Fit не описывает совместное размещение, current pressure и remote hardware.
-9. Catalog upstream endpoint больше не является рабочим API.
+9. Catalog не имеет разрешённого live provider; local cache и bundled snapshot
+   могут отставать.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

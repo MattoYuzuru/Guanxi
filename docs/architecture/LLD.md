@@ -19,7 +19,9 @@
 Current capability enum: completion, tools, vision, insert, thinking, embedding.
 Current thread mode: chat или agent. Message содержит content/thinking/tools/usage
 и P0-B bridge fields `turnStatus/turnError/stopReason`. Эти поля описывают
-connection-owned turn projection, но не durable Job/run id.
+connection-owned turn projection, но не durable Job/run id. P0-D добавляет
+source/time health, catalog freshness, sampled running rows и stable
+connect/load/stream-idle error categories.
 
 ### `packages/server`
 
@@ -33,8 +35,10 @@ connection-owned turn projection, но не durable Job/run id.
 - `http/models-routes.ts`: list/show/pull/delete/warm/unload/running;
 - `http/threads-routes.ts`: CRUD, POST/SSE turn, stop, compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
-- `models/service.ts`: `/api/tags` + unbounded parallel `/api/show`;
-- `models/catalog.ts`: defunct upstream search, local cache, bundled snapshot;
+- `models/service.ts`: installed `/api/tags`, sampled `/api/ps` и unbounded
+  parallel `/api/show`;
+- `models/catalog.ts`: validated stale local cache + dated bundled snapshot,
+  без remote request;
 - `hardware/*`: local host probe и static fit model;
 - `agent/loop.ts`: ordered turn/tool loop;
 - `store/db.ts`: `node:sqlite` migrations;
@@ -52,7 +56,8 @@ warm/load; waiters, `ApprovalGate` и active controllers не durable.
 
 Исходник: [lld-web.mmd](diagrams/lld-web.mmd).
 
-- `App.tsx`: health gate и Models/Chat/Settings;
+- `App.tsx`: application health gate, degraded Ollama notice, sampled Runtime
+  status и Models/Chat/Settings shell;
 - `components/ErrorBoundary.tsx`: root и keyed Chat containment с diagnostics;
 - `lib/router.tsx`: custom History API routing;
 - `lib/api.ts`: REST + current POST/SSE;
@@ -65,9 +70,9 @@ warm/load; waiters, `ApprovalGate` и active controllers не durable.
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields.
-- `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream и P0-B
-  terminal/error/reload regression; browser использует deterministic mocked
-  REST/SSE.
+- `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
+  terminal/error/reload и P0-D health/runtime regression; browser использует
+  deterministic mocked REST/SSE.
 
 ### `packages/cli`
 
@@ -87,6 +92,10 @@ foreground и открывает browser. Durable service lifecycle/TUI/API clie
 5. Provider error и EOF без terminal chunk сохраняются как `failed`; partial
    content/thinking остаются в той же atomic terminal projection.
 6. Reload показывает pending/completed/failed/cancelled либо legacy unknown.
+7. Connect заканчивается при response headers; load ждёт первый валидный stream
+   event или non-stream model response; idle обновляется каждым валидным event.
+8. Timeout сохраняет точный safe error, а Stop/disconnect остаётся authoritative
+   cancellation; permit освобождается в обоих случаях.
 
 `OllamaClient` пробрасывает signal abort для cancellation classification и
 оборачивает прочие ошибки чтения body как provider failure. Если terminal
@@ -104,10 +113,11 @@ P0-B не отделяет execution от POST/SSE connection: navigation всё
 cancel. P0-C не меняет ownership, но отменяемый waiter не сохраняет rows до
 admission, а permit освобождается после terminal/error/abort/generator return.
 Повторная compaction выбирает prefix после admission и использует реальный
-persisted `seq`.
+persisted `seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership,
+lease или доказательство unload между observations.
 
 Bridge не является Resource Governor: нет durable queue, leases, priorities,
-timeouts, `/api/ps` reconciliation, restart recovery или measured parallelism.
+continuous `/api/ps` reconciliation, restart recovery или measured parallelism.
 
 ## Target module boundaries
 

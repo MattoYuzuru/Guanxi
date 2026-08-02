@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A/P0-B с mocked REST/SSE  |
+| `test:web:browser` | deterministic Chromium P0-A–P0-D с mocked REST/SSE  |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -62,6 +62,12 @@ npm run link:cli
 - Current P0-C bridge сериализует Chat turn, compaction и explicit model
   warm/load одним process-local permit. FIFO wait connection-owned и не является
   durable Job queue или Resource Governor.
+- Current P0-D adapter различает connect, load и stream-idle deadlines.
+  Caller-owned Stop/disconnect имеет приоритет; timeout/provider/abort
+  освобождает P0-C permit.
+- Health/catalog/running facts — sampled observations с source/time. Installed
+  models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
+  использует stale local cache или dated bundled fallback без remote endpoint.
 
 ## Карта current-state
 
@@ -80,7 +86,7 @@ npm run link:cli
 - `context.ts` — зависимости, per-thread controllers и host-wide bridge owner;
 - `runtime/exclusive-inference.ts` — временный process-local FIFO permit;
 - `ollama/` — client, status и wire types;
-- `models/` — local details и catalog fallback;
+- `models/` — installed/running details и sourced catalog fallback;
 - `hardware/` — host probe и fit;
 - `http/` — models, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
@@ -102,11 +108,12 @@ npm run link:cli
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
-- `test/component` — Vitest/jsdom P0-A и P0-B projection/parser regression;
+- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D projection regression;
 - `test/browser` — Playwright Chromium first-stream, failure/reload и boundary
-  smoke.
+  smoke, включая degraded Runtime/catalog state.
 - server tests — deterministic P0-C mutex, cross-thread turn/compaction/warm,
-  cancellation/release и repeated-compaction regression.
+  cancellation/release и repeated-compaction regression; P0-D fake provider
+  health/catalog/running/timeout envelope.
 
 ### CLI
 

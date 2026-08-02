@@ -1,165 +1,138 @@
-# Prompt следующему агенту
+# Следующий агентский prompt
 
-**Назначение:** Phase 0, slice P0-D — Runtime/catalog health
 **Статус:** ready
 **Проверено:** 2026-08-02
+**Назначение:** Phase 0, slice P0-E — Browser regression gate
 
-Скопируйте текст ниже в новую coding-agent сессию.
+Скопируйте текст ниже в новую агентскую сессию.
 
 ---
 
 Работай в репозитории Alamo UI. Продолжи текущую Phase 0, но реализуй только
-bounded slice `P0-D Runtime/catalog health`.
+bounded slice `P0-E Browser regression gate`.
 
 P0-A независимо проверен в commits `f038b5c` и `d05a906`. P0-B реализован и
 проверен в commits `c673227`, `21115c5`, `ad6c2b4` и `7721ca0`. P0-C реализован
-и проверен в commits `0ca72d8` и `7a626f6`. Не откатывай Error Boundaries,
-deterministic web harness, SQLite migration 3, Message terminal CAS, truthful
-Chat projection, process-local exclusive inference bridge или persisted-seq
-compaction fix.
+и проверен в commits `0ca72d8` и `7a626f6`. P0-D реализован и проверен в commits
+`edf737d` и `5454fc7`. Не откатывай Error Boundaries, deterministic web harness,
+SQLite migration 3, Message terminal CAS, truthful Chat projection,
+process-local exclusive inference bridge, persisted-seq compaction fix,
+sourced health/catalog/running projection или provider timeout semantics.
 
 Обязательный порядок:
 
 1. Полностью прочитай `AGENTS.md`, затем `docs/NAVIGATION.md`,
-   `docs/plans/PHASE_STATUS.md`, Phase 0 в `docs/plans/ROADMAP.md`,
-   `docs/architecture/RUNTIME_LIFECYCLE.md`, HLD, LLD, `docs/TESTING.md` и
-   accepted ADR-0002/0003/0004.
+   `docs/plans/PHASE_STATUS.md`, Phase 0 и exit gate в
+   `docs/plans/ROADMAP.md`, `docs/architecture/RUNTIME_LIFECYCLE.md`, HLD, LLD,
+   `docs/TESTING.md` и accepted ADR-0002/0003/0004.
 2. Проверь Git status и сохрани unrelated/untracked user files. Не изменяй
    `.idea`, пользовательскую `~/.alamo`, workspace-файлы или реальные Ollama
    models.
 3. Используй:
-   - `sde-agent:implementation-planning` и `sde-agent:sde-agent` как owner;
-   - `sre-agent:verification-strategy` для health/timeout state model;
-   - `sre-agent:reliability-testing` для deterministic slow/unavailable/stalled
-     Ollama envelope;
-   - `sre-agent:finding-validation` для проверки dead endpoint, timeout
-     classification и release нового P0-C permit;
+   - `sde-agent:implementation-planning` и `sde-agent:sde-agent` как owner
+     минимальных harness/fixture fixes;
+   - `sre-agent:verification-strategy` для browser state/transition matrix;
+   - `sre-agent:reliability-testing` для deterministic REST/SSE failure
+     envelope;
+   - `sre-agent:finding-validation` и `sre-agent:release-readiness` для
+     независимого Phase 0 go/no-go;
    - `frontend-agent:frontend-agent` и
-     `frontend-agent:frontend-verification` для truthful Runtime/Chat
-     projection, locale, accessibility и responsive states.
-4. До правок воспроизведи current false/dead health signals, запрос к
-   несуществующему catalog endpoint, отсутствие `/api/ps` projection в Chat и
-   зависание fake Ollama до headers/первого chunk/между chunks. Составь bounded
-   plan с source/freshness model, timeout ownership, cancellation precedence,
-   UI states и точными validation commands.
+     `frontend-agent:frontend-verification` для observable Web, accessibility,
+     responsive и reduced-motion проверки.
+4. До правок запусти существующие component/browser tests, изучи Playwright
+   fixtures и воспроизведи пробел: сейчас happy-path create/first stream и
+   terminal reload проверяются разными сценариями, а не одним полным
+   `create → send → stream → done → reload` release flow.
+5. Составь bounded plan с точными mocked REST/SSE transitions, persisted reload
+   source of truth, failure matrix, viewport/accessibility checks и validation
+   commands. Не расширяй P0-E до новой product functionality.
 
-Scope P0-D:
+Scope P0-E:
 
-- сделать current health наблюдаемым и правдивым: application, Ollama runtime и
-  catalog/network source не должны выводиться healthy/reachable без реальной
-  проверки;
-- для каждого внешнего health факта указать source и observation time; stale,
-  unavailable и unknown не смешивать с healthy;
-- убрать runtime-вызов несуществующего Ollama catalog endpoint; сохранить
-  local/bundled fallback и явно показать его provenance/freshness;
-- не заменять dead endpoint HTML scraping или недокументированным private API;
-- использовать существующий `/api/ps` running-model source и показать текущие
-  loaded models в минимальной согласованной Chat/Runtime projection;
-- различать installed и running models; не выводить ownership, fit или memory
-  safety без подтверждённого источника;
-- ввести отдельные bounded Ollama connect/load/stream-idle timeout semantics;
-  timeout должен иметь stable safe category/message и не становиться completed
-  или generic empty success;
-- continuous healthy stream не должен падать только из-за общей длительности:
-  idle timeout обновляется наблюдаемым provider progress;
-- explicit Stop/connection abort должны сохранять authoritative cancellation
-  reason и не ошибочно классифицироваться как timeout/provider failure;
-- любой timeout/provider/abort path обязан освободить P0-C exclusive permit и
-  допустить следующего waiter;
-- согласованно изменить contract, server, Web, tests и current-state docs только
-  в объёме observable health/running/timeout behavior;
-- сохранить loopback-only default, public route/DB/localStorage identifiers,
-  forward-only migrations и существующий POST/SSE ownership.
-
-Health model:
-
-- application health не зависит от доступности catalog и Ollama history UI
-  остаётся usable в degraded state;
-- Ollama state как минимум различает checking, reachable, unavailable и
-  incompatible/invalid response, если последнее доказано protocol check;
-- catalog source различает fresh remote, stale cache, bundled fallback,
-  unavailable и unknown;
-- running model row содержит только поля, реально полученные из `/api/ps`, с
-  `observedAt`; отсутствие row не доказывает unload между observations;
-- Web показывает loading/empty/degraded/error и keyboard/accessibility states,
-  не блокирует всю application shell из-за optional source.
-
-Timeout/failure evidence:
-
-- deterministic fake transport никогда не отвечает на connect/headers и получает
-  connect timeout с release/cleanup;
-- cold warm/load превышает load deadline, abort-ится и освобождает permit;
-- stream отдаёт первый/несколько chunks, затем замолкает: idle timeout сохраняет
-  failed partial outcome, не completed;
-- stream продолжает отдавать chunks дольше одного idle interval и не timeout-ится;
-- missing terminal `done:true` остаётся `runtime_protocol`, а не timeout;
-- explicit Stop и connection abort раньше/одновременно с deadline остаются
-  `cancelled` с правильным stop reason;
-- timeout первого owner допускает ожидающий cross-thread turn/warm без overlap;
-- health проверяет malformed response, unavailable runtime, slow response,
-  stale cache и bundled fallback без real network;
-- `/api/ps` empty/non-empty/error fixtures дают truthful running projection;
-- catalog code не обращается к удалённому dead endpoint;
-- P0-A/P0-B/P0-C tests остаются зелёными, включая reload states, CAS,
-  cross-thread exclusion, compaction и waiter cancellation.
+- добавить единый deterministic Chromium flow:
+  `health → installed models → create Chat → redirect → send → start/thinking/
+  content progress → terminal done → reload → persisted history/output`;
+- проверить, что новый thread ID берётся из create response, URL и active
+  sidebar согласованы, composer проходит sending/streaming/idle, а reload читает
+  terminal Message projection, а не оставшийся live buffer;
+- поток должен содержать несколько observable phases и длиться достаточно для
+  проверки промежуточного состояния без flaky wall-clock sleep;
+- сохранить отдельный failure coverage как минимум для:
+  provider failure до первого content, failed partial stream, EOF без
+  `done:true`, explicit Stop с partial output и connection-owned navigation
+  abort;
+- для каждого failure после reload подтвердить authoritative
+  `failed/cancelled`, safe error/stop reason и отсутствие generic empty success;
+- сохранить Error Boundary regression: crash не превращает root в white screen,
+  shell/retry/navigation остаются доступны;
+- сохранить P0-D degraded runtime/catalog regression: application shell доступен
+  при unavailable/incompatible Ollama, `/api/ps` error не выглядит empty, source
+  и observation time видимы;
+- проверить keyboard focus/accessible names/live regions, narrow viewport,
+  отсутствие horizontal overflow, 200% zoom и reduced-motion fallback там, где
+  эти состояния наблюдаемы;
+- использовать только deterministic mocked browser transport и временные
+  fixtures. Обязательный suite не зависит от live Ollama, модели, публичной сети
+  или пользовательской DB;
+- разрешены только минимальные production fixes, доказанно необходимые для
+  browser gate. Contract/server/runtime semantics не меняй без отдельного
+  подтверждённого finding и согласованных regression tests.
 
 Non-goals:
 
 - не реализовывать Resource Governor, durable queue/Job Engine, leases,
   priorities, idempotency, replayable GET SSE или restart recovery;
-- не разрешать measured parallelism и не вычислять новый hardware fit;
-- не менять P0-B/P0-C connection ownership: navigation пока может cancel current
-  POST/SSE turn и connection-bound waiter;
-- не строить полный target Runtime Bar/Jobs UI или application service;
-- не реализовывать model import, Marketplace redesign, capability probes,
-  external telemetry или Ollama catalog scraping;
-- не реализовывать P0-E полный browser release gate сверх новых узких
-  health/running/timeout regression;
-- не менять product IA/theme, branding, media, Agent policy или retention;
-- не переписывать SQLite migrations 1–3 и не добавлять schema migration без
-  доказанной необходимости;
-- live Ollama/model и публичная сеть не являются обязательной test dependency.
+- не менять current POST/SSE connection ownership и не изображать reattach;
+- не строить полный Runtime Bar/Jobs UI, application service или model
+  Marketplace;
+- не менять product IA/theme, branding, media, Agent/MCP/Skills policy,
+  retention или locale architecture;
+- не переписывать SQLite migrations 1–3 и не добавлять migration без доказанной
+  необходимости;
+- не вводить live Ollama/model/public-network dependency;
+- не расширять gate до полного cross-browser/performance/security suite.
 
-Validation:
+Release criteria:
 
-- targeted contract/health/catalog/timeout unit tests;
-- deterministic server route tests для unavailable/malformed/slow/stalled fake
-  Ollama и `/api/ps`;
-- fake-clock либо bounded deterministic timers без flaky wall-clock sleeps;
-- component tests для checking/degraded/stale/empty/running/timeout projection;
-- узкий mocked Chromium smoke только если observable Web state изменился;
-- existing P0-B contract/migration/store/route/web regression;
-- existing P0-C 16 mutex/concurrency/release regressions;
-- `npm run test:web:browser`;
-- `npm run typecheck`;
-- `npm test`;
-- `npm run build`;
-- `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`;
-- `git diff --check`, self-review и independent SRE timeout/health review;
-- не использовать пользовательскую DB, реальные workspace или live model для
-  обязательных tests.
+- единый full-flow Chromium test действительно проходит create, redirect,
+  multi-phase stream, terminal done и hard reload с persisted outcome;
+- failure fixtures подтверждают failed/cancelled partial projections и
+  authoritative error/stop reason после reload;
+- missing terminal остаётся `runtime_protocol`, timeout остаётся своим stable
+  category, Stop/navigation abort не превращаются в provider failure;
+- P0-A cleanup/Error Boundaries, P0-B migration/CAS/reload, P0-C 16 baseline
+  mutex/release regressions и P0-D 36 targeted health/timeout tests зелёные;
+- browser assertions не опираются на произвольные sleep и дают полезный trace
+  при failure;
+- обязательные команды проходят:
 
-После успешной проверки:
+```bash
+npm test --workspace @alamo/web
+npm run test:browser --workspace @alamo/web
+npm run test:web:browser
+npm run typecheck
+npm test
+npm run build
+npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
+git diff --check
+```
 
-- обнови current-state docs и только строку P0-D в `PHASE_STATUS.md`, со ссылками
-  на commits и точными tests;
-- оставь Phase 0 незавершённой, пока P0-E не закрыт;
-- зафиксируй residual risks: health — sampled observation, bridge не Governor,
-  POST/SSE connection-owned и не replayable, restart recovery отсутствует,
-  live hardware/Ollama не проверены обязательным suite;
-- полностью перепиши `NEXT_AGENT_PROMPT.md` под следующий незавершённый slice
-  `P0-E Browser regression gate`, включая skills, full
-  `create → send → stream → done → reload` browser scope, failure coverage,
-  release criteria и ожидаемое обновление только P0-E;
-- сделай небольшие conventional commits для contract/runtime behavior,
-  health/timeout/UI tests и docs.
+После успешной независимой проверки:
 
-Если P0-D заблокирован или обязательная проверка не прошла, не переключай handoff
-на P0-E: оставь `NEXT_AGENT_PROMPT.md` на P0-D и добавь blocker, evidence,
-затронутые health/timeout ownership paths и безопасные recovery steps.
+- обнови current-state testing docs только если изменились команды, scope или
+  точные counts;
+- в `PHASE_STATUS.md` измени только строку P0-E, добавив commits и точные test
+  evidence; не переписывай evidence P0-A–P0-D;
+- оцени Phase 0 exit gate целиком, но не начинай Phase 1 в этом slice;
+- полностью перепиши `NEXT_AGENT_PROMPT.md` для первого действительно
+  незавершённого bounded slice либо для конкретного Phase 0 blocker;
+- сделай небольшие conventional commits для browser harness/regressions,
+  необходимых production fixes и docs.
 
-В финале сообщи commits, health/source model, timeout/cancellation precedence,
-test evidence, непройденные проверки, residual risks и slice, для которого
+Если P0-E или любой обязательный Phase 0 gate не прошёл, не отмечай P0-E
+завершённым. Оставь `NEXT_AGENT_PROMPT.md` на P0-E и добавь blocker, failing
+fixture/command, затронутые transitions и безопасные recovery steps.
+
+В финале сообщи commits, полный browser flow, failure/accessibility evidence,
+непройденные проверки, Phase 0 go/no-go, residual risks и slice, для которого
 подготовлен `NEXT_AGENT_PROMPT.md`.
-
----
