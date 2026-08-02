@@ -720,11 +720,13 @@ export function StreamingMessage({
     <article className="anim-fade-up">
       <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
         <span>Alamo</span>
-        <Badge tone={phase === 'awaiting_approval' ? 'yellow' : 'accent'}>
-          {retainedAfterFailure
-            ? translate('chat.turn.status.livePartial')
-            : phaseLabel(phase)}
-        </Badge>
+        <span role="status" aria-live="polite" aria-atomic="true">
+          <Badge tone={phase === 'awaiting_approval' ? 'yellow' : 'accent'}>
+            {retainedAfterFailure
+              ? translate('chat.turn.status.livePartial')
+              : phaseLabel(phase)}
+          </Badge>
+        </span>
       </div>
 
       {snapshot.thinking && (

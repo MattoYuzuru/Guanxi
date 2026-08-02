@@ -4,6 +4,35 @@ import { StreamingMessage } from '../../src/features/chat/ChatPage.tsx'
 import { StreamBuffer } from '../../src/features/chat/streamBuffer.ts'
 
 describe('streaming Chat rendering', () => {
+  it('announces each observable phase through one polite live status', () => {
+    const buffer = new StreamBuffer()
+    const view = render(
+      <StreamingMessage
+        buffer={buffer}
+        phase="sending"
+        retainedAfterFailure={false}
+        toolCalls={[]}
+        onChange={() => undefined}
+      />,
+    )
+
+    const status = screen.getByRole('status')
+    expect(status.getAttribute('aria-live')).toBe('polite')
+    expect(status.getAttribute('aria-atomic')).toBe('true')
+    expect(status.textContent).toBe('отправка')
+
+    view.rerender(
+      <StreamingMessage
+        buffer={buffer}
+        phase="generating"
+        retainedAfterFailure={false}
+        toolCalls={[]}
+        onChange={() => undefined}
+      />,
+    )
+    expect(screen.getByRole('status').textContent).toBe('генерация')
+  })
+
   it('does not treat the scroll result as an effect cleanup across phase updates', () => {
     const buffer = new StreamBuffer()
     const scrollToEnd = vi.fn(() => Promise.resolve())
