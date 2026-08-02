@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@alamo/contract": "*",
-    "diff": "^7.0.0",
+    "diff": "^9.0.0",
     "dompurify": "^3.2.4",
     "embla-carousel-react": "^8.5.2",
     "highlight.js": "^11.11.1",
@@ -23,7 +23,6 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
-    "@types/diff": "^6.0.0",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
