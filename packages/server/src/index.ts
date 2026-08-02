@@ -62,9 +62,15 @@ export async function start(options: StartOptions = {}) {
     )
   }
 
-  const instance = serve({ fetch: server.fetch, port, hostname: host })
-  const address = instance.address()
-  const actualPort = typeof address === 'object' && address ? address.port : port
+  let instance!: ReturnType<typeof serve>
+  const actualPort = await new Promise<number>((resolvePort, reject) => {
+    const onError = (error: Error) => reject(error)
+    instance = serve({ fetch: server.fetch, port, hostname: host }, (address) => {
+      instance.off('error', onError)
+      resolvePort(address.port)
+    })
+    instance.once('error', onError)
+  })
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const url = `http://${browserHost}:${actualPort}`
 
