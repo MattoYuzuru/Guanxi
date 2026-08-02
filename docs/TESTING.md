@@ -110,9 +110,12 @@ Baseline подтверждает существующие server/CLI unit и ro
 ### Retention и Maintenance
 
 - Keep never selected by expiry query;
+- every new Chat defaults to rolling 7-day retention, including in Project;
 - rolling TTL updates only on user activity;
-- Session trigger after Q-23;
+- leaving idle Session Chat moves it toward Trash;
+- reload/reconnect does not terminate Session;
 - active/non-terminal Job prevents tombstone;
+- Session Chat can be restored during its 24-hour Trash grace;
 - reasoning expires without final answer;
 - Trash restore before grace;
 - referenced blob never collected;

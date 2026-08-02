@@ -233,14 +233,19 @@ type RetentionPolicy =
   | {
       mode: "ttl";
       expiresAfterDays: 7;
-      refreshOn: "created" | "user_activity";
+      refreshOn: "user_activity";
     }
   | { mode: "session" };
 ```
 
-Точные defaults/Session trigger/TTL refresh остаются Q-22/Q-24. Policy можно
-изменить до окончательной очистки. Она управляет stored Chat/Artifacts, но не
-model weights, loaded instance или transient KV cache.
+Default любого нового Chat — `{ mode: "ttl", expiresAfterDays: 7,
+refreshOn: "user_activity" }`, независимо от принадлежности Project. `Keep`
+требует явного выбора пользователя.
+
+Session Chat переходит в Trash после ухода пользователя и terminal state
+активной Job. Reload/reconnect не завершают Session. Trash grace — 24 часа.
+Policy можно изменить до окончательной очистки. Она управляет stored
+Chat/Artifacts, но не model weights, loaded instance или transient KV cache.
 
 ### Maintenance Job
 
@@ -272,7 +277,7 @@ focus/permission/accessibility state. Доставка идемпотентна 
 | --------------------- | ---------------------------- | -------------------------- |
 | Project               | persistent                   | пользователь               |
 | Recipe                | persistent                   | пользователь               |
-| Chat                  | Q-22                         | Keep/TTL/Session           |
+| Chat                  | rolling user TTL 7 days      | Keep/TTL/Session           |
 | Quick Run             | explicit retention           | Keep/TTL/Session           |
 | Reasoning Artifact    | TTL 7 days                   | shorter parent policy wins |
 | Job metadata/events   | persistent audit window      | policy проекта/настроек    |

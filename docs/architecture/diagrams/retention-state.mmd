@@ -1,12 +1,14 @@
 stateDiagram-v2
     [*] --> active
     active --> active: user activity refreshes TTL
-    active --> expiring: TTL or Session trigger
+    active --> expiring: 7-day TTL expires
+    active --> waitingForJob: user leaves Session with active Job
+    waitingForJob --> expiring: Job becomes terminal
+    active --> expiring: user leaves idle Session
     expiring --> active: policy changed or work active
     expiring --> trash: maintenance tombstone
-    trash --> active: user restores during grace
-    trash --> deleting: grace expires
+    trash --> active: user restores within 24 hours
+    trash --> deleting: 24-hour grace expires
     deleting --> deleted: metadata removed
     deleted --> collected: no live blob references
     collected --> [*]
-

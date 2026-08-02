@@ -46,7 +46,7 @@ presentation metadata: display name, icon key и color token.
 
 - пользователю нужно объяснить Recipe;
 - current Workspace/Thread terminology потребует migration;
-- exact default/Session trigger требует Q-22/Q-23.
+- maintenance должен корректно различать user activity, navigation и reconnect.
 
 ## Alternatives
 

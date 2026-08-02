@@ -20,7 +20,7 @@
 | Q-06   | accepted: HF discovery и direct valid GGUF import               |
 | Q-07   | accepted: macOS Apple Silicon + Linux NVIDIA                    |
 | Q-08   | accepted: logical Project с filesystem bindings                 |
-| Q-09   | partially accepted: three retention modes; default/trigger open |
+| Q-09   | accepted: 7-day default; Keep override; Session recovery 24h    |
 | Q-10   | accepted: live reasoning + diagnostic retention 7 days          |
 | Q-11   | accepted: English + curated Russian + glossary                  |
 | Q-12   | accepted: full text foundation before STT                       |
@@ -34,35 +34,25 @@
 | Q-20   | open: новое имя пока не выбрано                                 |
 | Q-21   | accepted: JetBrains technical UI + document font                |
 
-## Блокируют retention implementation
+## Resolution Q-22–Q-24
 
 ### Q-22. Какой Chat retention является default?
 
-В ответе прозвучали оба варианта: полное сохранение и временное удаление.
-
-**Рекомендация:** `7 days` как default для нового обычного Chat, `Keep` для Chat,
-созданного внутри Project, и запоминание последнего выбора пользователя.
-
-Альтернатива: всегда `Keep`.
-
-Нужно одно прямое решение до DB default/migration.
+**Accepted:** любой новый Chat получает `7 days`, включая Chat внутри Project.
+Project не меняет default. Бессрочное хранение включается пользователем через
+`Keep`.
 
 ### Q-23. Когда заканчивается `Session` Chat?
 
-**Рекомендация:** пометить на удаление, когда пользователь покинул Chat, Job стал
-terminal и был открыт другой Chat/Quick Run. Page reload/reconnect не завершает
-session. Фактическое удаление идёт в Trash на 24 часа.
-
-Альтернатива: удалять только при закрытии Alamo Service.
-
-Нужно подтвердить trigger и нужен ли 24-hour recovery grace.
+**Accepted:** уход пользователя из Chat завершает Session lifecycle. Reload или
+reconnect сами по себе не считаются уходом. Пока связанная Job не terminal,
+удаление откладывается. Затем Chat попадает в Trash на 24 часа и может быть
+восстановлен или переведён в `7 days`/`Keep`.
 
 ### Q-24. TTL продлевается от создания или последней активности?
 
-**Рекомендация:** rolling TTL от последней user activity, а не от model/tool
-events. UI показывает exact expiry.
-
-Это влияет на cleanup index и ожидания пользователя.
+**Accepted:** rolling TTL считается от последней user activity. Model, tool,
+maintenance и background events не продлевают TTL. UI показывает exact expiry.
 
 ## Блокируют первый import slice
 

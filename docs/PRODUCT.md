@@ -189,6 +189,8 @@ experience, но не определяет всю предметную моде�
 | WORK-009 |  P1 | Maintenance Job применяет expiry при startup и периодически, используя Trash/grace перед blob deletion. |
 | WORK-010 |  P1 | Thinking хранится отдельным diagnostic Artifact 7 дней и удаляется независимо от final answer.          |
 | WORK-011 |  P2 | Project имеет редактируемые name, searchable icon и accessible color.                                   |
+| WORK-012 |  P1 | Любой новый Chat, включая Project Chat, получает rolling 7-day retention от последней user activity.    |
+| WORK-013 |  P1 | Session Chat после ухода хранится в Trash 24 часа для восстановления.                                   |
 
 ### Workbench и modalities
 
@@ -313,6 +315,21 @@ And transient KV cache может быть потерян
 And следующий Job может заново собрать context из истории
 And UI не обещает побитно тот же stochastic output
 And maintenance показывает exact expiry до удаления
+```
+
+```gherkin
+Given пользователь создаёт Chat внутри или вне Project
+When пользователь явно не выбрал Keep или Session
+Then Chat получает rolling retention 7 days
+And expiry продлевается только пользовательской активностью
+```
+
+```gherkin
+Given Session Chat больше не открыт пользователем
+When связанная Job стала terminal
+Then Chat попадает в Trash
+And его можно восстановить в течение 24 часов
+And reload или reconnect сами по себе не завершают Session
 ```
 
 ### Background notification

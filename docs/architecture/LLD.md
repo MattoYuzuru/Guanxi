@@ -363,10 +363,13 @@ type RetentionPolicy =
   | {
       mode: "ttl";
       expiresAt: string;
-      refreshOn: "created" | "user_activity";
+      refreshOn: "user_activity";
     }
   | { mode: "session"; sessionId: string };
 ```
+
+Новый Chat всегда создаётся с TTL семь дней от последней user activity, включая
+Chat внутри Project. `Keep` задаётся только явным изменением policy.
 
 Нужны indexes по `expires_at`, `deleted_at` и live references. Maintenance Job
 работает bounded batches:
@@ -375,9 +378,11 @@ type RetentionPolicy =
 eligible → tombstoned → trash grace → metadata delete → orphan blob GC
 ```
 
-User activity обновляет TTL; model/tool/maintenance events — нет. Active/
-non-terminal Job блокирует tombstone. Policy change до hard delete снимает
-tombstone.
+User activity обновляет TTL; model/tool/maintenance/background events — нет.
+Уход пользователя из Session Chat делает его eligible после terminal state
+связанной Job; reload/reconnect не считаются уходом. Active/non-terminal Job
+блокирует tombstone. Session Trash grace равен 24 часам. Policy change до hard
+delete снимает tombstone.
 
 Reasoning Artifact получает default `expires_at = created_at + 7 days`; shorter
 parent retention wins.

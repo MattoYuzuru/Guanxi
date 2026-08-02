@@ -354,8 +354,11 @@ active
 ```
 
 - `Keep` не получает automatic expiry.
-- `7 days` использует rolling TTL от user activity, если Q-24 подтверждён.
-- `Session` trigger определяется Q-23.
+- `7 days` — default любого нового Chat, включая Chat внутри Project.
+- `7 days` использует rolling TTL только от user activity.
+- `Session` становится eligible после ухода пользователя и terminal state
+  связанной Job; reload/reconnect не завершают Session.
+- Session Chat хранится в Trash 24 часа перед hard deletion.
 - Reasoning Artifact по default истекает через 7 дней.
 - Active/non-terminal Job блокирует deletion.
 - Startup и periodic Maintenance Jobs обрабатывают bounded batches.

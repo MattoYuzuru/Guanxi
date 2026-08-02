@@ -125,7 +125,8 @@ Roadmap — последовательность снижения рисков, 
 - Project name/icon/color;
 - large searchable icon library и accessible palette;
 - Quick Run и Chat retention control;
-- Keep/7 days/Session semantics после Q-22/Q-24;
+- Keep/7 days/Session semantics с единым 7-day default, rolling user TTL и
+  24-hour Session recovery;
 - Maintenance Job, Trash/grace и reasoning TTL;
 - Chat Info: rename/delete/retention/reasoning/notifications;
 - Chat search/archive/Project grouping;

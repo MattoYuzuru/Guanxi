@@ -117,14 +117,22 @@ Icon/color — presentation metadata, не business identity и не permission.
 трёхпозиционный retention control:
 
 - `Keep` — хранить до явного удаления;
-- `7 days` — удалить после rolling/absolute TTL;
-- `Session` — удалить после определённого session lifecycle.
+- `7 days` — удалить через семь дней после последней user activity;
+- `Session` — после ухода пользователя перевести в recoverable deletion flow.
 
 Retention можно менять в любой момент. Cleanup — системный maintenance Job,
 который выполняется при старте и периодически, пока сервис работает.
 
-Точный default и terminal trigger `Session` остаются открытыми: Q-22 и Q-23.
-Удаление должно быть recoverable через Trash/grace до окончательной очистки blobs.
+Default любого нового Chat — `7 days`, в том числе внутри Project. Project не
+делает Chat бессрочным автоматически; для этого пользователь выбирает `Keep`.
+
+Reload/reconnect не завершают `Session`. После ухода из Chat и завершения
+связанной активной Job Chat переводится в Trash на 24 часа. В течение grace
+пользователь может восстановить Chat или сменить policy на `7 days`/`Keep`;
+после grace maintenance окончательно удаляет metadata и unreferenced blobs.
+
+Rolling TTL обновляется только user activity. Model/tool/maintenance/background
+events не продлевают срок.
 
 ## D-010. Thinking/reasoning retention
 

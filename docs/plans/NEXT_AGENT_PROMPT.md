@@ -58,10 +58,17 @@ Validation:
 
 - обнови current-state docs и только строку P0-A в `PHASE_STATUS.md`;
 - зафиксируй остаточные риски;
+- полностью перепиши `NEXT_AGENT_PROMPT.md` в готовый bounded prompt для
+  следующего незавершённого slice (`P0-B`), включая skills, scope, non-goals,
+  validation и ожидаемое обновление статуса;
 - сделай небольшие conventional commits, например behavior и test/docs отдельно;
 - не помечай Phase 0 завершённой.
 
-В финале сообщи commits, доказательства, непройденные проверки и следующий slice
-`P0-B`.
+Если P0-A заблокирован или обязательная проверка не прошла, не переключай handoff
+на P0-B: оставь `NEXT_AGENT_PROMPT.md` на P0-A и добавь blocker, evidence и
+безопасные recovery steps.
+
+В финале сообщи commits, доказательства, непройденные проверки и название slice,
+для которого подготовлен `NEXT_AGENT_PROMPT.md`.
 
 ---

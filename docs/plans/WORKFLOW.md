@@ -71,9 +71,16 @@ Implementation self-review и независимая verification — разны
 - current docs отражают только реализованное;
 - ROADMAP scope не переписывается под удобный результат;
 - PHASE_STATUS содержит evidence;
+- NEXT_AGENT_PROMPT переписан под следующий незавершённый slice;
 - generated artifacts не коммитятся;
 - conventional commits разделяют поведение, tests/migrations и docs, когда это
   улучшает review/recovery.
+
+`NEXT_AGENT_PROMPT.md` — обязательный handoff artifact, а не статичный пример.
+После успешного slice агент полностью актуализирует его scope, skills, non-goals,
+validation и ожидаемый следующий status update. Если slice заблокирован или
+проверка не пройдена, файл остаётся на текущем slice и объясняет blocker и
+recovery. Prompt переходит в следующую фазу только после её exit gate.
 
 Примеры:
 
@@ -109,7 +116,8 @@ docs: record phase 1 verification evidence
 3. SRE/release review не нашёл blocking finding;
 4. migrations/recovery проверены;
 5. PHASE_STATUS и current docs обновлены;
-6. worktree имеет понятные commits.
+6. NEXT_AGENT_PROMPT указывает на первый slice следующей фазы;
+7. worktree имеет понятные commits.
 
 Иначе команда «продолжай» означает следующий slice той же фазы.
 

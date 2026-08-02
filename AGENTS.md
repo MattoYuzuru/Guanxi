@@ -19,6 +19,9 @@ Alamo UI — ранний local-first интерфейс и runtime-control laye
    `plans/OPEN_QUESTIONS.md`.
 6. Принятые ответы владельца находятся в
    `decisions/2026-08-02-product-decisions.md`; они выше старого proposal.
+7. После каждого bounded slice обновите `plans/PHASE_STATUS.md` и перепишите
+   `plans/NEXT_AGENT_PROMPT.md` для следующего незавершённого slice. Если работа
+   заблокирована, оставьте prompt на текущий slice с blocker и recovery steps.
 
 ## Статусы знаний
 
@@ -110,3 +113,5 @@ component/E2E/accessibility тестов; не называйте root test по
 3. тесты пропорциональны риску и их реальная область указана;
 4. документация отражает новое текущее состояние;
 5. остаточный риск явно назван, а `proposed` не выдан за `implemented`.
+6. `PHASE_STATUS.md` содержит evidence, а `NEXT_AGENT_PROMPT.md` готов к
+   следующей агентской сессии.
