@@ -274,7 +274,7 @@ export function Field({
 }
 
 const INPUT_CLASS =
-  'w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 py-1.5 text-xs ' +
+  'min-w-0 max-w-full w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 py-1.5 text-xs ' +
   'placeholder:text-[var(--fg-subtle)] focus:border-[var(--accent)] focus:outline-none ' +
   'disabled:opacity-50'
 

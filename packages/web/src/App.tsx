@@ -44,9 +44,9 @@ export function App() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden">
       <TopBar />
-      <main className="flex-1">
+      <main className="min-w-0 flex-1">
         {ollamaUnavailable && route.name === 'settings' && (
           <div className="px-3 pt-3">
             <Callout
@@ -99,8 +99,8 @@ function TopBar() {
   const themeLabel = { dark: 'Тёмная', light: 'Светлая', system: 'Системная' }[preference]
 
   return (
-    <header className="sticky top-0 z-30 flex h-11 shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-[var(--bg)]/85 px-4 backdrop-blur-md">
-      <div className="flex items-center gap-4">
+    <header className="sticky top-0 z-30 flex h-11 w-full min-w-0 shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg)]/85 px-2 backdrop-blur-md sm:gap-4 sm:px-4">
+      <div className="flex min-w-0 items-center gap-1 sm:gap-4">
         <Link to={paths.launcher()} className="text-xs font-semibold tracking-tight">
           Alamo
         </Link>
@@ -111,7 +111,7 @@ function TopBar() {
               to={tab.to}
               aria-current={tab.active ? 'page' : undefined}
               className={cx(
-                'rounded-md px-2 py-1 text-xs font-medium transition-colors',
+                'rounded-md px-1.5 py-1 text-xs font-medium transition-colors sm:px-2',
                 tab.active
                   ? 'bg-[var(--bg-inset)] text-[var(--fg)]'
                   : 'text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]',
@@ -129,8 +129,10 @@ function TopBar() {
         onClick={() => setPreference(nextTheme)}
         title={`Тема: ${themeLabel}. Нажмите, чтобы переключить.`}
         aria-label={`Тема: ${themeLabel}`}
+        className="shrink-0 px-1.5 sm:px-2"
       >
-        {preference === 'dark' ? '◐' : preference === 'light' ? '◑' : '◒'} {themeLabel}
+        {preference === 'dark' ? '◐' : preference === 'light' ? '◑' : '◒'}
+        <span className="hidden sm:inline">{themeLabel}</span>
       </Button>
     </header>
   )

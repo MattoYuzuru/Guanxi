@@ -118,10 +118,10 @@ function NewThreadPage() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl gap-5 px-5 py-5 md:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-5 px-4 py-5 sm:px-5 md:grid-cols-[240px_minmax(0,1fr)]">
       <ThreadSidebar currentId={null} />
 
-      <section className="surface rounded-xl p-4">
+      <section className="surface min-w-0 rounded-xl p-4">
         <h1 className="text-base font-semibold">Новый диалог</h1>
         <p className="mt-0.5 mb-4 text-xs text-[var(--fg-muted)]">
           Чат отвечает на вопросы. Агент дополнительно читает и меняет файлы выбранного проекта.
@@ -135,10 +135,10 @@ function NewThreadPage() {
           </div>
         )}
 
-        <form onSubmit={create} className="max-w-xl space-y-4">
+        <form onSubmit={create} className="w-full min-w-0 max-w-xl space-y-4">
           <fieldset>
             <legend className="mb-1.5 text-xs font-medium">Режим</legend>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2">
               <ModeButton
                 active={mode === 'chat'}
                 title="Чат"
@@ -227,14 +227,16 @@ function ModeButton({
       aria-pressed={active}
       onClick={onClick}
       className={cx(
-        'rounded-lg border px-3 py-2 text-left',
+        'min-w-0 rounded-lg border px-3 py-2 text-left',
         active
           ? 'border-[var(--accent)] bg-[var(--accent-subtle)]/55'
           : 'border-[var(--border)] hover:bg-[var(--bg-subtle)]',
       )}
     >
       <span className="block text-xs font-semibold">{title}</span>
-      <span className="mt-0.5 block text-2xs text-[var(--fg-muted)]">{description}</span>
+      <span className="mt-0.5 block break-words text-2xs text-[var(--fg-muted)]">
+        {description}
+      </span>
     </button>
   )
 }

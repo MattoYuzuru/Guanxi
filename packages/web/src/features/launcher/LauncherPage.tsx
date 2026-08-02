@@ -81,7 +81,7 @@ export function LauncherPage({ health }: { health: Health }) {
   const hardware = health.hardware
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-5 py-5">
+    <div className="mx-auto w-full min-w-0 max-w-[1600px] px-4 py-5 sm:px-5">
       {/* Железо: под него считается вся влезаемость, поэтому оно вверху */}
       <section className="mb-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -179,7 +179,7 @@ export function LauncherPage({ health }: { health: Health }) {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Поиск по каталогу…"
               aria-label="Поиск по каталогу моделей"
-              className="w-56"
+              className="w-full sm:w-56"
               type="search"
             />
           }
@@ -244,8 +244,8 @@ function SectionHeader({
   action?: React.ReactNode
 }) {
   return (
-    <div className="mb-3 flex items-center justify-between gap-3">
-      <div className="flex items-baseline gap-2">
+    <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
+      <div className="flex min-w-0 items-baseline gap-2">
         <h2 className="text-sm font-semibold">{title}</h2>
         {count !== undefined && (
           <span className="text-2xs text-[var(--fg-subtle)]">
