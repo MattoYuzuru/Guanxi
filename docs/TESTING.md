@@ -7,7 +7,7 @@
 
 На 2026-08-02:
 
-- `npm test`: 76/76 server/CLI и 10/10 web component/parser tests;
+- `npm test`: 93/93 server/CLI и 10/10 web component/parser tests;
 - `npm run test:web:browser`: 5/5 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -20,14 +20,19 @@
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
+- deterministic P0-C tests покрывают FIFO/idempotent permit, cross-thread turns,
+  same/cross-thread turn-compaction, две compaction, warm/load, cancelled waiter,
+  provider/protocol/storage failures, Stop/body cancel/generator return и
+  repeated compaction с next-turn context;
 - CI/lint/formatter commands отсутствуют;
-- живой Ollama, durable/replayable Job flow и global inference concurrency не
-  входят в regression suite.
+- живой Ollama, durable/replayable Job flow, второй application process и внешние
+  Ollama clients не входят в regression suite.
 
-Baseline локально подтверждает P0-A и P0-B bridge на временной SQLite,
-управляемом `OllamaClient` transport и mocked browser REST/SSE. Он не
-подтверждает resource safety, restart recovery, живой runtime или production
-use.
+Baseline локально подтверждает P0-A/P0-B/P0-C bridges на временной SQLite,
+управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
+доказывает one-lane admission только для участвующих entry points одного
+application composition; он не подтверждает hardware fit, Ollama scheduler,
+multi-process/external-client safety, restart recovery или production use.
 
 ## Существующее покрытие
 
@@ -46,7 +51,7 @@ use.
 | React render/navigation            | P0-A/P0-B component cases          |
 | Browser streaming/reload           | P0-A/P0-B mocked stream            |
 | Catalog provider/cache             | нет                                |
-| Global concurrency/model lifecycle | нет                                |
+| Global concurrency/model lifecycle | P0-C one-lane fake routes          |
 | SSE replay/restart                 | нет                                |
 | Accessibility/responsive           | P0-A boundary + P0-B failure smoke |
 

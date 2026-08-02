@@ -59,6 +59,9 @@ npm run link:cli
   native field и JSON/text fallback; сохраняйте оба пути и тесты при изменениях.
 - Current agent turn отправляет `keep_alive=10m`; это известный lifecycle risk, а
   не рекомендуемый target default.
+- Current P0-C bridge сериализует Chat turn, compaction и explicit model
+  warm/load одним process-local permit. FIFO wait connection-owned и не является
+  durable Job queue или Resource Governor.
 
 ## Карта current-state
 
@@ -74,7 +77,8 @@ npm run link:cli
 ### Server
 
 - `app.ts` — routes/composition/static serving;
-- `context.ts` — зависимости и in-memory runtime state;
+- `context.ts` — зависимости, per-thread controllers и host-wide bridge owner;
+- `runtime/exclusive-inference.ts` — временный process-local FIFO permit;
 - `ollama/` — client, status и wire types;
 - `models/` — local details и catalog fallback;
 - `hardware/` — host probe и fit;
@@ -101,6 +105,8 @@ npm run link:cli
 - `test/component` — Vitest/jsdom P0-A и P0-B projection/parser regression;
 - `test/browser` — Playwright Chromium first-stream, failure/reload и boundary
   smoke.
+- server tests — deterministic P0-C mutex, cross-thread turn/compaction/warm,
+  cancellation/release и repeated-compaction regression.
 
 ### CLI
 

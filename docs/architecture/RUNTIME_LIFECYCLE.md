@@ -11,18 +11,28 @@
 
 ```text
 UI POST/SSE
-→ INSERT user
 → activeTurns.set(threadId)
 → inspect capabilities
+→ wait for process-local exclusive inference permit
+→ INSERT user
 → INSERT empty assistant, turn_status=pending
 → Ollama /api/chat keep_alive=10m
 → stream thinking/content/tools
 → one CAS UPDATE with output + completed/failed/cancelled + error/stop reason
 → terminal SSE done
+→ release permit
 ```
 
-Lock запрещает только второй turn в том же thread. Другой thread может начать
-параллельный inference.
+`activeTurns` запрещает второй request в том же thread и даёт Stop controller,
+но не владеет host resource. P0-C добавил один `ExclusiveInferenceBridge` в
+application composition. Разные threads ждут его FIFO, поэтому участвующие
+Chat turns, compaction и explicit model warm/load не входят в Ollama inference
+одновременно.
+
+Ожидание существует только в памяти и привязано к текущему request/connection.
+Chat использует совместимую фазу `sending`; durable queue, priority, replay и
+restart recovery не изображаются. Отменённый waiter удаляется без отмены owner
+и до сохранения user/assistant rows.
 
 На route/thread change `useChat` abort-ит stream; server связывает disconnect с
 AbortController. P0-B различает explicit Stop (`stopped_by_user`) и закрытие
@@ -98,6 +108,24 @@ non-abort ошибки чтения provider body нормализует в бе
 отличается как `runtime_protocol/protocol_error`. Если перечитать terminal
 history не удалось, Web удерживает live partial buffer с отдельной
 неподтверждённой меткой и alert.
+
+### P0-C exclusive inference bridge
+
+Bridge имеет ровно один process-local owner и FIFO waiters. Permit держится весь
+connection-owned turn, включая tool/approval phases, как консервативная временная
+граница; compaction и warm/load держат его до завершения route operation.
+Идемпотентный release находится в `finally`, поэтому provider/protocol/storage
+error, Stop, connection abort и generator return не блокируют следующий request.
+
+Compaction выбирает prefix после admission и получает boundary из реального
+persisted `messages.seq`. После предыдущего summary следующая compaction больше
+не использует array index, не оставляет уже суммированные rows в tail и передаёт
+следующему turn упорядоченный context.
+
+Bridge не защищает внешний Ollama client или второй application process, не
+наблюдает `/api/ps`, не управляет leases/model eviction и не допускает measured
+parallelism. Без P0-D stream-idle timeout застрявший owner может удерживать lane
+неограниченно долго.
 
 ## Target Job lifecycle
 
@@ -506,7 +534,8 @@ private prompt/thinking/secrets по default.
 P0-A локально реализовал пункт 1 и узкий first-stream regression из пункта 8.
 P0-B реализовал пункты 2–3, truthful connection cancellation из пункта 7 и
 failure/reload regression из пункта 8. Navigation всё ещё отменяет current turn,
-потому что durable Job/reattach не входит в bridge. Global mutex, compaction
-sequencing и runtime/catalog health остаются следующими P0 slices.
+потому что durable Job/reattach не входит в bridge. P0-C реализовал пункты 4–5,
+включая warm/load boundary и повторную compaction по persisted `seq`.
+Runtime/catalog health и timeouts остаются P0-D.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

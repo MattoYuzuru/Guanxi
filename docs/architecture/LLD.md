@@ -26,7 +26,10 @@ connection-owned turn projection, но не durable Job/run id.
 Исходник: [lld-server.mmd](diagrams/lld-server.mmd).
 
 - `app.ts`: Hono composition, health, routes, SPA;
-- `context.ts`: Ollama client, stores, tools, approvals и `activeTurns`;
+- `context.ts`: Ollama client, stores, tools, approvals, `activeTurns` и один
+  `ExclusiveInferenceBridge`;
+- `runtime/exclusive-inference.ts`: process-local one-owner FIFO admission без
+  durability/priority/recovery;
 - `http/models-routes.ts`: list/show/pull/delete/warm/unload/running;
 - `http/threads-routes.ts`: CRUD, POST/SSE turn, stop, compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
@@ -36,11 +39,14 @@ connection-owned turn projection, но не durable Job/run id.
 - `agent/loop.ts`: ordered turn/tool loop;
 - `store/db.ts`: `node:sqlite` migrations;
 - migration 3: nullable Message terminal bridge с evidence-based legacy backfill;
-- `store/threads.ts`: atomic pending-to-terminal compare-and-set;
+- `store/threads.ts`: atomic pending-to-terminal compare-and-set и compaction
+  boundary по persisted `seq`;
 - `tools/*`: jail, filesystem и bash.
 
-`activeTurns` ограничивает только одинаковый thread. `ApprovalGate` и active
-controllers не durable.
+`activeTurns` ограничивает одинаковый thread и хранит Stop/connection
+controllers, включая ожидающий turn. Host-wide exclusion принадлежит отдельному
+bridge. Его permit совместно используют turn, compaction и explicit model
+warm/load; waiters, `ApprovalGate` и active controllers не durable.
 
 ### `packages/web`
 
@@ -72,14 +78,15 @@ foreground и открывает browser. Durable service lifecycle/TUI/API clie
 
 ## Current sequence и bridge limits
 
-1. User row сохраняется до inference.
-2. Empty assistant row создаётся до Ollama `POST /api/chat`, теперь со status
-   `pending`.
-3. Client crash/disconnect вызывает abort и P0-B сохраняет
+1. Turn request резервирует per-thread controller и ждёт process-local permit.
+2. User row и empty assistant со status `pending` создаются только после
+   admission.
+3. Chat turn, compaction и model warm/load выполняются в одной FIFO lane.
+4. Client crash/disconnect вызывает abort и P0-B сохраняет
    `cancelled/connection_aborted`.
-4. Provider error и EOF без terminal chunk сохраняются как `failed`; partial
+5. Provider error и EOF без terminal chunk сохраняются как `failed`; partial
    content/thinking остаются в той же atomic terminal projection.
-5. Reload показывает pending/completed/failed/cancelled либо legacy unknown.
+6. Reload показывает pending/completed/failed/cancelled либо legacy unknown.
 
 `OllamaClient` пробрасывает signal abort для cancellation classification и
 оборачивает прочие ошибки чтения body как provider failure. Если terminal
@@ -94,8 +101,13 @@ backfill-ит как `completed/legacy_terminal_chunk`. Terminal update меня
 
 P0-A по-прежнему отвечает за безопасный effect и root/Chat Error Boundaries.
 P0-B не отделяет execution от POST/SSE connection: navigation всё ещё может
-cancel. Повторная compaction вычисляет boundary по array length, а не реальному
-message sequence; global inference mutex также ещё не реализован.
+cancel. P0-C не меняет ownership, но отменяемый waiter не сохраняет rows до
+admission, а permit освобождается после terminal/error/abort/generator return.
+Повторная compaction выбирает prefix после admission и использует реальный
+persisted `seq`.
+
+Bridge не является Resource Governor: нет durable queue, leases, priorities,
+timeouts, `/api/ps` reconciliation, restart recovery или measured parallelism.
 
 ## Target module boundaries
 

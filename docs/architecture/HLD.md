@@ -40,19 +40,25 @@ Contract package ─ Zod types ─ browser + server
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
 SQLite хранит settings, threads/messages, workspaces, tool journal и calibration.
 Message bridge также хранит `pending/completed/failed/cancelled`, safe error и
-stop reason. Active turns, approvals и SSE events существуют только в памяти.
+stop reason. Active turns, exclusive inference bridge, approvals и SSE events
+существуют только в памяти.
 
 ### As-is execution boundary
 
 Текущий `POST /threads/:id/messages` одновременно:
 
-1. сохраняет user message;
-2. захватывает in-memory lock только данного thread;
-3. создаёт empty assistant с `turnStatus=pending`;
-4. запускает Ollama stream;
+1. резервирует connection-owned controller в `activeTurns` для данного thread;
+2. ждёт один process-local exclusive inference permit;
+3. только после admission сохраняет user и empty assistant
+   с `turnStatus=pending`;
+4. запускает Ollama stream и держит permit до terminal/abort;
 5. владеет SSE connection;
 6. одной compare-and-set записью terminalize-ит assistant;
-7. отдаёт terminal outcome через совместимый additive SSE bridge.
+7. отдаёт terminal outcome и освобождает permit в `finally`.
+
+Тот же permit оборачивает compaction и explicit model warm/load. Второй current
+request ждёт FIFO только пока живо его соединение. Это не durable queue: waiter
+не имеет ID/events, теряется при restart и не продолжает работу после disconnect.
 
 Browser disconnect/route change всё ещё abort-ит server generation, но P0-B
 сохраняет его как `cancelled/connection_aborted`; explicit Stop сохраняется как
@@ -74,7 +80,8 @@ Browser disconnect/route change всё ещё abort-ит server generation, но
 | Threads/messages/settings/workspaces | SQLite stores                           | persistent                  |
 | Message terminal bridge              | SQLite `messages` v3 columns            | persistent                  |
 | Tool run record                      | SQLite                                  | persistent после выполнения |
-| Active turn                          | server `Map<threadId, AbortController>` | process memory              |
+| Active/waiting turn request          | server `Map<threadId, AbortController>` | process memory              |
+| Exclusive inference bridge           | application `ExclusiveInferenceBridge`  | process memory              |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
 | SSE events                           | HTTP connection                         | не durable                  |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -84,15 +91,18 @@ Browser disconnect/route change всё ещё abort-ит server generation, но
 
 ### Основные current risks
 
-1. Разные threads могут одновременно запустить разные модели.
-2. `keep_alive: 10m` удерживает модели после turn; route не является unload.
-3. UI route владеет работой, поэтому navigation destructive.
-4. P0-B Message bridge не является durable Job: DB failure может оставить
+1. Process-local bridge не координирует внешний Ollama client или второй Alamo
+   process и не сверяется с фактическими loaded instances.
+2. FIFO wait не имеет priority/backpressure/stream-idle timeout; застрявший owner
+   блокирует lane до connection abort или process stop.
+3. `keep_alive: 10m` удерживает модели после turn; route не является unload.
+4. UI route владеет работой, поэтому navigation destructive.
+5. P0-B Message bridge не является durable Job: DB failure может оставить
    observable `pending`, а restart recovery отсутствует.
-5. Current SSE не replayable; additive terminal fields не меняют ownership.
-6. Remote bind открывает filesystem/shell boundaries без реальной authentication.
-7. Fit не описывает совместное размещение, current pressure и remote hardware.
-8. Catalog upstream endpoint больше не является рабочим API.
+6. Current SSE не replayable; additive terminal fields не меняют ownership.
+7. Remote bind открывает filesystem/shell boundaries без реальной authentication.
+8. Fit не описывает совместное размещение, current pressure и remote hardware.
+9. Catalog upstream endpoint больше не является рабочим API.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 
