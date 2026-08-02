@@ -10,36 +10,36 @@
 ### Turn
 
 ```text
-UI POST/SSE
-→ activeTurns.set(threadId)
-→ inspect capabilities
-→ wait for process-local exclusive inference permit
-→ INSERT user
-→ INSERT empty assistant, turn_status=pending
+UI POST /threads/:id/messages + idempotency key
+→ one transaction: queued Job + initial event + private input + Message pair
+→ application ChatJobExecutionOwner starts once per Job
+→ queued → reserving → wait for process-local exclusive inference permit
+→ loading/prefill/thinking/generating/tool phases
 → Ollama /api/chat keep_alive=10m
-→ stream thinking/content/tools
-→ one CAS UPDATE with output + completed/failed/cancelled + error/stop reason
-→ terminal SSE done
+→ persist each private Chat output before subscriber wake-up
+→ finalizing
+→ one transaction: assistant projection + terminal Job + terminal event/output
 → release permit
+→ GET /jobs/:id/events may replay from any persisted sequence
 ```
 
-`activeTurns` запрещает второй request в том же thread и даёт Stop controller,
-но не владеет host resource. P0-C добавил один `ExclusiveInferenceBridge` в
-application composition. Разные threads ждут его FIFO, поэтому участвующие
-Chat turns, compaction и explicit model warm/load не входят в Ollama inference
-одновременно.
+P1-D добавил один `ChatJobExecutionOwner` в application composition. SQLite
+владеет command intent, idempotency, lifecycle order, private replay output и
+Message association. `activeTurns` остаётся только compatibility mirror для
+старых внутренних проверок; route и React component больше не владеют работой.
 
-Ожидание существует только в памяти и привязано к текущему request/connection.
-Chat использует совместимую фазу `sending`; durable queue, priority, replay и
-restart recovery не изображаются. Отменённый waiter удаляется без отмены owner
-и до сохранения user/assistant rows.
+P0-C `ExclusiveInferenceBridge` по-прежнему один и process-local. Durable Chat
+Jobs разных threads ждут его FIFO вместе с compaction и explicit model
+warm/load, поэтому участвующие entry points одного application process не входят
+в Ollama inference одновременно. Это ещё не host-wide Resource Governor.
 
-На route/thread change `useChat` abort-ит stream; server связывает disconnect с
-AbortController. P0-B различает explicit Stop (`stopped_by_user`) и закрытие
-соединения (`connection_aborted`) и сохраняет `cancelled` с partial output.
-Generation всё равно прекращается, а модель может оставаться в Ollama до
-`keep_alive` expiry. Это по-прежнему одновременно теряет работу и не освобождает
-память.
+На route/thread change `useChat` закрывает только subscription. Job продолжает
+выполнение, а возвращение в Chat находит `jobId` в pending Message, читает
+canonical Job и replay-ит persisted output с sequence 0. Явные Thread Stop и Job
+cancel сходятся в owner: сначала durable `cancelling`, затем provider abort и
+одна подтверждённая terminal проекция. Restart recovery пока отсутствует:
+process-local owner не является daemon/worker и после падения сам не продолжает
+non-terminal Job.
 
 ### Исправленная в P0-A причина белого экрана
 
@@ -112,10 +112,11 @@ history не удалось, Web удерживает live partial buffer с о�
 ### P0-C exclusive inference bridge
 
 Bridge имеет ровно один process-local owner и FIFO waiters. Permit держится весь
-connection-owned turn, включая tool/approval phases, как консервативная временная
-граница; compaction и warm/load держат его до завершения route operation.
-Идемпотентный release находится в `finally`, поэтому provider/protocol/storage
-error, Stop, connection abort и generator return не блокируют следующий request.
+turn, включая tool/approval phases, как консервативная временная граница;
+compaction и warm/load держат его до завершения route operation. С P1-D permit
+Chat turn принадлежит execution owner, а не SSE request. Идемпотентный release
+находится в `finally`, поэтому provider/protocol/storage error, Stop и generator
+return не блокируют следующий request.
 
 Compaction выбирает prefix после admission и получает boundary из реального
 persisted `messages.seq`. После предыдущего summary следующая compaction больше
@@ -166,10 +167,10 @@ stable `ollama_*_timeout` category, сохраняет partial assistant как 
 использует совместимый DB `provider_error` stop reason. Missing terminal
 `done:true` остаётся отдельным `runtime_protocol`.
 
-Caller-owned Stop/connection abort имеет приоритет, включая гонку с deadline:
-результат остаётся `cancelled` с authoritative `stopped_by_user` либо
-`connection_aborted`. Любой timeout/provider/abort path выходит через
-идемпотентный release P0-C permit и допускает следующего waiter.
+Caller-owned explicit Stop имеет приоритет, включая гонку с deadline: результат
+остаётся `cancelled/stopped_by_user`. P1-D subscriber disconnect больше не
+передаётся provider как abort. Любой timeout/provider/explicit-abort path выходит
+через идемпотентный release P0-C permit и допускает следующего waiter.
 
 ### P1-A durable persistence foundation
 
@@ -185,7 +186,8 @@ SQLite migration 4 additive создаёт `jobs` и `job_events`, не меня
 - flat JSON-scalar metadata boundary без private input/output content.
 
 Create, append и terminal races проверены через независимые SQLite connections.
-Foundation входит в server composition, но current Chat turn его не использует.
+На этапе P1-A foundation ещё не использовался Chat; P1-D подключил к нему
+текущий turn через additive migration 5.
 
 ### P1-B transitions и persisted-first subscription
 
@@ -235,12 +237,49 @@ Cancellation принадлежит application service. Terminal и уже `can
 возвращаются идемпотентно. `queued` проходит persisted
 `cancelling → cancelled`, потому что executor ещё не запускал side effect.
 Активный cancellable state переходит только в `cancelling`; будущий execution
-owner должен подтвердить остановку перед `cancelled`. State без canonical edge
-возвращает controlled conflict без event.
+owner должен подтвердить остановку перед `cancelled`. P1-D реализует это
+подтверждение для Chat owner; generic Job без adapter остаётся `cancelling`.
+State без canonical edge возвращает controlled conflict без event.
 
-P1-C создаёт API durable records, но не Job executor. Новый Job правдиво остаётся
-`queued`; current Chat POST/SSE по-прежнему connection-owned и не использует эти
-routes.
+На этапе P1-C API ещё не имел Job executor: generic public Job без известного
+adapter и сейчас правдиво остаётся `queued`. P1-D подключает owner только для
+Chat Jobs, созданных через thread command boundary.
+
+### P1-D durable Chat execution, detach и replay
+
+Additive migration 5 сохраняет `messages.job_id`, immutable private
+`chat_job_inputs` и optional private `job_events.output` с обязательной
+classification `private_chat`. Safe lifecycle metadata остаётся отдельной
+плоской границей и не содержит prompt, reasoning, secrets или workspace content.
+
+`POST /api/threads/:threadId/messages` принимает optional UUID idempotency key
+для совместимости со старыми clients. Server строит scope
+`chat:<threadId>:send:v1` и fingerprint canonical input snapshot. Одна
+`BEGIN IMMEDIATE` transaction создаёт ровно один queued Job, initial lifecycle
+event, user/pending-assistant pair и association. Повтор того же key/input
+возвращает canonical Job; тот же key с другим fingerprint даёт controlled
+conflict без дополнительной записи.
+
+Один process-local `ChatJobExecutionOwner` стартует новый Chat Job ровно один
+раз, владеет controller и проходит canonical states. Каждый Chat output сначала
+commit-ится как Job event, затем `JobService` будит subscribers. Deltas больше
+16 KiB делятся по UTF-8 bytes на несколько ordered events без усечения. Final
+`done` не публикуется раньше transaction, которая одновременно terminalize-ит
+pending assistant, Job и его единственный terminal event. При injected failure
+Job остаётся `finalizing`, Message — `pending`, completed event отсутствует, а
+inference permit освобождается.
+
+Compatibility POST/SSE читает тот же durable event stream; canonical reattach
+использует `GET /api/jobs/:jobId` и `GET /api/jobs/:jobId/events`. HTTP
+backpressure ограничивает выдачу одним frame, а slow/disconnected subscriber не
+владеет producer. Web получает association из persisted Message, поэтому
+navigation, remount и hard reload не требуют localStorage truth.
+
+P1-D локально проверен на mocked Ollama и temporary SQLite, включая duplicate
+delivery, create/terminal rollback, cancel-before-admission, disconnect/replay,
+oversized deltas, cross-thread one-lane admission и 10 повторов
+disconnect/cancel/terminal race. Он не доказывает live Ollama/hardware,
+multi-process coordination или restart recovery; startup reconciliation — P1-E.
 
 ## Target Job lifecycle
 

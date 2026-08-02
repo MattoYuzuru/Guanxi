@@ -44,8 +44,8 @@ export interface AppContext {
   hardware: HardwareInfo
   appVersion: string
   /**
-   * Current connection-owned turn requests, including admission waiters.
-   * This map powers Stop; host-wide exclusion belongs to `inference`.
+   * Compatibility mirror for active Chat controllers. ChatJobExecutionOwner
+   * owns lifecycle/Stop; process-local exclusion belongs to `inference`.
    */
   activeTurns: Map<string, AbortController>
   /** Temporary process-local one-lane bridge for every current local inference entry point. */

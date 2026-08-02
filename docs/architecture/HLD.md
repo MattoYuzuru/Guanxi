@@ -18,7 +18,7 @@
 Исходник диаграммы: [hld-system-as-is.mmd](diagrams/hld-system-as-is.mmd).
 
 ```text
-Browser ─ REST + POST/SSE ─> Node/Hono server ─ HTTP/NDJSON ─> Ollama
+Browser ─ REST + POST/GET SSE ─> Node/Hono server ─ HTTP/NDJSON ─> Ollama
                                   │
                                   ├─ SQLite ~/.alamo/alamo.db
                                   ├─ workspace filesystem
@@ -38,35 +38,37 @@ Contract package ─ Zod types ─ browser + server
 | `cli`      | foreground launcher и reuse уже запущенного server |
 
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
-SQLite хранит settings, threads/messages, workspaces, tool journal, calibration
-и foundation-таблицы `jobs`/`job_events`. Message bridge также хранит
-`pending/completed/failed/cancelled`, safe error и stop reason. P1-C public Job
-API создаёт/читает durable queued records, replay-ит persisted events через GET
-SSE и выполняет explicit cancel поверх одного `JobService`. Он ещё не подключён
-к Chat execution. Active turns, exclusive inference bridge, approvals, Job
-subscriber wake-ups и current Chat SSE events существуют только в памяти.
+SQLite хранит settings, threads/messages, workspaces, tool journal, calibration,
+`jobs`/`job_events` и P1-D private Chat input association. Message bridge хранит
+`pending/completed/failed/cancelled`, safe error, stop reason и `jobId`. Public
+Job API читает canonical records, replay-ит persisted events через GET SSE и
+выполняет explicit cancel поверх одного `JobService`. Chat execution подключён
+к тому же service через один application `ChatJobExecutionOwner`; controller,
+subscriber wake-ups, exclusive inference bridge и approvals остаются в памяти,
+но command intent, lifecycle и replay output находятся в SQLite.
 
 ### As-is execution boundary
 
-Текущий `POST /threads/:id/messages` одновременно:
+Текущий `POST /threads/:id/messages`:
 
-1. резервирует connection-owned controller в `activeTurns` для данного thread;
-2. ждёт один process-local exclusive inference permit;
-3. только после admission сохраняет user и empty assistant
-   с `turnStatus=pending`;
-4. запускает Ollama stream и держит permit до terminal/abort;
-5. владеет SSE connection;
-6. одной compare-and-set записью terminalize-ит assistant;
-7. отдаёт terminal outcome и освобождает permit в `finally`.
+1. валидирует thread, immutable input и optional UUID idempotency key;
+2. одной transaction создаёт queued Chat Job, initial event, private input и
+   user/pending-assistant pair;
+3. передаёт Job application execution owner, который один владеет controller;
+4. возвращает compatibility SSE subscription на persisted Job events.
 
-Тот же permit оборачивает compaction и explicit model warm/load. Второй current
-request ждёт FIFO только пока живо его соединение. Это не durable queue: waiter
-не имеет ID/events, теряется при restart и не продолжает работу после disconnect.
+Owner проходит canonical states, ждёт один process-local inference permit,
+запускает Ollama stream и сначала persist-ит каждый private output event. Тот же
+permit оборачивает compaction и explicit model warm/load. Второй Chat Job имеет
+durable ID/events и продолжает работу после subscriber disconnect, но очередь
+исполнителей и permit всё ещё process-local и не восстанавливаются при restart.
 
-Browser disconnect/route change всё ещё abort-ит server generation, но P0-B
-сохраняет его как `cancelled/connection_aborted`; explicit Stop сохраняется как
-`cancelled/stopped_by_user`. После reload доступны persisted outcome/error/reason
-и partial output. Live phase и SSE event history не восстанавливаются.
+Browser disconnect/route change закрывает только subscription. При возврате Web
+находит `jobId` в pending assistant, читает canonical Job и replay-ит ordered
+private output из SQLite. Explicit Stop и public cancel проходят через owner:
+durable `cancelling`, provider abort, затем один `cancelled/stopped_by_user`.
+Assistant projection и terminal Job/event commit-ятся атомарно; injected failure
+не публикует completed.
 
 Provider adapter ограничивает connect, load и stream-idle отдельно. Валидный
 stream progress обновляет только idle deadline; timeout сохраняет failed partial
@@ -92,13 +94,15 @@ loaded rows — только из `/api/ps`.
 | ------------------------------------ | --------------------------------------- | --------------------------- |
 | Threads/messages/settings/workspaces | SQLite stores                           | persistent                  |
 | Message terminal bridge              | SQLite `messages` v3 columns            | persistent                  |
-| Job/event-store foundation           | SQLite `jobs`/`job_events` v4           | persistent, не исполняется  |
+| Job/event/output store               | SQLite `jobs`/`job_events` v5           | persistent                  |
+| Chat input/Message association       | SQLite `chat_job_inputs`/`messages`     | persistent                  |
+| Chat execution owner                 | application `ChatJobExecutionOwner`     | process memory, intent в DB |
 | Job HTTP subscription listeners      | application `JobService`                | process memory, events в DB |
 | Tool run record                      | SQLite                                  | persistent после выполнения |
-| Active/waiting turn request          | server `Map<threadId, AbortController>` | process memory              |
+| Active/waiting Chat controller       | `ChatJobExecutionOwner`                 | process memory              |
 | Exclusive inference bridge           | application `ExclusiveInferenceBridge`  | process memory              |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
-| SSE events                           | HTTP connection                         | не durable                  |
+| Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
 | Loaded model                         | Ollama                                  | external runtime            |
 | Catalog response                     | stale local cache/bundled snapshot      | sampled fallback            |
@@ -111,12 +115,11 @@ loaded rows — только из `/api/ps`.
 2. FIFO wait не имеет priority/backpressure; bounded timeout освобождает request,
    но не координирует provider вне этого application process.
 3. `keep_alive: 10m` удерживает модели после turn; route не является unload.
-4. UI route владеет работой, поэтому navigation destructive.
-5. P1-C Job API не подключён к P0-B Message bridge: current Chat DB
-   failure всё ещё может оставить observable `pending`, а restart recovery
-   отсутствует.
-6. Public Job HTTP SSE replayable из SQLite, но Web Job client отсутствует;
-   current Chat SSE остаётся connection-owned и не replayable.
+4. Process-local execution owner не переживает restart; non-terminal Chat Job и
+   `pending` Message требуют startup reconciliation P1-E.
+5. Generic public Job без Chat adapter остаётся queued и не исполняется.
+6. Private input/output находится в локальной SQLite без отдельного encryption
+   boundary; plaintext settings уже остаются известным долгом.
 7. Remote bind открывает filesystem/shell boundaries без реальной authentication.
 8. Fit не описывает совместное размещение, current pressure и remote hardware.
 9. Catalog не имеет разрешённого live provider; local cache и bundled snapshot

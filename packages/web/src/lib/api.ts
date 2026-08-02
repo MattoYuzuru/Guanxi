@@ -266,8 +266,8 @@ export function streamChat(
     schema: chatStreamEventSchema,
     method: 'POST',
     body,
-    // Повтор POST без idempotency-key создал бы второе пользовательское
-    // сообщение. Пока сервер не хранит replay-буфер, честно показываем обрыв.
+    // POST не переподключаем: после transport failure useChat перечитывает
+    // persisted Message association и продолжает через canonical GET Job SSE.
     maxRetries: 0,
     signal: handlers.signal,
     onEvent: handlers.onEvent,

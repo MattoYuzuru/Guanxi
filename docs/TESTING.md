@@ -7,7 +7,7 @@
 
 На 2026-08-03:
 
-- `npm test`: 160/160 server/CLI и 17/17 web component/parser tests;
+- `npm test`: 173/173 server/CLI и 17/17 web component/parser tests;
 - `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -17,7 +17,7 @@
   `health → installed → create → redirect → send → multi-phase stream → done →
   hard reload` с persisted terminal projection, а также P0-A Error Boundaries,
   P0-B failed-partial/unreconciled/Stop reload, connect timeout, missing
-  `done:true` и connection-owned navigation abort;
+  `done:true` и P1-D navigation detach/reattach через durable Job replay;
 - browser assertions управляют mocked headers/chunks без произвольных sleeps и
   проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
   horizontal overflow, 200% scaling и reduced motion;
@@ -48,11 +48,17 @@
   rollback invisibility, `Last-Event-ID`, two clients, terminal close/reconnect,
   disconnect cleanup, one-frame HTTP backpressure, SQLite catch-up, queued/active/
   repeated/terminal/conflicting cancel и redaction;
-- exact P1-A/P1-B/P1-C files дают 44/44, 15-test store race suite повторён 10 раз;
+- deterministic P1-D tests покрывают migration 5 fresh/v4→v5/failed+reopen,
+  atomic Chat Job+Message create, server-scoped idempotency/fingerprint conflict,
+  Message association, disconnect-only subscriber, ordered private replay,
+  cancel-before-admission, cancelling-before-abort acknowledgement, missing
+  terminal provider output, atomic terminal rollback/redaction, cross-thread
+  one-lane execution и 16 KiB UTF-8 chunking без truncation;
+- exact P1-A/P1-B/P1-C/P1-D files дают 57/57; 15-test store race suite ранее
+  повторён 10 раз, а P1-D disconnect/cancel/terminal race выполняет 10 repeats;
 - CI/lint/formatter commands отсутствуют;
-- живой Ollama, browser Job EventSource/reattach, durable execution/recovery,
-  второй application process и внешние Ollama clients не входят в regression
-  suite.
+- живой Ollama, startup execution recovery, второй application process и внешние
+  Ollama clients не входят в regression suite.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E на временной
 SQLite, управляемом fake `OllamaClient` transport и mocked browser REST/SSE. P0-C
@@ -66,11 +72,10 @@ Ollama, реальное железо или публичную сеть.
 
 - health и `/api/ps` — sampled observations, а не непрерывная истина;
 - process-local exclusive bridge не является Resource Governor;
-- текущий POST/SSE turn остаётся connection-owned и не replayable;
-- P1-C public Job API не подключён к execution, current Chat или recovery; live
-  wake-up остаётся process-local и предполагает mutation через один service
-  instance;
-- restart recovery отсутствует;
+- Chat execution durable/replayable, но owner и admission остаются process-local;
+- generic public Job без Chat adapter остаётся queued; live wake-up предполагает
+  mutation через один service instance;
+- startup scan/restart recovery и interrupted reconciliation отсутствуют;
 - обязательный suite не проверяет live hardware или live Ollama.
 
 ## Существующее покрытие
@@ -81,7 +86,7 @@ Ollama, реальное железо или публичную сеть.
 | Hardware fit                       | unit cases                         |
 | Filesystem tools/jail              | unit cases                         |
 | Server routes                      | integration-style tests            |
-| SQLite stores/migrations v3/v4     | fresh + v2/v3 upgrade/recovery     |
+| SQLite stores/migrations v3/v4/v5  | fresh + v2/v3/v4 upgrade/recovery  |
 | Durable Job/event foundation       | atomicity + two-connection races   |
 | Job transitions/service            | canonical matrix + replay/live     |
 | Turn terminal contract/CAS         | compatibility + failures           |
@@ -93,7 +98,7 @@ Ollama, реальное железо или публичную сеть.
 | Browser streaming/reload           | P0-A/P0-B/P0-E mocked flows        |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P0-C one-lane fake routes          |
-| Job replay/restart                 | HTTP SSE; restart replay           |
+| Job replay/reattach                | HTTP SSE; browser durable replay   |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |
 | Accessibility/responsive           | P0-A/B/D/E Chromium smoke          |
 

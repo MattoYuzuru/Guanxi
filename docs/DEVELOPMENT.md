@@ -60,19 +60,20 @@ npm run link:cli
 - Current agent turn отправляет `keep_alive=10m`; это известный lifecycle risk, а
   не рекомендуемый target default.
 - Current P0-C bridge сериализует Chat turn, compaction и explicit model
-  warm/load одним process-local permit. FIFO wait connection-owned и не является
-  durable Job queue или Resource Governor.
+  warm/load одним process-local permit. С P1-D Chat waiter имеет durable Job,
+  но admission/permit остаётся process-local и не является Resource Governor.
 - Current P0-D adapter различает connect, load и stream-idle deadlines.
-  Caller-owned Stop/disconnect имеет приоритет; timeout/provider/abort
-  освобождает P0-C permit.
+  Explicit Stop имеет приоритет; subscriber disconnect не отменяет Chat Job, а
+  timeout/provider/explicit abort освобождает P0-C permit.
 - Health/catalog/running facts — sampled observations с source/time. Installed
   models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
   использует stale local cache или dated bundled fallback без remote endpoint.
-- P1-C `JobService` поверх migration 4/`JobStore` владеет canonical state
+- P1-D `JobService` поверх migration 5/`JobStore` владеет canonical state
   transitions, cancel и persisted-first subscription. SQLite event sequence
   остаётся источником replay; live listeners хранят только wake-up signal.
-  Public Job create/query/GET SSE/cancel routes используют этот service, но он
-  не подключён к current Chat POST/SSE, worker или recovery.
+  Public Job и current Chat routes используют этот service. Один
+  `ChatJobExecutionOwner` продолжает Chat после subscriber disconnect, но
+  process restart recovery пока не реализован.
 
 ## Карта current-state
 
@@ -80,18 +81,18 @@ npm run link:cli
 
 - `schemas.ts` — domain Zod schemas;
 - `api.ts` — route constants и request/response schemas;
-- `events.ts` — SSE event union;
+- `events.ts` — Chat/Job SSE unions и classified private Chat output;
 - `index.ts` — public exports.
 - Durable Job record/state/error/outcome, event envelope и P1-C public
   create/query/cancel/cursor/SSE schemas экспортируются из contract.
-- Message terminal bridge использует additive/defaulted fields; точные новые SSE
-  terminal details остаются optional для старого strict client.
+- P1-D Chat command snapshot/idempotency и Message `jobId` остаются additive;
+  точные новые SSE terminal details optional для старого strict client.
 
 ### Server
 
 - `app.ts` — routes/composition/static serving;
-- `context.ts` — зависимости, один `JobStore` + `JobService`, per-thread
-  controllers и host-wide bridge owner;
+- `context.ts` — зависимости, один `JobStore` + `JobService` +
+  `ChatJobExecutionOwner` и process-local bridge owner;
 - `runtime/exclusive-inference.ts` — временный process-local FIFO permit;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details и sourced catalog fallback;
@@ -103,10 +104,15 @@ npm run link:cli
 - migration 4 additive добавляет `jobs`/`job_events`; `store/jobs.ts` владеет
   create/read/event page/sequence CAS, canonical non-terminal transition CAS и
   terminal CAS;
+- migration 5 additive связывает Message с Job, хранит private Chat input и
+  classified private output; Chat create и terminal Message/Job projection
+  transactionally atomic;
 - `jobs/lifecycle.ts` фиксирует transitions из canonical diagram;
   `jobs/service.ts` валидирует terminal edges и читает bounded SQLite pages при
   replay/live subscription без in-memory event queue, закрывает terminal tail и
   владеет cancel transitions;
+- `jobs/chat-execution.ts` владеет Chat controller, canonical phases,
+  persist-first output, 16 KiB chunk boundary и cancellation acknowledgement;
 - `http/jobs-routes.ts` предоставляет strict public command/query/GET SSE/cancel
   API с server-owned idempotency scope и bounded HTTP backpressure;
 - `agent/` — turn loop, prompts, approvals и parser;
@@ -117,11 +123,12 @@ npm run link:cli
 - `App.tsx` — current three-tab IA;
 - `components/ErrorBoundary.tsx` — root/Chat containment и safe diagnostics;
 - `lib/router.tsx` — History API router;
-- `lib/api.ts` — typed API calls;
-- `lib/sse.ts` — POST/SSE parser;
+- `lib/api.ts` — typed REST, Chat POST/SSE и Job query/replay/cancel calls;
+- `lib/sse.ts` — Chat `seq`/Job `sequence` parser;
 - `lib/locale.ts` — English fallback и curated Russian для новых boundary strings;
 - `features/launcher` и `features/models` — installed/catalog/profile;
-- `features/chat` — creation, timeline, composer и stream state;
+- `features/chat` — creation, timeline, composer, UUID command key и durable Job
+  discovery/reattach state;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
@@ -133,7 +140,9 @@ npm run link:cli
   health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и
   worker-thread connections проверяют migration, atomicity, idempotency,
   transition races, public command/query/cancel, persisted-first replay/live
-  handoff, HTTP cleanup/backpressure, terminal close и restart replay.
+  handoff, HTTP cleanup/backpressure, terminal close и restart replay; P1-D
+  проверяет migration 5, duplicate command, detached execution/reattach,
+  cancellation races, private-output redaction и atomic Message/Job terminal.
 
 ### CLI
 

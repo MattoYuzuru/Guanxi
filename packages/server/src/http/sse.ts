@@ -34,7 +34,8 @@ export const SSE_HEADERS = {
  * Оборачивает асинхронный генератор событий в HTTP-ответ.
  *
  * @param source генератор событий
- * @param options.onAbort вызывается, когда клиент отвалился — чтобы прекратить генерацию
+ * @param options.onAbort очищает ownership конкретного subscriber; решение об
+ * остановке producer остаётся у вызывающего lifecycle boundary
  * @param options.skipUntilSeq пропустить события до этого номера при переподключении
  */
 export function sseResponse(

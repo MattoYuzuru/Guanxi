@@ -26,16 +26,19 @@ exit gate ROADMAP проверен целиком.
 
 ## Phase 1
 
-| Slice                                   | Статус                 | Outcome                                                          |
-| --------------------------------------- | ---------------------- | ---------------------------------------------------------------- |
-| P1-A Durable Job/event-store foundation | independently verified | `138fb5e`, `91cb21f`, `92b68f0`; 15 targeted, all required gates |
-| P1-B Job transitions/subscription       | independently verified | `56b2200`, `55351bc`; 30 targeted, 10x races, all required gates |
-| P1-C Public Job HTTP API/SSE/cancel     | independently verified | `4b9d96a`, `0a06ea6`; 44 targeted, 10x races, all required gates |
+| Slice                                   | Статус                 | Outcome                                                           |
+| --------------------------------------- | ---------------------- | ----------------------------------------------------------------- |
+| P1-A Durable Job/event-store foundation | independently verified | `138fb5e`, `91cb21f`, `92b68f0`; 15 targeted, all required gates  |
+| P1-B Job transitions/subscription       | independently verified | `56b2200`, `55351bc`; 30 targeted, 10x races, all required gates  |
+| P1-C Public Job HTTP API/SSE/cancel     | independently verified | `4b9d96a`, `0a06ea6`; 44 targeted, 10x races, all required gates  |
+| P1-D Durable Chat execution/reattach    | independently verified | `da70576`, `08b3516`, `f33d5b9`; 57 targeted, 10x race, all gates |
 
-P1-A/P1-B/P1-C реализуют additive contract, migration 4, canonical state CAS,
-persisted-first `JobService` и public create/query/replay/cancel API. Новый Job
-остаётся queued: current Chat execution, durable execution owner, recovery и
-Governor не реализованы; Phase 1 остаётся `in progress`.
+P1-A–P1-D реализуют additive contract, migrations 4–5, canonical state CAS,
+persisted-first `JobService`, public create/query/replay/cancel API и один
+process-local Chat execution owner. Current Chat command атомарно создаёт Job и
+Message pair, переживает subscriber disconnect и reattach-ится из SQLite.
+Startup recovery/interrupted reconciliation и Resource Governor ещё не
+реализованы; Phase 1 остаётся `in progress`.
 
 ## Later phases
 

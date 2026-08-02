@@ -13,32 +13,36 @@
 - `schemas.ts`: models, hardware fit, health, threads/messages, settings,
   workspaces, tool calls, approvals и durable Job/event records;
 - `api.ts`: route paths и request/response Zod;
-- `events.ts`: turn SSE union;
+- `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
+  output;
 - `index.ts`: public exports.
 
 Current capability enum: completion, tools, vision, insert, thinking, embedding.
 Current thread mode: chat или agent. Message содержит content/thinking/tools/usage
-и P0-B bridge fields `turnStatus/turnError/stopReason`. Эти поля описывают
-connection-owned turn projection, но не durable Job/run id. P0-D добавляет
+и P0-B bridge fields `turnStatus/turnError/stopReason`. P1-D добавляет optional
+`jobId`, который связывает durable Job с user/assistant pair. P0-D добавляет
 source/time health, catalog freshness, sampled running rows и stable
 connect/load/stream-idle error categories.
 
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
-typed Job SSE event data. Public caller не передаёт storage scope.
+typed Job SSE event data. P1-D добавил optional Chat idempotency key, immutable
+input snapshot и private typed Chat output внутри Job event. Public caller не
+передаёт storage scope или privacy classification.
 
 ### `packages/server`
 
 Исходник: [lld-server.mmd](diagrams/lld-server.mmd).
 
 - `app.ts`: Hono composition, health, routes, SPA;
-- `context.ts`: Ollama client, stores, tools, approvals, `activeTurns` и один
-  `ExclusiveInferenceBridge`;
+- `context.ts`: Ollama client, stores, tools, approvals, один
+  `ExclusiveInferenceBridge` и один `ChatJobExecutionOwner`;
 - `runtime/exclusive-inference.ts`: process-local one-owner FIFO admission без
   durability/priority/recovery;
 - `http/models-routes.ts`: list/show/pull/delete/warm/unload/running;
-- `http/threads-routes.ts`: CRUD, POST/SSE turn, stop, compact;
+- `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
+  compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
 - `models/service.ts`: installed `/api/tags`, sampled `/api/ps` и unbounded
   parallel `/api/show`;
@@ -50,6 +54,8 @@ typed Job SSE event data. Public caller не передаёт storage scope.
 - migration 3: nullable Message terminal bridge с evidence-based legacy backfill;
 - migration 4: additive `jobs`/`job_events`, scoped idempotency, per-Job sequence
   и unique terminal event constraint;
+- migration 5: additive `messages.job_id`, private `chat_job_inputs` и optional
+  classified private output в `job_events`;
 - `store/jobs.ts`: atomic create + initial event, ordered replay page, event
   sequence CAS, canonical non-terminal state + lifecycle event CAS и terminal
   state + event CAS;
@@ -57,26 +63,37 @@ typed Job SSE event data. Public caller не передаёт storage scope.
 - `jobs/service.ts`: application create/get/transition/append/terminal boundary и
   persisted-first `AsyncIterable` subscription с bounded SQLite pages, terminal
   close и canonical cancel operation;
+- `jobs/chat-execution.ts`: process-local Chat Job owner, request fingerprint,
+  canonical state progression, persisted output/chunking и cancellation
+  acknowledgement;
 - `http/jobs-routes.ts`: public create/query/replay/cancel boundary, server-owned
   idempotency scope, controlled error mapping и pull-based Job SSE;
 - `store/threads.ts`: atomic pending-to-terminal compare-and-set и compaction
   boundary по persisted `seq`;
 - `tools/*`: jail, filesystem и bash.
 
-`activeTurns` ограничивает одинаковый thread и хранит Stop/connection
-controllers, включая ожидающий turn. Host-wide exclusion принадлежит отдельному
-bridge. Его permit совместно используют turn, compaction и explicit model
-warm/load; waiters, `ApprovalGate` и active controllers не durable.
+`ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
+Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
+mirror, но routes не используют его как lifecycle owner. Host-wide exclusion
+принадлежит отдельному bridge. Его permit совместно используют turn, compaction
+и explicit model warm/load; waiters, `ApprovalGate` и controllers не durable.
 
-Один `JobStore` и `JobService` входят в application context и public Job routes;
-current Chat routes их не вызывают. Store синхронно сериализует
-writers через SQLite `BEGIN IMMEDIATE`; Job create и terminalization
+Один `JobStore`, `JobService` и `ChatJobExecutionOwner` входят в application
+context; public Job и Chat routes используют один service. Store синхронно
+сериализует writers через SQLite `BEGIN IMMEDIATE`; Job create и terminalization
 откатываются целиком, если event insert не состоялся; то же верно для
 non-terminal transition, включая `startedAt`. Первый успешный выход из `queued`
 задаёт `startedAt`, поздние transitions его сохраняют. Одинаковая пара
 `idempotency_scope/idempotency_key` возвращает canonical Job. Event metadata
 ограничена плоскими JSON scalars и не предназначена для prompt, reasoning,
 secrets или workspace content.
+
+Chat create расширяет эту границу: одна transaction создаёт Job/initial event,
+user/pending-assistant pair и immutable private input association. Server-owned
+scope содержит thread ID; SHA-256 fingerprint связывает key с canonical input.
+Duplicate возвращает ту же association, а conflicting input не пишет ничего.
+Private Chat output хранится отдельно от safe metadata и читается только через
+typed `privacyClassification: private_chat` boundary.
 
 `JobService` проверяет terminal edge до store CAS. Subscription регистрирует
 process-local wake-up до replay, но всегда отдаёт сами events из SQLite по
@@ -85,16 +102,25 @@ sequence. Wake-ups coalesced, поэтому slow subscriber не блокиру
 
 Job HTTP handler валидирует UUID и decimal safe-integer cursor до subscription.
 `after` и `Last-Event-ID` могут совпадать, но conflict даёт `400`. Каждый SSE
-frame получает `id`, равный persisted sequence, и полный `jobEventSchema` в
-`data`. `ReadableStream.pull` ограничивает буфер одним frame. Terminal replay
+frame получает `id`, равный persisted sequence, и полный `jobStreamEventSchema` в
+`data` с additive private output. `ReadableStream.pull` ограничивает буфер одним
+frame. Terminal replay
 закрывает stream, включая reattach после terminal tail; cancel/disconnect stream
 не вызывает Job cancel command.
 
 Public create всегда использует `local-api:v1`: duplicate key возвращает тот же
 Job без второго initial event. Public cancel reason ограничена
 `user_requested`. Queued cancel фиксирует `cancelling → cancelled`; active Job
-остаётся `cancelling` до будущего execution-owner acknowledgement; terminal и
-уже cancelling ответы идемпотентны.
+остаётся `cancelling` до execution-owner acknowledgement. P1-D Chat owner такое
+acknowledgement выполняет; generic Job без adapter остаётся `cancelling`.
+Terminal и уже cancelling ответы идемпотентны.
+
+Chat owner persist-ит output event до wake-up, делит UTF-8 delta на chunks не
+больше 16 KiB и не держит in-memory output queue. Terminal Chat transaction
+одновременно обновляет pending assistant, Job и terminal event/output. Stop из
+thread route и cancel из Job route сходятся в owner; `cancelling` фиксируется до
+abort, а `cancelled` — после его подтверждения. Subscriber abort owner не
+останавливает.
 
 ### `packages/web`
 
@@ -104,10 +130,11 @@ Job без второго initial event. Public cancel reason ограничен
   status и Models/Chat/Settings shell;
 - `components/ErrorBoundary.tsx`: root и keyed Chat containment с diagnostics;
 - `lib/router.tsx`: custom History API routing;
-- `lib/api.ts`: REST + current POST/SSE;
-- `lib/sse.ts`: frame parser;
+- `lib/api.ts`: REST, compatibility POST/SSE и canonical Job GET/GET SSE/cancel;
+- `lib/sse.ts`: frame parser с Chat `seq` и Job `sequence` cursor;
 - `lib/locale.ts`: locale keys для boundary с English fallback/Russian;
-- `features/chat/useChat.ts`: page-owned turn state;
+- `features/chat/useChat.ts`: page projection, per-send UUID key и durable Job
+  discovery/reattach;
 - `features/chat/streamBuffer.ts`: rAF-buffered content/thinking;
 - `features/chat/ChatPage.tsx`: create, timeline, composer, context/tool UI;
 - `features/launcher`/`models`: installed/catalog/profile;
@@ -127,18 +154,21 @@ foreground и открывает browser. Durable service lifecycle/TUI/API clie
 
 ## Current sequence и bridge limits
 
-1. Turn request резервирует per-thread controller и ждёт process-local permit.
-2. User row и empty assistant со status `pending` создаются только после
-   admission.
-3. Chat turn, compaction и model warm/load выполняются в одной FIFO lane.
-4. Client crash/disconnect вызывает abort и P0-B сохраняет
-   `cancelled/connection_aborted`.
+1. Chat command атомарно создаёт queued Job, initial event, private input и
+   Message pair до начала execution.
+2. Application owner резервирует per-thread controller и ждёт process-local
+   permit; Chat, compaction и model warm/load выполняются в одной FIFO lane.
+3. Lifecycle и private output persist-first; HTTP subscribers читают SQLite по
+   sequence и не владеют execution.
+4. Client crash/navigation только disconnect-ит subscriber; remount/hard reload
+   находит Job по pending Message и replay-ит его с sequence 0.
 5. Provider error и EOF без terminal chunk сохраняются как `failed`; partial
-   content/thinking остаются в той же atomic terminal projection.
-6. Reload показывает pending/completed/failed/cancelled либо legacy unknown.
+   content/thinking остаются в atomic terminal Message/Job projection.
+6. Explicit Stop/cancel сначала сохраняет `cancelling`, затем единственный
+   cancelled terminal outcome; disconnect не является cancel.
 7. Connect заканчивается при response headers; load ждёт первый валидный stream
    event или non-stream model response; idle обновляется каждым валидным event.
-8. Timeout сохраняет точный safe error, а Stop/disconnect остаётся authoritative
+8. Timeout сохраняет точный safe error, а explicit Stop остаётся authoritative
    cancellation; permit освобождается в обоих случаях.
 
 `OllamaClient` пробрасывает signal abort для cancellation classification и
@@ -153,17 +183,15 @@ backfill-ит как `completed/legacy_terminal_chunk`. Terminal update меня
 остаётся наблюдаемым recovery state.
 
 P0-A по-прежнему отвечает за безопасный effect и root/Chat Error Boundaries.
-P0-B не отделяет execution от POST/SSE connection: navigation всё ещё может
-cancel. P0-C не меняет ownership, но отменяемый waiter не сохраняет rows до
-admission, а permit освобождается после terminal/error/abort/generator return.
-Повторная compaction выбирает prefix после admission и использует реальный
-persisted `seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership,
-lease или доказательство unload между observations.
+P0-C permit освобождается после terminal/error/abort/generator return. Повторная
+compaction выбирает prefix после admission и использует реальный persisted
+`seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership, lease или
+доказательство unload между observations.
 
-P1-C добавляет public Job records/replay/cancel, но не меняет current Chat
-sequence: `POST /threads/:id/messages` не создаёт Job, current SSE не replayable,
-disconnect по-прежнему отменяет generation, а recovery/worker и durable
-execution отсутствуют. Public create остаётся `queued` до следующего slice.
+P1-D отделяет Chat execution от POST/SSE connection и подключает Message bridge
+к durable Job records/replay/cancel. Generic public create без Chat adapter
+остаётся `queued`. Process-local owner не сканирует non-terminal Jobs при startup:
+restart recovery/interrupted reconciliation и Resource Governor ещё отсутствуют.
 
 Bridge не является Resource Governor: нет durable queue, leases, priorities,
 continuous `/api/ps` reconciliation, restart recovery или measured parallelism.

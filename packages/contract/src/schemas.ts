@@ -267,7 +267,8 @@ export const usageSchema = z.object({
 export type Usage = z.infer<typeof usageSchema>
 
 /**
- * Phase 0 compatibility bridge for the current connection-owned turn.
+ * Additive Message projection introduced as the Phase 0 compatibility bridge
+ * and associated with a durable Job since P1-D.
  *
  * `null` on a Message means that the row predates the bridge (or is not an
  * assistant turn at all). It must not be interpreted as completed.

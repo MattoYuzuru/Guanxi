@@ -108,10 +108,10 @@ export class JobService {
   }
 
   /**
-   * Owns the public cancellation state change without owning execution yet.
+   * Owns the public cancellation state change without owning execution itself.
    * A queued Job has no started side effect, so this service can confirm its
    * cancellation immediately. Active execution remains cancelling until its
-   * future execution owner confirms that the side effect stopped.
+   * typed execution owner confirms that the side effect stopped.
    */
   cancel(jobId: string, reason: JobCancelReason): Job {
     let current = this.store.get(jobId)
