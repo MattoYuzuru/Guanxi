@@ -2,7 +2,7 @@ import {
   jobTerminalStateSchema,
   type Job,
   type JobCancelReason,
-  type JobEvent,
+  type JobStreamEvent,
 } from '@alamo/contract'
 import {
   isCanonicalNonTerminalTransition,
@@ -12,9 +12,12 @@ import {
   JobStore,
   JobStoreError,
   type AppendJobEventInput,
+  type CreateChatJobInput,
+  type CreateChatJobResult,
   type CreateJobInput,
   type CreateJobResult,
   type TerminalizeJobInput,
+  type TerminalizeChatJobInput,
   type TerminalizeJobResult,
   type TransitionJobInput,
   type TransitionJobResult,
@@ -94,6 +97,12 @@ export class JobService {
     return result
   }
 
+  createChat(input: CreateChatJobInput): CreateChatJobResult {
+    const result = this.store.createChat(input)
+    if (result.created) this.publish(result.job.id)
+    return result
+  }
+
   get(jobId: string): Job | null {
     return this.store.get(jobId)
   }
@@ -146,7 +155,7 @@ export class JobService {
     return result
   }
 
-  appendSafeEvent(input: AppendJobEventInput): JobEvent {
+  appendSafeEvent(input: AppendJobEventInput): JobStreamEvent {
     const event = this.store.appendEvent(input)
     this.publish(input.jobId)
     return event
@@ -169,11 +178,23 @@ export class JobService {
     return result
   }
 
+  terminalizeChat(input: TerminalizeChatJobInput): TerminalizeJobResult {
+    if (!isCanonicalTerminalTransition(input.expectedStatus, input.status)) {
+      throw new JobServiceError(
+        'invalid_transition',
+        `Job transition ${input.expectedStatus} -> ${input.status} is not canonical`,
+      )
+    }
+    const result = this.store.terminalizeChat(input)
+    if (result.applied) this.publish(input.jobId)
+    return result
+  }
+
   async *subscribe(
     jobId: string,
     afterSequence: number,
     signal: AbortSignal,
-  ): AsyncIterable<JobEvent> {
+  ): AsyncIterable<JobStreamEvent> {
     const wake = new SubscriptionWake()
     const jobSubscribers = this.subscribers.get(jobId) ?? new Set<SubscriptionWake>()
     jobSubscribers.add(wake)

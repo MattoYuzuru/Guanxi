@@ -17,41 +17,87 @@ import {
   turnTerminalOutcomeSchema,
 } from './schemas.ts'
 
-/* ─────────────────────── Стрим Job events: GET /api/jobs ────────────────── */
-
-/** The SSE `id` is this persisted event's exact `sequence`. */
-export const jobStreamEventSchema = jobEventSchema
-export type JobStreamEvent = z.infer<typeof jobStreamEventSchema>
-
 /* ────────────────────── Стрим ответа: /api/threads/:id/messages ──────────── */
+
+const chatStartDataSchema = z.object({
+  messageId: z.string(),
+  model: z.string(),
+  /** Номер шага агентного цикла, для чата всегда 0. */
+  step: z.number().int(),
+  /** Additive bridge field; omitted frames from older servers remain readable. */
+  status: z.literal('pending').optional(),
+  /** Durable owner identity; omitted by pre-P1-D servers. */
+  jobId: z.string().uuid().optional(),
+})
+
+const chatThinkingDataSchema = z.object({ delta: z.string() })
+const chatTokenDataSchema = z.object({ delta: z.string() })
+const chatToolApprovalDataSchema = z.object({
+  toolCall: toolCallSchema,
+  /** Через сколько миллисекунд ожидание истечёт и вызов будет отклонён. */
+  timeoutMs: z.number().int(),
+})
+const chatToolResultDataSchema = z.object({
+  toolCallId: z.string(),
+  status: toolCallStatusSchema,
+  result: z.string().nullable(),
+  error: z.string().nullable(),
+  durationMs: z.number().int(),
+})
+const chatDoneDataSchema = z.object({
+  messageId: z.string(),
+  /** Compatibility value understood by pre-P0-B clients. */
+  stopReason: z.enum(['stop', 'length', 'tool_limit', 'stopped_by_user', 'error']),
+  /** Older frames omit outcome; persisted Message remains the reload source of truth. */
+  outcome: turnTerminalOutcomeSchema.optional(),
+  /** Precise additive reason; old clients ignore this unknown optional field. */
+  terminalStopReason: turnStopReasonSchema.optional(),
+  /** Сколько шагов агентного цикла прошло. */
+  steps: z.number().int(),
+})
+const chatErrorDataSchema = apiErrorSchema.extend({
+  /** Precise additive error; `code` above stays compatible with old clients. */
+  turnError: turnErrorSchema.optional(),
+})
+
+/**
+ * Private durable payload stored outside safe Job metadata. It deliberately has
+ * no sequence: the enclosing persisted Job event owns ordering and replay.
+ */
+export const chatJobOutputSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('start'), data: chatStartDataSchema }),
+  z.object({ type: z.literal('thinking'), data: chatThinkingDataSchema }),
+  z.object({ type: z.literal('token'), data: chatTokenDataSchema }),
+  z.object({ type: z.literal('tool_call'), data: toolCallSchema }),
+  z.object({ type: z.literal('tool_approval_required'), data: chatToolApprovalDataSchema }),
+  z.object({ type: z.literal('tool_result'), data: chatToolResultDataSchema }),
+  z.object({ type: z.literal('usage'), data: usageSchema }),
+  z.object({ type: z.literal('context'), data: contextStateSchema }),
+  z.object({ type: z.literal('done'), data: chatDoneDataSchema }),
+  z.object({ type: z.literal('error'), data: chatErrorDataSchema }),
+])
+export type ChatJobOutput = z.infer<typeof chatJobOutputSchema>
 
 export const chatStreamEventSchema = z.discriminatedUnion('type', [
   /** Ход начался, сообщение ассистента создано в базе с этим id. */
   z.object({
     type: z.literal('start'),
     seq: z.number().int(),
-    data: z.object({
-      messageId: z.string(),
-      model: z.string(),
-      /** Номер шага агентного цикла, для чата всегда 0. */
-      step: z.number().int(),
-      /** Additive bridge field; omitted frames from older servers remain readable. */
-      status: z.literal('pending').optional(),
-    }),
+    data: chatStartDataSchema,
   }),
 
   /** Кусок «размышления» для моделей с thinking. */
   z.object({
     type: z.literal('thinking'),
     seq: z.number().int(),
-    data: z.object({ delta: z.string() }),
+    data: chatThinkingDataSchema,
   }),
 
   /** Кусок обычного ответа. */
   z.object({
     type: z.literal('token'),
     seq: z.number().int(),
-    data: z.object({ delta: z.string() }),
+    data: chatTokenDataSchema,
   }),
 
   /** Модель попросила инструмент. Ещё не выполнен. */
@@ -68,24 +114,14 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tool_approval_required'),
     seq: z.number().int(),
-    data: z.object({
-      toolCall: toolCallSchema,
-      /** Через сколько миллисекунд ожидание истечёт и вызов будет отклонён. */
-      timeoutMs: z.number().int(),
-    }),
+    data: chatToolApprovalDataSchema,
   }),
 
   /** Инструмент отработал. */
   z.object({
     type: z.literal('tool_result'),
     seq: z.number().int(),
-    data: z.object({
-      toolCallId: z.string(),
-      status: toolCallStatusSchema,
-      result: z.string().nullable(),
-      error: z.string().nullable(),
-      durationMs: z.number().int(),
-    }),
+    data: chatToolResultDataSchema,
   }),
 
   /** Метрики хода. Приходит один раз перед `done`. */
@@ -106,30 +142,34 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('done'),
     seq: z.number().int(),
-    data: z.object({
-      messageId: z.string(),
-      /** Compatibility value understood by pre-P0-B clients. */
-      stopReason: z.enum(['stop', 'length', 'tool_limit', 'stopped_by_user', 'error']),
-      /** Older frames omit outcome; persisted Message remains the reload source of truth. */
-      outcome: turnTerminalOutcomeSchema.optional(),
-      /** Precise additive reason; old clients ignore this unknown optional field. */
-      terminalStopReason: turnStopReasonSchema.optional(),
-      /** Сколько шагов агентного цикла прошло. */
-      steps: z.number().int(),
-    }),
+    data: chatDoneDataSchema,
   }),
 
   z.object({
     type: z.literal('error'),
     seq: z.number().int(),
-    data: apiErrorSchema.extend({
-      /** Precise additive error; `code` above stays compatible with old clients. */
-      turnError: turnErrorSchema.optional(),
-    }),
+    data: chatErrorDataSchema,
   }),
 ])
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>
 export type ChatStreamEventType = ChatStreamEvent['type']
+
+/* ─────────────────────── Стрим Job events: GET /api/jobs ────────────────── */
+
+export const jobEventOutputSchema = z
+  .object({
+    privacyClassification: z.literal('private_chat'),
+    event: chatJobOutputSchema,
+  })
+  .strict()
+export type JobEventOutput = z.infer<typeof jobEventOutputSchema>
+
+/** The SSE `id` is this persisted event's exact `sequence`. */
+export const jobStreamEventSchema = jobEventSchema.extend({
+  /** Legacy/pre-v5 events have no replay payload. */
+  output: jobEventOutputSchema.nullish().default(null),
+})
+export type JobStreamEvent = z.infer<typeof jobStreamEventSchema>
 
 /* ────────────────────── Стрим скачивания: /api/models/:name/pull ─────────── */
 

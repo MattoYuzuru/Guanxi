@@ -317,6 +317,8 @@ export type TurnError = z.infer<typeof turnErrorSchema>
 export const messageSchema = z.object({
   id: z.string(),
   threadId: z.string(),
+  /** Durable execution association. Legacy/pre-v5 rows remain null. */
+  jobId: z.string().uuid().nullish().default(null),
   role: z.enum(['user', 'assistant', 'system', 'tool']),
   content: z.string(),
   thinking: z.string().nullable(),

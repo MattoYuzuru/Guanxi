@@ -176,6 +176,31 @@ const MIGRATIONS: readonly string[] = [
     ON job_events(job_id)
     WHERE state IN ('completed','failed','cancelled','interrupted');
   `,
+  // 5 — durable Chat Job input, Message projection and private replay payload bridge.
+  `
+  ALTER TABLE messages ADD COLUMN job_id TEXT
+    REFERENCES jobs(id) ON DELETE SET NULL;
+  CREATE INDEX idx_messages_job ON messages(job_id, seq);
+  CREATE UNIQUE INDEX idx_messages_job_user
+    ON messages(job_id)
+    WHERE job_id IS NOT NULL AND role = 'user';
+
+  ALTER TABLE job_events ADD COLUMN output TEXT
+    CHECK (output IS NULL OR json_valid(output));
+  ALTER TABLE job_events ADD COLUMN output_privacy TEXT
+    CHECK (output_privacy IS NULL OR output_privacy = 'private_chat');
+
+  CREATE TABLE chat_job_inputs (
+    job_id               TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    thread_id            TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    user_message_id      TEXT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+    assistant_message_id TEXT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+    request_fingerprint  TEXT NOT NULL,
+    input_json           TEXT NOT NULL CHECK (json_valid(input_json)),
+    created_at           TEXT NOT NULL
+  );
+  CREATE INDEX idx_chat_job_inputs_thread ON chat_job_inputs(thread_id, job_id);
+  `,
 ]
 
 export function openDb(path: string): Db {

@@ -37,6 +37,7 @@ interface ThreadRow {
 interface MessageRow {
   id: string
   thread_id: string
+  job_id: string | null
   seq: number
   role: string
   content: string
@@ -72,6 +73,7 @@ function toMessage(row: MessageRow): Message {
   return {
     id: row.id,
     threadId: row.thread_id,
+    jobId: row.job_id,
     role: row.role as Message['role'],
     content: row.content,
     thinking: row.thinking,
@@ -269,6 +271,7 @@ export class ThreadStore {
     turnStatus?: TurnStatus | null
     turnError?: TurnError | null
     stopReason?: TurnStopReason | null
+    jobId?: string | null
     /** Явная позиция в треде. Нужна компакции, чтобы резюме встало в начало, а не в конец. */
     seq?: number
   }): Message {
@@ -280,9 +283,9 @@ export class ThreadStore {
       .prepare(
         `INSERT INTO messages (
            id, thread_id, seq, role, content, thinking, tool_calls, usage,
-           is_compaction, created_at, turn_status, turn_error, stop_reason
+           is_compaction, created_at, turn_status, turn_error, stop_reason, job_id
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -298,6 +301,7 @@ export class ThreadStore {
         input.turnStatus ?? (input.role === 'assistant' ? 'pending' : null),
         input.turnError ? JSON.stringify(input.turnError) : null,
         input.stopReason ?? null,
+        input.jobId ?? null,
       )
 
     this.touch(input.threadId)
@@ -305,6 +309,7 @@ export class ThreadStore {
     return {
       id,
       threadId: input.threadId,
+      jobId: input.jobId ?? null,
       role: input.role,
       content: input.content,
       thinking: input.thinking ?? null,
@@ -351,6 +356,18 @@ export class ThreadStore {
     const row = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as unknown as
       | MessageRow
       | undefined
+    return row ? toMessage(row) : null
+  }
+
+  latestPendingAssistantForJob(jobId: string): Message | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM messages
+         WHERE job_id = ? AND role = 'assistant' AND turn_status = 'pending'
+         ORDER BY seq DESC
+         LIMIT 1`,
+      )
+      .get(jobId) as unknown as MessageRow | undefined
     return row ? toMessage(row) : null
   }
 

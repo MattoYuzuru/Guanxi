@@ -203,12 +203,24 @@ export type UpdateThreadBody = z.infer<typeof updateThreadBody>
 /** POST /api/threads/:id/messages → SSE (ChatStreamEvent) */
 export const sendMessageBody = z.object({
   content: z.string(),
+  /** New clients keep this stable for one logical submit; omitted by legacy clients. */
+  idempotencyKey: z.string().uuid().optional(),
   /** Пути файлов из воркспейса, приложенные к сообщению. */
   attachments: z.array(z.string()).optional(),
   /** Разрешить агенту выполнять инструменты без подтверждения в этом ходе. */
   autoApprove: z.boolean().optional(),
-})
+}).strict()
 export type SendMessageBody = z.infer<typeof sendMessageBody>
+
+/** Private persisted input snapshot; never serialized as safe Job metadata. */
+export const chatJobInputSnapshotSchema = z
+  .object({
+    content: z.string(),
+    attachments: z.array(z.string()),
+    autoApprove: z.boolean().nullable(),
+  })
+  .strict()
+export type ChatJobInputSnapshot = z.infer<typeof chatJobInputSnapshotSchema>
 
 export const compactThreadResponse = z.object({
   message: messageSchema,
