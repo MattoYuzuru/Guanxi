@@ -5,6 +5,7 @@
  * useChat перечитывает сохранённую историю целиком.
  */
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -420,10 +421,13 @@ function MessageTimeline({
 }) {
   const endRef = useRef<HTMLDivElement>(null)
   const showLive = phase !== 'idle'
+  const scrollToEnd = useCallback(() => {
+    endRef.current?.scrollIntoView({ block: 'end' })
+  }, [])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length, phase, liveToolCalls.length])
+    scrollToEnd()
+  }, [messages.length, phase, liveToolCalls.length, scrollToEnd])
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
@@ -444,7 +448,7 @@ function MessageTimeline({
             buffer={buffer}
             phase={phase}
             toolCalls={liveToolCalls}
-            onChange={() => endRef.current?.scrollIntoView({ block: 'end' })}
+            onChange={scrollToEnd}
           />
         )}
 
@@ -517,7 +521,7 @@ function MessageView({ message }: { message: Message }) {
   )
 }
 
-function StreamingMessage({
+export function StreamingMessage({
   buffer,
   phase,
   toolCalls,
@@ -530,7 +534,9 @@ function StreamingMessage({
 }) {
   const snapshot = useSyncExternalStore(buffer.subscribe, buffer.getSnapshot, buffer.getSnapshot)
 
-  useEffect(onChange, [snapshot.version, toolCalls.length, onChange])
+  useEffect(() => {
+    onChange()
+  }, [snapshot.version, toolCalls.length, onChange])
 
   return (
     <article className="anim-fade-up">

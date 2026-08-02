@@ -7,6 +7,7 @@ import { useAsync } from './lib/useAsync.ts'
 import { Link, paths, useRoute } from './lib/router.tsx'
 import { useTheme } from './lib/theme.tsx'
 import { Button, Callout, EmptyState, cx } from './components/ui.tsx'
+import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import {
   HealthLoading,
   HealthUnreachable,
@@ -64,7 +65,14 @@ export function App() {
         )}
         {route.name === 'launcher' && <LauncherPage health={data} />}
         {route.name === 'model' && <ModelPage name={route.modelName} health={data} />}
-        {route.name === 'chat' && <ChatPage threadId={route.threadId} health={data} />}
+        {route.name === 'chat' && (
+          <ErrorBoundary
+            key={route.threadId === null ? 'new-chat' : route.threadId}
+            scope="chat"
+          >
+            <ChatPage threadId={route.threadId} health={data} />
+          </ErrorBoundary>
+        )}
         {route.name === 'settings' && <SettingsPage />}
         {route.name === 'notFound' && (
           <EmptyState
