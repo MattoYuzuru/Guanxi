@@ -42,35 +42,51 @@ export function sseResponse(
   options: { onAbort?: () => void; skipUntilSeq?: number } = {},
 ): Response {
   const skipUntil = options.skipUntilSeq ?? -1
+  const iterator = source[Symbol.asyncIterator]()
+  let closed = false
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for await (const event of source) {
-          if (event.seq <= skipUntil) continue
-          controller.enqueue(frame(event))
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        if (closed) return
+        try {
+          while (true) {
+            const next = await iterator.next()
+            if (next.done) {
+              closed = true
+              controller.close()
+              return
+            }
+            if (next.value.seq <= skipUntil) continue
+            controller.enqueue(frame(next.value))
+            return
+          }
+        } catch {
+          closed = true
+          // Raw exception text may contain provider bodies or private paths.
+          controller.enqueue(
+            frame({
+              type: 'error',
+              seq: Number.MAX_SAFE_INTEGER,
+              data: {
+                code: 'internal_error',
+                message: 'The event stream could not continue',
+                details: null,
+              },
+            }),
+          )
+          controller.close()
         }
-      } catch (error) {
-        controller.enqueue(
-          frame({
-            type: 'error',
-            seq: Number.MAX_SAFE_INTEGER,
-            data: {
-              code: 'internal_error',
-              message: error instanceof Error ? error.message : String(error),
-              details: null,
-            },
-          }),
-        )
-      } finally {
-        controller.close()
-      }
+      },
+      async cancel() {
+        if (closed) return
+        closed = true
+        options.onAbort?.()
+        await iterator.return?.(undefined as never)
+      },
     },
-    cancel() {
-      options.onAbort?.()
-      void source.return(undefined as never).catch(() => {})
-    },
-  })
+    { highWaterMark: 1 },
+  )
 
   return new Response(stream, { headers: SSE_HEADERS })
 }

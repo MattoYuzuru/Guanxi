@@ -12,12 +12,13 @@ import type {
   ChatStreamEvent,
   ContextState,
   Message,
+  JobState,
   Thread,
   ToolCall,
   TurnTerminalOutcome,
   Usage,
 } from '@alamo/contract'
-import { api, errorMessage, streamChat } from '../../lib/api.ts'
+import { api, errorMessage, streamChat, streamJob } from '../../lib/api.ts'
 import { translate } from '../../lib/locale.ts'
 import { StreamBuffer } from './streamBuffer.ts'
 
@@ -78,6 +79,81 @@ export function useChat(threadId: string | null) {
 
   /* ─────────────────────────── Загрузка треда ─────────────────────────── */
 
+  const followPersistedJob = useCallback(
+    async (id: string, jobId: string, signal: AbortSignal) => {
+      const refresh = async () => {
+        const data = await api.getThread(id, signal)
+        if (signal.aborted || threadIdRef.current !== id) return
+        bufferRef.current.reset()
+        setState((previous) => ({
+          ...previous,
+          thread: data.thread,
+          messages: data.messages,
+          context: data.context,
+          phase: 'idle',
+          liveToolCalls: [],
+          approval: null,
+          reconnecting: false,
+          liveOutputRetained: false,
+        }))
+      }
+
+      let job
+      try {
+        job = (await api.getJob(jobId, signal)).job
+      } catch (error) {
+        if (signal.aborted) return
+        setState((previous) => ({
+          ...previous,
+          phase: 'idle',
+          streamError: { code: 'transport', message: errorMessage(error) },
+        }))
+        return
+      }
+      if (signal.aborted) return
+      if (isTerminalJobState(job.status)) {
+        await refresh()
+        return
+      }
+
+      setState((previous) => ({
+        ...previous,
+        phase: jobPhase(job.status),
+        turnStartedAt: previous.turnStartedAt ?? Date.now(),
+      }))
+      const { finished } = streamJob(jobId, {
+        signal,
+        after: 0,
+        onReconnect: () => setState((previous) => ({ ...previous, reconnecting: true })),
+        onGap: () => setState((previous) => ({ ...previous, reconnecting: true })),
+        onInvalidFrame: (raw) => {
+          console.warn('[alamo] Job SSE frame failed contract validation:', raw)
+        },
+        onEvent: (event) => {
+          if (!event.output) return
+          handleEvent(
+            { ...event.output.event, seq: event.sequence } as ChatStreamEvent,
+            bufferRef.current,
+            setState,
+          )
+        },
+        onError: (error) => {
+          bufferRef.current.flushNow()
+          setState((previous) => ({
+            ...previous,
+            phase: 'idle',
+            reconnecting: false,
+            streamError: { code: 'transport', message: errorMessage(error) },
+            liveOutputRetained: true,
+          }))
+        },
+      })
+      await finished
+      if (!signal.aborted) await refresh()
+    },
+    [],
+  )
+
   const load = useCallback(async (id: string, signal: AbortSignal) => {
     setState((previous) => ({ ...previous, loading: true, loadError: null }))
     try {
@@ -93,11 +169,20 @@ export function useChat(threadId: string | null) {
         loadError: null,
         liveOutputRetained: false,
       }))
+      const active = [...data.messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === 'assistant' &&
+            message.turnStatus === 'pending' &&
+            message.jobId !== null,
+        )
+      if (active?.jobId) await followPersistedJob(id, active.jobId, signal)
     } catch (error) {
       if (signal.aborted) return
       setState((previous) => ({ ...previous, loading: false, loadError: error }))
     }
-  }, [])
+  }, [followPersistedJob])
 
   useEffect(() => {
     // Смена треда обрывает незавершённый стрим предыдущего.
@@ -111,9 +196,13 @@ export function useChat(threadId: string | null) {
     }
 
     const controller = new AbortController()
+    abortRef.current = controller
     setState({ ...initialState(), loading: true })
     void load(threadId, controller.signal)
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      if (abortRef.current === controller) abortRef.current = null
+    }
   }, [threadId, load])
 
   useEffect(() => {
@@ -145,6 +234,7 @@ export function useChat(threadId: string | null) {
           {
             id: `optimistic-${crypto.randomUUID()}`,
             threadId: id,
+            jobId: null,
             role: 'user',
             content,
             thinking: null,
@@ -172,6 +262,7 @@ export function useChat(threadId: string | null) {
 
       const body = {
         content,
+        idempotencyKey: crypto.randomUUID(),
         ...(options?.attachments ? { attachments: options.attachments } : {}),
         ...(options?.autoApprove !== undefined ? { autoApprove: options.autoApprove } : {}),
       }
@@ -237,6 +328,17 @@ export function useChat(threadId: string | null) {
           approval: null,
           liveOutputRetained: false,
         }))
+        const active = [...data.messages]
+          .reverse()
+          .find(
+            (message) =>
+              message.role === 'assistant' &&
+              message.turnStatus === 'pending' &&
+              message.jobId !== null,
+          )
+        if (active?.jobId && !controller.signal.aborted) {
+          await followPersistedJob(id, active.jobId, controller.signal)
+        }
       } catch {
         // Перечитать не вышло — оставляем то, что уже показано, и снимаем фазу.
         buffer.flushNow()
@@ -249,7 +351,7 @@ export function useChat(threadId: string | null) {
         }))
       }
     },
-    [],
+    [followPersistedJob],
   )
 
   /* ─────────────────────────────── Стоп ───────────────────────────────── */
@@ -467,6 +569,25 @@ function upsertToolCall(calls: ToolCall[], next: ToolCall): ToolCall[] {
   const copy = calls.slice()
   copy[index] = { ...copy[index], ...next } as ToolCall
   return copy
+}
+
+function isTerminalJobState(status: JobState): boolean {
+  return (
+    status === 'completed' ||
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'interrupted'
+  )
+}
+
+function jobPhase(status: JobState): TurnPhase {
+  if (status === 'thinking') return 'thinking'
+  if (status === 'generating') return 'generating'
+  if (status === 'waiting_tool') return 'tools'
+  if (status === 'waiting_approval') return 'awaiting_approval'
+  if (status === 'finalizing' || status === 'cancelling') return 'finalizing'
+  if (status === 'queued' || status === 'reserving') return 'sending'
+  return 'prefill'
 }
 
 function initialState(): ChatState {

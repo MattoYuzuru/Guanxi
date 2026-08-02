@@ -15,6 +15,7 @@ import {
   createThreadResponse,
   getContextResponse,
   getHealthResponse,
+  getJobResponse,
   getModelResponse,
   getSettingsResponse,
   getThreadResponse,
@@ -23,12 +24,15 @@ import {
   listRunningResponse,
   listThreadsResponse,
   listWorkspacesResponse,
+  cancelJobResponse,
+  jobStreamEventSchema,
   pullStreamEventSchema,
   warmModelResponse,
   workspaceSchema,
   type ApiError,
   type ApprovalBody,
   type ChatStreamEvent,
+  type JobStreamEvent,
   type CreateThreadBody,
   type CreateWorkspaceBody,
   type PullStreamEvent,
@@ -148,6 +152,16 @@ export const api = {
 
   /* Модели */
 
+  getJob: (jobId: string, signal?: AbortSignal) =>
+    request(ROUTES.job(jobId), getJobResponse, { signal }),
+
+  cancelJob: (jobId: string, signal?: AbortSignal) =>
+    request(ROUTES.jobCancel(jobId), cancelJobResponse, {
+      method: 'POST',
+      body: { reason: 'user_requested' },
+      signal,
+    }),
+
   listModels: (contextLength?: number, signal?: AbortSignal) =>
     request(ROUTES.models(), listModelsResponse, { query: { contextLength }, signal }),
 
@@ -261,6 +275,37 @@ export function streamChat(
     onError: handlers.onError,
     onInvalidFrame: handlers.onInvalidFrame,
     onReconnect: handlers.onReconnect,
+  })
+}
+
+/** Durable GET subscription. Disconnect only detaches this client. */
+export function streamJob(
+  jobId: string,
+  handlers: {
+    onEvent: (event: JobStreamEvent) => void
+    onDone?: () => void
+    onError?: (error: unknown) => void
+    onInvalidFrame?: (raw: string, error: unknown) => void
+    onReconnect?: (attempt: number, lastSequence: number) => void
+    onGap?: (expected: number, received: number) => void
+    after?: number
+    signal?: AbortSignal
+  },
+) {
+  return consumeSse<JobStreamEvent>({
+    url: ROUTES.jobEvents(jobId),
+    schema: jobStreamEventSchema,
+    method: 'GET',
+    maxRetries: 3,
+    lastEventId: handlers.after ?? 0,
+    sequenceOf: (event) => event.sequence,
+    signal: handlers.signal,
+    onEvent: handlers.onEvent,
+    onDone: handlers.onDone,
+    onError: handlers.onError,
+    onInvalidFrame: handlers.onInvalidFrame,
+    onReconnect: handlers.onReconnect,
+    onGap: handlers.onGap,
   })
 }
 

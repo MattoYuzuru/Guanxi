@@ -12,7 +12,7 @@
  *  - переподключение с `Last-Event-ID` при обрыве соединения;
  *  - отмену через AbortController (кнопка «Стоп»).
  */
-import type { ZodType } from 'zod'
+import type { ZodType, ZodTypeDef } from 'zod'
 import { SSE_LAST_EVENT_ID_HEADER } from '@alamo/contract'
 
 /* ──────────────────────────── Разбор кадров ───────────────────────────── */
@@ -99,7 +99,7 @@ function parseFrame(raw: string): SseFrame | null {
 
 export type SseStreamOptions<T> = {
   url: string
-  schema: ZodType<T>
+  schema: ZodType<T, ZodTypeDef, unknown>
   method?: 'POST' | 'GET'
   body?: unknown
   signal?: AbortSignal
@@ -113,6 +113,8 @@ export type SseStreamOptions<T> = {
   onReconnect?: (attempt: number, lastSeq: number) => void
   /** В seq обнаружена дыра — события между lastSeq и seq потеряны. */
   onGap?: (expected: number, received: number) => void
+  /** Contract-specific persisted sequence; defaults to the legacy `seq` field. */
+  sequenceOf?: (event: T) => number
 }
 
 export class SseHttpError extends Error {
@@ -132,7 +134,7 @@ export class SseHttpError extends Error {
  * (в т.ч. повторы после переподключения) и отдаём в `Last-Event-ID`, чтобы
  * сервер продолжил с нужного места.
  */
-export async function* sseStream<T extends { seq: number }>(
+export async function* sseStream<T>(
   options: SseStreamOptions<T>,
 ): AsyncGenerator<T, void, void> {
   const {
@@ -145,6 +147,7 @@ export async function* sseStream<T extends { seq: number }>(
     onInvalidFrame,
     onReconnect,
     onGap,
+    sequenceOf = (event) => (event as { seq: number }).seq,
   } = options
 
   // seq начинается с 0; -1 означает, что ни одного кадра ещё не видели.
@@ -205,8 +208,9 @@ export async function* sseStream<T extends { seq: number }>(
           const tail = parser.flush()
           if (tail) {
             const event = decodeFrame(tail, schema, onInvalidFrame)
-            if (event && event.seq > lastSeq) {
-              lastSeq = event.seq
+            const sequence = event ? sequenceOf(event) : -1
+            if (event && sequence > lastSeq) {
+              lastSeq = sequence
               yield event
             }
           }
@@ -222,13 +226,14 @@ export async function* sseStream<T extends { seq: number }>(
           if (!event) continue
 
           // Повтор после переподключения — молча пропускаем.
-          if (event.seq <= lastSeq) continue
+          const sequence = sequenceOf(event)
+          if (sequence <= lastSeq) continue
 
-          if (lastSeq >= 0 && event.seq > lastSeq + 1) {
-            onGap?.(lastSeq + 1, event.seq)
+          if (lastSeq >= 0 && sequence > lastSeq + 1) {
+            onGap?.(lastSeq + 1, sequence)
           }
 
-          lastSeq = event.seq
+          lastSeq = sequence
           yield event
         }
       }
@@ -252,7 +257,7 @@ export async function* sseStream<T extends { seq: number }>(
  * Колбэчный фасад над итератором — удобнее там, где события расходятся
  * по разным обработчикам (чат) и не нужен `for await`.
  */
-export function consumeSse<T extends { seq: number }>(
+export function consumeSse<T>(
   options: SseStreamOptions<T> & {
     onEvent: (event: T) => void
     onDone?: () => void
@@ -288,7 +293,7 @@ export function consumeSse<T extends { seq: number }>(
 
 function decodeFrame<T>(
   frame: SseFrame,
-  schema: ZodType<T>,
+  schema: ZodType<T, ZodTypeDef, unknown>,
   onInvalidFrame?: (raw: string, error: unknown) => void,
 ): T | null {
   let json: unknown

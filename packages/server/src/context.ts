@@ -12,6 +12,7 @@ import { probeHardware } from './hardware/probe.ts'
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { JobService } from './jobs/service.ts'
+import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { ExclusiveInferenceBridge } from './runtime/exclusive-inference.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { openDb, type Db } from './store/db.ts'
@@ -33,6 +34,7 @@ export interface AppContext {
   db: Db
   jobs: JobStore
   jobService: JobService
+  chatExecution: ChatJobExecutionOwner
   threads: ThreadStore
   workspaces: WorkspaceStore
   settings: SettingsStore
@@ -84,10 +86,13 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
   const jobs = new JobStore(db)
 
-  return {
+  const activeTurns = new Map<string, AbortController>()
+  const inference = new ExclusiveInferenceBridge()
+  const jobService = new JobService(jobs)
+  const base = {
     db,
     jobs,
-    jobService: new JobService(jobs),
+    jobService,
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,
@@ -96,9 +101,13 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     tracker: new PrefillTracker(),
     hardware,
     appVersion: options.appVersion,
-    activeTurns: new Map(),
-    inference: new ExclusiveInferenceBridge(),
+    activeTurns,
+    inference,
     ollama,
     models,
+  }
+  return {
+    ...base,
+    chatExecution: new ChatJobExecutionOwner(base),
   }
 }

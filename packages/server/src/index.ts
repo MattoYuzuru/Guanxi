@@ -16,14 +16,25 @@ import { defaultDbPath } from './store/db.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { JobService, JobServiceError } from './jobs/service.ts'
+export {
+  CHAT_JOB_OPERATION,
+  CHAT_OUTPUT_CHUNK_BYTES,
+  ChatJobExecutionOwner,
+  chatIdempotencyScope,
+  chatRequestFingerprint,
+} from './jobs/chat-execution.ts'
 export type { JobServiceErrorCode, JobServiceOptions } from './jobs/service.ts'
 export { PUBLIC_JOB_IDEMPOTENCY_SCOPE } from './http/jobs-routes.ts'
 export type {
   AppendJobEventInput,
+  ChatJobAssociation,
+  CreateChatJobInput,
+  CreateChatJobResult,
   CreateJobInput,
   CreateJobResult,
   JobStoreErrorCode,
   TerminalizeJobInput,
+  TerminalizeChatJobInput,
   TerminalizeJobResult,
   TransitionJobInput,
   TransitionJobResult,
@@ -79,13 +90,15 @@ export async function start(options: StartOptions = {}) {
   let closing: Promise<void> | null = null
   const close = (): Promise<void> => {
     if (closing) return closing
-    for (const controller of context.activeTurns.values()) controller.abort()
-    closing = new Promise((resolveClose) => {
-      instance.close(() => {
-        context.db.close()
-        resolveClose()
-      })
-    })
+    closing = context.chatExecution.shutdown().then(
+      () =>
+        new Promise((resolveClose) => {
+          instance.close(() => {
+            context.db.close()
+            resolveClose()
+          })
+        }),
+    )
     return closing
   }
 

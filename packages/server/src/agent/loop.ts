@@ -27,7 +27,11 @@ import {
   type OllamaClient,
 } from '../ollama/client.ts'
 import type { OllamaChatChunk, OllamaChatMessage } from '../ollama/types.ts'
-import type { ThreadStore } from '../store/threads.ts'
+import type {
+  TerminalMessageResult,
+  TerminalMessageUpdate,
+  ThreadStore,
+} from '../store/threads.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
 import type { ToolRegistry } from '../tools/registry.ts'
 import { ToolError } from '../tools/types.ts'
@@ -51,6 +55,12 @@ export interface RunTurnParams {
   /** Разрешено ли выполнение команд оболочки. */
   enableBash: boolean
   signal: AbortSignal
+  /** Durable Chat owner association for assistant projections created after tool steps. */
+  jobId?: string
+  /** P1-D creates the initial pending assistant atomically with the Job. */
+  initialAssistantMessageId?: string
+  /** Allows the owner to defer the final Message into the Job terminal transaction. */
+  terminalizeMessage?: (id: string, update: TerminalMessageUpdate) => TerminalMessageResult
 }
 
 export const TURN_ABORT_REASON = {
@@ -237,7 +247,9 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         })
       : CHAT_SYSTEM_PROMPT
 
-  const persistedMessages = store.messages(thread.id)
+  const persistedMessages = store
+    .messages(thread.id)
+    .filter((message) => message.id !== params.initialAssistantMessageId)
   const working: OllamaChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...toOllamaMessages(persistedMessages),
@@ -264,7 +276,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
     let result
     try {
-      result = store.terminalizeMessage(activeMessageId, {
+      const update: TerminalMessageUpdate = {
         outcome,
         error,
         stopReason,
@@ -272,7 +284,10 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         thinking: activeThinking || null,
         toolCalls: activeToolCalls,
         usage: activeUsage,
-      })
+      }
+      result = params.terminalizeMessage
+        ? params.terminalizeMessage(activeMessageId, update)
+        : store.terminalizeMessage(activeMessageId, update)
     } catch (cause) {
       throw new TerminalPersistenceError(cause)
     }
@@ -313,11 +328,23 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
 
   try {
     while (step < MAX_AGENT_STEPS) {
-      const assistantMessage = store.addMessage({
-        threadId: thread.id,
-        role: 'assistant',
-        content: '',
-      })
+      const assistantMessage =
+        step === 0 && params.initialAssistantMessageId
+          ? store.getMessage(params.initialAssistantMessageId)
+          : store.addMessage({
+              threadId: thread.id,
+              role: 'assistant',
+              content: '',
+              jobId: params.jobId,
+            })
+      if (
+        !assistantMessage ||
+        assistantMessage.threadId !== thread.id ||
+        assistantMessage.role !== 'assistant' ||
+        assistantMessage.turnStatus !== 'pending'
+      ) {
+        throw new Error('The durable pending assistant projection is unavailable')
+      }
       activeMessageId = assistantMessage.id
       activeContent = ''
       activeThinking = ''
@@ -329,6 +356,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         model: thread.model,
         step,
         status: 'pending',
+        ...(params.jobId ? { jobId: params.jobId } : {}),
       })
 
       if (signal.aborted) {

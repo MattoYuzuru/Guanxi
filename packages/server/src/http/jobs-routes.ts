@@ -210,7 +210,7 @@ export function jobsRoutes(app: AppContext): Hono {
 
     try {
       return context.json(
-        cancelJobResponse.parse({ job: app.jobService.cancel(jobId, parsed.data.reason) }),
+        cancelJobResponse.parse({ job: await app.chatExecution.cancel(jobId, parsed.data.reason) }),
       )
     } catch (error) {
       return jobFailure(context, error)

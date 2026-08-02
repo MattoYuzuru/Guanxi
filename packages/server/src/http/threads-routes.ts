@@ -11,14 +11,14 @@ import {
   sendMessageBody,
   updateThreadBody,
   type ChatStreamEvent,
+  type JobStreamEvent,
   type ThreadOptions,
 } from '@alamo/contract'
-import { runTurn, TURN_ABORT_REASON } from '../agent/loop.ts'
 import { COMPACTION_PROMPT } from '../agent/prompts.ts'
 import { buildContextState, estimateTokens } from '../context/usage.ts'
 import type { AppContext } from '../context.ts'
 import type { InferencePermit } from '../runtime/exclusive-inference.ts'
-import { ToolRegistry } from '../tools/registry.ts'
+import { JobStoreError } from '../store/jobs.ts'
 import { fail, notFound } from './errors.ts'
 import { lastEventId, sseResponse } from './sse.ts'
 
@@ -27,6 +27,21 @@ function deriveTitle(text: string): string {
   const firstLine = text.trim().split('\n')[0] ?? ''
   const trimmed = firstLine.slice(0, 60)
   return trimmed.length > 0 ? trimmed : 'Новый диалог'
+}
+
+async function* compatibilityEvents(
+  app: AppContext,
+  jobId: string,
+  after: number,
+  signal: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
+  for await (const event of app.jobService.subscribe(jobId, after, signal)) {
+    if (!event.output) continue
+    yield {
+      ...event.output.event,
+      seq: event.sequence,
+    } as ChatStreamEvent
+  }
 }
 
 export function threadsRoutes(app: AppContext): Hono {
@@ -95,7 +110,7 @@ export function threadsRoutes(app: AppContext): Hono {
     const id = context.req.param('id')
     const existing = app.threads.get(id)
     if (!existing) return notFound(context, 'thread_not_found', 'Тред не найден')
-    if (app.activeTurns.has(id)) {
+    if (app.chatExecution.isThreadActive(id)) {
       return context.json(
         { code: 'validation_failed', message: 'Нельзя менять тред во время генерации', details: null },
         409,
@@ -118,7 +133,12 @@ export function threadsRoutes(app: AppContext): Hono {
 
   routes.delete('/:id', (context) => {
     const id = context.req.param('id')
-    app.activeTurns.get(id)?.abort(TURN_ABORT_REASON.explicitStop)
+    if (app.chatExecution.isThreadActive(id)) {
+      return context.json(
+        { code: 'validation_failed', message: 'Сначала остановите активную генерацию', details: null },
+        409,
+      )
+    }
     app.approvals.forgetThread(id)
 
     if (!app.threads.delete(id)) return notFound(context, 'thread_not_found', 'Тред не найден')
@@ -144,29 +164,28 @@ export function threadsRoutes(app: AppContext): Hono {
   })
 
   /** Останавливает идущий ход и снимает все ожидания подтверждения. */
-  routes.post('/:id/stop', (context) => {
+  routes.post('/:id/stop', async (context) => {
     const id = context.req.param('id')
-    const controller = app.activeTurns.get(id)
     app.approvals.cancelThread(id)
-    controller?.abort(TURN_ABORT_REASON.explicitStop)
-    return context.json({ ok: controller !== undefined })
+    const job = await app.chatExecution.cancelThread(id)
+    return context.json({ ok: job !== null })
   })
 
   /* ─────────────────────────── Отправка сообщения ────────────────────────── */
 
   routes.post('/:id/messages', async (context) => {
     const threadId = context.req.param('id')
-    const thread = app.threads.get(threadId)
-    if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
-
     const parsed = sendMessageBody.safeParse(await context.req.json().catch(() => null))
     if (!parsed.success) {
       return context.json({ code: 'validation_failed', message: 'Некорректное тело', details: null }, 400)
     }
+
+    const thread = app.threads.get(threadId)
+    if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
     const sendBody = parsed.data
 
-    // Второй ход в тот же тред не запускаем: модель одна, очередь одна.
-    if (app.activeTurns.has(threadId)) {
+    const active = app.jobs.activeChatJobForThread(threadId)
+    if (active && (!sendBody.idempotencyKey || active.job.idempotencyKey !== sendBody.idempotencyKey)) {
       return context.json(
         { code: 'validation_failed', message: 'В этом треде уже идёт генерация', details: null },
         409,
@@ -177,63 +196,45 @@ export function threadsRoutes(app: AppContext): Hono {
     if (thread.workspaceId && !workspace) {
       return notFound(context, 'workspace_not_found', 'Рабочая директория не найдена')
     }
-    if (workspace) app.workspaces.touch(workspace.id)
-
-    const settings = app.settings.get()
-    const registry = new ToolRegistry({
-      hasWorkspace: thread.mode === 'agent' && workspace !== null,
-      enableBash: settings.enableBash,
-    })
-
-    const controller = new AbortController()
-    app.activeTurns.set(threadId, controller)
-
-    const modelSupportsTools = await app.models().supportsTools(thread.model).catch(() => false)
-
-    async function* stream(): AsyncGenerator<ChatStreamEvent> {
-      let permit: InferencePermit | undefined
-      try {
-        permit = await app.inference.acquire(controller.signal)
-        if (controller.signal.aborted) return
-
-        /*
-         * Admission precedes persistence: a request cancelled while waiting
-         * leaves neither a user-only attempt nor an ambiguous assistant row.
-         */
-        if (app.threads.messages(threadId).length === 0) {
-          app.threads.update(threadId, { title: deriveTitle(sendBody.content) })
-        }
-        app.threads.addMessage({ threadId, role: 'user', content: sendBody.content })
-
-        yield* runTurn({
-          thread: app.threads.get(threadId)!,
-          workspace,
-          client: app.ollama(),
-          store: app.threads,
-          registry,
-          approvals: app.approvals,
-          tracker: app.tracker,
-          modelSupportsTools,
-          autoApprove: sendBody.autoApprove === true ? true : settings.autoApproveTools,
-          enableBash: settings.enableBash,
-          signal: controller.signal,
-        })
-      } catch (error) {
-        if (!controller.signal.aborted) throw error
-      } finally {
-        permit?.release()
-        if (app.activeTurns.get(threadId) === controller) {
-          app.activeTurns.delete(threadId)
-        }
+    let result
+    try {
+      result = app.chatExecution.createAndStart({
+        threadId,
+        idempotencyKey: sendBody.idempotencyKey,
+        snapshot: {
+          content: sendBody.content,
+          attachments: sendBody.attachments ?? [],
+          autoApprove: sendBody.autoApprove ?? null,
+        },
+        derivedTitle: deriveTitle(sendBody.content),
+      })
+    } catch (error) {
+      if (error instanceof JobStoreError && error.code === 'idempotency_conflict') {
+        return context.json(
+          { code: 'job_conflict', message: 'Ключ повтора уже связан с другим запросом', details: null },
+          409,
+        )
       }
+      if (error instanceof JobStoreError && error.code === 'invalid_input') {
+        return context.json(
+          { code: 'validation_failed', message: 'Некорректная Chat-команда', details: null },
+          400,
+        )
+      }
+      return context.json(
+        { code: 'storage_error', message: 'Chat-команда не была сохранена', details: null },
+        500,
+      )
     }
 
-    return sseResponse(stream(), {
-      onAbort: () => {
-        if (!controller.signal.aborted) {
-          controller.abort(TURN_ABORT_REASON.connectionAbort)
-        }
-      },
+    const subscriber = new AbortController()
+    return sseResponse(compatibilityEvents(
+      app,
+      result.job.id,
+      lastEventId(context.req.header('Last-Event-ID')) ?? 0,
+      subscriber.signal,
+    ), {
+      onAbort: () => subscriber.abort(),
       skipUntilSeq: lastEventId(context.req.header('Last-Event-ID')),
     })
   })
