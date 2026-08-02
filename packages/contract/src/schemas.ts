@@ -407,24 +407,56 @@ export const jobOutcomeSchema = z.object({
 })
 export type JobOutcome = z.infer<typeof jobOutcomeSchema>
 
-export const jobSchema = z.object({
-  id: z.string().min(1),
-  kind: jobKindSchema,
-  operation: z.string().min(1),
-  status: jobStateSchema,
-  /** Provider/adapter detail inside a stable state; null until a Job Engine sets it. */
-  phase: z.string().min(1).nullable(),
-  idempotencyScope: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  createdAt: z.string().datetime(),
-  startedAt: z.string().datetime().nullable(),
-  finishedAt: z.string().datetime().nullable(),
-  error: jobErrorSchema.nullable(),
-  outcome: jobOutcomeSchema.nullable(),
-  stopReason: z.string().min(1).nullable(),
-  /** Sequence of the last event committed in the same SQLite store. */
-  lastEventSequence: z.number().int().positive(),
-})
+export const jobSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: jobKindSchema,
+    operation: z.string().min(1),
+    status: jobStateSchema,
+    /** Provider/adapter detail inside a stable state; null until a Job Engine sets it. */
+    phase: z.string().min(1).nullable(),
+    idempotencyScope: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    createdAt: z.string().datetime(),
+    startedAt: z.string().datetime().nullable(),
+    finishedAt: z.string().datetime().nullable(),
+    error: jobErrorSchema.nullable(),
+    outcome: jobOutcomeSchema.nullable(),
+    stopReason: z.string().min(1).nullable(),
+    /** Sequence of the last event committed in the same SQLite store. */
+    lastEventSequence: z.number().int().positive(),
+  })
+  .superRefine((job, context) => {
+    const terminal = jobTerminalStateSchema.safeParse(job.status).success
+    if (terminal !== (job.finishedAt !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['finishedAt'],
+        message: 'finishedAt must be present exactly for terminal Jobs',
+      })
+    }
+    if (!terminal && (job.error !== null || job.outcome !== null || job.stopReason !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['status'],
+        message: 'non-terminal Jobs must not contain terminal metadata',
+      })
+    }
+    if (job.status === 'completed' && job.error !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['error'],
+        message: 'completed Jobs must not contain an error',
+      })
+    }
+    if (job.status === 'failed' && job.error === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['error'],
+        message: 'failed Jobs require a safe structured error',
+      })
+    }
+  })
 export type Job = z.infer<typeof jobSchema>
 
 export const jobEventTypeSchema = z.enum([

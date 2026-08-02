@@ -71,5 +71,24 @@ describe('durable Job contract', () => {
     assert.equal(jobStateSchema.safeParse('running').success, false)
     assert.equal(safeJobMetadataSchema.safeParse({ prompt: { private: true } }).success, false)
     assert.equal(safeJobMetadataSchema.safeParse({ durationMs: Number.POSITIVE_INFINITY }).success, false)
+    assert.equal(
+      jobSchema.safeParse({
+        id: 'false-success',
+        kind: 'inference',
+        operation: 'chat',
+        status: 'completed',
+        phase: null,
+        idempotencyScope: 'test',
+        idempotencyKey: 'malformed',
+        createdAt: '2026-08-03T00:00:00.000Z',
+        startedAt: null,
+        finishedAt: null,
+        error: null,
+        outcome: null,
+        stopReason: null,
+        lastEventSequence: 1,
+      }).success,
+      false,
+    )
   })
 })
