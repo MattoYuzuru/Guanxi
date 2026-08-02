@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { start } from '@alamo/server'
+import { DEFAULT_PORT, start } from '@alamo/server'
+import { probeExistingAlamo } from './existing.ts'
 
 const VERSION = '0.1.0'
 const here = dirname(fileURLToPath(import.meta.url))
@@ -80,6 +81,18 @@ function openBrowser(url: string): void {
   child.unref()
 }
 
+function requestedUrl(options: CliOptions): { url: string; port: number } {
+  const environmentPort = Number(process.env['PORT'])
+  const port =
+    options.port ??
+    (Number.isInteger(environmentPort) && environmentPort > 0 && environmentPort <= 65_535
+      ? environmentPort
+      : DEFAULT_PORT)
+  const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
+  const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
+  return { url: `http://${browserHost}:${port}`, port }
+}
+
 const args = process.argv.slice(2)
 if (args.includes('--help') || args.includes('-h')) {
   console.log(usage())
@@ -90,23 +103,55 @@ if (args.includes('--version') || args.includes('-v')) {
   process.exit(0)
 }
 
+let options: CliOptions
 try {
-  const options = parseArgs(args)
-  const bundledWeb = resolve(here, 'web')
-  const developmentWeb = resolve(here, '../../web/dist')
-  const webDir = existsSync(bundledWeb) ? bundledWeb : developmentWeb
-
-  const server = await start({
-    port: options.port,
-    host: options.host,
-    dataDir: options.dataDir,
-    webDir,
-  })
-
-  console.log(`Alamo UI ${VERSION} запущен: ${server.url}`)
-  if (options.open) openBrowser(server.url)
+  options = parseArgs(args)
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   console.error('\n' + usage())
   process.exit(1)
+}
+
+const requested = requestedUrl(options)
+const existing = requested.port === 0 ? null : await probeExistingAlamo(requested.url)
+
+if (existing?.kind === 'ui') {
+  console.log(`Alamo UI ${VERSION} уже запущен: ${existing.url}`)
+  if (options.open) openBrowser(existing.url)
+} else if (existing?.kind === 'api-only') {
+  console.error(
+    `На ${existing.url} уже работает Alamo${existing.version ? ` ${existing.version}` : ''}, ` +
+      'но frontend у этого процесса не был собран.',
+  )
+  console.error('Останови старый процесс и повтори: alamo-ui')
+  process.exitCode = 1
+} else {
+  try {
+    const bundledWeb = resolve(here, 'web')
+    const developmentWeb = resolve(here, '../../web/dist')
+    const webDir = existsSync(bundledWeb) ? bundledWeb : developmentWeb
+
+    const server = await start({
+      port: options.port,
+      host: options.host,
+      dataDir: options.dataDir,
+      webDir,
+    })
+
+    console.log(`Alamo UI ${VERSION} запущен: ${server.url}`)
+    if (options.open) openBrowser(server.url)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code
+    if (code === 'EADDRINUSE') {
+      console.error(`Порт ${requested.port} уже занят другим процессом.`)
+      console.error('Запусти Alamo на свободном порту: alamo-ui --port 0')
+    } else {
+      console.error(
+        `Не удалось запустить Alamo UI: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
+    process.exitCode = 1
+  }
 }

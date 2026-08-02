@@ -12,7 +12,7 @@
     "dev:server": "npm run dev --workspace @alamo/server",
     "dev:web": "npm run dev --workspace @alamo/web",
     "build": "npm run build --workspace @alamo/web && npm run build --workspace @alamo/server && npm run build --workspace alamo-ui",
-    "test": "node --test packages/server/test/**/*.test.ts",
+    "test": "node --test packages/server/test/**/*.test.ts packages/cli/test/**/*.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

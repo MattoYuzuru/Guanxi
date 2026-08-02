@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "test": "node --test 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "start": "node src/bin.ts"
   },
