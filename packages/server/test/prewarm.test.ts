@@ -43,6 +43,13 @@ function model(overrides: Partial<LocalModel> = {}): LocalModel {
     parameterSize: '7B',
     quantization: 'Q4_K_M',
     contextLength: 32_768,
+    contextLimit: {
+      state: 'declared',
+      value: 32_768,
+      source: 'ollama_api_tags',
+      observedAt: '2026-08-03T00:00:00.000Z',
+      confidence: 'declared',
+    },
     capabilities: ['completion'],
     isCloud: false,
     fit: {
@@ -98,6 +105,35 @@ function dependencies(options: {
 }
 
 describe('typed low-priority prewarm command', () => {
+  it('preserves an exact custom context above the retired ceiling with the short TTL', async () => {
+    const customContext = 1_048_577
+    const calls: number[] = []
+    const request: PrewarmModelBody = {
+      ...BODY,
+      contextLength: customContext,
+      selection: { ...BODY.selection },
+    }
+    const result = await executePrewarm(
+      dependencies({
+        installed: [model({
+          contextLength: 2_000_000,
+          contextLimit: {
+            state: 'declared', value: 2_000_000, source: 'ollama_api_tags',
+            observedAt: '2026-08-03T00:00:00.000Z', confidence: 'declared',
+          },
+          fit: { ...model().fit, contextLength: customContext },
+        })],
+        warm: async (_name, context, keepAlive) => {
+          calls.push(context)
+          assert.equal(keepAlive, PREWARM_KEEP_ALIVE)
+        },
+      }),
+      'fixture:latest', request, new AbortController().signal,
+    )
+    assert.equal(result.status, 'warmed')
+    assert.deepEqual(calls, [customContext])
+  })
+
   it('loads only an exact eligible installed variant with the central short TTL and releases', async () => {
     const calls: Array<{ name: string; context: number; keepAlive: string }> = []
     const deps = dependencies({

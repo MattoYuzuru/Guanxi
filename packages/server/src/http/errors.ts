@@ -13,12 +13,28 @@ import {
   OllamaUnavailableError,
 } from '../ollama/client.ts'
 import { ResourceGovernorError } from '../runtime/resource-governor.ts'
+import { ModelContextLimitExceededError } from '../models/service.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
 import { ToolError } from '../tools/types.ts'
 
 type StatusCode = 400 | 403 | 404 | 409 | 500 | 502 | 503 | 504
 
 function classify(error: unknown): { status: StatusCode; body: ApiError } {
+  if (error instanceof ModelContextLimitExceededError) {
+    return {
+      status: 400,
+      body: {
+        code: 'context_limit_exceeded',
+        message: error.message,
+        details: {
+          model: error.model,
+          requestedContext: error.requestedContext,
+          contextLimit: error.limit,
+        },
+      },
+    }
+  }
+
   if (error instanceof ResourceGovernorError) {
     if (
       error.code === 'unload_active_model' ||

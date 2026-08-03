@@ -17,6 +17,7 @@ import {
   localModelSchema,
   messageSchema,
   modelDetailSchema,
+  positiveSafeIntegerSchema,
   runningModelSchema,
   runtimeSnapshotSchema,
   settingsSchema,
@@ -128,7 +129,7 @@ export type CancelJobResponse = z.infer<typeof cancelJobResponse>
 
 /** GET /api/models?contextLength=32768 — вердикт влезаемости считается под это окно. */
 export const listModelsQuery = z.object({
-  contextLength: z.coerce.number().int().optional(),
+  contextLength: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
 })
 export const listModelsResponse = z.object({
   models: z.array(localModelSchema),
@@ -138,7 +139,7 @@ export type ListModelsResponse = z.infer<typeof listModelsResponse>
 /** GET /api/models/catalog?q=&contextLength= */
 export const listCatalogQuery = z.object({
   q: z.string().optional(),
-  contextLength: z.coerce.number().int().optional(),
+  contextLength: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
 })
 export const listCatalogResponse = z.object({
   models: z.array(catalogModelSchema),
@@ -151,6 +152,11 @@ export type ListCatalogResponse = z.infer<typeof listCatalogResponse>
 export const getModelResponse = modelDetailSchema
 export type GetModelResponse = z.infer<typeof getModelResponse>
 
+export const getModelQuery = z
+  .object({
+    contextLength: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
+  })
+
 export const listRunningResponse = z.object({
   models: z.array(runningModelSchema),
   observedAt: z.string().nullable().optional().default(null),
@@ -162,7 +168,7 @@ export type GetRuntimeResponse = z.infer<typeof getRuntimeResponse>
 
 /** POST /api/models/:name/warm — прогреть с нужным окном, чтобы замерить факт. */
 export const warmModelBody = z.object({
-  contextLength: z.number().int(),
+  contextLength: positiveSafeIntegerSchema,
 })
 export const warmModelResponse = z.object({
   running: runningModelSchema,
@@ -173,6 +179,7 @@ export type WarmModelResponse = z.infer<typeof warmModelResponse>
 
 export const prewarmSkipReasonSchema = z.enum([
   'disabled',
+  'context_limit_exceeded',
   'selection_changed',
   'model_not_installed',
   'fit_unknown',
@@ -196,7 +203,7 @@ export type PrewarmCancellationReason = z.infer<
 export const prewarmModelBody = z
   .object({
     operation: z.literal('chat'),
-    contextLength: z.number().int().min(512),
+    contextLength: positiveSafeIntegerSchema,
     selection: z
       .object({
         digest: z.string().min(1),
@@ -358,7 +365,7 @@ export const getSettingsResponse = settingsSchema
 export const updateSettingsBody = z.object({
   ollamaHost: z.string().optional(),
   defaultModel: z.string().nullable().optional(),
-  defaultNumCtx: z.number().int().optional(),
+  defaultNumCtx: positiveSafeIntegerSchema.optional(),
   autoApproveTools: z.boolean().optional(),
   enableBash: z.boolean().optional(),
   prewarmEnabled: z.boolean().optional(),

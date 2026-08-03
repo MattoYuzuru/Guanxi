@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import type { HardwareInfo } from '@alamo/contract'
-import { ModelService, MODEL_SHOW_CACHE_MAX_ENTRIES } from '../src/models/service.ts'
+import {
+  ModelContextLimitExceededError,
+  ModelService,
+  MODEL_SHOW_CACHE_MAX_ENTRIES,
+  MODEL_SHOW_MAX_CONCURRENCY,
+} from '../src/models/service.ts'
 import { OllamaClient } from '../src/ollama/client.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
@@ -31,7 +36,7 @@ const MODEL_INFO = {
 }
 
 interface ProviderState {
-  installed: Array<{ name: string; digest: string }>
+  installed: Array<{ name: string; digest: string; contextLength?: number | null }>
   running: Array<{ name: string; digest?: string; contextLength?: number }>
   version: string
   showCalls: string[]
@@ -62,7 +67,9 @@ function client(state: ProviderState, host = 'http://127.0.0.1:11434'): OllamaCl
               family: 'fixture',
               parameter_size: '1B',
               quantization_level: 'Q4',
-              context_length: 32_768,
+              ...(model.contextLength === null
+                ? {}
+                : { context_length: model.contextLength ?? 32_768 }),
             },
             capabilities: ['completion'],
           })),
@@ -296,5 +303,103 @@ describe('digest-aware model facts and bounded show cache', () => {
 
     await assert.rejects(pending, { name: 'AbortError' })
     assert.equal(providerObservedAbort, true)
+  })
+})
+
+describe('context capability evidence and profile projection', () => {
+  it('adds the exact custom context and declared maximum without treating suggestions as a whitelist', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-model-context-profile-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const db = openDb(join(root, 'alamo.db'))
+    test.after(() => db.close())
+    const state: ProviderState = {
+      installed: [{ name: 'fixture:latest', digest: 'sha256:a', contextLength: 2_000_000 }],
+      running: [],
+      version: '0.12.6',
+      showCalls: [],
+    }
+    const detail = await new ModelService(client(state), new CalibrationStore(db), HARDWARE)
+      .detail('fixture:latest', 1_048_577)
+    assert.equal(detail?.contextLimit.state, 'declared')
+    assert.deepEqual(
+      detail?.fitByContext.filter((fit) => [1_048_577, 2_000_000].includes(fit.contextLength)).map((fit) => fit.contextLength),
+      [1_048_577, 2_000_000],
+    )
+    assert.equal(detail?.fit.contextLength, 1_048_577)
+  })
+
+  it('keeps absent/conflicting declarations unknown and rejects a sourced over-maximum request', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-model-context-limit-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const db = openDb(join(root, 'alamo.db'))
+    test.after(() => db.close())
+    const state: ProviderState = {
+      installed: [{ name: 'fixture:latest', digest: 'sha256:a', contextLength: null }],
+      running: [], version: '0.12.6', showCalls: [],
+    }
+    const service = new ModelService(client(state), new CalibrationStore(db), HARDWARE)
+    const unknown = await service.detail('fixture:latest', 1_048_577)
+    assert.equal(unknown?.contextLimit.state, 'unknown')
+    assert.equal(unknown?.fit.contextLength, 1_048_577)
+
+    state.installed[0] = { name: 'fixture:latest', digest: 'sha256:b', contextLength: 32_768 }
+    await assert.rejects(
+      service.detail('fixture:latest', 32_769),
+      (error) => error instanceof ModelContextLimitExceededError && error.limit.source === 'ollama_api_tags',
+    )
+  })
+
+  it('uses a declared low maximum for an omitted profile context without rejecting the page', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-model-context-default-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const db = openDb(join(root, 'alamo.db'))
+    test.after(() => db.close())
+    const state: ProviderState = {
+      installed: [{ name: 'fixture:latest', digest: 'sha256:a', contextLength: 4_096 }],
+      running: [], version: '0.12.6', showCalls: [],
+    }
+    const detail = await new ModelService(client(state), new CalibrationStore(db), HARDWARE)
+      .detail('fixture:latest')
+    assert.equal(detail?.contextLimit.state, 'declared')
+    assert.equal(detail?.fit.contextLength, 4_096)
+    assert.deepEqual(detail?.fitByContext.map((fit) => fit.contextLength), [4_096])
+  })
+
+  it('bounds simultaneous /api/show calls while preserving all installed rows', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-model-show-concurrency-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const db = openDb(join(root, 'alamo.db'))
+    test.after(() => db.close())
+    let active = 0
+    let peak = 0
+    const installed = Array.from({ length: 12 }, (_, index) => ({
+      name: `fixture-${index}:latest`, digest: `sha256:${index}`,
+    }))
+    const ollama = new OllamaClient({
+      host: 'http://127.0.0.1:11434',
+      fetch: async (input) => {
+        const path = new URL(String(input)).pathname
+        if (path === '/api/version') return json({ version: '0.12.6' })
+        if (path === '/api/ps') return json({ models: [] })
+        if (path === '/api/tags') {
+          return json({ models: installed.map((entry) => ({
+            name: entry.name, model: entry.name, modified_at: '2026-08-03T00:00:00.000Z',
+            size: 4_000, digest: entry.digest, details: { family: 'fixture' },
+          })) })
+        }
+        if (path === '/api/show') {
+          active += 1
+          peak = Math.max(peak, active)
+          await new Promise((resolve) => setImmediate(resolve))
+          active -= 1
+          return json({ model_info: MODEL_INFO })
+        }
+        throw new Error(`unexpected path ${path}`)
+      },
+    })
+    const models = await new ModelService(ollama, new CalibrationStore(db), HARDWARE)
+      .listLocal(1_048_577)
+    assert.equal(models.length, installed.length)
+    assert.equal(peak, MODEL_SHOW_MAX_CONCURRENCY)
   })
 })

@@ -105,6 +105,12 @@ export async function executePrewarm(
     ) {
       return response('skipped', 'selection_changed', installed.digest)
     }
+    if (
+      installed.contextLimit.state === 'declared' &&
+      request.contextLength > installed.contextLimit.value
+    ) {
+      return response('skipped', 'context_limit_exceeded', installed.digest)
+    }
     if (installed.isCloud || installed.fit.level === 'red') {
       return response('skipped', 'fit_unavailable', installed.digest)
     }

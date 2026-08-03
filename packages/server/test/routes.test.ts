@@ -8,7 +8,10 @@ import { PrefillTracker } from '../src/context/usage.ts'
 import { UnsupportedHostTelemetry } from '../src/hardware/telemetry.ts'
 import { JobService } from '../src/jobs/service.ts'
 import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
-import type { ModelService } from '../src/models/service.ts'
+import {
+  ModelContextLimitExceededError,
+  type ModelService,
+} from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
 import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
@@ -63,7 +66,10 @@ function testContext(
     models:
       overrides.models ??
       (() => {
-        throw new Error('ModelService не должен вызываться в этом тесте')
+        return {
+          supportsTools: async () => false,
+          assertContextAllowed: async () => undefined,
+        } as unknown as ModelService
       }),
   }
   const runtimeBase = {
@@ -105,6 +111,7 @@ function streamingContext(
     models: () =>
       ({
         supportsTools: async () => false,
+        assertContextAllowed: async () => undefined,
       }) as unknown as ModelService,
   })
 }
@@ -169,6 +176,74 @@ describe('thread routes', () => {
     assert.equal(loaded.status, 200)
     assert.equal(((await loaded.json()) as { thread: { id: string } }).thread.id, thread.id)
     context.db.close()
+  })
+
+  it('returns sourced context-limit details while unknown evidence allows the exact request', async () => {
+    const contextLimit = {
+      state: 'declared' as const,
+      value: 32_768,
+      source: 'ollama_api_tags' as const,
+      observedAt: '2026-08-03T00:00:00.000Z',
+      confidence: 'declared' as const,
+    }
+    const checked: Array<{ model: string; requestedContext: number }> = []
+    const context = testContext({
+      models: () =>
+        ({
+          supportsTools: async () => false,
+          assertContextAllowed: async (model: string, requestedContext: number) => {
+            checked.push({ model, requestedContext })
+            if (model === 'declared-limit:latest') {
+              throw new ModelContextLimitExceededError(model, requestedContext, contextLimit)
+            }
+            // No provider declaration is represented by the absence of a refusal.
+          },
+        }) as unknown as ModelService,
+    })
+    const app = createApp(context)
+    try {
+      const rejected = await app.request('/api/threads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'chat',
+          model: 'declared-limit:latest',
+          options: { numCtx: 32_769 },
+        }),
+      })
+      assert.equal(rejected.status, 400)
+      assert.deepEqual(await rejected.json(), {
+        code: 'context_limit_exceeded',
+        message: 'Requested context 32769 exceeds the declared model limit 32768',
+        details: {
+          model: 'declared-limit:latest',
+          requestedContext: 32_769,
+          contextLimit,
+        },
+      })
+
+      const customContext = 1_048_577
+      const allowed = await app.request('/api/threads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'chat',
+          model: 'unknown-limit:latest',
+          options: { numCtx: customContext },
+        }),
+      })
+      assert.equal(allowed.status, 201)
+      assert.equal(
+        ((await allowed.json()) as { options: { numCtx: number } }).options.numCtx,
+        customContext,
+      )
+      assert.deepEqual(checked, [
+        { model: 'declared-limit:latest', requestedContext: 32_769 },
+        { model: 'unknown-limit:latest', requestedContext: customContext },
+      ])
+    } finally {
+      context.db.close()
+    }
   })
 
   it('streams a persisted completed outcome and reloads the same projection', async () => {
@@ -392,6 +467,24 @@ describe('thread routes', () => {
       assert.equal(updated.status, 200)
       assert.equal(((await updated.json()) as { prewarmEnabled: boolean }).prewarmEnabled, false)
       assert.equal(context.settings.get().prewarmEnabled, false)
+    } finally {
+      context.db.close()
+    }
+  })
+
+  it('saves and reloads an exact default context above the retired ceiling', async () => {
+    const customContext = 1_048_577
+    const context = testContext()
+    const app = createApp(context)
+    try {
+      const updated = await app.request('/api/settings', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ defaultNumCtx: customContext }),
+      })
+      assert.equal(updated.status, 200)
+      assert.equal(((await updated.json()) as { defaultNumCtx: number }).defaultNumCtx, customContext)
+      const reloaded = await app.request('/api/settings')
+      assert.equal(((await reloaded.json()) as { defaultNumCtx: number }).defaultNumCtx, customContext)
     } finally {
       context.db.close()
     }

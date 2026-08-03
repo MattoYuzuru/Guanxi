@@ -5,12 +5,14 @@
  * Здесь же живёт калибровка: только доказанное exact-соответствие artifact,
  * context, runtime/backend и hardware даёт отдельную точку «окно → память».
  */
-import type {
-  LocalModel,
-  ModelCapability,
-  ModelDetail,
-  RunningModel,
-  HardwareInfo,
+import {
+  DEFAULT_NUM_CTX,
+  type HardwareInfo,
+  type LocalModel,
+  type ModelContextLimit,
+  type ModelCapability,
+  type ModelDetail,
+  type RunningModel,
 } from '@alamo/contract'
 import { computeFit } from '../hardware/fit.ts'
 import type { OllamaClient } from '../ollama/client.ts'
@@ -32,9 +34,28 @@ const KNOWN_CAPABILITIES = new Set<ModelCapability>([
   'embedding',
 ])
 
-/** Размеры окна, для которых считаем вердикт в профиле модели. */
+/** Suggested checkpoints, never a whitelist or a product limit. */
 const PROFILE_CONTEXT_STEPS = [4_096, 8_192, 16_384, 32_768, 65_536, 131_072]
 export const MODEL_SHOW_CACHE_MAX_ENTRIES = 64
+export const MODEL_SHOW_MAX_CONCURRENCY = 4
+
+export class ModelContextLimitExceededError extends Error {
+  readonly model: string
+  readonly requestedContext: number
+  readonly limit: Extract<ModelContextLimit, { state: 'declared' }>
+
+  constructor(
+    model: string,
+    requestedContext: number,
+    limit: Extract<ModelContextLimit, { state: 'declared' }>,
+  ) {
+    super(`Requested context ${requestedContext} exceeds the declared model limit ${limit.value}`)
+    this.name = 'ModelContextLimitExceededError'
+    this.model = model
+    this.requestedContext = requestedContext
+    this.limit = limit
+  }
+}
 
 function toCapabilities(raw: readonly string[] | undefined): ModelCapability[] {
   if (!raw) return []
@@ -46,8 +67,79 @@ function isCloudModel(name: string): boolean {
   return name.endsWith(':cloud') || name.includes(':cloud-')
 }
 
-function contextLengthOf(entry: OllamaTagsEntry): number {
-  return entry.details.context_length ?? 4_096
+function positiveSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) > 0
+}
+
+function contextLimitOf(
+  entry: OllamaTagsEntry,
+  shown: OllamaShowResponse | null,
+  observedAt: string,
+  shownObservedAt = observedAt,
+): ModelContextLimit {
+  const tagged = positiveSafeInteger(entry.details.context_length)
+    ? entry.details.context_length
+    : null
+  const shownCandidates = [
+    shown?.details?.context_length,
+    ...Object.entries(shown?.model_info ?? {})
+      .filter(([key]) => key.endsWith('.context_length'))
+      .map(([, value]) => value),
+  ].filter(positiveSafeInteger)
+  const distinct = [...new Set([...(tagged === null ? [] : [tagged]), ...shownCandidates])]
+
+  if (distinct.length === 1 && tagged !== null) {
+    return {
+      state: 'declared',
+      value: tagged,
+      source: 'ollama_api_tags',
+      observedAt,
+      confidence: 'declared',
+    }
+  }
+  if (distinct.length === 1) {
+    return {
+      state: 'declared',
+      value: distinct[0]!,
+      source: 'ollama_api_show',
+      observedAt: shownObservedAt,
+      confidence: 'declared',
+    }
+  }
+
+  return {
+    state: 'unknown',
+    value: null,
+    source: distinct.length > 1 ? 'conflicting_provider_declarations' : 'not_reported',
+    observedAt,
+    confidence: 'unknown',
+  }
+}
+
+interface ModelDetailsObservation {
+  details: OllamaShowResponse
+  observedAt: string
+}
+
+async function mapConcurrent<Input, Output>(
+  values: readonly Input[],
+  concurrency: number,
+  map: (value: Input) => Promise<Output>,
+): Promise<Output[]> {
+  const output = new Array<Output>(values.length)
+  let next = 0
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (next < values.length) {
+        const index = next
+        next += 1
+        output[index] = await map(values[index]!)
+      }
+    },
+  )
+  await Promise.all(workers)
+  return output
 }
 
 export class ModelService {
@@ -57,7 +149,7 @@ export class ModelService {
   /** One retained digest per normalized reference, with a bounded LRU across references. */
   private readonly showCache = new Map<
     string,
-    { digest: string; details: OllamaShowResponse }
+    { digest: string; details: OllamaShowResponse; observedAt: string }
   >()
 
   constructor(client: OllamaClient, calibration: CalibrationStore, hardware: HardwareInfo) {
@@ -70,28 +162,30 @@ export class ModelService {
     name: string,
     digest: string,
     signal?: AbortSignal,
-  ): Promise<OllamaShowResponse | null> {
+  ): Promise<ModelDetailsObservation | null> {
     const normalized = normalizeOllamaModelReference(name)
     if (!normalized) return null
     const cached = this.showCache.get(normalized)
     if (cached?.digest === digest) {
       this.showCache.delete(normalized)
       this.showCache.set(normalized, cached)
-      return cached.details
+      return cached
     }
     if (cached) this.showCache.delete(normalized)
 
     try {
       const shown = await this.client.show(name, signal)
+      const observedAt = new Date().toISOString()
+      const observation = { details: shown, observedAt }
       if (shown.model_info) {
-        this.showCache.set(normalized, { digest, details: shown })
+        this.showCache.set(normalized, { digest, ...observation })
         while (this.showCache.size > MODEL_SHOW_CACHE_MAX_ENTRIES) {
           const oldest = this.showCache.keys().next().value
           if (oldest === undefined) break
           this.showCache.delete(oldest)
         }
       }
-      return shown
+      return observation
     } catch (error) {
       if (signal?.aborted) throw error
       return null
@@ -146,6 +240,7 @@ export class ModelService {
     ])
     const running = runningResult.running
     const runtimeVersion = versionResult
+    const observedAt = new Date().toISOString()
     const installed = tags.models.map((entry) => ({ name: entry.name, digest: entry.digest }))
     const installedReferenceCounts = new Map<string, number>()
     for (const entry of installed) {
@@ -175,8 +270,10 @@ export class ModelService {
       }
     }
 
-    return Promise.all(
-      tags.models.map(async (entry) => {
+    return mapConcurrent(
+      tags.models,
+      MODEL_SHOW_MAX_CONCURRENCY,
+      async (entry) => {
         const isCloud = isCloudModel(entry.name)
         const normalized = normalizeOllamaModelReference(entry.name)
         const matchingRunning = running.filter(
@@ -199,8 +296,17 @@ export class ModelService {
                 version: 1 as const,
                 reason: 'installed_reference_ambiguous' as const,
               }
-        const shown = isCloud ? null : await this.modelDetails(entry.name, entry.digest, signal)
+        const shownObservation = isCloud
+          ? null
+          : await this.modelDetails(entry.name, entry.digest, signal)
+        const shown = shownObservation?.details ?? null
         const info = shown?.model_info ?? null
+        const contextLimit = contextLimitOf(
+          entry,
+          shown,
+          observedAt,
+          shownObservation?.observedAt,
+        )
 
         return {
           name: entry.name,
@@ -210,7 +316,9 @@ export class ModelService {
           family: entry.details.family ?? 'unknown',
           parameterSize: entry.details.parameter_size ?? '—',
           quantization: entry.details.quantization_level ?? '—',
-          contextLength: contextLengthOf(entry),
+          contextLength:
+            contextLimit.state === 'declared' ? contextLimit.value : contextLength,
+          contextLimit,
           capabilities: toCapabilities(entry.capabilities),
           isCloud,
           fit: computeFit({
@@ -231,13 +339,13 @@ export class ModelService {
                 : null,
           }),
         }
-      }),
+      },
     )
   }
 
   async detail(
     name: string,
-    contextLength: number,
+    contextLength?: number,
     signal?: AbortSignal,
   ): Promise<ModelDetail | null> {
     const [tags, runtimeVersion] = await Promise.all([
@@ -248,7 +356,8 @@ export class ModelService {
     if (exactEntries.length !== 1) return null
     const entry = exactEntries[0]!
 
-    const shown = await this.modelDetails(name, entry.digest, signal)
+    const shownObservation = await this.modelDetails(name, entry.digest, signal)
+    const shown = shownObservation?.details ?? null
     const info = shown?.model_info ?? null
     const isCloud = isCloudModel(name)
 
@@ -271,7 +380,34 @@ export class ModelService {
       })
     }
 
-    const maxContext = contextLengthOf(entry)
+    const contextLimit = contextLimitOf(
+      entry,
+      shown,
+      new Date().toISOString(),
+      shownObservation?.observedAt,
+    )
+    if (
+      contextLength !== undefined &&
+      contextLimit.state === 'declared' &&
+      contextLength > contextLimit.value
+    ) {
+      throw new ModelContextLimitExceededError(name, contextLength, contextLimit)
+    }
+    const selectedContext =
+      contextLength ??
+      (contextLimit.state === 'declared'
+        ? Math.min(DEFAULT_NUM_CTX, contextLimit.value)
+        : DEFAULT_NUM_CTX)
+    const legacyContextLength =
+      contextLimit.state === 'declared' ? contextLimit.value : selectedContext
+    const profileContexts = [...new Set([
+      ...PROFILE_CONTEXT_STEPS.filter(
+        (value) => contextLimit.state !== 'declared' || value <= contextLimit.value,
+      ),
+      selectedContext,
+      ...(contextLimit.state === 'declared' ? [contextLimit.value] : []),
+    ])]
+      .sort((left, right) => left - right)
 
     return {
       name: entry.name,
@@ -281,16 +417,52 @@ export class ModelService {
       family: entry.details.family ?? 'unknown',
       parameterSize: entry.details.parameter_size ?? '—',
       quantization: entry.details.quantization_level ?? '—',
-      contextLength: maxContext,
+      contextLength: legacyContextLength,
+      contextLimit,
       capabilities: toCapabilities(entry.capabilities ?? shown?.capabilities),
       isCloud,
-      fit: fitFor(contextLength),
+      fit: fitFor(selectedContext),
       modelInfo: (info ?? {}) as ModelDetail['modelInfo'],
       template: shown?.template ?? null,
       systemPrompt: shown?.system ?? null,
       license: shown?.license ?? null,
-      // Слайдер в профиле показывает только достижимые для этой модели окна.
-      fitByContext: PROFILE_CONTEXT_STEPS.filter((ctx) => ctx <= maxContext).map(fitFor),
+      // Presets aid comparison; the requested custom value is always represented.
+      fitByContext: profileContexts.map(fitFor),
+    }
+  }
+
+  /** Returns only provider-declared evidence; absence remains explicitly unknown. */
+  async contextLimit(name: string, signal?: AbortSignal): Promise<ModelContextLimit | null> {
+    const tags = await this.client.tags(signal)
+    const exactEntries = tags.models.filter((model) => model.name === name)
+    if (exactEntries.length !== 1) return null
+    const entry = exactEntries[0]!
+    const shownObservation = isCloudModel(name)
+      ? null
+      : await this.modelDetails(name, entry.digest, signal)
+    return contextLimitOf(
+      entry,
+      shownObservation?.details ?? null,
+      new Date().toISOString(),
+      shownObservation?.observedAt,
+    )
+  }
+
+  /** Unknown/unavailable provider evidence never becomes an invented rejection. */
+  async assertContextAllowed(
+    name: string,
+    requestedContext: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    let limit: ModelContextLimit | null
+    try {
+      limit = await this.contextLimit(name, signal)
+    } catch (error) {
+      if (signal?.aborted) throw error
+      return
+    }
+    if (limit?.state === 'declared' && requestedContext > limit.value) {
+      throw new ModelContextLimitExceededError(name, requestedContext, limit)
     }
   }
 

@@ -191,7 +191,7 @@ function validateRequest(request: AdmissionRequest): void {
     ownerId.trim().length === 0 ||
     request.model.provider !== 'ollama' ||
     request.model.name.trim().length === 0 ||
-    !Number.isInteger(request.requestedContext) ||
+    !Number.isSafeInteger(request.requestedContext) ||
     request.requestedContext <= 0 ||
     (request.priority !== 'normal' && request.priority !== 'prewarm') ||
     Number.isNaN(Date.parse(request.enqueuedAt))

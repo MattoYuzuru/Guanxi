@@ -9,6 +9,9 @@
  */
 import { z } from 'zod'
 
+/** JSON/SQLite transport boundary for user-selected counts without a product ceiling. */
+export const positiveSafeIntegerSchema = z.number().int().positive().safe()
+
 /* ─────────────────────────── Железо и влезаемость ────────────────────────── */
 
 export const acceleratorSchema = z.enum(['metal', 'cuda', 'rocm', 'cpu'])
@@ -42,7 +45,7 @@ export const fitVerdictSchema = z.object({
   /** Короткая формулировка для карточки, на русском. */
   summary: z.string(),
   /** При каком размере окна считали. */
-  contextLength: z.number().int(),
+  contextLength: positiveSafeIntegerSchema,
   modelBytes: z.number().int(),
   kvCacheBytes: z.number().int(),
   requiredBytes: z.number().int(),
@@ -61,6 +64,28 @@ export const fitVerdictSchema = z.object({
     .nullable(),
 })
 export type FitVerdict = z.infer<typeof fitVerdictSchema>
+
+export const modelContextLimitSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('declared'),
+      value: positiveSafeIntegerSchema,
+      source: z.enum(['ollama_api_tags', 'ollama_api_show']),
+      observedAt: z.string().datetime(),
+      confidence: z.literal('declared'),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      value: z.null(),
+      source: z.enum(['not_reported', 'conflicting_provider_declarations']),
+      observedAt: z.string().datetime(),
+      confidence: z.literal('unknown'),
+    })
+    .strict(),
+])
+export type ModelContextLimit = z.infer<typeof modelContextLimitSchema>
 
 /* ──────────────────────────────── Модели ─────────────────────────────────── */
 
@@ -82,8 +107,16 @@ export const localModelSchema = z.object({
   family: z.string(),
   parameterSize: z.string(), // "7.6B"
   quantization: z.string(), // "Q4_K_M"
-  /** Максимум, который поддерживает модель. Не путать с выделенным при загрузке. */
-  contextLength: z.number().int(),
+  /** Legacy compatibility projection; capability decisions use `contextLimit`. */
+  contextLength: positiveSafeIntegerSchema,
+  /** Authoritative additive evidence; `contextLength` remains a legacy compatibility field. */
+  contextLimit: modelContextLimitSchema.optional().default({
+    state: 'unknown',
+    value: null,
+    source: 'not_reported',
+    observedAt: '1970-01-01T00:00:00.000Z',
+    confidence: 'unknown',
+  }),
   capabilities: z.array(modelCapabilitySchema),
   /** true — модель считается в облаке Ollama, локальная память не тратится. */
   isCloud: z.boolean(),
@@ -727,7 +760,7 @@ export const threadModeSchema = z.enum(['chat', 'agent'])
 export type ThreadMode = z.infer<typeof threadModeSchema>
 
 export const threadOptionsSchema = z.object({
-  numCtx: z.number().int().min(512).max(1_048_576),
+  numCtx: positiveSafeIntegerSchema,
   temperature: z.number().min(0).max(2),
   /** Режим размышления для моделей, которые его поддерживают. */
   think: z.enum(['off', 'low', 'medium', 'high']),
@@ -1056,7 +1089,7 @@ export type WebSearchProvider = z.infer<typeof webSearchProviderSchema>
 export const settingsSchema = z.object({
   ollamaHost: z.string(),
   defaultModel: z.string().nullable(),
-  defaultNumCtx: z.number().int(),
+  defaultNumCtx: positiveSafeIntegerSchema,
   /** Выполнять инструменты без подтверждения. По умолчанию выключено. */
   autoApproveTools: z.boolean(),
   /** Инструмент bash. Выключен по умолчанию и всегда выключен в удалённом режиме. */
@@ -1138,6 +1171,7 @@ export const apiErrorSchema = z.object({
     'path_outside_workspace',
     'tool_disabled',
     'validation_failed',
+    'context_limit_exceeded',
     'ollama_connect_timeout',
     'ollama_load_timeout',
     'ollama_stream_idle_timeout',

@@ -4,6 +4,7 @@
 import { Hono } from 'hono'
 import {
   DEFAULT_NUM_CTX,
+  getModelQuery,
   listCatalogQuery,
   listModelsQuery,
   prewarmModelBody,
@@ -28,7 +29,13 @@ export function modelsRoutes(app: AppContext): Hono {
 
   routes.get('/', async (context) => {
     const query = listModelsQuery.safeParse(Object.fromEntries(new URL(context.req.url).searchParams))
-    const contextLength = query.success ? (query.data.contextLength ?? DEFAULT_NUM_CTX) : DEFAULT_NUM_CTX
+    if (!query.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid model query', details: query.error.flatten() },
+        400,
+      )
+    }
+    const contextLength = query.data.contextLength ?? DEFAULT_NUM_CTX
 
     try {
       return context.json({ models: await app.models().listLocal(contextLength) })
@@ -41,9 +48,13 @@ export function modelsRoutes(app: AppContext): Hono {
     const parsed = listCatalogQuery.safeParse(
       Object.fromEntries(new URL(context.req.url).searchParams),
     )
-    const contextLength = parsed.success
-      ? (parsed.data.contextLength ?? DEFAULT_NUM_CTX)
-      : DEFAULT_NUM_CTX
+    if (!parsed.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid catalog query', details: parsed.error.flatten() },
+        400,
+      )
+    }
+    const contextLength = parsed.data.contextLength ?? DEFAULT_NUM_CTX
 
     // Каталог должен открываться, даже когда Ollama не запущена.
     const installed = await app
@@ -53,7 +64,7 @@ export function modelsRoutes(app: AppContext): Hono {
       .catch(() => new Set<string>())
 
     const result = await getCatalog({
-      query: parsed.success ? parsed.data.q : undefined,
+      query: parsed.data.q,
       contextLength,
       hardware: app.hardware,
       installed,
@@ -74,11 +85,21 @@ export function modelsRoutes(app: AppContext): Hono {
 
   routes.get('/:name{.+}', async (context) => {
     const name = decodeURIComponent(context.req.param('name'))
-    const requested = Number(context.req.query('contextLength'))
-    const contextLength = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_NUM_CTX
-
+    const query = getModelQuery.safeParse(
+      Object.fromEntries(new URL(context.req.url).searchParams),
+    )
+    if (!query.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid model query', details: query.error.flatten() },
+        400,
+      )
+    }
     try {
-      const detail = await app.models().detail(name, contextLength, context.req.raw.signal)
+      const detail = await app.models().detail(
+        name,
+        query.data.contextLength,
+        context.req.raw.signal,
+      )
       if (!detail) {
         return context.json(
           { code: 'model_not_found', message: `Модель ${name} не найдена`, details: null },
@@ -104,7 +125,13 @@ export function modelsRoutes(app: AppContext): Hono {
   routes.post('/:name{.+}/warm', async (context) => {
     const name = decodeURIComponent(context.req.param('name'))
     const body = warmModelBody.safeParse(await context.req.json().catch(() => ({})))
-    const contextLength = body.success ? body.data.contextLength : DEFAULT_NUM_CTX
+    if (!body.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid warm request', details: body.error.flatten() },
+        400,
+      )
+    }
+    const contextLength = body.data.contextLength
 
     const ownerController = new AbortController()
     const abortFromRequest = () => ownerController.abort(context.req.raw.signal.reason)
@@ -113,6 +140,7 @@ export function modelsRoutes(app: AppContext): Hono {
     let ticket: AdmissionTicket | undefined
     let lease: ResourceLease | undefined
     try {
+      await app.models().assertContextAllowed(name, contextLength, ownerController.signal)
       ticket = app.governor.enqueue({
         owner: operationOwner('model_warm'),
         operation: 'model_warm',

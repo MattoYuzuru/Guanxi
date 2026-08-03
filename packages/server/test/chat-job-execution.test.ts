@@ -98,6 +98,7 @@ function fixture(
     models: () =>
       ({
         supportsTools: async () => false,
+        assertContextAllowed: async () => undefined,
       }) as unknown as ModelService,
   }
   const runtimeBase = {

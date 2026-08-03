@@ -75,13 +75,24 @@ export function threadsRoutes(app: AppContext): Hono {
       temperature: mode === 'agent' ? DEFAULT_AGENT_TEMPERATURE : DEFAULT_TEMPERATURE,
       think: 'off',
     }
+    const options = { ...defaults, ...parsed.data.options }
+
+    try {
+      await app.models().assertContextAllowed(
+        parsed.data.model,
+        options.numCtx,
+        context.req.raw.signal,
+      )
+    } catch (error) {
+      return fail(context, error)
+    }
 
     const thread = app.threads.create({
       title: parsed.data.title ?? 'Новый диалог',
       mode,
       model: parsed.data.model,
       workspaceId,
-      options: { ...defaults, ...parsed.data.options },
+      options,
     })
 
     return context.json(thread, 201)
@@ -123,6 +134,18 @@ export function threadsRoutes(app: AppContext): Hono {
     }
     if (parsed.data.workspaceId && !app.workspaces.get(parsed.data.workspaceId)) {
       return notFound(context, 'workspace_not_found', 'Рабочая директория не найдена')
+    }
+
+    const nextModel = parsed.data.model ?? existing.model
+    const nextContext = parsed.data.options?.numCtx ?? existing.options.numCtx
+    try {
+      await app.models().assertContextAllowed(
+        nextModel,
+        nextContext,
+        context.req.raw.signal,
+      )
+    } catch (error) {
+      return fail(context, error)
     }
 
     const updated = app.threads.update(id, parsed.data)
@@ -200,6 +223,15 @@ export function threadsRoutes(app: AppContext): Hono {
     const workspace = thread.workspaceId ? app.workspaces.get(thread.workspaceId) : null
     if (thread.workspaceId && !workspace) {
       return notFound(context, 'workspace_not_found', 'Рабочая директория не найдена')
+    }
+    try {
+      await app.models().assertContextAllowed(
+        thread.model,
+        thread.options.numCtx,
+        context.req.raw.signal,
+      )
+    } catch (error) {
+      return fail(context, error)
     }
     let result
     try {
@@ -309,7 +341,6 @@ export function threadsRoutes(app: AppContext): Hono {
       const transcript = selection.messages
         .map((message) => `[${message.role}] ${message.content}`)
         .join('\n\n')
-        .slice(0, 60_000)
 
       const response = await app.ollama().chat(
         {

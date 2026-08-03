@@ -133,6 +133,7 @@ function testContext(options: {
     models: () =>
       ({
         supportsTools: async () => false,
+        assertContextAllowed: async () => undefined,
         ...options.models,
       }) as ModelService,
   }
@@ -299,6 +300,68 @@ async function assertTurnCompactionSerialized(sameThread: boolean): Promise<void
 }
 
 describe('exclusive inference routes', () => {
+  it('preserves a custom context above the retired ceiling through thread, Governor, and Ollama', async () => {
+    const customContext = 1_048_577
+    const release = deferred()
+    const checked: Array<{ model: string; context: number }> = []
+    let providerContext: number | undefined
+    const context = testContext({
+      client: {
+        chatStream(request: OllamaChatRequest) {
+          providerContext = request.options?.num_ctx
+          return (async function* () {
+            await release.promise
+            yield terminalChunk('custom context response')
+          })()
+        },
+      },
+      models: {
+        async assertContextAllowed(model, requestedContext) {
+          checked.push({ model, context: requestedContext })
+        },
+      },
+    })
+    try {
+      const app = createApp(context)
+      const createdResponse = await app.request('/api/threads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'chat', model: 'custom:latest', options: { numCtx: customContext },
+        }),
+      })
+      assert.equal(createdResponse.status, 201)
+      const thread = (await createdResponse.json()) as { id: string; options: { numCtx: number } }
+      assert.equal(thread.options.numCtx, customContext)
+      assert.equal(context.threads.get(thread.id)?.options.numCtx, customContext)
+
+      const updated = await app.request(`/api/threads/${thread.id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ options: { numCtx: customContext } }),
+      })
+      assert.equal(((await updated.json()) as { options: { numCtx: number } }).options.numCtx, customContext)
+
+      const response = await send(app, thread.id, 'use the exact custom context')
+      const reader = response.body!.getReader()
+      await reader.read()
+      await waitFor(() => providerContext !== undefined, 'provider did not receive custom context')
+      assert.equal(providerContext, customContext)
+      assert.equal(context.governor.snapshot().activeLease?.requestedContext, customContext)
+      assert.deepEqual(checked, [
+        { model: 'custom:latest', context: customContext },
+        { model: 'custom:latest', context: customContext },
+        { model: 'custom:latest', context: customContext },
+      ])
+      release.resolve()
+      while (!(await reader.read()).done) {}
+      assert.equal(context.governor.snapshot().activeLease, null)
+    } finally {
+      release.resolve()
+      await context.chatExecution.shutdown()
+      context.db.close()
+    }
+  })
+
   it('serializes durable Chat Jobs across threads and persists the queued projection', async () => {
     const probe = heldTurnClient()
     const context = testContext({ client: probe.client })
@@ -488,6 +551,13 @@ describe('exclusive inference routes', () => {
       parameterSize: '1B',
       quantization: 'Q4',
       contextLength: 32_768,
+      contextLimit: {
+        state: 'declared',
+        value: 32_768,
+        source: 'ollama_api_tags',
+        observedAt: '2026-08-03T00:00:00.000Z',
+        confidence: 'declared',
+      },
       capabilities: ['completion'],
       isCloud: false,
       fit: {
