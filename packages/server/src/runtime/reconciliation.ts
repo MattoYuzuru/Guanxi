@@ -192,6 +192,7 @@ function reconcileModels(
     const model: RuntimeModelObservation = {
       ...raw,
       name: modelName,
+      source: 'ollama_api_ps',
       observedAt,
       normalizedName: normalizedName ?? INVALID_MODEL_REFERENCE,
       ownerState: matched ? 'active_lease' : 'unknown',
