@@ -143,6 +143,12 @@ describe('runtime reconciliation contract and identity', () => {
     assert.equal(matched?.artifactIdentity, 'unknown')
     assert.equal(snapshot.models?.every((model) => model.observedAt === OBSERVED_AT), true)
 
+    const additive = runtimeSnapshotSchema.parse({
+      ...snapshot,
+      futureHostTelemetry: { state: 'unknown' },
+    })
+    assert.equal(additive.observedAt, OBSERVED_AT)
+
     lease.release()
     assert.equal(governor.cancel(queued), true)
   })

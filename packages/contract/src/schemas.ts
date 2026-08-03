@@ -327,7 +327,6 @@ export const runtimeSnapshotSchema = z
     models: z.array(runtimeModelObservationSchema).nullable(),
     decisions: z.array(runtimeReconciliationDecisionSchema).min(1),
   })
-  .strict()
   .superRefine((snapshot, context) => {
     if (
       snapshot.observedAt !== snapshot.source.observedAt ||
