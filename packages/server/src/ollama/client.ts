@@ -363,23 +363,25 @@ export class OllamaClient {
     return parsed.data.version
   }
 
-  async tags(): Promise<OllamaTagsResponse> {
-    return this.request<OllamaTagsResponse>('/api/tags')
+  async tags(signal?: AbortSignal): Promise<OllamaTagsResponse> {
+    return this.request<OllamaTagsResponse>('/api/tags', signal ? { signal } : {})
   }
 
-  async ps(): Promise<OllamaPsResponse> {
+  async ps(signal?: AbortSignal): Promise<OllamaPsResponse> {
     const result = await this.request<unknown>('/api/ps', {
       connectTimeoutMs: Math.min(this.connectTimeoutMs, 5_000),
+      ...(signal ? { signal } : {}),
     })
     const parsed = psResponseSchema.safeParse(result)
     if (!parsed.success) throw new OllamaProtocolError('/api/ps')
     return parsed.data satisfies OllamaPsResponse
   }
 
-  async show(name: string): Promise<OllamaShowResponse> {
+  async show(name: string, signal?: AbortSignal): Promise<OllamaShowResponse> {
     return this.request<OllamaShowResponse>('/api/show', {
       method: 'POST',
       body: JSON.stringify({ model: name }),
+      ...(signal ? { signal } : {}),
     })
   }
 

@@ -6,6 +6,7 @@ import {
   DEFAULT_NUM_CTX,
   listCatalogQuery,
   listModelsQuery,
+  prewarmModelBody,
   warmModelBody,
   type PullStreamEvent,
 } from '@alamo/contract'
@@ -18,6 +19,7 @@ import {
   type AdmissionTicket,
   type ResourceLease,
 } from '../runtime/resource-governor.ts'
+import { executePrewarm } from '../runtime/prewarm.ts'
 import { sseResponse } from './sse.ts'
 import { fail } from './errors.ts'
 
@@ -151,6 +153,35 @@ export function modelsRoutes(app: AppContext): Hono {
       lease?.release()
       if (!lease && ticket) app.governor.cancel(ticket)
     }
+  })
+
+  routes.post('/:name{.+}/prewarm', async (context) => {
+    const name = decodeURIComponent(context.req.param('name'))
+    const body = prewarmModelBody.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) {
+      return context.json(
+        {
+          code: 'validation_failed',
+          message: 'The prewarm request is invalid',
+          details: null,
+        },
+        400,
+      )
+    }
+
+    const result = await executePrewarm(
+      {
+        governor: app.governor,
+        runtime: app.runtime,
+        settings: app.settings,
+        models: app.models,
+        ollama: app.ollama,
+      },
+      name,
+      body.data,
+      context.req.raw.signal,
+    )
+    return context.json(result)
   })
 
   routes.post('/:name{.+}/stop', async (context) => {

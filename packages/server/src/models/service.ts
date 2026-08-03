@@ -56,12 +56,15 @@ export class ModelService {
     this.hardware = hardware
   }
 
-  private async modelInfo(name: string): Promise<Record<string, unknown> | null> {
+  private async modelInfo(
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown> | null> {
     const cached = this.showCache.get(name)
     if (cached) return cached
 
     try {
-      const shown = await this.client.show(name)
+      const shown = await this.client.show(name, signal)
       const info = shown.model_info ?? null
       if (info) this.showCache.set(name, info)
       return info
@@ -76,12 +79,12 @@ export class ModelService {
    * Загруженные прямо сейчас модели попутно дают точку калибровки — так вердикт
    * уточняется сам, без отдельного действия пользователя.
    */
-  async listLocal(contextLength: number): Promise<LocalModel[]> {
+  async listLocal(contextLength: number, signal?: AbortSignal): Promise<LocalModel[]> {
     const [tags, running] = await Promise.all([
-      this.client.tags(),
+      this.client.tags(signal),
       // Installed state belongs to /api/tags. A failed /api/ps sample removes
       // optional loaded-instance calibration, but must not erase installed rows.
-      this.ps().catch(() => []),
+      this.ps(signal).catch(() => []),
     ])
     const loadedByName = new Map(running.map((entry) => [entry.name, entry]))
 
@@ -102,7 +105,7 @@ export class ModelService {
       tags.models.map(async (entry) => {
         const isCloud = isCloudModel(entry.name)
         const loaded = loadedByName.get(entry.name)
-        const info = isCloud ? null : await this.modelInfo(entry.name)
+        const info = isCloud ? null : await this.modelInfo(entry.name, signal)
 
         return {
           name: entry.name,
@@ -178,9 +181,9 @@ export class ModelService {
     }
   }
 
-  async ps(): Promise<RunningModel[]> {
+  async ps(signal?: AbortSignal): Promise<RunningModel[]> {
     const observedAt = new Date().toISOString()
-    const response = await this.client.ps()
+    const response = await this.client.ps(signal)
 
     return response.models.map((entry) => {
       const sizeVram = entry.size_vram ?? null
