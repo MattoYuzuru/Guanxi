@@ -495,9 +495,10 @@ WebSocket нужен только если duplex live-audio latency это по
 
 ## Resource Governor
 
-### Current P1-F–P1-K policy
+### Current P1-F–P1-M policy
 
-- один active process-local accelerator lease;
+- один active process-local accelerator lease как консервативная application
+  policy, не как assertion о числе accelerator devices;
 - priorities `normal > prewarm`; FIFO сохраняется внутри normal;
 - Chat, compaction, explicit warm/load и automatic prewarm используют один
   `context.governor`;
@@ -517,6 +518,37 @@ WebSocket нужен только если duplex live-audio latency это по
   на admission/unload;
 - production current pressure/available memory, proven external ownership и
   multi-process lock отсутствуют.
+
+Device cardinality current host adapter не сообщает. Governor permit count не
+используется как hardware fact, а Runtime Bar показывает unknown отдельно.
+
+### Current context boundary
+
+P1-M принимает requested context как positive JavaScript safe integer и
+сохраняет exact value через thread/settings SQLite, Governor request, Ollama
+`num_ctx`, fit и prewarm. Defaults `8192`/`32768`, Launcher datalist и profile
+steps — только defaults/suggestions.
+
+Provider declaration из `/api/tags` или `/api/show` содержит value, source,
+observation time и confidence. Значение выше единственного непротиворечивого
+declared maximum даёт controlled `context_limit_exceeded` либо typed prewarm
+skip без clamp. Absent/conflicting evidence остаётся unknown и не блокирует
+валидный request. `/api/show` projection использует максимум четыре workers и
+digest-aware LRU 64; cache сохраняет исходное observation time.
+
+Output-budget control и media upload в current Chat flow не реализованы; UI не
+подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
+
+| Boundary                         | Kind                     | Observable behavior                                          |
+| -------------------------------- | ------------------------ | ------------------------------------------------------------ |
+| Bash stdout/stderr 64 KiB        | tool safety              | result явно сообщает truncation                              |
+| `read_file` 256 KiB/2000 lines   | tool/context safety      | result сообщает safe read limit и предлагает offset/limit    |
+| host probe output 64 KiB/1 s     | host adapter reliability | typed redacted `host_probe_output_limit`/timeout             |
+| tool JSON candidate 32k chars    | parser safety            | oversized candidate не исполняется и остаётся обычным text   |
+| Job/recovery pages 100, max 1000 | storage/backpressure     | bounded reads; invalid injected config даёт controlled error |
+| Chat output chunk 16 KiB         | replay transport         | ordered chunks без truncation                                |
+| Ollama/prewarm deadlines         | runtime reliability      | typed timeout/cancel state освобождает lease                 |
+| Agent 40 steps                   | current watchdog policy  | visible max-steps failure; Q-27 остаётся open                |
 
 ### Default policy
 

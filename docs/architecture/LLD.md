@@ -52,6 +52,14 @@ snapshots default-ятся в `legacy_snapshot`/`unknown`; complete key обяз
 normalized exact reference, artifact digest, context, sourced Ollama version и
 stable local Apple hardware fingerprint без private CPU/device strings.
 
+P1-M additive добавляет `positiveSafeIntegerSchema`, sourced
+`ModelContextLimit` и controlled `context_limit_exceeded`. Thread/settings/model
+query/warm/prewarm boundaries принимают любой positive JavaScript safe integer,
+но sourced declared maximum отклоняет запрос без clamp; absent/conflicting
+provider declarations остаются unknown. Legacy model responses получают
+additive unknown default, поэтому старые clients и SQLite schema остаются
+совместимыми без migration 7.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -84,8 +92,8 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
 - `models/service.ts`: installed `/api/tags`, sampled `/api/ps`, sourced
-  `/api/version` и unbounded parallel `/api/show` с digest-aware LRU на 64
-  normalized references;
+  `/api/version`, digest-aware LRU на 64 normalized references и не более четырёх
+  параллельных `/api/show` workers на installed-list projection;
 - `models/catalog.ts`: validated stale local cache + dated bundled snapshot,
   без remote request;
 - `hardware/probe.ts` и `fit.ts`: legacy local profile/estimate и static fit;
@@ -210,15 +218,18 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   bounded own reads и localized accessible dialog;
 - `features/chat/streamBuffer.ts`: rAF-buffered content/thinking;
 - `features/chat/ChatPage.tsx`: create, timeline, composer, context/tool UI и
-  one-intent conflict dispatch boundary;
-- `features/launcher`/`models`: installed/catalog/profile;
+  one-intent conflict dispatch boundary с exact custom context validation;
+- `features/launcher`/`models`: installed/catalog/profile, preset suggestions,
+  keyboard custom context и sourced maximum/unknown explanation;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
-- `features/settings`: runtime/tool/theme fields.
+- `features/settings`: runtime/tool/theme fields и exact positive safe-integer
+  default agent context без UI maximum.
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
-  conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority
-  regression; browser использует deterministic mocked REST/SSE/runtime snapshots.
+  conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
+  P1-M no-artificial-caps regression; browser использует deterministic mocked
+  REST/SSE/runtime snapshots.
 
 ### `packages/cli`
 

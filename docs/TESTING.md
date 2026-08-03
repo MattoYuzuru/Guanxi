@@ -18,7 +18,8 @@
   hard reload` с persisted terminal projection, а также P0-A Error Boundaries,
   P0-B failed-partial/unreconciled/Stop reload, connect timeout, missing
   `done:true`, P1-D navigation detach/reattach через durable Job replay, P1-J
-  resource conflict Queue/Stop decisions и P1-K prewarm selection/cleanup;
+  resource conflict Queue/Stop decisions, P1-K prewarm selection/cleanup и P1-M
+  exact custom context save/reload;
 - browser assertions управляют mocked headers/chunks без произвольных sleeps и
   проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
   horizontal overflow, 200% scaling и reduced motion;
@@ -76,6 +77,16 @@
   reopen/failure recovery, exact upsert/context family isolation, changed-digest
   `/api/show` invalidation, 64-reference LRU, remote-host unknown, safe provider
   failure и caller AbortSignal;
+- P1-M contract/server fixtures покрывают retired ceiling boundaries вплоть до
+  `Number.MAX_SAFE_INTEGER`, malformed/unsafe rejection, exact SQLite/settings/
+  thread/Governor/Ollama/prewarm propagation, sourced over-maximum refusal,
+  absent/conflicting unknown, low declared default и bounded four-worker
+  `/api/show` projection;
+- P1-M Web fixtures покрывают Settings/Launcher/Model Profile custom input,
+  locale hints/errors, exact query/PUT, device-count unknown и отсутствие
+  скрытого `max`; Chromium буквально вводит `1_048_577`, нажимает Enter,
+  сохраняет/reload-ит значение и проверяет keyboard, 390 px, 200%, overflow и
+  reduced motion;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -114,10 +125,11 @@
   redacted failure before listen, три startup attempts после injected failures,
   same-thread/cross-thread one-lane scheduling и truthful graceful shutdown;
 - exact P1-A/P1-B/P1-C/P1-D/P1-E/P1-F/P1-G/P1-H + P1-K/P1-L Runtime
-  contract/Governor files дают 98/98; новый key/migration/cache/runtime group —
-  28/28; отдельный prewarm service file — 6/6;
-  routes/Governor/concurrency дают 30/30; runtime/provider — 19/19;
-  fit/telemetry — 19/19; 15-test store race suite
+  contract/Governor files дают 98/98; P1-L+P1-M key/cache/runtime group —
+  32/32; отдельный prewarm service file — 7/7;
+  routes/Governor/concurrency дают 33/33; runtime/provider — 19/19;
+  fit/telemetry — 19/19; полный core — 248/248, Web — 46/46, mocked Chromium —
+  17/17; 15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
   P1-F release/cancel/close — 10 repeats без duplicate transfer/live state;
@@ -137,12 +149,16 @@
 - P1-K server priority/prewarm/inference group повторён 10× по 35/35, debounce
   file — 10× по 4/4; P1-J dialog file повторён 10× по 11/11, P1-I polling file —
   10× по 3/3, полный P1-E recovery file — 10× по 8/8;
-- P1-L key/migration/cache/runtime group повторён 10× по 28/28. Первый repeat
+- P1-L key/migration/cache/runtime group повторён 10× по 32/32. Первый repeat
   P1-J dialog выявил focus-effect race в assertion `prewarm + normal queue`;
   ожидание initial safe-default focus синхронизировано через `waitFor`, после
   чего file прошёл 10× по 11/11;
 - P1-G исправил flaky ожидание P1-E fixture на канонический
   `(createdAt, jobId)` order; узкий recovered FIFO case повторён 10/10;
+- P1-M custom contract/settings/end-to-end group повторён 10× по 49/49,
+  affected Web suite — 10× по 46/46, priority/prewarm/inference — 10× по 37/37,
+  P1-J conflict — 10× по 11/11, P1-I polling — 10× по 3/3 и P1-E recovery —
+  10× по 8/8;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -150,7 +166,7 @@
   P1-D navigation/detach/reload gate.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E и
-P1-A–P1-L на временной SQLite, управляемом fake `OllamaClient` transport и
+P1-A–P1-M на временной SQLite, управляемом fake `OllamaClient` transport и
 mocked browser REST/SSE. P1-F доказывает typed one-lane admission только для
 Chat, compaction и warm/load одного application composition; он не подтверждает
 Ollama scheduler, multi-process/external-client safety или production use. P1-G
@@ -169,6 +185,10 @@ multi-process coordination или generic eviction.
 P1-L доказывает exact observation identity и migration/cache policy только на
 deterministic local Apple fixtures. Это не live Ollama/hardware validation,
 continuous observation, remote telemetry или future-admission guarantee.
+P1-M доказывает отсутствие product/UI context ceiling и truthful declared/
+unknown semantics на deterministic provider fixtures. Он не доказывает live
+model acceptance огромного context, production memory fit, output budget,
+media support или device cardinality.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -198,6 +218,10 @@ process lock. P0-D health остаётся sampled observation; обязател
 - P1-L exact calibration не backfill-ит legacy rows и доступна только для
   complete local Apple identity. Live Ollama/hardware, continuous history,
   remote hardware fingerprint и safe parallel не проверены.
+- P1-M принимает любой positive safe integer на application boundary, но
+  provider/runtime может отказать по sourced capability либо физическому
+  ресурсу; output-budget и media controls остаются `not implemented`, device
+  count — unknown, а one-permit Governor остаётся explicit application policy.
 
 ## Существующее покрытие
 
@@ -215,14 +239,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                              |
 | Static web serving                 | test                               |
 | CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K component    |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K mocked flows   |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M component  |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M mocked flows |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane          |
 | Job replay/reattach                | HTTP SSE; browser durable replay   |
 | Chat startup recovery              | reopened SQLite, fail-closed pages |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K Chromium     |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M Chromium   |
 
 ## Обязательная target matrix
 

@@ -2,208 +2,150 @@
 
 **Статус:** ready
 **Проверено:** 2026-08-03
-**Назначение:** Phase 1, slice P1-M — no-artificial-caps audit для context,
-output/media и accelerator projection
+**Назначение:** Phase 2, slice P2-A — installed Model Descriptor и Capability
+Evidence foundation
 
 ## Prompt
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui`. Сначала прочитай корневой
 `AGENTS.md` и выполни его полностью. Не создавай subagents и не делегируй работу.
 
-Предыдущие slices P1-A–P1-L независимо проверены. P1-L ввёл exact versioned
-observation key, migration 6 и digest-aware bounded `/api/show` cache. Реализуй
-только bounded slice `P1-M no-artificial-caps audit`. Не расширяй задачу до
-Capability Registry, multi-device scheduler или Agent watchdog redesign.
+Phase 0 и Phase 1 independently verified. P1-M удалил artificial context
+ceiling, добавил sourced `ModelContextLimit`, exact custom propagation и
+truthful one-permit/device-unknown projection. Реализуй только bounded P2-A:
+additive descriptor/evidence contract для уже установленных Ollama models и его
+вертикальную server/Web projection. Не начинай import, Marketplace rewrite,
+controlled probes или persistent Capability Registry.
 
 ### Обязательное чтение и readiness
 
 1. Прочитай полностью:
    - `docs/NAVIGATION.md`;
-   - `docs/PRODUCT.md` (`RES-*`, `MOD-*`, `PLAT-*`);
-   - `docs/DOMAIN_MODEL.md`;
-   - `docs/UX_IA.md`;
-   - `docs/DEVELOPMENT.md`;
-   - `docs/TESTING.md`;
-   - `docs/architecture/HLD.md`;
-   - `docs/architecture/LLD.md`;
-   - `docs/architecture/RUNTIME_LIFECYCLE.md`;
-   - `docs/plans/ROADMAP.md` Phase 1 и exit gate;
-   - `docs/plans/OPEN_QUESTIONS.md`, особенно Q-27;
-   - `docs/decisions/2026-08-02-product-decisions.md`, особенно D-007;
-   - ADR-0001–0004 и все ADR, которые затрагивает inventory.
-2. Используй skills `sde-agent:sde-agent`,
-   `sde-agent:implementation-planning`, `product-agent:product-acceptance`,
-   `sre-agent:verification-strategy`, `sre-agent:reliability-testing`,
+   - `docs/PRODUCT.md`, особенно `MOD-001..005` и `RES-008..010`;
+   - `docs/DOMAIN_MODEL.md`, Model Reference/Variant/Installation/Runtime
+     Instance/Observation Key/Context Limit/Operation Descriptor;
+   - `docs/UX_IA.md`, Models/Marketplace и evidence copy;
+   - `docs/DEVELOPMENT.md` и `docs/TESTING.md`;
+   - `docs/architecture/HLD.md`, `LLD.md` и `RUNTIME_LIFECYCLE.md`;
+   - `docs/plans/ROADMAP.md` Phase 2 exit gate;
+   - `docs/plans/OPEN_QUESTIONS.md`, особенно Q-25/Q-26 — не закрывай их;
+   - `docs/decisions/2026-08-02-product-decisions.md`;
+   - ADR-0002, ADR-0003 и ADR-0008.
+2. Используй `architecture-agent:architecture-agent`,
+   `sde-agent:implementation-planning`, `sde-agent:sde-agent`,
+   `product-agent:product-acceptance`, `sre-agent:verification-strategy`,
    `sre-agent:finding-validation`, `sde-agent:implementation-evidence` и
-   `frontend-agent:frontend-agent` без делегирования.
+   `frontend-agent:frontend-verification` без делегирования.
 3. До правок воспроизведи baseline:
+   - typecheck;
    - P1 exact 98/98;
-   - P1-L key/migration/cache/runtime 28/28;
-   - prewarm 6/6;
-   - routes/Governor/concurrency 30/30;
+   - P1-L+M key/cache/runtime 32/32;
+   - prewarm 7/7;
+   - routes/Governor/concurrency 33/33;
    - runtime/provider 19/19;
    - fit/telemetry 19/19;
-   - root 237/237 server/CLI + 43/43 Web;
-   - Chromium 16/16.
-4. Составь до кода limit inventory с колонками `surface`, `value`, `source`,
-   `kind`, `enforcement point`, `user-visible explanation`, `action`.
-   Обязательно проверь:
-   - `threadOptionsSchema.numCtx.max(1_048_576)`;
-   - Settings `max={1_048_576}`;
-   - Launcher `CONTEXT_CHOICES`;
-   - `ModelService.PROFILE_CONTEXT_STEPS` и `fitByContext`;
-   - Chat URL/default context parsing и model max projection;
-   - REST query/body schemas и SQLite settings/thread round-trip;
-   - output/token/media controls или их отсутствие;
-   - `acceleratorSchema`, singular hardware projection и Governor literal one
-     permit;
-   - safety bounds: tool/host output bytes, parser candidate, pagination,
-     timeouts и `MAX_AGENT_STEPS`.
-5. До реализации классифицируй каждый limit:
-   - `runtime/adapter-reported capability`;
-   - `explicit policy/safety bound`;
-   - `display suggestion/default`;
-   - `transport/storage implementation bound`;
-   - `artificial product ceiling`;
-   - `unknown/not implemented`.
-   Default или suggestion не должны silently становиться validation cap.
+   - core 248/248, Web 46/46, Chromium 17/17;
+   - build, markdownlint и diff check.
+4. До реализации составь inventory current installed-model facts:
+   `/api/tags`, `/api/show`, `/api/ps`, bundled catalog, legacy `capabilities`,
+   `contextLimit`, digest, normalized reference, runtime version, cache key и UI
+   consumer. Для каждого укажи source, observation time, confidence, artifact
+   identity, staleness и failure semantics.
 
-## Scope P1-M
+## Scope P2-A
 
-- Удали artificial hard ceiling `1_048_576` из thread contract и Settings.
-  Boundary должен принимать любой positive safe integer в пределах реально
-  представимого/передаваемого значения; malformed, fractional, zero, negative и
-  unsafe integer по-прежнему отклоняются controlled validation.
-- Не заменяй потолок другим произвольным числом. Если runtime/model сообщает
-  context limit, показывай source/time/confidence и объясняй, является ли это
-  declared model capability, observed runtime limit или policy refusal.
-- `DEFAULT_CHAT_NUM_CTX=8192` и `DEFAULT_NUM_CTX=32768` остаются defaults, а не
-  max/recommendation для любого hardware. Copy и aria text должны это отражать.
-- Launcher presets остаются быстрыми suggestions только если пользователь может
-  ввести валидное custom значение вне списка. Custom context должен пройти
-  contract → server → SQLite/Chat/model fit/prewarm без clamp к последнему
-  preset.
-- Model profile не должен masquerade-ить `PROFILE_CONTEXT_STEPS` как полный
-  список разрешённых contexts. Добавь model-reported maximum и текущий/custom
-  context в fit projection либо введи другой bounded on-demand calculation.
-  Не запускай unbounded `/api/show` concurrency и не создавай огромный массив
-  всех возможных contexts.
-- Если selected context выше declared model maximum, не silently clamp-ь его.
-  Покажи controlled validation/explanation с source. Не выдавай bundled catalog
-  claim за runtime-verified limit.
-- Проведи output audit. Current отсутствие user-facing output-budget control не
-  нужно заполнять guessed max. Если обнаружен hidden inference-output cap,
-  убери его либо свяжи с typed adapter/runtime/policy source. Provider stop
-  reason `length` остаётся observation, не доказательство универсального max.
-- Проведи media audit. Если current product не принимает media upload в этом
-  flow, сохрани `not implemented`; не добавляй arbitrary file-count/size UI cap
-  и не начинай Phase 4. Existing filesystem/tool security bounds не называй
-  model capability limits.
-- Проведи accelerator/device audit. Current P1 Governor one permit — явная
-  conservative safety policy, а не claim, что host имеет один accelerator.
-  UI не должен утверждать число устройств без sourced adapter fact. Не
-  реализуй multi-device scheduling; unknown остаётся unknown.
-- Не удаляй justified safety/transport bounds механически. Tool output 64 KiB,
-  host probe output 64 KiB, parser candidate 32k, replay/recovery page bounds,
-  timeouts и current Agent 40-step watchdog относятся к security/reliability.
-  Зафиксируй source и user-visible failure semantics. Q-27 не закрывай без
-  benchmark/owner decision.
-- Public contract меняй additive/compatible там, где возможно. Удаление
-  arbitrary `max` расширяет принимаемое множество и не требует DB migration.
-  Legacy threads/settings/localStorage/URLs должны продолжать читаться.
-- User-facing strings добавляй через English source/fallback и curated Russian.
-  Проверяй keyboard, focus, 390 px, 200% scaling и reduced motion.
-- Все new async provider waits bounded/cancellable. Не логируй raw provider
-  body, endpoint credentials, paths, prompts, private workspace или reasoning.
-- Обнови current-state docs и Mermaid только если boundary действительно
-  изменилась.
+- Добавь additive contract, который явно различает:
+  - canonical provider/model reference;
+  - exact installed variant/artifact digest либо unknown identity;
+  - installation fact;
+  - capability evidence с source, observed time, confidence/state и применимым
+    fingerprint/identity basis.
+- Названия типов и nesting выбери после inventory, но сохрани accepted domain
+  distinction. Не называй `/api/tags` или `/api/show` declaration runtime proof.
+- Current Ollama adapter использует только documented local endpoints уже
+  доступного runtime. Не делай network scraping и не читай model store напрямую.
+- Legacy `LocalModel.capabilities`, `contextLength`, `contextLimit`, REST paths и
+  old response parsing остаются compatible. Новый contract additive; removal или
+  rename требует отдельного migration/compatibility plan.
+- Протяни descriptor/evidence через installed list и model detail. Один exact
+  installed digest не должен смешиваться с другим digest того же name.
+- Provider failure, missing field и conflicting declarations остаются typed
+  unknown/degraded evidence, а не `supported:false` и не positive claim.
+- Не выводи semantic quality, tool reliability, media support, output limit,
+  hardware fit или runtime verification из имени/tag substring.
+- Сохрани P1-L digest-aware cache, LRU 64, максимум четыре `/api/show` workers,
+  caller cancellation и исходное observation time. Новые waits должны быть
+  bounded/cancellable; raw body, endpoint credential, path, prompt и reasoning
+  не логируются.
+- В installed card/profile покажи evidence state/source/freshness только через
+  locale keys: English source/fallback и curated Russian. Unknown должен быть
+  видим, но не masquerade-иться как unsupported.
+- Если vertical UI становится слишком широким, оставь Marketplace/catalog
+  projection unchanged: P2-A относится к installed model evidence.
+- SQLite migration не добавляй без доказанной необходимости. Persistent
+  provider cache/TTL/SWR и registry history — следующий slice, не скрытая часть
+  P2-A.
 
 ## Required behavior model
 
 ```text
-requested value
-  → positive safe-integer syntax validation
-  → classify available limit evidence
-      ├─ explicit runtime/adapter/policy limit exists
-      │    → explain source + reject/allow by that typed boundary
-      ├─ only default/preset exists
-      │    → keep as suggestion; custom value remains possible
-      └─ evidence unavailable
-           → unknown; no guessed universal ceiling
-  → preserve exact requested value across REST, SQLite, fit and inference
+installed Ollama row
+  → canonical provider/model reference
+  → exact digest identity | explicit unknown
+  → collect documented declarations
+      ├─ sourced declaration → declared evidence + time/confidence
+      ├─ unavailable/missing → unknown/degraded evidence
+      └─ conflict → preserve conflict; do not choose a convenient claim
+  → additive REST projection
+  → localized installed card/profile explanation
 ```
 
-Device projection:
+Evidence levels remain distinct:
 
 ```text
-Governor permits = 1 conservative application policy
-hardware device count = sourced adapter fact | unknown
-never infer device count from permit count or singular display row
+catalog claim ≠ provider declaration ≠ controlled probe ≠ runtime observation
 ```
 
 ## Required deterministic evidence
 
-- contract accepts values immediately below, equal to and above the old
-  `1_048_576` ceiling when they are safe integers, and rejects invalid/unsafe
-  numeric inputs;
-- Settings saves/reloads a custom value above the old ceiling without clamp,
-  reset or precision loss; legacy/default values still parse;
-- thread create/update, Chat command, exact Governor request, Ollama `num_ctx`,
-  prewarm request and model fit receive the same custom value end to end;
-- Launcher exposes presets as suggestions and accepts keyboard-entered custom
-  context outside the list with localized hint/error;
-- Model profile shows/calculates at model-reported max and a valid custom
-  context without treating six `PROFILE_CONTEXT_STEPS` as whitelist;
-- value above a sourced model maximum gets truthful controlled behavior and
-  does not silently clamp; unavailable maximum stays unknown;
-- output/media inventory proves no hidden UI/product ceiling was introduced.
-  Justified tool/parser/page/watchdog limits retain safe observable failures;
-- Runtime Bar distinguishes one Governor permit policy from device-count fact
-  and never renders unsupported device cardinality as fact;
-- no regression in P1-L exact key: custom context changes key, creates a
-  distinct exact calibration row and cannot reuse another context sample as the
-  same observation;
-- P1-K prewarm uses the exact custom context while preserving normal-before-
-  prewarm, `2m` TTL and explicit warm/turn `10m`;
-- P1-J Queue/Stop, P1-I polling, P1-E recovery and durable Chat replay remain
-  green;
-- Chromium literally enters a custom context beyond the old preset/ceiling,
-  saves/reloads or starts the relevant flow, and observes the exact request.
-  Include keyboard, 390 px, 200%, no horizontal overflow and reduced motion;
-- no live Ollama/model, user DB, workspace file or public network in the
-  deterministic suite.
+- legacy model responses still parse with additive defaults;
+- canonical reference keeps registry/name/tag/digest distinctions already
+  protected by P1-L normalization;
+- installed exact digest A never receives evidence cached for replacement B;
+- tags/show declarations carry exact source/time/confidence and no refreshed
+  timestamp on a cache hit;
+- missing, malformed, conflicting and unavailable provider data remain visible
+  unknown/degraded states without erasing the installed row;
+- no model-name/capability substring heuristic appears in contract/server/Web;
+- list/detail preserve P1-M custom context and sourced context-limit behavior;
+- `/api/show` concurrency remains bounded and caller abort reaches provider;
+- UI covers loading, installed empty, unknown/degraded evidence and localized
+  explanation; keyboard, focus, 390 px, 200%, no horizontal overflow and
+  reduced motion remain safe;
+- no live Ollama/model, user DB, workspace file, model store or public network in
+  deterministic tests.
 
 ## Non-goals
 
-- не реализовывать multi-device discovery/scheduling или дополнительные permits;
-- не менять one-lane Governor admission, P1-J Queue/Stop, P1-K priority/TTL;
-- не добавлять Capability Registry/import/Marketplace Phase 2;
-- не добавлять media workbenches/uploads Phase 4;
-- не проектировать Agent watchdog/budget вместо открытого Q-27;
-- не удалять security, pagination, stream chunking, timeout или redaction bounds;
-- не добавлять durable runtime history, generic eviction, auto-unload, full Jobs
-  UI, Project/Recipe/retention, MCP/Skills, daemon/TUI или rebranding;
-- не выполнять live hardware/Ollama tests без отдельного explicit envelope.
+- не реализовывать `Add from Ollama`, Hugging Face/GGUF import или Q-25/Q-26;
+- не переписывать Marketplace/search/filter/compare;
+- не добавлять persistent Capability Registry, TTL/SWR или controlled probes;
+- не обещать semantic capability quality или runtime verification;
+- не добавлять Linux/NVIDIA telemetry, multi-device scheduling, extra permits,
+  measured parallel, generic eviction или auto-unload;
+- не менять migrations 1–6, Job/Governor lifecycle, prewarm priority/TTL,
+  P1-J Queue/Stop или no-artificial-caps boundary;
+- не начинать Project/Recipe/retention, media, Service/CLI/TUI, Agent или rebrand.
 
 ## Validation
 
-Сохрани новые exact counts и отдельно regression counts:
+Сохрани новые exact counts и отдельно regression counts. Минимум:
 
 ```bash
 npm run typecheck
-node --test packages/server/test/job-contract.test.ts \
-  packages/server/test/job-migration.test.ts \
-  packages/server/test/job-store.test.ts \
-  packages/server/test/job-service.test.ts \
-  packages/server/test/job-routes.test.ts \
-  packages/server/test/chat-job-execution.test.ts \
-  packages/server/test/chat-job-recovery.test.ts \
-  packages/server/test/resource-governor.test.ts \
-  packages/server/test/runtime-reconciliation.test.ts \
-  packages/server/test/host-telemetry.test.ts
-node --test packages/server/test/observation-key.test.ts \
-  packages/server/test/observation-migration.test.ts \
-  packages/server/test/model-service.test.ts \
+node --test packages/server/test/model-service.test.ts \
+  packages/server/test/context-limits.test.ts \
+  packages/server/test/observation-key.test.ts \
   packages/server/test/runtime-reconciliation.test.ts
 node --test packages/server/test/prewarm.test.ts
 node --test packages/server/test/routes.test.ts \
@@ -213,8 +155,6 @@ node --test packages/server/test/catalog.test.ts \
   packages/server/test/runtime-contract.test.ts \
   packages/server/test/runtime-routes.test.ts \
   packages/server/test/ollama-client.test.ts
-node --test packages/server/test/fit.test.ts \
-  packages/server/test/host-telemetry.test.ts
 npm test --workspace @alamo/web
 npm run test:web:browser
 npm test
@@ -223,29 +163,25 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-Повтори новые contract/settings/custom-context end-to-end races 10 раз,
-затронутые Web component files 10 раз, P1-L key/cache/runtime group 10 раз,
-P1-K priority/prewarm/inference 10 раз, P1-J conflict 10 раз, P1-I polling 10
-раз и P1-E recovery 10 раз. Первый flaky/failing result сохрани, диагностируй и
-исправь; не скрывай повторным green run.
+Повтори новый descriptor/evidence group 10 раз, P1-L+M key/cache/context group
+10 раз, affected Web component files 10 раз, P1-K priority/prewarm/inference 10
+раз, P1-J conflict 10 раз, P1-I polling 10 раз и P1-E recovery 10 раз. Первый
+failing/flaky result сохрани, диагностируй и исправь; повторный green не скрывает
+первую ошибку.
 
 ## Completion and handoff
 
-После успешной независимой проверки:
+После независимой проверки:
 
-- обнови current-state docs и `docs/TESTING.md`;
-- в `PHASE_STATUS.md` сохрани P0/P1-A–P1-L evidence и добавь только P1-M;
-- сверь весь Phase 1 exit gate. Не отмечай Phase 1 завершённой только потому,
-  что scope list исчерпан: каждый gate должен иметь evidence, а remaining gap —
-  отдельный bounded prompt;
+- обнови current-state domain/LLD/testing docs;
+- в `PHASE_STATUS.md` сохрани Phase 0/1 evidence и добавь только P2-A;
+- Phase 2 оставь `in progress`, пока весь её ROADMAP exit gate не доказан;
 - полностью перепиши `NEXT_AGENT_PROMPT.md` под следующий незавершённый slice;
-- сделай небольшие conventional commits для contract/behavior, UI/tests и docs.
+- сделай небольшие conventional commits для contract/server, Web/tests и docs.
 
-Если arbitrary ceiling нельзя удалить без отсутствующего runtime capability
-source, не подменяй его новым guessed max. Сохрани valid custom input там, где
-это безопасно, покажи unknown, оставь P1-M `blocked` только при доказанном
-compatibility/security gap и запиши recovery steps.
+Если descriptor semantics требуют выбрать Q-25/Q-26, остановись: import не входит
+в P2-A. Если documented provider facts недостаточны, сохрани unknown и запиши
+конкретный evidence gap вместо heuristic.
 
-В финале сообщи status `successful` либо `blocked`, commits, exact tests, первый
-failure и исправление, residual risks и что `NEXT_AGENT_PROMPT.md` полностью
-переписан.
+В финале сообщи `successful` либо `blocked`, commits, exact tests, первый failure
+и исправление, residual risks и подтверждение обновления обоих handoff docs.

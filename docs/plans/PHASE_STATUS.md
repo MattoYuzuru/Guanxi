@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-03
-**Текущая фаза:** Phase 1 — Durable Jobs и Resource Governor
+**Текущая фаза:** Phase 2 — Models, Capability Registry и import
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -40,8 +40,9 @@ exit gate ROADMAP проверен целиком.
 | P1-J Resource conflict/queue action UX  | independently verified | `2e8dc47`, `dc3f992`; 10 component, 4 browser, all gates            |
 | P1-K Prewarm priority/debounce          | independently verified | `811f7fa`..`60693ea`; 35 race, 6 service, 2 browser, all gates      |
 | P1-L Exact observation identity         | independently verified | `44730e2`..`94300b7`; 28 exact, 10× repeats, all gates              |
+| P1-M No-artificial-caps audit           | independently verified | `c86e537`, `fbff386`; 49 custom, 1 browser, 10× repeats, all gates  |
 
-P1-A–P1-L реализуют additive contract, migrations 4–6, canonical state CAS,
+P1-A–P1-M реализуют additive contract, migrations 4–6, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
@@ -56,9 +57,10 @@ observed/unknown current-fit explanation. P1-I добавляет persistent rea
 Runtime Bar. P1-J добавляет safe Queue и exact Job Stop/cancel acknowledgement
 для Chat conflict. P1-K добавляет typed lowest-priority prewarm после stable
 New Chat selection. P1-L добавляет exact observation keys, migration 6 и
-digest-aware bounded cache; no artificial caps audit и другие remaining
-exit-gate slices ещё впереди, поэтому Phase 1
-остаётся `in progress`.
+digest-aware bounded cache. P1-M удаляет arbitrary context ceiling, добавляет
+sourced declared/unknown limit evidence, exact custom propagation и truthful
+one-permit/device-unknown projection. Все Phase 1 slices и полный ROADMAP exit
+gate independently verified; Phase 1 завершена.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -296,22 +298,71 @@ product regressions.
 Не проверены live Ollama/hardware и production residency, continuous observation,
 remote hardware identity, safe parallel/future admission, external-client и
 multi-process safety, generic eviction. Exact v1 не включает ещё недоступные
-parallelism/KV/flash-attention/probe facts; они не подменены defaults. Phase 1
-остаётся `in progress` до no-artificial-caps audit и проверки remaining exit gate.
+parallelism/KV/flash-attention/probe facts; они не подменены defaults.
+
+P1-M evidence: public context boundaries принимают positive safe integers без
+replacement ceiling; invalid/fractional/non-positive/unsafe values получают
+controlled validation. `ModelContextLimit` различает declared `/api/tags` или
+`/api/show` evidence с observation time/confidence и absent/conflicting unknown.
+Sourced over-maximum request отклоняется `context_limit_exceeded` без clamp;
+unknown не создаёт guessed отказ. Exact `1_048_577` проходит Settings/thread
+SQLite, route, Governor, Ollama `num_ctx`, fit и prewarm. Defaults `8192`/`32768`,
+Launcher datalist и profile steps остались suggestions. `/api/show` projection
+ограничена четырьмя workers, digest-aware LRU — 64; cached source time не
+переписывается.
+
+Settings, Launcher и Model Profile принимают keyboard custom input и показывают
+localized validation/provenance. Runtime Bar называет один permit application
+policy и отдельно оставляет device count unknown. Output-budget и media upload
+в current flow остаются `not implemented`; guessed limits не добавлены. Bash/
+file/host/parser/page/chunk/timeout/40-step safety bounds сохранены с текущими
+failure semantics; Q-27 не закрыт.
+
+Локально прошли typecheck; 98/98 P1 exact; 32/32 P1-L+M key/cache/runtime;
+7/7 prewarm; 33/33 routes/Governor/concurrency; 19/19 runtime/provider; 19/19
+fit/telemetry; 248/248 server/CLI + 46/46 Web; 17/17 mocked Chromium; root test,
+build, markdownlint и diff check. Повторы: custom contract/settings/end-to-end
+10×49/49; affected Web 10×46/46; P1-L 10×32/32; P1-K 10×37/37; P1-J
+10×11/11; P1-I 10×3/3; P1-E 10×8/8.
+
+Первые P1-M проверки сохранили только harness/static failures. Detached baseline
+сначала запускался не из repository worktree и с неполным install; запуск из
+repo после `npm ci` подтвердил исходные counts. Новый component file сначала не
+имел Theme/matchMedia setup, затем использовал unsupported matcher и Embla path;
+fixture/setup исправлены до 3/3. Один root Vitest запуск обошёл Web jsdom config.
+Post-review typecheck поймал type-only imports и вложенный array; обе причины
+исправлены. Первый 10× wrapper использовал readonly zsh `status`; переменная
+wrapper заменена, все засчитываемые repeats зелёные. Product regression в этих
+первых failures не подтверждён.
+
+Phase 1 ROADMAP exit gate переоценён целиком:
+
+- navigation detach/reattach сохраняет durable Job и lease;
+- reload replay читает persisted canonical output без duplicate;
+- pre-listen restart recovery даёт interrupted/cancelled/queued truth;
+- P1-J Queue и canonical Governor предотвращают unsafe competing load;
+- route lifecycle не освобождает application lease;
+- Runtime Bar/conflict UI объясняют owner, queue, context, source и policy.
+
+Release-readiness verdict для phase exit — `go`, не production deployment.
+Остаточные риски не изменились: live Ollama/hardware, production residency/TTL,
+continuous observation, external-client identity, multi-process ownership,
+remote telemetry, safe parallel и generic eviction не проверены. Они входят в
+следующие фазы и не выданы за Phase 1 evidence.
 
 ## Later phases
 
-| Phase                                   | Статус      |
-| --------------------------------------- | ----------- |
-| Phase 1 — Durable Jobs/Governor         | in progress |
-| Phase 2 — Models/Capability/import      | not started |
-| Phase 3 — Text/Projects/retention/i18n  | not started |
-| Phase 4 — Service/CLI/TUI               | not started |
-| Phase 5 — First-party coding Agent      | not started |
-| Phase 6 — Audio                         | not started |
-| Phase 7 — Vision/OCR/image              | not started |
-| Phase 8 — Deliberate long-running Agent | not started |
-| Phase 9 — Packaging/hotkey/rebrand      | not started |
+| Phase                                   | Статус                 |
+| --------------------------------------- | ---------------------- |
+| Phase 1 — Durable Jobs/Governor         | independently verified |
+| Phase 2 — Models/Capability/import      | not started            |
+| Phase 3 — Text/Projects/retention/i18n  | not started            |
+| Phase 4 — Service/CLI/TUI               | not started            |
+| Phase 5 — First-party coding Agent      | not started            |
+| Phase 6 — Audio                         | not started            |
+| Phase 7 — Vision/OCR/image              | not started            |
+| Phase 8 — Deliberate long-running Agent | not started            |
+| Phase 9 — Packaging/hotkey/rebrand      | not started            |
 
 ## Update protocol
 

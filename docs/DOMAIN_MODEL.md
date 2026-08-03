@@ -148,11 +148,27 @@ Legacy `model_calibration(model, context)` сохраняется для сов�
 считается exact evidence. Migration 6 пишет новые samples отдельно; changed
 digest, context, runtime или hardware не перезаписывают друг друга.
 
+### Model Context Limit
+
+Current P1-M boundary различает только provider-declared limit и `unknown`.
+Declared evidence содержит positive safe-integer value, источник
+`/api/tags` либо `/api/show`, observation time и confidence. Отсутствующие или
+противоречащие declarations остаются unknown и не превращаются в guessed
+universal ceiling.
+
+Запрошенный context — отдельный exact параметр operation. Defaults `8192`/`32768`
+и UI presets являются стартовыми значениями/подсказками, а не capability.
+Значение выше sourced declared maximum отклоняется без clamp; при unknown
+maximum валидный custom value сохраняется через REST, SQLite, Governor, Ollama,
+fit и prewarm. Legacy `LocalModel.contextLength` остаётся compatibility
+projection; новые решения используют `contextLimit`.
+
 ### Resource Lease
 
 Право Job или prewarm удерживать Model Instance. Lease имеет purpose, priority,
 TTL и owner. Модель выгружается только при отсутствии leases и выполнении idle/
-pressure policy.
+pressure policy. Current один permit — консервативная application policy, а не
+свидетельство одного accelerator device; device cardinality пока unknown.
 
 ### Operation Descriptor
 
