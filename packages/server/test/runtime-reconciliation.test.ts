@@ -11,7 +11,6 @@ import {
 } from '@alamo/contract'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
-import type { ModelService } from '../src/models/service.ts'
 import {
   UnsupportedHostTelemetry,
   type HostTelemetry,
@@ -192,11 +191,26 @@ function reconciliation(
     HARDWARE,
     () => new Date(OBSERVED_AT),
   ),
+  identity?: {
+    installed: readonly { name: string; digest: string }[]
+    runtimeVersion?: string
+    runtimeHost?: string
+  },
 ): RuntimeReconciliationService {
   return new RuntimeReconciliationService({
     governor,
     hostTelemetry,
-    models: () => ({ ps }) as unknown as ModelService,
+    models: () => ({
+      ps,
+      ...(identity
+        ? {
+            installedArtifacts: async () => identity.installed,
+            runtimeVersion: async () => identity.runtimeVersion ?? '0.12.6',
+            runtimeHost: identity.runtimeHost ?? 'http://127.0.0.1:11434',
+            hardwareProfile: HARDWARE,
+          }
+        : {}),
+    }),
     now: () => new Date(OBSERVED_AT),
   })
 }
@@ -305,6 +319,7 @@ describe('runtime reconciliation contract and identity', () => {
       governor,
       async () => [running('fixture:latest', { digest: 'sha256:provider-observation' })],
       fixedHostTelemetry(async () => host),
+      { installed: [{ name: 'fixture:latest', digest: 'sha256:provider-observation' }] },
     )
 
     const snapshot = runtimeSnapshotSchema.parse(await service.snapshot())
@@ -316,7 +331,8 @@ describe('runtime reconciliation contract and identity', () => {
     assert.equal(model?.currentFit.runtimeAcceleratorAllocationBytes, 750)
     assert.equal(model?.currentFit.pressureLevel, 'normal')
     assert.equal(model?.currentFit.futureAdmissionGuarantee, false)
-    assert.equal(model?.artifactIdentity, 'unknown')
+    assert.equal(model?.artifactIdentity, 'exact_digest')
+    assert.equal(model?.observationKey.state, 'complete')
     assert.equal(model?.digest, 'sha256:provider-observation')
     assert.equal(snapshot.host.profile.totalMemoryBytes.source, 'node_os_totalmem')
     assert.equal(
@@ -325,6 +341,120 @@ describe('runtime reconciliation contract and identity', () => {
     )
     assert.equal(snapshot.host.profile.discreteVramBytes.bytes, null)
     assert.equal(snapshot.host.sample.gpuFreeMemoryBytes.bytes, null)
+    lease.release()
+  })
+
+  it('publishes complete keys only for exact tags↔ps/version/local-host identity', async () => {
+    const fixtures = [
+      {
+        name: 'exact',
+        identity: { installed: [{ name: 'fixture:latest', digest: 'sha256:runtime' }] },
+        keyState: 'complete',
+        reason: null,
+      },
+      {
+        name: 'changed installed digest',
+        identity: { installed: [{ name: 'fixture:latest', digest: 'sha256:stale' }] },
+        keyState: 'unavailable',
+        reason: 'installed_digest_mismatch',
+      },
+      {
+        name: 'ambiguous installed reference',
+        identity: {
+          installed: [
+            { name: 'fixture:latest', digest: 'sha256:runtime' },
+            { name: 'FIXTURE', digest: 'sha256:runtime' },
+          ],
+        },
+        keyState: 'unavailable',
+        reason: 'installed_reference_ambiguous',
+      },
+      {
+        name: 'missing runtime version',
+        identity: {
+          installed: [{ name: 'fixture:latest', digest: 'sha256:runtime' }],
+          runtimeVersion: '',
+        },
+        keyState: 'unavailable',
+        reason: 'runtime_version_unavailable',
+      },
+      {
+        name: 'remote runtime with local hardware',
+        identity: {
+          installed: [{ name: 'fixture:latest', digest: 'sha256:runtime' }],
+          runtimeHost: 'https://remote.example',
+        },
+        keyState: 'unavailable',
+        reason: 'hardware_fingerprint_unavailable',
+      },
+    ] as const
+
+    for (const fixture of fixtures) {
+      const governor = new ResourceGovernor()
+      const lease = await activeLease(governor, 'fixture:latest')
+      const snapshot = runtimeSnapshotSchema.parse(
+        await reconciliation(
+          governor,
+          async () => [running('fixture:latest', { digest: 'sha256:runtime' })],
+          fixedHostTelemetry(async () => appleHost()),
+          fixture.identity,
+        ).snapshot(),
+      )
+      const key = snapshot.models?.[0]?.observationKey
+      assert.equal(key?.state, fixture.keyState, fixture.name)
+      assert.equal(
+        key?.state === 'unavailable' ? key.reason : null,
+        fixture.reason,
+        fixture.name,
+      )
+      assert.equal(
+        snapshot.models?.[0]?.artifactIdentity,
+        fixture.keyState === 'complete' ? 'exact_digest' : 'unknown',
+        fixture.name,
+      )
+      assert.equal(
+        snapshot.models?.[0]?.currentFit.state,
+        fixture.keyState === 'complete' ? 'observed' : 'unknown',
+        fixture.name,
+      )
+      if (fixture.keyState === 'unavailable') {
+        assert.equal(
+          snapshot.models?.[0]?.currentFit.reason,
+          'observation_key_unavailable',
+          fixture.name,
+        )
+      }
+      lease.release()
+    }
+  })
+
+  it('parses a legacy observed Runtime snapshot as unavailable without fabricated components', async () => {
+    const governor = new ResourceGovernor()
+    const lease = await activeLease(governor, 'fixture:latest')
+    const current = await reconciliation(
+      governor,
+      async () => [running('fixture:latest', { digest: 'sha256:runtime' })],
+      fixedHostTelemetry(async () => appleHost()),
+      { installed: [{ name: 'fixture:latest', digest: 'sha256:runtime' }] },
+    ).snapshot()
+    const currentModel = current.models?.[0]
+    assert.ok(currentModel)
+    const { observationKey: _modelKey, ...legacyModel } = currentModel
+    const legacyDecisions = current.decisions.map((item) => {
+      const { observationKey: _decisionKey, ...legacyDecision } = item
+      return { ...legacyDecision, artifactIdentity: 'unknown' as const }
+    })
+    const parsed = runtimeSnapshotSchema.parse({
+      ...current,
+      models: [{ ...legacyModel, artifactIdentity: 'unknown' }],
+      decisions: legacyDecisions,
+    })
+    assert.deepEqual(parsed.models?.[0]?.observationKey, {
+      state: 'unavailable',
+      version: 1,
+      reason: 'legacy_snapshot',
+    })
+    assert.equal(parsed.models?.[0]?.currentFit.state, 'observed')
     lease.release()
   })
 
@@ -372,12 +502,21 @@ describe('runtime reconciliation contract and identity', () => {
           governor,
           async () => fixture.running,
           fixedHostTelemetry(async () => fixture.host),
+          {
+            installed: fixture.running.map((model) => ({
+              name: model.name,
+              digest: model.digest ?? '',
+            })),
+          },
         ).snapshot(),
       )
       assert.equal(snapshot.models?.[0]?.currentFit.state, 'unknown', fixture.name)
       assert.equal(snapshot.models?.[0]?.currentFit.reason, fixture.reason, fixture.name)
       assert.equal(snapshot.models?.[0]?.currentFit.futureAdmissionGuarantee, false)
-      assert.equal(snapshot.models?.[0]?.artifactIdentity, 'unknown')
+      assert.equal(
+        snapshot.models?.[0]?.artifactIdentity,
+        fixture.reason === 'runtime_reference_ambiguous' ? 'unknown' : 'exact_digest',
+      )
       lease.release()
     }
   })
@@ -467,6 +606,7 @@ describe('runtime reconciliation failures', () => {
         runtimeGovernor,
         async () => [running('fixture:latest')],
         telemetryFailure,
+        { installed: [{ name: 'fixture:latest', digest: 'sha256:fixture:latest' }] },
       ).snapshot(),
     )
     assert.equal(runtimeSuccess.models?.[0]?.ownerState, 'active_lease')
@@ -562,6 +702,7 @@ describe('runtime reconciliation concurrency and lifecycle', () => {
         return providerCalls === 1 ? provider.promise : []
       },
       hostTelemetry,
+      { installed: [{ name: 'second:latest', digest: 'sha256:second:latest' }] },
     )
     const cancelled = new AbortController()
     const callerLeaving = service.snapshot({ signal: cancelled.signal })
