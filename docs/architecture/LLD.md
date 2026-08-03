@@ -57,8 +57,9 @@ P1-M additive добавляет `positiveSafeIntegerSchema`, sourced
 query/warm/prewarm boundaries принимают любой positive JavaScript safe integer,
 но sourced declared maximum отклоняет запрос без clamp; absent/conflicting
 provider declarations остаются unknown. Legacy model responses получают
-additive unknown default, поэтому старые clients и SQLite schema остаются
-совместимыми без migration 7.
+additive unknown default. P2-B freshness также defaults в unknown; SQLite
+migration 7 используется только новым evidence store, старые clients её
+игнорируют.
 
 P2-A additive добавляет `InstalledModelDescriptor`: canonical/unknown Ollama
 reference, exact/unknown artifact identity, installation observation и
@@ -115,6 +116,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   classified private output в `job_events`;
 - migration 6: additive exact-key `model_calibration_observations`; legacy
   `model_calibration` остаётся readable, но не участвует в measured fit;
+- migration 7: additive `installed_model_evidence_cache` с safe normalized JSON,
+  exact identity, original observation, validation/expiry/stale timestamps и
+  no-backfill rollback compatibility;
 - `store/calibration.ts`: complete-key-only record и same-artifact/runtime/
   hardware context curve; changed identity получает отдельную row;
 - `store/jobs.ts`: atomic create + initial event, ordered replay page, event
@@ -141,19 +145,22 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | --- | --- | --- | --- | --- |
 | Installation/name/size/details/digest | local `/api/tags`, request completion time | observed installation; digest exact либо unknown | no persistent cache; route failure controlled | installed list, detail, fit, descriptor |
 | Capability field | `/api/tags`, тот же installation sample | provider-declared; exact digest basis возможен | missing/malformed/future value → unknown | legacy capabilities и descriptor |
-| Architecture/capability detail | local `/api/show`, first response time | provider-declared; artifact basis unknown, response без digest | digest-aware process LRU 64; unavailable not cached | context limit, fit, detail, descriptor |
+| Architecture/capability detail | local `/api/show`, first response time | provider-declared; exact cache write only after tags/version revalidation | LRU 64 + SQLite v7; 15m fresh, 7d stale/offline; four workers + per-key flight | context limit, fit, detail, descriptor |
 | Loaded instance | local `/api/ps`, sampled time | observed runtime row; exact only through P1-L reconciliation | failure remains `models:null`; no history | Runtime Bar, fit/calibration |
 | Runtime version | local `/api/version`, response time | observed runtime fingerprint либо unknown | request-scoped, failure independent | observation key и descriptor basis |
 | Catalog claim | local stale cache or dated bundled snapshot | claimed/bundled, not runtime fact | explicit stale/fallback/unavailable | Marketplace only, P2-A unchanged |
 | Legacy `capabilities` | filtered known `/api/tags` values | compatibility projection, not evidence decision | unknown/malformed → empty legacy array | old Web/clients |
 | Context facts | `/api/tags`/`/api/show` declarations | declared maximum либо unknown/conflict | LRU time preserved; no guessed ceiling | settings/list/detail/validation |
 | Canonical reference | P1-L normalizer over provider name | registry/name/tag/digest syntax preserved | invalid/duplicate → unknown/ambiguous | descriptor/cache/observation key |
-| Web evidence projection | additive REST descriptor | declared/degraded/unknown only | loading/empty/error remain separate | installed card/profile, locale keys |
+| Web evidence projection | additive REST descriptor | declared/degraded/unknown + fresh/stale/offline/unknown | loading/empty/error remain separate | installed card/profile, locale keys |
 
 `/api/tags` и `/api/show` declaration не являются runtime proof. Name-based
 `/api/show` lookup не выполняется для duplicate normalized references; даже при
-одной row detail declaration имеет `detail_not_bound_to_digest`. P2-A не пишет
-SQLite и не вводит TTL/SWR, history, controlled probes или registry service.
+одной row transient detail declaration имеет `detail_not_bound_to_digest`.
+P2-B exact cached projection получает digest basis только после bounded
+before/after validation; identity change не пишет row. Store принимает только
+allowlisted capability/context/architecture values. Full history, controlled
+probes и registry service не реализованы.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility

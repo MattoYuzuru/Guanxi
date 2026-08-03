@@ -98,6 +98,14 @@ npm run link:cli
   name-based detail lookup. Unknown/malformed/failure остаются видимыми
   unknown/degraded, а process cache не меняет исходное `/api/show` observation
   time.
+- P2-B добавляет migration 7 и safe exact installed-evidence cache. Key version
+  1 включает provider, canonical reference, installed digest, Ollama version и
+  evidence schema version. Fresh policy — 15 минут; unavailable `/api/show`
+  допускает explicit offline stale fallback ещё 7 дней. Before/after
+  `/api/tags` + runtime-version validation обязателен до write. Process LRU 64
+  остаётся front-cache; один per-key flight и общий pool не превышают четыре
+  detail workers. Cache хранит только allowlisted capabilities/context/
+  architecture numbers, без raw body, endpoints, paths, prompts или license.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
@@ -179,6 +187,8 @@ npm run link:cli
 - migration 6 additive создаёт `model_calibration_observations`; legacy
   `model_calibration` сохраняется без backfill/credit. Failed migration остаётся
   на v5 и повторяется после устранения conflicting schema;
+- migration 7 additive создаёт `installed_model_evidence_cache` без backfill;
+  failed migration остаётся на v6, а старый code игнорирует новую table;
 - `store/calibration.ts` принимает только complete observation key и отделяет
   context/digest/runtime/hardware rows;
 - `jobs/lifecycle.ts` фиксирует transitions из canonical diagram;

@@ -355,6 +355,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | Slice | Статус | Outcome |
 | --- | --- | --- |
 | P2-A Installed descriptor/evidence foundation | implemented, locally validated | `d750a3e`, `6a5c43d`, `d42b791`, `282c82e`; descriptor 9/9, Web 51/51, Chromium 18/18, all required gates |
+| P2-B Persistent installed evidence cache | implemented, locally validated | `a1ead74`, `597c130`, `c22c435`; persistent 17/17, core 274/274, Web 52/52, Chromium 18/18, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -393,13 +394,57 @@ unknown-enum-to-empty filtering, duplicate-reference cross-digest detail risk и
 fabricated exact digest basis для `/api/show`; `d42b791` сделал все три границы
 fail-closed и добавил regression coverage.
 
-P2-A остаётся `implemented, locally validated`, а не independently verified или
-production-validated. Не проверены live Ollama/model/hardware, provider-version
-matrix, persistent cache после restart, TTL/SWR/staleness, continuous evidence
-history, controlled probes, semantic tool/media quality, external-client
-identity и import. Phase 2 остаётся `in progress`: ROADMAP exit gate требует
-variant-first import, offline provider cache, HF exact revision/checksum/license,
-URL policy, search/filter/compare и platform work.
+P2-B добавляет append-only migration 7 и latest-row safe provider evidence cache.
+Exact key version 1 включает provider, canonical reference, installed digest,
+Ollama runtime version и evidence schema version. Fresh row читается 15 минут;
+если current `/api/show` unavailable, exact stale row может использоваться ещё
+7 дней с explicit offline state. Перед write bounded collection повторно
+проверяет `/api/tags` installation identity и `/api/version`; changed,
+ambiguous, malformed или conflicting current facts не получают cache write и не
+маскируются старым row. Process LRU 64 остаётся front-cache, per-key
+single-flight делит duplicate work, общий pool допускает не больше четырёх
+detail workers, а abort одного caller не отменяет остальных waiters.
+
+Persistent JSON содержит только normalized allowlisted capability/context/
+architecture facts и исходные observation timestamps. Raw provider body,
+endpoint/credentials, paths, prompt/template/system/license и private strings не
+сохраняются. Additive contract публикует `fresh | stale | unknown` и explicit
+offline flag; Installed card/profile показывают localized provenance/freshness
+без повышения provider declaration до verified runtime proof. Старые clients и
+legacy Web fixtures получают explicit unknown default.
+
+Required code evidence through revision `c22c435`: typecheck; P1 exact 98/98;
+P1-L+M 32/32; prewarm 7/7; routes/Governor/concurrency 33/33; runtime/provider
+19/19; fit/telemetry 19/19; descriptor 9/9; persistent migration/store/cache
+17/17; root server/CLI 274/274 + Web 52/52; Chromium 18/18; build, markdownlint и
+diff check. Repeats: persistent 10×17/17; descriptor 10×9/9; P1-L+M 10×32/32;
+affected Web 10×52/52; P1-K 10×37/37; P1-J 10×11/11; P1-I 10×3/3; P1-E
+10×8/8.
+
+Первые P2-B проверки зафиксированы, а не скрыты повторным green. Test helper
+сначала вывел неверный `TestContext` inference; тип указан явно. Node strip-only
+режим отклонил parameter property; helper переписан на обычное class field.
+Incompatible-row fixture нарушал SQLite `CHECK` до чтения; fixture теперь
+подменяет key component и проверяет fail-closed parser. Старые Web fixtures без
+freshness потребовали component-level unknown fallback. Невалидный CSS selector
+в assertion заменён проверкой `innerHTML`. Stale fixture сначала отключал
+`/api/tags`, хотя этот source владеет current installation; недоступным оставлен
+только `/api/show`.
+
+Две stress-orchestration попытки не входят в evidence counts. Запуск 80 процессов
+одновременно упёрся в test harness `UnknownProcessId`; восемь concurrent lanes
+теряли exit statuses и один раз дали contention-only timing failure P1-K. Он не
+воспроизвёлся в 10 изолированных P1-K runs; все засчитанные repeat groups
+запускались последовательно и завершились с точным exit status.
+
+P2-A и P2-B остаются `implemented, locally validated`, а не independently
+verified или production-validated. Не проверены live Ollama/model/hardware,
+provider-version matrix и multi-process coordination. Migration 7 хранит latest
+safe provider row, а не continuous evidence history/full Capability Registry;
+controlled probes, semantic tool/media quality, user overrides и import не
+реализованы. Phase 2 остаётся `in progress`: ROADMAP exit gate требует
+variant-first import, HF exact revision/checksum/license, URL policy,
+search/filter/compare и platform work; Q-25/Q-26 не закрыты молча.
 
 ## Later phases
 

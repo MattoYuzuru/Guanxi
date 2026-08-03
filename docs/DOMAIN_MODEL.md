@@ -128,11 +128,15 @@ Fit и calibration относятся к Variant, а не к абстрактн�
 Локально доступный Variant в конкретном Ollama runtime. Содержит installed state
 и runtime fingerprint, но не означает, что модель загружена.
 
-Current P2-A additive `InstalledModelDescriptor` отделяет canonical Ollama
+Current P2-A/P2-B additive `InstalledModelDescriptor` отделяет canonical Ollama
 reference, exact installed digest либо explicit unknown, observation установки
 из `/api/tags` и capability declarations. Legacy `LocalModel.capabilities` и
 `contextLength` сохранены как compatibility projection. Descriptor не является
-persistent registry: он собирается заново для installed list/detail.
+persistent registry. P2-B сохраняет только exact safe provider evidence в
+SQLite migration 7: cache key включает canonical reference, installed digest,
+Ollama version и evidence schema version. Freshness — application policy
+15 минут fresh + 7 дней stale/offline, а не provider truth. Исходный
+`observedAt` не меняется от cache hit.
 
 ### Runtime Instance
 
@@ -224,13 +228,20 @@ Speech adapter может отдельно доказать native operation/mod
 Состояния claim: `verified`, `declared`, `claimed`, `degraded`, `unknown`,
 `overridden`. Отсутствие metadata не равно `unsupported`.
 
-Current P2-A реализует только `declared | degraded | unknown` subset для
+Current P2-A/P2-B реализует только `declared | degraded | unknown` subset для
 documented local Ollama responses. `/api/tags` declaration может быть связана с
 exact installed digest; `/api/show` вызывается по имени и не возвращает digest,
 поэтому её artifact basis остаётся `detail_not_bound_to_digest`. Duplicate
 canonical reference, неизвестное capability value, malformed/missing field и
-provider failure не выбирают удобный aggregate claim. Это не controlled probe,
-runtime verification, semantic quality или media/tool reliability evidence.
+provider failure не выбирают удобный aggregate claim. P2-B выполняет bounded
+`/api/show`, затем повторно проверяет exact `/api/tags` identity и runtime
+version до persistent write. Изменившаяся/неоднозначная identity остаётся
+unknown/degraded. Stale exact row используется только при unavailable detail в
+7-дневном window и маркируется offline; malformed/conflicting current response
+не маскируется старым cache. Raw response, endpoint/credentials, paths,
+template/system/license и private content не persist-ятся. Это не controlled
+probe, runtime verification, semantic quality или media/tool reliability
+evidence.
 
 ### Task Adapter
 

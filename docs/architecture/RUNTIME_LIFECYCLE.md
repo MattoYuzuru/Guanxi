@@ -543,6 +543,22 @@ digest basis; `/api/show` response не несёт digest и остаётся
 missing/malformed/unavailable field видимы как degraded/unknown и не меняют
 Governor admission, prewarm, context propagation или runtime reconciliation.
 
+P2-B превращает только доказанную bounded collection в exact persistent row:
+
+```text
+tags/version identity A → compatible cache lookup
+  → fresh: return original observation
+  → stale/miss: one four-worker-bounded /api/show flight
+      → tags/version still A: normalize allowlist + atomic migration-7 write
+      → identity changed/malformed: visible unknown/degraded, no write
+      → detail unavailable: stale/offline only inside 7-day window
+```
+
+Application freshness policy — 15 минут, stale window — 7 дней. Access/cache
+hit не обновляет `observedAt`. Caller abort прекращает только его wait; owned
+request abort-ится, когда не осталось waiters. Provider installation failure не
+создаёт cached installed row: `/api/tags` остаётся current installation owner.
+
 Output-budget control и media upload в current Chat flow не реализованы; UI не
 подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
 

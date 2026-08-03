@@ -135,7 +135,13 @@ endpoints. `/api/tags` остаётся installation source и exact digest basi
 unavailable, future enum и ambiguous normalized-reference facts остаются
 unknown/degraded. Installed list/detail REST shape расширена совместимо, Web
 показывает state/source/time и прямо отделяет declaration от probe/runtime proof.
-SQLite, Marketplace, probes, import и persistent registry не изменены.
+P2-B добавляет persistent safe evidence cache в SQLite migration 7, но не full
+Capability Registry. Exact row keyed provider/reference/digest/runtime/schema
+читается fresh 15 минут; unavailable detail может использовать explicit
+stale/offline row ещё 7 дней. Перед write повторные `/api/tags` и `/api/version`
+должны подтвердить прежнюю identity. Один per-key flight и общий four-worker
+pool ограничивают duplicate detail work. Marketplace, probes и import не
+изменены.
 
 ### As-is deployment
 
@@ -166,7 +172,8 @@ SQLite, Marketplace, probes, import и persistent registry не изменены
 | Pending Chat conflict intent         | Chat decision component                 | page memory, one UUID key   |
 | Automatic prewarm request/controller | New Chat + server operation owner       | request/process memory      |
 | Exact calibration observation        | SQLite migration 6                      | persistent exact-key rows   |
-| `/api/show` architecture cache       | `ModelService` bounded LRU              | process memory, 64 refs     |
+| Installed safe provider evidence     | SQLite migration 7                      | exact 15m fresh + 7d stale  |
+| `/api/show` normalized front-cache   | `ModelService` bounded LRU              | process memory, 64 refs     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
 | Loaded model                         | Ollama                                  | external runtime            |
@@ -202,9 +209,9 @@ SQLite, Marketplace, probes, import и persistent registry не изменены
     Ollama/hardware, remote telemetry и durable continuous history не проверены.
 13. P1-K exact reuse проверяет текущие name/digest/context facts, но continuous
     runtime history и production TTL/residency validation ещё отсутствуют.
-14. P2-A descriptor transient: process restart теряет `/api/show` cache, TTL/SWR
-    и evidence history отсутствуют; `/api/show` response нельзя exact-привязать
-    к digest без дополнительного provider fact.
+14. P2-B cache хранит один latest exact safe row на normalized reference, но не
+    full evidence history/registry. TTL/stale — application policy, а не
+    provider guarantee; live Ollama и multi-process contention не проверены.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

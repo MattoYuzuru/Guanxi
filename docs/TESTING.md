@@ -5,9 +5,9 @@
 
 ## Текущий baseline
 
-На 2026-08-03 после P2-A:
+На 2026-08-03 после P2-B:
 
-- `npm test`: 257/257 server/CLI и 51/51 web component/parser tests;
+- `npm test`: 274/274 server/CLI и 52/52 web component/parser tests;
 - `npm run test:web:browser`: 18/18 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -97,6 +97,16 @@
   unsupported masquerade, English fallback/curated Russian и distinct loading/
   empty states. Chromium literally opens installed card/profile and verifies
   keyboard, 390 px, 200%, no horizontal overflow and reduced motion;
+- P2-B migration/store/cache fixtures покрывают fresh/v6→v7/reopen/rollback,
+  safe allowlist, incompatible row, exact provider/reference/digest/runtime/
+  schema key, same-reference digest replacement, fresh/stale/expired policy,
+  restart reuse, per-key single-flight, общий four-worker bound, before/after
+  identity conflict, malformed/conflicting current facts, offline fallback,
+  independent caller cancellation и отсутствие private/raw provider content;
+- P2-B Web fixtures round-trip additive freshness, сохраняют legacy unknown
+  fallback и различают localized fresh/stale/offline/unknown без optimistic
+  capability semantics. Chromium сохраняет P2-A keyboard/responsive/reduced-
+  motion gate;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -138,8 +148,9 @@
   contract/Governor files дают 98/98; P1-L+P1-M key/cache/runtime group —
   32/32; отдельный prewarm service file — 7/7;
   routes/Governor/concurrency дают 33/33; runtime/provider — 19/19;
-  fit/telemetry — 19/19; P2-A descriptor — 9/9; полный core — 257/257,
-  Web — 51/51, mocked Chromium — 18/18; 15-test store race suite
+  fit/telemetry — 19/19; P2-A descriptor — 9/9; P2-B persistent group —
+  17/17; полный core — 274/274, Web — 52/52, mocked Chromium — 18/18;
+  15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
   P1-F release/cancel/close — 10 repeats без duplicate transfer/live state;
@@ -172,6 +183,9 @@
 - P2-A descriptor group повторён 10× по 9/9, affected Web — 10× по 51/51,
   P1-L+M — 10× по 32/32, P1-K — 10× по 37/37, P1-J после focus assertion fix —
   10× по 11/11, P1-I — 10× по 3/3 и P1-E — 10× по 8/8;
+- P2-B persistent group повторён 10× по 17/17, descriptor — 10× по 9/9,
+  affected Web — 10× по 52/52, P1-L+M — 10× по 32/32, P1-K — 10× по
+  37/37, P1-J — 10× по 11/11, P1-I — 10× по 3/3 и P1-E — 10× по 8/8;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -202,10 +216,11 @@ P1-M доказывает отсутствие product/UI context ceiling и tru
 unknown semantics на deterministic provider fixtures. Он не доказывает live
 model acceptance огромного context, production memory fit, output budget,
 media support или device cardinality.
-P2-A доказывает transient installed descriptor/evidence projection только на
-documented local endpoints с deterministic fake transport. Это не persistent
-Capability Registry, TTL/SWR/history, controlled probe, live Ollama validation,
-semantic capability quality или import evidence.
+P2-A/P2-B доказывают installed descriptor и persistent exact safe provider cache
+только на documented local endpoints с deterministic fake transport. Fresh
+15-minute и offline stale 7-day windows являются application policy, а не
+provider guarantee. Это не full Capability Registry/history, controlled probe,
+live Ollama validation, semantic capability quality или import evidence.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -239,6 +254,9 @@ process lock. P0-D health остаётся sampled observation; обязател
   provider/runtime может отказать по sourced capability либо физическому
   ресурсу; output-budget и media controls остаются `not implemented`, device
   count — unknown, а one-permit Governor остаётся explicit application policy.
+- P2-B не проверяет live Ollama/provider-version matrix или concurrent writers в
+  нескольких application processes. Cache хранит latest safe provider evidence,
+  а не полный registry/history; probes, import и user overrides не реализованы.
 
 ## Существующее покрытие
 
@@ -248,7 +266,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Hardware fit                       | unit cases                         |
 | Filesystem tools/jail              | unit cases                         |
 | Server routes                      | integration-style tests            |
-| SQLite stores/migrations v3–v6     | fresh + prior-version recovery     |
+| SQLite stores/migrations v3–v7     | fresh + prior-version recovery     |
 | Durable Job/event foundation       | atomicity + two-connection races   |
 | Job transitions/service            | canonical matrix + replay/live     |
 | Turn terminal contract/CAS         | compatibility + failures           |
@@ -256,8 +274,8 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                              |
 | Static web serving                 | test                               |
 | CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M component  |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M mocked flows |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-B     |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2 mocked    |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane          |
 | Job replay/reattach                | HTTP SSE; browser durable replay   |

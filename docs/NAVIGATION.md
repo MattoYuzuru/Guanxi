@@ -43,7 +43,7 @@
 | [ROADMAP](plans/ROADMAP.md)                                    | accepted          | фазы, зависимости и exit gates              |
 | [PHASE_STATUS](plans/PHASE_STATUS.md)                          | implemented       | mutable tracker текущего slice              |
 | [WORKFLOW](plans/WORKFLOW.md)                                  | accepted          | протокол реализации и review                |
-| [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md)                | ready             | bounded prompt для P2-B evidence cache      |
+| [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md)                | ready             | bounded prompt для следующего Phase 2 slice |
 | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md)                      | proposed          | решения, требующие подтверждения            |
 | [EVIDENCE](research/EVIDENCE.md)                               | locally validated | внешние факты, риски и источники            |
 
