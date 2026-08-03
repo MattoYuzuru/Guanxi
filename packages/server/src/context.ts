@@ -15,6 +15,7 @@ import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
 import { ResourceGovernor } from './runtime/resource-governor.ts'
+import { RuntimeReconciliationService } from './runtime/reconciliation.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { openDb, type Db } from './store/db.ts'
 import { JobStore } from './store/jobs.ts'
@@ -51,6 +52,8 @@ export interface AppContext {
   activeTurns: Map<string, AbortController>
   /** Canonical process-local admission/lease owner for local model-affecting entry points. */
   governor: ResourceGovernor
+  /** One sampled `/api/ps` + Governor reconciliation boundary for public queries. */
+  runtime: RuntimeReconciliationService
   ollama(): OllamaClient
   models(): ModelService
 }
@@ -90,6 +93,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
     const activeTurns = new Map<string, AbortController>()
     const governor = new ResourceGovernor()
+    const runtime = new RuntimeReconciliationService({ governor, models })
     const jobService = new JobService(jobs)
     const base = {
       db,
@@ -105,6 +109,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       appVersion: options.appVersion,
       activeTurns,
       governor,
+      runtime,
       ollama,
       models,
     }

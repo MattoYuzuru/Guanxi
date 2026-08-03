@@ -11,6 +11,7 @@ import type { ModelService } from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
 import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
+import { RuntimeReconciliationService } from '../src/runtime/reconciliation.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
@@ -97,9 +98,16 @@ function fixture(
         supportsTools: async () => false,
       }) as unknown as ModelService,
   }
-  const context: AppContext = {
+  const runtimeBase = {
     ...base,
-    chatExecution: new ChatJobExecutionOwner(base),
+    runtime: new RuntimeReconciliationService({
+      governor: base.governor,
+      models: base.models,
+    }),
+  }
+  const context: AppContext = {
+    ...runtimeBase,
+    chatExecution: new ChatJobExecutionOwner(runtimeBase),
   }
   return { app: createApp(context), context, calls: () => callCount }
 }

@@ -312,8 +312,7 @@ export class ResourceGovernor {
     return true
   }
 
-  snapshot(): ResourceGovernorSnapshot {
-    const observedAt = this.timestamp()
+  snapshot(observedAt = this.timestamp()): ResourceGovernorSnapshot {
     const active = this.activeLease
     return {
       observedAt,

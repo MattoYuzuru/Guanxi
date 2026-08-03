@@ -36,8 +36,10 @@ export class OllamaError extends Error {
 
 /** Ollama не отвечает — сервис не запущен, не установлен или указан не тот хост. */
 export class OllamaUnavailableError extends OllamaError {
-  constructor(host: string, cause?: unknown) {
-    super(`Ollama недоступна по адресу ${host}`, null, cause)
+  constructor(_host: string, cause?: unknown) {
+    // The configured endpoint can contain credentials. Keep it on the client
+    // instance for transport only; public errors expose a stable safe summary.
+    super('Ollama is unavailable at the configured endpoint', null, cause)
     this.name = 'OllamaUnavailableError'
   }
 }

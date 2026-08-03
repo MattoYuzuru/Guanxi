@@ -17,6 +17,7 @@ import {
   getHealthResponse,
   getJobResponse,
   getModelResponse,
+  getRuntimeResponse,
   getSettingsResponse,
   getThreadResponse,
   listCatalogResponse,
@@ -173,6 +174,9 @@ export const api = {
 
   listRunning: (signal?: AbortSignal) =>
     request(ROUTES.modelsRunning(), listRunningResponse, { signal }),
+
+  runtimeSnapshot: (signal?: AbortSignal) =>
+    request(ROUTES.runtime(), getRuntimeResponse, { signal }),
 
   getModel: (name: string, contextLength?: number, signal?: AbortSignal) =>
     request(ROUTES.model(name), getModelResponse, { query: { contextLength }, signal }),

@@ -16,6 +16,7 @@ import {
   messageSchema,
   modelDetailSchema,
   runningModelSchema,
+  runtimeSnapshotSchema,
   settingsSchema,
   threadModeSchema,
   threadOptionsSchema,
@@ -36,6 +37,7 @@ export const ROUTES = {
   models: () => '/api/models',
   modelsCatalog: () => '/api/models/catalog',
   modelsRunning: () => '/api/models/running',
+  runtime: () => '/api/runtime',
   model: (name: string) => `/api/models/${encodeURIComponent(name)}`,
   modelPull: (name: string) => `/api/models/${encodeURIComponent(name)}/pull`,
   modelWarm: (name: string) => `/api/models/${encodeURIComponent(name)}/warm`,
@@ -151,6 +153,9 @@ export const listRunningResponse = z.object({
   observedAt: z.string().nullable().optional().default(null),
 })
 export type ListRunningResponse = z.infer<typeof listRunningResponse>
+
+export const getRuntimeResponse = runtimeSnapshotSchema
+export type GetRuntimeResponse = z.infer<typeof getRuntimeResponse>
 
 /** POST /api/models/:name/warm — прогреть с нужным окном, чтобы замерить факт. */
 export const warmModelBody = z.object({

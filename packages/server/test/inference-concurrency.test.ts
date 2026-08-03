@@ -12,6 +12,7 @@ import type { ModelService } from '../src/models/service.ts'
 import { OllamaClient, OllamaError } from '../src/ollama/client.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../src/ollama/types.ts'
 import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
+import { RuntimeReconciliationService } from '../src/runtime/reconciliation.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
@@ -133,7 +134,14 @@ function testContext(options: {
         ...options.models,
       }) as ModelService,
   }
-  return { ...base, chatExecution: new ChatJobExecutionOwner(base) }
+  const runtimeBase = {
+    ...base,
+    runtime: new RuntimeReconciliationService({
+      governor: base.governor,
+      models: base.models,
+    }),
+  }
+  return { ...runtimeBase, chatExecution: new ChatJobExecutionOwner(runtimeBase) }
 }
 
 function createThread(context: AppContext, model: string) {

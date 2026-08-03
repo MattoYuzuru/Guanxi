@@ -135,6 +135,221 @@ export const runningModelSchema = z.object({
 })
 export type RunningModel = z.infer<typeof runningModelSchema>
 
+/* ─────────────────────────── Runtime reconciliation ─────────────────────── */
+
+export const runtimeSourceErrorCodeSchema = z.enum([
+  'ollama_unavailable',
+  'ollama_connect_timeout',
+  'ollama_load_timeout',
+  'ollama_stream_idle_timeout',
+  'runtime_protocol',
+  'upstream_error',
+  'internal_error',
+])
+export type RuntimeSourceErrorCode = z.infer<typeof runtimeSourceErrorCodeSchema>
+
+const runtimeSourceObservationSchema = z.object({
+  source: z.literal('ollama_api_ps'),
+  observedAt: z.string().datetime(),
+})
+
+export const runtimeSourceHealthSchema = z.discriminatedUnion('state', [
+  runtimeSourceObservationSchema.extend({
+    state: z.literal('available'),
+    errorCode: z.null(),
+  }),
+  runtimeSourceObservationSchema.extend({
+    state: z.literal('unavailable'),
+    errorCode: z.enum([
+      'ollama_unavailable',
+      'ollama_connect_timeout',
+      'ollama_load_timeout',
+      'ollama_stream_idle_timeout',
+      'upstream_error',
+      'internal_error',
+    ]),
+  }),
+  runtimeSourceObservationSchema.extend({
+    state: z.literal('incompatible'),
+    errorCode: z.literal('runtime_protocol'),
+  }),
+])
+export type RuntimeSourceHealth = z.infer<typeof runtimeSourceHealthSchema>
+
+export const runtimeResourceOwnerSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('job'), jobId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal('operation'), operationId: z.string().min(1) }).strict(),
+])
+export type RuntimeResourceOwner = z.infer<typeof runtimeResourceOwnerSchema>
+
+export const runtimeResourceModelSchema = z
+  .object({
+    provider: z.literal('ollama'),
+    name: z.string().min(1),
+  })
+  .strict()
+export type RuntimeResourceModel = z.infer<typeof runtimeResourceModelSchema>
+
+export const runtimeAdmissionDecisionCodeSchema = z.enum([
+  'queued_fifo',
+  'admitted_single_permit',
+  'cancelled_waiting',
+  'released',
+  'admission_closed',
+  'unload_active_model',
+  'unload_conservative_active_owner',
+  'unknown_ticket',
+])
+export type RuntimeAdmissionDecisionCode = z.infer<
+  typeof runtimeAdmissionDecisionCodeSchema
+>
+
+export const runtimeAdmissionExplanationSchema = z
+  .object({
+    ticketId: z.string().nullable(),
+    decisionCode: runtimeAdmissionDecisionCodeSchema,
+    observedAt: z.string().datetime(),
+    policyBasis: z.literal('conservative_single_process_single_accelerator_permit_fifo'),
+    owner: runtimeResourceOwnerSchema.nullable(),
+    operation: z.enum(['chat', 'compaction', 'model_warm']).nullable(),
+    model: runtimeResourceModelSchema.nullable(),
+    requestedContext: z.number().int().positive().nullable(),
+    queuePosition: z.number().int().positive().nullable(),
+  })
+  .strict()
+
+export const runtimeGovernorSnapshotSchema = z
+  .object({
+    observedAt: z.string().datetime(),
+    accepting: z.boolean(),
+    policy: z
+      .object({
+        acceleratorPermits: z.literal(1),
+        order: z.literal('fifo'),
+        priorities: z.tuple([z.literal('normal')]),
+        scope: z.literal('application_process'),
+        basis: z.literal('conservative_single_process_single_accelerator_permit_fifo'),
+      })
+      .strict(),
+    queued: z.array(
+      z
+        .object({
+          ticketId: z.string().min(1),
+          owner: runtimeResourceOwnerSchema,
+          operation: z.enum(['chat', 'compaction', 'model_warm']),
+          model: runtimeResourceModelSchema,
+          requestedContext: z.number().int().positive(),
+          priority: z.literal('normal'),
+          enqueuedAt: z.string().datetime(),
+          reason: z.enum(['single_permit_busy', 'fifo_predecessor']),
+        })
+        .strict(),
+    ),
+    activeLease: z
+      .object({
+        leaseId: z.string().min(1),
+        ticketId: z.string().min(1),
+        owner: runtimeResourceOwnerSchema,
+        operation: z.enum(['chat', 'compaction', 'model_warm']),
+        model: runtimeResourceModelSchema,
+        requestedContext: z.number().int().positive(),
+        acquiredAt: z.string().datetime(),
+        state: z.literal('active'),
+      })
+      .strict()
+      .nullable(),
+    lastDecision: runtimeAdmissionExplanationSchema.nullable(),
+  })
+  .strict()
+export type RuntimeGovernorSnapshot = z.infer<typeof runtimeGovernorSnapshotSchema>
+
+export const runtimeOwnerStateSchema = z.enum(['active_lease', 'unknown'])
+export type RuntimeOwnerState = z.infer<typeof runtimeOwnerStateSchema>
+
+export const runtimeReconciliationDecisionCodeSchema = z.enum([
+  'matched_active_lease',
+  'active_not_observed',
+  'observed_unknown_owner',
+  'empty_sample',
+  'source_failure',
+])
+export type RuntimeReconciliationDecisionCode = z.infer<
+  typeof runtimeReconciliationDecisionCodeSchema
+>
+
+export const runtimeModelObservationSchema = runningModelSchema
+  .extend({
+    source: z.literal('ollama_api_ps'),
+    observedAt: z.string().datetime(),
+    normalizedName: z.string().min(1),
+    ownerState: runtimeOwnerStateSchema,
+    leaseId: z.string().nullable(),
+    owner: runtimeResourceOwnerSchema.nullable(),
+    decisionCode: z.enum(['matched_active_lease', 'observed_unknown_owner']),
+    identityBasis: z.enum([
+      'exact_normalized_model_reference',
+      'runtime_observation_only',
+    ]),
+    /** A lease has no digest, so `/api/ps` cannot prove artifact identity. */
+    artifactIdentity: z.literal('unknown'),
+  })
+  .strict()
+export type RuntimeModelObservation = z.infer<typeof runtimeModelObservationSchema>
+
+export const runtimeReconciliationDecisionSchema = z
+  .object({
+    code: runtimeReconciliationDecisionCodeSchema,
+    modelName: z.string().nullable(),
+    normalizedModelName: z.string().nullable(),
+    leaseId: z.string().nullable(),
+    owner: runtimeResourceOwnerSchema.nullable(),
+    runtimeDigest: z.string().nullable(),
+    requestedContext: z.number().int().positive().nullable(),
+    observedContext: z.number().int().nonnegative().nullable(),
+    identityBasis: z.enum([
+      'exact_normalized_model_reference',
+      'runtime_observation_only',
+      'none',
+    ]),
+    artifactIdentity: z.literal('unknown'),
+  })
+  .strict()
+export type RuntimeReconciliationDecision = z.infer<
+  typeof runtimeReconciliationDecisionSchema
+>
+
+export const runtimeSnapshotSchema = z
+  .object({
+    observedAt: z.string().datetime(),
+    source: runtimeSourceHealthSchema,
+    governor: runtimeGovernorSnapshotSchema,
+    /** `null` means the source failed; `[]` is a successful empty observation. */
+    models: z.array(runtimeModelObservationSchema).nullable(),
+    decisions: z.array(runtimeReconciliationDecisionSchema).min(1),
+  })
+  .strict()
+  .superRefine((snapshot, context) => {
+    if (
+      snapshot.observedAt !== snapshot.source.observedAt ||
+      snapshot.observedAt !== snapshot.governor.observedAt ||
+      snapshot.models?.some((model) => model.observedAt !== snapshot.observedAt)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['observedAt'],
+        message: 'runtime snapshot observations must share one observedAt',
+      })
+    }
+    if ((snapshot.source.state === 'available') !== (snapshot.models !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['models'],
+        message: 'runtime models must be present exactly for an available source',
+      })
+    }
+  })
+export type RuntimeSnapshot = z.infer<typeof runtimeSnapshotSchema>
+
 export const catalogSourceStateSchema = z.enum([
   'fresh_remote',
   'stale_cache',
