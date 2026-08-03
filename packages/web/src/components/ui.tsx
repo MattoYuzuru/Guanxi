@@ -13,6 +13,7 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from 'react'
+import { createPortal } from 'react-dom'
 import type { FitLevel } from '@alamo/contract'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -282,9 +283,12 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
   return <input className={cx(INPUT_CLASS, className)} {...rest} />
 }
 
-export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cx(INPUT_CLASS, 'resize-none', className)} {...rest} />
-}
+export const Textarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(function Textarea({ className, ...rest }, ref) {
+  return <textarea ref={ref} className={cx(INPUT_CLASS, 'resize-none', className)} {...rest} />
+})
 
 export function Select({
   value,
@@ -395,6 +399,10 @@ export function Modal({
   /** Закрытие по клику вне и по Escape. Для решений с таймаутом выключаем. */
   dismissable = true,
   labelledBy,
+  describedBy,
+  initialFocusRef,
+  returnFocusRef,
+  closeLabel = 'Закрыть',
 }: {
   open: boolean
   onClose: () => void
@@ -404,8 +412,13 @@ export function Modal({
   width?: number
   dismissable?: boolean
   labelledBy?: string
+  describedBy?: string
+  initialFocusRef?: React.RefObject<HTMLElement | null>
+  returnFocusRef?: React.RefObject<HTMLElement | null>
+  closeLabel?: string
 }) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
   const headingId = useId()
 
@@ -417,10 +430,22 @@ export function Modal({
     // Фокус внутрь: первый интерактивный элемент, иначе сам контейнер.
     const node = dialogRef.current
     const focusable = node ? collectFocusable(node) : []
-    ;(focusable[0] ?? node)?.focus()
+    ;(initialFocusRef?.current ?? focusable[0] ?? node)?.focus()
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const overlay = overlayRef.current
+    const inerted = Array.from(document.body.children)
+      .filter((element) => element !== overlay)
+      .map((element) => ({
+        element,
+        inert: element.hasAttribute('inert'),
+        ariaHidden: element.getAttribute('aria-hidden'),
+      }))
+    for (const entry of inerted) {
+      entry.element.setAttribute('inert', '')
+      entry.element.setAttribute('aria-hidden', 'true')
+    }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && dismissable) {
@@ -453,15 +478,21 @@ export function Modal({
     return () => {
       document.removeEventListener('keydown', onKeyDown, true)
       document.body.style.overflow = previousOverflow
-      restoreFocusRef.current?.focus?.()
+      for (const entry of inerted) {
+        if (!entry.inert) entry.element.removeAttribute('inert')
+        if (entry.ariaHidden === null) entry.element.removeAttribute('aria-hidden')
+        else entry.element.setAttribute('aria-hidden', entry.ariaHidden)
+      }
+      ;(returnFocusRef?.current ?? restoreFocusRef.current)?.focus?.()
     }
-  }, [open, dismissable, onClose])
+  }, [open, dismissable, onClose, initialFocusRef, returnFocusRef])
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-[8vh] backdrop-blur-[2px]"
+      ref={overlayRef}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-2 pt-[min(8vh,3rem)] backdrop-blur-[2px] sm:p-4 sm:pt-[min(8vh,3rem)]"
       onMouseDown={(event) => {
         if (dismissable && event.target === event.currentTarget) onClose()
       }}
@@ -471,8 +502,9 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy ?? (title ? headingId : undefined)}
+        aria-describedby={describedBy}
         tabIndex={-1}
-        className="anim-fade-up surface w-full rounded-xl shadow-[var(--shadow-card)] outline-none"
+        className="anim-fade-up surface flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden rounded-xl shadow-[var(--shadow-card)] outline-none sm:max-h-[calc(100dvh-2rem)]"
         style={{ maxWidth: width }}
       >
         {title && (
@@ -481,20 +513,21 @@ export function Modal({
               {title}
             </h2>
             {dismissable && (
-              <Button variant="ghost" size="sm" onClick={onClose} aria-label="Закрыть">
+              <Button variant="ghost" size="sm" onClick={onClose} aria-label={closeLabel}>
                 ✕
               </Button>
             )}
           </div>
         )}
-        <div className="px-4 py-3">{children}</div>
+        <div className="min-h-0 min-w-0 overflow-y-auto px-4 py-3">{children}</div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] px-4 py-2.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] px-4 py-2.5">
             {footer}
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

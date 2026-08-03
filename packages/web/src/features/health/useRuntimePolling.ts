@@ -10,6 +10,7 @@ export interface RuntimePollingState {
   loading: boolean
   refreshing: boolean
   retry: () => void
+  refresh: (signal?: AbortSignal, requireNewSample?: boolean) => Promise<RuntimeSnapshot>
 }
 
 /**
@@ -19,7 +20,7 @@ export interface RuntimePollingState {
 export function useRuntimePolling(
   loader: (signal: AbortSignal) => Promise<RuntimeSnapshot>,
 ): RuntimePollingState {
-  const [state, setState] = useState<Omit<RuntimePollingState, 'retry'>>({
+  const [state, setState] = useState<Omit<RuntimePollingState, 'retry' | 'refresh'>>({
     data: null,
     error: null,
     loading: true,
@@ -28,8 +29,11 @@ export function useRuntimePolling(
   const loaderRef = useRef(loader)
   const dataRef = useRef<RuntimeSnapshot | null>(null)
   const requestRef = useRef<AbortController | null>(null)
+  const pendingRef = useRef<Promise<RuntimeSnapshot> | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const runRef = useRef<() => void>(() => undefined)
+  const runRef = useRef<() => Promise<RuntimeSnapshot>>(() =>
+    Promise.reject(new DOMException('Runtime polling is not mounted', 'AbortError')),
+  )
 
   loaderRef.current = loader
 
@@ -50,14 +54,19 @@ export function useRuntimePolling(
         snapshot?.governor.activeLease || snapshot?.governor.queued.length,
       )
       timerRef.current = setTimeout(
-        () => runRef.current(),
+        () => void runRef.current().catch(() => undefined),
         active ? RUNTIME_ACTIVE_POLL_INTERVAL_MS : RUNTIME_IDLE_POLL_INTERVAL_MS,
       )
     }
 
     runRef.current = () => {
       clearTimer()
-      if (!mounted || requestRef.current) return
+      if (!mounted) {
+        return Promise.reject(
+          new DOMException('Runtime polling is not mounted', 'AbortError'),
+        )
+      }
+      if (pendingRef.current) return pendingRef.current
 
       const controller = new AbortController()
       requestRef.current = controller
@@ -69,25 +78,36 @@ export function useRuntimePolling(
         refreshing: hasConfirmedSample,
       }))
 
-      void loaderRef.current(controller.signal).then(
+      const pending = loaderRef.current(controller.signal).then(
         (data) => {
-          if (!mounted || controller.signal.aborted) return
+          if (!mounted || controller.signal.aborted) {
+            throw new DOMException('Runtime refresh was aborted', 'AbortError')
+          }
           dataRef.current = data
           setState({ data, error: null, loading: false, refreshing: false })
+          return data
         },
         (error: unknown) => {
-          if (!mounted || controller.signal.aborted) return
+          if (!mounted || controller.signal.aborted) throw error
           setState((previous) => ({
             data: previous.data,
             error,
             loading: false,
             refreshing: false,
           }))
+          throw error
         },
       ).finally(() => {
         if (requestRef.current === controller) requestRef.current = null
+        if (pendingRef.current === pending) pendingRef.current = null
         schedule()
       })
+      pendingRef.current = pending
+      // Timers and the Runtime Bar Retry intentionally do not await failures.
+      // Attaching a handler here prevents an unhandled rejection while callers
+      // still receive the original rejected Promise from `refresh`.
+      void pending.catch(() => undefined)
+      return pending
     }
 
     const onVisibilityChange = () => {
@@ -95,11 +115,11 @@ export function useRuntimePolling(
         clearTimer()
         return
       }
-      runRef.current()
+      void runRef.current().catch(() => undefined)
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange)
-    runRef.current()
+    void runRef.current().catch(() => undefined)
 
     return () => {
       mounted = false
@@ -107,10 +127,65 @@ export function useRuntimePolling(
       document.removeEventListener('visibilitychange', onVisibilityChange)
       requestRef.current?.abort()
       requestRef.current = null
-      runRef.current = () => undefined
+      pendingRef.current = null
+      runRef.current = () =>
+        Promise.reject(new DOMException('Runtime polling is not mounted', 'AbortError'))
     }
   }, [])
 
-  const retry = useCallback(() => runRef.current(), [])
-  return { ...state, retry }
+  const refresh = useCallback(async (signal?: AbortSignal, requireNewSample = false) => {
+    const sharedPending = pendingRef.current
+    if (requireNewSample && sharedPending) {
+      try {
+        if (signal) await waitForCaller(sharedPending, signal)
+        else await sharedPending
+      } catch (error) {
+        if (isAbortError(error, signal)) throw error
+        // A failed older sample must not prevent this explicit fresh query.
+      }
+    }
+
+    const pending = runRef.current()
+    return signal ? waitForCaller(pending, signal) : pending
+  }, [])
+  const retry = useCallback(() => {
+    void refresh().catch(() => undefined)
+  }, [refresh])
+  return { ...state, retry, refresh }
+}
+
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  return Boolean(
+    signal?.aborted ||
+      (error instanceof DOMException && error.name === 'AbortError'),
+  )
+}
+
+function waitForCaller(
+  pending: Promise<RuntimeSnapshot>,
+  signal: AbortSignal,
+): Promise<RuntimeSnapshot> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Runtime refresh wait was aborted', 'AbortError'))
+  }
+
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      cleanup()
+      reject(new DOMException('Runtime refresh wait was aborted', 'AbortError'))
+    }
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+
+    signal.addEventListener('abort', onAbort, { once: true })
+    void pending.then(
+      (snapshot) => {
+        cleanup()
+        resolve(snapshot)
+      },
+      (error: unknown) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
 }

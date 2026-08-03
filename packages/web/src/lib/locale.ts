@@ -194,6 +194,50 @@ const english = {
   'runtime.memory.basis.unifiedNoVram': 'discrete VRAM does not apply to unified memory',
   'runtime.memory.basis.vramUnknown': 'discrete VRAM was not observed',
   'runtime.memory.basis.gpuFreeUnknown': 'GPU-free memory was not reported',
+  'chat.conflict.title': 'Resource conflict before sending',
+  'chat.conflict.close': 'Close resource decision',
+  'chat.conflict.back': 'Keep current work',
+  'chat.conflict.stop': 'Stop current and switch',
+  'chat.conflict.queue': 'Queue after current',
+  'chat.conflict.description':
+    'The current one-permit runtime lane is busy. Choose what should happen to this Chat turn.',
+  'chat.conflict.policy':
+    'Queue is the safe default. The server Governor owns FIFO admission; this sampled view does not promise an exact start time or parallel capacity.',
+  'chat.conflict.sample.stale':
+    'The current refresh failed. This is the last confirmed sample, so Stop is unavailable.',
+  'chat.conflict.sample.updated':
+    'The sampled conflict changed while this decision was open. Review the current details before acting.',
+  'chat.conflict.active': 'Observed active work',
+  'chat.conflict.active.changed': 'No active lease is present in the current sampled view.',
+  'chat.conflict.queueAhead': 'FIFO work ahead: {count}',
+  'chat.conflict.queue.empty': 'No FIFO predecessor is present in this sampled view.',
+  'chat.conflict.stop.stale':
+    'Stop requires a fresh verification of an exact public Job owner.',
+  'chat.conflict.stop.noExactJob':
+    'Stop is unavailable because there is no exact active public Job owner.',
+  'chat.conflict.stop.operationOwner':
+    'Stop is unavailable for a process-local runtime operation owner.',
+  'chat.conflict.stop.changedOwner':
+    'Stop is unavailable because the active Job changed after this decision opened.',
+  'chat.conflict.action.verifying': 'Refreshing Runtime and verifying the exact Job owner…',
+  'chat.conflict.action.cancelling': 'The cancellation command was sent once…',
+  'chat.conflict.action.acknowledging': 'Waiting for a terminal cancellation acknowledgement…',
+  'chat.conflict.action.dispatching': 'Sending this Chat turn once…',
+  'chat.conflict.error.title': 'The resource action was not completed',
+  'chat.conflict.error.runtimeUnavailable':
+    'A fresh Runtime sample is unavailable. Queue remains safe; Stop remains disabled.',
+  'chat.conflict.error.ownerChanged':
+    'The active owner changed during verification. Nothing was cancelled or sent.',
+  'chat.conflict.error.jobUnavailable':
+    'The exact active Job could not be verified. Nothing was cancelled or sent.',
+  'chat.conflict.error.cancelConflict':
+    'The Job state changed before cancellation could be accepted. Nothing new was sent.',
+  'chat.conflict.error.cancelFailed':
+    'The cancellation command failed. Activate Stop again to retry explicitly.',
+  'chat.conflict.error.cancelTimeout':
+    'Cancellation was accepted but no terminal acknowledgement arrived before the bounded wait ended.',
+  'chat.conflict.error.dispatchFailed':
+    'The Chat command was not accepted. Activate an action again to retry with the same command key.',
   'catalog.source.fresh.title': 'Fresh remote catalog',
   'catalog.source.fresh.summary': 'The displayed provider sample is current.',
   'catalog.source.stale.title': 'Stale local catalog cache',
@@ -410,6 +454,50 @@ const russian: Messages = {
   'runtime.memory.basis.unifiedNoVram': 'discrete VRAM неприменима к unified memory',
   'runtime.memory.basis.vramUnknown': 'discrete VRAM не наблюдалась',
   'runtime.memory.basis.gpuFreeUnknown': 'GPU-free memory не сообщена',
+  'chat.conflict.title': 'Конфликт ресурсов перед отправкой',
+  'chat.conflict.close': 'Закрыть выбор действия с ресурсами',
+  'chat.conflict.back': 'Оставить текущую работу',
+  'chat.conflict.stop': 'Остановить текущую и переключиться',
+  'chat.conflict.queue': 'Поставить после текущей',
+  'chat.conflict.description':
+    'Текущая runtime-очередь с одним permit занята. Выберите, что делать с новым ходом чата.',
+  'chat.conflict.policy':
+    'Очередь — безопасное действие по умолчанию. FIFO admission принадлежит серверному Governor; этот sample не обещает точное время старта или параллельный запуск.',
+  'chat.conflict.sample.stale':
+    'Обновить состояние не удалось. Показан последний подтверждённый sample, поэтому Stop недоступен.',
+  'chat.conflict.sample.updated':
+    'Пока окно было открыто, sampled conflict изменился. Проверьте актуальные сведения перед действием.',
+  'chat.conflict.active': 'Наблюдаемая активная работа',
+  'chat.conflict.active.changed': 'В текущем sample нет активного lease.',
+  'chat.conflict.queueAhead': 'Работа впереди в FIFO: {count}',
+  'chat.conflict.queue.empty': 'В текущем sample нет FIFO-предшественника.',
+  'chat.conflict.stop.stale':
+    'Для Stop нужна свежая проверка точного владельца public Job.',
+  'chat.conflict.stop.noExactJob':
+    'Stop недоступен: точный владелец active public Job неизвестен.',
+  'chat.conflict.stop.operationOwner':
+    'Stop недоступен для владельца process-local runtime operation.',
+  'chat.conflict.stop.changedOwner':
+    'Stop недоступен: active Job изменился после открытия окна.',
+  'chat.conflict.action.verifying': 'Обновляем Runtime и проверяем точного владельца Job…',
+  'chat.conflict.action.cancelling': 'Команда отмены отправлена один раз…',
+  'chat.conflict.action.acknowledging': 'Ждём terminal-подтверждение отмены…',
+  'chat.conflict.action.dispatching': 'Отправляем этот ход чата один раз…',
+  'chat.conflict.error.title': 'Действие с ресурсами не завершено',
+  'chat.conflict.error.runtimeUnavailable':
+    'Свежий sample Runtime недоступен. Queue остаётся безопасной, Stop выключен.',
+  'chat.conflict.error.ownerChanged':
+    'Active owner изменился во время проверки. Ничего не отменено и не отправлено.',
+  'chat.conflict.error.jobUnavailable':
+    'Не удалось проверить точный active Job. Ничего не отменено и не отправлено.',
+  'chat.conflict.error.cancelConflict':
+    'Состояние Job изменилось до принятия отмены. Новый ход не отправлен.',
+  'chat.conflict.error.cancelFailed':
+    'Команда отмены завершилась ошибкой. Для повтора снова явно активируйте Stop.',
+  'chat.conflict.error.cancelTimeout':
+    'Отмена принята, но terminal-подтверждение не пришло до окончания bounded wait.',
+  'chat.conflict.error.dispatchFailed':
+    'Команда чата не принята. Для повтора снова активируйте действие; command key сохранён.',
   'catalog.source.fresh.title': 'Свежий удалённый каталог',
   'catalog.source.fresh.summary': 'Показанный provider sample актуален.',
   'catalog.source.stale.title': 'Устаревший локальный cache каталога',

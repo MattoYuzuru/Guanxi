@@ -14,6 +14,7 @@ import {
   OllamaHealthNotice,
 } from './features/health/HealthGate.tsx'
 import { RuntimeStatus } from './features/health/RuntimeStatus.tsx'
+import { RuntimeProvider } from './features/health/RuntimeContext.tsx'
 import { LauncherPage } from './features/launcher/LauncherPage.tsx'
 import { ModelPage } from './features/models/ModelPage.tsx'
 import { ChatPage } from './features/chat/ChatPage.tsx'
@@ -46,36 +47,38 @@ export function App() {
         onRetry={retry}
         retrying={retrying}
       />
-      <ErrorBoundary scope="runtime">
-        <RuntimeStatus />
-      </ErrorBoundary>
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        {route.name === 'launcher' && <LauncherPage health={data} />}
-        {route.name === 'model' && <ModelPage name={route.modelName} health={data} />}
-        {route.name === 'chat' && (
-          <ErrorBoundary
-            key={route.threadId === null ? 'new-chat' : route.threadId}
-            scope="chat"
-          >
-            <ChatPage threadId={route.threadId} health={data} />
-          </ErrorBoundary>
-        )}
-        {route.name === 'settings' && <SettingsPage />}
-        {route.name === 'notFound' && (
-          <EmptyState
-            title="Страница не найдена"
-            description={route.path}
-            action={
-              <Link
-                to={paths.launcher()}
-                className="text-xs text-[var(--accent)] underline underline-offset-2"
-              >
-                На главную
-              </Link>
-            }
-          />
-        )}
-      </main>
+      <RuntimeProvider>
+        <ErrorBoundary scope="runtime">
+          <RuntimeStatus />
+        </ErrorBoundary>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          {route.name === 'launcher' && <LauncherPage health={data} />}
+          {route.name === 'model' && <ModelPage name={route.modelName} health={data} />}
+          {route.name === 'chat' && (
+            <ErrorBoundary
+              key={route.threadId === null ? 'new-chat' : route.threadId}
+              scope="chat"
+            >
+              <ChatPage threadId={route.threadId} health={data} />
+            </ErrorBoundary>
+          )}
+          {route.name === 'settings' && <SettingsPage />}
+          {route.name === 'notFound' && (
+            <EmptyState
+              title="Страница не найдена"
+              description={route.path}
+              action={
+                <Link
+                  to={paths.launcher()}
+                  className="text-xs text-[var(--accent)] underline underline-offset-2"
+                >
+                  На главную
+                </Link>
+              }
+            />
+          )}
+        </main>
+      </RuntimeProvider>
     </div>
   )
 }

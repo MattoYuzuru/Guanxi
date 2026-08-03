@@ -7,7 +7,6 @@ import type {
   RuntimeSnapshot,
 } from '@alamo/contract'
 import { Button, Spinner } from '../../components/ui.tsx'
-import { api } from '../../lib/api.ts'
 import {
   formatBytes,
   formatContextLength,
@@ -15,7 +14,7 @@ import {
   formatDuration,
 } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
-import { useRuntimePolling } from './useRuntimePolling.ts'
+import { useRuntimeProjection } from './RuntimeContext.tsx'
 
 export interface RuntimeStatusViewProps {
   data: RuntimeSnapshot | null
@@ -26,7 +25,7 @@ export interface RuntimeStatusViewProps {
 }
 
 export function RuntimeStatus() {
-  const runtime = useRuntimePolling(api.runtimeSnapshot)
+  const runtime = useRuntimeProjection()
 
   return (
     <RuntimeStatusView

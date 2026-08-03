@@ -262,6 +262,7 @@ export function streamChat(
     onError?: (error: unknown) => void
     onInvalidFrame?: (raw: string, error: unknown) => void
     onReconnect?: (attempt: number, lastSeq: number) => void
+    onAccepted?: () => void
     signal?: AbortSignal
   },
 ) {
@@ -279,6 +280,7 @@ export function streamChat(
     onError: handlers.onError,
     onInvalidFrame: handlers.onInvalidFrame,
     onReconnect: handlers.onReconnect,
+    onOpen: handlers.onAccepted,
   })
 }
 

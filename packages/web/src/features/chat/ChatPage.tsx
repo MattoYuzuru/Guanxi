@@ -12,6 +12,7 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type RefObject,
 } from 'react'
 import type {
   Health,
@@ -50,7 +51,12 @@ import { ToolCallCard } from '../agent/ToolCallCard.tsx'
 import { WorkspaceChip, WorkspacePicker } from '../agent/WorkspacePicker.tsx'
 import { ContextChip, ContextPanel } from '../context/ContextPanel.tsx'
 import type { StreamBuffer } from './streamBuffer.ts'
-import { useChat, type TurnPhase } from './useChat.ts'
+import { useChat, type ChatSendOptions, type TurnPhase } from './useChat.ts'
+import {
+  ResourceConflictDialog,
+  useResourceConflictDecision,
+  type ChatSendIntent,
+} from './ResourceConflictDecision.tsx'
 
 export function ChatPage({
   threadId,
@@ -255,9 +261,26 @@ function ModeButton({
 
 function ThreadPage({ threadId, health }: { threadId: string; health: Health }) {
   const chat = useChat(threadId)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const workspaces = useAsync((signal) => api.listWorkspaces(signal), [chat.thread?.workspaceId])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [autoApprove, setAutoApprove] = useLocalStorage('alamo.autoApproveTurn', false)
+  const dispatchChat = useCallback(
+    (
+      intent: ChatSendIntent,
+      callbacks: { onAccepted: () => void; onCommandError: () => void },
+    ) => {
+      const options: ChatSendOptions = {
+        autoApprove,
+        idempotencyKey: intent.idempotencyKey,
+        onCommandAccepted: callbacks.onAccepted,
+        onCommandError: callbacks.onCommandError,
+      }
+      void chat.send(intent.content, options).catch(callbacks.onCommandError)
+    },
+    [autoApprove, chat.send],
+  )
+  const resourceDecision = useResourceConflictDecision(dispatchChat)
 
   const workspace =
     workspaces.data?.workspaces.find((item) => item.id === chat.thread?.workspaceId) ?? null
@@ -365,13 +388,15 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
           </div>
 
           <Composer
+            inputRef={composerRef}
             disabled={!health.ollama.running}
+            decisionOpen={resourceDecision.decision !== null}
             phase={chat.phase}
             isStreaming={chat.isStreaming}
             agentMode={chat.thread.mode === 'agent'}
             autoApprove={autoApprove}
             onAutoApprove={setAutoApprove}
-            onSend={(content) => chat.send(content, { autoApprove })}
+            onSend={resourceDecision.request}
             onStop={chat.stop}
           />
         </div>
@@ -402,6 +427,16 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
           onDecide={(decision, remember) =>
             void chat.respondToApproval(chat.approval!.toolCall.id, decision, remember)
           }
+        />
+      )}
+
+      {resourceDecision.decision && (
+        <ResourceConflictDialog
+          decision={resourceDecision.decision}
+          onQueue={resourceDecision.queue}
+          onStopAndSwitch={() => void resourceDecision.stopAndSwitch()}
+          onClose={resourceDecision.close}
+          returnFocusRef={composerRef}
         />
       )}
     </div>
@@ -766,7 +801,9 @@ export function StreamingMessage({
 /* ───────────────────────────── Композер ───────────────────────────────── */
 
 function Composer({
+  inputRef,
   disabled,
+  decisionOpen,
   phase,
   isStreaming,
   agentMode,
@@ -775,13 +812,17 @@ function Composer({
   onSend,
   onStop,
 }: {
+  inputRef: RefObject<HTMLTextAreaElement | null>
   disabled: boolean
+  decisionOpen: boolean
   phase: TurnPhase
   isStreaming: boolean
   agentMode: boolean
   autoApprove: boolean
   onAutoApprove: (next: boolean) => void
-  onSend: (content: string) => Promise<void>
+  onSend: (
+    intent: ChatSendIntent,
+  ) => Promise<'conflict' | 'dispatched' | 'ignored'>
   onStop: () => Promise<void>
 }) {
   const [content, setContent] = useState('')
@@ -789,12 +830,24 @@ function Composer({
 
   const submit = async () => {
     const trimmed = content.trim()
-    if (!trimmed || isStreaming || disabled) return
-    setContent('')
+    if (!trimmed || isStreaming || disabled || decisionOpen || sending) return
     setSending(true)
-    try {
-      await onSend(trimmed)
-    } finally {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      setSending(false)
+    }
+    const result = await onSend({
+      content: trimmed,
+      idempotencyKey: crypto.randomUUID(),
+      onAccepted: () => {
+        setContent('')
+        finish()
+      },
+      onRejected: finish,
+    })
+    if (result === 'conflict' || result === 'ignored') {
       setSending(false)
     }
   }
@@ -802,9 +855,10 @@ function Composer({
   return (
     <div className="mx-auto max-w-3xl">
       <Textarea
+        ref={inputRef}
         value={content}
         rows={3}
-        disabled={disabled || isStreaming}
+        disabled={disabled || isStreaming || decisionOpen}
         placeholder={
           disabled
             ? 'Запустите Ollama, чтобы продолжить'
@@ -849,7 +903,7 @@ function Composer({
               variant="primary"
               onClick={() => void submit()}
               loading={sending}
-              disabled={disabled || !content.trim()}
+              disabled={disabled || decisionOpen || !content.trim()}
             >
               Отправить
             </Button>

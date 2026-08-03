@@ -115,6 +115,8 @@ export type SseStreamOptions<T> = {
   onGap?: (expected: number, received: number) => void
   /** Contract-specific persisted sequence; defaults to the legacy `seq` field. */
   sequenceOf?: (event: T) => number
+  /** Validated HTTP headers/body are available and the command was accepted. */
+  onOpen?: () => void
 }
 
 export class SseHttpError extends Error {
@@ -147,6 +149,7 @@ export async function* sseStream<T>(
     onInvalidFrame,
     onReconnect,
     onGap,
+    onOpen,
     sequenceOf = (event) => (event as { seq: number }).seq,
   } = options
 
@@ -194,6 +197,7 @@ export async function* sseStream<T>(
     }
 
     if (!response.body) throw new Error('Ответ без тела: стрим невозможен')
+    onOpen?.()
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()

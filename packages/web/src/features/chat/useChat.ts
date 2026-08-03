@@ -43,6 +43,15 @@ export type PendingApproval = {
   deadline: number
 }
 
+export type ChatSendOptions = {
+  attachments?: string[]
+  autoApprove?: boolean
+  /** Created once at send intent and reused across conflict actions/retries. */
+  idempotencyKey?: string
+  onCommandAccepted?: () => void
+  onCommandError?: () => void
+}
+
 export type ChatState = {
   thread: Thread | null
   messages: Message[]
@@ -216,7 +225,7 @@ export function useChat(threadId: string | null) {
   /* ──────────────────────────── Отправка хода ─────────────────────────── */
 
   const send = useCallback(
-    async (content: string, options?: { attachments?: string[]; autoApprove?: boolean }) => {
+    async (content: string, options?: ChatSendOptions) => {
       const id = threadIdRef.current
       if (!id) return
 
@@ -262,14 +271,19 @@ export function useChat(threadId: string | null) {
 
       const body = {
         content,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: options?.idempotencyKey ?? crypto.randomUUID(),
         ...(options?.attachments ? { attachments: options.attachments } : {}),
         ...(options?.autoApprove !== undefined ? { autoApprove: options.autoApprove } : {}),
       }
 
       let terminalObserved = false
+      let commandAccepted = false
       const { finished } = streamChat(id, body, {
         signal: controller.signal,
+        onAccepted: () => {
+          commandAccepted = true
+          options?.onCommandAccepted?.()
+        },
         onReconnect: () => setState((previous) => ({ ...previous, reconnecting: true })),
         onInvalidFrame: (raw) => {
           // Кадр не по контракту — стрим продолжается, но это стоит увидеть.
@@ -280,6 +294,7 @@ export function useChat(threadId: string | null) {
           handleEvent(event, buffer, setState)
         },
         onError: (error) => {
+          if (!commandAccepted) options?.onCommandError?.()
           buffer.flushNow()
           const live = buffer.peek()
           setState((previous) => ({
