@@ -9,7 +9,8 @@ flowchart TB
     Agent[Agent loop and approvals]
     Jobs[Job service and Chat execution owner]
     Recovery[Pre-listen Chat recovery]
-    Governor[Resource governor FIFO tickets and leases]
+    Governor[Resource governor normal before prewarm leases]
+    Prewarm[Bounded exact model prewarm owner]
     Runtime[Runtime reconciliation single flight]
     Tools[Tool registry jail fs bash]
     Ollama[Ollama client]
@@ -34,10 +35,15 @@ flowchart TB
     Recovery --> Stores
     Jobs --> Governor
     Routes --> Governor
+    Routes --> Prewarm
     Routes --> Runtime
     Runtime --> Governor
     Runtime --> Models
     Runtime --> Telemetry
+    Prewarm --> Governor
+    Prewarm --> Runtime
+    Prewarm --> Models
+    Prewarm --> Ollama
     Governor --> Ollama
     Jobs --> Agent
     Jobs --> Stores

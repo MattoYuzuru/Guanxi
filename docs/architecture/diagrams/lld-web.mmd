@@ -5,6 +5,7 @@ flowchart TB
     ChatBoundary[Chat feature Error Boundary]
     RuntimeBoundary[Runtime feature Error Boundary]
     RuntimeBar[Runtime Bar projection]
+    RuntimeProjection[Shared Runtime projection]
     Polling[Adaptive polling and visibility]
     Router[History router]
     API[REST client]
@@ -12,6 +13,7 @@ flowchart TB
     Async[Async state helpers]
     Pages[Models Chat Settings]
     Chat[useChat and StreamBuffer]
+    Prewarm[Exact selection prewarm debounce]
     UI[UI primitives and Markdown]
     Locale[Boundary locale keys]
 
@@ -23,7 +25,8 @@ flowchart TB
     App --> ChatBoundary
     App --> RuntimeBoundary
     RuntimeBoundary --> RuntimeBar
-    RuntimeBar --> Polling
+    RuntimeBar --> RuntimeProjection
+    RuntimeProjection --> Polling
     Polling --> API
     RuntimeBar --> Locale
     ChatBoundary --> Chat
@@ -33,5 +36,8 @@ flowchart TB
     Pages --> UI
     Pages --> Chat
     Chat --> API
+    Chat --> Prewarm
+    Prewarm --> API
+    Prewarm --> RuntimeProjection
     Chat --> SSE
     Chat --> UI

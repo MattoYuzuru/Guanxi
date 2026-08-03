@@ -37,6 +37,14 @@ provenance/confidence и explicit available/missing fields, а каждой runt
 Apple adapter пока публикует current fit как `unknown`, потому что официальный
 pressure/available-memory source не подтверждён.
 
+P1-K additive расширяет Governor operation/priority contract значениями
+`model_prewarm`/`prewarm`, сохраняя parser compatibility для прежнего
+normal-only snapshot. Strict request/response schemas для
+`POST /api/models/:name/prewarm` фиксируют exact digest, Chat context, fit
+level/basis, short `2m` keep-alive и typed warmed/reused/skipped/cancelled reason.
+Settings получает additive `prewarmEnabled`; отсутствие старого key означает
+`true`.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -52,14 +60,17 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `context.ts`: Ollama client, stores, tools, approvals, один
   `ResourceGovernor` и один `ChatJobExecutionOwner`;
 - `runtime/resource-governor.ts`: typed immutable request/ticket, один
-  process-local FIFO permit, active lease, bounded live snapshot/explanation,
-  unload guard и graceful close;
+  process-local permit, normal-before-prewarm admission, active lease, bounded
+  live snapshot/explanation, unload guard и graceful close;
+- `runtime/prewarm.ts`: bounded exact selection/residency validation,
+  lowest-priority admission, exact-owner abort и short-TTL Ollama warm;
 - `runtime/reconciliation.ts`: process-local shared `/api/ps` + host telemetry
   single-flight, common timestamp linearization, exact normalized reference
   matching, independent source failure redaction, current fit explanation и
   compatibility projection;
 - `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query;
-- `http/models-routes.ts`: list/show/pull/delete/warm/unload/running;
+- `http/models-routes.ts`: list/show/pull/delete/explicit warm/prewarm/unload/
+  running;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
@@ -99,9 +110,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
 mirror, но routes не используют его как lifecycle owner. Application-wide
 exclusion принадлежит одному `context.governor`. Его lease используют Chat,
-compaction и explicit model warm/load; unload отклоняется при exact active lease
-и консервативно при любом другом active single-lane owner. Tickets, leases,
-`ApprovalGate` и controllers не durable.
+compaction, explicit model warm/load и automatic prewarm; unload отклоняется при
+exact active lease и консервативно при любом другом active single-lane owner.
+Normal intent отменяет queued prewarm либо вызывает abort hook только exact
+active prewarm owner и ждёт release. Prewarm не допускается при normal work и не
+abort-ит normal owner. Tickets, leases, `ApprovalGate` и controllers не durable.
 
 Один `RuntimeReconciliationService` входит в application context рядом с
 Governor. `GET /api/runtime` и `GET /api/models/running` используют этот service,
@@ -176,6 +189,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   caller-scoped fresh wait без abort shared request;
 - `features/chat/useChat.ts`: page projection, caller-supplied per-send UUID key,
   HTTP command acceptance и durable Job discovery/reattach;
+- `features/chat/useModelPrewarm.ts`: exact-selection debounce, visibility/
+  setting/normal-work cleanup и caller-owned bounded prewarm request;
 - `features/chat/ResourceConflictDecision.tsx`: sampled conflict state machine,
   safe Queue default, exact Job revalidation/cancel/terminal acknowledgement,
   bounded own reads и localized accessible dialog;
@@ -188,8 +203,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `features/settings`: runtime/tool/theme fields.
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
-  conflict/TOCTOU/idempotency/accessibility regression; browser использует
-  deterministic mocked REST/SSE/runtime snapshots.
+  conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority
+  regression; browser использует deterministic mocked REST/SSE/runtime snapshots.
 
 ### `packages/cli`
 
@@ -203,8 +218,9 @@ foreground и открывает browser. Durable service lifecycle/TUI/API clie
 1. Chat command атомарно создаёт queued Job, initial event, private input и
    Message pair до начала execution.
 2. Application owner резервирует per-thread controller, переводит Job в
-   `reserving` и ждёт typed process-local lease; Chat, compaction и model
-   warm/load выполняются в одной `normal` FIFO lane.
+   `reserving` и ждёт typed process-local lease; Chat, compaction и explicit
+   model warm/load выполняются в normal FIFO, а auto prewarm — в lowest-priority
+   lane того же permit.
 3. Lifecycle и private output persist-first; HTTP subscribers читают SQLite по
    sequence и не владеют execution.
 4. Client crash/navigation только disconnect-ит subscriber; remount/hard reload
@@ -248,9 +264,10 @@ reconciliation, host facts и explanation, не admission automation. Active lea
 сопоставляется только с первой row по exact normalized Ollama reference;
 ambiguous duplicates оставляют current fit unknown. Отсутствие lease digest не доказывает
 artifact identity. Unmatched row получает owner `unknown`, active lease без row
-— `active_not_observed`. Ни одно состояние не запускает load/unload и не меняет
-FIFO. Production pressure/available-memory observation, target priorities,
-prewarm, lease journal, measured parallelism и multi-process lock отсутствуют.
+— `active_not_observed`. Само observation state не запускает load/unload и не
+меняет admission. Production pressure/available-memory observation, durable
+observation keys/history, lease journal, measured parallelism и multi-process
+lock отсутствуют.
 
 P1-I заменяет Web compatibility projection `/api/models/running` на typed
 `api.runtimeSnapshot()`. Persistent shell component показывает только один live
@@ -268,14 +285,26 @@ fresh Runtime verify, `GET Job`, не более одного `POST cancel`, bou
 poll и затем не более одного Chat POST. Stale/operation/unknown/changed owner не
 отменяется. Серверный Governor остаётся единственным admission/FIFO owner.
 
+P1-K New Chat вычисляет exact operation context до model query, поэтому fit и
+prewarm request относятся к одному context. `useModelPrewarm` ждёт 600 ms
+стабильного Chat selection, требует exact installed digest и green/yellow fit,
+не запускается hidden/disabled/normal-busy и очищает timer/controller на
+selection, mode, visibility или route change. Server заново проверяет installed
+facts, setting, sampled runtime и Governor в точке admission. Exact один
+resident name+digest+context даёт reuse без Ollama call; ambiguous identity —
+skip. Bounded warm использует `2m` и не меняет explicit warm response/`10m`.
+Runtime Bar показывает operation/priority как process operation; P1-J игнорирует
+prewarm-only conflict и никогда не предлагает из-за него Stop current Job.
+
 Current admission request фиксирует owner (`jobId` либо process-local operation
-ID), `chat | compaction | model_warm`, exact Ollama model name, requested context,
-priority `normal` и enqueue time. Ticket проходит `queued → active → released`
-либо `queued → cancelled`; release/cancel/close идемпотентны. Snapshot хранит
+ID), `chat | compaction | model_warm | model_prewarm`, exact Ollama model name,
+requested context, priority `normal | prewarm` и enqueue time. Ticket проходит
+`queued → active → released` либо `queued → cancelled`; release/cancel/close
+идемпотентны. Snapshot хранит
 только live queue, одну active lease и одну последнюю decision, поэтому
 diagnostics не растут с числом завершённых operations. P1-H сохраняет только
 один pending reconciliation Promise и не хранит observations. Migration 6 для
-P1-F–P1-J не нужна: canonical queue intent уже находится в Job, а transient
+P1-F–P1-K не нужна: canonical queue intent уже находится в Job, а transient
 lease journal, durable runtime cache и client-side resource lock не вводились.
 
 ## Target module boundaries
@@ -283,8 +312,9 @@ lease journal, durable runtime cache и client-side resource lock не ввод�
 ### Application command/query API
 
 Первые четыре Job routes ниже implemented в P1-C; `GET /api/runtime` implemented
-в P1-G. Остальные route names остаются proposed до соответствующего ADR/API
-review.
+в P1-G. Current P1-K route — `POST /api/models/:name/prewarm`; target
+`/api/runtime/models/:id/prewarm` ниже остаётся proposed и не является alias.
+Остальные route names остаются proposed до соответствующего ADR/API review.
 
 ```text
 POST /api/jobs

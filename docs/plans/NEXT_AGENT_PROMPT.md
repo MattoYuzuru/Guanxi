@@ -2,7 +2,7 @@
 
 **Статус:** ready
 **Проверено:** 2026-08-03
-**Назначение:** Phase 1, slice P1-K — prewarm low-priority lease/debounce
+**Назначение:** Phase 1, slice P1-L — context/model/digest-aware observation keys
 
 Скопируйте текст ниже в новую агентскую сессию.
 
@@ -10,187 +10,181 @@
 
 Работай в репозитории Alamo UI. Phase 0 прошла bounded deterministic exit gate.
 P1-A–P1-E реализовали durable Jobs, Chat detach/reattach и fail-closed recovery;
-P1-F — typed process-local Resource Governor; P1-G — shared `/api/ps`
-reconciliation; P1-H — truthful Apple host telemetry/current fit; P1-I —
-persistent Runtime Bar; P1-J — conflict Queue/exact Job Stop decision. Реализуй
-только slice `P1-K prewarm low-priority lease/debounce`. Не создавай subagents и
-не делегируй работу.
+P1-F–P1-H — process-local Governor, runtime reconciliation и Apple telemetry;
+P1-I/P1-J — persistent Runtime Bar и conflict Queue/exact Stop; P1-K — typed
+lowest-priority prewarm. Реализуй только slice `P1-L context/model/digest-aware
+observation keys`. Не создавай subagents и не делегируй работу.
 
 Проверенные commits:
 
 - Phase 0: `f038b5c`..`b2b3088`, evidence сохранено в `PHASE_STATUS.md`;
-- P1-A contract/store: `138fb5e`, `91cb21f`, `92b68f0`;
-- P1-B store/service/tests: `56b2200`, `55351bc`;
-- P1-C public API: `4b9d96a`, `0a06ea6`;
-- P1-D contract/storage/execution/evidence: `da70576`, `08b3516`, `f33d5b9`;
-- P1-E startup recovery/evidence: `22a1aff`, `6c748de`;
-- P1-F Governor implementation/evidence: `a0bc047`, `ff96dc0`;
+- P1-A–P1-E: `138fb5e`..`6c748de`;
+- P1-F Governor: `a0bc047`, `ff96dc0`;
 - P1-G runtime reconciliation: `b8328bd`, `bd0d7a1`, `40a0de7`, `f53a868`;
-- P1-H telemetry/fit/tests/docs: `df4d156`..`66c23c0`;
-- P1-I Runtime Bar behavior/tests/review: `6c297ce`..`11e516b`;
+- P1-H telemetry/fit: `df4d156`..`66c23c0`;
+- P1-I Runtime Bar: `6c297ce`..`11e516b`;
 - P1-J conflict behavior/tests: `2e8dc47`, `dc3f992`;
-- P1-J docs/status/handoff: commit непосредственно перед этим prompt.
+- P1-K policy/server/Web/tests: `811f7fa`, `ed26445`, `ddb78d0`, `60693ea`;
+- P1-K docs/status/handoff: commit непосредственно перед этим prompt.
 
 Не откатывай P0 Error Boundaries, truthful Message terminal CAS, provider
 deadlines, migrations 1–5, scoped Job idempotency, canonical state CAS,
-persisted-first subscription, strict public Job schemas, pull backpressure,
-durable Chat privacy/chunking/terminal transaction, disconnect-only semantics,
-Web reattach, pre-listen recovery, P1-F one-permit lease/unload guard, P1-G
-single-flight/source semantics, P1-H provenance/current-fit unknown states,
-P1-I polling/stale/accessibility или P1-J one-intent/fresh-owner/focus semantics.
+persisted-first subscription, durable Chat privacy/chunking/recovery, P1-F one
+permit/unload guard, P1-G source semantics, P1-H truthful unknown fit, P1-I
+polling/accessibility, P1-J one-intent/exact-owner/focus semantics или P1-K
+normal-before-prewarm/exact-owner cleanup/short-TTL semantics.
 
 Обязательный порядок:
 
 1. Полностью прочитай `AGENTS.md`, `docs/NAVIGATION.md`,
    `docs/plans/PHASE_STATUS.md`, Phase 1/exit gate в `docs/plans/ROADMAP.md`,
-   `docs/PRODUCT.md` (`RES-001`, `RES-002`, `RES-006`), `docs/UX_IA.md`
-   (`Создание Chat`), `docs/DOMAIN_MODEL.md`, Runtime Lifecycle (`Resource
-   Governor`, `Model lease lifecycle`, `Prewarm`), HLD, LLD, `docs/TESTING.md`,
-   `docs/DEVELOPMENT.md`, accepted ADR-0001/0002/0004, `OPEN_QUESTIONS.md` и
-   accepted product decisions D-002/D-003.
+   `docs/PRODUCT.md` (`RES-001..008`, `MOD-002/003`), `docs/UX_IA.md` model/
+   Runtime sections, `docs/DOMAIN_MODEL.md`, Runtime Lifecycle (`Resource
+   Governor`, `Memory model`, `Observability contract`), HLD, LLD,
+   `docs/TESTING.md`, `docs/DEVELOPMENT.md`, accepted ADR-0001/0002/0003/0004,
+   `OPEN_QUESTIONS.md` и accepted product decisions D-002/D-003.
 2. Проверь Git status; сохрани unrelated/untracked user files. Не изменяй
-   `.idea`, `~/.alamo`, workspace-файлы или реальные Ollama models.
+   `.idea`, `~/.alamo`, реальные Ollama models или workspace-файлы.
 3. Используй `sde-agent:implementation-planning`, `sde-agent:sde-agent`,
-   `frontend-agent:frontend-agent`, `frontend-agent:frontend-verification`,
    `product-agent:product-acceptance`, `sre-agent:verification-strategy`,
    `sre-agent:reliability-testing`, `sre-agent:finding-validation` и
-   `sde-agent:implementation-evidence` без делегирования.
-4. До правок воспроизведи baseline: P1-A–P1-H exact files 92/92;
-   routes/Governor/concurrency 28/28; runtime/provider 19/19; fit/telemetry
-   19/19; root 210/210 server/CLI + 37/37 Web; Chromium 14/14.
-5. Инвентаризируй `ResourceGovernor` queue/admit/cancel/close, model warm route,
-   Ollama `keep_alive`, ModelPage explicit warm, New Chat model selector,
-   settings storage, Runtime provider, request AbortSignal ownership и fixtures.
-   До кода составь state/action table, priority policy и exact validation plan.
+   `sde-agent:implementation-evidence` без делегирования. Frontend skills нужны
+   только если после inventory действительно меняется UI.
+4. До правок воспроизведи baseline: P1 exact 96/96; prewarm service 6/6;
+   routes/Governor/concurrency 30/30; runtime/provider 19/19; fit/telemetry
+   19/19; root 223/223 server/CLI + 43/43 Web; Chromium 16/16.
+5. Инвентаризируй `model_calibration` schema/store/callers, `ModelService`
+   `/api/show` cache, installed `/api/tags` digest, running `/api/ps` identity,
+   `RuntimeModelObservation/currentFit`, hardware/profile facts,
+   `PrefillTracker`, warm/prewarm paths и all places, где observation сейчас
+   ключуется одним model name. До кода составь key-readiness table, legacy data
+   policy, migration/rollback plan и exact validation matrix.
 
-## Scope P1-K
+## Scope P1-L
 
-- Добавь `prewarm` как явно типизированный lowest priority Governor intent/
-  lease. `normal` Chat/compaction/explicit warm остаются сильнее. Active normal
-  work никогда не вытесняется prewarm и не ждёт новый prewarm.
-- Prewarm стартует только после устойчивого выбора exact installed model variant
-  в New Chat selector и bounded debounce. Hover, catalog card render, background
-  tab и простая навигация не запускают warm.
-- До команды должны быть известны exact Ollama model name, operation/context и
-  существующий fit basis. Unknown-high-risk либо unavailable decision не
-  превращай в optimistic load; покажи/сохрани truthful skipped reason.
-- Server Governor остаётся canonical admission owner. UI debounce не является
-  resource lock. Server должен повторно проверить policy/state в точке admission;
-  клиентский sampled Runtime snapshot не разрешает load сам по себе.
-- Если во время debounce выбор изменился, setting выключен, component unmount-нут,
-  document hidden либо появился normal Job, старый prewarm отменяется. Отмена
-  idемпотентна и не затрагивает Job/normal lease.
-- Queued prewarm не обгоняет normal FIFO. Новый normal intent отменяет либо
-  обходит queued prewarm по явно задокументированному policy. Если prewarm уже
-  получил lease/load, normal intent может abort-нуть только exact prewarm owner,
-  дождаться release и затем сохранить FIFO normal Jobs; active normal Job не
-  preempt-ится.
-- Совместимая уже resident exact model не должна получать повторный load только
-  ради UI-effect. Не объявляй reuse по одному имени, если digest/config/context
-  недостаточны; в ambiguous случае skip либо conservative prewarm без reuse
-  claim согласно typed policy.
-- Prewarm использует короткий централизованный idle `keep_alive`/TTL, отличный
-  от current explicit warm/turn `10m`. Значение и basis должны быть видимы в
-  config/constant и tests; navigation не вызывает explicit unload.
-- Сохрани current explicit ModelPage `Прогреть` как user-command с priority
-  `normal`; auto prewarm не должен менять его response/error semantics.
-- Добавь user setting для отключения prewarm, если current settings boundary
-  позволяет сделать это additive key/value без migration. Default, update/read
-  semantics и locale должны быть явными; отсутствие старого key сохраняет
-  backward-compatible default.
-- Предпочти отдельный typed prewarm command либо минимальное additive поле над
-  warm API — только после contract compatibility review. Не маскируй prewarm как
-  normal в public Runtime snapshot: priority/purpose/explanation должны быть
-  truthful для Runtime Bar и P1-J dialog.
-- Все request waits имеют bounded deadline/AbortSignal. Route disconnect либо
-  selector cleanup отменяет только exact prewarm owner. После response race
-  stale completion не обновляет выбранную модель и не оставляет retained
-  timer/listener/controller.
-- Safe errors не показывают raw Ollama body, endpoint, credentials, paths или
-  private input. Expected abort/skipped state не становится alarming failure.
-- Все новые user-facing strings проходят locale keys: English source/fallback и
-  curated Russian. Model names/IDs не переводятся.
-- Не добавляй arbitrary context/model-size caps. Используй contract/provider/
-  policy facts; unknown остаётся unknown.
-- Contract/server/Web/tests меняй согласованно. SQLite migration не ожидается:
-  settings уже key/value, а prewarm lease process-local. Если требуется durable
-  schema, сначала докажи gap и опиши recovery/compatibility до migration.
-- Обнови current-state docs и Mermaid только если реально изменишь boundary.
+- Введи один versioned typed observation-key boundary. Для evidence, которое
+  влияет на measured fit/reuse/cache claim, key должен различать как минимум
+  provider, normalized exact model reference, artifact digest, context length,
+  runtime/backend fingerprint и hardware fingerprint. Не собирай ad-hoc string
+  keys независимо в разных modules.
+- Раздели `key complete` и `key unavailable` typed reason. Missing digest,
+  context, runtime/backend version или required hardware facts не заменяй model
+  name, family, size либо optimistic default. Unknown остаётся unknown/estimated.
+- Исправь current `model_calibration`, который ключуется `(model,
+  context_length)`: measured sample одного digest/hardware/backend не должен
+  применяться к другому. Старые name-only rows не выдавай за exact measured
+  evidence.
+- Если нужна durable schema, добавь только forward migration 6 либо следующий
+  свободный номер. Не переписывай migration 1 и не делай недоказуемый backfill
+  digest/fingerprint. Сохрани legacy table/data readable и опиши rollback/
+  recovery; partial migration должна атомарно откатываться.
+- Исправь `/api/show` cache: смена installed digest под тем же name не должна
+  reuse старые architecture facts. Cache остаётся bounded либо получает explicit
+  invalidation; unbounded history новых digests не вводи.
+- Runtime reconciliation может публиковать observation key только для exact
+  однозначной row. Duplicate normalized references, missing digest/context или
+  incompatible source дают typed unavailable reason, а не первую строку как
+  identity. `observedAt`, source и confidence сохраняются.
+- Calibration record разрешён только при доказанном соответствии installed
+  artifact и running instance. Name-only `/api/ps` match, stale tag или changed
+  digest не создаёт measured sample. Одно observation не становится future
+  admission guarantee.
+- Context является частью key. Sample 8k не перезаписывает/не masquerade-ится как
+  32k; одновременно не вводи UI ceiling или whitelist context sizes.
+- Hardware fingerprint строится из стабильных sourced facts, а не raw private
+  host strings. Не логируй serial/user/path. Remote/unsupported/partial hardware
+  не превращай в локальный verified fingerprint без явной policy.
+- Runtime/backend fingerprint должен иметь источник и version semantics. Если
+  current Ollama boundary не даёт достаточно фактов без дополнительного
+  unbounded probe, оставь key unavailable с reason либо введи один bounded shared
+  source. Не используйте timestamp как fingerprint.
+- Реши судьбу `PrefillTracker` по evidence: либо переведи его baseline на тот же
+  exact key, если execution уже знает необходимые facts, либо явно оставь
+  heuristic name-scoped state вне measured observation contract. Не расширяй
+  Chat storage/command только ради красивого key без compatibility plan.
+- P1-K exact resident reuse остаётся name+digest+context current-sample decision.
+  Не ослабляй normal-before-prewarm, cleanup, 2m TTL или explicit warm 10m.
+  Если shared observation key безопасно переиспользуется, докажи, что missing
+  backend/hardware не блокирует уже корректный current-residency exact match без
+  причины.
+- Public contract меняй additive. Legacy Runtime snapshots, settings и current
+  model API должны parse/read как раньше; новые fields optional/defaulted только
+  там, где это не создаёт ложный complete key.
+- User-facing projection, если добавляется, показывает components/source/time и
+  unavailable reason через English locale source/fallback и curated Russian.
+  IDs/digests/fingerprints не переводятся. Не добавляй UI только для отображения
+  внутренней hash-строки.
+- Все provider/DB waits bounded/cancellable. Safe errors не раскрывают raw
+  Ollama body, endpoint credentials, host-private strings, paths или prompts.
+- Не добавляй arbitrary context/model-size/output caps. Следующий отдельный audit
+  no-artificial-caps остаётся впереди.
+- Обнови current-state docs и Mermaid только если boundary действительно
+  изменилась.
 
-## Required state/action model
+## Required key/readiness model
 
 ```text
-exact model selection
-  → debounce pending
-      ├─ selection/settings/navigation/hidden change → cancel timer, no command
-      └─ stable + eligible → typed prewarm request
-           → Governor normal work present → skip/queue lowest priority
-           → Governor idle → acquire prewarm lease → bounded short-TTL warm
-                ├─ normal intent arrives → abort exact prewarm → release → normal
-                ├─ selection/unmount abort → release, no Job effect
-                └─ success → sampled runtime may later observe residency
+installed artifact + runtime row + requested/observed context + host/backend facts
+  → normalize exact reference
+  → prove one artifact digest and one runtime instance
+      ├─ any required component missing/ambiguous → key unavailable(reason)
+      │      → no measured calibration/cache/reuse claim from that observation
+      └─ all components sourced → versioned observation key
+             → exact-key calibration read/write
+             → exact-key cache/read projection
+             → changed digest/context/backend/hardware → distinct key/miss
 ```
 
-Priority policy должен иметь deterministic tie-break. FIFO normal Jobs не должны
-менять взаимный порядок из-за prewarm. Release/cancel/close повторяются безопасно.
+Legacy calibration policy должна быть явной: preserve rows, no invented digest,
+no destructive rewrite, no silent measured credit.
 
 ## Required deterministic evidence
 
-- contract fixtures принимают `normal` и `prewarm`, отклоняют unknown priority и
-  сохраняют compatibility normal snapshot/API;
-- Governor unit tests доказывают priority order, FIFO внутри normal, no prewarm
-  admission при active/queued normal, cancellation exact queued/active prewarm,
-  release before next normal и idempotent cancel/release/close;
-- race: prewarm становится eligible одновременно с normal enqueue — normal
-  выигрывает независимо от callback order, без двух active leases;
-- current same/cross-thread Chat, compaction и explicit warm matrix остаётся
-  one-permit; active normal никогда не получает abort от prewarm;
-- prewarm HTTP route/service использует typed request, low priority, bounded
-  deadline, exact AbortSignal и короткий keep-alive; disconnect/abort освобождает
-  ticket/lease и не вызывает later stale success;
-- explicit warm остаётся `normal`, использует прежний response и не наследует
-  short prewarm TTL;
-- already-compatible resident exact variant не получает duplicate prewarm;
-  ambiguous identity не получает ложный reuse claim;
-- New Chat selector debounce создаёт максимум один command для финального выбора;
-  rapid A→B→C, rerender, StrictMode, route change, hidden document и setting off
-  дают expected cancel/no command без retained timers/listeners;
-- normal Chat send во время queued/active prewarm отменяет только prewarm и
-  создаёт Chat Job ровно один раз с canonical P1-J idempotency key;
-- P1-J conflict dialog не предлагает Stop current Job из-за prewarm race и не
-  получает focus steal от prewarm/Runtime updates;
-- Runtime Bar показывает prewarm purpose/priority/explanation из contract, без
-  durable Job либо external-owner claim;
-- setting round-trip/default/update проверен server/Web tests, новые strings —
-  Russian и English fallback;
-- Chromium буквально выбирает idle model, выдерживает fake-timer-controlled
-  debounce, наблюдает один prewarm, затем отправляет Chat и доказывает prewarm
-  abort/release до одного Chat dispatch. Отдельно проверяет rapid selection,
-  navigation/hidden/settings-off, 390 px, 200%, keyboard и reduced motion;
-- mocked browser не называется live Ollama/hardware/TTL validation;
-- P1-D detach/reattach/Stop, P1-E recovery, P1-F FIFO/unload/cleanup, P1-G source,
-  P1-H telemetry/fit, P1-I polling и P1-J conflict suites остаются зелёными.
+- contract fixtures принимают legacy Runtime/model responses, round-trip complete
+  observation key, отклоняют malformed/unknown version и сохраняют unavailable
+  reason без fabricated components;
+- key builder даёт одинаковый key для одинаковых canonical inputs и разные keys
+  при изменении каждого digest/context/backend/runtime/hardware component;
+- normalization не объединяет разные registries/names/tags/digests и не использует
+  fuzzy family match;
+- migration fresh/current previous/reopen/failed+reopen проходит атомарно; legacy
+  name-only calibration сохраняется, но не читается как exact measured sample;
+- calibration store не смешивает два digest одного name, два contexts, два
+  hardware/backend fingerprints; concurrent/upsert semantics deterministic;
+- `/api/show` cache hit только для того же installed digest; digest replacement
+  вызывает новый bounded show и не оставляет unbounded retained entries;
+- `/api/tags`↔`/api/ps` exact/ambiguous/missing digest/context matrix доказывает,
+  когда sample записывается и когда остаётся unavailable/estimated;
+- current fit не становится measured при missing/legacy/cross-key sample и не
+  обещает future admission;
+- P1-K exact reuse, normal-prewarm races, explicit warm response/TTL и P1-J
+  conflict behavior остаются без regression;
+- safe errors/redaction и AbortSignal cleanup доказаны для нового source/store
+  boundary;
+- если UI не меняется, browser 16/16 остаётся regression evidence и не получает
+  ложный credit за observation-key semantics. Если UI меняется, добавь literal
+  Chromium actions с 390 px, 200%, keyboard и reduced motion;
+- P1-D detach/reattach, P1-E recovery, P1-F cleanup, P1-G source, P1-H fit,
+  P1-I polling, P1-J conflict и P1-K priority/debounce suites остаются зелёными.
 
 ## Non-goals
 
-- не добавлять safe parallel, additional permits, measured joint-fit admission,
-  normal Job preemption, pin, generic TTL/LRU eviction или auto-unload;
-- не превращать prewarm в durable Job, full queue manager либо lease journal;
-- не прогревать catalog cards, hover, каждую модель, каждый Chat route или hidden
-  page;
-- не считать successful warm гарантией будущего admission/fit;
-- не менять Job state machine, Chat replay/recovery, public cancel semantics или
-  P1-J Queue/Stop contract;
-- не добавлять Runtime SSE/WebSocket, durable observation history/cache, metrics,
-  multi-process lock или external-client control;
-- не добавлять import/Project/Recipe/Artifact/retention/notifications,
-  Agent/MCP/Skills, service/daemon, CLI/TUI или rebranding;
-- не использовать live Ollama, реальную модель, user DB, workspace files или
+- не добавлять safe parallel/additional permits, memory-pressure admission,
+  external-client control или multi-process lock;
+- не делать durable Runtime history/metrics dashboard, generic cache service,
+  full Jobs UI или lease journal;
+- не менять Job state machine, Chat replay/recovery, P1-J Queue/Stop или P1-K
+  prewarm priority/TTL;
+- не добавлять pin, generic TTL/LRU eviction, auto-unload либо background probes;
+- не внедрять capability registry/import/Marketplace provider работу Phase 2;
+- не добавлять Project/Recipe/Artifact/retention/notifications, Agent/MCP/Skills,
+  service/daemon, CLI/TUI или rebranding;
+- не использовать live Ollama, реальную model, user DB, workspace files или
   public network в deterministic suite.
 
 ## Validation
 
-Сохрани новые exact counts и отдельно baseline/regression counts:
+Сохрани новые exact counts и отдельно regression counts:
 
 ```bash
 npm run typecheck
@@ -204,6 +198,7 @@ node --test packages/server/test/job-contract.test.ts \
   packages/server/test/resource-governor.test.ts \
   packages/server/test/runtime-reconciliation.test.ts \
   packages/server/test/host-telemetry.test.ts
+node --test packages/server/test/prewarm.test.ts
 node --test packages/server/test/routes.test.ts \
   packages/server/test/exclusive-inference.test.ts \
   packages/server/test/inference-concurrency.test.ts
@@ -221,32 +216,32 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-Повтори новые priority/debounce/abort race tests 10 раз, P1-J conflict file 10
-раз, P1-I timer/visibility file 10 раз и P1-E recovery file 10 раз. Первый
-flaky/failing result сохрани, диагностируй и исправь до полного gate; не скрывай
-повторным green run.
+Повтори новые key/migration/cache/concurrency races 10 раз, P1-K server priority/
+abort group 10 раз, P1-K debounce file 10 раз, P1-J conflict file 10 раз, P1-I
+polling file 10 раз и P1-E recovery file 10 раз. Первый flaky/failing result
+сохрани, диагностируй и исправь до полного gate; не скрывай повторным green run.
 
-В evidence укажи exact priority transitions, request/warm/abort/release counts,
-debounce/TTL constants и owners, selection/settings/visibility rules, Runtime
-projection и literal browser actions. Отдельно назови, что live hardware/Ollama,
-production TTL/residency, continuous observation, safe parallel/future fit,
-external-client identity, multi-process safety и generic eviction не проверены.
+В evidence перечисли exact key components/version, complete/unavailable reasons,
+legacy-data policy, migration number/rollback, cache bounds, changed-component
+miss matrix, source/time/confidence и реальные test counts. Отдельно назови, что
+live hardware/Ollama, production residency, continuous observation, safe
+parallel, external-client identity, multi-process safety и generic eviction не
+проверены.
 
 После успешной независимой проверки:
 
 - обнови current-state docs и `docs/TESTING.md`;
-- в `PHASE_STATUS.md` сохрани Phase 0/P1-A–P1-J evidence и добавь только P1-K;
-- не отмечай Phase 1 завершённой: context/model/digest-aware observation keys,
-  no artificial caps audit и возможные remaining exit-gate slices ещё впереди;
+- в `PHASE_STATUS.md` сохрани P0/P1-A–P1-K evidence и добавь только P1-L;
+- не отмечай Phase 1 завершённой: no artificial caps audit и возможные remaining
+  exit-gate slices ещё впереди;
 - полностью перепиши `NEXT_AGENT_PROMPT.md` под следующий bounded Phase 1 slice
-  либо оставь P1-K с blocker/recovery steps;
-- сделай небольшие conventional commits для contract/policy, behavior, tests и
-  docs.
+  либо оставь P1-L с blocker/recovery steps;
+- сделай небольшие conventional commits для contract/key policy, storage/
+  behavior, tests и docs.
 
-Если current warm API/request lifecycle не позволяет безопасно отменить exact
-prewarm owner без затрагивания normal work, не симулируй priority на клиенте.
-Сначала введи минимальную typed server boundary или оставь P1-K `blocked` с
-доказанным invariant gap и recovery plan.
+Если exact runtime/backend/hardware facts нельзя получить без ложного identity
+claim или unsafe migration, не маскируй name-only key hash-строкой. Оставь P1-L
+`blocked` с доказанным gap, сохранённым legacy data и конкретным recovery plan.
 
 В финале сообщи status `successful` либо `blocked`, commits, exact tests,
 failures, residual risks и что `NEXT_AGENT_PROMPT.md` полностью переписан.

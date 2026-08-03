@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P1-J с mocked REST/SSE  |
+| `test:web:browser` | deterministic Chromium P0-A–P1-K с mocked REST/SSE  |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -59,12 +59,20 @@ npm run link:cli
   native field и JSON/text fallback; сохраняйте оба пути и тесты при изменениях.
 - Current agent turn отправляет `keep_alive=10m`; это известный lifecycle risk, а
   не рекомендуемый target default.
-- Current P1-F `ResourceGovernor` сериализует Chat turn, compaction и explicit
-  model warm/load одной typed process-local lease. Durable Chat использует
-  canonical `jobId`; compatibility operations — UUID operation owner. FIFO имеет
-  только priority `normal`. P1-H samples `/api/ps` и injected host telemetry
-  рядом с Governor state, но observation/current-fit explanation не меняют
-  admission.
+- Current P1-K `ResourceGovernor` сериализует Chat turn, compaction, explicit
+  model warm/load и automatic prewarm одной typed process-local lease. Durable
+  Chat использует canonical `jobId`; compatibility/prewarm operations — UUID
+  operation owner. Priority — `normal > prewarm`, FIFO сохраняется внутри
+  normal; normal отменяет queued prewarm либо exact-owner abort-ит active
+  prewarm и ждёт release. Prewarm никогда не preempt-ит normal. P1-H samples
+  `/api/ps` и injected host telemetry рядом с Governor state, но observation/
+  current-fit explanation не меняют admission.
+- New Chat auto prewarm ждёт 600 ms стабильного exact installed Chat selection,
+  использует fit для того же context и отменяется при selection/mode/setting/
+  visibility/unmount/normal-work change. Server повторно валидирует selection,
+  setting, runtime identity и Governor; short TTL — `2m`, deadline — 30 s.
+  Explicit warm и turns сохраняют `10m`. Prewarm request не durable и не
+  переживает disconnect.
 - Current P0-D adapter различает connect, load и stream-idle deadlines.
   Explicit Stop имеет приоритет; subscriber disconnect не отменяет Chat Job, а
   timeout/provider/explicit abort освобождает P1-F lease.
@@ -118,6 +126,8 @@ npm run link:cli
   точные новые SSE terminal details optional для старого strict client.
 - P1-H Runtime snapshot содержит source health, current Governor state, sampled
   model rows, host profile/sample и stable observed/unknown current-fit reasons.
+- P1-K Runtime snapshot дополнительно различает normal/prewarm priority и
+  `model_prewarm`; prewarm command/settings имеют strict additive schemas.
 
 ### Server
 
@@ -125,8 +135,9 @@ npm run link:cli
 - `context.ts` — зависимости, один `JobStore` + `JobService` +
   `ChatJobExecutionOwner`, один process-local `ResourceGovernor` и один
   `HostTelemetry`;
-- `runtime/resource-governor.ts` — typed FIFO admission, active lease,
-  snapshot/explanation, unload guard и close boundary;
+- `runtime/resource-governor.ts` — typed normal-before-prewarm admission, active
+  lease, snapshot/explanation, unload guard и close boundary;
+- `runtime/prewarm.ts` — exact validation, short-TTL warm и caller/normal abort;
 - `runtime/reconciliation.ts` — shared `/api/ps` + host sample, common timestamp,
   owner/identity/current-fit classification и compatibility projection;
 - `ollama/` — client, status и wire types;
@@ -171,15 +182,16 @@ npm run link:cli
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;
+  New Chat prewarm использует exact-context debounce и cleanup owner;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
-- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J projection,
-  accessibility, conflict races/idempotency и fake-timer polling regression;
+- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K
+  projection, accessibility, conflict/prewarm races/idempotency и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
-  P1-J literal Queue/Stop/unsupported/failure flows, narrow viewport, 200%
-  scaling и reduced motion.
+  P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
+  Chat-dispatch flows, narrow viewport, 200% scaling и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
   health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и
@@ -199,7 +211,9 @@ npm run link:cli
   Web states, inventory, adaptive polling cleanup, feature containment и mocked
   navigation/recovery projection; P1-J — typed API inventory, exact owner/TOCTOU,
   cancel acknowledgement, command acceptance/key reuse, focus/inert/keyboard,
-  retry и responsive browser flows.
+  retry и responsive browser flows; P1-K — contract compatibility, priority
+  order, exact owner abort/release, typed route/TTL, settings, exact residency,
+  debounce/visibility/StrictMode cleanup и one-command browser flow.
 
 ### CLI
 

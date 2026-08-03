@@ -495,11 +495,16 @@ WebSocket нужен только если duplex live-audio latency это по
 
 ## Resource Governor
 
-### Current P1-F–P1-J policy
+### Current P1-F–P1-K policy
 
 - один active process-local accelerator lease;
-- один supported priority `normal`, FIFO без preemption;
-- Chat, compaction и explicit warm/load используют один `context.governor`;
+- priorities `normal > prewarm`; FIFO сохраняется внутри normal;
+- Chat, compaction, explicit warm/load и automatic prewarm используют один
+  `context.governor`;
+- normal intent отменяет queued prewarm; active prewarm получает abort только
+  через callback своего exact owner, освобождает lease, и лишь затем входит
+  первый normal waiter;
+- prewarm не допускается при active/queued normal и никогда не abort-ит normal;
 - waiting abort удаляет только свой ticket, active abort принадлежит execution
   owner;
 - unload блокируется active lease/conservative current owner;
@@ -583,16 +588,29 @@ owner`; auto-unload её требует explicit policy.
 
 ### Prewarm
 
-Prewarm начинается после model selection и debounce только если:
+Current P1-K реализует bounded subset этой policy. В New Chat он начинается
+после 600 ms debounce только если:
 
 - Governor idle;
-- variant/operation уже resolved;
-- estimate не unknown-high-risk;
+- exact installed name/digest, Chat operation и requested context уже resolved;
+- fit level для того же context — `green` либо `yellow`, а basis известен;
 - нет более приоритетного Job;
-- пользователь не отключил prewarm.
+- пользователь не отключил prewarm;
+- document видим, selector всё ещё mounted и выбор не изменился.
 
 Prewarm не должен загружать все карточки, hovered models или каждый Chat в
-background. New Job может отменить его до load либо забрать совместимый lease.
+background. Typed `POST /api/models/:name/prewarm` повторно проверяет installed
+variant, fit facts, setting, sampled residency и canonical Governor state.
+Exact resident name+digest+context даёт `reused`; ambiguous identity даёт
+truthful skip без reuse claim. Load использует centralized `keep_alive=2m` и
+30 s server deadline; explicit warm/turn сохраняют прежние `10m` semantics.
+
+Selector change, setting off, hidden document, component unmount, request
+disconnect или client/server deadline отменяют только этот prewarm. Normal
+intent отменяет queued prewarm либо abort-ит exact active prewarm, ждёт release и
+сохраняет normal FIFO. Prewarm — process-local request/lease, не durable Job и не
+background work после закрытия соединения. Navigation не вызывает explicit
+unload; она лишь завершает принадлежащий странице speculative prewarm request.
 
 ## Memory model
 
@@ -836,7 +854,7 @@ Checkpoint resume, opt-in login autostart и обнаружение одновр
 
 ## Observability contract
 
-Current P1-H projection реализует bounded subset:
+Current P1-H–P1-K projection реализует bounded subset:
 
 ```ts
 type RuntimeSnapshot = {
@@ -850,9 +868,11 @@ type RuntimeSnapshot = {
 ```
 
 Host source states, facts, per-model current fit, P1-I read-only Runtime Bar и
-P1-J bounded Queue/exact Job Stop action реализованы. Production pressure/
-available memory, durable observations, safe parallel, prewarm и full resource
-actions/history ещё не реализованы. Target projection остаётся шире:
+P1-J bounded Queue/exact Job Stop action реализованы. P1-K дополнительно
+показывает `model_prewarm` purpose, `prewarm` priority и live explanation, но не
+выдаёт operation owner за durable Job. Production pressure/available memory,
+context/model/digest-aware durable observation keys/history, safe parallel и
+full resource actions ещё не реализованы. Target projection остаётся шире:
 
 Runtime projection:
 

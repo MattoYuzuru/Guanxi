@@ -38,8 +38,9 @@ exit gate ROADMAP проверен целиком.
 | P1-H Apple host telemetry/current fit   | independently verified | `df4d156`..`66c23c0`; 92 targeted, all gates                        |
 | P1-I Read-only Runtime Bar projection   | independently verified | `6c297ce`..`11e516b`; 13 component, 10 browser, all gates           |
 | P1-J Resource conflict/queue action UX  | independently verified | `2e8dc47`, `dc3f992`; 10 component, 4 browser, all gates            |
+| P1-K Prewarm priority/debounce          | independently verified | `811f7fa`..`60693ea`; 35 race, 6 service, 2 browser, all gates      |
 
-P1-A–P1-J реализуют additive contract, migrations 4–5, canonical state CAS,
+P1-A–P1-K реализуют additive contract, migrations 4–5, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
@@ -52,8 +53,10 @@ P1-G добавляет один sampled `/api/ps` reconciliation service и pub
 `GET /api/runtime`. P1-H добавляет shared Apple host sample и truthful
 observed/unknown current-fit explanation. P1-I добавляет persistent read-only
 Runtime Bar. P1-J добавляет safe Queue и exact Job Stop/cancel acknowledgement
-для Chat conflict; prewarm и другие remaining exit-gate slices ещё не
-реализованы, поэтому Phase 1 остаётся `in progress`.
+для Chat conflict. P1-K добавляет typed lowest-priority prewarm после stable
+New Chat selection; context/model/digest-aware observation keys, no artificial
+caps audit и другие remaining exit-gate slices ещё впереди, поэтому Phase 1
+остаётся `in progress`.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -197,8 +200,57 @@ fixture failures, не скрытые product regressions.
 
 Не проверены live Ollama/hardware, continuous observations, production pressure/
 available-memory, safe parallel/future admission, external-client identity и
-multi-process safety. Prewarm, full Jobs history и generic resource actions не
+multi-process safety. Full Jobs history и generic resource actions не
 реализованы.
+
+P1-K evidence: contract различает compatible legacy `normal` snapshot и current
+`normal | prewarm`, отклоняет unknown priority и типизирует отдельный
+`POST /api/models/:name/prewarm`. Governor policy — один permit,
+`normal > prewarm`, FIFO внутри normal. При normal enqueue queued prewarm
+отменяется; active prewarm получает abort только через exact process-local
+operation owner, release происходит до первого normal admission. Active/queued
+normal блокирует новый prewarm, а prewarm никогда не abort-ит normal owner.
+Cancel/release/close повторяются идемпотентно; normal выигрывает simultaneous
+enqueue независимо от callback order без двух active leases.
+
+New Chat запрашивает models/fit для exact operation context и после 600 ms
+stable exact installed Chat selection отправляет name/digest/context/fit basis.
+Setting off, mode/selection change, hidden document, normal Runtime work,
+unmount/navigation и stale completion очищают только timer/request этого
+prewarm. Client deadline — 35 s, server command deadline — 30 s, centralized
+prewarm `keep_alive=2m`; explicit warm/turn остаются `normal` и `10m`. Server
+повторно проверяет setting, installed facts, safe fit, sampled runtime и
+canonical Governor. Один exact resident name+digest+context даёт `reused` без
+warm call; ambiguous identity даёт safe skip. Runtime Bar показывает
+`model_prewarm`/`prewarm` как operation owner, не durable Job; P1-J не открывает
+Stop dialog для prewarm-only state.
+
+Локально прошли typecheck; 96/96 P1 exact; 6/6 prewarm service; 30/30
+routes/Governor/concurrency; 19/19 runtime/provider; 19/19 fit/telemetry;
+223/223 server/CLI + 43/43 Web root; 16/16 mocked Chromium; build,
+markdownlint и diff check. Server priority/prewarm/inference group повторён 10×
+по 35/35, debounce file — 10× по 4/4, P1-J conflict — 10× по 11/11, P1-I
+polling — 10× по 3/3, P1-E recovery — 10× по 8/8.
+
+Первые узкие проверки сохранили четыре test-harness failures. Governor assertion
+ожидал прежний `fifo`; его обновили на принятую `priority_fifo`. Vitest сначала
+пытался fake-ить readonly `requestAnimationFrame`, затем fixture сохранял
+default active normal и fake-timer `waitFor` не продвигался; fake timers сузили,
+fixtures сделали idle, microtask flush — явным, а cleanup перестал dispatch-ить
+visibility event после восстановления исчерпанного mock. Первый Chromium case
+увидел B и C, потому что fake clock пересёк deadline до React passive cleanup;
+controlled animation-frame flush зафиксировал реальный effect order. После
+исправлений все gates/repeats зелёные; это assertion/fixture failures, не
+скрытые product regressions.
+
+Первый post-docs markdownlint нашёл четыре `MD060` только в двух добавленных
+table rows, второй — один оставшийся сдвиг; выравнивание колонок исправлено до
+финального lint gate.
+
+Live hardware/Ollama, production TTL/residency, continuous observation,
+safe parallel/future fit, external-client identity, multi-process safety и
+generic eviction не проверены. Prewarm остаётся best-effort request/process-local
+lease, не durable Job и не гарантия будущего admission.
 
 ## Later phases
 

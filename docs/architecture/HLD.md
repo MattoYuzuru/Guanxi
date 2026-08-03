@@ -109,6 +109,16 @@ P1-J поднимает этот poller в один persistent shell `RuntimePro
 Job cancel до terminal acknowledgement. Dialog/navigation не владеют lease и
 не отменяют shared polling либо active Job по unmount.
 
+P1-K добавляет отдельный typed `POST /api/models/:name/prewarm`. New Chat
+selector после 600 ms стабильного exact installed выбора отправляет Chat context,
+digest и fit basis; hidden/unmount/selection/setting cleanup отменяет только этот
+request. Server повторно валидирует facts, exact resident identity и setting,
+после чего `ResourceGovernor` допускает lowest-priority `prewarm` lease только
+без normal work. Новый normal intent отменяет queued prewarm либо abort-ит exact
+active prewarm owner и ждёт release, не меняя FIFO normal Jobs. Short prewarm
+`keep_alive=2m` не меняет explicit warm/turn `10m`; prewarm не durable и не
+переживает disconnect.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -136,6 +146,7 @@ Job cancel до terminal acknowledgement. Dialog/navigation не владеют 
 | Pending approval                     | `ApprovalGate`                          | process memory              |
 | Runtime Bar HTTP wait/timer          | persistent Web shell component          | page memory, query-only     |
 | Pending Chat conflict intent         | Chat decision component                 | page memory, one UUID key   |
+| Automatic prewarm request/controller | New Chat + server operation owner       | request/process memory      |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
 | Loaded model                         | Ollama                                  | external runtime            |
@@ -147,10 +158,11 @@ Job cancel до terminal acknowledgement. Dialog/navigation не владеют 
 1. Process-local Governor показывает sampled `/api/ps` drift, но не координирует
    внешний Ollama client или второй Alamo process и не считает неизвестного
    владельца внешним установленным фактом.
-2. P1-F поддерживает только один `normal` FIFO lane без priority/backpressure;
-   bounded timeout освобождает request, но не координирует provider вне этого
-   application process.
-3. `keep_alive: 10m` удерживает модели после turn; route не является unload.
+2. P1-K поддерживает только `normal > prewarm` на одном permit; нет measured
+   parallelism, fairness для будущих priorities или координации provider вне
+   этого application process.
+3. Turn/explicit warm `keep_alive: 10m` и prewarm `2m` просят Ollama удерживать
+   model, но не являются точным unload timer либо гарантией будущей residency.
 4. P1-E восстанавливает single-process Chat truth после restart, но не даёт
    checkpoint/resume executing inference и не координирует второй process.
 5. Generic public Job без Chat adapter остаётся queued и не исполняется.
@@ -166,6 +178,9 @@ Job cancel до terminal acknowledgement. Dialog/navigation не владеют 
    могут отставать.
 11. P1-J conflict decision использует sampled facts и fail-closed Stop; он не
     является cross-process lock, future-admission guarantee или full Jobs UI.
+12. P1-K exact reuse проверяет текущие name/digest/context facts, но durable
+    context/model/digest-aware observation history и production TTL/residency
+    validation ещё отсутствуют.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 
