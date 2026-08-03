@@ -12,6 +12,7 @@ import {
   browseResponse,
   chatStreamEventSchema,
   compactThreadResponse,
+  completionProbeResponse,
   createThreadResponse,
   getContextResponse,
   getHealthResponse,
@@ -34,6 +35,7 @@ import {
   type ApiError,
   type ApprovalBody,
   type ChatStreamEvent,
+  type CompletionProbeBody,
   type JobStreamEvent,
   type CreateThreadBody,
   type CreateWorkspaceBody,
@@ -197,6 +199,13 @@ export const api = {
 
   prewarmModel: (name: string, body: PrewarmModelBody, signal?: AbortSignal) =>
     request(ROUTES.modelPrewarm(name), prewarmModelResponse, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  completionProbe: (name: string, body: CompletionProbeBody, signal?: AbortSignal) =>
+    request(ROUTES.modelCompletionProbe(name), completionProbeResponse, {
       method: 'POST',
       body,
       signal,

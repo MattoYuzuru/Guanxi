@@ -28,3 +28,7 @@ export function useRuntimeProjection(): RuntimePollingState {
   if (!runtime) throw new Error('RuntimeProvider is missing')
   return runtime
 }
+
+export function useOptionalRuntimeProjection(): RuntimePollingState | null {
+  return useContext(RuntimeContext)
+}

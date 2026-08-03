@@ -31,6 +31,7 @@ import { FitIndicator } from './FitIndicator.tsx'
 import { exceedsDeclaredContextLimit, parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { translate } from '../../lib/locale.ts'
 import { InstalledEvidenceDetails } from './InstalledEvidence.tsx'
+import { CompletionProbe } from './CompletionProbe.tsx'
 
 export function ModelPage({ name, health }: { name: string; health: Health }) {
   const navigate = useNavigate()
@@ -214,6 +215,10 @@ function ModelProfile({
         <div className="min-w-0 space-y-4">
           <Panel title={translate('models.evidence.title')}>
             <InstalledEvidenceDetails descriptor={model.descriptor} />
+          </Panel>
+
+          <Panel title={translate('models.probe.title')}>
+            <CompletionProbe model={model} contextLength={contextLength} />
           </Panel>
 
           <Panel title="Параметры архитектуры">

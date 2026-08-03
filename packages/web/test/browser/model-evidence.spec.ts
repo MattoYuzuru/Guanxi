@@ -8,6 +8,7 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const observedAt = '2026-08-03T00:00:00.000Z'
   const pageErrors: string[] = []
+  const probeRequests: Array<Record<string, unknown>> = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
   const basis = {
@@ -110,6 +111,34 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
     if (url.pathname === '/api/models/fixture%3Alatest' || url.pathname === '/api/models/fixture:latest') {
       return route.fulfill(json(detail))
     }
+    if (
+      url.pathname === '/api/models/fixture%3Alatest/probes/completion'
+      || url.pathname === '/api/models/fixture:latest/probes/completion'
+    ) {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      probeRequests.push(body)
+      if (probeRequests.length === 3) {
+        return route.fulfill(json({
+          code: 'internal_error',
+          message: 'The completion probe could not be completed safely',
+          details: null,
+        }, 500))
+      }
+      return route.fulfill(json({
+        evidence: {
+          status: 'verified', reason: 'terminal_response', capability: 'completion',
+          source: 'runtime_probe', confidence: 'verified', observedAt,
+          completedAt: observedAt, durationMs: 0,
+          basis: {
+            state: 'exact', keyVersion: 1, probeDefinitionVersion: 1,
+            provider: 'ollama', normalizedModelReference: 'fixture:latest',
+            artifactDigest: 'sha256:fixture', runtimeVersion: '0.12.6',
+            contextLength: 8_192, id: `sha256:${'a'.repeat(64)}`,
+          },
+          historical: probeRequests.length === 2,
+        },
+      }))
+    }
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })
 
@@ -128,6 +157,47 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
   await expect(page.getByText('Устарело · offline').first()).toBeVisible()
   await expect(page.getByText(/7-дневного stale window/u)).toBeVisible()
   await expect(page.getByText(/не является controlled probe/u)).toBeVisible()
+  await expect(page.getByText(/ручная проверка может ненадолго загрузить/u)).toBeVisible()
+
+  const probe = page.getByRole('button', {
+    name: 'Просмотреть условия и запустить проверку completion',
+  })
+  await probe.hover()
+  expect(probeRequests).toEqual([])
+  await page.reload()
+  await expect(probe).toBeVisible()
+  expect(probeRequests).toEqual([])
+
+  await probe.focus()
+  await probe.press('Enter')
+  const dialog = page.getByRole('dialog', {
+    name: 'Ненадолго загрузить и проверить модель?',
+  })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Запустить проверку' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(probe).toBeFocused()
+  expect(probeRequests).toEqual([])
+
+  await probe.press('Enter')
+  await dialog.getByRole('button', { name: 'Запустить проверку' }).press('Enter')
+  await expect(page.getByText('Подтверждено', { exact: true })).toBeVisible()
+  expect(probeRequests).toEqual([{
+    capability: 'completion', expectedDigest: 'sha256:fixture',
+    contextLength: 8_192, force: false,
+  }])
+
+  await probe.press('Enter')
+  await dialog.getByRole('button', { name: 'Запустить проверку' }).press('Enter')
+  await expect(page.getByText('Исторический exact-результат')).toBeVisible()
+  await page.getByRole('button', {
+    name: 'Просмотреть условия и запустить новую проверку completion',
+  }).press('Enter')
+  await page.getByRole('dialog', { name: 'Запустить новую проверку?' })
+    .getByRole('button', { name: 'Запустить новую проверку' }).press('Enter')
+  await expect(page.getByText('Ошибка запроса')).toBeVisible()
+  await expect(page.getByText('The completion probe could not be completed safely')).toBeVisible()
+  expect(probeRequests[2]?.force).toBe(true)
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const layout = await page.evaluate(() => {

@@ -385,6 +385,7 @@ function operationLabel(operation: RuntimeResourceOperation): string {
   if (operation === 'chat') return translate('runtime.operation.chat')
   if (operation === 'compaction') return translate('runtime.operation.compaction')
   if (operation === 'model_prewarm') return translate('runtime.operation.modelPrewarm')
+  if (operation === 'model_probe') return translate('runtime.operation.modelProbe')
   return translate('runtime.operation.modelWarm')
 }
 
