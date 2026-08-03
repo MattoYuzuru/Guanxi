@@ -1,10 +1,4 @@
-/**
- * Замеры «размер окна → занятая память» по каждой модели.
- *
- * Каждая загрузка модели бесплатно даёт одну точку. Со второй точки вердикт по
- * железу перестаёт быть прикидкой по формуле и становится расчётом по факту —
- * зависимость строго линейная, это проверено замерами при 4k/16k/32k.
- */
+import type { ModelObservationKey } from '@alamo/contract'
 import type { CalibrationSample } from '../hardware/fit.ts'
 import type { Db } from './db.ts'
 
@@ -13,6 +7,9 @@ interface CalibrationRow {
   size_bytes: number
 }
 
+type CompleteObservationKey = Extract<ModelObservationKey, { state: 'complete' }>
+
+/** Durable measured samples are accepted and queried only through one exact key boundary. */
 export class CalibrationStore {
   private readonly db: Db
 
@@ -20,42 +17,94 @@ export class CalibrationStore {
     this.db = db
   }
 
-  samples(model: string): CalibrationSample[] {
+  samples(key: ModelObservationKey): CalibrationSample[] {
+    if (key.state !== 'complete') return []
+    const components = key.components
     const rows = this.db
-      .prepare('SELECT context_length, size_bytes FROM model_calibration WHERE model = ? ORDER BY context_length')
-      .all(model) as unknown as CalibrationRow[]
+      .prepare(
+        `SELECT context_length, size_bytes
+         FROM model_calibration_observations
+         WHERE provider = ?
+           AND normalized_model_reference = ?
+           AND artifact_digest = ?
+           AND runtime_backend_fingerprint = ?
+           AND hardware_fingerprint = ?
+         ORDER BY context_length`,
+      )
+      .all(
+        components.provider,
+        components.normalizedModelReference,
+        components.artifactDigest,
+        components.runtimeBackend.fingerprint,
+        components.hardware.fingerprint,
+      ) as unknown as CalibrationRow[]
 
     return rows.map((row) => ({ contextLength: row.context_length, sizeBytes: row.size_bytes }))
   }
 
-  /** Запоминает точку. Повторный замер того же окна перезаписывает прошлый. */
-  record(model: string, contextLength: number, sizeBytes: number, sizeVramBytes: number): void {
-    if (contextLength <= 0 || sizeBytes <= 0) return
+  exact(key: ModelObservationKey): CalibrationSample | null {
+    if (key.state !== 'complete') return null
+    const row = this.db
+      .prepare(
+        `SELECT context_length, size_bytes
+         FROM model_calibration_observations
+         WHERE observation_key = ?`,
+      )
+      .get(key.id) as CalibrationRow | undefined
+    return row ? { contextLength: row.context_length, sizeBytes: row.size_bytes } : null
+  }
 
+  /** Same exact observation replaces itself; another context/digest/runtime/host is a new row. */
+  record(
+    key: ModelObservationKey,
+    sizeBytes: number,
+    sizeVramBytes: number,
+    measuredAt = new Date().toISOString(),
+  ): boolean {
+    if (
+      key.state !== 'complete' ||
+      !Number.isSafeInteger(sizeBytes) ||
+      sizeBytes <= 0 ||
+      !Number.isSafeInteger(sizeVramBytes) ||
+      sizeVramBytes < 0
+    ) {
+      return false
+    }
+    this.upsertComplete(key, sizeBytes, sizeVramBytes, measuredAt)
+    return true
+  }
+
+  private upsertComplete(
+    key: CompleteObservationKey,
+    sizeBytes: number,
+    sizeVramBytes: number,
+    measuredAt: string,
+  ): void {
+    const components = key.components
     this.db
       .prepare(
-        `INSERT INTO model_calibration (model, context_length, size_bytes, size_vram_bytes, measured_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (model, context_length) DO UPDATE SET
+        `INSERT INTO model_calibration_observations (
+           observation_key, key_version, provider, normalized_model_reference,
+           artifact_digest, context_length, runtime_backend_fingerprint,
+           hardware_fingerprint, size_bytes, size_vram_bytes, measured_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (observation_key) DO UPDATE SET
            size_bytes = excluded.size_bytes,
            size_vram_bytes = excluded.size_vram_bytes,
            measured_at = excluded.measured_at`,
       )
-      .run(model, contextLength, sizeBytes, sizeVramBytes, new Date().toISOString())
-  }
-
-  /** Все замеры разом — чтобы построить список моделей одним проходом. */
-  allSamples(): Map<string, CalibrationSample[]> {
-    const rows = this.db
-      .prepare('SELECT model, context_length, size_bytes FROM model_calibration ORDER BY model, context_length')
-      .all() as unknown as (CalibrationRow & { model: string })[]
-
-    const grouped = new Map<string, CalibrationSample[]>()
-    for (const row of rows) {
-      const list = grouped.get(row.model) ?? []
-      list.push({ contextLength: row.context_length, sizeBytes: row.size_bytes })
-      grouped.set(row.model, list)
-    }
-    return grouped
+      .run(
+        key.id,
+        key.version,
+        components.provider,
+        components.normalizedModelReference,
+        components.artifactDigest,
+        components.contextLength,
+        components.runtimeBackend.fingerprint,
+        components.hardware.fingerprint,
+        sizeBytes,
+        sizeVramBytes,
+        measuredAt,
+      )
   }
 }

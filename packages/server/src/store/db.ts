@@ -201,6 +201,33 @@ const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX idx_chat_job_inputs_thread ON chat_job_inputs(thread_id, job_id);
   `,
+  // 6 — exact model/runtime/hardware/context calibration observations.
+  // Legacy name/context rows remain intact, but are never promoted to exact evidence.
+  `
+  CREATE TABLE model_calibration_observations (
+    observation_key              TEXT PRIMARY KEY
+      CHECK (observation_key GLOB 'sha256:*' AND length(observation_key) = 71),
+    key_version                  INTEGER NOT NULL CHECK (key_version = 1),
+    provider                     TEXT NOT NULL CHECK (provider = 'ollama'),
+    normalized_model_reference  TEXT NOT NULL,
+    artifact_digest             TEXT NOT NULL,
+    context_length              INTEGER NOT NULL CHECK (context_length > 0),
+    runtime_backend_fingerprint TEXT NOT NULL,
+    hardware_fingerprint        TEXT NOT NULL,
+    size_bytes                  INTEGER NOT NULL CHECK (size_bytes > 0),
+    size_vram_bytes             INTEGER NOT NULL CHECK (size_vram_bytes >= 0),
+    measured_at                 TEXT NOT NULL
+  );
+  CREATE INDEX idx_model_calibration_observation_family
+    ON model_calibration_observations (
+      provider,
+      normalized_model_reference,
+      artifact_digest,
+      runtime_backend_fingerprint,
+      hardware_fingerprint,
+      context_length
+    );
+  `,
 ]
 
 export function openDb(path: string): Db {

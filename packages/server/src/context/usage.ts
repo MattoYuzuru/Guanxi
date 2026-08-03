@@ -36,7 +36,11 @@ export interface PrefillObservation {
 }
 
 export class PrefillTracker {
-  /** Опорная стоимость холодной обработки одного токена, мс. */
+  /**
+   * Process-local heuristic keyed only by the execution model name. The current
+   * Chat command does not carry digest/runtime/hardware facts, so this must not
+   * be persisted or reused as measured observation-key evidence.
+   */
   private readonly msPerToken = new Map<string, number>()
 
   coldMsPerToken(model: string): number | null {

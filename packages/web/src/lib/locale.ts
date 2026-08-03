@@ -163,6 +163,8 @@ const english = {
   'runtime.fit.reason.availableUnknown': 'Current available memory is unknown',
   'runtime.fit.reason.pressureUnknown': 'Current memory pressure is unknown',
   'runtime.fit.reason.pressureElevated': 'Current memory pressure is elevated',
+  'runtime.fit.reason.observationKeyUnavailable':
+    'Exact model, runtime, context, and hardware identity is incomplete',
   'runtime.host.title': 'Host telemetry',
   'runtime.host.available': 'Host telemetry available',
   'runtime.host.availableMissing': 'Host telemetry available with unknown fields',
@@ -445,6 +447,8 @@ const russian: Messages = {
   'runtime.fit.reason.availableUnknown': 'Текущая доступная память неизвестна',
   'runtime.fit.reason.pressureUnknown': 'Текущий memory pressure неизвестен',
   'runtime.fit.reason.pressureElevated': 'Текущий memory pressure повышен',
+  'runtime.fit.reason.observationKeyUnavailable':
+    'Точная identity модели, runtime, контекста и железа неполна',
   'runtime.host.title': 'Host telemetry',
   'runtime.host.available': 'Host telemetry доступна',
   'runtime.host.availableMissing': 'Host telemetry доступна с неизвестными полями',

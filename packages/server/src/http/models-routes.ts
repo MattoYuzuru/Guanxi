@@ -78,7 +78,7 @@ export function modelsRoutes(app: AppContext): Hono {
     const contextLength = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_NUM_CTX
 
     try {
-      const detail = await app.models().detail(name, contextLength)
+      const detail = await app.models().detail(name, contextLength, context.req.raw.signal)
       if (!detail) {
         return context.json(
           { code: 'model_not_found', message: `Модель ${name} не найдена`, details: null },

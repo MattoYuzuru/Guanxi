@@ -465,5 +465,8 @@ function fitReasonLabel(reason: RuntimeCurrentFitReason): string {
   if (reason === 'host_available_memory_unknown') return translate('runtime.fit.reason.availableUnknown')
   if (reason === 'host_pressure_unknown') return translate('runtime.fit.reason.pressureUnknown')
   if (reason === 'host_pressure_elevated') return translate('runtime.fit.reason.pressureElevated')
+  if (reason === 'observation_key_unavailable') {
+    return translate('runtime.fit.reason.observationKeyUnavailable')
+  }
   return translate('runtime.fit.currentResidency')
 }

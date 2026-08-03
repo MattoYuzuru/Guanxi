@@ -17,7 +17,7 @@ import {
   type ResourceLease,
 } from './resource-governor.ts'
 import type { RuntimeReconciliationService } from './reconciliation.ts'
-import { normalizeOllamaModelReference } from './reconciliation.ts'
+import { normalizeOllamaModelReference } from './observation-key.ts'
 
 export const PREWARM_KEEP_ALIVE = '2m' as const
 export const PREWARM_COMMAND_TIMEOUT_MS = 30_000

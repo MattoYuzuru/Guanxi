@@ -9,13 +9,19 @@ import type {
   RuntimeSnapshot,
   RuntimeSourceErrorCode,
   RuntimeSourceHealth,
+  ModelObservationKey,
+  HardwareInfo,
 } from '@alamo/contract'
 import type { HostTelemetry } from '../hardware/telemetry.ts'
 import {
   alignHostTelemetryObservedAt,
   unavailableHostTelemetry,
 } from '../hardware/telemetry.ts'
-import type { ModelService } from '../models/service.ts'
+import type { InstalledArtifactIdentity } from './observation-key.ts'
+import {
+  normalizeOllamaModelReference,
+  resolveRuntimeObservationKey,
+} from './observation-key.ts'
 import {
   OllamaError,
   OllamaProtocolError,
@@ -41,8 +47,16 @@ interface ReconciliationOutcome {
 export interface RuntimeReconciliationOptions {
   governor: ResourceGovernor
   hostTelemetry: HostTelemetry
-  models(): ModelService
+  models(): RuntimeModelSource
   now?: () => Date
+}
+
+export interface RuntimeModelSource {
+  ps(signal?: AbortSignal): Promise<RunningModel[]>
+  installedArtifacts?(signal?: AbortSignal): Promise<readonly InstalledArtifactIdentity[]>
+  runtimeVersion?(signal?: AbortSignal): Promise<string>
+  readonly runtimeHost?: string
+  readonly hardwareProfile?: HardwareInfo
 }
 
 export interface RuntimeSnapshotOptions {
@@ -55,30 +69,7 @@ function abortError(): Error {
   return error
 }
 
-/**
- * Normalize only syntax that Ollama itself makes implicit. No family, digest,
- * or fuzzy matching is allowed at this boundary.
- */
-export function normalizeOllamaModelReference(input: string): string | null {
-  const normalized = input.normalize('NFKC').trim().toLowerCase()
-  if (
-    normalized.length === 0 ||
-    normalized.startsWith('/') ||
-    normalized.endsWith('/') ||
-    normalized.includes('\\') ||
-    /\s|[^a-z0-9._:/@-]/u.test(normalized)
-  ) {
-    return null
-  }
-  const segments = normalized.split('/')
-  if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) {
-    return null
-  }
-  if (normalized.includes('@')) return normalized
-
-  const lastSlash = normalized.lastIndexOf('/')
-  return normalized.lastIndexOf(':') > lastSlash ? normalized : `${normalized}:latest`
-}
+export { normalizeOllamaModelReference } from './observation-key.ts'
 
 function safeOwner(owner: ResourceOwner): ResourceOwner {
   if (owner.kind === 'job') {
@@ -174,7 +165,12 @@ function decision(
     requestedContext: input.requestedContext ?? null,
     observedContext: input.observedContext ?? null,
     identityBasis: input.identityBasis ?? 'none',
-    artifactIdentity: 'unknown',
+    observationKey: input.observationKey ?? {
+      state: 'unavailable',
+      version: 1,
+      reason: 'legacy_snapshot',
+    },
+    artifactIdentity: input.artifactIdentity ?? 'unknown',
   }
 }
 
@@ -183,6 +179,12 @@ function reconcileModels(
   governor: RuntimeGovernorSnapshot,
   host: RuntimeHostTelemetry,
   observedAt: string,
+  identity: {
+    installed: readonly InstalledArtifactIdentity[] | null
+    runtimeVersion: string | null
+    runtimeHost: string
+    hardware: HardwareInfo
+  },
 ): { models: RuntimeModelObservation[]; decisions: RuntimeReconciliationDecision[] } {
   const active = governor.activeLease
   const activeReference = active
@@ -197,12 +199,27 @@ function reconcileModels(
   const decisions: RuntimeReconciliationDecision[] = []
   const models = running.map((raw): RuntimeModelObservation => {
     const normalizedName = normalizeOllamaModelReference(raw.name)
+    const ambiguousReference = Boolean(
+      normalizedName && (normalizedCounts.get(normalizedName) ?? 0) > 1,
+    )
     const matched = Boolean(
-      !activeMatched && active && activeReference && normalizedName === activeReference,
+      !activeMatched &&
+        !ambiguousReference &&
+        active &&
+        activeReference &&
+        normalizedName === activeReference,
     )
     if (matched) activeMatched = true
     const modelName = normalizedName ? raw.name.trim() : INVALID_MODEL_REFERENCE
     const owner = matched && active ? active.owner : null
+    const observationKey = resolveRuntimeObservationKey({
+      running: raw,
+      runningRows: running,
+      installed: identity.installed,
+      runtimeVersion: identity.runtimeVersion,
+      runtimeHost: identity.runtimeHost,
+      hardware: identity.hardware,
+    })
     const model: RuntimeModelObservation = {
       ...raw,
       name: modelName,
@@ -216,15 +233,15 @@ function reconcileModels(
       identityBasis: matched
         ? 'exact_normalized_model_reference'
         : 'runtime_observation_only',
-      artifactIdentity: 'unknown',
+      observationKey,
+      artifactIdentity: observationKey.state === 'complete' ? 'exact_digest' : 'unknown',
       currentFit: currentFitFor({
         model: raw,
         active: matched ? active : null,
         host,
         observedAt,
-        ambiguousReference: Boolean(
-          normalizedName && (normalizedCounts.get(normalizedName) ?? 0) > 1,
-        ),
+        ambiguousReference,
+        observationKey,
       }),
     }
     decisions.push(
@@ -238,6 +255,8 @@ function reconcileModels(
         requestedContext: matched && active ? active.requestedContext : null,
         observedContext: model.contextLength,
         identityBasis: model.identityBasis,
+        observationKey,
+        artifactIdentity: model.artifactIdentity,
       }),
     )
     return model
@@ -267,6 +286,7 @@ function currentFitFor(input: {
   host: RuntimeHostTelemetry
   observedAt: string
   ambiguousReference: boolean
+  observationKey: ModelObservationKey
 }): RuntimeCurrentFit {
   const base = {
     observedAt: input.observedAt,
@@ -284,10 +304,13 @@ function currentFitFor(input: {
     reason,
   })
 
-  if (!input.active) return unknown('runtime_owner_unknown')
   if (input.ambiguousReference) return unknown('runtime_reference_ambiguous')
+  if (!input.active) return unknown('runtime_owner_unknown')
   if (input.model.digest === null) return unknown('runtime_digest_missing')
   if (input.model.contextLength === null) return unknown('runtime_context_missing')
+  if (input.observationKey.state !== 'complete') {
+    return unknown('observation_key_unavailable')
+  }
   if (input.active.requestedContext !== input.model.contextLength) {
     return unknown('runtime_context_mismatch')
   }
@@ -330,7 +353,7 @@ function currentFitFor(input: {
 export class RuntimeReconciliationService {
   private readonly governor: ResourceGovernor
   private readonly hostTelemetry: HostTelemetry
-  private readonly models: () => ModelService
+  private readonly models: () => RuntimeModelSource
   private readonly now: () => Date
   private inFlight: Promise<ReconciliationOutcome> | null = null
 
@@ -398,9 +421,12 @@ export class RuntimeReconciliationService {
   }
 
   private async reconcileOnce(): Promise<ReconciliationOutcome> {
-    const [runtimeResult, hostResult] = await Promise.allSettled([
-      this.models().ps(),
+    const modelSource = this.models()
+    const [runtimeResult, hostResult, installedResult, versionResult] = await Promise.allSettled([
+      modelSource.ps(),
       this.hostTelemetry.sample(),
+      modelSource.installedArtifacts?.() ?? Promise.reject(new Error('installed source unavailable')),
+      modelSource.runtimeVersion?.() ?? Promise.reject(new Error('runtime version unavailable')),
     ])
     const observedAt = this.now().toISOString()
     const host = alignHostTelemetryObservedAt(
@@ -428,7 +454,12 @@ export class RuntimeReconciliationService {
 
     const running = runtimeResult.value
     const compatibilityModels = running.map((model) => ({ ...model, observedAt }))
-    const reconciled = reconcileModels(compatibilityModels, governor, host, observedAt)
+    const reconciled = reconcileModels(compatibilityModels, governor, host, observedAt, {
+      installed: installedResult.status === 'fulfilled' ? installedResult.value : null,
+      runtimeVersion: versionResult.status === 'fulfilled' ? versionResult.value : null,
+      runtimeHost: modelSource.runtimeHost ?? '',
+      hardware: modelSource.hardwareProfile ?? this.hostTelemetry.profile,
+    })
     return {
       snapshot: {
         observedAt,
