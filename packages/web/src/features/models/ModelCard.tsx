@@ -11,6 +11,7 @@ import { formatBytes, formatContextLength } from '../../lib/format.ts'
 import { FitIndicator } from './FitIndicator.tsx'
 import { PullControl } from './PullControl.tsx'
 import { translate } from '../../lib/locale.ts'
+import { InstalledEvidenceSummary } from './InstalledEvidence.tsx'
 
 export type ModelCardData =
   | { kind: 'local'; model: LocalModel }
@@ -44,7 +45,10 @@ export const ModelCard = memo(function ModelCard({
   const catalog = data.kind === 'catalog' ? data.model : null
   const installed = local !== null || catalog?.installed === true
 
-  const capabilities = model.capabilities
+  const capabilities =
+    local && local.descriptor.capabilities.state !== 'declared'
+      ? []
+      : model.capabilities
   const primary = capabilities.filter((capability) =>
     HIGHLIGHT_CAPABILITIES.includes(capability),
   )
@@ -94,6 +98,8 @@ export const ModelCard = memo(function ModelCard({
           )}
         </div>
       </header>
+
+      {local ? <InstalledEvidenceSummary descriptor={local.descriptor} /> : null}
 
       {/* Характеристики */}
       <div className="mb-2 flex flex-wrap items-center gap-1">

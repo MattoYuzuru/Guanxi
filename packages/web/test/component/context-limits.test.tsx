@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Health, LocalModel, ModelDetail, Settings } from '@alamo/contract'
+import { legacyInstalledModelDescriptor } from '@alamo/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'
 import { ModelPage } from '../../src/features/models/ModelPage.tsx'
@@ -52,6 +53,7 @@ function local(contextLength = CUSTOM_CONTEXT): LocalModel {
       observedAt: OBSERVED_AT, confidence: 'declared',
     },
     capabilities: ['completion'], isCloud: false, fit: fit(contextLength),
+    descriptor: legacyInstalledModelDescriptor,
   }
 }
 
