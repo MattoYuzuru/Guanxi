@@ -109,7 +109,7 @@ function publicGovernorSnapshot(
     ...snapshot,
     policy: {
       ...snapshot.policy,
-      priorities: ['normal'],
+      priorities: ['normal', 'prewarm'],
     },
     queued: snapshot.queued.map((entry) => ({
       ...entry,

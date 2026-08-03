@@ -15,6 +15,7 @@ const KEYS = {
   defaultNumCtx: 'default_num_ctx',
   autoApproveTools: 'auto_approve_tools',
   enableBash: 'enable_bash',
+  prewarmEnabled: 'prewarm_enabled',
   webSearchProvider: 'web_search_provider',
   webSearchBaseUrl: 'web_search_base_url',
   webSearchApiKey: 'web_search_api_key',
@@ -60,6 +61,7 @@ export class SettingsStore {
       defaultNumCtx: Number(this.raw(KEYS.defaultNumCtx) ?? DEFAULT_NUM_CTX),
       autoApproveTools: this.raw(KEYS.autoApproveTools) === 'true',
       enableBash: this.raw(KEYS.enableBash) === 'true',
+      prewarmEnabled: this.raw(KEYS.prewarmEnabled) !== 'false',
       webSearch: {
         provider: (this.raw(KEYS.webSearchProvider) ?? 'none') as WebSearchProvider,
         baseUrl: this.raw(KEYS.webSearchBaseUrl),
@@ -80,6 +82,7 @@ export class SettingsStore {
     defaultNumCtx?: number
     autoApproveTools?: boolean
     enableBash?: boolean
+    prewarmEnabled?: boolean
     webSearch?: { provider?: WebSearchProvider; baseUrl?: string | null; apiKey?: string | null }
     theme?: Settings['theme']
   }): Settings {
@@ -89,6 +92,8 @@ export class SettingsStore {
     if (patch.autoApproveTools !== undefined)
       this.write(KEYS.autoApproveTools, String(patch.autoApproveTools))
     if (patch.enableBash !== undefined) this.write(KEYS.enableBash, String(patch.enableBash))
+    if (patch.prewarmEnabled !== undefined)
+      this.write(KEYS.prewarmEnabled, String(patch.prewarmEnabled))
     if (patch.theme !== undefined) this.write(KEYS.theme, patch.theme)
 
     if (patch.webSearch) {

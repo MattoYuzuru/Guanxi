@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 
 export const RESOURCE_GOVERNOR_CLOSE_REASON = 'resource_governor_shutdown'
 
-export type ResourceOperation = 'chat' | 'compaction' | 'model_warm'
-export type AdmissionPriority = 'normal'
+export type ResourceOperation = 'chat' | 'compaction' | 'model_warm' | 'model_prewarm'
+export type AdmissionPriority = 'normal' | 'prewarm'
 
 export type ResourceOwner =
   | Readonly<{ kind: 'job'; jobId: string }>
@@ -38,6 +38,7 @@ export interface ResourceLease {
   readonly operation: ResourceOperation
   readonly model: ModelResourceRequest
   readonly requestedContext: number
+  readonly priority: AdmissionPriority
   readonly acquiredAt: string
   readonly releasedAt: string | null
   readonly state: 'active' | 'released'
@@ -53,6 +54,8 @@ export type GovernorDecisionCode =
   | 'admission_closed'
   | 'unload_active_model'
   | 'unload_conservative_active_owner'
+  | 'prewarm_skipped_normal_work'
+  | 'prewarm_preempted_by_normal'
   | 'unknown_ticket'
 
 export interface AdmissionExplanation {
@@ -64,6 +67,7 @@ export interface AdmissionExplanation {
   readonly operation: ResourceOperation | null
   readonly model: ModelResourceRequest | null
   readonly requestedContext: number | null
+  readonly priority: AdmissionPriority | null
   readonly queuePosition: number | null
 }
 
@@ -72,8 +76,8 @@ export interface ResourceGovernorSnapshot {
   readonly accepting: boolean
   readonly policy: {
     readonly acceleratorPermits: 1
-    readonly order: 'fifo'
-    readonly priorities: readonly ['normal']
+    readonly order: 'priority_fifo'
+    readonly priorities: readonly ['normal', 'prewarm']
     readonly scope: 'application_process'
     readonly basis: typeof SINGLE_PERMIT_POLICY_BASIS
   }
@@ -94,6 +98,7 @@ export interface ResourceGovernorSnapshot {
     readonly operation: ResourceOperation
     readonly model: ModelResourceRequest
     readonly requestedContext: number
+    readonly priority: AdmissionPriority
     readonly acquiredAt: string
     readonly state: 'active'
   } | null
@@ -104,6 +109,8 @@ export interface AcquireOptions {
   readonly signal?: AbortSignal
   /** Execution-owner hook used only by graceful application shutdown. */
   readonly abortOwner?: () => void
+  /** Exact low-priority owner hook used only when normal work preempts prewarm. */
+  readonly preemptOwner?: () => void
 }
 
 export interface ResourceGovernorOptions {
@@ -112,7 +119,7 @@ export interface ResourceGovernorOptions {
 }
 
 export const SINGLE_PERMIT_POLICY_BASIS =
-  'conservative_single_process_single_accelerator_permit_fifo' as const
+  'conservative_single_process_single_accelerator_permit_normal_before_prewarm_fifo' as const
 
 export type ResourceGovernorErrorCode =
   | 'admission_closed'
@@ -120,6 +127,7 @@ export type ResourceGovernorErrorCode =
   | 'invalid_admission_ticket'
   | 'unload_active_model'
   | 'unload_conservative_active_owner'
+  | 'prewarm_normal_work_present'
 
 export class ResourceGovernorError extends Error {
   readonly code: ResourceGovernorErrorCode
@@ -143,6 +151,8 @@ interface TicketRecord {
   signal: AbortSignal | undefined
   onAbort: (() => void) | null
   abortOwner: (() => void) | null
+  preemptOwner: (() => void) | null
+  preemptionRequested: boolean
 }
 
 interface LeaseRecord {
@@ -183,7 +193,7 @@ function validateRequest(request: AdmissionRequest): void {
     request.model.name.trim().length === 0 ||
     !Number.isInteger(request.requestedContext) ||
     request.requestedContext <= 0 ||
-    request.priority !== 'normal' ||
+    (request.priority !== 'normal' && request.priority !== 'prewarm') ||
     Number.isNaN(Date.parse(request.enqueuedAt))
   ) {
     throw new ResourceGovernorError(
@@ -196,9 +206,9 @@ function validateRequest(request: AdmissionRequest): void {
 /**
  * Canonical process-local owner for every current model-affecting operation.
  *
- * P1-F deliberately implements one conservative FIFO accelerator lane. It does
- * not infer hardware fit, observe Ollama residency, or coordinate other
- * processes and external Ollama clients.
+ * One conservative accelerator lane with deterministic normal-before-prewarm
+ * ordering. Normal work never gets preempted; it cancels queued prewarm or asks
+ * the exact active prewarm owner to abort and waits for its release.
  */
 export class ResourceGovernor {
   private readonly now: () => Date
@@ -234,6 +244,13 @@ export class ResourceGovernor {
     }
     validateRequest(input)
     const request = freezeRequest(input)
+    if (request.priority === 'prewarm' && this.hasNormalWork()) {
+      this.recordRequestDecision('prewarm_skipped_normal_work', request)
+      throw new ResourceGovernorError(
+        'prewarm_normal_work_present',
+        'Prewarm was skipped because normal resource work is present',
+      )
+    }
     const record = {} as TicketRecord
     const ticket: AdmissionTicket = Object.freeze({
       id: this.createId(),
@@ -251,10 +268,13 @@ export class ResourceGovernor {
       signal: undefined,
       onAbort: null,
       abortOwner: null,
+      preemptOwner: null,
+      preemptionRequested: false,
     })
     this.tickets.set(ticket.id, record)
     this.queue.push(record)
     this.recordDecision('queued_fifo', record)
+    if (request.priority === 'normal') this.preemptPrewarmForNormal()
     return ticket
   }
 
@@ -297,6 +317,7 @@ export class ResourceGovernor {
       record.reject = reject
       record.signal = options.signal
       record.abortOwner = options.abortOwner ?? null
+      record.preemptOwner = options.preemptOwner ?? null
       if (options.signal) {
         record.onAbort = () => this.cancelRecord(record, admissionCancelledError())
         options.signal.addEventListener('abort', record.onAbort, { once: true })
@@ -319,8 +340,8 @@ export class ResourceGovernor {
       accepting: this.accepting,
       policy: {
         acceleratorPermits: 1,
-        order: 'fifo',
-        priorities: ['normal'],
+        order: 'priority_fifo',
+        priorities: ['normal', 'prewarm'],
         scope: 'application_process',
         basis: SINGLE_PERMIT_POLICY_BASIS,
       },
@@ -342,6 +363,7 @@ export class ResourceGovernor {
             operation: active.ticket.request.operation,
             model: active.ticket.request.model,
             requestedContext: active.ticket.request.requestedContext,
+            priority: active.ticket.request.priority,
             acquiredAt: active.lease.acquiredAt,
             state: 'active',
           }
@@ -425,6 +447,7 @@ export class ResourceGovernor {
         operation: record.request.operation,
         model: record.request.model,
         requestedContext: record.request.requestedContext,
+        priority: record.request.priority,
         acquiredAt,
         get releasedAt() {
           return leaseRecord.releasedAt
@@ -456,6 +479,7 @@ export class ResourceGovernor {
     record.releasedAt = this.timestamp()
     record.ticket.state = 'released'
     record.ticket.abortOwner = null
+    record.ticket.preemptOwner = null
     record.ticket.signal = undefined
     if (this.activeLease === record) this.activeLease = null
     this.tickets.delete(record.ticket.ticket.id)
@@ -464,7 +488,11 @@ export class ResourceGovernor {
     this.finishCloseIfIdle()
   }
 
-  private cancelRecord(record: TicketRecord, error: Error): void {
+  private cancelRecord(
+    record: TicketRecord,
+    error: Error,
+    decisionCode?: GovernorDecisionCode,
+  ): void {
     if (record.state !== 'queued') return
     const index = this.queue.indexOf(record)
     if (index !== -1) this.queue.splice(index, 1)
@@ -475,11 +503,13 @@ export class ResourceGovernor {
     record.resolve = null
     record.reject = null
     record.abortOwner = null
+    record.preemptOwner = null
     record.signal = undefined
     this.recordDecision(
-      error instanceof ResourceGovernorError && error.code === 'admission_closed'
-        ? 'admission_closed'
-        : 'cancelled_waiting',
+      decisionCode ??
+        (error instanceof ResourceGovernorError && error.code === 'admission_closed'
+          ? 'admission_closed'
+          : 'cancelled_waiting'),
       record,
     )
     reject?.(error)
@@ -513,12 +543,51 @@ export class ResourceGovernor {
       operation: record?.request.operation ?? null,
       model: record?.request.model ?? null,
       requestedContext: record?.request.requestedContext ?? null,
+      priority: record?.request.priority ?? null,
       queuePosition,
     })
   }
 
   private timestamp(): string {
     return this.now().toISOString()
+  }
+
+  private hasNormalWork(): boolean {
+    return Boolean(
+      this.activeLease?.ticket.request.priority === 'normal' ||
+        this.queue.some((record) => record.request.priority === 'normal'),
+    )
+  }
+
+  private preemptPrewarmForNormal(): void {
+    for (const record of [...this.queue]) {
+      if (record.request.priority !== 'prewarm') continue
+      this.cancelRecord(record, admissionCancelledError(), 'prewarm_preempted_by_normal')
+    }
+
+    const active = this.activeLease?.ticket
+    if (!active || active.request.priority !== 'prewarm' || active.preemptionRequested) return
+    active.preemptionRequested = true
+    this.recordDecision('prewarm_preempted_by_normal', active)
+    active.preemptOwner?.()
+  }
+
+  private recordRequestDecision(
+    decisionCode: GovernorDecisionCode,
+    request: AdmissionRequest,
+  ): void {
+    this.lastDecision = Object.freeze({
+      ticketId: null,
+      decisionCode,
+      observedAt: this.timestamp(),
+      policyBasis: SINGLE_PERMIT_POLICY_BASIS,
+      owner: request.owner,
+      operation: request.operation,
+      model: request.model,
+      requestedContext: request.requestedContext,
+      priority: request.priority,
+      queuePosition: null,
+    })
   }
 
   private finishCloseIfIdle(): void {

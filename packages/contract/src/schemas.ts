@@ -382,6 +382,22 @@ export const runtimeResourceModelSchema = z
   .strict()
 export type RuntimeResourceModel = z.infer<typeof runtimeResourceModelSchema>
 
+export const runtimeResourceOperationSchema = z.enum([
+  'chat',
+  'compaction',
+  'model_warm',
+  'model_prewarm',
+])
+export type RuntimeResourceOperation = z.infer<typeof runtimeResourceOperationSchema>
+
+export const runtimeAdmissionPrioritySchema = z.enum(['normal', 'prewarm'])
+export type RuntimeAdmissionPriority = z.infer<typeof runtimeAdmissionPrioritySchema>
+
+export const runtimeAdmissionPolicyBasisSchema = z.enum([
+  'conservative_single_process_single_accelerator_permit_fifo',
+  'conservative_single_process_single_accelerator_permit_normal_before_prewarm_fifo',
+])
+
 export const runtimeAdmissionDecisionCodeSchema = z.enum([
   'queued_fifo',
   'admitted_single_permit',
@@ -390,6 +406,8 @@ export const runtimeAdmissionDecisionCodeSchema = z.enum([
   'admission_closed',
   'unload_active_model',
   'unload_conservative_active_owner',
+  'prewarm_skipped_normal_work',
+  'prewarm_preempted_by_normal',
   'unknown_ticket',
 ])
 export type RuntimeAdmissionDecisionCode = z.infer<
@@ -401,11 +419,12 @@ export const runtimeAdmissionExplanationSchema = z
     ticketId: z.string().nullable(),
     decisionCode: runtimeAdmissionDecisionCodeSchema,
     observedAt: z.string().datetime(),
-    policyBasis: z.literal('conservative_single_process_single_accelerator_permit_fifo'),
+    policyBasis: runtimeAdmissionPolicyBasisSchema,
     owner: runtimeResourceOwnerSchema.nullable(),
-    operation: z.enum(['chat', 'compaction', 'model_warm']).nullable(),
+    operation: runtimeResourceOperationSchema.nullable(),
     model: runtimeResourceModelSchema.nullable(),
     requestedContext: z.number().int().positive().nullable(),
+    priority: runtimeAdmissionPrioritySchema.nullable().optional().default(null),
     queuePosition: z.number().int().positive().nullable(),
   })
   .strict()
@@ -417,10 +436,13 @@ export const runtimeGovernorSnapshotSchema = z
     policy: z
       .object({
         acceleratorPermits: z.literal(1),
-        order: z.literal('fifo'),
-        priorities: z.tuple([z.literal('normal')]),
+        order: z.enum(['fifo', 'priority_fifo']),
+        priorities: z.union([
+          z.tuple([z.literal('normal')]),
+          z.tuple([z.literal('normal'), z.literal('prewarm')]),
+        ]),
         scope: z.literal('application_process'),
-        basis: z.literal('conservative_single_process_single_accelerator_permit_fifo'),
+        basis: runtimeAdmissionPolicyBasisSchema,
       })
       .strict(),
     queued: z.array(
@@ -428,10 +450,10 @@ export const runtimeGovernorSnapshotSchema = z
         .object({
           ticketId: z.string().min(1),
           owner: runtimeResourceOwnerSchema,
-          operation: z.enum(['chat', 'compaction', 'model_warm']),
+          operation: runtimeResourceOperationSchema,
           model: runtimeResourceModelSchema,
           requestedContext: z.number().int().positive(),
-          priority: z.literal('normal'),
+          priority: runtimeAdmissionPrioritySchema,
           enqueuedAt: z.string().datetime(),
           reason: z.enum(['single_permit_busy', 'fifo_predecessor']),
         })
@@ -442,9 +464,10 @@ export const runtimeGovernorSnapshotSchema = z
         leaseId: z.string().min(1),
         ticketId: z.string().min(1),
         owner: runtimeResourceOwnerSchema,
-        operation: z.enum(['chat', 'compaction', 'model_warm']),
+        operation: runtimeResourceOperationSchema,
         model: runtimeResourceModelSchema,
         requestedContext: z.number().int().positive(),
+        priority: runtimeAdmissionPrioritySchema.optional().default('normal'),
         acquiredAt: z.string().datetime(),
         state: z.literal('active'),
       })
@@ -941,6 +964,8 @@ export const settingsSchema = z.object({
   autoApproveTools: z.boolean(),
   /** Инструмент bash. Выключен по умолчанию и всегда выключен в удалённом режиме. */
   enableBash: z.boolean(),
+  /** Auto prewarm on a stable New Chat model selection. Missing legacy keys default on. */
+  prewarmEnabled: z.boolean().optional().default(true),
   webSearch: z.object({
     provider: webSearchProviderSchema,
     baseUrl: z.string().nullable(),

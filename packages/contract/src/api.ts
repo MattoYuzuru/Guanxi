@@ -9,6 +9,8 @@ import {
   catalogModelSchema,
   catalogSourceHealthSchema,
   contextStateSchema,
+  fitLevelSchema,
+  fitVerdictSchema,
   healthSchema,
   jobKindSchema,
   jobSchema,
@@ -41,6 +43,7 @@ export const ROUTES = {
   model: (name: string) => `/api/models/${encodeURIComponent(name)}`,
   modelPull: (name: string) => `/api/models/${encodeURIComponent(name)}/pull`,
   modelWarm: (name: string) => `/api/models/${encodeURIComponent(name)}/warm`,
+  modelPrewarm: (name: string) => `/api/models/${encodeURIComponent(name)}/prewarm`,
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
@@ -168,6 +171,71 @@ export const warmModelResponse = z.object({
 })
 export type WarmModelResponse = z.infer<typeof warmModelResponse>
 
+export const prewarmSkipReasonSchema = z.enum([
+  'disabled',
+  'selection_changed',
+  'model_not_installed',
+  'fit_unknown',
+  'fit_unavailable',
+  'runtime_unavailable',
+  'normal_work_present',
+  'resident_identity_ambiguous',
+])
+export type PrewarmSkipReason = z.infer<typeof prewarmSkipReasonSchema>
+
+export const prewarmCancellationReasonSchema = z.enum([
+  'request_timeout',
+  'request_cancelled',
+  'normal_work_started',
+])
+export type PrewarmCancellationReason = z.infer<
+  typeof prewarmCancellationReasonSchema
+>
+
+/** POST /api/models/:name/prewarm — cancellable low-priority best-effort command. */
+export const prewarmModelBody = z
+  .object({
+    operation: z.literal('chat'),
+    contextLength: z.number().int().min(512),
+    selection: z
+      .object({
+        digest: z.string().min(1),
+        fitLevel: fitLevelSchema,
+        fitBasis: fitVerdictSchema.shape.basis,
+      })
+      .strict(),
+  })
+  .strict()
+export type PrewarmModelBody = z.infer<typeof prewarmModelBody>
+
+const prewarmModelResultBase = z
+  .object({
+    model: z.object({ name: z.string().min(1), digest: z.string().min(1) }).strict(),
+    operation: z.literal('chat'),
+    purpose: z.literal('model_prewarm'),
+    priority: z.literal('prewarm'),
+    keepAlive: z.literal('2m'),
+    observedAt: z.string().datetime(),
+  })
+  .strict()
+
+export const prewarmModelResponse = z.discriminatedUnion('status', [
+  prewarmModelResultBase.extend({ status: z.literal('warmed'), reason: z.literal('loaded') }),
+  prewarmModelResultBase.extend({
+    status: z.literal('reused'),
+    reason: z.literal('already_resident_exact'),
+  }),
+  prewarmModelResultBase.extend({
+    status: z.literal('skipped'),
+    reason: prewarmSkipReasonSchema,
+  }),
+  prewarmModelResultBase.extend({
+    status: z.literal('cancelled'),
+    reason: prewarmCancellationReasonSchema,
+  }),
+])
+export type PrewarmModelResponse = z.infer<typeof prewarmModelResponse>
+
 /** POST /api/models/:name/pull → SSE (PullStreamEvent) */
 export const pullModelBody = z.object({
   insecure: z.boolean().optional(),
@@ -293,6 +361,7 @@ export const updateSettingsBody = z.object({
   defaultNumCtx: z.number().int().optional(),
   autoApproveTools: z.boolean().optional(),
   enableBash: z.boolean().optional(),
+  prewarmEnabled: z.boolean().optional(),
   webSearch: z
     .object({
       provider: settingsSchema.shape.webSearch.shape.provider.optional(),
