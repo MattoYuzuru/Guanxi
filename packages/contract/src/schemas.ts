@@ -99,6 +99,170 @@ export const modelCapabilitySchema = z.enum([
 ])
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>
 
+export const modelReferenceSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('canonical'),
+      provider: z.literal('ollama'),
+      original: z.string().min(1),
+      normalized: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      provider: z.literal('ollama'),
+      original: z.string().nullable(),
+      normalized: z.null(),
+      reason: z.enum(['legacy_response', 'invalid_reference']),
+    })
+    .strict(),
+])
+export type ModelReference = z.infer<typeof modelReferenceSchema>
+
+export const modelArtifactIdentitySchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('exact_digest'), digest: z.string().min(1) }).strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      digest: z.null(),
+      reason: z.enum(['legacy_response', 'digest_not_reported', 'digest_malformed']),
+    })
+    .strict(),
+])
+export type ModelArtifactIdentity = z.infer<typeof modelArtifactIdentitySchema>
+
+export const modelRuntimeFingerprintSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('sourced'),
+      runtime: z.literal('ollama'),
+      version: z.string().min(1),
+      source: z.literal('ollama_api_version'),
+      observedAt: z.string().datetime(),
+      confidence: z.literal('observed'),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      runtime: z.literal('ollama'),
+      version: z.null(),
+      source: z.enum(['legacy_response', 'runtime_unavailable']),
+      observedAt: z.string().datetime(),
+      confidence: z.literal('unknown'),
+    })
+    .strict(),
+])
+export type ModelRuntimeFingerprint = z.infer<typeof modelRuntimeFingerprintSchema>
+
+export const modelEvidenceBasisSchema = z
+  .object({
+    reference: modelReferenceSchema,
+    artifact: modelArtifactIdentitySchema,
+    runtime: modelRuntimeFingerprintSchema,
+  })
+  .strict()
+export type ModelEvidenceBasis = z.infer<typeof modelEvidenceBasisSchema>
+
+export const modelCapabilityDeclarationSchema = z
+  .object({
+    capabilities: z.array(modelCapabilitySchema),
+    source: z.enum(['ollama_api_tags', 'ollama_api_show']),
+    observedAt: z.string().datetime(),
+    confidence: z.literal('declared'),
+    basis: modelEvidenceBasisSchema,
+  })
+  .strict()
+export type ModelCapabilityDeclaration = z.infer<typeof modelCapabilityDeclarationSchema>
+
+const modelCapabilityEvidenceBaseSchema = z.object({
+  observedAt: z.string().datetime(),
+  declarations: z.array(modelCapabilityDeclarationSchema),
+})
+
+export const modelCapabilityEvidenceSchema = z.discriminatedUnion('state', [
+  modelCapabilityEvidenceBaseSchema
+    .extend({ state: z.literal('declared'), reason: z.null() })
+    .strict(),
+  modelCapabilityEvidenceBaseSchema
+    .extend({
+      state: z.literal('degraded'),
+      reason: z.enum([
+        'conflicting_provider_declarations',
+        'provider_field_missing',
+        'provider_malformed',
+        'provider_unavailable',
+      ]),
+    })
+    .strict(),
+  modelCapabilityEvidenceBaseSchema
+    .extend({
+      state: z.literal('unknown'),
+      reason: z.enum([
+        'legacy_response',
+        'field_not_reported',
+        'provider_malformed',
+        'provider_unavailable',
+      ]),
+    })
+    .strict(),
+])
+export type ModelCapabilityEvidence = z.infer<typeof modelCapabilityEvidenceSchema>
+
+export const modelInstallationEvidenceSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('installed'),
+      source: z.literal('ollama_api_tags'),
+      observedAt: z.string().datetime(),
+      confidence: z.literal('observed'),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      source: z.literal('legacy_response'),
+      observedAt: z.string().datetime(),
+      confidence: z.literal('unknown'),
+    })
+    .strict(),
+])
+export type ModelInstallationEvidence = z.infer<typeof modelInstallationEvidenceSchema>
+
+export const installedModelDescriptorSchema = z
+  .object({
+    reference: modelReferenceSchema,
+    artifact: modelArtifactIdentitySchema,
+    installation: modelInstallationEvidenceSchema,
+    capabilities: modelCapabilityEvidenceSchema,
+  })
+  .strict()
+export type InstalledModelDescriptor = z.infer<typeof installedModelDescriptorSchema>
+
+export const legacyInstalledModelDescriptor: InstalledModelDescriptor = {
+  reference: {
+    state: 'unknown',
+    provider: 'ollama',
+    original: null,
+    normalized: null,
+    reason: 'legacy_response',
+  },
+  artifact: { state: 'unknown', digest: null, reason: 'legacy_response' },
+  installation: {
+    state: 'unknown',
+    source: 'legacy_response',
+    observedAt: '1970-01-01T00:00:00.000Z',
+    confidence: 'unknown',
+  },
+  capabilities: {
+    state: 'unknown',
+    reason: 'legacy_response',
+    observedAt: '1970-01-01T00:00:00.000Z',
+    declarations: [],
+  },
+}
+
 export const localModelSchema = z.object({
   name: z.string(),
   digest: z.string(),
@@ -118,6 +282,8 @@ export const localModelSchema = z.object({
     confidence: 'unknown',
   }),
   capabilities: z.array(modelCapabilitySchema),
+  /** Additive installed identity and source-preserving capability declarations. */
+  descriptor: installedModelDescriptorSchema.optional().default(legacyInstalledModelDescriptor),
   /** true — модель считается в облаке Ollama, локальная память не тратится. */
   isCloud: z.boolean(),
   fit: fitVerdictSchema,

@@ -102,6 +102,35 @@ const modelDetailsSchema = z
   })
   .passthrough()
 
+const tagsResponseSchema = z.object({
+  models: z.array(
+    z
+      .object({
+        name: z.string().min(1),
+        model: z.string().catch(''),
+        modified_at: z.string().catch(''),
+        size: z.number().int().nonnegative().catch(0),
+        digest: z.string().catch(''),
+        details: modelDetailsSchema.catch({}),
+        capabilities: z.unknown().optional(),
+      })
+      .passthrough(),
+  ),
+})
+
+const showResponseSchema = z
+  .object({
+    license: z.string().optional().catch(undefined),
+    modelfile: z.string().optional().catch(undefined),
+    parameters: z.string().optional().catch(undefined),
+    template: z.string().optional().catch(undefined),
+    system: z.string().optional().catch(undefined),
+    details: modelDetailsSchema.optional().catch(undefined),
+    model_info: z.record(z.unknown()).optional().catch(undefined),
+    capabilities: z.unknown().optional(),
+  })
+  .passthrough()
+
 const psResponseSchema = z.object({
   models: z.array(
     z
@@ -364,7 +393,10 @@ export class OllamaClient {
   }
 
   async tags(signal?: AbortSignal): Promise<OllamaTagsResponse> {
-    return this.request<OllamaTagsResponse>('/api/tags', signal ? { signal } : {})
+    const result = await this.request<unknown>('/api/tags', signal ? { signal } : {})
+    const parsed = tagsResponseSchema.safeParse(result)
+    if (!parsed.success) throw new OllamaProtocolError('/api/tags')
+    return parsed.data satisfies OllamaTagsResponse
   }
 
   async ps(signal?: AbortSignal): Promise<OllamaPsResponse> {
@@ -378,11 +410,14 @@ export class OllamaClient {
   }
 
   async show(name: string, signal?: AbortSignal): Promise<OllamaShowResponse> {
-    return this.request<OllamaShowResponse>('/api/show', {
+    const result = await this.request<unknown>('/api/show', {
       method: 'POST',
       body: JSON.stringify({ model: name }),
       ...(signal ? { signal } : {}),
     })
+    const parsed = showResponseSchema.safeParse(result)
+    if (!parsed.success) throw new OllamaProtocolError('/api/show')
+    return parsed.data satisfies OllamaShowResponse
   }
 
   async deleteModel(name: string): Promise<void> {

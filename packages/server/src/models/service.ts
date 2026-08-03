@@ -8,10 +8,13 @@
 import {
   DEFAULT_NUM_CTX,
   type HardwareInfo,
+  type InstalledModelDescriptor,
   type LocalModel,
+  type ModelCapabilityDeclaration,
   type ModelContextLimit,
   type ModelCapability,
   type ModelDetail,
+  type ModelEvidenceBasis,
   type RunningModel,
 } from '@alamo/contract'
 import { computeFit } from '../hardware/fit.ts'
@@ -57,9 +60,22 @@ export class ModelContextLimitExceededError extends Error {
   }
 }
 
-function toCapabilities(raw: readonly string[] | undefined): ModelCapability[] {
-  if (!raw) return []
+function toCapabilities(raw: unknown): ModelCapability[] {
+  if (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string')) return []
   return raw.filter((item): item is ModelCapability => KNOWN_CAPABILITIES.has(item as ModelCapability))
+}
+
+type CapabilityField =
+  | { state: 'present'; capabilities: ModelCapability[] }
+  | { state: 'missing' }
+  | { state: 'malformed' }
+
+function capabilityField(raw: unknown): CapabilityField {
+  if (raw === undefined) return { state: 'missing' }
+  if (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string')) {
+    return { state: 'malformed' }
+  }
+  return { state: 'present', capabilities: toCapabilities(raw) }
 }
 
 /** Облачные модели помечены суффиксом тега. Локальную память они не расходуют. */
@@ -116,9 +132,156 @@ function contextLimitOf(
   }
 }
 
-interface ModelDetailsObservation {
-  details: OllamaShowResponse
+type ModelDetailsObservation =
+  | { state: 'available'; details: OllamaShowResponse; observedAt: string }
+  | { state: 'unavailable'; observedAt: string }
+
+interface RuntimeVersionObservation {
+  version: string | null
   observedAt: string
+}
+
+function evidenceBasis(
+  entry: OllamaTagsEntry,
+  runtime: RuntimeVersionObservation,
+): ModelEvidenceBasis {
+  const normalized = normalizeOllamaModelReference(entry.name)
+  const digest = entry.digest.trim()
+  return {
+    reference: normalized
+      ? {
+          state: 'canonical',
+          provider: 'ollama',
+          original: entry.name,
+          normalized,
+        }
+      : {
+          state: 'unknown',
+          provider: 'ollama',
+          original: entry.name,
+          normalized: null,
+          reason: 'invalid_reference',
+        },
+    artifact:
+      digest.length > 0
+        ? { state: 'exact_digest', digest }
+        : {
+            state: 'unknown',
+            digest: null,
+            reason: entry.digest.length === 0 ? 'digest_not_reported' : 'digest_malformed',
+          },
+    runtime:
+      runtime.version === null
+        ? {
+            state: 'unknown',
+            runtime: 'ollama',
+            version: null,
+            source: 'runtime_unavailable',
+            observedAt: runtime.observedAt,
+            confidence: 'unknown',
+          }
+        : {
+            state: 'sourced',
+            runtime: 'ollama',
+            version: runtime.version,
+            source: 'ollama_api_version',
+            observedAt: runtime.observedAt,
+            confidence: 'observed',
+          },
+  }
+}
+
+function capabilityDeclaration(
+  field: Extract<CapabilityField, { state: 'present' }>,
+  source: ModelCapabilityDeclaration['source'],
+  observedAt: string,
+  basis: ModelEvidenceBasis,
+): ModelCapabilityDeclaration {
+  return {
+    capabilities: field.capabilities,
+    source,
+    observedAt,
+    confidence: 'declared',
+    basis,
+  }
+}
+
+function sameCapabilities(left: ModelCapability[], right: ModelCapability[]): boolean {
+  return (
+    left.length === right.length &&
+    [...left].sort().every((capability, index) => capability === [...right].sort()[index])
+  )
+}
+
+function installedDescriptor(
+  entry: OllamaTagsEntry,
+  tagsObservedAt: string,
+  shown: ModelDetailsObservation,
+  runtime: RuntimeVersionObservation,
+): InstalledModelDescriptor {
+  const basis = evidenceBasis(entry, runtime)
+  const tagged = capabilityField(entry.capabilities)
+  const shownField =
+    shown.state === 'available' ? capabilityField(shown.details.capabilities) : null
+  const declarations: ModelCapabilityDeclaration[] = []
+  if (tagged.state === 'present') {
+    declarations.push(
+      capabilityDeclaration(tagged, 'ollama_api_tags', tagsObservedAt, basis),
+    )
+  }
+  if (shownField?.state === 'present') {
+    declarations.push(
+      capabilityDeclaration(shownField, 'ollama_api_show', shown.observedAt, basis),
+    )
+  }
+  const observedAt =
+    shown.observedAt > tagsObservedAt ? shown.observedAt : tagsObservedAt
+
+  let capabilities: InstalledModelDescriptor['capabilities']
+  if (tagged.state === 'malformed' || shownField?.state === 'malformed') {
+    capabilities = declarations.length > 0
+      ? { state: 'degraded', reason: 'provider_malformed', observedAt, declarations }
+      : { state: 'unknown', reason: 'provider_malformed', observedAt, declarations }
+  } else if (shown.state === 'unavailable') {
+    capabilities = declarations.length > 0
+      ? { state: 'degraded', reason: 'provider_unavailable', observedAt, declarations }
+      : { state: 'unknown', reason: 'provider_unavailable', observedAt, declarations }
+  } else if (tagged.state === 'present' && shownField?.state === 'present') {
+    capabilities = sameCapabilities(tagged.capabilities, shownField.capabilities)
+      ? { state: 'declared', reason: null, observedAt, declarations }
+      : {
+          state: 'degraded',
+          reason: 'conflicting_provider_declarations',
+          observedAt,
+          declarations,
+        }
+  } else if (declarations.length > 0) {
+    capabilities = {
+      state: 'degraded',
+      reason: 'provider_field_missing',
+      observedAt,
+      declarations,
+    }
+  } else {
+    capabilities = {
+      state: 'unknown',
+      reason: 'field_not_reported',
+      observedAt,
+      declarations,
+    }
+  }
+
+  return {
+    reference: basis.reference,
+    artifact: basis.artifact,
+    installation: {
+      state: 'installed',
+      source: 'ollama_api_tags',
+      observedAt: tagsObservedAt,
+      confidence: 'observed',
+    },
+    capabilities,
+  }
 }
 
 async function mapConcurrent<Input, Output>(
@@ -162,42 +325,47 @@ export class ModelService {
     name: string,
     digest: string,
     signal?: AbortSignal,
-  ): Promise<ModelDetailsObservation | null> {
+  ): Promise<ModelDetailsObservation> {
     const normalized = normalizeOllamaModelReference(name)
-    if (!normalized) return null
+    if (!normalized) {
+      return { state: 'unavailable', observedAt: new Date().toISOString() }
+    }
     const cached = this.showCache.get(normalized)
     if (cached?.digest === digest) {
       this.showCache.delete(normalized)
       this.showCache.set(normalized, cached)
-      return cached
+      return { state: 'available', ...cached }
     }
     if (cached) this.showCache.delete(normalized)
 
     try {
       const shown = await this.client.show(name, signal)
       const observedAt = new Date().toISOString()
-      const observation = { details: shown, observedAt }
-      if (shown.model_info) {
-        this.showCache.set(normalized, { digest, ...observation })
-        while (this.showCache.size > MODEL_SHOW_CACHE_MAX_ENTRIES) {
-          const oldest = this.showCache.keys().next().value
-          if (oldest === undefined) break
-          this.showCache.delete(oldest)
-        }
+      const observation = { state: 'available' as const, details: shown, observedAt }
+      this.showCache.set(normalized, { digest, details: shown, observedAt })
+      while (this.showCache.size > MODEL_SHOW_CACHE_MAX_ENTRIES) {
+        const oldest = this.showCache.keys().next().value
+        if (oldest === undefined) break
+        this.showCache.delete(oldest)
       }
       return observation
     } catch (error) {
       if (signal?.aborted) throw error
-      return null
+      return { state: 'unavailable', observedAt: new Date().toISOString() }
     }
   }
 
-  private async runtimeVersionOrNull(signal?: AbortSignal): Promise<string | null> {
+  private async runtimeVersionObservation(
+    signal?: AbortSignal,
+  ): Promise<RuntimeVersionObservation> {
     try {
-      return await this.client.version(signal)
+      return {
+        version: await this.client.version(signal),
+        observedAt: new Date().toISOString(),
+      }
     } catch (error) {
       if (signal?.aborted) throw error
-      return null
+      return { version: null, observedAt: new Date().toISOString() }
     }
   }
 
@@ -225,8 +393,11 @@ export class ModelService {
    * и `/api/ps` однозначно доказывают один и тот же exact artifact.
    */
   async listLocal(contextLength: number, signal?: AbortSignal): Promise<LocalModel[]> {
-    const [tags, runningResult, versionResult] = await Promise.all([
-      this.client.tags(signal),
+    const [tagsObservation, runningResult, runtimeVersionObservation] = await Promise.all([
+      this.client.tags(signal).then((tags) => ({
+        tags,
+        observedAt: new Date().toISOString(),
+      })),
       // Installed state belongs to /api/tags. A failed /api/ps sample removes
       // optional loaded-instance calibration, but must not erase installed rows.
       this.ps(signal).then(
@@ -236,11 +407,11 @@ export class ModelService {
           return { state: 'unavailable' as const, running: [] as RunningModel[] }
         },
       ),
-      this.runtimeVersionOrNull(signal),
+      this.runtimeVersionObservation(signal),
     ])
+    const { tags, observedAt } = tagsObservation
     const running = runningResult.running
-    const runtimeVersion = versionResult
-    const observedAt = new Date().toISOString()
+    const runtimeVersion = runtimeVersionObservation.version
     const installed = tags.models.map((entry) => ({ name: entry.name, digest: entry.digest }))
     const installedReferenceCounts = new Map<string, number>()
     for (const entry of installed) {
@@ -296,16 +467,16 @@ export class ModelService {
                 version: 1 as const,
                 reason: 'installed_reference_ambiguous' as const,
               }
-        const shownObservation = isCloud
-          ? null
+        const shownObservation: ModelDetailsObservation = isCloud
+          ? { state: 'unavailable', observedAt }
           : await this.modelDetails(entry.name, entry.digest, signal)
-        const shown = shownObservation?.details ?? null
+        const shown = shownObservation.state === 'available' ? shownObservation.details : null
         const info = shown?.model_info ?? null
         const contextLimit = contextLimitOf(
           entry,
           shown,
           observedAt,
-          shownObservation?.observedAt,
+          shownObservation.observedAt,
         )
 
         return {
@@ -320,6 +491,12 @@ export class ModelService {
             contextLimit.state === 'declared' ? contextLimit.value : contextLength,
           contextLimit,
           capabilities: toCapabilities(entry.capabilities),
+          descriptor: installedDescriptor(
+            entry,
+            observedAt,
+            shownObservation,
+            runtimeVersionObservation,
+          ),
           isCloud,
           fit: computeFit({
             contextLength,
@@ -348,16 +525,21 @@ export class ModelService {
     contextLength?: number,
     signal?: AbortSignal,
   ): Promise<ModelDetail | null> {
-    const [tags, runtimeVersion] = await Promise.all([
-      this.client.tags(signal),
-      this.runtimeVersionOrNull(signal),
+    const [tagsObservation, runtimeVersionObservation] = await Promise.all([
+      this.client.tags(signal).then((tags) => ({
+        tags,
+        observedAt: new Date().toISOString(),
+      })),
+      this.runtimeVersionObservation(signal),
     ])
+    const { tags, observedAt } = tagsObservation
+    const runtimeVersion = runtimeVersionObservation.version
     const exactEntries = tags.models.filter((model) => model.name === name)
     if (exactEntries.length !== 1) return null
     const entry = exactEntries[0]!
 
     const shownObservation = await this.modelDetails(name, entry.digest, signal)
-    const shown = shownObservation?.details ?? null
+    const shown = shownObservation.state === 'available' ? shownObservation.details : null
     const info = shown?.model_info ?? null
     const isCloud = isCloudModel(name)
 
@@ -384,7 +566,7 @@ export class ModelService {
       entry,
       shown,
       new Date().toISOString(),
-      shownObservation?.observedAt,
+      shownObservation.observedAt,
     )
     if (
       contextLength !== undefined &&
@@ -420,6 +602,12 @@ export class ModelService {
       contextLength: legacyContextLength,
       contextLimit,
       capabilities: toCapabilities(entry.capabilities ?? shown?.capabilities),
+      descriptor: installedDescriptor(
+        entry,
+        observedAt,
+        shownObservation,
+        runtimeVersionObservation,
+      ),
       isCloud,
       fit: fitFor(selectedContext),
       modelInfo: (info ?? {}) as ModelDetail['modelInfo'],
@@ -437,14 +625,15 @@ export class ModelService {
     const exactEntries = tags.models.filter((model) => model.name === name)
     if (exactEntries.length !== 1) return null
     const entry = exactEntries[0]!
-    const shownObservation = isCloudModel(name)
-      ? null
+    const tagsObservedAt = new Date().toISOString()
+    const shownObservation: ModelDetailsObservation = isCloudModel(name)
+      ? { state: 'unavailable', observedAt: tagsObservedAt }
       : await this.modelDetails(name, entry.digest, signal)
     return contextLimitOf(
       entry,
-      shownObservation?.details ?? null,
-      new Date().toISOString(),
-      shownObservation?.observedAt,
+      shownObservation.state === 'available' ? shownObservation.details : null,
+      tagsObservedAt,
+      shownObservation.observedAt,
     )
   }
 
@@ -504,7 +693,7 @@ export class ModelService {
     const [runningRows, tags, runtimeVersion] = await Promise.all([
       this.ps(signal),
       this.client.tags(signal),
-      this.runtimeVersionOrNull(signal),
+      this.runtimeVersionObservation(signal).then((observation) => observation.version),
     ])
     const normalized = normalizeOllamaModelReference(name)
     const matchingRunning = runningRows.filter(

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { HardwareInfo, LocalModel } from '@alamo/contract'
+import {
+  legacyInstalledModelDescriptor,
+  type HardwareInfo,
+  type LocalModel,
+} from '@alamo/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { createApp } from '../src/app.ts'
@@ -559,6 +563,7 @@ describe('exclusive inference routes', () => {
         confidence: 'declared',
       },
       capabilities: ['completion'],
+      descriptor: legacyInstalledModelDescriptor,
       isCloud: false,
       fit: {
         level: 'green',

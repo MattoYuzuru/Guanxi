@@ -38,7 +38,9 @@ export function modelsRoutes(app: AppContext): Hono {
     const contextLength = query.data.contextLength ?? DEFAULT_NUM_CTX
 
     try {
-      return context.json({ models: await app.models().listLocal(contextLength) })
+      return context.json({
+        models: await app.models().listLocal(contextLength, context.req.raw.signal),
+      })
     } catch (error) {
       return fail(context, error)
     }

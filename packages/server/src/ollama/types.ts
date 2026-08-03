@@ -25,7 +25,7 @@ export interface OllamaTagsEntry {
   size: number
   digest: string
   details: OllamaModelDetails
-  capabilities?: string[]
+  capabilities?: unknown
 }
 
 export interface OllamaTagsResponse {
@@ -61,7 +61,7 @@ export interface OllamaShowResponse {
    * `qwen2.attention.head_count_kv`. Из них считается размер KV-кэша.
    */
   model_info?: Record<string, unknown>
-  capabilities?: string[]
+  capabilities?: unknown
 }
 
 export interface OllamaToolCall {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  legacyInstalledModelDescriptor,
   prewarmModelResponse,
   type LocalModel,
   type PrewarmModelBody,
@@ -51,6 +52,7 @@ function model(overrides: Partial<LocalModel> = {}): LocalModel {
       confidence: 'declared',
     },
     capabilities: ['completion'],
+    descriptor: legacyInstalledModelDescriptor,
     isCloud: false,
     fit: {
       level: 'green',
