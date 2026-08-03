@@ -36,7 +36,7 @@ exit gate ROADMAP проверен целиком.
 | P1-F Resource Governor foundation       | independently verified | `a0bc047`, `ff96dc0`; 72 targeted, 10x cleanup, all gates           |
 | P1-G Runtime `/api/ps` reconciliation   | independently verified | `b8328bd`, `bd0d7a1`, `40a0de7`, `f53a868`; 82 targeted, all gates  |
 | P1-H Apple host telemetry/current fit   | independently verified | `df4d156`..`66c23c0`; 92 targeted, all gates                        |
-| P1-I Read-only Runtime Bar projection   | independently verified | `6c297ce`, `151fe07`; 13 component, 10 browser, all gates           |
+| P1-I Read-only Runtime Bar projection   | independently verified | `6c297ce`..`11e516b`; 13 component, 10 browser, all gates           |
 
 P1-A–P1-I реализуют additive contract, migrations 4–5, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один

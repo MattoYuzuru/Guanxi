@@ -27,7 +27,7 @@ slice `P1-J resource conflict/queue action UX`. Не создавай subagents 
 - P1-F Governor implementation/evidence: `a0bc047`, `ff96dc0`;
 - P1-G runtime reconciliation: `b8328bd`, `bd0d7a1`, `40a0de7`, `f53a868`;
 - P1-H telemetry/fit/tests/docs: `df4d156`..`66c23c0`;
-- P1-I Runtime Bar behavior/tests: `6c297ce`, `151fe07`;
+- P1-I Runtime Bar behavior/tests/review fix: `6c297ce`, `151fe07`, `11e516b`;
 - P1-I docs/status/handoff: commit непосредственно перед этим prompt.
 
 Не откатывай P0 Error Boundaries, truthful Message terminal CAS, persisted
