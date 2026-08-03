@@ -1,13 +1,20 @@
 import type {
   ListRunningResponse,
   RunningModel,
+  RuntimeCurrentFit,
   RuntimeGovernorSnapshot,
+  RuntimeHostTelemetry,
   RuntimeModelObservation,
   RuntimeReconciliationDecision,
   RuntimeSnapshot,
   RuntimeSourceErrorCode,
   RuntimeSourceHealth,
 } from '@alamo/contract'
+import type { HostTelemetry } from '../hardware/telemetry.ts'
+import {
+  alignHostTelemetryObservedAt,
+  unavailableHostTelemetry,
+} from '../hardware/telemetry.ts'
 import type { ModelService } from '../models/service.ts'
 import {
   OllamaError,
@@ -33,6 +40,7 @@ interface ReconciliationOutcome {
 
 export interface RuntimeReconciliationOptions {
   governor: ResourceGovernor
+  hostTelemetry: HostTelemetry
   models(): ModelService
   now?: () => Date
 }
@@ -173,6 +181,7 @@ function decision(
 function reconcileModels(
   running: readonly RunningModel[],
   governor: RuntimeGovernorSnapshot,
+  host: RuntimeHostTelemetry,
   observedAt: string,
 ): { models: RuntimeModelObservation[]; decisions: RuntimeReconciliationDecision[] } {
   const active = governor.activeLease
@@ -180,6 +189,11 @@ function reconcileModels(
     ? normalizeOllamaModelReference(active.model.name)
     : null
   let activeMatched = false
+  const normalizedCounts = new Map<string, number>()
+  for (const raw of running) {
+    const normalized = normalizeOllamaModelReference(raw.name)
+    if (normalized) normalizedCounts.set(normalized, (normalizedCounts.get(normalized) ?? 0) + 1)
+  }
   const decisions: RuntimeReconciliationDecision[] = []
   const models = running.map((raw): RuntimeModelObservation => {
     const normalizedName = normalizeOllamaModelReference(raw.name)
@@ -203,6 +217,15 @@ function reconcileModels(
         ? 'exact_normalized_model_reference'
         : 'runtime_observation_only',
       artifactIdentity: 'unknown',
+      currentFit: currentFitFor({
+        model: raw,
+        active: matched ? active : null,
+        host,
+        observedAt,
+        ambiguousReference: Boolean(
+          normalizedName && (normalizedCounts.get(normalizedName) ?? 0) > 1,
+        ),
+      }),
     }
     decisions.push(
       decision({
@@ -238,6 +261,63 @@ function reconcileModels(
   return { models, decisions }
 }
 
+function currentFitFor(input: {
+  model: RunningModel
+  active: RuntimeGovernorSnapshot['activeLease']
+  host: RuntimeHostTelemetry
+  observedAt: string
+  ambiguousReference: boolean
+}): RuntimeCurrentFit {
+  const base = {
+    observedAt: input.observedAt,
+    requestedContext: input.active?.requestedContext ?? null,
+    observedContext: input.model.contextLength,
+    runtimeAllocationBytes: input.model.sizeBytes,
+    runtimeAcceleratorAllocationBytes: input.model.sizeVramBytes,
+    pressureLevel: input.host.sample.pressure.level,
+    futureAdmissionGuarantee: false as const,
+  }
+  const unknown = (reason: Exclude<RuntimeCurrentFit['reason'], 'observed_current_residency'>) => ({
+    ...base,
+    state: 'unknown' as const,
+    basis: 'insufficient_evidence' as const,
+    reason,
+  })
+
+  if (!input.active) return unknown('runtime_owner_unknown')
+  if (input.ambiguousReference) return unknown('runtime_reference_ambiguous')
+  if (input.model.digest === null) return unknown('runtime_digest_missing')
+  if (input.model.contextLength === null) return unknown('runtime_context_missing')
+  if (input.active.requestedContext !== input.model.contextLength) {
+    return unknown('runtime_context_mismatch')
+  }
+  if (
+    input.host.state === 'unsupported' ||
+    input.host.profile.platform !== 'darwin' ||
+    input.host.profile.arch !== 'arm64' ||
+    !input.host.profile.unifiedMemory
+  ) {
+    return unknown('host_unsupported')
+  }
+  if (input.host.state === 'unavailable') return unknown('host_unavailable')
+  if (input.host.state === 'partial') return unknown('host_partial')
+  if (input.host.sample.pressure.level === 'unknown') return unknown('host_pressure_unknown')
+  if (input.host.sample.pressure.level !== 'normal') return unknown('host_pressure_elevated')
+  if (
+    input.host.sample.availableMemoryBytes.bytes === null ||
+    input.host.sample.availableMemoryBytes.confidence !== 'observed'
+  ) {
+    return unknown('host_available_memory_unknown')
+  }
+
+  return {
+    ...base,
+    state: 'observed',
+    basis: 'current_loaded_configuration',
+    reason: 'observed_current_residency',
+  }
+}
+
 /**
  * One sampled application boundary for public runtime projections.
  *
@@ -248,12 +328,14 @@ function reconcileModels(
  */
 export class RuntimeReconciliationService {
   private readonly governor: ResourceGovernor
+  private readonly hostTelemetry: HostTelemetry
   private readonly models: () => ModelService
   private readonly now: () => Date
   private inFlight: Promise<ReconciliationOutcome> | null = null
 
   constructor(options: RuntimeReconciliationOptions) {
     this.governor = options.governor
+    this.hostTelemetry = options.hostTelemetry
     this.models = options.models
     this.now = options.now ?? (() => new Date())
   }
@@ -315,29 +397,37 @@ export class RuntimeReconciliationService {
   }
 
   private async reconcileOnce(): Promise<ReconciliationOutcome> {
-    let running: RunningModel[]
-    try {
-      running = await this.models().ps()
-    } catch (error) {
-      const observedAt = this.now().toISOString()
-      const governor = publicGovernorSnapshot(this.governor.snapshot(observedAt))
+    const [runtimeResult, hostResult] = await Promise.allSettled([
+      this.models().ps(),
+      this.hostTelemetry.sample(),
+    ])
+    const observedAt = this.now().toISOString()
+    const host = alignHostTelemetryObservedAt(
+      hostResult.status === 'fulfilled'
+        ? hostResult.value
+        : unavailableHostTelemetry(this.hostTelemetry.profile, observedAt),
+      observedAt,
+    )
+    const governor = publicGovernorSnapshot(this.governor.snapshot(observedAt))
+
+    if (runtimeResult.status === 'rejected') {
       return {
         snapshot: {
           observedAt,
-          source: sourceFailure(error, observedAt),
+          source: sourceFailure(runtimeResult.reason, observedAt),
+          host,
           governor,
           models: null,
           decisions: [decision({ code: 'source_failure' })],
         },
         compatibilityModels: null,
-        error,
+        error: runtimeResult.reason,
       }
     }
 
-    const observedAt = this.now().toISOString()
+    const running = runtimeResult.value
     const compatibilityModels = running.map((model) => ({ ...model, observedAt }))
-    const governor = publicGovernorSnapshot(this.governor.snapshot(observedAt))
-    const reconciled = reconcileModels(compatibilityModels, governor, observedAt)
+    const reconciled = reconcileModels(compatibilityModels, governor, host, observedAt)
     return {
       snapshot: {
         observedAt,
@@ -347,6 +437,7 @@ export class RuntimeReconciliationService {
           observedAt,
           errorCode: null,
         },
+        host,
         governor,
         models: reconciled.models,
         decisions: reconciled.decisions,

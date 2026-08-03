@@ -6,6 +6,7 @@ import { TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
+import { UnsupportedHostTelemetry } from '../src/hardware/telemetry.ts'
 import { JobService } from '../src/jobs/service.ts'
 import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import type { ModelService } from '../src/models/service.ts'
@@ -124,6 +125,7 @@ function testContext(options: {
     approvals: new ApprovalGate(),
     tracker: new PrefillTracker(),
     hardware: HARDWARE,
+    hostTelemetry: new UnsupportedHostTelemetry(HARDWARE),
     appVersion: 'inference-fixture',
     activeTurns: new Map(),
     governor: new ResourceGovernor(),
@@ -138,6 +140,7 @@ function testContext(options: {
     ...base,
     runtime: new RuntimeReconciliationService({
       governor: base.governor,
+      hostTelemetry: base.hostTelemetry,
       models: base.models,
     }),
   }

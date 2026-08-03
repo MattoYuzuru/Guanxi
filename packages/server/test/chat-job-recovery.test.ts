@@ -16,6 +16,7 @@ import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
+import { UnsupportedHostTelemetry } from '../src/hardware/telemetry.ts'
 import { ChatJobExecutionOwner } from '../src/jobs/chat-execution.ts'
 import {
   ChatRecoveryError,
@@ -169,6 +170,7 @@ function runtimeFixture(
     approvals: new ApprovalGate(),
     tracker: new PrefillTracker(),
     hardware: HARDWARE,
+    hostTelemetry: new UnsupportedHostTelemetry(HARDWARE),
     appVersion: 'recovery-fixture',
     activeTurns: new Map<string, AbortController>(),
     governor: new ResourceGovernor(),
@@ -188,6 +190,7 @@ function runtimeFixture(
     ...base,
     runtime: new RuntimeReconciliationService({
       governor: base.governor,
+      hostTelemetry: base.hostTelemetry,
       models: base.models,
     }),
   }

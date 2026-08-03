@@ -9,6 +9,7 @@ import type { HardwareInfo } from '@alamo/contract'
 import { ApprovalGate } from './agent/approvals.ts'
 import { PrefillTracker } from './context/usage.ts'
 import { probeHardware } from './hardware/probe.ts'
+import { createHostTelemetry, type HostTelemetry } from './hardware/telemetry.ts'
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { JobService } from './jobs/service.ts'
@@ -44,6 +45,8 @@ export interface AppContext {
   approvals: ApprovalGate
   tracker: PrefillTracker
   hardware: HardwareInfo
+  /** One infrastructure boundary for sampled host facts; it has no admission side effects. */
+  hostTelemetry: HostTelemetry
   appVersion: string
   /**
    * Compatibility mirror for active Chat controllers. ChatJobExecutionOwner
@@ -67,6 +70,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
   const db = openDb(options.dbPath)
   try {
     const hardware = await probeHardware()
+    const hostTelemetry = createHostTelemetry(hardware)
 
     const settings = new SettingsStore(db, { ollamaHost: DEFAULT_OLLAMA_HOST })
     const calibration = new CalibrationStore(db)
@@ -93,7 +97,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
     const activeTurns = new Map<string, AbortController>()
     const governor = new ResourceGovernor()
-    const runtime = new RuntimeReconciliationService({ governor, models })
+    const runtime = new RuntimeReconciliationService({ governor, hostTelemetry, models })
     const jobService = new JobService(jobs)
     const base = {
       db,
@@ -106,6 +110,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       approvals: new ApprovalGate(),
       tracker: new PrefillTracker(),
       hardware,
+      hostTelemetry,
       appVersion: options.appVersion,
       activeTurns,
       governor,

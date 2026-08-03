@@ -1,5 +1,9 @@
 /**
- * Оценка «потянет ли железо» конкретную модель при заданном размере окна.
+ * Legacy catalog estimate for a model and context window.
+ *
+ * This helper intentionally retains `HardwareInfo.usableMemoryBytes` for the
+ * current Web contract. It is not the sampled P1-H current-fit projection and
+ * must not be used as observed host availability or pressure.
  *
  * Требуемая память = вес весов модели + KV-кэш. Второе линейно растёт с окном
  * контекста, и при 32k окне сопоставимо с самими весами, поэтому игнорировать его нельзя.

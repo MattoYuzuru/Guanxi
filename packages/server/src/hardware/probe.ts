@@ -11,13 +11,7 @@ import type { Accelerator, HardwareInfo } from '@alamo/contract'
 
 const execFileAsync = promisify(execFile)
 
-/**
- * Какую долю общей памяти реально может занять модель.
- *
- * На Apple Silicon память общая: macOS по умолчанию отдаёт GPU около 75%, но часть
- * съедает система и сам процесс Ollama, поэтому берём 70% — так вердикт не врёт
- * в оптимистичную сторону.
- */
+/** Legacy UI compatibility estimate, never current availability or pressure. */
 const UNIFIED_MEMORY_USABLE_FRACTION = 0.7
 
 /** На дискретной видеокарте почти вся видеопамять доступна, оставляем запас на драйвер. */

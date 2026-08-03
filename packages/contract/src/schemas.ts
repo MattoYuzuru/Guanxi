@@ -20,7 +20,7 @@ export const hardwareInfoSchema = z.object({
   cpuModel: z.string(),
   cpuCores: z.number().int(),
   totalMemoryBytes: z.number().int(),
-  /** Сколько реально доступно ускорителю. На Apple Silicon это доля unified memory. */
+  /** Legacy compatibility estimate; it is not current available/pressure telemetry. */
   usableMemoryBytes: z.number().int(),
   accelerator: acceleratorSchema,
   acceleratorName: z.string().nullable(),
@@ -123,7 +123,7 @@ export const runningModelSchema = z.object({
   name: z.string(),
   digest: z.string().nullable().optional().default(null),
   sizeBytes: z.number().int(),
-  /** Сколько ушло на ускоритель. */
+  /** Runtime-reported accelerator allocation; on Apple this is not discrete VRAM. */
   sizeVramBytes: z.number().int().nullable(),
   /** Legacy derived fields; current `/api/ps` projection leaves them null. */
   gpuPercent: z.number().int().nullable(),
@@ -175,6 +175,195 @@ export const runtimeSourceHealthSchema = z.discriminatedUnion('state', [
   }),
 ])
 export type RuntimeSourceHealth = z.infer<typeof runtimeSourceHealthSchema>
+
+/* ───────────────────────────── Host telemetry ───────────────────────────── */
+
+export const runtimeTelemetryConfidenceSchema = z.enum(['observed', 'estimated', 'unknown'])
+export type RuntimeTelemetryConfidence = z.infer<typeof runtimeTelemetryConfidenceSchema>
+
+export const runtimeMemoryFactSourceSchema = z.enum([
+  'node_os_totalmem',
+  'legacy_apple_unified_memory_70_percent',
+  'apple_vm_stat_pages_free',
+  'apple_host_available_memory',
+  'apple_host_gpu_free_memory',
+  'not_reported',
+])
+export type RuntimeMemoryFactSource = z.infer<typeof runtimeMemoryFactSourceSchema>
+
+export const runtimeMemoryFactBasisSchema = z.enum([
+  'total_unified_memory',
+  'legacy_compatibility_estimate_not_current_availability',
+  'system_free_pages_not_safe_capacity',
+  'system_available_memory_advisory',
+  'discrete_vram_not_applicable_to_apple_unified_memory',
+  'gpu_free_memory_not_reported',
+])
+export type RuntimeMemoryFactBasis = z.infer<typeof runtimeMemoryFactBasisSchema>
+
+export const runtimeMemoryFactSchema = z
+  .object({
+    bytes: z.number().int().nonnegative().nullable(),
+    source: runtimeMemoryFactSourceSchema,
+    observedAt: z.string().datetime(),
+    confidence: runtimeTelemetryConfidenceSchema,
+    basis: runtimeMemoryFactBasisSchema,
+  })
+  .strict()
+export type RuntimeMemoryFact = z.infer<typeof runtimeMemoryFactSchema>
+
+export const runtimeHostPressureLevelSchema = z.enum([
+  'normal',
+  'warning',
+  'critical',
+  'unknown',
+])
+export type RuntimeHostPressureLevel = z.infer<typeof runtimeHostPressureLevelSchema>
+
+export const runtimeHostPressureFactSchema = z
+  .object({
+    level: runtimeHostPressureLevelSchema,
+    source: z.enum(['apple_host_memory_pressure', 'not_reported']),
+    observedAt: z.string().datetime(),
+    confidence: runtimeTelemetryConfidenceSchema,
+    basis: z.enum(['system_memory_pressure', 'not_observed']),
+  })
+  .strict()
+export type RuntimeHostPressureFact = z.infer<typeof runtimeHostPressureFactSchema>
+
+export const runtimeHostTelemetryFieldSchema = z.enum([
+  'total_unified_memory_bytes',
+  'legacy_usable_memory_estimate_bytes',
+  'free_memory_bytes',
+  'available_memory_bytes',
+  'memory_pressure',
+  'discrete_vram_bytes',
+  'gpu_free_memory_bytes',
+])
+export type RuntimeHostTelemetryField = z.infer<typeof runtimeHostTelemetryFieldSchema>
+
+export const runtimeHostProfileSchema = z
+  .object({
+    platform: z.string().min(1),
+    arch: z.string().min(1),
+    accelerator: acceleratorSchema,
+    acceleratorName: z.string().nullable(),
+    unifiedMemory: z.boolean(),
+    source: z.literal('legacy_hardware_probe'),
+    observedAt: z.string().datetime(),
+    confidence: z.literal('observed'),
+    totalMemoryBytes: runtimeMemoryFactSchema,
+    legacyUsableMemoryBytes: runtimeMemoryFactSchema,
+    discreteVramBytes: runtimeMemoryFactSchema,
+  })
+  .strict()
+export type RuntimeHostProfile = z.infer<typeof runtimeHostProfileSchema>
+
+export const runtimeHostSampleSchema = z
+  .object({
+    source: z.enum(['apple_vm_stat', 'none']),
+    observedAt: z.string().datetime(),
+    freeMemoryBytes: runtimeMemoryFactSchema,
+    availableMemoryBytes: runtimeMemoryFactSchema,
+    pressure: runtimeHostPressureFactSchema,
+    gpuFreeMemoryBytes: runtimeMemoryFactSchema,
+  })
+  .strict()
+export type RuntimeHostSample = z.infer<typeof runtimeHostSampleSchema>
+
+export const runtimeHostTelemetrySchema = z
+  .object({
+    state: z.enum(['available', 'partial', 'unavailable', 'unsupported']),
+    observedAt: z.string().datetime(),
+    profile: runtimeHostProfileSchema,
+    sample: runtimeHostSampleSchema,
+    availableFields: z.array(runtimeHostTelemetryFieldSchema),
+    missingFields: z.array(runtimeHostTelemetryFieldSchema),
+    errorCode: z
+      .enum(['host_probe_timeout', 'host_probe_output_limit', 'host_probe_failed', 'host_probe_malformed'])
+      .nullable(),
+  })
+  .strict()
+  .superRefine((host, context) => {
+    const timestamps = [
+      host.profile.observedAt,
+      host.profile.totalMemoryBytes.observedAt,
+      host.profile.legacyUsableMemoryBytes.observedAt,
+      host.profile.discreteVramBytes.observedAt,
+      host.sample.observedAt,
+      host.sample.freeMemoryBytes.observedAt,
+      host.sample.availableMemoryBytes.observedAt,
+      host.sample.pressure.observedAt,
+      host.sample.gpuFreeMemoryBytes.observedAt,
+    ]
+    if (timestamps.some((observedAt) => observedAt !== host.observedAt)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['observedAt'],
+        message: 'host telemetry facts must share the host observedAt',
+      })
+    }
+    if ((host.state === 'available' || host.state === 'unsupported') && host.errorCode !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['errorCode'],
+        message: 'available and unsupported host telemetry cannot carry an error',
+      })
+    }
+    if (host.state === 'partial' && host.missingFields.length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['missingFields'],
+        message: 'partial host telemetry must enumerate missing fields',
+      })
+    }
+  })
+export type RuntimeHostTelemetry = z.infer<typeof runtimeHostTelemetrySchema>
+
+export const runtimeCurrentFitReasonSchema = z.enum([
+  'observed_current_residency',
+  'runtime_owner_unknown',
+  'runtime_reference_ambiguous',
+  'runtime_digest_missing',
+  'runtime_context_missing',
+  'runtime_context_mismatch',
+  'host_unsupported',
+  'host_unavailable',
+  'host_partial',
+  'host_available_memory_unknown',
+  'host_pressure_unknown',
+  'host_pressure_elevated',
+])
+export type RuntimeCurrentFitReason = z.infer<typeof runtimeCurrentFitReasonSchema>
+
+const runtimeCurrentFitObservationSchema = z.object({
+  observedAt: z.string().datetime(),
+  requestedContext: z.number().int().positive().nullable(),
+  observedContext: z.number().int().nonnegative().nullable(),
+  runtimeAllocationBytes: z.number().int().nonnegative().nullable(),
+  runtimeAcceleratorAllocationBytes: z.number().int().nonnegative().nullable(),
+  pressureLevel: runtimeHostPressureLevelSchema,
+  /** A current observation never promises that a future admission is safe. */
+  futureAdmissionGuarantee: z.literal(false),
+})
+
+export const runtimeCurrentFitSchema = z.discriminatedUnion('state', [
+  runtimeCurrentFitObservationSchema
+    .extend({
+      state: z.literal('observed'),
+      basis: z.literal('current_loaded_configuration'),
+      reason: z.literal('observed_current_residency'),
+    })
+    .strict(),
+  runtimeCurrentFitObservationSchema
+    .extend({
+      state: z.literal('unknown'),
+      basis: z.literal('insufficient_evidence'),
+      reason: runtimeCurrentFitReasonSchema.exclude(['observed_current_residency']),
+    })
+    .strict(),
+])
+export type RuntimeCurrentFit = z.infer<typeof runtimeCurrentFitSchema>
 
 export const runtimeResourceOwnerSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('job'), jobId: z.string().min(1) }).strict(),
@@ -292,6 +481,7 @@ export const runtimeModelObservationSchema = runningModelSchema
     ]),
     /** A lease has no digest, so `/api/ps` cannot prove artifact identity. */
     artifactIdentity: z.literal('unknown'),
+    currentFit: runtimeCurrentFitSchema,
   })
   .strict()
 export type RuntimeModelObservation = z.infer<typeof runtimeModelObservationSchema>
@@ -322,6 +512,7 @@ export const runtimeSnapshotSchema = z
   .object({
     observedAt: z.string().datetime(),
     source: runtimeSourceHealthSchema,
+    host: runtimeHostTelemetrySchema,
     governor: runtimeGovernorSnapshotSchema,
     /** `null` means the source failed; `[]` is a successful empty observation. */
     models: z.array(runtimeModelObservationSchema).nullable(),
@@ -330,8 +521,13 @@ export const runtimeSnapshotSchema = z
   .superRefine((snapshot, context) => {
     if (
       snapshot.observedAt !== snapshot.source.observedAt ||
+      snapshot.observedAt !== snapshot.host.observedAt ||
       snapshot.observedAt !== snapshot.governor.observedAt ||
-      snapshot.models?.some((model) => model.observedAt !== snapshot.observedAt)
+      snapshot.models?.some(
+        (model) =>
+          model.observedAt !== snapshot.observedAt ||
+          model.currentFit.observedAt !== snapshot.observedAt,
+      )
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
