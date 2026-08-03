@@ -300,6 +300,32 @@ const english = {
   'models.evidence.installed': 'Installed',
   'models.evidence.unknown': 'Unknown',
   'models.evidence.observed': 'Observed',
+  'models.evidence.validated': 'Validated',
+  'models.evidence.freshness': 'Evidence freshness',
+  'models.evidence.freshness.fresh': 'Fresh',
+  'models.evidence.freshness.staleOffline': 'Stale · offline',
+  'models.evidence.freshness.unknown': 'Freshness unknown',
+  'models.evidence.freshness.source.provider': 'Current Ollama response',
+  'models.evidence.freshness.source.process': 'Validated process cache',
+  'models.evidence.freshness.source.persistent': 'Validated persistent cache',
+  'models.evidence.freshness.source.none': 'No compatible source',
+  'models.evidence.freshness.explanation.provider':
+    'The exact identity was unchanged before and after the detail request.',
+  'models.evidence.freshness.explanation.cache':
+    'A compatible exact row is inside the 15-minute application freshness policy.',
+  'models.evidence.freshness.explanation.staleOffline':
+    'Ollama detail is unavailable. This exact cached declaration is within the 7-day stale window and may be outdated.',
+  'models.evidence.freshness.reason.legacy': 'This response has no freshness metadata.',
+  'models.evidence.freshness.reason.identityUnavailable':
+    'Exact reference, digest, or runtime identity is unavailable; no exact cache hit is allowed.',
+  'models.evidence.freshness.reason.identityChanged':
+    'The installed identity changed during collection; no exact cache row was written.',
+  'models.evidence.freshness.reason.providerUnavailable':
+    'Current Ollama detail is unavailable and no compatible stale fallback can be used.',
+  'models.evidence.freshness.reason.providerInvalid':
+    'Current provider data is malformed or conflicting and was not replaced by older cache data.',
+  'models.evidence.freshness.reason.cacheExpired':
+    'The compatible cached declaration is outside the 7-day stale window.',
   'models.evidence.state.declared': 'Declared',
   'models.evidence.state.degraded': 'Degraded',
   'models.evidence.state.unknown': 'Unknown',
@@ -315,6 +341,8 @@ const english = {
   'models.evidence.reason.matching': 'Documented provider declarations match.',
   'models.evidence.reason.identityAmbiguous':
     'The exact artifact is ambiguous, so name-based detail evidence was not assigned.',
+  'models.evidence.reason.identityChanged':
+    'The exact artifact changed during detail collection; cached detail evidence was not assigned.',
   'models.evidence.reason.conflict': 'Provider declarations conflict; no aggregate claim is selected.',
   'models.evidence.reason.missing': 'One provider source omitted the field.',
   'models.evidence.reason.malformed': 'Provider capability data was malformed.',
@@ -645,6 +673,32 @@ const russian: Messages = {
   'models.evidence.installed': 'Установлена',
   'models.evidence.unknown': 'Неизвестно',
   'models.evidence.observed': 'Наблюдалось',
+  'models.evidence.validated': 'Проверено',
+  'models.evidence.freshness': 'Свежесть evidence',
+  'models.evidence.freshness.fresh': 'Свежие данные',
+  'models.evidence.freshness.staleOffline': 'Устарело · offline',
+  'models.evidence.freshness.unknown': 'Свежесть неизвестна',
+  'models.evidence.freshness.source.provider': 'Текущий ответ Ollama',
+  'models.evidence.freshness.source.process': 'Проверенный process cache',
+  'models.evidence.freshness.source.persistent': 'Проверенный persistent cache',
+  'models.evidence.freshness.source.none': 'Совместимый источник отсутствует',
+  'models.evidence.freshness.explanation.provider':
+    'Exact identity не изменилась до и после detail request.',
+  'models.evidence.freshness.explanation.cache':
+    'Совместимая exact row находится внутри 15-минутной application freshness policy.',
+  'models.evidence.freshness.explanation.staleOffline':
+    'Ollama detail недоступен. Эта exact cached declaration находится внутри 7-дневного stale window и может устареть.',
+  'models.evidence.freshness.reason.legacy': 'В этом ответе нет freshness metadata.',
+  'models.evidence.freshness.reason.identityUnavailable':
+    'Exact reference, digest или runtime identity недоступны; exact cache hit запрещён.',
+  'models.evidence.freshness.reason.identityChanged':
+    'Installed identity изменилась во время сбора; exact cache row не записана.',
+  'models.evidence.freshness.reason.providerUnavailable':
+    'Текущий Ollama detail недоступен, совместимый stale fallback использовать нельзя.',
+  'models.evidence.freshness.reason.providerInvalid':
+    'Текущие provider data malformed или conflicting и не заменены старым cache.',
+  'models.evidence.freshness.reason.cacheExpired':
+    'Совместимая cached declaration находится вне 7-дневного stale window.',
   'models.evidence.state.declared': 'Объявлено',
   'models.evidence.state.degraded': 'Неполные данные',
   'models.evidence.state.unknown': 'Неизвестно',
@@ -660,6 +714,8 @@ const russian: Messages = {
   'models.evidence.reason.matching': 'Documented provider declarations совпадают.',
   'models.evidence.reason.identityAmbiguous':
     'Exact artifact неоднозначен, поэтому detail evidence по имени не привязан.',
+  'models.evidence.reason.identityChanged':
+    'Exact artifact изменился во время detail collection; cached detail evidence не привязан.',
   'models.evidence.reason.conflict': 'Provider declarations расходятся; общий claim не выбран.',
   'models.evidence.reason.missing': 'Один provider source не сообщил поле.',
   'models.evidence.reason.malformed': 'Capability data provider имеет неверную форму.',

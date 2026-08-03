@@ -12,9 +12,13 @@ export function InstalledEvidenceSummary({
   descriptor: InstalledModelDescriptor
 }) {
   const evidence = descriptor.capabilities
+  const freshness = evidenceFreshness(descriptor)
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1" aria-label={translate('models.evidence.label')}>
       <Badge tone={evidenceTone(evidence)}>{evidenceState(evidence)}</Badge>
+      <Badge tone={freshnessTone(freshness)}>
+        {freshnessState(freshness)}
+      </Badge>
       <Badge tone="outline">{evidenceSources(evidence)}</Badge>
       <span className="text-2xs text-[var(--fg-subtle)]">
         {translate('models.evidence.observed')} {formatDateTime(evidence.observedAt)}
@@ -29,6 +33,7 @@ export function InstalledEvidenceDetails({
   descriptor: InstalledModelDescriptor
 }) {
   const evidence = descriptor.capabilities
+  const freshness = evidenceFreshness(descriptor)
   return (
     <div className="space-y-3 text-2xs">
       <dl className="grid gap-x-3 gap-y-2 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)]">
@@ -92,6 +97,24 @@ export function InstalledEvidenceDetails({
             </ul>
           )}
         </dd>
+        <dt className="text-[var(--fg-subtle)]">{translate('models.evidence.freshness')}</dt>
+        <dd className="space-y-1">
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge tone={freshnessTone(freshness)}>
+              {freshnessState(freshness)}
+            </Badge>
+            <span>{freshnessSource(freshness.source)}</span>
+          </div>
+          <p>{freshnessExplanation(freshness)}</p>
+          {freshness.observedAt ? (
+            <p className="text-[var(--fg-subtle)]">
+              {translate('models.evidence.observed')} {formatDateTime(freshness.observedAt)}
+              {'validatedAt' in freshness
+                ? ` · ${translate('models.evidence.validated')} ${formatDateTime(freshness.validatedAt)}`
+                : ''}
+            </p>
+          ) : null}
+        </dd>
       </dl>
       <p className="text-[var(--fg-subtle)]">
         {translate('models.evidence.declarationBoundary')}
@@ -100,9 +123,66 @@ export function InstalledEvidenceDetails({
   )
 }
 
+function evidenceFreshness(
+  descriptor: InstalledModelDescriptor,
+): InstalledModelDescriptor['freshness'] {
+  return descriptor.freshness ?? {
+    state: 'unknown',
+    source: 'none',
+    observedAt: null,
+    reason: 'legacy_response',
+    offline: false,
+  }
+}
+
 function evidenceTone(evidence: ModelCapabilityEvidence): 'green' | 'yellow' | 'outline' {
   if (evidence.state === 'degraded') return 'yellow'
   return 'outline'
+}
+
+function freshnessTone(
+  freshness: InstalledModelDescriptor['freshness'],
+): 'yellow' | 'outline' {
+  return freshness.state === 'stale' || freshness.offline ? 'yellow' : 'outline'
+}
+
+function freshnessState(freshness: InstalledModelDescriptor['freshness']): string {
+  if (freshness.state === 'fresh') return translate('models.evidence.freshness.fresh')
+  if (freshness.state === 'stale') return translate('models.evidence.freshness.staleOffline')
+  return translate('models.evidence.freshness.unknown')
+}
+
+function freshnessSource(source: InstalledModelDescriptor['freshness']['source']): string {
+  if (source === 'provider') return translate('models.evidence.freshness.source.provider')
+  if (source === 'process_cache') return translate('models.evidence.freshness.source.process')
+  if (source === 'persistent_cache') return translate('models.evidence.freshness.source.persistent')
+  return translate('models.evidence.freshness.source.none')
+}
+
+function freshnessExplanation(freshness: InstalledModelDescriptor['freshness']): string {
+  if (freshness.state === 'fresh') {
+    return freshness.source === 'provider'
+      ? translate('models.evidence.freshness.explanation.provider')
+      : translate('models.evidence.freshness.explanation.cache')
+  }
+  if (freshness.state === 'stale') {
+    return translate('models.evidence.freshness.explanation.staleOffline')
+  }
+  switch (freshness.reason) {
+    case 'legacy_response':
+      return translate('models.evidence.freshness.reason.legacy')
+    case 'identity_unavailable':
+      return translate('models.evidence.freshness.reason.identityUnavailable')
+    case 'identity_changed':
+      return translate('models.evidence.freshness.reason.identityChanged')
+    case 'provider_unavailable':
+      return translate('models.evidence.freshness.reason.providerUnavailable')
+    case 'provider_malformed':
+    case 'conflicting_provider_data':
+      return translate('models.evidence.freshness.reason.providerInvalid')
+    case 'cache_expired':
+      return translate('models.evidence.freshness.reason.cacheExpired')
+  }
 }
 
 function evidenceState(evidence: ModelCapabilityEvidence): string {
@@ -129,6 +209,8 @@ function evidenceReason(evidence: ModelCapabilityEvidence): string {
       return translate('models.evidence.reason.matching')
     case 'artifact_identity_ambiguous':
       return translate('models.evidence.reason.identityAmbiguous')
+    case 'artifact_identity_changed':
+      return translate('models.evidence.reason.identityChanged')
     case 'conflicting_provider_declarations':
       return translate('models.evidence.reason.conflict')
     case 'provider_field_missing':

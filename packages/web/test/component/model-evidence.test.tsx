@@ -29,6 +29,10 @@ afterEach(() => vi.restoreAllMocks())
 
 function descriptor(
   capabilities: InstalledModelDescriptor['capabilities'],
+  freshness: InstalledModelDescriptor['freshness'] = {
+    state: 'fresh', source: 'provider', observedAt: OBSERVED_AT,
+    validatedAt: OBSERVED_AT, expiresAt: '2026-08-03T00:15:00.000Z', offline: false,
+  },
 ): InstalledModelDescriptor {
   return {
     reference: {
@@ -45,6 +49,7 @@ function descriptor(
       confidence: 'observed',
     },
     capabilities,
+    freshness,
   }
 }
 
@@ -132,6 +137,42 @@ describe('installed model evidence projection', () => {
     expect(view.container.textContent).toContain('Provider не сообщил capability declarations.')
     expect(view.container.textContent).toContain('Provider declarations расходятся')
     expect(view.container.textContent).not.toContain('unsupported')
+  })
+
+  it('distinguishes provider/cache fresh, stale offline and unknown freshness', () => {
+    const capabilities = {
+      state: 'declared' as const,
+      reason: null,
+      observedAt: OBSERVED_AT,
+      declarations: [{
+        capabilities: ['completion'] as const, source: 'ollama_api_tags' as const,
+        observedAt: OBSERVED_AT, confidence: 'declared' as const, basis,
+      }],
+    }
+    const freshCache = descriptor(capabilities, {
+      state: 'fresh', source: 'persistent_cache', observedAt: OBSERVED_AT,
+      validatedAt: OBSERVED_AT, expiresAt: '2026-08-03T00:15:00.000Z', offline: false,
+    })
+    const stale = descriptor(capabilities, {
+      state: 'stale', source: 'persistent_cache', observedAt: OBSERVED_AT,
+      validatedAt: OBSERVED_AT, expiresAt: '2026-08-03T00:15:00.000Z',
+      staleUntil: '2026-08-10T00:15:00.000Z', offline: true,
+    })
+    const unknown = descriptor({
+      state: 'unknown', reason: 'provider_unavailable', observedAt: OBSERVED_AT, declarations: [],
+    }, {
+      state: 'unknown', source: 'provider', observedAt: OBSERVED_AT,
+      reason: 'cache_expired', offline: true,
+    })
+    const view = render(<>
+      <InstalledEvidenceDetails descriptor={freshCache} />
+      <InstalledEvidenceDetails descriptor={stale} />
+      <InstalledEvidenceDetails descriptor={unknown} />
+    </>)
+    expect(view.container.textContent).toContain('Проверенный persistent cache')
+    expect(view.container.textContent).toContain('Устарело · offline')
+    expect(view.container.textContent).toContain('вне 7-дневного stale window')
+    expect(view.container.innerHTML).not.toContain('color-fit-green')
   })
 
   it('explains why ambiguous name-based evidence is not assigned', () => {
