@@ -749,10 +749,18 @@ describe('durable Chat startup recovery', () => {
       'Recovered queued Jobs did not enter one FIFO lane',
     )
     const governor = runtime.context.governor.snapshot()
-    assert.deepEqual(governor.activeLease?.owner, { kind: 'job', jobId: jobs[0]!.job.id })
+    const recoveryOrder = jobs.slice().sort(
+      (left, right) =>
+        left.job.createdAt.localeCompare(right.job.createdAt) ||
+        left.job.id.localeCompare(right.job.id),
+    )
+    assert.deepEqual(governor.activeLease?.owner, {
+      kind: 'job',
+      jobId: recoveryOrder[0]!.job.id,
+    })
     assert.deepEqual(
       governor.queued.map((entry) => entry.owner),
-      jobs.slice(1).map((job) => ({ kind: 'job' as const, jobId: job.job.id })),
+      recoveryOrder.slice(1).map((job) => ({ kind: 'job' as const, jobId: job.job.id })),
     )
     assert.equal(governor.activeLease?.operation, 'chat')
     assert.equal(governor.queued.every((entry) => entry.operation === 'chat'), true)
