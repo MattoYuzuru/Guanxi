@@ -7,7 +7,7 @@
 
 На 2026-08-03:
 
-- `npm test`: 200/200 server/CLI и 17/17 web component/parser tests;
+- `npm test`: 210/210 server/CLI и 17/17 web component/parser tests;
 - `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -35,6 +35,14 @@
   active-not-observed, healthy empty, unavailable/timeout/incompatible sources,
   redaction, common timestamp linearization, shared route single-flight,
   independent caller abort, cleanup и отсутствие auto-unload;
+- deterministic P1-H tests покрывают единственный injected `HostTelemetry`,
+  exact bounded Apple `vm_stat` command, page-size conversion, extra/malformed
+  rows, available/partial/unavailable/unsupported states, provenance/confidence,
+  safe timeout/output/failure redaction и отсутствие host command вне adapter;
+- reconciliation P1-H fixtures покрывают independent provider/telemetry failure,
+  один shared call каждого source, caller abort, Governor capture после обоих
+  sources, новый sample после completion, observed current residency только при
+  достаточных Apple facts и stable unknown для digest/context/host/pressure;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -72,8 +80,9 @@
   tool-step preservation, atomic trigger rollback, malformed association/output,
   redacted failure before listen, три startup attempts после injected failures,
   same-thread/cross-thread one-lane scheduling и truthful graceful shutdown;
-- exact P1-A/P1-B/P1-C/P1-D/P1-E/P1-F/P1-G files дают 82/82; routes/Governor/
-  concurrency дают 28/28; runtime/provider — 19/19; 15-test store race suite
+- exact P1-A/P1-B/P1-C/P1-D/P1-E/P1-F/P1-G/P1-H files дают 92/92;
+  routes/Governor/concurrency дают 28/28; runtime/provider — 19/19;
+  fit/telemetry — 19/19; 15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
   P1-F release/cancel/close — 10 repeats без duplicate transfer/live state;
@@ -86,13 +95,15 @@
   P1-D navigation/detach/reload gate.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E и
-P1-A–P1-G на временной SQLite, управляемом fake `OllamaClient` transport и
+P1-A–P1-H на временной SQLite, управляемом fake `OllamaClient` transport и
 mocked browser REST/SSE. P1-F доказывает typed one-lane admission только для
 Chat, compaction и warm/load одного application composition; он не подтверждает
-hardware fit, Ollama scheduler, multi-process/external-client safety или
-production use. P1-G доказывает только sampled query-time `/api/ps`
+Ollama scheduler, multi-process/external-client safety или production use. P1-G
+доказывает только sampled query-time `/api/ps`
 reconciliation: exact active reference match, unknown ownership и bounded
 single-flight; он не идентифицирует external client и не меняет admission.
+P1-H добавляет deterministic fake-runner evidence для host source states,
+sampling bound и current-fit semantics; это не live hardware validation.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -100,16 +111,19 @@ process lock. P0-D health остаётся sampled observation; обязател
 
 ### Current residual risks
 
-- health и `/api/ps` — sampled observations, а не непрерывная истина;
-- P1-G reconciles `/api/ps` только на query; Resource Governor и leases остаются
-  process-local, host telemetry/fit отсутствуют;
+- health, `/api/ps` и host telemetry — sampled observations, а не непрерывная
+  истина;
+- P1-H reconciles `/api/ps` и host facts только на query; Resource Governor и
+  leases остаются process-local, production Apple pressure/available memory и
+  remote-host telemetry отсутствуют;
 - Chat execution durable/replayable, но execution owner и lease остаются
   process-local;
 - generic public Job без Chat adapter остаётся queued; live wake-up предполагает
   mutation через один service instance;
 - startup recovery не координирует второй writer и не resume-ит executing side
   effects; malformed typed Chat state намеренно блокирует healthy startup;
-- обязательный suite не проверяет live hardware или live Ollama.
+- обязательный suite не проверяет live hardware или live Ollama; observed-fit
+  branch использует достаточный injected Apple fixture.
 
 ## Существующее покрытие
 

@@ -162,6 +162,42 @@ timeout или malformed source публикует `models: null`, safe source c
 lease, не запускает load/unload, не меняет admission и не доказывает состояние
 между calls. Stale state отсутствует, потому что P1-G не имеет cache.
 
+### P1-H sampled host telemetry и current fit
+
+Один injected `HostTelemetry` boundary принадлежит application composition.
+`/api/ps` и host sample запускаются параллельно внутри того же shared pending
+reconciliation. После завершения обоих service выбирает root `observedAt`,
+выравнивает timestamps фактов и синхронно capture-ит Governor. Поэтому один
+result является coherent application sample, но не атомарным host-wide снимком.
+Caller abort прекращает только ожидание; следующий call после completion заново
+вызывает оба источника. Cache, background polling и durable history не добавлены.
+
+Apple Silicon adapter применяется только для `darwin/arm64` и запускает
+`/usr/bin/vm_stat` без shell с timeout 1 s и output limit 64 KiB. Из официально
+документированных полей он публикует `Pages free × page size` как observed
+system-free bytes. `os.totalmem()` даёт static total unified-memory fact.
+Legacy `HardwareInfo.usableMemoryBytes = 70%` остаётся явно estimated
+compatibility value, а не current availability. Free pages также не считаются
+safe available capacity. Discrete VRAM/GPU-free для unified memory не
+выдумываются; available memory и pressure остаются unknown. Malformed output
+даёт `partial`, timeout/failure — safe `unavailable`, non-Apple host —
+`unsupported` без выполнения команды.
+
+Ошибки источников независимы: valid runtime rows сохраняются при telemetry
+failure, а valid host facts сохраняются при `/api/ps` failure (`models: null`).
+Raw command output/error не проходит в public contract. Все факты имеют source,
+confidence и общий observation time.
+
+`currentFit.observed` разрешён только для unambiguous exact active lease/row,
+provider digest, exact requested/observed context и достаточного Apple sample с
+observed available memory и normal observed pressure. Он означает только
+наблюдаемую текущую residency/configuration; artifact identity остаётся
+`unknown`, а `futureAdmissionGuarantee` всегда `false`. Missing digest/context,
+ambiguous row, unsupported/failed/partial host, unknown/elevated pressure или
+missing available memory дают stable `unknown` reason. Production Apple adapter
+не публикует достаточные pressure/available-memory facts, поэтому его fit сейчас
+truthfully `unknown`; observed branch проверяется только injected fixtures.
+
 ### P0-D sampled health и provider deadlines
 
 Application health подтверждается ответом собственного HTTP route и не зависит
@@ -410,7 +446,7 @@ WebSocket нужен только если duplex live-audio latency это по
 
 ## Resource Governor
 
-### Current P1-F/P1-G policy
+### Current P1-F/P1-G/P1-H policy
 
 - один active process-local accelerator lease;
 - один supported priority `normal`, FIFO без preemption;
@@ -423,7 +459,10 @@ WebSocket нужен только если duplex live-audio latency это по
   migration 6 не вводилась;
 - `/api/ps` sampled через single-flight query boundary, но не влияет на
   admission/unload;
-- telemetry, fit, proven external ownership и multi-process lock отсутствуют.
+- Apple host telemetry делит single-flight и объясняет current fit, но не влияет
+  на admission/unload;
+- production current pressure/available memory, proven external ownership и
+  multi-process lock отсутствуют.
 
 ### Default policy
 
@@ -740,26 +779,29 @@ Current P1-E recovery scan:
 - persisted typed Chat `cancelling` становится `cancelled`;
 - generic Jobs и pending approvals остаются будущей adapter recovery работой;
 - transient P1-F leases после process death не восстанавливаются, а первый
-  P1-G query только samples текущий `/api/ps` без восстановления ownership.
+  P1-H query только samples текущие `/api/ps` и host telemetry без
+  восстановления ownership.
 
 Checkpoint resume, opt-in login autostart и обнаружение одновременно запущенного
 второго application writer остаются target более поздних slices.
 
 ## Observability contract
 
-Current P1-G projection реализует только bounded subset:
+Current P1-H projection реализует bounded subset:
 
 ```ts
 type RuntimeSnapshot = {
   observedAt: string;
   source: RuntimeSourceHealth;
   governor: RuntimeGovernorSnapshot;
+  host: RuntimeHostTelemetry;
   models: RuntimeModelObservation[] | null;
   decisions: RuntimeReconciliationDecision[];
 };
 ```
 
-Host telemetry, pressure, fit, durable observations и full Runtime Bar ещё не
+Host source states, facts и per-model current fit реализованы. Production
+pressure/available memory, durable observations и full Runtime Bar ещё не
 реализованы. Target projection остаётся шире:
 
 Runtime projection:
@@ -802,7 +844,8 @@ P0-D реализовал пункт 6 как минимальную sampled Cha
 правдивые health/catalog sources и bounded connect/load/stream-idle deadlines.
 P1-D добавил durable Chat execution/detach/reattach, P1-E — bounded startup
 reconciliation, P1-F — typed process-local Governor admission/lease foundation,
-P1-G — query-time `/api/ps` reconciliation и additive `GET /api/runtime`.
-Host telemetry/fit, Runtime Bar и resource UX остаются target.
+P1-G — query-time `/api/ps` reconciliation и additive `GET /api/runtime`, P1-H —
+sampled Apple host facts и observed/unknown current-fit explanation. Production
+pressure/available-memory source, Runtime Bar и resource UX остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

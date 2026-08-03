@@ -62,8 +62,9 @@ npm run link:cli
 - Current P1-F `ResourceGovernor` сериализует Chat turn, compaction и explicit
   model warm/load одной typed process-local lease. Durable Chat использует
   canonical `jobId`; compatibility operations — UUID operation owner. FIFO имеет
-  только priority `normal`. P1-G samples `/api/ps` рядом с Governor state, но
-  observation не меняет admission; hardware fit ещё не участвует.
+  только priority `normal`. P1-H samples `/api/ps` и injected host telemetry
+  рядом с Governor state, но observation/current-fit explanation не меняют
+  admission.
 - Current P0-D adapter различает connect, load и stream-idle deadlines.
   Explicit Stop имеет приоритет; subscriber disconnect не отменяет Chat Job, а
   timeout/provider/explicit abort освобождает P1-F lease.
@@ -71,9 +72,16 @@ npm run link:cli
   models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
   использует stale local cache или dated bundled fallback без remote endpoint.
 - `GET /api/runtime` и compatibility `GET /api/models/running` используют один
-  `RuntimeReconciliationService`. Pending callers делят один provider request;
-  completed state не кэшируется. `models: []` — healthy empty, `models: null` —
-  source failure. Owner без exact active reference остаётся `unknown`.
+  `RuntimeReconciliationService`. Pending callers делят один provider request и
+  один host sample; completed state не кэшируется. Sources fail независимо.
+  `models: []` — healthy empty, `models: null` — source failure. Owner без exact
+  active reference остаётся `unknown`.
+- Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
+  не запускают host commands. Apple adapter использует bounded absolute
+  `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
+  estimate/current available/pressure/discrete VRAM остаются разными facts.
+  Current production Apple fit — `unknown`, пока pressure и available memory не
+  имеют подтверждённого source.
 - P1-D `JobService` поверх migration 5/`JobStore` владеет canonical state
   transitions, cancel и persisted-first subscription. SQLite event sequence
   остаётся источником replay; live listeners хранят только wake-up signal.
@@ -95,21 +103,22 @@ npm run link:cli
   create/query/cancel/cursor/SSE schemas экспортируются из contract.
 - P1-D Chat command snapshot/idempotency и Message `jobId` остаются additive;
   точные новые SSE terminal details optional для старого strict client.
-- P1-G Runtime snapshot содержит source health, current Governor state, sampled
-  model rows и stable reconciliation codes без host telemetry/fit claims.
+- P1-H Runtime snapshot содержит source health, current Governor state, sampled
+  model rows, host profile/sample и stable observed/unknown current-fit reasons.
 
 ### Server
 
 - `app.ts` — routes/composition/static serving;
 - `context.ts` — зависимости, один `JobStore` + `JobService` +
-  `ChatJobExecutionOwner` и один process-local `ResourceGovernor`;
+  `ChatJobExecutionOwner`, один process-local `ResourceGovernor` и один
+  `HostTelemetry`;
 - `runtime/resource-governor.ts` — typed FIFO admission, active lease,
   snapshot/explanation, unload guard и close boundary;
-- `runtime/reconciliation.ts` — sampled `/api/ps` single-flight, common timestamp,
-  owner/identity classification и compatibility projection;
+- `runtime/reconciliation.ts` — shared `/api/ps` + host sample, common timestamp,
+  owner/identity/current-fit classification и compatibility projection;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details и sourced catalog fallback;
-- `hardware/` — host probe и fit;
+- `hardware/` — legacy profile/static fit и injectable sampled telemetry adapter;
 - `http/` — models, runtime, Jobs, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
 - migration 3 добавляет nullable `turn_status/turn_error/stop_reason` и не
@@ -163,7 +172,9 @@ npm run link:cli
   typed request/ticket/lease, FIFO/cancellation/close, bounded diagnostics,
   unload conflict и полная current Chat/compaction/warm matrix; P1-G — exact
   runtime contract/identity, source failures, linearization, single-flight,
-  caller cancellation, route inventory и no-auto-unload.
+  caller cancellation, route inventory и no-auto-unload; P1-H — bounded command,
+  parser/source states, failure independence, shared call count, Governor
+  linearization и observed/unknown fit fixtures.
 
 ### CLI
 

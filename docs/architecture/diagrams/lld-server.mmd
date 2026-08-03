@@ -4,7 +4,8 @@ flowchart TB
     Routes[HTTP routes]
     Stores[SQLite stores]
     Models[Model and catalog services]
-    Hardware[Hardware probe and fit]
+    Hardware[Legacy hardware probe and static fit]
+    Telemetry[Injected host telemetry adapter]
     Agent[Agent loop and approvals]
     Jobs[Job service and Chat execution owner]
     Recovery[Pre-listen Chat recovery]
@@ -28,6 +29,7 @@ flowchart TB
     Context --> Recovery
     Context --> Governor
     Context --> Runtime
+    Context --> Telemetry
     Recovery --> Jobs
     Recovery --> Stores
     Jobs --> Governor
@@ -35,6 +37,7 @@ flowchart TB
     Routes --> Runtime
     Runtime --> Governor
     Runtime --> Models
+    Runtime --> Telemetry
     Governor --> Ollama
     Jobs --> Agent
     Jobs --> Stores

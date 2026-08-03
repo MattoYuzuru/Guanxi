@@ -10,6 +10,7 @@ flowchart LR
         Memory[activeTurns and approvals]
         Governor[Typed process local Resource Governor]
         Runtime[Sampled runtime reconciliation]
+        Telemetry[Sampled host telemetry]
         Recovery[Pre-listen Chat recovery]
         DB[(SQLite)]
         Files[Workspace filesystem]
@@ -22,6 +23,7 @@ flowchart LR
         Context --> Memory
         Context --> Governor
         Context --> Runtime
+        Context --> Telemetry
         Context --> DB
         Context --> Recovery
         Recovery --> DB
@@ -30,6 +32,7 @@ flowchart LR
         Server --> Runtime
         Runtime --> Governor
         Runtime --> Ollama
+        Runtime --> Telemetry
         Governor --> Ollama
         Server --> Files
         Server --> Shell

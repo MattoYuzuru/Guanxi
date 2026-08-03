@@ -30,6 +30,13 @@ reconciliation decisions. `models: []` означает successful empty sample;
 `models: null` — controlled unavailable/incompatible source. Runtime digest
 остаётся observed `/api/ps` fact, а artifact identity явно `unknown`.
 
+P1-H additive добавляет `host` с отдельными static profile/dynamic sample,
+provenance/confidence и explicit available/missing fields, а каждой runtime row
+— `currentFit`. `observed` означает только текущую exact loaded configuration
+при достаточных Apple host facts; это не future admission guarantee. Production
+Apple adapter пока публикует current fit как `unknown`, потому что официальный
+pressure/available-memory source не подтверждён.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -47,9 +54,10 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `runtime/resource-governor.ts`: typed immutable request/ticket, один
   process-local FIFO permit, active lease, bounded live snapshot/explanation,
   unload guard и graceful close;
-- `runtime/reconciliation.ts`: process-local `/api/ps` single-flight, common
-  timestamp linearization, exact normalized reference matching, source failure
-  redaction и compatibility projection;
+- `runtime/reconciliation.ts`: process-local shared `/api/ps` + host telemetry
+  single-flight, common timestamp linearization, exact normalized reference
+  matching, independent source failure redaction, current fit explanation и
+  compatibility projection;
 - `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query;
 - `http/models-routes.ts`: list/show/pull/delete/warm/unload/running;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
@@ -59,7 +67,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   parallel `/api/show`;
 - `models/catalog.ts`: validated stale local cache + dated bundled snapshot,
   без remote request;
-- `hardware/*`: local host probe и static fit model;
+- `hardware/probe.ts` и `fit.ts`: legacy local profile/estimate и static fit;
+- `hardware/telemetry.ts`: один injectable host boundary; bounded Apple Silicon
+  `vm_stat` adapter, strict parser и explicit unsupported/partial/failure states;
 - `agent/loop.ts`: ordered turn/tool loop;
 - `store/db.ts`: `node:sqlite` migrations;
 - migration 3: nullable Message terminal bridge с evidence-based legacy backfill;
@@ -95,11 +105,12 @@ compaction и explicit model warm/load; unload отклоняется при exa
 
 Один `RuntimeReconciliationService` входит в application context рядом с
 Governor. `GET /api/runtime` и `GET /api/models/running` используют этот service,
-поэтому overlapping callers создают не больше одного `/api/ps` request. Caller
-abort прекращает только его ожидание. Provider sample завершается первым, затем
-с одним общим `observedAt` снимается Governor snapshot — это linearization point.
-Completed result не кэшируется; stale state не публикуется, следующий call
-делает новый sample.
+поэтому overlapping callers создают не больше одного `/api/ps` request и одного
+host probe. Caller abort прекращает только его ожидание. Provider и host sample
+стартуют вместе; после завершения обоих выбирается общий `observedAt` и
+синхронно снимается Governor snapshot — это linearization point. Ошибка одного
+source не уничтожает факты другого. Completed result не кэшируется; stale state
+не публикуется, следующий call делает новые samples.
 
 Один `JobStore`, `JobService` и `ChatJobExecutionOwner` входят в application
 context; public Job и Chat routes используют один service. Store синхронно
@@ -220,22 +231,23 @@ waiting_tool/waiting_approval/finalizing` получают recovery-only
 `interrupted`, `cancelling` — `cancelled`; untouched `queued` schedule-ится
 существующим owner после полного reconciliation pass.
 
-P1-G сохраняет консервативный P1-F Governor, но добавляет sampled reconciliation,
-не admission automation. Active lease сопоставляется только с первой row по
+P1-G/P1-H сохраняют консервативный P1-F Governor, но добавляют sampled
+reconciliation, host facts и explanation, не admission automation. Active lease
+сопоставляется только с одной unambiguous row по
 exact normalized Ollama reference; отсутствие lease digest не доказывает
 artifact identity. Unmatched row получает owner `unknown`, active lease без row
 — `active_not_observed`. Ни одно состояние не запускает load/unload и не меняет
-FIFO. Telemetry/fit, target priorities, prewarm, lease journal, measured
-parallelism и multi-process lock отсутствуют.
+FIFO. Production pressure/available-memory observation, target priorities,
+prewarm, lease journal, measured parallelism и multi-process lock отсутствуют.
 
 Current admission request фиксирует owner (`jobId` либо process-local operation
 ID), `chat | compaction | model_warm`, exact Ollama model name, requested context,
 priority `normal` и enqueue time. Ticket проходит `queued → active → released`
 либо `queued → cancelled`; release/cancel/close идемпотентны. Snapshot хранит
 только live queue, одну active lease и одну последнюю decision, поэтому
-diagnostics не растут с числом завершённых operations. P1-G держит только один
-pending reconciliation Promise и не хранит observations. Migration 6 для
-P1-F/P1-G не нужна: canonical queue intent уже находится в Job, а transient
+diagnostics не растут с числом завершённых operations. P1-H сохраняет только
+один pending reconciliation Promise и не хранит observations. Migration 6 для
+P1-F/P1-G/P1-H не нужна: canonical queue intent уже находится в Job, а transient
 lease journal и durable runtime cache не вводились.
 
 ## Target module boundaries

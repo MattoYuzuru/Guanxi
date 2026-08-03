@@ -1,7 +1,7 @@
 # Research evidence
 
 **Статус:** locally validated research  
-**Проверено:** 2026-08-02  
+**Проверено:** 2026-08-03
 **Правило:** upstream facts могут меняться; проверять перед реализацией
 
 ## Рекомендация
@@ -32,6 +32,26 @@ voice, images, MCP и agent UI; менее закрытая зона — пра�
 через empty request, unload через `keep_alive:0`, а context memory растёт с
 parallel requests. Поэтому prewarm/unload/parallel policy нельзя проектировать
 как локальный effect одной страницы.
+
+## Apple Silicon host telemetry
+
+Проверено 2026-08-03 по официальным первичным источникам:
+
+| Факт | Источник | Ограничение |
+| ---- | -------- | ----------- |
+| Node `os.totalmem()` возвращает total system memory bytes | [Node.js OS API](https://nodejs.org/api/os.html#ostotalmem) | static capacity, не current availability |
+| `execFile` запускает executable без shell по default и поддерживает timeout/maxBuffer | [Node.js child process API](https://nodejs.org/download/release/v22.17.0/docs/api/child_process.html#child_processexecfilefile-args-options-callback) | timeout завершает child, output всё равно нельзя публиковать |
+| `vm_stat` сообщает page size и `Pages free` | [Apple OSS vm_stat(1)](https://github.com/apple-oss-distributions/system_cmds/blob/main/vm_stat/vm_stat.1) | free pages не равны safe available capacity/pressure |
+| `os_proc_available_memory()` оценивает память для текущего process | [Apple os_proc_available_memory](https://developer.apple.com/documentation/os/os_proc_available_memory) | advisory для Alamo process, не host/Ollama admission fact |
+| `memory_pressure` manual описывает pressure generation/simulation | [Apple OSS memory_pressure(1)](https://github.com/apple-oss-distributions/system_cmds/blob/main/memory_pressure/memory_pressure.1) | не подтверждает стабильный read-only level/threshold contract |
+
+Следствие P1-H: production adapter использует только bounded absolute
+`/usr/bin/vm_stat` и публикует total unified memory и system free pages с
+provenance. Текущие available memory и pressure остаются `unknown`; локально
+работающий undocumented `memory_pressure -Q` не стал product contract. Поэтому
+production current fit нельзя повышать до `observed`. Injected fixture может
+доказать логику observed current residency при достаточных facts, но не является
+hardware validation или future admission guarantee.
 
 ## Catalog policy
 

@@ -91,10 +91,14 @@ Application shell остаётся доступным при degraded Ollama. `/
 sampled observations с source/time. Installed state приходит из `/api/tags`;
 loaded rows — только из `/api/ps`. P1-G добавил один application
 `RuntimeReconciliationService`: `GET /api/runtime` и compatibility
-`GET /api/models/running` делят pending provider sample. После его завершения
-service одним `observedAt` снимает Governor state и классифицирует exact
-normalized active reference, unmatched active lease и unknown-owner runtime
-rows. Completed sample/cache/history не хранится и background polling нет.
+`GET /api/models/running` делят pending provider sample и один injected
+`HostTelemetry` sample. На Apple Silicon adapter параллельно вызывает только
+bounded `/usr/bin/vm_stat`, а на остальных hosts возвращает `unsupported` без
+host command. После завершения обоих источников service выбирает один
+`observedAt`, снимает Governor state и классифицирует exact normalized active
+reference, unmatched active lease и unknown-owner runtime rows. Ошибки Ollama и
+host telemetry независимы. Completed sample/cache/history не хранится и
+background polling нет.
 
 ### As-is deployment
 
@@ -119,6 +123,7 @@ rows. Completed sample/cache/history не хранится и background polling
 | Active/waiting Chat controller       | `ChatJobExecutionOwner`                 | process memory              |
 | Resource admission/active lease      | application `ResourceGovernor`          | process memory              |
 | Runtime reconciliation/sample        | `RuntimeReconciliationService`          | process memory, без history |
+| Static/dynamic host telemetry        | injected `HostTelemetry` adapter        | sampled, без history        |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -141,8 +146,11 @@ rows. Completed sample/cache/history не хранится и background polling
 6. Private input/output находится в локальной SQLite без отдельного encryption
    boundary; plaintext settings уже остаются известным долгом.
 7. Remote bind открывает filesystem/shell boundaries без реальной authentication.
-8. Fit не описывает совместное размещение, current pressure и remote hardware.
-9. `/api/runtime` не содержит host telemetry/fit и не является continuous truth.
+8. Production Apple adapter наблюдает total unified memory и system free pages,
+   но не имеет официально подтверждённого current available-memory/pressure
+   source; поэтому current fit остаётся `unknown`.
+9. `/api/runtime` содержит query-time host/fit projection, но не является
+   continuous truth, future admission guarantee или remote-host telemetry.
 10. Catalog не имеет разрешённого live provider; local cache и bundled snapshot
    могут отставать.
 
