@@ -442,7 +442,7 @@ describe('resource conflict decision', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send fixture' }))
     const dialog = await screen.findByRole('dialog', { name: 'Resource conflict before sending' })
     const queue = screen.getByRole('button', { name: 'Queue after current' })
-    expect(document.activeElement).toBe(queue)
+    await waitFor(() => expect(document.activeElement).toBe(queue))
 
     await act(async () => {
       await refresh()
