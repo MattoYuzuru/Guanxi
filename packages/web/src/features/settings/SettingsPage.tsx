@@ -4,7 +4,6 @@
  */
 import { useEffect, useState, type FormEvent } from 'react'
 import type { Settings, WebSearchProvider } from '@alamo/contract'
-import { DEFAULT_NUM_CTX } from '@alamo/contract'
 import {
   Button,
   Callout,
@@ -16,6 +15,7 @@ import {
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { translate } from '../../lib/locale.ts'
+import { parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 
@@ -31,6 +31,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [defaultNumCtxText, setDefaultNumCtxText] = useState('')
 
   useEffect(() => {
     if (!loaded.data) return
@@ -42,11 +43,17 @@ export function SettingsPage() {
         clearApiKey: false,
       },
     })
+    setDefaultNumCtxText(String(loaded.data.defaultNumCtx))
   }, [loaded.data])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
     if (!draft) return
+    const defaultNumCtx = parsePositiveSafeInteger(defaultNumCtxText)
+    if (defaultNumCtx === null) {
+      setSaveError(translate('context.validation.positiveSafeInteger'))
+      return
+    }
 
     setSaving(true)
     setSaved(false)
@@ -62,7 +69,7 @@ export function SettingsPage() {
       const result = await api.updateSettings({
         ollamaHost: draft.ollamaHost.trim(),
         defaultModel: draft.defaultModel,
-        defaultNumCtx: draft.defaultNumCtx,
+        defaultNumCtx,
         autoApproveTools: draft.autoApproveTools,
         enableBash: draft.enableBash,
         prewarmEnabled: draft.prewarmEnabled,
@@ -79,6 +86,7 @@ export function SettingsPage() {
         ...result,
         webSearch: { ...result.webSearch, apiKey: '', clearApiKey: false },
       })
+      setDefaultNumCtxText(String(result.defaultNumCtx))
       setSaved(true)
     } catch (error) {
       setSaveError(errorMessage(error))
@@ -116,6 +124,7 @@ export function SettingsPage() {
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((previous) => (previous ? { ...previous, [key]: value } : previous))
+  const defaultNumCtxInvalid = parsePositiveSafeInteger(defaultNumCtxText) === null
 
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-5">
@@ -167,17 +176,27 @@ export function SettingsPage() {
             />
           </Field>
 
-          <Field label="Контекст агента по умолчанию" hint="От 512 токенов до лимита модели.">
+          <Field
+            label={translate('settings.context.label')}
+            hint={translate('settings.context.hint')}
+            htmlFor="settings-default-context"
+          >
             <Input
+              id="settings-default-context"
               type="number"
-              min={512}
-              max={1_048_576}
-              step={512}
-              value={draft.defaultNumCtx}
-              onChange={(event) =>
-                update('defaultNumCtx', Number(event.target.value) || DEFAULT_NUM_CTX)
-              }
+              min={1}
+              step={1}
+              inputMode="numeric"
+              value={defaultNumCtxText}
+              onChange={(event) => setDefaultNumCtxText(event.target.value)}
+              aria-invalid={defaultNumCtxInvalid}
+              aria-describedby={defaultNumCtxInvalid ? 'settings-default-context-error' : undefined}
             />
+            {defaultNumCtxInvalid ? (
+              <p id="settings-default-context-error" className="mt-1 text-2xs text-[var(--danger)]" role="alert">
+                {translate('context.validation.positiveSafeInteger')}
+              </p>
+            ) : null}
           </Field>
           <Toggle
             checked={draft.prewarmEnabled}

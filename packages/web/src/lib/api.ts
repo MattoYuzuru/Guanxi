@@ -44,6 +44,7 @@ import {
   type UpdateThreadBody,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
+import { translate } from './locale.ts'
 
 /* ──────────────────────────────── Ошибки ──────────────────────────────── */
 
@@ -75,7 +76,10 @@ export class ApiShapeError extends Error {
 }
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof ApiRequestError) return error.payload?.message ?? error.message
+  if (error instanceof ApiRequestError) {
+    if (error.code === 'context_limit_exceeded') return translate('context.limit.exceeded')
+    return error.payload?.message ?? error.message
+  }
   if (error instanceof ApiShapeError) return error.message
   if (error instanceof Error) {
     // Самый частый случай локально: сервер не поднят.

@@ -16,7 +16,6 @@ import {
   Callout,
   EmptyState,
   Input,
-  Select,
   Skeleton,
   Stat,
 } from '../../components/ui.tsx'
@@ -31,10 +30,12 @@ import {
 import { translate } from '../../lib/locale.ts'
 
 /** Окна, под которые пересчитываем вердикт прямо на лончере. */
-const CONTEXT_CHOICES = [4096, 8192, 16384, 32768, 65536, 131072]
+const CONTEXT_SUGGESTIONS = [4096, 8192, 16384, 32768, 65536, 131072]
 
 export function LauncherPage({ health }: { health: Health }) {
   const [contextLength, setContextLength] = useState(DEFAULT_NUM_CTX)
+  const [contextDraft, setContextDraft] = useState(String(DEFAULT_NUM_CTX))
+  const [contextError, setContextError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const debouncedQuery = useDebounced(query, 300)
   const [reloadToken, setReloadToken] = useState(0)
@@ -60,12 +61,13 @@ export function LauncherPage({ health }: { health: Health }) {
         render: ({ focusIndex }) => (
           <ModelCard
             data={{ kind: 'local', model }}
+            selectedContextLength={contextLength}
             onFocusCard={focusIndex}
             onInstalled={onInstalled}
           />
         ),
       })),
-    [local.data, onInstalled],
+    [contextLength, local.data, onInstalled],
   )
 
   const catalogItems: CarouselItem[] = useMemo(
@@ -75,12 +77,13 @@ export function LauncherPage({ health }: { health: Health }) {
         render: ({ focusIndex }) => (
           <ModelCard
             data={{ kind: 'catalog', model }}
+            selectedContextLength={contextLength}
             onFocusCard={focusIndex}
             onInstalled={onInstalled}
           />
         ),
       })),
-    [catalog.data, onInstalled],
+    [catalog.data, contextLength, onInstalled],
   )
 
   const hardware = health.hardware
@@ -100,9 +103,9 @@ export function LauncherPage({ health }: { health: Health }) {
           <div className="flex items-end gap-4">
             <div className="hidden items-center gap-4 sm:flex">
               <Stat
-                label="Ускоритель"
+                label={translate('hardware.acceleratorProfile')}
                 value={hardware.acceleratorName ?? hardware.accelerator}
-                hint={`${hardware.cpuModel}, ${hardware.cpuCores} ядер`}
+                hint={`${hardware.cpuModel}, ${hardware.cpuCores} ядер · ${translate('hardware.deviceCountUnknown')}`}
               />
               <Stat
                 label="Доступно памяти"
@@ -118,19 +121,45 @@ export function LauncherPage({ health }: { health: Health }) {
               )}
             </div>
 
-            <label className="flex items-center gap-1.5">
-              <span className="text-2xs text-[var(--fg-subtle)]">окно</span>
-              <Select
-                ariaLabel="Размер окна контекста для расчёта влезаемости"
-                value={String(contextLength)}
-                onChange={(value) => setContextLength(Number(value))}
-                options={CONTEXT_CHOICES.map((value) => ({
-                  value: String(value),
-                  label: formatContextLength(value),
-                }))}
-                className="w-24"
-              />
-            </label>
+            <div className="min-w-0">
+              <label className="flex items-center gap-1.5">
+                <span className="text-2xs text-[var(--fg-subtle)]">
+                  {translate('launcher.context.short')}
+                </span>
+                <Input
+                  aria-label={translate('launcher.context.aria')}
+                  aria-describedby="launcher-context-hint"
+                  value={contextDraft}
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  list="launcher-context-suggestions"
+                  aria-invalid={contextError !== null}
+                  onChange={(event) => setContextDraft(event.target.value)}
+                  onBlur={() => applyContextDraft(contextDraft, setContextLength, setContextError)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return
+                    event.preventDefault()
+                    applyContextDraft(contextDraft, setContextLength, setContextError)
+                  }}
+                  className="w-28"
+                />
+                <datalist id="launcher-context-suggestions">
+                  {CONTEXT_SUGGESTIONS.map((value) => (
+                    <option key={value} value={value}>{formatContextLength(value)}</option>
+                  ))}
+                </datalist>
+              </label>
+              <p id="launcher-context-hint" className="mt-1 max-w-64 text-2xs text-[var(--fg-subtle)]">
+                {translate('launcher.context.hint')}
+              </p>
+              {contextError ? (
+                <p className="mt-1 max-w-64 text-2xs text-[var(--danger)]" role="alert">
+                  {contextError}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
       </section>
@@ -228,6 +257,20 @@ export function LauncherPage({ health }: { health: Health }) {
       </section>
     </div>
   )
+}
+
+function applyContextDraft(
+  draft: string,
+  apply: (value: number) => void,
+  setError: (value: string | null) => void,
+): void {
+  const parsed = Number(draft)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    setError(translate('context.validation.positiveSafeInteger'))
+    return
+  }
+  setError(null)
+  apply(parsed)
 }
 
 export function CatalogSourceNotice({

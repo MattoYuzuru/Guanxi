@@ -162,6 +162,9 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
       <p className="mt-0.5 text-[var(--fg-subtle)]">
         {translate('runtime.admission.scope')}
       </p>
+      <p className="mt-0.5 text-[var(--fg-subtle)]">
+        {translate('runtime.admission.permitPolicy')}
+      </p>
       <p className="mt-1 font-medium">
         {governor.accepting
           ? translate('runtime.admission.open')
@@ -312,6 +315,9 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
       <p className="mt-0.5 font-medium">{hostStateLabel(host)}</p>
       <p className="text-[var(--fg-subtle)]">
         {host.profile.platform}/{host.profile.arch} · {host.profile.accelerator}
+      </p>
+      <p className="text-[var(--fg-subtle)]">
+        {translate('runtime.host.devicesUnknown')}
       </p>
       <dl className="mt-2 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
         <MemoryFact label={translate('runtime.host.total')} fact={host.profile.totalMemoryBytes} />

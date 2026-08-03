@@ -10,6 +10,7 @@ import { Link, paths } from '../../lib/router.tsx'
 import { formatBytes, formatContextLength } from '../../lib/format.ts'
 import { FitIndicator } from './FitIndicator.tsx'
 import { PullControl } from './PullControl.tsx'
+import { translate } from '../../lib/locale.ts'
 
 export type ModelCardData =
   | { kind: 'local'; model: LocalModel }
@@ -30,10 +31,12 @@ export const ModelCard = memo(function ModelCard({
   data,
   onFocusCard,
   onInstalled,
+  selectedContextLength,
 }: {
   data: ModelCardData
   onFocusCard?: () => void
   onInstalled?: (name: string) => void
+  selectedContextLength?: number
 }) {
   const [pulling, setPulling] = useState(false)
   const model = data.model
@@ -94,11 +97,19 @@ export const ModelCard = memo(function ModelCard({
 
       {/* Характеристики */}
       <div className="mb-2 flex flex-wrap items-center gap-1">
-        {model.contextLength !== null && (
-          <Badge tone="outline" title="Максимальный размер окна контекста">
+        {local?.contextLimit.state === 'declared' ? (
+          <Badge tone="outline" title={translate('context.limit.declared')}>
+            {translate('context.window.short')} {formatContextLength(local.contextLimit.value)}
+          </Badge>
+        ) : local ? (
+          <Badge tone="outline" title={translate('context.limit.unknown')}>
+            {translate('context.window.unknown')}
+          </Badge>
+        ) : model.contextLength !== null ? (
+          <Badge tone="outline" title="Заявленный каталогом размер окна контекста">
             окно {formatContextLength(model.contextLength)}
           </Badge>
-        )}
+        ) : null}
         {local ? (
           <Badge tone="outline" title="Занимает на диске">
             {formatBytes(local.sizeBytes)}
@@ -184,7 +195,7 @@ export const ModelCard = memo(function ModelCard({
               Профиль
             </Link>
             <Link
-              to={`${paths.chat()}?model=${encodeURIComponent(model.name)}`}
+              to={`${paths.chat()}?model=${encodeURIComponent(model.name)}${selectedContextLength === undefined ? '' : `&numCtx=${selectedContextLength}`}`}
               onFocus={onFocusCard}
               className="flex h-8 flex-1 items-center justify-center rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:brightness-110"
             >

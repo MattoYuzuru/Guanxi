@@ -112,6 +112,7 @@ describe('Runtime Bar projection', () => {
     )
     expect(screen.getByText('Владелец — runtime-операция')).toBeTruthy()
     expect(screen.getByText(/это не история durable Jobs/)).toBeTruthy()
+    expect(screen.getByText(/не число hardware devices/)).toBeTruthy()
     operation.unmount()
 
     renderRuntime(
@@ -247,6 +248,7 @@ describe('Runtime Bar projection', () => {
     expect(host.textContent).toContain('compatibility estimate, не текущая доступность')
     expect(host.textContent).toContain('Discrete VRAM:Неизвестно')
     expect(host.textContent).not.toContain('Discrete VRAM:0')
+    expect(host.textContent).toContain('не сообщает количество accelerator devices')
   })
 
   it('keeps confirmed content during refresh/failure and exposes only transition alerts', () => {

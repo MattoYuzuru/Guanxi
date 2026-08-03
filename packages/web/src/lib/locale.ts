@@ -98,6 +98,8 @@ const english = {
   'runtime.admission.title': 'Live admission',
   'runtime.admission.scope':
     'One live lease and its FIFO waiters; this is not durable Job history.',
+  'runtime.admission.permitPolicy':
+    'One permit is a conservative application policy, not a hardware device count.',
   'runtime.admission.open': 'Admission is accepting work',
   'runtime.admission.closed': 'Admission is closed',
   'runtime.admission.idle': 'No active lease',
@@ -179,6 +181,8 @@ const english = {
   'runtime.host.discreteVram': 'Discrete VRAM',
   'runtime.host.gpuFree': 'GPU-free memory',
   'runtime.host.missing': 'Unknown fields',
+  'runtime.host.devicesUnknown':
+    'Accelerator device count is not reported by the current host adapter.',
   'runtime.confidence.observed': 'observed',
   'runtime.confidence.estimated': 'estimated',
   'runtime.confidence.unknown': 'unknown confidence',
@@ -262,6 +266,31 @@ const english = {
   'settings.prewarm.label': 'Prewarm a selected Chat model',
   'settings.prewarm.hint':
     'After a bounded debounce, request a lowest-priority short-TTL warm. Normal work always wins.',
+  'settings.context.label': 'Default agent context',
+  'settings.context.hint':
+    'Any positive whole-token count is accepted; a provider-declared model limit is checked separately.',
+  'launcher.context.aria': 'Context window used for fit calculation',
+  'launcher.context.short': 'context',
+  'launcher.context.hint':
+    'Preset values are suggestions. You can enter any positive whole-token count.',
+  'hardware.acceleratorProfile': 'Accelerator profile',
+  'hardware.deviceCountUnknown': 'Device count is not reported by this adapter.',
+  'context.validation.positiveSafeInteger':
+    'Enter a positive whole number no larger than JavaScript’s exact integer range.',
+  'context.limit.exceeded': 'The value exceeds the provider-declared model limit.',
+  'context.limit.declared': 'Provider-declared maximum',
+  'context.limit.unknown': 'The provider did not report a model context limit.',
+  'context.limit.conflicting': 'Provider declarations disagree; the limit remains unknown.',
+  'context.limit.source.tags': 'Ollama /api/tags',
+  'context.limit.source.show': 'Ollama /api/show',
+  'context.limit.confidence.declared': 'confidence: provider-declared',
+  'context.limit.confidence.unknown': 'confidence: unknown',
+  'context.window.short': 'context',
+  'context.window.unknown': 'context unknown',
+  'context.custom.apply': 'Apply custom context',
+  'context.custom.label': 'Custom context window',
+  'context.custom.hint':
+    'Apply a positive whole-token count to calculate fit at that exact value.',
   'catalog.source.fresh.title': 'Fresh remote catalog',
   'catalog.source.fresh.summary': 'The displayed provider sample is current.',
   'catalog.source.stale.title': 'Stale local catalog cache',
@@ -382,6 +411,8 @@ const russian: Messages = {
   'runtime.admission.title': 'Текущий admission',
   'runtime.admission.scope':
     'Один live lease и его FIFO-ожидание; это не история durable Jobs.',
+  'runtime.admission.permitPolicy':
+    'Один permit — консервативная policy приложения, а не число hardware devices.',
   'runtime.admission.open': 'Admission принимает работу',
   'runtime.admission.closed': 'Admission закрыт',
   'runtime.admission.idle': 'Активного lease нет',
@@ -463,6 +494,8 @@ const russian: Messages = {
   'runtime.host.discreteVram': 'Discrete VRAM',
   'runtime.host.gpuFree': 'Свободная GPU memory',
   'runtime.host.missing': 'Неизвестные поля',
+  'runtime.host.devicesUnknown':
+    'Текущий host adapter не сообщает количество accelerator devices.',
   'runtime.confidence.observed': 'наблюдается',
   'runtime.confidence.estimated': 'оценка',
   'runtime.confidence.unknown': 'confidence неизвестен',
@@ -546,6 +579,31 @@ const russian: Messages = {
   'settings.prewarm.label': 'Прогревать выбранную Chat-модель',
   'settings.prewarm.hint':
     'После bounded debounce запросить lowest-priority прогрев с коротким TTL. Обычная работа всегда сильнее.',
+  'settings.context.label': 'Контекст агента по умолчанию',
+  'settings.context.hint':
+    'Допустимо любое положительное целое число токенов; объявленный provider лимит модели проверяется отдельно.',
+  'launcher.context.aria': 'Размер окна контекста для расчёта влезаемости',
+  'launcher.context.short': 'окно',
+  'launcher.context.hint':
+    'Preset-значения — только подсказки. Можно ввести любое положительное целое число токенов.',
+  'hardware.acceleratorProfile': 'Профиль ускорителя',
+  'hardware.deviceCountUnknown': 'Этот adapter не сообщает число devices.',
+  'context.validation.positiveSafeInteger':
+    'Введите положительное целое число в диапазоне точных JavaScript integer.',
+  'context.limit.exceeded': 'Значение выше объявленного provider лимита модели.',
+  'context.limit.declared': 'Объявленный provider максимум',
+  'context.limit.unknown': 'Provider не сообщил лимит контекста модели.',
+  'context.limit.conflicting': 'Provider declarations расходятся; лимит остаётся неизвестным.',
+  'context.limit.source.tags': 'Ollama /api/tags',
+  'context.limit.source.show': 'Ollama /api/show',
+  'context.limit.confidence.declared': 'confidence: объявлено provider',
+  'context.limit.confidence.unknown': 'confidence: неизвестен',
+  'context.window.short': 'окно',
+  'context.window.unknown': 'окно неизвестно',
+  'context.custom.apply': 'Применить свой контекст',
+  'context.custom.label': 'Свой размер окна контекста',
+  'context.custom.hint':
+    'Примените положительное целое число токенов, чтобы рассчитать fit для точного значения.',
   'catalog.source.fresh.title': 'Свежий удалённый каталог',
   'catalog.source.fresh.summary': 'Показанный provider sample актуален.',
   'catalog.source.stale.title': 'Устаревший локальный cache каталога',

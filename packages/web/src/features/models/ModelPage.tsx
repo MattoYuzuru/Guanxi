@@ -1,9 +1,8 @@
 /**
  * Профиль модели: детали, шаблон, лицензия, слайдер окна и прогрев.
  *
- * Слайдер не ходит на сервер — вердикты под разные окна уже пришли в
- * `fitByContext`. Это важно: пересчёт по сети на каждое движение ручки
- * превратил бы слайдер в лаг-машину.
+ * Preset slider uses the bounded server projection. A custom value performs one
+ * explicit on-demand request, so suggestions never become a hidden whitelist.
  */
 import { useMemo, useState } from 'react'
 import type { FitVerdict, Health, ModelDetail, RunningModel } from '@alamo/contract'
@@ -15,6 +14,7 @@ import {
   Button,
   Callout,
   Disclosure,
+  Input,
   Skeleton,
   StepSlider,
   Stat,
@@ -28,10 +28,16 @@ import {
   formatRelativeTime,
 } from '../../lib/format.ts'
 import { FitIndicator } from './FitIndicator.tsx'
+import { exceedsDeclaredContextLimit, parsePositiveSafeInteger } from '../../lib/contextLength.ts'
+import { translate } from '../../lib/locale.ts'
 
 export function ModelPage({ name, health }: { name: string; health: Health }) {
   const navigate = useNavigate()
-  const detail = useAsync((signal) => api.getModel(name, undefined, signal), [name])
+  const [requestedContext, setRequestedContext] = useState<number | undefined>(undefined)
+  const detail = useAsync(
+    (signal) => api.getModel(name, requestedContext, signal),
+    [name, requestedContext],
+  )
 
   if (detail.loading) return <ModelSkeleton />
 
@@ -61,8 +67,11 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
 
   return (
     <ModelProfile
+      key={`${detail.data.digest}:${requestedContext ?? 'default'}:${detail.data.fit.contextLength}`}
       model={detail.data}
       health={health}
+      requestedContext={requestedContext}
+      onRequestContext={setRequestedContext}
       onStartChat={(contextLength) =>
         navigate(
           `${paths.chat()}?model=${encodeURIComponent(name)}&numCtx=${contextLength}`,
@@ -76,10 +85,14 @@ function ModelProfile({
   model,
   health,
   onStartChat,
+  onRequestContext,
+  requestedContext,
 }: {
   model: ModelDetail
   health: Health
   onStartChat: (contextLength: number) => void
+  onRequestContext: (contextLength: number) => void
+  requestedContext?: number
 }) {
   /* Слайдер ходит по тем окнам, для которых сервер прислал вердикт. */
   const contextValues = useMemo(() => {
@@ -87,13 +100,14 @@ function ModelProfile({
     return values.length > 0 ? values : [model.contextLength]
   }, [model.fitByContext, model.contextLength])
 
-  const defaultContext = useMemo(() => {
-    // Стартуем с ближайшего к дефолту чата, но не выше максимума модели.
-    const target = Math.min(DEFAULT_CHAT_NUM_CTX, model.contextLength)
-    return nearest(contextValues, target)
-  }, [contextValues, model.contextLength])
+  const defaultContext = useMemo(
+    () => nearest(contextValues, requestedContext ?? DEFAULT_CHAT_NUM_CTX),
+    [contextValues, requestedContext],
+  )
 
   const [contextLength, setContextLength] = useState(defaultContext)
+  const [contextDraft, setContextDraft] = useState(String(defaultContext))
+  const [contextError, setContextError] = useState<string | null>(null)
   const [warmed, setWarmed] = useState<{ running: RunningModel; fit: FitVerdict } | null>(null)
   const [warming, setWarming] = useState(false)
   const [warmError, setWarmError] = useState<string | null>(null)
@@ -107,6 +121,21 @@ function ModelProfile({
   // под которое грели.
   const shownFit =
     warmed && warmed.fit.contextLength === contextLength ? warmed.fit : sliderFit
+  const contextBlocked = exceedsDeclaredContextLimit(contextLength, model.contextLimit)
+
+  const applyCustomContext = () => {
+    const parsed = parsePositiveSafeInteger(contextDraft)
+    if (parsed === null) {
+      setContextError(translate('context.validation.positiveSafeInteger'))
+      return
+    }
+    if (exceedsDeclaredContextLimit(parsed, model.contextLimit)) {
+      setContextError(translate('context.limit.exceeded'))
+      return
+    }
+    setContextError(null)
+    onRequestContext(parsed)
+  }
 
   const warm = async () => {
     setWarming(true)
@@ -156,10 +185,10 @@ function ModelProfile({
         </div>
 
         <div className="flex shrink-0 gap-1.5">
-          <Button variant="secondary" onClick={warm} loading={warming}>
+          <Button variant="secondary" onClick={warm} loading={warming} disabled={contextBlocked}>
             {warming ? 'Греем…' : 'Прогреть'}
           </Button>
-          <Button variant="primary" onClick={() => onStartChat(contextLength)}>
+          <Button variant="primary" onClick={() => onStartChat(contextLength)} disabled={contextBlocked}>
             Начать чат
           </Button>
         </div>
@@ -221,14 +250,73 @@ function ModelProfile({
             <StepSlider
               values={contextValues}
               value={contextLength}
-              onChange={setContextLength}
+              onChange={(value) => {
+                setContextLength(value)
+                setContextDraft(String(value))
+                setContextError(null)
+              }}
               format={formatContextLength}
               label="Размер окна контекста"
             />
 
-            <p className="mt-1.5 mb-3 text-2xs text-[var(--fg-subtle)]">
-              KV-кэш растёт линейно с окном. Максимум модели —{' '}
-              {formatContextLength(model.contextLength)}.
+            <div className="mt-2">
+              <label htmlFor="model-custom-context" className="text-2xs font-medium">
+                {translate('context.custom.label')}
+              </label>
+              <div className="mt-1 flex min-w-0 gap-1.5">
+                <Input
+                  id="model-custom-context"
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  value={contextDraft}
+                  aria-invalid={contextError !== null}
+                  aria-describedby="model-custom-context-hint"
+                  onChange={(event) => setContextDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return
+                    event.preventDefault()
+                    applyCustomContext()
+                  }}
+                />
+                <Button variant="secondary" size="sm" onClick={applyCustomContext}>
+                  {translate('context.custom.apply')}
+                </Button>
+              </div>
+              <p id="model-custom-context-hint" className="mt-1 text-2xs text-[var(--fg-subtle)]">
+                {translate('context.custom.hint')}
+              </p>
+              {contextError ? (
+                <p className="mt-1 text-2xs text-[var(--danger)]" role="alert">
+                  {contextError}
+                </p>
+              ) : null}
+            </div>
+
+            <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+              {model.contextLimit.state === 'declared' ? (
+                <>
+                  {translate('context.limit.declared')}: {formatContextLength(model.contextLimit.value)} ·{' '}
+                  {model.contextLimit.source === 'ollama_api_tags'
+                    ? translate('context.limit.source.tags')
+                    : translate('context.limit.source.show')}{' '}
+                  · {translate('context.limit.confidence.declared')} ·{' '}
+                  {formatDateTime(model.contextLimit.observedAt)}
+                </>
+              ) : model.contextLimit.source === 'conflicting_provider_declarations' ? (
+                <>
+                  {translate('context.limit.conflicting')} ·{' '}
+                  {translate('context.limit.confidence.unknown')} ·{' '}
+                  {formatDateTime(model.contextLimit.observedAt)}
+                </>
+              ) : (
+                <>
+                  {translate('context.limit.unknown')} ·{' '}
+                  {translate('context.limit.confidence.unknown')} ·{' '}
+                  {formatDateTime(model.contextLimit.observedAt)}
+                </>
+              )}
             </p>
 
             <FitIndicator

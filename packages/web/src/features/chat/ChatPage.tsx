@@ -44,6 +44,10 @@ import {
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatRelativeTime, formatTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import {
+  exceedsDeclaredContextLimit,
+  parsePositiveSafeInteger,
+} from '../../lib/contextLength.ts'
 import { Link, paths, useNavigate } from '../../lib/router.tsx'
 import { useAsync, useLocalStorage } from '../../lib/useAsync.ts'
 import { ApprovalPrompt } from '../agent/ApprovalPrompt.tsx'
@@ -83,26 +87,27 @@ function NewThreadPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  const requestedContext = Number(query.get('numCtx'))
+  const requestedContextText = query.get('numCtx')
+  const requestedContext = parsePositiveSafeInteger(requestedContextText)
+  const contextInputInvalid = requestedContextText !== null && requestedContext === null
   const defaultContext =
     mode === 'agent'
       ? settings.data?.defaultNumCtx ?? DEFAULT_NUM_CTX
       : DEFAULT_CHAT_NUM_CTX
   const numCtx =
-    Number.isFinite(requestedContext) && requestedContext >= 512
+    requestedContext !== null
       ? requestedContext
       : defaultContext
   const models = useAsync((signal) => api.listModels(numCtx, signal), [numCtx])
   const workspaces = useAsync((signal) => api.listWorkspaces(signal), [])
   const availableModels = models.data?.models ?? []
   const selectedModel =
-    mode === 'chat'
-      ? (availableModels.find(
-          (item) => item.name === model && !item.capabilities.includes('embedding'),
-        ) ?? null)
-      : null
+    availableModels.find(
+      (item) => item.name === model && !item.capabilities.includes('embedding'),
+    ) ?? null
+  const contextBlocked = exceedsDeclaredContextLimit(numCtx, selectedModel?.contextLimit)
   const prewarm = useModelPrewarm({
-    model: selectedModel,
+    model: mode === 'chat' ? selectedModel : null,
     contextLength: numCtx,
     enabled: settings.data?.prewarmEnabled,
   })
@@ -121,7 +126,7 @@ function NewThreadPage() {
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
-    if (!model) return
+    if (!model || contextBlocked || contextInputInvalid) return
 
     setCreating(true)
     setCreateError(null)
@@ -200,12 +205,28 @@ function NewThreadPage() {
             {models.error !== null && (
               <p className="mt-1 text-2xs text-[var(--danger)]">{errorMessage(models.error)}</p>
             )}
-            {selectedModel ? (
+            {selectedModel && mode === 'chat' ? (
               <p className="mt-1 text-2xs text-[var(--fg-subtle)]" role="status" aria-live="polite">
                 {prewarmLabel(prewarm)}
               </p>
             ) : null}
           </label>
+
+          {contextBlocked && selectedModel?.contextLimit.state === 'declared' ? (
+            <Callout tone="danger" title={translate('context.limit.exceeded')}>
+              {translate('context.limit.declared')}: {' '}
+              {selectedModel.contextLimit.value.toLocaleString()} · {' '}
+              {selectedModel.contextLimit.source === 'ollama_api_tags'
+                ? translate('context.limit.source.tags')
+                : translate('context.limit.source.show')}
+            </Callout>
+          ) : null}
+
+          {contextInputInvalid ? (
+            <Callout tone="danger" title={translate('context.validation.positiveSafeInteger')}>
+              {translate('context.custom.hint')}
+            </Callout>
+          ) : null}
 
           {mode === 'agent' && (
             <label className="block">
@@ -232,7 +253,12 @@ function NewThreadPage() {
           )}
 
           <div className="flex justify-end">
-            <Button variant="primary" type="submit" loading={creating} disabled={!model}>
+            <Button
+              variant="primary"
+              type="submit"
+              loading={creating}
+              disabled={!model || contextBlocked || contextInputInvalid}
+            >
               Создать диалог
             </Button>
           </div>
