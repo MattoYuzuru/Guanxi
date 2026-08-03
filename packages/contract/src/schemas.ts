@@ -323,6 +323,77 @@ export const runtimeHostTelemetrySchema = z
   })
 export type RuntimeHostTelemetry = z.infer<typeof runtimeHostTelemetrySchema>
 
+export const modelObservationKeyUnavailableReasonSchema = z.enum([
+  'legacy_snapshot',
+  'invalid_model_reference',
+  'runtime_reference_ambiguous',
+  'runtime_digest_missing',
+  'runtime_context_missing',
+  'installed_source_unavailable',
+  'installed_reference_missing',
+  'installed_reference_ambiguous',
+  'installed_digest_mismatch',
+  'runtime_version_unavailable',
+  'hardware_fingerprint_unavailable',
+])
+export type ModelObservationKeyUnavailableReason = z.infer<
+  typeof modelObservationKeyUnavailableReasonSchema
+>
+
+const sha256FingerprintSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/u)
+
+export const modelObservationKeySchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('complete'),
+      version: z.literal(1),
+      id: sha256FingerprintSchema,
+      components: z
+        .object({
+          provider: z.literal('ollama'),
+          normalizedModelReference: z.string().min(1),
+          artifactDigest: z.string().min(1),
+          contextLength: z.number().int().positive(),
+          runtimeBackend: z
+            .object({
+              runtime: z.literal('ollama'),
+              version: z.string().min(1),
+              source: z.literal('ollama_api_version'),
+              fingerprint: sha256FingerprintSchema,
+            })
+            .strict(),
+          hardware: z
+            .object({
+              platform: z.literal('darwin'),
+              arch: z.literal('arm64'),
+              accelerator: z.literal('metal'),
+              unifiedMemory: z.literal(true),
+              totalMemoryBytes: z.number().int().positive(),
+              source: z.literal('local_runtime_profile'),
+              totalMemorySource: z.literal('node_os_totalmem'),
+              fingerprint: sha256FingerprintSchema,
+            })
+            .strict(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unavailable'),
+      version: z.literal(1),
+      reason: modelObservationKeyUnavailableReasonSchema,
+    })
+    .strict(),
+])
+export type ModelObservationKey = z.infer<typeof modelObservationKeySchema>
+
+const legacyUnavailableObservationKey: ModelObservationKey = {
+  state: 'unavailable',
+  version: 1,
+  reason: 'legacy_snapshot',
+}
+
 export const runtimeCurrentFitReasonSchema = z.enum([
   'observed_current_residency',
   'runtime_owner_unknown',
@@ -336,6 +407,7 @@ export const runtimeCurrentFitReasonSchema = z.enum([
   'host_available_memory_unknown',
   'host_pressure_unknown',
   'host_pressure_elevated',
+  'observation_key_unavailable',
 ])
 export type RuntimeCurrentFitReason = z.infer<typeof runtimeCurrentFitReasonSchema>
 
@@ -505,8 +577,10 @@ export const runtimeModelObservationSchema = runningModelSchema
       'exact_normalized_model_reference',
       'runtime_observation_only',
     ]),
-    /** A lease has no digest, so `/api/ps` cannot prove artifact identity. */
-    artifactIdentity: z.literal('unknown'),
+    observationKey: modelObservationKeySchema
+      .optional()
+      .default(legacyUnavailableObservationKey),
+    artifactIdentity: z.enum(['unknown', 'exact_digest']).optional().default('unknown'),
     currentFit: runtimeCurrentFitSchema,
   })
   .strict()
@@ -527,7 +601,10 @@ export const runtimeReconciliationDecisionSchema = z
       'runtime_observation_only',
       'none',
     ]),
-    artifactIdentity: z.literal('unknown'),
+    observationKey: modelObservationKeySchema
+      .optional()
+      .default(legacyUnavailableObservationKey),
+    artifactIdentity: z.enum(['unknown', 'exact_digest']).optional().default('unknown'),
   })
   .strict()
 export type RuntimeReconciliationDecision = z.infer<
@@ -568,6 +645,16 @@ export const runtimeSnapshotSchema = z
         message: 'runtime models must be present exactly for an available source',
       })
     }
+    snapshot.models?.forEach((model, index) => {
+      const complete = model.observationKey.state === 'complete'
+      if (complete !== (model.artifactIdentity === 'exact_digest')) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['models', index, 'artifactIdentity'],
+          message: 'exact artifact identity requires one complete observation key',
+        })
+      }
+    })
   })
 export type RuntimeSnapshot = z.infer<typeof runtimeSnapshotSchema>
 
