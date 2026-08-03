@@ -46,7 +46,9 @@ export function App() {
         onRetry={retry}
         retrying={retrying}
       />
-      <RuntimeStatus />
+      <ErrorBoundary scope="runtime">
+        <RuntimeStatus />
+      </ErrorBoundary>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         {route.name === 'launcher' && <LauncherPage health={data} />}
         {route.name === 'model' && <ModelPage name={route.modelName} health={data} />}

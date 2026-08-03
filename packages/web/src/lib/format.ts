@@ -1,4 +1,4 @@
-/** Форматирование чисел и времени. Всё на русском, единицы — ГБ/МБ, не GiB. */
+/** Locale-aware common formatting. Units remain base-1024 compatibility labels. */
 
 const NBSP = ' '
 
@@ -6,7 +6,9 @@ export function formatBytes(bytes: number | null | undefined, digits?: number): 
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return '—'
   if (bytes === 0) return `0${NBSP}Б`
 
-  const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']
+  const units = currentLocale() === 'ru'
+    ? ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']
+    : ['B', 'KB', 'MB', 'GB', 'TB']
   const exp = Math.min(Math.floor(Math.log(Math.abs(bytes)) / Math.log(1024)), units.length - 1)
   const value = bytes / 1024 ** exp
   // Байты и килобайты дробями показывать незачем.
@@ -22,18 +24,23 @@ export function formatBytesPerSecond(bps: number | null | undefined): string {
 /** Длительности показываем по-разному: миллисекунды важны при попадании в кэш. */
 export function formatDuration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return '—'
-  if (ms < 1) return `<1${NBSP}мс`
-  if (ms < 1000) return `${Math.round(ms)}${NBSP}мс`
-  if (ms < 10_000) return `${trimZeros((ms / 1000).toFixed(1))}${NBSP}с`
-  if (ms < 60_000) return `${Math.round(ms / 1000)}${NBSP}с`
+  const russian = currentLocale() === 'ru'
+  const millisecond = russian ? 'мс' : 'ms'
+  const second = russian ? 'с' : 's'
+  const minute = russian ? 'мин' : 'min'
+  const hour = russian ? 'ч' : 'h'
+  if (ms < 1) return `<1${NBSP}${millisecond}`
+  if (ms < 1000) return `${Math.round(ms)}${NBSP}${millisecond}`
+  if (ms < 10_000) return `${trimZeros((ms / 1000).toFixed(1))}${NBSP}${second}`
+  if (ms < 60_000) return `${Math.round(ms / 1000)}${NBSP}${second}`
 
   const totalSeconds = Math.round(ms / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
-  if (minutes < 60) return `${minutes}${NBSP}мин${seconds ? ` ${seconds}${NBSP}с` : ''}`
+  if (minutes < 60) return `${minutes}${NBSP}${minute}${seconds ? ` ${seconds}${NBSP}${second}` : ''}`
 
   const hours = Math.floor(minutes / 60)
-  return `${hours}${NBSP}ч${minutes % 60 ? ` ${minutes % 60}${NBSP}мин` : ''}`
+  return `${hours}${NBSP}${hour}${minutes % 60 ? ` ${minutes % 60}${NBSP}${minute}` : ''}`
 }
 
 export function formatEta(seconds: number | null | undefined): string {
@@ -70,7 +77,7 @@ export function formatUtilization(utilization: number): string {
 
 export function formatTokensPerSecond(tps: number | null | undefined): string {
   if (tps === null || tps === undefined || !Number.isFinite(tps)) return '—'
-  return `${trimZeros(tps.toFixed(1))} tok/с`
+  return `${trimZeros(tps.toFixed(1))} tok/${currentLocale() === 'ru' ? 'с' : 's'}`
 }
 
 const RELATIVE_STEPS: Array<[limit: number, divisor: number, unit: Intl.RelativeTimeFormatUnit]> = [
@@ -82,8 +89,6 @@ const RELATIVE_STEPS: Array<[limit: number, divisor: number, unit: Intl.Relative
   [31_536_000_000, 2_592_000_000, 'month'],
 ]
 
-const relativeFormatter = new Intl.RelativeTimeFormat('ru', { numeric: 'auto' })
-
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const timestamp = Date.parse(iso)
@@ -91,7 +96,9 @@ export function formatRelativeTime(iso: string | null | undefined): string {
 
   const diff = timestamp - Date.now()
   const abs = Math.abs(diff)
-  if (abs < 45_000) return 'только что'
+  const locale = currentLocale()
+  if (abs < 45_000) return locale === 'ru' ? 'только что' : 'just now'
+  const relativeFormatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
 
   for (const [limit, divisor, unit] of RELATIVE_STEPS) {
     if (abs < limit) return relativeFormatter.format(Math.round(diff / divisor), unit)
@@ -99,27 +106,26 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   return relativeFormatter.format(Math.round(diff / 31_536_000_000), 'year')
 }
 
-const dateTimeFormatter = new Intl.DateTimeFormat('ru', {
-  day: '2-digit',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const timestamp = Date.parse(iso)
   if (Number.isNaN(timestamp)) return '—'
-  return dateTimeFormatter.format(timestamp)
+  return new Intl.DateTimeFormat(currentLocale(), {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
 }
-
-const timeFormatter = new Intl.DateTimeFormat('ru', { hour: '2-digit', minute: '2-digit' })
 
 export function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const timestamp = Date.parse(iso)
   if (Number.isNaN(timestamp)) return '—'
-  return timeFormatter.format(timestamp)
+  return new Intl.DateTimeFormat(currentLocale(), {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
 }
 
 /** Путь для узкой колонки: /Users/me/Projects/app → …/Projects/app */
@@ -144,6 +150,12 @@ export function formatCount(count: number, one: string, few: string, many: strin
 
 function trimZeros(value: string): string {
   return value.replace(/\.?0+$/, '')
+}
+
+function currentLocale(): 'en' | 'ru' {
+  if (typeof document === 'undefined') return 'en'
+  const language = document.documentElement.lang.toLowerCase()
+  return language === 'ru' || language.startsWith('ru-') ? 'ru' : 'en'
 }
 
 export { NBSP }

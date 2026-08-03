@@ -7,7 +7,7 @@ import {
 } from 'react'
 import { translate } from '../lib/locale.ts'
 
-type ErrorScope = 'root' | 'chat'
+type ErrorScope = 'root' | 'chat' | 'runtime'
 
 type Diagnostic = {
   correlationId: string
@@ -62,25 +62,36 @@ function ErrorFallback({
   const titleRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
-    titleRef.current?.focus()
-  }, [])
+    if (scope !== 'runtime') titleRef.current?.focus()
+  }, [scope])
 
   const root = scope === 'root'
-  const title = translate(root ? 'error.root.title' : 'error.chat.title')
-  const summary = translate(root ? 'error.root.summary' : 'error.chat.summary')
+  const runtime = scope === 'runtime'
+  const title = translate(
+    root ? 'error.root.title' : runtime ? 'error.runtime.title' : 'error.chat.title',
+  )
+  const summary = translate(
+    root ? 'error.root.summary' : runtime ? 'error.runtime.summary' : 'error.chat.summary',
+  )
 
   return (
     <div
       className={
         root
           ? 'flex min-h-dvh items-center justify-center bg-[var(--bg)] p-4 text-[var(--fg)]'
-          : 'flex min-h-[calc(100dvh-44px)] items-start justify-center bg-[var(--bg)] p-4 text-[var(--fg)] sm:p-6'
+          : runtime
+            ? 'border-b border-[var(--border)] bg-[var(--bg-subtle)] p-2 text-[var(--fg)]'
+            : 'flex min-h-[calc(100dvh-44px)] items-start justify-center bg-[var(--bg)] p-4 text-[var(--fg)] sm:p-6'
       }
     >
       <section
         role="alert"
         aria-labelledby={`error-title-${scope}`}
-        className="surface w-full max-w-2xl rounded-xl p-4 shadow-[var(--shadow-card)] sm:p-5"
+        className={
+          runtime
+            ? 'w-full px-1 py-1'
+            : 'surface w-full max-w-2xl rounded-xl p-4 shadow-[var(--shadow-card)] sm:p-5'
+        }
       >
         <p className="mb-1 font-mono text-2xs tracking-wide text-[var(--danger)] uppercase">
           {diagnostic.correlationId}
@@ -95,7 +106,7 @@ function ErrorFallback({
         </h1>
         <p className="mt-1 max-w-prose text-xs text-[var(--fg-muted)]">{summary}</p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className={runtime ? 'mt-2 flex flex-wrap gap-2' : 'mt-4 flex flex-wrap gap-2'}>
           <button
             type="button"
             className="inline-flex h-8 items-center justify-center rounded-md border border-transparent bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:brightness-110"
@@ -103,7 +114,7 @@ function ErrorFallback({
           >
             {translate('error.reload')}
           </button>
-          {!root && (
+          {!root && !runtime && (
             <a
               href="/chat"
               className="inline-flex h-8 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 text-xs font-medium hover:bg-[var(--bg-subtle)]"
