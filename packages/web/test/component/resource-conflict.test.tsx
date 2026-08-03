@@ -136,6 +136,50 @@ describe('resource conflict decision', () => {
     expect(loader).toHaveBeenCalledTimes(2)
   })
 
+  it('never opens Stop for prewarm alone and hides Stop when normal work is queued behind it', async () => {
+    const prewarmOnly = runtimeSnapshotFixture((snapshot) => {
+      snapshot.governor.queued = []
+      if (snapshot.governor.activeLease) {
+        snapshot.governor.activeLease.operation = 'model_prewarm'
+        snapshot.governor.activeLease.priority = 'prewarm'
+        snapshot.governor.activeLease.owner = {
+          kind: 'operation',
+          operationId: 'model_prewarm:fixture',
+        }
+      }
+    })
+    const queuedNormal = runtimeSnapshotFixture((snapshot) => {
+      if (snapshot.governor.activeLease) {
+        snapshot.governor.activeLease.operation = 'model_prewarm'
+        snapshot.governor.activeLease.priority = 'prewarm'
+        snapshot.governor.activeLease.owner = {
+          kind: 'operation',
+          operationId: 'model_prewarm:fixture',
+        }
+      }
+    })
+    const loader = vi
+      .fn<(signal: AbortSignal) => Promise<RuntimeSnapshot>>()
+      .mockResolvedValueOnce(prewarmOnly)
+      .mockResolvedValueOnce(prewarmOnly)
+      .mockResolvedValueOnce(queuedNormal)
+    const dispatch = vi.fn<ChatIntentDispatcher>((_intent, callbacks) => callbacks.onAccepted())
+    renderDecision(loader, dispatch)
+    await screen.findByText('ready')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send fixture' }))
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send fixture' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(screen.queryByRole('button', { name: 'Остановить текущую и переключиться' })).toBeNull()
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Поставить после текущей' }),
+    )
+    expect(dialog.textContent).not.toContain('model_prewarm:fixture')
+  })
+
   it('shows exact FIFO facts, defaults focus to Queue, traps/restores focus, and queues once', async () => {
     const snapshot = runtimeSnapshotFixture()
     const loader = vi.fn(async () => snapshot)

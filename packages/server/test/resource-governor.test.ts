@@ -11,14 +11,16 @@ import {
 
 function request(
   ownerId: string,
-  options: Partial<Pick<AdmissionRequest, 'operation' | 'model' | 'requestedContext'>> = {},
+  options: Partial<
+    Pick<AdmissionRequest, 'operation' | 'model' | 'requestedContext' | 'priority'>
+  > = {},
 ): AdmissionRequest {
   return {
     owner: { kind: 'operation', operationId: ownerId },
     operation: options.operation ?? 'model_warm',
     model: options.model ?? { provider: 'ollama', name: `model-${ownerId}` },
     requestedContext: options.requestedContext ?? 4_096,
-    priority: 'normal',
+    priority: options.priority ?? 'normal',
     enqueuedAt: '2026-08-03T10:00:00.000Z',
   }
 }
@@ -56,8 +58,8 @@ describe('ResourceGovernor typed admission and observation', () => {
 
     const snapshot = governor.snapshot()
     assert.equal(snapshot.policy.acceleratorPermits, 1)
-    assert.equal(snapshot.policy.order, 'fifo')
-    assert.deepEqual(snapshot.policy.priorities, ['normal'])
+    assert.equal(snapshot.policy.order, 'priority_fifo')
+    assert.deepEqual(snapshot.policy.priorities, ['normal', 'prewarm'])
     assert.equal(snapshot.policy.scope, 'application_process')
     assert.equal(snapshot.policy.basis, SINGLE_PERMIT_POLICY_BASIS)
     assert.deepEqual(snapshot.activeLease, {
@@ -67,6 +69,7 @@ describe('ResourceGovernor typed admission and observation', () => {
       operation: 'compaction',
       model: { provider: 'ollama', name: 'exact-model' },
       requestedContext: 32_768,
+      priority: 'normal',
       acquiredAt: firstLease.acquiredAt,
       state: 'active',
     })
@@ -124,6 +127,144 @@ describe('ResourceGovernor typed admission and observation', () => {
     nextLease.release()
     assert.equal(governor.active, false)
     assert.equal(governor.waiting, 0)
+  })
+
+  it('keeps normal FIFO ahead of queued prewarm and preempts only the exact active prewarm owner', async () => {
+    const governor = deterministicGovernor()
+    const prewarmController = new AbortController()
+    const activePrewarmTicket = governor.enqueue(
+      request('prewarm-active', { operation: 'model_prewarm', priority: 'prewarm' }),
+    )
+    const activePrewarm = await governor.acquire(activePrewarmTicket, {
+      signal: prewarmController.signal,
+      preemptOwner: () => prewarmController.abort('normal-arrived'),
+    })
+    prewarmController.signal.addEventListener('abort', () => activePrewarm.release(), {
+      once: true,
+    })
+
+    const queuedPrewarmController = new AbortController()
+    const queuedPrewarmTicket = governor.enqueue(
+      request('prewarm-queued', { operation: 'model_prewarm', priority: 'prewarm' }),
+    )
+    const queuedPrewarm = governor.acquire(queuedPrewarmTicket, {
+      signal: queuedPrewarmController.signal,
+    })
+    const queuedPrewarmRejected = assert.rejects(queuedPrewarm, { name: 'AbortError' })
+
+    const order: string[] = []
+    const firstNormalTicket = governor.enqueue(request('normal-first'))
+    const firstNormal = governor.acquire(firstNormalTicket).then((lease) => {
+      order.push('normal-first')
+      return lease
+    })
+    const secondNormalTicket = governor.enqueue(request('normal-second'))
+    const secondNormal = governor.acquire(secondNormalTicket).then((lease) => {
+      order.push('normal-second')
+      return lease
+    })
+
+    await queuedPrewarmRejected
+    assert.equal(prewarmController.signal.aborted, true)
+    assert.equal(queuedPrewarmTicket.state, 'cancelled')
+    assert.equal(governor.cancel(queuedPrewarmTicket), false)
+    assert.equal(governor.cancel(queuedPrewarmTicket), false)
+    const firstLease = await firstNormal
+    assert.equal(activePrewarm.state, 'released')
+    activePrewarm.release()
+    activePrewarm.release()
+    assert.deepEqual(order, ['normal-first'])
+    firstLease.release()
+    const secondLease = await secondNormal
+    assert.deepEqual(order, ['normal-first', 'normal-second'])
+    secondLease.release()
+    assert.equal(governor.active, false)
+  })
+
+  it('never admits prewarm while normal work exists and never aborts an active normal owner', async () => {
+    const governor = deterministicGovernor()
+    let normalAbortCalls = 0
+    const normalTicket = governor.enqueue(request('normal-active'))
+    const normalLease = await governor.acquire(normalTicket, {
+      preemptOwner: () => {
+        normalAbortCalls += 1
+      },
+    })
+
+    assert.throws(
+      () =>
+        governor.enqueue(
+          request('prewarm-denied', {
+            operation: 'model_prewarm',
+            priority: 'prewarm',
+          }),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ResourceGovernorError)
+        assert.equal(error.code, 'prewarm_normal_work_present')
+        return true
+      },
+    )
+    assert.equal(normalAbortCalls, 0)
+    assert.equal(governor.waiting, 0)
+    assert.equal(governor.snapshot().lastDecision?.decisionCode, 'prewarm_skipped_normal_work')
+    normalLease.release()
+  })
+
+  it('gives normal work the only lease for both simultaneous callback orders in 10 repeats', async () => {
+    for (let repeat = 0; repeat < 10; repeat += 1) {
+      for (const normalFirst of [true, false]) {
+        const governor = deterministicGovernor()
+        let simultaneousActive = 0
+        let maxActive = 0
+        const entered: string[] = []
+
+        const runNormal = async () => {
+          const ticket = governor.enqueue(request(`normal-${repeat}`))
+          const lease = await governor.acquire(ticket)
+          simultaneousActive += 1
+          maxActive = Math.max(maxActive, simultaneousActive)
+          entered.push('normal')
+          simultaneousActive -= 1
+          lease.release()
+        }
+        const runPrewarm = async () => {
+          let ticket
+          try {
+            ticket = governor.enqueue(
+              request(`prewarm-${repeat}`, {
+                operation: 'model_prewarm',
+                priority: 'prewarm',
+              }),
+            )
+          } catch (error) {
+            assert.ok(error instanceof ResourceGovernorError)
+            assert.equal(error.code, 'prewarm_normal_work_present')
+            return
+          }
+          const controller = new AbortController()
+          const lease = await governor.acquire(ticket, {
+            signal: controller.signal,
+            preemptOwner: () => controller.abort('normal-arrived'),
+          })
+          if (controller.signal.aborted) {
+            lease.release()
+            return
+          }
+          simultaneousActive += 1
+          maxActive = Math.max(maxActive, simultaneousActive)
+          entered.push('prewarm')
+          simultaneousActive -= 1
+          lease.release()
+        }
+
+        if (normalFirst) await Promise.all([runNormal(), runPrewarm()])
+        else await Promise.all([runPrewarm(), runNormal()])
+        assert.equal(maxActive, 1)
+        assert.equal(entered.filter((entry) => entry === 'normal').length, 1)
+        assert.equal(governor.active, false)
+      }
+    }
   })
 
   it('rejects exact and conservative unload conflicts without leaking private values', async () => {
@@ -184,8 +325,12 @@ describe('ResourceGovernor typed admission and observation', () => {
   it('closes idempotently, aborts owners, rejects waiters, and never transfers twice in 10 repeats', async () => {
     for (let repeat = 0; repeat < 10; repeat += 1) {
       const governor = deterministicGovernor()
+      const requestOptions =
+        repeat % 2 === 0
+          ? {}
+          : ({ operation: 'model_prewarm', priority: 'prewarm' } as const)
       const activeController = new AbortController()
-      const activeTicket = governor.enqueue(request(`active-${repeat}`))
+      const activeTicket = governor.enqueue(request(`active-${repeat}`, requestOptions))
       const activeLease = await governor.acquire(activeTicket, {
         signal: activeController.signal,
         abortOwner: () => activeController.abort('application-shutdown'),
@@ -195,7 +340,7 @@ describe('ResourceGovernor typed admission and observation', () => {
       })
 
       const waitingController = new AbortController()
-      const waitingTicket = governor.enqueue(request(`waiting-${repeat}`))
+      const waitingTicket = governor.enqueue(request(`waiting-${repeat}`, requestOptions))
       const waiting = governor.acquire(waitingTicket, {
         signal: waitingController.signal,
         abortOwner: () => waitingController.abort('application-shutdown'),
@@ -207,6 +352,7 @@ describe('ResourceGovernor typed admission and observation', () => {
 
       activeLease.release()
       activeLease.release()
+      assert.equal(governor.cancel(waitingTicket), false)
       assert.equal(governor.cancel(waitingTicket), false)
       assert.equal(governor.snapshot().accepting, false)
       assert.equal(governor.snapshot().activeLease, null)

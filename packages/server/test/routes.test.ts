@@ -374,4 +374,26 @@ describe('thread routes', () => {
     assert.equal(assistant?.stopReason, 'stop')
     context.db.close()
   })
+
+  it('round-trips the additive prewarm setting through the public settings route', async () => {
+    const context = testContext()
+    const app = createApp(context)
+    try {
+      const initial = (await (await app.request('/api/settings')).json()) as {
+        prewarmEnabled: boolean
+      }
+      assert.equal(initial.prewarmEnabled, true)
+
+      const updated = await app.request('/api/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prewarmEnabled: false }),
+      })
+      assert.equal(updated.status, 200)
+      assert.equal(((await updated.json()) as { prewarmEnabled: boolean }).prewarmEnabled, false)
+      assert.equal(context.settings.get().prewarmEnabled, false)
+    } finally {
+      context.db.close()
+    }
+  })
 })

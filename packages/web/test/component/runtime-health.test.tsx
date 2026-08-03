@@ -79,6 +79,27 @@ describe('Runtime Bar projection', () => {
     expect(screen.queryByRole('link', { name: /Job|операц/u })).toBeNull()
   })
 
+  it('shows prewarm purpose and lowest priority without claiming a durable Job owner', () => {
+    renderRuntime(
+      runtimeSnapshotFixture((snapshot) => {
+        snapshot.governor.queued = []
+        if (snapshot.governor.activeLease) {
+          snapshot.governor.activeLease.operation = 'model_prewarm'
+          snapshot.governor.activeLease.priority = 'prewarm'
+          snapshot.governor.activeLease.owner = {
+            kind: 'operation',
+            operationId: 'model_prewarm:fixture',
+          }
+        }
+      }),
+    )
+
+    expect(screen.getAllByText('Автоматический prewarm модели').length).toBeGreaterThan(0)
+    expect(screen.getByText('Prewarm (самый низкий)')).toBeTruthy()
+    expect(screen.getByText('Владелец — runtime-операция')).toBeTruthy()
+    expect(screen.queryByText('Владелец — Job')).toBeNull()
+  })
+
   it('shows operation owner, idle and closed admission without inventing durable Job history', () => {
     const operation = renderRuntime(
       runtimeSnapshotFixture((snapshot) => {

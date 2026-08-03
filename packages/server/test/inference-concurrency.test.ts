@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { HardwareInfo } from '@alamo/contract'
+import type { HardwareInfo, LocalModel } from '@alamo/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { createApp } from '../src/app.ts'
@@ -446,6 +446,118 @@ describe('exclusive inference routes', () => {
       assert.equal(warmCalls.length, 1)
       assert.equal(warmCalls[0]?.name, 'other-model')
       assert.equal(context.governor.active, false)
+    } finally {
+      context.db.close()
+    }
+  })
+
+  it('preempts only active prewarm before one canonical idempotent Chat dispatch', async () => {
+    const events: string[] = []
+    let warmCalls = 0
+    let chatCalls = 0
+    const client: Partial<OllamaClient> = {
+      async warm(_name, _context, keepAlive, signal) {
+        warmCalls += 1
+        assert.equal(keepAlive, '2m')
+        events.push('prewarm-enter')
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              events.push('prewarm-abort')
+              reject(new DOMException('aborted', 'AbortError'))
+            },
+            { once: true },
+          )
+        })
+      },
+      chatStream() {
+        return (async function* () {
+          chatCalls += 1
+          events.push('chat-enter')
+          yield terminalChunk('one canonical answer')
+        })()
+      },
+    }
+    const installed: LocalModel = {
+      name: 'prewarm-model:latest',
+      digest: 'sha256:prewarm-model',
+      sizeBytes: 1_000_000_000,
+      modifiedAt: '2026-08-03T00:00:00.000Z',
+      family: 'fixture',
+      parameterSize: '1B',
+      quantization: 'Q4',
+      contextLength: 32_768,
+      capabilities: ['completion'],
+      isCloud: false,
+      fit: {
+        level: 'green',
+        summary: 'fixture fit',
+        contextLength: 8_192,
+        modelBytes: 1_000_000_000,
+        kvCacheBytes: 100_000_000,
+        requiredBytes: 1_100_000_000,
+        usableBytes: 12_000_000_000,
+        utilization: 0.1,
+        basis: 'estimate',
+        measured: null,
+      },
+    }
+    const context = testContext({
+      client,
+      models: {
+        async listLocal() {
+          return [installed]
+        },
+        async ps() {
+          return []
+        },
+      },
+    })
+
+    try {
+      const app = createApp(context)
+      const thread = createThread(context, installed.name)
+      const prewarmResponse = app.request(`/api/models/${encodeURIComponent(installed.name)}/prewarm`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          operation: 'chat',
+          contextLength: 8_192,
+          selection: {
+            digest: installed.digest,
+            fitLevel: installed.fit.level,
+            fitBasis: installed.fit.basis,
+          },
+        }),
+      })
+      await waitFor(() => events.includes('prewarm-enter'), 'prewarm never entered fake Ollama')
+
+      const idempotencyKey = '55555555-5555-4555-8555-555555555555'
+      const dispatch = () =>
+        app.request(`/api/threads/${thread.id}/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content: 'one intent', idempotencyKey }),
+        })
+      const first = await dispatch()
+      assert.equal(first.status, 200)
+      await first.text()
+      const second = await dispatch()
+      assert.equal(second.status, 200)
+      await second.text()
+
+      const prewarm = (await (await prewarmResponse).json()) as {
+        status: string
+        reason: string
+      }
+      assert.equal(prewarm.status, 'cancelled')
+      assert.equal(prewarm.reason, 'normal_work_started')
+      assert.equal(warmCalls, 1)
+      assert.equal(chatCalls, 1)
+      assert.deepEqual(events, ['prewarm-enter', 'prewarm-abort', 'chat-enter'])
+      assert.equal(context.governor.active, false)
+      assert.equal(context.governor.waiting, 0)
     } finally {
       context.db.close()
     }

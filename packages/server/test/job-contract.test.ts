@@ -17,6 +17,10 @@ import {
   jobTerminalStateSchema,
   safeJobMetadataSchema,
   messageSchema,
+  prewarmModelBody,
+  prewarmModelResponse,
+  runtimeGovernorSnapshotSchema,
+  settingsSchema,
   sendMessageBody,
 } from '@alamo/contract'
 
@@ -220,5 +224,85 @@ describe('durable Job contract', () => {
       }).success,
       false,
     )
+  })
+
+  it('keeps legacy normal Runtime snapshots compatible and types prewarm priority/command', () => {
+    const observedAt = '2026-08-03T00:00:00.000Z'
+    const base = {
+      observedAt,
+      accepting: true,
+      policy: {
+        acceleratorPermits: 1,
+        order: 'fifo',
+        priorities: ['normal'],
+        scope: 'application_process',
+        basis: 'conservative_single_process_single_accelerator_permit_fifo',
+      },
+      queued: [],
+      activeLease: {
+        leaseId: 'legacy-lease',
+        ticketId: 'legacy-ticket',
+        owner: { kind: 'operation', operationId: 'legacy-warm' },
+        operation: 'model_warm',
+        model: { provider: 'ollama', name: 'fixture:latest' },
+        requestedContext: 4_096,
+        acquiredAt: observedAt,
+        state: 'active',
+      },
+      lastDecision: null,
+    } as const
+    assert.equal(runtimeGovernorSnapshotSchema.parse(base).activeLease?.priority, 'normal')
+
+    const current = structuredClone(base) as Record<string, unknown>
+    current.policy = {
+      acceleratorPermits: 1,
+      order: 'priority_fifo',
+      priorities: ['normal', 'prewarm'],
+      scope: 'application_process',
+      basis:
+        'conservative_single_process_single_accelerator_permit_normal_before_prewarm_fifo',
+    }
+    current.activeLease = {
+      ...base.activeLease,
+      operation: 'model_prewarm',
+      priority: 'prewarm',
+    }
+    assert.equal(runtimeGovernorSnapshotSchema.parse(current).activeLease?.priority, 'prewarm')
+    assert.equal(
+      runtimeGovernorSnapshotSchema.safeParse({
+        ...current,
+        activeLease: { ...(current.activeLease as object), priority: 'urgent' },
+      }).success,
+      false,
+    )
+
+    const body = prewarmModelBody.parse({
+      operation: 'chat',
+      contextLength: 8_192,
+      selection: { digest: 'sha256:fixture', fitLevel: 'green', fitBasis: 'estimate' },
+    })
+    assert.equal(body.selection.digest, 'sha256:fixture')
+    assert.equal(
+      prewarmModelResponse.parse({
+        status: 'warmed',
+        reason: 'loaded',
+        model: { name: 'fixture:latest', digest: 'sha256:fixture' },
+        operation: 'chat',
+        purpose: 'model_prewarm',
+        priority: 'prewarm',
+        keepAlive: '2m',
+        observedAt,
+      }).priority,
+      'prewarm',
+    )
+    assert.equal(settingsSchema.parse({
+      ollamaHost: 'http://fixture.invalid',
+      defaultModel: null,
+      defaultNumCtx: 8_192,
+      autoApproveTools: false,
+      enableBash: false,
+      webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
+      theme: 'system',
+    }).prewarmEnabled, true)
   })
 })

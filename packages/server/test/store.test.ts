@@ -86,6 +86,17 @@ describe('SQLite stores', () => {
     db.close()
   })
 
+  it('defaults legacy settings to prewarm enabled and round-trips an additive toggle', () => {
+    const db = openDb(':memory:')
+    const settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
+
+    assert.equal(settings.get().prewarmEnabled, true)
+    assert.equal(settings.update({ prewarmEnabled: false }).prewarmEnabled, false)
+    assert.equal(settings.get().prewarmEnabled, false)
+    assert.equal(settings.update({ prewarmEnabled: true }).prewarmEnabled, true)
+    db.close()
+  })
+
   it('terminalizes an assistant once and never overwrites failure with completed', () => {
     const db = openDb(':memory:')
     const threads = new ThreadStore(db)
