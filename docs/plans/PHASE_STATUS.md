@@ -36,8 +36,9 @@ exit gate ROADMAP проверен целиком.
 | P1-F Resource Governor foundation       | independently verified | `a0bc047`, `ff96dc0`; 72 targeted, 10x cleanup, all gates           |
 | P1-G Runtime `/api/ps` reconciliation   | independently verified | `b8328bd`, `bd0d7a1`, `40a0de7`, `f53a868`; 82 targeted, all gates  |
 | P1-H Apple host telemetry/current fit   | independently verified | `df4d156`..`66c23c0`; 92 targeted, all gates                        |
+| P1-I Read-only Runtime Bar projection   | independently verified | `6c297ce`, `151fe07`; 13 component, 10 browser, all gates           |
 
-P1-A–P1-H реализуют additive contract, migrations 4–5, canonical state CAS,
+P1-A–P1-I реализуют additive contract, migrations 4–5, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
@@ -48,8 +49,9 @@ queued Chat. P1-F заменяет anonymous mutex одним typed process-loca
 unload защищён active owner, close прекращает admission и освобождает live state.
 P1-G добавляет один sampled `/api/ps` reconciliation service и public
 `GET /api/runtime`. P1-H добавляет shared Apple host sample и truthful
-observed/unknown current-fit explanation; prewarm, Runtime Bar и resource action
-UX ещё не реализованы, поэтому Phase 1 остаётся `in progress`.
+observed/unknown current-fit explanation. P1-I добавляет persistent read-only
+Runtime Bar; prewarm и resource action UX ещё не реализованы, поэтому Phase 1
+остаётся `in progress`.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -121,12 +123,39 @@ Overlapping callers дают один provider call и один host probe; call
 component и 9/9 mocked Chromium tests, а также typecheck, build, markdownlint и
 diff check. Полный P1-E recovery file с восемью cases прошёл 10/10 повторов;
 P1-F suite сохранил 1000-release bound и внутренние 10x release/cancel/close.
-Browser gate проверяет только прежние mocked connect-timeout/EOF partial,
+На момент P1-H browser gate проверял только прежние mocked connect-timeout/EOF partial,
 create/redirect/stream/terminal reload, navigation detach/reattach,
 Stop/cancelled reload, Error Boundary accessibility и degraded Runtime narrow
-viewport; Runtime Bar/telemetry UI не реализованы и credit не получали. Live
+viewport; Runtime Bar/telemetry UI ещё не был реализован и credit не получал. Live
 hardware/Ollama, continuous observation, future fit, external-client identity и
 multi-process safety не проверялись и не реализованы.
+
+P1-I evidence: persistent shell `RuntimeStatus` больше не вызывает compatibility
+`/api/models/running`, а читает только contract-validated
+`api.runtimeSnapshot()`. Read-only projection различает один active lease,
+FIFO waiters, closed/idle admission, sampled loaded/unknown-owner models,
+`active_not_observed`, independent Ollama/host states и observed/unknown current
+fit. Apple free pages явно не названы capacity, legacy 70% остаётся estimate,
+null memory не становится zero, а observed residency всегда показывает
+`futureAdmissionGuarantee:false`. Runtime feature Error Boundary сохраняет shell.
+
+Polling bound: один request, один timer и один visibility listener; active/queued
+2 s, idle 10 s, hidden pause, visible immediate refresh, no overlap. Unmount
+abort-ит только свой HTTP wait. Failed refresh сохраняет confirmed sample с
+явной stale/error меткой без raw endpoint/body. Route navigation Chat ↔ Settings
+сохраняет тот же Runtime Bar/disclosure и не вызывает Job cancel, model stop или
+unload. Narrow bar является последним flex-элементом shell и не перекрывает main.
+
+Локально прошли 92/92 P1-A–P1-H Job/Governor/reconciliation, 28/28
+route/concurrency, 19/19 runtime/provider, 19/19 fit/telemetry, 210/210
+server/CLI, 27/27 Web component/parser и 10/10 mocked Chromium tests, а также
+typecheck, build, markdownlint и diff check. Три timer/visibility cases и полный
+P1-E recovery file повторены 10/10. Browser открыл Chat и Settings, проверил
+active lease, два FIFO waiter, independent Ollama failure при доступном host,
+manual retry/recovery, navigation persistence, 390 px, 200% scaling, no
+horizontal overflow и reduced motion. Live hardware/Ollama, continuous
+observation, future admission fit, external-client identity, multi-process
+safety и resource actions не проверялись и не реализованы.
 
 ## Later phases
 

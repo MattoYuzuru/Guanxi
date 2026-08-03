@@ -7,8 +7,8 @@
 
 На 2026-08-03:
 
-- `npm test`: 210/210 server/CLI и 17/17 web component/parser tests;
-- `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
+- `npm test`: 210/210 server/CLI и 27/27 web component/parser tests;
+- `npm run test:web:browser`: 10/10 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
@@ -43,6 +43,15 @@
   один shared call каждого source, caller abort, Governor capture после обоих
   sources, новый sample после completion, observed current residency только при
   достаточных Apple facts и stable unknown для digest/context/host/pressure;
+- deterministic P1-I component fixtures round-trip через
+  `runtimeSnapshotSchema` и покрывают active Job/operation owner, два FIFO
+  waiter, idle/closed admission, exact/unknown owner rows,
+  `active_not_observed`, healthy empty/source failure, все четыре host states,
+  observed/unknown fit, distinct memory facts, stale refresh, locale fallback,
+  Russian copy и Runtime feature containment без focus steal;
+- P1-I fake timers покрывают initial request, active/queued 2 s, idle 10 s,
+  no-overlap, hidden pause, visible immediate refresh, bounded manual retry,
+  stale sample preservation, unmount abort и отсутствие retained timer/listener;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -86,6 +95,13 @@
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
   P1-F release/cancel/close — 10 repeats без duplicate transfer/live state;
+- 13 новых P1-I component/lifecycle cases проходят в составе 27/27 Web;
+  Chromium case 10 открывает Chat и Settings, сохраняет один Runtime Bar и
+  disclosure, проверяет active lease + два FIFO waiter + unknown owner,
+  переключает mocked runtime success → Ollama failure при доступном host →
+  recovery двумя manual Retry, подтверждает отсутствие cancel/stop/unload,
+  bottom placement, 390 px, 200% scaling, no horizontal overflow и reduced
+  motion;
 - P1-G исправил flaky ожидание P1-E fixture на канонический
   `(createdAt, jobId)` order; узкий recovered FIFO case повторён 10/10;
 - CI/lint/formatter commands отсутствуют;
@@ -103,7 +119,9 @@ Ollama scheduler, multi-process/external-client safety или production use. P1
 reconciliation: exact active reference match, unknown ownership и bounded
 single-flight; он не идентифицирует external client и не меняет admission.
 P1-H добавляет deterministic fake-runner evidence для host source states,
-sampling bound и current-fit semantics; это не live hardware validation.
+sampling bound и current-fit semantics; это не live hardware validation. P1-I
+доказывает только read-only Web projection и query polling над mocked snapshots,
+не continuous observation и не resource actions.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -141,14 +159,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                              |
 | Static web serving                 | test                               |
 | CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/P0-B/P0-D/P0-E component      |
-| Browser streaming/reload           | P0-A/P0-B/P0-E mocked flows        |
+| React render/navigation            | P0-A/P0-B/P0-D/P0-E/P1-I component |
+| Browser streaming/reload           | P0-A/P0-B/P0-E/P1-I mocked flows   |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P1-G sampled reconcile + P1-F lane |
 | Job replay/reattach                | HTTP SSE; browser durable replay   |
 | Chat startup recovery              | reopened SQLite, fail-closed pages |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |
-| Accessibility/responsive           | P0-A/B/D/E Chromium smoke          |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I Chromium smoke   |
 
 ## Обязательная target matrix
 

@@ -160,13 +160,17 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 
 Исходник: [lld-web.mmd](diagrams/lld-web.mmd).
 
-- `App.tsx`: application health gate, degraded Ollama notice, sampled Runtime
-  status и Models/Chat/Settings shell;
-- `components/ErrorBoundary.tsx`: root и keyed Chat containment с diagnostics;
+- `App.tsx`: application health gate, degraded Ollama notice, persistent sampled
+  Runtime Bar и Models/Chat/Settings shell;
+- `components/ErrorBoundary.tsx`: root, keyed Chat и Runtime containment с diagnostics;
 - `lib/router.tsx`: custom History API routing;
 - `lib/api.ts`: REST, compatibility POST/SSE и canonical Job GET/GET SSE/cancel;
 - `lib/sse.ts`: frame parser с Chat `seq` и Job `sequence` cursor;
 - `lib/locale.ts`: locale keys для boundary с English fallback/Russian;
+- `features/health/RuntimeStatus.tsx`: typed read-only lease/FIFO/runtime-model/
+  host/current-fit projection с compact disclosure и feature containment;
+- `features/health/useRuntimePolling.ts`: один abortable HTTP wait, один timer,
+  active/queued 2 s, idle 10 s, hidden pause и visible refresh без overlap;
 - `features/chat/useChat.ts`: page projection, per-send UUID key и durable Job
   discovery/reattach;
 - `features/chat/streamBuffer.ts`: rAF-buffered content/thinking;
@@ -176,8 +180,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields.
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
-  terminal/error/reload и P0-D health/runtime regression; browser использует
-  deterministic mocked REST/SSE.
+  terminal/error/reload, P0-D health и P1-I Runtime Bar/polling regression;
+  browser использует deterministic mocked REST/SSE/runtime snapshots.
 
 ### `packages/cli`
 
@@ -239,6 +243,14 @@ artifact identity. Unmatched row получает owner `unknown`, active lease 
 — `active_not_observed`. Ни одно состояние не запускает load/unload и не меняет
 FIFO. Production pressure/available-memory observation, target priorities,
 prewarm, lease journal, measured parallelism и multi-process lock отсутствуют.
+
+P1-I заменяет Web compatibility projection `/api/models/running` на typed
+`api.runtimeSnapshot()`. Persistent shell component показывает только один live
+lease, FIFO waiters, sampled models, independent Ollama/host states и
+observed/unknown current fit; это не durable Jobs history и не admission owner.
+Refresh не очищает confirmed sample. Navigation/unmount отменяет только текущий
+HTTP wait; resource action не вызывается. Compatibility route и contract
+остаются для старых clients.
 
 Current admission request фиксирует owner (`jobId` либо process-local operation
 ID), `chat | compaction | model_warm`, exact Ollama model name, requested context,

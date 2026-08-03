@@ -198,6 +198,28 @@ missing available memory дают stable `unknown` reason. Production Apple adap
 не публикует достаточные pressure/available-memory facts, поэтому его fit сейчас
 truthfully `unknown`; observed branch проверяется только injected fixtures.
 
+### P1-I read-only Runtime Bar projection
+
+Persistent Web shell теперь читает только typed `api.runtimeSnapshot()` и
+показывает один active lease, FIFO waiters, loaded runtime rows, independent
+Ollama/host source states и per-model current fit. Compatibility
+`GET /api/models/running` остаётся, но Runtime Bar его не вызывает. Projection не
+является durable Jobs list, не доказывает external client identity и не владеет
+admission/cancel/load/unload.
+
+Один `useRuntimePolling` владеет одним HTTP wait и одним timer. Active либо
+queued sample планирует следующий query через 2 s, idle — через 10 s. Hidden
+document не планирует timer; возврат в visible вызывает immediate refresh. Пока
+request не завершён, timer/manual/visibility trigger не создают overlap.
+Unmount abort-ит только свой HTTP wait и удаляет timer/listener; Job и lease
+остаются server-owned.
+
+Initial loading, ordinary refresh и failed refresh различаются. Confirmed sample
+не очищается во время обновления; failure сохраняет его с явным stale/error
+alert и не показывает raw endpoint/body. `models: []` остаётся healthy empty,
+`models: null` — source failure. Narrow shell держит bar последним flex-элементом,
+поэтому bottom-sheet-like disclosure не перекрывает main content.
+
 ### P0-D sampled health и provider deadlines
 
 Application health подтверждается ответом собственного HTTP route и не зависит
@@ -800,9 +822,9 @@ type RuntimeSnapshot = {
 };
 ```
 
-Host source states, facts и per-model current fit реализованы. Production
-pressure/available memory, durable observations и full Runtime Bar ещё не
-реализованы. Target projection остаётся шире:
+Host source states, facts, per-model current fit и P1-I read-only Runtime Bar
+реализованы. Production pressure/available memory, durable observations и
+resource actions ещё не реализованы. Target projection остаётся шире:
 
 Runtime projection:
 
@@ -845,7 +867,8 @@ P0-D реализовал пункт 6 как минимальную sampled Cha
 P1-D добавил durable Chat execution/detach/reattach, P1-E — bounded startup
 reconciliation, P1-F — typed process-local Governor admission/lease foundation,
 P1-G — query-time `/api/ps` reconciliation и additive `GET /api/runtime`, P1-H —
-sampled Apple host facts и observed/unknown current-fit explanation. Production
-pressure/available-memory source, Runtime Bar и resource UX остаются target.
+sampled Apple host facts и observed/unknown current-fit explanation, P1-I —
+read-only persistent Runtime Bar с bounded adaptive polling. Production
+pressure/available-memory source и resource action UX остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

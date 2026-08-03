@@ -90,6 +90,12 @@ npm run link:cli
   выполняет bounded Chat recovery после migration и до HTTP listen: unsafe
   execution становится `interrupted`, persisted `cancelling` — `cancelled`, а
   только untouched `queued` передаётся тому же owner.
+- P1-I persistent Runtime Bar читает только typed `GET /api/runtime`: один
+  component владеет максимум одним HTTP wait, poll-ит active/queued sample через
+  2 s, idle через 10 s, не создаёт timer в hidden document и немедленно
+  refresh-ится после `visible`. Route change component не unmount-ит и не
+  вызывает Job cancel, model stop или unload. Failed refresh сохраняет последний
+  confirmed sample с явной stale/error меткой.
 
 ## Карта current-state
 
@@ -144,21 +150,25 @@ npm run link:cli
 
 ### Web
 
-- `App.tsx` — current three-tab IA;
-- `components/ErrorBoundary.tsx` — root/Chat containment и safe diagnostics;
+- `App.tsx` — current three-tab IA и persistent Runtime Bar boundary;
+- `components/ErrorBoundary.tsx` — root/Chat/Runtime containment и safe diagnostics;
 - `lib/router.tsx` — History API router;
 - `lib/api.ts` — typed REST, Chat POST/SSE и Job query/replay/cancel calls;
 - `lib/sse.ts` — Chat `seq`/Job `sequence` parser;
 - `lib/locale.ts` — English fallback и curated Russian для новых boundary strings;
+- `features/health/RuntimeStatus.tsx` — read-only lease/FIFO/models/host/fit
+  projection; `useRuntimePolling.ts` — bounded adaptive polling/visibility owner;
 - `features/launcher` и `features/models` — installed/catalog/profile;
 - `features/chat` — creation, timeline, composer, UUID command key и durable Job
   discovery/reattach state;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
-- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E projection regression;
+- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I projection,
+  accessibility и fake-timer polling regression;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
-  и boundary smoke, включая degraded Runtime/catalog state.
+  и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation,
+  narrow viewport, 200% scaling и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
   health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и
@@ -174,7 +184,9 @@ npm run link:cli
   runtime contract/identity, source failures, linearization, single-flight,
   caller cancellation, route inventory и no-auto-unload; P1-H — bounded command,
   parser/source states, failure independence, shared call count, Governor
-  linearization и observed/unknown fit fixtures.
+  linearization и observed/unknown fit fixtures; P1-I — contract-round-tripped
+  Web states, inventory, adaptive polling cleanup, feature containment и mocked
+  navigation/recovery projection.
 
 ### CLI
 

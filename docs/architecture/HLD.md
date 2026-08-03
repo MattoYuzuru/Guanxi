@@ -97,8 +97,11 @@ bounded `/usr/bin/vm_stat`, а на остальных hosts возвращае�
 host command. После завершения обоих источников service выбирает один
 `observedAt`, снимает Governor state и классифицирует exact normalized active
 reference, unmatched active lease и unknown-owner runtime rows. Ошибки Ollama и
-host telemetry независимы. Completed sample/cache/history не хранится и
-background polling нет.
+host telemetry независимы. Completed server sample/cache/history не хранится.
+P1-I Web Runtime Bar выполняет bounded query polling: 2 s при active/queued,
+10 s idle, pause в hidden document и immediate refresh после visibility return.
+Он сохраняет confirmed sample при refresh failure и не владеет Job, lease,
+cancel, load или unload.
 
 ### As-is deployment
 
@@ -125,6 +128,7 @@ background polling нет.
 | Runtime reconciliation/sample        | `RuntimeReconciliationService`          | process memory, без history |
 | Static/dynamic host telemetry        | injected `HostTelemetry` adapter        | sampled, без history        |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
+| Runtime Bar HTTP wait/timer          | persistent Web shell component          | page memory, query-only     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
 | Loaded model                         | Ollama                                  | external runtime            |
