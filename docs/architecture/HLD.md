@@ -128,6 +128,15 @@ Migration 6 хранит exact samples отдельно и не credit-ит lega
 `/api/show` cache удерживает не более 64 normalized references и invalidates row
 при смене digest того же имени.
 
+P2-A добавляет transient installed descriptor поверх тех же documented local
+endpoints. `/api/tags` остаётся installation source и exact digest basis;
+`/api/show` даёт отдельную provider declaration без digest binding, а
+`/api/version` — sourced runtime fingerprint. Missing, malformed, conflicting,
+unavailable, future enum и ambiguous normalized-reference facts остаются
+unknown/degraded. Installed list/detail REST shape расширена совместимо, Web
+показывает state/source/time и прямо отделяет declaration от probe/runtime proof.
+SQLite, Marketplace, probes, import и persistent registry не изменены.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -193,6 +202,9 @@ Migration 6 хранит exact samples отдельно и не credit-ит lega
     Ollama/hardware, remote telemetry и durable continuous history не проверены.
 13. P1-K exact reuse проверяет текущие name/digest/context facts, но continuous
     runtime history и production TTL/residency validation ещё отсутствуют.
+14. P2-A descriptor transient: process restart теряет `/api/show` cache, TTL/SWR
+    и evidence history отсутствуют; `/api/show` response нельзя exact-привязать
+    к digest без дополнительного provider fact.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

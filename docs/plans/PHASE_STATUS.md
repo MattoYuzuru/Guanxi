@@ -350,12 +350,63 @@ continuous observation, external-client identity, multi-process ownership,
 remote telemetry, safe parallel и generic eviction не проверены. Они входят в
 следующие фазы и не выданы за Phase 1 evidence.
 
+## Phase 2
+
+| Slice | Статус | Outcome |
+| --- | --- | --- |
+| P2-A Installed descriptor/evidence foundation | implemented, locally validated | `d750a3e`, `6a5c43d`, `d42b791`, `282c82e`; descriptor 9/9, Web 51/51, Chromium 18/18, all required gates |
+
+P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
+reference, exact/unknown installed artifact, `/api/tags` installation fact и
+source-preserving capability declarations. Legacy response получает explicit
+unknown defaults; legacy `capabilities`, `contextLength`, paths и clients
+сохранены. `/api/tags`, `/api/show`, `/api/version` и `/api/ps` остаются
+раздельными facts. `/api/show` declaration не получает exact digest basis,
+потому что name-addressed response не содержит digest. Duplicate normalized
+references не вызывают detail lookup; future enum, missing, malformed, conflict
+и unavailable остаются unknown/degraded. Provider declaration не считается
+controlled probe/runtime proof и не получает verified-green UI semantics.
+
+Inventory current facts и failure/staleness semantics зафиксирован в LLD:
+installation/digest и legacy capabilities из `/api/tags`; name-based detail и
+context из `/api/show`; loaded rows из `/api/ps`; sourced runtime version;
+stale/bundled catalog; canonical normalizer; digest-aware LRU 64; installed card/
+profile consumers. SQLite migration не добавлена: descriptor transient, а
+persistent cache/TTL/SWR/history остаются следующим slice. Marketplace, import,
+Q-25/Q-26, probes и registry persistence не изменены.
+
+Required code evidence through revision `282c82e`: typecheck; P1 exact 98/98; P1-L+M
+32/32; prewarm 7/7; routes/Governor/concurrency 33/33; runtime/provider 19/19;
+fit/telemetry 19/19; descriptor 9/9; root server/CLI 257/257 + Web 51/51;
+Chromium 18/18; build. Repeats: descriptor 10×9/9; affected Web 10×51/51;
+P1-L+M 10×32/32; P1-K 10×37/37; P1-I 10×3/3; P1-E 10×8/8; P1-J после fix
+10×11/11.
+
+Первые failures сохранены. Два узких Playwright запуска были ошибочно вызваны
+не из Web workspace: первый передал `--grep` как filename и получил `No tests
+found`, второй не загрузил workspace `baseURL` и получил invalid `page.goto('/')`;
+exact workspace spec прошёл 1/1, полный browser gate — 18/18. P1-J repeat run 2
+нашёл реальный flaky assertion: проверка initial Queue focus опережала modal
+effect и видела `body`. Assertion синхронизирован через `waitFor`, после чего
+file прошёл отдельный 11/11 и 10×11/11. First inherited P2-A review также нашёл
+unknown-enum-to-empty filtering, duplicate-reference cross-digest detail risk и
+fabricated exact digest basis для `/api/show`; `d42b791` сделал все три границы
+fail-closed и добавил regression coverage.
+
+P2-A остаётся `implemented, locally validated`, а не independently verified или
+production-validated. Не проверены live Ollama/model/hardware, provider-version
+matrix, persistent cache после restart, TTL/SWR/staleness, continuous evidence
+history, controlled probes, semantic tool/media quality, external-client
+identity и import. Phase 2 остаётся `in progress`: ROADMAP exit gate требует
+variant-first import, offline provider cache, HF exact revision/checksum/license,
+URL policy, search/filter/compare и platform work.
+
 ## Later phases
 
 | Phase                                   | Статус                 |
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
-| Phase 2 — Models/Capability/import      | not started            |
+| Phase 2 — Models/Capability/import      | in progress            |
 | Phase 3 — Text/Projects/retention/i18n  | not started            |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |

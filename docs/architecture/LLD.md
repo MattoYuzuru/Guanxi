@@ -60,6 +60,13 @@ provider declarations остаются unknown. Legacy model responses полу�
 additive unknown default, поэтому старые clients и SQLite schema остаются
 совместимыми без migration 7.
 
+P2-A additive добавляет `InstalledModelDescriptor`: canonical/unknown Ollama
+reference, exact/unknown artifact identity, installation observation и
+source-preserving capability evidence. Legacy `LocalModel`/`ModelDetail`
+ответы default-ятся в explicit unknown. Реализованы только provider states
+`declared | degraded | unknown`; `verified/claimed/probe/override` остаются
+target. Unknown enum не фильтруется в ложную пустую декларацию.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -127,6 +134,26 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `store/threads.ts`: atomic pending-to-terminal compare-and-set и compaction
   boundary по persisted `seq`;
 - `tools/*`: jail, filesystem и bash.
+
+### Current installed-model fact inventory
+
+| Fact/surface | Source и observation | Confidence/identity | Staleness/failure | Current consumer |
+| --- | --- | --- | --- | --- |
+| Installation/name/size/details/digest | local `/api/tags`, request completion time | observed installation; digest exact либо unknown | no persistent cache; route failure controlled | installed list, detail, fit, descriptor |
+| Capability field | `/api/tags`, тот же installation sample | provider-declared; exact digest basis возможен | missing/malformed/future value → unknown | legacy capabilities и descriptor |
+| Architecture/capability detail | local `/api/show`, first response time | provider-declared; artifact basis unknown, response без digest | digest-aware process LRU 64; unavailable not cached | context limit, fit, detail, descriptor |
+| Loaded instance | local `/api/ps`, sampled time | observed runtime row; exact only through P1-L reconciliation | failure remains `models:null`; no history | Runtime Bar, fit/calibration |
+| Runtime version | local `/api/version`, response time | observed runtime fingerprint либо unknown | request-scoped, failure independent | observation key и descriptor basis |
+| Catalog claim | local stale cache or dated bundled snapshot | claimed/bundled, not runtime fact | explicit stale/fallback/unavailable | Marketplace only, P2-A unchanged |
+| Legacy `capabilities` | filtered known `/api/tags` values | compatibility projection, not evidence decision | unknown/malformed → empty legacy array | old Web/clients |
+| Context facts | `/api/tags`/`/api/show` declarations | declared maximum либо unknown/conflict | LRU time preserved; no guessed ceiling | settings/list/detail/validation |
+| Canonical reference | P1-L normalizer over provider name | registry/name/tag/digest syntax preserved | invalid/duplicate → unknown/ambiguous | descriptor/cache/observation key |
+| Web evidence projection | additive REST descriptor | declared/degraded/unknown only | loading/empty/error remain separate | installed card/profile, locale keys |
+
+`/api/tags` и `/api/show` declaration не являются runtime proof. Name-based
+`/api/show` lookup не выполняется для duplicate normalized references; даже при
+одной row detail declaration имеет `detail_not_bound_to_digest`. P2-A не пишет
+SQLite и не вводит TTL/SWR, history, controlled probes или registry service.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
@@ -220,7 +247,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `features/chat/ChatPage.tsx`: create, timeline, composer, context/tool UI и
   one-intent conflict dispatch boundary с exact custom context validation;
 - `features/launcher`/`models`: installed/catalog/profile, preset suggestions,
-  keyboard custom context и sourced maximum/unknown explanation;
+  keyboard custom context, sourced maximum/unknown explanation и P2-A installed
+  evidence state/source/time; Marketplace projection не менялась;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields и exact positive safe-integer
@@ -228,8 +256,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
-  P1-M no-artificial-caps regression; browser использует deterministic mocked
-  REST/SSE/runtime snapshots.
+  P1-M no-artificial-caps/P2-A descriptor regression; browser использует
+  deterministic mocked REST/SSE/runtime snapshots.
 
 ### `packages/cli`
 

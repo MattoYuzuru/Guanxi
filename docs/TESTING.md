@@ -5,10 +5,10 @@
 
 ## Текущий baseline
 
-На 2026-08-03:
+На 2026-08-03 после P2-A:
 
-- `npm test`: 237/237 server/CLI и 43/43 web component/parser tests;
-- `npm run test:web:browser`: 16/16 deterministic Chromium tests с mocked
+- `npm test`: 257/257 server/CLI и 51/51 web component/parser tests;
+- `npm run test:web:browser`: 18/18 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
@@ -87,6 +87,16 @@
   скрытого `max`; Chromium буквально вводит `1_048_577`, нажимает Enter,
   сохраняет/reload-ит значение и проверяет keyboard, 390 px, 200%, overflow и
   reduced motion;
+- P2-A descriptor fixtures покрывают legacy additive default, canonical
+  provider/reference, installation/digest identity, source/time/confidence,
+  list/detail parity, same-name digest replacement, duplicate normalized
+  references, unknown future enum, missing/malformed/conflicting/unavailable
+  declarations, runtime-version unknown, cached original observation time,
+  four-worker `/api/show` bound, caller abort и safe redaction;
+- P2-A Web fixtures показывают declared/degraded/unknown без verified-green или
+  unsupported masquerade, English fallback/curated Russian и distinct loading/
+  empty states. Chromium literally opens installed card/profile and verifies
+  keyboard, 390 px, 200%, no horizontal overflow and reduced motion;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -128,8 +138,8 @@
   contract/Governor files дают 98/98; P1-L+P1-M key/cache/runtime group —
   32/32; отдельный prewarm service file — 7/7;
   routes/Governor/concurrency дают 33/33; runtime/provider — 19/19;
-  fit/telemetry — 19/19; полный core — 248/248, Web — 46/46, mocked Chromium —
-  17/17; 15-test store race suite
+  fit/telemetry — 19/19; P2-A descriptor — 9/9; полный core — 257/257,
+  Web — 51/51, mocked Chromium — 18/18; 15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
   P1-F release/cancel/close — 10 repeats без duplicate transfer/live state;
@@ -159,6 +169,9 @@
   affected Web suite — 10× по 46/46, priority/prewarm/inference — 10× по 37/37,
   P1-J conflict — 10× по 11/11, P1-I polling — 10× по 3/3 и P1-E recovery —
   10× по 8/8;
+- P2-A descriptor group повторён 10× по 9/9, affected Web — 10× по 51/51,
+  P1-L+M — 10× по 32/32, P1-K — 10× по 37/37, P1-J после focus assertion fix —
+  10× по 11/11, P1-I — 10× по 3/3 и P1-E — 10× по 8/8;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -189,6 +202,10 @@ P1-M доказывает отсутствие product/UI context ceiling и tru
 unknown semantics на deterministic provider fixtures. Он не доказывает live
 model acceptance огромного context, production memory fit, output budget,
 media support или device cardinality.
+P2-A доказывает transient installed descriptor/evidence projection только на
+documented local endpoints с deterministic fake transport. Это не persistent
+Capability Registry, TTL/SWR/history, controlled probe, live Ollama validation,
+semantic capability quality или import evidence.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не

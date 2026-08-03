@@ -91,6 +91,13 @@ npm run link:cli
   timestamp не входит в fingerprint. Migration 6 хранит exact calibration
   отдельно и не читает legacy name-only rows как measured evidence. `/api/show`
   cache invalidates same-name changed digest и удерживает максимум 64 references.
+- P2-A installed list/detail добавляют additive `InstalledModelDescriptor`.
+  Installation и tag declaration получают `/api/tags` observation; detail
+  declaration из `/api/show` сохраняет unknown digest basis, потому что response
+  не содержит artifact digest. Duplicate normalized references не вызывают
+  name-based detail lookup. Unknown/malformed/failure остаются видимыми
+  unknown/degraded, а process cache не меняет исходное `/api/show` observation
+  time.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
@@ -138,6 +145,9 @@ npm run link:cli
 - P1-L Runtime model/decision additive публикует versioned
   `observationKey: complete | unavailable`; legacy snapshots default-ятся в
   `legacy_snapshot`, а exact digest claim допустим только с complete key.
+- P2-A `LocalModel`/`ModelDetail` additive публикуют descriptor с canonical
+  reference, artifact identity, installation observation и source-preserving
+  capability declarations. Legacy response получает explicit unknown default.
 
 ### Server
 
@@ -152,7 +162,9 @@ npm run link:cli
   policy; `runtime/reconciliation.ts` — shared provider/host sources, common
   timestamp, owner/artifact/current-fit classification и compatibility projection;
 - `ollama/` — client, status и wire types;
-- `models/` — installed/running details и sourced catalog fallback;
+- `models/` — installed/running details, P2-A descriptor assembler и sourced
+  catalog fallback; descriptor path сохраняет four-worker `/api/show` bound,
+  caller AbortSignal, digest-aware LRU 64 и fail-closed ambiguous evidence;
 - `hardware/` — legacy profile/static fit и injectable sampled telemetry adapter;
 - `http/` — models, runtime, Jobs, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
@@ -194,7 +206,9 @@ npm run link:cli
   `RuntimeStatus.tsx` — read-only lease/FIFO/models/host/fit projection;
   `useRuntimePolling.ts` — bounded adaptive polling/visibility owner и
   caller-scoped fresh wait без отмены shared request;
-- `features/launcher` и `features/models` — installed/catalog/profile;
+- `features/launcher` и `features/models` — installed/catalog/profile; installed
+  cards/profile показывают P2-A source/state/freshness через locale keys без
+  verified-green semantics для provider declaration;
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;

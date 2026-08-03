@@ -536,6 +536,13 @@ skip без clamp. Absent/conflicting evidence остаётся unknown и не 
 валидный request. `/api/show` projection использует максимум четыре workers и
 digest-aware LRU 64; cache сохраняет исходное observation time.
 
+P2-A использует те же local sources для installed capability descriptor, но не
+повышает declaration до runtime proof. `/api/tags` несёт installation/exact
+digest basis; `/api/show` response не несёт digest и остаётся
+`detail_not_bound_to_digest`. Ambiguous reference, unknown enum, conflict,
+missing/malformed/unavailable field видимы как degraded/unknown и не меняют
+Governor admission, prewarm, context propagation или runtime reconciliation.
+
 Output-budget control и media upload в current Chat flow не реализованы; UI не
 подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
 
