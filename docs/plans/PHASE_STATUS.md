@@ -35,8 +35,9 @@ exit gate ROADMAP проверен целиком.
 | P1-E Startup recovery/reconciliation    | independently verified | `22a1aff`, `6c748de`; 66 targeted, 10x recovery, all gates          |
 | P1-F Resource Governor foundation       | independently verified | `a0bc047`, `ff96dc0`; 72 targeted, 10x cleanup, all gates           |
 | P1-G Runtime `/api/ps` reconciliation   | independently verified | `b8328bd`, `bd0d7a1`, `40a0de7`, `f53a868`; 82 targeted, all gates  |
+| P1-H Apple host telemetry/current fit   | independently verified | `df4d156`, `02acf72`, `a5df7c9`, `324e54a`; 92 targeted, all gates  |
 
-P1-A–P1-G реализуют additive contract, migrations 4–5, canonical state CAS,
+P1-A–P1-H реализуют additive contract, migrations 4–5, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
@@ -46,8 +47,9 @@ queued Chat. P1-F заменяет anonymous mutex одним typed process-loca
 `ResourceGovernor`: Chat, compaction и warm/load получают FIFO ticket/lease,
 unload защищён active owner, close прекращает admission и освобождает live state.
 P1-G добавляет один sampled `/api/ps` reconciliation service и public
-`GET /api/runtime`; telemetry/fit, prewarm и Runtime Bar ещё не реализованы;
-Phase 1 остаётся `in progress`.
+`GET /api/runtime`. P1-H добавляет shared Apple host sample и truthful
+observed/unknown current-fit explanation; prewarm, Runtime Bar и resource action
+UX ещё не реализованы, поэтому Phase 1 остаётся `in progress`.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -91,6 +93,40 @@ multi-process safety не проверялись и не реализованы.
 только mocked connect timeout/EOF partial, create/redirect/stream/terminal reload,
 navigation detach/reattach, Stop/cancelled reload, Error Boundary accessibility и
 degraded runtime narrow viewport; это не Governor/runtime UI или hardware test.
+
+P1-H evidence: один application `HostTelemetry` injected в
+`RuntimeReconciliationService`; routes, Web, Governor и static fit не запускают
+host commands. Apple `darwin/arm64` adapter использует absolute
+`/usr/bin/vm_stat`, `shell:false`, timeout 1 s и output limit 64 KiB. Он
+публикует observed `node_os_totalmem` total unified memory и
+`apple_vm_stat_pages_free` system-free bytes. Legacy 70% usable memory остаётся
+estimated compatibility fact; current available memory, pressure,
+discrete VRAM и GPU-free — `unknown`. Malformed output даёт `partial`,
+timeout/output/failure — redacted `unavailable`, non-Apple — `unsupported` без
+command. Production Apple current fit поэтому остаётся
+`unknown/host_pressure_unknown`; sufficient injected fixture доказывает только
+`observed_current_residency`, с artifact identity `unknown` и
+`futureAdmissionGuarantee:false`.
+
+Provider и telemetry samples стартуют вместе и fail независимо. После обоих
+settled выбирается один root `observedAt`, затем синхронно capture-ится Governor.
+Overlapping callers дают один provider call и один host probe; caller abort не
+отменяет shared work, а post-completion query запускает новые calls. Подключены
+только `GET /api/runtime` и compatibility `GET /api/models/running`; второй
+сохраняет прежнюю response shape. Ни один observation не меняет FIFO/admission,
+не запускает load/unload и не создаёт migration 6/cache/history.
+
+Локально прошли 92/92 Job/Governor/reconciliation, 28/28 route/concurrency,
+19/19 runtime/provider, 19/19 fit/telemetry, 210/210 server/CLI, 17/17 Web
+component и 9/9 mocked Chromium tests, а также typecheck, build, markdownlint и
+diff check. Полный P1-E recovery file с восемью cases прошёл 10/10 повторов;
+P1-F suite сохранил 1000-release bound и внутренние 10x release/cancel/close.
+Browser gate проверяет только прежние mocked connect-timeout/EOF partial,
+create/redirect/stream/terminal reload, navigation detach/reattach,
+Stop/cancelled reload, Error Boundary accessibility и degraded Runtime narrow
+viewport; Runtime Bar/telemetry UI не реализованы и credit не получали. Live
+hardware/Ollama, continuous observation, future fit, external-client identity и
+multi-process safety не проверялись и не реализованы.
 
 ## Later phases
 

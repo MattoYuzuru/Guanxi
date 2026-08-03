@@ -2,8 +2,7 @@
 
 **Статус:** ready
 **Проверено:** 2026-08-03
-**Назначение:** Phase 1, slice P1-H — host telemetry interface и Apple Silicon
-observed/unknown fit
+**Назначение:** Phase 1, slice P1-I — read-only Runtime Bar/resource projection
 
 Скопируйте текст ниже в новую агентскую сессию.
 
@@ -11,10 +10,11 @@ observed/unknown fit
 
 Работай в репозитории Alamo UI. Phase 0 прошла bounded deterministic exit gate.
 P1-A–P1-E реализовали durable Jobs, Chat detach/reattach и fail-closed startup
-recovery. P1-F добавил typed process-local Resource Governor. P1-G добавил один
-sampled `/api/ps` reconciliation boundary и additive `GET /api/runtime`.
-Реализуй только slice `P1-H host telemetry interface + Apple Silicon
-observed/unknown fit`. Не создавай subagents и не делегируй работу.
+recovery. P1-F добавил typed process-local Resource Governor, P1-G — shared
+`/api/ps` reconciliation и `GET /api/runtime`, P1-H — shared Apple host telemetry
+и truthful observed/unknown current-fit explanation. Реализуй только slice
+`P1-I read-only Runtime Bar/resource projection`. Не создавай subagents и не
+делегируй работу.
 
 Проверенные commits:
 
@@ -25,190 +25,179 @@ observed/unknown fit`. Не создавай subagents и не делегиру�
 - P1-D contract/storage/execution/evidence: `da70576`, `08b3516`, `f33d5b9`;
 - P1-E startup recovery/evidence: `22a1aff`, `6c748de`;
 - P1-F Governor implementation/evidence: `a0bc047`, `ff96dc0`;
-- P1-G runtime reconciliation: `b8328bd`, `bd0d7a1`, `40a0de7`;
-- P1-G additive response compatibility: `f53a868`;
-- P1-G docs/status: commit непосредственно перед этим handoff prompt.
+- P1-G runtime reconciliation/compatibility: `b8328bd`, `bd0d7a1`, `40a0de7`,
+  `f53a868`;
+- P1-H telemetry/fit/tests/docs: `df4d156`, `02acf72`, `a5df7c9`, `324e54a`;
+- P1-H status/handoff: commit непосредственно перед этим prompt.
 
 Не откатывай Error Boundaries, truthful Message terminal CAS, persisted
 compaction fix, sampled runtime health/timeouts, SQLite migrations 1–5, scoped
 Job idempotency, canonical state CAS, persisted-first subscription, strict public
-Job command schemas, server-owned idempotency scopes, pull-based HTTP
-backpressure, durable Chat privacy/chunking/terminal transaction,
-disconnect-only semantics, Web reattach, P1-E pre-listen recovery, P1-F typed
-tickets/leases/unload guard или P1-G runtime single-flight/source semantics.
+Job schemas, pull-based HTTP backpressure, durable Chat privacy/chunking/terminal
+transaction, disconnect-only semantics, Web reattach, P1-E pre-listen recovery,
+P1-F tickets/leases/unload guard, P1-G single-flight/source semantics или P1-H
+telemetry provenance/current-fit unknown states.
 
 Обязательный порядок:
 
 1. Полностью прочитай `AGENTS.md`, затем `docs/NAVIGATION.md`,
    `docs/plans/PHASE_STATUS.md`, Phase 1/exit gate в `docs/plans/ROADMAP.md`,
-   `docs/architecture/RUNTIME_LIFECYCLE.md`, HLD, LLD, `docs/DOMAIN_MODEL.md`,
-   `docs/TESTING.md`, `docs/DEVELOPMENT.md`, `docs/PRODUCT.md`, `docs/UX_IA.md`,
-   accepted ADR-0001/0002/0003/0004, `docs/research/EVIDENCE.md`,
-   `docs/plans/OPEN_QUESTIONS.md` и
-   `docs/decisions/2026-08-02-product-decisions.md`.
+   `docs/PRODUCT.md` (`RES-003`, `RES-004`, `RES-008`), `docs/UX_IA.md`
+   (`Persistent Runtime Bar`, responsive), `docs/DOMAIN_MODEL.md`,
+   `docs/architecture/RUNTIME_LIFECYCLE.md`, HLD, LLD, `docs/TESTING.md`,
+   `docs/DEVELOPMENT.md`, accepted ADR-0001/0002/0003/0004,
+   `docs/plans/OPEN_QUESTIONS.md` и принятые product decisions.
 2. Проверь Git status и сохрани unrelated/untracked user files. Не изменяй
    `.idea`, пользовательскую `~/.alamo`, workspace-файлы или реальные Ollama
    models.
 3. Используй `sde-agent:implementation-planning`, `sde-agent:sde-agent`,
-   `architecture-agent:architecture-agent`,
-   `architecture-agent:architecture-capacity`,
-   `sre-agent:verification-strategy`, `sre-agent:reliability-testing`,
-   `sre-agent:finding-validation` и `sde-agent:implementation-evidence` без
-   делегирования.
-4. Для macOS/Node telemetry сначала проверь актуальные official Apple и Node.js
-   contracts. Не превращай undocumented command output или remembered API в
-   validated source; сохрани URL/date/limitations в research evidence, только
-   если факт реально влияет на implementation.
-5. До правок воспроизведи current state: exact Job/Governor/reconciliation files
-   дают 82/82; routes/Governor/concurrency — 28/28; runtime/provider — 19/19;
-   current `fit.test.ts` — 13/13. P1-G имеет один `context.runtime`, один pending
-   `/api/ps` Promise, `models: []` только для healthy empty и `models: null` для
-   source failure. Current `HardwareInfo.usableMemoryBytes` использует static
-   70% Apple heuristic; это legacy estimate, не observed current availability.
-6. До кода составь bounded plan с inventory всех hardware/fit consumers,
-   static-profile/dynamic-sample table, source/confidence semantics, Apple
-   success/partial/failure/unsupported states, sampling order/linearization,
-   concurrency/cancellation/timeouts, compatibility/migration, command security,
+   `frontend-agent:frontend-agent`, `frontend-agent:frontend-verification`,
+   `product-agent:product-acceptance`, `sre-agent:verification-strategy`,
+   `sre-agent:reliability-testing`, `sre-agent:finding-validation` и
+   `sde-agent:implementation-evidence` без делегирования. Accepted UX уже задаёт
+   visual direction, поэтому не расширяй slice новым redesign discovery.
+4. До правок воспроизведи current state: exact P1-A–P1-H files дают 92/92;
+   routes/Governor/concurrency — 28/28; runtime/provider — 19/19;
+   fit/telemetry — 19/19; root — 210/210 server/CLI + 17/17 Web; mocked Chromium
+   — 9/9. Проверь current `RuntimeStatus`, `useAsync`, `api.runtimeSnapshot`,
+   locale/format helpers, component/browser fixtures и responsive shell.
+5. До кода составь bounded plan с inventory всех current Runtime UI/API
+   consumers, state table, polling/cancellation ownership, accessible structure,
+   narrow/mobile layout, source/error mapping, locale keys, compatibility,
    capacity bound и exact validation commands.
 
-## Scope P1-H
+## Scope P1-I
 
-- ввести один injectable `HostTelemetry` application/infrastructure interface;
-  routes, Web, fit helpers и Governor не запускают `sysctl`, `vm_stat`,
-  `memory_pressure` или другие host commands напрямую;
-- добавить Apple Silicon implementation только для `darwin/arm64`. Используй
-  documented/stable sources с bounded timeout/output и injected `execFile`-like
-  runner. Не вызывай shell, не интерполируй user input и не включай command
-  stderr/raw output в public response;
-- разделить immutable/static host profile и dynamic telemetry sample. Каждое
-  опубликованное поле имеет source, `observedAt` и confidence/state. Unknown или
-  unavailable лучше 70% heuristic, выданной за current fact;
-- additive расширить current `GET /api/runtime` host projection. P1-G top-level
-  parser специально tolerant к additive fields; не ломай P1-G fields/codes и
-  compatibility `GET /api/models/running`;
-- сохранить legacy `/api/health.hardware` и `HardwareInfo` shape для current Web.
-  Если 70% `usableMemoryBytes` остаётся там ради compatibility, явно маркируй его
-  как legacy estimate в новом runtime contract/docs; не используй как observed
-  pressure/available memory;
-- минимум различать Apple host telemetry `available`, `partial`, `unavailable`
-  и non-Apple `unsupported` либо эквивалентные narrow stable states. Partial
-  обязан перечислять доступные facts и отсутствующие fields, а не заполнять их
-  нулями;
-- Apple unified memory не называть discrete VRAM. Если public source не даёт
-  отдельной GPU-free memory, поле остаётся `null/unknown`; total unified memory,
-  current available/pressure и `/api/ps size_vram` — разные факты;
-- интегрировать telemetry в P1-G shared sample: overlapping `/api/runtime`
-  callers создают bounded provider-call и telemetry-probe count. Caller abort не
-  отменяет shared work для остальных. После completion live Promise/listeners не
-  растут и следующий call делает новый sample;
-- явно определить sampling/linearization. Допустимый rule: `/api/ps` и host
-  telemetry запускаются вместе, после завершения обоих выбирается один root
-  `observedAt`, затем синхронно capture-ится Governor. Это coherent application
-  projection, но не atomic host/runtime truth;
-- `/api/ps` и telemetry failures независимы: healthy runtime rows не исчезают
-  из-за telemetry failure, а valid telemetry не превращает failed `/api/ps` в
-  `models: []`. Общий route остаётся диагностируемым;
-- добавить narrow current-fit projection только там, где evidence достаточно.
-  `observed` означает ровно наблюдавшуюся loaded configuration на этом runtime
-  и Apple host sample, а не future admission guarantee. Missing/mismatched
-  context, missing telemetry, failed source или unverified host → `unknown`;
-- runtime row digest остаётся provider observation; lease по-прежнему не имеет
-  digest и не получает proven artifact identity. Host observation не доказывает
-  external client identity;
-- не считать current load безопасным только потому, что процесс не упал. Если
-  pressure semantics не подтверждены официальным source/fixture, публикуй
-  residency observed и fit unknown;
-- не менять P1-F default policy: один permit, priority `normal`, FIFO. Telemetry
-  и fit в P1-H read-only/explanatory; они не разрешают parallel, не preempt-ят,
-  не auto-unload-ят и не меняют очередь;
-- сохранить exact/conservative unload guard. Unknown-owner row не
-  auto-unload-ится, active lease без row не освобождается;
-- P1-E startup ordering сохранить. Startup не должен ждать live telemetry или
-  Ollama сверх current recovery boundary; generic public Job не получает ticket,
-  lease или runtime owner;
-- migration 6 не нужна для process-local sampled telemetry. Если вводится
-  durable cache, это scope expansion: нужен explicit TTL/staleness, additive
-  fresh/v5→v6/failed+reopen test и rollback note. Предпочтительный P1-H cache не
-  вводит;
-- обновить current-state docs и Mermaid/source diagram, если component/data
-  boundary изменилась.
+- заменить узкую `GET /api/models/running` projection в persistent
+  `RuntimeStatus` на typed `api.runtimeSnapshot()`/`GET /api/runtime`. Не описывай
+  shape вручную и не обходи Zod contract;
+- сделать read-only Runtime Bar, который остаётся в application shell на
+  Launcher, Model, Chat и Settings routes. Route change не отменяет Job, lease
+  или другую resource operation;
+- показать только факты, уже присутствующие в P1-H snapshot:
+  - active lease: operation, model, owner kind и elapsed/acquired time;
+  - FIFO queue: order, operation, model, owner kind, requested context и wait;
+  - loaded runtime models, unknown-owner warning и active-not-observed decision;
+  - host telemetry state, total/free/legacy estimate с source/confidence/basis;
+  - per-model `observed | unknown` current fit, context/allocation/pressure basis;
+  - sample time и независимое состояние Ollama/host sources;
+- не выдавать Governor live queue за полный durable Jobs list. Snapshot содержит
+  только one active lease/live waiters, а не terminal history или canonical Job
+  phase. Если exact Job title/route неизвестны, показывай безопасный owner kind,
+  не выдумывай navigation target;
+- сохранить различие `models: []` (healthy empty) и `models: null` (source
+  failure). Host `partial`, `unavailable`, `unsupported` и available-with-missing
+  fields имеют разные понятные states. Failure одного source не скрывает другой;
+- Apple system-free pages не подписывать как «доступно для новой модели».
+  `legacyUsableMemoryBytes` показывать как estimate/compatibility, а unknown
+  pressure/available/discrete VRAM — как unknown, без optimistic zero;
+- `currentFit.observed` подписывать как current loaded configuration/residency,
+  не «модель поместится». Всегда объяснять `futureAdmissionGuarantee:false`;
+  stable unknown reasons отображать человекочитаемо, не raw enum-only UI;
+- unknown-owner `/api/ps` row показывать как «owner unknown/external possible»,
+  не как доказанный external client. Digest остаётся runtime observation, не
+  proven artifact identity;
+- добавить bounded adaptive polling без overlap: чаще при active/queued state,
+  реже idle, pause либо существенно снизить frequency в hidden document,
+  немедленно refresh при возвращении visibility. Один component не держит больше
+  одного request; cleanup abort-ит только свой HTTP wait. Manual Retry остаётся;
+- polling interval constants должны быть именованы и покрыты fake timers или
+  injected scheduler. Не добавлять SSE/WebSocket runtime feed;
+- обновление sample не должно очищать предыдущую readable projection обычным
+  loading flash. Refresh/error должны быть observable; failed refresh может
+  сохранить last confirmed sample с явной stale/error меткой, но не как fresh;
+- все новые user-facing strings проходят locale keys: English source/fallback и
+  curated Russian. Memory/date/duration/context используют общие format helpers;
+- структура должна быть semantic/accessibility-first: named region/heading,
+  status/alert только для реальных transitions, keyboard reachable disclosure,
+  no focus steal, reduced-motion-safe refresh. Не announce-ить весь bar на каждом
+  poll;
+- desktop bar остаётся compact и не перекрывает main content. На narrow viewport
+  он превращается в компактный expandable/bottom-sheet-like projection без
+  horizontal overflow при 200% zoom. Не вводи произвольные context/memory caps;
+- добавь feature-local Error Boundary либо докажи, что current root containment
+  сохраняет usable shell при render failure; не ломай P0-A boundary semantics;
+- compatibility `GET /api/models/running` route/contract остаётся. Если Web больше
+  его не вызывает, server route всё равно должен проходить P1-G tests;
+- server/contract/storage migration для этого slice не ожидаются. Если current
+  snapshot реально недостаточен для обязательного read-only факта, сначала
+  докажи gap; расширяй contract additive и узко, не добавляй speculative fields;
+- обнови current-state Web/architecture/testing docs и Mermaid diagram только
+  если boundary действительно изменилась.
 
-## Runtime result P1-H
+## Runtime Bar state model
 
 ```text
-validated /api/ps result or controlled failure
-        +
-bounded Apple host telemetry result or partial/unknown
-→ one shared application sample
-→ capture Governor after sources settle with one root observedAt
-→ explain residency/current fit as observed or unknown
-→ additive GET /api/runtime without admission side effects
+initial load
+  → current snapshot
+      ├─ active lease + zero/more FIFO waiters
+      ├─ no active lease + empty queue
+      ├─ Ollama models [] | rows | unavailable
+      └─ host available | partial | unavailable | unsupported
+  → bounded refresh without blanking confirmed content
+  → refreshed snapshot or stale-with-explicit-refresh-error
 ```
 
-P1-H остаётся sampled single-process observation. Он не доказывает continuous
-memory state, future model fit, external process identity, Ollama scheduler
-safety или multi-process ownership.
+Runtime Bar — read-only projection. Он не владеет Jobs, leases, cancellation,
+model loading или unload; navigation/unmount меняет только HTTP subscription.
 
 ## Required deterministic evidence
 
-- inventory test доказывает один injected telemetry boundary и отсутствие host
-  command execution в routes/Web/Governor/fit helpers;
-- contract round-trip покрывает Apple available/partial/unavailable, non-Apple
-  unsupported, observed и unknown fit, а P1-G-shaped response с новым additive
-  field остаётся parseable;
-- Apple fixture фиксирует exact command/API inputs, bounded timeout/output и
-  unit conversions; malformed/missing/extra output даёт partial/unknown, не
-  optimistic zero;
-- total unified memory, dynamic available/pressure, runtime allocation и legacy
-  70% usable estimate имеют разные source/basis labels;
-- Apple adapter не публикует discrete VRAM либо GPU-free bytes без реального
-  source;
-- `/api/ps` success + telemetry failure сохраняет models/owner decisions;
-  `/api/ps` failure + telemetry success сохраняет host facts и `models: null`;
-- matched active lease + exact runtime row + sufficient Apple sample даёт только
-  разрешённый observed current-fit explanation; digest/context/host mismatch и
-  missing pressure дают `unknown`;
-- telemetry/provider calls, pending во время enqueue/acquire/release, дают ровно
-  документированную common-timestamp linearization;
-- минимум два concurrent callers, один caller abort и следующий post-completion
-  call доказывают bounded call count, независимую cancellation и отсутствие
-  retained history/listeners;
-- telemetry timeout/runner failure не содержит raw stdout/stderr, hostname,
-  username, endpoint credentials, path, prompt, reasoning или secret;
-- unload exact/conservative guard, unknown-owner no-auto-unload и P1-G source
-  failure semantics остаются зелёными;
-- P1-E recovered stable order/unsafe no-ticket, P1-F Chat/compaction/warm matrix,
-  1000 cleanup и 10x release/cancel/close остаются зелёными;
-- P1-D duplicate/cancel/detach/reattach, P1-A–P1-C store/subscription, P0-D
-  timeout gates и P0 browser smoke остаются зелёными;
-- browser gate не получает credit за telemetry/fit UI: если Web projection не
-  меняется, это прежний mocked P0/P1-D smoke.
+- inventory test доказывает, что Web Runtime Bar использует только
+  `api.runtimeSnapshot`/contract schema и не вызывает `/api/ps`, host command,
+  Ollama или filesystem напрямую;
+- component fixtures round-trip через `runtimeSnapshotSchema` и покрывают active
+  Job owner, operation owner, multiple FIFO waiters, idle/closed admission,
+  loaded exact-owner row, unknown-owner row и active-not-observed decision;
+- `models: []`, `models: null`, host available-with-missing fields, partial,
+  unavailable и unsupported имеют разные accessible labels;
+- observed fit показывает current-residency limitation; unknown
+  digest/context/host/pressure reasons не превращаются в success;
+- total unified memory, system-free bytes, legacy estimate, runtime allocation и
+  accelerator allocation имеют разные labels/source/confidence; null не
+  форматируется как zero;
+- polling fake покрывает initial request, active/queued и idle intervals, no
+  overlap, hidden/visible transition, manual retry, unmount abort и отсутствие
+  retained timers/listeners;
+- refresh не blank-ит confirmed sample; refresh failure получает explicit stale
+  state без raw endpoint/body/credential/path/secret;
+- navigation между минимум Chat и Settings сохраняет Runtime Bar projection и не
+  вызывает Job cancel, model stop или unload;
+- component accessibility проверяет region/heading, disclosure keyboard, alert/
+  status discipline и locale fallback/Russian strings;
+- Chromium проверяет active+queued projection, independent degraded source,
+  manual retry/recovery, navigation persistence, narrow viewport, 200% scaling,
+  no horizontal overflow и reduced motion. Mocked browser test не является live
+  Ollama/hardware validation;
+- P1-D detach/reattach/Stop, P1-E recovered ordering, P1-F FIFO/unload/cleanup,
+  P1-G source compatibility и P1-H telemetry/fit suites остаются зелёными;
+- browser actions/count указаны буквально: какие routes открывались, какая
+  mocked state transition выполнена и что не проверялось.
 
 ## Non-goals
 
-- не добавлять background polling, SSE runtime feed, durable telemetry history,
-  metrics exporter или cloud telemetry;
-- не реализовывать Linux/NVIDIA/ROCm adapter кроме explicit `unsupported/unknown`
-  contract fixture;
-- не вводить RAM/VRAM reservation, joint-fit admission, parallel permits,
-  priority/preemption, prewarm, pin, idle TTL/LRU или auto-unload;
-- не превращать static 70%, `os.freemem()`, model size или absence OOM в точный
-  safe capacity без documented basis;
-- не идентифицировать внешний process/client по `/api/ps` row;
-- не добавлять полный Runtime Bar, Jobs screen, queue dialog или новый IA;
-- не добавлять durable lease journal, checkpoint resume, generic worker registry,
-  arbitrary public Job execution, retry/scheduler policy или multi-process lock;
-- не добавлять Application Service/daemon, CLI/TUI Job commands или autostart;
-- не добавлять catalog/capability/import, retention, notification, Project,
-  Recipe, Artifact, Agent/MCP/Skills, branding или locale expansion;
-- не использовать live Ollama, реальную модель, public network, user DB или
-  реальные workspace files в deterministic suite;
-- не называть fake telemetry hardware validation, current sample future fit или
-  process-local observation host-wide safety.
+- не добавлять Cancel/Open/Queue/Stop-and-switch/parallel actions или conflict
+  dialog; это отдельный resource-action slice;
+- не реализовывать prewarm, debounce warm, priority/preemption, additional
+  permits, joint-fit admission, pin, TTL/LRU или auto-unload;
+- не менять P1-F one-permit `normal` FIFO policy и unload guard;
+- не добавлять full durable Jobs screen/history, generic Job worker/adapter,
+  checkpoint resume, retry scheduler или lease journal;
+- не добавлять runtime SSE/WebSocket, durable observation cache/history, metrics
+  exporter, cloud telemetry или multi-process lock;
+- не реализовывать новые Apple pressure heuristics либо Linux/NVIDIA/ROCm
+  telemetry; unknown остаётся честным;
+- не идентифицировать внешний process/client и не обещать future fit;
+- не добавлять catalog/capability/import, Project/Recipe/Artifact, retention,
+  notifications, Agent/MCP/Skills, service/daemon, CLI/TUI или rebranding;
+- не использовать live Ollama, реальную модель, user DB, workspace files или
+  public network в deterministic suite;
+- не считать текущие 9 mocked Chromium tests доказательством нового Runtime Bar,
+  пока не добавлены явные browser assertions этого slice.
 
 ## Validation
 
-Уточни новый telemetry test filename в плане и сохрани exact counts:
+Сохрани новые exact counts и отдельно baseline/regression counts:
 
 ```bash
 npm run typecheck
@@ -220,7 +209,8 @@ node --test packages/server/test/job-contract.test.ts \
   packages/server/test/chat-job-execution.test.ts \
   packages/server/test/chat-job-recovery.test.ts \
   packages/server/test/resource-governor.test.ts \
-  packages/server/test/runtime-reconciliation.test.ts
+  packages/server/test/runtime-reconciliation.test.ts \
+  packages/server/test/host-telemetry.test.ts
 node --test packages/server/test/routes.test.ts \
   packages/server/test/exclusive-inference.test.ts \
   packages/server/test/inference-concurrency.test.ts
@@ -238,28 +228,31 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-В финальном evidence укажи exact counts, telemetry state/source/confidence,
-observed/unknown fit basis, failure independence, call bound, linearization rule,
-какие routes реально подключены и какие browser actions реально проверены.
-Отдельно назови, что live hardware/Ollama, continuous observation, future fit,
-external-client identity и multi-process safety не проверены и не реализованы.
+Повтори узкие timer/visibility tests 10 раз, а P1-E recovery file — 10 раз, если
+Runtime Bar lifecycle затрагивает timing либо route navigation. Не скрывай flaky
+failure повторным запуском: сначала сохрани cause/fix/evidence.
+
+В финальном evidence укажи exact counts, Runtime Bar states/facts, polling
+interval/call bound, cancellation/visibility rule, source independence,
+accessibility/responsive checks и реальные browser actions. Отдельно назови, что
+live hardware/Ollama, continuous observation, future admission fit,
+external-client identity, multi-process safety и resource actions не проверены и
+не реализованы.
 
 После успешной независимой проверки:
 
-- обнови current-state runtime/HLD/LLD/development/testing docs;
-- в `PHASE_STATUS.md` сохрани Phase 0/P1-A–P1-G evidence и добавь только P1-H;
-- не отмечай всю Phase 1 завершённой: prewarm/unload policy, Runtime Bar,
-  queue/stop-and-switch UX и resource UX ещё впереди;
+- обнови current-state docs и `docs/TESTING.md`;
+- в `PHASE_STATUS.md` сохрани Phase 0/P1-A–P1-H evidence и добавь только P1-I;
+- не отмечай всю Phase 1 завершённой: queue/stop-and-switch UX, prewarm и другие
+  resource-action slices ещё впереди;
 - полностью перепиши `NEXT_AGENT_PROMPT.md` под следующий bounded Phase 1 slice
-  read-only Runtime Bar/resource projection либо оставь P1-H с blocker и
-  recovery steps;
-- сделай небольшие conventional commits для contract/telemetry, tests и docs.
+  resource conflict/queue action UX либо оставь P1-I с blocker/recovery steps;
+- сделай небольшие conventional commits для Web behavior, tests и docs.
 
-Если Apple pressure/available-memory semantics или observed-fit threshold
-требует недоступного official evidence либо нового product decision, не угадывай.
-Реализуй меньший truthful profile/unknown snapshot, а спорное оставь residual
-scope; P1-H блокируй только при конкретном несовместимом invariant и failing
-fixture.
+Если accepted UX требует факт, которого нет в P1-H snapshot, не угадывай и не
+рисуй optimistic state. Реализуй меньшую truthful projection и оставь exact gap
+residual scope; блокируй P1-I только при конкретном несовместимом invariant или
+неустранимом failing fixture.
 
 В финале сообщи status `successful` либо `blocked`, commits, exact tests,
 failures, residual risks и что `NEXT_AGENT_PROMPT.md` полностью переписан.
