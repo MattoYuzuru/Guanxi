@@ -677,8 +677,20 @@ describe('runtime reconciliation composition inventory', () => {
     const runtimeRoute = readFileSync(`${sourceRoot}/http/runtime-routes.ts`, 'utf8')
     const webApi = readFileSync(`${webRoot}/lib/api.ts`, 'utf8')
     const webRuntime = readFileSync(`${webRoot}/features/health/RuntimeStatus.tsx`, 'utf8')
+    const webRuntimeContext = readFileSync(`${webRoot}/features/health/RuntimeContext.tsx`, 'utf8')
     const webPolling = readFileSync(`${webRoot}/features/health/useRuntimePolling.ts`, 'utf8')
-    const publicProjectionSources = [modelsRoute, runtimeRoute, webApi, webRuntime, webPolling].join('\n')
+    const webConflict = readFileSync(`${webRoot}/features/chat/ResourceConflictDecision.tsx`, 'utf8')
+    const webChat = readFileSync(`${webRoot}/features/chat/ChatPage.tsx`, 'utf8')
+    const publicProjectionSources = [
+      modelsRoute,
+      runtimeRoute,
+      webApi,
+      webRuntime,
+      webRuntimeContext,
+      webPolling,
+      webConflict,
+      webChat,
+    ].join('\n')
 
     assert.match(
       context,
@@ -690,8 +702,15 @@ describe('runtime reconciliation composition inventory', () => {
     assert.match(runtimeRoute, /app\.runtime\.snapshot/u)
     assert.doesNotMatch(publicProjectionSources, /\.ps\(/u)
     assert.match(webApi, /request\(ROUTES\.runtime\(\), getRuntimeResponse/u)
-    assert.match(webRuntime, /useRuntimePolling\(api\.runtimeSnapshot\)/u)
+    assert.match(webRuntimeContext, /useRuntimePolling\(loader\)/u)
+    assert.match(webRuntimeContext, /loader = api\.runtimeSnapshot/u)
+    assert.match(webRuntime, /useRuntimeProjection\(\)/u)
+    assert.match(webConflict, /useRuntimeProjection\(\)/u)
+    assert.match(webConflict, /api\.getJob\(/u)
+    assert.match(webConflict, /api\.cancelJob\(/u)
+    assert.doesNotMatch(webChat, /api\.runtimeSnapshot|api\.cancelJob|api\.getJob/u)
     assert.doesNotMatch(webRuntime, /listRunning|modelsRunning|\/api\/ps|execFile|filesystem/u)
+    assert.doesNotMatch(webConflict, /listRunning|modelsRunning|\/api\/ps|execFile|filesystem|ResourceGovernor/u)
     assert.doesNotMatch(webPolling, /\bfetch\(|ROUTES\.|listRunning|modelsRunning|\/api\/ps/u)
     assert.equal(existsSync(`${sourceRoot}/runtime/reconciliation.ts`), true)
   })

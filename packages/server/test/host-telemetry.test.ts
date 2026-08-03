@@ -210,7 +210,9 @@ describe('host telemetry composition inventory', () => {
       readFileSync(`${serverRoot}/http/models-routes.ts`, 'utf8'),
       readFileSync(`${webRoot}/lib/api.ts`, 'utf8'),
       readFileSync(`${webRoot}/features/health/RuntimeStatus.tsx`, 'utf8'),
+      readFileSync(`${webRoot}/features/health/RuntimeContext.tsx`, 'utf8'),
       readFileSync(`${webRoot}/features/health/useRuntimePolling.ts`, 'utf8'),
+      readFileSync(`${webRoot}/features/chat/ResourceConflictDecision.tsx`, 'utf8'),
     ].join('\n')
 
     assert.match(context, /const hostTelemetry = createHostTelemetry\(hardware\)/u)
