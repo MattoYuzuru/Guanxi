@@ -257,6 +257,48 @@ const MIGRATIONS: readonly string[] = [
       evidence_schema_version
     );
   `,
+  // 8 — exact latest projection for the explicit completion probe.
+  // No provider declaration is backfilled or promoted to runtime evidence.
+  `
+  CREATE TABLE completion_probe_evidence (
+    probe_key                   TEXT PRIMARY KEY
+      CHECK (probe_key GLOB 'sha256:*' AND length(probe_key) = 71),
+    key_version                 INTEGER NOT NULL CHECK (key_version = 1),
+    probe_definition_version    INTEGER NOT NULL CHECK (probe_definition_version = 1),
+    provider                    TEXT NOT NULL CHECK (provider = 'ollama'),
+    normalized_model_reference TEXT NOT NULL,
+    artifact_digest             TEXT NOT NULL,
+    runtime_version             TEXT NOT NULL,
+    context_length              INTEGER NOT NULL CHECK (context_length > 0),
+    outcome                     TEXT NOT NULL
+      CHECK (outcome IN ('verified','degraded','unknown')),
+    reason                      TEXT NOT NULL CHECK (reason IN (
+      'terminal_response',
+      'provider_unavailable',
+      'connect_timeout',
+      'load_timeout',
+      'response_timeout',
+      'provider_error',
+      'runtime_protocol',
+      'empty_response'
+    )),
+    source                      TEXT NOT NULL CHECK (source = 'runtime_probe'),
+    confidence                  TEXT NOT NULL
+      CHECK (confidence IN ('verified','degraded','unknown')),
+    observed_at                 TEXT NOT NULL,
+    completed_at                TEXT NOT NULL,
+    duration_ms                 INTEGER NOT NULL CHECK (duration_ms >= 0)
+  );
+  CREATE INDEX idx_completion_probe_evidence_family
+    ON completion_probe_evidence (
+      provider,
+      normalized_model_reference,
+      artifact_digest,
+      runtime_version,
+      context_length,
+      probe_definition_version
+    );
+  `,
 ]
 
 export function openDb(path: string): Db {

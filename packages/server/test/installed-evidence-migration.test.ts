@@ -12,6 +12,7 @@ function version(db: DatabaseSync): number {
 
 function downgradeToV6(db: DatabaseSync): void {
   db.exec(`
+    DROP TABLE completion_probe_evidence;
     DROP TABLE installed_model_evidence_cache;
     PRAGMA user_version = 6;
   `)
@@ -24,7 +25,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 7)
+    assert.equal(version(first), 8)
     assert.equal(
       (first.prepare(
         `SELECT COUNT(*) AS count FROM sqlite_schema
@@ -35,7 +36,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 7)
+    assert.equal(version(reopened), 8)
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -59,7 +60,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 7)
+    assert.equal(version(upgraded), 8)
     assert.equal(
       (upgraded.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -98,7 +99,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 7)
+    assert.equal(version(recovered), 8)
     recovered.close()
   })
 })

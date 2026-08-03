@@ -19,6 +19,7 @@ function schemaObjects(db: DatabaseSync, names: string[]): Array<{ name: string;
 
 function downgradeToV4(db: DatabaseSync): void {
   db.exec(`
+    DROP TABLE completion_probe_evidence;
     DROP TABLE installed_model_evidence_cache;
     DROP TABLE model_calibration_observations;
     DROP TABLE chat_job_inputs;
@@ -38,7 +39,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 7 })
+    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 8 })
     assert.deepEqual(
       schemaObjects(first, [
         'jobs',
@@ -64,7 +65,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 7 })
+    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 8 })
     assert.equal(
       schemaObjects(reopened, ['jobs', 'job_events']).filter((row) => row.type === 'table').length,
       2,
@@ -117,7 +118,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 7 })
+    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 8 })
     assert.deepEqual(
       {
         ...upgraded.prepare('SELECT id, title, mode, model FROM threads WHERE id = ?').get('thread-v3'),
@@ -179,7 +180,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 7 })
+    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 8 })
     assert.equal(schemaObjects(recovered, ['jobs', 'job_events', 'chat_job_inputs']).length, 3)
     recovered.close()
   })
