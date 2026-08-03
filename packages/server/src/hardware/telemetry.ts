@@ -286,10 +286,9 @@ export class UnsupportedHostTelemetry implements HostTelemetry {
       state: 'unsupported',
       sampleSource: 'none',
       freeMemoryBytes: null,
-      availableFields: [],
+      availableFields: ['legacy_usable_memory_estimate_bytes'],
       missingFields: [
         'total_unified_memory_bytes',
-        'legacy_usable_memory_estimate_bytes',
         'free_memory_bytes',
         'available_memory_bytes',
         'memory_pressure',
@@ -319,8 +318,11 @@ export function unavailableHostTelemetry(
     state: 'unavailable',
     sampleSource: 'none',
     freeMemoryBytes: null,
-    availableFields: appleUnified ? STATIC_APPLE_FIELDS : [],
+    availableFields: appleUnified
+      ? STATIC_APPLE_FIELDS
+      : ['legacy_usable_memory_estimate_bytes'],
     missingFields: [
+      ...(appleUnified ? [] : (['total_unified_memory_bytes'] as const)),
       'free_memory_bytes',
       'available_memory_bytes',
       'memory_pressure',

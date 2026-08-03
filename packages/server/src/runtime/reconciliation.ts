@@ -323,8 +323,9 @@ function currentFitFor(input: {
  *
  * A provider call is shared only while it is pending. Caller cancellation stops
  * that caller's wait, never the shared sample, and no completed history/cache is
- * retained. Governor state is captured after the provider settles; that capture
- * is the snapshot linearization point and shares one `observedAt` with all rows.
+ * retained. Governor state is captured after provider and host sources settle;
+ * that capture is the snapshot linearization point and shares one `observedAt`
+ * with every projected fact.
  */
 export class RuntimeReconciliationService {
   private readonly governor: ResourceGovernor

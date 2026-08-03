@@ -14,6 +14,7 @@ import {
   HostTelemetryProbeError,
   createHostTelemetry,
   parseAppleVmStat,
+  unavailableHostTelemetry,
   type HostCommandOptions,
   type HostCommandRunner,
 } from '../src/hardware/telemetry.ts'
@@ -181,9 +182,17 @@ describe('Apple Silicon host telemetry adapter', () => {
       'legacy_hardware_usable_estimate',
     )
     assert.equal(sample.profile.discreteVramBytes.basis, 'discrete_vram_not_observed')
-    assert.deepEqual(sample.availableFields, [])
+    assert.deepEqual(sample.availableFields, ['legacy_usable_memory_estimate_bytes'])
     assert.ok(sample.missingFields.includes('total_unified_memory_bytes'))
     assert.deepEqual(runner.calls, [])
+
+    const failedSample = runtimeHostTelemetrySchema.parse(
+      unavailableHostTelemetry(telemetry.profile, OBSERVED_AT),
+    )
+    assert.deepEqual(failedSample.availableFields, [
+      'legacy_usable_memory_estimate_bytes',
+    ])
+    assert.ok(failedSample.missingFields.includes('total_unified_memory_bytes'))
   })
 })
 

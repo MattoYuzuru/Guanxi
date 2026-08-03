@@ -233,8 +233,8 @@ waiting_tool/waiting_approval/finalizing` получают recovery-only
 
 P1-G/P1-H сохраняют консервативный P1-F Governor, но добавляют sampled
 reconciliation, host facts и explanation, не admission automation. Active lease
-сопоставляется только с одной unambiguous row по
-exact normalized Ollama reference; отсутствие lease digest не доказывает
+сопоставляется только с первой row по exact normalized Ollama reference;
+ambiguous duplicates оставляют current fit unknown. Отсутствие lease digest не доказывает
 artifact identity. Unmatched row получает owner `unknown`, active lease без row
 — `active_not_observed`. Ни одно состояние не запускает load/unload и не меняет
 FIFO. Production pressure/available-memory observation, target priorities,
