@@ -15,6 +15,7 @@ import {
   Toggle,
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
+import { translate } from '../../lib/locale.ts'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 
@@ -64,6 +65,7 @@ export function SettingsPage() {
         defaultNumCtx: draft.defaultNumCtx,
         autoApproveTools: draft.autoApproveTools,
         enableBash: draft.enableBash,
+        prewarmEnabled: draft.prewarmEnabled,
         theme: draft.theme,
         webSearch: {
           provider: draft.webSearch.provider,
@@ -177,6 +179,12 @@ export function SettingsPage() {
               }
             />
           </Field>
+          <Toggle
+            checked={draft.prewarmEnabled}
+            onChange={(value) => update('prewarmEnabled', value)}
+            label={translate('settings.prewarm.label')}
+            hint={translate('settings.prewarm.hint')}
+          />
         </Panel>
 
         <Panel title="Инструменты">

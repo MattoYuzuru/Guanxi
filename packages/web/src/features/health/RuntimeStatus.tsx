@@ -4,6 +4,8 @@ import type {
   RuntimeMemoryFact,
   RuntimeModelObservation,
   RuntimeResourceOwner,
+  RuntimeResourceOperation,
+  RuntimeAdmissionPriority,
   RuntimeSnapshot,
 } from '@alamo/contract'
 import { Button, Spinner } from '../../components/ui.tsx'
@@ -171,6 +173,7 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
           <h4 className="font-medium">{translate('runtime.active.title')}</h4>
           <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
             <Fact label={translate('runtime.operation')} value={operationLabel(governor.activeLease.operation)} />
+            <Fact label={translate('runtime.priority')} value={priorityLabel(governor.activeLease.priority)} />
             <Fact label={translate('runtime.model')} value={governor.activeLease.model.name} mono />
             <Fact label={translate('runtime.owner')} value={ownerLabel(governor.activeLease.owner)} />
             <Fact
@@ -212,7 +215,7 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
                   {waiter.model.name}
                 </p>
                 <p className="text-[var(--fg-muted)]">
-                  {ownerLabel(waiter.owner)} · {translate('runtime.context')}:{' '}
+                  {ownerLabel(waiter.owner)} · {priorityLabel(waiter.priority)} · {translate('runtime.context')}:{' '}
                   {formatContextLength(waiter.requestedContext)} · {translate('runtime.wait')}:{' '}
                   {formatElapsed(waiter.enqueuedAt)}
                 </p>
@@ -372,10 +375,17 @@ function ownerLabel(owner: RuntimeResourceOwner): string {
     : translate('runtime.owner.operation')
 }
 
-function operationLabel(operation: 'chat' | 'compaction' | 'model_warm'): string {
+function operationLabel(operation: RuntimeResourceOperation): string {
   if (operation === 'chat') return translate('runtime.operation.chat')
   if (operation === 'compaction') return translate('runtime.operation.compaction')
+  if (operation === 'model_prewarm') return translate('runtime.operation.modelPrewarm')
   return translate('runtime.operation.modelWarm')
+}
+
+function priorityLabel(priority: RuntimeAdmissionPriority): string {
+  return priority === 'prewarm'
+    ? translate('runtime.priority.prewarm')
+    : translate('runtime.priority.normal')
 }
 
 function sourceStateLabel(state: RuntimeSnapshot['source']['state']): string {

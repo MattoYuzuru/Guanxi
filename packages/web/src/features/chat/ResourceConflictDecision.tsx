@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import type { Job, RuntimeResourceOwner, RuntimeSnapshot } from '@alamo/contract'
+import type {
+  Job,
+  RuntimeAdmissionPriority,
+  RuntimeResourceOperation,
+  RuntimeResourceOwner,
+  RuntimeSnapshot,
+} from '@alamo/contract'
 import { Button, Modal, Spinner } from '../../components/ui.tsx'
 import { ApiRequestError, api } from '../../lib/api.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'
@@ -161,7 +167,7 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher) {
     try {
       const fresh = await runtime.refresh(controller.signal, true)
       if (controller.signal.aborted) return
-      const active = fresh.governor.activeLease
+      const active = normalActiveLease(fresh)
 
       if (!active) {
         dispatchIntent(initial.intent, true)
@@ -295,7 +301,9 @@ export function ResourceConflictDialog({
 }) {
   const queueRef = useRef<HTMLButtonElement>(null)
   const descriptionId = 'resource-conflict-description'
-  const active = decision.snapshot.governor.activeLease
+  const active = normalActiveLease(decision.snapshot)
+  const queued = normalQueued(decision.snapshot)
+  const prewarmOwnsPermit = decision.snapshot.governor.activeLease?.priority === 'prewarm'
   const busy = decision.action !== 'idle'
   const stopReason = stopUnavailableReason(decision)
 
@@ -314,14 +322,16 @@ export function ResourceConflictDialog({
           <Button className="min-h-11 sm:min-h-0" variant="ghost" onClick={onClose}>
             {translate('chat.conflict.back')}
           </Button>
-          <Button
-            className="min-h-11 sm:min-h-0"
-            variant="danger"
-            disabled={busy || Boolean(stopReason)}
-            onClick={onStopAndSwitch}
-          >
-            {translate('chat.conflict.stop')}
-          </Button>
+          {!prewarmOwnsPermit ? (
+            <Button
+              className="min-h-11 sm:min-h-0"
+              variant="danger"
+              disabled={busy || Boolean(stopReason)}
+              onClick={onStopAndSwitch}
+            >
+              {translate('chat.conflict.stop')}
+            </Button>
+          ) : null}
           <Button
             ref={queueRef}
             className="min-h-11 sm:min-h-0"
@@ -359,6 +369,7 @@ export function ResourceConflictDialog({
         {active ? (
           <dl className="mt-1 grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs text-[var(--fg-muted)]">
             <Fact label={translate('runtime.operation')} value={operationLabel(active.operation)} />
+            <Fact label={translate('runtime.priority')} value={priorityLabel(active.priority)} />
             <Fact label={translate('runtime.model')} value={active.model.name} mono />
             <Fact label={translate('runtime.owner')} value={ownerLabel(active.owner)} />
             <Fact label={translate('runtime.context')} value={formatContextLength(active.requestedContext)} />
@@ -375,12 +386,12 @@ export function ResourceConflictDialog({
         <h3 id="resource-conflict-queue" className="text-xs font-semibold">
           {translate('chat.conflict.queueAhead').replace(
             '{count}',
-            String(decision.snapshot.governor.queued.length),
+            String(queued.length),
           )}
         </h3>
-        {decision.snapshot.governor.queued.length > 0 ? (
+        {queued.length > 0 ? (
           <ol className="mt-1 space-y-1.5">
-            {decision.snapshot.governor.queued.map((waiter, index) => (
+            {queued.map((waiter, index) => (
               <li key={waiter.ticketId} className="min-w-0 border-l-2 border-[var(--border-strong)] pl-2 text-2xs">
                 <p className="font-medium">
                   {translate('runtime.queue.position').replace('{position}', String(index + 1))}{' '}
@@ -429,7 +440,7 @@ function createDecision(
   snapshot: RuntimeSnapshot,
   sampleState: ConflictDecision['sampleState'],
 ): ConflictDecision {
-  const owner = snapshot.governor.activeLease?.owner
+  const owner = normalActiveLease(snapshot)?.owner
   return {
     intent,
     snapshot,
@@ -441,11 +452,11 @@ function createDecision(
 }
 
 function hasConservativeConflict(snapshot: RuntimeSnapshot): boolean {
-  return Boolean(snapshot.governor.activeLease || snapshot.governor.queued.length)
+  return Boolean(normalActiveLease(snapshot) || normalQueued(snapshot).length)
 }
 
 function conflictFingerprint(snapshot: RuntimeSnapshot): string {
-  const active = snapshot.governor.activeLease
+  const active = normalActiveLease(snapshot)
   return JSON.stringify({
     active: active
       ? {
@@ -455,7 +466,7 @@ function conflictFingerprint(snapshot: RuntimeSnapshot): string {
           requestedContext: active.requestedContext,
         }
       : null,
-    queued: snapshot.governor.queued.map((waiter) => ({
+    queued: normalQueued(snapshot).map((waiter) => ({
       owner: waiter.owner,
       operation: waiter.operation,
       model: waiter.model,
@@ -467,7 +478,7 @@ function conflictFingerprint(snapshot: RuntimeSnapshot): string {
 
 function stopUnavailableReason(decision: ConflictDecision): string | null {
   if (decision.sampleState === 'stale') return translate('chat.conflict.stop.stale')
-  const active = decision.snapshot.governor.activeLease
+  const active = normalActiveLease(decision.snapshot)
   if (!active) return translate('chat.conflict.stop.noExactJob')
   if (active.owner.kind !== 'job') return translate('chat.conflict.stop.operationOwner')
   if (active.owner.jobId !== decision.expectedJobId) return translate('chat.conflict.stop.changedOwner')
@@ -480,10 +491,26 @@ function ownerLabel(owner: RuntimeResourceOwner): string {
     : translate('runtime.owner.operation')
 }
 
-function operationLabel(operation: 'chat' | 'compaction' | 'model_warm'): string {
+function operationLabel(operation: RuntimeResourceOperation): string {
   if (operation === 'chat') return translate('runtime.operation.chat')
   if (operation === 'compaction') return translate('runtime.operation.compaction')
+  if (operation === 'model_prewarm') return translate('runtime.operation.modelPrewarm')
   return translate('runtime.operation.modelWarm')
+}
+
+function priorityLabel(priority: RuntimeAdmissionPriority): string {
+  return priority === 'prewarm'
+    ? translate('runtime.priority.prewarm')
+    : translate('runtime.priority.normal')
+}
+
+function normalActiveLease(snapshot: RuntimeSnapshot) {
+  const active = snapshot.governor.activeLease
+  return active?.priority === 'normal' ? active : null
+}
+
+function normalQueued(snapshot: RuntimeSnapshot) {
+  return snapshot.governor.queued.filter((waiter) => waiter.priority === 'normal')
 }
 
 function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {

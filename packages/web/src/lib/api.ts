@@ -28,6 +28,7 @@ import {
   cancelJobResponse,
   jobStreamEventSchema,
   pullStreamEventSchema,
+  prewarmModelResponse,
   warmModelResponse,
   workspaceSchema,
   type ApiError,
@@ -37,6 +38,7 @@ import {
   type CreateThreadBody,
   type CreateWorkspaceBody,
   type PullStreamEvent,
+  type PrewarmModelBody,
   type SendMessageBody,
   type UpdateSettingsBody,
   type UpdateThreadBody,
@@ -186,6 +188,13 @@ export const api = {
     request(ROUTES.modelWarm(name), warmModelResponse, {
       method: 'POST',
       body: { contextLength },
+      signal,
+    }),
+
+  prewarmModel: (name: string, body: PrewarmModelBody, signal?: AbortSignal) =>
+    request(ROUTES.modelPrewarm(name), prewarmModelResponse, {
+      method: 'POST',
+      body,
       signal,
     }),
 

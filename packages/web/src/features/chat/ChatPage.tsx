@@ -52,6 +52,7 @@ import { WorkspaceChip, WorkspacePicker } from '../agent/WorkspacePicker.tsx'
 import { ContextChip, ContextPanel } from '../context/ContextPanel.tsx'
 import type { StreamBuffer } from './streamBuffer.ts'
 import { useChat, type ChatSendOptions, type TurnPhase } from './useChat.ts'
+import { useModelPrewarm, type ModelPrewarmState } from './useModelPrewarm.ts'
 import {
   ResourceConflictDialog,
   useResourceConflictDecision,
@@ -74,8 +75,6 @@ export function ChatPage({
 function NewThreadPage() {
   const navigate = useNavigate()
   const query = useMemo(() => new URLSearchParams(window.location.search), [])
-  const models = useAsync((signal) => api.listModels(undefined, signal), [])
-  const workspaces = useAsync((signal) => api.listWorkspaces(signal), [])
   const settings = useAsync((signal) => api.getSettings(signal), [])
 
   const [mode, setMode] = useState<ThreadMode>('chat')
@@ -84,7 +83,29 @@ function NewThreadPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
+  const requestedContext = Number(query.get('numCtx'))
+  const defaultContext =
+    mode === 'agent'
+      ? settings.data?.defaultNumCtx ?? DEFAULT_NUM_CTX
+      : DEFAULT_CHAT_NUM_CTX
+  const numCtx =
+    Number.isFinite(requestedContext) && requestedContext >= 512
+      ? requestedContext
+      : defaultContext
+  const models = useAsync((signal) => api.listModels(numCtx, signal), [numCtx])
+  const workspaces = useAsync((signal) => api.listWorkspaces(signal), [])
   const availableModels = models.data?.models ?? []
+  const selectedModel =
+    mode === 'chat'
+      ? (availableModels.find(
+          (item) => item.name === model && !item.capabilities.includes('embedding'),
+        ) ?? null)
+      : null
+  const prewarm = useModelPrewarm({
+    model: selectedModel,
+    contextLength: numCtx,
+    enabled: settings.data?.prewarmEnabled,
+  })
 
   useEffect(() => {
     if (model || availableModels.length === 0) return
@@ -105,16 +126,6 @@ function NewThreadPage() {
     setCreating(true)
     setCreateError(null)
     try {
-      const requestedContext = Number(query.get('numCtx'))
-      const defaultContext =
-        mode === 'agent'
-          ? settings.data?.defaultNumCtx ?? DEFAULT_NUM_CTX
-          : DEFAULT_CHAT_NUM_CTX
-      const numCtx =
-        Number.isFinite(requestedContext) && requestedContext >= 512
-          ? requestedContext
-          : defaultContext
-
       const thread = await api.createThread({
         mode,
         model,
@@ -189,6 +200,11 @@ function NewThreadPage() {
             {models.error !== null && (
               <p className="mt-1 text-2xs text-[var(--danger)]">{errorMessage(models.error)}</p>
             )}
+            {selectedModel ? (
+              <p className="mt-1 text-2xs text-[var(--fg-subtle)]" role="status" aria-live="polite">
+                {prewarmLabel(prewarm)}
+              </p>
+            ) : null}
           </label>
 
           {mode === 'agent' && (
@@ -224,6 +240,34 @@ function NewThreadPage() {
       </section>
     </div>
   )
+}
+
+function prewarmLabel(state: ModelPrewarmState): string {
+  if (state.phase === 'idle') return translate('chat.prewarm.idle')
+  if (state.phase === 'pending') return translate('chat.prewarm.pending')
+  if (state.phase === 'warming') return translate('chat.prewarm.warming')
+  if (state.phase === 'warmed') return translate('chat.prewarm.warmed')
+  if (state.phase === 'reused') return translate('chat.prewarm.reused')
+  if (state.reason === 'disabled') return translate('chat.prewarm.skipped.disabled')
+  if (state.reason === 'fit_unknown') return translate('chat.prewarm.skipped.fitUnknown')
+  if (state.reason === 'fit_unavailable') return translate('chat.prewarm.skipped.fitUnavailable')
+  if (state.reason === 'document_hidden') return translate('chat.prewarm.cancelled.hidden')
+  if (state.reason === 'normal_work_present' || state.reason === 'normal_work_started') {
+    return translate('chat.prewarm.cancelled.normalWork')
+  }
+  if (state.reason === 'already_resident_exact') return translate('chat.prewarm.reused')
+  if (state.reason === 'resident_identity_ambiguous') {
+    return translate('chat.prewarm.skipped.identityAmbiguous')
+  }
+  if (state.reason === 'request_timeout') return translate('chat.prewarm.skipped.timeout')
+  if (state.reason === 'selection_changed') {
+    return translate('chat.prewarm.skipped.selectionChanged')
+  }
+  if (state.reason === 'model_not_installed') {
+    return translate('chat.prewarm.skipped.selectionChanged')
+  }
+  if (state.reason === 'request_cancelled') return translate('chat.prewarm.cancelled.cleanup')
+  return translate('chat.prewarm.skipped.runtimeUnavailable')
 }
 
 function ModeButton({
