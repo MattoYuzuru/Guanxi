@@ -174,8 +174,10 @@ describe('resource conflict decision', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send fixture' }))
     const dialog = await screen.findByRole('dialog')
     expect(screen.queryByRole('button', { name: 'Остановить текущую и переключиться' })).toBeNull()
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Поставить после текущей' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Поставить после текущей' }),
+      ),
     )
     expect(dialog.textContent).not.toContain('model_prewarm:fixture')
   })

@@ -607,6 +607,16 @@ export const runtimeReconciliationDecisionSchema = z
     artifactIdentity: z.enum(['unknown', 'exact_digest']).optional().default('unknown'),
   })
   .strict()
+  .superRefine((decision, context) => {
+    const complete = decision.observationKey.state === 'complete'
+    if (complete !== (decision.artifactIdentity === 'exact_digest')) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['artifactIdentity'],
+        message: 'exact artifact identity requires one complete observation key',
+      })
+    }
+  })
 export type RuntimeReconciliationDecision = z.infer<
   typeof runtimeReconciliationDecisionSchema
 >

@@ -341,6 +341,14 @@ describe('runtime reconciliation contract and identity', () => {
     )
     assert.equal(snapshot.host.profile.discreteVramBytes.bytes, null)
     assert.equal(snapshot.host.sample.gpuFreeMemoryBytes.bytes, null)
+    assert.throws(() =>
+      runtimeSnapshotSchema.parse({
+        ...snapshot,
+        decisions: snapshot.decisions.map((decision, index) =>
+          index === 0 ? { ...decision, artifactIdentity: 'unknown' } : decision,
+        ),
+      }),
+    )
     lease.release()
   })
 
