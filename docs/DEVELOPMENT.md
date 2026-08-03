@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P1-K с mocked REST/SSE  |
+| `test:web:browser` | deterministic Chromium P0-A–P1-L regression gate    |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -80,10 +80,17 @@ npm run link:cli
   models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
   использует stale local cache или dated bundled fallback без remote endpoint.
 - `GET /api/runtime` и compatibility `GET /api/models/running` используют один
-  `RuntimeReconciliationService`. Pending callers делят один provider request и
-  один host sample; completed state не кэшируется. Sources fail независимо.
+  `RuntimeReconciliationService`. Pending callers делят `/api/ps`, `/api/tags`,
+  `/api/version` и host sample; completed state не кэшируется. Sources fail
+  независимо.
   `models: []` — healthy empty, `models: null` — source failure. Owner без exact
   active reference остаётся `unknown`.
+- P1-L complete observation key version 1 требует exact tags↔ps digest,
+  context, sourced Ollama version и stable local Apple profile. Missing,
+  ambiguous, changed, remote либо unsupported facts остаются typed unavailable;
+  timestamp не входит в fingerprint. Migration 6 хранит exact calibration
+  отдельно и не читает legacy name-only rows как measured evidence. `/api/show`
+  cache invalidates same-name changed digest и удерживает максимум 64 references.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
@@ -128,6 +135,9 @@ npm run link:cli
   model rows, host profile/sample и stable observed/unknown current-fit reasons.
 - P1-K Runtime snapshot дополнительно различает normal/prewarm priority и
   `model_prewarm`; prewarm command/settings имеют strict additive schemas.
+- P1-L Runtime model/decision additive публикует versioned
+  `observationKey: complete | unavailable`; legacy snapshots default-ятся в
+  `legacy_snapshot`, а exact digest claim допустим только с complete key.
 
 ### Server
 
@@ -138,8 +148,9 @@ npm run link:cli
 - `runtime/resource-governor.ts` — typed normal-before-prewarm admission, active
   lease, snapshot/explanation, unload guard и close boundary;
 - `runtime/prewarm.ts` — exact validation, short-TTL warm и caller/normal abort;
-- `runtime/reconciliation.ts` — shared `/api/ps` + host sample, common timestamp,
-  owner/identity/current-fit classification и compatibility projection;
+- `runtime/observation-key.ts` — canonical key construction и unavailable
+  policy; `runtime/reconciliation.ts` — shared provider/host sources, common
+  timestamp, owner/artifact/current-fit classification и compatibility projection;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details и sourced catalog fallback;
 - `hardware/` — legacy profile/static fit и injectable sampled telemetry adapter;
@@ -153,6 +164,11 @@ npm run link:cli
 - migration 5 additive связывает Message с Job, хранит private Chat input и
   classified private output; Chat create и terminal Message/Job projection
   transactionally atomic;
+- migration 6 additive создаёт `model_calibration_observations`; legacy
+  `model_calibration` сохраняется без backfill/credit. Failed migration остаётся
+  на v5 и повторяется после устранения conflicting schema;
+- `store/calibration.ts` принимает только complete observation key и отделяет
+  context/digest/runtime/hardware rows;
 - `jobs/lifecycle.ts` фиксирует transitions из canonical diagram;
   `jobs/service.ts` валидирует terminal edges и читает bounded SQLite pages при
   replay/live subscription без in-memory event queue, закрывает terminal tail и
@@ -213,7 +229,9 @@ npm run link:cli
   cancel acknowledgement, command acceptance/key reuse, focus/inert/keyboard,
   retry и responsive browser flows; P1-K — contract compatibility, priority
   order, exact owner abort/release, typed route/TTL, settings, exact residency,
-  debounce/visibility/StrictMode cleanup и one-command browser flow.
+  debounce/visibility/StrictMode cleanup и one-command browser flow; P1-L —
+  typed keys, migration 6, exact calibration, digest-aware cache, tags↔ps
+  reconciliation, redaction и AbortSignal.
 
 ### CLI
 

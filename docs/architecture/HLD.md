@@ -38,8 +38,9 @@ Contract package ─ Zod types ─ browser + server
 | `cli`      | foreground launcher и reuse уже запущенного server |
 
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
-SQLite хранит settings, threads/messages, workspaces, tool journal, calibration,
-`jobs`/`job_events` и P1-D private Chat input association. Message bridge хранит
+SQLite хранит settings, threads/messages, workspaces, tool journal, legacy
+calibration, exact P1-L observation samples, `jobs`/`job_events` и P1-D private
+Chat input association. Message bridge хранит
 `pending/completed/failed/cancelled`, safe error, stop reason и `jobId`. Public
 Job API читает canonical records, replay-ит persisted events через GET SSE и
 выполняет explicit cancel поверх одного `JobService`. Chat execution подключён
@@ -119,6 +120,14 @@ active prewarm owner и ждёт release, не меняя FIFO normal Jobs. Shor
 `keep_alive=2m` не меняет explicit warm/turn `10m`; prewarm не durable и не
 переживает disconnect.
 
+P1-L добавляет один versioned observation-key builder для model/runtime evidence.
+`/api/tags`, `/api/ps`, `/api/version`, requested/observed context и sourced
+local Apple profile дают complete key только при однозначном digest match.
+Incomplete/remote/ambiguous identity публикуется как typed unavailable reason.
+Migration 6 хранит exact samples отдельно и не credit-ит legacy name-only rows;
+`/api/show` cache удерживает не более 64 normalized references и invalidates row
+при смене digest того же имени.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -147,6 +156,8 @@ active prewarm owner и ждёт release, не меняя FIFO normal Jobs. Shor
 | Runtime Bar HTTP wait/timer          | persistent Web shell component          | page memory, query-only     |
 | Pending Chat conflict intent         | Chat decision component                 | page memory, one UUID key   |
 | Automatic prewarm request/controller | New Chat + server operation owner       | request/process memory      |
+| Exact calibration observation        | SQLite migration 6                      | persistent exact-key rows   |
+| `/api/show` architecture cache       | `ModelService` bounded LRU              | process memory, 64 refs     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
 | Loaded model                         | Ollama                                  | external runtime            |
@@ -178,9 +189,10 @@ active prewarm owner и ждёт release, не меняя FIFO normal Jobs. Shor
    могут отставать.
 11. P1-J conflict decision использует sampled facts и fail-closed Stop; он не
     является cross-process lock, future-admission guarantee или full Jobs UI.
-12. P1-K exact reuse проверяет текущие name/digest/context facts, но durable
-    context/model/digest-aware observation history и production TTL/residency
-    validation ещё отсутствуют.
+12. P1-L exact keys доказаны только deterministic local Apple fixtures; live
+    Ollama/hardware, remote telemetry и durable continuous history не проверены.
+13. P1-K exact reuse проверяет текущие name/digest/context facts, но continuous
+    runtime history и production TTL/residency validation ещё отсутствуют.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

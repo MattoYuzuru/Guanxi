@@ -45,6 +45,13 @@ level/basis, short `2m` keep-alive и typed warmed/reused/skipped/cancelled reas
 Settings получает additive `prewarmEnabled`; отсутствие старого key означает
 `true`.
 
+P1-L additive добавляет `ModelObservationKey` version 1 и
+`complete | unavailable(reason)` projection в Runtime model/decision. Legacy
+snapshots default-ятся в `legacy_snapshot`/`unknown`; complete key обязан
+соответствовать `artifactIdentity: exact_digest`. Key компоненты — `ollama`,
+normalized exact reference, artifact digest, context, sourced Ollama version и
+stable local Apple hardware fingerprint без private CPU/device strings.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -64,18 +71,21 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   live snapshot/explanation, unload guard и graceful close;
 - `runtime/prewarm.ts`: bounded exact selection/residency validation,
   lowest-priority admission, exact-owner abort и short-TTL Ollama warm;
-- `runtime/reconciliation.ts`: process-local shared `/api/ps` + host telemetry
-  single-flight, common timestamp linearization, exact normalized reference
-  matching, independent source failure redaction, current fit explanation и
-  compatibility projection;
+- `runtime/observation-key.ts`: canonical exact-reference normalization,
+  versioned hash components и typed unavailable reasons;
+- `runtime/reconciliation.ts`: process-local shared `/api/ps`, `/api/tags`,
+  `/api/version` + host telemetry single-flight, common timestamp linearization,
+  exact artifact matching, independent source failure redaction, current fit
+  explanation и compatibility projection;
 - `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query;
 - `http/models-routes.ts`: list/show/pull/delete/explicit warm/prewarm/unload/
   running;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
-- `models/service.ts`: installed `/api/tags`, sampled `/api/ps` и unbounded
-  parallel `/api/show`;
+- `models/service.ts`: installed `/api/tags`, sampled `/api/ps`, sourced
+  `/api/version` и unbounded parallel `/api/show` с digest-aware LRU на 64
+  normalized references;
 - `models/catalog.ts`: validated stale local cache + dated bundled snapshot,
   без remote request;
 - `hardware/probe.ts` и `fit.ts`: legacy local profile/estimate и static fit;
@@ -88,6 +98,10 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   и unique terminal event constraint;
 - migration 5: additive `messages.job_id`, private `chat_job_inputs` и optional
   classified private output в `job_events`;
+- migration 6: additive exact-key `model_calibration_observations`; legacy
+  `model_calibration` остаётся readable, но не участвует в measured fit;
+- `store/calibration.ts`: complete-key-only record и same-artifact/runtime/
+  hardware context curve; changed identity получает отдельную row;
 - `store/jobs.ts`: atomic create + initial event, ordered replay page, event
   sequence CAS, canonical non-terminal state + lifecycle event CAS и terminal
   state + event CAS;
@@ -302,10 +316,14 @@ requested context, priority `normal | prewarm` и enqueue time. Ticket прох�
 `queued → active → released` либо `queued → cancelled`; release/cancel/close
 идемпотентны. Snapshot хранит
 только live queue, одну active lease и одну последнюю decision, поэтому
-diagnostics не растут с числом завершённых operations. P1-H сохраняет только
-один pending reconciliation Promise и не хранит observations. Migration 6 для
-P1-F–P1-K не нужна: canonical queue intent уже находится в Job, а transient
-lease journal, durable runtime cache и client-side resource lock не вводились.
+diagnostics не растут с числом завершённых operations. P1-L сохраняет только
+один pending reconciliation Promise, но exact calibration samples пишет через
+migration 6. Legacy rows не backfill-ятся, потому что digest/runtime/hardware
+для них недоказуемы. Rollback code может перестать читать новую table, а schema
+и rows остаются forward-compatible; failed migration transaction сохраняет
+`user_version=5`, после устранения conflicting schema повторный open применяет
+её заново. Lease journal, durable runtime sample history и client-side resource
+lock не вводились.
 
 ## Target module boundaries
 

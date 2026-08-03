@@ -648,6 +648,22 @@ flash-attention/runtime settings
 adapter/probe version
 ```
 
+Current P1-L реализует безопасный subset как `ModelObservationKey` version 1:
+provider `ollama`, normalized exact reference, installed/runtime digest,
+observed/requested context, `/api/version`-sourced Ollama fingerprint и stable
+local Apple profile (`darwin/arm64/metal`, unified memory, total bytes и source).
+`/api/ps` не даёт отдельный backend/device identifier, поэтому он не
+fabricate-ится. Parallelism, KV format, flash-attention и adapter/probe version
+остаются target-компонентами будущего ключа, а не неявными defaults v1.
+
+Complete key требует one-to-one `/api/tags` ↔ `/api/ps` digest match. Missing
+source, duplicate normalized reference, changed digest, missing context/version,
+remote либо unsupported hardware дают typed unavailable reason. Timestamp
+остаётся observation metadata. Migration 6 хранит exact samples отдельно от
+legacy `(model, context)` rows; context rows одной exact digest/runtime/hardware
+family строят curve, но каждый context имеет собственный key и не перезаписывает
+другой.
+
 Нельзя использовать универсальную константу bytes-per-element для всех runtime.
 На Apple unified memory учитываются total pressure и host reserve; на NVIDIA —
 VRAM, RAM/offload и device topology. Remote Ollama использует remote telemetry.
@@ -854,7 +870,7 @@ Checkpoint resume, opt-in login autostart и обнаружение одновр
 
 ## Observability contract
 
-Current P1-H–P1-K projection реализует bounded subset:
+Current P1-H–P1-L projection реализует bounded subset:
 
 ```ts
 type RuntimeSnapshot = {
@@ -870,9 +886,11 @@ type RuntimeSnapshot = {
 Host source states, facts, per-model current fit, P1-I read-only Runtime Bar и
 P1-J bounded Queue/exact Job Stop action реализованы. P1-K дополнительно
 показывает `model_prewarm` purpose, `prewarm` priority и live explanation, но не
-выдаёт operation owner за durable Job. Production pressure/available memory,
-context/model/digest-aware durable observation keys/history, safe parallel и
-full resource actions ещё не реализованы. Target projection остаётся шире:
+выдаёт operation owner за durable Job. P1-L добавляет exact
+model/digest/context/runtime/hardware observation key, exact-only calibration и
+digest-aware bounded `/api/show` cache. Production pressure/available memory,
+continuous durable runtime history, safe parallel и full resource actions ещё
+не реализованы. Target projection остаётся шире:
 
 Runtime projection:
 

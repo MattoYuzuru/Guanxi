@@ -12,6 +12,8 @@ flowchart TB
     Governor[Resource governor normal before prewarm leases]
     Prewarm[Bounded exact model prewarm owner]
     Runtime[Runtime reconciliation single flight]
+    Observation[Versioned observation key boundary]
+    Calibration[Exact calibration store migration 6]
     Tools[Tool registry jail fs bash]
     Ollama[Ollama client]
     Static[Built web assets]
@@ -40,6 +42,10 @@ flowchart TB
     Runtime --> Governor
     Runtime --> Models
     Runtime --> Telemetry
+    Runtime --> Observation
+    Models --> Observation
+    Models --> Calibration
+    Calibration --> Stores
     Prewarm --> Governor
     Prewarm --> Runtime
     Prewarm --> Models

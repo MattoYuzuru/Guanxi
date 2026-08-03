@@ -39,8 +39,9 @@ exit gate ROADMAP проверен целиком.
 | P1-I Read-only Runtime Bar projection   | independently verified | `6c297ce`..`11e516b`; 13 component, 10 browser, all gates           |
 | P1-J Resource conflict/queue action UX  | independently verified | `2e8dc47`, `dc3f992`; 10 component, 4 browser, all gates            |
 | P1-K Prewarm priority/debounce          | independently verified | `811f7fa`..`60693ea`; 35 race, 6 service, 2 browser, all gates      |
+| P1-L Exact observation identity         | independently verified | `44730e2`..`94300b7`; 28 exact, 10× repeats, all gates              |
 
-P1-A–P1-K реализуют additive contract, migrations 4–5, canonical state CAS,
+P1-A–P1-L реализуют additive contract, migrations 4–6, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
@@ -54,8 +55,9 @@ P1-G добавляет один sampled `/api/ps` reconciliation service и pub
 observed/unknown current-fit explanation. P1-I добавляет persistent read-only
 Runtime Bar. P1-J добавляет safe Queue и exact Job Stop/cancel acknowledgement
 для Chat conflict. P1-K добавляет typed lowest-priority prewarm после stable
-New Chat selection; context/model/digest-aware observation keys, no artificial
-caps audit и другие remaining exit-gate slices ещё впереди, поэтому Phase 1
+New Chat selection. P1-L добавляет exact observation keys, migration 6 и
+digest-aware bounded cache; no artificial caps audit и другие remaining
+exit-gate slices ещё впереди, поэтому Phase 1
 остаётся `in progress`.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
@@ -251,6 +253,51 @@ Live hardware/Ollama, production TTL/residency, continuous observation,
 safe parallel/future fit, external-client identity, multi-process safety и
 generic eviction не проверены. Prewarm остаётся best-effort request/process-local
 lease, не durable Job и не гарантия будущего admission.
+
+P1-L evidence: `ModelObservationKey` version 1 различает `complete` и typed
+`unavailable(reason)`. Complete components: provider `ollama`, normalized exact
+reference, installed/runtime artifact digest, context, `/api/version`-sourced
+runtime fingerprint и stable local Apple hardware fingerprint
+(`darwin/arm64/metal`, unified memory, total bytes/source). Timestamp остаётся
+sample metadata; raw CPU/device/user/path strings не входят в fingerprint.
+Missing/ambiguous tags↔ps identity, digest, context, version, local supported
+hardware либо remote host остаются unavailable и не получают measured credit.
+
+Additive migration 6 создаёт `model_calibration_observations`. Legacy
+`model_calibration(model, context)` rows сохраняются readable без invented
+backfill и никогда не читаются как exact evidence. Failed transaction оставляет
+v5; после устранения conflicting schema reopen повторяет migration. Exact row
+upsert deterministic, context/digest/runtime/hardware изменения дают отдельные
+rows; context curve читает только одну artifact/runtime/hardware family.
+`/api/show` cache invalidates changed digest того же normalized name, удерживает
+один digest на reference и максимум 64 references. Model detail wait получает
+caller AbortSignal; provider failures не кэшируются и не раскрывают raw body.
+`PrefillTracker` остаётся process-local name heuristic вне measured contract.
+P1-K resident reuse остаётся current-sample name+digest+context и не требует
+недоступный historical hardware key.
+
+Локально прошли typecheck; 98/98 P1 exact; 28/28 новый key/migration/cache/
+runtime group; 6/6 prewarm service; 30/30 routes/Governor/concurrency; 19/19
+runtime/provider; 19/19 fit/telemetry; 237/237 server/CLI + 43/43 Web root;
+16/16 mocked Chromium; build, markdownlint и diff check. Новый P1-L group,
+P1-K priority/prewarm/inference, P1-K debounce, P1-J conflict, P1-I polling и
+P1-E recovery повторены 10×: соответственно 28/28, 35/35, 4/4, 11/11, 3/3 и
+8/8 в каждом run.
+
+Первые post-change проверки нашли: stale `ModelService` type/implicit-any;
+пять migration assertions, ожидавших v5; четыре старых runtime fixtures без
+новых tags/version facts; одну union-narrowing ошибку теста и одну устаревшую
+artifact expectation. Причины исправлены, все соответствующие gates зелёные.
+Первый 10× repeat P1-J conflict отдельно выявил focus-effect race: assertion
+иногда опережал перевод фокуса на safe Queue. Проверка синхронизирована через
+`waitFor`; повтор стал 10× по 11/11. Это harness/assertion failures, не скрытые
+product regressions.
+
+Не проверены live Ollama/hardware и production residency, continuous observation,
+remote hardware identity, safe parallel/future admission, external-client и
+multi-process safety, generic eviction. Exact v1 не включает ещё недоступные
+parallelism/KV/flash-attention/probe facts; они не подменены defaults. Phase 1
+остаётся `in progress` до no-artificial-caps audit и проверки remaining exit gate.
 
 ## Later phases
 

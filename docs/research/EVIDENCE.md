@@ -20,6 +20,7 @@ voice, images, MCP и agent UI; менее закрытая зона — пра�
 | `/api/tags` перечисляет local models, digest, size/details                     | [List local models](https://docs.ollama.com/api/tags)                          | optional fields меняются             |
 | `/api/show` возвращает model info, template, parameters, license, capabilities | [Show model details](https://docs.ollama.com/api-reference/show-model-details) | declaration не равно качеству        |
 | `/api/ps` возвращает running models, VRAM, context, expiry                     | [List running models](https://docs.ollama.com/api/ps)                          | не даёт всю host RAM/queue ownership |
+| `/api/version` возвращает Ollama runtime version                               | [Get version](https://docs.ollama.com/api-reference/get-version)               | не даёт отдельный backend/device ID  |
 | Chat stream разделяет content, thinking и tool calls                           | [Chat API](https://docs.ollama.com/api/chat)                                   | capability зависит от модели         |
 | Thinking имеет отдельный channel/control                                       | [Thinking](https://docs.ollama.com/capabilities/thinking)                      | boolean/level зависит от model       |
 | Vision принимает images у совместимых models                                   | [Vision](https://docs.ollama.com/capabilities/vision)                          | не универсальный image generation    |

@@ -2,10 +2,12 @@ flowchart TB
     Schemas[schemas.ts domain Zod]
     API[api.ts REST paths and schemas]
     Events[events.ts SSE union]
+    Observation[ModelObservationKey v1 complete or unavailable]
     Index[index.ts public exports]
 
     Schemas --> API
     Schemas --> Events
+    Schemas --> Observation
     API --> Index
     Events --> Index
     Schemas --> Index
@@ -13,4 +15,3 @@ flowchart TB
     Index --> Server[Server validation]
     Index --> Web[Web client validation]
     Index --> CLI[CLI client future]
-

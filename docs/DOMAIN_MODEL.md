@@ -130,9 +130,23 @@ Fit и calibration относятся к Variant, а не к абстрактн�
 
 ### Runtime Instance
 
-Наблюдаемая загруженная модель: digest, backend/device, context, VRAM/RAM,
-expiry и source. Ollama остаётся фактическим владельцем instance; Alamo
-согласует своё состояние через `/api/ps`.
+Наблюдаемая загруженная модель: digest, context, VRAM/RAM, expiry и source.
+Ollama остаётся фактическим владельцем instance; Alamo согласует своё состояние
+через `/api/ps`. Current `/api/ps` не публикует отдельный backend/device label,
+поэтому P1-L связывает row с sourced Ollama version и локальным Apple hardware
+profile, но не изобретает более точную backend identity.
+
+### Model Observation Key
+
+Current version 1 — typed `complete | unavailable` boundary. Complete key
+включает provider, canonical exact model reference, artifact digest, context,
+Ollama runtime/version fingerprint и локальный Apple hardware fingerprint.
+Timestamp остаётся metadata observation, а не частью fingerprint. Missing либо
+ambiguous component сохраняет reason и не получает measured credit.
+
+Legacy `model_calibration(model, context)` сохраняется для совместимости, но не
+считается exact evidence. Migration 6 пишет новые samples отдельно; changed
+digest, context, runtime или hardware не перезаписывают друг друга.
 
 ### Resource Lease
 
