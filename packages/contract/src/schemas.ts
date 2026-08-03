@@ -184,6 +184,7 @@ export type RuntimeTelemetryConfidence = z.infer<typeof runtimeTelemetryConfiden
 export const runtimeMemoryFactSourceSchema = z.enum([
   'node_os_totalmem',
   'legacy_apple_unified_memory_70_percent',
+  'legacy_hardware_usable_estimate',
   'apple_vm_stat_pages_free',
   'apple_host_available_memory',
   'apple_host_gpu_free_memory',
@@ -193,10 +194,12 @@ export type RuntimeMemoryFactSource = z.infer<typeof runtimeMemoryFactSourceSche
 
 export const runtimeMemoryFactBasisSchema = z.enum([
   'total_unified_memory',
+  'total_system_memory',
   'legacy_compatibility_estimate_not_current_availability',
   'system_free_pages_not_safe_capacity',
   'system_available_memory_advisory',
   'discrete_vram_not_applicable_to_apple_unified_memory',
+  'discrete_vram_not_observed',
   'gpu_free_memory_not_reported',
 ])
 export type RuntimeMemoryFactBasis = z.infer<typeof runtimeMemoryFactBasisSchema>

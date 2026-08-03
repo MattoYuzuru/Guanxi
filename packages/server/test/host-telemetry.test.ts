@@ -175,6 +175,14 @@ describe('Apple Silicon host telemetry adapter', () => {
     assert.equal(sample.state, 'unsupported')
     assert.equal(sample.sample.source, 'none')
     assert.equal(sample.sample.pressure.level, 'unknown')
+    assert.equal(sample.profile.totalMemoryBytes.basis, 'total_system_memory')
+    assert.equal(
+      sample.profile.legacyUsableMemoryBytes.source,
+      'legacy_hardware_usable_estimate',
+    )
+    assert.equal(sample.profile.discreteVramBytes.basis, 'discrete_vram_not_observed')
+    assert.deepEqual(sample.availableFields, [])
+    assert.ok(sample.missingFields.includes('total_unified_memory_bytes'))
     assert.deepEqual(runner.calls, [])
   })
 })

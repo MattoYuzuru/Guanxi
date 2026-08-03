@@ -145,13 +145,13 @@ function baseTelemetry(
         bytes: hardware.totalMemoryBytes,
         source: 'node_os_totalmem',
         confidence: 'observed',
-        basis: 'total_unified_memory',
+        basis: appleUnified ? 'total_unified_memory' : 'total_system_memory',
       }),
       legacyUsableMemoryBytes: memoryFact(observedAt, {
         bytes: hardware.usableMemoryBytes,
         source: appleUnified
           ? 'legacy_apple_unified_memory_70_percent'
-          : 'not_reported',
+          : 'legacy_hardware_usable_estimate',
         confidence: 'estimated',
         basis: 'legacy_compatibility_estimate_not_current_availability',
       }),
@@ -159,7 +159,9 @@ function baseTelemetry(
         bytes: null,
         source: 'not_reported',
         confidence: 'unknown',
-        basis: 'discrete_vram_not_applicable_to_apple_unified_memory',
+        basis: appleUnified
+          ? 'discrete_vram_not_applicable_to_apple_unified_memory'
+          : 'discrete_vram_not_observed',
       }),
     },
     sample: {
@@ -284,8 +286,10 @@ export class UnsupportedHostTelemetry implements HostTelemetry {
       state: 'unsupported',
       sampleSource: 'none',
       freeMemoryBytes: null,
-      availableFields: ['total_unified_memory_bytes', 'legacy_usable_memory_estimate_bytes'],
+      availableFields: [],
       missingFields: [
+        'total_unified_memory_bytes',
+        'legacy_usable_memory_estimate_bytes',
         'free_memory_bytes',
         'available_memory_bytes',
         'memory_pressure',
