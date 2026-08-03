@@ -5,11 +5,17 @@ import { describe, it } from 'node:test'
 import {
   listRunningResponse,
   runtimeSnapshotSchema,
+  type HardwareInfo,
   type RunningModel,
+  type RuntimeHostTelemetry,
 } from '@alamo/contract'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import type { ModelService } from '../src/models/service.ts'
+import {
+  UnsupportedHostTelemetry,
+  type HostTelemetry,
+} from '../src/hardware/telemetry.ts'
 import {
   OllamaProtocolError,
   OllamaTimeoutError,
@@ -27,6 +33,18 @@ import {
 } from '../src/runtime/reconciliation.ts'
 
 const OBSERVED_AT = '2026-08-03T12:00:00.000Z'
+const HARDWARE: HardwareInfo = {
+  platform: 'darwin',
+  arch: 'arm64',
+  cpuModel: 'fixture',
+  cpuCores: 8,
+  totalMemoryBytes: 16_000_000_000,
+  usableMemoryBytes: 11_200_000_000,
+  accelerator: 'metal',
+  acceleratorName: 'fixture',
+  unifiedMemory: true,
+  freeDiskBytes: null,
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -36,6 +54,106 @@ function deferred<T>() {
     reject = rejectPromise
   })
   return { promise, resolve, reject }
+}
+
+function appleHost(options: {
+  pressure?: 'normal' | 'warning' | 'critical' | 'unknown'
+  availableMemoryBytes?: number | null
+  state?: RuntimeHostTelemetry['state']
+  platform?: string
+} = {}): RuntimeHostTelemetry {
+  const pressure = options.pressure ?? 'normal'
+  const availableMemoryBytes = options.availableMemoryBytes ?? 4_000
+  const state = options.state ?? 'available'
+  const observed = (bytes: number, source: 'node_os_totalmem' | 'apple_vm_stat_pages_free' | 'apple_host_available_memory', basis: 'total_unified_memory' | 'system_free_pages_not_safe_capacity' | 'system_available_memory_advisory') => ({
+    bytes,
+    source,
+    observedAt: OBSERVED_AT,
+    confidence: 'observed' as const,
+    basis,
+  })
+  const unknown = (basis: 'discrete_vram_not_applicable_to_apple_unified_memory' | 'gpu_free_memory_not_reported' | 'system_available_memory_advisory') => ({
+    bytes: null,
+    source: 'not_reported' as const,
+    observedAt: OBSERVED_AT,
+    confidence: 'unknown' as const,
+    basis,
+  })
+  return {
+    state,
+    observedAt: OBSERVED_AT,
+    profile: {
+      platform: options.platform ?? 'darwin',
+      arch: 'arm64',
+      accelerator: 'metal',
+      acceleratorName: 'fixture',
+      unifiedMemory: true,
+      source: 'legacy_hardware_probe',
+      observedAt: OBSERVED_AT,
+      confidence: 'observed',
+      totalMemoryBytes: observed(
+        HARDWARE.totalMemoryBytes,
+        'node_os_totalmem',
+        'total_unified_memory',
+      ),
+      legacyUsableMemoryBytes: {
+        bytes: HARDWARE.usableMemoryBytes,
+        source: 'legacy_apple_unified_memory_70_percent',
+        observedAt: OBSERVED_AT,
+        confidence: 'estimated',
+        basis: 'legacy_compatibility_estimate_not_current_availability',
+      },
+      discreteVramBytes: unknown(
+        'discrete_vram_not_applicable_to_apple_unified_memory',
+      ),
+    },
+    sample: {
+      source: 'apple_vm_stat',
+      observedAt: OBSERVED_AT,
+      freeMemoryBytes: observed(
+        3_000,
+        'apple_vm_stat_pages_free',
+        'system_free_pages_not_safe_capacity',
+      ),
+      availableMemoryBytes:
+        availableMemoryBytes === null
+          ? unknown('system_available_memory_advisory')
+          : observed(
+              availableMemoryBytes,
+              'apple_host_available_memory',
+              'system_available_memory_advisory',
+            ),
+      pressure: {
+        level: pressure,
+        source: pressure === 'unknown' ? 'not_reported' : 'apple_host_memory_pressure',
+        observedAt: OBSERVED_AT,
+        confidence: pressure === 'unknown' ? 'unknown' : 'observed',
+        basis: pressure === 'unknown' ? 'not_observed' : 'system_memory_pressure',
+      },
+      gpuFreeMemoryBytes: unknown('gpu_free_memory_not_reported'),
+    },
+    availableFields: [
+      'total_unified_memory_bytes',
+      'legacy_usable_memory_estimate_bytes',
+      'free_memory_bytes',
+      ...(availableMemoryBytes === null ? [] : ['available_memory_bytes'] as const),
+      ...(pressure === 'unknown' ? [] : ['memory_pressure'] as const),
+    ],
+    missingFields: [
+      ...(availableMemoryBytes === null ? ['available_memory_bytes'] as const : []),
+      ...(pressure === 'unknown' ? ['memory_pressure'] as const : []),
+      'discrete_vram_bytes',
+      'gpu_free_memory_bytes',
+    ],
+    errorCode: state === 'available' ? null : 'host_probe_failed',
+  }
+}
+
+function fixedHostTelemetry(
+  sample: () => Promise<RuntimeHostTelemetry>,
+  profile: HardwareInfo = HARDWARE,
+): HostTelemetry {
+  return { profile, sample }
 }
 
 function request(ownerId: string, model = ownerId): AdmissionRequest {
@@ -70,9 +188,14 @@ function running(
 function reconciliation(
   governor: ResourceGovernor,
   ps: () => Promise<RunningModel[]>,
+  hostTelemetry: HostTelemetry = new UnsupportedHostTelemetry(
+    HARDWARE,
+    () => new Date(OBSERVED_AT),
+  ),
 ): RuntimeReconciliationService {
   return new RuntimeReconciliationService({
     governor,
+    hostTelemetry,
     models: () => ({ ps }) as unknown as ModelService,
     now: () => new Date(OBSERVED_AT),
   })
@@ -173,6 +296,91 @@ describe('runtime reconciliation contract and identity', () => {
     )
     lease.release()
   })
+
+  it('labels only an exact loaded configuration with sufficient Apple facts as observed current fit', async () => {
+    const governor = new ResourceGovernor()
+    const lease = await activeLease(governor, 'fixture:latest')
+    const host = appleHost()
+    const service = reconciliation(
+      governor,
+      async () => [running('fixture:latest', { digest: 'sha256:provider-observation' })],
+      fixedHostTelemetry(async () => host),
+    )
+
+    const snapshot = runtimeSnapshotSchema.parse(await service.snapshot())
+    const model = snapshot.models?.[0]
+    assert.equal(model?.currentFit.state, 'observed')
+    assert.equal(model?.currentFit.basis, 'current_loaded_configuration')
+    assert.equal(model?.currentFit.reason, 'observed_current_residency')
+    assert.equal(model?.currentFit.runtimeAllocationBytes, 1_000)
+    assert.equal(model?.currentFit.runtimeAcceleratorAllocationBytes, 750)
+    assert.equal(model?.currentFit.pressureLevel, 'normal')
+    assert.equal(model?.currentFit.futureAdmissionGuarantee, false)
+    assert.equal(model?.artifactIdentity, 'unknown')
+    assert.equal(model?.digest, 'sha256:provider-observation')
+    assert.equal(snapshot.host.profile.totalMemoryBytes.source, 'node_os_totalmem')
+    assert.equal(
+      snapshot.host.profile.legacyUsableMemoryBytes.source,
+      'legacy_apple_unified_memory_70_percent',
+    )
+    assert.equal(snapshot.host.profile.discreteVramBytes.bytes, null)
+    assert.equal(snapshot.host.sample.gpuFreeMemoryBytes.bytes, null)
+    lease.release()
+  })
+
+  it('keeps current fit unknown for ambiguous digest rows, context/host mismatch, and missing pressure', async () => {
+    const fixtures: Array<{
+      name: string
+      running: RunningModel[]
+      host: RuntimeHostTelemetry
+      reason: string
+    }> = [
+      {
+        name: 'ambiguous digest rows',
+        running: [
+          running('fixture:latest', { digest: 'sha256:first' }),
+          running('FIXTURE', { digest: 'sha256:second' }),
+        ],
+        host: appleHost(),
+        reason: 'runtime_reference_ambiguous',
+      },
+      {
+        name: 'context mismatch',
+        running: [running('fixture:latest', { contextLength: 4_096 })],
+        host: appleHost(),
+        reason: 'runtime_context_mismatch',
+      },
+      {
+        name: 'host mismatch',
+        running: [running('fixture:latest')],
+        host: appleHost({ platform: 'linux' }),
+        reason: 'host_unsupported',
+      },
+      {
+        name: 'missing pressure',
+        running: [running('fixture:latest')],
+        host: appleHost({ pressure: 'unknown' }),
+        reason: 'host_pressure_unknown',
+      },
+    ]
+
+    for (const fixture of fixtures) {
+      const governor = new ResourceGovernor()
+      const lease = await activeLease(governor, 'fixture:latest')
+      const snapshot = runtimeSnapshotSchema.parse(
+        await reconciliation(
+          governor,
+          async () => fixture.running,
+          fixedHostTelemetry(async () => fixture.host),
+        ).snapshot(),
+      )
+      assert.equal(snapshot.models?.[0]?.currentFit.state, 'unknown', fixture.name)
+      assert.equal(snapshot.models?.[0]?.currentFit.reason, fixture.reason, fixture.name)
+      assert.equal(snapshot.models?.[0]?.currentFit.futureAdmissionGuarantee, false)
+      assert.equal(snapshot.models?.[0]?.artifactIdentity, 'unknown')
+      lease.release()
+    }
+  })
 })
 
 describe('runtime reconciliation failures', () => {
@@ -247,6 +455,42 @@ describe('runtime reconciliation failures', () => {
       /user:secret-token|private\.invalid|\/tmp\/private|provider body|prompt/u,
     )
   })
+
+  it('keeps provider and telemetry failures independent in the shared projection', async () => {
+    const runtimeGovernor = new ResourceGovernor()
+    const runtimeLease = await activeLease(runtimeGovernor, 'fixture:latest')
+    const telemetryFailure = fixedHostTelemetry(async () => {
+      throw new Error('hostname username secret-token /Users/private')
+    })
+    const runtimeSuccess = runtimeSnapshotSchema.parse(
+      await reconciliation(
+        runtimeGovernor,
+        async () => [running('fixture:latest')],
+        telemetryFailure,
+      ).snapshot(),
+    )
+    assert.equal(runtimeSuccess.models?.[0]?.ownerState, 'active_lease')
+    assert.equal(runtimeSuccess.models?.[0]?.currentFit.reason, 'host_unavailable')
+    assert.equal(runtimeSuccess.host.state, 'unavailable')
+    assert.doesNotMatch(JSON.stringify(runtimeSuccess), /hostname|username|secret-token|Users\/private/u)
+    runtimeLease.release()
+
+    const telemetryGovernor = new ResourceGovernor()
+    const validHost = appleHost()
+    const providerFailure = runtimeSnapshotSchema.parse(
+      await reconciliation(
+        telemetryGovernor,
+        async () => {
+          throw new OllamaUnavailableError('provider unavailable')
+        },
+        fixedHostTelemetry(async () => validHost),
+      ).snapshot(),
+    )
+    assert.equal(providerFailure.models, null)
+    assert.equal(providerFailure.source.state, 'unavailable')
+    assert.equal(providerFailure.host.state, 'available')
+    assert.equal(providerFailure.host.sample.availableMemoryBytes.bytes, 4_000)
+  })
 })
 
 describe('runtime reconciliation concurrency and lifecycle', () => {
@@ -298,6 +542,63 @@ describe('runtime reconciliation concurrency and lifecycle', () => {
     assert.deepEqual(next.models, [])
     assert.equal(calls, 2)
     assert.equal(service.sampling, false)
+  })
+
+  it('bounds provider and telemetry probes together and linearizes Governor after both settle', async () => {
+    const governor = new ResourceGovernor()
+    const firstLease = await activeLease(governor, 'first:latest', 'first-owner')
+    const provider = deferred<RunningModel[]>()
+    const telemetry = deferred<RuntimeHostTelemetry>()
+    let providerCalls = 0
+    let telemetryCalls = 0
+    const hostTelemetry = fixedHostTelemetry(async () => {
+      telemetryCalls += 1
+      return telemetryCalls === 1 ? telemetry.promise : appleHost()
+    })
+    const service = reconciliation(
+      governor,
+      async () => {
+        providerCalls += 1
+        return providerCalls === 1 ? provider.promise : []
+      },
+      hostTelemetry,
+    )
+    const cancelled = new AbortController()
+    const callerLeaving = service.snapshot({ signal: cancelled.signal })
+    const remainingCaller = service.snapshot()
+    assert.equal(providerCalls, 1)
+    assert.equal(telemetryCalls, 1)
+
+    const secondTicket = governor.enqueue(request('second-owner', 'second:latest'))
+    const secondLeasePromise = governor.acquire(secondTicket)
+    firstLease.release()
+    const secondLease = await secondLeasePromise
+    cancelled.abort('caller-left')
+    await assert.rejects(callerLeaving, { name: 'AbortError' })
+
+    provider.resolve([running('second:latest')])
+    await Promise.resolve()
+    assert.equal(service.sampling, true)
+    telemetry.resolve(appleHost())
+    const snapshot = runtimeSnapshotSchema.parse(await remainingCaller)
+
+    assert.equal(snapshot.governor.activeLease?.leaseId, secondLease.id)
+    assert.equal(snapshot.models?.[0]?.leaseId, secondLease.id)
+    assert.equal(snapshot.models?.[0]?.currentFit.state, 'observed')
+    assert.equal(snapshot.source.observedAt, snapshot.observedAt)
+    assert.equal(snapshot.host.observedAt, snapshot.observedAt)
+    assert.equal(snapshot.host.sample.pressure.observedAt, snapshot.observedAt)
+    assert.equal(snapshot.governor.observedAt, snapshot.observedAt)
+    assert.equal(providerCalls, 1)
+    assert.equal(telemetryCalls, 1)
+    assert.equal(service.sampling, false)
+
+    const next = await service.snapshot()
+    assert.deepEqual(next.models, [])
+    assert.equal(providerCalls, 2)
+    assert.equal(telemetryCalls, 2)
+    assert.equal(service.sampling, false)
+    secondLease.release()
   })
 
   it('shares one provider call across both public routes and preserves the running compatibility shape', async () => {
@@ -378,7 +679,10 @@ describe('runtime reconciliation composition inventory', () => {
     const webRuntime = readFileSync(`${webRoot}/features/health/RuntimeStatus.tsx`, 'utf8')
     const publicProjectionSources = [modelsRoute, runtimeRoute, webApi, webRuntime].join('\n')
 
-    assert.match(context, /const runtime = new RuntimeReconciliationService\(\{ governor, models \}\)/u)
+    assert.match(
+      context,
+      /const runtime = new RuntimeReconciliationService\(\{ governor, hostTelemetry, models \}\)/u,
+    )
     assert.match(context, /\bruntime,\n/u)
     assert.match(app, /server\.route\('\/api\/runtime', runtimeRoutes\(app\)\)/u)
     assert.match(modelsRoute, /app\.runtime\.runningModels/u)
