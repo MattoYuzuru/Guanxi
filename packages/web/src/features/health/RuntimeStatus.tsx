@@ -284,8 +284,8 @@ function RuntimeModelRow({ model }: { model: RuntimeModelObservation }) {
       <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
         <Fact label={translate('runtime.digest')} value={model.digest ?? translate('runtime.unknown')} mono />
         <Fact label={translate('runtime.context.observed')} value={model.contextLength === null ? translate('runtime.unknown') : formatContextLength(model.contextLength)} />
-        <Fact label={translate('runtime.allocation.runtime')} value={allocationLabel(model.sizeBytes)} />
-        <Fact label={translate('runtime.allocation.accelerator')} value={allocationLabel(model.sizeVramBytes)} />
+        <Fact label={translate('runtime.allocation.runtime')} value={allocationLabel(fit.runtimeAllocationBytes)} />
+        <Fact label={translate('runtime.allocation.accelerator')} value={allocationLabel(fit.runtimeAcceleratorAllocationBytes)} />
         <Fact label={translate('runtime.fit.state')} value={fit.state === 'observed' ? translate('runtime.fit.observed') : translate('runtime.fit.unknown')} />
         <Fact label={translate('runtime.fit.basis')} value={fit.state === 'observed' ? translate('runtime.fit.currentResidency') : fitReasonLabel(fit.reason)} />
         <Fact label={translate('runtime.fit.requestedContext')} value={fit.requestedContext === null ? translate('runtime.unknown') : formatContextLength(fit.requestedContext)} />
