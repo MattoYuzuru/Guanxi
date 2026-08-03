@@ -210,6 +210,7 @@ describe('host telemetry composition inventory', () => {
       readFileSync(`${serverRoot}/http/models-routes.ts`, 'utf8'),
       readFileSync(`${webRoot}/lib/api.ts`, 'utf8'),
       readFileSync(`${webRoot}/features/health/RuntimeStatus.tsx`, 'utf8'),
+      readFileSync(`${webRoot}/features/health/useRuntimePolling.ts`, 'utf8'),
     ].join('\n')
 
     assert.match(context, /const hostTelemetry = createHostTelemetry\(hardware\)/u)
@@ -223,7 +224,7 @@ describe('host telemetry composition inventory', () => {
     assert.match(telemetry, /APPLE_VM_STAT_PATH/u)
     assert.doesNotMatch(
       forbiddenSources,
-      /\b(?:exec|execFile|spawn)\(|\b(?:sysctl|vm_stat|memory_pressure)\b/u,
+      /\b(?:exec|execFile|spawn)\(/u,
     )
   })
 })

@@ -677,7 +677,8 @@ describe('runtime reconciliation composition inventory', () => {
     const runtimeRoute = readFileSync(`${sourceRoot}/http/runtime-routes.ts`, 'utf8')
     const webApi = readFileSync(`${webRoot}/lib/api.ts`, 'utf8')
     const webRuntime = readFileSync(`${webRoot}/features/health/RuntimeStatus.tsx`, 'utf8')
-    const publicProjectionSources = [modelsRoute, runtimeRoute, webApi, webRuntime].join('\n')
+    const webPolling = readFileSync(`${webRoot}/features/health/useRuntimePolling.ts`, 'utf8')
+    const publicProjectionSources = [modelsRoute, runtimeRoute, webApi, webRuntime, webPolling].join('\n')
 
     assert.match(
       context,
@@ -688,7 +689,10 @@ describe('runtime reconciliation composition inventory', () => {
     assert.match(modelsRoute, /app\.runtime\.runningModels/u)
     assert.match(runtimeRoute, /app\.runtime\.snapshot/u)
     assert.doesNotMatch(publicProjectionSources, /\.ps\(/u)
-    assert.match(webApi, /request\(ROUTES\.modelsRunning\(\), listRunningResponse/u)
+    assert.match(webApi, /request\(ROUTES\.runtime\(\), getRuntimeResponse/u)
+    assert.match(webRuntime, /useRuntimePolling\(api\.runtimeSnapshot\)/u)
+    assert.doesNotMatch(webRuntime, /listRunning|modelsRunning|\/api\/ps|execFile|filesystem/u)
+    assert.doesNotMatch(webPolling, /\bfetch\(|ROUTES\.|listRunning|modelsRunning|\/api\/ps/u)
     assert.equal(existsSync(`${sourceRoot}/runtime/reconciliation.ts`), true)
   })
 })

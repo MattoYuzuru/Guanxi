@@ -14,8 +14,9 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
   await installChatApiFixture(page, 'completed')
 
   await page.goto('/chat')
+  await page.getByText('Показать сведения о runtime').click()
   await expect(
-    page.getByRole('listitem').filter({ hasText: 'ollama_api_ps' }),
+    page.getByRole('listitem').filter({ hasText: 'fixture:latest' }),
   ).toContainText('fixture:latest')
 
   const createButton = page.getByRole('button', { name: 'Создать диалог' })

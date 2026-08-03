@@ -1,17 +1,15 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import type { CatalogSourceHealth, Health, ListRunningResponse } from '@alamo/contract'
+import type { CatalogSourceHealth, Health, RuntimeCurrentFitReason } from '@alamo/contract'
 import { describe, expect, it, vi } from 'vitest'
+import { OllamaHealthNotice } from '../../src/features/health/HealthGate.tsx'
+import { RuntimeStatusView } from '../../src/features/health/RuntimeStatus.tsx'
+import { CatalogSourceNotice } from '../../src/features/launcher/LauncherPage.tsx'
 import {
-  OllamaHealthNotice,
-} from '../../src/features/health/HealthGate.tsx'
-import {
-  RuntimeStatusView,
-} from '../../src/features/health/RuntimeStatus.tsx'
-import {
-  CatalogSourceNotice,
-} from '../../src/features/launcher/LauncherPage.tsx'
-
-const OBSERVED_AT = '2026-08-02T12:00:00.000Z'
+  RUNTIME_OBSERVED_AT,
+  runtimeActiveLease,
+  runtimeModel,
+  runtimeSnapshotFixture,
+} from '../fixtures/runtime.ts'
 
 function health(state: 'reachable' | 'unavailable' | 'incompatible'): Health {
   return {
@@ -20,14 +18,14 @@ function health(state: 'reachable' | 'unavailable' | 'incompatible'): Health {
     application: {
       state: 'reachable',
       source: 'application_http',
-      observedAt: OBSERVED_AT,
+      observedAt: RUNTIME_OBSERVED_AT,
     },
     ollama: {
       installed: state !== 'unavailable',
       running: state === 'reachable',
       state,
       source: 'ollama_api_version',
-      observedAt: OBSERVED_AT,
+      observedAt: RUNTIME_OBSERVED_AT,
       version: state === 'reachable' ? '0.1' : null,
       host: 'http://fixture.invalid',
       installHint: null,
@@ -53,111 +51,242 @@ function health(state: 'reachable' | 'unavailable' | 'incompatible'): Health {
   }
 }
 
-function runtimeData(models: ListRunningResponse['models']): ListRunningResponse {
-  return { models, observedAt: OBSERVED_AT }
+function renderRuntime(data = runtimeSnapshotFixture()) {
+  const view = render(
+    <RuntimeStatusView
+      data={data}
+      error={null}
+      loading={false}
+      refreshing={false}
+      onRetry={() => undefined}
+    />,
+  )
+  fireEvent.click(screen.getByText('Показать сведения о runtime'))
+  return view
 }
 
-describe('runtime health projection', () => {
-  it('announces checking and an empty sampled observation without claiming unload', () => {
-    const checking = render(
-      <RuntimeStatusView
-        data={null}
-        error={null}
-        loading
-        refreshing={false}
-        onRetry={() => undefined}
-      />,
-    )
-    expect(within(checking.container).getByRole('status').textContent).toContain(
-      'Проверяем текущий sample /api/ps',
-    )
-    checking.unmount()
+describe('Runtime Bar projection', () => {
+  it('round-trips active Job ownership, multiple FIFO waiters, exact and unknown-owner rows', () => {
+    renderRuntime()
 
-    render(
-      <RuntimeStatusView
-        data={runtimeData([])}
-        error={null}
-        loading={false}
-        refreshing={false}
-        onRetry={() => undefined}
-      />,
-    )
-    expect(screen.getByText('Загруженные модели не наблюдались')).toBeTruthy()
-    expect(screen.getByText(/не доказывает, что происходило между наблюдениями/)).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Runtime и ресурсы' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Текущий admission' })).toBeTruthy()
+    expect(screen.getByText('Владелец — Job')).toBeTruthy()
+    expect(screen.getByText(/Позиция 1/)).toBeTruthy()
+    expect(screen.getByText(/Позиция 2/)).toBeTruthy()
+    expect(screen.getByText(/возможен внешний клиент, но это не доказано/)).toBeTruthy()
+    expect(screen.getByText(/identity артефакта остаётся неизвестной/)).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Job|операц/u })).toBeNull()
   })
 
-  it('shows only sampled running facts with source and observation time', () => {
-    render(
-      <RuntimeStatusView
-        data={runtimeData([
+  it('shows operation owner, idle and closed admission without inventing durable Job history', () => {
+    const operation = renderRuntime(
+      runtimeSnapshotFixture((snapshot) => {
+        snapshot.governor.activeLease = runtimeActiveLease({
+          kind: 'operation',
+          operationId: 'operation-fixture',
+        })
+        snapshot.governor.queued = []
+      }),
+    )
+    expect(screen.getByText('Владелец — runtime-операция')).toBeTruthy()
+    expect(screen.getByText(/это не история durable Jobs/)).toBeTruthy()
+    operation.unmount()
+
+    renderRuntime(
+      runtimeSnapshotFixture((snapshot) => {
+        snapshot.governor.activeLease = null
+        snapshot.governor.queued = []
+        snapshot.governor.accepting = false
+        snapshot.models = []
+        snapshot.decisions = [
           {
-            name: 'fixture:latest',
-            digest: 'sha256:fixture',
-            sizeBytes: 1_000_000,
-            sizeVramBytes: null,
-            gpuPercent: null,
-            processorLabel: null,
-            contextLength: 8_192,
-            expiresAt: null,
-            source: 'ollama_api_ps',
-            observedAt: OBSERVED_AT,
+            code: 'empty_sample',
+            modelName: null,
+            normalizedModelName: null,
+            leaseId: null,
+            owner: null,
+            runtimeDigest: null,
+            requestedContext: null,
+            observedContext: null,
+            identityBasis: 'none',
+            artifactIdentity: 'unknown',
           },
-        ])}
-        error={null}
-        loading={false}
-        refreshing={false}
-        onRetry={() => undefined}
-      />,
+        ]
+      }),
     )
-
-    const row = screen.getByRole('listitem')
-    expect(within(row).getByText('fixture:latest')).toBeTruthy()
-    expect(row.textContent).toContain('ollama_api_ps')
-    expect(row.textContent).toContain('Контекст:')
-    expect(row.textContent).not.toContain('owner')
-    expect(row.textContent).not.toContain('fit')
+    expect(screen.getByText('Admission закрыт')).toBeTruthy()
+    expect(screen.getByText('В этом sample активный lease не зафиксирован.')).toBeTruthy()
+    expect(screen.getByText('Ожидающих live-операций нет.')).toBeTruthy()
   })
 
-  it('keeps a failed /api/ps sample degraded and keyboard-retryable', () => {
+  it('distinguishes healthy empty, unavailable, and incompatible Ollama samples', () => {
+    const states = [
+      runtimeSnapshotFixture((snapshot) => {
+        snapshot.governor.activeLease = null
+        snapshot.governor.queued = []
+        snapshot.models = []
+        snapshot.decisions = [{
+          code: 'empty_sample', modelName: null, normalizedModelName: null, leaseId: null,
+          owner: null, runtimeDigest: null, requestedContext: null, observedContext: null,
+          identityBasis: 'none', artifactIdentity: 'unknown',
+        }]
+      }),
+      runtimeSnapshotFixture((snapshot) => {
+        snapshot.source = { state: 'unavailable', source: 'ollama_api_ps', observedAt: RUNTIME_OBSERVED_AT, errorCode: 'ollama_unavailable' }
+        snapshot.models = null
+        snapshot.decisions = [{
+          code: 'source_failure', modelName: null, normalizedModelName: null, leaseId: null,
+          owner: null, runtimeDigest: null, requestedContext: null, observedContext: null,
+          identityBasis: 'none', artifactIdentity: 'unknown',
+        }]
+      }),
+      runtimeSnapshotFixture((snapshot) => {
+        snapshot.source = { state: 'incompatible', source: 'ollama_api_ps', observedAt: RUNTIME_OBSERVED_AT, errorCode: 'runtime_protocol' }
+        snapshot.models = null
+        snapshot.decisions = [{
+          code: 'source_failure', modelName: null, normalizedModelName: null, leaseId: null,
+          owner: null, runtimeDigest: null, requestedContext: null, observedContext: null,
+          identityBasis: 'none', artifactIdentity: 'unknown',
+        }]
+      }),
+    ]
+    const expected = [
+      'Загруженные модели не наблюдались',
+      'Состояние моделей неизвестно, а не пусто',
+      'Ответ Ollama несовместим',
+    ]
+
+    for (let index = 0; index < states.length; index += 1) {
+      const view = renderRuntime(states[index])
+      expect(view.container.textContent).toContain(expected[index])
+      view.unmount()
+    }
+  })
+
+  it('distinguishes available-with-missing, partial, unavailable, and unsupported host telemetry', () => {
+    const cases = [
+      { state: 'available' as const, expected: 'доступна с неизвестными полями', errorCode: null },
+      { state: 'partial' as const, expected: 'Host telemetry неполна', errorCode: 'host_probe_malformed' as const },
+      { state: 'unavailable' as const, expected: 'Host telemetry недоступна', errorCode: 'host_probe_failed' as const },
+      { state: 'unsupported' as const, expected: 'Host telemetry не поддерживается', errorCode: null },
+    ]
+
+    for (const fixture of cases) {
+      const view = renderRuntime(runtimeSnapshotFixture((snapshot) => {
+        snapshot.host.state = fixture.state
+        snapshot.host.errorCode = fixture.errorCode
+        if (fixture.state === 'unsupported') snapshot.host.sample.source = 'none'
+      }))
+      expect(view.container.textContent).toContain(fixture.expected)
+      view.unmount()
+    }
+  })
+
+  it('labels current residency as observed without promising future admission', () => {
+    renderRuntime(runtimeSnapshotFixture((snapshot) => {
+      snapshot.models = [runtimeModel('active_lease', 'observed')]
+      snapshot.decisions = [snapshot.decisions[0]]
+    }))
+
+    expect(screen.getByText('Только текущая загруженная конфигурация/residency')).toBeTruthy()
+    expect(screen.getByText(/не гарантирует fit при будущем admission/)).toBeTruthy()
+    expect(screen.getByText(/Выделено runtime/)).toBeTruthy()
+    expect(screen.getByText(/Выделено на ускорителе/)).toBeTruthy()
+  })
+
+  it('turns stable unknown fit reasons into human-readable explanations', () => {
+    const reasons: Array<[Exclude<RuntimeCurrentFitReason, 'observed_current_residency'>, string]> = [
+      ['runtime_digest_missing', 'Runtime не сообщил digest'],
+      ['runtime_context_missing', 'Runtime не сообщил контекст'],
+      ['host_unavailable', 'Host telemetry недоступна'],
+      ['host_pressure_unknown', 'Текущий memory pressure неизвестен'],
+    ]
+
+    for (const [reason, label] of reasons) {
+      const view = renderRuntime(runtimeSnapshotFixture((snapshot) => {
+        const model = runtimeModel('active_lease', 'unknown')
+        if (model.currentFit.state === 'unknown') model.currentFit.reason = reason
+        snapshot.models = [model]
+        snapshot.decisions = [snapshot.decisions[0]]
+      }))
+      expect(view.container.textContent).toContain(label)
+      expect(view.container.textContent).not.toContain(reason)
+      view.unmount()
+    }
+  })
+
+  it('keeps memory facts distinct and never formats null as zero', () => {
+    renderRuntime()
+    const host = screen.getByRole('region', { name: 'Host telemetry' })
+    expect(host.textContent).toContain('Всего unified/system memory')
+    expect(host.textContent).toContain('Свободные system pages')
+    expect(host.textContent).toContain('Старая оценка usable memory')
+    expect(host.textContent).toContain('free pages, не safe capacity для новой модели')
+    expect(host.textContent).toContain('compatibility estimate, не текущая доступность')
+    expect(host.textContent).toContain('Discrete VRAM:Неизвестно')
+    expect(host.textContent).not.toContain('Discrete VRAM:0')
+  })
+
+  it('keeps confirmed content during refresh/failure and exposes only transition alerts', () => {
     const retry = vi.fn()
-    render(
+    const data = runtimeSnapshotFixture()
+    const view = render(
+      <RuntimeStatusView data={data} error={null} loading={false} refreshing onRetry={retry} />,
+    )
+    expect(screen.getByRole('status').textContent).toContain('последний подтверждённый sample')
+    expect(view.container.textContent).toContain('fixture:latest')
+    view.rerender(
       <RuntimeStatusView
-        data={null}
-        error={new Error('fixture unavailable')}
+        data={data}
+        error={new Error('secret endpoint /api/runtime?token=private')}
         loading={false}
         refreshing={false}
         onRetry={retry}
       />,
     )
-
-    expect(screen.getByRole('alert').textContent).toContain(
-      'Состояние загруженных моделей недоступно',
-    )
-    const button = screen.getByRole('button', { name: 'Повторить runtime-проверку' })
-    button.focus()
-    expect(document.activeElement).toBe(button)
-    fireEvent.click(button)
+    expect(screen.getByRole('alert').textContent).toContain('sample устарел')
+    expect(view.container.textContent).toContain('fixture:latest')
+    expect(view.container.textContent).not.toContain('secret endpoint')
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить runtime-проверку' }))
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the shell-oriented Ollama degraded states distinct', () => {
-    const unavailable = render(
-      <OllamaHealthNotice
-        health={health('unavailable')}
+  it('provides keyboard disclosure plus English fallback and curated Russian copy', () => {
+    document.documentElement.lang = 'fr'
+    const english = render(
+      <RuntimeStatusView
+        data={runtimeSnapshotFixture()}
+        error={null}
+        loading={false}
+        refreshing={false}
         onRetry={() => undefined}
-        retrying={false}
       />,
     )
+    expect(screen.getByRole('region', { name: 'Runtime and resources' })).toBeTruthy()
+    const disclosure = screen.getByText('Show runtime details')
+    disclosure.focus()
+    expect(document.activeElement).toBe(disclosure)
+    fireEvent.click(disclosure)
+    expect(screen.getByRole('heading', { name: 'Live admission' })).toBeTruthy()
+    english.unmount()
+
+    document.documentElement.lang = 'ru'
+    renderRuntime()
+    expect(screen.getByRole('heading', { name: 'Текущий admission' })).toBeTruthy()
+  })
+})
+
+describe('shell health projection', () => {
+  it('keeps the shell-oriented Ollama degraded states distinct', () => {
+    const unavailable = render(
+      <OllamaHealthNotice health={health('unavailable')} onRetry={() => undefined} retrying={false} />,
+    )
     expect(within(unavailable.container).getByText('Ollama недоступна')).toBeTruthy()
-    expect(unavailable.container.textContent).toContain('ollama_api_version')
     unavailable.unmount()
 
     render(
-      <OllamaHealthNotice
-        health={health('incompatible')}
-        onRetry={() => undefined}
-        retrying={false}
-      />,
+      <OllamaHealthNotice health={health('incompatible')} onRetry={() => undefined} retrying={false} />,
     )
     expect(screen.getByRole('alert').textContent).toContain('несовместимый ответ')
   })
@@ -165,35 +294,17 @@ describe('runtime health projection', () => {
 
 describe('catalog source projection', () => {
   it('distinguishes stale cache, bundled fallback, unavailable, and unknown', () => {
-    const cases: Array<{
-      source: CatalogSourceHealth | null
-      expected: string
-    }> = [
+    const cases: Array<{ source: CatalogSourceHealth | null; expected: string }> = [
       {
-        source: {
-          state: 'stale_cache',
-          source: 'ollama_recommendations_cache',
-          observedAt: OBSERVED_AT,
-          fetchedAt: '2026-07-30T12:00:00.000Z',
-        },
+        source: { state: 'stale_cache', source: 'ollama_recommendations_cache', observedAt: RUNTIME_OBSERVED_AT, fetchedAt: '2026-07-30T12:00:00.000Z' },
         expected: 'Устаревший локальный cache каталога',
       },
       {
-        source: {
-          state: 'bundled_fallback',
-          source: 'bundled_snapshot',
-          observedAt: OBSERVED_AT,
-          fetchedAt: OBSERVED_AT,
-        },
+        source: { state: 'bundled_fallback', source: 'bundled_snapshot', observedAt: RUNTIME_OBSERVED_AT, fetchedAt: RUNTIME_OBSERVED_AT },
         expected: 'Встроенный fallback каталога',
       },
       {
-        source: {
-          state: 'unavailable',
-          source: 'none',
-          observedAt: OBSERVED_AT,
-          fetchedAt: null,
-        },
+        source: { state: 'unavailable', source: 'none', observedAt: RUNTIME_OBSERVED_AT, fetchedAt: null },
         expected: 'Источник каталога недоступен',
       },
       { source: null, expected: 'Свежесть каталога неизвестна' },

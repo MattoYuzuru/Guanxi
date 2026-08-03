@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { runtimeBrowserSnapshot } from './runtime-snapshot.ts'
 
 export type ChatFixtureScenario =
   | 'completed'
@@ -34,7 +35,7 @@ export async function installChatApiFixture(
   scenario: ChatFixtureScenario,
 ): Promise<void> {
   await page.addInitScript(
-    ({ scenario: fixtureScenario }) => {
+    ({ scenario: fixtureScenario, runtimeSnapshot }) => {
       type StoredState = 'new' | 'created' | 'running' | 'terminal'
       type FixtureControl = {
         releaseHeaders: () => void
@@ -192,6 +193,47 @@ export async function installChatApiFixture(
         expiresAt: null,
         source: 'ollama_api_ps',
         observedAt,
+      }
+      const runtimeState = {
+        ...runtimeSnapshot,
+        models: [
+          {
+            ...running,
+            normalizedName: model.name,
+            ownerState: 'unknown',
+            leaseId: null,
+            owner: null,
+            decisionCode: 'observed_unknown_owner',
+            identityBasis: 'runtime_observation_only',
+            artifactIdentity: 'unknown',
+            currentFit: {
+              state: 'unknown',
+              basis: 'insufficient_evidence',
+              reason: 'runtime_owner_unknown',
+              observedAt,
+              requestedContext: null,
+              observedContext: model.contextLength,
+              runtimeAllocationBytes: model.sizeBytes,
+              runtimeAcceleratorAllocationBytes: null,
+              pressureLevel: 'unknown',
+              futureAdmissionGuarantee: false,
+            },
+          },
+        ],
+        decisions: [
+          {
+            code: 'observed_unknown_owner',
+            modelName: model.name,
+            normalizedModelName: model.name,
+            leaseId: null,
+            owner: null,
+            runtimeDigest: model.digest,
+            requestedContext: null,
+            observedContext: model.contextLength,
+            identityBasis: 'runtime_observation_only',
+            artifactIdentity: 'unknown',
+          },
+        ],
       }
       const terminalAssistant = {
         completed: {
@@ -529,9 +571,7 @@ export async function installChatApiFixture(
             'GET').toUpperCase()
 
         if (url.pathname === '/api/health') return json(health)
-        if (url.pathname === '/api/models/running') {
-          return json({ models: [running], observedAt })
-        }
+        if (url.pathname === '/api/runtime') return json(runtimeState)
         if (url.pathname === '/api/models') return json({ models: [model] })
         if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
         if (url.pathname === '/api/settings') {
@@ -639,7 +679,7 @@ export async function installChatApiFixture(
         )
       }
     },
-    { scenario },
+    { scenario, runtimeSnapshot: runtimeBrowserSnapshot() },
   )
 }
 

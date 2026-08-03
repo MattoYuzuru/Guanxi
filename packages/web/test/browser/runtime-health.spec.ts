@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow viewport', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.addInitScript(() => {
+  await page.addInitScript((runtimeSnapshot) => {
     const observedAt = '2026-08-02T12:00:00.000Z'
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), {
@@ -61,21 +62,36 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
       basis: 'estimate',
       measured: null,
     }
+    const degradedRuntime = {
+      ...runtimeSnapshot,
+      source: {
+        state: 'incompatible',
+        source: 'ollama_api_ps',
+        observedAt,
+        errorCode: 'runtime_protocol',
+      },
+      models: null,
+      decisions: [
+        {
+          code: 'source_failure',
+          modelName: null,
+          normalizedModelName: null,
+          leaseId: null,
+          owner: null,
+          runtimeDigest: null,
+          requestedContext: null,
+          observedContext: null,
+          identityBasis: 'none',
+          artifactIdentity: 'unknown',
+        },
+      ],
+    }
 
     window.fetch = async (input) => {
       const rawUrl = typeof input === 'string' ? input : input.url
       const url = new URL(rawUrl, window.location.origin)
       if (url.pathname === '/api/health') return json(health)
-      if (url.pathname === '/api/models/running') {
-        return json(
-          {
-            code: 'runtime_protocol',
-            message: 'Ollama returned an incompatible response',
-            details: { endpoint: '/api/ps' },
-          },
-          502,
-        )
-      }
+      if (url.pathname === '/api/runtime') return json(degradedRuntime)
       if (url.pathname === '/api/models') {
         return json(
           {
@@ -117,13 +133,16 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
       }
       return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
     }
-  })
+  }, runtimeBrowserSnapshot())
 
   await page.goto('/')
 
   await expect(page.getByRole('link', { name: 'Чат' })).toBeVisible()
   await expect(page.getByText('Ollama вернула несовместимый ответ')).toBeVisible()
-  await expect(page.getByText('Состояние загруженных моделей недоступно')).toBeVisible()
+  const runtime = page.getByRole('region', { name: 'Runtime и ресурсы' })
+  await expect(runtime).toContainText('Источник Ollama несовместим')
+  await runtime.getByText('Показать сведения о runtime').click()
+  await expect(page.getByText(/Состояние загруженных моделей неизвестно/)).toBeVisible()
   await expect(page.getByText('Встроенный fallback каталога')).toBeVisible()
   await expect(page.getByText('fixture-catalog')).toBeVisible()
 

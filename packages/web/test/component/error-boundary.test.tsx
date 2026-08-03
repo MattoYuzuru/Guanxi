@@ -52,4 +52,22 @@ describe('ErrorBoundary', () => {
 
     document.documentElement.lang = 'ru'
   })
+
+  it('contains a Runtime Bar render failure without replacing or refocusing the shell', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    render(
+      <>
+        <button type="button" autoFocus>Shell navigation</button>
+        <ErrorBoundary scope="runtime">
+          <BrokenChat />
+        </ErrorBoundary>
+      </>,
+    )
+
+    const shell = screen.getByRole('button', { name: 'Shell navigation' })
+    expect(shell).toBe(document.activeElement)
+    expect(screen.getByRole('heading', { name: 'Не удалось показать состояние runtime' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'К моделям' })).toBeTruthy()
+  })
 })
