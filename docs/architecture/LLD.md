@@ -24,6 +24,12 @@ Current thread mode: chat или agent. Message содержит content/thinkin
 source/time health, catalog freshness, sampled running rows и stable
 connect/load/stream-idle error categories.
 
+P1-G добавляет typed additive `RuntimeSnapshot`: один `observedAt`, source health,
+current Governor admission projection, nullable observed models и stable
+reconciliation decisions. `models: []` означает successful empty sample;
+`models: null` — controlled unavailable/incompatible source. Runtime digest
+остаётся observed `/api/ps` fact, а artifact identity явно `unknown`.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -41,6 +47,10 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `runtime/resource-governor.ts`: typed immutable request/ticket, один
   process-local FIFO permit, active lease, bounded live snapshot/explanation,
   unload guard и graceful close;
+- `runtime/reconciliation.ts`: process-local `/api/ps` single-flight, common
+  timestamp linearization, exact normalized reference matching, source failure
+  redaction и compatibility projection;
+- `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query;
 - `http/models-routes.ts`: list/show/pull/delete/warm/unload/running;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
   compact;
@@ -82,6 +92,14 @@ exclusion принадлежит одному `context.governor`. Его lease �
 compaction и explicit model warm/load; unload отклоняется при exact active lease
 и консервативно при любом другом active single-lane owner. Tickets, leases,
 `ApprovalGate` и controllers не durable.
+
+Один `RuntimeReconciliationService` входит в application context рядом с
+Governor. `GET /api/runtime` и `GET /api/models/running` используют этот service,
+поэтому overlapping callers создают не больше одного `/api/ps` request. Caller
+abort прекращает только его ожидание. Provider sample завершается первым, затем
+с одним общим `observedAt` снимается Governor snapshot — это linearization point.
+Completed result не кэшируется; stale state не публикуется, следующий call
+делает новый sample.
 
 Один `JobStore`, `JobService` и `ChatJobExecutionOwner` входят в application
 context; public Job и Chat routes используют один service. Store синхронно
@@ -202,27 +220,31 @@ waiting_tool/waiting_approval/finalizing` получают recovery-only
 `interrupted`, `cancelling` — `cancelled`; untouched `queued` schedule-ится
 существующим owner после полного reconciliation pass.
 
-P1-F является консервативным Resource Governor foundation, но не полным
-host-level control plane: queue intent остаётся durable Job state, а tickets и
-leases process-local; нет `/api/ps` reconciliation, telemetry/fit, target
-priorities, prewarm, lease journal или measured parallelism. Recovery остаётся
-single-process startup reconciliation без checkpoint resume и process lock.
+P1-G сохраняет консервативный P1-F Governor, но добавляет sampled reconciliation,
+не admission automation. Active lease сопоставляется только с первой row по
+exact normalized Ollama reference; отсутствие lease digest не доказывает
+artifact identity. Unmatched row получает owner `unknown`, active lease без row
+— `active_not_observed`. Ни одно состояние не запускает load/unload и не меняет
+FIFO. Telemetry/fit, target priorities, prewarm, lease journal, measured
+parallelism и multi-process lock отсутствуют.
 
 Current admission request фиксирует owner (`jobId` либо process-local operation
 ID), `chat | compaction | model_warm`, exact Ollama model name, requested context,
 priority `normal` и enqueue time. Ticket проходит `queued → active → released`
 либо `queued → cancelled`; release/cancel/close идемпотентны. Snapshot хранит
 только live queue, одну active lease и одну последнюю decision, поэтому
-diagnostics не растут с числом завершённых operations. Migration 6 для P1-F не
-нужна: canonical queue intent уже находится в Job, а transient lease journal не
-вводился.
+diagnostics не растут с числом завершённых operations. P1-G держит только один
+pending reconciliation Promise и не хранит observations. Migration 6 для
+P1-F/P1-G не нужна: canonical queue intent уже находится в Job, а transient
+lease journal и durable runtime cache не вводились.
 
 ## Target module boundaries
 
 ### Application command/query API
 
-Первые четыре Job routes ниже implemented в P1-C. Остальные route names остаются
-proposed до соответствующего ADR/API review.
+Первые четыре Job routes ниже implemented в P1-C; `GET /api/runtime` implemented
+в P1-G. Остальные route names остаются proposed до соответствующего ADR/API
+review.
 
 ```text
 POST /api/jobs

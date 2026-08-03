@@ -132,8 +132,35 @@ Governor snapshot/explanation содержит только live queue, active l
 decision, observation time и policy basis; released state не растёт без границ.
 Explicit unload получает controlled conflict до Ollama call при exact active
 model и при любом другом current owner консервативного lane. Governor не защищает
-внешний Ollama client или второй application process, не reconciles `/api/ps`,
-не знает hardware fit/residency и не допускает measured parallelism.
+внешний Ollama client или второй application process, не знает hardware fit и не
+допускает measured parallelism.
+
+### P1-G sampled runtime reconciliation
+
+Один application `RuntimeReconciliationService` связывает
+`ModelService.ps()` и `context.governor`. `GET /api/runtime` и compatibility
+`GET /api/models/running` делят один pending provider call; completed result,
+cache и history не сохраняются. Abort отдельного caller прекращает только его
+ожидание и не отменяет общий sample для остальных.
+
+Linearization rule: сначала завершается validated `/api/ps` response либо
+controlled failure, затем service выбирает один `observedAt` и синхронно снимает
+Governor snapshot. Enqueue/acquire/release до этой точки видны в result, после
+неё — только в следующем call. Source health, Governor projection и все model
+rows имеют тот же sample timestamp; исторический `lastDecision.observedAt`
+сохраняет время самой admission decision.
+
+Exact normalized Ollama reference (`case/whitespace`, implicit `:latest`) может
+связать active lease с одной observed row. Lease не содержит digest, поэтому
+даже matched row публикует runtime digest только как provider fact и оставляет
+artifact identity `unknown`. Остальные rows имеют owner `unknown`, не
+`external`; active lease без row остаётся `active_not_observed`.
+
+Successful empty response публикует `models: []` и `empty_sample`. Unavailable,
+timeout или malformed source публикует `models: null`, safe source code и
+`source_failure`, сохраняя queue/lease projection. Reconciliation не освобождает
+lease, не запускает load/unload, не меняет admission и не доказывает состояние
+между calls. Stale state отсутствует, потому что P1-G не имеет cache.
 
 ### P0-D sampled health и provider deadlines
 
@@ -329,8 +356,8 @@ internal shutdown abort reason и reconciles active Chat как `interrupted` л
 для внутреннего shutdown и закрывает subscribers/SQLite после owner cleanup.
 
 P1-E не реализует checkpoint resume, multi-process locking или daemon/service.
-P1-F добавил transient Resource Governor tickets/leases без lease journal и
-`/api/ps` reconciliation.
+P1-F добавил transient Resource Governor tickets/leases без lease journal; P1-G
+добавил только query-time sampled `/api/ps` reconciliation без recovery journal.
 
 ## Target Job lifecycle
 
@@ -383,7 +410,7 @@ WebSocket нужен только если duplex live-audio latency это по
 
 ## Resource Governor
 
-### Current P1-F policy
+### Current P1-F/P1-G policy
 
 - один active process-local accelerator lease;
 - один supported priority `normal`, FIFO без preemption;
@@ -394,7 +421,9 @@ WebSocket нужен только если duplex live-audio latency это по
 - close прекращает admission, abort-ит owners и ждёт release;
 - queue intent остаётся в durable Job, а tickets/leases process-local, поэтому
   migration 6 не вводилась;
-- `/api/ps`, telemetry, fit, external ownership и multi-process lock отсутствуют.
+- `/api/ps` sampled через single-flight query boundary, но не влияет на
+  admission/unload;
+- telemetry, fit, proven external ownership и multi-process lock отсутствуют.
 
 ### Default policy
 
@@ -709,14 +738,29 @@ Current P1-E recovery scan:
 - только доказанно untouched typed Chat `queued` возвращаются owner;
 - unsafe typed Chat executing states становятся `interrupted`;
 - persisted typed Chat `cancelling` становится `cancelled`;
-- generic Jobs, pending approvals, `/api/ps` и external/stale runtime instances
-  остаются будущей adapter/Governor recovery работой; transient P1-F leases после
-  process death не восстанавливаются.
+- generic Jobs и pending approvals остаются будущей adapter recovery работой;
+- transient P1-F leases после process death не восстанавливаются, а первый
+  P1-G query только samples текущий `/api/ps` без восстановления ownership.
 
 Checkpoint resume, opt-in login autostart и обнаружение одновременно запущенного
 второго application writer остаются target более поздних slices.
 
 ## Observability contract
+
+Current P1-G projection реализует только bounded subset:
+
+```ts
+type RuntimeSnapshot = {
+  observedAt: string;
+  source: RuntimeSourceHealth;
+  governor: RuntimeGovernorSnapshot;
+  models: RuntimeModelObservation[] | null;
+  decisions: RuntimeReconciliationDecision[];
+};
+```
+
+Host telemetry, pressure, fit, durable observations и full Runtime Bar ещё не
+реализованы. Target projection остаётся шире:
 
 Runtime projection:
 
@@ -757,8 +801,8 @@ warm/load boundary и повторную compaction по persisted `seq`.
 P0-D реализовал пункт 6 как минимальную sampled Chat/Runtime projection,
 правдивые health/catalog sources и bounded connect/load/stream-idle deadlines.
 P1-D добавил durable Chat execution/detach/reattach, P1-E — bounded startup
-reconciliation, P1-F — typed process-local Governor admission/lease foundation.
-Полные `/api/ps` reconciliation, telemetry/fit, Runtime Bar и resource UX
-остаются target.
+reconciliation, P1-F — typed process-local Governor admission/lease foundation,
+P1-G — query-time `/api/ps` reconciliation и additive `GET /api/runtime`.
+Host telemetry/fit, Runtime Bar и resource UX остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

@@ -7,7 +7,7 @@
 
 На 2026-08-03:
 
-- `npm test`: 190/190 server/CLI и 17/17 web component/parser tests;
+- `npm test`: 200/200 server/CLI и 17/17 web component/parser tests;
 - `npm run test:web:browser`: 9/9 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -29,6 +29,12 @@
   snapshot/explanation, waiting/active cancellation, exact/conservative unload
   guard, bounded live diagnostics после 1000 releases и 10 repeats
   release/cancel/close;
+- deterministic P1-G tests покрывают typed additive Runtime snapshot, exact
+  normalized
+  reference match без digest identity claim, unknown-owner rows,
+  active-not-observed, healthy empty, unavailable/timeout/incompatible sources,
+  redaction, common timestamp linearization, shared route single-flight,
+  independent caller abort, cleanup и отсутствие auto-unload;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -66,11 +72,13 @@
   tool-step preservation, atomic trigger rollback, malformed association/output,
   redacted failure before listen, три startup attempts после injected failures,
   same-thread/cross-thread one-lane scheduling и truthful graceful shutdown;
-- exact P1-A/P1-B/P1-C/P1-D/P1-E/P1-F files дают 72/72; routes/Governor/
+- exact P1-A/P1-B/P1-C/P1-D/P1-E/P1-F/P1-G files дают 82/82; routes/Governor/
   concurrency дают 28/28; runtime/provider — 19/19; 15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
   P1-F release/cancel/close — 10 repeats без duplicate transfer/live state;
+- P1-G исправил flaky ожидание P1-E fixture на канонический
+  `(createdAt, jobId)` order; узкий recovered FIFO case повторён 10/10;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -78,11 +86,14 @@
   P1-D navigation/detach/reload gate.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E и
-P1-A–P1-F на временной SQLite, управляемом fake `OllamaClient` transport и
+P1-A–P1-G на временной SQLite, управляемом fake `OllamaClient` transport и
 mocked browser REST/SSE. P1-F доказывает typed one-lane admission только для
 Chat, compaction и warm/load одного application composition; он не подтверждает
-hardware fit, Ollama scheduler, `/api/ps` ownership, multi-process/
-external-client safety или production use. P1-E доказывает
+hardware fit, Ollama scheduler, multi-process/external-client safety или
+production use. P1-G доказывает только sampled query-time `/api/ps`
+reconciliation: exact active reference match, unknown ownership и bounded
+single-flight; он не идентифицирует external client и не меняет admission.
+P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
 проверяет live Ollama, реальное железо или публичную сеть.
@@ -90,7 +101,8 @@ process lock. P0-D health остаётся sampled observation; обязател
 ### Current residual risks
 
 - health и `/api/ps` — sampled observations, а не непрерывная истина;
-- P1-F Resource Governor и leases process-local и не reconciles `/api/ps`;
+- P1-G reconciles `/api/ps` только на query; Resource Governor и leases остаются
+  process-local, host telemetry/fit отсутствуют;
 - Chat execution durable/replayable, но execution owner и lease остаются
   process-local;
 - generic public Job без Chat adapter остаётся queued; live wake-up предполагает
@@ -118,7 +130,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 | React render/navigation            | P0-A/P0-B/P0-D/P0-E component      |
 | Browser streaming/reload           | P0-A/P0-B/P0-E mocked flows        |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
-| Global concurrency/model lifecycle | P1-F typed one-lane fake routes    |
+| Global concurrency/model lifecycle | P1-G sampled reconcile + P1-F lane |
 | Job replay/reattach                | HTTP SSE; browser durable replay   |
 | Chat startup recovery              | reopened SQLite, fail-closed pages |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |

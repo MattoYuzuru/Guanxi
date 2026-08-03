@@ -26,16 +26,17 @@ exit gate ROADMAP проверен целиком.
 
 ## Phase 1
 
-| Slice                                   | Статус                 | Outcome                                                           |
-| --------------------------------------- | ---------------------- | ----------------------------------------------------------------- |
-| P1-A Durable Job/event-store foundation | independently verified | `138fb5e`, `91cb21f`, `92b68f0`; 15 targeted, all required gates  |
-| P1-B Job transitions/subscription       | independently verified | `56b2200`, `55351bc`; 30 targeted, 10x races, all required gates  |
-| P1-C Public Job HTTP API/SSE/cancel     | independently verified | `4b9d96a`, `0a06ea6`; 44 targeted, 10x races, all required gates  |
-| P1-D Durable Chat execution/reattach    | independently verified | `da70576`, `08b3516`, `f33d5b9`; 57 targeted, 10x race, all gates |
-| P1-E Startup recovery/reconciliation    | independently verified | `22a1aff`, `6c748de`; 66 targeted, 10x recovery, all gates        |
-| P1-F Resource Governor foundation       | independently verified | `a0bc047`, `ff96dc0`; 72 targeted, 10x cleanup, all gates         |
+| Slice                                   | Статус                 | Outcome                                                             |
+| --------------------------------------- | ---------------------- | ------------------------------------------------------------------- |
+| P1-A Durable Job/event-store foundation | independently verified | `138fb5e`, `91cb21f`, `92b68f0`; 15 targeted, all required gates    |
+| P1-B Job transitions/subscription       | independently verified | `56b2200`, `55351bc`; 30 targeted, 10x races, all required gates    |
+| P1-C Public Job HTTP API/SSE/cancel     | independently verified | `4b9d96a`, `0a06ea6`; 44 targeted, 10x races, all required gates    |
+| P1-D Durable Chat execution/reattach    | independently verified | `da70576`, `08b3516`, `f33d5b9`; 57 targeted, 10x race, all gates   |
+| P1-E Startup recovery/reconciliation    | independently verified | `22a1aff`, `6c748de`; 66 targeted, 10x recovery, all gates          |
+| P1-F Resource Governor foundation       | independently verified | `a0bc047`, `ff96dc0`; 72 targeted, 10x cleanup, all gates           |
+| P1-G Runtime `/api/ps` reconciliation   | independently verified | `b8328bd`, `bd0d7a1`, `40a0de7`, `f53a868`; 82 targeted, all gates  |
 
-P1-A–P1-F реализуют additive contract, migrations 4–5, canonical state CAS,
+P1-A–P1-G реализуют additive contract, migrations 4–5, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
@@ -44,8 +45,9 @@ Message pair, переживает subscriber disconnect и reattach-ится и
 queued Chat. P1-F заменяет anonymous mutex одним typed process-local
 `ResourceGovernor`: Chat, compaction и warm/load получают FIFO ticket/lease,
 unload защищён active owner, close прекращает admission и освобождает live state.
-`/api/ps` reconciliation, telemetry/fit, prewarm и Runtime Bar ещё не
-реализованы; Phase 1 остаётся `in progress`.
+P1-G добавляет один sampled `/api/ps` reconciliation service и public
+`GET /api/runtime`; telemetry/fit, prewarm и Runtime Bar ещё не реализованы;
+Phase 1 остаётся `in progress`.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -69,6 +71,26 @@ release/cancel/close. Migration 6 не добавлена: queue intent уже d
 lease process-local. `/api/ps`, live Ollama/hardware, external clients и
 multi-process ownership не проверялись и не реализованы; browser gate проверяет
 только существующие mocked P0/P1-D flows без Governor UI.
+
+P1-G evidence: `GET /api/runtime` и compatibility `GET /api/models/running`
+используют один application `RuntimeReconciliationService`; overlapping callers
+дают один provider call, caller abort независим, completed Promise очищается.
+Linearization point — Governor capture после provider completion с одним
+`observedAt`. Exact normalized active reference получает
+`matched_active_lease`, но runtime digest не становится artifact identity;
+unmatched rows остаются `unknown`, active lease без row —
+`active_not_observed`, successful empty — `empty_sample`, source error —
+`models: null`/`source_failure`. Unavailable/timeout/malformed fixtures сохраняют
+queue/lease и не раскрывают raw body, endpoint credentials или path. Локально
+прошли 82/82 Job/Governor/reconciliation, 28/28 route/concurrency, 19/19
+runtime/provider, 200/200 server/CLI, 17/17 Web component и 9/9 mocked Chromium,
+а также typecheck, build, markdownlint и diff check; recovered stable FIFO
+fixture повторён 10/10. Migration 6, cache/history и auto-unload не добавлены.
+Live Ollama/hardware, continuous observation, external-client identity и
+multi-process safety не проверялись и не реализованы. Browser gate проверяет
+только mocked connect timeout/EOF partial, create/redirect/stream/terminal reload,
+navigation detach/reattach, Stop/cancelled reload, Error Boundary accessibility и
+degraded runtime narrow viewport; это не Governor/runtime UI или hardware test.
 
 ## Later phases
 

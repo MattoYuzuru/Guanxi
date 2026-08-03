@@ -62,13 +62,18 @@ npm run link:cli
 - Current P1-F `ResourceGovernor` сериализует Chat turn, compaction и explicit
   model warm/load одной typed process-local lease. Durable Chat использует
   canonical `jobId`; compatibility operations — UUID operation owner. FIFO имеет
-  только priority `normal`; hardware fit и `/api/ps` ещё не участвуют.
+  только priority `normal`. P1-G samples `/api/ps` рядом с Governor state, но
+  observation не меняет admission; hardware fit ещё не участвует.
 - Current P0-D adapter различает connect, load и stream-idle deadlines.
   Explicit Stop имеет приоритет; subscriber disconnect не отменяет Chat Job, а
   timeout/provider/explicit abort освобождает P1-F lease.
 - Health/catalog/running facts — sampled observations с source/time. Installed
   models приходят из `/api/tags`, loaded rows из `/api/ps`; current catalog
   использует stale local cache или dated bundled fallback без remote endpoint.
+- `GET /api/runtime` и compatibility `GET /api/models/running` используют один
+  `RuntimeReconciliationService`. Pending callers делят один provider request;
+  completed state не кэшируется. `models: []` — healthy empty, `models: null` —
+  source failure. Owner без exact active reference остаётся `unknown`.
 - P1-D `JobService` поверх migration 5/`JobStore` владеет canonical state
   transitions, cancel и persisted-first subscription. SQLite event sequence
   остаётся источником replay; live listeners хранят только wake-up signal.
@@ -90,6 +95,8 @@ npm run link:cli
   create/query/cancel/cursor/SSE schemas экспортируются из contract.
 - P1-D Chat command snapshot/idempotency и Message `jobId` остаются additive;
   точные новые SSE terminal details optional для старого strict client.
+- P1-G Runtime snapshot содержит source health, current Governor state, sampled
+  model rows и stable reconciliation codes без host telemetry/fit claims.
 
 ### Server
 
@@ -98,10 +105,12 @@ npm run link:cli
   `ChatJobExecutionOwner` и один process-local `ResourceGovernor`;
 - `runtime/resource-governor.ts` — typed FIFO admission, active lease,
   snapshot/explanation, unload guard и close boundary;
+- `runtime/reconciliation.ts` — sampled `/api/ps` single-flight, common timestamp,
+  owner/identity classification и compatibility projection;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details и sourced catalog fallback;
 - `hardware/` — host probe и fit;
-- `http/` — models, threads, workspaces, SSE;
+- `http/` — models, runtime, Jobs, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
 - migration 3 добавляет nullable `turn_status/turn_error/stop_reason` и не
   переписывает старые migrations;
@@ -152,7 +161,9 @@ npm run link:cli
   P1-E — closed/reopened DB recovery, all non-terminal Chat states, bounded
   pages, partial projection, fail-closed startup и truthful shutdown; P1-F —
   typed request/ticket/lease, FIFO/cancellation/close, bounded diagnostics,
-  unload conflict и полная current Chat/compaction/warm matrix.
+  unload conflict и полная current Chat/compaction/warm matrix; P1-G — exact
+  runtime contract/identity, source failures, linearization, single-flight,
+  caller cancellation, route inventory и no-auto-unload.
 
 ### CLI
 

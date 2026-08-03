@@ -9,6 +9,7 @@ flowchart TB
     Jobs[Job service and Chat execution owner]
     Recovery[Pre-listen Chat recovery]
     Governor[Resource governor FIFO tickets and leases]
+    Runtime[Runtime reconciliation single flight]
     Tools[Tool registry jail fs bash]
     Ollama[Ollama client]
     Static[Built web assets]
@@ -26,10 +27,14 @@ flowchart TB
     Context --> Agent
     Context --> Recovery
     Context --> Governor
+    Context --> Runtime
     Recovery --> Jobs
     Recovery --> Stores
     Jobs --> Governor
     Routes --> Governor
+    Routes --> Runtime
+    Runtime --> Governor
+    Runtime --> Models
     Governor --> Ollama
     Jobs --> Agent
     Jobs --> Stores

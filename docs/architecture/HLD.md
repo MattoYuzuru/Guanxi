@@ -89,7 +89,12 @@ outcome и освобождает active lease. Caller-owned Stop/disconnect и�
 Application shell остаётся доступным при degraded Ollama. `/api/version`,
 локальный catalog cache/bundled snapshot и `/api/ps` публикуются как раздельные
 sampled observations с source/time. Installed state приходит из `/api/tags`;
-loaded rows — только из `/api/ps`.
+loaded rows — только из `/api/ps`. P1-G добавил один application
+`RuntimeReconciliationService`: `GET /api/runtime` и compatibility
+`GET /api/models/running` делят pending provider sample. После его завершения
+service одним `observedAt` снимает Governor state и классифицирует exact
+normalized active reference, unmatched active lease и unknown-owner runtime
+rows. Completed sample/cache/history не хранится и background polling нет.
 
 ### As-is deployment
 
@@ -113,6 +118,7 @@ loaded rows — только из `/api/ps`.
 | Tool run record                      | SQLite                                  | persistent после выполнения |
 | Active/waiting Chat controller       | `ChatJobExecutionOwner`                 | process memory              |
 | Resource admission/active lease      | application `ResourceGovernor`          | process memory              |
+| Runtime reconciliation/sample        | `RuntimeReconciliationService`          | process memory, без history |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -122,8 +128,9 @@ loaded rows — только из `/api/ps`.
 
 ### Основные current risks
 
-1. Process-local Governor не координирует внешний Ollama client или второй Alamo
-   process и ещё не сверяется с фактическими loaded instances.
+1. Process-local Governor показывает sampled `/api/ps` drift, но не координирует
+   внешний Ollama client или второй Alamo process и не считает неизвестного
+   владельца внешним установленным фактом.
 2. P1-F поддерживает только один `normal` FIFO lane без priority/backpressure;
    bounded timeout освобождает request, но не координирует provider вне этого
    application process.
@@ -135,7 +142,8 @@ loaded rows — только из `/api/ps`.
    boundary; plaintext settings уже остаются известным долгом.
 7. Remote bind открывает filesystem/shell boundaries без реальной authentication.
 8. Fit не описывает совместное размещение, current pressure и remote hardware.
-9. Catalog не имеет разрешённого live provider; local cache и bundled snapshot
+9. `/api/runtime` не содержит host telemetry/fit и не является continuous truth.
+10. Catalog не имеет разрешённого live provider; local cache и bundled snapshot
    могут отставать.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
