@@ -85,6 +85,12 @@ type RequestOptions = RequestInit & {
   }
 }
 
+export interface OllamaStreamTimeoutPolicy {
+  connectTimeoutMs: number
+  loadTimeoutMs: number
+  streamIdleTimeoutMs: number
+}
+
 const versionResponseSchema = z.object({
   version: z.string().min(1),
 })
@@ -294,6 +300,7 @@ export class OllamaClient {
     path: string,
     body: unknown,
     signal?: AbortSignal,
+    timeoutPolicy?: OllamaStreamTimeoutPolicy,
   ): AsyncGenerator<T> {
     const controller = new AbortController()
     const externalSignal = signal ?? null
@@ -304,7 +311,7 @@ export class OllamaClient {
     try {
       response = await this.withinDeadline(
         'connect',
-        this.connectTimeoutMs,
+        timeoutPolicy?.connectTimeoutMs ?? this.connectTimeoutMs,
         controller,
         externalSignal,
         () =>
@@ -329,14 +336,17 @@ export class OllamaClient {
     const decoder = new TextDecoder()
     let buffer = ''
     let observedProgress = false
-    let progressDeadline = Date.now() + this.loadTimeoutMs
+    const loadTimeoutMs = timeoutPolicy?.loadTimeoutMs ?? this.loadTimeoutMs
+    const streamIdleTimeoutMs =
+      timeoutPolicy?.streamIdleTimeoutMs ?? this.streamIdleTimeoutMs
+    let progressDeadline = Date.now() + loadTimeoutMs
 
     try {
       while (true) {
         const phase: OllamaTimeoutPhase = observedProgress ? 'stream_idle' : 'load'
         const policyTimeoutMs = observedProgress
-          ? this.streamIdleTimeoutMs
-          : this.loadTimeoutMs
+          ? streamIdleTimeoutMs
+          : loadTimeoutMs
         const remainingMs = Math.max(1, progressDeadline - Date.now())
         const { done, value } = await this.withinDeadline(
           phase,
@@ -359,7 +369,7 @@ export class OllamaClient {
           if (!trimmed) continue
           const parsed = JSON.parse(trimmed) as T
           observedProgress = true
-          progressDeadline = Date.now() + this.streamIdleTimeoutMs
+          progressDeadline = Date.now() + streamIdleTimeoutMs
           yield parsed
         }
       }
@@ -431,8 +441,17 @@ export class OllamaClient {
     return this.streamNdjson<OllamaPullChunk>('/api/pull', { model: name, stream: true }, signal)
   }
 
-  chatStream(request: OllamaChatRequest, signal?: AbortSignal): AsyncGenerator<OllamaChatChunk> {
-    return this.streamNdjson<OllamaChatChunk>('/api/chat', { ...request, stream: true }, signal)
+  chatStream(
+    request: OllamaChatRequest,
+    signal?: AbortSignal,
+    timeoutPolicy?: OllamaStreamTimeoutPolicy,
+  ): AsyncGenerator<OllamaChatChunk> {
+    return this.streamNdjson<OllamaChatChunk>(
+      '/api/chat',
+      { ...request, stream: true },
+      signal,
+      timeoutPolicy,
+    )
   }
 
   async chat(request: OllamaChatRequest, signal?: AbortSignal): Promise<OllamaChatChunk> {

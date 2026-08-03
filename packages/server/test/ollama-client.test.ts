@@ -136,6 +136,29 @@ describe('Ollama client timeout and protocol boundaries', () => {
     )
   })
 
+  it('uses optional per-call stream deadlines without changing client defaults', async () => {
+    const client = new OllamaClient({
+      host: 'http://fixture.invalid',
+      connectTimeoutMs: 100,
+      loadTimeoutMs: 100,
+      streamIdleTimeoutMs: 100,
+      fetch: async (_input, init) => stalledBody(init?.signal),
+    })
+    const startedAt = Date.now()
+    await assert.rejects(
+      client.chatStream(REQUEST, undefined, {
+        connectTimeoutMs: 20,
+        loadTimeoutMs: 10,
+        streamIdleTimeoutMs: 10,
+      }).next(),
+      (error) =>
+        error instanceof OllamaTimeoutError
+        && error.phase === 'load'
+        && error.timeoutMs === 10,
+    )
+    assert.ok(Date.now() - startedAt < 80)
+  })
+
   it('allows a continuously progressing stream to outlive one idle interval', async () => {
     const client = clientWith(async (_input, init) => {
       let emitted = 0

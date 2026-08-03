@@ -11,6 +11,7 @@ import {
   contextStateSchema,
   fitLevelSchema,
   fitVerdictSchema,
+  completionProbeEvidenceSchema,
   healthSchema,
   jobKindSchema,
   jobSchema,
@@ -45,6 +46,8 @@ export const ROUTES = {
   modelPull: (name: string) => `/api/models/${encodeURIComponent(name)}/pull`,
   modelWarm: (name: string) => `/api/models/${encodeURIComponent(name)}/warm`,
   modelPrewarm: (name: string) => `/api/models/${encodeURIComponent(name)}/prewarm`,
+  modelCompletionProbe: (name: string) =>
+    `/api/models/${encodeURIComponent(name)}/probes/completion`,
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
@@ -242,6 +245,23 @@ export const prewarmModelResponse = z.discriminatedUnion('status', [
   }),
 ])
 export type PrewarmModelResponse = z.infer<typeof prewarmModelResponse>
+
+export const completionProbeBody = z
+  .object({
+    capability: z.literal('completion'),
+    expectedDigest: z.string().min(1),
+    contextLength: positiveSafeIntegerSchema,
+    force: z.boolean().optional().default(false),
+  })
+  .strict()
+export type CompletionProbeBody = z.infer<typeof completionProbeBody>
+
+export const completionProbeResponse = z
+  .object({
+    evidence: completionProbeEvidenceSchema,
+  })
+  .strict()
+export type CompletionProbeResponse = z.infer<typeof completionProbeResponse>
 
 /** POST /api/models/:name/pull → SSE (PullStreamEvent) */
 export const pullModelBody = z.object({

@@ -149,7 +149,11 @@ function testContext(options: {
       models: base.models,
     }),
   }
-  return { ...runtimeBase, chatExecution: new ChatJobExecutionOwner(runtimeBase) }
+  return {
+    ...runtimeBase,
+    completionProbe: { execute: async () => { throw new Error('not invoked') } } as never,
+    chatExecution: new ChatJobExecutionOwner(runtimeBase),
+  }
 }
 
 function createThread(context: AppContext, model: string) {

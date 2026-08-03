@@ -298,6 +298,98 @@ export const installedModelDescriptorSchema = z
   .strict()
 export type InstalledModelDescriptor = z.infer<typeof installedModelDescriptorSchema>
 
+export const completionProbeIdentitySchema = z
+  .object({
+    state: z.literal('exact'),
+    keyVersion: z.literal(1),
+    probeDefinitionVersion: z.literal(1),
+    provider: z.literal('ollama'),
+    normalizedModelReference: z.string().min(1),
+    artifactDigest: z.string().min(1),
+    runtimeVersion: z.string().min(1),
+    contextLength: positiveSafeIntegerSchema,
+    id: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+  })
+  .strict()
+export type CompletionProbeIdentity = z.infer<typeof completionProbeIdentitySchema>
+
+export const completionProbeBasisSchema = z.discriminatedUnion('state', [
+  completionProbeIdentitySchema,
+  z
+    .object({
+      state: z.literal('unavailable'),
+      keyVersion: z.literal(1),
+      probeDefinitionVersion: z.literal(1),
+      reason: z.enum([
+        'invalid_model_reference',
+        'installed_reference_ambiguous',
+        'installed_digest_missing',
+        'runtime_version_unavailable',
+      ]),
+    })
+    .strict(),
+])
+export type CompletionProbeBasis = z.infer<typeof completionProbeBasisSchema>
+
+const completionProbeEvidenceBaseSchema = z
+  .object({
+    capability: z.literal('completion'),
+    source: z.literal('runtime_probe'),
+    observedAt: z.string().datetime(),
+    completedAt: z.string().datetime(),
+    durationMs: z.number().int().nonnegative(),
+    basis: completionProbeBasisSchema,
+    historical: z.boolean(),
+  })
+  .strict()
+
+export const completionProbeEvidenceSchema = z.discriminatedUnion('status', [
+  completionProbeEvidenceBaseSchema.extend({
+    status: z.literal('verified'),
+    confidence: z.literal('verified'),
+    reason: z.literal('terminal_response'),
+  }),
+  completionProbeEvidenceBaseSchema.extend({
+    status: z.literal('degraded'),
+    confidence: z.literal('degraded'),
+    reason: z.enum([
+      'provider_unavailable',
+      'connect_timeout',
+      'load_timeout',
+      'response_timeout',
+      'provider_error',
+      'runtime_protocol',
+      'empty_response',
+      'identity_changed',
+      'persistence_failed',
+    ]),
+  }),
+  completionProbeEvidenceBaseSchema.extend({
+    status: z.literal('unknown'),
+    confidence: z.literal('unknown'),
+    reason: z.enum(['identity_unavailable', 'context_limit_unknown']),
+  }),
+  completionProbeEvidenceBaseSchema.extend({
+    status: z.literal('cancelled'),
+    confidence: z.literal('unknown'),
+    reason: z.enum(['request_cancelled', 'request_timeout']),
+  }),
+  completionProbeEvidenceBaseSchema.extend({
+    status: z.literal('skipped'),
+    confidence: z.literal('unknown'),
+    reason: z.enum([
+      'model_not_installed',
+      'cloud_model',
+      'fit_red',
+      'fit_unknown',
+      'context_limit_exceeded',
+      'identity_unavailable',
+      'probe_in_progress',
+    ]),
+  }),
+])
+export type CompletionProbeEvidence = z.infer<typeof completionProbeEvidenceSchema>
+
 export const legacyInstalledModelDescriptor: InstalledModelDescriptor = {
   reference: {
     state: 'unknown',
@@ -723,6 +815,7 @@ export const runtimeResourceOperationSchema = z.enum([
   'compaction',
   'model_warm',
   'model_prewarm',
+  'model_probe',
 ])
 export type RuntimeResourceOperation = z.infer<typeof runtimeResourceOperationSchema>
 

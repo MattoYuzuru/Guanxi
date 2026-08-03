@@ -65,7 +65,11 @@ function testContext(client: OllamaClient): AppContext {
       models: base.models,
     }),
   }
-  return { ...runtimeBase, chatExecution: new ChatJobExecutionOwner(runtimeBase) }
+  return {
+    ...runtimeBase,
+    completionProbe: { execute: async () => { throw new Error('not invoked') } } as never,
+    chatExecution: new ChatJobExecutionOwner(runtimeBase),
+  }
 }
 
 function clientWith(fetchImpl: typeof fetch): OllamaClient {

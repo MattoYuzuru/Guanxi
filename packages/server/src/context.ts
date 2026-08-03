@@ -16,8 +16,10 @@ import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
 import { ResourceGovernor } from './runtime/resource-governor.ts'
+import { CompletionProbeService } from './runtime/completion-probe.ts'
 import { RuntimeReconciliationService } from './runtime/reconciliation.ts'
 import { CalibrationStore } from './store/calibration.ts'
+import { CompletionProbeStore } from './store/completion-probe.ts'
 import { openDb, type Db } from './store/db.ts'
 import { JobStore } from './store/jobs.ts'
 import { SettingsStore } from './store/settings.ts'
@@ -42,6 +44,7 @@ export interface AppContext {
   workspaces: WorkspaceStore
   settings: SettingsStore
   calibration: CalibrationStore
+  completionProbe: CompletionProbeService
   approvals: ApprovalGate
   tracker: PrefillTracker
   hardware: HardwareInfo
@@ -74,6 +77,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
     const settings = new SettingsStore(db, { ollamaHost: DEFAULT_OLLAMA_HOST })
     const calibration = new CalibrationStore(db)
+    const completionProbeStore = new CompletionProbeStore(db)
 
     let client: OllamaClient | null = null
     let modelService: ModelService | null = null
@@ -120,6 +124,12 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     }
     const context = {
       ...base,
+      completionProbe: new CompletionProbeService({
+        governor,
+        models,
+        ollama,
+        store: completionProbeStore,
+      }),
       chatExecution: new ChatJobExecutionOwner(base),
     }
     await recoverChatJobs(context)

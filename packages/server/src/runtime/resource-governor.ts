@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 
 export const RESOURCE_GOVERNOR_CLOSE_REASON = 'resource_governor_shutdown'
 
-export type ResourceOperation = 'chat' | 'compaction' | 'model_warm' | 'model_prewarm'
+export type ResourceOperation =
+  | 'chat'
+  | 'compaction'
+  | 'model_warm'
+  | 'model_prewarm'
+  | 'model_probe'
 export type AdmissionPriority = 'normal' | 'prewarm'
 
 export type ResourceOwner =

@@ -4,6 +4,7 @@
 import { Hono } from 'hono'
 import {
   DEFAULT_NUM_CTX,
+  completionProbeBody,
   getModelQuery,
   listCatalogQuery,
   listModelsQuery,
@@ -212,6 +213,38 @@ export function modelsRoutes(app: AppContext): Hono {
       context.req.raw.signal,
     )
     return context.json(result)
+  })
+
+  routes.post('/:name{.+}/probes/completion', async (context) => {
+    const name = decodeURIComponent(context.req.param('name'))
+    const body = completionProbeBody.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) {
+      return context.json(
+        {
+          code: 'validation_failed',
+          message: 'The completion probe request is invalid',
+          details: null,
+        },
+        400,
+      )
+    }
+    try {
+      const evidence = await app.completionProbe.execute(
+        name,
+        body.data,
+        context.req.raw.signal,
+      )
+      return context.json({ evidence })
+    } catch {
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The completion probe could not be completed safely',
+          details: null,
+        },
+        500,
+      )
+    }
   })
 
   routes.post('/:name{.+}/stop', async (context) => {

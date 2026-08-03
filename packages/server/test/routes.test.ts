@@ -80,7 +80,11 @@ function testContext(
       models: base.models,
     }),
   }
-  return { ...runtimeBase, chatExecution: new ChatJobExecutionOwner(runtimeBase) }
+  return {
+    ...runtimeBase,
+    completionProbe: { execute: async () => { throw new Error('not invoked') } } as never,
+    chatExecution: new ChatJobExecutionOwner(runtimeBase),
+  }
 }
 
 function terminalChunk(content: string): OllamaChatChunk {
