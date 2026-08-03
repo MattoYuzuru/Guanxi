@@ -313,6 +313,8 @@ const english = {
   'models.evidence.identityUnknown': 'artifact identity unknown',
   'models.evidence.runtimeUnknown': 'runtime fingerprint unknown',
   'models.evidence.reason.matching': 'Documented provider declarations match.',
+  'models.evidence.reason.identityAmbiguous':
+    'The exact artifact is ambiguous, so name-based detail evidence was not assigned.',
   'models.evidence.reason.conflict': 'Provider declarations conflict; no aggregate claim is selected.',
   'models.evidence.reason.missing': 'One provider source omitted the field.',
   'models.evidence.reason.malformed': 'Provider capability data was malformed.',
@@ -656,6 +658,8 @@ const russian: Messages = {
   'models.evidence.identityUnknown': 'identity артефакта неизвестна',
   'models.evidence.runtimeUnknown': 'runtime fingerprint неизвестен',
   'models.evidence.reason.matching': 'Documented provider declarations совпадают.',
+  'models.evidence.reason.identityAmbiguous':
+    'Exact artifact неоднозначен, поэтому detail evidence по имени не привязан.',
   'models.evidence.reason.conflict': 'Provider declarations расходятся; общий claim не выбран.',
   'models.evidence.reason.missing': 'Один provider source не сообщил поле.',
   'models.evidence.reason.malformed': 'Capability data provider имеет неверную форму.',

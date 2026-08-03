@@ -101,7 +101,6 @@ export function InstalledEvidenceDetails({
 }
 
 function evidenceTone(evidence: ModelCapabilityEvidence): 'green' | 'yellow' | 'outline' {
-  if (evidence.state === 'declared') return 'green'
   if (evidence.state === 'degraded') return 'yellow'
   return 'outline'
 }
@@ -128,6 +127,8 @@ function evidenceReason(evidence: ModelCapabilityEvidence): string {
   switch (evidence.reason) {
     case null:
       return translate('models.evidence.reason.matching')
+    case 'artifact_identity_ambiguous':
+      return translate('models.evidence.reason.identityAmbiguous')
     case 'conflicting_provider_declarations':
       return translate('models.evidence.reason.conflict')
     case 'provider_field_missing':

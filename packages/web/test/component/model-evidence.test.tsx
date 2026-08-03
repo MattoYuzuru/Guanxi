@@ -66,6 +66,15 @@ const basis = {
   },
 }
 
+const showBasis = {
+  ...basis,
+  artifact: {
+    state: 'unknown' as const,
+    digest: null,
+    reason: 'detail_not_bound_to_digest' as const,
+  },
+}
+
 describe('installed model evidence projection', () => {
   it('shows canonical exact identity and matching declaration provenance', () => {
     const model = descriptor({
@@ -85,15 +94,16 @@ describe('installed model evidence projection', () => {
           source: 'ollama_api_show',
           observedAt: OBSERVED_AT,
           confidence: 'declared',
-          basis,
+          basis: showBasis,
         },
       ],
     })
-    render(<><InstalledEvidenceSummary descriptor={model} /><InstalledEvidenceDetails descriptor={model} /></>)
+    const view = render(<><InstalledEvidenceSummary descriptor={model} /><InstalledEvidenceDetails descriptor={model} /></>)
     expect(screen.getByText('registry.example/team/model:q4')).toBeTruthy()
     expect(screen.getAllByText('sha256:fixture').length).toBeGreaterThan(0)
     expect(screen.getByText('Documented provider declarations совпадают.')).toBeTruthy()
     expect(screen.getByText(/не является controlled probe/u)).toBeTruthy()
+    expect(view.container.querySelector('.text-\\[var\\(--color-fit-green\\)\\]')).toBeNull()
   })
 
   it('keeps unknown and degraded states visible instead of rendering unsupported', () => {
@@ -122,6 +132,22 @@ describe('installed model evidence projection', () => {
     expect(view.container.textContent).toContain('Provider не сообщил capability declarations.')
     expect(view.container.textContent).toContain('Provider declarations расходятся')
     expect(view.container.textContent).not.toContain('unsupported')
+  })
+
+  it('explains why ambiguous name-based evidence is not assigned', () => {
+    const ambiguous = descriptor({
+      state: 'degraded',
+      reason: 'artifact_identity_ambiguous',
+      observedAt: OBSERVED_AT,
+      declarations: [
+        {
+          capabilities: ['completion'], source: 'ollama_api_tags', observedAt: OBSERVED_AT,
+          confidence: 'declared', basis,
+        },
+      ],
+    })
+    render(<InstalledEvidenceDetails descriptor={ambiguous} />)
+    expect(screen.getByText(/detail evidence по имени не привязан/u)).toBeTruthy()
   })
 
   it('uses English source/fallback copy when the document locale is English', () => {

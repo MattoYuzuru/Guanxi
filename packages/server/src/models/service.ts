@@ -75,7 +75,12 @@ function capabilityField(raw: unknown): CapabilityField {
   if (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string')) {
     return { state: 'malformed' }
   }
-  return { state: 'present', capabilities: toCapabilities(raw) }
+  const capabilities = toCapabilities(raw)
+  // A future/unknown provider value is not an empty declaration. Until the
+  // contract vocabulary understands it, keep the whole field degraded rather
+  // than silently filtering it into a convenient supported/unsupported claim.
+  if (capabilities.length !== raw.length) return { state: 'malformed' }
+  return { state: 'present', capabilities }
 }
 
 /** Облачные модели помечены суффиксом тега. Локальную память они не расходуют. */
@@ -134,7 +139,11 @@ function contextLimitOf(
 
 type ModelDetailsObservation =
   | { state: 'available'; details: OllamaShowResponse; observedAt: string }
-  | { state: 'unavailable'; observedAt: string }
+  | {
+      state: 'unavailable'
+      reason: 'provider_unavailable' | 'artifact_identity_ambiguous'
+      observedAt: string
+    }
 
 interface RuntimeVersionObservation {
   version: string | null
@@ -230,8 +239,18 @@ function installedDescriptor(
     )
   }
   if (shownField?.state === 'present') {
+    const shownBasis: ModelEvidenceBasis = {
+      ...basis,
+      // /api/show is addressed by name and its response has no artifact digest.
+      // A concurrent replacement must not inherit the earlier /api/tags digest.
+      artifact: {
+        state: 'unknown',
+        digest: null,
+        reason: 'detail_not_bound_to_digest',
+      },
+    }
     declarations.push(
-      capabilityDeclaration(shownField, 'ollama_api_show', shown.observedAt, basis),
+      capabilityDeclaration(shownField, 'ollama_api_show', shown.observedAt, shownBasis),
     )
   }
   const observedAt =
@@ -243,9 +262,10 @@ function installedDescriptor(
       ? { state: 'degraded', reason: 'provider_malformed', observedAt, declarations }
       : { state: 'unknown', reason: 'provider_malformed', observedAt, declarations }
   } else if (shown.state === 'unavailable') {
+    const reason = shown.reason
     capabilities = declarations.length > 0
-      ? { state: 'degraded', reason: 'provider_unavailable', observedAt, declarations }
-      : { state: 'unknown', reason: 'provider_unavailable', observedAt, declarations }
+      ? { state: 'degraded', reason, observedAt, declarations }
+      : { state: 'unknown', reason, observedAt, declarations }
   } else if (tagged.state === 'present' && shownField?.state === 'present') {
     capabilities = sameCapabilities(tagged.capabilities, shownField.capabilities)
       ? { state: 'declared', reason: null, observedAt, declarations }
@@ -328,7 +348,11 @@ export class ModelService {
   ): Promise<ModelDetailsObservation> {
     const normalized = normalizeOllamaModelReference(name)
     if (!normalized) {
-      return { state: 'unavailable', observedAt: new Date().toISOString() }
+      return {
+        state: 'unavailable',
+        reason: 'provider_unavailable',
+        observedAt: new Date().toISOString(),
+      }
     }
     const cached = this.showCache.get(normalized)
     if (cached?.digest === digest) {
@@ -351,7 +375,11 @@ export class ModelService {
       return observation
     } catch (error) {
       if (signal?.aborted) throw error
-      return { state: 'unavailable', observedAt: new Date().toISOString() }
+      return {
+        state: 'unavailable',
+        reason: 'provider_unavailable',
+        observedAt: new Date().toISOString(),
+      }
     }
   }
 
@@ -468,7 +496,9 @@ export class ModelService {
                 reason: 'installed_reference_ambiguous' as const,
               }
         const shownObservation: ModelDetailsObservation = isCloud
-          ? { state: 'unavailable', observedAt }
+          ? { state: 'unavailable', reason: 'provider_unavailable', observedAt }
+          : normalized && installedReferenceCounts.get(normalized) !== 1
+            ? { state: 'unavailable', reason: 'artifact_identity_ambiguous', observedAt }
           : await this.modelDetails(entry.name, entry.digest, signal)
         const shown = shownObservation.state === 'available' ? shownObservation.details : null
         const info = shown?.model_info ?? null
@@ -537,8 +567,20 @@ export class ModelService {
     const exactEntries = tags.models.filter((model) => model.name === name)
     if (exactEntries.length !== 1) return null
     const entry = exactEntries[0]!
+    const normalized = normalizeOllamaModelReference(entry.name)
+    const normalizedMatches = tags.models.filter(
+      (model) =>
+        normalized !== null && normalizeOllamaModelReference(model.name) === normalized,
+    )
 
-    const shownObservation = await this.modelDetails(name, entry.digest, signal)
+    const shownObservation: ModelDetailsObservation =
+      normalized !== null && normalizedMatches.length !== 1
+        ? {
+            state: 'unavailable',
+            reason: 'artifact_identity_ambiguous',
+            observedAt,
+          }
+        : await this.modelDetails(name, entry.digest, signal)
     const shown = shownObservation.state === 'available' ? shownObservation.details : null
     const info = shown?.model_info ?? null
     const isCloud = isCloudModel(name)
@@ -627,7 +669,11 @@ export class ModelService {
     const entry = exactEntries[0]!
     const tagsObservedAt = new Date().toISOString()
     const shownObservation: ModelDetailsObservation = isCloudModel(name)
-      ? { state: 'unavailable', observedAt: tagsObservedAt }
+      ? {
+          state: 'unavailable',
+          reason: 'provider_unavailable',
+          observedAt: tagsObservedAt,
+        }
       : await this.modelDetails(name, entry.digest, signal)
     return contextLimitOf(
       entry,

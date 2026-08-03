@@ -126,7 +126,12 @@ export const modelArtifactIdentitySchema = z.discriminatedUnion('state', [
     .object({
       state: z.literal('unknown'),
       digest: z.null(),
-      reason: z.enum(['legacy_response', 'digest_not_reported', 'digest_malformed']),
+      reason: z.enum([
+        'legacy_response',
+        'digest_not_reported',
+        'digest_malformed',
+        'detail_not_bound_to_digest',
+      ]),
     })
     .strict(),
 ])
@@ -189,6 +194,7 @@ export const modelCapabilityEvidenceSchema = z.discriminatedUnion('state', [
     .extend({
       state: z.literal('degraded'),
       reason: z.enum([
+        'artifact_identity_ambiguous',
         'conflicting_provider_declarations',
         'provider_field_missing',
         'provider_malformed',
@@ -200,6 +206,7 @@ export const modelCapabilityEvidenceSchema = z.discriminatedUnion('state', [
     .extend({
       state: z.literal('unknown'),
       reason: z.enum([
+        'artifact_identity_ambiguous',
         'legacy_response',
         'field_not_reported',
         'provider_malformed',

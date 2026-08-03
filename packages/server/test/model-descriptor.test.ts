@@ -204,10 +204,52 @@ describe('installed model descriptor and capability evidence', () => {
         { source: 'ollama_api_show', confidence: 'declared' },
       ],
     )
+    const tagsDeclaration = descriptor.capabilities.declarations.find(
+      (declaration) => declaration.source === 'ollama_api_tags',
+    )!
+    const showDeclaration = descriptor.capabilities.declarations.find(
+      (declaration) => declaration.source === 'ollama_api_show',
+    )!
+    assert.deepEqual(tagsDeclaration.basis.artifact, {
+      state: 'exact_digest',
+      digest: 'sha256:artifact-a',
+    })
+    assert.deepEqual(showDeclaration.basis.artifact, {
+      state: 'unknown',
+      digest: null,
+      reason: 'detail_not_bound_to_digest',
+    })
     for (const declaration of descriptor.capabilities.declarations) {
-      assert.equal(declaration.basis.artifact.state, 'exact_digest')
       assert.equal(declaration.basis.runtime.state, 'sourced')
     }
+
+    const detail = await (await service(test, provider)).detail(
+      'Registry.Example/Team/Model:Q4',
+      8_192,
+    )
+    assert.ok(detail)
+    assert.equal(detail.descriptor.reference.state, 'canonical')
+    assert.deepEqual(detail.descriptor.artifact, descriptor.artifact)
+    assert.deepEqual(
+      detail.descriptor.capabilities.declarations.map((declaration) => ({
+        source: declaration.source,
+        artifact: declaration.basis.artifact,
+      })),
+      [
+        {
+          source: 'ollama_api_tags',
+          artifact: { state: 'exact_digest', digest: 'sha256:artifact-a' },
+        },
+        {
+          source: 'ollama_api_show',
+          artifact: {
+            state: 'unknown',
+            digest: null,
+            reason: 'detail_not_bound_to_digest',
+          },
+        },
+      ],
+    )
   })
 
   it('never reuses cached declaration evidence after same-name digest replacement', async (test) => {
@@ -233,9 +275,56 @@ describe('installed model descriptor and capability evidence', () => {
       second[0]!.descriptor.capabilities.declarations.map((entry) => entry.capabilities),
       [['tools'], ['tools']],
     )
-    assert.ok(second[0]!.descriptor.capabilities.declarations.every(
-      (entry) => entry.basis.artifact.state === 'exact_digest' && entry.basis.artifact.digest === 'sha256:b',
-    ))
+    assert.deepEqual(
+      second[0]!.descriptor.capabilities.declarations.map((entry) => entry.basis.artifact),
+      [
+        { state: 'exact_digest', digest: 'sha256:b' },
+        { state: 'unknown', digest: null, reason: 'detail_not_bound_to_digest' },
+      ],
+    )
+  })
+
+  it('never assigns name-based show evidence across ambiguous exact digests', async (test) => {
+    const provider = fixture([
+      {
+        name: 'Fixture',
+        digest: 'sha256:a',
+        tagsCapabilities: ['completion'],
+        showCapabilities: ['tools'],
+      },
+      {
+        name: 'fixture:latest',
+        digest: 'sha256:b',
+        tagsCapabilities: ['tools'],
+        showCapabilities: ['completion'],
+      },
+    ])
+    const rows = await (await service(test, provider)).listLocal(8_192)
+    assert.equal(provider.showCalls.length, 0)
+    assert.deepEqual(
+      rows.map((row) => ({
+        digest: row.digest,
+        state: row.descriptor.capabilities.state,
+        reason: row.descriptor.capabilities.reason,
+        declarations: row.descriptor.capabilities.declarations.map(
+          (declaration) => [declaration.source, declaration.capabilities],
+        ),
+      })),
+      [
+        {
+          digest: 'sha256:a',
+          state: 'degraded',
+          reason: 'artifact_identity_ambiguous',
+          declarations: [['ollama_api_tags', ['completion']]],
+        },
+        {
+          digest: 'sha256:b',
+          state: 'degraded',
+          reason: 'artifact_identity_ambiguous',
+          declarations: [['ollama_api_tags', ['tools']]],
+        },
+      ],
+    )
   })
 
   it('preserves the original /api/show observation time on a digest-aware cache hit', async (test) => {
@@ -266,6 +355,12 @@ describe('installed model descriptor and capability evidence', () => {
         showCapabilities: { tools: true },
       },
       {
+        name: 'future-value:latest',
+        digest: 'sha256:f',
+        tagsCapabilities: ['completion', 'future-capability'],
+        showCapabilities: ['completion', 'future-capability'],
+      },
+      {
         name: 'conflict:latest',
         digest: 'sha256:c',
         tagsCapabilities: ['completion'],
@@ -279,9 +374,10 @@ describe('installed model descriptor and capability evidence', () => {
       },
     ])
     const rows = await (await service(test, provider)).listLocal(8_192)
-    assert.equal(rows.length, 4)
+    assert.equal(rows.length, 5)
     assert.deepEqual(rows.map((row) => [row.descriptor.capabilities.state, row.descriptor.capabilities.reason]), [
       ['unknown', 'field_not_reported'],
+      ['unknown', 'provider_malformed'],
       ['unknown', 'provider_malformed'],
       ['degraded', 'conflicting_provider_declarations'],
       ['degraded', 'provider_unavailable'],
@@ -290,6 +386,8 @@ describe('installed model descriptor and capability evidence', () => {
     assert.deepEqual(rows[1]!.capabilities, [])
     assert.deepEqual(rows[2]!.capabilities, ['completion'])
     assert.deepEqual(rows[3]!.capabilities, ['completion'])
+    assert.deepEqual(rows[4]!.capabilities, ['completion'])
+    assert.equal(rows[2]!.descriptor.capabilities.declarations.length, 0)
     assert.doesNotMatch(JSON.stringify(rows), /secret|Users\/private|raw prompt/u)
   })
 

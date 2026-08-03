@@ -38,7 +38,13 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
         },
         {
           capabilities: ['tools'], source: 'ollama_api_show', observedAt,
-          confidence: 'declared', basis,
+          confidence: 'declared',
+          basis: {
+            ...basis,
+            artifact: {
+              state: 'unknown', digest: null, reason: 'detail_not_bound_to_digest',
+            },
+          },
         },
       ],
     },
