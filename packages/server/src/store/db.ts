@@ -228,6 +228,35 @@ const MIGRATIONS: readonly string[] = [
       context_length
     );
   `,
+  // 7 — exact, minimized installed provider-evidence cache.
+  // The cache is additive and has no backfill: old code safely ignores this table.
+  `
+  CREATE TABLE installed_model_evidence_cache (
+    cache_key                  TEXT PRIMARY KEY
+      CHECK (cache_key GLOB 'sha256:*' AND length(cache_key) = 71),
+    key_version                INTEGER NOT NULL CHECK (key_version = 1),
+    evidence_schema_version    INTEGER NOT NULL CHECK (evidence_schema_version = 1),
+    provider                   TEXT NOT NULL CHECK (provider = 'ollama'),
+    normalized_model_reference TEXT NOT NULL,
+    artifact_digest            TEXT NOT NULL,
+    runtime_version            TEXT NOT NULL,
+    safe_evidence_json         TEXT NOT NULL CHECK (json_valid(safe_evidence_json)),
+    observed_at                TEXT NOT NULL,
+    fetched_at                 TEXT NOT NULL,
+    validated_at               TEXT NOT NULL,
+    expires_at                 TEXT NOT NULL,
+    stale_until                TEXT NOT NULL,
+    CHECK (expires_at <= stale_until)
+  );
+  CREATE INDEX idx_installed_model_evidence_family
+    ON installed_model_evidence_cache (
+      provider,
+      normalized_model_reference,
+      artifact_digest,
+      runtime_version,
+      evidence_schema_version
+    );
+  `,
 ]
 
 export function openDb(path: string): Db {
