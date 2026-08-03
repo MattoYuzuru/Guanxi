@@ -195,6 +195,7 @@ export const modelCapabilityEvidenceSchema = z.discriminatedUnion('state', [
       state: z.literal('degraded'),
       reason: z.enum([
         'artifact_identity_ambiguous',
+        'artifact_identity_changed',
         'conflicting_provider_declarations',
         'provider_field_missing',
         'provider_malformed',
@@ -207,6 +208,7 @@ export const modelCapabilityEvidenceSchema = z.discriminatedUnion('state', [
       state: z.literal('unknown'),
       reason: z.enum([
         'artifact_identity_ambiguous',
+        'artifact_identity_changed',
         'legacy_response',
         'field_not_reported',
         'provider_malformed',
@@ -216,6 +218,48 @@ export const modelCapabilityEvidenceSchema = z.discriminatedUnion('state', [
     .strict(),
 ])
 export type ModelCapabilityEvidence = z.infer<typeof modelCapabilityEvidenceSchema>
+
+export const modelEvidenceFreshnessSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('fresh'),
+      source: z.enum(['provider', 'process_cache', 'persistent_cache']),
+      observedAt: z.string().datetime(),
+      validatedAt: z.string().datetime(),
+      expiresAt: z.string().datetime(),
+      offline: z.literal(false),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('stale'),
+      source: z.literal('persistent_cache'),
+      observedAt: z.string().datetime(),
+      validatedAt: z.string().datetime(),
+      expiresAt: z.string().datetime(),
+      staleUntil: z.string().datetime(),
+      offline: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      source: z.enum(['provider', 'none']),
+      observedAt: z.string().datetime().nullable(),
+      reason: z.enum([
+        'legacy_response',
+        'identity_unavailable',
+        'identity_changed',
+        'provider_unavailable',
+        'provider_malformed',
+        'conflicting_provider_data',
+        'cache_expired',
+      ]),
+      offline: z.boolean(),
+    })
+    .strict(),
+])
+export type ModelEvidenceFreshness = z.infer<typeof modelEvidenceFreshnessSchema>
 
 export const modelInstallationEvidenceSchema = z.discriminatedUnion('state', [
   z
@@ -243,6 +287,13 @@ export const installedModelDescriptorSchema = z
     artifact: modelArtifactIdentitySchema,
     installation: modelInstallationEvidenceSchema,
     capabilities: modelCapabilityEvidenceSchema,
+    freshness: modelEvidenceFreshnessSchema.optional().default({
+      state: 'unknown',
+      source: 'none',
+      observedAt: null,
+      reason: 'legacy_response',
+      offline: false,
+    }),
   })
   .strict()
 export type InstalledModelDescriptor = z.infer<typeof installedModelDescriptorSchema>
@@ -267,6 +318,13 @@ export const legacyInstalledModelDescriptor: InstalledModelDescriptor = {
     reason: 'legacy_response',
     observedAt: '1970-01-01T00:00:00.000Z',
     declarations: [],
+  },
+  freshness: {
+    state: 'unknown',
+    source: 'none',
+    observedAt: null,
+    reason: 'legacy_response',
+    offline: false,
   },
 }
 

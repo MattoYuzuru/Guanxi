@@ -17,6 +17,11 @@ export class CalibrationStore {
     this.db = db
   }
 
+  /** Shared composition-owned database for adjacent exact model evidence stores. */
+  get database(): Db {
+    return this.db
+  }
+
   samples(key: ModelObservationKey): CalibrationSample[] {
     if (key.state !== 'complete') return []
     const components = key.components

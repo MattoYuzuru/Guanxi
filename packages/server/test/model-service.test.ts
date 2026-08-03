@@ -206,7 +206,9 @@ describe('digest-aware model facts and bounded show cache', () => {
     assert.equal(state.showCalls.length, MODEL_SHOW_CACHE_MAX_ENTRIES + 1)
     assert.equal(observationCount(db), 0)
     await service.detail(installed[0]!.name, 8_192)
-    assert.equal(state.showCalls.length, MODEL_SHOW_CACHE_MAX_ENTRIES + 2)
+    // Process LRU evicts the first row, but the compatible fresh durable row
+    // survives and avoids another /api/show request.
+    assert.equal(state.showCalls.length, MODEL_SHOW_CACHE_MAX_ENTRIES + 1)
   })
 
   it('redacts failed /api/show payloads and falls back without caching them', async (test) => {

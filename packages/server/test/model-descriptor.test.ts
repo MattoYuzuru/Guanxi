@@ -174,6 +174,10 @@ describe('installed model descriptor and capability evidence', () => {
       observedAt: '1970-01-01T00:00:00.000Z',
       declarations: [],
     })
+    assert.deepEqual(parsed.descriptor.freshness, {
+      state: 'unknown', source: 'none', observedAt: null,
+      reason: 'legacy_response', offline: false,
+    })
   })
 
   it('projects canonical provider/reference, exact digest, installation and matching declarations', async (test) => {

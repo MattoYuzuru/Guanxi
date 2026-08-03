@@ -11,6 +11,7 @@ import {
   type InstalledModelDescriptor,
   type LocalModel,
   type ModelCapabilityDeclaration,
+  type ModelEvidenceFreshness,
   type ModelContextLimit,
   type ModelCapability,
   type ModelDetail,
@@ -27,6 +28,16 @@ import {
   type InstalledArtifactIdentity,
 } from '../runtime/observation-key.ts'
 import type { CalibrationStore } from '../store/calibration.ts'
+import {
+  INSTALLED_EVIDENCE_FRESH_TTL_MS,
+  INSTALLED_EVIDENCE_STALE_WINDOW_MS,
+  InstalledEvidenceCacheStore,
+  installedEvidenceCacheKey,
+  safeInstalledEvidenceFromProvider,
+  type InstalledEvidenceCacheIdentity,
+  type InstalledEvidenceCacheRecord,
+  type SafeInstalledEvidence,
+} from '../store/installed-evidence.ts'
 
 const KNOWN_CAPABILITIES = new Set<ModelCapability>([
   'completion',
@@ -138,11 +149,20 @@ function contextLimitOf(
 }
 
 type ModelDetailsObservation =
-  | { state: 'available'; details: OllamaShowResponse; observedAt: string }
+  | {
+      state: 'available'
+      details: OllamaShowResponse
+      observedAt: string
+      freshness: ModelEvidenceFreshness
+    }
   | {
       state: 'unavailable'
-      reason: 'provider_unavailable' | 'artifact_identity_ambiguous'
+      reason:
+        | 'provider_unavailable'
+        | 'artifact_identity_ambiguous'
+        | 'artifact_identity_changed'
       observedAt: string
+      freshness: ModelEvidenceFreshness
     }
 
 interface RuntimeVersionObservation {
@@ -301,7 +321,136 @@ function installedDescriptor(
       confidence: 'observed',
     },
     capabilities,
+    freshness: shown.freshness,
   }
+}
+
+function unknownFreshness(
+  reason: Extract<ModelEvidenceFreshness, { state: 'unknown' }>['reason'],
+  observedAt: string | null,
+  offline: boolean,
+): ModelEvidenceFreshness {
+  return { state: 'unknown', source: 'provider', observedAt, reason, offline }
+}
+
+function showFromSafeEvidence(evidence: SafeInstalledEvidence): OllamaShowResponse {
+  const modelInfo: Record<string, unknown> = {}
+  if (evidence.architecture) {
+    const architecture = evidence.architecture
+    modelInfo['general.architecture'] = architecture.name
+    if (architecture.blockCount !== undefined) {
+      modelInfo[`${architecture.name}.block_count`] = architecture.blockCount
+    }
+    if (architecture.headCount !== undefined) {
+      modelInfo[`${architecture.name}.attention.head_count`] = architecture.headCount
+    }
+    if (architecture.headCountKv !== undefined) {
+      modelInfo[`${architecture.name}.attention.head_count_kv`] = architecture.headCountKv
+    }
+    if (architecture.keyLength !== undefined) {
+      modelInfo[`${architecture.name}.attention.key_length`] = architecture.keyLength
+    }
+    if (architecture.embeddingLength !== undefined) {
+      modelInfo[`${architecture.name}.embedding_length`] = architecture.embeddingLength
+    }
+  }
+  return {
+    ...(evidence.capabilities === undefined ? {} : { capabilities: evidence.capabilities }),
+    ...(evidence.contextLength === undefined
+      ? {}
+      : { details: { context_length: evidence.contextLength } }),
+    ...(Object.keys(modelInfo).length === 0 ? {} : { model_info: modelInfo }),
+  }
+}
+
+function freshFromRecord(
+  record: InstalledEvidenceCacheRecord,
+  source: 'process_cache' | 'persistent_cache',
+): ModelEvidenceFreshness {
+  return {
+    state: 'fresh',
+    source,
+    observedAt: record.observedAt,
+    validatedAt: record.validatedAt,
+    expiresAt: record.expiresAt,
+    offline: false,
+  }
+}
+
+function staleFromRecord(record: InstalledEvidenceCacheRecord): ModelEvidenceFreshness {
+  return {
+    state: 'stale',
+    source: 'persistent_cache',
+    observedAt: record.observedAt,
+    validatedAt: record.validatedAt,
+    expiresAt: record.expiresAt,
+    staleUntil: record.staleUntil,
+    offline: true,
+  }
+}
+
+class DetailWorkerPool {
+  private active = 0
+  private readonly waiters: Array<{
+    signal: AbortSignal
+    start: () => void
+    reject: (error: unknown) => void
+    cleanup: () => void
+  }> = []
+
+  async run<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    await new Promise<void>((resolve, reject) => {
+      let waiter: (typeof this.waiters)[number]
+      const onAbort = () => {
+        const index = this.waiters.indexOf(waiter)
+        if (index >= 0) this.waiters.splice(index, 1)
+        reject(new DOMException('Aborted', 'AbortError'))
+      }
+      waiter = {
+        signal,
+        start: () => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        },
+        reject,
+        cleanup: () => signal.removeEventListener('abort', onAbort),
+      }
+      if (signal.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'))
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      this.waiters.push(waiter)
+      this.drain()
+    })
+    try {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      return await operation()
+    } finally {
+      this.active -= 1
+      this.drain()
+    }
+  }
+
+  private drain(): void {
+    while (this.active < MODEL_SHOW_MAX_CONCURRENCY && this.waiters.length > 0) {
+      const waiter = this.waiters.shift()!
+      if (waiter.signal.aborted) {
+        waiter.cleanup()
+        waiter.reject(new DOMException('Aborted', 'AbortError'))
+        continue
+      }
+      this.active += 1
+      waiter.start()
+    }
+  }
+}
+
+interface DetailFlight {
+  controller: AbortController
+  promise: Promise<ModelDetailsObservation>
+  waiters: number
+  settled: boolean
 }
 
 async function mapConcurrent<Input, Output>(
@@ -329,57 +478,292 @@ export class ModelService {
   private readonly client: OllamaClient
   private readonly calibration: CalibrationStore
   private readonly hardware: HardwareInfo
+  private readonly evidenceCache: InstalledEvidenceCacheStore
+  private readonly now: () => number
+  private readonly detailWorkers = new DetailWorkerPool()
+  private readonly detailFlights = new Map<string, DetailFlight>()
   /** One retained digest per normalized reference, with a bounded LRU across references. */
   private readonly showCache = new Map<
     string,
-    { digest: string; details: OllamaShowResponse; observedAt: string }
+    { identity: InstalledEvidenceCacheIdentity; record: InstalledEvidenceCacheRecord }
   >()
 
-  constructor(client: OllamaClient, calibration: CalibrationStore, hardware: HardwareInfo) {
+  constructor(
+    client: OllamaClient,
+    calibration: CalibrationStore,
+    hardware: HardwareInfo,
+    evidenceCache?: InstalledEvidenceCacheStore,
+    now: () => number = Date.now,
+  ) {
     this.client = client
     this.calibration = calibration
     this.hardware = hardware
+    this.evidenceCache = evidenceCache ?? new InstalledEvidenceCacheStore(calibration.database)
+    this.now = now
   }
 
   private async modelDetails(
     name: string,
     digest: string,
+    runtimeVersion: string | null,
     signal?: AbortSignal,
   ): Promise<ModelDetailsObservation> {
     const normalized = normalizeOllamaModelReference(name)
     if (!normalized) {
+      const observedAt = new Date(this.now()).toISOString()
       return {
         state: 'unavailable',
         reason: 'provider_unavailable',
-        observedAt: new Date().toISOString(),
+        observedAt,
+        freshness: unknownFreshness('identity_unavailable', observedAt, false),
       }
     }
+    if (digest.trim().length === 0 || runtimeVersion === null) {
+      try {
+        const details = await this.detailWorkers.run(
+          signal ?? new AbortController().signal,
+          () => this.client.show(name, signal),
+        )
+        const observedAt = new Date(this.now()).toISOString()
+        return {
+          state: 'available',
+          details,
+          observedAt,
+          freshness: unknownFreshness('identity_unavailable', observedAt, false),
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error
+        const observedAt = new Date(this.now()).toISOString()
+        return {
+          state: 'unavailable',
+          reason: 'provider_unavailable',
+          observedAt,
+          freshness: unknownFreshness('provider_unavailable', observedAt, true),
+        }
+      }
+    }
+    const identity: InstalledEvidenceCacheIdentity = {
+      provider: 'ollama',
+      normalizedModelReference: normalized,
+      artifactDigest: digest,
+      runtimeVersion,
+    }
     const cached = this.showCache.get(normalized)
-    if (cached?.digest === digest) {
+    const processRead = cached && installedEvidenceCacheKey(cached.identity) === installedEvidenceCacheKey(identity)
+      ? this.evidenceCache.read(identity, this.now())
+      : { state: 'miss' as const }
+    if (cached && processRead.state === 'fresh') {
       this.showCache.delete(normalized)
       this.showCache.set(normalized, cached)
-      return { state: 'available', ...cached }
+      return {
+        state: 'available',
+        details: showFromSafeEvidence(processRead.record.evidence),
+        observedAt: processRead.record.observedAt,
+        freshness: freshFromRecord(processRead.record, 'process_cache'),
+      }
     }
     if (cached) this.showCache.delete(normalized)
 
-    try {
-      const shown = await this.client.show(name, signal)
-      const observedAt = new Date().toISOString()
-      const observation = { state: 'available' as const, details: shown, observedAt }
-      this.showCache.set(normalized, { digest, details: shown, observedAt })
-      while (this.showCache.size > MODEL_SHOW_CACHE_MAX_ENTRIES) {
-        const oldest = this.showCache.keys().next().value
-        if (oldest === undefined) break
-        this.showCache.delete(oldest)
+    const durable = this.evidenceCache.read(identity, this.now())
+    if (durable.state === 'fresh') {
+      this.retainProcessRecord(normalized, identity, durable.record)
+      return {
+        state: 'available',
+        details: showFromSafeEvidence(durable.record.evidence),
+        observedAt: durable.record.observedAt,
+        freshness: freshFromRecord(durable.record, 'persistent_cache'),
       }
-      return observation
+    }
+
+    const flightKey = installedEvidenceCacheKey(identity)
+    let flight = this.detailFlights.get(flightKey)
+    if (!flight) {
+      const controller = new AbortController()
+      const created: DetailFlight = {
+        controller,
+        waiters: 0,
+        settled: false,
+        promise: Promise.resolve(null as never),
+      }
+      created.promise = this.detailWorkers
+        .run(controller.signal, () => this.collectModelDetails(name, identity, controller.signal))
+        .finally(() => {
+          created.settled = true
+          this.detailFlights.delete(flightKey)
+        })
+      // A caller may detach before provider cleanup settles. This prevents an
+      // intentionally unobserved owned abort from becoming an unhandled rejection.
+      void created.promise.catch(() => {})
+      this.detailFlights.set(flightKey, created)
+      flight = created
+    }
+    return this.waitForDetailFlight(flight, signal, durable)
+  }
+
+  private async collectModelDetails(
+    name: string,
+    identity: InstalledEvidenceCacheIdentity,
+    signal: AbortSignal,
+  ): Promise<ModelDetailsObservation> {
+    let shown: OllamaShowResponse
+    let observedAt: string
+    try {
+      shown = await this.client.show(name, signal)
+      observedAt = new Date(this.now()).toISOString()
     } catch (error) {
-      if (signal?.aborted) throw error
+      if (signal.aborted) throw error
       return {
         state: 'unavailable',
         reason: 'provider_unavailable',
-        observedAt: new Date().toISOString(),
+        observedAt: new Date(this.now()).toISOString(),
+        freshness: unknownFreshness('provider_unavailable', null, true),
       }
+    }
+
+    const safeEvidence = safeInstalledEvidenceFromProvider(shown)
+    const rawCapabilitiesReported = shown.capabilities !== undefined
+    const rawContextReported =
+      shown.details?.context_length !== undefined ||
+      Object.keys(shown.model_info ?? {}).some((key) => key.endsWith('.context_length'))
+    if (
+      (rawCapabilitiesReported && safeEvidence.capabilities === undefined) ||
+      (rawContextReported && safeEvidence.contextLength === undefined)
+    ) {
+      return {
+        state: 'available',
+        details: shown,
+        observedAt,
+        freshness: unknownFreshness('provider_malformed', observedAt, false),
+      }
+    }
+
+    let after
+    let afterRuntimeVersion
+    try {
+      ;[after, afterRuntimeVersion] = await Promise.all([
+        this.client.tags(signal),
+        this.client.version(signal),
+      ])
+    } catch (error) {
+      if (signal.aborted) throw error
+      return {
+        state: 'unavailable',
+        reason: 'provider_unavailable',
+        observedAt,
+        freshness: unknownFreshness('provider_unavailable', observedAt, true),
+      }
+    }
+    const exactAfter = after.models.filter(
+      (entry) => normalizeOllamaModelReference(entry.name) === identity.normalizedModelReference,
+    )
+    if (
+      exactAfter.length !== 1 ||
+      exactAfter[0]!.digest !== identity.artifactDigest ||
+      afterRuntimeVersion !== identity.runtimeVersion
+    ) {
+      return {
+        state: 'unavailable',
+        reason: 'artifact_identity_changed',
+        observedAt,
+        freshness: unknownFreshness('identity_changed', observedAt, false),
+      }
+    }
+
+    const validatedAt = new Date(this.now()).toISOString()
+    const record = this.evidenceCache.write({
+      identity,
+      evidence: safeEvidence,
+      observedAt,
+      fetchedAt: observedAt,
+      validatedAt,
+      freshTtlMs: INSTALLED_EVIDENCE_FRESH_TTL_MS,
+      staleWindowMs: INSTALLED_EVIDENCE_STALE_WINDOW_MS,
+    })
+    this.retainProcessRecord(identity.normalizedModelReference, identity, record)
+    return {
+      state: 'available',
+      details: showFromSafeEvidence(safeEvidence),
+      observedAt,
+      freshness: {
+        state: 'fresh',
+        source: 'provider',
+        observedAt,
+        validatedAt,
+        expiresAt: record.expiresAt,
+        offline: false,
+      },
+    }
+  }
+
+  private waitForDetailFlight(
+    flight: DetailFlight,
+    signal: AbortSignal | undefined,
+    fallback: ReturnType<InstalledEvidenceCacheStore['read']>,
+  ): Promise<ModelDetailsObservation> {
+    flight.waiters += 1
+    let detached = false
+    const detach = () => {
+      if (detached) return
+      detached = true
+      flight.waiters -= 1
+      if (!flight.settled && flight.waiters === 0) flight.controller.abort('all-callers-left')
+    }
+    const providerResult = flight.promise.then((result) => {
+      if (
+        result.state === 'unavailable' &&
+        result.reason === 'provider_unavailable' &&
+        fallback.state === 'stale'
+      ) {
+        return {
+          state: 'available' as const,
+          details: showFromSafeEvidence(fallback.record.evidence),
+          observedAt: fallback.record.observedAt,
+          freshness: staleFromRecord(fallback.record),
+        }
+      }
+      if (
+        result.state === 'unavailable' &&
+        result.reason === 'provider_unavailable' &&
+        fallback.state === 'expired'
+      ) {
+        return {
+          ...result,
+          freshness: unknownFreshness('cache_expired', fallback.record.observedAt, true),
+        }
+      }
+      return result
+    })
+    let removeAbortListener: (() => void) | undefined
+    const waited = signal
+      ? Promise.race([
+          providerResult,
+          new Promise<never>((_resolve, reject) => {
+            const abort = () => reject(new DOMException('Aborted', 'AbortError'))
+            if (signal.aborted) abort()
+            else {
+              signal.addEventListener('abort', abort, { once: true })
+              removeAbortListener = () => signal.removeEventListener('abort', abort)
+            }
+          }),
+        ])
+      : providerResult
+    return waited.finally(() => {
+      removeAbortListener?.()
+      detach()
+    })
+  }
+
+  private retainProcessRecord(
+    normalized: string,
+    identity: InstalledEvidenceCacheIdentity,
+    record: InstalledEvidenceCacheRecord,
+  ): void {
+    this.showCache.delete(normalized)
+    this.showCache.set(normalized, { identity, record })
+    while (this.showCache.size > MODEL_SHOW_CACHE_MAX_ENTRIES) {
+      const oldest = this.showCache.keys().next().value
+      if (oldest === undefined) break
+      this.showCache.delete(oldest)
     }
   }
 
@@ -496,10 +880,20 @@ export class ModelService {
                 reason: 'installed_reference_ambiguous' as const,
               }
         const shownObservation: ModelDetailsObservation = isCloud
-          ? { state: 'unavailable', reason: 'provider_unavailable', observedAt }
+          ? {
+              state: 'unavailable',
+              reason: 'provider_unavailable',
+              observedAt,
+              freshness: unknownFreshness('identity_unavailable', observedAt, false),
+            }
           : normalized && installedReferenceCounts.get(normalized) !== 1
-            ? { state: 'unavailable', reason: 'artifact_identity_ambiguous', observedAt }
-          : await this.modelDetails(entry.name, entry.digest, signal)
+            ? {
+                state: 'unavailable',
+                reason: 'artifact_identity_ambiguous',
+                observedAt,
+                freshness: unknownFreshness('identity_unavailable', observedAt, false),
+              }
+          : await this.modelDetails(entry.name, entry.digest, runtimeVersion, signal)
         const shown = shownObservation.state === 'available' ? shownObservation.details : null
         const info = shown?.model_info ?? null
         const contextLimit = contextLimitOf(
@@ -579,8 +973,9 @@ export class ModelService {
             state: 'unavailable',
             reason: 'artifact_identity_ambiguous',
             observedAt,
+            freshness: unknownFreshness('identity_unavailable', observedAt, false),
           }
-        : await this.modelDetails(name, entry.digest, signal)
+        : await this.modelDetails(name, entry.digest, runtimeVersion, signal)
     const shown = shownObservation.state === 'available' ? shownObservation.details : null
     const info = shown?.model_info ?? null
     const isCloud = isCloudModel(name)
@@ -663,7 +1058,10 @@ export class ModelService {
 
   /** Returns only provider-declared evidence; absence remains explicitly unknown. */
   async contextLimit(name: string, signal?: AbortSignal): Promise<ModelContextLimit | null> {
-    const tags = await this.client.tags(signal)
+    const [tags, runtimeVersionObservation] = await Promise.all([
+      this.client.tags(signal),
+      this.runtimeVersionObservation(signal),
+    ])
     const exactEntries = tags.models.filter((model) => model.name === name)
     if (exactEntries.length !== 1) return null
     const entry = exactEntries[0]!
@@ -673,8 +1071,14 @@ export class ModelService {
           state: 'unavailable',
           reason: 'provider_unavailable',
           observedAt: tagsObservedAt,
+          freshness: unknownFreshness('identity_unavailable', tagsObservedAt, false),
         }
-      : await this.modelDetails(name, entry.digest, signal)
+      : await this.modelDetails(
+          name,
+          entry.digest,
+          runtimeVersionObservation.version,
+          signal,
+        )
     return contextLimitOf(
       entry,
       shownObservation.state === 'available' ? shownObservation.details : null,
