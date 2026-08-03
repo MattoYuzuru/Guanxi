@@ -7,8 +7,8 @@
 
 На 2026-08-03:
 
-- `npm test`: 210/210 server/CLI и 27/27 web component/parser tests;
-- `npm run test:web:browser`: 10/10 deterministic Chromium tests с mocked
+- `npm test`: 210/210 server/CLI и 37/37 web component/parser tests;
+- `npm run test:web:browser`: 14/14 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
@@ -17,7 +17,8 @@
   `health → installed → create → redirect → send → multi-phase stream → done →
   hard reload` с persisted terminal projection, а также P0-A Error Boundaries,
   P0-B failed-partial/unreconciled/Stop reload, connect timeout, missing
-  `done:true` и P1-D navigation detach/reattach через durable Job replay;
+  `done:true`, P1-D navigation detach/reattach через durable Job replay и P1-J
+  resource conflict Queue/Stop decisions;
 - browser assertions управляют mocked headers/chunks без произвольных sleeps и
   проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
   horizontal overflow, 200% scaling и reduced motion;
@@ -52,6 +53,13 @@
 - P1-I fake timers покрывают initial request, active/queued 2 s, idle 10 s,
   no-overlap, hidden pause, visible immediate refresh, bounded manual retry,
   stale sample preservation, unmount abort и отсутствие retained timer/listener;
+- P1-J component fixtures покрывают no-conflict one-command path, exact active
+  Job и multiple FIFO facts, safe Queue default, one UUID key across explicit
+  retry, fresh owner revalidation, `cancelling → cancelled`, already-terminal,
+  operation/stale/changed owner, cancel/transport failure и unmount caller abort.
+  Dialog tests проверяют named description, initial Queue focus, Escape/Back,
+  focus trap/restore, inert background, polling update without focus steal,
+  Russian copy и English fallback;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -102,6 +110,14 @@
   recovery двумя manual Retry, подтверждает отсутствие cancel/stop/unload,
   bottom placement, 390 px, 200% scaling, no horizontal overflow и reduced
   motion;
+- 10 P1-J component cases проходят в составе 37/37 Web; четыре новых Chromium
+  cases буквально выполняют Queue через Enter, повторное открытие/double click,
+  exact Job Stop с terminal acknowledgement, operation/unknown disabled Stop и
+  redacted cancel failure с explicit retry. Они также проверяют отсутствие
+  resource action при Escape/navigation, 390 px, 200%, focus containment/
+  restore, inert background, no horizontal overflow и reduced motion;
+- P1-J dialog file повторён 10× по 10/10, P1-I polling file — 10× по 3/3,
+  полный P1-E recovery file — 10× по 8/8;
 - P1-G исправил flaky ожидание P1-E fixture на канонический
   `(createdAt, jobId)` order; узкий recovered FIFO case повторён 10/10;
 - CI/lint/formatter commands отсутствуют;
@@ -111,7 +127,7 @@
   P1-D navigation/detach/reload gate.
 
 Baseline локально подтверждает поведение P0-A/P0-B/P0-C/P0-D/P0-E и
-P1-A–P1-H на временной SQLite, управляемом fake `OllamaClient` transport и
+P1-A–P1-J на временной SQLite, управляемом fake `OllamaClient` transport и
 mocked browser REST/SSE. P1-F доказывает typed one-lane admission только для
 Chat, compaction и warm/load одного application composition; он не подтверждает
 Ollama scheduler, multi-process/external-client safety или production use. P1-G
@@ -120,8 +136,10 @@ reconciliation: exact active reference match, unknown ownership и bounded
 single-flight; он не идентифицирует external client и не меняет admission.
 P1-H добавляет deterministic fake-runner evidence для host source states,
 sampling bound и current-fit semantics; это не live hardware validation. P1-I
-доказывает только read-only Web projection и query polling над mocked snapshots,
-не continuous observation и не resource actions.
+доказывает read-only Web projection и query polling над mocked snapshots. P1-J
+доказывает Queue и exact Job cancel/acknowledge action поверх sampled query и
+canonical server admission; он не делает snapshot client-side lock, не
+гарантирует future fit и не идентифицирует unknown/external owner.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -142,6 +160,10 @@ process lock. P0-D health остаётся sampled observation; обязател
   effects; malformed typed Chat state намеренно блокирует healthy startup;
 - обязательный suite не проверяет live hardware или live Ollama; observed-fit
   branch использует достаточный injected Apple fixture.
+- P1-J Stop зависит от доступности fresh sampled Runtime/public Job query; при
+  stale, changed или unknown owner действие fail-closed. Full Jobs history,
+  continuous observation, safe parallel, prewarm и multi-process coordination
+  остаются вне current implementation.
 
 ## Существующее покрытие
 
@@ -159,14 +181,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                              |
 | Static web serving                 | test                               |
 | CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/P0-B/P0-D/P0-E/P1-I component |
-| Browser streaming/reload           | P0-A/P0-B/P0-E/P1-I mocked flows   |
+| React render/navigation            | P0-A/B/D/E + P1-I/J component      |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J mocked flows     |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P1-G sampled reconcile + P1-F lane |
 | Job replay/reattach                | HTTP SSE; browser durable replay   |
 | Chat startup recovery              | reopened SQLite, fail-closed pages |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web     |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I Chromium smoke   |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J Chromium smoke |
 
 ## Обязательная target matrix
 

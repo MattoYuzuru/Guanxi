@@ -37,8 +37,9 @@ exit gate ROADMAP проверен целиком.
 | P1-G Runtime `/api/ps` reconciliation   | independently verified | `b8328bd`, `bd0d7a1`, `40a0de7`, `f53a868`; 82 targeted, all gates  |
 | P1-H Apple host telemetry/current fit   | independently verified | `df4d156`..`66c23c0`; 92 targeted, all gates                        |
 | P1-I Read-only Runtime Bar projection   | independently verified | `6c297ce`..`11e516b`; 13 component, 10 browser, all gates           |
+| P1-J Resource conflict/queue action UX  | independently verified | `2e8dc47`, `dc3f992`; 10 component, 4 browser, all gates            |
 
-P1-A–P1-I реализуют additive contract, migrations 4–5, canonical state CAS,
+P1-A–P1-J реализуют additive contract, migrations 4–5, canonical state CAS,
 persisted-first `JobService`, public create/query/replay/cancel API и один
 process-local Chat execution owner. Current Chat command атомарно создаёт Job и
 Message pair, переживает subscriber disconnect и reattach-ится из SQLite. P1-E
@@ -50,8 +51,9 @@ unload защищён active owner, close прекращает admission и ос
 P1-G добавляет один sampled `/api/ps` reconciliation service и public
 `GET /api/runtime`. P1-H добавляет shared Apple host sample и truthful
 observed/unknown current-fit explanation. P1-I добавляет persistent read-only
-Runtime Bar; prewarm и resource action UX ещё не реализованы, поэтому Phase 1
-остаётся `in progress`.
+Runtime Bar. P1-J добавляет safe Queue и exact Job Stop/cancel acknowledgement
+для Chat conflict; prewarm и другие remaining exit-gate slices ещё не
+реализованы, поэтому Phase 1 остаётся `in progress`.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -156,6 +158,47 @@ manual retry/recovery, navigation persistence, 390 px, 200% scaling, no
 horizontal overflow и reduced motion. Live hardware/Ollama, continuous
 observation, future admission fit, external-client identity, multi-process
 safety и resource actions не проверялись и не реализованы.
+
+P1-J evidence: один persistent `RuntimeProvider` владеет P1-I polling и делится
+single-flight refresh с Chat; второй loop/timer/listener не создаётся, а abort
+dialog/unmount прекращает только caller wait. Composer создаёт один UUID intent
+до resource query. No-conflict и safe default Queue вызывают существующий Chat
+command не более одного раза; transport retry повторно использует тот же key и
+dialog закрывается только после принятия HTTP/SSE command. Server Governor
+остаётся canonical admission/FIFO owner; same-model conflict не получает
+Parallel/future-fit обещание.
+
+Dialog показывает только typed active operation/model/owner kind/context и FIFO
+position. Exact fresh Job Stop повторно запрашивает Runtime, сверяет тот же
+`jobId`, читает public Job, вызывает один cancel и bounded ждёт
+`cancelling → terminal`; already-terminal сразу допускает один dispatch.
+Operation/unknown/stale/changed owner, unavailable verification и cancel failure
+не приводят к guessed cancel или hidden dispatch. Errors локализованы и не
+раскрывают endpoint/body/path/private input. Queue initial focus, Escape/Back,
+Tab containment, inert background, focus restore, polling without focus steal,
+390 px, 200%, no horizontal overflow и reduced motion проверены.
+
+Локально прошли 92/92 P1-A–P1-H, 28/28 route/Governor/concurrency,
+19/19 runtime/provider, 19/19 fit/telemetry, 210/210 server/CLI, 37/37 Web и
+14/14 mocked Chromium, а также typecheck, build, markdownlint и diff check.
+Новый dialog file повторён 10× по 10/10, P1-I polling — 10× по 3/3, полный P1-E
+recovery — 10× по 8/8.
+
+Первые новые browser fixtures дали 2/4: composer focus не возвращался, потому
+что control становился disabled до захвата active element; cancel retry fixture
+ошибочно делал Job terminal после неуспешного cancel. Explicit return-focus ref
+и accepted-cancel fixture исправили причины, после чего 4/4 и полный 14/14
+стабильно прошли. Первый repeat Vitest был ошибочно запущен из repository root
+без Web jsdom config и дал `document is not defined`; повтор из
+`packages/web` прошёл 10×. Одна post-change пакетная Node попытка также была
+невалидной: устаревшие `.mjs` paths попали одним аргументом. Точные команды из
+handoff с `.ts` затем дали 92/92, 28/28, 19/19 и 19/19. Это command-scope/
+fixture failures, не скрытые product regressions.
+
+Не проверены live Ollama/hardware, continuous observations, production pressure/
+available-memory, safe parallel/future admission, external-client identity и
+multi-process safety. Prewarm, full Jobs history и generic resource actions не
+реализованы.
 
 ## Later phases
 

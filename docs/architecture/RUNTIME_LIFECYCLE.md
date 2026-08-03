@@ -220,6 +220,33 @@ alert и не показывает raw endpoint/body. `models: []` остаёт�
 `models: null` — source failure. Narrow shell держит bar последним flex-элементом,
 поэтому bottom-sheet-like disclosure не перекрывает main content.
 
+### P1-J resource conflict decision
+
+`RuntimeProvider` сохраняет один P1-I poller на уровне shell. Chat send intent
+получает UUID до resource check и делает bounded fresh query через тот же
+single-flight. Active lease или уже ожидающий FIFO ticket открывает dialog;
+иначе intent один раз передаётся существующему Chat POST. UI sample не является
+lock: canonical admission и порядок остаются у server `ResourceGovernor`.
+
+`Queue after current` — safe default. Она отправляет ровно тот же intent/key и
+не вызывает cancel, stop либо unload. Dialog закрывается только после HTTP
+command acceptance; transport failure оставляет draft/intent для явного retry.
+Back, Escape, route change и unmount не выполняют resource command.
+
+`Stop current and switch` доступен только для fresh exact
+`{ kind: "job", jobId }`. Перед mutation Web запрашивает новый Runtime sample,
+сверяет тот же owner, читает public Job и вызывает один typed cancel. Новый Chat
+dispatch разрешён только если Job уже terminal либо cancel acknowledgement
+достиг terminal через bounded public Job polling. Changed, stale, unavailable,
+operation или unknown owner fail-closed; их IDs не угадываются и не выводятся
+как title. Abort dialog wait не отменяет shared Runtime request или active Job.
+
+Dialog показывает только contract operation/model/owner kind/context/FIFO
+position, без private input и durable-history claim. Localized safe errors не
+включают raw endpoint/provider body/path. Portal обеспечивает named description,
+Queue initial focus, Escape, Tab containment, inert background, focus restore,
+один content scroll и responsive actions.
+
 ### P0-D sampled health и provider deadlines
 
 Application health подтверждается ответом собственного HTTP route и не зависит
@@ -468,7 +495,7 @@ WebSocket нужен только если duplex live-audio latency это по
 
 ## Resource Governor
 
-### Current P1-F/P1-G/P1-H policy
+### Current P1-F–P1-J policy
 
 - один active process-local accelerator lease;
 - один supported priority `normal`, FIFO без preemption;
@@ -822,9 +849,10 @@ type RuntimeSnapshot = {
 };
 ```
 
-Host source states, facts, per-model current fit и P1-I read-only Runtime Bar
-реализованы. Production pressure/available memory, durable observations и
-resource actions ещё не реализованы. Target projection остаётся шире:
+Host source states, facts, per-model current fit, P1-I read-only Runtime Bar и
+P1-J bounded Queue/exact Job Stop action реализованы. Production pressure/
+available memory, durable observations, safe parallel, prewarm и full resource
+actions/history ещё не реализованы. Target projection остаётся шире:
 
 Runtime projection:
 
@@ -868,7 +896,9 @@ P1-D добавил durable Chat execution/detach/reattach, P1-E — bounded sta
 reconciliation, P1-F — typed process-local Governor admission/lease foundation,
 P1-G — query-time `/api/ps` reconciliation и additive `GET /api/runtime`, P1-H —
 sampled Apple host facts и observed/unknown current-fit explanation, P1-I —
-read-only persistent Runtime Bar с bounded adaptive polling. Production
-pressure/available-memory source и resource action UX остаются target.
+read-only persistent Runtime Bar с bounded adaptive polling, P1-J — sampled
+conflict decision с safe Queue и exact Job cancel acknowledgement. Production
+pressure/available-memory source, safe parallel и другие resource actions
+остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

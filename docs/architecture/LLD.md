@@ -167,21 +167,29 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `lib/api.ts`: REST, compatibility POST/SSE и canonical Job GET/GET SSE/cancel;
 - `lib/sse.ts`: frame parser с Chat `seq` и Job `sequence` cursor;
 - `lib/locale.ts`: locale keys для boundary с English fallback/Russian;
+- `features/health/RuntimeContext.tsx`: один persistent shell owner shared
+  Runtime projection;
 - `features/health/RuntimeStatus.tsx`: typed read-only lease/FIFO/runtime-model/
   host/current-fit projection с compact disclosure и feature containment;
 - `features/health/useRuntimePolling.ts`: один abortable HTTP wait, один timer,
-  active/queued 2 s, idle 10 s, hidden pause и visible refresh без overlap;
-- `features/chat/useChat.ts`: page projection, per-send UUID key и durable Job
-  discovery/reattach;
+  active/queued 2 s, idle 10 s, hidden pause, visible refresh без overlap и
+  caller-scoped fresh wait без abort shared request;
+- `features/chat/useChat.ts`: page projection, caller-supplied per-send UUID key,
+  HTTP command acceptance и durable Job discovery/reattach;
+- `features/chat/ResourceConflictDecision.tsx`: sampled conflict state machine,
+  safe Queue default, exact Job revalidation/cancel/terminal acknowledgement,
+  bounded own reads и localized accessible dialog;
 - `features/chat/streamBuffer.ts`: rAF-buffered content/thinking;
-- `features/chat/ChatPage.tsx`: create, timeline, composer, context/tool UI;
+- `features/chat/ChatPage.tsx`: create, timeline, composer, context/tool UI и
+  one-intent conflict dispatch boundary;
 - `features/launcher`/`models`: installed/catalog/profile;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields.
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
-  terminal/error/reload, P0-D health и P1-I Runtime Bar/polling regression;
-  browser использует deterministic mocked REST/SSE/runtime snapshots.
+  terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
+  conflict/TOCTOU/idempotency/accessibility regression; browser использует
+  deterministic mocked REST/SSE/runtime snapshots.
 
 ### `packages/cli`
 
@@ -252,6 +260,14 @@ Refresh не очищает confirmed sample. Navigation/unmount отменяе�
 HTTP wait; resource action не вызывается. Compatibility route и contract
 остаются для старых clients.
 
+P1-J сохраняет один poller в `RuntimeProvider`; on-demand `refresh(..., true)`
+либо делит pending request, либо после него делает один новый sample. Abort
+dialog caller прекращает только его wait. Composer создаёт intent UUID до
+проверки и повторно использует его при explicit Queue retry. Exact Stop делает
+fresh Runtime verify, `GET Job`, не более одного `POST cancel`, bounded terminal
+poll и затем не более одного Chat POST. Stale/operation/unknown/changed owner не
+отменяется. Серверный Governor остаётся единственным admission/FIFO owner.
+
 Current admission request фиксирует owner (`jobId` либо process-local operation
 ID), `chat | compaction | model_warm`, exact Ollama model name, requested context,
 priority `normal` и enqueue time. Ticket проходит `queued → active → released`
@@ -259,8 +275,8 @@ priority `normal` и enqueue time. Ticket проходит `queued → active �
 только live queue, одну active lease и одну последнюю decision, поэтому
 diagnostics не растут с числом завершённых operations. P1-H сохраняет только
 один pending reconciliation Promise и не хранит observations. Migration 6 для
-P1-F/P1-G/P1-H не нужна: canonical queue intent уже находится в Job, а transient
-lease journal и durable runtime cache не вводились.
+P1-F–P1-J не нужна: canonical queue intent уже находится в Job, а transient
+lease journal, durable runtime cache и client-side resource lock не вводились.
 
 ## Target module boundaries
 

@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P0-E с mocked REST/SSE  |
+| `test:web:browser` | deterministic Chromium P0-A–P1-J с mocked REST/SSE  |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -96,6 +96,13 @@ npm run link:cli
   refresh-ится после `visible`. Route change component не unmount-ит и не
   вызывает Job cancel, model stop или unload. Failed refresh сохраняет последний
   confirmed sample с явной stale/error меткой.
+- P1-J переносит этот poller в один persistent `RuntimeProvider`. Chat dispatch
+  делает bounded fresh read через общий single-flight, но не создаёт второй
+  polling loop. При active lease/FIFO predecessor safe default отправляет тот же
+  Chat command с заранее созданным UUID key; destructive Stop разрешён только
+  для fresh exact Job owner, повторно сверяет owner и public Job state, вызывает
+  один cancel и ждёт terminal acknowledgement перед единственным dispatch.
+  Operation/unknown/stale/changed owner никогда не угадывается и не отменяется.
 
 ## Карта current-state
 
@@ -156,19 +163,23 @@ npm run link:cli
 - `lib/api.ts` — typed REST, Chat POST/SSE и Job query/replay/cancel calls;
 - `lib/sse.ts` — Chat `seq`/Job `sequence` parser;
 - `lib/locale.ts` — English fallback и curated Russian для новых boundary strings;
-- `features/health/RuntimeStatus.tsx` — read-only lease/FIFO/models/host/fit
-  projection; `useRuntimePolling.ts` — bounded adaptive polling/visibility owner;
+- `features/health/RuntimeContext.tsx` — persistent shared Runtime projection;
+  `RuntimeStatus.tsx` — read-only lease/FIFO/models/host/fit projection;
+  `useRuntimePolling.ts` — bounded adaptive polling/visibility owner и
+  caller-scoped fresh wait без отмены shared request;
 - `features/launcher` и `features/models` — installed/catalog/profile;
-- `features/chat` — creation, timeline, composer, UUID command key и durable Job
-  discovery/reattach state;
+- `features/chat` — creation, timeline, composer, UUID command key, durable Job
+  discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
+  command key; Stop использует только typed Runtime/public Job query/cancel;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
-- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I projection,
-  accessibility и fake-timer polling regression;
+- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J projection,
+  accessibility, conflict races/idempotency и fake-timer polling regression;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
-  и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation,
-  narrow viewport, 200% scaling и reduced motion.
+  и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
+  P1-J literal Queue/Stop/unsupported/failure flows, narrow viewport, 200%
+  scaling и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
   health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и
@@ -186,7 +197,9 @@ npm run link:cli
   parser/source states, failure independence, shared call count, Governor
   linearization и observed/unknown fit fixtures; P1-I — contract-round-tripped
   Web states, inventory, adaptive polling cleanup, feature containment и mocked
-  navigation/recovery projection.
+  navigation/recovery projection; P1-J — typed API inventory, exact owner/TOCTOU,
+  cancel acknowledgement, command acceptance/key reuse, focus/inert/keyboard,
+  retry и responsive browser flows.
 
 ### CLI
 

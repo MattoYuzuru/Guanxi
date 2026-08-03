@@ -102,6 +102,12 @@ P1-I Web Runtime Bar выполняет bounded query polling: 2 s при active
 10 s idle, pause в hidden document и immediate refresh после visibility return.
 Он сохраняет confirmed sample при refresh failure и не владеет Job, lease,
 cancel, load или unload.
+P1-J поднимает этот poller в один persistent shell `RuntimeProvider`. Chat
+использует caller-scoped bounded fresh reads того же single-flight: Queue
+передаёт один command с canonical client UUID в server-owned FIFO, а Stop
+доступен только для повторно подтверждённого exact Job owner и вызывает public
+Job cancel до terminal acknowledgement. Dialog/navigation не владеют lease и
+не отменяют shared polling либо active Job по unmount.
 
 ### As-is deployment
 
@@ -129,6 +135,7 @@ cancel, load или unload.
 | Static/dynamic host telemetry        | injected `HostTelemetry` adapter        | sampled, без history        |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
 | Runtime Bar HTTP wait/timer          | persistent Web shell component          | page memory, query-only     |
+| Pending Chat conflict intent         | Chat decision component                 | page memory, one UUID key   |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
 | Loaded model                         | Ollama                                  | external runtime            |
@@ -157,6 +164,8 @@ cancel, load или unload.
    continuous truth, future admission guarantee или remote-host telemetry.
 10. Catalog не имеет разрешённого live provider; local cache и bundled snapshot
    могут отставать.
+11. P1-J conflict decision использует sampled facts и fail-closed Stop; он не
+    является cross-process lock, future-admission guarantee или full Jobs UI.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 
