@@ -27,7 +27,8 @@ recovery. P1-F добавил typed process-local Resource Governor, P1-G — sh
 - P1-F Governor implementation/evidence: `a0bc047`, `ff96dc0`;
 - P1-G runtime reconciliation/compatibility: `b8328bd`, `bd0d7a1`, `40a0de7`,
   `f53a868`;
-- P1-H telemetry/fit/tests/docs: `df4d156`, `02acf72`, `a5df7c9`, `324e54a`;
+- P1-H telemetry/fit/tests/docs: `df4d156`, `02acf72`, `a5df7c9`, `324e54a`,
+  `66c23c0`;
 - P1-H status/handoff: commit непосредственно перед этим prompt.
 
 Не откатывай Error Boundaries, truthful Message terminal CAS, persisted
