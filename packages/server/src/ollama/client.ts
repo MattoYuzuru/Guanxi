@@ -154,6 +154,24 @@ const psResponseSchema = z.object({
   ),
 })
 
+const pullChunkSchema = z.union([
+  z
+    .object({
+      status: z.string().min(1),
+      error: z.never().optional(),
+      digest: z.string().min(1).optional(),
+      total: z.number().int().nonnegative().optional(),
+      completed: z.number().int().nonnegative().optional(),
+    })
+    .passthrough(),
+  z
+    .object({
+      error: z.string().min(1),
+      status: z.never().optional(),
+    })
+    .passthrough(),
+])
+
 export class OllamaClient {
   readonly host: string
   private readonly connectTimeoutMs: number
@@ -437,8 +455,16 @@ export class OllamaClient {
     })
   }
 
-  pull(name: string, signal?: AbortSignal): AsyncGenerator<OllamaPullChunk> {
-    return this.streamNdjson<OllamaPullChunk>('/api/pull', { model: name, stream: true }, signal)
+  async *pull(name: string, signal?: AbortSignal): AsyncGenerator<OllamaPullChunk> {
+    for await (const raw of this.streamNdjson<unknown>(
+      '/api/pull',
+      { model: name, stream: true },
+      signal,
+    )) {
+      const parsed = pullChunkSchema.safeParse(raw)
+      if (!parsed.success) throw new OllamaProtocolError('/api/pull')
+      yield parsed.data
+    }
   }
 
   chatStream(

@@ -1,20 +1,25 @@
 /**
  * Роуты моделей: список, каталог, профиль, установка, прогрев.
  */
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import {
   DEFAULT_NUM_CTX,
   completionProbeBody,
   getModelQuery,
   listCatalogQuery,
   listModelsQuery,
+  ollamaReferencePreviewBody,
+  ollamaReferenceStartBody,
   prewarmModelBody,
   warmModelBody,
-  type PullStreamEvent,
 } from '@alamo/contract'
 import type { AppContext } from '../context.ts'
 import { getCatalog } from '../models/catalog.ts'
-import { OllamaUnavailableError } from '../ollama/client.ts'
+import { pullModelEvents } from '../models/ollama-pull.ts'
+import {
+  normalizeOllamaReference,
+  OllamaReferenceError,
+} from '../models/ollama-reference.ts'
 import {
   RESOURCE_GOVERNOR_CLOSE_REASON,
   operationOwner,
@@ -84,6 +89,68 @@ export function modelsRoutes(app: AppContext): Hono {
     } catch (error) {
       return fail(context, error)
     }
+  })
+
+  routes.post('/imports/ollama-reference/preview', async (context) => {
+    const body = ollamaReferencePreviewBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) return invalidOllamaReferenceResponse(context)
+    try {
+      return context.json({ preview: normalizeOllamaReference(body.data.reference) })
+    } catch (error) {
+      if (error instanceof OllamaReferenceError) {
+        return invalidOllamaReferenceResponse(context, error.reason)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The Ollama reference could not be checked safely',
+          details: null,
+        },
+        500,
+      )
+    }
+  })
+
+  routes.post('/imports/ollama-reference/start', async (context) => {
+    const body = ollamaReferenceStartBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) return invalidOllamaReferenceResponse(context)
+
+    let normalizedModelName: string
+    try {
+      const preview = normalizeOllamaReference(body.data.reference)
+      normalizedModelName = preview.normalizedModelName
+      if (body.data.confirmedModelName !== normalizedModelName) {
+        return invalidOllamaReferenceResponse(context, 'confirmation_mismatch')
+      }
+    } catch (error) {
+      if (error instanceof OllamaReferenceError) {
+        return invalidOllamaReferenceResponse(context, error.reason)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The confirmed Ollama pull could not start safely',
+          details: null,
+        },
+        500,
+      )
+    }
+
+    const controller = new AbortController()
+    const events = connectionOwnedPullEvents(
+      app,
+      normalizedModelName,
+      context.req.raw.signal,
+      controller,
+    )
+    return sseResponse(
+      events,
+      { onAbort: () => controller.abort('ollama-reference-client-disconnected') },
+    )
   })
 
   routes.get('/:name{.+}', async (context) => {
@@ -262,72 +329,43 @@ export function modelsRoutes(app: AppContext): Hono {
   routes.post('/:name{.+}/pull', async (context) => {
     const name = decodeURIComponent(context.req.param('name'))
     const controller = new AbortController()
-    const client = app.ollama()
-
-    async function* events(): AsyncGenerator<PullStreamEvent> {
-      let seq = 0
-      const startedAt = Date.now()
-      let lastCompleted = 0
-
-      try {
-        for await (const chunk of client.pull(name, controller.signal)) {
-          if (chunk.error) {
-            yield {
-              type: 'error',
-              seq: seq++,
-              data: { code: 'upstream_error', message: chunk.error, details: null },
-            }
-            return
-          }
-
-          const total = chunk.total ?? null
-          const completed = chunk.completed ?? null
-          const elapsedSeconds = (Date.now() - startedAt) / 1000
-
-          // Скорость считаем от начала: мгновенная слишком дёргается на глаз.
-          const bytesPerSecond =
-            completed !== null && elapsedSeconds > 0 ? Math.round(completed / elapsedSeconds) : null
-
-          const remaining = total !== null && completed !== null ? total - completed : null
-          const etaSeconds =
-            remaining !== null && bytesPerSecond && bytesPerSecond > 0
-              ? Math.round(remaining / bytesPerSecond)
-              : null
-
-          if (completed !== null) lastCompleted = completed
-
-          yield {
-            type: 'progress',
-            seq: seq++,
-            data: {
-              status: chunk.status,
-              digest: chunk.digest ?? null,
-              totalBytes: total,
-              completedBytes: completed,
-              percent: total && completed !== null ? Math.round((completed / total) * 1000) / 10 : null,
-              bytesPerSecond,
-              etaSeconds,
-            },
-          }
-        }
-
-        void lastCompleted
-        yield { type: 'done', seq: seq++, data: { name } }
-      } catch (error) {
-        yield {
-          type: 'error',
-          seq: seq++,
-          data: {
-            code: error instanceof OllamaUnavailableError ? 'ollama_unavailable' : 'upstream_error',
-            message: error instanceof Error ? error.message : String(error),
-            details: null,
-          },
-        }
-      }
-    }
-
-    return sseResponse(events(), { onAbort: () => controller.abort() })
+    return sseResponse(
+      connectionOwnedPullEvents(app, name, context.req.raw.signal, controller),
+      { onAbort: () => controller.abort('legacy-pull-client-disconnected') },
+    )
   })
 
   return routes
+}
+
+async function* connectionOwnedPullEvents(
+  app: AppContext,
+  modelName: string,
+  requestSignal: AbortSignal,
+  controller: AbortController,
+) {
+  const abortFromRequest = () => controller.abort(
+    requestSignal.reason ?? 'pull-request-disconnected',
+  )
+  if (requestSignal.aborted) abortFromRequest()
+  else requestSignal.addEventListener('abort', abortFromRequest, { once: true })
+  try {
+    yield* pullModelEvents(app.ollama(), modelName, controller.signal)
+  } finally {
+    requestSignal.removeEventListener('abort', abortFromRequest)
+  }
+}
+
+function invalidOllamaReferenceResponse(
+  context: Context,
+  reason = 'invalid_request',
+): Response {
+  return context.json(
+    {
+      code: 'validation_failed',
+      message: 'The Ollama reference is invalid',
+      details: { reason },
+    },
+    400,
+  )
 }

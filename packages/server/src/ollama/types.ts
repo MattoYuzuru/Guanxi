@@ -126,7 +126,7 @@ export interface OllamaChatChunk {
 }
 
 export interface OllamaPullChunk {
-  status: string
+  status?: string
   digest?: string
   total?: number
   completed?: number

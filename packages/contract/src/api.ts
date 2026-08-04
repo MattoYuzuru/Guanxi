@@ -48,6 +48,8 @@ export const ROUTES = {
   modelPrewarm: (name: string) => `/api/models/${encodeURIComponent(name)}/prewarm`,
   modelCompletionProbe: (name: string) =>
     `/api/models/${encodeURIComponent(name)}/probes/completion`,
+  ollamaReferencePreview: () => '/api/models/imports/ollama-reference/preview',
+  ollamaReferenceStart: () => '/api/models/imports/ollama-reference/start',
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
@@ -262,6 +264,41 @@ export const completionProbeResponse = z
   })
   .strict()
 export type CompletionProbeResponse = z.infer<typeof completionProbeResponse>
+
+export const ollamaReferenceInputKindSchema = z.enum([
+  'model_name',
+  'official_page_url',
+])
+export type OllamaReferenceInputKind = z.infer<typeof ollamaReferenceInputKindSchema>
+
+export const ollamaReferencePreviewBody = z
+  .object({ reference: z.string().min(1) })
+  .strict()
+export type OllamaReferencePreviewBody = z.infer<typeof ollamaReferencePreviewBody>
+
+export const ollamaReferencePreviewSchema = z
+  .object({
+    inputKind: ollamaReferenceInputKindSchema,
+    displayValue: z.string().min(1),
+    normalizedModelName: z.string().min(1),
+  })
+  .strict()
+export type OllamaReferencePreview = z.infer<typeof ollamaReferencePreviewSchema>
+
+export const ollamaReferencePreviewResponse = z
+  .object({ preview: ollamaReferencePreviewSchema })
+  .strict()
+export type OllamaReferencePreviewResponse = z.infer<
+  typeof ollamaReferencePreviewResponse
+>
+
+export const ollamaReferenceStartBody = z
+  .object({
+    reference: z.string().min(1),
+    confirmedModelName: z.string().min(1),
+  })
+  .strict()
+export type OllamaReferenceStartBody = z.infer<typeof ollamaReferenceStartBody>
 
 /** POST /api/models/:name/pull → SSE (PullStreamEvent) */
 export const pullModelBody = z.object({
