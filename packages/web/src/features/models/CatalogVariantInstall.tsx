@@ -210,6 +210,7 @@ export function CatalogVariantInstall({
                   <button
                     type="button"
                     disabled={!selectable || active || compareFull}
+                    data-catalog-compare-target={variant.normalizedName ?? undefined}
                     aria-pressed={compared}
                     aria-label={`${compared ? translate('catalog.compare.remove') : translate('catalog.compare.add')} ${variant.normalizedName ?? variant.tag}`}
                     onClick={() => onToggleCompare(variant)}

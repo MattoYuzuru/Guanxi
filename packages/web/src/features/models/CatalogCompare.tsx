@@ -37,14 +37,30 @@ export function CatalogCompare({
   const [open, setOpen] = useState(false)
   const openRef = useRef<HTMLButtonElement>(null)
   const swapRef = useRef<HTMLButtonElement>(null)
+  const focusAfterRemoveRef = useRef<string | null>(null)
   const selected = useMemo(() => selectedTargets.flatMap((target) => {
     const row = rows.find((candidate) => candidate.variant.normalizedName === target)
     return row ? [row] : []
   }), [rows, selectedTargets])
 
   useEffect(() => {
-    if (selected.length !== 2) setOpen(false)
+    if (selected.length === 2) return
+    setOpen(false)
+    const target = focusAfterRemoveRef.current
+    focusAfterRemoveRef.current = null
+    if (target === null) return
+    queueMicrotask(() => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>(
+        '[data-catalog-compare-target]',
+      )].find((candidate) => candidate.dataset.catalogCompareTarget === target)
+      button?.focus()
+    })
   }, [selected.length])
+
+  const remove = (target: string) => {
+    focusAfterRemoveRef.current = selectedTargets.find((value) => value !== target) ?? null
+    onRemove(target)
+  }
 
   return (
     <>
@@ -82,7 +98,7 @@ export function CatalogCompare({
         </p>
         <div className="grid min-w-0 gap-3 md:grid-cols-2" aria-label={translate('catalog.compare.region')}>
           {selected.map((row) => (
-            <CompareColumn key={row.variant.normalizedName} row={row} onRemove={onRemove} />
+            <CompareColumn key={row.variant.normalizedName} row={row} onRemove={remove} />
           ))}
         </div>
         <p className="mt-3 text-2xs text-[var(--fg-subtle)]">

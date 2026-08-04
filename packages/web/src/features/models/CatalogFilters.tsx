@@ -166,10 +166,16 @@ export function CatalogFilters({
             </label>
             <UnknownToggle
               checked={value.contextUnknown}
-              onChange={(checked) => onChange({
-                ...value, contextUnknown: checked,
-                minClaimedContext: checked ? undefined : value.minClaimedContext,
-              })}
+              onChange={(checked) => {
+                if (checked) {
+                  setContextDraft('')
+                  setContextError(false)
+                }
+                onChange({
+                  ...value, contextUnknown: checked,
+                  minClaimedContext: checked ? undefined : value.minClaimedContext,
+                })
+              }}
             />
             {contextError ? <ValidationError /> : null}
           </fieldset>
@@ -199,10 +205,16 @@ export function CatalogFilters({
             </label>
             <UnknownToggle
               checked={value.artifactSizeUnknown}
-              onChange={(checked) => onChange({
-                ...value, artifactSizeUnknown: checked,
-                maxClaimedArtifactSize: checked ? undefined : value.maxClaimedArtifactSize,
-              })}
+              onChange={(checked) => {
+                if (checked) {
+                  setSizeDraft('')
+                  setSizeError(false)
+                }
+                onChange({
+                  ...value, artifactSizeUnknown: checked,
+                  maxClaimedArtifactSize: checked ? undefined : value.maxClaimedArtifactSize,
+                })
+              }}
             />
             {sizeError ? <ValidationError /> : null}
           </fieldset>

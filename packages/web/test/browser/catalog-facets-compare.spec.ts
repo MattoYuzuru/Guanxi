@@ -112,6 +112,11 @@ test('Marketplace filters and compares exact variants without resource side effe
   await dialog.getByRole('button', { name: 'Поменять колонки местами' }).press('Enter')
   await page.keyboard.press('Escape')
   await expect(compare).toBeFocused()
+  await compare.press('Enter')
+  await dialog.getByRole('button', { name: 'Убрать из сравнения fixture:b' }).press('Enter')
+  const retained = page.getByRole('button', { name: 'Убрать из сравнения fixture:a' })
+  await expect(retained).toBeFocused()
+  await page.getByRole('button', { name: 'Добавить к сравнению fixture:b' }).press('Enter')
 
   const search = page.getByLabel('Поиск по каталогу моделей')
   await search.fill('only-a')

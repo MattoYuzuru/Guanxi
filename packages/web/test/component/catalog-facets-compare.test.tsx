@@ -137,6 +137,9 @@ describe('catalog query transport and filter projection', () => {
     fireEvent.change(numbers[1]!, { target: { value: '1.5' } })
     fireEvent.keyDown(numbers[1]!, { key: 'Enter' })
     expect(screen.getByRole('alert').textContent).toContain('положительное целое число')
+    fireEvent.click(screen.getAllByLabelText('Явно неизвестно')[1]!)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect((numbers[1] as HTMLInputElement).value).toBe('')
     fireEvent.click(screen.getByRole('button', { name: 'Сбросить фильтры' }))
     expect(screen.queryByLabelText('Применённые фильтры каталога')).toBeNull()
   })
@@ -241,6 +244,9 @@ describe('pairwise exact variant compare', () => {
     fireEvent.keyDown(remove, { key: 'Enter' })
     fireEvent.click(remove)
     expect(screen.getByRole('button', { name: 'Сравнить точные варианты (1/2)' })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('button', {
+      name: 'Убрать из сравнения fixture:a',
+    })).toBe(document.activeElement))
     expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 
