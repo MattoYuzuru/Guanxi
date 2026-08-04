@@ -192,6 +192,8 @@ export const api = {
         contextClaim: params.contextClaim,
         maxClaimedArtifactSize: params.maxClaimedArtifactSize,
         artifactSizeClaim: params.artifactSizeClaim,
+        page: params.page,
+        pageSize: params.pageSize,
       },
       signal,
     }),

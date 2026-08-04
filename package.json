@@ -17,6 +17,7 @@
     "test:core": "node --test packages/server/test/**/*.test.ts packages/cli/test/**/*.test.ts",
     "test:web": "npm test --workspace @alamo/web",
     "test:web:browser": "npm run test:browser --workspace @alamo/web",
+    "benchmark:catalog": "node packages/server/scripts/catalog-pagination-benchmark.ts && npm run benchmark:catalog --workspace @alamo/web",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

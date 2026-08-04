@@ -102,17 +102,21 @@ export function ModelCarousel({
       applyTween(emblaApi)
       sync()
     }
+    const onScroll = () => applyTween(emblaApi)
+    const onSettle = () => applyTween(emblaApi)
 
     onReInit()
     emblaApi.on('reInit', onReInit)
     emblaApi.on('select', sync)
     // 'scroll' летит на каждом кадре анимации — здесь это и нужно.
-    emblaApi.on('scroll', () => applyTween(emblaApi))
-    emblaApi.on('settle', () => applyTween(emblaApi))
+    emblaApi.on('scroll', onScroll)
+    emblaApi.on('settle', onSettle)
 
     return () => {
       emblaApi.off('reInit', onReInit)
       emblaApi.off('select', sync)
+      emblaApi.off('scroll', onScroll)
+      emblaApi.off('settle', onSettle)
     }
   }, [emblaApi, applyTween, collectTweenNodes])
 

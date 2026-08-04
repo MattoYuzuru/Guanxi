@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:mock": "node mock/server.mjs",
     "build": "vite build",
+    "benchmark:catalog": "vitest run --config vitest.benchmark.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:browser": "playwright test",

@@ -29,6 +29,36 @@ Object.defineProperty(globalThis, 'cancelAnimationFrame', {
   value: window.cancelAnimationFrame,
 })
 
+Object.defineProperty(window, 'matchMedia', {
+  configurable: true,
+  value: (media: string) => ({
+    matches: false,
+    media,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent: () => false,
+  }),
+})
+
+class ObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+Object.defineProperty(globalThis, 'IntersectionObserver', {
+  configurable: true,
+  value: ObserverStub,
+})
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  configurable: true,
+  value: ObserverStub,
+})
+
 vi.stubGlobal('crypto', {
   ...globalThis.crypto,
   randomUUID: () => '00000000-0000-4000-8000-000000000001',

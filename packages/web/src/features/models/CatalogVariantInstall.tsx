@@ -35,12 +35,14 @@ export function CatalogVariantInstall({
   onInstalled,
   compareTargets = [],
   onToggleCompare,
+  onPullActiveChange,
 }: {
   model: CatalogModel
   selectedContextLength?: number
   onInstalled?: (name: string) => void
   compareTargets?: readonly string[]
   onToggleCompare?: (variant: CatalogVariant) => void
+  onPullActiveChange?: (active: boolean) => void
 }) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null)
   const [state, setState] = useState<FlowState>({ kind: 'idle' })
@@ -68,6 +70,13 @@ export function CatalogVariantInstall({
     if (state.kind === 'confirming') confirmRef.current?.focus()
     if (state.kind === 'pulling') cancelRef.current?.focus()
   }, [state.kind])
+
+  useEffect(() => {
+    onPullActiveChange?.(active)
+    return () => {
+      if (active) onPullActiveChange?.(false)
+    }
+  }, [active, onPullActiveChange])
 
   const choose = (variant: CatalogVariant) => {
     if (active || variant.normalizedName === null) return

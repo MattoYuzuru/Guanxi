@@ -35,6 +35,7 @@ export const ModelCard = memo(function ModelCard({
   selectedContextLength,
   compareTargets,
   onToggleCompare,
+  onPullActiveChange,
 }: {
   data: ModelCardData
   onFocusCard?: () => void
@@ -42,6 +43,7 @@ export const ModelCard = memo(function ModelCard({
   selectedContextLength?: number
   compareTargets?: readonly string[]
   onToggleCompare?: (variant: CatalogModel['variants'][number]) => void
+  onPullActiveChange?: (active: boolean) => void
 }) {
   const model = data.model
   const local = data.kind === 'local' ? data.model : null
@@ -159,6 +161,7 @@ export const ModelCard = memo(function ModelCard({
           onInstalled={onInstalled}
           compareTargets={compareTargets}
           onToggleCompare={onToggleCompare}
+          onPullActiveChange={onPullActiveChange}
         />
       ) : (
         <>

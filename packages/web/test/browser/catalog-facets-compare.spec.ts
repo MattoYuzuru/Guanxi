@@ -120,8 +120,8 @@ test('Marketplace filters and compares exact variants without resource side effe
 
   const search = page.getByLabel('Поиск по каталогу моделей')
   await search.fill('only-a')
-  await expect(page.getByText(/исчезла из последнего валидного ответа/u)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Сравнить точные варианты (1/2)' })).toBeDisabled()
+  await expect(page.getByText(/Сравнение очищено/u)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Сравнить точные варианты (0/2)' })).toBeDisabled()
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const layout = await page.evaluate(() => ({

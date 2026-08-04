@@ -6,9 +6,15 @@
  * («Начать чат» против «Установить»). Смешивать их в один список — значит
  * половину карточек показывать пустыми.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CatalogSourceHealth, CatalogVariant, Health } from '@alamo/contract'
-import { DEFAULT_NUM_CTX } from '@alamo/contract'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  CatalogModel,
+  CatalogSourceHealth,
+  CatalogVariant,
+  Health,
+  ListCatalogResponse,
+} from '@alamo/contract'
+import { CATALOG_DEFAULT_PAGE_SIZE, DEFAULT_NUM_CTX } from '@alamo/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync, useDebounced } from '../../lib/useAsync.ts'
 import {
@@ -37,7 +43,11 @@ import {
   hasCatalogFilters,
   type CatalogFilterState,
 } from '../models/CatalogFilters.tsx'
-import { CatalogCompare, exactCatalogRows } from '../models/CatalogCompare.tsx'
+import {
+  CatalogCompare,
+  exactCatalogRows,
+  type CatalogComparisonRow,
+} from '../models/CatalogCompare.tsx'
 
 /** Окна, под которые пересчитываем вердикт прямо на лончере. */
 const CONTEXT_SUGGESTIONS = [4096, 8192, 16384, 32768, 65536, 131072]
@@ -50,9 +60,42 @@ export function LauncherPage({ health }: { health: Health }) {
   const debouncedQuery = useDebounced(query, 300)
   const [filters, setFilters] = useState<CatalogFilterState>(EMPTY_CATALOG_FILTERS)
   const debouncedFilters = useDebounced(filters, 250)
-  const [compareTargets, setCompareTargets] = useState<string[]>([])
+  const [catalogPage, setCatalogPage] = useState(1)
+  const [compareRows, setCompareRows] = useState<CatalogComparisonRow[]>([])
   const [compareNotice, setCompareNotice] = useState<string | null>(null)
+  const [catalogPullActive, setCatalogPullActive] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
+  const catalogBasisRef = useRef<string | null>(null)
+  const acceptedQueryBasis = JSON.stringify([
+    debouncedQuery,
+    debouncedFilters,
+    contextLength,
+    reloadToken,
+  ])
+  const pageBasisRef = useRef(acceptedQueryBasis)
+  const catalogRequestPage = pageBasisRef.current === acceptedQueryBasis ? catalogPage : 1
+
+  const compareTargets = useMemo(
+    () => compareRows.map((row) => row.variant.normalizedName),
+    [compareRows],
+  )
+
+  const invalidateCatalogBasis = useCallback((notice = true, resetPage = true) => {
+    catalogBasisRef.current = null
+    if (resetPage) setCatalogPage(1)
+    setCompareRows((current) => {
+      if (notice && current.length > 0) {
+        setCompareNotice(translate('catalog.compare.invalidated'))
+      }
+      return current.length === 0 ? current : []
+    })
+  }, [])
+
+  useEffect(() => {
+    if (pageBasisRef.current === acceptedQueryBasis) return
+    pageBasisRef.current = acceptedQueryBasis
+    setCatalogPage(1)
+  }, [acceptedQueryBasis])
 
   const local = useAsync(
     (signal) => api.listModels(contextLength, signal),
@@ -63,42 +106,61 @@ export function LauncherPage({ health }: { health: Health }) {
       q: debouncedQuery || undefined,
       contextLength,
       ...catalogFilterQuery(debouncedFilters),
+      page: catalogRequestPage,
+      pageSize: CATALOG_DEFAULT_PAGE_SIZE,
     }, signal),
-    [debouncedQuery, debouncedFilters, contextLength, reloadToken],
+    [debouncedQuery, debouncedFilters, contextLength, catalogRequestPage, reloadToken],
   )
 
-  const compareRows = useMemo(
-    () => exactCatalogRows(catalog.data?.models ?? []),
-    [catalog.data?.models],
+  const catalogProjection = useMemo(
+    () => projectCatalogPage(catalog.data, catalogRequestPage),
+    [catalog.data, catalogRequestPage],
+  )
+  const availableComparisonRows = useMemo(
+    () => exactCatalogRows(catalogProjection.models),
+    [catalogProjection.models],
   )
 
   useEffect(() => {
-    if (!catalog.data) return
-    const available = new Set(compareRows.map((row) => row.variant.normalizedName))
-    setCompareTargets((current) => {
-      const retained = current.filter((target) => available.has(target))
-      if (retained.length !== current.length) {
-        setCompareNotice(translate('catalog.compare.vanished'))
-      }
-      return retained.length === current.length ? current : retained
-    })
-  }, [catalog.data, compareRows])
+    if (!catalog.data || catalog.data.pagination?.mode !== 'paged') return
+    const source = catalog.data.source
+    const basis = JSON.stringify([
+      source?.state ?? null,
+      source?.source ?? null,
+      source?.fetchedAt ?? null,
+      catalog.data.pagination.totalItems,
+    ])
+    if (catalogBasisRef.current !== null && catalogBasisRef.current !== basis) {
+      setCompareRows((current) => {
+        if (current.length > 0) setCompareNotice(translate('catalog.compare.invalidated'))
+        return current.length === 0 ? current : []
+      })
+    }
+    catalogBasisRef.current = basis
+  }, [catalog.data])
 
-  const toggleCompare = useCallback((variant: CatalogVariant) => {
+  const toggleCompare = useCallback((model: CatalogModel, variant: CatalogVariant) => {
     const target = variant.normalizedName
     if (target === null) return
+    const exact = availableComparisonRows.find((row) =>
+      row.model === model && row.variant.normalizedName === target,
+    )
+    if (!exact) return
     setCompareNotice(null)
-    setCompareTargets((current) => {
-      if (current.includes(target)) return current.filter((value) => value !== target)
+    setCompareRows((current) => {
+      if (current.some((row) => row.variant.normalizedName === target)) {
+        return current.filter((row) => row.variant.normalizedName !== target)
+      }
       if (current.length >= 2) return current
-      return [...current, target]
+      return [...current, exact]
     })
-  }, [])
+  }, [availableComparisonRows])
 
   const onInstalled = useCallback(() => {
     // Модель переехала из каталога в установленные — перечитываем оба списка.
+    invalidateCatalogBasis()
     setReloadToken((value) => value + 1)
-  }, [])
+  }, [invalidateCatalogBasis])
 
   const localItems: CarouselItem[] = useMemo(
     () =>
@@ -118,7 +180,7 @@ export function LauncherPage({ health }: { health: Health }) {
 
   const catalogItems: CarouselItem[] = useMemo(
     () =>
-      (catalog.data?.models ?? []).map((model) => ({
+      catalogProjection.models.map((model) => ({
         key: model.name,
         render: ({ focusIndex }) => (
           <ModelCard
@@ -127,11 +189,12 @@ export function LauncherPage({ health }: { health: Health }) {
             onFocusCard={focusIndex}
             onInstalled={onInstalled}
             compareTargets={compareTargets}
-            onToggleCompare={toggleCompare}
+            onToggleCompare={(variant) => toggleCompare(model, variant)}
+            onPullActiveChange={setCatalogPullActive}
           />
         ),
       })),
-    [catalog.data, compareTargets, contextLength, onInstalled, toggleCompare],
+    [catalogProjection.models, compareTargets, contextLength, onInstalled, toggleCompare],
   )
 
   const hardware = health.hardware
@@ -185,11 +248,25 @@ export function LauncherPage({ health }: { health: Health }) {
                   list="launcher-context-suggestions"
                   aria-invalid={contextError !== null}
                   onChange={(event) => setContextDraft(event.target.value)}
-                  onBlur={() => applyContextDraft(contextDraft, setContextLength, setContextError)}
+                  onBlur={() => applyContextDraft(
+                    contextDraft,
+                    (value) => {
+                      if (value !== contextLength) invalidateCatalogBasis()
+                      setContextLength(value)
+                    },
+                    setContextError,
+                  )}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter') return
                     event.preventDefault()
-                    applyContextDraft(contextDraft, setContextLength, setContextError)
+                    applyContextDraft(
+                      contextDraft,
+                      (value) => {
+                        if (value !== contextLength) invalidateCatalogBasis()
+                        setContextLength(value)
+                      },
+                      setContextError,
+                    )
                   }}
                   className="w-28"
                 />
@@ -219,7 +296,10 @@ export function LauncherPage({ health }: { health: Health }) {
           count={local.data?.models.length}
           refreshing={local.refreshing}
           action={
-            <Button variant="ghost" size="sm" onClick={() => setReloadToken((v) => v + 1)}>
+            <Button variant="ghost" size="sm" onClick={() => {
+              invalidateCatalogBasis()
+              setReloadToken((v) => v + 1)
+            }}>
               Обновить
             </Button>
           }
@@ -253,7 +333,7 @@ export function LauncherPage({ health }: { health: Health }) {
       <section>
         <SectionHeader
           title="Каталог"
-          count={catalog.data?.models.length}
+          count={catalogProjection.totalItems}
           refreshing={catalog.refreshing}
           action={
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
@@ -263,7 +343,12 @@ export function LauncherPage({ health }: { health: Health }) {
               />
               <Input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  // The accepted debounced basis resets page 1 atomically, so
+                  // typing never issues page 1 for the previous query.
+                  invalidateCatalogBasis(true, false)
+                  setQuery(event.target.value)
+                }}
                 placeholder="Поиск по каталогу…"
                 aria-label="Поиск по каталогу моделей"
                 className="w-full sm:w-56"
@@ -272,8 +357,10 @@ export function LauncherPage({ health }: { health: Health }) {
               <CatalogCompare
                 rows={compareRows}
                 selectedTargets={compareTargets}
-                onRemove={(target) => setCompareTargets((current) => current.filter((value) => value !== target))}
-                onSwap={() => setCompareTargets((current) => [...current].reverse())}
+                onRemove={(target) => setCompareRows((current) => current.filter(
+                  (row) => row.variant.normalizedName !== target,
+                ))}
+                onSwap={() => setCompareRows((current) => [...current].reverse())}
               />
             </div>
           }
@@ -282,12 +369,12 @@ export function LauncherPage({ health }: { health: Health }) {
         <CatalogFilters
           value={filters}
           onChange={(next) => {
-            setCompareNotice(null)
+            invalidateCatalogBasis(true, false)
             setFilters(next)
           }}
           onClear={() => {
+            invalidateCatalogBasis(true, false)
             setFilters(EMPTY_CATALOG_FILTERS)
-            setCompareNotice(null)
           }}
         />
 
@@ -300,25 +387,44 @@ export function LauncherPage({ health }: { health: Health }) {
         {catalog.data && <CatalogSourceNotice source={catalog.data.source ?? null} />}
 
         <div className={catalog.data ? 'mt-3' : ''}>
-          {catalog.loading ? (
+          {catalog.loading || catalog.refreshing ? (
             <CarouselSkeleton />
           ) : catalog.error ? (
             <Callout
               tone="danger"
               title="Каталог недоступен"
               action={
-                <Button size="sm" onClick={catalog.reload}>
+                <Button size="sm" onClick={() => {
+                  invalidateCatalogBasis()
+                  catalog.reload()
+                }}>
                   Повторить
                 </Button>
               }
             >
               {errorMessage(catalog.error)}
             </Callout>
+          ) : catalogProjection.outOfRange ? (
+            <EmptyState
+              title={translate('catalog.pagination.outOfRange.title')}
+              description={translate('catalog.pagination.outOfRange.description')}
+              action={(
+                <Button size="sm" onClick={() => setCatalogPage(1)}>
+                  {translate('catalog.pagination.first')}
+                </Button>
+              )}
+            />
           ) : catalogItems.length === 0 ? (
             <EmptyState
-              title={query || hasCatalogFilters(filters) ? translate('catalog.empty.filtered.title') : 'Каталог пуст'}
+              title={catalog.data?.source?.state === 'unavailable'
+                ? translate('catalog.empty.unavailable.title')
+                : query || hasCatalogFilters(filters)
+                  ? translate('catalog.empty.filtered.title')
+                  : 'Каталог пуст'}
               description={
-                query || hasCatalogFilters(filters)
+                catalog.data?.source?.state === 'unavailable'
+                  ? translate('catalog.empty.unavailable.description')
+                  : query || hasCatalogFilters(filters)
                   ? `${translate('catalog.empty.filtered.description')} ${[
                       query ? `${translate('catalog.search.summary')}: ${query}` : '',
                       ...filterSummary(filters),
@@ -328,6 +434,7 @@ export function LauncherPage({ health }: { health: Health }) {
               action={
                 query || hasCatalogFilters(filters) ? (
                   <Button size="sm" onClick={() => {
+                    invalidateCatalogBasis()
                     setQuery('')
                     setFilters(EMPTY_CATALOG_FILTERS)
                   }}>
@@ -340,8 +447,161 @@ export function LauncherPage({ health }: { health: Health }) {
             <ModelCarousel items={catalogItems} ariaLabel="Каталог моделей" />
           )}
         </div>
+
+        {catalog.data ? (
+          <CatalogPager
+            page={catalogProjection.page}
+            totalPages={catalogProjection.totalPages}
+            totalItems={catalogProjection.totalItems ?? 0}
+            pageItems={catalogProjection.models.length}
+            previousPage={catalogProjection.previousPage}
+            nextPage={catalogProjection.nextPage}
+            loading={catalog.loading || catalog.refreshing}
+            pullActive={catalogPullActive}
+            onPage={setCatalogPage}
+          />
+        ) : null}
       </section>
     </div>
+  )
+}
+
+type CatalogPageProjection = {
+  models: CatalogModel[]
+  page: number
+  totalItems: number | undefined
+  totalPages: number
+  previousPage: number | null
+  nextPage: number | null
+  outOfRange: boolean
+}
+
+/** New servers page explicitly; legacy full responses remain bounded client-side. */
+export function projectCatalogPage(
+  response: ListCatalogResponse | null,
+  requestedPage: number,
+): CatalogPageProjection {
+  if (!response) {
+    return {
+      models: [], page: requestedPage, totalItems: undefined, totalPages: 0,
+      previousPage: null, nextPage: null, outOfRange: false,
+    }
+  }
+  if (response.pagination?.mode === 'paged') {
+    const metadata = response.pagination
+    return {
+      models: response.models,
+      page: metadata.page,
+      totalItems: metadata.totalItems,
+      totalPages: metadata.totalPages,
+      previousPage: metadata.previousPage,
+      nextPage: metadata.nextPage,
+      outOfRange: metadata.totalItems > 0 && metadata.page > metadata.totalPages,
+    }
+  }
+
+  const totalItems = response.pagination?.totalItems ?? response.models.length
+  const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / CATALOG_DEFAULT_PAGE_SIZE)
+  const start = requestedPage <= totalPages
+    ? (requestedPage - 1) * CATALOG_DEFAULT_PAGE_SIZE
+    : null
+  return {
+    models: start === null
+      ? []
+      : response.models.slice(start, start + CATALOG_DEFAULT_PAGE_SIZE),
+    page: requestedPage,
+    totalItems,
+    totalPages,
+    previousPage:
+      totalPages === 0 ? null : requestedPage > totalPages ? totalPages : requestedPage > 1 ? requestedPage - 1 : null,
+    nextPage: requestedPage < totalPages ? requestedPage + 1 : null,
+    outOfRange: totalItems > 0 && requestedPage > totalPages,
+  }
+}
+
+export function CatalogPager({
+  page,
+  totalPages,
+  totalItems,
+  pageItems,
+  previousPage,
+  nextPage,
+  loading,
+  pullActive,
+  onPage,
+}: {
+  page: number
+  totalPages: number
+  totalItems: number
+  pageItems: number
+  previousPage: number | null
+  nextPage: number | null
+  loading: boolean
+  pullActive: boolean
+  onPage: (page: number) => void
+}) {
+  const blocked = loading || pullActive
+  const descriptionId = pullActive ? 'catalog-pager-pull-boundary' : undefined
+  const previousRef = useRef<HTMLButtonElement>(null)
+  const nextRef = useRef<HTMLButtonElement>(null)
+  const pendingFocusRef = useRef<'previous' | 'next' | null>(null)
+
+  useEffect(() => {
+    const requested = pendingFocusRef.current
+    if (loading || requested === null) return
+    pendingFocusRef.current = null
+    const preferred = requested === 'previous' ? previousRef.current : nextRef.current
+    const fallback = requested === 'previous' ? nextRef.current : previousRef.current
+    const target = preferred && !preferred.disabled ? preferred : fallback
+    if (target && !target.disabled) target.focus({ preventScroll: true })
+  }, [loading, page])
+
+  const requestPage = (direction: 'previous' | 'next', target: number | null) => {
+    if (target === null || blocked) return
+    pendingFocusRef.current = direction
+    onPage(target)
+  }
+
+  return (
+    <nav
+      className="mt-4 flex min-w-0 flex-wrap items-center justify-center gap-3"
+      aria-label={translate('catalog.pagination.label')}
+      aria-describedby={descriptionId}
+      aria-busy={loading}
+    >
+      <Button
+        ref={previousRef}
+        variant="secondary"
+        size="sm"
+        className="h-11 sm:h-6"
+        disabled={blocked || previousPage === null}
+        onClick={() => requestPage('previous', previousPage)}
+      >
+        {translate('catalog.pagination.previous')}
+      </Button>
+      <span className="min-w-0 text-center text-xs" role="status" aria-live="polite">
+        {translate('catalog.pagination.status')
+          .replace('{page}', String(page))
+          .replace('{totalPages}', String(totalPages))
+          .replace('{pageItems}', String(pageItems))
+          .replace('{totalItems}', String(totalItems))}
+      </span>
+      <Button
+        ref={nextRef}
+        variant="secondary"
+        size="sm"
+        className="h-11 sm:h-6"
+        disabled={blocked || nextPage === null}
+        onClick={() => requestPage('next', nextPage)}
+      >
+        {translate('catalog.pagination.next')}
+      </Button>
+      {pullActive ? (
+        <p id={descriptionId} className="basis-full text-center text-2xs text-[var(--warning)]" role="status">
+          {translate('catalog.pagination.pullBlocked')}
+        </p>
+      ) : null}
+    </nav>
   )
 }
 

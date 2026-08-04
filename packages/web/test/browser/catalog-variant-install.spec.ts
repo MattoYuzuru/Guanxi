@@ -154,10 +154,12 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
   const layout = await page.evaluate(() => ({
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-    animationDuration: getComputedStyle(document.querySelector('[role="dialog"]')!).animationDuration,
+    animationDurations: [...document.querySelectorAll<HTMLElement>('*')]
+      .map((element) => Number.parseFloat(getComputedStyle(element).animationDuration || '0'))
+      .filter(Number.isFinite),
   }))
   expect(layout.overflow).toBeLessThanOrEqual(1)
   expect(layout.reducedMotion).toBe(true)
-  expect(Number.parseFloat(layout.animationDuration || '0')).toBeLessThanOrEqual(0.00001)
+  expect(Math.max(0, ...layout.animationDurations)).toBeLessThanOrEqual(0.00001)
   expect(pageErrors).toEqual([])
 })
