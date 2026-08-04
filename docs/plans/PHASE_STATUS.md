@@ -360,6 +360,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-D Confirmed Add from Ollama | implemented, locally validated | `21c0404`, `3d129d2`, `0d9aaa6`; P2-D 20/20, core 311/311, Web 65/65, Chromium 19/19, all required gates |
 | P2-E Variant-first Marketplace install | implemented, locally validated | `56b802b`, `2959b98`; P2-E 12/12, core 320/320, Web 75/75, Chromium 20/20, all required gates |
 | P2-F Truthful facets/pairwise compare | implemented, locally validated | `c769fbd`, `c1495a3`, `1fc3c20`; P2-F 10/10, core 330/330, Web 83/83, Chromium 21/21, all required gates |
+| P2-G Truthful Linux/NVIDIA telemetry | implemented, locally validated | `a4a3ead`, `3f1a533`, `6ceae50`; P2-G 38/38, core 339/339, Web 88/88, Chromium 22/22, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -624,10 +625,51 @@ draft при explicit unknown.
 P1-K 37. Они исправлены до fail-fast/count-aware wrappers, после чего все exact
 10× groups выполнены заново с каноническими file sets.
 
-P2-A, P2-B, P2-C, P2-D, P2-E и P2-F остаются `implemented, locally validated`, а не
-independently verified или production-validated. Не проверены live Ollama/model/
-hardware, provider-version matrix, production TTL/residency, external-client
-ownership и multi-process coordination. Migrations 7/8 хранят latest safe
+P2-G additive расширяет host contract explicit NVIDIA projection с legacy
+`unknown` default. Local Linux + detected CUDA использует один absolute
+`/usr/bin/nvidia-smi` call с fixed argv, `shell:false`, minimal C locale, timeout
+1 s и output limit 64 KiB. Pure parser принимает LF/CRLF, safe Unicode и любое
+число rows внутри reliability bound, переводит integer MiB в safe bytes,
+сохраняет non-sequential indexes и nullable UUID. Missing identity/mixed rows
+дают `partial`; all malformed, duplicate index/UUID, command missing/failure,
+timeout и output limit остаются разными redacted unavailable reasons. Apple и
+unsupported routing сохранены.
+
+Каждый usable device несёт index, redacted-in-UI UUID, name, observed total и
+current-free VRAM, source/time/confidence. System memory, legacy usable estimate,
+per-device VRAM, `/api/ps` allocation и pressure не смешиваются. Runtime Bar
+показывает localized available/partial/unavailable/unsupported states и все rows
+в contained scroll без UI cap; stale refresh сохраняет confirmed timestamps.
+Linux observation key/current fit остаются unavailable/unknown, Governor — с
+одним permit: `/api/ps` не сообщает device assignment, а free VRAM не является
+safe admission capacity.
+
+Required evidence through revision `6ceae50`: typecheck; P2-G server/identity
+38/38 и exact three-file group 34/34; P2-F server 10/10; P2-E server 12/12;
+key/model/runtime group 30/30; full core 339/339 + Web 88/88; mocked Chromium
+22/22; production build, markdownlint и diff check. Sequential repeats with
+exit/count checking: P2-G server 10×38/38, targeted Web 10×20/20, Chromium
+10×1/1, affected Web 10×88/88, P2-F server/Web 10×10/10 и 10×8/8, P2-E
+server/Web 10×12/12 и 10×10/10, P1-H fit/telemetry 10×25/25, P1-L+M
+10×33/33, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8.
+
+Первые failures не скрыты. Root npm Chromium `--grep` был разобран как filename
+и дал `No tests found`; direct root Playwright не имел Web `baseURL` и получил
+invalid `/chat`. Канонический запуск из `packages/web` прошёл. Первый English
+component fixture искал Russian disclosure, а `toHaveClass` отсутствовал в
+текущем matcher setup; locale-neutral locator и portable `className` assertion
+исправили harness. Review нашёл browser fixture с `nvidia` внутри source-health
+и ложный Linux fit reason `host_unsupported`; projection перенесена в host, а
+reason выровнен с server `observation_key_unavailable`. Первый full Web gate
+после strict provenance review дал 86/88: all-malformed fixtures ошибочно
+ставили `source:none`; `nvidia_smi` source восстановлен, после чего 88/88 и все
+repeats зелёные.
+
+P2-A, P2-B, P2-C, P2-D, P2-E, P2-F и P2-G остаются `implemented, locally
+validated`, а не independently verified или production-validated. Не проверены
+live Ollama/model/hardware, NVIDIA driver/GPU/MIG, provider-version matrix,
+production TTL/residency, external-client ownership и multi-process coordination.
+Migrations 7/8 хранят latest safe
 projections, а не continuous evidence history/full Capability Registry;
 semantic quality, tool/media capabilities и user overrides не реализованы.
 P2-D/P2-E — только bounded mutable-tag pull: нет durable resume, disk
@@ -638,7 +680,7 @@ license/quantization/task facts.
 Phase 2 остаётся `in progress`: ROADMAP exit gate требует HF exact revision/
 checksum/license и platform work; Q-25 остаётся открытым и блокирует первый
 Hugging Face import slice. Следующий handoff — не зависящий от Q-25 bounded
-Linux/NVIDIA truthful telemetry prototype, не full calibration/scheduling.
+catalog scale/pagination slice, не remote provider и не full NVIDIA calibration.
 
 ## Later phases
 

@@ -183,6 +183,22 @@ safe available capacity. Discrete VRAM/GPU-free для unified memory не
 даёт `partial`, timeout/failure — safe `unavailable`, non-Apple host —
 `unsupported` без выполнения команды.
 
+P2-G добавляет второй adapter только для local `linux` + detected `cuda`
+profile. Он выполняет absolute `/usr/bin/nvidia-smi` без shell с fixed
+`--query-gpu=index,uuid,name,memory.total,memory.free` и
+`--format=csv,noheader,nounits`, теми же timeout 1 s/output 64 KiB и minimal C
+locale env. Pure parser принимает LF/CRLF, whitespace, Unicode names и любое
+число rows внутри output bound; MiB переводится в safe integer bytes. Каждый
+usable device имеет provider index, nullable UUID, name, total/current-free
+VRAM, source/time/confidence. Missing UUID даёт partial identity, usable +
+malformed rows — partial, all malformed — unavailable, duplicate index/UUID —
+fail-closed inconsistent, command/timeout/output failure — redacted unavailable.
+
+Этот sample не суммирует VRAM, не определяет MIG/topology и не связывает
+`/api/ps` row с device. Поэтому Linux observation key остаётся unavailable,
+current fit — unknown, free VRAM не становится safe admission capacity, а
+Governor сохраняет один консервативный permit.
+
 Ошибки источников независимы: valid runtime rows сохраняются при telemetry
 failure, а valid host facts сохраняются при `/api/ps` failure (`models: null`).
 Raw command output/error не проходит в public contract. Все факты имеют source,
@@ -1072,7 +1088,7 @@ Checkpoint resume, opt-in login autostart и обнаружение одновр
 
 ## Observability contract
 
-Current P1-H–P1-L projection реализует bounded subset:
+Current P1-H–P1-L + P2-G projection реализует bounded subset:
 
 ```ts
 type RuntimeSnapshot = {
@@ -1095,7 +1111,9 @@ operation и manual exact result без Job Stop. P2-D/P2-E pull не входи
 projection: это connection-owned download, а не inference lease/Job. P2-F
 filter/compare вообще не создаёт operation owner. Production pressure/available
 memory, continuous durable runtime history, safe parallel и full resource
-actions ещё не реализованы. Target projection остаётся шире:
+actions ещё не реализованы. P2-G Runtime Bar показывает sourced Linux/NVIDIA
+devices с redacted UUID и contained scrolling, но не aggregate capacity либо
+future fit. Target projection остаётся шире:
 
 Runtime projection:
 
@@ -1140,8 +1158,9 @@ reconciliation, P1-F — typed process-local Governor admission/lease foundation
 P1-G — query-time `/api/ps` reconciliation и additive `GET /api/runtime`, P1-H —
 sampled Apple host facts и observed/unknown current-fit explanation, P1-I —
 read-only persistent Runtime Bar с bounded adaptive polling, P1-J — sampled
-conflict decision с safe Queue и exact Job cancel acknowledgement. Production
-pressure/available-memory source, safe parallel и другие resource actions
-остаются target.
+conflict decision с safe Queue и exact Job cancel acknowledgement. P2-G добавил
+truthful local Linux/NVIDIA per-device telemetry prototype без fit/admission
+promotion. Production pressure/available-memory source, safe parallel и другие
+resource actions остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.

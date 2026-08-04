@@ -202,8 +202,10 @@ projection; новые решения используют `contextLimit`.
 Право Job, prewarm или explicit probe удерживать Model Instance. Lease имеет
 purpose, priority, TTL и owner. Модель выгружается только при отсутствии leases
 и выполнении idle/pressure policy. Current один permit — консервативная
-application policy, а не свидетельство одного accelerator device; device
-cardinality пока unknown.
+application policy, а не свидетельство одного accelerator device. P2-G может
+наблюдать все rows одного local Linux/NVIDIA query, но это sampled device list,
+а не topology, scheduler capacity или связь конкретного Model Instance с GPU;
+на остальных adapters device cardinality остаётся unknown.
 
 ### Operation Descriptor
 

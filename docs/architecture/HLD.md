@@ -94,8 +94,12 @@ loaded rows — только из `/api/ps`. P1-G добавил один applic
 `RuntimeReconciliationService`: `GET /api/runtime` и compatibility
 `GET /api/models/running` делят pending provider sample и один injected
 `HostTelemetry` sample. На Apple Silicon adapter параллельно вызывает только
-bounded `/usr/bin/vm_stat`, а на остальных hosts возвращает `unsupported` без
-host command. После завершения обоих источников service выбирает один
+bounded `/usr/bin/vm_stat`; P2-G на local Linux с detected CUDA profile вызывает
+один fixed shell-free `/usr/bin/nvidia-smi` query с теми же 1 s/64 KiB bounds и
+публикует per-device index/nullable UUID/name/total/current-free VRAM. Другие
+hosts возвращают `unsupported` без host command. Partial/malformed/duplicate и
+command failure не становятся healthy empty/zero. После завершения обоих
+источников service выбирает один
 `observedAt`, снимает Governor state и классифицирует exact normalized active
 reference, unmatched active lease и unknown-owner runtime rows. Ошибки Ollama и
 host telemetry независимы. Completed server sample/cache/history не хранится.
@@ -207,7 +211,7 @@ cache write или runtime evidence.
 | Active/waiting Chat controller       | `ChatJobExecutionOwner`                 | process memory              |
 | Resource admission/active lease      | application `ResourceGovernor`          | process memory              |
 | Runtime reconciliation/sample        | `RuntimeReconciliationService`          | process memory, без history |
-| Static/dynamic host telemetry        | injected `HostTelemetry` adapter        | sampled, без history        |
+| Static/dynamic host telemetry        | injected Apple/NVIDIA `HostTelemetry`   | sampled, без history        |
 | Pending approval                     | `ApprovalGate`                          | process memory              |
 | Runtime Bar HTTP wait/timer          | persistent Web shell component          | page memory, query-only     |
 | Pending Chat conflict intent         | Chat decision component                 | page memory, one UUID key   |
@@ -269,6 +273,10 @@ cache write или runtime evidence.
 18. P2-F facets/compare работают только над current local/bundled response и не
     доказывают provider completeness. Saved filters, pagination/virtualization,
     catalog-scale benchmark и remote provider отсутствуют.
+19. P2-G Linux/NVIDIA telemetry проверена fake runner, а не live driver/GPU.
+    Она не связывает `/api/ps` row с device, не знает MIG/topology/pressure и не
+    превращает current free VRAM в admission capacity, measured fit или второй
+    Governor permit.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

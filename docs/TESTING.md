@@ -44,6 +44,11 @@
   exact bounded Apple `vm_stat` command, page-size conversion, extra/malformed
   rows, available/partial/unavailable/unsupported states, provenance/confidence,
   safe timeout/output/failure redaction и отсутствие host command вне adapter;
+- deterministic P2-G tests добавляют fixed shell-free NVIDIA query, minimal
+  locale env, MiB-to-bytes safe conversion, LF/CRLF/Unicode, 257 devices без
+  product ceiling, missing UUID, mixed/all malformed rows, duplicate identity,
+  unsafe/negative/fractional/overflow numbers, missing/failure/timeout/output
+  states и Apple/Linux/unsupported routing без live GPU;
 - reconciliation P1-H fixtures покрывают independent provider/telemetry failure,
   один shared call каждого source, caller abort, Governor capture после обоих
   sources, новый sample после completion, observed current residency только при
@@ -53,7 +58,9 @@
   waiter, idle/closed admission, exact/unknown owner rows,
   `active_not_observed`, healthy empty/source failure, все четыре host states,
   observed/unknown fit, distinct memory facts, stale refresh, locale fallback,
-  Russian copy и Runtime feature containment без focus steal;
+  Russian copy и Runtime feature containment без focus steal. P2-G fixtures
+  дополнительно покрывают все NVIDIA states, redacted UUID, per-device total/
+  free/source/time/confidence, 257 rendered rows и stale sample preservation;
 - P1-I fake timers покрывают initial request, active/queued 2 s, idle 10 s,
   no-overlap, hidden pause, visible immediate refresh, bounded manual retry,
   stale sample preservation, unmount abort и отсутствие retained timer/listener;
@@ -195,13 +202,13 @@
   redacted failure before listen, три startup attempts после injected failures,
   same-thread/cross-thread one-lane scheduling и truthful graceful shutdown;
 - exact P1-A/P1-B/P1-C/P1-D/P1-E/P1-F/P1-G/P1-H + P1-K/P1-L Runtime
-  contract/Governor files дают 98/98; P1-L+P1-M key/cache/runtime group —
-  32/32; отдельный prewarm service file — 7/7;
+  contract/Governor baseline сохраняется; P1-L+P1-M key/cache/runtime group с
+  P2-G Linux unknown case — 33/33; отдельный prewarm service file — 7/7;
   routes/Governor/concurrency дают 33/33; runtime/provider — 19/19;
-  fit/telemetry — 19/19; P2-A descriptor — 9/9; P2-B persistent group —
+  P2-G fit/telemetry — 25/25; P2-A descriptor — 9/9; P2-B persistent group —
   17/17; P2-C + Ollama boundaries — 34/34; P2-D server — 20/20; P2-E exact
-  contract/catalog — 12/12; P2-F facets — 10/10; полный core — 330/330,
-  Web — 83/83, mocked Chromium — 21/21;
+  contract/catalog — 12/12; P2-F facets — 10/10; P2-G server/identity — 38/38;
+  полный core — 339/339, Web — 88/88, mocked Chromium — 22/22;
   15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
@@ -258,6 +265,11 @@
   P2-A 10×9/9, P1-L+M 10×32/32, P1-K 10×37/37, P1-J 10×11/11,
   P1-I 10×3/3 и P1-E 10×8/8. После focus/unknown review fixes P2-F Web и
   affected Web повторены ещё 10×8/8 и 10×83/83;
+- P2-G server/identity, targeted Runtime Web и NVIDIA Chromium повторены
+  последовательно 10×38/38, 10×20/20 и 10×1/1; affected Web — 10×88/88.
+  Также повторены P2-F server/Web 10×10/10 и 10×8/8, P2-E server/Web
+  10×12/12 и 10×10/10, P1-H fit/telemetry 10×25/25, P1-L+M 10×33/33,
+  P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -306,6 +318,10 @@ disk reservation или persistent registry/history. P2-F доказывает b
 facets/compare только над current response facts; нет remote catalog provider,
 pagination/virtualization/load benchmark, saved filters, inferred license/
 quantization/task или runtime capability proof.
+P2-G доказывает Linux/NVIDIA command/parser/contract/UI semantics только через
+fake runner и mocked Runtime snapshots. Он не проверяет live driver/GPU,
+MIG/topology, `/api/ps` device allocation, pressure/admission, multi-GPU
+scheduling, safe parallelism или future fit.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -315,9 +331,9 @@ process lock. P0-D health остаётся sampled observation; обязател
 
 - health, `/api/ps` и host telemetry — sampled observations, а не непрерывная
   истина;
-- P1-H reconciles `/api/ps` и host facts только на query; Resource Governor и
-  leases остаются process-local, production Apple pressure/available memory и
-  remote-host telemetry отсутствуют;
+- P1-H/P2-G reconciles `/api/ps` и host facts только на query; Resource Governor
+  и leases остаются process-local, production Apple/Linux pressure/admission,
+  runtime-to-device allocation и remote-host telemetry отсутствуют;
 - Chat execution durable/replayable, но execution owner и lease остаются
   process-local;
 - generic public Job без Chat adapter остаётся queued; live wake-up предполагает

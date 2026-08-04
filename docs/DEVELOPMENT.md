@@ -91,6 +91,8 @@ npm run link:cli
   timestamp не входит в fingerprint. Migration 6 хранит exact calibration
   отдельно и не читает legacy name-only rows как measured evidence. `/api/show`
   cache invalidates same-name changed digest и удерживает максимум 64 references.
+  P2-G Linux/NVIDIA device facts не добавляются в key: без связи `/api/ps` row с
+  backend/device identity Linux key и current fit остаются unavailable/unknown.
 - P2-A installed list/detail добавляют additive `InstalledModelDescriptor`.
   Installation и tag declaration получают `/api/tags` observation; detail
   declaration из `/api/show` сохраняет unknown digest basis, потому что response
@@ -162,10 +164,16 @@ npm run link:cli
   запускают pull, probe, prewarm, load или provider refresh.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
-  `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
-  estimate/current available/pressure/discrete VRAM остаются разными facts.
-  Current production Apple fit — `unknown`, пока pressure и available memory не
-  имеют подтверждённого source.
+  `/usr/bin/vm_stat`. Local Linux с detected CUDA profile использует один
+  shell-free `/usr/bin/nvidia-smi` query с fixed argv, timeout 1 s и output limit
+  64 KiB; остальные hosts возвращают `unsupported` без команды. Pure parser
+  публикует все usable rows как per-device index, nullable UUID, name и observed
+  total/current-free VRAM с общим time/source/confidence. Duplicate identity
+  fail-closed; malformed subset остаётся `partial`, а command/timeout/output
+  failure — redacted `unavailable`. Total/free/legacy estimate/current available/
+  pressure/discrete VRAM остаются разными facts. Current Apple и Linux fit
+  остаётся `unknown`, пока нет достаточных pressure/admission и exact
+  runtime-device facts.
 - P1-D `JobService` поверх migration 5/`JobStore` владеет canonical state
   transitions, cancel и persisted-first subscription. SQLite event sequence
   остаётся источником replay; live listeners хранят только wake-up signal.
@@ -179,7 +187,9 @@ npm run link:cli
   2 s, idle через 10 s, не создаёт timer в hidden document и немедленно
   refresh-ится после `visible`. Route change component не unmount-ит и не
   вызывает Job cancel, model stop или unload. Failed refresh сохраняет последний
-  confirmed sample с явной stale/error меткой.
+  confirmed sample с явной stale/error меткой. P2-G добавляет localized
+  available/partial/unavailable/unsupported NVIDIA projection, redacted UUID и
+  contained scrolling всех returned devices без aggregate capacity claim.
 - P1-J переносит этот poller в один persistent `RuntimeProvider`. Chat dispatch
   делает bounded fresh read через общий single-flight, но не создаёт второй
   polling loop. При active lease/FIFO predecessor safe default отправляет тот же
@@ -250,7 +260,8 @@ npm run link:cli
   и применяет P2-F same-row facets без mutation provenance, descriptor path
   сохраняет four-worker `/api/show` bound, caller AbortSignal, digest-aware LRU
   64 и fail-closed ambiguous evidence;
-- `hardware/` — legacy profile/static fit и injectable sampled telemetry adapter;
+- `hardware/` — legacy profile/static fit и injectable sampled Apple/NVIDIA
+  telemetry adapters с fixed command boundaries и pure parsers;
 - `http/` — models, runtime, Jobs, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
 - migration 3 добавляет nullable `turn_status/turn_error/stop_reason` и не

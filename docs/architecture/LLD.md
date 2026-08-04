@@ -140,7 +140,8 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   remote request или provenance mutation;
 - `hardware/probe.ts` и `fit.ts`: legacy local profile/estimate и static fit;
 - `hardware/telemetry.ts`: один injectable host boundary; bounded Apple Silicon
-  `vm_stat` adapter, strict parser и explicit unsupported/partial/failure states;
+  `vm_stat` и Linux/CUDA fixed `nvidia-smi` adapters, pure strict parsers и
+  explicit unsupported/partial/unavailable states;
 - `agent/loop.ts`: ordered turn/tool loop;
 - `store/db.ts`: `node:sqlite` migrations;
 - migration 3: nullable Message terminal bridge с evidence-based legacy backfill;
@@ -187,6 +188,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | Architecture/capability detail | local `/api/show`, first response time | provider-declared; exact cache write only after tags/version revalidation | LRU 64 + SQLite v7; 15m fresh, 7d stale/offline; four workers + per-key flight | context limit, fit, detail, descriptor |
 | Loaded instance | local `/api/ps`, sampled time | observed runtime row; exact only through P1-L reconciliation | failure remains `models:null`; no history | Runtime Bar, fit/calibration |
 | Runtime version | local `/api/version`, response time | observed runtime fingerprint либо unknown | request-scoped, failure independent | observation key и descriptor basis |
+| NVIDIA device facts | fixed local `/usr/bin/nvidia-smi` query, common sample time | observed per-device index/name/total/free; UUID nullable | query-time only; partial/malformed/duplicate/command failure explicit | Runtime Bar only; no admission/key credit |
 | Catalog variant claim | local stale cache or dated bundled snapshot + server normalizer | exact mutable target; size/context/fit remain claimed | malformed/duplicate target or unknown size fail closed; explicit stale/fallback | P2-E selector + P2-F facets/compare |
 | Legacy `capabilities` | filtered known `/api/tags` values | compatibility projection, not evidence decision | unknown/malformed → empty legacy array | old Web/clients |
 | Context facts | `/api/tags`/`/api/show` declarations | declared maximum либо unknown/conflict | LRU time preserved; no guessed ceiling | settings/list/detail/validation |
@@ -234,6 +236,14 @@ host probe. Caller abort прекращает только его ожидани
 синхронно снимается Governor snapshot — это linearization point. Ошибка одного
 source не уничтожает факты другого. Completed result не кэшируется; stale state
 не публикуется, следующий call делает новые samples.
+
+P2-G выбирает NVIDIA adapter только для local `linux` + detected `cuda` legacy
+profile. Fixed query не использует shell/PATH/user args и ограничен 1 s/64 KiB.
+Parser не имеет device-count ceiling, конвертирует integer MiB в safe bytes,
+сохраняет usable rows при malformed subset и fail-closed отклоняет duplicate
+index/UUID. Linux observation key/current fit остаются unavailable/unknown:
+device sample не связывает `/api/ps` allocation с GPU и free VRAM не является
+safe capacity.
 
 Один `JobStore`, `JobService` и `ChatJobExecutionOwner` входят в application
 context; public Job и Chat routes используют один service. Store синхронно
@@ -293,7 +303,9 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `features/health/RuntimeContext.tsx`: один persistent shell owner shared
   Runtime projection;
 - `features/health/RuntimeStatus.tsx`: typed read-only lease/FIFO/runtime-model/
-  host/current-fit projection с compact disclosure и feature containment;
+  host/current-fit projection с compact disclosure и feature containment; P2-G
+  группирует все NVIDIA devices в contained scroll, redacts UUID и сохраняет
+  per-device source/time/confidence без aggregate capacity claim;
 - `features/health/useRuntimePolling.ts`: один abortable HTTP wait, один timer,
   active/queued 2 s, idle 10 s, hidden pause, visible refresh без overlap и
   caller-scoped fresh wait без abort shared request;
@@ -390,6 +402,11 @@ artifact identity. Unmatched row получает owner `unknown`, active lease 
 меняет admission. Production pressure/available-memory observation, durable
 observation keys/history, lease journal, measured parallelism и multi-process
 lock отсутствуют.
+
+P2-G расширяет только host projection: Linux/CUDA sample может быть available,
+partial или unavailable и содержит per-device VRAM facts. Он не меняет
+Governor, observation key, current-fit calculation, `/api/ps` ownership либо
+model lifecycle.
 
 P1-I заменяет Web compatibility projection `/api/models/running` на typed
 `api.runtimeSnapshot()`. Persistent shell component показывает только один live
