@@ -359,6 +359,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-C Explicit controlled completion probe | implemented, locally validated | `ce9ef4b`, `c48799a`, `d1c3c38`; P2-C 34/34, core 300/300, Web 58/58, Chromium 18/18, all required gates |
 | P2-D Confirmed Add from Ollama | implemented, locally validated | `21c0404`, `3d129d2`, `0d9aaa6`; P2-D 20/20, core 311/311, Web 65/65, Chromium 19/19, all required gates |
 | P2-E Variant-first Marketplace install | implemented, locally validated | `56b802b`, `2959b98`; P2-E 12/12, core 320/320, Web 75/75, Chromium 20/20, all required gates |
+| P2-F Truthful facets/pairwise compare | implemented, locally validated | `c769fbd`, `c1495a3`, `1fc3c20`; P2-F 10/10, core 330/330, Web 83/83, Chromium 21/21, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -575,7 +576,55 @@ fetched и `/api/tags` observation timestamps в selector/success projection.
 test failure; незавершённые runs не засчитаны и соответствующие groups
 перезапущены отдельно до полных exact 10× counts.
 
-P2-A, P2-B, P2-C, P2-D и P2-E остаются `implemented, locally validated`, а не
+P2-F additive расширяет strict catalog query доступными current facts. Один CSV
+value задаёт OR внутри installation/fit/scope/source/freshness/capability, а
+groups объединяются AND. Repeated/unknown key, duplicate/future enum,
+non-positive/fractional/unsafe numeric и numeric+unknown conflict дают controlled
+400 до provider access. Variant installation/fit/context/size обязаны совпасть
+на одной exact P2-E row; model scope/source/freshness/capability применяются
+отдельно. Missing metadata остаётся explicit unknown, provenance/timestamps не
+переписываются, remote fetch/persistence не добавлены.
+
+Web сохраняет text search и добавляет accessible filter disclosure, applied
+chips/clear, loading/filtered-empty/error/retry, bounded debounce, AbortSignal и
+late-response guard. Pairwise compare принимает ровно две unique valid exact
+rows, показывает claimed size/parameters/context, per-variant fit+basis,
+source/freshness/times и exact sampled installation/digest-or-reason. Duplicate,
+invalid и third row fail-closed; remove/swap/vanish/Escape восстанавливают
+предсказуемый focus. Search/filter/compare/reload не вызывают pull, probe,
+prewarm/load, provider fetch или capability promotion.
+
+Required evidence through revision `1fc3c20`: typecheck; P2-F server 10/10;
+P2-E server 12/12; combined catalog/descriptor/fit 44/44; P2-F/P2-E targeted Web
+18/18; P2-D 20/20; P2-C 34/34; P2-B 17/17; P2-A 9/9; core 330/330 + Web
+83/83; mocked Chromium 21/21; production build, markdownlint и diff check.
+Sequential repeats with exit/count checking: P2-F server 10×10/10, targeted Web
+10×8/8, affected Web 10×83/83, P2-E server/Web 10×12/12 и 10×10/10, P2-D
+10×20/20, P2-C 10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M
+10×32/32, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8.
+После review fixes P2-F targeted и affected Web повторены ещё 10×8/8 и
+10×83/83; updated browser spec прошёл 1/1 и полный gate 21/21.
+
+Первые failures сохранены. Baseline server command сначала был запущен из
+неверного cwd; unknown fixture использовал default вместо `null`. Первый Web run
+дал 13/17: translation labels вычислялись при module import, а часть assertions
+не соответствовала DOM; translation перенесён в render, fixtures/assertions
+исправлены. Первый Chromium locator неоднозначно находил `установлен`, после
+exact locator следующий run обнаружил реальный wiring defect: compare props
+передавались Installed card вместо catalog card. Root targeted Vitest без Web
+config получил 18 `document is not defined`; exact workspace run прошёл 18/18.
+Полный Chromium затем нашёл старый глобальный absence assertion `completion`,
+который пересёкся с новой закрытой facet option; assertion scoped к Installed
+carousel. Review добавил fail-closed duplicate compare targets, vanished close,
+initial Swap focus, focus remaining row после remove и очистку invalid numeric
+draft при explicit unknown.
+
+Несколько незасчитанных repeat wrappers тоже не скрыты: zsh read-only `status`,
+несуществующий Vitest reporter `basic`, envelope 35 вместо P1-L+M 32 и 19 вместо
+P1-K 37. Они исправлены до fail-fast/count-aware wrappers, после чего все exact
+10× groups выполнены заново с каноническими file sets.
+
+P2-A, P2-B, P2-C, P2-D, P2-E и P2-F остаются `implemented, locally validated`, а не
 independently verified или production-validated. Не проверены live Ollama/model/
 hardware, provider-version matrix, production TTL/residency, external-client
 ownership и multi-process coordination. Migrations 7/8 хранят latest safe
@@ -583,10 +632,13 @@ projections, а не continuous evidence history/full Capability Registry;
 semantic quality, tool/media capabilities и user overrides не реализованы.
 P2-D/P2-E — только bounded mutable-tag pull: нет durable resume, disk
 reservation, checksum/provenance, immutable tag resolution или recent entry.
+P2-F работает только с current local/bundled response: нет remote provider,
+pagination/virtualization/catalog-scale benchmark, saved filters или inferred
+license/quantization/task facts.
 Phase 2 остаётся `in progress`: ROADMAP exit gate требует HF exact revision/
-checksum/license, search/filter/compare и platform work; Q-25 остаётся открытым
-и блокирует первый Hugging Face import slice. Следующий handoff — не зависящий
-от Q-25 P2-F bounded faceted search/filter/compare current local/catalog facts.
+checksum/license и platform work; Q-25 остаётся открытым и блокирует первый
+Hugging Face import slice. Следующий handoff — не зависящий от Q-25 bounded
+Linux/NVIDIA truthful telemetry prototype, не full calibration/scheduling.
 
 ## Later phases
 

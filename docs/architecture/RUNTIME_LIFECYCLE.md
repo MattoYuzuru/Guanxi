@@ -612,6 +612,25 @@ refresh/state update. Catalog fit остаётся calculation по claimed size
 Governor admission или live hardware measurement; exact installation не
 наследуется между tags одной family.
 
+P2-F добавляет только read-only query/compare boundary:
+
+```text
+validated P2-E rows + strict facets
+  → model claims: scope/source/freshness/capability
+  → one-row predicates: installation + fit + claimed context + claimed size
+  → filtered exact rows with unchanged provenance
+  → page-local selection of exactly two unique targets
+  → side-by-side claims/sampled facts, no resource command
+```
+
+CSV values дают OR внутри facet group, groups объединяются AND. Unknown доступен
+только явно; absent capability metadata, size, context, fit или installation не
+становятся unsupported/zero/green/not-installed. Web abort-ит предыдущий query
+и не принимает late response. Если exact target исчез из последнего valid
+response, selection удаляется с visible notice, а не rebound-ится по family/tag
+index. Filter, clear, retry, swap, remove, Escape и reload не запускают pull,
+probe, prewarm/load, provider fetch или timestamp refresh.
+
 Output-budget control и media upload в current Chat flow не реализованы; UI не
 подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
 
@@ -773,6 +792,24 @@ success Web читает Installed descriptor и принимает digest то�
 canonical exact match. Missing match и refresh failure различаются и не
 запускают completion probe, prewarm/load, capability promotion либо remote
 catalog fetch.
+
+### Current catalog facets и pairwise compare
+
+Catalog REST принимает legacy text/context query и additive strict facets.
+Repeated keys, duplicate CSV values, future enum, unknown key, non-positive/
+fractional/unsafe integer и numeric+unknown conflict дают controlled 400 до
+source read. Filtering выполняется после exact variant validation и возвращает
+только совпавшие rows, не переписывая top-level compatibility projections или
+source/fetch/observation times.
+
+Web query bounded debounce-ом и AbortSignal. Loading, filtered empty, source/
+transport error и retry различимы; chips и clear отражают applied state. Compare
+открывается только для двух unique exact targets, показывает claimed size/
+parameters/context, calculated-or-unknown fit+basis, source/freshness/times и
+exact sampled installation/digest-or-reason. Нет winner, quality score,
+recommendation, capability support или implicit action. Dialog сохраняет focus
+containment/restore, включая remove, и укладывается в один controlled region на
+narrow/zoomed layout.
 
 ## Memory model
 
@@ -1055,7 +1092,8 @@ P1-J bounded Queue/exact Job Stop action реализованы. P1-K допол
 model/digest/context/runtime/hardware observation key, exact-only calibration и
 digest-aware bounded `/api/show` cache. P2-C показывает typed `model_probe`
 operation и manual exact result без Job Stop. P2-D/P2-E pull не входит в Governor
-projection: это connection-owned download, а не inference lease/Job. Production pressure/available
+projection: это connection-owned download, а не inference lease/Job. P2-F
+filter/compare вообще не создаёт operation owner. Production pressure/available
 memory, continuous durable runtime history, safe parallel и full resource
 actions ещё не реализованы. Target projection остаётся шире:
 

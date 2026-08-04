@@ -5,10 +5,10 @@
 
 ## Текущий baseline
 
-На 2026-08-04 после P2-E:
+На 2026-08-04 после P2-F:
 
-- `npm test`: 320/320 server/CLI и 75/75 web component/parser tests;
-- `npm run test:web:browser`: 20/20 deterministic Chromium tests с mocked
+- `npm test`: 330/330 server/CLI и 83/83 web component/parser tests;
+- `npm run test:web:browser`: 21/21 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
@@ -21,7 +21,8 @@
   resource conflict Queue/Stop decisions, P1-K prewarm selection/cleanup и P1-M
   exact custom context save/reload, а также P2-C explicit completion-probe
   confirmation, queued/running/result/error/cancel projection и P2-D explicit
-  reference preview/confirmed pull/Installed refresh;
+  reference preview/confirmed pull/Installed refresh, а также P2-F faceted
+  catalog query/pairwise exact compare без resource side effects;
 - browser assertions управляют mocked headers/chunks без произвольных sleeps и
   проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
   horizontal overflow, 200% scaling и reduced motion;
@@ -144,6 +145,18 @@
   Installed refresh. Chromium проверяет keyboard/focus restore, 390 px, 200%,
   no overflow, reduced motion, one exact target и отсутствие automatic probe/
   prewarm/load/catalog fetch;
+- P2-F contract/server fixtures покрывают additive legacy defaults, strict
+  unknown/repeated/duplicate/future query rejection, CSV OR внутри groups и AND
+  между ними, positive-safe numeric и explicit unknown context/size, text query,
+  same-row installation/fit/context/size, model-level scope/source/freshness/
+  capability, malformed/duplicate exact target и неизменную provenance;
+- P2-F Web fixtures покрывают deterministic CSV transport с AbortSignal,
+  debounce/previous-abort/late-response guard, loading/empty/error/retry/clear,
+  localized chips и explicit unknown validation. Pairwise compare проверяет две
+  unique exact rows, invalid/duplicate/third rejection, exact facts вместо legacy
+  aggregates, remove/swap/vanish, focus restore после remove, English/Russian и
+  отсутствие pull/probe/prewarm/load/remote fetch. Chromium дополнительно
+  проверяет 390 px, 200%, overflow и reduced motion;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -187,8 +200,8 @@
   routes/Governor/concurrency дают 33/33; runtime/provider — 19/19;
   fit/telemetry — 19/19; P2-A descriptor — 9/9; P2-B persistent group —
   17/17; P2-C + Ollama boundaries — 34/34; P2-D server — 20/20; P2-E exact
-  contract/catalog — 12/12; полный core — 320/320, Web — 75/75, mocked
-  Chromium — 20/20;
+  contract/catalog — 12/12; P2-F facets — 10/10; полный core — 330/330,
+  Web — 83/83, mocked Chromium — 21/21;
   15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
@@ -239,6 +252,12 @@
   10×10/10; affected Web — 10×75/75. Также повторены P2-D 10×20/20, P2-C
   10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M 10×32/32, P1-K
   10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8;
+- P2-F exact server и targeted Web повторены последовательно 10×10/10 и
+  10×8/8; affected Web — 10×83/83. Также повторены P2-E server/Web
+  10×12/12 и 10×10/10, P2-D 10×20/20, P2-C 10×34/34, P2-B 10×17/17,
+  P2-A 10×9/9, P1-L+M 10×32/32, P1-K 10×37/37, P1-J 10×11/11,
+  P1-I 10×3/3 и P1-E 10×8/8. После focus/unknown review fixes P2-F Web и
+  affected Web повторены ещё 10×8/8 и 10×83/83;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -283,7 +302,10 @@ download, provider-version matrix, resumability, disk reservation/checksum ил�
 P2-E доказывает exact mutable catalog target, per-variant claimed fit и sampled
 installation truth только для validated local cache/bundled fixtures и mocked
 pull/Installed refresh. Это не immutable revision resolution, live hardware fit,
-disk reservation, persistent registry/history или full faceted catalog.
+disk reservation или persistent registry/history. P2-F доказывает bounded
+facets/compare только над current response facts; нет remote catalog provider,
+pagination/virtualization/load benchmark, saved filters, inferred license/
+quantization/task или runtime capability proof.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -323,8 +345,9 @@ process lock. P0-D health остаётся sampled observation; обязател
   overrides не реализованы. P2-D pull не durable/replayable, не резервирует disk,
   не проверяет artifact checksum и не координируется с external pull clients.
   P2-E selected target остаётся mutable tag claim; exact digest появляется
-  только после sampled `/api/tags` refresh, а full search/filter/compare ещё не
-  реализован.
+  только после sampled `/api/tags` refresh. P2-F не добавляет remote provider,
+  immutable revision, saved filters, pagination/virtualization или catalog-scale
+  benchmark; compare остаётся page-memory projection двух current exact rows.
 
 ## Существующее покрытие
 
@@ -342,14 +365,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                                    |
 | Static web serving                 | test                                     |
 | CLI existing-server logic          | tests                                    |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C/D/E       |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C/D/E mocked    |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C/D/E/F     |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C/D/E/F mocked  |
 | Catalog provider/cache             | P0-D local/bundled fixtures              |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane                |
 | Job replay/reattach                | HTTP SSE; browser durable replay         |
 | Chat startup recovery              | reopened SQLite, fail-closed pages       |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web           |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M Chromium         |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C/D/E/F     |
 
 ## Обязательная target matrix
 

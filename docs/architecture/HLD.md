@@ -174,6 +174,16 @@ terminal success принимает digest только из одного exact 
 Это не persistent registry, immutable tag resolution, durable download или
 remote catalog provider.
 
+P2-F добавляет bounded discovery поверх тех же validated rows. Strict REST query
+кодирует multi-select одним CSV value, применяет OR внутри facet group и AND
+между groups; repeated/unknown/invalid input fail-closed до source access.
+Installation/fit/context/size должны совпасть на одной exact variant row, тогда
+как scope/source/freshness/capability остаются model-level claims. Web владеет
+только debounced query и page-local pair selection: late response игнорируется,
+vanished exact target удаляется с объяснением, а compare показывает две rows без
+winner/recommendation. Filter/compare не создаёт pull, probe, load, remote fetch,
+cache write или runtime evidence.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -207,7 +217,7 @@ remote catalog provider.
 | Latest exact completion probe        | SQLite migration 8                      | latest exact-key projection |
 | Active completion probe/controller   | HTTP request + `ResourceGovernor`       | request/process memory      |
 | Active confirmed Ollama pull         | HTTP request + Ollama `/api/pull`       | connection/provider owned   |
-| Selected catalog variant/install UI  | catalog REST + page-local selection     | sampled facts + page memory |
+| Catalog filter/variant/compare UI    | catalog REST + page-local selection     | sampled facts + page memory |
 | `/api/show` normalized front-cache   | `ModelService` bounded LRU              | process memory, 64 refs     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -256,6 +266,9 @@ remote catalog provider.
 17. P2-E exact target относится к mutable catalog tag и claimed metadata. Он не
     разрешает immutable digest до pull, не резервирует disk и не доказывает live
     hardware fit; post-success installation зависит от нового `/api/tags` sample.
+18. P2-F facets/compare работают только над current local/bundled response и не
+    доказывают provider completeness. Saved filters, pagination/virtualization,
+    catalog-scale benchmark и remote provider отсутствуют.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

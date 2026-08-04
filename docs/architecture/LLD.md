@@ -88,6 +88,12 @@ freshness/timestamps. Старый `{tag,sizeBytes,parameterSize}` row parse-и�
 non-installable legacy defaults. Top-level installed/fit остаются только явно
 помеченными compatibility projections.
 
+P2-F additive расширяет strict `listCatalogQuery` без изменения response shape.
+Facet groups принимают один deterministic CSV value без duplicates; repeated
+keys, unknown fields, future enums и unsafe numeric shapes отклоняются. Claimed
+context/size — positive safe integer либо explicit unknown, но не оба сразу.
+Legacy `q/contextLength` получают пустые filter defaults.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -130,7 +136,8 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   `/api/version`, digest-aware LRU на 64 normalized references и не более четырёх
   параллельных `/api/show` workers на installed-list projection;
 - `models/catalog.ts`: validated stale local cache + dated bundled snapshot,
-  strict exact P2-E variants/fit/installation, без remote request;
+  strict exact P2-E variants/fit/installation и P2-F pure same-row facets без
+  remote request или provenance mutation;
 - `hardware/probe.ts` и `fit.ts`: legacy local profile/estimate и static fit;
 - `hardware/telemetry.ts`: один injectable host boundary; bounded Apple Silicon
   `vm_stat` adapter, strict parser и explicit unsupported/partial/failure states;
@@ -180,7 +187,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | Architecture/capability detail | local `/api/show`, first response time | provider-declared; exact cache write only after tags/version revalidation | LRU 64 + SQLite v7; 15m fresh, 7d stale/offline; four workers + per-key flight | context limit, fit, detail, descriptor |
 | Loaded instance | local `/api/ps`, sampled time | observed runtime row; exact only through P1-L reconciliation | failure remains `models:null`; no history | Runtime Bar, fit/calibration |
 | Runtime version | local `/api/version`, response time | observed runtime fingerprint либо unknown | request-scoped, failure independent | observation key и descriptor basis |
-| Catalog variant claim | local stale cache or dated bundled snapshot + server normalizer | exact mutable target; size/context/fit remain claimed | malformed/duplicate target or unknown size fail closed; explicit stale/fallback | P2-E Marketplace selector |
+| Catalog variant claim | local stale cache or dated bundled snapshot + server normalizer | exact mutable target; size/context/fit remain claimed | malformed/duplicate target or unknown size fail closed; explicit stale/fallback | P2-E selector + P2-F facets/compare |
 | Legacy `capabilities` | filtered known `/api/tags` values | compatibility projection, not evidence decision | unknown/malformed → empty legacy array | old Web/clients |
 | Context facts | `/api/tags`/`/api/show` declarations | declared maximum либо unknown/conflict | LRU time preserved; no guessed ceiling | settings/list/detail/validation |
 | Canonical reference | P1-L normalizer over provider name | registry/name/tag/digest syntax preserved | invalid/duplicate → unknown/ambiguous | descriptor/cache/observation key |
@@ -204,6 +211,10 @@ P2-E catalog variant переиспользует этот pull target, но н�
 семантику. Exact tag installation определяется только one-to-one normalized
 `/api/tags` match; соседний tag не наследует family installed. Claimed size fit,
 source observation/fetch time и installation observation показываются отдельно.
+P2-F сначала получает эти exact rows, затем одним predicate применяет
+installation/fit/context/size к каждой row; model-level scope/source/freshness/
+capability не смешиваются с variant facts. Empty capabilities — unknown, не
+unsupported. Результат сохраняет исходные timestamps и compatibility fields.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
@@ -303,7 +314,9 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   preview, confirmation, one-intent pull, progress/cancel/retry и Installed
   refresh без auto-probe/capability promotion; P2-E `CatalogVariantInstall`
   требует exact row selection, показывает variant claim/fit/provenance и
-  фиксирует target до terminal refresh;
+  фиксирует target до terminal refresh; P2-F `CatalogFilters` формирует
+  debounced/abortable strict query, а `CatalogCompare` хранит максимум две unique
+  exact rows, удаляет vanished target и восстанавливает focus после close/remove;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields и exact positive safe-integer
@@ -312,8 +325,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
   P1-M no-artificial-caps/P2-A descriptor/P2-C probe/P2-D confirmed pull/P2-E
-  variant-first regression; browser использует deterministic mocked REST/SSE/
-  runtime snapshots.
+  variant-first/P2-F facets-compare regression; browser использует deterministic
+  mocked REST/SSE/runtime snapshots.
 
 ### `packages/cli`
 

@@ -4,14 +4,14 @@
 
 **Проверено:** 2026-08-04
 
-**Назначение:** Phase 2, slice P2-F — truthful faceted search и pairwise variant compare
+**Назначение:** Phase 2, slice P2-G — truthful Linux/NVIDIA telemetry prototype
 
 ## Контекст
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui` на текущей ветке. Сначала
 прочитай `AGENTS.md` и маршрут из `docs/NAVIGATION.md`; для code change обязательны
 `PRODUCT.md`, `DOMAIN_MODEL.md`, `DEVELOPMENT.md`, `TESTING.md`, HLD, LLD,
-`architecture/RUNTIME_LIFECYCLE.md`, связанные ADR, `plans/PHASE_STATUS.md`,
+`architecture/RUNTIME_LIFECYCLE.md`, ADR-0002, `plans/PHASE_STATUS.md`,
 `plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted owner decisions.
 
 Не считай target/proposed уже реализованным. Код определяет current behavior,
@@ -19,23 +19,22 @@ accepted ADR/decision — целевую границу, ROADMAP — поряд�
 `.idea/`, пользовательские данные, real Ollama model store, `node_modules`,
 generated outputs или unrelated worktree changes.
 
-P2-A–P2-E уже реализованы:
+P2-A–P2-F уже реализованы:
 
 - `d750a3e`..`282c82e` — installed descriptor и truthful provider evidence;
-- `a1ead74`, `597c130`, `c22c435` — migration 7 и persistent exact provider cache;
+- `a1ead74`, `597c130`, `c22c435` — migration 7 и persistent exact cache;
 - `ce9ef4b`, `c48799a`, `d1c3c38` — migration 8 и explicit completion probe;
-- `21c0404`, `3d129d2`, `0d9aaa6` — strict Add from Ollama preview/confirmed
-  connection-owned pull;
-- `56b802b`, `2959b98` — exact catalog targets, per-variant fit/installation и
-  variant-first selection/confirmation/pull/Installed refresh.
+- `21c0404`, `3d129d2`, `0d9aaa6` — strict Add from Ollama;
+- `56b802b`, `2959b98` — exact catalog variants и variant-first install;
+- `c769fbd`, `c1495a3`, `1fc3c20` — strict facets и pairwise exact compare.
 
-Подтверждённый current baseline: typecheck; P2-E exact server 12/12; P2-D 20/20;
-P2-C 34/34; P2-B 17/17; P2-A 9/9; P1-L+M 32/32; P1-K 37/37; core 320/320;
-Web 75/75; mocked Chromium 20/20; build, markdownlint и diff check. Repeats:
-P2-E server 10×12/12, targeted Web 10×10/10, affected Web 10×75/75, P2-D
-10×20/20, P2-C 10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M
-10×32/32, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E
-10×8/8.
+Подтверждённый current baseline: typecheck; P2-F server 10/10; P2-E server
+12/12; P2-F/P2-E targeted Web 18/18; P2-D 20/20; P2-C 34/34; P2-B 17/17;
+P2-A 9/9; core 330/330; Web 83/83; mocked Chromium 21/21; build, markdownlint и
+diff check. Repeats: P2-F server 10×10/10, targeted Web 10×8/8, affected Web
+10×83/83, P2-E server/Web 10×12/12 и 10×10/10, P2-D 10×20/20, P2-C
+10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M 10×32/32, P1-K
+10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8.
 
 Q-26 resolved: manual Add from Ollama принимает strict name или official page
 URL. Q-25 остаётся открытым и блокирует первый Hugging Face slice. Не начинай HF
@@ -43,158 +42,134 @@ API/download/import, не выбирай formats и не закрывай Q-25 �
 
 ## Current gap
 
-Marketplace имеет только text query по name/description. P2-E показывает exact
-variants, но пользователь не может truthfully сузить catalog по fit выбранного
-варианта, installation, local/cloud, source/freshness, claimed context/size или
-claimed capability. Нельзя выбрать две exact rows и сопоставить их facts рядом.
+`HostTelemetry` сейчас реализует bounded Apple Silicon `vm_stat`; любой другой
+host получает `unsupported`. Legacy `probeHardware` может распознать только
+первую NVIDIA row и превращает её VRAM в compatibility `usableMemoryBytes`, но
+это startup estimate без current source/time, device identity, per-device total/
+free VRAM или truthful failure state. Runtime Bar поэтому не может показать
+Linux/NVIDIA как второй evidence-bearing platform.
 
-Top-level `CatalogModel.fit` и `installed` остаются compatibility projections.
-Если фильтровать их напрямую, комбинация `installed + green` может ошибочно
-сопоставить installed tag A с green tag B. Отсутствующая capability metadata не
-равна unsupported. License, quantization, task/operation и immutable revision в
-current catalog contract отсутствуют; name/tag heuristics не создают эти facts.
+Current `/api/ps` не публикует backend/device assignment. P1-L observation key
+намеренно ограничен local Apple identity, а current-fit calculation требует
+доказанные pressure/available-memory facts. Нельзя суммировать devices,
+приписывать model row конкретной GPU, считать свободную VRAM safe admission,
+поднимать Linux current fit до observed или менять one-permit Governor только по
+`nvidia-smi` sample.
 
-P2-F должен сделать честный bounded subset MOD-004 и compare без remote provider,
-новой persistence или import lifecycle. Это не полный Catalog Service, не
-virtualization/pagination для 10k rows и не весь Phase 2 exit gate.
+P2-G должен добавить bounded read-only Linux/NVIDIA host projection и Runtime Bar
+UI. Это prototype PLAT-002, а не verified tier, full calibration, scheduler или
+measured parallelism.
 
-## Цель P2-F
+## Цель P2-G
 
-Добавь серверные facets по доступным current facts и pairwise compare двух exact
-catalog variants. Пользователь должен понимать, какой exact variant удовлетворил
-всем variant-level filters, какие значения claimed/unknown, и сравнить две rows
-без winner/recommendation или side effect.
+На local Linux host с NVIDIA driver пользователь видит sourced/timestamped
+per-device identity, total/free VRAM и controlled available/partial/unavailable/
+unsupported states. Missing command, malformed/partial output и mixed/duplicate
+rows не превращаются в zero, CPU-only, healthy empty или safe-fit claim.
 
 ## Обязательный scope
 
-### Contract и query semantics
+### Contract и evidence semantics
 
-- Additive расширь strict `listCatalogQuery`; старые `q/contextLength` requests и
-  response shapes сохраняются. Не удаляй/не переименовывай public keys.
-- Введи typed filters только для доступных facts:
-  - exact variant installation: `installed | not_installed | unknown`;
-  - per-variant fit: `green | yellow | red | unknown`;
-  - provider scope: `local | cloud`;
-  - source: `local_cache | bundled | remote` с future-compatible response policy;
-  - freshness: `fresh | stale | fallback | unknown`;
-  - claimed capability или explicit `unknown`, не `unsupported`;
-  - minimum claimed context и maximum claimed artifact size как positive safe
-    integers без arbitrary UI/server ceiling.
-- Определи repeat/multi-select encoding однозначно и детерминированно. Unknown
-  query keys/future command enums fail closed; legacy requests получают no-filter
-  defaults.
-- Text query остаётся case-insensitive name/description search. Не ищи и не
-  фильтруй private paths/provider raw content.
-- Все variant-level predicates должны совпасть на одной exact valid variant row.
-  Нельзя удовлетворить `installed` через A, `green` через B, а size/context через C.
-- Model-level local/cloud, source/freshness и claimed capabilities применяются
-  отдельно и объясняются. Empty capabilities остаются unknown, не unsupported.
-- Не вводи filter по license, quantization, task/modality, immutable digest или
-  runtime-verified capability, пока соответствующего fact нет в contract.
-- Если нужен additive match projection, он должен перечислять exact normalized
-  matching targets/reasons без превращения legacy aggregate в evidence.
+- Additive расширь `RuntimeHostTelemetry`; старые Apple/legacy snapshots должны
+  parse-иться с explicit default, а старые clients могут игнорировать новые keys.
+- Введи typed per-device projection без hardcoded device-count ceiling. Минимум:
+  stable provider device index, NVIDIA UUID или explicit unknown, display name,
+  total VRAM, current free VRAM, source, observedAt и confidence.
+- Не публикуй raw `nvidia-smi` row, PCI topology, process list, username, paths,
+  command stderr или environment. UUID — hardware identity; показывай его в UI
+  только в bounded/redacted form, если полное значение не нужно пользователю.
+- Units должны быть однозначны и конвертироваться в bytes с safe-integer check.
+  Unknown не становится `0`; duplicate index/UUID и inconsistent row fail-closed.
+- Сохрани раздельными system total/free/available memory, GPU total/free VRAM,
+  pressure, legacy usable estimate и `/api/ps` allocation. Не называй free VRAM
+  safe capacity, measured fit или future-admission guarantee.
+- Расширяй enums additive. Unknown future enum по-прежнему отклоняется текущим
+  strict client contract; legacy snapshot получает понятный unknown/default.
+- Не меняй P1-L key на Linux и не создавай calibration row без exact backend/
+  device identity. Linux/NVIDIA current model fit остаётся unknown с объяснимым
+  reason, пока `/api/ps` нельзя связать с device и pressure/admission facts.
 
-### Server/catalog
+### Linux/NVIDIA adapter
 
-- Filtering остаётся server-owned поверх current validated local recommendations
-  cache и dated bundled snapshot. Никакого Ollama human catalog scrape, remote
-  catalog request или arbitrary URL fetch.
-- Сначала построй и провалидируй P2-E exact variants, затем применяй same-row
-  predicates. Malformed/duplicate target не становится удобным result.
-- Unknown size/context/fit/installation участвует только в explicit unknown
-  filter; он не становится zero, false, green или unsupported.
-- Exact installed state продолжает приходить только из sampled `/api/tags`.
-  Provider failure сохраняет unknown filter semantics и не подменяется legacy
-  family aggregate.
-- Source/freshness/observed/fetched provenance сохраняется в filtered response и
-  compare facts. Не обновляй source timestamp от filtering/access.
-- Combined facets используют AND между группами и документированную OR semantics
-  внутри multi-select группы. Empty selection означает filter absent.
-- Добавь controlled 400 для invalid numeric/enum/query shapes и safe error без raw
-  cache/provider content.
-- Не добавляй DB migration, remote cache, saved filters, pagination, background
-  refresh или persistent comparison в этом slice.
+- Добавь отдельный `HostTelemetry` adapter только для local Linux + detected
+  CUDA/NVIDIA profile. Apple adapter и unsupported fallback не регрессируют.
+- Используй один injected, shell-free, allowlisted command boundary с fixed argv
+  для documented `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`.
+  Никаких user-supplied binary/args, shell, arbitrary PATH lookup или remote SSH.
+- Сохрани current 1 s timeout и 64 KiB output safety bounds либо обоснуй отдельные
+  не менее строгие bounds. Output bound — reliability limit, не device ceiling.
+- Parser должен быть pure и deterministic: LF/CRLF, whitespace, multiple devices,
+  Unicode display names, missing token, duplicate index/UUID, negative/fractional/
+  unsafe number, malformed column count и extra line имеют explicit policy.
+- Отдельно классифицируй command missing/failure, timeout, output limit,
+  malformed all rows и partial usable rows. Safe public error не содержит raw
+  command output/stderr/path.
+- Если total VRAM доступна только из legacy startup probe, не переиспользуй её как
+  current observation. Current per-device total/free должны иметь собственный
+  sample source/time или оставаться unknown.
+- Не читай NVML/CUDA libraries, `/proc`, sysfs или Ollama internal files в этом
+  slice, если без них выполняется минимальный NVIDIA prototype. Любое расширение
+  источников требует отдельной provenance/failure model и тестов.
+- Sampling остаётся query-time через существующий
+  `RuntimeReconciliationService`: один pending single-flight, caller abort не
+  отменяет shared source, следующий completed query создаёт новый sample.
 
-### Web filters
+### Runtime Bar Web
 
-- Сохрани существующий search input и добавь accessible filter disclosure/sheet,
-  подходящий desktop и 390 px. Applied filters имеют видимый summary/chips и один
-  clear-all action.
-- Покажи только доступные facets и честные labels: claimed context/artifact size,
-  catalog capability claim, selected-context fit, sampled installation,
-  source/freshness. Не называй size memory requirement или fit measured.
-- Unknown доступен как явный выбор там, где факт может отсутствовать. Отсутствие
-  capability metadata не рисуется как unsupported.
-- Query dispatch debounced/bounded, previous request abortable; late response не
-  перезаписывает более новый filter state. Reload/navigation не запускает pull,
-  probe, prewarm/load или provider fetch.
-- Loading, empty-result, source unavailable, validation/transport error и retry
-  различимы. Empty result показывает applied summary и clear action.
-- Search, filters и clear вызывают catalog query, но никогда P2-D start либо
-  manual Add preview. Installed cards/profile/P2-C probe/P2-D/P2-E install
-  продолжают работать.
+- Покажи Linux/NVIDIA adapter state и список всех returned devices без UI cap.
+  При большом числе rows используй wrapping/contained scroll, не silent truncation.
+- Для каждой device различай total VRAM, current free VRAM, source/time и
+  confidence. Не объединяй devices в одну «доступную память» и не показывай
+  optimistic green/safe parallel.
+- Available, partial, unavailable и unsupported имеют разные localized states;
+  stale refresh сохраняет последний confirmed snapshot с существующей error
+  меткой, не меняя его timestamps.
 - Все новые strings проходят locale keys: English source/fallback и curated
   Russian. Не добавляй bilingual hardcode в component.
-
-### Pairwise exact variant compare
-
-- Compare — pairwise flow ровно двух explicit exact valid variant rows. Это
-  bounded layout/action, не limit модели/runtime/hardware.
-- Add/remove selection не запускает pull. Duplicate exact target нельзя выбрать
-  дважды; invalid/non-installable legacy row нельзя добавить.
-- Compare view показывает рядом: exact target/tag, claimed size/parameters/
-  context, per-variant fit+basis, source/freshness/observed/fetched и exact sampled
-  installation/digest либо unknown reason.
-- Не показывай winner, score, quality, recommended, supported capability,
-  quantization или license без evidence. Mutable tag и catalog-claim boundary
-  видимы.
-- Selection survives ordinary filtering only while the exact target still exists
-  in the latest valid response; vanished/changed target is removed with visible
-  explanation, не silently rebound по family/tag index.
-- Dialog/sheet имеет semantic heading/description, predictable focus,
-  containment/restore, Escape/back без side effect, keyboard remove/swap и
-  accessible names. На 390 px/200% comparison stacks или scrolls внутри одного
-  controlled region без page horizontal overflow; reduced motion соблюдается.
+- Runtime query/retry/navigation не запускают model load/unload, prewarm, probe,
+  pull, Job cancel или second polling loop. Existing Apple/P1-I/P1-J UI и focus
+  не регрессируют.
+- На 390 px и 200% device facts не создают page horizontal overflow; keyboard,
+  screen-reader grouping и reduced motion сохраняются.
 
 ## Failure matrix и тесты
 
 Минимальные deterministic cases:
 
-- legacy query/response round-trip, additive defaults и strict unknown fields;
-- valid multi-select encoding, positive-safe integer boundaries и invalid 400;
-- text query вместе с facets; AND across groups, OR within group;
-- same-row invariant: installed A + green B не даёт ложного match;
-- exact installed/not-installed/unknown и соседний tag isolation;
-- green/yellow/red/unknown fit, unknown size/context без zero/default;
-- local/cloud, local-cache/bundled/future response source, stale/fallback/unknown;
-- claimed capability positive и absent metadata as unknown, never unsupported;
-- provenance/timestamps preserved through filter/match/compare;
-- malformed/duplicate exact variants fail closed;
-- filter change abort/late-response race, loading/empty/error/retry/clear;
-- no pull/probe/prewarm/load/remote fetch on mount/search/filter/compare/reload;
-- pair exact A/B selection, duplicate/invalid rejection, remove/swap/vanish;
-- compare facts use exact rows and never legacy top-level fit/installed;
-- English fallback/Russian, keyboard/focus, 390 px, 200%, overflow и reduced motion;
-- manual Add from Ollama, P2-E install, Installed profile/P2-C probe, current
-  cards/carousel/context input remain regression-covered.
+- legacy Runtime host snapshot default и additive NVIDIA round-trip;
+- exact fixed executable/argv, `shell:false`, env/output/time bounds;
+- one/many devices, non-sequential indexes и no arbitrary device ceiling;
+- MiB-to-bytes exact conversion, zero-as-observed только если provider реально
+  сообщил zero, unknown отдельно;
+- LF/CRLF, whitespace и safe Unicode name;
+- missing UUID/value, duplicate index/UUID, extra/missing column, negative,
+  fractional, unsafe и overflow values;
+- all-malformed → unavailable/partial по documented policy; usable+malformed rows
+  не становятся silently healthy complete;
+- command missing/failure, timeout, output limit и redaction;
+- Linux without NVIDIA, non-Linux/non-Apple и Apple routing;
+- shared reconciliation call count, common observedAt, independent provider/
+  telemetry failure и caller abort;
+- Linux current fit/observation key остаются unknown/unavailable без fabricated
+  backend/device/pressure link;
+- Runtime Bar English/Russian, all source states, multi-device grouping, stale
+  retry, no resource actions, 390 px, 200%, overflow и reduced motion.
 
-Не используй live model/real Ollama store. Fake transport проверяет exact query,
-AbortSignal и отсутствие mutating endpoints. Если добавляешь race/concurrency
-behavior, повтори новый group 10 раз последовательно с exit-status checking; не
-запускай десятки Node/Vitest processes одновременно.
+Не используй live GPU/Ollama в обязательных tests. Fake runner должен доказать
+command/parse/error boundary. Live `nvidia-smi` smoke допустим только как отдельно
+обозначенный, явно разрешённый integration envelope и не заменяет fixtures.
 
-## Не входит в P2-F
+## Не входит в P2-G
 
-- Hugging Face API/search/download, GGUF revision/checksum/license/gated flow;
-- Ollama remote catalog, scrape или remote HTML parsing;
-- durable/resumable import Job, cache/staging, disk reservation/checksum;
-- saved filters/recent catalog, pagination/virtualization/load benchmark;
-- inferred quantization/license/task/modality/quality/recommendation;
-- immutable tag resolution, registry history или generic Capability Registry;
-- semantic/tool/thinking/vision/embedding/media probes и user override;
-- delete/import-from-file, Modelfile editor, conversion или adapters;
-- Linux/NVIDIA telemetry, measured parallel, Project/Agent/MCP/Skills, service
-  lifecycle, retention или rebrand.
+- full NVIDIA calibration, NVML integration или per-process GPU accounting;
+- binding `/api/ps` model row к device, MIG topology или multi-GPU placement;
+- measured parallel, второй permit, pin/eviction/TTL policy или scheduler change;
+- remote Ollama/SSH telemetry, multi-host routing или network security profile;
+- Linux service/autostart/package verification и PLAT-002 exit declaration;
+- Apple pressure/available-memory redesign или AMD/ROCm telemetry;
+- Hugging Face API/import, catalog pagination, saved filters, persistence;
+- DB migration, durable telemetry history или capability promotion.
 
 ## Проверка
 
@@ -203,20 +178,16 @@ behavior, повтори новый group 10 раз последовательн
 
 ```bash
 npm run typecheck
+node --test packages/server/test/host-telemetry.test.ts \
+  packages/server/test/runtime-contract.test.ts \
+  packages/server/test/runtime-reconciliation.test.ts
+node --test packages/server/test/catalog-facets-contract.test.ts \
+  packages/server/test/catalog-facets.test.ts
 node --test packages/server/test/catalog-variant-contract.test.ts \
-  packages/server/test/catalog.test.ts \
-  packages/server/test/model-descriptor.test.ts \
-  packages/server/test/fit.test.ts
-node --test packages/server/test/ollama-reference-contract.test.ts \
-  packages/server/test/ollama-reference-routes.test.ts \
-  packages/server/test/ollama-reference.test.ts \
-  packages/server/test/ollama-client.test.ts
-node --test packages/server/test/completion-probe-contract.test.ts \
-  packages/server/test/completion-probe-migration.test.ts \
-  packages/server/test/completion-probe-store.test.ts \
-  packages/server/test/completion-probe.test.ts \
-  packages/server/test/completion-probe-routes.test.ts \
-  packages/server/test/ollama-client.test.ts
+  packages/server/test/catalog.test.ts
+node --test packages/server/test/model-service.test.ts \
+  packages/server/test/observation-key.test.ts \
+  packages/server/test/runtime-reconciliation.test.ts
 npm test --workspace @alamo/web
 npm run test:web:browser
 npm test
@@ -225,25 +196,28 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-Добавь exact P2-F contract/server/Web commands. Повтори новый P2-F group,
-affected Web, P2-E server/Web, P2-D server, P2-C, P2-B, P2-A, P1-L+M, P1-K,
-P1-J, P1-I и P1-E по 10 раз последовательно. Первый failing/flaky result сохрани,
-диагностируй и исправь; повторный green не скрывает первую ошибку.
+Добавь exact P2-G server/Web/Chromium commands. Повтори новый P2-G group,
+affected Web, P2-F server/Web, P2-E server/Web, P1-H runtime/telemetry, P1-L+M,
+P1-K, P1-J, P1-I и P1-E по 10 раз последовательно с exit/count checking. Первый
+failing/flaky result сохрани, диагностируй и исправь; повторный green не скрывает
+первую ошибку. Не запускай десятки Node/Vitest processes одновременно.
 
 ## Completion и handoff
 
 После bounded slice:
 
-- согласованно обнови contract, server, Web, tests и current-state docs;
-- добавь P2-F evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-E;
-- Phase 2 оставь `in progress`, пока весь ROADMAP exit gate не доказан;
+- согласованно обнови contract, server adapter/composition, Runtime Web, tests и
+  current-state docs;
+- добавь P2-G evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-F;
+- Phase 2 оставь `in progress`: prototype не закрывает PLAT-002, HF/Q-25 или весь
+  ROADMAP exit gate;
 - Q-25 оставь открытым; HF slice остаётся blocked до explicit owner decision;
 - полностью перепиши этот файл под следующий незавершённый non-blocked Phase 2
-  slice, вероятно Linux/NVIDIA truthful telemetry prototype либо отдельно
-  обоснованный catalog scale/pagination slice;
+  slice: вероятно catalog scale/pagination benchmark либо отдельно обоснованный
+  resource-policy slice, но не full NVIDIA calibration из Phase 9;
 - используй небольшие conventional commits и не включай `.idea/`.
 
 В финале сообщи ровно `status successful` либо `status blocked`, commits, exact
 test counts, first failures/fixes, residual risks и подтверждение обоих handoff
-docs. Если combined facets нельзя связать с одной exact variant row, fail closed;
-не возвращайся к family-level aggregate filtering.
+docs. Если device fact нельзя связать с конкретной sourced row, оставь unknown;
+не возвращайся к legacy first-GPU aggregate как evidence.

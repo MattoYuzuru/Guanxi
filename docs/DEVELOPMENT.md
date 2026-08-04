@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P2-E regression gate    |
+| `test:web:browser` | deterministic Chromium P0-A–P2-F regression gate    |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -144,6 +144,22 @@ npm run link:cli
   только при одном canonical `/api/tags` match. Catalog source/fetched/observed
   time и unknown/stale/fallback остаются видимыми; никаких auto probe, prewarm,
   load, capability promotion или remote catalog fetch.
+- P2-F additive расширяет catalog query strict facets. Multi-select кодируется
+  одним CSV value: OR внутри installation/fit/scope/source/freshness/capability,
+  AND между группами. Context/size принимают positive safe integer либо
+  explicit unknown. Repeated/unknown key, duplicate value, future enum и
+  конфликт numeric+unknown дают controlled 400 до provider access.
+- Variant-level installation/fit/context/size фильтруются только на одной exact
+  row после P2-E normalization; model-level scope/source/freshness/capability
+  применяются отдельно. Empty capability metadata означает unknown, не
+  unsupported. Filtering сохраняет source timestamps и не создаёт remote fetch,
+  persistence либо нового runtime observation.
+- Web debounces и abort-ит catalog queries, не принимает late response, показывает
+  applied chips/clear/loading/empty/error/retry. Compare допускает ровно две
+  unique exact rows, показывает claims, per-variant fit, provenance и exact
+  sampled installation без winner/recommendation. Vanished target удаляется
+  явно; remove/swap/Escape сохраняют focus boundary. Search/filter/compare не
+  запускают pull, probe, prewarm, load или provider refresh.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
@@ -206,6 +222,11 @@ npm run link:cli
   unknown evidence и source freshness/timestamps. Legacy variant rows получают
   non-installable unknown defaults; top-level compatibility projections не
   выдаются за выбранный variant fact.
+- P2-F additive расширяет strict `listCatalogQuery`: deterministic CSV facets,
+  positive-safe claimed context/size и explicit unknown. Legacy `q`/
+  `contextLength` сохраняют no-filter defaults; repeated/unknown keys и future
+  enums fail-closed. Response shape не меняется: server возвращает только
+  совпавшие exact variant rows с прежней provenance.
 
 ### Server
 
@@ -225,9 +246,10 @@ npm run link:cli
   timestamp, owner/artifact/current-fit classification и compatibility projection;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details, P2-A descriptor assembler и sourced
-  catalog fallback; catalog строит P2-E exact variant targets/fit/installation,
-  descriptor path сохраняет four-worker `/api/show` bound, caller AbortSignal,
-  digest-aware LRU 64 и fail-closed ambiguous evidence;
+  catalog fallback; catalog строит P2-E exact variant targets/fit/installation
+  и применяет P2-F same-row facets без mutation provenance, descriptor path
+  сохраняет four-worker `/api/show` bound, caller AbortSignal, digest-aware LRU
+  64 и fail-closed ambiguous evidence;
 - `hardware/` — legacy profile/static fit и injectable sampled telemetry adapter;
 - `http/` — models, runtime, Jobs, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
@@ -283,7 +305,9 @@ npm run link:cli
   отдельно даёт localized `Add from Ollama` preview/confirmation/progress/
   cancel/retry и truthful post-success Installed refresh; catalog cards требуют
   P2-E exact variant selection и показывают per-variant claim/fit/provenance/
-  installation до того же confirmed pull lifecycle;
+  installation до того же confirmed pull lifecycle; P2-F добавляет accessible
+  server-owned filters, applied summary и pairwise exact compare с abortable
+  query/vanish/focus handling без resource side effects;
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;
@@ -325,7 +349,10 @@ npm run link:cli
   progress/redaction/cancel и Marketplace one-intent/locale/focus/responsive/
   unmount regression; P2-E отдельно покрывает additive variant contract,
   fail-closed target derivation, exact installed tag, different/unknown fit,
-  target snapshot, refresh truth и deterministic catalog selector Chromium flow.
+  target snapshot, refresh truth и deterministic catalog selector Chromium flow;
+  P2-F покрывает strict query/400, same-row facets, unknown/provenance semantics,
+  abort/late response, loading/empty/error/retry/clear, exact compare/remove/
+  swap/vanish, locale/focus/responsive/reduced-motion и no-side-effect boundary.
 
 ### CLI
 
