@@ -33,10 +33,14 @@ export function CatalogVariantInstall({
   model,
   selectedContextLength,
   onInstalled,
+  compareTargets = [],
+  onToggleCompare,
 }: {
   model: CatalogModel
   selectedContextLength?: number
   onInstalled?: (name: string) => void
+  compareTargets?: readonly string[]
+  onToggleCompare?: (variant: CatalogVariant) => void
 }) {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null)
   const [state, setState] = useState<FlowState>({ kind: 'idle' })
@@ -175,31 +179,46 @@ export function CatalogVariantInstall({
         <legend className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
           {translate('models.catalogVariant.choose')}
         </legend>
-        <div className="flex flex-wrap gap-1" role="group" aria-label={translate('models.catalogVariant.choose')}>
+        <div className="space-y-1" role="group" aria-label={translate('models.catalogVariant.choose')}>
           {model.variants.map((variant, index) => {
             const selectable = variant.normalizedName !== null
             const selectedNow = selectable && variant.normalizedName === selectedTarget
+            const compared = selectable && compareTargets.includes(variant.normalizedName!)
+            const compareFull = compareTargets.length >= 2 && !compared
             return (
-              <button
-                key={`${variant.tag}:${index}`}
-                type="button"
-                disabled={!selectable || active}
-                aria-pressed={selectedNow}
-                aria-label={selectable
-                  ? `${translate('models.catalogVariant.select')} ${variant.tag}`
-                  : `${variant.tag}: ${translate('models.catalogVariant.invalid')}`}
-                onClick={() => choose(variant)}
-                className={cx(
-                  'min-h-11 rounded border px-2 py-1 font-mono text-2xs transition-colors sm:min-h-8',
-                  selectedNow
-                    ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)]'
-                    : 'border-[var(--border)] text-[var(--fg-subtle)] hover:border-[var(--border-strong)]',
-                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]',
-                  'disabled:cursor-not-allowed disabled:opacity-45',
-                )}
-              >
-                {variant.tag}
-              </button>
+              <div key={`${variant.tag}:${index}`} className="flex min-w-0 gap-1">
+                <button
+                  type="button"
+                  disabled={!selectable || active}
+                  aria-pressed={selectedNow}
+                  aria-label={selectable
+                    ? `${translate('models.catalogVariant.select')} ${variant.tag}`
+                    : `${variant.tag}: ${translate('models.catalogVariant.invalid')}`}
+                  onClick={() => choose(variant)}
+                  className={cx(
+                    'min-h-11 min-w-0 flex-1 rounded border px-2 py-1 text-left font-mono text-2xs transition-colors sm:min-h-8',
+                    selectedNow
+                      ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)]'
+                      : 'border-[var(--border)] text-[var(--fg-subtle)] hover:border-[var(--border-strong)]',
+                    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]',
+                    'disabled:cursor-not-allowed disabled:opacity-45',
+                  )}
+                >
+                  {variant.tag}
+                </button>
+                {onToggleCompare ? (
+                  <button
+                    type="button"
+                    disabled={!selectable || active || compareFull}
+                    aria-pressed={compared}
+                    aria-label={`${compared ? translate('catalog.compare.remove') : translate('catalog.compare.add')} ${variant.normalizedName ?? variant.tag}`}
+                    onClick={() => onToggleCompare(variant)}
+                    className="min-h-11 shrink-0 rounded border border-[var(--border)] px-2 text-2xs hover:border-[var(--border-strong)] disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-8"
+                  >
+                    {compared ? '−' : '+'}
+                  </button>
+                ) : null}
+              </div>
             )
           })}
         </div>

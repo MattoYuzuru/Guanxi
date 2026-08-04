@@ -33,11 +33,15 @@ export const ModelCard = memo(function ModelCard({
   onFocusCard,
   onInstalled,
   selectedContextLength,
+  compareTargets,
+  onToggleCompare,
 }: {
   data: ModelCardData
   onFocusCard?: () => void
   onInstalled?: (name: string) => void
   selectedContextLength?: number
+  compareTargets?: readonly string[]
+  onToggleCompare?: (variant: CatalogModel['variants'][number]) => void
 }) {
   const model = data.model
   const local = data.kind === 'local' ? data.model : null
@@ -153,6 +157,8 @@ export const ModelCard = memo(function ModelCard({
           model={catalog}
           selectedContextLength={selectedContextLength}
           onInstalled={onInstalled}
+          compareTargets={compareTargets}
+          onToggleCompare={onToggleCompare}
         />
       ) : (
         <>

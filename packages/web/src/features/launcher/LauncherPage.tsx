@@ -6,8 +6,8 @@
  * («Начать чат» против «Установить»). Смешивать их в один список — значит
  * половину карточек показывать пустыми.
  */
-import { useCallback, useMemo, useState } from 'react'
-import type { CatalogSourceHealth, Health } from '@alamo/contract'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { CatalogSourceHealth, CatalogVariant, Health } from '@alamo/contract'
 import { DEFAULT_NUM_CTX } from '@alamo/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync, useDebounced } from '../../lib/useAsync.ts'
@@ -29,6 +29,15 @@ import {
   formatDateTime,
 } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import {
+  CatalogFilters,
+  EMPTY_CATALOG_FILTERS,
+  catalogFilterQuery,
+  filterSummary,
+  hasCatalogFilters,
+  type CatalogFilterState,
+} from '../models/CatalogFilters.tsx'
+import { CatalogCompare, exactCatalogRows } from '../models/CatalogCompare.tsx'
 
 /** Окна, под которые пересчитываем вердикт прямо на лончере. */
 const CONTEXT_SUGGESTIONS = [4096, 8192, 16384, 32768, 65536, 131072]
@@ -39,6 +48,10 @@ export function LauncherPage({ health }: { health: Health }) {
   const [contextError, setContextError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const debouncedQuery = useDebounced(query, 300)
+  const [filters, setFilters] = useState<CatalogFilterState>(EMPTY_CATALOG_FILTERS)
+  const debouncedFilters = useDebounced(filters, 250)
+  const [compareTargets, setCompareTargets] = useState<string[]>([])
+  const [compareNotice, setCompareNotice] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
   const local = useAsync(
@@ -46,9 +59,41 @@ export function LauncherPage({ health }: { health: Health }) {
     [contextLength, reloadToken],
   )
   const catalog = useAsync(
-    (signal) => api.listCatalog({ q: debouncedQuery || undefined, contextLength }, signal),
-    [debouncedQuery, contextLength, reloadToken],
+    (signal) => api.listCatalog({
+      q: debouncedQuery || undefined,
+      contextLength,
+      ...catalogFilterQuery(debouncedFilters),
+    }, signal),
+    [debouncedQuery, debouncedFilters, contextLength, reloadToken],
   )
+
+  const compareRows = useMemo(
+    () => exactCatalogRows(catalog.data?.models ?? []),
+    [catalog.data?.models],
+  )
+
+  useEffect(() => {
+    if (!catalog.data) return
+    const available = new Set(compareRows.map((row) => row.variant.normalizedName))
+    setCompareTargets((current) => {
+      const retained = current.filter((target) => available.has(target))
+      if (retained.length !== current.length) {
+        setCompareNotice(translate('catalog.compare.vanished'))
+      }
+      return retained.length === current.length ? current : retained
+    })
+  }, [catalog.data, compareRows])
+
+  const toggleCompare = useCallback((variant: CatalogVariant) => {
+    const target = variant.normalizedName
+    if (target === null) return
+    setCompareNotice(null)
+    setCompareTargets((current) => {
+      if (current.includes(target)) return current.filter((value) => value !== target)
+      if (current.length >= 2) return current
+      return [...current, target]
+    })
+  }, [])
 
   const onInstalled = useCallback(() => {
     // Модель переехала из каталога в установленные — перечитываем оба списка.
@@ -81,10 +126,12 @@ export function LauncherPage({ health }: { health: Health }) {
             selectedContextLength={contextLength}
             onFocusCard={focusIndex}
             onInstalled={onInstalled}
+            compareTargets={compareTargets}
+            onToggleCompare={toggleCompare}
           />
         ),
       })),
-    [catalog.data, contextLength, onInstalled],
+    [catalog.data, compareTargets, contextLength, onInstalled, toggleCompare],
   )
 
   const hardware = health.hardware
@@ -222,9 +269,33 @@ export function LauncherPage({ health }: { health: Health }) {
                 className="w-full sm:w-56"
                 type="search"
               />
+              <CatalogCompare
+                rows={compareRows}
+                selectedTargets={compareTargets}
+                onRemove={(target) => setCompareTargets((current) => current.filter((value) => value !== target))}
+                onSwap={() => setCompareTargets((current) => [...current].reverse())}
+              />
             </div>
           }
         />
+
+        <CatalogFilters
+          value={filters}
+          onChange={(next) => {
+            setCompareNotice(null)
+            setFilters(next)
+          }}
+          onClear={() => {
+            setFilters(EMPTY_CATALOG_FILTERS)
+            setCompareNotice(null)
+          }}
+        />
+
+        {compareNotice ? (
+          <p className="mt-2 text-2xs text-[var(--warning)]" role="status">
+            {compareNotice}
+          </p>
+        ) : null}
 
         {catalog.data && <CatalogSourceNotice source={catalog.data.source ?? null} />}
 
@@ -245,14 +316,22 @@ export function LauncherPage({ health }: { health: Health }) {
             </Callout>
           ) : catalogItems.length === 0 ? (
             <EmptyState
-              title={query ? 'Ничего не найдено' : 'Каталог пуст'}
+              title={query || hasCatalogFilters(filters) ? translate('catalog.empty.filtered.title') : 'Каталог пуст'}
               description={
-                query ? `По запросу «${query}» моделей нет.` : undefined
+                query || hasCatalogFilters(filters)
+                  ? `${translate('catalog.empty.filtered.description')} ${[
+                      query ? `${translate('catalog.search.summary')}: ${query}` : '',
+                      ...filterSummary(filters),
+                    ].filter(Boolean).join(' · ')}`
+                  : undefined
               }
               action={
-                query ? (
-                  <Button size="sm" onClick={() => setQuery('')}>
-                    Сбросить поиск
+                query || hasCatalogFilters(filters) ? (
+                  <Button size="sm" onClick={() => {
+                    setQuery('')
+                    setFilters(EMPTY_CATALOG_FILTERS)
+                  }}>
+                    {translate('catalog.filters.clearAll')}
                   </Button>
                 ) : undefined
               }

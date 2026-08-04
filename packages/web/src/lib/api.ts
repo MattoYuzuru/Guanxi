@@ -46,6 +46,7 @@ import {
   type SendMessageBody,
   type UpdateSettingsBody,
   type UpdateThreadBody,
+  type ListCatalogQuery,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
 import { translate } from './locale.ts'
@@ -176,9 +177,22 @@ export const api = {
   listModels: (contextLength?: number, signal?: AbortSignal) =>
     request(ROUTES.models(), listModelsResponse, { query: { contextLength }, signal }),
 
-  listCatalog: (params: { q?: string; contextLength?: number } = {}, signal?: AbortSignal) =>
+  listCatalog: (params: ListCatalogQuery = {}, signal?: AbortSignal) =>
     request(ROUTES.modelsCatalog(), listCatalogResponse, {
-      query: { q: params.q, contextLength: params.contextLength },
+      query: {
+        q: params.q,
+        contextLength: params.contextLength,
+        installation: params.installation?.join(','),
+        fit: params.fit?.join(','),
+        providerScope: params.providerScope?.join(','),
+        source: params.source?.join(','),
+        freshness: params.freshness?.join(','),
+        capability: params.capability?.join(','),
+        minClaimedContext: params.minClaimedContext,
+        contextClaim: params.contextClaim,
+        maxClaimedArtifactSize: params.maxClaimedArtifactSize,
+        artifactSizeClaim: params.artifactSizeClaim,
+      },
       signal,
     }),
 
