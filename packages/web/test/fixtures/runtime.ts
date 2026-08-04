@@ -261,7 +261,7 @@ export function linuxNvidiaRuntimeSnapshot(
     snapshot.host.profile.totalMemoryBytes.basis = 'total_system_memory'
     snapshot.host.profile.legacyUsableMemoryBytes.source = 'legacy_hardware_usable_estimate'
     snapshot.host.profile.discreteVramBytes.basis = 'discrete_vram_not_observed'
-    snapshot.host.sample.source = state === 'unavailable' ? 'none' : 'nvidia_smi'
+    snapshot.host.sample.source = 'nvidia_smi'
     snapshot.host.sample.availableMemoryBytes.bytes = null
     snapshot.host.sample.availableMemoryBytes.source = 'not_reported'
     snapshot.host.sample.availableMemoryBytes.confidence = 'unknown'
@@ -278,7 +278,7 @@ export function linuxNvidiaRuntimeSnapshot(
     snapshot.host.errorCode = state === 'available' ? null : 'host_probe_malformed'
     snapshot.host.nvidia = {
       state,
-      source: state === 'unavailable' ? 'none' : 'nvidia_smi',
+      source: 'nvidia_smi',
       observedAt: RUNTIME_OBSERVED_AT,
       reason: state === 'available' ? null : state === 'partial' ? 'some_rows_malformed' : 'all_rows_malformed',
       devices: state === 'unavailable' ? [] : [

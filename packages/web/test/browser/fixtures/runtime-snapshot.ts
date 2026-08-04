@@ -361,7 +361,7 @@ export function linuxNvidiaRuntimeBrowserSnapshot(
       },
       sample: {
         ...base.host.sample,
-        source: state === 'unavailable' ? 'none' : 'nvidia_smi',
+        source: 'nvidia_smi',
         availableMemoryBytes: {
           ...base.host.sample.availableMemoryBytes,
           bytes: null,
@@ -382,7 +382,7 @@ export function linuxNvidiaRuntimeBrowserSnapshot(
       errorCode: state === 'available' ? null : 'host_probe_malformed',
       nvidia: {
         state,
-        source: state === 'unavailable' ? 'none' : 'nvidia_smi',
+        source: 'nvidia_smi',
         observedAt,
         devices: state === 'unavailable' ? [] : [
           device(2, 'GPU-browser-private-first-12345678', 'NVIDIA RTX 4090', 24_576, 8_192),
