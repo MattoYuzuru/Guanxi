@@ -16,6 +16,7 @@ import type {
   CatalogModel,
   CatalogVariant,
   CatalogSourceHealth,
+  CatalogPagination,
   HardwareInfo,
   ListCatalogQuery,
   ModelCapability,
@@ -150,11 +151,16 @@ export function catalogSeedFromRecommendation(
 }
 
 /** Читает рекомендации, которые Ollama складывает у себя в кэш. */
-async function loadLocalRecommendations(): Promise<LocalRecommendations | null> {
+async function loadLocalRecommendations(signal?: AbortSignal): Promise<LocalRecommendations | null> {
   const path = join(homedir(), '.ollama', 'cache', 'model-recommendations.json')
 
   try {
-    const [raw, metadata] = await Promise.all([readFile(path, 'utf8'), stat(path)])
+    signal?.throwIfAborted()
+    const [raw, metadata] = await Promise.all([
+      readFile(path, { encoding: 'utf8', signal }),
+      stat(path),
+    ])
+    signal?.throwIfAborted()
     const parsed = recommendationsSchema.safeParse(JSON.parse(raw))
     if (!parsed.success) return null
 
@@ -172,18 +178,21 @@ export interface CatalogResult {
   models: CatalogModel[]
   live: boolean
   source: CatalogSourceHealth
+  pagination: CatalogPagination
 }
 
 export interface CatalogInput {
   query?: string
   contextLength: number
   filters?: CatalogFilters
+  pagination?: { page: number; pageSize: number }
   hardware: HardwareInfo
   /** Exact sampled `/api/tags` rows. `null` means the source was unavailable. */
   installed: {
     models: readonly { name: string; digest: string }[]
     observedAt: string
   } | null
+  signal?: AbortSignal
 }
 
 export type CatalogFilters = Pick<
@@ -201,7 +210,7 @@ export type CatalogFilters = Pick<
 >
 
 export interface CatalogDependencies {
-  loadLocalRecommendations?: () => Promise<LocalRecommendations | null>
+  loadLocalRecommendations?: (signal?: AbortSignal) => Promise<LocalRecommendations | null>
   bundled?: readonly CatalogSeed[]
   now?: () => Date
 }
@@ -374,10 +383,12 @@ export async function getCatalog(
   input: CatalogInput,
   dependencies: CatalogDependencies = {},
 ): Promise<CatalogResult> {
+  input.signal?.throwIfAborted()
   const observedAt = (dependencies.now ?? (() => new Date()))().toISOString()
   const local = await (
     dependencies.loadLocalRecommendations ?? loadLocalRecommendations
-  )()
+  )(input.signal)
+  input.signal?.throwIfAborted()
   const bundled = dependencies.bundled ?? BUNDLED
   const sourcedSeeds: SourcedSeed[] = [
     ...(local?.seeds ?? []).map((seed) => ({
@@ -470,7 +481,91 @@ export async function getCatalog(
       }
     })
 
-  return { models: filterCatalogModels(models, input.filters), live: false, source }
+  const filtered = filterCatalogModels(
+    failClosedDuplicateCatalogTargets(models),
+    input.filters,
+  ).sort(compareCatalogModels)
+  if (!input.pagination) {
+    return {
+      models: filtered,
+      live: false,
+      source,
+      pagination: { mode: 'legacy', totalItems: filtered.length },
+    }
+  }
+
+  const { page, pageSize } = input.pagination
+  const totalItems = filtered.length
+  const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / pageSize)
+  const start = page <= totalPages ? (page - 1) * pageSize : null
+  return {
+    models: start !== null ? filtered.slice(start, start + pageSize) : [],
+    live: false,
+    source,
+    pagination: {
+      mode: 'paged',
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      previousPage:
+        totalPages === 0 || page > totalPages ? null : page > 1 ? page - 1 : null,
+      nextPage: page < totalPages ? page + 1 : null,
+    },
+  }
+}
+
+/**
+ * Exact targets are identities across the complete source snapshot, not only a
+ * response page. Mark every duplicate ambiguous before filters/count/slicing so
+ * pagination can never hide its counterpart on another page.
+ */
+function failClosedDuplicateCatalogTargets(models: CatalogModel[]): CatalogModel[] {
+  const counts = new Map<string, number>()
+  for (const model of models) {
+    for (const variant of model.variants) {
+      if (variant.normalizedName !== null) {
+        counts.set(
+          variant.normalizedName,
+          (counts.get(variant.normalizedName) ?? 0) + 1,
+        )
+      }
+    }
+  }
+  if ([...counts.values()].every((count) => count === 1)) return models
+
+  return models.map((model) => ({
+    ...model,
+    variants: model.variants.map((variant) =>
+      variant.normalizedName !== null && counts.get(variant.normalizedName)! > 1
+        ? {
+            ...variant,
+            normalizedName: null,
+            fit: unknownVariantFit('invalid_variant', variant.contextLength),
+            installation: {
+              state: 'unknown' as const,
+              digest: null,
+              source: 'unavailable' as const,
+              observedAt: null,
+              reason: 'ambiguous_installed_reference' as const,
+            },
+          }
+        : variant,
+    ),
+  }))
+}
+
+/** Locale-independent code-unit ordering with an exact-row tie-breaker. */
+function compareCatalogModels(left: CatalogModel, right: CatalogModel): number {
+  const byName = compareCodeUnits(left.name, right.name)
+  if (byName !== 0) return byName
+  const leftTargets = left.variants.map((variant) => variant.normalizedName ?? '').join('\u0000')
+  const rightTargets = right.variants.map((variant) => variant.normalizedName ?? '').join('\u0000')
+  return compareCodeUnits(leftTargets, rightTargets)
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function selected<T>(values: readonly T[] | undefined, value: T): boolean {

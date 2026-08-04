@@ -186,6 +186,14 @@ export const catalogCapabilityFilterSchema = z.enum([
 export type CatalogCapabilityFilter = z.infer<typeof catalogCapabilityFilterSchema>
 
 /**
+ * P2-H transport/render policy. The default is used by explicit new clients;
+ * the maximum bounds one response page only and never caps matching catalog rows.
+ */
+export const CATALOG_DEFAULT_PAGE_SIZE = 12
+export const CATALOG_MAX_PAGE_SIZE = 100
+const catalogCountSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+
+/**
  * GET /api/models/catalog. Multi-select groups use one comma-separated value;
  * OR applies inside a group and AND across groups. Repeated keys are rejected
  * by the HTTP boundary before this strict schema is parsed.
@@ -204,6 +212,11 @@ export const listCatalogQuery = z
     contextClaim: z.literal('unknown').optional(),
     maxClaimedArtifactSize: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
     artifactSizeClaim: z.literal('unknown').optional(),
+    page: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
+    pageSize: z.coerce
+      .number()
+      .pipe(positiveSafeIntegerSchema.max(CATALOG_MAX_PAGE_SIZE))
+      .optional(),
   })
   .strict()
   .superRefine((query, context) => {
@@ -224,13 +237,38 @@ export const listCatalogQuery = z
         message: 'Claimed artifact size cannot be both numeric and unknown',
       })
     }
+    if ((query.page === undefined) !== (query.pageSize === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [query.page === undefined ? 'page' : 'pageSize'],
+        message: 'page and pageSize must be provided together',
+      })
+    }
   })
 export type ListCatalogQuery = z.infer<typeof listCatalogQuery>
+export const catalogPaginationSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('legacy'),
+    totalItems: catalogCountSchema,
+  }).strict(),
+  z.object({
+    mode: z.literal('paged'),
+    page: positiveSafeIntegerSchema,
+    pageSize: positiveSafeIntegerSchema.max(CATALOG_MAX_PAGE_SIZE),
+    totalItems: catalogCountSchema,
+    totalPages: catalogCountSchema,
+    previousPage: positiveSafeIntegerSchema.nullable(),
+    nextPage: positiveSafeIntegerSchema.nullable(),
+  }).strict(),
+])
+export type CatalogPagination = z.infer<typeof catalogPaginationSchema>
 export const listCatalogResponse = z.object({
   models: z.array(catalogModelSchema),
   /** Legacy compatibility projection; P0-D does not call an undocumented remote endpoint. */
   live: z.boolean(),
   source: catalogSourceHealthSchema.optional(),
+  /** Optional only so recorded legacy responses remain parseable by new clients. */
+  pagination: catalogPaginationSchema.optional(),
 })
 export type ListCatalogResponse = z.infer<typeof listCatalogResponse>
 

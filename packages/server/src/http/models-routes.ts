@@ -84,13 +84,18 @@ export function modelsRoutes(app: AppContext): Hono {
         observedAt: new Date().toISOString(),
       }))
       .catch(() => null)
+    context.req.raw.signal.throwIfAborted()
 
     const result = await getCatalog({
       query: parsed.data.q,
       contextLength,
       filters: parsed.data,
+      pagination: parsed.data.page === undefined
+        ? undefined
+        : { page: parsed.data.page, pageSize: parsed.data.pageSize! },
       hardware: app.hardware,
       installed,
+      signal: context.req.raw.signal,
     })
 
     return context.json(result)
