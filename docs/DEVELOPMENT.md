@@ -33,18 +33,20 @@ npm run typecheck
 npm test
 npm run test:web:browser
 npm run build
+npm run benchmark:catalog
 npm run link:cli
 ```
 
-| Команда            | Фактическая область                                 |
-| ------------------ | --------------------------------------------------- |
-| `dev:server`       | Node/Hono на loopback:4310                          |
-| `dev:web`          | Vite:5173 с API proxy                               |
-| `typecheck`        | TypeScript workspaces                               |
-| `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P2-F regression gate    |
-| `build`            | contract, web, server и CLI production artifacts    |
-| `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
+| Команда             | Фактическая область                                  |
+| ------------------- | ---------------------------------------------------- |
+| `dev:server`        | Node/Hono на loopback:4310                           |
+| `dev:web`           | Vite:5173 с API proxy                                |
+| `typecheck`         | TypeScript workspaces                                |
+| `test`              | server + CLI + узкие web component regression tests  |
+| `test:web:browser`  | deterministic Chromium P0-A–P2-H regression gate     |
+| `build`             | contract, web, server и CLI production artifacts     |
+| `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
+| `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
 
 `packages/web` содержит script `dev:mock`, но целевой `mock/server.mjs` отсутствует.
 Считайте команду неработающей до отдельного решения: восстановить fixture server
@@ -162,6 +164,21 @@ npm run link:cli
   sampled installation без winner/recommendation. Vanished target удаляется
   явно; remove/swap/Escape сохраняют focus boundary. Search/filter/compare не
   запускают pull, probe, prewarm, load или provider refresh.
+- P2-H explicit paged catalog mode использует pair `page + pageSize`: оба
+  positive safe integers, page size не больше 100; partial/invalid/repeated/
+  unknown query даёт 400 до source и `/api/tags`. Legacy request без pair
+  сохраняет полный list. Server выполняет normalization, global duplicate-target
+  fail-closed, P2-F filtering и locale-independent stable sorting до exact count/
+  slice; empty и out-of-range page не подменяются другой страницей. Caller
+  AbortSignal проходит до local cache read, а один request по-прежнему делает не
+  более одного `/api/tags` sample.
+- New Web всегда запрашивает page size 12, рендерит только current page и
+  constant Previous/Next pager. Accepted debounced query/filter/context basis
+  атомарно сбрасывает page 1, late response не принимается. До двух exact compare
+  snapshots переживают простую page navigation, но source/query basis change
+  очищает их с localized notice. Pager блокируется на время active
+  connection-owned pull и не отменяет его; paging не запускает resource action
+  или background prefetch. Legacy full response дополнительно bounded client-side.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`. Local Linux с detected CUDA profile использует один
@@ -235,8 +252,13 @@ npm run link:cli
 - P2-F additive расширяет strict `listCatalogQuery`: deterministic CSV facets,
   positive-safe claimed context/size и explicit unknown. Legacy `q`/
   `contextLength` сохраняют no-filter defaults; repeated/unknown keys и future
-  enums fail-closed. Response shape не меняется: server возвращает только
-  совпавшие exact variant rows с прежней provenance.
+  enums fail-closed. Server возвращает только совпавшие exact variant rows с
+  прежней provenance.
+- P2-H additive добавляет `page + pageSize`, page-size maximum 100 и
+  discriminated `legacy | paged` metadata с exact model-row total/pages и
+  previous/next. Оба pagination keys обязательны вместе; Web default 12 —
+  transport/render policy, не total catalog ceiling. Optional metadata сохраняет
+  parse старых recorded responses.
 
 ### Server
 
@@ -257,9 +279,13 @@ npm run link:cli
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details, P2-A descriptor assembler и sourced
   catalog fallback; catalog строит P2-E exact variant targets/fit/installation
-  и применяет P2-F same-row facets без mutation provenance, descriptor path
-  сохраняет four-worker `/api/show` bound, caller AbortSignal, digest-aware LRU
-  64 и fail-closed ambiguous evidence;
+  и применяет P2-F same-row facets без mutation provenance; P2-H перед slice
+  выполняет global duplicate-target fail-closed и stable code-unit order,
+  считает exact total и возвращает legacy full либо explicit bounded page;
+  descriptor path сохраняет four-worker `/api/show` bound, caller AbortSignal,
+  digest-aware LRU 64 и fail-closed ambiguous evidence;
+- `scripts/catalog-pagination-benchmark.ts` — reproducible 1,000-model/
+  4,000-variant local diagnostic response bytes/time без live provider и SLA;
 - `hardware/` — legacy profile/static fit и injectable sampled Apple/NVIDIA
   telemetry adapters с fixed command boundaries и pure parsers;
 - `http/` — models, runtime, Jobs, threads, workspaces, SSE;
@@ -318,7 +344,9 @@ npm run link:cli
   P2-E exact variant selection и показывают per-variant claim/fit/provenance/
   installation до того же confirmed pull lifecycle; P2-F добавляет accessible
   server-owned filters, applied summary и pairwise exact compare с abortable
-  query/vanish/focus handling без resource side effects;
+  query/vanish/focus handling без resource side effects; P2-H хранит explicit
+  page state, renders максимум 12 current rows, сохраняет две exact compare
+  snapshots между pages и блокирует pager без cancel active pull;
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;
@@ -326,12 +354,14 @@ npm run link:cli
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
-- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K
-  projection, accessibility, conflict/prewarm races/idempotency и fake timers;
+- `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
+  P2-C–P2-H projection, accessibility, conflict/prewarm races/idempotency,
+  catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
-  Chat-dispatch flows, narrow viewport, 200% scaling и reduced motion.
+  Chat-dispatch flows, P2-G NVIDIA и P2-H catalog paging, narrow viewport,
+  200% scaling и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
   health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и
@@ -363,7 +393,10 @@ npm run link:cli
   target snapshot, refresh truth и deterministic catalog selector Chromium flow;
   P2-F покрывает strict query/400, same-row facets, unknown/provenance semantics,
   abort/late response, loading/empty/error/retry/clear, exact compare/remove/
-  swap/vanish, locale/focus/responsive/reduced-motion и no-side-effect boundary.
+  swap/vanish, locale/focus/responsive/reduced-motion и no-side-effect boundary;
+  P2-H — legacy/paged contract, 1,000+ stable pages, exact totals/out-of-range,
+  cross-page compare, atomic page reset, active-pull pager block и bounded DOM/
+  listener behavior в component, Chromium и benchmark fixtures.
 
 ### CLI
 

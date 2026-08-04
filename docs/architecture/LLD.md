@@ -88,11 +88,20 @@ freshness/timestamps. Старый `{tag,sizeBytes,parameterSize}` row parse-и�
 non-installable legacy defaults. Top-level installed/fit остаются только явно
 помеченными compatibility projections.
 
-P2-F additive расширяет strict `listCatalogQuery` без изменения response shape.
+P2-F additive расширяет strict `listCatalogQuery`; его exact row semantics
+сохраняются при последующем additive P2-H response metadata.
 Facet groups принимают один deterministic CSV value без duplicates; repeated
 keys, unknown fields, future enums и unsafe numeric shapes отклоняются. Claimed
 context/size — positive safe integer либо explicit unknown, но не оба сразу.
 Legacy `q/contextLength` получают пустые filter defaults.
+
+P2-H additive расширяет query парой positive-safe `page + pageSize` и response
+discriminated metadata `legacy | paged`. Partial pair, value выше page-size
+policy 100, repeated/unknown/fractional/non-positive/unsafe input отклоняется до
+source access. Paged metadata содержит requested page, applied page size, exact
+model-row total/pages и nullable previous/next; zero и out-of-range page не
+clamp-ятся. Optional metadata позволяет новому parser читать старые recorded
+responses. Web default 12 и maximum 100 ограничивают одну page, не общий catalog.
 
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
@@ -137,7 +146,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   параллельных `/api/show` workers на installed-list projection;
 - `models/catalog.ts`: validated stale local cache + dated bundled snapshot,
   strict exact P2-E variants/fit/installation и P2-F pure same-row facets без
-  remote request или provenance mutation;
+  remote request или provenance mutation; P2-H global duplicate-target
+  fail-closed, stable code-unit sort, exact count и legacy-full/paged slice с
+  caller AbortSignal;
+- `scripts/catalog-pagination-benchmark.ts`: synthetic 1,000-model/
+  4,000-variant response diagnostic без live provider;
 - `hardware/probe.ts` и `fit.ts`: legacy local profile/estimate и static fit;
 - `hardware/telemetry.ts`: один injectable host boundary; bounded Apple Silicon
   `vm_stat` и Linux/CUDA fixed `nvidia-smi` adapters, pure strict parsers и
@@ -190,6 +203,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | Runtime version | local `/api/version`, response time | observed runtime fingerprint либо unknown | request-scoped, failure independent | observation key и descriptor basis |
 | NVIDIA device facts | fixed local `/usr/bin/nvidia-smi` query, common sample time | observed per-device index/name/total/free; UUID nullable | query-time only; partial/malformed/duplicate/command failure explicit | Runtime Bar only; no admission/key credit |
 | Catalog variant claim | local stale cache or dated bundled snapshot + server normalizer | exact mutable target; size/context/fit remain claimed | malformed/duplicate target or unknown size fail closed; explicit stale/fallback | P2-E selector + P2-F facets/compare |
+| Catalog page projection | same validated source/query snapshot, then stable sort/count/slice | exact matching model-row total for one request; page size is transport policy | no durable snapshot across requests; legacy full mode retained | P2-H Marketplace pager/benchmark |
 | Legacy `capabilities` | filtered known `/api/tags` values | compatibility projection, not evidence decision | unknown/malformed → empty legacy array | old Web/clients |
 | Context facts | `/api/tags`/`/api/show` declarations | declared maximum либо unknown/conflict | LRU time preserved; no guessed ceiling | settings/list/detail/validation |
 | Canonical reference | P1-L normalizer over provider name | registry/name/tag/digest syntax preserved | invalid/duplicate → unknown/ambiguous | descriptor/cache/observation key |
@@ -217,6 +231,11 @@ P2-F сначала получает эти exact rows, затем одним pr
 installation/fit/context/size к каждой row; model-level scope/source/freshness/
 capability не смешиваются с variant facts. Empty capabilities — unknown, не
 unsupported. Результат сохраняет исходные timestamps и compatibility fields.
+P2-H до filtering/count/slice помечает duplicate canonical targets во всём
+logical source snapshot как ambiguous, затем применяет locale-independent stable
+order. Explicit page возвращает exact metadata; legacy request возвращает весь
+filtered list. Между requests source snapshot не pin-ится и total не считается
+durable catalog fact.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
@@ -329,6 +348,10 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   фиксирует target до terminal refresh; P2-F `CatalogFilters` формирует
   debounced/abortable strict query, а `CatalogCompare` хранит максимум две unique
   exact rows, удаляет vanished target и восстанавливает focus после close/remove;
+  P2-H Launcher владеет explicit page/query basis, current-page projection и
+  constant Previous/Next pager; две exact row snapshots переживают простой page
+  change, accepted query/source basis invalidates их, а active pull блокирует
+  navigation без cancel;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields и exact positive safe-integer
@@ -338,7 +361,9 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
   P1-M no-artificial-caps/P2-A descriptor/P2-C probe/P2-D confirmed pull/P2-E
   variant-first/P2-F facets-compare regression; browser использует deterministic
-  mocked REST/SSE/runtime snapshots.
+  mocked REST/SSE/runtime snapshots. P2-H добавляет 1,000+ server rows, bounded
+  12-row jsdom/Chromium projection, exact page state/cross-page compare и
+  listener/pull ownership regression.
 
 ### `packages/cli`
 

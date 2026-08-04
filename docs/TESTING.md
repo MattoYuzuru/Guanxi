@@ -5,12 +5,17 @@
 
 ## Текущий baseline
 
-На 2026-08-04 после P2-F:
+На 2026-08-04 после P2-H:
 
-- `npm test`: 330/330 server/CLI и 83/83 web component/parser tests;
-- `npm run test:web:browser`: 21/21 deterministic Chromium tests с mocked
+- `npm test`: 349/349 server/CLI и 95/95 web component/parser tests;
+- `npm run test:web:browser`: 23/23 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
+- `npm run benchmark:catalog`: зафиксированный implementation run на synthetic
+  1,000 models/4,000 variants дал server legacy 3,768,624 bytes/10.537 ms против
+  page 12 — 45,513 bytes/4.759 ms и 48 variants; jsdom legacy 1,000 slides +
+  1,000 dots/215.759 ms против bounded 12 slides + 12 dots + 2 pager buttons/
+  6.222 ms. Это один local diagnostic, не SLA и не timing assertion;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
   проверяет документацию с repository config;
 - web automation покрывает единый P0-E
@@ -22,7 +27,8 @@
   exact custom context save/reload, а также P2-C explicit completion-probe
   confirmation, queued/running/result/error/cancel projection и P2-D explicit
   reference preview/confirmed pull/Installed refresh, а также P2-F faceted
-  catalog query/pairwise exact compare без resource side effects;
+  catalog query/pairwise exact compare и P2-H bounded pages/cross-page compare/
+  active-pull boundary без resource side effects;
 - browser assertions управляют mocked headers/chunks без произвольных sleeps и
   проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
   horizontal overflow, 200% scaling и reduced motion;
@@ -164,6 +170,19 @@
   aggregates, remove/swap/vanish, focus restore после remove, English/Russian и
   отсутствие pull/probe/prewarm/load/remote fetch. Chromium дополнительно
   проверяет 390 px, 200%, overflow и reduced motion;
+- P2-H contract/server fixtures покрывают additive legacy/paged round-trip,
+  mandatory pair и strict page inputs до source/tags, default 12/maximum 100,
+  first/middle/last/zero/out-of-range/exact boundary, P2-F count-before-slice,
+  stable code-unit order, global duplicate-target fail-closed, AbortSignal и
+  1,003 models/4,012 variants без total ceiling либо duplicate/omitted rows;
+- P2-H Web fixtures покрывают explicit page transport, accepted-basis atomic
+  reset, previous abort/late response, source shrink/out-of-range, exact total
+  против page count, unavailable/filtered empty/retry и legacy client-side
+  bounding. Cross-page compare хранит максимум две exact snapshots и invalidates
+  их только при changed query/source basis; active pull disables pager without
+  cancel. Listener cleanup, keyboard/focus, locale, 44 px mobile targets,
+  390 px/200%/overflow/reduced motion и отсутствие background prefetch/resource
+  action проверены component/Chromium fixtures;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -208,7 +227,8 @@
   P2-G fit/telemetry — 25/25; P2-A descriptor — 9/9; P2-B persistent group —
   17/17; P2-C + Ollama boundaries — 34/34; P2-D server — 20/20; P2-E exact
   contract/catalog — 12/12; P2-F facets — 10/10; P2-G server/identity — 38/38;
-  полный core — 339/339, Web — 88/88, mocked Chromium — 22/22;
+  P2-H pagination — 10/10; полный core — 349/349, Web — 95/95, mocked
+  Chromium — 23/23;
   15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
@@ -270,6 +290,12 @@
   Также повторены P2-F server/Web 10×10/10 и 10×8/8, P2-E server/Web
   10×12/12 и 10×10/10, P1-H fit/telemetry 10×25/25, P1-L+M 10×33/33,
   P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8;
+- P2-H server, targeted Web и Chromium повторены последовательно 10×10/10,
+  10×7/7 и 10×1/1; affected Web — 10×95/95. Также повторены P2-F server/Web
+  10×10/10 и 10×8/8, P2-E server/Web 10×12/12 и 10×10/10, P2-G
+  server/Web/Chromium 10×38/38, 10×20/20 и 10×1/1, P1-H 10×25/25,
+  P1-L+M 10×33/33, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и
+  P1-E 10×8/8;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -315,9 +341,12 @@ P2-E доказывает exact mutable catalog target, per-variant claimed fit 
 installation truth только для validated local cache/bundled fixtures и mocked
 pull/Installed refresh. Это не immutable revision resolution, live hardware fit,
 disk reservation или persistent registry/history. P2-F доказывает bounded
-facets/compare только над current response facts; нет remote catalog provider,
-pagination/virtualization/load benchmark, saved filters, inferred license/
-quantization/task или runtime capability proof.
+facets/compare только над current response facts. P2-H доказывает exact
+count/order/slice и bounded current-page DOM на synthetic 1,000+ rows, но не
+provider completeness, immutable snapshot между requests, 10k/live load,
+generic virtualization или production latency. Legacy request намеренно всё ещё
+может получить full list; remote provider, saved filters, inferred license/
+quantization/task и runtime capability proof отсутствуют.
 P2-G доказывает Linux/NVIDIA command/parser/contract/UI semantics только через
 fake runner и mocked Runtime snapshots. Он не проверяет live driver/GPU,
 MIG/topology, `/api/ps` device allocation, pressure/admission, multi-GPU
@@ -361,9 +390,11 @@ process lock. P0-D health остаётся sampled observation; обязател
   overrides не реализованы. P2-D pull не durable/replayable, не резервирует disk,
   не проверяет artifact checksum и не координируется с external pull clients.
   P2-E selected target остаётся mutable tag claim; exact digest появляется
-  только после sampled `/api/tags` refresh. P2-F не добавляет remote provider,
-  immutable revision, saved filters, pagination/virtualization или catalog-scale
-  benchmark; compare остаётся page-memory projection двух current exact rows.
+  только после sampled `/api/tags` refresh. P2-H не добавляет remote provider,
+  immutable revision, saved filters или durable source snapshot; compare остаётся
+  page-memory projection двух exact rows, а legacy compatibility path сохраняет
+  full response. Page size 12/maximum 100 — response/render policy, не catalog
+  total limit; benchmark — local synthetic diagnostic, не production SLA.
 
 ## Существующее покрытие
 
@@ -381,14 +412,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                                    |
 | Static web serving                 | test                                     |
 | CLI existing-server logic          | tests                                    |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C/D/E/F     |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C/D/E/F mocked  |
-| Catalog provider/cache             | P0-D local/bundled fixtures              |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P2-H      |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P2-H mocked   |
+| Catalog provider/cache/pages       | P0-D/P2-E–P2-H local/bundled fixtures    |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane                |
 | Job replay/reattach                | HTTP SSE; browser durable replay         |
 | Chat startup recovery              | reopened SQLite, fail-closed pages       |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web           |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C/D/E/F     |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P2-H      |
 
 ## Обязательная target matrix
 

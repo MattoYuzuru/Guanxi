@@ -162,6 +162,17 @@ compatibility projections. Выбор и pull transient; только post-succe
 Installed refresh подтверждает exact digest. Mutable catalog tag всё ещё не
 является immutable artifact revision.
 
+P2-H добавляет transport/render pagination, но не новую persistent catalog
+entity. Explicit new client передаёт `page + pageSize`; server после P2-E
+normalization применяет global duplicate-target fail-closed, P2-F filtering и
+locale-independent stable order, считает exact matching model rows и только
+затем возвращает slice. Default 12 и maximum 100 ограничивают одну response/
+render page, а не общий catalog. Legacy request без обоих keys по-прежнему
+получает полный list с additive `legacy` metadata. Web хранит не более двух
+exact comparison row snapshots между pages; query/filter/context/source basis
+change очищает их явно. Page, selection и active connection-owned pull остаются
+transient page/request state без DB history, provider snapshot или durable Job.
+
 ### Runtime Instance
 
 Наблюдаемая загруженная модель: digest, context, VRAM/RAM, expiry и source.

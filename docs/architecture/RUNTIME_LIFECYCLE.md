@@ -827,6 +827,35 @@ recommendation, capability support или implicit action. Dialog сохраня
 containment/restore, включая remove, и укладывается в один controlled region на
 narrow/zoomed layout.
 
+### Current catalog pagination и pull ownership
+
+New Web catalog request всегда передаёт positive-safe `page` и `pageSize=12`;
+server policy принимает максимум 100 rows на одну page. Legacy request без обоих
+keys сохраняет полный filtered list. Partial pair, repeated/unknown key и
+non-positive/fractional/unsafe/over-policy value отклоняются до local source и
+`/api/tags` access. Page size не является total catalog или capability limit.
+
+Один request читает local cache либо bundled snapshot один раз и получает не
+больше одного installed sample. Затем server для всего logical response
+fail-closed помечает duplicate exact targets, применяет P2-F filters, stable
+locale-independent order, exact model-row count и только после этого slice.
+Requested out-of-range page остаётся explicit empty page с тем же total и без
+silent clamp. Caller abort проходит до/после local read; paging не создаёт
+remote provider, background prefetch, persistent snapshot или cache history.
+
+Launcher хранит accepted debounced query/filter/context basis отдельно от page,
+поэтому новый basis атомарно запрашивает page 1 и late old response не заменяет
+его. DOM содержит только current page: максимум 12 slides/dots и constant two
+pager buttons. До двух exact comparison snapshots переживают обычный page
+change; query/filter/context/explicit source refresh либо изменившийся source
+basis очищает их с localized notice. Focus остаётся на доступной pager boundary,
+а 44 px mobile targets не создают horizontal overflow.
+
+P2-D/P2-E pull всё ещё принадлежит одному POST/SSE connection и card subtree.
+Пока он active, Previous/Next disabled с accessible explanation; page не меняется
+и pull не abort-ится. После terminal/cancel ownership освобождается. Pagination
+сама не запускает pull, Installed refresh, probe, prewarm/load или unload.
+
 ## Memory model
 
 Предварительная reservation:

@@ -188,6 +188,17 @@ vanished exact target удаляется с объяснением, а compare �
 winner/recommendation. Filter/compare не создаёт pull, probe, load, remote fetch,
 cache write или runtime evidence.
 
+P2-H делает discovery response/render bounded без total catalog ceiling.
+Explicit `page + pageSize` включает additive paged mode; отсутствие обоих keys
+сохраняет legacy full-list response. Server один раз читает разрешённый source,
+до slicing выполняет P2-E validation, global duplicate-target fail-closed,
+P2-F filtering и stable code-unit ordering, затем сообщает exact model-row total,
+pages и previous/next. Maximum 100 ограничивает только одну response page; Web
+использует 12, показывает constant Previous/Next pager и не создаёт total-
+proportional controls. Две exact compare snapshots переживают page navigation,
+но query/filter/context/source basis change очищает их явно. Active P2-D/P2-E
+pull остаётся connection-owned: pager disabled и не отменяет operation.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -221,7 +232,7 @@ cache write или runtime evidence.
 | Latest exact completion probe        | SQLite migration 8                      | latest exact-key projection |
 | Active completion probe/controller   | HTTP request + `ResourceGovernor`       | request/process memory      |
 | Active confirmed Ollama pull         | HTTP request + Ollama `/api/pull`       | connection/provider owned   |
-| Catalog filter/variant/compare UI    | catalog REST + page-local selection     | sampled facts + page memory |
+| Catalog page/filter/variant/compare  | paged REST + max two exact snapshots    | sampled facts + page memory |
 | `/api/show` normalized front-cache   | `ModelService` bounded LRU              | process memory, 64 refs     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -270,9 +281,10 @@ cache write или runtime evidence.
 17. P2-E exact target относится к mutable catalog tag и claimed metadata. Он не
     разрешает immutable digest до pull, не резервирует disk и не доказывает live
     hardware fit; post-success installation зависит от нового `/api/tags` sample.
-18. P2-F facets/compare работают только над current local/bundled response и не
-    доказывают provider completeness. Saved filters, pagination/virtualization,
-    catalog-scale benchmark и remote provider отсутствуют.
+18. P2-H pages/facets/compare работают только над current local/bundled response
+    и не доказывают provider completeness или immutable multi-request snapshot.
+    Legacy clients всё ещё могут запросить полный list; saved filters, generic
+    virtualization, 10k/live load evidence и remote provider отсутствуют.
 19. P2-G Linux/NVIDIA telemetry проверена fake runner, а не live driver/GPU.
     Она не связывает `/api/ps` row с device, не знает MIG/topology/pressure и не
     превращает current free VRAM в admission capacity, measured fit или второй

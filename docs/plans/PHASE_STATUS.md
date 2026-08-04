@@ -361,6 +361,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-E Variant-first Marketplace install | implemented, locally validated | `56b802b`, `2959b98`; P2-E 12/12, core 320/320, Web 75/75, Chromium 20/20, all required gates |
 | P2-F Truthful facets/pairwise compare | implemented, locally validated | `c769fbd`, `c1495a3`, `1fc3c20`; P2-F 10/10, core 330/330, Web 83/83, Chromium 21/21, all required gates |
 | P2-G Truthful Linux/NVIDIA telemetry | implemented, locally validated | `a4a3ead`, `3f1a533`, `6ceae50`; P2-G 38/38, core 339/339, Web 88/88, Chromium 22/22, all required gates |
+| P2-H Catalog pagination/bounded rendering | implemented, locally validated | `3c4960d`, `cc40d14`; P2-H 10/10, core 349/349, Web 95/95, Chromium 23/23, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -665,7 +666,61 @@ reason выровнен с server `observation_key_unavailable`. Первый fu
 ставили `source:none`; `nvidia_smi` source восстановлен, после чего 88/88 и все
 repeats зелёные.
 
-P2-A, P2-B, P2-C, P2-D, P2-E, P2-F и P2-G остаются `implemented, locally
+P2-H добавляет additive explicit catalog pagination без silent legacy break.
+Pair positive-safe `page + pageSize` включает paged mode; отсутствие обоих keys
+сохраняет полный legacy list. Maximum 100 ограничивает одну response page, Web
+default 12 — одну render page; total matching rows не ограничен. Partial pair,
+repeated/unknown/fractional/non-positive/unsafe/over-policy input даёт controlled
+400 до source и `/api/tags`. Response различает `legacy | paged`, exact
+model-row total/pages и nullable previous/next; zero и requested out-of-range
+page остаются explicit и не clamp-ятся.
+
+Server один раз читает local cache либо bundled fallback и не больше одного раза
+samples `/api/tags`. P2-E normalization, global duplicate canonical-target
+fail-closed, P2-F filtering и locale-independent stable sort выполняются до
+count/slice. Caller AbortSignal проходит в route/local read. Web хранит accepted
+debounced query/filter/context/source basis и page отдельно: новый basis
+атомарно запрашивает page 1, late response игнорируется. DOM содержит только
+current page и constant Previous/Next controls. До двух exact row snapshots
+переживают page navigation; changed evidence basis очищает compare с localized
+notice. Active connection-owned P2-D/P2-E pull блокирует pager с explanation,
+но не abort-ится и не превращается в durable/background Job.
+
+Required evidence through revision `cc40d14`: clean detached baseline
+`d75676a` после восстановления dependencies прошёл typecheck, P2-F 10/10,
+P2-E 12/12 и Web 88/88. Post-implementation прошли typecheck; P2-H server
+10/10; targeted Web 25/25; P2-H Chromium 1/1; P2-G server 38/38; full core
+349/349 + Web 95/95; mocked Chromium 23/23; production build; markdownlint
+31 files/0 issues; diff check; server/jsdom benchmark по 1/1. Vite сохранил
+известный warning о chunk больше 500 kB, build завершился успешно.
+
+Sequential repeats with exit/count checking: P2-H server 10×10/10, targeted Web
+10×7/7, Chromium 10×1/1, affected Web 10×95/95; P2-F server/Web 10×10/10 и
+10×8/8; P2-E server/Web 10×12/12 и 10×10/10; P2-G server/Web/Chromium
+10×38/38, 10×20/20 и 10×1/1; P1-H 10×25/25; P1-L+M 10×33/33; P1-K
+10×37/37; P1-J 10×11/11; P1-I 10×3/3; P1-E 10×8/8. Все засчитанные
+groups выполнялись последовательно, а не десятками одновременных процессов.
+
+Synthetic diagnostic использует 1,000 models/4,000 variants. Legacy server
+response: 3,768,624 bytes и 10.537 ms; page 12: 45,513 bytes, 4.759 ms и
+48 variants. jsdom legacy projection: 1,000 slides + 1,000 dots и 215.759 ms;
+bounded: 12 slides + 12 dots + 2 pager buttons и 6.222 ms. Это один local run,
+не production SLA, provider capacity или timing gate.
+
+Первые failures/findings не скрыты. Detached worktree не имел `node_modules`,
+поэтому первая typecheck attempt получила `tsc: command not found`; после
+read-only dependency symlink baseline полностью прошёл. Review исправил page-1
+reset: он теперь атомарен с accepted debounced basis и не делает request старого
+query; duplicate targets across logical pages fail-closed до pagination; mobile
+pager получил 44 px targets. Первый historical repeat wrapper использовал
+несуществующий `chat-recovery.test.ts` и завершился после уже green P1-K/J/I;
+канонический `chat-job-recovery.test.ts` подтверждён 8/8, затем весь exact
+envelope выполнен заново. Следующий count wrapper ожидал TAP prefix `#`, тогда
+как current Node печатает `ℹ`; parser переведён на поля `tests/pass`, после чего
+все groups перезапущены и получили точные counts. Это dependency/orchestration
+failures, не скрытые product regressions.
+
+P2-A, P2-B, P2-C, P2-D, P2-E, P2-F, P2-G и P2-H остаются `implemented, locally
 validated`, а не independently verified или production-validated. Не проверены
 live Ollama/model/hardware, NVIDIA driver/GPU/MIG, provider-version matrix,
 production TTL/residency, external-client ownership и multi-process coordination.
@@ -674,13 +729,15 @@ projections, а не continuous evidence history/full Capability Registry;
 semantic quality, tool/media capabilities и user overrides не реализованы.
 P2-D/P2-E — только bounded mutable-tag pull: нет durable resume, disk
 reservation, checksum/provenance, immutable tag resolution или recent entry.
-P2-F работает только с current local/bundled response: нет remote provider,
-pagination/virtualization/catalog-scale benchmark, saved filters или inferred
-license/quantization/task facts.
+P2-H работает только с current local/bundled response: нет remote provider,
+immutable multi-request snapshot, saved filters, generic virtualization, 10k/
+live load evidence или inferred license/quantization/task facts. Legacy client
+может по-прежнему запросить полный list; page-size policy не является total cap.
 Phase 2 остаётся `in progress`: ROADMAP exit gate требует HF exact revision/
 checksum/license и platform work; Q-25 остаётся открытым и блокирует первый
 Hugging Face import slice. Следующий handoff — не зависящий от Q-25 bounded
-catalog scale/pagination slice, не remote provider и не full NVIDIA calibration.
+P2-I exact installed capability user override foundation по MOD-008/ADR-0003,
+не full Capability Registry, remote provider или inferred capability resolver.
 
 ## Later phases
 
