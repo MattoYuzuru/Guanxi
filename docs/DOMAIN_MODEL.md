@@ -152,6 +152,16 @@ Variant, Installation, capability claim или availability proof. Confirmed pul
 создать observed Installation/digest fact. Import Job, resume, checksum,
 provenance record и recent catalog entry ещё не реализованы.
 
+P2-E добавляет variant-first projection текущего local/bundled Marketplace, но
+не persistent `ModelVariant` registry. Каждая валидная catalog row получает
+server-derived exact normalized target, собственный claimed-size fit и exact
+installation projection из sampled `/api/tags`. Duplicate/malformed target,
+unknown size и unavailable/ambiguous installation остаются typed unknown;
+family-level `installed` и largest-variant `fit` сохранены только как legacy
+compatibility projections. Выбор и pull transient; только post-success
+Installed refresh подтверждает exact digest. Mutable catalog tag всё ещё не
+является immutable artifact revision.
+
 ### Runtime Instance
 
 Наблюдаемая загруженная модель: digest, context, VRAM/RAM, expiry и source.

@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P2-D regression gate    |
+| `test:web:browser` | deterministic Chromium P0-A–P2-E regression gate    |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -132,6 +132,18 @@ npm run link:cli
   останавливает Ollama daemon. Web не retry-ит stream автоматически, после
   terminal success отдельно перечитывает `/api/tags` и не запускает completion
   probe либо capability promotion.
+- P2-E расширяет local/bundled catalog exact variant rows: shared P2-D
+  normalizer формирует canonical pull target, fit считается по claimed size
+  выбранного варианта, а installation сопоставляется только с exact normalized
+  `/api/tags` row и digest. Duplicate/malformed row fail-closed без fallback на
+  base/latest; top-level `installed`/`fit` сохранены как явно compatibility
+  aggregate/largest projection.
+- Marketplace требует variant selection до confirmation, фиксирует выбранный
+  target на время active pull и переиспользует connection-owned P2-D start.
+  Success отдельно перечитывает Installed descriptor и показывает exact digest
+  только при одном canonical `/api/tags` match. Catalog source/fetched/observed
+  time и unknown/stale/fallback остаются видимыми; никаких auto probe, prewarm,
+  load, capability promotion или remote catalog fetch.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
@@ -189,6 +201,11 @@ npm run link:cli
 - P2-D additive публикует strict preview/start request и preview response для
   Ollama reference. Input kind закрыт enum-ом, unknown fields отклоняются, а
   pull progress сохраняет совместимый `PullStreamEvent` contract.
+- P2-E additive расширяет `CatalogModel.variants` normalized target, claimed
+  context, per-variant calculated/unknown fit, exact installed/not-installed/
+  unknown evidence и source freshness/timestamps. Legacy variant rows получают
+  non-installable unknown defaults; top-level compatibility projections не
+  выдаются за выбранный variant fact.
 
 ### Server
 
@@ -208,8 +225,9 @@ npm run link:cli
   timestamp, owner/artifact/current-fit classification и compatibility projection;
 - `ollama/` — client, status и wire types;
 - `models/` — installed/running details, P2-A descriptor assembler и sourced
-  catalog fallback; descriptor path сохраняет four-worker `/api/show` bound,
-  caller AbortSignal, digest-aware LRU 64 и fail-closed ambiguous evidence;
+  catalog fallback; catalog строит P2-E exact variant targets/fit/installation,
+  descriptor path сохраняет four-worker `/api/show` bound, caller AbortSignal,
+  digest-aware LRU 64 и fail-closed ambiguous evidence;
 - `hardware/` — legacy profile/static fit и injectable sampled telemetry adapter;
 - `http/` — models, runtime, Jobs, threads, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
@@ -263,7 +281,9 @@ npm run link:cli
   объясняет side effect manual completion probe, подтверждает его dialog-ом и
   показывает queued/running/historical/result/error/cancel states; Marketplace
   отдельно даёт localized `Add from Ollama` preview/confirmation/progress/
-  cancel/retry и truthful post-success Installed refresh;
+  cancel/retry и truthful post-success Installed refresh; catalog cards требуют
+  P2-E exact variant selection и показывают per-variant claim/fit/provenance/
+  installation до того же confirmed pull lifecycle;
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;
@@ -303,7 +323,9 @@ npm run link:cli
   reconciliation, redaction и AbortSignal; P2-D — strict local reference
   grammar, pure preview, exact confirmed target, validated terminal pull/
   progress/redaction/cancel и Marketplace one-intent/locale/focus/responsive/
-  unmount regression.
+  unmount regression; P2-E отдельно покрывает additive variant contract,
+  fail-closed target derivation, exact installed tag, different/unknown fit,
+  target snapshot, refresh truth и deterministic catalog selector Chromium flow.
 
 ### CLI
 

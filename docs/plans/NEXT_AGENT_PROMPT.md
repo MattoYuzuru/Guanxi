@@ -4,7 +4,7 @@
 
 **Проверено:** 2026-08-04
 
-**Назначение:** Phase 2, slice P2-E — variant-first Marketplace install
+**Назначение:** Phase 2, slice P2-F — truthful faceted search и pairwise variant compare
 
 ## Контекст
 
@@ -19,21 +19,23 @@ accepted ADR/decision — целевую границу, ROADMAP — поряд�
 `.idea/`, пользовательские данные, real Ollama model store, `node_modules`,
 generated outputs или unrelated worktree changes.
 
-P2-A–P2-D уже реализованы:
+P2-A–P2-E уже реализованы:
 
 - `d750a3e`..`282c82e` — installed descriptor и truthful provider evidence;
 - `a1ead74`, `597c130`, `c22c435` — migration 7 и persistent exact provider cache;
 - `ce9ef4b`, `c48799a`, `d1c3c38` — migration 8 и explicit completion probe;
 - `21c0404`, `3d129d2`, `0d9aaa6` — strict Add from Ollama preview/confirmed
-  connection-owned pull и hardened traversal/unmount boundaries.
+  connection-owned pull;
+- `56b802b`, `2959b98` — exact catalog targets, per-variant fit/installation и
+  variant-first selection/confirmation/pull/Installed refresh.
 
-Подтверждённый current baseline: typecheck; P1 exact 98/98; P1-L+M 32/32;
-prewarm 7/7; routes/Governor/concurrency 33/33; runtime/provider 20/20;
-fit/telemetry 19/19; P2-A 9/9; P2-B 17/17; P2-C 34/34; P2-D server 20/20;
-core 311/311; Web 65/65; mocked Chromium 19/19; build, markdownlint и diff check.
-Repeats: P2-D server 10×20/20, targeted Web 10×7/7, affected Web 10×65/65,
-P2-C 10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M 10×32/32, P1-K
-10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8.
+Подтверждённый current baseline: typecheck; P2-E exact server 12/12; P2-D 20/20;
+P2-C 34/34; P2-B 17/17; P2-A 9/9; P1-L+M 32/32; P1-K 37/37; core 320/320;
+Web 75/75; mocked Chromium 20/20; build, markdownlint и diff check. Repeats:
+P2-E server 10×12/12, targeted Web 10×10/10, affected Web 10×75/75, P2-D
+10×20/20, P2-C 10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M
+10×32/32, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E
+10×8/8.
 
 Q-26 resolved: manual Add from Ollama принимает strict name или official page
 URL. Q-25 остаётся открытым и блокирует первый Hugging Face slice. Не начинай HF
@@ -41,126 +43,156 @@ API/download/import, не выбирай formats и не закрывай Q-25 �
 
 ## Current gap
 
-Current `CatalogModel.variants` показывает только tag/claimed size/parameter size.
-Server рассчитывает top-level fit по самому крупному варианту. Web рисует variant
-badges, но `PullControl` всегда отправляет base `model.name`; пользователь не
-выбирает exact tag до install. Top-level `installed` также может стать true из-за
-другого tag того же family. Это не удовлетворяет MOD-002 variant-first boundary и
-может связать показанный fit с другим pull target.
+Marketplace имеет только text query по name/description. P2-E показывает exact
+variants, но пользователь не может truthfully сузить catalog по fit выбранного
+варианта, installation, local/cloud, source/freshness, claimed context/size или
+claimed capability. Нельзя выбрать две exact rows и сопоставить их facts рядом.
 
-P2-D уже даёт strict canonical confirmed pull. P2-E должен использовать ту же
-server-owned normalization/terminal lifecycle, но сохранить разные UX surfaces:
-manual reference form не является catalog variant selector, а catalog claim не
-становится installed/digest evidence до `/api/tags` refresh.
+Top-level `CatalogModel.fit` и `installed` остаются compatibility projections.
+Если фильтровать их напрямую, комбинация `installed + green` может ошибочно
+сопоставить installed tag A с green tag B. Отсутствующая capability metadata не
+равна unsupported. License, quantization, task/operation и immutable revision в
+current catalog contract отсутствуют; name/tag heuristics не создают эти facts.
 
-## Цель P2-E
+P2-F должен сделать честный bounded subset MOD-004 и compare без remote provider,
+новой persistence или import lifecycle. Это не полный Catalog Service, не
+virtualization/pagination для 10k rows и не весь Phase 2 exit gate.
 
-Сделай Marketplace install variant-first: пользователь видит и явно выбирает
-конкретный catalog tag, получает fit/size/source именно для выбранного варианта,
-подтверждает exact normalized pull target и только затем запускает один local
-Ollama pull. После terminal success exact installation/digest truth приходит из
-`/api/tags`.
+## Цель P2-F
 
-Это bounded curated/local-catalog slice. Он не превращает mutable tag или stale
-catalog row в immutable artifact, не реализует HF import и не завершает весь
-Capability Registry/search subsystem.
+Добавь серверные facets по доступным current facts и pairwise compare двух exact
+catalog variants. Пользователь должен понимать, какой exact variant удовлетворил
+всем variant-level filters, какие значения claimed/unknown, и сравнить две rows
+без winner/recommendation или side effect.
 
 ## Обязательный scope
 
-### Contract и catalog variant boundary
+### Contract и query semantics
 
-- Additive расширь `CatalogModel` так, чтобы каждый variant имел однозначный
-  server-derived canonical pull target и собственный fit. Сохрани legacy fields/
-  defaults и старых clients; public API/keys не удаляй и не переименовывай.
-- Target формируй через один shared server normalizer, а не client string
-  concatenation. Base/tag/namespace grammar и implicit/canonical tag должны быть
-  согласованы с P2-D.
-- Variant отражает только доступные facts: exact normalized name/tag, claimed
-  size/parameter/source/freshness и calculated fit basis. Не выдумывай digest,
-  quantization, license, context, capability, availability или immutable revision.
-- Fit вычисляй для конкретного variant size/context claim. Unknown size остаётся
-  unknown/объяснённым, а не нулём или скрытым safe default. Top-level legacy fit
-  не должен маскироваться под selected-variant evidence.
-- Installed state различай по exact normalized target. Установка одного tag не
-  делает другой tag installed; family-level legacy projection можно сохранить
-  только как явно compatibility aggregate.
-- Invalid/malformed/duplicate variant rows fail-closed и не приводят к pull
-  удобного base/default target. Сохраняй catalog provenance/observed/fetched time.
-- Unknown fields/future enums соблюдают существующую compatibility policy; новые
-  strict command boundaries отклоняют лишние поля.
+- Additive расширь strict `listCatalogQuery`; старые `q/contextLength` requests и
+  response shapes сохраняются. Не удаляй/не переименовывай public keys.
+- Введи typed filters только для доступных facts:
+  - exact variant installation: `installed | not_installed | unknown`;
+  - per-variant fit: `green | yellow | red | unknown`;
+  - provider scope: `local | cloud`;
+  - source: `local_cache | bundled | remote` с future-compatible response policy;
+  - freshness: `fresh | stale | fallback | unknown`;
+  - claimed capability или explicit `unknown`, не `unsupported`;
+  - minimum claimed context и maximum claimed artifact size как positive safe
+    integers без arbitrary UI/server ceiling.
+- Определи repeat/multi-select encoding однозначно и детерминированно. Unknown
+  query keys/future command enums fail closed; legacy requests получают no-filter
+  defaults.
+- Text query остаётся case-insensitive name/description search. Не ищи и не
+  фильтруй private paths/provider raw content.
+- Все variant-level predicates должны совпасть на одной exact valid variant row.
+  Нельзя удовлетворить `installed` через A, `green` через B, а size/context через C.
+- Model-level local/cloud, source/freshness и claimed capabilities применяются
+  отдельно и объясняются. Empty capabilities остаются unknown, не unsupported.
+- Не вводи filter по license, quantization, task/modality, immutable digest или
+  runtime-verified capability, пока соответствующего fact нет в contract.
+- Если нужен additive match projection, он должен перечислять exact normalized
+  matching targets/reasons без превращения legacy aggregate в evidence.
 
-### Server и pull lifecycle
+### Server/catalog
 
-- Не добавляй remote catalog call и не scrape-и `ollama.com`. Используй только
-  current validated local recommendations cache и dated bundled snapshot.
-- Confirmation/start обязан повторно доказать exact selected target через P2-D
-  normalizer. Web не передаёт endpoint, insecure, headers, auth или provider options.
-- Exact selected target достигает одного fake `OllamaClient.pull`; base name или
-  соседний tag не должен случайно попасть в request.
-- Сохрани P2-D terminal-success, malformed/regressing progress, redaction,
-  disconnect/cancel и zero automatic retry semantics.
-- Pull остаётся connection-owned, non-durable и non-replayable. Не создавай DB
-  migration/Job/resume/cache/disk reservation без отдельного доказанного scope.
-- После success refresh `/api/tags` подтверждает exact target и digest. Missing
-  target либо refresh failure остаётся truthful unconfirmed state; catalog claim
-  не становится installation evidence.
-- Не запускай completion probe, load/prewarm, capability promotion или Governor
-  admission автоматически.
+- Filtering остаётся server-owned поверх current validated local recommendations
+  cache и dated bundled snapshot. Никакого Ollama human catalog scrape, remote
+  catalog request или arbitrary URL fetch.
+- Сначала построй и провалидируй P2-E exact variants, затем применяй same-row
+  predicates. Malformed/duplicate target не становится удобным result.
+- Unknown size/context/fit/installation участвует только в explicit unknown
+  filter; он не становится zero, false, green или unsupported.
+- Exact installed state продолжает приходить только из sampled `/api/tags`.
+  Provider failure сохраняет unknown filter semantics и не подменяется legacy
+  family aggregate.
+- Source/freshness/observed/fetched provenance сохраняется в filtered response и
+  compare facts. Не обновляй source timestamp от filtering/access.
+- Combined facets используют AND между группами и документированную OR semantics
+  внутри multi-select группы. Empty selection означает filter absent.
+- Добавь controlled 400 для invalid numeric/enum/query shapes и safe error без raw
+  cache/provider content.
+- Не добавляй DB migration, remote cache, saved filters, pagination, background
+  refresh или persistent comparison в этом slice.
 
-### Web
+### Web filters
 
-- На Marketplace card variant selection обязателен до install; variant badges
-  больше не должны выглядеть passive, если именно они определяют pull target.
-- Покажи exact selected name/tag, per-variant claimed size/parameter, fit и source/
-  freshness. Unknown/stale/fallback states остаются видимыми и не выглядят как
-  verified runtime facts.
-- До confirmation явно сообщи о network/disk side effect и mutable catalog/tag
-  boundary. Никакого pull на mount, focus, hover, selection, carousel navigation,
-  reload или variant change.
-- Double click/Enter dispatches один UI intent. Поддержи progress/error/cancel/
-  explicit retry и exact installed-after-refresh state без optimistic digest.
-- Selection change до start обновляет preview/fit; во время active pull не
-  подменяет target. Unmount/navigation abort-ит только owned wait и не делает
-  late state/refresh update.
+- Сохрани существующий search input и добавь accessible filter disclosure/sheet,
+  подходящий desktop и 390 px. Applied filters имеют видимый summary/chips и один
+  clear-all action.
+- Покажи только доступные facets и честные labels: claimed context/artifact size,
+  catalog capability claim, selected-context fit, sampled installation,
+  source/freshness. Не называй size memory requirement или fit measured.
+- Unknown доступен как явный выбор там, где факт может отсутствовать. Отсутствие
+  capability metadata не рисуется как unsupported.
+- Query dispatch debounced/bounded, previous request abortable; late response не
+  перезаписывает более новый filter state. Reload/navigation не запускает pull,
+  probe, prewarm/load или provider fetch.
+- Loading, empty-result, source unavailable, validation/transport error и retry
+  различимы. Empty result показывает applied summary и clear action.
+- Search, filters и clear вызывают catalog query, но никогда P2-D start либо
+  manual Add preview. Installed cards/profile/P2-C probe/P2-D/P2-E install
+  продолжают работать.
 - Все новые strings проходят locale keys: English source/fallback и curated
-  Russian. Проверь keyboard, accessible names/status/progress, focus containment/
-  restore, 390 px, 200% zoom, no horizontal overflow и reduced motion.
-- Manual `Add from Ollama`, Installed profile/P2-C probe, search input и current
-  local/catalog cards продолжают работать.
+  Russian. Не добавляй bilingual hardcode в component.
+
+### Pairwise exact variant compare
+
+- Compare — pairwise flow ровно двух explicit exact valid variant rows. Это
+  bounded layout/action, не limit модели/runtime/hardware.
+- Add/remove selection не запускает pull. Duplicate exact target нельзя выбрать
+  дважды; invalid/non-installable legacy row нельзя добавить.
+- Compare view показывает рядом: exact target/tag, claimed size/parameters/
+  context, per-variant fit+basis, source/freshness/observed/fetched и exact sampled
+  installation/digest либо unknown reason.
+- Не показывай winner, score, quality, recommended, supported capability,
+  quantization или license без evidence. Mutable tag и catalog-claim boundary
+  видимы.
+- Selection survives ordinary filtering only while the exact target still exists
+  in the latest valid response; vanished/changed target is removed with visible
+  explanation, не silently rebound по family/tag index.
+- Dialog/sheet имеет semantic heading/description, predictable focus,
+  containment/restore, Escape/back без side effect, keyboard remove/swap и
+  accessible names. На 390 px/200% comparison stacks или scrolls внутри одного
+  controlled region без page horizontal overflow; reduced motion соблюдается.
 
 ## Failure matrix и тесты
 
 Минимальные deterministic cases:
 
-- contract legacy round-trip и additive variant defaults;
-- exact targets для base/tag/namespace; malformed/duplicate tag/name rejection;
-- two variants с разным size дают разные explained fit; unknown size не становится
-  zero/green; stale/fallback provenance сохраняется;
-- exact installed tag не отмечает соседний tag installed;
-- no pull на mount/selection/focus/hover/navigation/reload и без confirmation;
-- selected variant A передаёт ровно target A один раз; base/variant B не вызываются;
-- double activation, ordered progress, provider/protocol/transport error, cancel,
-  unmount и explicit retry;
-- terminal success refreshes `/api/tags`; exact target/digest present, missing и
-  refresh-failure states остаются различимыми;
-- no automatic completion probe, prewarm/load, capability promotion или catalog
-  remote fetch;
-- English fallback/Russian, keyboard/focus, 390 px, 200%, overflow и reduced motion.
+- legacy query/response round-trip, additive defaults и strict unknown fields;
+- valid multi-select encoding, positive-safe integer boundaries и invalid 400;
+- text query вместе с facets; AND across groups, OR within group;
+- same-row invariant: installed A + green B не даёт ложного match;
+- exact installed/not-installed/unknown и соседний tag isolation;
+- green/yellow/red/unknown fit, unknown size/context без zero/default;
+- local/cloud, local-cache/bundled/future response source, stale/fallback/unknown;
+- claimed capability positive и absent metadata as unknown, never unsupported;
+- provenance/timestamps preserved through filter/match/compare;
+- malformed/duplicate exact variants fail closed;
+- filter change abort/late-response race, loading/empty/error/retry/clear;
+- no pull/probe/prewarm/load/remote fetch on mount/search/filter/compare/reload;
+- pair exact A/B selection, duplicate/invalid rejection, remove/swap/vanish;
+- compare facts use exact rows and never legacy top-level fit/installed;
+- English fallback/Russian, keyboard/focus, 390 px, 200%, overflow и reduced motion;
+- manual Add from Ollama, P2-E install, Installed profile/P2-C probe, current
+  cards/carousel/context input remain regression-covered.
 
-Не используй live model/real Ollama store. Fake transport должен проверять exact
-target/options/cancellation. Если добавляешь concurrency/race behavior, повтори
-новый group 10 раз последовательно с exit-status checking; не запускай десятки
-Node/Vitest processes одновременно.
+Не используй live model/real Ollama store. Fake transport проверяет exact query,
+AbortSignal и отсутствие mutating endpoints. Если добавляешь race/concurrency
+behavior, повтори новый group 10 раз последовательно с exit-status checking; не
+запускай десятки Node/Vitest processes одновременно.
 
-## Не входит в P2-E
+## Не входит в P2-F
 
 - Hugging Face API/search/download, GGUF revision/checksum/license/gated flow;
-- arbitrary URL fetch, Ollama human catalog scrape или remote HTML parsing;
-- durable/resumable import Job, staging/cache, disk reservation или checksum;
-- immutable tag resolution до provider pull, registry history или recent catalog;
+- Ollama remote catalog, scrape или remote HTML parsing;
+- durable/resumable import Job, cache/staging, disk reservation/checksum;
+- saved filters/recent catalog, pagination/virtualization/load benchmark;
+- inferred quantization/license/task/modality/quality/recommendation;
+- immutable tag resolution, registry history или generic Capability Registry;
 - semantic/tool/thinking/vision/embedding/media probes и user override;
-- full faceted search/filter/compare redesign — это следующий отдельный slice;
-- delete/import-from-file, Modelfile editor, safetensors conversion или adapters;
+- delete/import-from-file, Modelfile editor, conversion или adapters;
 - Linux/NVIDIA telemetry, measured parallel, Project/Agent/MCP/Skills, service
   lifecycle, retention или rebrand.
 
@@ -171,13 +203,14 @@ Node/Vitest processes одновременно.
 
 ```bash
 npm run typecheck
+node --test packages/server/test/catalog-variant-contract.test.ts \
+  packages/server/test/catalog.test.ts \
+  packages/server/test/model-descriptor.test.ts \
+  packages/server/test/fit.test.ts
 node --test packages/server/test/ollama-reference-contract.test.ts \
   packages/server/test/ollama-reference-routes.test.ts \
   packages/server/test/ollama-reference.test.ts \
   packages/server/test/ollama-client.test.ts
-node --test packages/server/test/catalog.test.ts \
-  packages/server/test/model-descriptor.test.ts \
-  packages/server/test/fit.test.ts
 node --test packages/server/test/completion-probe-contract.test.ts \
   packages/server/test/completion-probe-migration.test.ts \
   packages/server/test/completion-probe-store.test.ts \
@@ -192,24 +225,25 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-Добавь exact P2-E server/Web commands. Повтори новый P2-E group, affected Web,
-P2-D server, P2-C, P2-B, P2-A, P1-L+M, P1-K, P1-J, P1-I и P1-E по 10 раз
-последовательно. Первый failing/flaky result сохрани, диагностируй и исправь;
-повторный green не скрывает первую ошибку.
+Добавь exact P2-F contract/server/Web commands. Повтори новый P2-F group,
+affected Web, P2-E server/Web, P2-D server, P2-C, P2-B, P2-A, P1-L+M, P1-K,
+P1-J, P1-I и P1-E по 10 раз последовательно. Первый failing/flaky result сохрани,
+диагностируй и исправь; повторный green не скрывает первую ошибку.
 
 ## Completion и handoff
 
 После bounded slice:
 
 - согласованно обнови contract, server, Web, tests и current-state docs;
-- добавь P2-E evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-D;
+- добавь P2-F evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-E;
 - Phase 2 оставь `in progress`, пока весь ROADMAP exit gate не доказан;
 - Q-25 оставь открытым; HF slice остаётся blocked до explicit owner decision;
 - полностью перепиши этот файл под следующий незавершённый non-blocked Phase 2
-  slice, вероятно bounded faceted search/filter/compare;
+  slice, вероятно Linux/NVIDIA truthful telemetry prototype либо отдельно
+  обоснованный catalog scale/pagination slice;
 - используй небольшие conventional commits и не включай `.idea/`.
 
 В финале сообщи ровно `status successful` либо `status blocked`, commits, exact
 test counts, first failures/fixes, residual risks и подтверждение обоих handoff
-docs. Если exact variant target нельзя безопасно вывести из current catalog facts,
-fail-closed и зафиксируй конкретный blocker; не возвращайся к silent base pull.
+docs. Если combined facets нельзя связать с одной exact variant row, fail closed;
+не возвращайся к family-level aggregate filtering.

@@ -358,6 +358,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-B Persistent installed evidence cache | implemented, locally validated | `a1ead74`, `597c130`, `c22c435`; persistent 17/17, core 274/274, Web 52/52, Chromium 18/18, all required gates |
 | P2-C Explicit controlled completion probe | implemented, locally validated | `ce9ef4b`, `c48799a`, `d1c3c38`; P2-C 34/34, core 300/300, Web 58/58, Chromium 18/18, all required gates |
 | P2-D Confirmed Add from Ollama | implemented, locally validated | `21c0404`, `3d129d2`, `0d9aaa6`; P2-D 20/20, core 311/311, Web 65/65, Chromium 19/19, all required gates |
+| P2-E Variant-first Marketplace install | implemented, locally validated | `56b802b`, `2959b98`; P2-E 12/12, core 320/320, Web 75/75, Chromium 20/20, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -534,18 +535,58 @@ unmount state update; raw traversal reject и StrictMode-safe mounted guard
 envelopes (11 вместо 20 без `ollama-client`, затем 19 вместо P1-K 37); product
 tests были green, а точные groups перезапущены с ожидаемыми counts.
 
-P2-A, P2-B, P2-C и P2-D остаются `implemented, locally validated`, а не independently
-verified или production-validated. Не проверены live Ollama/model/hardware,
-provider-version matrix, production TTL/residency, external-client ownership и
-multi-process coordination. Migrations 7/8 хранят latest safe projections, а не
-continuous evidence history/full Capability Registry; semantic quality,
-tool/media capabilities и user overrides не реализованы. P2-D — только bounded
-Ollama reference pull: нет durable resume, disk reservation, checksum/provenance,
-variant-first catalog install или recent entry. Phase 2 остаётся `in progress`:
-ROADMAP exit gate требует variant-first install, HF exact revision/checksum/
-license, search/filter/compare и platform work; Q-25 остаётся открытым и блокирует
-первый Hugging Face import slice. Следующий handoff — не зависящий от Q-25 P2-E
-variant-first Marketplace install.
+P2-E расширяет `CatalogModel.variants` exact normalized target, claimed context,
+per-variant calculated/unknown fit, exact installed/not-installed/unknown
+evidence и source freshness/timestamps. Legacy rows получают non-installable
+unknown defaults; top-level family installed и largest-variant fit остаются
+явно помеченными compatibility projections. Shared P2-D normalizer строит
+base/tag/namespace target. Invalid, traversal, multi-colon, duplicate либо
+malformed rows fail-closed без silent base/latest pull. Unknown size не
+превращается в zero/green fit, а один installed tag не отмечает соседний.
+
+Marketplace catalog card требует exact selection до install, показывает target,
+claimed size/parameters/context, fit basis, source freshness/fetch/observation и
+sampled `/api/tags` installation time. Confirmation объясняет network/disk и
+mutable-tag boundaries. Active pull фиксирует selected target и блокирует
+подмену selection; double activation создаёт один intent. Progress, provider/
+protocol/transport error, cancel, explicit retry и unmount используют тот же
+connection-owned P2-D lifecycle без auto retry. После terminal success Web
+принимает digest только из одного exact canonical Installed descriptor; missing
+target и refresh failure остаются разными unconfirmed states. Completion probe,
+prewarm/load, capability promotion и remote catalog fetch автоматически не
+запускаются.
+
+Required evidence through revision `2959b98`: typecheck; exact P2-E contract/
+catalog 12/12; P2-D 20/20; catalog/descriptor/fit с additive contract 34/34;
+P2-C 34/34; core 320/320 + Web 75/75; mocked Chromium 20/20; production build,
+markdownlint и diff check. Sequential repeats with exit/count checking: P2-E
+server 10×12/12, targeted Web 10×10/10, affected Web 10×75/75, P2-D
+10×20/20, P2-C 10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M
+10×32/32, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E
+10×8/8.
+
+Required product checks не падали. Initial inherited P2-E smoke дал server
+11/11 и Web 10/10; последующий review нашёл fail-open parsing локального cache:
+`name:tag:extra` мог быть усечён прежним `split(':')` до удобного target.
+Cache row теперь сначала проходит shared strict normalizer; regression поднял
+exact group до 12/12. Review также добавил отсутствовавшие catalog observed/
+fetched и `/api/tags` observation timestamps в selector/success projection.
+Несколько oversized repeat wrappers завершились до всех заявленных groups без
+test failure; незавершённые runs не засчитаны и соответствующие groups
+перезапущены отдельно до полных exact 10× counts.
+
+P2-A, P2-B, P2-C, P2-D и P2-E остаются `implemented, locally validated`, а не
+independently verified или production-validated. Не проверены live Ollama/model/
+hardware, provider-version matrix, production TTL/residency, external-client
+ownership и multi-process coordination. Migrations 7/8 хранят latest safe
+projections, а не continuous evidence history/full Capability Registry;
+semantic quality, tool/media capabilities и user overrides не реализованы.
+P2-D/P2-E — только bounded mutable-tag pull: нет durable resume, disk
+reservation, checksum/provenance, immutable tag resolution или recent entry.
+Phase 2 остаётся `in progress`: ROADMAP exit gate требует HF exact revision/
+checksum/license, search/filter/compare и platform work; Q-25 остаётся открытым
+и блокирует первый Hugging Face import slice. Следующий handoff — не зависящий
+от Q-25 P2-F bounded faceted search/filter/compare current local/catalog facts.
 
 ## Later phases
 

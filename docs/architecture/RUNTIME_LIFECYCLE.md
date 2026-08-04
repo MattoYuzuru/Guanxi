@@ -594,6 +594,24 @@ Preview не делает provider/network/filesystem/SQLite call. Start пов�
 Ollama daemon, partial provider data и external pulls не принадлежат этому
 controller.
 
+P2-E добавляет selection boundary перед тем же P2-D pull:
+
+```text
+catalog source row → strict exact target + per-variant claimed fit
+  → explicit variant selection → confirmation snapshots exact target
+  → one connection-owned P2-D pull
+  → terminal success → fresh Installed descriptor query
+      → one exact target + digest: confirmed installation
+      → missing/ambiguous/failed refresh: unconfirmed
+```
+
+Selection, hover, focus, carousel navigation, reload и variant change не создают
+side effect. Во время active pull selector disabled, а upstream rerender не
+подменяет captured target. Unmount abort-ит только owned wait и запрещает late
+refresh/state update. Catalog fit остаётся calculation по claimed size, не
+Governor admission или live hardware measurement; exact installation не
+наследуется между tags одной family.
+
 Output-budget control и media upload в current Chat flow не реализованы; UI не
 подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
 
@@ -739,6 +757,22 @@ lookalikes fail-closed до Ollama. Provider progress становится termi
 после status `success`; malformed, regressing или EOF-before-success даёт safe
 error без raw body/input/path. Success сам по себе не создаёт evidence: Web
 перечитывает `/api/tags`, а refresh failure остаётся explicit unconfirmed state.
+
+### Current variant-first catalog pull
+
+Marketplace catalog card больше не отправляет family base name. Пользователь
+выбирает один exact valid tag, видит normalized target, claimed size/parameters/
+context, per-variant fit, source freshness/fetch/observation и exact sampled
+installation state. Invalid/duplicate row disabled; unknown size не становится
+нулевым или зелёным fit.
+
+Confirmation показывает network/disk effect и mutable-tag boundary. Double
+activation создаёт один intent, а selection snapshot остаётся target до
+terminal state. Progress/error/cancel/retry использует P2-D stream. После
+success Web читает Installed descriptor и принимает digest только при одном
+canonical exact match. Missing match и refresh failure различаются и не
+запускают completion probe, prewarm/load, capability promotion либо remote
+catalog fetch.
 
 ## Memory model
 
@@ -1020,7 +1054,7 @@ P1-J bounded Queue/exact Job Stop action реализованы. P1-K допол
 выдаёт operation owner за durable Job. P1-L добавляет exact
 model/digest/context/runtime/hardware observation key, exact-only calibration и
 digest-aware bounded `/api/show` cache. P2-C показывает typed `model_probe`
-operation и manual exact result без Job Stop. P2-D pull не входит в Governor
+operation и manual exact result без Job Stop. P2-D/P2-E pull не входит в Governor
 projection: это connection-owned download, а не inference lease/Job. Production pressure/available
 memory, continuous durable runtime history, safe parallel и full resource
 actions ещё не реализованы. Target projection остаётся шире:

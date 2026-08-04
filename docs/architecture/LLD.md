@@ -82,6 +82,12 @@ model name; start содержит original reference и exact confirmed name. U
 fields/future kind fail-closed. Progress/error/done использует существующий
 additive `PullStreamEvent`, поэтому legacy clients и route schema не удалены.
 
+P2-E additive расширяет catalog variant exact normalized name, claimed context,
+calculated/unknown fit, exact installed/not-installed/unknown evidence и source
+freshness/timestamps. Старый `{tag,sizeBytes,parameterSize}` row parse-ится с
+non-installable legacy defaults. Top-level installed/fit остаются только явно
+помеченными compatibility projections.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -124,7 +130,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   `/api/version`, digest-aware LRU на 64 normalized references и не более четырёх
   параллельных `/api/show` workers на installed-list projection;
 - `models/catalog.ts`: validated stale local cache + dated bundled snapshot,
-  без remote request;
+  strict exact P2-E variants/fit/installation, без remote request;
 - `hardware/probe.ts` и `fit.ts`: legacy local profile/estimate и static fit;
 - `hardware/telemetry.ts`: один injectable host boundary; bounded Apple Silicon
   `vm_stat` adapter, strict parser и explicit unsupported/partial/failure states;
@@ -174,7 +180,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | Architecture/capability detail | local `/api/show`, first response time | provider-declared; exact cache write only after tags/version revalidation | LRU 64 + SQLite v7; 15m fresh, 7d stale/offline; four workers + per-key flight | context limit, fit, detail, descriptor |
 | Loaded instance | local `/api/ps`, sampled time | observed runtime row; exact only through P1-L reconciliation | failure remains `models:null`; no history | Runtime Bar, fit/calibration |
 | Runtime version | local `/api/version`, response time | observed runtime fingerprint либо unknown | request-scoped, failure independent | observation key и descriptor basis |
-| Catalog claim | local stale cache or dated bundled snapshot | claimed/bundled, not runtime fact | explicit stale/fallback/unavailable | Marketplace only, P2-A unchanged |
+| Catalog variant claim | local stale cache or dated bundled snapshot + server normalizer | exact mutable target; size/context/fit remain claimed | malformed/duplicate target or unknown size fail closed; explicit stale/fallback | P2-E Marketplace selector |
 | Legacy `capabilities` | filtered known `/api/tags` values | compatibility projection, not evidence decision | unknown/malformed → empty legacy array | old Web/clients |
 | Context facts | `/api/tags`/`/api/show` declarations | declared maximum либо unknown/conflict | LRU time preserved; no guessed ceiling | settings/list/detail/validation |
 | Canonical reference | P1-L normalizer over provider name | registry/name/tag/digest syntax preserved | invalid/duplicate → unknown/ambiguous | descriptor/cache/observation key |
@@ -194,6 +200,10 @@ generic registry service и semantic/tool/media probes не реализован
 P2-D preview/target не становится installation/capability fact: до отдельного
 `/api/tags` refresh он не доказывает installation или digest и нигде не
 persist-ится.
+P2-E catalog variant переиспользует этот pull target, но не меняет evidence
+семантику. Exact tag installation определяется только one-to-one normalized
+`/api/tags` match; соседний tag не наследует family installed. Claimed size fit,
+source observation/fetch time и installation observation показываются отдельно.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
@@ -291,7 +301,9 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   evidence state/source/time; P2-C manual completion confirmation/status/cancel
   и historical projection; P2-D Marketplace `AddFromOllama` с explicit local
   preview, confirmation, one-intent pull, progress/cancel/retry и Installed
-  refresh без auto-probe/capability promotion;
+  refresh без auto-probe/capability promotion; P2-E `CatalogVariantInstall`
+  требует exact row selection, показывает variant claim/fit/provenance и
+  фиксирует target до terminal refresh;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields и exact positive safe-integer
@@ -299,8 +311,9 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
-  P1-M no-artificial-caps/P2-A descriptor/P2-C probe/P2-D confirmed pull
-  regression; browser использует deterministic mocked REST/SSE/runtime snapshots.
+  P1-M no-artificial-caps/P2-A descriptor/P2-C probe/P2-D confirmed pull/P2-E
+  variant-first regression; browser использует deterministic mocked REST/SSE/
+  runtime snapshots.
 
 ### `packages/cli`
 

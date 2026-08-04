@@ -5,10 +5,10 @@
 
 ## Текущий baseline
 
-На 2026-08-04 после P2-D:
+На 2026-08-04 после P2-E:
 
-- `npm test`: 311/311 server/CLI и 65/65 web component/parser tests;
-- `npm run test:web:browser`: 19/19 deterministic Chromium tests с mocked
+- `npm test`: 320/320 server/CLI и 75/75 web component/parser tests;
+- `npm run test:web:browser`: 20/20 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"`:
@@ -132,6 +132,18 @@
   progress/error/cancel/retry, `/api/tags` refresh и truthful partial state при
   refresh failure, StrictMode/unmount cleanup, English fallback/Russian. Chromium
   проверяет focus containment/restore, 390 px, 200%, overflow и reduced motion;
+- P2-E contract/catalog fixtures покрывают legacy additive defaults, strict
+  future enums, base/tag/namespace targets, normalized local-cache rows,
+  malformed/traversal/multi-colon/duplicate rejection, different per-variant
+  fit, unknown size, exact installed tag/digest, ambiguous/unavailable tags и
+  stale/fallback provenance/timestamps;
+- P2-E Web fixtures покрывают no pull на mount/focus/hover/selection/navigation/
+  reload, required selector, variant A/B fit/facts, invalid row, exact installed
+  tag, selected-target snapshot, double activation, ordered progress, provider/
+  protocol/transport error, cancel, retry, unmount и exact/missing/failed
+  Installed refresh. Chromium проверяет keyboard/focus restore, 390 px, 200%,
+  no overflow, reduced motion, one exact target и отсутствие automatic probe/
+  prewarm/load/catalog fetch;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -174,8 +186,9 @@
   32/32; отдельный prewarm service file — 7/7;
   routes/Governor/concurrency дают 33/33; runtime/provider — 19/19;
   fit/telemetry — 19/19; P2-A descriptor — 9/9; P2-B persistent group —
-  17/17; P2-C + Ollama boundaries — 34/34; P2-D server — 20/20; полный core —
-  311/311, Web — 65/65, mocked Chromium — 19/19;
+  17/17; P2-C + Ollama boundaries — 34/34; P2-D server — 20/20; P2-E exact
+  contract/catalog — 12/12; полный core — 320/320, Web — 75/75, mocked
+  Chromium — 20/20;
   15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
@@ -222,6 +235,10 @@
   affected Web — 10×65/65. Также повторены P2-C 10×34/34, P2-B 10×17/17,
   P2-A 10×9/9, P1-L+M 10×32/32, P1-K 10×37/37, P1-J 10×11/11, P1-I
   10×3/3 и P1-E 10×8/8;
+- P2-E exact server и targeted Web повторены последовательно 10×12/12 и
+  10×10/10; affected Web — 10×75/75. Также повторены P2-D 10×20/20, P2-C
+  10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M 10×32/32, P1-K
+  10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -263,6 +280,10 @@ Capability Registry/history, live Ollama validation, tool/media capability ил�
 connection-owned confirmed pull на fake transport. Он не доказывает live large
 download, provider-version matrix, resumability, disk reservation/checksum или
 освобождение partial provider data после cancel.
+P2-E доказывает exact mutable catalog target, per-variant claimed fit и sampled
+installation truth только для validated local cache/bundled fixtures и mocked
+pull/Installed refresh. Это не immutable revision resolution, live hardware fit,
+disk reservation, persistent registry/history или full faceted catalog.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -301,31 +322,34 @@ process lock. P0-D health остаётся sampled observation; обязател
   projections, а не полный registry/history; semantic/tool/media probes и user
   overrides не реализованы. P2-D pull не durable/replayable, не резервирует disk,
   не проверяет artifact checksum и не координируется с external pull clients.
+  P2-E selected target остаётся mutable tag claim; exact digest появляется
+  только после sampled `/api/tags` refresh, а full search/filter/compare ещё не
+  реализован.
 
 ## Существующее покрытие
 
-| Область                            | Есть                               |
-| ---------------------------------- | ---------------------------------- |
-| Agent loop                         | unit cases                         |
-| Hardware fit                       | unit cases                         |
-| Filesystem tools/jail              | unit cases                         |
-| Server routes                      | integration-style tests            |
-| SQLite stores/migrations v3–v8     | fresh + prior-version recovery     |
-| Durable Job/event foundation       | atomicity + two-connection races   |
-| Job transitions/service            | canonical matrix + replay/live     |
-| Turn terminal contract/CAS         | compatibility + failures           |
-| Tool parser                        | tests                              |
-| Context usage                      | tests                              |
-| Static web serving                 | test                               |
-| CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C/D   |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C/D mocked|
-| Catalog provider/cache             | P0-D local/bundled fixtures        |
-| Global concurrency/model lifecycle | P1-G + P1-K priority lane          |
-| Job replay/reattach                | HTTP SSE; browser durable replay   |
-| Chat startup recovery              | reopened SQLite, fail-closed pages |
-| Runtime health/timeouts            | P0-D fake transport/routes/Web     |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M Chromium   |
+| Область                            | Есть                                     |
+| ---------------------------------- | ---------------------------------------- |
+| Agent loop                         | unit cases                               |
+| Hardware fit                       | unit cases                               |
+| Filesystem tools/jail              | unit cases                               |
+| Server routes                      | integration-style tests                  |
+| SQLite stores/migrations v3–v8     | fresh + prior-version recovery           |
+| Durable Job/event foundation       | atomicity + two-connection races         |
+| Job transitions/service            | canonical matrix + replay/live           |
+| Turn terminal contract/CAS         | compatibility + failures                 |
+| Tool parser                        | tests                                    |
+| Context usage                      | tests                                    |
+| Static web serving                 | test                                     |
+| CLI existing-server logic          | tests                                    |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C/D/E       |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C/D/E mocked    |
+| Catalog provider/cache             | P0-D local/bundled fixtures              |
+| Global concurrency/model lifecycle | P1-G + P1-K priority lane                |
+| Job replay/reattach                | HTTP SSE; browser durable replay         |
+| Chat startup recovery              | reopened SQLite, fail-closed pages       |
+| Runtime health/timeouts            | P0-D fake transport/routes/Web           |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M Chromium         |
 
 ## Обязательная target matrix
 

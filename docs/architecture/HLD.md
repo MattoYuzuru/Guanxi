@@ -163,6 +163,17 @@ grammar к canonical lower-case name с explicit tag. Confirmation start зан�
 preview/pull target не становится installed/capability evidence и не запускает
 P2-C probe автоматически.
 
+P2-E делает текущий local/bundled Marketplace variant-first. Catalog assembler
+проводит base/tag/namespace через тот же strict P2-D normalizer, вычисляет fit по
+claimed size каждого exact row и сопоставляет installation только с exact
+normalized `/api/tags` row. Invalid/duplicate rows не получают удобный default
+target. Top-level family installed и largest-variant fit остаются additive
+compatibility projections, а variant несёт собственные source/freshness/times.
+Web требует selection и confirmation, фиксирует target на время pull и после
+terminal success принимает digest только из одного exact Installed descriptor.
+Это не persistent registry, immutable tag resolution, durable download или
+remote catalog provider.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -196,6 +207,7 @@ P2-C probe автоматически.
 | Latest exact completion probe        | SQLite migration 8                      | latest exact-key projection |
 | Active completion probe/controller   | HTTP request + `ResourceGovernor`       | request/process memory      |
 | Active confirmed Ollama pull         | HTTP request + Ollama `/api/pull`       | connection/provider owned   |
+| Selected catalog variant/install UI  | catalog REST + page-local selection     | sampled facts + page memory |
 | `/api/show` normalized front-cache   | `ModelService` bounded LRU              | process memory, 64 refs     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -241,6 +253,9 @@ P2-C probe автоматически.
 16. P2-D pull не durable/replayable, не резервирует disk и не проверяет artifact
     checksum. Cancel закрывает owned wait, но partial provider data и concurrent
     external pulls остаются поведением Ollama; live large downloads не проверены.
+17. P2-E exact target относится к mutable catalog tag и claimed metadata. Он не
+    разрешает immutable digest до pull, не резервирует disk и не доказывает live
+    hardware fit; post-success installation зависит от нового `/api/tags` sample.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 
