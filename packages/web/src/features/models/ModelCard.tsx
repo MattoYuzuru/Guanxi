@@ -3,13 +3,13 @@
  * карточкой каталога — это разные типы контракта, поэтому union, а не
  * «общий» самодельный тип.
  */
-import { memo, useState } from 'react'
+import { memo } from 'react'
 import type { CatalogModel, LocalModel, ModelCapability } from '@alamo/contract'
 import { Badge, Button, cx } from '../../components/ui.tsx'
 import { Link, paths } from '../../lib/router.tsx'
 import { formatBytes, formatContextLength } from '../../lib/format.ts'
 import { FitIndicator } from './FitIndicator.tsx'
-import { PullControl } from './PullControl.tsx'
+import { CatalogVariantInstall } from './CatalogVariantInstall.tsx'
 import { translate } from '../../lib/locale.ts'
 import { InstalledEvidenceSummary } from './InstalledEvidence.tsx'
 
@@ -39,11 +39,9 @@ export const ModelCard = memo(function ModelCard({
   onInstalled?: (name: string) => void
   selectedContextLength?: number
 }) {
-  const [pulling, setPulling] = useState(false)
   const model = data.model
   const local = data.kind === 'local' ? data.model : null
   const catalog = data.kind === 'catalog' ? data.model : null
-  const installed = local !== null || catalog?.installed === true
 
   const capabilities =
     local && local.descriptor.capabilities.state !== 'declared'
@@ -150,48 +148,18 @@ export const ModelCard = memo(function ModelCard({
         </div>
       )}
 
-      {/* Влезаемость — главное на карточке */}
-      <div className="mb-2.5 flex-1">
-        <FitIndicator fit={model.fit} compact />
-      </div>
-
-      {/* Варианты каталога */}
-      {catalog && catalog.variants.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1">
-          {catalog.variants.slice(0, 4).map((variant) => (
-            <span
-              key={variant.tag}
-              className="rounded border border-[var(--border)] px-1 py-px font-mono text-2xs text-[var(--fg-subtle)]"
-              title={
-                variant.sizeBytes !== null
-                  ? `${variant.tag}: ${formatBytes(variant.sizeBytes)}`
-                  : variant.tag
-              }
-            >
-              {variant.tag}
-            </span>
-          ))}
-          {catalog.variants.length > 4 && (
-            <span className="px-1 text-2xs text-[var(--fg-subtle)]">
-              +{catalog.variants.length - 4}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Действия */}
-      <footer className="mt-auto">
-        {pulling || !installed ? (
-          <PullControl
-            name={model.name}
-            active={pulling}
-            onStart={() => setPulling(true)}
-            onFinish={(ok) => {
-              setPulling(false)
-              if (ok) onInstalled?.(model.name)
-            }}
-          />
-        ) : (
+      {catalog ? (
+        <CatalogVariantInstall
+          model={catalog}
+          selectedContextLength={selectedContextLength}
+          onInstalled={onInstalled}
+        />
+      ) : (
+        <>
+          <div className="mb-2.5 flex-1">
+            <FitIndicator fit={model.fit} compact />
+          </div>
+          <footer className="mt-auto">
           <div className="flex gap-1.5">
             <Link
               to={paths.model(model.name)}
@@ -208,8 +176,9 @@ export const ModelCard = memo(function ModelCard({
               Начать чат
             </Link>
           </div>
-        )}
-      </footer>
+          </footer>
+        </>
+      )}
     </article>
   )
 })
