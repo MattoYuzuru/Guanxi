@@ -21,6 +21,7 @@ import {
 } from '../../components/ui.tsx'
 import { ModelCarousel, type CarouselItem } from '../models/ModelCarousel.tsx'
 import { ModelCard } from '../models/ModelCard.tsx'
+import { AddFromOllama } from '../models/AddFromOllama.tsx'
 import {
   formatBytes,
   formatContextLength,
@@ -208,14 +209,20 @@ export function LauncherPage({ health }: { health: Health }) {
           count={catalog.data?.models.length}
           refreshing={catalog.refreshing}
           action={
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Поиск по каталогу…"
-              aria-label="Поиск по каталогу моделей"
-              className="w-full sm:w-56"
-              type="search"
-            />
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              <AddFromOllama
+                installedNames={(local.data?.models ?? []).map((model) => model.name)}
+                onInstalled={onInstalled}
+              />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Поиск по каталогу…"
+                aria-label="Поиск по каталогу моделей"
+                className="w-full sm:w-56"
+                type="search"
+              />
+            </div>
           }
         />
 

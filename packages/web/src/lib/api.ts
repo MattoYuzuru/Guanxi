@@ -28,6 +28,7 @@ import {
   listWorkspacesResponse,
   cancelJobResponse,
   jobStreamEventSchema,
+  ollamaReferencePreviewResponse,
   pullStreamEventSchema,
   prewarmModelResponse,
   warmModelResponse,
@@ -36,6 +37,7 @@ import {
   type ApprovalBody,
   type ChatStreamEvent,
   type CompletionProbeBody,
+  type OllamaReferenceStartBody,
   type JobStreamEvent,
   type CreateThreadBody,
   type CreateWorkspaceBody,
@@ -211,6 +213,13 @@ export const api = {
       signal,
     }),
 
+  previewOllamaReference: (reference: string, signal?: AbortSignal) =>
+    request(ROUTES.ollamaReferencePreview(), ollamaReferencePreviewResponse, {
+      method: 'POST',
+      body: { reference },
+      signal,
+    }),
+
   stopModel: (name: string, signal?: AbortSignal) =>
     request(ROUTES.modelStop(name), approvalResponse, { method: 'POST', signal }),
 
@@ -351,5 +360,20 @@ export function streamPull(
     // Обрыв качающегося многогигабайтного файла лучше показать, чем молча
     // ретраить: сервер продолжит с места, но прогресс придётся пересчитать.
     maxRetries: 1,
+  })
+}
+
+/** Confirmed manual reference pull. It is connection-owned and never retried. */
+export function streamOllamaReferencePull(
+  body: OllamaReferenceStartBody,
+  signal?: AbortSignal,
+): AsyncGenerator<PullStreamEvent, void, void> {
+  return sseStream<PullStreamEvent>({
+    url: ROUTES.ollamaReferenceStart(),
+    schema: pullStreamEventSchema,
+    method: 'POST',
+    body,
+    signal,
+    maxRetries: 0,
   })
 }

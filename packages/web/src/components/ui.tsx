@@ -279,9 +279,12 @@ const INPUT_CLASS =
   'placeholder:text-[var(--fg-subtle)] focus:border-[var(--accent)] focus:outline-none ' +
   'disabled:opacity-50'
 
-export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cx(INPUT_CLASS, className)} {...rest} />
-}
+export const Input = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement>
+>(function Input({ className, ...rest }, ref) {
+  return <input ref={ref} className={cx(INPUT_CLASS, className)} {...rest} />
+})
 
 export const Textarea = forwardRef<
   HTMLTextAreaElement,
