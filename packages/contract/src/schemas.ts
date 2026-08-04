@@ -647,6 +647,8 @@ export const runtimeMemoryFactSourceSchema = z.enum([
   'apple_vm_stat_pages_free',
   'apple_host_available_memory',
   'apple_host_gpu_free_memory',
+  'nvidia_smi_memory_total',
+  'nvidia_smi_memory_free',
   'not_reported',
 ])
 export type RuntimeMemoryFactSource = z.infer<typeof runtimeMemoryFactSourceSchema>
@@ -660,12 +662,14 @@ export const runtimeMemoryFactBasisSchema = z.enum([
   'discrete_vram_not_applicable_to_apple_unified_memory',
   'discrete_vram_not_observed',
   'gpu_free_memory_not_reported',
+  'device_total_vram',
+  'device_free_vram_not_safe_capacity',
 ])
 export type RuntimeMemoryFactBasis = z.infer<typeof runtimeMemoryFactBasisSchema>
 
 export const runtimeMemoryFactSchema = z
   .object({
-    bytes: z.number().int().nonnegative().nullable(),
+    bytes: z.number().int().nonnegative().safe().nullable(),
     source: runtimeMemoryFactSourceSchema,
     observedAt: z.string().datetime(),
     confidence: runtimeTelemetryConfidenceSchema,
@@ -695,12 +699,14 @@ export type RuntimeHostPressureFact = z.infer<typeof runtimeHostPressureFactSche
 
 export const runtimeHostTelemetryFieldSchema = z.enum([
   'total_unified_memory_bytes',
+  'total_system_memory_bytes',
   'legacy_usable_memory_estimate_bytes',
   'free_memory_bytes',
   'available_memory_bytes',
   'memory_pressure',
   'discrete_vram_bytes',
   'gpu_free_memory_bytes',
+  'nvidia_devices',
 ])
 export type RuntimeHostTelemetryField = z.infer<typeof runtimeHostTelemetryFieldSchema>
 
@@ -723,7 +729,7 @@ export type RuntimeHostProfile = z.infer<typeof runtimeHostProfileSchema>
 
 export const runtimeHostSampleSchema = z
   .object({
-    source: z.enum(['apple_vm_stat', 'none']),
+    source: z.enum(['apple_vm_stat', 'nvidia_smi', 'none']),
     observedAt: z.string().datetime(),
     freeMemoryBytes: runtimeMemoryFactSchema,
     availableMemoryBytes: runtimeMemoryFactSchema,
@@ -733,19 +739,224 @@ export const runtimeHostSampleSchema = z
   .strict()
 export type RuntimeHostSample = z.infer<typeof runtimeHostSampleSchema>
 
-export const runtimeHostTelemetrySchema = z
+export const runtimeNvidiaDeviceSchema = z
+  .object({
+    providerIndex: z.number().int().nonnegative().safe(),
+    uuid: z.string().regex(/^GPU-[0-9A-Za-z-]+$/u).nullable(),
+    displayName: z
+      .string()
+      .min(1)
+      .refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), {
+        message: 'NVIDIA display name cannot contain control characters',
+      }),
+    source: z.literal('nvidia_smi_query_gpu'),
+    observedAt: z.string().datetime(),
+    confidence: z.literal('observed'),
+    totalVramBytes: runtimeMemoryFactSchema,
+    freeVramBytes: runtimeMemoryFactSchema,
+  })
+  .strict()
+  .superRefine((device, context) => {
+    if (
+      device.totalVramBytes.observedAt !== device.observedAt ||
+      device.freeVramBytes.observedAt !== device.observedAt
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['observedAt'],
+        message: 'NVIDIA device facts must share the device observedAt',
+      })
+    }
+    if (
+      device.totalVramBytes.bytes !== null &&
+      device.freeVramBytes.bytes !== null &&
+      device.freeVramBytes.bytes > device.totalVramBytes.bytes
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['freeVramBytes', 'bytes'],
+        message: 'NVIDIA free VRAM cannot exceed total VRAM',
+      })
+    }
+    if (
+      device.totalVramBytes.bytes === null ||
+      device.totalVramBytes.source !== 'nvidia_smi_memory_total' ||
+      device.totalVramBytes.confidence !== 'observed' ||
+      device.totalVramBytes.basis !== 'device_total_vram'
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['totalVramBytes'],
+        message: 'NVIDIA total VRAM must be an observed nvidia-smi device fact',
+      })
+    }
+    if (
+      device.freeVramBytes.bytes === null ||
+      device.freeVramBytes.source !== 'nvidia_smi_memory_free' ||
+      device.freeVramBytes.confidence !== 'observed' ||
+      device.freeVramBytes.basis !== 'device_free_vram_not_safe_capacity'
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['freeVramBytes'],
+        message: 'NVIDIA free VRAM must be an observed nvidia-smi device fact',
+      })
+    }
+  })
+export type RuntimeNvidiaDevice = z.infer<typeof runtimeNvidiaDeviceSchema>
+
+export const runtimeNvidiaTelemetrySchema = z
+  .object({
+    state: z.enum(['available', 'partial', 'unavailable', 'unsupported', 'unknown']),
+    source: z.enum(['nvidia_smi', 'none']),
+    observedAt: z.string().datetime(),
+    devices: z.array(runtimeNvidiaDeviceSchema),
+    reason: z
+      .enum([
+        'legacy_snapshot',
+        'platform_not_linux',
+        'nvidia_not_detected',
+        'command_missing',
+        'command_failed',
+        'timeout',
+        'output_limit',
+        'all_rows_malformed',
+        'some_rows_malformed',
+        'device_identity_partial',
+        'inconsistent_rows',
+      ])
+      .nullable(),
+  })
+  .strict()
+  .superRefine((telemetry, context) => {
+    const available = telemetry.state === 'available'
+    const partial = telemetry.state === 'partial'
+    const expectedSource =
+      available ||
+      partial ||
+      (telemetry.state === 'unavailable' &&
+        (telemetry.reason === 'all_rows_malformed' ||
+          telemetry.reason === 'inconsistent_rows'))
+        ? 'nvidia_smi'
+        : 'none'
+    if (telemetry.source !== expectedSource) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['source'],
+        message: 'NVIDIA telemetry source must match its state and reason',
+      })
+    }
+    const reasonMatchesState =
+      (available && telemetry.reason === null) ||
+      (partial &&
+        (telemetry.reason === 'some_rows_malformed' ||
+          telemetry.reason === 'device_identity_partial')) ||
+      (telemetry.state === 'unavailable' &&
+        (telemetry.reason === 'command_missing' ||
+          telemetry.reason === 'command_failed' ||
+          telemetry.reason === 'timeout' ||
+          telemetry.reason === 'output_limit' ||
+          telemetry.reason === 'all_rows_malformed' ||
+          telemetry.reason === 'inconsistent_rows')) ||
+      (telemetry.state === 'unsupported' &&
+        (telemetry.reason === 'platform_not_linux' ||
+          telemetry.reason === 'nvidia_not_detected')) ||
+      (telemetry.state === 'unknown' && telemetry.reason === 'legacy_snapshot')
+    if (!reasonMatchesState) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reason'],
+        message: 'NVIDIA telemetry reason must match its state',
+      })
+    }
+    if ((available || partial) && telemetry.devices.length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['devices'],
+        message: 'available or partial NVIDIA telemetry requires a usable device',
+      })
+    }
+    if (!available && !partial && telemetry.devices.length > 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['devices'],
+        message: 'unavailable, unsupported, or unknown NVIDIA telemetry cannot publish devices',
+      })
+    }
+    if (
+      telemetry.devices.some(
+        (device) =>
+          device.observedAt !== telemetry.observedAt ||
+          device.totalVramBytes.observedAt !== telemetry.observedAt ||
+          device.freeVramBytes.observedAt !== telemetry.observedAt,
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['observedAt'],
+        message: 'NVIDIA telemetry facts must share the NVIDIA observedAt',
+      })
+    }
+    const indexes = new Set<number>()
+    const uuids = new Set<string>()
+    for (const [index, device] of telemetry.devices.entries()) {
+      if (indexes.has(device.providerIndex)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['devices', index, 'providerIndex'],
+          message: 'NVIDIA provider device index must be unique',
+        })
+      }
+      indexes.add(device.providerIndex)
+      if (device.uuid === null) continue
+      if (uuids.has(device.uuid)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['devices', index, 'uuid'],
+          message: 'NVIDIA device UUID must be unique',
+        })
+      }
+      uuids.add(device.uuid)
+    }
+  })
+export type RuntimeNvidiaTelemetry = z.infer<typeof runtimeNvidiaTelemetrySchema>
+
+function legacyNvidiaTelemetry(observedAt: string): RuntimeNvidiaTelemetry {
+  return {
+    state: 'unknown',
+    source: 'none',
+    observedAt,
+    devices: [],
+    reason: 'legacy_snapshot',
+  }
+}
+
+const runtimeHostTelemetryObjectSchema = z
   .object({
     state: z.enum(['available', 'partial', 'unavailable', 'unsupported']),
     observedAt: z.string().datetime(),
     profile: runtimeHostProfileSchema,
     sample: runtimeHostSampleSchema,
+    nvidia: runtimeNvidiaTelemetrySchema.optional(),
     availableFields: z.array(runtimeHostTelemetryFieldSchema),
     missingFields: z.array(runtimeHostTelemetryFieldSchema),
     errorCode: z
-      .enum(['host_probe_timeout', 'host_probe_output_limit', 'host_probe_failed', 'host_probe_malformed'])
+      .enum([
+        'host_probe_command_missing',
+        'host_probe_timeout',
+        'host_probe_output_limit',
+        'host_probe_failed',
+        'host_probe_malformed',
+      ])
       .nullable(),
   })
   .strict()
+
+export const runtimeHostTelemetrySchema = runtimeHostTelemetryObjectSchema
+  .transform((host) => ({
+    ...host,
+    nvidia: host.nvidia ?? legacyNvidiaTelemetry(host.observedAt),
+  }))
   .superRefine((host, context) => {
     const timestamps = [
       host.profile.observedAt,
@@ -757,6 +968,12 @@ export const runtimeHostTelemetrySchema = z
       host.sample.availableMemoryBytes.observedAt,
       host.sample.pressure.observedAt,
       host.sample.gpuFreeMemoryBytes.observedAt,
+      host.nvidia.observedAt,
+      ...host.nvidia.devices.flatMap((device) => [
+        device.observedAt,
+        device.totalVramBytes.observedAt,
+        device.freeVramBytes.observedAt,
+      ]),
     ]
     if (timestamps.some((observedAt) => observedAt !== host.observedAt)) {
       context.addIssue({

@@ -6,6 +6,7 @@ import {
   runningModelSchema,
   turnErrorSchema,
   turnStopReasonSchema,
+  runtimeHostTelemetrySchema,
 } from '@alamo/contract'
 
 const HARDWARE = {
@@ -125,5 +126,109 @@ describe('runtime health contract', () => {
       assert.equal(turnErrorSchema.parse({ code, message: 'safe' }).code, code)
     }
     assert.equal(turnStopReasonSchema.parse('provider_error'), 'provider_error')
+  })
+})
+
+describe('runtime host telemetry additive contract', () => {
+  it('defaults a legacy host snapshot to explicit unknown NVIDIA telemetry', () => {
+    const parsed = runtimeHostTelemetrySchema.parse({
+      state: 'unsupported',
+      observedAt: '2026-08-02T12:00:00.000Z',
+      profile: {
+        platform: 'linux', arch: 'x64', accelerator: 'cpu', acceleratorName: null,
+        unifiedMemory: false, source: 'legacy_hardware_probe',
+        observedAt: '2026-08-02T12:00:00.000Z', confidence: 'observed',
+        totalMemoryBytes: { bytes: 16_000_000_000, source: 'node_os_totalmem', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'observed', basis: 'total_system_memory' },
+        legacyUsableMemoryBytes: { bytes: 8_000_000_000, source: 'legacy_hardware_usable_estimate', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'estimated', basis: 'legacy_compatibility_estimate_not_current_availability' },
+        discreteVramBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'discrete_vram_not_observed' },
+      },
+      sample: {
+        source: 'none', observedAt: '2026-08-02T12:00:00.000Z',
+        freeMemoryBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'system_free_pages_not_safe_capacity' },
+        availableMemoryBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'system_available_memory_advisory' },
+        pressure: { level: 'unknown', source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'not_observed' },
+        gpuFreeMemoryBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'gpu_free_memory_not_reported' },
+      },
+      availableFields: ['total_system_memory_bytes', 'legacy_usable_memory_estimate_bytes'],
+      missingFields: ['free_memory_bytes', 'available_memory_bytes', 'memory_pressure', 'discrete_vram_bytes', 'gpu_free_memory_bytes', 'nvidia_devices'],
+      errorCode: null,
+    })
+    assert.deepEqual(parsed.nvidia, {
+      state: 'unknown', source: 'none', observedAt: parsed.observedAt,
+      devices: [], reason: 'legacy_snapshot',
+    })
+  })
+
+  it('round-trips additive per-device NVIDIA facts and rejects unknown future states', () => {
+    const legacy = runtimeHostTelemetrySchema.parse({
+      state: 'unsupported', observedAt: '2026-08-02T12:00:00.000Z',
+      profile: {
+        platform: 'linux', arch: 'x64', accelerator: 'cpu', acceleratorName: null,
+        unifiedMemory: false, source: 'legacy_hardware_probe', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'observed',
+        totalMemoryBytes: { bytes: 16_000_000_000, source: 'node_os_totalmem', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'observed', basis: 'total_system_memory' },
+        legacyUsableMemoryBytes: { bytes: 8_000_000_000, source: 'legacy_hardware_usable_estimate', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'estimated', basis: 'legacy_compatibility_estimate_not_current_availability' },
+        discreteVramBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'discrete_vram_not_observed' },
+      },
+      sample: {
+        source: 'none', observedAt: '2026-08-02T12:00:00.000Z',
+        freeMemoryBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'system_free_pages_not_safe_capacity' },
+        availableMemoryBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'system_available_memory_advisory' },
+        pressure: { level: 'unknown', source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'not_observed' },
+        gpuFreeMemoryBytes: { bytes: null, source: 'not_reported', observedAt: '2026-08-02T12:00:00.000Z', confidence: 'unknown', basis: 'gpu_free_memory_not_reported' },
+      },
+      availableFields: ['total_system_memory_bytes', 'legacy_usable_memory_estimate_bytes'],
+      missingFields: ['free_memory_bytes', 'available_memory_bytes', 'memory_pressure', 'discrete_vram_bytes', 'gpu_free_memory_bytes', 'nvidia_devices'], errorCode: null,
+    })
+    const current = structuredClone(legacy)
+    current.state = 'available'
+    current.sample.source = 'nvidia_smi'
+    current.errorCode = null
+    current.nvidia = {
+      state: 'available', source: 'nvidia_smi', observedAt: current.observedAt, reason: null,
+      devices: [{
+        providerIndex: 3, uuid: 'GPU-contract', displayName: 'NVIDIA Contract GPU',
+        source: 'nvidia_smi_query_gpu', observedAt: current.observedAt, confidence: 'observed',
+        totalVramBytes: { bytes: 24 * 1024 ** 3, source: 'nvidia_smi_memory_total', observedAt: current.observedAt, confidence: 'observed', basis: 'device_total_vram' },
+        freeVramBytes: { bytes: 7 * 1024 ** 3, source: 'nvidia_smi_memory_free', observedAt: current.observedAt, confidence: 'observed', basis: 'device_free_vram_not_safe_capacity' },
+      }],
+    }
+    assert.equal(runtimeHostTelemetrySchema.parse(current).nvidia.devices[0]?.providerIndex, 3)
+    assert.equal(runtimeHostTelemetrySchema.safeParse({ ...current, nvidia: { ...current.nvidia, state: 'future' } }).success, false)
+    assert.equal(runtimeHostTelemetrySchema.safeParse({
+      ...current,
+      nvidia: { ...current.nvidia, source: 'none' },
+    }).success, false)
+    assert.equal(runtimeHostTelemetrySchema.safeParse({
+      ...current,
+      nvidia: {
+        ...current.nvidia,
+        state: 'unsupported',
+        source: 'none',
+        devices: [],
+        reason: 'command_failed',
+      },
+    }).success, false)
+    assert.equal(runtimeHostTelemetrySchema.safeParse({
+      ...current,
+      nvidia: {
+        ...current.nvidia,
+        devices: [current.nvidia.devices[0]!, { ...current.nvidia.devices[0]! }],
+      },
+    }).success, false)
+    assert.equal(runtimeHostTelemetrySchema.safeParse({
+      ...current,
+      nvidia: {
+        ...current.nvidia,
+        devices: [{
+          ...current.nvidia.devices[0]!,
+          totalVramBytes: {
+            ...current.nvidia.devices[0]!.totalVramBytes,
+            bytes: null,
+            source: 'not_reported',
+            confidence: 'unknown',
+          },
+        }],
+      },
+    }).success, false)
   })
 })

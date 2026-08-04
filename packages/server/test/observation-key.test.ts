@@ -117,6 +117,17 @@ describe('versioned model observation key', () => {
       }),
       resolveRuntimeObservationKey({ ...base, runtimeVersion: null }),
       resolveRuntimeObservationKey({ ...base, runtimeHost: 'https://remote.example' }),
+      resolveRuntimeObservationKey({
+        ...base,
+        hardware: {
+          ...HARDWARE,
+          platform: 'linux',
+          arch: 'x64',
+          accelerator: 'cuda',
+          acceleratorName: 'private NVIDIA fixture is excluded',
+          unifiedMemory: false,
+        },
+      }),
     ]
     assert.deepEqual(
       cases.map((key) => (key.state === 'unavailable' ? key.reason : 'complete')),
@@ -129,6 +140,7 @@ describe('versioned model observation key', () => {
         'installed_reference_ambiguous',
         'installed_digest_mismatch',
         'runtime_version_unavailable',
+        'hardware_fingerprint_unavailable',
         'hardware_fingerprint_unavailable',
       ],
     )

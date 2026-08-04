@@ -12,8 +12,13 @@ import {
   HOST_TELEMETRY_MAX_OUTPUT_BYTES,
   HOST_TELEMETRY_TIMEOUT_MS,
   HostTelemetryProbeError,
+  NVIDIA_SMI_ARGS,
+  NVIDIA_SMI_PATH,
+  NvidiaHostTelemetry,
   createHostTelemetry,
+  hostCommandExecOptions,
   parseAppleVmStat,
+  parseNvidiaSmi,
   unavailableHostTelemetry,
   type HostCommandOptions,
   type HostCommandRunner,
@@ -31,6 +36,17 @@ const APPLE_HARDWARE: HardwareInfo = {
   acceleratorName: 'Apple fixture',
   unifiedMemory: true,
   freeDiskBytes: null,
+}
+
+const NVIDIA_HARDWARE: HardwareInfo = {
+  ...APPLE_HARDWARE,
+  platform: 'linux',
+  arch: 'x64',
+  totalMemoryBytes: 64 * 1024 ** 3,
+  usableMemoryBytes: Math.floor(24 * 1024 ** 3 * 0.9),
+  accelerator: 'cuda',
+  acceleratorName: 'legacy first GPU name',
+  unifiedMemory: false,
 }
 
 const VALID_VM_STAT = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
@@ -182,17 +198,172 @@ describe('Apple Silicon host telemetry adapter', () => {
       'legacy_hardware_usable_estimate',
     )
     assert.equal(sample.profile.discreteVramBytes.basis, 'discrete_vram_not_observed')
-    assert.deepEqual(sample.availableFields, ['legacy_usable_memory_estimate_bytes'])
-    assert.ok(sample.missingFields.includes('total_unified_memory_bytes'))
+    assert.deepEqual(sample.availableFields, [
+      'total_system_memory_bytes',
+      'legacy_usable_memory_estimate_bytes',
+    ])
+    assert.ok(sample.missingFields.includes('nvidia_devices'))
     assert.deepEqual(runner.calls, [])
 
     const failedSample = runtimeHostTelemetrySchema.parse(
       unavailableHostTelemetry(telemetry.profile, OBSERVED_AT),
     )
     assert.deepEqual(failedSample.availableFields, [
+      'total_system_memory_bytes',
       'legacy_usable_memory_estimate_bytes',
     ])
-    assert.ok(failedSample.missingFields.includes('total_unified_memory_bytes'))
+    assert.ok(failedSample.missingFields.includes('nvidia_devices'))
+  })
+})
+
+describe('Linux NVIDIA host telemetry adapter', () => {
+  it('uses one fixed shell-free allowlisted query and returns all non-sequential devices', async () => {
+    const rows = [
+      '2, GPU-UUID15, NVIDIA RTX 4090, 24576, 0',
+      '7, GPU-UUID16, NVIDIA H100 NVL, 98304, 97000',
+      '11, GPU-UUID17, NVIDIA Тестовая GPU, 12288, 4096',
+    ].join('\r\n')
+    const runner = new RecordingRunner(`${rows}\r\n`)
+    const telemetry = new NvidiaHostTelemetry(NVIDIA_HARDWARE, {
+      runner,
+      now: () => new Date(OBSERVED_AT),
+    })
+
+    const sample = runtimeHostTelemetrySchema.parse(await telemetry.sample())
+    assert.deepEqual(runner.calls, [{
+      file: NVIDIA_SMI_PATH,
+      args: NVIDIA_SMI_ARGS,
+      options: {
+        timeoutMs: HOST_TELEMETRY_TIMEOUT_MS,
+        maxOutputBytes: HOST_TELEMETRY_MAX_OUTPUT_BYTES,
+      },
+    }])
+    assert.equal(sample.state, 'available')
+    assert.equal(sample.nvidia.state, 'available')
+    assert.deepEqual(sample.nvidia.devices.map((device) => device.providerIndex), [2, 7, 11])
+    assert.equal(sample.nvidia.devices[0]?.totalVramBytes.bytes, 24_576 * 1024 ** 2)
+    assert.equal(sample.nvidia.devices[0]?.freeVramBytes.bytes, 0)
+    assert.equal(sample.nvidia.devices[2]?.displayName, 'NVIDIA Тестовая GPU')
+    assert.equal(sample.nvidia.devices[0]?.source, 'nvidia_smi_query_gpu')
+    assert.equal(sample.nvidia.devices[0]?.observedAt, OBSERVED_AT)
+    assert.equal(sample.profile.discreteVramBytes.bytes, null)
+    assert.equal(sample.sample.gpuFreeMemoryBytes.bytes, null)
+    assert.ok(sample.availableFields.includes('nvidia_devices'))
+    assert.ok(sample.missingFields.includes('memory_pressure'))
+    assert.deepEqual(
+      hostCommandExecOptions({
+        timeoutMs: HOST_TELEMETRY_TIMEOUT_MS,
+        maxOutputBytes: HOST_TELEMETRY_MAX_OUTPUT_BYTES,
+      }),
+      {
+        encoding: 'utf8',
+        env: { LANG: 'C', LC_ALL: 'C' },
+        maxBuffer: HOST_TELEMETRY_MAX_OUTPUT_BYTES,
+        shell: false,
+        timeout: HOST_TELEMETRY_TIMEOUT_MS,
+        windowsHide: true,
+      },
+    )
+  })
+
+  it('has no arbitrary parser device ceiling and preserves LF/whitespace', () => {
+    const rows = Array.from({ length: 257 }, (_, index) =>
+      ` ${index * 2} , GPU-${String(index).padStart(12, '0')} , GPU ${index} , 1024 , 512 `,
+    ).join('\n')
+    const parsed = parseNvidiaSmi(`${rows}\n`)
+    assert.equal(parsed.state, 'available')
+    assert.equal(parsed.devices.length, 257)
+    assert.equal(parsed.devices[256]?.providerIndex, 512)
+  })
+
+  it('keeps unknown UUID and usable plus malformed rows explicitly partial', () => {
+    const unknownUuid = parseNvidiaSmi('0, N/A, GPU A, 1024, 512\n')
+    assert.equal(unknownUuid.state, 'partial')
+    assert.equal(unknownUuid.reason, 'device_identity_partial')
+    assert.equal(unknownUuid.devices[0]?.uuid, null)
+
+    const mixed = parseNvidiaSmi([
+      '0, GPU-valid-0000, GPU A, 1024, 512',
+      'broken,row',
+      '4, GPU-valid-0004, GPU B, 2048, 1000',
+    ].join('\n'))
+    assert.equal(mixed.state, 'partial')
+    assert.equal(mixed.reason, 'some_rows_malformed')
+    assert.deepEqual(mixed.devices.map((device) => device.providerIndex), [0, 4])
+  })
+
+  it('fails closed for duplicate identity and all malformed numeric/column rows', () => {
+    for (const output of [
+      '0, GPU-one, GPU A, 1024, 512\n0, GPU-two, GPU B, 1024, 512\n',
+      '0, GPU-one, GPU A, 1024, 512\n1, GPU-one, GPU B, 1024, 512\n',
+    ]) {
+      assert.deepEqual(parseNvidiaSmi(output), {
+        state: 'unavailable', devices: [], reason: 'inconsistent_rows',
+      })
+    }
+
+    for (const output of [
+      '',
+      '0, GPU-one, GPU A, -1, 0\n',
+      '0, GPU-one, GPU A, 1.5, 0\n',
+      '0, GPU-one, GPU A, 9007199254740992, 0\n',
+      '9007199254740992, GPU-one, GPU A, 1, 0\n',
+      '0, GPU-one, GPU A, 1\n',
+      '0, GPU-one, GPU A, 1, 0, extra\n',
+      '0, missing, GPU A, 1, 0\n',
+      '0, GPU-one, GPU A, 1, 2\n',
+      '0, GPU-one, bad\u0000name, 1, 0\n',
+    ]) {
+      assert.deepEqual(parseNvidiaSmi(output), {
+        state: 'unavailable', devices: [], reason: 'all_rows_malformed',
+      })
+    }
+  })
+
+  it('classifies missing command, failure, timeout, output limit, and redacts details', async () => {
+    const cases = [
+      ['host_probe_command_missing', 'command_missing'],
+      ['host_probe_failed', 'command_failed'],
+      ['host_probe_timeout', 'timeout'],
+      ['host_probe_output_limit', 'output_limit'],
+    ] as const
+    for (const [errorCode, reason] of cases) {
+      const error = new HostTelemetryProbeError(errorCode)
+      ;(error as Error & { stdout?: string; stderr?: string }).stdout =
+        'GPU-private /Users/private username secret-token'
+      ;(error as Error & { stdout?: string; stderr?: string }).stderr = 'driver path credential'
+      const telemetry = new NvidiaHostTelemetry(NVIDIA_HARDWARE, {
+        runner: new RecordingRunner(error),
+        now: () => new Date(OBSERVED_AT),
+      })
+      const sample = runtimeHostTelemetrySchema.parse(await telemetry.sample())
+      assert.equal(sample.state, 'unavailable')
+      assert.equal(sample.errorCode, errorCode)
+      assert.equal(sample.nvidia.state, 'unavailable')
+      assert.equal(sample.nvidia.reason, reason)
+      assert.equal(sample.nvidia.devices.length, 0)
+      assert.doesNotMatch(JSON.stringify(sample), /private|Users|username|secret|driver path|credential/u)
+    }
+  })
+
+  it('routes only local Linux CUDA to NVIDIA while preserving Apple and unsupported fallback', async () => {
+    const linuxRunner = new RecordingRunner('0, GPU-one, GPU A, 1024, 512\n')
+    assert.ok(createHostTelemetry(NVIDIA_HARDWARE, { runner: linuxRunner }) instanceof NvidiaHostTelemetry)
+    assert.ok(createHostTelemetry(APPLE_HARDWARE) instanceof AppleSiliconHostTelemetry)
+
+    for (const hardware of [
+      { ...NVIDIA_HARDWARE, accelerator: 'cpu' as const },
+      { ...NVIDIA_HARDWARE, platform: 'win32' },
+      { ...NVIDIA_HARDWARE, platform: 'darwin', arch: 'x64' },
+    ]) {
+      const runner = new RecordingRunner(new Error('must not run'))
+      const sample = runtimeHostTelemetrySchema.parse(await createHostTelemetry(hardware, {
+        runner, now: () => new Date(OBSERVED_AT),
+      }).sample())
+      assert.equal(sample.state, 'unsupported')
+      assert.equal(sample.nvidia.state, 'unsupported')
+      assert.deepEqual(runner.calls, [])
+    }
   })
 })
 
@@ -223,7 +394,9 @@ describe('host telemetry composition inventory', () => {
     assert.match(telemetry, /export interface HostTelemetry/u)
     assert.match(telemetry, /execFile\(/u)
     assert.match(telemetry, /shell: false/u)
+    assert.match(telemetry, /env: \{ LANG: 'C', LC_ALL: 'C' \}/u)
     assert.match(telemetry, /APPLE_VM_STAT_PATH/u)
+    assert.match(telemetry, /NVIDIA_SMI_PATH/u)
     assert.doesNotMatch(
       forbiddenSources,
       /\b(?:exec|execFile|spawn)\(/u,

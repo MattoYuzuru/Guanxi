@@ -4,9 +4,16 @@ import type {
   RuntimeHostTelemetry,
   RuntimeHostTelemetryField,
   RuntimeMemoryFact,
+  RuntimeNvidiaDevice,
+  RuntimeNvidiaTelemetry,
 } from '@alamo/contract'
 
 export const APPLE_VM_STAT_PATH = '/usr/bin/vm_stat'
+export const NVIDIA_SMI_PATH = '/usr/bin/nvidia-smi'
+export const NVIDIA_SMI_ARGS = [
+  '--query-gpu=index,uuid,name,memory.total,memory.free',
+  '--format=csv,noheader,nounits',
+] as const
 export const HOST_TELEMETRY_TIMEOUT_MS = 1_000
 export const HOST_TELEMETRY_MAX_OUTPUT_BYTES = 64 * 1024
 
@@ -15,6 +22,17 @@ export type HostTelemetryErrorCode = NonNullable<RuntimeHostTelemetry['errorCode
 export interface HostCommandOptions {
   timeoutMs: number
   maxOutputBytes: number
+}
+
+export function hostCommandExecOptions(options: HostCommandOptions) {
+  return {
+    encoding: 'utf8' as const,
+    env: { LANG: 'C', LC_ALL: 'C' },
+    maxBuffer: options.maxOutputBytes,
+    shell: false as const,
+    timeout: options.timeoutMs,
+    windowsHide: true,
+  }
 }
 
 /** Narrow command boundary used only by host telemetry infrastructure. */
@@ -43,14 +61,7 @@ export class ExecFileHostCommandRunner implements HostCommandRunner {
       execFile(
         file,
         [...args],
-        {
-          encoding: 'utf8',
-          env: { LANG: 'C', LC_ALL: 'C' },
-          maxBuffer: options.maxOutputBytes,
-          shell: false,
-          timeout: options.timeoutMs,
-          windowsHide: true,
-        },
+        hostCommandExecOptions(options),
         (error, stdout) => {
           if (!error) {
             resolve(stdout)
@@ -64,6 +75,8 @@ export class ExecFileHostCommandRunner implements HostCommandRunner {
           }
           if (processError.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
             reject(new HostTelemetryProbeError('host_probe_output_limit'))
+          } else if (processError.code === 'ENOENT') {
+            reject(new HostTelemetryProbeError('host_probe_command_missing'))
           } else if (processError.killed || processError.signal === 'SIGTERM') {
             reject(new HostTelemetryProbeError('host_probe_timeout'))
           } else {
@@ -78,6 +91,109 @@ export class ExecFileHostCommandRunner implements HostCommandRunner {
 interface VmStatReading {
   freeMemoryBytes: number | null
   malformed: boolean
+}
+
+export interface NvidiaSmiReading {
+  state: 'available' | 'partial' | 'unavailable'
+  devices: Array<{
+    providerIndex: number
+    uuid: string | null
+    displayName: string
+    totalVramBytes: number
+    freeVramBytes: number
+  }>
+  reason: RuntimeNvidiaTelemetry['reason']
+}
+
+const NVIDIA_UNKNOWN_TOKENS = new Set(['', 'n/a', '[not supported]', 'not supported'])
+const NVIDIA_UUID_PATTERN = /^GPU-[0-9A-Za-z-]+$/u
+const MIB_BYTES = 1024n * 1024n
+
+function parseNvidiaInteger(value: string): number | null {
+  if (!/^\d+$/u.test(value)) return null
+  const integer = BigInt(value)
+  if (integer > BigInt(Number.MAX_SAFE_INTEGER)) return null
+  return Number(integer)
+}
+
+function parseNvidiaMib(value: string): number | null {
+  if (!/^\d+$/u.test(value)) return null
+  const bytes = BigInt(value) * MIB_BYTES
+  if (bytes > BigInt(Number.MAX_SAFE_INTEGER)) return null
+  return Number(bytes)
+}
+
+/** Pure parser for the fixed five-column `nvidia-smi` query. */
+export function parseNvidiaSmi(output: string): NvidiaSmiReading {
+  const lines = output.split(/\r?\n/u).filter((line) => line.trim().length > 0)
+  const devices: NvidiaSmiReading['devices'] = []
+  let malformedRows = 0
+  let unknownUuid = false
+  let inconsistentRows = false
+  const seenIndexes = new Set<number>()
+  const seenUuids = new Set<string>()
+
+  for (const line of lines) {
+    const columns = line.split(',')
+    if (columns.length !== 5) {
+      malformedRows += 1
+      continue
+    }
+    const [rawIndex, rawUuid, rawName, rawTotal, rawFree] = columns.map((value) => value.trim())
+    const providerIndex = parseNvidiaInteger(rawIndex ?? '')
+    const uuidToken = rawUuid ?? ''
+    const normalizedUuid = NVIDIA_UNKNOWN_TOKENS.has(uuidToken.toLowerCase())
+      ? null
+      : NVIDIA_UUID_PATTERN.test(uuidToken)
+        ? uuidToken
+        : undefined
+    const displayName = rawName ?? ''
+    const totalVramBytes = parseNvidiaMib(rawTotal ?? '')
+    const freeVramBytes = parseNvidiaMib(rawFree ?? '')
+    if (providerIndex !== null) {
+      if (seenIndexes.has(providerIndex)) inconsistentRows = true
+      seenIndexes.add(providerIndex)
+    }
+    if (normalizedUuid) {
+      if (seenUuids.has(normalizedUuid)) inconsistentRows = true
+      seenUuids.add(normalizedUuid)
+    }
+    if (
+      providerIndex === null ||
+      normalizedUuid === undefined ||
+      displayName.length === 0 ||
+      /[\u0000-\u001f\u007f]/u.test(displayName) ||
+      totalVramBytes === null ||
+      freeVramBytes === null ||
+      freeVramBytes > totalVramBytes
+    ) {
+      malformedRows += 1
+      continue
+    }
+    if (normalizedUuid === null) unknownUuid = true
+    devices.push({
+      providerIndex,
+      uuid: normalizedUuid,
+      displayName,
+      totalVramBytes,
+      freeVramBytes,
+    })
+  }
+
+  if (inconsistentRows) {
+    return { state: 'unavailable', devices: [], reason: 'inconsistent_rows' }
+  }
+  if (devices.length === 0) {
+    return { state: 'unavailable', devices: [], reason: 'all_rows_malformed' }
+  }
+
+  if (malformedRows > 0) {
+    return { state: 'partial', devices, reason: 'some_rows_malformed' }
+  }
+  if (unknownUuid) {
+    return { state: 'partial', devices, reason: 'device_identity_partial' }
+  }
+  return { state: 'available', devices, reason: null }
 }
 
 /**
@@ -126,6 +242,7 @@ function baseTelemetry(
   > & {
     sampleSource: RuntimeHostTelemetry['sample']['source']
     freeMemoryBytes: number | null
+    nvidia?: RuntimeNvidiaTelemetry
   },
 ): RuntimeHostTelemetry {
   const appleUnified = hardware.platform === 'darwin' && hardware.arch === 'arm64'
@@ -193,9 +310,52 @@ function baseTelemetry(
         basis: 'gpu_free_memory_not_reported',
       }),
     },
+    nvidia: input.nvidia ?? unsupportedNvidiaTelemetry(hardware, observedAt),
     availableFields: input.availableFields,
     missingFields: input.missingFields,
     errorCode: input.errorCode,
+  }
+}
+
+function unsupportedNvidiaTelemetry(
+  hardware: HardwareInfo,
+  observedAt: string,
+): RuntimeNvidiaTelemetry {
+  return {
+    state: 'unsupported',
+    source: 'none',
+    observedAt,
+    devices: [],
+    reason: hardware.platform === 'linux' ? 'nvidia_not_detected' : 'platform_not_linux',
+  }
+}
+
+function nvidiaMemoryFact(
+  observedAt: string,
+  bytes: number,
+  kind: 'total' | 'free',
+): RuntimeMemoryFact {
+  return memoryFact(observedAt, {
+    bytes,
+    source: kind === 'total' ? 'nvidia_smi_memory_total' : 'nvidia_smi_memory_free',
+    confidence: 'observed',
+    basis: kind === 'total' ? 'device_total_vram' : 'device_free_vram_not_safe_capacity',
+  })
+}
+
+function nvidiaDevice(
+  observedAt: string,
+  device: NvidiaSmiReading['devices'][number],
+): RuntimeNvidiaDevice {
+  return {
+    providerIndex: device.providerIndex,
+    uuid: device.uuid,
+    displayName: device.displayName,
+    source: 'nvidia_smi_query_gpu',
+    observedAt,
+    confidence: 'observed',
+    totalVramBytes: nvidiaMemoryFact(observedAt, device.totalVramBytes, 'total'),
+    freeVramBytes: nvidiaMemoryFact(observedAt, device.freeVramBytes, 'free'),
   }
 }
 
@@ -213,6 +373,88 @@ const UNOBSERVED_APPLE_FIELDS: RuntimeHostTelemetryField[] = [
 export interface AppleSiliconHostTelemetryOptions {
   runner?: HostCommandRunner
   now?: () => Date
+}
+
+export type NvidiaHostTelemetryOptions = AppleSiliconHostTelemetryOptions
+
+export class NvidiaHostTelemetry implements HostTelemetry {
+  readonly profile: HardwareInfo
+  private readonly runner: HostCommandRunner
+  private readonly now: () => Date
+
+  constructor(profile: HardwareInfo, options: NvidiaHostTelemetryOptions = {}) {
+    this.profile = profile
+    this.runner = options.runner ?? new ExecFileHostCommandRunner()
+    this.now = options.now ?? (() => new Date())
+  }
+
+  async sample(): Promise<RuntimeHostTelemetry> {
+    let output: string
+    try {
+      output = await this.runner.run(NVIDIA_SMI_PATH, NVIDIA_SMI_ARGS, {
+        timeoutMs: HOST_TELEMETRY_TIMEOUT_MS,
+        maxOutputBytes: HOST_TELEMETRY_MAX_OUTPUT_BYTES,
+      })
+    } catch (error) {
+      const observedAt = this.now().toISOString()
+      const errorCode =
+        error instanceof HostTelemetryProbeError ? error.code : 'host_probe_failed'
+      const reason =
+        errorCode === 'host_probe_command_missing'
+          ? 'command_missing'
+          : errorCode === 'host_probe_timeout'
+            ? 'timeout'
+            : errorCode === 'host_probe_output_limit'
+              ? 'output_limit'
+              : 'command_failed'
+      return baseTelemetry(this.profile, observedAt, {
+        state: 'unavailable',
+        sampleSource: 'none',
+        freeMemoryBytes: null,
+        availableFields: ['total_system_memory_bytes', 'legacy_usable_memory_estimate_bytes'],
+        missingFields: [
+          'free_memory_bytes',
+          'available_memory_bytes',
+          'memory_pressure',
+          'discrete_vram_bytes',
+          'gpu_free_memory_bytes',
+          'nvidia_devices',
+        ],
+        errorCode,
+        nvidia: { state: 'unavailable', source: 'none', observedAt, devices: [], reason },
+      })
+    }
+
+    const observedAt = this.now().toISOString()
+    const reading = parseNvidiaSmi(output)
+    const nvidia: RuntimeNvidiaTelemetry = {
+      state: reading.state,
+      source: 'nvidia_smi',
+      observedAt,
+      devices: reading.devices.map((device) => nvidiaDevice(observedAt, device)),
+      reason: reading.reason,
+    }
+    return baseTelemetry(this.profile, observedAt, {
+      state: reading.state,
+      sampleSource: 'nvidia_smi',
+      freeMemoryBytes: null,
+      availableFields: [
+        'total_system_memory_bytes',
+        'legacy_usable_memory_estimate_bytes',
+        ...(reading.devices.length > 0 ? (['nvidia_devices'] as const) : []),
+      ],
+      missingFields: [
+        'free_memory_bytes',
+        'available_memory_bytes',
+        'memory_pressure',
+        'discrete_vram_bytes',
+        'gpu_free_memory_bytes',
+        ...(reading.devices.length > 0 ? [] : (['nvidia_devices'] as const)),
+      ],
+      errorCode: reading.state === 'available' ? null : 'host_probe_malformed',
+      nvidia,
+    })
+  }
 }
 
 export class AppleSiliconHostTelemetry implements HostTelemetry {
@@ -286,14 +528,17 @@ export class UnsupportedHostTelemetry implements HostTelemetry {
       state: 'unsupported',
       sampleSource: 'none',
       freeMemoryBytes: null,
-      availableFields: ['legacy_usable_memory_estimate_bytes'],
+      availableFields: [
+        'total_system_memory_bytes',
+        'legacy_usable_memory_estimate_bytes',
+      ],
       missingFields: [
-        'total_unified_memory_bytes',
         'free_memory_bytes',
         'available_memory_bytes',
         'memory_pressure',
         'discrete_vram_bytes',
         'gpu_free_memory_bytes',
+        'nvidia_devices',
       ],
       errorCode: null,
     })
@@ -304,9 +549,13 @@ export function createHostTelemetry(
   hardware: HardwareInfo,
   options: AppleSiliconHostTelemetryOptions = {},
 ): HostTelemetry {
-  return hardware.platform === 'darwin' && hardware.arch === 'arm64'
-    ? new AppleSiliconHostTelemetry(hardware, options)
-    : new UnsupportedHostTelemetry(hardware, options.now)
+  if (hardware.platform === 'darwin' && hardware.arch === 'arm64') {
+    return new AppleSiliconHostTelemetry(hardware, options)
+  }
+  if (hardware.platform === 'linux' && hardware.accelerator === 'cuda') {
+    return new NvidiaHostTelemetry(hardware, options)
+  }
+  return new UnsupportedHostTelemetry(hardware, options.now)
 }
 
 export function unavailableHostTelemetry(
@@ -320,16 +569,26 @@ export function unavailableHostTelemetry(
     freeMemoryBytes: null,
     availableFields: appleUnified
       ? STATIC_APPLE_FIELDS
-      : ['legacy_usable_memory_estimate_bytes'],
+      : ['total_system_memory_bytes', 'legacy_usable_memory_estimate_bytes'],
     missingFields: [
-      ...(appleUnified ? [] : (['total_unified_memory_bytes'] as const)),
       'free_memory_bytes',
       'available_memory_bytes',
       'memory_pressure',
       'discrete_vram_bytes',
       'gpu_free_memory_bytes',
+      ...(appleUnified ? [] : (['nvidia_devices'] as const)),
     ],
     errorCode: 'host_probe_failed',
+    nvidia:
+      hardware.platform === 'linux' && hardware.accelerator === 'cuda'
+        ? {
+            state: 'unavailable',
+            source: 'none',
+            observedAt,
+            devices: [],
+            reason: 'command_failed',
+          }
+        : undefined,
   })
 }
 
@@ -356,6 +615,16 @@ export function alignHostTelemetryObservedAt(
       availableMemoryBytes: alignMemory(host.sample.availableMemoryBytes),
       pressure: { ...host.sample.pressure, observedAt },
       gpuFreeMemoryBytes: alignMemory(host.sample.gpuFreeMemoryBytes),
+    },
+    nvidia: {
+      ...host.nvidia,
+      observedAt,
+      devices: host.nvidia.devices.map((device) => ({
+        ...device,
+        observedAt,
+        totalVramBytes: alignMemory(device.totalVramBytes),
+        freeVramBytes: alignMemory(device.freeVramBytes),
+      })),
     },
   }
 }

@@ -145,6 +145,13 @@ function appleHost(options: {
       'gpu_free_memory_bytes',
     ],
     errorCode: state === 'available' ? null : 'host_probe_failed',
+    nvidia: {
+      state: 'unknown',
+      source: 'none',
+      observedAt: OBSERVED_AT,
+      devices: [],
+      reason: 'legacy_snapshot',
+    },
   }
 }
 
@@ -195,6 +202,7 @@ function reconciliation(
     installed: readonly { name: string; digest: string }[]
     runtimeVersion?: string
     runtimeHost?: string
+    hardware?: HardwareInfo
   },
 ): RuntimeReconciliationService {
   return new RuntimeReconciliationService({
@@ -207,7 +215,7 @@ function reconciliation(
             installedArtifacts: async () => identity.installed,
             runtimeVersion: async () => identity.runtimeVersion ?? '0.12.6',
             runtimeHost: identity.runtimeHost ?? 'http://127.0.0.1:11434',
-            hardwareProfile: HARDWARE,
+            hardwareProfile: identity.hardware ?? HARDWARE,
           }
         : {}),
     }),
@@ -527,6 +535,96 @@ describe('runtime reconciliation contract and identity', () => {
       )
       lease.release()
     }
+  })
+
+  it('keeps Linux NVIDIA fit and observation identity unavailable without a device allocation link', async () => {
+    const linuxHardware: HardwareInfo = {
+      ...HARDWARE,
+      platform: 'linux',
+      arch: 'x64',
+      accelerator: 'cuda',
+      acceleratorName: 'legacy first GPU name',
+      unifiedMemory: false,
+      totalMemoryBytes: 64 * 1024 ** 3,
+      usableMemoryBytes: 22 * 1024 ** 3,
+    }
+    const host = appleHost({ platform: 'linux' })
+    host.profile.arch = 'x64'
+    host.profile.accelerator = 'cuda'
+    host.profile.acceleratorName = 'legacy first GPU name'
+    host.profile.unifiedMemory = false
+    host.profile.totalMemoryBytes.basis = 'total_system_memory'
+    host.profile.legacyUsableMemoryBytes.source = 'legacy_hardware_usable_estimate'
+    host.profile.discreteVramBytes.basis = 'discrete_vram_not_observed'
+    host.sample.source = 'nvidia_smi'
+    host.sample.availableMemoryBytes.bytes = null
+    host.sample.availableMemoryBytes.source = 'not_reported'
+    host.sample.availableMemoryBytes.confidence = 'unknown'
+    host.sample.pressure = {
+      level: 'unknown', source: 'not_reported', observedAt: OBSERVED_AT,
+      confidence: 'unknown', basis: 'not_observed',
+    }
+    host.nvidia = {
+      state: 'available', source: 'nvidia_smi', observedAt: OBSERVED_AT, reason: null,
+      devices: [{
+        providerIndex: 7,
+        uuid: 'GPU-reconciliation-12345678',
+        displayName: 'NVIDIA fixture',
+        source: 'nvidia_smi_query_gpu',
+        observedAt: OBSERVED_AT,
+        confidence: 'observed',
+        totalVramBytes: {
+          bytes: 24 * 1024 ** 3,
+          source: 'nvidia_smi_memory_total',
+          observedAt: OBSERVED_AT,
+          confidence: 'observed',
+          basis: 'device_total_vram',
+        },
+        freeVramBytes: {
+          bytes: 8 * 1024 ** 3,
+          source: 'nvidia_smi_memory_free',
+          observedAt: OBSERVED_AT,
+          confidence: 'observed',
+          basis: 'device_free_vram_not_safe_capacity',
+        },
+      }],
+    }
+    host.availableFields = [
+      'total_system_memory_bytes',
+      'legacy_usable_memory_estimate_bytes',
+      'nvidia_devices',
+    ]
+    host.missingFields = [
+      'free_memory_bytes',
+      'available_memory_bytes',
+      'memory_pressure',
+      'discrete_vram_bytes',
+      'gpu_free_memory_bytes',
+    ]
+
+    const governor = new ResourceGovernor()
+    const lease = await activeLease(governor, 'fixture:latest')
+    const snapshot = runtimeSnapshotSchema.parse(await reconciliation(
+      governor,
+      async () => [running('fixture:latest', { digest: 'sha256:linux' })],
+      fixedHostTelemetry(async () => host, linuxHardware),
+      {
+        installed: [{ name: 'fixture:latest', digest: 'sha256:linux' }],
+        hardware: linuxHardware,
+      },
+    ).snapshot())
+    const model = snapshot.models?.[0]
+    assert.deepEqual(model?.observationKey, {
+      state: 'unavailable', version: 1, reason: 'hardware_fingerprint_unavailable',
+    })
+    assert.equal(model?.artifactIdentity, 'unknown')
+    assert.equal(model?.currentFit.state, 'unknown')
+    assert.equal(model?.currentFit.reason, 'observation_key_unavailable')
+    assert.equal(model?.currentFit.runtimeAcceleratorAllocationBytes, 750)
+    assert.equal(model?.currentFit.futureAdmissionGuarantee, false)
+    assert.doesNotMatch(JSON.stringify(model), /GPU-reconciliation|providerIndex/u)
+    assert.equal(snapshot.host.nvidia.devices[0]?.providerIndex, 7)
+    lease.release()
   })
 })
 
