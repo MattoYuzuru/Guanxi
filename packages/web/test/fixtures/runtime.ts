@@ -183,6 +183,13 @@ export function runtimeSnapshotFixture(
       ],
       missingFields: ['discrete_vram_bytes', 'gpu_free_memory_bytes'],
       errorCode: null,
+      nvidia: {
+        state: 'unsupported',
+        source: 'none',
+        observedAt: RUNTIME_OBSERVED_AT,
+        devices: [],
+        reason: 'platform_not_linux',
+      },
     },
     governor: {
       observedAt: RUNTIME_OBSERVED_AT,
@@ -239,4 +246,87 @@ export function runtimeSnapshotFixture(
 
   mutate?.(snapshot)
   return runtimeSnapshotSchema.parse(structuredClone(snapshot))
+}
+
+export function linuxNvidiaRuntimeSnapshot(
+  state: 'available' | 'partial' | 'unavailable' = 'available',
+): RuntimeSnapshot {
+  return runtimeSnapshotFixture((snapshot) => {
+    snapshot.host.state = state
+    snapshot.host.profile.platform = 'linux'
+    snapshot.host.profile.arch = 'x64'
+    snapshot.host.profile.accelerator = 'cuda'
+    snapshot.host.profile.acceleratorName = 'Legacy startup NVIDIA profile'
+    snapshot.host.profile.unifiedMemory = false
+    snapshot.host.profile.totalMemoryBytes.basis = 'total_system_memory'
+    snapshot.host.profile.legacyUsableMemoryBytes.source = 'legacy_hardware_usable_estimate'
+    snapshot.host.profile.discreteVramBytes.basis = 'discrete_vram_not_observed'
+    snapshot.host.sample.source = state === 'unavailable' ? 'none' : 'nvidia_smi'
+    snapshot.host.sample.availableMemoryBytes.bytes = null
+    snapshot.host.sample.availableMemoryBytes.source = 'not_reported'
+    snapshot.host.sample.availableMemoryBytes.confidence = 'unknown'
+    snapshot.host.sample.pressure.level = 'unknown'
+    snapshot.host.sample.pressure.source = 'not_reported'
+    snapshot.host.sample.pressure.confidence = 'unknown'
+    snapshot.host.sample.pressure.basis = 'not_observed'
+    snapshot.host.availableFields = ['total_system_memory_bytes', 'legacy_usable_memory_estimate_bytes']
+    snapshot.host.missingFields = [
+      'free_memory_bytes', 'available_memory_bytes', 'memory_pressure',
+      'discrete_vram_bytes', 'gpu_free_memory_bytes',
+      ...(state === 'unavailable' ? ['nvidia_devices' as const] : []),
+    ]
+    snapshot.host.errorCode = state === 'available' ? null : 'host_probe_malformed'
+    snapshot.host.nvidia = {
+      state,
+      source: state === 'unavailable' ? 'none' : 'nvidia_smi',
+      observedAt: RUNTIME_OBSERVED_AT,
+      reason: state === 'available' ? null : state === 'partial' ? 'some_rows_malformed' : 'all_rows_malformed',
+      devices: state === 'unavailable' ? [] : [
+        nvidiaDevice(2, 'GPU-sensitive-first-12345678', 'NVIDIA RTX 4090', 24_576, 8_192),
+        nvidiaDevice(7, null, 'NVIDIA Тестовая GPU', 98_304, 0),
+      ],
+    }
+    snapshot.models = snapshot.models?.map((model) => ({
+      ...model,
+      currentFit: {
+        ...model.currentFit,
+        state: 'unknown' as const,
+        basis: 'insufficient_evidence' as const,
+        reason: 'observation_key_unavailable' as const,
+        pressureLevel: 'unknown' as const,
+        futureAdmissionGuarantee: false as const,
+      },
+    })) ?? null
+  })
+}
+
+function nvidiaDevice(
+  providerIndex: number,
+  uuid: string | null,
+  displayName: string,
+  totalMib: number,
+  freeMib: number,
+) {
+  return {
+    providerIndex,
+    uuid,
+    displayName,
+    source: 'nvidia_smi_query_gpu' as const,
+    observedAt: RUNTIME_OBSERVED_AT,
+    confidence: 'observed' as const,
+    totalVramBytes: {
+      bytes: totalMib * 1024 ** 2,
+      source: 'nvidia_smi_memory_total' as const,
+      observedAt: RUNTIME_OBSERVED_AT,
+      confidence: 'observed' as const,
+      basis: 'device_total_vram' as const,
+    },
+    freeVramBytes: {
+      bytes: freeMib * 1024 ** 2,
+      source: 'nvidia_smi_memory_free' as const,
+      observedAt: RUNTIME_OBSERVED_AT,
+      confidence: 'observed' as const,
+      basis: 'device_free_vram_not_safe_capacity' as const,
+    },
+  }
 }

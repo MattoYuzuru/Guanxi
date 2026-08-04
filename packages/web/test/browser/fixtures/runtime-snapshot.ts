@@ -77,6 +77,13 @@ export function runtimeBrowserSnapshot() {
         'gpu_free_memory_bytes',
       ],
       errorCode: null,
+      nvidia: {
+        state: 'unsupported',
+        source: 'none',
+        observedAt,
+        devices: [],
+        reason: 'platform_not_linux',
+      },
     },
     governor: {
       observedAt,
@@ -291,5 +298,113 @@ export function degradedRuntimeBrowserSnapshot() {
         artifactIdentity: 'unknown',
       },
     ],
+  }
+}
+
+export function linuxNvidiaRuntimeBrowserSnapshot(
+  state: 'available' | 'partial' | 'unavailable' = 'available',
+) {
+  const base = activeRuntimeBrowserSnapshot()
+  const observedAt = base.observedAt
+  const device = (
+    providerIndex: number,
+    uuid: string | null,
+    displayName: string,
+    totalMib: number,
+    freeMib: number,
+  ) => ({
+    providerIndex,
+    uuid,
+    displayName,
+    source: 'nvidia_smi_query_gpu',
+    observedAt,
+    confidence: 'observed',
+    totalVramBytes: {
+      bytes: totalMib * 1024 ** 2,
+      source: 'nvidia_smi_memory_total',
+      observedAt,
+      confidence: 'observed',
+      basis: 'device_total_vram',
+    },
+    freeVramBytes: {
+      bytes: freeMib * 1024 ** 2,
+      source: 'nvidia_smi_memory_free',
+      observedAt,
+      confidence: 'observed',
+      basis: 'device_free_vram_not_safe_capacity',
+    },
+  })
+  return {
+    ...base,
+    host: {
+      ...base.host,
+      state,
+      profile: {
+        ...base.host.profile,
+        platform: 'linux',
+        arch: 'x64',
+        accelerator: 'cuda',
+        acceleratorName: 'Legacy NVIDIA profile',
+        unifiedMemory: false,
+        totalMemoryBytes: {
+          ...base.host.profile.totalMemoryBytes,
+          basis: 'total_system_memory',
+        },
+        legacyUsableMemoryBytes: {
+          ...base.host.profile.legacyUsableMemoryBytes,
+          source: 'legacy_hardware_usable_estimate',
+        },
+        discreteVramBytes: {
+          ...base.host.profile.discreteVramBytes,
+          basis: 'discrete_vram_not_observed',
+        },
+      },
+      sample: {
+        ...base.host.sample,
+        source: state === 'unavailable' ? 'none' : 'nvidia_smi',
+        availableMemoryBytes: {
+          ...base.host.sample.availableMemoryBytes,
+          bytes: null,
+          source: 'not_reported',
+          confidence: 'unknown',
+        },
+        pressure: {
+          level: 'unknown', source: 'not_reported', observedAt,
+          confidence: 'unknown', basis: 'not_observed',
+        },
+      },
+      availableFields: ['total_system_memory_bytes', 'legacy_usable_memory_estimate_bytes'],
+      missingFields: [
+        'free_memory_bytes', 'available_memory_bytes', 'memory_pressure',
+        'discrete_vram_bytes', 'gpu_free_memory_bytes',
+        ...(state === 'unavailable' ? ['nvidia_devices'] : []),
+      ],
+      errorCode: state === 'available' ? null : 'host_probe_malformed',
+      nvidia: {
+        state,
+        source: state === 'unavailable' ? 'none' : 'nvidia_smi',
+        observedAt,
+        devices: state === 'unavailable' ? [] : [
+          device(2, 'GPU-browser-private-first-12345678', 'NVIDIA RTX 4090', 24_576, 8_192),
+          device(9, null, 'NVIDIA Тестовая GPU', 98_304, 0),
+        ],
+        reason: state === 'available'
+          ? null
+          : state === 'partial'
+            ? 'some_rows_malformed'
+            : 'all_rows_malformed',
+      },
+    },
+    models: base.models.map((model) => ({
+      ...model,
+      currentFit: {
+        ...model.currentFit,
+        state: 'unknown',
+        basis: 'insufficient_evidence',
+        reason: 'observation_key_unavailable',
+        pressureLevel: 'unknown',
+        futureAdmissionGuarantee: false,
+      },
+    })),
   }
 }

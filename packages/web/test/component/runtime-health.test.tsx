@@ -7,6 +7,7 @@ import { CatalogSourceNotice } from '../../src/features/launcher/LauncherPage.ts
 import {
   RUNTIME_OBSERVED_AT,
   runtimeActiveLease,
+  linuxNvidiaRuntimeSnapshot,
   runtimeModel,
   runtimeSnapshotFixture,
 } from '../fixtures/runtime.ts'
@@ -61,7 +62,7 @@ function renderRuntime(data = runtimeSnapshotFixture()) {
       onRetry={() => undefined}
     />,
   )
-  fireEvent.click(screen.getByText('Показать сведения о runtime'))
+  fireEvent.click(screen.getByText(/Показать сведения о runtime|Show runtime details/u))
   return view
 }
 
@@ -249,6 +250,106 @@ describe('Runtime Bar projection', () => {
     expect(host.textContent).toContain('Discrete VRAM:Неизвестно')
     expect(host.textContent).not.toContain('Discrete VRAM:0')
     expect(host.textContent).toContain('не сообщает количество accelerator devices')
+  })
+
+  it('groups every NVIDIA device with sourced totals/free VRAM and redacted identity', () => {
+    renderRuntime(linuxNvidiaRuntimeSnapshot())
+    const devices = screen.getByRole('region', { name: 'Устройства NVIDIA' })
+    expect(within(devices).getByText('NVIDIA RTX 4090')).toBeTruthy()
+    expect(within(devices).getByText('NVIDIA Тестовая GPU')).toBeTruthy()
+    expect(devices.textContent).toContain('Индекс устройства у провайдера:2')
+    expect(devices.textContent).toContain('Индекс устройства у провайдера:7')
+    expect(devices.textContent).toContain('GPU-…12345678')
+    expect(devices.textContent).not.toContain('GPU-sensitive-first')
+    expect(devices.textContent).toMatch(/Текущая свободная VRAM устройства:0\s*Б/u)
+    expect(devices.textContent).toContain('наблюдение из указанного источника')
+    expect(devices.textContent).toContain('фиксированный запрос GPU через nvidia-smi')
+    expect(devices.textContent).toContain('Наблюдалось:')
+    expect(
+      screen.getAllByText('Точная identity модели, runtime, контекста и железа неполна').length,
+    ).toBe(2)
+    expect(screen.getAllByText('Неизвестен').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Это наблюдение не гарантирует fit/).length).toBe(2)
+  })
+
+  it('localizes all NVIDIA source states without turning unavailable into empty healthy devices', () => {
+    const cases = [
+      ['available' as const, 'Телеметрия NVIDIA доступна'],
+      ['partial' as const, 'Телеметрия NVIDIA неполна'],
+      ['unavailable' as const, 'Телеметрия NVIDIA недоступна'],
+    ]
+    for (const [state, label] of cases) {
+      const view = renderRuntime(linuxNvidiaRuntimeSnapshot(state))
+      expect(view.container.textContent).toContain(label)
+      if (state === 'unavailable') {
+        expect(screen.queryByRole('region', { name: 'Устройства NVIDIA' })).toBeNull()
+      }
+      view.unmount()
+    }
+
+    const legacy = renderRuntime(runtimeSnapshotFixture((snapshot) => {
+      snapshot.host.nvidia = {
+        state: 'unknown', source: 'none', observedAt: snapshot.observedAt,
+        devices: [], reason: 'legacy_snapshot',
+      }
+    }))
+    expect(legacy.container.textContent).toContain('неизвестна для этого старого снимка')
+    legacy.unmount()
+
+    const unsupported = renderRuntime()
+    expect(unsupported.container.textContent).toContain('Телеметрия NVIDIA не поддерживается')
+  })
+
+  it('uses English source copy and exposes safe failure reasons', () => {
+    document.documentElement.lang = 'en'
+    const partial = renderRuntime(linuxNvidiaRuntimeSnapshot('partial'))
+    expect(partial.container.textContent).toContain('NVIDIA telemetry partial')
+    expect(partial.container.textContent).toContain('one or more returned GPU rows were unusable')
+    expect(partial.container.textContent).toContain('not safe capacity or a future-admission guarantee')
+    partial.unmount()
+
+    const unavailable = renderRuntime(linuxNvidiaRuntimeSnapshot('unavailable'))
+    expect(unavailable.container.textContent).toContain('NVIDIA telemetry unavailable')
+    expect(unavailable.container.textContent).toContain('no returned GPU row was usable')
+    expect(screen.queryByRole('region', { name: 'NVIDIA devices' })).toBeNull()
+  })
+
+  it('renders every returned NVIDIA device inside one contained list without a UI ceiling', () => {
+    const snapshot = linuxNvidiaRuntimeSnapshot()
+    const prototype = snapshot.host.nvidia.devices[0]!
+    snapshot.host.nvidia.devices = Array.from({ length: 257 }, (_, index) => ({
+      ...structuredClone(prototype),
+      providerIndex: index * 2,
+      uuid: `GPU-component-${String(index).padStart(12, '0')}`,
+      displayName: `NVIDIA device ${index}`,
+    }))
+    renderRuntime(snapshot)
+    const devices = screen.getByRole('region', { name: 'Устройства NVIDIA' })
+    expect(within(devices).getAllByRole('listitem')).toHaveLength(257)
+    expect(within(devices).getByText('NVIDIA device 256')).toBeTruthy()
+    expect(within(devices).getByRole('list').className).toContain('overflow-y-auto')
+  })
+
+  it('keeps the confirmed NVIDIA sample and timestamps during stale retry failure', () => {
+    const retry = vi.fn()
+    const data = linuxNvidiaRuntimeSnapshot()
+    const view = render(
+      <RuntimeStatusView data={data} error={null} loading={false} refreshing onRetry={retry} />,
+    )
+    fireEvent.click(screen.getByText('Показать сведения о runtime'))
+    const before = screen.getByRole('region', { name: 'Устройства NVIDIA' }).textContent
+    view.rerender(
+      <RuntimeStatusView
+        data={data}
+        error={new Error('secret stderr path /Users/private')}
+        loading={false}
+        refreshing={false}
+        onRetry={retry}
+      />,
+    )
+    expect(screen.getByRole('region', { name: 'Устройства NVIDIA' }).textContent).toBe(before)
+    expect(screen.getByRole('alert').textContent).toContain('sample устарел')
+    expect(view.container.textContent).not.toContain('/Users/private')
   })
 
   it('keeps confirmed content during refresh/failure and exposes only transition alerts', () => {

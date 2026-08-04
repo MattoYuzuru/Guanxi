@@ -304,6 +304,7 @@ function RuntimeModelRow({ model }: { model: RuntimeModelObservation }) {
 }
 
 function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
+  const nvidia = host.nvidia
   return (
     <section
       aria-labelledby="runtime-host-title"
@@ -316,9 +317,12 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
       <p className="text-[var(--fg-subtle)]">
         {host.profile.platform}/{host.profile.arch} · {host.profile.accelerator}
       </p>
-      <p className="text-[var(--fg-subtle)]">
-        {translate('runtime.host.devicesUnknown')}
-      </p>
+      {nvidia.state === 'unknown' || nvidia.state === 'unsupported' ? (
+        <p className="text-[var(--fg-subtle)]">
+          {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)} ·{' '}
+          {translate('runtime.host.devicesUnknown')}
+        </p>
+      ) : null}
       <dl className="mt-2 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
         <MemoryFact label={translate('runtime.host.total')} fact={host.profile.totalMemoryBytes} />
         <MemoryFact label={translate('runtime.host.free')} fact={host.sample.freeMemoryBytes} />
@@ -328,6 +332,44 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
         <MemoryFact label={translate('runtime.host.discreteVram')} fact={host.profile.discreteVramBytes} />
         <MemoryFact label={translate('runtime.host.gpuFree')} fact={host.sample.gpuFreeMemoryBytes} />
       </dl>
+      {nvidia.state === 'available' || nvidia.state === 'partial' ? (
+        <section className="mt-3 min-w-0" aria-labelledby="runtime-nvidia-devices-title">
+          <h4 id="runtime-nvidia-devices-title" className="font-semibold">
+            {translate('runtime.nvidia.devices')}
+          </h4>
+          <p className="text-[var(--fg-subtle)]">
+            {nvidiaStateLabel(nvidia.state)}
+            {nvidia.reason === null ? '' : ` · ${nvidiaReasonLabel(nvidia.reason)}`} ·{' '}
+            {translate('runtime.nvidia.freeWarning')}
+          </p>
+          <ul
+            className="mt-1 max-h-48 min-w-0 space-y-2 overflow-y-auto overscroll-contain pr-1"
+            aria-label={translate('runtime.nvidia.devices')}
+          >
+            {nvidia.devices.map((device) => (
+              <li
+                key={`${device.providerIndex}:${device.uuid ?? device.displayName}`}
+                className="min-w-0 border-l-2 border-[var(--border-strong)] pl-2"
+              >
+                <p className="break-words font-mono font-medium">{device.displayName}</p>
+                <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
+                  <Fact label={translate('runtime.nvidia.index')} value={String(device.providerIndex)} mono />
+                  <Fact label={translate('runtime.nvidia.uuid')} value={redactNvidiaUuid(device.uuid)} mono />
+                  <MemoryFact label={translate('runtime.nvidia.totalVram')} fact={device.totalVramBytes} />
+                  <MemoryFact label={translate('runtime.nvidia.freeVram')} fact={device.freeVramBytes} />
+                  <Fact label={translate('runtime.nvidia.source')} value={translate('runtime.nvidia.source.smi')} />
+                  <Fact label={translate('runtime.nvidia.observedAt')} value={formatDateTime(device.observedAt)} />
+                  <Fact label={translate('runtime.nvidia.confidence')} value={confidenceLabel(device.confidence)} />
+                </dl>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : nvidia.state === 'unavailable' ? (
+        <p className="mt-2 font-medium text-[var(--danger)]">
+          {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)}
+        </p>
+      ) : null}
       {host.missingFields.length > 0 ? (
         <p className="mt-2 text-[var(--fg-subtle)]">
           {translate('runtime.host.missing')}:{' '}
@@ -430,6 +472,8 @@ function memorySourceLabel(source: RuntimeMemoryFact['source']): string {
   if (source === 'apple_vm_stat_pages_free') return translate('runtime.memory.source.freePages')
   if (source === 'apple_host_available_memory') return translate('runtime.memory.source.available')
   if (source === 'apple_host_gpu_free_memory') return translate('runtime.memory.source.gpuFree')
+  if (source === 'nvidia_smi_memory_total') return translate('runtime.memory.source.nvidiaTotal')
+  if (source === 'nvidia_smi_memory_free') return translate('runtime.memory.source.nvidiaFree')
   if (
     source === 'legacy_apple_unified_memory_70_percent' ||
     source === 'legacy_hardware_usable_estimate'
@@ -447,17 +491,51 @@ function memoryBasisLabel(basis: RuntimeMemoryFact['basis']): string {
   if (basis === 'system_available_memory_advisory') return translate('runtime.memory.basis.available')
   if (basis === 'discrete_vram_not_applicable_to_apple_unified_memory') return translate('runtime.memory.basis.unifiedNoVram')
   if (basis === 'discrete_vram_not_observed') return translate('runtime.memory.basis.vramUnknown')
+  if (basis === 'device_total_vram') return translate('runtime.memory.basis.deviceTotalVram')
+  if (basis === 'device_free_vram_not_safe_capacity') return translate('runtime.memory.basis.deviceFreeVram')
   return translate('runtime.memory.basis.gpuFreeUnknown')
 }
 
 function hostFieldLabel(field: RuntimeHostTelemetry['missingFields'][number]): string {
   if (field === 'total_unified_memory_bytes') return translate('runtime.host.total')
+  if (field === 'total_system_memory_bytes') return translate('runtime.host.total')
   if (field === 'legacy_usable_memory_estimate_bytes') return translate('runtime.host.legacyEstimate')
   if (field === 'free_memory_bytes') return translate('runtime.host.free')
   if (field === 'available_memory_bytes') return translate('runtime.host.availableMemory')
   if (field === 'memory_pressure') return translate('runtime.host.pressure')
   if (field === 'discrete_vram_bytes') return translate('runtime.host.discreteVram')
-  return translate('runtime.host.gpuFree')
+  if (field === 'gpu_free_memory_bytes') return translate('runtime.host.gpuFree')
+  return translate('runtime.nvidia.devices')
+}
+
+function nvidiaStateLabel(state: RuntimeHostTelemetry['nvidia']['state']): string {
+  if (state === 'available') return translate('runtime.nvidia.available')
+  if (state === 'partial') return translate('runtime.nvidia.partial')
+  if (state === 'unavailable') return translate('runtime.nvidia.unavailable')
+  if (state === 'unsupported') return translate('runtime.nvidia.unsupported')
+  return translate('runtime.nvidia.unknown')
+}
+
+function redactNvidiaUuid(uuid: string | null): string {
+  if (uuid === null) return translate('runtime.unknown')
+  const body = uuid.slice(4)
+  const suffix = body.length > 8 ? body.slice(-8) : body.slice(-4)
+  return `GPU-…${suffix}`
+}
+
+function nvidiaReasonLabel(reason: RuntimeHostTelemetry['nvidia']['reason']): string {
+  if (reason === 'legacy_snapshot') return translate('runtime.nvidia.reason.legacy')
+  if (reason === 'platform_not_linux') return translate('runtime.nvidia.reason.platform')
+  if (reason === 'nvidia_not_detected') return translate('runtime.nvidia.reason.notDetected')
+  if (reason === 'command_missing') return translate('runtime.nvidia.reason.commandMissing')
+  if (reason === 'command_failed') return translate('runtime.nvidia.reason.commandFailed')
+  if (reason === 'timeout') return translate('runtime.nvidia.reason.timeout')
+  if (reason === 'output_limit') return translate('runtime.nvidia.reason.outputLimit')
+  if (reason === 'all_rows_malformed') return translate('runtime.nvidia.reason.allMalformed')
+  if (reason === 'some_rows_malformed') return translate('runtime.nvidia.reason.someMalformed')
+  if (reason === 'device_identity_partial') return translate('runtime.nvidia.reason.identityPartial')
+  if (reason === 'inconsistent_rows') return translate('runtime.nvidia.reason.inconsistent')
+  return translate('runtime.unknown')
 }
 
 function fitReasonLabel(reason: RuntimeCurrentFitReason): string {
