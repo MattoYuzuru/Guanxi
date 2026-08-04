@@ -67,9 +67,15 @@ export function modelsRoutes(app: AppContext): Hono {
     // Каталог должен открываться, даже когда Ollama не запущена.
     const installed = await app
       .ollama()
-      .tags()
-      .then((tags) => new Set(tags.models.map((model) => model.name)))
-      .catch(() => new Set<string>())
+      .tags(context.req.raw.signal)
+      .then((tags) => ({
+        models: tags.models.map((model) => ({
+          name: model.name,
+          digest: model.digest,
+        })),
+        observedAt: new Date().toISOString(),
+      }))
+      .catch(() => null)
 
     const result = await getCatalog({
       query: parsed.data.q,

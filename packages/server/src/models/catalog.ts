@@ -14,12 +14,17 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type {
   CatalogModel,
+  CatalogVariant,
   CatalogSourceHealth,
   HardwareInfo,
   ModelCapability,
 } from '@alamo/contract'
 import { z } from 'zod'
 import { computeFit } from '../hardware/fit.ts'
+import {
+  normalizeOllamaModelName,
+  OllamaReferenceError,
+} from './ollama-reference.ts'
 
 export interface CatalogSeed {
   name: string
@@ -108,6 +113,41 @@ export interface LocalRecommendations {
   fetchedAt: string
 }
 
+type RecommendationRow = {
+  model: string
+  description?: string
+  context_length?: number
+  required_plan?: 'free' | 'pro'
+  vram_bytes?: number
+}
+
+export function catalogSeedFromRecommendation(
+  entry: RecommendationRow,
+): CatalogSeed | null {
+  let normalized: string
+  try {
+    normalized = normalizeOllamaModelName(entry.model)
+  } catch (error) {
+    if (error instanceof OllamaReferenceError) return null
+    throw error
+  }
+  const separator = normalized.lastIndexOf(':')
+  if (separator <= 0 || separator === normalized.length - 1) return null
+  const name = normalized.slice(0, separator)
+  const tag = normalized.slice(separator + 1)
+  return {
+    name,
+    description: entry.description ?? '',
+    variants: [{ tag, sizeBytes: null, parameterSize: null }],
+    contextLength: entry.context_length ?? null,
+    // The cache entry has no capability evidence. Absence remains unknown.
+    capabilities: [],
+    vramBytes: entry.vram_bytes ?? null,
+    isCloud: tag === 'cloud',
+    requiredPlan: entry.required_plan ?? null,
+  }
+}
+
 /** Читает рекомендации, которые Ollama складывает у себя в кэш. */
 async function loadLocalRecommendations(): Promise<LocalRecommendations | null> {
   const path = join(homedir(), '.ollama', 'cache', 'model-recommendations.json')
@@ -117,21 +157,9 @@ async function loadLocalRecommendations(): Promise<LocalRecommendations | null> 
     const parsed = recommendationsSchema.safeParse(JSON.parse(raw))
     if (!parsed.success) return null
 
-    const seeds = (parsed.data.recommendations ?? []).map((entry) => {
-      const isCloud = entry.model.endsWith(':cloud')
-      const [base, tag] = entry.model.split(':')
-
-      return {
-        name: base ?? entry.model,
-        description: entry.description ?? '',
-        variants: [{ tag: tag ?? 'latest', sizeBytes: null, parameterSize: null }],
-        contextLength: entry.context_length ?? null,
-        // The cache entry has no capability evidence. Absence remains unknown.
-        capabilities: [],
-        vramBytes: entry.vram_bytes ?? null,
-        isCloud,
-        requiredPlan: entry.required_plan ?? null,
-      }
+    const seeds = (parsed.data.recommendations ?? []).flatMap((entry) => {
+      const seed = catalogSeedFromRecommendation(entry)
+      return seed ? [seed] : []
     })
     return { seeds, fetchedAt: metadata.mtime.toISOString() }
   } catch {
@@ -149,8 +177,11 @@ export interface CatalogInput {
   query?: string
   contextLength: number
   hardware: HardwareInfo
-  /** Уже скачанные модели: их помечаем как установленные. */
-  installed: ReadonlySet<string>
+  /** Exact sampled `/api/tags` rows. `null` means the source was unavailable. */
+  installed: {
+    models: readonly { name: string; digest: string }[]
+    observedAt: string
+  } | null
 }
 
 export interface CatalogDependencies {
@@ -164,6 +195,163 @@ interface SourcedSeed {
   source: CatalogModel['source']
   freshness: CatalogModel['freshness']
   fetchedAt: string | null
+}
+
+type VariantSource = Pick<
+  CatalogVariant,
+  'source' | 'freshness' | 'sourceObservedAt' | 'sourceFetchedAt'
+>
+
+function unknownVariantFit(
+  reason: 'size_unknown' | 'invalid_variant',
+  contextLength: number | null,
+): CatalogVariant['fit'] {
+  return {
+    state: 'unknown',
+    source: 'catalog_claim',
+    contextLength,
+    verdict: null,
+    reason,
+  }
+}
+
+function installedIndex(
+  sample: CatalogInput['installed'],
+): Map<string, Array<{ digest: string }>> | null {
+  if (!sample) return null
+  const result = new Map<string, Array<{ digest: string }>>()
+  for (const row of sample.models) {
+    let normalized: string
+    try {
+      normalized = normalizeOllamaModelName(row.name)
+    } catch (error) {
+      if (error instanceof OllamaReferenceError) continue
+      throw error
+    }
+    const matches = result.get(normalized) ?? []
+    matches.push({ digest: row.digest })
+    result.set(normalized, matches)
+  }
+  return result
+}
+
+function variantInstallation(
+  target: string | null,
+  sample: CatalogInput['installed'],
+  index: ReturnType<typeof installedIndex>,
+): CatalogVariant['installation'] {
+  if (!sample || !index) {
+    return {
+      state: 'unknown', digest: null, source: 'unavailable', observedAt: null,
+      reason: 'provider_unavailable',
+    }
+  }
+  if (!target) {
+    return {
+      state: 'unknown', digest: null, source: 'unavailable', observedAt: null,
+      reason: 'ambiguous_installed_reference',
+    }
+  }
+  const matches = index.get(target) ?? []
+  if (matches.length === 0) {
+    return {
+      state: 'not_installed', digest: null, source: 'ollama_api_tags',
+      observedAt: sample.observedAt,
+    }
+  }
+  if (matches.length !== 1) {
+    return {
+      state: 'unknown', digest: null, source: 'unavailable', observedAt: null,
+      reason: 'ambiguous_installed_reference',
+    }
+  }
+  const digest = matches[0]!.digest.trim()
+  return digest.length > 0
+    ? {
+        state: 'installed', digest, source: 'ollama_api_tags',
+        observedAt: sample.observedAt,
+      }
+    : {
+        state: 'unknown', digest: null, source: 'unavailable', observedAt: null,
+        reason: 'installed_digest_missing',
+      }
+}
+
+function buildVariants(
+  seed: CatalogSeed,
+  input: CatalogInput,
+  source: VariantSource,
+): CatalogVariant[] {
+  const candidates = seed.variants.map((variant) => {
+    const rowValid =
+      variant.tag.length > 0
+      && variant.tag === variant.tag.trim()
+      && (variant.sizeBytes === null
+        || (Number.isSafeInteger(variant.sizeBytes) && variant.sizeBytes > 0))
+      && (variant.parameterSize === null || variant.parameterSize.trim().length > 0)
+      && (seed.contextLength === null
+        || (Number.isSafeInteger(seed.contextLength) && seed.contextLength > 0))
+    if (!rowValid) return { variant, target: null }
+    try {
+      return {
+        variant,
+        target: normalizeOllamaModelName(`${seed.name}:${variant.tag}`),
+      }
+    } catch (error) {
+      if (error instanceof OllamaReferenceError) return { variant, target: null }
+      throw error
+    }
+  })
+  const counts = new Map<string, number>()
+  for (const candidate of candidates) {
+    if (candidate.target) counts.set(candidate.target, (counts.get(candidate.target) ?? 0) + 1)
+  }
+  const installed = installedIndex(input.installed)
+
+  return candidates.map(({ variant, target: candidateTarget }) => {
+    const target = candidateTarget && counts.get(candidateTarget) === 1
+      ? candidateTarget
+      : null
+    const safeSize = variant.sizeBytes !== null
+      && Number.isSafeInteger(variant.sizeBytes)
+      && variant.sizeBytes > 0
+      ? variant.sizeBytes
+      : null
+    const safeParameterSize = variant.parameterSize?.trim() || null
+    const safeContextLength = seed.contextLength !== null
+      && Number.isSafeInteger(seed.contextLength)
+      && seed.contextLength > 0
+      ? seed.contextLength
+      : null
+    const fit: CatalogVariant['fit'] = target === null
+      ? unknownVariantFit('invalid_variant', safeContextLength)
+      : safeSize === null
+        ? unknownVariantFit('size_unknown', safeContextLength)
+        : {
+            state: 'calculated',
+            source: 'catalog_claim',
+            contextLength: input.contextLength,
+            verdict: computeFit({
+              contextLength: input.contextLength,
+              hardware: input.hardware,
+              modelBytes: safeSize,
+              // The claimed artifact size is the only variant-specific memory
+              // hint available in this bounded catalog; it is never measured.
+              vramHintBytes: safeSize,
+              isCloud: seed.isCloud,
+            }),
+          }
+    return {
+      tag: variant.tag,
+      sizeBytes: safeSize,
+      parameterSize: safeParameterSize,
+      normalizedName: target,
+      contextLength: safeContextLength,
+      fit,
+      installation: variantInstallation(target, input.installed, installed),
+      ...source,
+    }
+  })
 }
 
 export async function getCatalog(
@@ -226,9 +414,14 @@ export async function getCatalog(
       return seed.name.toLowerCase().includes(query) || seed.description.toLowerCase().includes(query)
     })
     .map(({ seed, source: modelSource, freshness, fetchedAt }) => {
-      const installed = [...input.installed].some(
-        (name) => name === seed.name || name.startsWith(`${seed.name}:`),
-      )
+      const sourceFields: VariantSource = {
+        source: modelSource,
+        freshness,
+        sourceObservedAt: observedAt,
+        sourceFetchedAt: fetchedAt,
+      }
+      const variants = buildVariants(seed, input, sourceFields)
+      const installed = variants.some((variant) => variant.installation.state === 'installed')
       // Для вердикта берём самый крупный вариант: он и есть ограничивающий.
       const largest = seed.variants.reduce<number>(
         (max, variant) => Math.max(max, variant.sizeBytes ?? 0),
@@ -238,7 +431,7 @@ export async function getCatalog(
       return {
         name: seed.name,
         description: seed.description,
-        variants: seed.variants,
+        variants,
         contextLength: seed.contextLength,
         capabilities: seed.capabilities,
         vramBytes: seed.vramBytes,
@@ -252,6 +445,8 @@ export async function getCatalog(
           vramHintBytes: seed.vramBytes,
           isCloud: seed.isCloud,
         }),
+        installedProjection: 'variant_aggregate_compatibility',
+        fitProjection: 'largest_variant_compatibility',
         source: modelSource,
         freshness,
         sourceObservedAt: observedAt,

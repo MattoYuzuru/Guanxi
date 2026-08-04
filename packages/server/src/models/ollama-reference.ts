@@ -30,6 +30,13 @@ function normalizeModelName(input: string): string | null {
     : `${normalized}:latest`
 }
 
+/** Shared strict name-only boundary for server-derived catalog pull targets. */
+export function normalizeOllamaModelName(input: string): string {
+  const normalized = normalizeModelName(input)
+  if (!normalized) throw new OllamaReferenceError('invalid_model_name')
+  return normalized
+}
+
 function normalizeOfficialPageUrl(input: string): OllamaReferencePreview {
   if (input.includes('\\') || input.includes('%')) {
     throw new OllamaReferenceError('invalid_official_url')
@@ -102,8 +109,7 @@ export function normalizeOllamaReference(input: string): OllamaReferencePreview 
 
   if (input.includes('://')) return normalizeOfficialPageUrl(input)
 
-  const normalizedModelName = normalizeModelName(input)
-  if (!normalizedModelName) throw new OllamaReferenceError('invalid_model_name')
+  const normalizedModelName = normalizeOllamaModelName(input)
   return {
     inputKind: 'model_name',
     displayValue: input,

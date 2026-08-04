@@ -447,17 +447,110 @@ export const localModelSchema = z.object({
 })
 export type LocalModel = z.infer<typeof localModelSchema>
 
+export const catalogVariantFitSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('calculated'),
+      source: z.literal('catalog_claim'),
+      contextLength: positiveSafeIntegerSchema,
+      verdict: fitVerdictSchema,
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      source: z.enum(['catalog_claim', 'legacy_response']),
+      contextLength: positiveSafeIntegerSchema.nullable(),
+      verdict: z.null(),
+      reason: z.enum(['size_unknown', 'invalid_variant', 'legacy_response']),
+    })
+    .strict(),
+])
+export type CatalogVariantFit = z.infer<typeof catalogVariantFitSchema>
+
+export const catalogVariantInstallationSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('installed'),
+      digest: z.string().min(1),
+      source: z.literal('ollama_api_tags'),
+      observedAt: z.string().datetime(),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('not_installed'),
+      digest: z.null(),
+      source: z.literal('ollama_api_tags'),
+      observedAt: z.string().datetime(),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      digest: z.null(),
+      source: z.enum(['unavailable', 'legacy_response']),
+      observedAt: z.null(),
+      reason: z.enum([
+        'provider_unavailable',
+        'ambiguous_installed_reference',
+        'installed_digest_missing',
+        'legacy_response',
+      ]),
+    })
+    .strict(),
+])
+export type CatalogVariantInstallation = z.infer<
+  typeof catalogVariantInstallationSchema
+>
+
+const legacyCatalogVariantFit = {
+  state: 'unknown' as const,
+  source: 'legacy_response' as const,
+  contextLength: null,
+  verdict: null,
+  reason: 'legacy_response' as const,
+}
+
+const legacyCatalogVariantInstallation = {
+  state: 'unknown' as const,
+  digest: null,
+  source: 'legacy_response' as const,
+  observedAt: null,
+  reason: 'legacy_response' as const,
+}
+
+export const catalogVariantSchema = z.object({
+  tag: z.string(),
+  sizeBytes: z.number().int().nullable(),
+  parameterSize: z.string().nullable(),
+  /** Exact pull target produced by the shared server normalizer. */
+  normalizedName: z.string().nullable().optional().default(null),
+  /** Catalog claim copied to the variant; it is not a runtime maximum. */
+  contextLength: positiveSafeIntegerSchema.nullable().optional().default(null),
+  fit: catalogVariantFitSchema.optional().default(legacyCatalogVariantFit),
+  installation: catalogVariantInstallationSchema
+    .optional()
+    .default(legacyCatalogVariantInstallation),
+  source: z
+    .enum(['remote', 'local_cache', 'bundled'])
+    .nullable()
+    .optional()
+    .default(null),
+  freshness: z
+    .enum(['fresh', 'stale', 'fallback', 'unknown'])
+    .optional()
+    .default('unknown'),
+  sourceObservedAt: z.string().nullable().optional().default(null),
+  sourceFetchedAt: z.string().nullable().optional().default(null),
+})
+export type CatalogVariant = z.infer<typeof catalogVariantSchema>
+
 export const catalogModelSchema = z.object({
   name: z.string(),
   description: z.string(),
   /** Доступные теги-размеры: 7b, 14b, 27b-q4 и т.п. */
-  variants: z.array(
-    z.object({
-      tag: z.string(),
-      sizeBytes: z.number().int().nullable(),
-      parameterSize: z.string().nullable(),
-    }),
-  ),
+  variants: z.array(catalogVariantSchema),
   contextLength: z.number().int().nullable(),
   capabilities: z.array(modelCapabilitySchema),
   /** Подсказка вендора по требуемой видеопамяти, если есть. */
@@ -466,6 +559,16 @@ export const catalogModelSchema = z.object({
   requiredPlan: z.enum(['free', 'pro']).nullable(),
   installed: z.boolean(),
   fit: fitVerdictSchema,
+  /** `installed` is retained only as an any-variant compatibility aggregate. */
+  installedProjection: z
+    .enum(['variant_aggregate_compatibility', 'legacy_family_compatibility'])
+    .optional()
+    .default('legacy_family_compatibility'),
+  /** `fit` is retained only for clients that predate per-variant fit evidence. */
+  fitProjection: z
+    .enum(['largest_variant_compatibility', 'legacy_model_compatibility'])
+    .optional()
+    .default('legacy_model_compatibility'),
   /** Provider provenance. `remote` remains for a future documented provider. */
   source: z.enum(['remote', 'local_cache', 'bundled']),
   /** Additive P0-D freshness fields; absent values are legacy/unknown. */
