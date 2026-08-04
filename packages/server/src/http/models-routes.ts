@@ -53,12 +53,20 @@ export function modelsRoutes(app: AppContext): Hono {
   })
 
   routes.get('/catalog', async (context) => {
-    const parsed = listCatalogQuery.safeParse(
-      Object.fromEntries(new URL(context.req.url).searchParams),
+    const searchParams = new URL(context.req.url).searchParams
+    const repeated = [...new Set(searchParams.keys())].filter(
+      (key) => searchParams.getAll(key).length !== 1,
     )
+    const parsed = repeated.length === 0
+      ? listCatalogQuery.safeParse(Object.fromEntries(searchParams))
+      : { success: false as const, error: null }
     if (!parsed.success) {
       return context.json(
-        { code: 'validation_failed', message: 'Invalid catalog query', details: parsed.error.flatten() },
+        {
+          code: 'validation_failed',
+          message: 'Invalid catalog query',
+          details: parsed.error?.flatten() ?? { repeatedKeys: repeated },
+        },
         400,
       )
     }
@@ -80,6 +88,7 @@ export function modelsRoutes(app: AppContext): Hono {
     const result = await getCatalog({
       query: parsed.data.q,
       contextLength,
+      filters: parsed.data,
       hardware: app.hardware,
       installed,
     })

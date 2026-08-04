@@ -17,6 +17,7 @@ import type {
   CatalogVariant,
   CatalogSourceHealth,
   HardwareInfo,
+  ListCatalogQuery,
   ModelCapability,
 } from '@alamo/contract'
 import { z } from 'zod'
@@ -176,6 +177,7 @@ export interface CatalogResult {
 export interface CatalogInput {
   query?: string
   contextLength: number
+  filters?: CatalogFilters
   hardware: HardwareInfo
   /** Exact sampled `/api/tags` rows. `null` means the source was unavailable. */
   installed: {
@@ -183,6 +185,20 @@ export interface CatalogInput {
     observedAt: string
   } | null
 }
+
+export type CatalogFilters = Pick<
+  ListCatalogQuery,
+  | 'installation'
+  | 'fit'
+  | 'providerScope'
+  | 'source'
+  | 'freshness'
+  | 'capability'
+  | 'minClaimedContext'
+  | 'contextClaim'
+  | 'maxClaimedArtifactSize'
+  | 'artifactSizeClaim'
+>
 
 export interface CatalogDependencies {
   loadLocalRecommendations?: () => Promise<LocalRecommendations | null>
@@ -454,5 +470,72 @@ export async function getCatalog(
       }
     })
 
-  return { models, live: false, source }
+  return { models: filterCatalogModels(models, input.filters), live: false, source }
+}
+
+function selected<T>(values: readonly T[] | undefined, value: T): boolean {
+  return !values || values.length === 0 || values.includes(value)
+}
+
+function hasVariantFilters(filters: CatalogFilters): boolean {
+  return Boolean(
+    filters.installation?.length
+      || filters.fit?.length
+      || filters.minClaimedContext
+      || filters.contextClaim
+      || filters.maxClaimedArtifactSize
+      || filters.artifactSizeClaim,
+  )
+}
+
+function variantMatches(variant: CatalogVariant, filters: CatalogFilters): boolean {
+  // A malformed or duplicate exact target can never satisfy a variant facet.
+  if (variant.normalizedName === null) return false
+
+  const installation = variant.installation.state
+  if (!selected(filters.installation, installation)) return false
+
+  const fit = variant.fit.state === 'calculated' ? variant.fit.verdict.level : 'unknown'
+  if (!selected(filters.fit, fit)) return false
+
+  if (filters.contextClaim === 'unknown' && variant.contextLength !== null) return false
+  if (
+    filters.minClaimedContext !== undefined
+    && (variant.contextLength === null || variant.contextLength < filters.minClaimedContext)
+  ) return false
+
+  if (filters.artifactSizeClaim === 'unknown' && variant.sizeBytes !== null) return false
+  if (
+    filters.maxClaimedArtifactSize !== undefined
+    && (variant.sizeBytes === null || variant.sizeBytes > filters.maxClaimedArtifactSize)
+  ) return false
+
+  return true
+}
+
+/** Pure query-time filter; it never changes provenance or compatibility fields. */
+export function filterCatalogModels(
+  models: readonly CatalogModel[],
+  filters: CatalogFilters = {},
+): CatalogModel[] {
+  const variantFiltering = hasVariantFilters(filters)
+  return models.flatMap((model) => {
+    const scope = model.isCloud ? 'cloud' : 'local'
+    if (!selected(filters.providerScope, scope)) return []
+    if (!selected(filters.source, model.source)) return []
+    if (!selected(filters.freshness, model.freshness)) return []
+
+    if (filters.capability?.length) {
+      const capabilityMatches = filters.capability.some((capability) =>
+        capability === 'unknown'
+          ? model.capabilities.length === 0
+          : model.capabilities.includes(capability),
+      )
+      if (!capabilityMatches) return []
+    }
+
+    if (!variantFiltering) return [model]
+    const variants = model.variants.filter((variant) => variantMatches(variant, filters))
+    return variants.length === 0 ? [] : [{ ...model, variants }]
+  })
 }

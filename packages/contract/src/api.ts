@@ -141,11 +141,91 @@ export const listModelsResponse = z.object({
 })
 export type ListModelsResponse = z.infer<typeof listModelsResponse>
 
-/** GET /api/models/catalog?q=&contextLength= */
-export const listCatalogQuery = z.object({
-  q: z.string().optional(),
-  contextLength: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
-})
+const csvValues = <Schema extends z.ZodTypeAny>(schema: Schema) =>
+  z.preprocess(
+    (value) =>
+      typeof value === 'string'
+        ? value.length === 0
+          ? []
+          : value.split(',')
+        : value,
+    z.array(schema).max(16).refine(
+      (values) => new Set(values).size === values.length,
+      'Duplicate filter values are not allowed',
+    ),
+  )
+
+export const catalogInstallationFilterSchema = z.enum([
+  'installed',
+  'not_installed',
+  'unknown',
+])
+export type CatalogInstallationFilter = z.infer<typeof catalogInstallationFilterSchema>
+export const catalogFitFilterSchema = z.enum(['green', 'yellow', 'red', 'unknown'])
+export type CatalogFitFilter = z.infer<typeof catalogFitFilterSchema>
+export const catalogProviderScopeFilterSchema = z.enum(['local', 'cloud'])
+export type CatalogProviderScopeFilter = z.infer<typeof catalogProviderScopeFilterSchema>
+export const catalogSourceFilterSchema = z.enum(['local_cache', 'bundled', 'remote'])
+export type CatalogSourceFilter = z.infer<typeof catalogSourceFilterSchema>
+export const catalogFreshnessFilterSchema = z.enum([
+  'fresh',
+  'stale',
+  'fallback',
+  'unknown',
+])
+export type CatalogFreshnessFilter = z.infer<typeof catalogFreshnessFilterSchema>
+export const catalogCapabilityFilterSchema = z.enum([
+  'completion',
+  'tools',
+  'vision',
+  'insert',
+  'thinking',
+  'embedding',
+  'unknown',
+])
+export type CatalogCapabilityFilter = z.infer<typeof catalogCapabilityFilterSchema>
+
+/**
+ * GET /api/models/catalog. Multi-select groups use one comma-separated value;
+ * OR applies inside a group and AND across groups. Repeated keys are rejected
+ * by the HTTP boundary before this strict schema is parsed.
+ */
+export const listCatalogQuery = z
+  .object({
+    q: z.string().optional(),
+    contextLength: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
+    installation: csvValues(catalogInstallationFilterSchema).optional(),
+    fit: csvValues(catalogFitFilterSchema).optional(),
+    providerScope: csvValues(catalogProviderScopeFilterSchema).optional(),
+    source: csvValues(catalogSourceFilterSchema).optional(),
+    freshness: csvValues(catalogFreshnessFilterSchema).optional(),
+    capability: csvValues(catalogCapabilityFilterSchema).optional(),
+    minClaimedContext: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
+    contextClaim: z.literal('unknown').optional(),
+    maxClaimedArtifactSize: z.coerce.number().pipe(positiveSafeIntegerSchema).optional(),
+    artifactSizeClaim: z.literal('unknown').optional(),
+  })
+  .strict()
+  .superRefine((query, context) => {
+    if (query.minClaimedContext !== undefined && query.contextClaim !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['contextClaim'],
+        message: 'Claimed context cannot be both numeric and unknown',
+      })
+    }
+    if (
+      query.maxClaimedArtifactSize !== undefined
+      && query.artifactSizeClaim !== undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['artifactSizeClaim'],
+        message: 'Claimed artifact size cannot be both numeric and unknown',
+      })
+    }
+  })
+export type ListCatalogQuery = z.infer<typeof listCatalogQuery>
 export const listCatalogResponse = z.object({
   models: z.array(catalogModelSchema),
   /** Legacy compatibility projection; P0-D does not call an undocumented remote endpoint. */
