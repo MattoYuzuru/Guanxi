@@ -1,7 +1,7 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-03
+**Проверено:** 2026-08-04
 **Текущая фаза:** Phase 2 — Models, Capability Registry и import
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
@@ -357,6 +357,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-A Installed descriptor/evidence foundation | implemented, locally validated | `d750a3e`, `6a5c43d`, `d42b791`, `282c82e`; descriptor 9/9, Web 51/51, Chromium 18/18, all required gates |
 | P2-B Persistent installed evidence cache | implemented, locally validated | `a1ead74`, `597c130`, `c22c435`; persistent 17/17, core 274/274, Web 52/52, Chromium 18/18, all required gates |
 | P2-C Explicit controlled completion probe | implemented, locally validated | `ce9ef4b`, `c48799a`, `d1c3c38`; P2-C 34/34, core 300/300, Web 58/58, Chromium 18/18, all required gates |
+| P2-D Confirmed Add from Ollama | implemented, locally validated | `21c0404`, `3d129d2`, `0d9aaa6`; P2-D 20/20, core 311/311, Web 65/65, Chromium 19/19, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -487,16 +488,64 @@ persisted timing, unmount update, forced-run focus restore, safe route redaction
 repeat из root не подхватил Web jsdom config и получил 11 `document is not
 defined`; все засчитываемые P1-J runs выполнены из Web workspace и дали 10×11/11.
 
-P2-A, P2-B и P2-C остаются `implemented, locally validated`, а не independently
+P2-D добавляет strict additive reference preview/start contract и один pure
+server-owned normalizer. Разрешены ASCII base/tag/one namespace и exact HTTPS
+Ollama model-page shapes; case normalizes, missing tag становится `:latest`.
+Whitespace/control, credentials, port, query/fragment, arbitrary/lookalike/IP/
+localhost host, encoded separator, literal traversal и ambiguous grammar
+fail-closed. Preview не обращается к DNS/network/Ollama/filesystem/SQLite и не
+утверждает availability, size, license, capability, fit или installation.
+
+Start заново нормализует original reference и требует exact confirmed name.
+Local `OllamaClient.pull` получает только canonical name без user-owned endpoint,
+headers, auth, insecure или options. Pull chunk валидируется; regressing/
+malformed/EOF-before-success даёт controlled redacted error, а `done` требует
+provider status `success`. Controller принадлежит connection, stream не retry-ится
+автоматически и не является durable/background/replayable Job. Cancel не
+останавливает daemon. После success Web отдельно перечитывает `/api/tags`; refresh
+failure не фабрикует installed digest и completion probe не запускается.
+
+Marketplace modal использует locale keys с English fallback и curated Russian,
+explicit keyboard preview/confirmation, one-intent double-click guard,
+validating/invalid/progress/error/cancel/retry/success states, focus containment/
+restore и truthful already-installed/refresh projection. Mount/type/paste/hover/
+reload/navigation не запускают pull. StrictMode/unmount cleanup не делает late
+Installed refresh; 390 px, 200% zoom, overflow и reduced motion проверены в
+mocked Chromium.
+
+Required evidence through revision `0d9aaa6`: typecheck; P1 exact 98/98; P1-L+M
+32/32; prewarm 7/7; routes/Governor/concurrency 33/33; runtime/provider 20/20;
+fit/telemetry 19/19; P2-A 9/9; P2-B 17/17; P2-C 34/34; P2-D server 20/20;
+core 311/311 + Web 65/65; Chromium 19/19; build, markdownlint и diff check.
+Sequential repeats with exit/count checking: P2-D server 10×20/20, targeted Web
+10×7/7, affected Web 10×65/65, P2-C 10×34/34, P2-B 10×17/17, P2-A 10×9/9,
+P1-L+M 10×32/32, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8.
+После review-fixes затронутые P2-D/Web groups повторены с теми же counts.
+
+Первые failures не скрыты. Initial normalizer использовал unsupported TypeScript
+parameter property: 11 tests прошли, два files не загрузились; field assignment
+переписан явно. Raw explicit `:443` терялся при URL canonicalization и дал 17/18;
+authority теперь проверяется до `URL`. Первый targeted Web run дал 3/5 из-за
+невалидных fixtures/assertions; setup и strict model fixture исправлены до 7/7.
+Root-level Playwright не нашёл Web baseURL; exact spec из `packages/web` прошёл
+1/1. Review дополнительно нашёл literal dot-segment canonicalization и late
+unmount state update; raw traversal reject и StrictMode-safe mounted guard
+зафиксированы в `0d9aaa6`. Две repeat-wrapper попытки неверно восстановили
+envelopes (11 вместо 20 без `ollama-client`, затем 19 вместо P1-K 37); product
+tests были green, а точные groups перезапущены с ожидаемыми counts.
+
+P2-A, P2-B, P2-C и P2-D остаются `implemented, locally validated`, а не independently
 verified или production-validated. Не проверены live Ollama/model/hardware,
 provider-version matrix, production TTL/residency, external-client ownership и
 multi-process coordination. Migrations 7/8 хранят latest safe projections, а не
 continuous evidence history/full Capability Registry; semantic quality,
-tool/media capabilities, user overrides и import не реализованы. Phase 2
-остаётся `in progress`: ROADMAP exit gate требует variant-first import, HF exact
-revision/checksum/license, URL policy, search/filter/compare и platform work;
-Q-26 явно reconciled с accepted D-005 как name + official Ollama page URL перед
-handoff P2-D, а Q-25 остаётся открытым для первого Hugging Face import slice.
+tool/media capabilities и user overrides не реализованы. P2-D — только bounded
+Ollama reference pull: нет durable resume, disk reservation, checksum/provenance,
+variant-first catalog install или recent entry. Phase 2 остаётся `in progress`:
+ROADMAP exit gate требует variant-first install, HF exact revision/checksum/
+license, search/filter/compare и platform work; Q-25 остаётся открытым и блокирует
+первый Hugging Face import slice. Следующий handoff — не зависящий от Q-25 P2-E
+variant-first Marketplace install.
 
 ## Later phases
 

@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-03
+**Проверено:** 2026-08-04
 
 ## Current package design
 
@@ -76,6 +76,12 @@ source/confidence/timing и historical reuse. `verified` относится то
 versioned fixed probe, не повышает provider declaration и не означает semantic,
 tool или media support.
 
+P2-D additive добавляет strict Ollama reference preview/start schemas. Preview
+возвращает только closed input kind, original safe display value и normalized
+model name; start содержит original reference и exact confirmed name. Unknown
+fields/future kind fail-closed. Progress/error/done использует существующий
+additive `PullStreamEvent`, поэтому legacy clients и route schema не удалены.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -98,6 +104,10 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `runtime/completion-probe.ts`: explicit fixed completion call, exact
   tags/version fingerprint, normal-priority admission, bounded transport,
   request cancel/deadline и before/after identity validation;
+- `models/ollama-reference.ts`: pure strict model-name/official-page parser без
+  DNS, fetch, Ollama, filesystem или persistence;
+- `models/ollama-pull.ts`: validated progress, terminal-success requirement и
+  redacted provider/protocol error projection;
 - `runtime/observation-key.ts`: canonical exact-reference normalization,
   versioned hash components и typed unavailable reasons;
 - `runtime/reconciliation.ts`: process-local shared `/api/ps`, `/api/tags`,
@@ -106,7 +116,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   explanation и compatibility projection;
 - `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query;
 - `http/models-routes.ts`: list/show/pull/delete/explicit warm/prewarm/unload/
-  running;
+  running и P2-D reference preview/confirmed connection-owned pull;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
@@ -170,6 +180,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | Canonical reference | P1-L normalizer over provider name | registry/name/tag/digest syntax preserved | invalid/duplicate → unknown/ambiguous | descriptor/cache/observation key |
 | Web evidence projection | additive REST descriptor | declared/degraded/unknown + fresh/stale/offline/unknown | loading/empty/error remain separate | installed card/profile, locale keys |
 | Completion probe | explicit fixed local Ollama chat call | verified only for exact reference/digest/runtime/context/probe v1 | no automatic run; historical exact reuse or bounded forced observation | installed profile + Runtime Bar operation |
+| Manual Ollama reference | pure local name/page parser, then local `/api/pull` | normalized target only; no availability/digest/capability claim | pull connection-owned; success rechecks Installed via `/api/tags` | Marketplace Add from Ollama |
 
 `/api/tags` и `/api/show` declaration не являются runtime proof. Name-based
 `/api/show` lookup не выполняется для duplicate normalized references; даже при
@@ -180,6 +191,9 @@ allowlisted capability/context/architecture values. P2-C хранит отдел
 latest normalized completion outcome для exact probe key; raw provider text,
 prompt, reasoning, endpoint/path и credentials не сохраняются. Full history,
 generic registry service и semantic/tool/media probes не реализованы.
+P2-D preview/target не становится installation/capability fact: до отдельного
+`/api/tags` refresh он не доказывает installation или digest и нигде не
+persist-ится.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
@@ -275,7 +289,9 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `features/launcher`/`models`: installed/catalog/profile, preset suggestions,
   keyboard custom context, sourced maximum/unknown explanation и P2-A installed
   evidence state/source/time; P2-C manual completion confirmation/status/cancel
-  и historical projection; Marketplace projection не менялась;
+  и historical projection; P2-D Marketplace `AddFromOllama` с explicit local
+  preview, confirmation, one-intent pull, progress/cancel/retry и Installed
+  refresh без auto-probe/capability promotion;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields и exact positive safe-integer
@@ -283,8 +299,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
-  P1-M no-artificial-caps/P2-A descriptor/P2-C probe regression; browser использует
-  deterministic mocked REST/SSE/runtime snapshots.
+  P1-M no-artificial-caps/P2-A descriptor/P2-C probe/P2-D confirmed pull
+  regression; browser использует deterministic mocked REST/SSE/runtime snapshots.
 
 ### `packages/cli`
 
@@ -401,8 +417,11 @@ client-side resource lock не вводились.
 в P1-G. Current P1-K route — `POST /api/models/:name/prewarm`; target
 `/api/runtime/models/:id/prewarm` ниже остаётся proposed и не является alias.
 Current P2-C route — `POST /api/models/:name/probes/completion`; generic target
-`/api/capabilities/:fingerprint/probes` ниже остаётся proposed. Остальные route
-names остаются proposed до соответствующего ADR/API review.
+`/api/capabilities/:fingerprint/probes` ниже остаётся proposed. Current P2-D
+routes — `POST /api/models/imports/ollama-reference/preview` и connection-owned
+`POST /api/models/imports/ollama-reference/start`; proposed generic single route
+ниже не является alias или durable Job. Остальные route names остаются proposed
+до соответствующего ADR/API review.
 
 ```text
 POST /api/jobs
@@ -589,7 +608,9 @@ Input принимает только:
   name.
 
 Server не fetch-ит произвольный URL. После preview/confirmation Job вызывает
-documented local pull. Recent reference может стать локальной catalog entry.
+documented local pull. Это target durable pipeline: current P2-D выполняет
+connection-owned POST+SSE wait без Job/replay/resume и не создаёт recent catalog
+entry. После terminal success только `/api/tags` даёт installed/digest fact.
 
 #### Hugging Face GGUF import
 

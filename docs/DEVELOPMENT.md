@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-03
+**Проверено:** 2026-08-04
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -42,7 +42,7 @@ npm run link:cli
 | `dev:web`          | Vite:5173 с API proxy                               |
 | `typecheck`        | TypeScript workspaces                               |
 | `test`             | server + CLI + узкие web component regression tests |
-| `test:web:browser` | deterministic Chromium P0-A–P1-L regression gate    |
+| `test:web:browser` | deterministic Chromium P0-A–P2-D regression gate    |
 | `build`            | contract, web, server и CLI production artifacts    |
 | `link:cli`         | глобальная локальная ссылка `alamo-ui`              |
 
@@ -119,6 +119,19 @@ npm run link:cli
   `num_predict=8`, response bytes 1024 и `keep_alive=2m`. До и после call
   повторно проверяются `/api/tags` и `/api/version`; identity drift, cancel,
   timeout, protocol/provider или persistence failure не дают verified.
+- P2-D добавляет отдельный Marketplace flow для user-supplied Ollama reference.
+  Strict server normalizer локально принимает только ASCII model name с одним
+  optional namespace/tag либо exact HTTPS page shape на `ollama.com`, приводит
+  case и implicit `:latest`, fail-closed отклоняет credentials/port/query/
+  fragment/encoded или literal traversal. Preview не вызывает сеть, Ollama,
+  filesystem или SQLite. Start заново нормализует исходный reference, требует
+  exact confirmed name и передаёт в `OllamaClient.pull` только это имя.
+- P2-D pull использует validated NDJSON progress и legacy additive SSE event
+  schema, но требует provider status `success` до `done`. Caller connection
+  владеет controller; disconnect/cancel не создаёт durable/replayable Job и не
+  останавливает Ollama daemon. Web не retry-ит stream автоматически, после
+  terminal success отдельно перечитывает `/api/tags` и не запускает completion
+  probe либо capability promotion.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
@@ -173,6 +186,9 @@ npm run link:cli
   `verified | degraded | unknown | cancelled | skipped`, exact/unavailable basis,
   source/time/confidence и historical flag. Unknown future enum отклоняется;
   legacy model/descriptor shapes не получают probe fields.
+- P2-D additive публикует strict preview/start request и preview response для
+  Ollama reference. Input kind закрыт enum-ом, unknown fields отклоняются, а
+  pull progress сохраняет совместимый `PullStreamEvent` contract.
 
 ### Server
 
@@ -185,6 +201,8 @@ npm run link:cli
 - `runtime/prewarm.ts` — exact validation, short-TTL warm и caller/normal abort;
 - `runtime/completion-probe.ts` — explicit exact completion probe, request-owned
   deadline/cancel, fixed provider call, Governor cleanup и before/after identity;
+- `models/ollama-reference.ts` — pure strict name/page normalizer;
+  `models/ollama-pull.ts` — terminal-success/redacted pull event adapter;
 - `runtime/observation-key.ts` — canonical key construction и unavailable
   policy; `runtime/reconciliation.ts` — shared provider/host sources, common
   timestamp, owner/artifact/current-fit classification и compatibility projection;
@@ -243,7 +261,9 @@ npm run link:cli
   cards/profile показывают P2-A source/state/freshness через locale keys без
   verified-green semantics для provider declaration; Installed profile отдельно
   объясняет side effect manual completion probe, подтверждает его dialog-ом и
-  показывает queued/running/historical/result/error/cancel states;
+  показывает queued/running/historical/result/error/cancel states; Marketplace
+  отдельно даёт localized `Add from Ollama` preview/confirmation/progress/
+  cancel/retry и truthful post-success Installed refresh;
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;
@@ -280,7 +300,10 @@ npm run link:cli
   order, exact owner abort/release, typed route/TTL, settings, exact residency,
   debounce/visibility/StrictMode cleanup и one-command browser flow; P1-L —
   typed keys, migration 6, exact calibration, digest-aware cache, tags↔ps
-  reconciliation, redaction и AbortSignal.
+  reconciliation, redaction и AbortSignal; P2-D — strict local reference
+  grammar, pure preview, exact confirmed target, validated terminal pull/
+  progress/redaction/cancel и Marketplace one-intent/locale/focus/responsive/
+  unmount regression.
 
 ### CLI
 

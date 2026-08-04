@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-03
+**Проверено:** 2026-08-04
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -152,6 +152,17 @@ tags/runtime identity до и после bounded call. Только terminal non
 degraded, cancel — cancelled, а unsafe identity/fit/context — unknown/skipped.
 Connection владеет wait: это не durable/replayable Job.
 
+P2-D добавляет bounded manual reference/pull boundary, не весь import subsystem.
+Marketplace Web по explicit submit отправляет name либо official Ollama page URL
+на pure local preview; server normalizer fail-closed сводит только разрешённую
+grammar к canonical lower-case name с explicit tag. Confirmation start заново
+проверяет original reference и exact confirmed name, затем documented local
+`/api/pull` отдаёт validated progress через существующий additive SSE contract.
+Только provider `success` даёт terminal `done`; disconnect/cancel прекращает
+этот connection-owned wait. После success Web отдельно перечитывает `/api/tags`;
+preview/pull target не становится installed/capability evidence и не запускает
+P2-C probe автоматически.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -184,6 +195,7 @@ Connection владеет wait: это не durable/replayable Job.
 | Installed safe provider evidence     | SQLite migration 7                      | exact 15m fresh + 7d stale  |
 | Latest exact completion probe        | SQLite migration 8                      | latest exact-key projection |
 | Active completion probe/controller   | HTTP request + `ResourceGovernor`       | request/process memory      |
+| Active confirmed Ollama pull         | HTTP request + Ollama `/api/pull`       | connection/provider owned   |
 | `/api/show` normalized front-cache   | `ModelService` bounded LRU              | process memory, 64 refs     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -226,6 +238,9 @@ Connection владеет wait: это не durable/replayable Job.
 15. P2-C verified доказывает только basic terminal non-empty completion для
     exact fingerprint/probe version. Live model/hardware, semantic quality,
     tool/media support, external clients и multi-process admission не проверены.
+16. P2-D pull не durable/replayable, не резервирует disk и не проверяет artifact
+    checksum. Cancel закрывает owned wait, но partial provider data и concurrent
+    external pulls остаются поведением Ollama; live large downloads не проверены.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

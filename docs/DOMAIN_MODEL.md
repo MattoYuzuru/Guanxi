@@ -1,8 +1,8 @@
 # Доменная модель
 
-**Статус:** accepted target model, not implemented
+**Статус:** mixed — accepted target, current P1/P2 subsets implemented
 
-**Проверено:** 2026-08-02  
+**Проверено:** 2026-08-04
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -143,6 +143,14 @@ P2-C не встраивает runtime proof обратно в provider declarat
 canonical reference + digest + Ollama version + context + probe-definition
 version. Historical reuse сохраняет исходное observation time; force создаёт
 новое observation для того же exact key.
+
+P2-D добавляет transient `OllamaReferencePreview`, но не новую persistent domain
+entity. Preview различает только model name и official page URL, хранит safe
+display value и canonical lower-case name с explicit tag. Он не является Model
+Variant, Installation, capability claim или availability proof. Confirmed pull
+остаётся connection-owned operation; только последующий `/api/tags` sample может
+создать observed Installation/digest fact. Import Job, resume, checksum,
+provenance record и recent catalog entry ещё не реализованы.
 
 ### Runtime Instance
 

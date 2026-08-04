@@ -2,7 +2,7 @@
 
 **Статус:** mixed — diagnosis locally validated, lifecycle target accepted
 
-**Проверено:** 2026-08-03
+**Проверено:** 2026-08-04
 **Критичность:** основной correctness и safety boundary
 
 ## Подтверждённое current behavior
@@ -576,6 +576,24 @@ load. Cancel/timeout/provider/protocol/empty/persistence failure никогда 
 становятся unsupported или verified. Caller connection владеет ожиданием;
 request не durable, не replayable и не продолжает работу после abort.
 
+P2-D reference preview/pull не меняет Governor или evidence stores:
+
+```text
+explicit preview submit → pure strict local normalization
+  → explicit confirmation of exact normalized name
+  → connection-owned local Ollama /api/pull
+      → validated non-regressing progress
+      → provider terminal success → SSE done
+      → Web refreshes /api/tags for installed/digest truth
+```
+
+Preview не делает provider/network/filesystem/SQLite call. Start повторно
+нормализует original reference и отклоняет confirmation mismatch. Pull не
+является inference lease или durable Job, не retry-ится Web автоматически и не
+запускает completion probe. Disconnect/cancel abort-ит только owned HTTP wait;
+Ollama daemon, partial provider data и external pulls не принадлежат этому
+controller.
+
 Output-budget control и media upload в current Chat flow не реализованы; UI не
 подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
 
@@ -590,6 +608,7 @@ Output-budget control и media upload в current Chat flow не реализов
 | Ollama/prewarm deadlines         | runtime reliability      | typed timeout/cancel state освобождает lease                 |
 | Completion probe 10/30/5/45 s    | runtime reliability      | connect/load/idle/total; typed non-verified outcome          |
 | Completion probe 8 tokens/1 KiB  | protocol safety          | server-owned bounds; generated content не сохраняется        |
+| Ollama pull default 15/300/30 s  | adapter reliability      | connect/first-progress/idle; connection abort, no total Job  |
 | Agent 40 steps                   | current watchdog policy  | visible max-steps failure; Q-27 остаётся open                |
 
 ### Default policy
@@ -705,6 +724,21 @@ reference/digest/runtime/context/probe version. Historical row сохраняе�
 исходные `observedAt/completedAt`; force заменяет latest projection новым
 observation. Store не содержит prompt, response, reasoning, endpoint,
 credentials или paths.
+
+### Current confirmed Ollama reference pull
+
+Marketplace dialog не запускает preview/pull на mount, type, paste, hover,
+navigation или reload. Explicit preview показывает только normalized name и
+предупреждает о network/disk side effect. Confirmation dispatches один UI intent;
+retry всегда новый explicit intent, а SSE POST имеет zero automatic retries.
+
+Server принимает base/tag/one-namespace ASCII names либо exact HTTPS
+`ollama.com` model-page shapes. Credentials, ports, query/fragment, alternate
+host/scheme, encoded separators, literal traversal, whitespace/control и
+lookalikes fail-closed до Ollama. Provider progress становится terminal только
+после status `success`; malformed, regressing или EOF-before-success даёт safe
+error без raw body/input/path. Success сам по себе не создаёт evidence: Web
+перечитывает `/api/tags`, а refresh failure остаётся explicit unconfirmed state.
 
 ## Memory model
 
@@ -986,7 +1020,8 @@ P1-J bounded Queue/exact Job Stop action реализованы. P1-K допол
 выдаёт operation owner за durable Job. P1-L добавляет exact
 model/digest/context/runtime/hardware observation key, exact-only calibration и
 digest-aware bounded `/api/show` cache. P2-C показывает typed `model_probe`
-operation и manual exact result без Job Stop. Production pressure/available
+operation и manual exact result без Job Stop. P2-D pull не входит в Governor
+projection: это connection-owned download, а не inference lease/Job. Production pressure/available
 memory, continuous durable runtime history, safe parallel и full resource
 actions ещё не реализованы. Target projection остаётся шире:
 
