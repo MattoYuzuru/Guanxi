@@ -46,10 +46,15 @@ export function AddFromOllama({
   const previewControllerRef = useRef<AbortController | null>(null)
   const pullControllerRef = useRef<AbortController | null>(null)
   const pullIntentRef = useRef(false)
+  const mountedRef = useRef(true)
 
-  useEffect(() => () => {
-    previewControllerRef.current?.abort('unmount')
-    pullControllerRef.current?.abort('unmount')
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      previewControllerRef.current?.abort('unmount')
+      pullControllerRef.current?.abort('unmount')
+    }
   }, [])
 
   useEffect(() => {
@@ -108,6 +113,7 @@ export function AddFromOllama({
         reference: target.displayValue,
         confirmedModelName: target.normalizedModelName,
       }, controller.signal)) {
+        if (!mountedRef.current) return
         if (event.type === 'progress') {
           setState({ kind: 'pulling', preview: target, progress: event.data })
         } else if (event.type === 'error') {
@@ -118,7 +124,7 @@ export function AddFromOllama({
         }
       }
       if (controller.signal.aborted) {
-        setState({ kind: 'cancelled', preview: target })
+        if (mountedRef.current) setState({ kind: 'cancelled', preview: target })
         return
       }
       if (!completed) {
@@ -131,6 +137,7 @@ export function AddFromOllama({
 
       try {
         const installed = await api.listModels(undefined, controller.signal)
+        if (!mountedRef.current) return
         const installedConfirmed = installed.models.some(
           (model) => model.name.toLowerCase() === target.normalizedModelName,
         )
@@ -141,9 +148,10 @@ export function AddFromOllama({
         onInstalled()
       } catch {
         if (controller.signal.aborted) {
-          setState({ kind: 'cancelled', preview: target })
+          if (mountedRef.current) setState({ kind: 'cancelled', preview: target })
           return
         }
+        if (!mountedRef.current) return
         setState({
           kind: 'success', preview: target, installedConfirmed: false,
           refreshFailed: true,
@@ -151,8 +159,9 @@ export function AddFromOllama({
       }
     } catch {
       if (controller.signal.aborted) {
-        setState({ kind: 'cancelled', preview: target })
+        if (mountedRef.current) setState({ kind: 'cancelled', preview: target })
       } else {
+        if (!mountedRef.current) return
         setState({
           kind: 'error', preview: target,
           message: translate('models.addOllama.error.connection'),

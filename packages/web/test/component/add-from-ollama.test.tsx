@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AddFromOllama } from '../../src/features/models/AddFromOllama.tsx'
 
@@ -252,6 +253,7 @@ describe('Add from Ollama Marketplace flow', () => {
 
   it('aborts the connection-owned pull on unmount without a late refresh', async () => {
     let pullSignal: AbortSignal | null = null
+    const onInstalled = vi.fn()
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith('/preview')) return json(preview('qwen3:8b'))
@@ -266,7 +268,11 @@ describe('Add from Ollama Marketplace flow', () => {
       throw new Error(url)
     })
     vi.stubGlobal('fetch', fetch)
-    const view = render(<AddFromOllama installedNames={[]} onInstalled={vi.fn()} />)
+    const view = render(
+      <StrictMode>
+        <AddFromOllama installedNames={[]} onInstalled={onInstalled} />
+      </StrictMode>,
+    )
     fireEvent.click(screen.getByRole('button', { name: /Добавить модель/u }))
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: 'qwen3:8b' } })
@@ -276,5 +282,6 @@ describe('Add from Ollama Marketplace flow', () => {
     view.unmount()
     await waitFor(() => expect(pullSignal?.aborted).toBe(true))
     expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/models')).toHaveLength(0)
+    expect(onInstalled).not.toHaveBeenCalled()
   })
 })

@@ -47,6 +47,7 @@ describe('strict local Ollama reference normalization', () => {
       'https://ollama.com:443/library/qwen3', 'https://ollama.com/library/qwen3?q=x',
       'https://ollama.com/library/qwen3#x', 'https://ollama.com/library/qwen3/',
       'https://ollama.com/library/a/b', 'https://ollama.com/library/%2e%2e',
+      'https://ollama.com/team/old/../model', 'https://ollama.com/team/./model',
       'https://ollama.com/library/team%2Fmodel', 'https://ollama.com\\@evil.test/library/qwen3',
       'ftp://ollama.com/library/qwen3', 'file:///private/model',
     ]

@@ -41,6 +41,10 @@ function normalizeOfficialPageUrl(input: string): OllamaReferencePreview {
   if (!authority || authority.includes(':')) {
     throw new OllamaReferenceError('invalid_official_url')
   }
+  const rawPath = input.slice(`https://${authority}`.length).split(/[?#]/u, 1)[0] ?? ''
+  if (rawPath.split('/').some((segment) => segment === '.' || segment === '..')) {
+    throw new OllamaReferenceError('invalid_official_url')
+  }
 
   let url: URL
   try {
