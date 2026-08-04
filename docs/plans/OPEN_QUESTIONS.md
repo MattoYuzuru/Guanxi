@@ -54,7 +54,7 @@ reconnect сами по себе не считаются уходом. Пока 
 **Accepted:** rolling TTL считается от последней user activity. Model, tool,
 maintenance и background events не продлевают TTL. UI показывает exact expiry.
 
-## Блокируют первый import slice
+## Блокируют Hugging Face import slice
 
 ### Q-25. Какие форматы импортировать с Hugging Face первыми?
 
@@ -64,12 +64,17 @@ adapters — отдельные поздние capabilities.
 Пользователь сообщил, что обычно выбирает проверенные GGUF; это делает первый
 slice безопаснее и понятнее.
 
+## Resolved для Add from Ollama
+
 ### Q-26. Что принимать в поле «Add from Ollama»?
 
-**Рекомендация:** model name (`qwen3:8b`) и URL официальной model page. Preview
-показывает нормализованное имя; pull начинается только после подтверждения.
+**Accepted 2026-08-03:** model name (`qwen3:8b`) и URL официальной Ollama model
+page. Preview показывает нормализованное имя; pull начинается только после
+подтверждения.
 
 Произвольный URL не передаётся Ollama и не используется для server-side fetch.
+Это явно reconciled с accepted D-005 перед handoff P2-D; Q-25 остаётся открытым
+и продолжает блокировать первый Hugging Face import slice.
 
 ## Блокируют autonomous agent safety
 

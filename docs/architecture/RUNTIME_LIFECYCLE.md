@@ -500,8 +500,8 @@ WebSocket нужен только если duplex live-audio latency это по
 - один active process-local accelerator lease как консервативная application
   policy, не как assertion о числе accelerator devices;
 - priorities `normal > prewarm`; FIFO сохраняется внутри normal;
-- Chat, compaction, explicit warm/load и automatic prewarm используют один
-  `context.governor`;
+- Chat, compaction, explicit warm/load, automatic prewarm и explicit completion
+  probe используют один `context.governor`;
 - normal intent отменяет queued prewarm; active prewarm получает abort только
   через callback своего exact owner, освобождает lease, и лишь затем входит
   первый normal waiter;
@@ -559,6 +559,23 @@ hit не обновляет `observedAt`. Caller abort прекращает то
 request abort-ится, когда не осталось waiters. Provider installation failure не
 создаёт cached installed row: `/api/tags` остаётся current installation owner.
 
+P2-C использует отдельный exact probe key и migration 8:
+
+```text
+explicit confirmation → tags/version identity A → historical exact lookup
+  → hit without force: return original observation as historical
+  → miss/force: normal-priority model_probe admission
+      → fixed bounded Ollama completion call
+      → release ticket/lease
+      → tags/version still A: persist normalized latest outcome
+      → identity changed/unavailable: degraded/unknown, no positive write
+```
+
+Cloud, red fit, unknown fit и sourced context overflow дают skip до provider
+load. Cancel/timeout/provider/protocol/empty/persistence failure никогда не
+становятся unsupported или verified. Caller connection владеет ожиданием;
+request не durable, не replayable и не продолжает работу после abort.
+
 Output-budget control и media upload в current Chat flow не реализованы; UI не
 подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
 
@@ -571,6 +588,8 @@ Output-budget control и media upload в current Chat flow не реализов
 | Job/recovery pages 100, max 1000 | storage/backpressure     | bounded reads; invalid injected config даёт controlled error |
 | Chat output chunk 16 KiB         | replay transport         | ordered chunks без truncation                                |
 | Ollama/prewarm deadlines         | runtime reliability      | typed timeout/cancel state освобождает lease                 |
+| Completion probe 10/30/5/45 s    | runtime reliability      | connect/load/idle/total; typed non-verified outcome          |
+| Completion probe 8 tokens/1 KiB  | protocol safety          | server-owned bounds; generated content не сохраняется        |
 | Agent 40 steps                   | current watchdog policy  | visible max-steps failure; Q-27 остаётся open                |
 
 ### Default policy
@@ -667,6 +686,26 @@ intent отменяет queued prewarm либо abort-ит exact active prewarm,
 background work после закрытия соединения. Navigation не вызывает explicit
 unload; она лишь завершает принадлежащий странице speculative prewarm request.
 
+### Current explicit completion probe
+
+Installed profile не запускает probe на mount, hover, selection, navigation или
+reload. User открывает focus-contained confirmation, видит exact model/context и
+краткий load side effect, затем явно запускает либо отменяет request. Runtime Bar
+показывает `model_probe` как process-local operation/queue owner и не предлагает
+Job Stop.
+
+Server-owned definition version 1 отправляет только fixed text prompt с
+`temperature=0`, `seed=0`, `num_predict=8`, exact requested `num_ctx` и
+`keep_alive=2m`. Ollama transport применяет connect 10 s, load 30 s и stream-idle
+5 s; общий request deadline — 45 s, accumulated visible response — не более
+1024 bytes. Эти protocol/safety bounds не являются product output ceiling.
+
+Terminal non-whitespace response даёт `verified` только для exact
+reference/digest/runtime/context/probe version. Historical row сохраняет
+исходные `observedAt/completedAt`; force заменяет latest projection новым
+observation. Store не содержит prompt, response, reasoning, endpoint,
+credentials или paths.
+
 ## Memory model
 
 Предварительная reservation:
@@ -708,8 +747,11 @@ provider `ollama`, normalized exact reference, installed/runtime digest,
 observed/requested context, `/api/version`-sourced Ollama fingerprint и stable
 local Apple profile (`darwin/arm64/metal`, unified memory, total bytes и source).
 `/api/ps` не даёт отдельный backend/device identifier, поэтому он не
-fabricate-ится. Parallelism, KV format, flash-attention и adapter/probe version
-остаются target-компонентами будущего ключа, а не неявными defaults v1.
+fabricate-ится. Parallelism, KV format, flash-attention и adapter version
+остаются target-компонентами будущего calibration key, а не неявными defaults
+v1. P2-C completion probe использует отдельный exact key с probe-definition
+version 1; он не дополняет calibration fingerprint выдуманными hardware/backend
+facts.
 
 Complete key требует one-to-one `/api/tags` ↔ `/api/ps` digest match. Missing
 source, duplicate normalized reference, changed digest, missing context/version,
@@ -943,9 +985,10 @@ P1-J bounded Queue/exact Job Stop action реализованы. P1-K допол
 показывает `model_prewarm` purpose, `prewarm` priority и live explanation, но не
 выдаёт operation owner за durable Job. P1-L добавляет exact
 model/digest/context/runtime/hardware observation key, exact-only calibration и
-digest-aware bounded `/api/show` cache. Production pressure/available memory,
-continuous durable runtime history, safe parallel и full resource actions ещё
-не реализованы. Target projection остаётся шире:
+digest-aware bounded `/api/show` cache. P2-C показывает typed `model_probe`
+operation и manual exact result без Job Stop. Production pressure/available
+memory, continuous durable runtime history, safe parallel и full resource
+actions ещё не реализованы. Target projection остаётся шире:
 
 Runtime projection:
 

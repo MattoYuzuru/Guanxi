@@ -140,8 +140,17 @@ Capability Registry. Exact row keyed provider/reference/digest/runtime/schema
 читается fresh 15 минут; unavailable detail может использовать explicit
 stale/offline row ещё 7 дней. Перед write повторные `/api/tags` и `/api/version`
 должны подтвердить прежнюю identity. Один per-key flight и общий four-worker
-pool ограничивают duplicate detail work. Marketplace, probes и import не
-изменены.
+pool ограничивают duplicate detail work. В scope P2-B Marketplace, probes и
+import не менялись.
+
+P2-C добавляет первый narrow runtime proof отдельно от descriptor aggregation:
+explicit `completion` probe для exact installed Ollama fingerprint. Web сначала
+объясняет краткий load и требует confirmation; server владеет prompt/options,
+проходит normal-priority `model_probe` через canonical Governor и проверяет
+tags/runtime identity до и после bounded call. Только terminal non-empty response
+становится `verified`; provider/protocol/timeout/persistence failure остаётся
+degraded, cancel — cancelled, а unsafe identity/fit/context — unknown/skipped.
+Connection владеет wait: это не durable/replayable Job.
 
 ### As-is deployment
 
@@ -173,6 +182,8 @@ pool ограничивают duplicate detail work. Marketplace, probes и impo
 | Automatic prewarm request/controller | New Chat + server operation owner       | request/process memory      |
 | Exact calibration observation        | SQLite migration 6                      | persistent exact-key rows   |
 | Installed safe provider evidence     | SQLite migration 7                      | exact 15m fresh + 7d stale  |
+| Latest exact completion probe        | SQLite migration 8                      | latest exact-key projection |
+| Active completion probe/controller   | HTTP request + `ResourceGovernor`       | request/process memory      |
 | `/api/show` normalized front-cache   | `ModelService` bounded LRU              | process memory, 64 refs     |
 | Chat/Job SSE output                  | SQLite event output + HTTP subscription | persistent private replay   |
 | Streaming projection                 | React `StreamBuffer`                    | page memory                 |
@@ -212,6 +223,9 @@ pool ограничивают duplicate detail work. Marketplace, probes и impo
 14. P2-B cache хранит один latest exact safe row на normalized reference, но не
     full evidence history/registry. TTL/stale — application policy, а не
     provider guarantee; live Ollama и multi-process contention не проверены.
+15. P2-C verified доказывает только basic terminal non-empty completion для
+    exact fingerprint/probe version. Live model/hardware, semantic quality,
+    tool/media support, external clients и multi-process admission не проверены.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

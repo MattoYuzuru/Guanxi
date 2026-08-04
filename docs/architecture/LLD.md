@@ -57,8 +57,8 @@ P1-M additive добавляет `positiveSafeIntegerSchema`, sourced
 query/warm/prewarm boundaries принимают любой positive JavaScript safe integer,
 но sourced declared maximum отклоняет запрос без clamp; absent/conflicting
 provider declarations остаются unknown. Legacy model responses получают
-additive unknown default. P2-B freshness также defaults в unknown; SQLite
-migration 7 используется только новым evidence store, старые clients её
+additive unknown default. P2-B freshness также defaults в unknown. SQLite
+migrations 7/8 используются только новыми evidence stores; старые clients их
 игнорируют.
 
 P2-A additive добавляет `InstalledModelDescriptor`: canonical/unknown Ollama
@@ -67,6 +67,14 @@ source-preserving capability evidence. Legacy `LocalModel`/`ModelDetail`
 ответы default-ятся в explicit unknown. Реализованы только provider states
 `declared | degraded | unknown`; `verified/claimed/probe/override` остаются
 target. Unknown enum не фильтруется в ложную пустую декларацию.
+
+P2-C additive добавляет отдельный strict completion-probe contract, не меняя
+legacy descriptor: request содержит literal `completion`, expected digest,
+positive safe-integer context и optional force. Evidence различает
+`verified | degraded | unknown | cancelled | skipped`, exact/unavailable basis,
+source/confidence/timing и historical reuse. `verified` относится только к
+versioned fixed probe, не повышает provider declaration и не означает semantic,
+tool или media support.
 
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
@@ -87,6 +95,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   live snapshot/explanation, unload guard и graceful close;
 - `runtime/prewarm.ts`: bounded exact selection/residency validation,
   lowest-priority admission, exact-owner abort и short-TTL Ollama warm;
+- `runtime/completion-probe.ts`: explicit fixed completion call, exact
+  tags/version fingerprint, normal-priority admission, bounded transport,
+  request cancel/deadline и before/after identity validation;
 - `runtime/observation-key.ts`: canonical exact-reference normalization,
   versioned hash components и typed unavailable reasons;
 - `runtime/reconciliation.ts`: process-local shared `/api/ps`, `/api/tags`,
@@ -119,6 +130,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 7: additive `installed_model_evidence_cache` с safe normalized JSON,
   exact identity, original observation, validation/expiry/stale timestamps и
   no-backfill rollback compatibility;
+- migration 8: additive `completion_probe_evidence` latest projection keyed by
+  versioned exact fingerprint; no provider-declaration backfill, prompt или
+  response content;
+- `store/completion-probe.ts`: fail-closed exact key/timing/outcome validation и
+  atomic latest-row upsert;
 - `store/calibration.ts`: complete-key-only record и same-artifact/runtime/
   hardware context curve; changed identity получает отдельную row;
 - `store/jobs.ts`: atomic create + initial event, ordered replay page, event
@@ -153,14 +169,17 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | Context facts | `/api/tags`/`/api/show` declarations | declared maximum либо unknown/conflict | LRU time preserved; no guessed ceiling | settings/list/detail/validation |
 | Canonical reference | P1-L normalizer over provider name | registry/name/tag/digest syntax preserved | invalid/duplicate → unknown/ambiguous | descriptor/cache/observation key |
 | Web evidence projection | additive REST descriptor | declared/degraded/unknown + fresh/stale/offline/unknown | loading/empty/error remain separate | installed card/profile, locale keys |
+| Completion probe | explicit fixed local Ollama chat call | verified only for exact reference/digest/runtime/context/probe v1 | no automatic run; historical exact reuse or bounded forced observation | installed profile + Runtime Bar operation |
 
 `/api/tags` и `/api/show` declaration не являются runtime proof. Name-based
 `/api/show` lookup не выполняется для duplicate normalized references; даже при
 одной row transient detail declaration имеет `detail_not_bound_to_digest`.
 P2-B exact cached projection получает digest basis только после bounded
 before/after validation; identity change не пишет row. Store принимает только
-allowlisted capability/context/architecture values. Full history, controlled
-probes и registry service не реализованы.
+allowlisted capability/context/architecture values. P2-C хранит отдельно только
+latest normalized completion outcome для exact probe key; raw provider text,
+prompt, reasoning, endpoint/path и credentials не сохраняются. Full history,
+generic registry service и semantic/tool/media probes не реализованы.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
@@ -255,7 +274,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   one-intent conflict dispatch boundary с exact custom context validation;
 - `features/launcher`/`models`: installed/catalog/profile, preset suggestions,
   keyboard custom context, sourced maximum/unknown explanation и P2-A installed
-  evidence state/source/time; Marketplace projection не менялась;
+  evidence state/source/time; P2-C manual completion confirmation/status/cancel
+  и historical projection; Marketplace projection не менялась;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields и exact positive safe-integer
@@ -263,7 +283,7 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
-  P1-M no-artificial-caps/P2-A descriptor regression; browser использует
+  P1-M no-artificial-caps/P2-A descriptor/P2-C probe regression; browser использует
   deterministic mocked REST/SSE/runtime snapshots.
 
 ### `packages/cli`
@@ -357,8 +377,9 @@ Runtime Bar показывает operation/priority как process operation; P1
 prewarm-only conflict и никогда не предлагает из-за него Stop current Job.
 
 Current admission request фиксирует owner (`jobId` либо process-local operation
-ID), `chat | compaction | model_warm | model_prewarm`, exact Ollama model name,
-requested context, priority `normal | prewarm` и enqueue time. Ticket проходит
+ID), `chat | compaction | model_warm | model_prewarm | model_probe`, exact Ollama
+model name, requested context, priority `normal | prewarm` и enqueue time. Probe
+использует normal priority и поэтому не обходит active/queued normal work. Ticket проходит
 `queued → active → released` либо `queued → cancelled`; release/cancel/close
 идемпотентны. Snapshot хранит
 только live queue, одну active lease и одну последнюю decision, поэтому
@@ -368,8 +389,9 @@ migration 6. Legacy rows не backfill-ятся, потому что digest/runt
 для них недоказуемы. Rollback code может перестать читать новую table, а schema
 и rows остаются forward-compatible; failed migration transaction сохраняет
 `user_version=5`, после устранения conflicting schema повторный open применяет
-её заново. Lease journal, durable runtime sample history и client-side resource
-lock не вводились.
+её заново. Тот же invariant доказан для migrations 7/8: failure сохраняет
+предыдущие версии 6/7. Lease journal, durable runtime sample history и
+client-side resource lock не вводились.
 
 ## Target module boundaries
 
@@ -378,7 +400,9 @@ lock не вводились.
 Первые четыре Job routes ниже implemented в P1-C; `GET /api/runtime` implemented
 в P1-G. Current P1-K route — `POST /api/models/:name/prewarm`; target
 `/api/runtime/models/:id/prewarm` ниже остаётся proposed и не является alias.
-Остальные route names остаются proposed до соответствующего ADR/API review.
+Current P2-C route — `POST /api/models/:name/probes/completion`; generic target
+`/api/capabilities/:fingerprint/probes` ниже остаётся proposed. Остальные route
+names остаются proposed до соответствующего ADR/API review.
 
 ```text
 POST /api/jobs

@@ -138,6 +138,12 @@ Ollama version и evidence schema version. Freshness — application policy
 15 минут fresh + 7 дней stale/offline, а не provider truth. Исходный
 `observedAt` не меняется от cache hit.
 
+P2-C не встраивает runtime proof обратно в provider declaration. Он хранит
+отдельную latest projection одного explicit `completion` probe для exact
+canonical reference + digest + Ollama version + context + probe-definition
+version. Historical reuse сохраняет исходное observation time; force создаёт
+новое observation для того же exact key.
+
 ### Runtime Instance
 
 Наблюдаемая загруженная модель: digest, context, VRAM/RAM, expiry и source.
@@ -175,10 +181,11 @@ projection; новые решения используют `contextLimit`.
 
 ### Resource Lease
 
-Право Job или prewarm удерживать Model Instance. Lease имеет purpose, priority,
-TTL и owner. Модель выгружается только при отсутствии leases и выполнении idle/
-pressure policy. Current один permit — консервативная application policy, а не
-свидетельство одного accelerator device; device cardinality пока unknown.
+Право Job, prewarm или explicit probe удерживать Model Instance. Lease имеет
+purpose, priority, TTL и owner. Модель выгружается только при отсутствии leases
+и выполнении idle/pressure policy. Current один permit — консервативная
+application policy, а не свидетельство одного accelerator device; device
+cardinality пока unknown.
 
 ### Operation Descriptor
 
@@ -228,8 +235,8 @@ Speech adapter может отдельно доказать native operation/mod
 Состояния claim: `verified`, `declared`, `claimed`, `degraded`, `unknown`,
 `overridden`. Отсутствие metadata не равно `unsupported`.
 
-Current P2-A/P2-B реализует только `declared | degraded | unknown` subset для
-documented local Ollama responses. `/api/tags` declaration может быть связана с
+Current P2-A/P2-B реализует `declared | degraded | unknown` descriptor subset
+для documented local Ollama responses. `/api/tags` declaration может быть связана с
 exact installed digest; `/api/show` вызывается по имени и не возвращает digest,
 поэтому её artifact basis остаётся `detail_not_bound_to_digest`. Duplicate
 canonical reference, неизвестное capability value, malformed/missing field и
@@ -239,9 +246,15 @@ version до persistent write. Изменившаяся/неоднозначна
 unknown/degraded. Stale exact row используется только при unavailable detail в
 7-дневном window и маркируется offline; malformed/conflicting current response
 не маскируется старым cache. Raw response, endpoint/credentials, paths,
-template/system/license и private content не persist-ятся. Это не controlled
-probe, runtime verification, semantic quality или media/tool reliability
-evidence.
+template/system/license и private content не persist-ятся.
+
+P2-C отдельно реализует user-triggered completion-probe evidence со status
+`verified | degraded | unknown | cancelled | skipped`. Verified требует exact
+identity до/после и terminal non-whitespace response bounded server-owned probe
+version 1. Failure, cancel, unsafe fit/context и identity drift не становятся
+`unsupported`. Persisted row содержит только normalized outcome, safe reason,
+timing и exact key — без prompt, response или reasoning. Это не semantic quality,
+tool/media reliability или generic Capability Registry resolution.
 
 ### Task Adapter
 
@@ -339,7 +352,7 @@ focus/permission/accessibility state. Доставка идемпотентна 
 | Agent Run/checkpoints | persistent until terminal GC | explicit/run policy        |
 | Artifact              | parent/Recipe policy         | content-addressed store    |
 | Notification          | local read/unread window     | settings policy            |
-| Capability evidence   | cache                        | fingerprint + freshness    |
+| Capability evidence   | latest safe projections      | fingerprint + freshness    |
 | Resource lease        | transient + journal          | governor                   |
 | Secrets               | protected store              | connection/settings owner  |
 
@@ -380,3 +393,5 @@ Model Variant ── has ──> Capability Evidence
 13. Stored history и transient KV cache — разные данные и lifecycle.
 14. Maintenance Job не удаляет active/non-terminal work.
 15. Notification delivery не меняет terminal state Job и не раскрывает content.
+16. Positive probe evidence записывается только после exact before/after
+    identity match; historical observation не выдаётся за новый runtime fact.

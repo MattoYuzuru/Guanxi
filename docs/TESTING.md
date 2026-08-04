@@ -5,9 +5,9 @@
 
 ## Текущий baseline
 
-На 2026-08-03 после P2-B:
+На 2026-08-03 после P2-C:
 
-- `npm test`: 274/274 server/CLI и 52/52 web component/parser tests;
+- `npm test`: 300/300 server/CLI и 58/58 web component/parser tests;
 - `npm run test:web:browser`: 18/18 deterministic Chromium tests с mocked
   REST/SSE;
 - `npm run typecheck`: успешно во всех workspaces;
@@ -19,7 +19,8 @@
   P0-B failed-partial/unreconciled/Stop reload, connect timeout, missing
   `done:true`, P1-D navigation detach/reattach через durable Job replay, P1-J
   resource conflict Queue/Stop decisions, P1-K prewarm selection/cleanup и P1-M
-  exact custom context save/reload;
+  exact custom context save/reload, а также P2-C explicit completion-probe
+  confirmation, queued/running/result/error и cancel projection;
 - browser assertions управляют mocked headers/chunks без произвольных sleeps и
   проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
   horizontal overflow, 200% scaling и reduced motion;
@@ -107,6 +108,17 @@
   fallback и различают localized fresh/stale/offline/unknown без optimistic
   capability semantics. Chromium сохраняет P2-A keyboard/responsive/reduced-
   motion gate;
+- P2-C contract/migration/store/service/route fixtures покрывают strict legacy-
+  compatible schema, fresh/v7→v8/reopen/rollback recovery, exact key isolation,
+  no-backfill, historical reuse/force, before/after identity drift, cloud/red/
+  unknown-fit/context skip, normal Governor queue/cleanup, per-call/total timeout,
+  cancel, malformed/empty/non-terminal/provider response, bounded output,
+  persistence failure и route redaction. Fake transport проверяет fixed prompt,
+  deterministic options, `num_predict=8`, `keep_alive=2m` и 10/30/5/45 s bounds;
+- P2-C Web fixtures покрывают отсутствие auto-probe, explicit confirmation,
+  duplicate action, queued/running/verified/degraded/cancelled/historical/error,
+  unmount abort, focus restore и English/Russian locale. Chromium проверяет
+  keyboard, 390 px, 200%, overflow и reduced motion на mocked explicit probe;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -149,7 +161,8 @@
   32/32; отдельный prewarm service file — 7/7;
   routes/Governor/concurrency дают 33/33; runtime/provider — 19/19;
   fit/telemetry — 19/19; P2-A descriptor — 9/9; P2-B persistent group —
-  17/17; полный core — 274/274, Web — 52/52, mocked Chromium — 18/18;
+  17/17; P2-C + Ollama boundaries — 34/34; полный core — 300/300, Web —
+  58/58, mocked Chromium — 18/18;
   15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
@@ -186,6 +199,12 @@
 - P2-B persistent group повторён 10× по 17/17, descriptor — 10× по 9/9,
   affected Web — 10× по 52/52, P1-L+M — 10× по 32/32, P1-K — 10× по
   37/37, P1-J — 10× по 11/11, P1-I — 10× по 3/3 и P1-E — 10× по 8/8;
+- P2-C exact group повторён последовательно 10× по 34/34 с проверкой exit status;
+  P2-B — 10×17/17, P2-A — 10×9/9, P1-L+M — 10×32/32, affected Web —
+  10×58/58, P1-K — 10×37/37, P1-J — 10×11/11, P1-I — 10×3/3 и P1-E —
+  10×8/8. Один root-level targeted Vitest command не подхватил Web jsdom config
+  и получил 11 `document is not defined`; засчитываемые runs выполнены из
+  `packages/web` с repository config;
 - CI/lint/formatter commands отсутствуют;
 - живой Ollama, второй application process и внешние Ollama clients не входят в
   regression suite. Chromium P1-E server restart не моделирует: hard boundary
@@ -219,8 +238,11 @@ media support или device cardinality.
 P2-A/P2-B доказывают installed descriptor и persistent exact safe provider cache
 только на documented local endpoints с deterministic fake transport. Fresh
 15-minute и offline stale 7-day windows являются application policy, а не
-provider guarantee. Это не full Capability Registry/history, controlled probe,
-live Ollama validation, semantic capability quality или import evidence.
+provider guarantee. P2-C отдельно доказывает только explicit basic completion
+response для exact fingerprint на deterministic fake transport; verified значит
+terminal non-empty bounded response, а не semantic quality. Это не full
+Capability Registry/history, live Ollama validation, tool/media capability или
+import evidence.
 P1-E доказывает
 single-process startup ordering/reconciliation, но не checkpoint resume или
 process lock. P0-D health остаётся sampled observation; обязательный suite не
@@ -254,9 +276,10 @@ process lock. P0-D health остаётся sampled observation; обязател
   provider/runtime может отказать по sourced capability либо физическому
   ресурсу; output-budget и media controls остаются `not implemented`, device
   count — unknown, а one-permit Governor остаётся explicit application policy.
-- P2-B не проверяет live Ollama/provider-version matrix или concurrent writers в
-  нескольких application processes. Cache хранит latest safe provider evidence,
-  а не полный registry/history; probes, import и user overrides не реализованы.
+- P2-B/P2-C не проверяют live Ollama/provider-version matrix или concurrent
+  writers в нескольких application processes. Stores хранят latest safe
+  projections, а не полный registry/history; semantic/tool/media probes, import
+  и user overrides не реализованы.
 
 ## Существующее покрытие
 
@@ -266,7 +289,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Hardware fit                       | unit cases                         |
 | Filesystem tools/jail              | unit cases                         |
 | Server routes                      | integration-style tests            |
-| SQLite stores/migrations v3–v7     | fresh + prior-version recovery     |
+| SQLite stores/migrations v3–v8     | fresh + prior-version recovery     |
 | Durable Job/event foundation       | atomicity + two-connection races   |
 | Job transitions/service            | canonical matrix + replay/live     |
 | Turn terminal contract/CAS         | compatibility + failures           |
@@ -274,7 +297,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                              |
 | Static web serving                 | test                               |
 | CLI existing-server logic          | tests                              |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-B     |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C     |
 | Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2 mocked    |
 | Catalog provider/cache             | P0-D local/bundled fixtures        |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane          |

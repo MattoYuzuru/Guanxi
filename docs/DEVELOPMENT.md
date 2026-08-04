@@ -106,6 +106,19 @@ npm run link:cli
   остаётся front-cache; один per-key flight и общий pool не превышают четыре
   detail workers. Cache хранит только allowlisted capabilities/context/
   architecture numbers, без raw body, endpoints, paths, prompts или license.
+- P2-C добавляет только явный `completion` probe из Installed profile.
+  `POST /api/models/:name/probes/completion` принимает exact expected digest,
+  requested context и optional force, а server владеет prompt/options. Exact
+  fingerprint version 1 связывает canonical reference, digest, Ollama version,
+  context и probe-definition version. Historical exact row возвращается без
+  нового load, force выполняет новый bounded observation; declaration при этом
+  не повышается до verified.
+- Probe проходит normal-priority `model_probe` admission через тот же Governor.
+  Cloud/red/unknown-fit и context-over-limit дают skip до load. Transport bounds:
+  connect 10 s, load 30 s, response-idle 5 s, общий request deadline 45 s,
+  `num_predict=8`, response bytes 1024 и `keep_alive=2m`. До и после call
+  повторно проверяются `/api/tags` и `/api/version`; identity drift, cancel,
+  timeout, protocol/provider или persistence failure не дают verified.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`; non-Apple возвращает `unsupported`. Total/free/legacy
@@ -156,6 +169,10 @@ npm run link:cli
 - P2-A `LocalModel`/`ModelDetail` additive публикуют descriptor с canonical
   reference, artifact identity, installation observation и source-preserving
   capability declarations. Legacy response получает explicit unknown default.
+- P2-C additive публикует strict completion-probe request/response/evidence с
+  `verified | degraded | unknown | cancelled | skipped`, exact/unavailable basis,
+  source/time/confidence и historical flag. Unknown future enum отклоняется;
+  legacy model/descriptor shapes не получают probe fields.
 
 ### Server
 
@@ -166,6 +183,8 @@ npm run link:cli
 - `runtime/resource-governor.ts` — typed normal-before-prewarm admission, active
   lease, snapshot/explanation, unload guard и close boundary;
 - `runtime/prewarm.ts` — exact validation, short-TTL warm и caller/normal abort;
+- `runtime/completion-probe.ts` — explicit exact completion probe, request-owned
+  deadline/cancel, fixed provider call, Governor cleanup и before/after identity;
 - `runtime/observation-key.ts` — canonical key construction и unavailable
   policy; `runtime/reconciliation.ts` — shared provider/host sources, common
   timestamp, owner/artifact/current-fit classification и compatibility projection;
@@ -189,6 +208,10 @@ npm run link:cli
   на v5 и повторяется после устранения conflicting schema;
 - migration 7 additive создаёт `installed_model_evidence_cache` без backfill;
   failed migration остаётся на v6, а старый code игнорирует новую table;
+- migration 8 additive создаёт `completion_probe_evidence` без backfill из
+  provider declarations; failed migration остаётся на v7 и безопасно retry-ится;
+- `store/completion-probe.ts` принимает только compatible exact fingerprint,
+  normalized outcome/timing и fail-closed читает corrupted/incompatible row;
 - `store/calibration.ts` принимает только complete observation key и отделяет
   context/digest/runtime/hardware rows;
 - `jobs/lifecycle.ts` фиксирует transitions из canonical diagram;
@@ -218,7 +241,9 @@ npm run link:cli
   caller-scoped fresh wait без отмены shared request;
 - `features/launcher` и `features/models` — installed/catalog/profile; installed
   cards/profile показывают P2-A source/state/freshness через locale keys без
-  verified-green semantics для provider declaration;
+  verified-green semantics для provider declaration; Installed profile отдельно
+  объясняет side effect manual completion probe, подтверждает его dialog-ом и
+  показывает queued/running/historical/result/error/cancel states;
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;
@@ -298,6 +323,8 @@ npm run link:cli
 3. Храните provenance/freshness/confidence.
 4. Не превращайте model-card claim в runtime fact.
 5. Неподдерживаемый provider не должен ломать installed models.
+6. Runtime probe запускайте только explicit action, с exact identity,
+   Governor admission, bounded transport и content-free persistence.
 
 ### UI
 

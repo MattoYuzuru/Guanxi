@@ -356,6 +356,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | --- | --- | --- |
 | P2-A Installed descriptor/evidence foundation | implemented, locally validated | `d750a3e`, `6a5c43d`, `d42b791`, `282c82e`; descriptor 9/9, Web 51/51, Chromium 18/18, all required gates |
 | P2-B Persistent installed evidence cache | implemented, locally validated | `a1ead74`, `597c130`, `c22c435`; persistent 17/17, core 274/274, Web 52/52, Chromium 18/18, all required gates |
+| P2-C Explicit controlled completion probe | implemented, locally validated | `ce9ef4b`, `c48799a`, `d1c3c38`; P2-C 34/34, core 300/300, Web 58/58, Chromium 18/18, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -437,14 +438,65 @@ freshness потребовали component-level unknown fallback. Невали�
 воспроизвёлся в 10 изолированных P1-K runs; все засчитанные repeat groups
 запускались последовательно и завершились с точным exit status.
 
-P2-A и P2-B остаются `implemented, locally validated`, а не independently
+P2-C добавляет strict additive completion-probe contract и append-only migration
+8 без backfill из provider declarations. Exact key version 1 включает provider,
+canonical reference, installed digest, sourced Ollama version, requested context
+и probe-definition version. Store хранит только normalized latest outcome, safe
+reason и согласованное timing; prompt, response, reasoning, raw body, endpoint,
+credentials и paths не сохраняются. Compatible exact row без force возвращается
+как historical с исходным observation time; force создаёт новый observation.
+
+Manual action доступен только из Installed profile после focus-safe confirmation.
+Server-owned request проверяет только basic `completion`, использует
+`num_predict=8`, `temperature=0`, `seed=0`, `keep_alive=2m`, limits 1 KiB response,
+10 s connect, 30 s load, 5 s idle и 45 s total. Cloud/red/unknown-fit и sourced
+context overflow skip-ятся до load. Canonical normal-priority `model_probe`
+Governor operation не обходит active/queued work; ticket, lease, timers и
+listeners очищаются на success/failure/cancel/timeout. Caller connection владеет
+wait, поэтому probe не является durable/background/replayable Job.
+
+Positive `verified` требует terminal non-whitespace response и exact
+tags/runtime identity до и после call. Empty/malformed/non-terminal/provider/
+transport/persistence failure остаётся degraded/unknown, cancel — cancelled,
+identity/fit/context safety — skipped; ни один failure не становится
+`unsupported`. Runtime Bar показывает typed operation без P1-J Job Stop. Web
+показывает idle/confirmation/queued/running/historical/result/error/cancel,
+English fallback и curated Russian; mount/hover/selection/navigation/reload не
+запускают probe.
+
+Required evidence through revision `d1c3c38`: typecheck; P1 exact 98/98; P1-L+M
+32/32; prewarm 7/7; routes/Governor/concurrency 33/33; runtime/provider 20/20;
+fit/telemetry 19/19; P2-A descriptor 9/9; P2-B persistent 17/17; P2-C + Ollama
+boundaries 34/34; core 300/300 + Web 58/58; Chromium 18/18; build, markdownlint
+и diff check. Detached inherited baseline `226da56` отдельно прошёл typecheck и
+P2-A/P2-B 26/26. Repeats выполнены последовательно с exit-status checking:
+P2-C 10×34/34, P2-B 10×17/17, P2-A 10×9/9, P1-L+M 10×32/32, affected Web
+10×58/58, P1-K 10×37/37, P1-J 10×11/11, P1-I 10×3/3 и P1-E 10×8/8.
+
+Первые failures не скрыты повторным green. Первый root run дал 284/295 и 11
+старых migration-fixture failures: current version expectations обновлены на 8,
+а downgrade helpers теперь удаляют более новые tables. Узкий rerun сначала ждал
+старый reason для whitespace-only response; ожидание исправлено на
+`empty_response`. Первый affected Web run дал 53/58 и unhandled error:
+Runtime projection сделана optional для isolated `ModelPage`, unsupported
+matcher/invalid selector заменены portable assertions. Первый Chromium P2-C
+case дал 0/1 из-за strict locator, совпавшего с badge и confidence text; locator
+сузили до exact badge. Review дополнительно исправил whitespace false verify,
+persisted timing, unmount update, forced-run focus restore, safe route redaction
+и реальные per-call transport deadlines. Один незасчитываемый targeted Vitest
+repeat из root не подхватил Web jsdom config и получил 11 `document is not
+defined`; все засчитываемые P1-J runs выполнены из Web workspace и дали 10×11/11.
+
+P2-A, P2-B и P2-C остаются `implemented, locally validated`, а не independently
 verified или production-validated. Не проверены live Ollama/model/hardware,
-provider-version matrix и multi-process coordination. Migration 7 хранит latest
-safe provider row, а не continuous evidence history/full Capability Registry;
-controlled probes, semantic tool/media quality, user overrides и import не
-реализованы. Phase 2 остаётся `in progress`: ROADMAP exit gate требует
-variant-first import, HF exact revision/checksum/license, URL policy,
-search/filter/compare и platform work; Q-25/Q-26 не закрыты молча.
+provider-version matrix, production TTL/residency, external-client ownership и
+multi-process coordination. Migrations 7/8 хранят latest safe projections, а не
+continuous evidence history/full Capability Registry; semantic quality,
+tool/media capabilities, user overrides и import не реализованы. Phase 2
+остаётся `in progress`: ROADMAP exit gate требует variant-first import, HF exact
+revision/checksum/license, URL policy, search/filter/compare и platform work;
+Q-26 явно reconciled с accepted D-005 как name + official Ollama page URL перед
+handoff P2-D, а Q-25 остаётся открытым для первого Hugging Face import slice.
 
 ## Later phases
 
