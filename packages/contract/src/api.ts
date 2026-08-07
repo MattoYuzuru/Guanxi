@@ -13,6 +13,11 @@ import {
   fitVerdictSchema,
   completionProbeEvidenceSchema,
   healthSchema,
+  HUGGING_FACE_DISCOVERY_VERSION,
+  huggingFaceReferencePreviewSchema,
+  huggingFaceRepositorySchema,
+  huggingFaceSourceHealthSchema,
+  huggingFaceTransportFailureReasonSchema,
   jobKindSchema,
   jobSchema,
   localModelSchema,
@@ -54,6 +59,8 @@ export const ROUTES = {
     `/api/models/${encodeURIComponent(name)}/capability-overrides`,
   ollamaReferencePreview: () => '/api/models/imports/ollama-reference/preview',
   ollamaReferenceStart: () => '/api/models/imports/ollama-reference/start',
+  huggingFaceSearch: () => '/api/models/discovery/hugging-face/search',
+  huggingFaceRepository: () => '/api/models/discovery/hugging-face/repository',
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
@@ -503,6 +510,148 @@ export const ollamaReferenceStartBody = z
   })
   .strict()
 export type OllamaReferenceStartBody = z.infer<typeof ollamaReferenceStartBody>
+
+/* ─────────────────── Hugging Face read-only discovery (P2-J) ─────────────── */
+
+/**
+ * P2-J discovery is a POST so arbitrary user query text never lands in a request line,
+ * an access log or a referrer, matching the existing reference-preview precedent. It is
+ * still a read-only operation: it starts no download, pull, probe, load, unload, Governor
+ * admission, catalog refresh or background Job.
+ */
+export const HUGGING_FACE_SEARCH_DEFAULT_PAGE_SIZE = 10
+export const HUGGING_FACE_SEARCH_MAX_PAGE_SIZE = 25
+/**
+ * One explicit search may walk at most this many bounded pages. The Hub list API is
+ * cursor-paginated, so `page` is only this ordinal bound — never an offset, and never
+ * published as a total-result count.
+ */
+export const HUGGING_FACE_SEARCH_MAX_PAGES = 5
+export const HUGGING_FACE_SEARCH_MAX_QUERY_LENGTH = 128
+
+export const huggingFaceSearchBody = z
+  .object({
+    query: z
+      .string()
+      .min(1)
+      .max(HUGGING_FACE_SEARCH_MAX_QUERY_LENGTH)
+      .refine((value) => value.trim().length > 0, 'The search text cannot be blank')
+      .refine(
+        (value) => !/[\u0000-\u001f\u007f]/u.test(value),
+        'The search text cannot contain control characters',
+      ),
+    page: positiveSafeIntegerSchema.max(HUGGING_FACE_SEARCH_MAX_PAGES).optional().default(1),
+    pageSize: positiveSafeIntegerSchema
+      .max(HUGGING_FACE_SEARCH_MAX_PAGE_SIZE)
+      .optional()
+      .default(HUGGING_FACE_SEARCH_DEFAULT_PAGE_SIZE),
+    /** Opaque documented Hub cursor. It is echoed back, never parsed or constructed. */
+    cursor: z.string().min(1).max(2_048).nullable().optional().default(null),
+  })
+  .strict()
+  .superRefine((body, context) => {
+    // A cursor is what makes a page beyond the first reachable, so the pair must agree
+    // instead of silently returning page 1 for a page-3 request.
+    if ((body.page === 1) !== (body.cursor === null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['cursor'],
+        message: 'exactly the first page is requested without a cursor',
+      })
+    }
+  })
+export type HuggingFaceSearchBody = z.infer<typeof huggingFaceSearchBody>
+
+const huggingFaceSearchPageBase = z
+  .object({
+    version: z.literal(HUGGING_FACE_DISCOVERY_VERSION),
+    page: positiveSafeIntegerSchema.max(HUGGING_FACE_SEARCH_MAX_PAGES),
+    pageSize: positiveSafeIntegerSchema.max(HUGGING_FACE_SEARCH_MAX_PAGE_SIZE),
+    source: huggingFaceSourceHealthSchema,
+    /**
+     * Rows the bounded parser refused. Reported so a shrunken page is visible instead of
+     * looking like a smaller result set.
+     */
+    droppedRows: z.number().int().nonnegative().safe(),
+  })
+  .strict()
+
+export const huggingFaceSearchResultSchema = z.discriminatedUnion('state', [
+  huggingFaceSearchPageBase
+    .extend({
+      state: z.literal('listed'),
+      repositories: z.array(huggingFaceRepositorySchema).min(1),
+      /** `null` means this bounded page is the last one this slice will walk. */
+      nextCursor: z.string().min(1).max(2_048).nullable(),
+      reason: z.null(),
+    })
+    .strict(),
+  huggingFaceSearchPageBase
+    .extend({
+      state: z.literal('empty'),
+      repositories: z.array(huggingFaceRepositorySchema).max(0),
+      nextCursor: z.null(),
+      reason: z.null(),
+    })
+    .strict(),
+  huggingFaceSearchPageBase
+    .extend({
+      state: z.literal('failed'),
+      repositories: z.array(huggingFaceRepositorySchema).max(0),
+      nextCursor: z.null(),
+      reason: huggingFaceTransportFailureReasonSchema,
+    })
+    .strict(),
+])
+export type HuggingFaceSearchResult = z.infer<typeof huggingFaceSearchResultSchema>
+
+export const huggingFaceSearchResponse = z
+  .object({ result: huggingFaceSearchResultSchema })
+  .strict()
+export type HuggingFaceSearchResponse = z.infer<typeof huggingFaceSearchResponse>
+
+export const huggingFaceRepositoryBody = z
+  .object({ reference: z.string().min(1).max(512) })
+  .strict()
+export type HuggingFaceRepositoryBody = z.infer<typeof huggingFaceRepositoryBody>
+
+export const huggingFaceRepositoryResultSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('resolved'),
+      version: z.literal(HUGGING_FACE_DISCOVERY_VERSION),
+      preview: huggingFaceReferencePreviewSchema,
+      repository: huggingFaceRepositorySchema,
+      source: huggingFaceSourceHealthSchema,
+      reason: z.null(),
+    })
+    .strict(),
+  /**
+   * The identity parsed locally, but the Hub could not be read. The repository row is
+   * still returned with `metadata: 'unavailable'` and an unknown verdict, because a
+   * failed read is not evidence that the repository lacks GGUF files.
+   */
+  z
+    .object({
+      state: z.literal('failed'),
+      version: z.literal(HUGGING_FACE_DISCOVERY_VERSION),
+      preview: huggingFaceReferencePreviewSchema,
+      repository: huggingFaceRepositorySchema,
+      source: huggingFaceSourceHealthSchema,
+      reason: huggingFaceTransportFailureReasonSchema,
+    })
+    .strict(),
+])
+export type HuggingFaceRepositoryResult = z.infer<
+  typeof huggingFaceRepositoryResultSchema
+>
+
+export const huggingFaceRepositoryResponse = z
+  .object({ result: huggingFaceRepositoryResultSchema })
+  .strict()
+export type HuggingFaceRepositoryResponse = z.infer<
+  typeof huggingFaceRepositoryResponse
+>
 
 /** POST /api/models/:name/pull → SSE (PullStreamEvent) */
 export const pullModelBody = z.object({

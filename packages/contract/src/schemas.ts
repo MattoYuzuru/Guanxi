@@ -1441,6 +1441,353 @@ export const catalogSourceHealthSchema = z.discriminatedUnion('state', [
 ])
 export type CatalogSourceHealth = z.infer<typeof catalogSourceHealthSchema>
 
+/* ─────────────────── Hugging Face read-only discovery (P2-J) ─────────────── */
+
+/**
+ * P2-J publishes Hugging Face repository facts as a provider of their own. They are
+ * deliberately not `CatalogModel` rows and not `InstalledModelDescriptor` facts: an HF
+ * repository has different provenance, a different identity grammar and no installability
+ * at all in this slice.
+ *
+ * Nothing in this section is evidence that `ollama pull` works. The accepted scope is
+ * exact GGUF files only, so a repository without GGUF is explicitly `unsupported` for
+ * this application's import path — never "broken", "bad" or "unavailable" — and a
+ * repository whose metadata could not be read stays `unknown` rather than unsupported.
+ */
+export const HUGGING_FACE_DISCOVERY_VERSION = 1
+
+/**
+ * Hub repository paths are case-sensitive, so the identity keeps the exact owner and
+ * name. `comparisonKey` is a case-folded local equality/dedup key only and must never be
+ * sent back to the Hub or shown as the repository path.
+ */
+export const huggingFaceRepositoryIdentitySchema = z
+  .object({
+    provider: z.literal('hugging_face'),
+    owner: z.string().min(1),
+    name: z.string().min(1),
+    repositoryId: z.string().min(1),
+    comparisonKey: z.string().min(1),
+  })
+  .strict()
+  .superRefine((identity, context) => {
+    if (identity.repositoryId !== `${identity.owner}/${identity.name}`) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repositoryId'],
+        message: 'repositoryId must be exactly owner/name',
+      })
+    }
+    if (identity.comparisonKey !== identity.repositoryId.toLowerCase()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['comparisonKey'],
+        message: 'comparisonKey must be the case-folded repositoryId',
+      })
+    }
+  })
+export type HuggingFaceRepositoryIdentity = z.infer<
+  typeof huggingFaceRepositoryIdentitySchema
+>
+
+export const huggingFaceInputKindSchema = z.enum(['repository_id', 'model_page_url'])
+export type HuggingFaceInputKind = z.infer<typeof huggingFaceInputKindSchema>
+
+export const huggingFaceReferencePreviewSchema = z
+  .object({
+    inputKind: huggingFaceInputKindSchema,
+    displayValue: z.string().min(1),
+    identity: huggingFaceRepositoryIdentitySchema,
+  })
+  .strict()
+export type HuggingFaceReferencePreview = z.infer<
+  typeof huggingFaceReferencePreviewSchema
+>
+
+/**
+ * A revision is only exact when the Hub reported one full commit SHA. A branch name such
+ * as `main` is mutable and is therefore never published here as an exact revision.
+ */
+export const huggingFaceRevisionSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('exact_commit'),
+      commit: z.string().regex(/^[a-f0-9]{40}$/u),
+      source: z.literal('hugging_face_api_model'),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      commit: z.null(),
+      source: z.enum([
+        'not_reported',
+        'malformed',
+        'legacy_response',
+      ]),
+    })
+    .strict(),
+])
+export type HuggingFaceRevision = z.infer<typeof huggingFaceRevisionSchema>
+
+/**
+ * Gated state is shown so the user knows acceptance/token would be required later. P2-J
+ * neither requests nor stores a token, and gated state on its own never changes the
+ * GGUF support verdict.
+ */
+export const huggingFaceGatedStateSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('open'), mode: z.null() }).strict(),
+  z
+    .object({
+      state: z.literal('gated'),
+      mode: z.enum(['auto', 'manual', 'unspecified']),
+    })
+    .strict(),
+  z.object({ state: z.literal('unknown'), mode: z.null() }).strict(),
+])
+export type HuggingFaceGatedState = z.infer<typeof huggingFaceGatedStateSchema>
+
+/** An author-declared license claim, never a legal review or a compliance verdict. */
+export const huggingFaceLicenseStateSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('declared'),
+      value: z.string().min(1),
+      source: z.literal('hugging_face_model_tags'),
+      confidence: z.literal('declared'),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      value: z.null(),
+      source: z.enum([
+        'not_reported',
+        'malformed',
+        'conflicting_declarations',
+        'metadata_unavailable',
+      ]),
+      confidence: z.literal('unknown'),
+    })
+    .strict(),
+])
+export type HuggingFaceLicenseState = z.infer<typeof huggingFaceLicenseStateSchema>
+
+/** One exact GGUF file path inside one repository listing. Size stays nullable. */
+export const huggingFaceGgufFileSchema = z
+  .object({
+    path: z.string().min(1),
+    sizeBytes: z.number().int().nonnegative().safe().nullable(),
+    sizeSource: z.enum(['hugging_face_api_model', 'not_reported']),
+  })
+  .strict()
+  .superRefine((file, context) => {
+    if ((file.sizeBytes === null) !== (file.sizeSource === 'not_reported')) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sizeSource'],
+        message: 'a GGUF file size and its source must be reported together',
+      })
+    }
+  })
+export type HuggingFaceGgufFile = z.infer<typeof huggingFaceGgufFileSchema>
+
+/**
+ * `truncated` is the difference between "this repository has no GGUF" and "this listing
+ * did not show every file". Only a complete listing can support `unsupported`.
+ */
+export const huggingFaceFileInventorySchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('listed'),
+      source: z.literal('hugging_face_api_model'),
+      totalFiles: z.number().int().nonnegative().safe(),
+      malformedEntries: z.number().int().nonnegative().safe(),
+      truncated: z.boolean(),
+      ggufFiles: z.array(huggingFaceGgufFileSchema),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unknown'),
+      source: z.enum(['not_reported', 'malformed', 'metadata_unavailable']),
+      totalFiles: z.null(),
+      malformedEntries: z.null(),
+      truncated: z.null(),
+      ggufFiles: z.array(huggingFaceGgufFileSchema).max(0),
+    })
+    .strict(),
+])
+export type HuggingFaceFileInventory = z.infer<typeof huggingFaceFileInventorySchema>
+
+export const huggingFaceUnknownVerdictReasonSchema = z.enum([
+  'file_inventory_unavailable',
+  'file_listing_truncated',
+  'file_entries_malformed',
+  'metadata_unavailable',
+  'legacy_response',
+])
+export type HuggingFaceUnknownVerdictReason = z.infer<
+  typeof huggingFaceUnknownVerdictReasonSchema
+>
+
+/**
+ * The single support statement this slice makes, about this application's GGUF-only
+ * import scope and nothing else. It is never a capability, quality, fit, licence or
+ * `ollama pull` claim.
+ */
+export const huggingFaceSupportVerdictSchema = z
+  .object({
+    state: z.enum(['supported', 'unsupported', 'unknown']),
+    scope: z.literal('exact_gguf_file_only'),
+    basis: z.enum([
+      'exact_gguf_files_listed',
+      'complete_listing_without_gguf',
+      'insufficient_evidence',
+    ]),
+    reason: huggingFaceUnknownVerdictReasonSchema.nullable(),
+    /** An installable target still requires the P2-K exact file/revision choice. */
+    requiresExactFileSelection: z.literal(true),
+  })
+  .strict()
+  .superRefine((verdict, context) => {
+    const expectedBasis =
+      verdict.state === 'supported'
+        ? 'exact_gguf_files_listed'
+        : verdict.state === 'unsupported'
+          ? 'complete_listing_without_gguf'
+          : 'insufficient_evidence'
+    if (verdict.basis !== expectedBasis) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['basis'],
+        message: 'a support verdict basis must match its state',
+      })
+    }
+    if ((verdict.state === 'unknown') !== (verdict.reason !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reason'],
+        message: 'exactly an unknown verdict carries a reason',
+      })
+    }
+  })
+export type HuggingFaceSupportVerdict = z.infer<typeof huggingFaceSupportVerdictSchema>
+
+/**
+ * One repository row. `metadata` separates "the Hub answered about this repository" from
+ * "we only know the identity the user typed", so a failed detail read never silently
+ * becomes an unsupported repository.
+ */
+export const huggingFaceRepositorySchema = z
+  .object({
+    version: z.literal(HUGGING_FACE_DISCOVERY_VERSION),
+    provider: z.literal('hugging_face'),
+    identity: huggingFaceRepositoryIdentitySchema,
+    metadata: z.enum(['resolved', 'unavailable']),
+    observedAt: z.string().datetime(),
+    revision: huggingFaceRevisionSchema,
+    gated: huggingFaceGatedStateSchema,
+    license: huggingFaceLicenseStateSchema,
+    files: huggingFaceFileInventorySchema,
+    verdict: huggingFaceSupportVerdictSchema,
+  })
+  .strict()
+  .superRefine((repository, context) => {
+    if (repository.metadata === 'unavailable') {
+      if (repository.files.state !== 'unknown' || repository.verdict.state !== 'unknown') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['metadata'],
+          message: 'unavailable metadata cannot publish file or support evidence',
+        })
+      }
+      return
+    }
+    const files = repository.files
+    if (files.state !== 'listed') {
+      if (repository.verdict.state !== 'unknown') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['verdict'],
+          message: 'an unknown file inventory cannot support a decided verdict',
+        })
+      }
+      return
+    }
+    if (files.ggufFiles.length > files.totalFiles) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['files', 'ggufFiles'],
+        message: 'listed GGUF files cannot exceed the listed file total',
+      })
+    }
+    const paths = new Set(files.ggufFiles.map((file) => file.path))
+    if (paths.size !== files.ggufFiles.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['files', 'ggufFiles'],
+        message: 'listed GGUF file paths must be unique',
+      })
+    }
+    // `supported` requires exact GGUF evidence; `unsupported` requires a complete
+    // listing that proves their absence. Truncation or malformed entries are neither.
+    const complete = !files.truncated && files.malformedEntries === 0
+    const expected =
+      files.ggufFiles.length > 0
+        ? 'supported'
+        : complete
+          ? 'unsupported'
+          : 'unknown'
+    if (repository.verdict.state !== expected) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['verdict', 'state'],
+        message: 'the support verdict must follow the exact GGUF evidence',
+      })
+    }
+  })
+export type HuggingFaceRepository = z.infer<typeof huggingFaceRepositorySchema>
+
+/**
+ * Redacted transport states. No raw provider body, endpoint, host, path, header or token
+ * is ever published, and none of these is a statement about the repository itself.
+ */
+export const huggingFaceTransportFailureReasonSchema = z.enum([
+  'provider_unavailable',
+  'connect_timeout',
+  'response_timeout',
+  'response_too_large',
+  'provider_malformed',
+  'provider_error',
+  'rate_limited',
+  'not_found',
+  'request_cancelled',
+])
+export type HuggingFaceTransportFailureReason = z.infer<
+  typeof huggingFaceTransportFailureReasonSchema
+>
+
+export const huggingFaceSourceHealthSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('available'),
+      source: z.literal('hugging_face_public_api'),
+      observedAt: z.string().datetime(),
+      reason: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unavailable'),
+      source: z.literal('hugging_face_public_api'),
+      observedAt: z.string().datetime(),
+      reason: huggingFaceTransportFailureReasonSchema,
+    })
+    .strict(),
+])
+export type HuggingFaceSourceHealth = z.infer<typeof huggingFaceSourceHealthSchema>
+
 export const modelDetailSchema = localModelSchema.extend({
   /** Сырой блок из /api/show — архитектурные параметры. */
   modelInfo: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
