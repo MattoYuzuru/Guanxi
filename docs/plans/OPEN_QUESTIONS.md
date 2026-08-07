@@ -10,14 +10,14 @@
 
 ## Что осталось открытым
 
-После owner session 2026-08-07 **ни один вопрос не блокирует следующий slice**.
-Открыты три производных вопроса, требующие design-решения перед своей фазой:
+После owner session 2026-08-07 **ни один продуктовый вопрос не открыт и не
+блокирует следующий slice**. Q-28a и Q-34a закрыты в той же сессии.
 
-| Sub-question | О чём                                                           | Нужен к фазе |
-| ------------ | --------------------------------------------------------------- | ------------ |
-| Q-27a        | `wrap up and report` как durable Job state и recovery-поведение | Phase 5/8    |
-| Q-28a        | сохраняется ли approval для push/deploy/service/network         | Phase 5      |
-| Q-34a        | размещение flag infra отдельно от measured-parallel policy      | Phase 2/3    |
+Единственный незакрытый пункт — **Q-27a**: `wrap up and report` требует нового
+durable Job state, а не UI-флага, и нужно определить поведение при падении
+process во время wind-down (иначе P1-E recovery отнесёт run к `interrupted` и
+потеряет сам отчёт). Это design decision внутри Phase 5/8, к текущему slice
+отношения не имеет; ждёт architecture review 2026-08-07.
 
 ## Resolution Q-01–Q-21
 
@@ -123,12 +123,20 @@ review 2026-08-07).
 Удаление секретов (например `.env`) запрещено. Внутри разрешённого scope агент
 работает свободно — граница по scope, не по типу действия.
 
-Открытый sub-question **Q-28a**: scope-only модель не покрывает action-type
-риски вне filesystem — `push`/`publish`/`deploy`, изменение service/login
-configuration и расширение network allowlist. Нужно явно решить, сохраняется ли
-для них approval из ADR-0008/ADR-0010, иначе новая модель регрессирует принятую
-границу. Layer 3 задаётся текстом промпта, поэтому trust model требует отдельной
-проверки на prompt injection и path traversal.
+**Q-28a resolved 2026-08-07:** три слоя scope определяют, **где** агент работает,
+и не отменяют approval за то, **что** он делает. Accepted ADR-0008/ADR-0010
+границы сохраняются: `push`/`publish`/`deploy`, изменение service/login
+configuration и расширение network allowlist по-прежнему требуют явного
+подтверждения даже в auto mode, потому что эти действия выходят за пределы
+файловой системы и не ограничиваются выбором папок.
+
+Layer 3 задаётся текстом промпта, поэтому граница безопасности определяется
+естественным языком, который читает сама модель. Из этого следует обязательное
+требование: grant принимается только от пользовательского ввода, никогда из
+содержимого файлов, tool output или repository. Path traversal (`..`, symlink,
+hardlink, case-insensitive macOS paths) резолвится до проверки. `no delete` в
+soft-режиме обязан покрывать эквиваленты удаления — truncate к нулю, overwrite
+пустым и rename-away, иначе гарантия только номинальная.
 
 ## Resolved, не блокируют ранние фазы
 
@@ -177,10 +185,30 @@ subagent и видимый review-fix commit (`plans/WORKFLOW.md`). CI доба�
 машине одновременно вести generation/research flow и держать speech-to-text
 модель (STT дешёвая по compute). Это RES-009 measured parallelism.
 
-Открытый sub-question **Q-34a**: measured parallelism требует measured evidence
-с реального железа, а железо доступно только после Phase 4. Значит flag infra и
-measured-parallel policy нельзя закрывать одним slice. Точное размещение фиксирует
-resequencing 2026-08-07.
+**Q-34a resolved 2026-08-07:** разделяем на две независимые вещи.
+
+**Estimated admission (можно делать без нового железа).** Владелец указал, что
+решение о втором слоте можно принимать по уже известным фактам: сколько модель
+потребляет и что известно про host. Такие факты в коде уже есть — declared model
+size, `estimateKvCacheBytes`/`computeFit` (`packages/server/src/hardware/fit.ts`),
+observed `/api/ps` VRAM в `CalibrationStore` и host memory sample. Поэтому Alamo
+может суммировать их и выдавать **estimated** вердикт о параллельном запуске.
+
+Жёсткое ограничение: такой вердикт остаётся `estimated` с источником и никогда
+не публикуется как `measured` или как гарантия будущего admission. Это прямое
+следствие текущего инварианта AGENTS.md — capability/fit не выводится как факт
+без источника и уровня уверенности. Apple current pressure остаётся `unknown`
+(`research/EVIDENCE.md`), значит estimated-решение обязано быть conservative и
+объяснимым.
+
+**Measured parallelism (только после Phase 4).** Подтверждение реальным
+замером, RES-009 pin/TTL policy и second verified tier ждут живого железа
+(Q-35). Flag infra не должна обещать measured там, где есть только estimate.
+
+Мотивация владельца — параллельный generation/research + STT. STT относится к
+Phase 6, а cross-phase rule запрещает audio до exit gate текстового фундамента.
+Поэтому flag slice отделяется от STT-цели: инфраструктура и estimated policy
+делаются раньше, а конкретный LLM+STT сценарий включается в свою фазу.
 
 ### Q-35. Когда проверяем живой Ollama и Linux/NVIDIA?
 
