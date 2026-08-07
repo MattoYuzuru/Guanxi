@@ -52,9 +52,9 @@ npm run link:cli
 | `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
 | `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
 
-`packages/web` содержит script `dev:mock`, но целевой `mock/server.mjs` отсутствует.
-Считайте команду неработающей до отдельного решения: восстановить fixture server
-либо удалить script.
+`dev:mock` удалён 2026-08-07 (Q-36): целевой `mock/server.mjs` отсутствовал, а
+browser gate мокает REST/SSE через Playwright routes, поэтому отдельный fixture
+server не нужен.
 
 ## Current runtime conventions
 
