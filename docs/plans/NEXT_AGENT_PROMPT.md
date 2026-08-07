@@ -2,7 +2,7 @@
 
 **Статус:** ready
 
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-07
 
 **Назначение:** Phase 2, slice P2-I — exact installed capability user override
 foundation
@@ -47,9 +47,18 @@ server response 3,768,624 bytes/10.537 ms, page 12 — 45,513 bytes/4.759 ms;
 legacy jsdom 1,000 slides + 1,000 dots/215.759 ms, bounded page — 12 slides +
 12 dots + 2 pager buttons/6.222 ms. Это local diagnostic, не production SLA.
 
-Q-25 остаётся открытым и блокирует первый Hugging Face slice. Не начинай HF
-API/download/import, не выбирай formats и не закрывай Q-25 молча. P2-G остаётся
-prototype, а P2-H — local/bundled response pagination, не remote provider.
+Owner session 2026-08-07 закрыла Q-25–Q-36 (см. `plans/OPEN_QUESTIONS.md`). Ни
+один вопрос больше не блокирует slice. Что из этого важно **для P2-I**:
+
+- HF разблокирован (GGUF-only), но это **не твой slice** — он идёт как P2-J..P2-M
+  по последовательности в `PHASE_STATUS.md`. Не начинай HF в P2-I;
+- measured parallelism и Linux verified tier вынесены за Phase 4 и убраны из
+  exit gate Phase 2. Не заявляй hardware-подтверждений;
+- CI пока нет: все gates — твоя ответственность, включая browser gate;
+- P2-G остаётся prototype, P2-H — local/bundled pagination, не remote provider.
+
+Открыт только Q-27a (`wrap up and report` как durable state) — это Phase 5/8, к
+P2-I не относится.
 
 ## Current gap
 
@@ -162,7 +171,8 @@ fake tags/version transport и mocked browser routes должны доказат
 
 ## Не входит в P2-I
 
-- Hugging Face API/import, GGUF revision/license/checksum и Q-25 decision;
+- Hugging Face API/import, GGUF revision/license/checksum — это P2-J..P2-M;
+- feature flags и estimated parallel-admission — это P2-N/P2-O;
 - full Capability Registry, OperationResolution/Task Adapter wiring или generic
   precedence/conflict resolver;
 - negative `unsupported`, confidence slider, arbitrary capability/name, free-form
@@ -225,11 +235,12 @@ green не скрывает первую ошибку. Не запускай д�
 - запиши counts как `N new / M envelope`, не смешивая regression envelope с новой
   работой;
 - добавь P2-I evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-H;
-- Phase 2 оставь `in progress`: override foundation не закрывает HF/Q-25,
-  verified Linux tier, full Capability Registry или ROADMAP exit gate;
-- Q-25 оставь открытым; HF slice остаётся blocked до explicit owner decision;
-- полностью перепиши этот файл под следующий незавершённый non-blocked Phase 2
-  slice либо оставь P2-I с blocker/recovery steps;
+- обнови статус P2-I в таблице «Планируемая последовательность Phase 2»;
+- Phase 2 оставь `in progress`: override foundation не закрывает HF-цепочку
+  (P2-J..P2-M), flag infra (P2-N/P2-O) или ROADMAP exit gate;
+- полностью перепиши этот файл под **P2-J — HF search и repository metadata,
+  GGUF-only**: это следующий незаблокированный slice. Если P2-I заблокирован,
+  оставь файл на P2-I с blocker и recovery steps;
 - используй небольшие conventional commits и не включай `.idea/`.
 
 В финале сообщи ровно `status successful` либо `status blocked`, commits, exact
