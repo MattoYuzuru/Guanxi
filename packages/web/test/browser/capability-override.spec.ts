@@ -280,8 +280,11 @@ test('user capability overrides stay separate, truthful, keyboard and layout saf
   expect(mutations).toHaveLength(2)
   expect(mutations[1]?.method).toBe('DELETE')
 
+  const beforeReload = mutations.length
   await page.getByRole('button', { name: 'Перечитать модель' }).click()
   await expect(page.getByText('sha256:replaced').first()).toBeVisible()
+  // The explicit reload re-reads the model; it is not itself a mutation.
+  expect(mutations).toHaveLength(beforeReload)
 
   // A reloaded exact identity that no longer matches shows no stale assertion.
   await expect(page.getByText('Переопределено')).toHaveCount(1)

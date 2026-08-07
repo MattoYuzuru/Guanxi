@@ -1,7 +1,7 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-07
 **Текущая фаза:** Phase 2 — Models, Capability Registry и import
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
@@ -372,6 +372,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-F Truthful facets/pairwise compare | implemented, locally validated | `c769fbd`, `c1495a3`, `1fc3c20`; P2-F 10/10, core 330/330, Web 83/83, Chromium 21/21, all required gates |
 | P2-G Truthful Linux/NVIDIA telemetry | implemented, locally validated | `a4a3ead`, `3f1a533`, `6ceae50`; P2-G 38/38, core 339/339, Web 88/88, Chromium 22/22, all required gates |
 | P2-H Catalog pagination/bounded rendering | implemented, locally validated | `3c4960d`, `cc40d14`; P2-H 10/10, core 349/349, Web 95/95, Chromium 23/23, all required gates |
+| P2-I Exact installed capability user override | independently verified | `6b98d37`..`6cc4504`; P2-I 52 new / 401 core envelope, Web 117/117, Chromium 25/25, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -730,6 +731,95 @@ envelope выполнен заново. Следующий count wrapper ожи�
 все groups перезапущены и получили точные counts. Это dependency/orchestration
 failures, не скрытые product regressions.
 
+P2-I добавляет первое user-owned capability состояние. Strict
+`ModelCapabilityOverride` version 1 несёт literal source `user_override`, state
+`overridden`, единственное positive value `present`, одну capability из
+существующего closed enum, canonical reference, exact digest, sourced runtime
+version и createdAt/updatedAt. Descriptor получает два additive поля: sourced/
+unknown `runtime` fingerprint и `overrides: []` с legacy default, поэтому старые
+recorded responses парсятся без fabricated override. Negative `unsupported`,
+confidence, free-form capability и arbitrary note не введены: absence строки
+оставляет capability в прежнем `declared | degraded | unknown` состоянии.
+
+Migration 9 создаёт `model_capability_user_overrides` без изменения migrations
+1–8 и без backfill из declaration или probe. Одна latest row принадлежит exact
+`(provider, canonical reference, digest, runtime version, capability)`; повторный
+identical write идемпотентен и не меняет timestamps, clear удаляет ровно одну
+row. Rollback на v8 оставляет user data читаемой, а старый code игнорирует table.
+Одна нечитаемая row не прячет и не блокирует соседние capabilities той же
+identity, но сама никогда не становится visible assertion.
+
+Server владеет identity: mutation допускается только при одном canonical
+`/api/tags` match, exact expected digest и sourced local `/api/version`, и
+identity перечитывается в точке mutation. Duplicate/missing/changed identity,
+missing digest, unavailable runtime version, stale client expectation и
+persistence failure дают typed conflict без записи и удаления; conflict по
+contract не может нести ни identity, ни override. Committed mutation никогда не
+сообщается как `persistence_failed`. Mutation не запускает Ollama chat/pull/
+load/unload, Governor admission, probe, catalog refresh или background Job —
+только два read-only identity endpoint.
+
+Installed profile показывает assertions отдельным labelled регионом рядом с
+provider declarations и completion probe. Positive override не красит declaration
+в verified-green и не скрывает conflict/degraded/unknown. Add/remove требуют
+explicit confirmation и one-intent guard; mount, hover, focus, rerender,
+navigation, reload и export ничего не мутируют. Copy/Download отдают
+deterministic safe JSON с фиксированным filename и content type, без endpoint,
+credentials, path, provider body, prompt, response и reasoning.
+
+Required evidence through revision `6cc4504`: typecheck; P2-I 52 new / 401 core
+envelope (contract 6, migration 6, store 12, service 21, routes 7); Web 117/117;
+mocked Chromium 25/25; production build; markdownlint 31 files/0 issues; diff
+check. Sequential repeats with exit/count checking: P2-I server 10×52/52,
+targeted Web 10×16/16 и Chromium 10×2/2; migration/descriptor files, затронутые
+diff — 10×35/35; AppContext-затронутые files — 10×64/64.
+
+Первые failures не скрыты. Первый core run после migration 9 дал 335/349 и 14
+inherited migration-fixture failures: version expectations были прибиты к 8, а
+downgrade helpers не удаляли новую table. Причины исправлены в fixtures. Один
+component assertion использовал недоступный в текущем setup `toBeDisabled`;
+заменён на portable проверку `disabled` плюс явную проверку инертности. Первый
+root-level Playwright запуск получил `Cannot navigate to invalid URL` — это
+известная cwd-ловушка, канонический запуск из `packages/web` прошёл. Мой первый
+catalog fixture в browser spec не соответствовал `catalogModelSchema`; исправлен.
+Несколько `npm test | grep` конвейеров завершались exit 137 под memory pressure —
+это окружение, а не продукт: те же команды с записью в файл дали полные counts.
+Один repeat wrapper использовал zsh без word splitting и не нашёл файлы, другой
+ожидал 17 вместо 16 tests; wrappers исправлены и все засчитанные groups
+перезапущены.
+
+Независимая verification выполнена двумя reviewer-субагентами
+(`sde-agent:implementation-reviewer` для contract/store/routes,
+`frontend-agent:accessibility-reviewer` для Installed Web) и нашла реальные
+дефекты, исправленные отдельными commits. `09b3c00`: padded `/api/version`
+делал успешно записанное assertion навсегда невидимым, потому что write
+тримил runtime version, а descriptor read — нет; committed mutation
+сообщалась как `persistence_failed`, когда падала только read-back projection;
+одна corrupt row wedge-ила все capabilities identity без пути к восстановлению;
+store принимал non-canonical reference, позволяя одной модели владеть несколькими
+rows; malformed percent-escape в имени давал untyped 500. `c8ef1b8`: `Select` не
+принимал `id`, поэтому visible `htmlFor` label не был связан с control.
+`a177b14`: `URL.revokeObjectURL` в том же тике мог отменить начатое скачивание.
+`6cc4504`: fix стабильного `returnFocusRef` был применён только к add-пути, из-за
+чего remove-dialog отскакивал фокусом при каждом rerender, а после удаления row
+фокус падал на `<body>`. Каждый fix имеет assertion, проверенный мутацией
+исходника. Reviewer также нашёл, что мой `git add -A` затянул в коммит
+scratch-каталог `.review-tmp/` первого reviewer-а; удалён и внесён в
+`.gitignore` (`ef62f3c`).
+
+Остаточные риски P2-I названы прямо. User override — это заявление пользователя,
+а не verification: оно не доказывает capability, не включает Task Adapter, не
+участвует в admission/fit, и отсутствие override не означает unsupported. Не
+реализованы full Capability Registry, generic precedence/conflict resolver,
+negative override, confidence, audit history, multi-user/auth profile и
+sync/cloud export. Не проверены live Ollama/hardware, реальный provider-version
+matrix, external-client identity и multi-process coordination: все tests
+используют temporary SQLite, fake tags/version transport и mocked browser routes.
+Явно не покрыт assertion пункт «positive override не красит declaration
+verified-green» в состоянии, когда declaration действительно verified: текущие
+fixtures держат provider evidence degraded, а verified-green треатмент в
+Installed evidence сейчас не существует.
+
 P2-A, P2-B, P2-C, P2-D, P2-E, P2-F, P2-G и P2-H остаются `implemented, locally
 validated`, а не independently verified или production-validated. Не проверены
 live Ollama/model/hardware, NVIDIA driver/GPU/MIG, provider-version matrix,
@@ -764,14 +854,16 @@ slice: без неё читатель делает вывод, что до ко�
 | measured-parallel за feature flag (RES-009)      | flag infra → P2-N; estimated admission → P2-O; measured вынесен за Phase 4 (Q-34a)                           |
 | variant calibration (MOD-004)                    | **половина**: variant-first install есть, calibration не связана с catalog fit (`catalog.ts` — 0 упоминаний) |
 | Linux/NVIDIA verified tier (PLAT-002)            | prototype есть; verified tier вынесен за Phase 4 (Q-35), убран из exit gate                                  |
-| user override (MOD-008)                          | следующий slice P2-I                                                                                         |
+| user override (MOD-008)                          | **сделано в P2-I** (`6b98d37`..`6cc4504`): migration 9, exact-identity ownership, Installed UI, safe export  |
 | bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
 
-Итог на 2026-08-07: из 14 scope bullets — 9 delivered, 1 сделан Phase 1,
-1 половина (calibration не связана с catalog fit), 3 без единой строки кода.
-После owner decisions ни один пункт не заблокирован вопросом: HF разблокирован
-Q-25, а hardware-зависимые пункты вынесены за Phase 4 и убраны из exit gate.
-Остаток фазы — семь slices P2-I..P2-O.
+Итог на 2026-08-07 после P2-I: из 14 scope bullets — 10 delivered, 1 сделан
+Phase 1, 1 половина (calibration не связана с catalog fit), 3 без единой строки
+кода. После owner decisions ни один пункт не заблокирован вопросом: HF
+разблокирован Q-25, а hardware-зависимые пункты вынесены за Phase 4 и убраны из
+exit gate. Остаток фазы — шесть slices P2-J..P2-O. Из exit-gate bullets закрыт
+«user override видим, экспортируем и не выдаётся за provider/runtime facts»;
+остаются HF-цепочка и estimated parallel-admission.
 
 ## Планируемая последовательность Phase 2
 
@@ -780,15 +872,15 @@ Q-25, а hardware-зависимые пункты вынесены за Phase 4 
 `research/EVIDENCE.md` следует, что HF URL нельзя обещать как direct
 `ollama pull`, и каждый шаг имеет свои failure states.
 
-| Slice | Outcome                                                            | Статус          |
-| ----- | ------------------------------------------------------------------ | --------------- |
-| P2-I  | exact installed capability user override (MOD-008)                 | ready           |
-| P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | ready           |
-| P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | blocked by P2-J |
-| P2-L  | download с checksum/provenance, bounded и cancel-safe              | blocked by P2-K |
-| P2-M  | local Ollama import через `/api/create` + probe                    | blocked by P2-L |
-| P2-N  | feature-flag infrastructure (без обещания measured)                | ready           |
-| P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | blocked by P2-N |
+| Slice | Outcome                                                            | Статус                 |
+| ----- | ------------------------------------------------------------------ | ---------------------- |
+| P2-I  | exact installed capability user override (MOD-008)                 | independently verified |
+| P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | ready                  |
+| P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | blocked by P2-J        |
+| P2-L  | download с checksum/provenance, bounded и cancel-safe              | blocked by P2-K        |
+| P2-M  | local Ollama import через `/api/create` + probe                    | blocked by P2-L        |
+| P2-N  | feature-flag infrastructure (без обещания measured)                | ready                  |
+| P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | blocked by P2-N        |
 
 `/api/create` в текущем `ollama/client.ts` отсутствует — P2-M добавляет его как
 новый documented endpoint, а не переиспользует pull. P2-N/P2-O закрывают
@@ -851,10 +943,16 @@ Phase 4.
   P2-D 20. Net new у P2-D — 11, не 20. Таблица Phase 2 выше даёт headline без
   этой оговорки; новые slices пишут `N new / M envelope` по правилу 4a
   `WORKFLOW.md`.
-- **`independently verified` без механизма.** Все 132 commit — один автор, CI и
+- **`independently verified` без механизма.** Все commits — один автор, CI и
   git hooks отсутствуют. До Phase 2 этот статус означал self-review, а не
   второго участника. С 2026-08-07 статус ставится только при наличии отдельного
-  reviewer-субагента и видимого review-fix commit.
+  reviewer-субагента и видимого review-fix commit. P2-I — первый slice, где это
+  правило реально применено: два reviewer-субагента нашли шесть дефектов, каждый
+  закрыт отдельным `fix(...)` commit с assertion, проверенным мутацией исходника.
+- **Reviewer-субагент может писать в worktree.** Первый P2-I reviewer создал
+  `.review-tmp/` для mutation-проверок, и `git add -A` затянул его в коммит.
+  Каталог удалён и внесён в `.gitignore`; следующим агентам стоит проверять
+  `git status` перед commit, а reviewer-у явно запрещать создание файлов.
 - **Playwright Chromium** требует `npx playwright install chromium`; postinstall
   hook отсутствует, поэтому документированная последовательность
   `npm install` → `npm run test:web:browser` на чистой машине падает.

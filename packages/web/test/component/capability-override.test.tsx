@@ -447,6 +447,8 @@ describe('installed capability overrides', () => {
   })
 
   it('drops a previous artifact assertions when the rendered model changes', async () => {
+    const apply = vi.spyOn(api, 'applyCapabilityOverride')
+    const clear = vi.spyOn(api, 'clearCapabilityOverride')
     const { view } = renderOverrides({ overrides: [override()] })
     expect(screen.queryAllByText('Переопределено')).toHaveLength(1)
 
@@ -471,6 +473,9 @@ describe('installed capability overrides', () => {
     const payload = clipboard.writeText.mock.calls[0]![0] as string
     expect(payload).toContain('sha256:replaced')
     expect(JSON.parse(payload).overrides).toHaveLength(0)
+    // Navigating to another artifact and exporting are both read-only.
+    expect(apply).not.toHaveBeenCalled()
+    expect(clear).not.toHaveBeenCalled()
   })
 
   it('keeps a stale list from surviving a conflict', async () => {
