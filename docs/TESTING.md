@@ -7,7 +7,7 @@
 
 На 2026-08-07 после P2-I:
 
-- `npm test`: 391/391 server/CLI и 109/109 web component/parser tests;
+- `npm test`: 391/391 server/CLI и 110/110 web component/parser tests;
 - `npm run test:web:browser`: 25/25 deterministic Chromium tests с mocked
   REST/SSE. Требует заранее установленный browser binary
   (`npx playwright install chromium`) — postinstall hook отсутствует, поэтому на
@@ -256,7 +256,7 @@
   contract/catalog — 12/12; P2-F facets — 10/10; P2-G server/identity — 38/38;
   P2-H pagination — 10/10; P2-I capability override — 42/42 (contract 6,
   migration 5, store 9, service 16, routes 6); полный core — 391/391,
-  Web — 109/109, mocked Chromium — 25/25;
+  Web — 110/110, mocked Chromium — 25/25;
   15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а
