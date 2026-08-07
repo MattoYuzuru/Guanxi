@@ -446,6 +446,16 @@ describe('installed capability overrides', () => {
     await act(async () => release(outcome()))
   })
 
+  it('associates the visible label with the capability control', () => {
+    renderOverrides()
+    const select = screen.getByRole('combobox', { name: 'Какую capability утвердить' })
+    const label = document.querySelector('label[for="capability-override-draft"]')
+    // A visible `htmlFor` label must resolve to this control, not to nothing.
+    expect(label).not.toBeNull()
+    expect(select.id).toBe('capability-override-draft')
+    expect((label as HTMLLabelElement).control).toBe(select)
+  })
+
   it('offers only capabilities that are not asserted yet', () => {
     renderOverrides({
       overrides: (

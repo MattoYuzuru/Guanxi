@@ -300,6 +300,8 @@ export function Select({
   className,
   disabled,
   ariaLabel,
+  /** Required whenever a visible `<label htmlFor>` names this control. */
+  id,
 }: {
   value: string
   onChange: (next: string) => void
@@ -307,9 +309,11 @@ export function Select({
   className?: string
   disabled?: boolean
   ariaLabel?: string
+  id?: string
 }) {
   return (
     <select
+      id={id}
       value={value}
       disabled={disabled}
       aria-label={ariaLabel}

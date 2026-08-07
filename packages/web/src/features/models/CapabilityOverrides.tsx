@@ -291,6 +291,7 @@ export function CapabilityOverrides({
           </label>
           <div className="mt-1">
             <Select
+              id="capability-override-draft"
               value={draft}
               onChange={(next) => setDraft(modelCapabilitySchema.parse(next))}
               disabled={identity === null || pending || addable.length === 0}
