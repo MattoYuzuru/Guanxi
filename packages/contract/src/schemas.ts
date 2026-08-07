@@ -1595,12 +1595,17 @@ export type HuggingFaceGgufFile = z.infer<typeof huggingFaceGgufFileSchema>
 /**
  * `truncated` is the difference between "this repository has no GGUF" and "this listing
  * did not show every file". Only a complete listing can support `unsupported`.
+ *
+ * `totalFiles` counts the entries this bounded listing actually examined, which is not
+ * the provider's own file total when `truncated` is true. It is deliberately not
+ * published as "the repository has N files": the bounded read cannot know that.
  */
 export const huggingFaceFileInventorySchema = z.discriminatedUnion('state', [
   z
     .object({
       state: z.literal('listed'),
       source: z.literal('hugging_face_api_model'),
+      /** Entries examined by this bounded listing, not the provider's file total. */
       totalFiles: z.number().int().nonnegative().safe(),
       malformedEntries: z.number().int().nonnegative().safe(),
       truncated: z.boolean(),
