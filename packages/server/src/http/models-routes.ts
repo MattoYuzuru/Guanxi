@@ -6,6 +6,8 @@ import {
   DEFAULT_NUM_CTX,
   completionProbeBody,
   getModelQuery,
+  huggingFaceRepositoryBody,
+  huggingFaceSearchBody,
   listCatalogQuery,
   listModelsQuery,
   modelCapabilityOverrideMutationBody,
@@ -13,12 +15,17 @@ import {
   ollamaReferenceStartBody,
   prewarmModelBody,
   warmModelBody,
+  type HuggingFaceReferencePreview,
   type ModelCapabilityOverrideMutationBody,
   type ModelCapabilityOverrideOutcome,
 } from '@alamo/contract'
 import type { AppContext } from '../context.ts'
 import { getCatalog } from '../models/catalog.ts'
 import { pullModelEvents } from '../models/ollama-pull.ts'
+import {
+  HuggingFaceReferenceError,
+  normalizeHuggingFaceReference,
+} from '../models/hugging-face-reference.ts'
 import {
   normalizeOllamaReference,
   OllamaReferenceError,
@@ -174,6 +181,96 @@ export function modelsRoutes(app: AppContext): Hono {
       events,
       { onAbort: () => controller.abort('ollama-reference-client-disconnected') },
     )
+  })
+
+  /**
+   * P2-J read-only Hugging Face discovery. POST keeps arbitrary user query text out of
+   * request lines, access logs and referrers, matching the reference-preview precedent.
+   *
+   * Registered ahead of the greedy `/:name{.+}` routes to keep the discovery paths
+   * lexically adjacent to the other `imports`/`discovery` entry points. Order is not
+   * load-bearing for these two: every greedy POST pattern carries a required suffix
+   * (`/warm`, `/prewarm`, `/probes/completion`, `/stop`, `/pull`,
+   * `/capability-overrides`), so none of them can match a discovery path.
+   *
+   * Both handlers are read-only: no pull, probe, prewarm, load, unload, Governor
+   * admission, catalog refresh or background Job is started, and the Web client never
+   * learns the Hub endpoint.
+   */
+  routes.post('/discovery/hugging-face/search', async (context) => {
+    const body = huggingFaceSearchBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) return invalidHuggingFaceRequestResponse(context)
+    try {
+      return context.json({
+        result: await app.huggingFace.search({
+          query: body.data.query,
+          page: body.data.page,
+          pageSize: body.data.pageSize,
+          cursor: body.data.cursor,
+          signal: context.req.raw.signal,
+        }),
+      })
+    } catch {
+      // A caller disconnect is a cancellation, never a provider verdict.
+      if (context.req.raw.signal.aborted) {
+        return invalidHuggingFaceRequestResponse(context, 'request_cancelled', 409)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The Hugging Face search could not be completed safely',
+          details: null,
+        },
+        500,
+      )
+    }
+  })
+
+  routes.post('/discovery/hugging-face/repository', async (context) => {
+    const body = huggingFaceRepositoryBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) return invalidHuggingFaceRequestResponse(context)
+
+    let preview: HuggingFaceReferencePreview
+    try {
+      preview = normalizeHuggingFaceReference(body.data.reference)
+    } catch (error) {
+      if (error instanceof HuggingFaceReferenceError) {
+        return invalidHuggingFaceRequestResponse(context, error.reason)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The Hugging Face reference could not be checked safely',
+          details: null,
+        },
+        500,
+      )
+    }
+
+    try {
+      return context.json({
+        result: await app.huggingFace.repository({
+          preview,
+          signal: context.req.raw.signal,
+        }),
+      })
+    } catch {
+      if (context.req.raw.signal.aborted) {
+        return invalidHuggingFaceRequestResponse(context, 'request_cancelled', 409)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The Hugging Face repository could not be read safely',
+          details: null,
+        },
+        500,
+      )
+    }
   })
 
   /**
@@ -471,5 +568,24 @@ function invalidOllamaReferenceResponse(
       details: { reason },
     },
     400,
+  )
+}
+
+/**
+ * One redacted refusal shape for the discovery boundary. It carries a typed reason and
+ * never the Hub endpoint, host, response body or any credential.
+ */
+function invalidHuggingFaceRequestResponse(
+  context: Context,
+  reason = 'invalid_request',
+  status: 400 | 409 = 400,
+): Response {
+  return context.json(
+    {
+      code: 'validation_failed',
+      message: 'The Hugging Face discovery request is invalid',
+      details: { reason },
+    },
+    status,
   )
 }

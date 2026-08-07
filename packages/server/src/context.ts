@@ -13,6 +13,7 @@ import { createHostTelemetry, type HostTelemetry } from './hardware/telemetry.ts
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
+import { HuggingFaceTransport } from './models/hugging-face-transport.ts'
 import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
@@ -49,6 +50,11 @@ export interface AppContext {
   completionProbe: CompletionProbeService
   /** Owner of explicit positive user capability assertions; it runs no model work. */
   capabilityOverrides: ModelCapabilityOverrideService
+  /**
+   * The only outbound Hugging Face boundary. Read-only discovery: it never touches
+   * Ollama, the Governor, the catalog or any Job, and it holds no credentials.
+   */
+  huggingFace: HuggingFaceTransport
   approvals: ApprovalGate
   tracker: PrefillTracker
   hardware: HardwareInfo
@@ -148,6 +154,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
         models,
         store: capabilityOverrideStore,
       }),
+      huggingFace: new HuggingFaceTransport(),
       chatExecution: new ChatJobExecutionOwner(base),
     }
     await recoverChatJobs(context)

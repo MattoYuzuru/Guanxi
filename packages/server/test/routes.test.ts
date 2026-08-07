@@ -87,6 +87,11 @@ function testContext(
       apply: async () => { throw new Error('not invoked') },
       clear: async () => { throw new Error('not invoked') },
     } as never,
+    // P2-J discovery is unrelated to these flows: reaching it is a defect.
+    huggingFace: {
+      search: async () => { throw new Error('not invoked') },
+      repository: async () => { throw new Error('not invoked') },
+    } as never,
     chatExecution: new ChatJobExecutionOwner(runtimeBase),
   }
 }
