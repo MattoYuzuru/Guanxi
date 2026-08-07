@@ -281,6 +281,33 @@ export const modelInstallationEvidenceSchema = z.discriminatedUnion('state', [
 ])
 export type ModelInstallationEvidence = z.infer<typeof modelInstallationEvidenceSchema>
 
+/**
+ * P2-I explicit positive user assertion for one exact installed artifact.
+ *
+ * It is never a provider declaration, a controlled probe or a runtime proof, and
+ * the absence of a row never means `unsupported`. There is no negative override,
+ * no confidence slider and no free-form capability in this version: the value is
+ * always the single positive `present`, so a missing row leaves the capability in
+ * its prior declared/degraded/unknown state.
+ */
+export const MODEL_CAPABILITY_OVERRIDE_VERSION = 1
+export const modelCapabilityOverrideSchema = z
+  .object({
+    version: z.literal(MODEL_CAPABILITY_OVERRIDE_VERSION),
+    source: z.literal('user_override'),
+    state: z.literal('overridden'),
+    value: z.literal('present'),
+    capability: modelCapabilitySchema,
+    provider: z.literal('ollama'),
+    normalizedModelReference: z.string().min(1),
+    artifactDigest: z.string().min(1),
+    runtimeVersion: z.string().min(1),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict()
+export type ModelCapabilityOverride = z.infer<typeof modelCapabilityOverrideSchema>
+
 export const installedModelDescriptorSchema = z
   .object({
     reference: modelReferenceSchema,
@@ -294,6 +321,11 @@ export const installedModelDescriptorSchema = z
       reason: 'legacy_response',
       offline: false,
     }),
+    /**
+     * Additive user assertions for this exact identity only. Optional so recorded
+     * legacy descriptor responses stay parseable without a fabricated override.
+     */
+    overrides: z.array(modelCapabilityOverrideSchema).optional().default([]),
   })
   .strict()
 export type InstalledModelDescriptor = z.infer<typeof installedModelDescriptorSchema>
@@ -418,6 +450,7 @@ export const legacyInstalledModelDescriptor: InstalledModelDescriptor = {
     reason: 'legacy_response',
     offline: false,
   },
+  overrides: [],
 }
 
 export const localModelSchema = z.object({

@@ -83,6 +83,10 @@ function testContext(
   return {
     ...runtimeBase,
     completionProbe: { execute: async () => { throw new Error('not invoked') } } as never,
+    capabilityOverrides: {
+      apply: async () => { throw new Error('not invoked') },
+      clear: async () => { throw new Error('not invoked') },
+    } as never,
     chatExecution: new ChatJobExecutionOwner(runtimeBase),
   }
 }

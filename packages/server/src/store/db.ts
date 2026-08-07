@@ -299,6 +299,45 @@ const MIGRATIONS: readonly string[] = [
       probe_definition_version
     );
   `,
+  // 9 — explicit positive user capability assertions for one exact installed artifact.
+  // Additive and never backfilled from provider declarations or probe results: old
+  // code safely ignores this table, and a schema rollback does not remove user data.
+  `
+  CREATE TABLE model_capability_user_overrides (
+    override_key                TEXT PRIMARY KEY
+      CHECK (override_key GLOB 'sha256:*' AND length(override_key) = 71),
+    key_version                 INTEGER NOT NULL CHECK (key_version = 1),
+    override_schema_version     INTEGER NOT NULL CHECK (override_schema_version = 1),
+    provider                    TEXT NOT NULL CHECK (provider = 'ollama'),
+    normalized_model_reference  TEXT NOT NULL CHECK (length(normalized_model_reference) > 0),
+    artifact_digest             TEXT NOT NULL CHECK (length(artifact_digest) > 0),
+    runtime_version             TEXT NOT NULL CHECK (length(runtime_version) > 0),
+    capability                  TEXT NOT NULL CHECK (capability IN (
+      'completion','tools','vision','insert','thinking','embedding'
+    )),
+    source                      TEXT NOT NULL CHECK (source = 'user_override'),
+    state                       TEXT NOT NULL CHECK (state = 'overridden'),
+    value                       TEXT NOT NULL CHECK (value = 'present'),
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL,
+    UNIQUE (
+      provider,
+      normalized_model_reference,
+      artifact_digest,
+      runtime_version,
+      capability,
+      override_schema_version
+    )
+  );
+  CREATE INDEX idx_model_capability_user_overrides_identity
+    ON model_capability_user_overrides (
+      provider,
+      normalized_model_reference,
+      artifact_digest,
+      runtime_version,
+      override_schema_version
+    );
+  `,
 ]
 
 export function openDb(path: string): Db {

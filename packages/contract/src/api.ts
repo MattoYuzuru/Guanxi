@@ -17,6 +17,8 @@ import {
   jobSchema,
   localModelSchema,
   messageSchema,
+  modelCapabilitySchema,
+  modelCapabilityOverrideSchema,
   modelDetailSchema,
   positiveSafeIntegerSchema,
   runningModelSchema,
@@ -48,6 +50,8 @@ export const ROUTES = {
   modelPrewarm: (name: string) => `/api/models/${encodeURIComponent(name)}/prewarm`,
   modelCompletionProbe: (name: string) =>
     `/api/models/${encodeURIComponent(name)}/probes/completion`,
+  modelCapabilityOverrides: (name: string) =>
+    `/api/models/${encodeURIComponent(name)}/capability-overrides`,
   ollamaReferencePreview: () => '/api/models/imports/ollama-reference/preview',
   ollamaReferenceStart: () => '/api/models/imports/ollama-reference/start',
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
@@ -382,6 +386,88 @@ export const completionProbeResponse = z
   })
   .strict()
 export type CompletionProbeResponse = z.infer<typeof completionProbeResponse>
+
+/**
+ * P2-I user override mutations. The client always states the exact identity it
+ * rendered, so a stale expectation is a controlled conflict instead of a write
+ * addressed by model name alone.
+ */
+export const modelCapabilityOverrideMutationBody = z
+  .object({
+    capability: modelCapabilitySchema,
+    expectedDigest: z.string().min(1),
+    expectedRuntimeVersion: z.string().min(1),
+  })
+  .strict()
+export type ModelCapabilityOverrideMutationBody = z.infer<
+  typeof modelCapabilityOverrideMutationBody
+>
+
+export const modelCapabilityOverrideIdentitySchema = z
+  .object({
+    provider: z.literal('ollama'),
+    normalizedModelReference: z.string().min(1),
+    artifactDigest: z.string().min(1),
+    runtimeVersion: z.string().min(1),
+  })
+  .strict()
+export type ModelCapabilityOverrideIdentity = z.infer<
+  typeof modelCapabilityOverrideIdentitySchema
+>
+
+/**
+ * A conflict is never a capability claim: it says the exact identity or the
+ * caller expectation could not be confirmed, so nothing was written or removed.
+ */
+export const modelCapabilityOverrideConflictReasonSchema = z.enum([
+  'invalid_model_reference',
+  'model_not_installed',
+  'installed_reference_ambiguous',
+  'installed_digest_missing',
+  'runtime_version_unavailable',
+  'provider_unavailable',
+  'digest_expectation_mismatch',
+  'runtime_expectation_mismatch',
+  'persistence_failed',
+])
+export type ModelCapabilityOverrideConflictReason = z.infer<
+  typeof modelCapabilityOverrideConflictReasonSchema
+>
+
+const modelCapabilityOverrideResolvedBase = z
+  .object({
+    capability: modelCapabilitySchema,
+    identity: modelCapabilityOverrideIdentitySchema,
+    /** Every exact compatible override for this identity after the mutation. */
+    overrides: z.array(modelCapabilityOverrideSchema),
+  })
+  .strict()
+
+export const modelCapabilityOverrideOutcomeSchema = z.discriminatedUnion('state', [
+  modelCapabilityOverrideResolvedBase.extend({ state: z.literal('applied') }),
+  modelCapabilityOverrideResolvedBase.extend({ state: z.literal('cleared') }),
+  /** Clearing an override that this exact identity does not have changes nothing. */
+  modelCapabilityOverrideResolvedBase.extend({ state: z.literal('absent') }),
+  z
+    .object({
+      state: z.literal('conflict'),
+      capability: modelCapabilitySchema,
+      reason: modelCapabilityOverrideConflictReasonSchema,
+      identity: z.null(),
+      overrides: z.array(modelCapabilityOverrideSchema).max(0),
+    })
+    .strict(),
+])
+export type ModelCapabilityOverrideOutcome = z.infer<
+  typeof modelCapabilityOverrideOutcomeSchema
+>
+
+export const modelCapabilityOverrideResponse = z
+  .object({ outcome: modelCapabilityOverrideOutcomeSchema })
+  .strict()
+export type ModelCapabilityOverrideResponse = z.infer<
+  typeof modelCapabilityOverrideResponse
+>
 
 export const ollamaReferenceInputKindSchema = z.enum([
   'model_name',

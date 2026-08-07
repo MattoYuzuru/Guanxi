@@ -8,6 +8,7 @@ import { openDb } from '../src/store/db.ts'
 
 function downgradeToV5(db: DatabaseSync): void {
   db.exec(`
+    DROP TABLE model_capability_user_overrides;
     DROP TABLE completion_probe_evidence;
     DROP TABLE installed_model_evidence_cache;
     DROP TABLE model_calibration_observations;
@@ -26,7 +27,7 @@ describe('SQLite exact observation-key migration 6', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 8)
+    assert.equal(version(first), 9)
     assert.equal(
       (
         first
@@ -41,7 +42,7 @@ describe('SQLite exact observation-key migration 6', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 8)
+    assert.equal(version(reopened), 9)
     assert.equal(
       (
         reopened
@@ -69,7 +70,7 @@ describe('SQLite exact observation-key migration 6', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 8)
+    assert.equal(version(upgraded), 9)
     assert.deepEqual(
       {
         ...upgraded
@@ -126,7 +127,7 @@ describe('SQLite exact observation-key migration 6', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 8)
+    assert.equal(version(recovered), 9)
     recovered.close()
   })
 })

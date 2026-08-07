@@ -11,6 +11,7 @@ import {
   type InstalledModelDescriptor,
   type LocalModel,
   type ModelCapabilityDeclaration,
+  type ModelCapabilityOverride,
   type ModelEvidenceFreshness,
   type ModelContextLimit,
   type ModelCapability,
@@ -28,6 +29,10 @@ import {
   type InstalledArtifactIdentity,
 } from '../runtime/observation-key.ts'
 import type { CalibrationStore } from '../store/calibration.ts'
+import {
+  ModelCapabilityOverrideStore,
+  exactCapabilityOverrides,
+} from '../store/capability-override.ts'
 import {
   INSTALLED_EVIDENCE_FRESH_TTL_MS,
   INSTALLED_EVIDENCE_STALE_WINDOW_MS,
@@ -247,6 +252,12 @@ function installedDescriptor(
   tagsObservedAt: string,
   shown: ModelDetailsObservation,
   runtime: RuntimeVersionObservation,
+  /**
+   * P2-I user assertions for this exact identity only. They are projected beside
+   * provider declarations and never merged into `capabilities`, so a positive
+   * override cannot promote a declaration to runtime evidence.
+   */
+  overrides: ModelCapabilityOverride[] = [],
 ): InstalledModelDescriptor {
   const basis = evidenceBasis(entry, runtime)
   const tagged = capabilityField(entry.capabilities)
@@ -322,6 +333,7 @@ function installedDescriptor(
     },
     capabilities,
     freshness: shown.freshness,
+    overrides,
   }
 }
 
@@ -479,6 +491,7 @@ export class ModelService {
   private readonly calibration: CalibrationStore
   private readonly hardware: HardwareInfo
   private readonly evidenceCache: InstalledEvidenceCacheStore
+  private readonly overrideStore: ModelCapabilityOverrideStore
   private readonly now: () => number
   private readonly detailWorkers = new DetailWorkerPool()
   private readonly detailFlights = new Map<string, DetailFlight>()
@@ -494,11 +507,13 @@ export class ModelService {
     hardware: HardwareInfo,
     evidenceCache?: InstalledEvidenceCacheStore,
     now: () => number = Date.now,
+    overrideStore?: ModelCapabilityOverrideStore,
   ) {
     this.client = client
     this.calibration = calibration
     this.hardware = hardware
     this.evidenceCache = evidenceCache ?? new InstalledEvidenceCacheStore(calibration.database)
+    this.overrideStore = overrideStore ?? new ModelCapabilityOverrideStore(calibration.database)
     this.now = now
   }
 
@@ -767,6 +782,27 @@ export class ModelService {
     }
   }
 
+  /**
+   * P2-I: only an unambiguous canonical reference with an exact digest and a
+   * sourced runtime version can carry a user assertion. An ambiguous reference, a
+   * missing digest or an unavailable `/api/version` projects nothing, so a stale
+   * override never stands in for the current installation.
+   */
+  private exactOverrides(
+    normalizedReference: string | null,
+    unambiguous: boolean,
+    digest: string,
+    runtimeVersion: string | null,
+  ): ModelCapabilityOverride[] {
+    if (!unambiguous) return []
+    const exactDigest = digest.trim()
+    return exactCapabilityOverrides(this.overrideStore, {
+      normalizedModelReference: normalizedReference,
+      artifactDigest: exactDigest.length > 0 ? exactDigest : null,
+      runtimeVersion,
+    })
+  }
+
   private async runtimeVersionObservation(
     signal?: AbortSignal,
   ): Promise<RuntimeVersionObservation> {
@@ -920,6 +956,12 @@ export class ModelService {
             observedAt,
             shownObservation,
             runtimeVersionObservation,
+            this.exactOverrides(
+              normalized,
+              installedReferenceCounts.get(normalized ?? '') === 1,
+              entry.digest,
+              runtimeVersion,
+            ),
           ),
           isCloud,
           fit: computeFit({
@@ -1044,6 +1086,12 @@ export class ModelService {
         observedAt,
         shownObservation,
         runtimeVersionObservation,
+        this.exactOverrides(
+          normalized,
+          normalizedMatches.length === 1,
+          entry.digest,
+          runtimeVersion,
+        ),
       ),
       isCloud,
       fit: fitFor(selectedContext),

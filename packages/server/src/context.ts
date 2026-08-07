@@ -12,6 +12,7 @@ import { probeHardware } from './hardware/probe.ts'
 import { createHostTelemetry, type HostTelemetry } from './hardware/telemetry.ts'
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
+import { ModelCapabilityOverrideService } from './models/capability-override.ts'
 import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
@@ -19,6 +20,7 @@ import { ResourceGovernor } from './runtime/resource-governor.ts'
 import { CompletionProbeService } from './runtime/completion-probe.ts'
 import { RuntimeReconciliationService } from './runtime/reconciliation.ts'
 import { CalibrationStore } from './store/calibration.ts'
+import { ModelCapabilityOverrideStore } from './store/capability-override.ts'
 import { CompletionProbeStore } from './store/completion-probe.ts'
 import { openDb, type Db } from './store/db.ts'
 import { JobStore } from './store/jobs.ts'
@@ -45,6 +47,8 @@ export interface AppContext {
   settings: SettingsStore
   calibration: CalibrationStore
   completionProbe: CompletionProbeService
+  /** Owner of explicit positive user capability assertions; it runs no model work. */
+  capabilityOverrides: ModelCapabilityOverrideService
   approvals: ApprovalGate
   tracker: PrefillTracker
   hardware: HardwareInfo
@@ -78,6 +82,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     const settings = new SettingsStore(db, { ollamaHost: DEFAULT_OLLAMA_HOST })
     const calibration = new CalibrationStore(db)
     const completionProbeStore = new CompletionProbeStore(db)
+    const capabilityOverrideStore = new ModelCapabilityOverrideStore(db)
 
     let client: OllamaClient | null = null
     let modelService: ModelService | null = null
@@ -93,7 +98,16 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
     const models = (): ModelService => {
       const current = ollama()
-      if (!modelService) modelService = new ModelService(current, calibration, hardware)
+      if (!modelService) {
+        modelService = new ModelService(
+          current,
+          calibration,
+          hardware,
+          undefined,
+          undefined,
+          capabilityOverrideStore,
+        )
+      }
       return modelService
     }
 
@@ -129,6 +143,10 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
         models,
         ollama,
         store: completionProbeStore,
+      }),
+      capabilityOverrides: new ModelCapabilityOverrideService({
+        models,
+        store: capabilityOverrideStore,
       }),
       chatExecution: new ChatJobExecutionOwner(base),
     }

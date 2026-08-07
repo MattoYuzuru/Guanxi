@@ -8,10 +8,13 @@ import {
   getModelQuery,
   listCatalogQuery,
   listModelsQuery,
+  modelCapabilityOverrideMutationBody,
   ollamaReferencePreviewBody,
   ollamaReferenceStartBody,
   prewarmModelBody,
   warmModelBody,
+  type ModelCapabilityOverrideMutationBody,
+  type ModelCapabilityOverrideOutcome,
 } from '@alamo/contract'
 import type { AppContext } from '../context.ts'
 import { getCatalog } from '../models/catalog.ts'
@@ -172,6 +175,75 @@ export function modelsRoutes(app: AppContext): Hono {
       { onAbort: () => controller.abort('ollama-reference-client-disconnected') },
     )
   })
+
+  /**
+   * P2-I user assertions. Write and clear share one strict body so the caller
+   * always states the exact identity it rendered; the service revalidates it at
+   * the mutation point. Registered before the generic `/:name` routes so the
+   * greedy name pattern cannot swallow this suffix.
+   */
+  const capabilityOverrideMutation = (
+    mutate: (
+      name: string,
+      body: ModelCapabilityOverrideMutationBody,
+      signal: AbortSignal,
+    ) => Promise<ModelCapabilityOverrideOutcome>,
+  ) => async (context: Context) => {
+    // An absent parameter cannot happen for these registered paths; an empty name
+    // still resolves to the same controlled invalid-reference conflict.
+    const name = decodeURIComponent(context.req.param('name') ?? '')
+    const body = modelCapabilityOverrideMutationBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) {
+      return context.json(
+        {
+          code: 'validation_failed',
+          message: 'The capability override request is invalid',
+          details: null,
+        },
+        400,
+      )
+    }
+    try {
+      return context.json({
+        outcome: await mutate(name, body.data, context.req.raw.signal),
+      })
+    } catch {
+      if (context.req.raw.signal.aborted) {
+        return context.json(
+          {
+            code: 'validation_failed',
+            message: 'The capability override request was cancelled',
+            details: null,
+          },
+          409,
+        )
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The capability override could not be changed safely',
+          details: null,
+        },
+        500,
+      )
+    }
+  }
+
+  routes.post(
+    '/:name{.+}/capability-overrides',
+    capabilityOverrideMutation((name, body, signal) =>
+      app.capabilityOverrides.apply(name, body, signal),
+    ),
+  )
+
+  routes.delete(
+    '/:name{.+}/capability-overrides',
+    capabilityOverrideMutation((name, body, signal) =>
+      app.capabilityOverrides.clear(name, body, signal),
+    ),
+  )
 
   routes.get('/:name{.+}', async (context) => {
     const name = decodeURIComponent(context.req.param('name'))

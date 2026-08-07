@@ -46,6 +46,7 @@ function model(overrides: Partial<LocalModel> = {}): LocalModel {
       installation: { state: 'installed', source: 'ollama_api_tags', observedAt: AT, confidence: 'observed' },
       capabilities: { state: 'declared', reason: null, observedAt: AT, declarations: [] },
       freshness: { state: 'unknown', source: 'none', observedAt: null, reason: 'identity_unavailable', offline: false },
+      overrides: [],
     },
     isCloud: false,
     fit: {
