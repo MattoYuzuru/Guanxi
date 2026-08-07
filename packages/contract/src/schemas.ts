@@ -322,6 +322,19 @@ export const installedModelDescriptorSchema = z
       offline: false,
     }),
     /**
+     * Sourced local runtime version for this observation. It is part of the exact
+     * identity a user assertion binds to, so it is projected independently of
+     * whether the provider declared any capability at all.
+     */
+    runtime: modelRuntimeFingerprintSchema.optional().default({
+      state: 'unknown',
+      runtime: 'ollama',
+      version: null,
+      source: 'legacy_response',
+      observedAt: '1970-01-01T00:00:00.000Z',
+      confidence: 'unknown',
+    }),
+    /**
      * Additive user assertions for this exact identity only. Optional so recorded
      * legacy descriptor responses stay parseable without a fabricated override.
      */
@@ -449,6 +462,14 @@ export const legacyInstalledModelDescriptor: InstalledModelDescriptor = {
     observedAt: null,
     reason: 'legacy_response',
     offline: false,
+  },
+  runtime: {
+    state: 'unknown',
+    runtime: 'ollama',
+    version: null,
+    source: 'legacy_response',
+    observedAt: '1970-01-01T00:00:00.000Z',
+    confidence: 'unknown',
   },
   overrides: [],
 }

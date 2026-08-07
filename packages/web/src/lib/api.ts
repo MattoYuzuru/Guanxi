@@ -26,6 +26,7 @@ import {
   listRunningResponse,
   listThreadsResponse,
   listWorkspacesResponse,
+  modelCapabilityOverrideResponse,
   cancelJobResponse,
   jobStreamEventSchema,
   ollamaReferencePreviewResponse,
@@ -37,6 +38,7 @@ import {
   type ApprovalBody,
   type ChatStreamEvent,
   type CompletionProbeBody,
+  type ModelCapabilityOverrideMutationBody,
   type OllamaReferenceStartBody,
   type JobStreamEvent,
   type CreateThreadBody,
@@ -225,6 +227,29 @@ export const api = {
   completionProbe: (name: string, body: CompletionProbeBody, signal?: AbortSignal) =>
     request(ROUTES.modelCompletionProbe(name), completionProbeResponse, {
       method: 'POST',
+      body,
+      signal,
+    }),
+
+  /** Explicit positive user assertion for the exact identity the caller rendered. */
+  applyCapabilityOverride: (
+    name: string,
+    body: ModelCapabilityOverrideMutationBody,
+    signal?: AbortSignal,
+  ) =>
+    request(ROUTES.modelCapabilityOverrides(name), modelCapabilityOverrideResponse, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  clearCapabilityOverride: (
+    name: string,
+    body: ModelCapabilityOverrideMutationBody,
+    signal?: AbortSignal,
+  ) =>
+    request(ROUTES.modelCapabilityOverrides(name), modelCapabilityOverrideResponse, {
+      method: 'DELETE',
       body,
       signal,
     }),

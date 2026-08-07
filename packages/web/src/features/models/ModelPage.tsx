@@ -32,6 +32,7 @@ import { exceedsDeclaredContextLimit, parsePositiveSafeInteger } from '../../lib
 import { translate } from '../../lib/locale.ts'
 import { InstalledEvidenceDetails } from './InstalledEvidence.tsx'
 import { CompletionProbe } from './CompletionProbe.tsx'
+import { CapabilityOverrides } from './CapabilityOverrides.tsx'
 
 export function ModelPage({ name, health }: { name: string; health: Health }) {
   const navigate = useNavigate()
@@ -74,6 +75,7 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
       health={health}
       requestedContext={requestedContext}
       onRequestContext={setRequestedContext}
+      onRefresh={detail.reload}
       onStartChat={(contextLength) =>
         navigate(
           `${paths.chat()}?model=${encodeURIComponent(name)}&numCtx=${contextLength}`,
@@ -88,12 +90,14 @@ function ModelProfile({
   health,
   onStartChat,
   onRequestContext,
+  onRefresh,
   requestedContext,
 }: {
   model: ModelDetail
   health: Health
   onStartChat: (contextLength: number) => void
   onRequestContext: (contextLength: number) => void
+  onRefresh: () => void
   requestedContext?: number
 }) {
   /* Слайдер ходит по тем окнам, для которых сервер прислал вердикт. */
@@ -219,6 +223,11 @@ function ModelProfile({
 
           <Panel title={translate('models.probe.title')}>
             <CompletionProbe model={model} contextLength={contextLength} />
+          </Panel>
+
+          {/* Deliberately its own region: a user assertion is not provider or runtime evidence. */}
+          <Panel title={translate('models.override.title')}>
+            <CapabilityOverrides model={model} onRefresh={onRefresh} />
           </Panel>
 
           <Panel title="Параметры архитектуры">

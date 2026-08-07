@@ -333,6 +333,7 @@ function installedDescriptor(
     },
     capabilities,
     freshness: shown.freshness,
+    runtime: basis.runtime,
     overrides,
   }
 }

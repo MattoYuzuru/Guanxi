@@ -447,6 +447,76 @@ const english = {
   'models.probe.reason.fit_unknown': 'Fit is unknown, so the model was not loaded.',
   'models.probe.reason.context_limit_exceeded': 'The requested context exceeds the sourced model limit.',
   'models.probe.reason.probe_in_progress': 'The same exact probe is already in progress.',
+  'models.override.title': 'Your capability assertions',
+  'models.override.label': 'User capability overrides for this exact installed model',
+  'models.override.explanation':
+    'You can assert that this exact installed artifact supports a capability. This is your own statement, not a provider declaration, a controlled probe or a runtime verification.',
+  'models.override.boundary':
+    'An assertion is bound to this reference, this digest and this Ollama version. It is not inherited by another digest, another runtime version or a Marketplace row, and removing it never means the capability is unsupported.',
+  'models.override.identity': 'Bound identity',
+  'models.override.identity.reference': 'Reference',
+  'models.override.identity.digest': 'Digest',
+  'models.override.identity.runtime': 'Ollama version',
+  'models.override.identity.unavailable':
+    'This model has no exact reference, digest and sourced Ollama version right now, so no assertion can be added or removed.',
+  'models.override.empty': 'You have not asserted any capability for this exact artifact.',
+  'models.override.list': 'Your assertions',
+  'models.override.state': 'Overridden',
+  'models.override.source': 'user override',
+  'models.override.created': 'Asserted',
+  'models.override.updated': 'Updated',
+  'models.override.capability.label': 'Capability to assert',
+  'models.override.add': 'Assert capability',
+  'models.override.add.aria': 'Review and assert the selected capability',
+  'models.override.remove': 'Remove',
+  'models.override.remove.aria': 'Review and remove your assertion for',
+  'models.override.pending': 'Applying your change…',
+  'models.override.confirm.addTitle': 'Assert this capability yourself?',
+  'models.override.confirm.removeTitle': 'Remove your assertion?',
+  'models.override.confirm.addDescription':
+    'This records your own assertion for the exact model, digest and Ollama version below. It runs no download, probe, load or unload, and it does not change what the provider declared.',
+  'models.override.confirm.removeDescription':
+    'This removes only your assertion for this exact identity. The capability returns to whatever the provider declared or left unknown; it does not become unsupported.',
+  'models.override.confirm.capability': 'Capability',
+  'models.override.confirm.close': 'Close capability override confirmation',
+  'models.override.confirm.back': 'Not now',
+  'models.override.confirm.add': 'Assert capability',
+  'models.override.confirm.remove': 'Remove assertion',
+  'models.override.success.applied': 'Your assertion was recorded.',
+  'models.override.success.cleared': 'Your assertion was removed.',
+  'models.override.success.absent': 'There was no assertion to remove for this exact identity.',
+  'models.override.error': 'The change could not be applied. Nothing was recorded.',
+  'models.override.retry': 'Try again',
+  'models.override.refresh': 'Reload this model',
+  'models.override.conflict.title': 'Nothing was changed',
+  'models.override.conflict.invalid_model_reference':
+    'This model name is not a valid canonical Ollama reference.',
+  'models.override.conflict.model_not_installed':
+    'This model is no longer in the current installed sample.',
+  'models.override.conflict.installed_reference_ambiguous':
+    'More than one installed row matches this canonical reference, so the exact artifact is ambiguous.',
+  'models.override.conflict.installed_digest_missing':
+    'The current installed sample reports no exact digest for this model.',
+  'models.override.conflict.runtime_version_unavailable':
+    'The local Ollama version could not be sourced, so no exact identity could be confirmed.',
+  'models.override.conflict.provider_unavailable':
+    'Ollama was unavailable, so the current installation could not be confirmed.',
+  'models.override.conflict.digest_expectation_mismatch':
+    'The installed digest changed since this page was loaded. Reload the model and decide again.',
+  'models.override.conflict.runtime_expectation_mismatch':
+    'The Ollama version changed since this page was loaded. Reload the model and decide again.',
+  'models.override.conflict.persistence_failed':
+    'The assertion could not be saved, so nothing was recorded.',
+  'models.override.export': 'Your assertions as JSON',
+  'models.override.export.copy': 'Copy JSON',
+  'models.override.export.copy.aria': 'Copy your capability assertions as JSON',
+  'models.override.export.download': 'Download JSON',
+  'models.override.export.download.aria': 'Download your capability assertions as JSON',
+  'models.override.export.copied': 'Copied',
+  'models.override.export.downloaded': 'Download started',
+  'models.override.export.failed': 'The JSON could not be exported in this browser.',
+  'models.override.export.boundary':
+    'The export contains only your assertions and this exact identity. It has no endpoint, credentials, local path, provider response, prompt, answer or reasoning.',
   'models.addOllama.open': 'Add from Ollama',
   'models.addOllama.open.aria': 'Add a model from an Ollama name or official page',
   'models.addOllama.title': 'Add from Ollama',
@@ -1111,6 +1181,76 @@ const russian: Messages = {
   'models.probe.reason.fit_unknown': 'Fit неизвестен, поэтому модель не загружалась.',
   'models.probe.reason.context_limit_exceeded': 'Запрошенный контекст превышает sourced limit модели.',
   'models.probe.reason.probe_in_progress': 'Та же exact-проверка уже выполняется.',
+  'models.override.title': 'Ваши утверждения о capabilities',
+  'models.override.label': 'Пользовательские override capabilities для этой exact установленной модели',
+  'models.override.explanation':
+    'Вы можете утвердить, что именно этот установленный артефакт поддерживает capability. Это ваше собственное утверждение, а не provider declaration, controlled probe или runtime-проверка.',
+  'models.override.boundary':
+    'Утверждение привязано к этой ссылке, этому digest и этой версии Ollama. Оно не наследуется другим digest, другой версией runtime или строкой Marketplace, а его удаление никогда не означает, что capability не поддерживается.',
+  'models.override.identity': 'Привязанная identity',
+  'models.override.identity.reference': 'Ссылка',
+  'models.override.identity.digest': 'Digest',
+  'models.override.identity.runtime': 'Версия Ollama',
+  'models.override.identity.unavailable':
+    'Сейчас у этой модели нет exact ссылки, digest и подтверждённой версии Ollama, поэтому утверждение нельзя ни добавить, ни удалить.',
+  'models.override.empty': 'Вы не утверждали ни одной capability для этого exact артефакта.',
+  'models.override.list': 'Ваши утверждения',
+  'models.override.state': 'Переопределено',
+  'models.override.source': 'user override',
+  'models.override.created': 'Утверждено',
+  'models.override.updated': 'Обновлено',
+  'models.override.capability.label': 'Какую capability утвердить',
+  'models.override.add': 'Утвердить capability',
+  'models.override.add.aria': 'Просмотреть условия и утвердить выбранную capability',
+  'models.override.remove': 'Удалить',
+  'models.override.remove.aria': 'Просмотреть условия и удалить ваше утверждение для',
+  'models.override.pending': 'Применяем ваше изменение…',
+  'models.override.confirm.addTitle': 'Утвердить эту capability самостоятельно?',
+  'models.override.confirm.removeTitle': 'Удалить ваше утверждение?',
+  'models.override.confirm.addDescription':
+    'Будет записано ваше собственное утверждение для указанных ниже exact модели, digest и версии Ollama. Это не запускает скачивание, probe, загрузку или выгрузку и не меняет то, что заявил provider.',
+  'models.override.confirm.removeDescription':
+    'Будет удалено только ваше утверждение для этой exact identity. Capability вернётся к тому, что заявил provider или оставил неизвестным, и не станет unsupported.',
+  'models.override.confirm.capability': 'Capability',
+  'models.override.confirm.close': 'Закрыть подтверждение override capability',
+  'models.override.confirm.back': 'Не сейчас',
+  'models.override.confirm.add': 'Утвердить capability',
+  'models.override.confirm.remove': 'Удалить утверждение',
+  'models.override.success.applied': 'Ваше утверждение записано.',
+  'models.override.success.cleared': 'Ваше утверждение удалено.',
+  'models.override.success.absent': 'Для этой exact identity удалять было нечего.',
+  'models.override.error': 'Изменение не применилось. Ничего не записано.',
+  'models.override.retry': 'Повторить',
+  'models.override.refresh': 'Перечитать модель',
+  'models.override.conflict.title': 'Ничего не изменено',
+  'models.override.conflict.invalid_model_reference':
+    'Это имя модели не является корректной канонической ссылкой Ollama.',
+  'models.override.conflict.model_not_installed':
+    'Этой модели больше нет в текущей выборке установленных.',
+  'models.override.conflict.installed_reference_ambiguous':
+    'Канонической ссылке соответствует больше одной установленной строки, поэтому exact артефакт неоднозначен.',
+  'models.override.conflict.installed_digest_missing':
+    'Текущая выборка установленных не сообщает exact digest для этой модели.',
+  'models.override.conflict.runtime_version_unavailable':
+    'Версию локальной Ollama не удалось получить, поэтому exact identity не подтверждена.',
+  'models.override.conflict.provider_unavailable':
+    'Ollama недоступна, поэтому текущую установку не удалось подтвердить.',
+  'models.override.conflict.digest_expectation_mismatch':
+    'Установленный digest изменился после загрузки страницы. Перечитайте модель и примите решение заново.',
+  'models.override.conflict.runtime_expectation_mismatch':
+    'Версия Ollama изменилась после загрузки страницы. Перечитайте модель и примите решение заново.',
+  'models.override.conflict.persistence_failed':
+    'Утверждение не удалось сохранить, поэтому ничего не записано.',
+  'models.override.export': 'Ваши утверждения в JSON',
+  'models.override.export.copy': 'Копировать JSON',
+  'models.override.export.copy.aria': 'Копировать ваши утверждения о capabilities как JSON',
+  'models.override.export.download': 'Скачать JSON',
+  'models.override.export.download.aria': 'Скачать ваши утверждения о capabilities как JSON',
+  'models.override.export.copied': 'Скопировано',
+  'models.override.export.downloaded': 'Скачивание начато',
+  'models.override.export.failed': 'В этом браузере JSON не удалось экспортировать.',
+  'models.override.export.boundary':
+    'Экспорт содержит только ваши утверждения и эту exact identity. В нём нет endpoint, credentials, локального пути, ответа provider, промпта, ответа модели или reasoning.',
   'models.addOllama.open': 'Добавить из Ollama',
   'models.addOllama.open.aria': 'Добавить модель по имени Ollama или официальной странице',
   'models.addOllama.title': 'Добавить из Ollama',
