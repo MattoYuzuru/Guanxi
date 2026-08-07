@@ -27,6 +27,7 @@ Root npm workspaces связывают пакеты. Production server разд�
 
 ```bash
 npm install
+npx playwright install chromium   # обязательно один раз до test:web:browser
 npm run dev:server
 npm run dev:web
 npm run typecheck
@@ -36,6 +37,9 @@ npm run build
 npm run benchmark:catalog
 npm run link:cli
 ```
+
+`npm install` не устанавливает browser binaries: postinstall hook отсутствует.
+Без `npx playwright install chromium` browser gate падает на чистой машине.
 
 | Команда             | Фактическая область                                  |
 | ------------------- | ---------------------------------------------------- |

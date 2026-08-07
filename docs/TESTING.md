@@ -9,7 +9,11 @@
 
 - `npm test`: 349/349 server/CLI и 95/95 web component/parser tests;
 - `npm run test:web:browser`: 23/23 deterministic Chromium tests с mocked
-  REST/SSE;
+  REST/SSE. Требует заранее установленный browser binary
+  (`npx playwright install chromium`) — postinstall hook отсутствует, поэтому на
+  чистой машине `npm install` этого не делает. Запускать из корня либо из
+  `packages/web`: прямой `npx playwright` из корня не получает workspace
+  `baseURL` и падает с `Cannot navigate to invalid URL`;
 - `npm run typecheck`: успешно во всех workspaces;
 - `npm run benchmark:catalog`: зафиксированный implementation run на synthetic
   1,000 models/4,000 variants дал server legacy 3,768,624 bytes/10.537 ms против
