@@ -95,23 +95,44 @@ Roadmap — последовательность снижения рисков, 
 - license/gated/size/dry-run/fit preview;
 - local Ollama create/import, checksum и provenance;
 - faceted search/filter/compare;
-- bounded `/api/show` concurrency;
-- Linux/NVIDIA telemetry prototype;
-- measured-parallel experiment только за feature flag.
+- bounded `/api/show` concurrency (реализовано в P1-M, `c86e537`);
+- Linux/NVIDIA telemetry prototype без verified claim;
+- feature-flag infrastructure как отдельный slice;
+- estimated parallel-admission вердикт из declared model size, KV-cache estimate,
+  observed `/api/ps` VRAM и host memory sample — всегда с source и confidence.
 
 ### Requirements
 
-`MOD-001..010`, `RES-008..010`, `PLAT-001..002`.
+`MOD-001..010`, `RES-008`, `PLAT-001`.
+
+`RES-009`/`RES-010` measured parallelism и `PLAT-002` verified Linux tier
+перенесены за Phase 4 решением owner 2026-08-07 (Q-34a/Q-35): для них нужен
+measured evidence с реального железа, недоступный до тех пор.
 
 ### Exit gate
+
+Пересобран 2026-08-07 так, чтобы каждый bullet был достижим mocked-тестами на
+Apple Silicon. Hardware-зависимые пункты вынесены явно, а не молча ослаблены.
 
 - installed и Marketplace не смешаны;
 - selected GGUF/quantization совпадает с fit/install;
 - unknown не отображается как supported;
 - network/provider offline не ломает local;
-- HF import фиксирует exact revision/checksum/license state;
+- HF import фиксирует exact revision/checksum и license state для GGUF-only
+  scope; non-GGUF repository получает explicit unsupported state;
 - arbitrary URL не server-side fetch-ится;
-- Ollama human catalog не scrape-ится.
+- Ollama human catalog не scrape-ится;
+- user override видим, экспортируем и не выдаётся за provider/runtime facts;
+- parallel-admission вердикт помечен `estimated` с источником и никогда не
+  публикуется как `measured` или как гарантия будущего admission.
+
+### Вынесено из exit gate Phase 2
+
+- measured parallel execution и pin/TTL policy (`RES-009`, `RES-010`) → Phase 9
+  либо отдельный post-Phase-4 slice;
+- Linux/NVIDIA verified tier (`PLAT-002`) → post-Phase-4; в Phase 2 остаётся
+  только prototype без verified claim;
+- любые live-Ollama/GPU тесты → post-Phase-4 (Q-35).
 
 ## Phase 3 — Text, Projects, retention и localization
 
