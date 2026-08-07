@@ -1,0 +1,250 @@
+import { expect, test } from '@playwright/test'
+import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+
+test('Marketplace discovers Hugging Face repositories read-only without resource side effects', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const observedAt = '2026-08-07T12:00:00.000Z'
+  const requests: Array<{ path: string; method: string; body: string | null }> = []
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  const health = {
+    ok: true, appVersion: 'test',
+    application: { state: 'reachable', source: 'application_http', observedAt },
+    ollama: {
+      installed: true, installSource: 'runtime_response', running: true,
+      state: 'reachable', source: 'ollama_api_version', observedAt,
+      version: '0.12.6', host: 'http://127.0.0.1:11434', installHint: null,
+    },
+    hardware: {
+      platform: 'darwin', arch: 'arm64', cpuModel: 'fixture', cpuCores: 8,
+      totalMemoryBytes: 16_000_000_000, usableMemoryBytes: 12_000_000_000,
+      accelerator: 'metal', acceleratorName: 'Fixture Metal', unifiedMemory: true,
+      freeDiskBytes: null,
+    },
+    network: {
+      ollamaComReachable: null, checkedAt: null,
+      status: 'unknown', source: 'not_checked',
+    },
+  }
+
+  const identity = (owner: string, name: string) => ({
+    provider: 'hugging_face', owner, name,
+    repositoryId: `${owner}/${name}`,
+    comparisonKey: `${owner}/${name}`.toLowerCase(),
+  })
+
+  const supported = {
+    version: 1, provider: 'hugging_face',
+    identity: identity('TheBloke', 'Llama-2-7B-GGUF'),
+    metadata: 'resolved', observedAt,
+    revision: { state: 'exact_commit', commit: 'a'.repeat(40), source: 'hugging_face_api_model' },
+    gated: { state: 'gated', mode: 'manual' },
+    license: {
+      state: 'declared', value: 'apache-2.0',
+      source: 'hugging_face_model_tags', confidence: 'declared',
+    },
+    files: {
+      state: 'listed', source: 'hugging_face_api_model', totalFiles: 2,
+      malformedEntries: 0, truncated: false,
+      ggufFiles: [{
+        path: 'llama-2-7b.Q4_K_M.gguf', sizeBytes: 4_000_000_000,
+        sizeSource: 'hugging_face_api_model',
+      }],
+    },
+    verdict: {
+      state: 'supported', scope: 'exact_gguf_file_only',
+      basis: 'exact_gguf_files_listed', reason: null,
+      requiresExactFileSelection: true,
+    },
+  }
+
+  const unsupported = {
+    ...supported,
+    identity: identity('openai', 'whisper-large-v3'),
+    gated: { state: 'open', mode: null },
+    files: {
+      state: 'listed', source: 'hugging_face_api_model', totalFiles: 3,
+      malformedEntries: 0, truncated: false, ggufFiles: [],
+    },
+    verdict: {
+      state: 'unsupported', scope: 'exact_gguf_file_only',
+      basis: 'complete_listing_without_gguf', reason: null,
+      requiresExactFileSelection: true,
+    },
+  }
+
+  const unknown = {
+    ...supported,
+    identity: identity('mystery', 'repo'),
+    metadata: 'unavailable',
+    revision: { state: 'unknown', commit: null, source: 'not_reported' },
+    gated: { state: 'unknown', mode: null },
+    license: {
+      state: 'unknown', value: null,
+      source: 'metadata_unavailable', confidence: 'unknown',
+    },
+    files: {
+      state: 'unknown', source: 'metadata_unavailable', totalFiles: null,
+      malformedEntries: null, truncated: null, ggufFiles: [],
+    },
+    verdict: {
+      state: 'unknown', scope: 'exact_gguf_file_only',
+      basis: 'insufficient_evidence', reason: 'metadata_unavailable',
+      requiresExactFileSelection: true,
+    },
+  }
+
+  const json = (body: unknown, status = 200) => ({
+    status, contentType: 'application/json', body: JSON.stringify(body),
+  })
+
+  const searchPage = (repositories: unknown[], nextCursor: string | null) => ({
+    result: {
+      state: 'listed', version: 1, page: 1, pageSize: 10,
+      source: {
+        state: 'available', source: 'hugging_face_public_api',
+        observedAt, reason: null,
+      },
+      droppedRows: 1, repositories, nextCursor, reason: null,
+    },
+  })
+
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    requests.push({
+      path: url.pathname,
+      method: request.method(),
+      body: request.postData() ?? null,
+    })
+    if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))
+    if (url.pathname === '/api/models/catalog') {
+      return route.fulfill(json({
+        models: [], live: false,
+        source: {
+          state: 'stale_cache', source: 'ollama_recommendations_cache',
+          observedAt, fetchedAt: '2026-08-01T00:00:00.000Z',
+        },
+      }))
+    }
+    if (url.pathname === '/api/models/discovery/hugging-face/search') {
+      const body = JSON.parse(request.postData() ?? '{}') as { query?: string }
+      if (body.query === 'rate-limited') {
+        return route.fulfill(json({
+          result: {
+            state: 'failed', version: 1, page: 1, pageSize: 10,
+            source: {
+              state: 'unavailable', source: 'hugging_face_public_api',
+              observedAt, reason: 'rate_limited',
+            },
+            droppedRows: 0, repositories: [], nextCursor: null,
+            reason: 'rate_limited',
+          },
+        }))
+      }
+      return route.fulfill(json(searchPage([supported, unsupported, unknown], null)))
+    }
+    return route.fulfill(json(
+      { code: 'internal_error', message: url.pathname, details: null }, 500,
+    ))
+  })
+
+  await page.goto('/')
+
+  const section = page.getByRole('region', { name: 'Hugging Face' })
+  const search = page.getByLabel('Поиск репозиториев Hugging Face')
+  await expect(search).toBeVisible()
+  await expect(page.getByText('Поиск ещё не выполнялся')).toBeVisible()
+
+  // Mount, hover, focus and reload must not reach the discovery boundary.
+  await search.hover()
+  await search.focus()
+  await search.fill('llama gguf')
+  const discoveryCalls = () =>
+    requests.filter((entry) => entry.path.includes('/discovery/hugging-face/'))
+  expect(discoveryCalls()).toHaveLength(0)
+
+  await page.reload()
+  await expect(page.getByText('Поиск ещё не выполнялся')).toBeVisible()
+  expect(discoveryCalls()).toHaveLength(0)
+
+  // One explicit keyboard submit issues exactly one request.
+  await search.fill('llama gguf')
+  await search.press('Enter')
+  await expect(section.getByText('TheBloke/Llama-2-7B-GGUF')).toBeVisible()
+  expect(discoveryCalls()).toHaveLength(1)
+  expect(JSON.parse(discoveryCalls()[0]!.body ?? '{}')).toEqual({
+    query: 'llama gguf', page: 1, pageSize: 10, cursor: null,
+  })
+
+  // The three verdict states stay visibly distinct and truthfully worded.
+  await expect(section.getByText('Содержит файлы GGUF')).toBeVisible()
+  await expect(section.getByText('Вне GGUF-only scope этого приложения')).toBeVisible()
+  await expect(section.getByText('Доказательств недостаточно')).toBeVisible()
+  await expect(section.getByText(/не значит, что модель сломана/u)).toBeVisible()
+  await expect(section.getByText(/Metadata репозитория прочитать не удалось/u)).toBeVisible()
+  await expect(section.getByText(/это не «нашлось меньше»/u)).toBeVisible()
+  await expect(section.getByText(/Gated — ручное одобрение/u)).toBeVisible()
+  await expect(section.getByText(/не запрашивает token/u)).toBeVisible()
+
+  // No install affordance exists in this slice.
+  for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Скачать/u]) {
+    await expect(section.getByRole('button', { name })).toHaveCount(0)
+  }
+  await expect(section.getByText(/нужно выбрать точный файл GGUF/u).first()).toBeVisible()
+
+  // The GGUF list is a keyboard-operable disclosure with focus retained.
+  const disclosure = section.getByRole('button', { name: /Файлы GGUF: 1/u })
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  await disclosure.press('Enter')
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(disclosure).toBeFocused()
+  await expect(section.getByText('llama-2-7b.Q4_K_M.gguf')).toBeVisible()
+
+  // A rate-limited answer is distinguishable and retryable.
+  await search.fill('rate-limited')
+  await search.press('Enter')
+  const alert = section.getByRole('alert')
+  await expect(alert).toContainText(/ограничивает частоту запросов/u)
+  const retry = section.getByRole('button', { name: 'Повторить' })
+  await expect(retry).toBeVisible()
+  await retry.press('Enter')
+  await expect(alert).toContainText(/ограничивает частоту запросов/u)
+
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const layout = await page.evaluate(() => ({
+    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    animationDurations: [...document.querySelectorAll<HTMLElement>('*')]
+      .map((element) => Number.parseFloat(getComputedStyle(element).animationDuration || '0'))
+      .filter(Number.isFinite),
+  }))
+  expect(layout.overflow).toBeLessThanOrEqual(1)
+  expect(layout.reducedMotion).toBe(true)
+  expect(Math.max(0, ...layout.animationDurations)).toBeLessThanOrEqual(0.00001)
+  expect(pageErrors).toEqual([])
+
+  // Discovery never triggers a pull, probe, prewarm, warm, stop, delete or create.
+  const forbidden = requests.filter((entry) =>
+    /\/(pull|prewarm|warm|stop|probes|create|imports)\b/u.test(entry.path)
+    || entry.method === 'DELETE'
+    || entry.method === 'PUT'
+    || entry.method === 'PATCH',
+  )
+  expect(forbidden).toEqual([])
+
+  // Every non-GET request in this run is a discovery POST and nothing else.
+  const writes = requests.filter((entry) => entry.method !== 'GET')
+  expect(writes.every((entry) =>
+    entry.path === '/api/models/discovery/hugging-face/search',
+  )).toBe(true)
+
+  // The browser never talks to the provider directly.
+  expect(requests.every((entry) => entry.path.startsWith('/api/'))).toBe(true)
+})
