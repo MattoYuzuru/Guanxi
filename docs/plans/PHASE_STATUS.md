@@ -771,7 +771,7 @@ Required evidence through revision `6cc4504`: typecheck; P2-I 52 new / 401 core
 envelope (contract 6, migration 6, store 12, service 21, routes 7); Web 117/117;
 mocked Chromium 25/25; production build; markdownlint 31 files/0 issues; diff
 check. Sequential repeats with exit/count checking: P2-I server 10×52/52,
-targeted Web 10×16/16 и Chromium 10×2/2; migration/descriptor files, затронутые
+targeted Web 10×22/22 и Chromium 10×2/2; migration/descriptor files, затронутые
 diff — 10×35/35; AppContext-затронутые files — 10×64/64.
 
 Первые failures не скрыты. Первый core run после migration 9 дал 335/349 и 14
