@@ -14,7 +14,12 @@ foundation
 `PRODUCT.md`, `DOMAIN_MODEL.md`, `UX_IA.md`, `DEVELOPMENT.md`, `TESTING.md`, HLD,
 LLD, `architecture/RUNTIME_LIFECYCLE.md`, ADR-0003,
 `plans/PHASE_STATUS.md`, `plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted
-owner decisions. Не создавай subagents и не делегируй работу.
+owner decisions, а также обязательный протокол `plans/WORKFLOW.md`.
+
+Implementation не делегируется: contract, server, Web, migration и tests пишешь
+ты сам. Но независимая verification в конце slice — обязательный отдельный шаг
+через reviewer-субагента (см. «Независимая verification» в `WORKFLOW.md`).
+Не используй субагентов для написания production code.
 
 Не считай target/proposed реализованным. Код определяет current behavior,
 accepted ADR/decision — целевую границу, ROADMAP — порядок перехода. Не трогай
@@ -27,14 +32,15 @@ P2-A–P2-H уже реализованы. P2-H code commits:
   count/order/slice;
 - `cc40d14` — bounded Marketplace pages, cross-page compare и benchmark.
 
-Подтверждённый P2-H baseline: typecheck; P2-H server 10/10; targeted Web 25/25;
-P2-H Chromium 1/1; P2-G server 38/38; core 349/349; Web 95/95; mocked Chromium
-23/23; build, markdownlint и diff check. Repeats: P2-H server/Web/Chromium
-10×10/10, 10×7/7, 10×1/1; affected Web 10×95/95; P2-F server/Web
-10×10/10 и 10×8/8; P2-E server/Web 10×12/12 и 10×10/10; P2-G
-server/Web/Chromium 10×38/38, 10×20/20 и 10×1/1; P1-H 10×25/25;
-P1-L+M 10×33/33; P1-K 10×37/37; P1-J 10×11/11; P1-I 10×3/3;
-P1-E 10×8/8.
+Подтверждённый baseline (перепроверен 2026-08-07): typecheck clean; core 349/349;
+Web 95/95; mocked Chromium 23/23; build, markdownlint и diff check — всё зелёное.
+P2-H net new — 10 server tests (`catalog-pagination.test.ts`).
+
+Полный исторический ledger повторов хранится в `PHASE_STATUS.md` и здесь больше
+не дублируется. Repeat-политика: повторяй 10× **только** новую P2-I group и те
+файлы, которые твой diff реально задевает. Не повторяй по 10 раз всю унаследованную
+цепочку P1-E…P2-H — это не даёт информации и вытесняет содержание промпта. Flaky
+результат фиксируй, диагностируй и только потом переходи дальше.
 
 Catalog diagnostic использует synthetic 1,000 models/4,000 variants: legacy
 server response 3,768,624 bytes/10.537 ms, page 12 — 45,513 bytes/4.759 ms;
@@ -191,19 +197,33 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-Добавь exact P2-I migration/store/route/Web/Chromium commands. Повтори новый
-P2-I group, affected Web, P2-A/P2-B descriptor/cache, P2-C probe, P2-H
-server/Web/Chromium, P1-L+M, P1-K, P1-J, P1-I и P1-E по 10 раз последовательно
-с exit/count checking. Первый failing/flaky result сохрани, диагностируй и
-исправь; повторный green не скрывает первую ошибку. Не запускай десятки Node/
-Vitest processes одновременно.
+Browser gate требует заранее установленный Chromium
+(`npx playwright install chromium`) и запускается из корня либо из
+`packages/web`; прямой `npx playwright` из корня не получает workspace `baseURL`.
+
+Добавь exact P2-I migration/store/route/Web/Chromium commands. Повтори 10×
+только новую P2-I group и файлы, реально затронутые твоим diff, с exit/count
+checking. Первый failing/flaky result сохрани, диагностируй и исправь; повторный
+green не скрывает первую ошибку. Не запускай десятки Node/Vitest processes
+одновременно — под memory pressure Vitest даёт exit 137 без вывода, и это
+окружение, а не продукт.
 
 ## Completion и handoff
 
 После bounded slice:
 
+- **вызови reviewer-субагента** (`sde-agent:implementation-reviewer` для
+  contract/store/routes, `frontend-agent:accessibility-reviewer` для Installed
+  Web), передай ему точный diff и заявленные свойства, исправь findings
+  отдельным `fix(...)`/`test(...)` commit и запусти browser gate после фикса;
+- проверь, что каждое заявленное свойство имеет падающий assertion: для
+  «не дублирует / ровно один row / идемпотентно» нужен explicit count, а не
+  только visible/absent;
 - согласованно обнови contract, migration/store, server descriptor/routes,
   Installed Web, locale, tests и current-state docs;
+- обнови таблицу «Phase 2 — что реально осталось» в `PHASE_STATUS.md`;
+- запиши counts как `N new / M envelope`, не смешивая regression envelope с новой
+  работой;
 - добавь P2-I evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-H;
 - Phase 2 оставь `in progress`: override foundation не закрывает HF/Q-25,
   verified Linux tier, full Capability Registry или ROADMAP exit gate;

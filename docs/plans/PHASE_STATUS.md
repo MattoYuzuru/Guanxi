@@ -59,8 +59,18 @@ Runtime Bar. P1-J добавляет safe Queue и exact Job Stop/cancel acknowl
 New Chat selection. P1-L добавляет exact observation keys, migration 6 и
 digest-aware bounded cache. P1-M удаляет arbitrary context ceiling, добавляет
 sourced declared/unknown limit evidence, exact custom propagation и truthful
-one-permit/device-unknown projection. Все Phase 1 slices и полный ROADMAP exit
-gate independently verified; Phase 1 завершена.
+one-permit/device-unknown projection. Все Phase 1 slices реализованы и полный
+ROADMAP exit gate проверен.
+
+Поправка 2026-08-07: exit-gate bullet «reload replay не дублирует output» до этой
+даты не имел assertion — browser tests проверяли только `toHaveCount(0)` на live
+draft, поэтому отсутствие duplicate было следствием, а не проверкой. Явный
+`toHaveCount(1)` на persisted answer добавлен в
+`packages/web/test/browser/chat-first-stream.spec.ts`; mutation check
+(ожидание 2) падает, значит assertion имеет силу. «restart даёт
+interrupted/recovery state» подтверждён `chat-job-recovery.test.ts:306`
+(close → reopen → `interrupted === 8`). Остальные bullets exit gate не
+перепроверялись этой правкой.
 
 P1-E evidence: reopened temporary SQLite с page sizes 2/2 покрывает восемь
 executing states, cancelling, queued, terminal no-op, partial channels,
@@ -738,6 +748,42 @@ checksum/license и platform work; Q-25 остаётся открытым и б�
 Hugging Face import slice. Следующий handoff — не зависящий от Q-25 bounded
 P2-I exact installed capability user override foundation по MOD-008/ADR-0003,
 не full Capability Registry, remote provider или inferred capability resolver.
+
+## Phase 2 — что реально осталось
+
+**Проверено кодом 2026-08-07.** Таблица обязательна к обновлению каждым Phase 2
+slice: без неё читатель делает вывод, что до конца фазы остался один HF slice, а
+это неверно.
+
+| ROADMAP scope item                               | Состояние                                                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| HF search + exact GGUF/revision import (MOD-010) | **нет кода**: `huggingface`/`gguf` — 0 файлов в src; blocked Q-25                                            |
+| license/gated/size/dry-run/fit preview           | **нет кода**: `dryRun`/`gated` — 0 файлов; `license` только display                                          |
+| local Ollama create/import + checksum/provenance | **нет кода**: `/api/create` отсутствует; все `sha256:` — internal keys                                       |
+| measured-parallel за feature flag (RES-009)      | **нет кода и нет flag-инфраструктуры**; Governor hardcoded single-permit                                     |
+| variant calibration (MOD-004)                    | **половина**: variant-first install есть, calibration не связана с catalog fit (`catalog.ts` — 0 упоминаний) |
+| Linux/NVIDIA verified tier (PLAT-002)            | prototype есть; verified tier нет — Linux key/fit остаются unavailable                                       |
+| user override (MOD-008)                          | следующий slice P2-I                                                                                         |
+| bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
+
+Итог: из 14 scope bullets — 9 delivered, 1 сделан Phase 1, 1 половина, 3 без
+единой строки кода. Exit-gate bullet «HF import фиксирует exact revision/
+checksum/license state» недостижим и блокирует фазу.
+
+## Известные долги evidence
+
+- **Двойной учёт tests.** `ollama-client.test.ts` (9) посчитан и в P2-C 34, и в
+  P2-D 20. Net new у P2-D — 11, не 20. Таблица Phase 2 выше даёт headline без
+  этой оговорки; новые slices пишут `N new / M envelope` по правилу 4a
+  `WORKFLOW.md`.
+- **`independently verified` без механизма.** Все 132 commit — один автор, CI и
+  git hooks отсутствуют. До Phase 2 этот статус означал self-review, а не
+  второго участника. С 2026-08-07 статус ставится только при наличии отдельного
+  reviewer-субагента и видимого review-fix commit.
+- **Playwright Chromium** требует `npx playwright install chromium`; postinstall
+  hook отсутствует, поэтому документированная последовательность
+  `npm install` → `npm run test:web:browser` на чистой машине падает.
+- `dev:mock` сломан: `packages/web/mock/server.mjs` отсутствует, скрипт остался.
 
 ## Later phases
 
