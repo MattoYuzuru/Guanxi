@@ -87,6 +87,8 @@ export function CapabilityOverrides({
    * the trigger on every re-render while the dialog is still open.
    */
   const returnFocusRef = useRef<HTMLElement | null>(null)
+  /** Set when a mutation may have deleted the control that currently has focus. */
+  const recoverFocusRef = useRef(false)
   const mountedRef = useRef(true)
   const controllerRef = useRef<AbortController | null>(null)
   const pendingRef = useRef(false)
@@ -104,6 +106,17 @@ export function CapabilityOverrides({
       controllerRef.current?.abort('model-profile-unmounted')
     }
   }, [])
+
+  /*
+   * After a removal commits, the Remove button the dialog returned focus to is
+   * gone and focus has fallen to `<body>`. Move it to the Add control so the
+   * keyboard position stays inside this region.
+   */
+  useEffect(() => {
+    if (!recoverFocusRef.current) return
+    recoverFocusRef.current = false
+    if (document.activeElement === document.body) addRef.current?.focus()
+  }, [overrides])
 
   const identity = exactIdentity(model)
   const asserted = new Set(overrides.map((override) => override.capability))
@@ -135,7 +148,12 @@ export function CapabilityOverrides({
         : await api.clearCapabilityOverride(model.name, body, controller.signal)
       if (!mountedRef.current || controller.signal.aborted) return
       setFeedback({ kind: 'outcome', outcome: response.outcome })
-      if (response.outcome.state !== 'conflict') setOverrides(response.outcome.overrides)
+      if (response.outcome.state !== 'conflict') {
+        // The dialog already restored focus to the Remove control, which this
+        // update may delete. Recover the focus position after the list commits.
+        recoverFocusRef.current = true
+        setOverrides(response.outcome.overrides)
+      }
     } catch (error) {
       if (!mountedRef.current || controller.signal.aborted) return
       setFeedback({ kind: 'error', message: errorMessage(error) })
@@ -271,9 +289,14 @@ export function CapabilityOverrides({
                   size="sm"
                   disabled={identity === null || pending}
                   onClick={() => {
-                    // Capture the exact activating control before the list rerenders.
+                    /*
+                     * Capture the exact activating control before the list
+                     * rerenders. A confirmed removal deletes that very button, so
+                     * fall back to the Add control instead of dropping focus on
+                     * `<body>` and losing the keyboard position entirely.
+                     */
                     returnFocusRef.current =
-                      removeRefs.current.get(override.capability) ?? null
+                      removeRefs.current.get(override.capability) ?? addRef.current
                     setIntent({ kind: 'remove', capability: override.capability })
                   }}
                   aria-label={`${translate('models.override.remove.aria')} ${override.capability}`}
@@ -367,7 +390,7 @@ export function CapabilityOverrides({
         )}
         describedBy="capability-override-confirmation"
         initialFocusRef={confirmRef}
-        returnFocusRef={intent?.kind === "remove" ? { current: removeRefs.current.get(intent.capability) ?? null } : addRef}
+        returnFocusRef={returnFocusRef}
         closeLabel={translate('models.override.confirm.close')}
         footer={
           <>

@@ -492,25 +492,100 @@ describe('installed capability overrides', () => {
     expect(screen.getByRole('button', { name: 'Перечитать модель' })).toBeTruthy()
   })
 
-  it('keeps dialog focus through a rerender instead of bouncing to the trigger', async () => {
-    const { view } = renderOverrides({ overrides: [override()] })
-    const add = screen.getByRole('button', { name: /утвердить выбранную capability/u })
-    add.focus()
-    fireEvent.click(add)
-    const confirm = await screen.findByRole('button', { name: 'Утвердить capability' })
-    await waitFor(() => expect(document.activeElement).toBe(confirm))
+  it.each([
+    {
+      path: 'add',
+      trigger: /утвердить выбранную capability/u,
+      dialog: 'Утвердить эту capability самостоятельно?',
+      confirm: 'Утвердить capability',
+    },
+    {
+      path: 'remove',
+      trigger: /удалить ваше утверждение для tools/u,
+      dialog: 'Удалить ваше утверждение?',
+      confirm: 'Удалить утверждение',
+    },
+  ])(
+    'keeps $path dialog focus through a rerender instead of bouncing to the trigger',
+    async ({ trigger, dialog, confirm }) => {
+      const { view } = renderOverrides({ overrides: [override()] })
+      const control = screen.getByRole('button', { name: trigger })
+      control.focus()
+      fireEvent.click(control)
+      const confirmButton = await screen.findByRole('button', { name: confirm })
+      await waitFor(() => expect(document.activeElement).toBe(confirmButton))
 
-    // A parent rerender while the dialog is open must not tear down the focus
-    // effect and throw focus back to the activating control.
-    view.rerender(
-      <CapabilityOverrides model={model({ overrides: [override()] })} onRefresh={vi.fn()} />,
-    )
-    expect(screen.getByRole('dialog', { name: 'Утвердить эту capability самостоятельно?' }))
-      .toBeTruthy()
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Утвердить capability' }),
-    )
-    expect(document.activeElement).not.toBe(add)
+      // A parent rerender while the dialog is open must not tear down Modal's
+      // focus effect and throw focus back to the activating control.
+      view.rerender(
+        <CapabilityOverrides model={model({ overrides: [override()] })} onRefresh={vi.fn()} />,
+      )
+      expect(screen.getByRole('dialog', { name: dialog })).toBeTruthy()
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: confirm }))
+      expect(document.activeElement).not.toBe(control)
+
+      // Escape still returns focus to the exact control that opened the dialog.
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: trigger }),
+      ))
+    },
+  )
+
+  it('returns focus to the activating control after a confirmed mutation', async () => {
+    vi.spyOn(api, 'clearCapabilityOverride')
+      .mockResolvedValue(outcome({ state: 'cleared', overrides: [override({ capability: 'vision' })] }))
+    renderOverrides({ overrides: [override(), override({ capability: 'vision' })] })
+    const remove = screen.getByRole('button', {
+      name: /удалить ваше утверждение для tools/u,
+    })
+    remove.focus()
+    fireEvent.click(remove)
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить утверждение' }))
+    expect(await screen.findByText('Ваше утверждение удалено.')).toBeTruthy()
+    // The removed row is gone, so focus must land somewhere real and not on body.
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body))
+  })
+
+  it('contains Tab inside the dialog', async () => {
+    renderOverrides()
+    fireEvent.click(screen.getByRole('button', { name: /утвердить выбранную capability/u }))
+    const dialog = await screen.findByRole('dialog')
+    const focusable = [...dialog.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    )].filter((node) => !node.hasAttribute('disabled'))
+    expect(focusable.length).toBeGreaterThan(1)
+    const last = focusable[focusable.length - 1]!
+    last.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    // Tab from the last control wraps to the first inside the dialog, never to
+    // the inert background.
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+    focusable[0]!.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  })
+
+  it('clears a previous error when the same action is retried', async () => {
+    const apply = vi.spyOn(api, 'applyCapabilityOverride')
+      .mockRejectedValueOnce(new Error('The capability override could not be changed safely'))
+      .mockResolvedValueOnce(outcome())
+    renderOverrides()
+    const run = async () => {
+      fireEvent.click(screen.getByRole('button', { name: /утвердить выбранную capability/u }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Утвердить capability' }))
+    }
+    await run()
+    expect(await screen.findByText('Изменение не применилось. Ничего не записано.')).toBeTruthy()
+
+    await run()
+    expect(await screen.findByText('Ваше утверждение записано.')).toBeTruthy()
+    // The stale error must not survive alongside the fresh success.
+    expect(screen.queryByText('Изменение не применилось. Ничего не записано.')).toBeNull()
+    expect(
+      screen.queryByText('The capability override could not be changed safely'),
+    ).toBeNull()
+    expect(apply).toHaveBeenCalledTimes(2)
   })
 
   it('associates the visible label with the capability control', () => {
