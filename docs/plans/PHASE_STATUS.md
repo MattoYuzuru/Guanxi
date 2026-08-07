@@ -743,11 +743,12 @@ P2-H работает только с current local/bundled response: нет rem
 immutable multi-request snapshot, saved filters, generic virtualization, 10k/
 live load evidence или inferred license/quantization/task facts. Legacy client
 может по-прежнему запросить полный list; page-size policy не является total cap.
-Phase 2 остаётся `in progress`: ROADMAP exit gate требует HF exact revision/
-checksum/license и platform work; Q-25 остаётся открытым и блокирует первый
-Hugging Face import slice. Следующий handoff — не зависящий от Q-25 bounded
-P2-I exact installed capability user override foundation по MOD-008/ADR-0003,
-не full Capability Registry, remote provider или inferred capability resolver.
+Phase 2 остаётся `in progress`. Запись выше отражала состояние на 2026-08-04;
+owner session 2026-08-07 закрыла Q-25 (GGUF-only), поэтому HF import больше не
+заблокирован и разбит на P2-J..P2-M, а hardware-зависимые пункты вынесены за
+Phase 4. Следующий handoff — bounded P2-I exact installed capability user
+override foundation по MOD-008/ADR-0003, не full Capability Registry, remote
+provider или inferred capability resolver.
 
 ## Phase 2 — что реально осталось
 
@@ -757,18 +758,92 @@ slice: без неё читатель делает вывод, что до ко�
 
 | ROADMAP scope item                               | Состояние                                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| HF search + exact GGUF/revision import (MOD-010) | **нет кода**: `huggingface`/`gguf` — 0 файлов в src; blocked Q-25                                            |
+| HF search + exact GGUF/revision import (MOD-010) | **нет кода**: `huggingface`/`gguf` — 0 файлов в src; Q-25 закрыт, unblocked → P2-J..P2-M                     |
 | license/gated/size/dry-run/fit preview           | **нет кода**: `dryRun`/`gated` — 0 файлов; `license` только display                                          |
 | local Ollama create/import + checksum/provenance | **нет кода**: `/api/create` отсутствует; все `sha256:` — internal keys                                       |
-| measured-parallel за feature flag (RES-009)      | **нет кода и нет flag-инфраструктуры**; Governor hardcoded single-permit                                     |
+| measured-parallel за feature flag (RES-009)      | flag infra → P2-N; estimated admission → P2-O; measured вынесен за Phase 4 (Q-34a)                           |
 | variant calibration (MOD-004)                    | **половина**: variant-first install есть, calibration не связана с catalog fit (`catalog.ts` — 0 упоминаний) |
-| Linux/NVIDIA verified tier (PLAT-002)            | prototype есть; verified tier нет — Linux key/fit остаются unavailable                                       |
+| Linux/NVIDIA verified tier (PLAT-002)            | prototype есть; verified tier вынесен за Phase 4 (Q-35), убран из exit gate                                  |
 | user override (MOD-008)                          | следующий slice P2-I                                                                                         |
 | bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
 
-Итог: из 14 scope bullets — 9 delivered, 1 сделан Phase 1, 1 половина, 3 без
-единой строки кода. Exit-gate bullet «HF import фиксирует exact revision/
-checksum/license state» недостижим и блокирует фазу.
+Итог на 2026-08-07: из 14 scope bullets — 9 delivered, 1 сделан Phase 1,
+1 половина (calibration не связана с catalog fit), 3 без единой строки кода.
+После owner decisions ни один пункт не заблокирован вопросом: HF разблокирован
+Q-25, а hardware-зависимые пункты вынесены за Phase 4 и убраны из exit gate.
+Остаток фазы — семь slices P2-I..P2-O.
+
+## Планируемая последовательность Phase 2
+
+Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
+разбита на bounded vertical slices, а не один «import» slice: из
+`research/EVIDENCE.md` следует, что HF URL нельзя обещать как direct
+`ollama pull`, и каждый шаг имеет свои failure states.
+
+| Slice | Outcome                                                            | Статус          |
+| ----- | ------------------------------------------------------------------ | --------------- |
+| P2-I  | exact installed capability user override (MOD-008)                 | ready           |
+| P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | ready           |
+| P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | blocked by P2-J |
+| P2-L  | download с checksum/provenance, bounded и cancel-safe              | blocked by P2-K |
+| P2-M  | local Ollama import через `/api/create` + probe                    | blocked by P2-L |
+| P2-N  | feature-flag infrastructure (без обещания measured)                | ready           |
+| P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | blocked by P2-N |
+
+`/api/create` в текущем `ollama/client.ts` отсутствует — P2-M добавляет его как
+новый documented endpoint, а не переиспользует pull. P2-N/P2-O закрывают
+мотивацию owner про параллельный LLM + STT на уровне инфраструктуры и estimate;
+сам STT остаётся в Phase 6 по cross-phase rule, а measured подтверждение — после
+Phase 4.
+
+## Design debts от owner session 2026-08-07
+
+Проверено по коду 2026-08-07. Это не найденные баги в реализованном поведении, а
+разрывы между accepted Q-27/Q-28 и текущим кодом. Каждый пункт обязателен к
+закрытию до соответствующей фазы; agent tools остаются default-off, поэтому
+сейчас это не активная уязвимость.
+
+### Q-28 filesystem scope (Phase 5)
+
+- **`resolveInWorkspace` принимает ровно один root** (`tools/jail.ts:61`).
+  Трёхслойная модель требует набора allowed roots — это смена сигнатуры и всех
+  шести tool-ов, не настройка.
+- **`no delete` не обеспечен.** Delete-инструмента нет вовсе (tools: `list_dir`,
+  `read_file`, `write_file`, `edit_file`, `glob`, `grep`), но `write_file`
+  (`fs-tools.ts`, `mutating: true`) может записать пустоту, а `bash`
+  (`tools/bash.ts:26`, `mutating: true`) **не имеет блок-листа команд**, поэтому
+  `rm -rf` проходит. Гарантия «read/modify без delete» пока номинальная.
+- **Traversal закрыт корректно** и переписывать не нужно: `realpathSync` вместо
+  строковых сравнений (`jail.ts:13,68`), проверка `..` в несуществующем хвосте
+  (`jail.ts:85-88`), граница по separator (`jail.ts:48-51`), NUL-байт
+  (`jail.ts:62`).
+- **Регистр не нормализуется**: `isInside` сравнивает case-sensitive
+  (`jail.ts:48-51`), а macOS по умолчанию case-insensitive. Нужен явный тест на
+  `/Users/x/Secret` против `/users/x/secret`.
+- **`.env` скрыт только в листинге.** `list_dir` фильтрует dot-файлы кроме
+  `.env.example`; `read_file` по явному пути не ограничен. Защита по маскам имён
+  обходится через `.env.local`, `.env.production`, `id_rsa`, `.aws/credentials`,
+  `.npmrc` — pattern-based правило само по себе не защита.
+- **Layer 3 grants приходят текстом промпта**, поэтому обязательны: приём grant
+  только из user input (никогда из file content, tool output или repository) и
+  покрытие delete-эквивалентов — truncate к нулю, overwrite пустым, rename-away.
+
+### Q-27 time-based control (Phase 5/8)
+
+- **`wrap up and report` требует нового persisted state + migration.** Текущие
+  transitions (`jobs/lifecycle.ts:4-37`) ведут из каждого рабочего состояния в
+  `interrupted` при падении процесса. Без отдельного состояния P1-E recovery
+  классифицирует прерванный wind-down как `interrupted` и **теряет сам отчёт** —
+  то есть ровно то, ради чего wind-down и нужен.
+- **`cancelling` переиспользовать нельзя** (`lifecycle.ts:26`): он ведёт в
+  `cancelled`, а wind-down должен приводить к `completed` с отчётом. Это разные
+  терминалы.
+- **Stall detector по «нет input и output токенов» даст false positives.**
+  В `prefill`/`thinking` отсутствие выходных токенов — штатное состояние
+  (`lifecycle.ts:7-8`). Нужен порог по времени с учётом текущего state, иначе
+  длинный prefill будет считаться залипанием.
+- Deadline mid-run mutation: нужно решить owner-ство и поведение при сокращении
+  дедлайна в прошлое и при сокращении во время уже идущего wind-down.
 
 ## Известные долги evidence
 
@@ -783,7 +858,7 @@ checksum/license state» недостижим и блокирует фазу.
 - **Playwright Chromium** требует `npx playwright install chromium`; postinstall
   hook отсутствует, поэтому документированная последовательность
   `npm install` → `npm run test:web:browser` на чистой машине падает.
-- `dev:mock` сломан: `packages/web/mock/server.mjs` отсутствует, скрипт остался.
+- `dev:mock` удалён 2026-08-07 по Q-36; browser gate использует Playwright routes.
 
 ## Later phases
 
