@@ -73,7 +73,7 @@ describe('bounded server-owned Hugging Face transport', () => {
     assert.equal(url.searchParams.get('limit'), '10')
     assert.equal(url.searchParams.get('full'), 'true')
     // Anonymous public access only: no token may be attached in this slice.
-    const headers = new Headers(call.init?.headers as HeadersInit)
+    const headers = new Headers(call.init?.headers as Record<string, string>)
     assert.equal(headers.get('authorization'), null)
     assert.equal(headers.get('cookie'), null)
     assert.equal(JSON.stringify(call.init?.headers).toLowerCase().includes('token'), false)
