@@ -81,6 +81,12 @@ export function CapabilityOverrides({
   const addRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const removeRefs = useRef(new Map<ModelCapability, HTMLButtonElement | null>())
+  /**
+   * Stable identity on purpose: Modal's focus effect depends on this ref, so a
+   * fresh object per render would tear that effect down and bounce focus back to
+   * the trigger on every re-render while the dialog is still open.
+   */
+  const returnFocusRef = useRef<HTMLElement | null>(null)
   const mountedRef = useRef(true)
   const controllerRef = useRef<AbortController | null>(null)
   const pendingRef = useRef(false)
@@ -262,7 +268,12 @@ export function CapabilityOverrides({
                   variant="ghost"
                   size="sm"
                   disabled={identity === null || pending}
-                  onClick={() => setIntent({ kind: 'remove', capability: override.capability })}
+                  onClick={() => {
+                    // Capture the exact activating control before the list rerenders.
+                    returnFocusRef.current =
+                      removeRefs.current.get(override.capability) ?? null
+                    setIntent({ kind: 'remove', capability: override.capability })
+                  }}
                   aria-label={`${translate('models.override.remove.aria')} ${override.capability}`}
                 >
                   {translate('models.override.remove')}
@@ -307,7 +318,10 @@ export function CapabilityOverrides({
           ref={addRef}
           variant="secondary"
           disabled={identity === null || pending || addable.length === 0}
-          onClick={() => setIntent({ kind: 'add', capability: draft })}
+          onClick={() => {
+            returnFocusRef.current = addRef.current
+            setIntent({ kind: 'add', capability: draft })
+          }}
           aria-label={translate('models.override.add.aria')}
         >
           {translate('models.override.add')}
@@ -351,11 +365,7 @@ export function CapabilityOverrides({
         )}
         describedBy="capability-override-confirmation"
         initialFocusRef={confirmRef}
-        returnFocusRef={
-          intent?.kind === 'remove'
-            ? { current: removeRefs.current.get(intent.capability) ?? null }
-            : addRef
-        }
+        returnFocusRef={intent?.kind === "remove" ? { current: removeRefs.current.get(intent.capability) ?? null } : addRef}
         closeLabel={translate('models.override.confirm.close')}
         footer={
           <>

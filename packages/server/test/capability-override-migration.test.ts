@@ -175,6 +175,26 @@ describe('SQLite capability override migration 9', () => {
     reopened.close()
   })
 
+  it('keeps a UNIQUE tuple so a corrupted key cannot create a second owner', async (test) => {
+    const path = await temporaryDbPath(test, 'unique')
+    const db = openDb(path)
+    const store = new ModelCapabilityOverrideStore(db)
+    store.write({ identity: IDENTITY, capability: 'tools', now: AT })
+    assert.equal(count(db, 'model_capability_user_overrides'), 1)
+
+    // Corrupt only the primary key: the identity tuple still says `tools`, so a
+    // second row for the same identity must be refused by the schema itself.
+    db.prepare('UPDATE model_capability_user_overrides SET override_key = ?').run(
+      `sha256:${'e'.repeat(64)}`,
+    )
+    assert.throws(
+      () => store.write({ identity: IDENTITY, capability: 'tools', now: AT }),
+      /UNIQUE/u,
+    )
+    assert.equal(count(db, 'model_capability_user_overrides'), 1)
+    db.close()
+  })
+
   it('rejects an incompatible row at the schema boundary', async (test) => {
     const path = await temporaryDbPath(test, 'checks')
     const db = openDb(path)

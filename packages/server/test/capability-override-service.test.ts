@@ -413,6 +413,140 @@ describe('capability override server ownership', () => {
     }
   })
 
+  it('reports a committed mutation even when the read-back projection fails', async (test) => {
+    const db = await database(test, 'readback')
+    const real = new ModelCapabilityOverrideStore(db)
+    let failListing = false
+    const { service } = serviceWith(db, {
+      store: {
+        write: (input: Parameters<typeof real.write>[0]) => real.write(input),
+        clear: (input: Parameters<typeof real.clear>[0]) => real.clear(input),
+        listReadable: (identity: Parameters<typeof real.listReadable>[0]) => {
+          if (failListing) throw new Error('SQLITE_IOERR during projection')
+          return real.listReadable(identity)
+        },
+      } as unknown as ModelCapabilityOverrideStore,
+    })
+
+    failListing = true
+    const applied = await service.apply('fixture:latest', BODY, new AbortController().signal)
+    // The row IS committed, so the outcome must not claim nothing was written.
+    assert.equal(rowCount(db), 1)
+    assert.equal(applied.state, 'applied')
+    assert.notEqual(applied.state, 'conflict')
+
+    const cleared = await service.clear('fixture:latest', BODY, new AbortController().signal)
+    assert.equal(rowCount(db), 0)
+    assert.equal(cleared.state, 'cleared')
+    assert.notEqual(cleared.state, 'conflict')
+  })
+
+  it('still reports persistence_failed when the write itself fails', async (test) => {
+    const db = await database(test, 'writefail')
+    const real = new ModelCapabilityOverrideStore(db)
+    const { service } = serviceWith(db, {
+      store: {
+        write: () => { throw new Error('SQLITE_IOERR on write') },
+        clear: () => { throw new Error('SQLITE_IOERR on delete') },
+        listReadable: (identity: Parameters<typeof real.listReadable>[0]) =>
+          real.listReadable(identity),
+      } as unknown as ModelCapabilityOverrideStore,
+    })
+    for (const mutate of ['apply', 'clear'] as const) {
+      const outcome = await service[mutate](
+        'fixture:latest',
+        BODY,
+        new AbortController().signal,
+      )
+      assert.equal(outcome.state, 'conflict')
+      assert.equal(
+        outcome.state === 'conflict' ? outcome.reason : null,
+        'persistence_failed',
+      )
+    }
+    assert.equal(rowCount(db), 0)
+  })
+
+  it('writes a key the descriptor can read back for a padded runtime version', async (test) => {
+    const db = await database(test, 'padded')
+    const store = new ModelCapabilityOverrideStore(db)
+    const client = {
+      host: 'http://127.0.0.1:11434',
+      // A runtime that pads its version string must not make the assertion invisible.
+      version: async () => '  0.12.6\n',
+      tags: async () => ({ models: [tagsEntry()] }),
+      show: async () => ({ capabilities: ['completion'] }),
+      ps: async () => ({ models: [] }),
+    } as unknown as OllamaClient
+    const models = new ModelService(
+      client,
+      new CalibrationStore(db),
+      HARDWARE,
+      undefined,
+      undefined,
+      store,
+    )
+    const service = new ModelCapabilityOverrideService({
+      models: () => models,
+      store,
+    })
+    const applied = await service.apply(
+      'fixture:latest',
+      BODY,
+      new AbortController().signal,
+    )
+    assert.equal(applied.state, 'applied')
+    assert.equal(rowCount(db), 1)
+    // The descriptor read must find the very row the mutation wrote.
+    const listed = await models.listLocal(8_192)
+    assert.equal(listed[0]!.descriptor.overrides.length, 1)
+    assert.equal(listed[0]!.descriptor.overrides[0]!.capability, 'tools')
+    const detail = await models.detail('fixture:latest', 8_192)
+    assert.equal(detail?.descriptor.overrides.length, 1)
+  })
+
+  it('passes the caller signal to both identity endpoints', async (test) => {
+    const db = await database(test, 'signal')
+    const seen: Array<AbortSignal | undefined> = []
+    const controller = new AbortController()
+    const service = new ModelCapabilityOverrideService({
+      models: (() => ({
+        installedArtifacts: async (signal?: AbortSignal) => {
+          seen.push(signal)
+          return [{ name: 'fixture:latest', digest: DIGEST }]
+        },
+        runtimeVersion: async (signal?: AbortSignal) => {
+          seen.push(signal)
+          return RUNTIME
+        },
+      })) as unknown as ConstructorParameters<
+        typeof ModelCapabilityOverrideService
+      >[0]['models'],
+      store: new ModelCapabilityOverrideStore(db),
+    })
+    await service.apply('fixture:latest', BODY, controller.signal)
+    assert.equal(seen.length, 2)
+    // Both provider reads must receive the caller signal, not undefined.
+    for (const signal of seen) assert.equal(signal, controller.signal)
+  })
+
+  it('does not write when the caller aborts between observation and persist', async (test) => {
+    const db = await database(test, 'abortwindow')
+    const controller = new AbortController()
+    let observations = 0
+    const { service } = serviceWith(db, {
+      version: async () => {
+        observations += 1
+        // Both observations resolve successfully, then the caller goes away.
+        controller.abort('client-disconnected')
+        return RUNTIME
+      },
+    })
+    await assert.rejects(() => service.apply('fixture:latest', BODY, controller.signal))
+    assert.equal(observations, 1)
+    assert.equal(rowCount(db), 0)
+  })
+
   it('propagates caller cancellation without a partial write', async (test) => {
     const db = await database(test, 'abort')
     const before = new AbortController()

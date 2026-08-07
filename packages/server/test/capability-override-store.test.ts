@@ -174,6 +174,90 @@ describe('capability override store', () => {
     assert.deepEqual(exactCapabilityOverrides(overrides, IDENTITY), [])
   })
 
+  it('keeps other capabilities readable when one row is corrupt', async (test) => {
+    const { db, store: overrides } = await store(test, 'partial')
+    overrides.write({ identity: IDENTITY, capability: 'tools', now: AT })
+    overrides.write({ identity: IDENTITY, capability: 'vision', now: AT })
+    db.prepare(
+      'UPDATE model_capability_user_overrides SET override_key = ? WHERE capability = ?',
+    ).run(`sha256:${'d'.repeat(64)}`, 'tools')
+
+    // One corrupt row must not hide or wedge the healthy neighbour.
+    const readable = overrides.listReadable(IDENTITY)
+    assert.equal(readable.unreadable, 1)
+    assert.equal(readable.records.length, 1)
+    assert.equal(readable.records[0]!.capability, 'vision')
+    assert.equal(exactCapabilityOverrides(overrides, IDENTITY).length, 1)
+    assert.equal(exactCapabilityOverrides(overrides, IDENTITY)[0]!.capability, 'vision')
+    // The corrupt row is still never projected as a user assertion.
+    assert.equal(
+      exactCapabilityOverrides(overrides, IDENTITY).some((o) => o.capability === 'tools'),
+      false,
+    )
+    // The strict reader still refuses a partially readable identity.
+    assert.throws(() => overrides.list(IDENTITY))
+  })
+
+  it('reads the same row the write created for a padded runtime version', async (test) => {
+    const { db, store: overrides } = await store(test, 'padding')
+    overrides.write({ identity: IDENTITY, capability: 'tools', now: AT })
+    assert.equal(rowCount(db), 1)
+    // The descriptor observes the raw provider string; a padded `/api/version`
+    // must not desynchronize the read key from the written key.
+    for (const raw of [' 0.12.6', '0.12.6 ', '  0.12.6\n', '\t0.12.6']) {
+      assert.equal(
+        exactCapabilityOverrides(overrides, { ...IDENTITY, runtimeVersion: raw }).length,
+        1,
+        raw,
+      )
+    }
+    for (const raw of ['sha256:fixture ', ' sha256:fixture']) {
+      assert.equal(
+        exactCapabilityOverrides(overrides, { ...IDENTITY, artifactDigest: raw }).length,
+        1,
+        raw,
+      )
+    }
+    // A genuinely different version still sees nothing.
+    assert.equal(
+      exactCapabilityOverrides(overrides, { ...IDENTITY, runtimeVersion: '0.12.7' }).length,
+      0,
+    )
+  })
+
+  it('refuses a non-canonical reference so one model cannot own two rows', async (test) => {
+    const { db, store: overrides } = await store(test, 'canonical')
+    overrides.write({ identity: IDENTITY, capability: 'tools', now: AT })
+    assert.equal(rowCount(db), 1)
+    for (const reference of [
+      'Fixture:Latest',
+      'fixture',
+      'fix ture:latest',
+      'FIXTURE:LATEST',
+      '/fixture:latest',
+      'fixture:latest/',
+    ]) {
+      assert.throws(
+        () => overrides.write({
+          identity: { ...IDENTITY, normalizedModelReference: reference },
+          capability: 'tools',
+          now: AT,
+        }),
+        reference,
+      )
+    }
+    // Still exactly one row: no spelling created a second owner.
+    assert.equal(rowCount(db), 1)
+    for (const digest of ['sha256:fix ture', 'sha256:fix\tture']) {
+      assert.throws(() => overrides.write({
+        identity: { ...IDENTITY, artifactDigest: digest },
+        capability: 'tools',
+        now: AT,
+      }))
+    }
+    assert.equal(rowCount(db), 1)
+  })
+
   it('rejects an incomplete identity before touching SQLite', async (test) => {
     const { db, store: overrides } = await store(test, 'identity')
     for (const identity of [

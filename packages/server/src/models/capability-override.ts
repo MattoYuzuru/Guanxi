@@ -26,7 +26,7 @@ import {
 
 export interface ModelCapabilityOverrideDependencies {
   models(): Pick<ModelService, 'installedArtifacts' | 'runtimeVersion'>
-  store: Pick<ModelCapabilityOverrideStore, 'list' | 'write' | 'clear'>
+  store: Pick<ModelCapabilityOverrideStore, 'listReadable' | 'write' | 'clear'>
   now?: () => Date
 }
 
@@ -102,13 +102,23 @@ export class ModelCapabilityOverrideService {
       return conflict('runtime_expectation_mismatch')
     }
 
+    // The write and the read-back are separate steps on purpose: a failed
+    // projection after a committed write must not be reported as
+    // `persistence_failed`, because that would claim nothing was written.
     let state: 'applied' | 'cleared' | 'absent'
-    let overrides: ModelCapabilityOverrideOutcome['overrides']
     try {
       state = persist(identity, request.capability)
-      overrides = this.dependencies.store.list(identity).map(modelCapabilityOverrideProjection)
     } catch {
       return conflict('persistence_failed')
+    }
+    let overrides: ModelCapabilityOverrideOutcome['overrides'] = []
+    try {
+      overrides = this.dependencies.store
+        .listReadable(identity)
+        .records.map(modelCapabilityOverrideProjection)
+    } catch {
+      // The mutation did happen; the caller re-reads the descriptor for truth.
+      overrides = []
     }
     return {
       state,

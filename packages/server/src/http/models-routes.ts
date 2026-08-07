@@ -189,9 +189,21 @@ export function modelsRoutes(app: AppContext): Hono {
       signal: AbortSignal,
     ) => Promise<ModelCapabilityOverrideOutcome>,
   ) => async (context: Context) => {
-    // An absent parameter cannot happen for these registered paths; an empty name
-    // still resolves to the same controlled invalid-reference conflict.
-    const name = decodeURIComponent(context.req.param('name') ?? '')
+    // A malformed percent-escape must stay a typed validation failure instead of
+    // throwing out of the handler as an untyped 500.
+    let name: string
+    try {
+      name = decodeURIComponent(context.req.param('name') ?? '')
+    } catch {
+      return context.json(
+        {
+          code: 'validation_failed',
+          message: 'The capability override request is invalid',
+          details: null,
+        },
+        400,
+      )
+    }
     const body = modelCapabilityOverrideMutationBody.safeParse(
       await context.req.json().catch(() => null),
     )

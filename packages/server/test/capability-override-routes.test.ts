@@ -139,6 +139,29 @@ describe('capability override HTTP routes', () => {
     assert.equal(calls, 0)
   })
 
+  it('returns a typed error for a malformed percent-escape in the name', async () => {
+    let calls = 0
+    const app = appWith({
+      apply: async () => { calls += 1; return APPLIED },
+      clear: async () => { calls += 1; return APPLIED },
+    })
+    for (const method of ['POST', 'DELETE'] as const) {
+      const response = await app.request(new Request(
+        'http://local.test/api/models/fix%ture/capability-overrides',
+        {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(BODY),
+        },
+      ))
+      assert.equal(response.status, 400)
+      // A decode failure must stay a typed contract error, not a bare 500.
+      const payload = await response.json() as { code: string }
+      assert.equal(payload.code, 'validation_failed')
+    }
+    assert.equal(calls, 0)
+  })
+
   it('propagates caller cancellation through the request signal only', async () => {
     let observed: AbortSignal | undefined
     let entered!: () => void

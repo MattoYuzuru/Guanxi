@@ -446,6 +446,27 @@ describe('installed capability overrides', () => {
     await act(async () => release(outcome()))
   })
 
+  it('keeps dialog focus through a rerender instead of bouncing to the trigger', async () => {
+    const { view } = renderOverrides({ overrides: [override()] })
+    const add = screen.getByRole('button', { name: /утвердить выбранную capability/u })
+    add.focus()
+    fireEvent.click(add)
+    const confirm = await screen.findByRole('button', { name: 'Утвердить capability' })
+    await waitFor(() => expect(document.activeElement).toBe(confirm))
+
+    // A parent rerender while the dialog is open must not tear down the focus
+    // effect and throw focus back to the activating control.
+    view.rerender(
+      <CapabilityOverrides model={model({ overrides: [override()] })} onRefresh={vi.fn()} />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Утвердить эту capability самостоятельно?' }))
+      .toBeTruthy()
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Утвердить capability' }),
+    )
+    expect(document.activeElement).not.toBe(add)
+  })
+
   it('associates the visible label with the capability control', () => {
     renderOverrides()
     const select = screen.getByRole('combobox', { name: 'Какую capability утвердить' })

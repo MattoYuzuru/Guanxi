@@ -15,6 +15,7 @@ import {
   type ModelCapability,
   type ModelCapabilityOverride,
 } from '@alamo/contract'
+import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import type { Db } from './db.ts'
 
 export const MODEL_CAPABILITY_OVERRIDE_KEY_VERSION = 1 as const
@@ -68,10 +69,13 @@ function exactIdentity(
   }
   if (
     exact.provider !== 'ollama' ||
-    exact.normalizedModelReference.trim().length === 0 ||
-    exact.normalizedModelReference !== exact.normalizedModelReference.trim() ||
+    // The reference must already be canonical. Accepting a merely non-empty
+    // string would let two spellings of one model own two separate rows.
+    normalizeOllamaModelReference(exact.normalizedModelReference)
+      !== exact.normalizedModelReference ||
     exact.artifactDigest.trim().length === 0 ||
     exact.artifactDigest !== exact.artifactDigest.trim() ||
+    /\s/u.test(exact.artifactDigest) ||
     exact.runtimeVersion.trim().length === 0 ||
     exact.runtimeVersion !== exact.runtimeVersion.trim() ||
     exact.keyVersion !== MODEL_CAPABILITY_OVERRIDE_KEY_VERSION ||
@@ -156,7 +160,7 @@ export function modelCapabilityOverrideProjection(
  * `unsupported`, so failing closed here can neither invent nor hide a claim.
  */
 export function exactCapabilityOverrides(
-  store: Pick<ModelCapabilityOverrideStore, 'list'>,
+  store: Pick<ModelCapabilityOverrideStore, 'listReadable'>,
   identity: {
     normalizedModelReference: string | null
     artifactDigest: string | null
@@ -172,13 +176,18 @@ export function exactCapabilityOverrides(
   }
   try {
     return store
-      .list({
+      .listReadable({
         provider: 'ollama',
-        normalizedModelReference: identity.normalizedModelReference,
-        artifactDigest: identity.artifactDigest,
-        runtimeVersion: identity.runtimeVersion,
+        // The descriptor observes raw provider values; normalize and trim here so
+        // a padded `/api/version` string cannot desynchronize the read key from
+        // the key the mutation wrote.
+        normalizedModelReference:
+          normalizeOllamaModelReference(identity.normalizedModelReference)
+          ?? identity.normalizedModelReference,
+        artifactDigest: identity.artifactDigest.trim(),
+        runtimeVersion: identity.runtimeVersion.trim(),
       })
-      .map(modelCapabilityOverrideProjection)
+      .records.map(modelCapabilityOverrideProjection)
   } catch {
     return []
   }
@@ -190,34 +199,64 @@ const SELECT_COLUMNS = `override_key, key_version, override_schema_version, prov
 
 export class ModelCapabilityOverrideStore {
   private readonly db: Db
+  /** `listLocal` reads once per installed model, so the statement is reused. */
+  private listStatement: ReturnType<Db['prepare']> | null = null
 
   constructor(db: Db) {
     this.db = db
   }
 
-  /**
-   * Every exact override for one identity, ordered by capability so the response
-   * and the exported projection stay deterministic across reads and processes.
-   */
-  list(identity: ModelCapabilityOverrideIdentity): ModelCapabilityOverrideRecord[] {
-    const exact = exactIdentity(identity)
-    const rows = this.db
-      .prepare(
-        `SELECT ${SELECT_COLUMNS}
+  private listRows(exact: Required<ModelCapabilityOverrideIdentity>): OverrideRow[] {
+    this.listStatement ??= this.db.prepare(
+      `SELECT ${SELECT_COLUMNS}
          FROM model_capability_user_overrides
          WHERE provider = ? AND normalized_model_reference = ?
            AND artifact_digest = ? AND runtime_version = ?
            AND override_schema_version = ?
          ORDER BY capability ASC`,
-      )
-      .all(
-        exact.provider,
-        exact.normalizedModelReference,
-        exact.artifactDigest,
-        exact.runtimeVersion,
-        exact.overrideSchemaVersion,
-      ) as unknown as OverrideRow[]
-    return rows.map(parseRow)
+    )
+    return this.listStatement.all(
+      exact.provider,
+      exact.normalizedModelReference,
+      exact.artifactDigest,
+      exact.runtimeVersion,
+      exact.overrideSchemaVersion,
+    ) as unknown as OverrideRow[]
+  }
+
+  /**
+   * Every readable exact override for one identity, ordered by capability so the
+   * response and the exported projection stay deterministic across reads.
+   *
+   * An unreadable row is skipped rather than thrown, so one corrupted row cannot
+   * hide — or permanently wedge — every other capability of the same identity.
+   * Skipping still fails closed: a row that cannot be verified never becomes a
+   * visible assertion. `unreadable` reports how many rows were dropped so a
+   * caller can distinguish "nothing asserted" from "something is corrupt".
+   */
+  listReadable(identity: ModelCapabilityOverrideIdentity): {
+    records: ModelCapabilityOverrideRecord[]
+    unreadable: number
+  } {
+    const rows = this.listRows(exactIdentity(identity))
+    const records: ModelCapabilityOverrideRecord[] = []
+    let unreadable = 0
+    for (const row of rows) {
+      try {
+        records.push(parseRow(row))
+      } catch {
+        unreadable += 1
+      }
+    }
+    return { records, unreadable }
+  }
+
+  /**
+   * Strict variant: any unreadable row throws. Used where a caller must not act
+   * on a partially readable identity.
+   */
+  list(identity: ModelCapabilityOverrideIdentity): ModelCapabilityOverrideRecord[] {
+    return this.listRows(exactIdentity(identity)).map(parseRow)
   }
 
   read(
