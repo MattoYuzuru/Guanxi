@@ -21,6 +21,8 @@ import {
   getRuntimeResponse,
   getSettingsResponse,
   getThreadResponse,
+  huggingFaceRepositoryResponse,
+  huggingFaceSearchResponse,
   listCatalogResponse,
   listModelsResponse,
   listRunningResponse,
@@ -38,6 +40,7 @@ import {
   type ApprovalBody,
   type ChatStreamEvent,
   type CompletionProbeBody,
+  type HuggingFaceSearchBody,
   type ModelCapabilityOverrideMutationBody,
   type OllamaReferenceStartBody,
   type JobStreamEvent,
@@ -256,6 +259,27 @@ export const api = {
 
   previewOllamaReference: (reference: string, signal?: AbortSignal) =>
     request(ROUTES.ollamaReferencePreview(), ollamaReferencePreviewResponse, {
+      method: 'POST',
+      body: { reference },
+      signal,
+    }),
+
+  /**
+   * P2-J read-only Hugging Face discovery. The server owns every Hub request, so the
+   * Web client never issues a cross-origin call and never learns the Hub endpoint.
+   */
+  searchHuggingFace: (
+    body: HuggingFaceSearchBody,
+    signal?: AbortSignal,
+  ) =>
+    request(ROUTES.huggingFaceSearch(), huggingFaceSearchResponse, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  readHuggingFaceRepository: (reference: string, signal?: AbortSignal) =>
+    request(ROUTES.huggingFaceRepository(), huggingFaceRepositoryResponse, {
       method: 'POST',
       body: { reference },
       signal,

@@ -28,6 +28,7 @@ import {
 import { ModelCarousel, type CarouselItem } from '../models/ModelCarousel.tsx'
 import { ModelCard } from '../models/ModelCard.tsx'
 import { AddFromOllama } from '../models/AddFromOllama.tsx'
+import { HuggingFaceDiscovery } from '../models/HuggingFaceDiscovery.tsx'
 import {
   formatBytes,
   formatContextLength,
@@ -462,6 +463,12 @@ export function LauncherPage({ health }: { health: Health }) {
           />
         ) : null}
       </section>
+
+      {/*
+        Hugging Face discovery is its own source, deliberately outside the catalog
+        section: its rows have different provenance and are not installable here.
+      */}
+      <HuggingFaceDiscovery />
     </div>
   )
 }

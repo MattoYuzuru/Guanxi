@@ -727,6 +727,97 @@ const english = {
   'catalog.compare.fetched': 'Source fetched',
   'catalog.compare.installation': 'Exact sampled installation and digest',
   'catalog.compare.boundary': 'No winner, quality score, recommendation, capability support, pull, probe, prewarm, load or remote fetch is produced by comparison.',
+
+  /* P2-J Hugging Face read-only discovery */
+  'hf.section.title': 'Hugging Face',
+  'hf.section.subtitle':
+    'A separate source from the catalog above. Results are Hugging Face repository metadata, not installable models.',
+  'hf.search.label': 'Search Hugging Face repositories',
+  'hf.search.placeholder': 'Repository name or owner/name',
+  'hf.search.hint': 'Press Enter to search. Nothing is requested until you submit.',
+  'hf.search.submit': 'Search',
+  'hf.search.searching': 'Searching…',
+  'hf.search.aria.submit': 'Run the Hugging Face search',
+  'hf.search.idle.title': 'No search has been run',
+  'hf.search.idle.description':
+    'Enter a query and submit it. This section makes no request on its own.',
+  'hf.search.loading': 'Reading Hugging Face metadata…',
+  'hf.results.count': 'Repositories on this page',
+  'hf.results.dropped':
+    'Some rows were refused because their metadata could not be read. This page is shorter than the provider returned; it is not a smaller result set.',
+  'hf.empty.title': 'No repositories matched',
+  'hf.empty.description': 'The provider answered with no usable repository for this query.',
+  'hf.more': 'Load the next page',
+  'hf.more.bounded':
+    'This slice reads a bounded number of pages and never a full result count.',
+  'hf.repository.owner': 'Owner',
+  'hf.repository.name': 'Repository',
+  'hf.repository.revision': 'Revision',
+  'hf.repository.revision.exact': 'Exact commit',
+  'hf.repository.revision.unknown': 'No exact commit reported',
+  'hf.repository.observed': 'Metadata observed',
+  'hf.repository.source': 'Source',
+  'hf.repository.source.value': 'Hugging Face public API',
+  'hf.repository.gated': 'Access',
+  'hf.repository.gated.open': 'Open',
+  'hf.repository.gated.gated': 'Gated',
+  'hf.repository.gated.gated.auto': 'Gated — automatic acceptance',
+  'hf.repository.gated.gated.manual': 'Gated — manual approval',
+  'hf.repository.gated.gated.unspecified': 'Gated — terms unspecified',
+  'hf.repository.gated.unknown': 'Access state not reported',
+  'hf.repository.gated.note':
+    'A gated repository would need acceptance and a token later. This slice requests no token and unlocks nothing.',
+  'hf.repository.license': 'License',
+  'hf.repository.license.unknown': 'Not declared',
+  'hf.repository.license.conflicting': 'Conflicting declarations',
+  'hf.repository.license.note': 'An author-declared claim, not a legal review.',
+  'hf.repository.files': 'GGUF files',
+  'hf.repository.files.none': 'None in this listing',
+  'hf.repository.files.unknown': 'File listing unavailable',
+  'hf.repository.files.truncated':
+    'The file listing was cut off, so absence cannot be concluded.',
+  'hf.repository.files.malformed': 'Some file entries could not be read.',
+  'hf.repository.files.total': 'Files listed',
+  'hf.repository.files.size.unknown': 'Size not reported',
+  'hf.verdict.supported': 'Contains GGUF files',
+  'hf.verdict.supported.detail':
+    'Exact GGUF files are listed. Choosing one is a later step and is not available yet.',
+  'hf.verdict.unsupported': 'Outside this application’s GGUF-only scope',
+  'hf.verdict.unsupported.detail':
+    'The complete listing contains no GGUF file. This application imports exact GGUF files only — it does not mean the model is broken, bad or unavailable elsewhere.',
+  'hf.verdict.unknown': 'Not enough evidence',
+  'hf.verdict.unknown.detail':
+    'The metadata needed to decide could not be read. This is not the same as having no GGUF file.',
+  'hf.verdict.reason.file_inventory_unavailable': 'The provider reported no file listing.',
+  'hf.verdict.reason.file_listing_truncated': 'The file listing exceeded the bounded page.',
+  'hf.verdict.reason.file_entries_malformed': 'Some file entries were malformed.',
+  'hf.verdict.reason.metadata_unavailable': 'The repository metadata could not be read.',
+  'hf.verdict.reason.legacy_response': 'The response predates this evidence contract.',
+  'hf.next': 'Next step',
+  'hf.next.detail':
+    'Installing still requires choosing an exact GGUF file and revision, then a download and a local import. None of that is available in this version, and no result here promises a one-click install or a direct `ollama pull`.',
+  'hf.error.title': 'Hugging Face could not be read',
+  'hf.error.retry': 'Try again',
+  'hf.error.reason.provider_unavailable': 'The provider could not be reached.',
+  'hf.error.reason.connect_timeout':
+    'The provider did not accept the connection before the deadline.',
+  'hf.error.reason.response_timeout':
+    'The provider stopped sending the response before the deadline.',
+  'hf.error.reason.response_too_large':
+    'The response exceeded the size this application will read.',
+  'hf.error.reason.provider_malformed':
+    'The provider returned a response this application could not parse.',
+  'hf.error.reason.provider_error': 'The provider refused the request.',
+  'hf.error.reason.rate_limited':
+    'The provider is rate-limiting requests. Wait before retrying.',
+  'hf.error.reason.not_found': 'No publicly readable repository matched.',
+  'hf.error.reason.request_cancelled': 'The request was cancelled.',
+  'hf.error.offline':
+    'This computer appears to be offline. Search needs an internet connection; the rest of the application does not.',
+  'hf.error.invalidReference':
+    'Enter a repository as owner/name, or an exact HTTPS huggingface.co model-page URL.',
+  'hf.boundary':
+    'Discovery is read-only. It starts no download, install, pull, probe or warm-up, and it changes nothing in Installed or the catalog.',
 } as const
 
 export type LocaleKey = keyof typeof english
@@ -1461,6 +1552,96 @@ const russian: Messages = {
   'catalog.compare.fetched': 'Источник получен',
   'catalog.compare.installation': 'Точная sampled установка и digest',
   'catalog.compare.boundary': 'Сравнение не создаёт winner, quality score, рекомендацию, capability support, pull, probe, prewarm, load или remote fetch.',
+
+  /* P2-J Hugging Face read-only discovery */
+  'hf.section.title': 'Hugging Face',
+  'hf.section.subtitle':
+    'Отдельный источник, не каталог выше. Это metadata репозиториев Hugging Face, а не готовые к установке модели.',
+  'hf.search.label': 'Поиск репозиториев Hugging Face',
+  'hf.search.placeholder': 'Название репозитория или owner/name',
+  'hf.search.hint': 'Нажмите Enter, чтобы искать. До явной отправки запрос не уходит.',
+  'hf.search.submit': 'Искать',
+  'hf.search.searching': 'Ищем…',
+  'hf.search.aria.submit': 'Выполнить поиск по Hugging Face',
+  'hf.search.idle.title': 'Поиск ещё не выполнялся',
+  'hf.search.idle.description':
+    'Введите запрос и отправьте его. Сам по себе этот раздел ничего не запрашивает.',
+  'hf.search.loading': 'Читаем metadata Hugging Face…',
+  'hf.results.count': 'Репозиториев на этой странице',
+  'hf.results.dropped':
+    'Часть строк отклонена: их metadata не удалось прочитать. Страница короче, чем ответил провайдер, — это не «нашлось меньше».',
+  'hf.empty.title': 'Подходящих репозиториев нет',
+  'hf.empty.description':
+    'Провайдер ответил, но пригодных репозиториев по этому запросу не вернул.',
+  'hf.more': 'Загрузить следующую страницу',
+  'hf.more.bounded':
+    'Этот срез читает ограниченное число страниц и никогда не показывает общее число результатов.',
+  'hf.repository.owner': 'Владелец',
+  'hf.repository.name': 'Репозиторий',
+  'hf.repository.revision': 'Ревизия',
+  'hf.repository.revision.exact': 'Точный commit',
+  'hf.repository.revision.unknown': 'Точный commit не сообщён',
+  'hf.repository.observed': 'Metadata наблюдалась',
+  'hf.repository.source': 'Источник',
+  'hf.repository.source.value': 'Публичный API Hugging Face',
+  'hf.repository.gated': 'Доступ',
+  'hf.repository.gated.open': 'Открытый',
+  'hf.repository.gated.gated': 'Gated',
+  'hf.repository.gated.gated.auto': 'Gated — автоматическое согласие',
+  'hf.repository.gated.gated.manual': 'Gated — ручное одобрение',
+  'hf.repository.gated.gated.unspecified': 'Gated — условия не указаны',
+  'hf.repository.gated.unknown': 'Состояние доступа не сообщено',
+  'hf.repository.gated.note':
+    'Для gated-репозитория позже потребуются согласие и token. Этот срез не запрашивает token и ничего не открывает.',
+  'hf.repository.license': 'Лицензия',
+  'hf.repository.license.unknown': 'Не заявлена',
+  'hf.repository.license.conflicting': 'Противоречивые заявления',
+  'hf.repository.license.note': 'Заявление автора, а не юридическая проверка.',
+  'hf.repository.files': 'Файлы GGUF',
+  'hf.repository.files.none': 'В этом перечне нет',
+  'hf.repository.files.unknown': 'Перечень файлов недоступен',
+  'hf.repository.files.truncated':
+    'Перечень файлов обрезан, поэтому вывод об отсутствии сделать нельзя.',
+  'hf.repository.files.malformed': 'Часть записей о файлах прочитать не удалось.',
+  'hf.repository.files.total': 'Файлов в перечне',
+  'hf.repository.files.size.unknown': 'Размер не сообщён',
+  'hf.verdict.supported': 'Содержит файлы GGUF',
+  'hf.verdict.supported.detail':
+    'Точные файлы GGUF перечислены. Выбор конкретного файла — следующий шаг, он пока недоступен.',
+  'hf.verdict.unsupported': 'Вне GGUF-only scope этого приложения',
+  'hf.verdict.unsupported.detail':
+    'В полном перечне нет ни одного файла GGUF. Это приложение импортирует только точные файлы GGUF — это не значит, что модель сломана, плохая или недоступна где-то ещё.',
+  'hf.verdict.unknown': 'Доказательств недостаточно',
+  'hf.verdict.unknown.detail':
+    'Metadata, нужную для вывода, прочитать не удалось. Это не то же самое, что отсутствие файлов GGUF.',
+  'hf.verdict.reason.file_inventory_unavailable': 'Провайдер не сообщил перечень файлов.',
+  'hf.verdict.reason.file_listing_truncated': 'Перечень файлов превысил ограниченную страницу.',
+  'hf.verdict.reason.file_entries_malformed': 'Часть записей о файлах некорректна.',
+  'hf.verdict.reason.metadata_unavailable': 'Metadata репозитория прочитать не удалось.',
+  'hf.verdict.reason.legacy_response': 'Ответ старше текущего контракта доказательств.',
+  'hf.next': 'Что дальше',
+  'hf.next.detail':
+    'Для установки всё ещё нужно выбрать точный файл GGUF и ревизию, затем скачать и импортировать локально. Ничего из этого в текущей версии нет, и ни один результат здесь не обещает установку в один клик или прямой `ollama pull`.',
+  'hf.error.title': 'Не удалось прочитать Hugging Face',
+  'hf.error.retry': 'Повторить',
+  'hf.error.reason.provider_unavailable': 'Провайдер недоступен.',
+  'hf.error.reason.connect_timeout': 'Провайдер не принял соединение до истечения срока.',
+  'hf.error.reason.response_timeout': 'Провайдер перестал присылать ответ до истечения срока.',
+  'hf.error.reason.response_too_large':
+    'Ответ превысил размер, который приложение готово прочитать.',
+  'hf.error.reason.provider_malformed':
+    'Провайдер вернул ответ, который приложение не смогло разобрать.',
+  'hf.error.reason.provider_error': 'Провайдер отклонил запрос.',
+  'hf.error.reason.rate_limited':
+    'Провайдер ограничивает частоту запросов. Подождите перед повтором.',
+  'hf.error.reason.not_found': 'Публично доступного репозитория не нашлось.',
+  'hf.error.reason.request_cancelled': 'Запрос отменён.',
+  'hf.error.offline':
+    'Похоже, компьютер офлайн. Поиску нужен интернет; остальному приложению — нет.',
+  'hf.error.invalidReference':
+    'Укажите репозиторий как owner/name или точный HTTPS-URL страницы модели на huggingface.co.',
+  'hf.boundary':
+    'Discovery только читает. Он не запускает загрузку, установку, pull, probe или прогрев и ничего не меняет в установленных моделях и каталоге.',
 }
 
 export function translate(key: LocaleKey): string {
