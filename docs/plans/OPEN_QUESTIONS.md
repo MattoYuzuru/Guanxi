@@ -1,12 +1,23 @@
 # Открытые продуктовые решения
 
-**Статус:** proposed question register after iteration 2026-08-02
+**Статус:** question register; Q-01–Q-36 отвечены, открыты только sub-questions
 
-**Проверено:** 2026-08-02
+**Проверено:** 2026-08-07
 
 Ответы Q-01–Q-21 зафиксированы в
 [decision log](../decisions/2026-08-02-product-decisions.md). Ни один исходный
 вопрос больше не блокирует документирование архитектуры.
+
+## Что осталось открытым
+
+После owner session 2026-08-07 **ни один вопрос не блокирует следующий slice**.
+Открыты три производных вопроса, требующие design-решения перед своей фазой:
+
+| Sub-question | О чём                                                           | Нужен к фазе |
+| ------------ | --------------------------------------------------------------- | ------------ |
+| Q-27a        | `wrap up and report` как durable Job state и recovery-поведение | Phase 5/8    |
+| Q-28a        | сохраняется ли approval для push/deploy/service/network         | Phase 5      |
+| Q-34a        | размещение flag infra отдельно от measured-parallel policy      | Phase 2/3    |
 
 ## Resolution Q-01–Q-21
 
@@ -28,10 +39,10 @@
 | Q-14   | accepted: native STT и LLM post-processing разделены            |
 | Q-15   | accepted: video deferred indefinitely                           |
 | Q-16   | accepted with changed direction: first-party coding agent       |
-| Q-17   | accepted: deliberate long-run profile; exact watchdog open      |
+| Q-17   | accepted: deliberate long-run profile; limits — см. Q-27        |
 | Q-18   | accepted: MCP/Skills off by default and Project-scoped          |
 | Q-19   | accepted: background service, shared settings, opt-in autostart |
-| Q-20   | open: новое имя пока не выбрано                                 |
+| Q-20   | deferred: продолжаем с `Alamo`, см. Q-31                        |
 | Q-21   | accepted: JetBrains technical UI + document font                |
 
 ## Resolution Q-22–Q-24
@@ -54,15 +65,19 @@ reconnect сами по себе не считаются уходом. Пока 
 **Accepted:** rolling TTL считается от последней user activity. Model, tool,
 maintenance и background events не продлевают TTL. UI показывает exact expiry.
 
-## Блокируют Hugging Face import slice
+## Resolved для Hugging Face import
 
 ### Q-25. Какие форматы импортировать с Hugging Face первыми?
 
-**Рекомендация:** только exact GGUF file/revision. Safetensors conversion и GGUF
-adapters — отдельные поздние capabilities.
+**Accepted 2026-08-07:** только exact GGUF file/revision. Safetensors
+conversion и GGUF adapters не входят в scope и остаются возможной поздней
+capability, а не обещанием.
 
-Пользователь сообщил, что обычно выбирает проверенные GGUF; это делает первый
-slice безопаснее и понятнее.
+Следствия: HF slice **разблокирован**. Non-GGUF repository не должен выглядеть
+importable — UI показывает explicit unsupported state, а не пустой список.
+HF URL по-прежнему нельзя обещать как direct `ollama pull`: pipeline остаётся
+metadata → exact GGUF → download/checksum → local Ollama import → probe
+(см. `research/EVIDENCE.md`).
 
 ## Resolved для Add from Ollama
 
@@ -73,58 +88,112 @@ page. Preview показывает нормализованное имя; pull �
 подтверждения.
 
 Произвольный URL не передаётся Ollama и не используется для server-side fetch.
-Это явно reconciled с accepted D-005 перед handoff P2-D; Q-25 остаётся открытым
-и продолжает блокировать первый Hugging Face import slice.
+Это явно reconciled с accepted D-005 перед handoff P2-D. Q-25 закрыт 2026-08-07,
+поэтому HF import больше не заблокирован.
 
-## Блокируют autonomous agent safety
+## Resolved для autonomous agent safety
 
-### Q-27. Какие watchdog limits нужны long-running Agent Run?
+### Q-27. Какие limits нужны long-running Agent Run?
 
-Это не денежный budget. Нужно предотвратить бесконечный одинаковый loop.
+**Accepted 2026-08-07: только time-based control.** Memory, disk и output
+ceilings явно **не** вводятся.
 
-**Рекомендация:**
+- пользователь задаёт expected duration до старта (например 8 часов);
+- duration можно менять mid-run в обе стороны — продлить и сократить;
+- hard interrupt доступен всегда;
+- отдельное graceful `wrap up and report`: агент быстро сворачивается и отдаёт
+  результат, вместо потери нескольких часов работы;
+- ранний финиш нормален: 5 часов из 8 — это success, а не отклонение;
+- нужен stall detector: ни input, ни output tokens не производятся.
 
-- user-configurable expected duration;
-- hard wall-clock ceiling;
-- repeated-failure/no-progress threshold;
-- disk/output ceiling;
-- pause on unavailable dependency;
-- explicit `No time target`, но не `No safety limits`.
+Открытый sub-question **Q-27a**: `wrap up and report` — новое durable Job state,
+а не UI-флаг. Точная граница state/transition и поведение при падении process
+во время wind-down требуют design decision до реализации (см. architecture
+review 2026-08-07).
 
-Точные значения следует выбрать после 4–6-hour benchmark.
+### Q-28. Какая модель разрешений у agent filesystem access?
 
-### Q-28. Что auto mode всё равно никогда не делает без подтверждения?
+**Accepted 2026-08-07: три слоя scope.**
 
-**Рекомендация:** выход за allowed roots, credential access, изменение service/
-login configuration, irreversible delete, push/publish/deploy и расширение
-network allowlist.
+1. main folder, выбранная через UI, где стартует Run;
+2. дополнительные folders, настраиваемые в UI;
+3. per-prompt grants: пользователь в промпте называет конкретные paths или
+   credentials; режим soft read/modify **без delete**.
 
-Даже для личного MCP это защищает от ошибки модели, а не от недоверия к автору
-MCP.
+Удаление секретов (например `.env`) запрещено. Внутри разрешённого scope агент
+работает свободно — граница по scope, не по типу действия.
 
-## Не блокируют ранние фазы
+Открытый sub-question **Q-28a**: scope-only модель не покрывает action-type
+риски вне filesystem — `push`/`publish`/`deploy`, изменение service/login
+configuration и расширение network allowlist. Нужно явно решить, сохраняется ли
+для них approval из ADR-0008/ADR-0010, иначе новая модель регрессирует принятую
+границу. Layer 3 задаётся текстом промпта, поэтому trust model требует отдельной
+проверки на prompt injection и path traversal.
+
+## Resolved, не блокируют ранние фазы
 
 ### Q-29. Completion sound default
 
-**Рекомендация:** in-app notification включено; sound включён только для
-background Job и выключен, когда Job открыт. Global + per-Chat override.
-
-Нужно выбрать/создать короткий лицензированный sound и проверить reduced-motion/
-sensory preferences.
+**Accepted 2026-08-07:** sound по умолчанию **выключен**. Звук допустим только
+когда Job фоновая либо вкладка закрыта; для открытой Job звука нет. Нужен
+короткий явно лицензированный sound; reduced-motion/sensory preferences
+уважаются, visual equivalent обязателен.
 
 ### Q-30. Русская метка `Recipe`
 
-**Рекомендация:** `Сценарий`; в glossary объяснить, что это сохранённая настройка
-задачи.
-
-Альтернативы: `Профиль`, `Шаблон`. Нельзя использовать все три как разные
-сущности.
+**Accepted 2026-08-07:** `Сценарий`. `Профиль` и `Шаблон` не используются как
+отдельные сущности; glossary объясняет, что это сохранённая настройка задачи.
 
 ### Q-31. Новое название
 
-Остаётся открытым без влияния на ранние фазы. До выбора действует ADR-0007.
+**Accepted 2026-08-07 как осознанная отсрочка:** продолжаем с `Alamo`. Имя пока
+не выбрано, поэтому главное требование — сохранять лёгкую заменяемость: ADR-0007
+central brand manifest, никаких новых hardcoded вариантов имени.
 
 ### Q-32. Custom Project icons
 
-**Рекомендация:** сначала большая встроенная searchable icon library и accessible
-palette. Upload custom SVG/image — поздняя функция с sanitation/storage risks.
+**Accepted 2026-08-07:** только большая встроенная searchable icon library и
+accessible palette. Upload custom SVG/image не делаем — sanitation/storage risks
+без потребности.
+
+## Resolved: процесс и платформа
+
+### Q-33. Нужен ли CI сейчас?
+
+**Accepted 2026-08-07: пока нет.** Проект ещё не привязан к remote; первым будет
+GitHub. До привязки все gates остаются ответственностью агента и владельца.
+
+Явный остаточный риск: без CI статус `independently verified` не имеет
+механизма, а browser gate легко пропустить. Поэтому protocol требует reviewer
+subagent и видимый review-fix commit (`plans/WORKFLOW.md`). CI добавляется сразу
+после привязки к GitHub.
+
+### Q-34. Где живёт feature-flag infrastructure?
+
+**Accepted 2026-08-07:** это отдельный slice, а не побочный эффект другой работы.
+Владелец считает слой важным и требующим research.
+
+Мотивация владельца — не generic flagging, а возможность на достаточно мощной
+машине одновременно вести generation/research flow и держать speech-to-text
+модель (STT дешёвая по compute). Это RES-009 measured parallelism.
+
+Открытый sub-question **Q-34a**: measured parallelism требует measured evidence
+с реального железа, а железо доступно только после Phase 4. Значит flag infra и
+measured-parallel policy нельзя закрывать одним slice. Точное размещение фиксирует
+resequencing 2026-08-07.
+
+### Q-35. Когда проверяем живой Ollama и Linux/NVIDIA?
+
+**Accepted 2026-08-07: после завершения Phase 4.** Linux+NVIDIA машина у владельца
+есть, но использоваться будет только тогда; live-Ollama и Linux tests
+проводятся вместе, на Mac и Linux.
+
+Следствие: `PLAT-002` verified tier и любые hardware claims не могут входить в
+exit gate Phase 2. До Phase 4 все tests остаются mocked, и это не production
+validation.
+
+### Q-36. Судьба `dev:mock`
+
+**Accepted 2026-08-07:** если fixture server не нужен агентскому flow — удалить
+script и убрать упоминания из docs, а не держать сломанным. Починка оправдана
+только при реальном использовании.
