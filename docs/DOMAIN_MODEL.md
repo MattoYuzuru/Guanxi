@@ -266,6 +266,20 @@ Speech adapter может отдельно доказать native operation/mod
 Состояния claim: `verified`, `declared`, `claimed`, `degraded`, `unknown`,
 `overridden`. Отсутствие metadata не равно `unsupported`.
 
+Current P2-I добавляет `overridden` как отдельное visible состояние: user может
+явно утвердить одну capability для exact `(canonical reference, digest, sourced
+runtime version)`. Assertion хранится отдельной append-only row, переживает
+restart, экспортируется как safe typed JSON и показывается в отдельном UI-регионе
+рядом с provider declarations и completion probe — она их не переписывает, не
+объединяется с ними и не красит declaration в verified. Реализовано только
+positive `present`: negative `unsupported`, confidence и free-form capability не
+введены, поэтому отсутствие assertion оставляет capability в прежнем состоянии, а
+не делает её unsupported. Assertion не наследуется другим digest, другой runtime
+version, другой моделью или Marketplace row; старая row может остаться как
+non-active data, но current descriptor её не показывает. Полный Capability
+Registry, OperationResolution/Task Adapter wiring и generic precedence resolver
+остаются target.
+
 Current P2-A/P2-B реализует `declared | degraded | unknown` descriptor subset
 для documented local Ollama responses. `/api/tags` declaration может быть связана с
 exact installed digest; `/api/show` вызывается по имени и не возвращает digest,

@@ -1,14 +1,14 @@
 # Стратегия проверки
 
 **Статус:** implemented для current-state, proposed для target matrix  
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-07
 
 ## Текущий baseline
 
-На 2026-08-04 после P2-H:
+На 2026-08-07 после P2-I:
 
-- `npm test`: 349/349 server/CLI и 95/95 web component/parser tests;
-- `npm run test:web:browser`: 23/23 deterministic Chromium tests с mocked
+- `npm test`: 391/391 server/CLI и 109/109 web component/parser tests;
+- `npm run test:web:browser`: 25/25 deterministic Chromium tests с mocked
   REST/SSE. Требует заранее установленный browser binary
   (`npx playwright install chromium`) — postinstall hook отсутствует, поэтому на
   чистой машине `npm install` этого не делает. Запускать из корня либо из
@@ -31,8 +31,10 @@
   exact custom context save/reload, а также P2-C explicit completion-probe
   confirmation, queued/running/result/error/cancel projection и P2-D explicit
   reference preview/confirmed pull/Installed refresh, а также P2-F faceted
-  catalog query/pairwise exact compare и P2-H bounded pages/cross-page compare/
-  active-pull boundary без resource side effects;
+  catalog query/pairwise exact compare, P2-H bounded pages/cross-page compare/
+  active-pull boundary без resource side effects и P2-I explicit capability
+  assertion/removal с separate labelled regions, identity-drift conflict и safe
+  deterministic export;
 - browser assertions управляют mocked headers/chunks без произвольных sleeps и
   проверяют keyboard/focus, live phase status, narrow viewport, отсутствие
   horizontal overflow, 200% scaling и reduced motion;
@@ -187,6 +189,27 @@
   cancel. Listener cleanup, keyboard/focus, locale, 44 px mobile targets,
   390 px/200%/overflow/reduced motion и отсутствие background prefetch/resource
   action проверены component/Chromium fixtures;
+- P2-I contract/migration/store/service/route fixtures покрывают legacy
+  descriptor default `overrides: []`, strict unknown/future enum и extra field,
+  malformed reference/digest/runtime/timestamp, fresh/v8→v9/reopen/failed
+  migration, rollback-читаемость без потери user data, отсутствие backfill из
+  declaration или probe, idempotent create с неизменными timestamps по explicit
+  count, exact-key isolation для same name/new digest, same digest/new runtime,
+  другой модели и другой capability, deterministic order, exact clear, malformed
+  row fail-closed, duplicate/missing installed identity, missing digest/version,
+  identity drift до mutation, stale client expectation, unavailable/malformed
+  `/api/tags` и `/api/version` без записи и удаления, provider declared/degraded/
+  unknown и probe projection без изменений, redacted persistence failure,
+  AbortSignal и отсутствие chat/pull/load/unload/probe/Governor/catalog action;
+- P2-I Web fixtures покрывают отсутствие mutation на mount/hover/focus/rerender/
+  navigation/reload/export, one mutation на double activation, exact identity в
+  request, все conflict states с reload только при identity drift, disabled
+  controls при неполной identity, deterministic byte-identical copy/download,
+  filename/content type, export failure state, curated English fallback, focus
+  containment/restore на exact activated control, Escape, abort на unmount и
+  отсутствие override UI в Marketplace. Chromium дополнительно проверяет три
+  раздельных labelled regions, сохранение degraded provider evidence, 390 px,
+  200%, overflow и reduced motion;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,
@@ -231,8 +254,9 @@
   P2-G fit/telemetry — 25/25; P2-A descriptor — 9/9; P2-B persistent group —
   17/17; P2-C + Ollama boundaries — 34/34; P2-D server — 20/20; P2-E exact
   contract/catalog — 12/12; P2-F facets — 10/10; P2-G server/identity — 38/38;
-  P2-H pagination — 10/10; полный core — 349/349, Web — 95/95, mocked
-  Chromium — 23/23;
+  P2-H pagination — 10/10; P2-I capability override — 42/42 (contract 6,
+  migration 5, store 9, service 16, routes 6); полный core — 391/391,
+  Web — 109/109, mocked Chromium — 25/25;
   15-test store race suite
   ранее повторён 10 раз, P1-D disconnect/cancel/terminal race выполняет 10
   repeats, terminal P1-E recovery — 10 repeats без новых sequence/output, а

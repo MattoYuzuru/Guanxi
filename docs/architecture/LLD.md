@@ -103,6 +103,18 @@ model-row total/pages и nullable previous/next; zero и out-of-range page не
 clamp-ятся. Optional metadata позволяет новому parser читать старые recorded
 responses. Web default 12 и maximum 100 ограничивают одну page, не общий catalog.
 
+P2-I additive добавляет `ModelCapabilityOverride` version 1 и два additive
+descriptor поля: sourced/unknown `runtime` fingerprint и `overrides: []` с legacy
+default. Override содержит literal source `user_override`, state `overridden`,
+единственное positive value `present`, одну capability из существующего closed
+enum, canonical reference, exact digest, sourced runtime version и
+createdAt/updatedAt. Negative `unsupported`, confidence, free-form capability и
+arbitrary note в этой версии отсутствуют, поэтому absence строки оставляет
+capability в прежнем `declared | degraded | unknown` состоянии. Mutation body
+несёт capability и expected digest/runtime version; typed outcome различает
+`applied | cleared | absent | conflict`, а conflict по contract не может нести ни
+identity, ни override.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -125,6 +137,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `runtime/completion-probe.ts`: explicit fixed completion call, exact
   tags/version fingerprint, normal-priority admission, bounded transport,
   request cancel/deadline и before/after identity validation;
+- `models/capability-override.ts`: exact installed identity ownership для user
+  assertions — canonical reference normalization, один `/api/tags` match, exact
+  digest, sourced `/api/version`, revalidation в точке mutation, typed
+  conflict/redaction; никакого chat/pull/load/unload, Governor admission, probe,
+  catalog refresh или background Job;
 - `models/ollama-reference.ts`: pure strict model-name/official-page parser без
   DNS, fetch, Ollama, filesystem или persistence;
 - `models/ollama-pull.ts`: validated progress, terminal-success requirement и
@@ -137,7 +154,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   explanation и compatibility projection;
 - `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query;
 - `http/models-routes.ts`: list/show/pull/delete/explicit warm/prewarm/unload/
-  running и P2-D reference preview/confirmed connection-owned pull;
+  running, P2-D reference preview/confirmed connection-owned pull и P2-I
+  POST/DELETE `capability-overrides`, зарегистрированные до generic `/:name`,
+  чтобы жадный name pattern не поглотил suffix;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
@@ -170,6 +189,14 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 8: additive `completion_probe_evidence` latest projection keyed by
   versioned exact fingerprint; no provider-declaration backfill, prompt или
   response content;
+- migration 9: additive `model_capability_user_overrides` — одна latest row на
+  exact `(provider, reference, digest, runtime version, capability)` с CHECK на
+  key/schema version, provider, source, state, value и capability enum; никакого
+  backfill из declaration или probe, rollback не удаляет user data;
+- `store/capability-override.ts`: fail-closed exact key/timestamp validation,
+  idempotent create без изменения timestamps, exact-row clear, deterministic
+  capability order и `exactCapabilityOverrides` projection, которая при неполной
+  identity или нечитаемой row не показывает ничего;
 - `store/completion-probe.ts`: fail-closed exact key/timing/outcome validation и
   atomic latest-row upsert;
 - `store/calibration.ts`: complete-key-only record и same-artifact/runtime/
@@ -210,6 +237,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 | Web evidence projection | additive REST descriptor | declared/degraded/unknown + fresh/stale/offline/unknown | loading/empty/error remain separate | installed card/profile, locale keys |
 | Completion probe | explicit fixed local Ollama chat call | verified only for exact reference/digest/runtime/context/probe v1 | no automatic run; historical exact reuse or bounded forced observation | installed profile + Runtime Bar operation |
 | Manual Ollama reference | pure local name/page parser, then local `/api/pull` | normalized target only; no availability/digest/capability claim | pull connection-owned; success rechecks Installed via `/api/tags` | Marketplace Add from Ollama |
+| User capability assertion | explicit user action, revalidated `/api/tags` + `/api/version` at the mutation point | `overridden/user_override`, positive `present` only, bound to exact reference/digest/runtime version | SQLite v9 survives restart; drifted identity gives conflict and stays hidden from the current descriptor | installed profile region + safe JSON export |
 
 `/api/tags` и `/api/show` declaration не являются runtime proof. Name-based
 `/api/show` lookup не выполняется для duplicate normalized references; даже при
@@ -236,6 +264,16 @@ logical source snapshot как ambiguous, затем применяет locale-i
 order. Explicit page возвращает exact metadata; legacy request возвращает весь
 filtered list. Между requests source snapshot не pin-ится и total не считается
 durable catalog fact.
+
+P2-I user assertion не участвует в этой evidence-цепочке и не меняет ни одну её
+строку: она хранится отдельной row, читается только для exact
+reference+digest+runtime version и проецируется отдельным descriptor полем.
+Mutation принимает expected digest и expected runtime version от caller, поэтому
+stale client expectation, ambiguous или пропавшая installation, отсутствующий
+digest и недоступный `/api/version` дают controlled conflict вместо записи по
+имени. Provider failure не маскируется существующей row: capability evidence
+остаётся degraded/unknown, а assertion показывается рядом. Absence row —
+по-прежнему unknown, не unsupported.
 
 `ChatJobExecutionOwner` ограничивает один active Chat Job на thread и владеет
 Stop controller, включая ожидающий Job. `activeTurns` остаётся compatibility
@@ -351,7 +389,11 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   P2-H Launcher владеет explicit page/query basis, current-page projection и
   constant Previous/Next pager; две exact row snapshots переживают простой page
   change, accepted query/source basis invalidates их, а active pull блокирует
-  navigation без cancel;
+  navigation без cancel; P2-I `CapabilityOverrides` живёт только в Installed
+  profile, отдельным labelled регионом от provider evidence и probe: explicit
+  add/remove с confirmation и one-intent guard, exact identity в подтверждении,
+  typed conflict states с reload только для identity drift и deterministic safe
+  Copy/Download JSON;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
 - `features/settings`: runtime/tool/theme fields и exact positive safe-integer
@@ -360,7 +402,8 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и
   P1-M no-artificial-caps/P2-A descriptor/P2-C probe/P2-D confirmed pull/P2-E
-  variant-first/P2-F facets-compare regression; browser использует deterministic
+  variant-first/P2-F facets-compare/P2-I capability-override regression; browser
+  использует deterministic
   mocked REST/SSE/runtime snapshots. P2-H добавляет 1,000+ server rows, bounded
   12-row jsdom/Chromium projection, exact page state/cross-page compare и
   listener/pull ownership regression.

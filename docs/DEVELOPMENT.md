@@ -183,6 +183,23 @@ server не нужен.
   очищает их с localized notice. Pager блокируется на время active
   connection-owned pull и не отменяет его; paging не запускает resource action
   или background prefetch. Legacy full response дополнительно bounded client-side.
+- P2-I добавляет explicit positive user capability assertion только для exact
+  installed artifact. `POST`/`DELETE /api/models/:name/capability-overrides`
+  принимают capability из существующего closed enum, expected digest и expected
+  runtime version; оба пути зарегистрированы до generic `/:name`, чтобы жадный
+  name pattern не поглотил suffix. Server перечитывает `/api/tags` и
+  `/api/version` в точке mutation: один canonical match, exact digest и sourced
+  version обязательны, иначе возвращается typed conflict без записи и удаления.
+  Repeated identical write идемпотентен и не меняет timestamps; clear удаляет
+  ровно одну row. Mutation не запускает chat/pull/load/unload, Governor
+  admission, probe, catalog refresh или background Job.
+- Installed profile показывает assertions отдельным labelled регионом рядом с
+  provider declarations и completion probe. Positive assertion не красит
+  declaration в verified и не скрывает conflict/degraded/unknown. Add/remove
+  требуют explicit confirmation и one-intent guard; mount/hover/focus/navigation/
+  reload/export ничего не мутируют. Copy/Download отдают deterministic safe JSON
+  без endpoint, credentials, path, provider body, prompt, response и reasoning.
+  Absence assertion остаётся unknown, а не unsupported.
 - Один `HostTelemetry` создаётся в `context.ts`; route, Web, Governor и static fit
   не запускают host commands. Apple adapter использует bounded absolute
   `/usr/bin/vm_stat`. Local Linux с detected CUDA profile использует один
@@ -263,6 +280,12 @@ server не нужен.
   previous/next. Оба pagination keys обязательны вместе; Web default 12 —
   transport/render policy, не total catalog ceiling. Optional metadata сохраняет
   parse старых recorded responses.
+- P2-I additive добавляет `ModelCapabilityOverride` version 1, descriptor поля
+  `runtime` и `overrides`, strict mutation body и typed outcome union
+  `applied | cleared | absent | conflict`. Legacy descriptor responses парсятся с
+  `overrides: []` и unknown runtime. Conflict по contract не может нести ни
+  identity, ни override. Negative `unsupported`, confidence и free-form
+  capability не введены.
 
 ### Server
 
@@ -275,6 +298,8 @@ server не нужен.
 - `runtime/prewarm.ts` — exact validation, short-TTL warm и caller/normal abort;
 - `runtime/completion-probe.ts` — explicit exact completion probe, request-owned
   deadline/cancel, fixed provider call, Governor cleanup и before/after identity;
+- `models/capability-override.ts` — exact installed identity ownership, mutation-
+  point revalidation, typed conflict/redaction и никакого model work;
 - `models/ollama-reference.ts` — pure strict name/page normalizer;
   `models/ollama-pull.ts` — terminal-success/redacted pull event adapter;
 - `runtime/observation-key.ts` — canonical key construction и unavailable
@@ -309,6 +334,12 @@ server не нужен.
   failed migration остаётся на v6, а старый code игнорирует новую table;
 - migration 8 additive создаёт `completion_probe_evidence` без backfill из
   provider declarations; failed migration остаётся на v7 и безопасно retry-ится;
+- migration 9 additive создаёт `model_capability_user_overrides` без backfill из
+  declarations или probe results; failed migration остаётся на v8, старый code
+  игнорирует table, а schema rollback не удаляет user data;
+- `store/capability-override.ts` принимает только compatible exact identity,
+  делает identical write идемпотентным без изменения timestamps, удаляет ровно
+  одну row и fail-closed читает corrupted/incompatible row;
 - `store/completion-probe.ts` принимает только compatible exact fingerprint,
   normalized outcome/timing и fail-closed читает corrupted/incompatible row;
 - `store/calibration.ts` принимает только complete observation key и отделяет

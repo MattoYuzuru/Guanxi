@@ -199,6 +199,20 @@ proportional controls. Две exact compare snapshots переживают page 
 но query/filter/context/source basis change очищает их явно. Active P2-D/P2-E
 pull остаётся connection-owned: pager disabled и не отменяет operation.
 
+P2-I вводит первое user-owned capability состояние. Пользователь на Installed
+profile явно утверждает одну capability для exact `(canonical reference, digest,
+sourced runtime version)`; assertion живёт отдельной append-only SQLite row,
+переживает restart и экспортируется как safe typed JSON. Server владеет
+identity: mutation допускается только при одном canonical `/api/tags` match,
+exact expected digest и sourced local `/api/version`, а identity перечитывается
+в точке mutation, поэтому stale client expectation или подменённый artifact дают
+controlled conflict вместо записи по имени. Assertion не наследуется другим
+digest, runtime version или Marketplace row, не переписывает provider
+declaration и completion probe и показывается отдельным labelled регионом. Value
+только positive: отсутствие row остаётся unknown, а не unsupported. Mutation не
+запускает chat/pull/load/unload, Governor admission, probe, catalog refresh или
+background Job.
+
 ### As-is deployment
 
 - CLI запускает application server в foreground;
@@ -230,6 +244,7 @@ pull остаётся connection-owned: pager disabled и не отменяет 
 | Exact calibration observation        | SQLite migration 6                      | persistent exact-key rows   |
 | Installed safe provider evidence     | SQLite migration 7                      | exact 15m fresh + 7d stale  |
 | Latest exact completion probe        | SQLite migration 8                      | latest exact-key projection |
+| User capability assertion            | SQLite migration 9                      | one row per exact key       |
 | Active completion probe/controller   | HTTP request + `ResourceGovernor`       | request/process memory      |
 | Active confirmed Ollama pull         | HTTP request + Ollama `/api/pull`       | connection/provider owned   |
 | Catalog page/filter/variant/compare  | paged REST + max two exact snapshots    | sampled facts + page memory |
@@ -289,6 +304,12 @@ pull остаётся connection-owned: pager disabled и не отменяет 
     Она не связывает `/api/ps` row с device, не знает MIG/topology/pressure и не
     превращает current free VRAM в admission capacity, measured fit или второй
     Governor permit.
+20. P2-I user override — это заявление пользователя, а не verification. Оно не
+    доказывает, что модель действительно умеет capability, не включает Task
+    Adapter и не участвует в admission/fit. Отсутствие override не означает
+    unsupported. Полный Capability Registry, generic precedence/conflict
+    resolver, negative override, audit history, multi-user profile и
+    sync/cloud export не реализованы.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 
