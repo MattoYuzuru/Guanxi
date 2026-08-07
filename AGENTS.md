@@ -17,9 +17,12 @@ Alamo UI — ранний local-first интерфейс и runtime-control laye
 5. Для запланированной работы прочитайте `plans/PHASE_STATUS.md`, затем
    `plans/ROADMAP.md`; открытые решения не закрывайте молча — сверяйтесь с
    `plans/OPEN_QUESTIONS.md`.
-6. Принятые ответы владельца находятся в
+6. **Обязательно прочитайте [`plans/WORKFLOW.md`](docs/plans/WORKFLOW.md)** — это
+   канонический протокол одного slice: orientation, план, vertical implementation,
+   независимая verification, docs/commits. Без него slice считается неполным.
+7. Принятые ответы владельца находятся в
    `decisions/2026-08-02-product-decisions.md`; они выше старого proposal.
-7. После каждого bounded slice обновите `plans/PHASE_STATUS.md` и перепишите
+8. После каждого bounded slice обновите `plans/PHASE_STATUS.md` и перепишите
    `plans/NEXT_AGENT_PROMPT.md` для следующего незавершённого slice. Если работа
    заблокирована, оставьте prompt на текущий slice с blocker и recovery steps.
 
@@ -76,10 +79,18 @@ npm run test:web:browser
 npm run build
 ```
 
-`npm test` проверяет server, CLI и узкий набор web component regression tests.
-Deterministic Chromium tests P0-A запускаются отдельно через
-`npm run test:web:browser`. Они покрывают только crash containment и первый
-mocked stream; не называйте root test или этот smoke полным regression suite.
+`npm test` проверяет server, CLI и web component regression tests.
+Deterministic Chromium tests запускаются отдельно через
+`npm run test:web:browser`: на текущей revision это 23 mocked теста, покрывающие
+P0-A–P2-H (crash containment, first stream, terminal reload, runtime bar,
+resource conflict, prewarm, context limits, model evidence, catalog). Это
+по-прежнему mocked gate без live Ollama/GPU/network — не называйте его полным
+regression suite и не выдавайте за production validation.
+
+Browser gate требует заранее установленный Chromium: `npx playwright install
+chromium` (postinstall hook отсутствует). Запускайте gate только из корня или из
+`packages/web`; прямой `npx playwright` из корня не получает workspace `baseURL`
+и падает с invalid URL.
 
 ## Границы изменений
 
@@ -114,7 +125,16 @@ mocked stream; не называйте root test или этот smoke полн�
 1. поведение и отказные состояния наблюдаемы;
 2. соответствующие типы и границы согласованы;
 3. тесты пропорциональны риску и их реальная область указана;
-4. документация отражает новое текущее состояние;
-5. остаточный риск явно назван, а `proposed` не выдан за `implemented`.
-6. `PHASE_STATUS.md` содержит evidence, а `NEXT_AGENT_PROMPT.md` готов к
-   следующей агентской сессии.
+4. **каждое свойство, заявленное в docs или ROADMAP exit gate, имеет assertion,
+   который падает при нарушении этого свойства.** `toBeVisible` не доказывает
+   отсутствие duplicate; «не дублирует» требует явного count. Если свойство
+   заявлено, но не проверено — это не готовность, а долг;
+5. **независимая verification выполнена отдельным действием** (см.
+   `plans/WORKFLOW.md`), её findings исправлены, а fix виден отдельным commit;
+6. **E2E/browser gate `npm run test:web:browser` прошёл** для любого slice,
+   меняющего Web;
+7. документация отражает новое текущее состояние;
+8. остаточный риск явно назван, а `proposed` не выдан за `implemented`;
+9. `PHASE_STATUS.md` содержит evidence с разделением **new / regression
+   envelope** (см. правило подсчёта в `plans/WORKFLOW.md`), а
+   `NEXT_AGENT_PROMPT.md` готов к следующей агентской сессии.

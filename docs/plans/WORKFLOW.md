@@ -54,9 +54,26 @@ contract/migration
 
 Не оставлять новый contract реализованным только с одной стороны.
 
-### 4. Independent verification
+### 4. Независимая verification
 
 Implementation self-review и независимая verification — разные действия.
+Self-review делает автор кода; независимая verification выполняется **отдельным
+reviewer-субагентом**, который не писал этот код.
+
+**Как запускать (обязательный шаг, не опция):**
+
+- вызови reviewer-субагента по таблице skills ниже: для server/contract —
+  `sde-agent:implementation-reviewer`, для Web/a11y —
+  `frontend-agent:accessibility-reviewer`, для migration/recovery/security —
+  `sre-agent:test-actor`;
+- передай ему **точный diff slice** и заявленные свойства, а не общий вопрос;
+- дай reviewer-у read-only задачу: он ищет расхождения, но не правит код;
+- findings исправляет автор **отдельным commit** (`fix(...)` либо `test(...)`),
+  чтобы review был виден в истории;
+- если reviewer не нашёл ничего — это тоже результат, но зафиксируй, что именно
+  он проверял. Slice без review не считается завершённым.
+
+Что обязан покрыть review:
 
 - happy path;
 - error/cancel/reload/restart;
@@ -64,7 +81,21 @@ Implementation self-review и независимая verification — разны
 - accessibility/responsive для UI;
 - security/allowed roots для tools;
 - regression commands;
-- residual risks.
+- residual risks;
+- **заявленные-но-непроверенные свойства**: для каждого утверждения в docs и
+  ROADMAP exit gate reviewer ищет assertion, который упадёт при нарушении. Если
+  утверждение доказывается только косвенно — это finding.
+
+### 4a. Правило подсчёта tests
+
+Headline-число теста — не доказательство объёма работы. В evidence разделяй:
+
+- **new** — тесты, добавленные этим slice (проверяется через
+  `git diff <base>..<head> --stat -- '*test*'`);
+- **regression envelope** — файлы, запущенные целиком для защиты от регрессий.
+
+Пиши `P2-D: 11 new / 20 envelope`, а не `P2-D 20/20`. Один и тот же файл нельзя
+записывать как достижение двух разных slices.
 
 ### 5. Documentation and commits
 
@@ -94,6 +125,8 @@ docs: record phase 1 verification evidence
 
 ## Какие skills подключать
 
+Это **skills** (вызываются как skill, помогают писать код):
+
 | Работа                         | Рекомендуемые skills                                                                            |
 | ------------------------------ | ----------------------------------------------------------------------------------------------- |
 | Любая нетривиальная реализация | `sde-agent:implementation-planning`, `sde-agent:sde-agent`, `sde-agent:implementation-evidence` |
@@ -103,6 +136,25 @@ docs: record phase 1 verification evidence
 | Agent/tools/MCP                | `sre-agent:defensive-security-review`, `sre-agent:finding-validation`                           |
 | Release/phase exit             | `sre-agent:release-readiness`                                                                   |
 | Документационный drift         | `cleaner-agent:documentation-reconciliation`                                                    |
+
+## Какие reviewer-субагенты вызывать
+
+Это **subagent types** для шага 4 — другой реестр, не skills. Имя skill нельзя
+передать как `subagent_type`: например `sre-agent:release-readiness` существует
+как skill, но **не** как subagent type, и такой вызов падает.
+
+| Область slice             | Reviewer subagent                          |
+| ------------------------- | ------------------------------------------ |
+| server/contract/migration | `sde-agent:implementation-reviewer`        |
+| Web/UI/accessibility      | `frontend-agent:accessibility-reviewer`    |
+| runtime/recovery/security | `sre-agent:test-actor`                     |
+| архитектурная граница     | `architecture-agent:adversarial-architect` |
+| удаление кода/docs drift  | `cleaner-agent:cleanup-reviewer`           |
+| release/delivery          | `devops-agent:release-verifier`            |
+
+Reviewer получает read-only задачу и не правит код. Актуальный список типов
+всегда виден в системном перечне доступных агентов — сверяйся с ним перед
+вызовом, а не по памяти.
 
 Не нужно включать все plugins в каждый prompt. Один implementation owner и один
 независимый verification lane обычно достаточны.
