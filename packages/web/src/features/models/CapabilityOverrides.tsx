@@ -190,7 +190,9 @@ export function CapabilityOverrides({
       anchor.href = url
       anchor.download = exportFilename
       anchor.click()
-      URL.revokeObjectURL(url)
+      // Revoking in the same tick can cancel the download the click just started,
+      // so release the URL only after the browser has picked it up.
+      setTimeout(() => URL.revokeObjectURL(url), 0)
       setFeedback({ kind: 'export', state: 'downloaded' })
     } catch {
       setFeedback({ kind: 'export', state: 'failed' })

@@ -446,6 +446,52 @@ describe('installed capability overrides', () => {
     await act(async () => release(outcome()))
   })
 
+  it('drops a previous artifact assertions when the rendered model changes', async () => {
+    const { view } = renderOverrides({ overrides: [override()] })
+    expect(screen.queryAllByText('Переопределено')).toHaveLength(1)
+
+    // Same component instance, different exact artifact: the previous model's
+    // assertions must not linger as if they belonged to the new digest.
+    view.rerender(
+      <CapabilityOverrides
+        model={model({
+          artifact: { state: 'exact_digest', digest: 'sha256:replaced' },
+          overrides: [],
+        })}
+        onRefresh={vi.fn()}
+      />,
+    )
+    await waitFor(() => expect(screen.queryAllByText('Переопределено')).toHaveLength(0))
+    expect(
+      screen.getByText('Вы не утверждали ни одной capability для этого exact артефакта.'),
+    ).toBeTruthy()
+    // The export now describes the new identity only.
+    fireEvent.click(screen.getByRole('button', { name: /Копировать ваши утверждения/u }))
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledTimes(1))
+    const payload = clipboard.writeText.mock.calls[0]![0] as string
+    expect(payload).toContain('sha256:replaced')
+    expect(JSON.parse(payload).overrides).toHaveLength(0)
+  })
+
+  it('keeps a stale list from surviving a conflict', async () => {
+    vi.spyOn(api, 'clearCapabilityOverride').mockResolvedValue({
+      outcome: {
+        state: 'conflict', capability: 'tools',
+        reason: 'digest_expectation_mismatch', identity: null, overrides: [],
+      },
+    })
+    renderOverrides({ overrides: [override()] })
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Просмотреть условия и удалить ваше утверждение для tools',
+    }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить утверждение' }))
+    expect(await screen.findByText('Ничего не изменено')).toBeTruthy()
+    // A conflict changed nothing, so the row must still be shown exactly once and
+    // must not be silently emptied as if the removal had succeeded.
+    expect(screen.queryAllByText('Переопределено')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Перечитать модель' })).toBeTruthy()
+  })
+
   it('keeps dialog focus through a rerender instead of bouncing to the trigger', async () => {
     const { view } = renderOverrides({ overrides: [override()] })
     const add = screen.getByRole('button', { name: /утвердить выбранную capability/u })
