@@ -86,6 +86,9 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
   await page.reload()
   await expect(page).toHaveURL(/\/chat\/thread-p0-e-full$/)
   await expect(page.getByText('Persisted canonical answer', { exact: true })).toBeVisible()
+  // Reload replay обязан прочитать persisted canonical output ровно один раз:
+  // `toBeVisible` прошёл бы и при duplicate render, поэтому count проверяется явно.
+  await expect(page.getByText('Persisted canonical answer', { exact: true })).toHaveCount(1)
   await expect(page.getByText('Live stream draft', { exact: true })).toHaveCount(0)
   await expect(
     page.locator('nav[aria-label="История диалогов"] a[aria-current="page"]'),
