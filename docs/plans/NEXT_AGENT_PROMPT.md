@@ -2,17 +2,18 @@
 
 **Статус:** ready
 
-**Проверено:** 2026-08-07
+**Проверено:** 2026-08-08
 
-**Назначение:** Phase 2, slice P2-J — Hugging Face search и repository metadata,
-GGUF-only
+**Назначение:** Phase 2, slice P2-K — выбор exact GGUF file/revision и
+size/license/fit preview
 
 ## Контекст
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui` на текущей ветке. Сначала
 прочитай `AGENTS.md` и маршрут из `docs/NAVIGATION.md`; для code change обязательны
-`PRODUCT.md`, `DOMAIN_MODEL.md`, `UX_IA.md`, `DEVELOPMENT.md`, `TESTING.md`, HLD,
-LLD, ADR-0003, **ADR-0006 (`decisions/0006-catalog-sources-and-compliance.md`)**,
+`PRODUCT.md`, `DOMAIN_MODEL.md`, `UX_IA.md`, `DEVELOPMENT.md`, `TESTING.md`, HLD
+(раздел «Import GGUF из Hugging Face»), LLD (раздел «Hugging Face GGUF import»),
+ADR-0003, **ADR-0006 (`decisions/0006-catalog-sources-and-compliance.md`)**,
 **`research/EVIDENCE.md` раздел Hugging Face**, `plans/PHASE_STATUS.md`,
 `plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted owner decisions, а также
 обязательный протокол `plans/WORKFLOW.md`.
@@ -27,159 +28,179 @@ accepted ADR/decision — целевую границу, ROADMAP — поряд�
 `.idea/`, пользовательские данные, real Ollama model store, `node_modules`,
 generated outputs или unrelated worktree changes.
 
-P2-A–P2-I уже реализованы. P2-I code commits:
+P2-A–P2-J уже реализованы. P2-J code commits:
 
-- `6b98d37` — additive override contract, migration 9, store, exact-identity
-  server ownership и descriptor projection;
-- `8f5b5d5` — Installed Web management и safe export;
-- `d478f65`, `ea97be0` — server и Web failure-matrix tests;
-- review fixes: `09b3c00` (symmetric read/write key, committed-mutation truth,
-  partial-row tolerance, canonical reference, typed decode error), `c8ef1b8`
-  (label ↔ control), `a177b14` (export URL lifetime), `6cc4504` (remove-path
-  dialog focus).
+- `e544c7c` — strict versioned HF discovery contract (schemas + routes/bodies);
+- `70d7cf9` — pure identity parser `hugging-face-reference.ts`;
+- `fb19812`, `59a417b` — bounded transport `hugging-face-transport.ts` и GGUF
+  support verdict;
+- `1314d5b` — два read-only discovery route и AppContext wiring;
+- `ec6b7e3`, `de951f6` — Marketplace Web секция и Chromium spec;
+- `985db43`, `4b0d6bc` — NUL-byte cleanup и уточнение семантики `totalFiles`;
+- review fixes: `2428475` (bounded published page, единая identity grammar,
+  whole-token `rel="next"`, cursor validation), `2f13e31` (сохранение результатов
+  при failed странице, retry ровно упавшего intent, dropped rows при empty,
+  live region, `role="alert"` на контейнере, malformed vs absent metadata,
+  formatted `observedAt`, license caveat, 44 px targets, копирайт без «срез»).
 
-Подтверждённый baseline (перепроверен 2026-08-07): typecheck clean; core 401/401;
-Web 117/117; mocked Chromium 25/25; build, markdownlint 31 files/0 issues и diff
-check — всё зелёное. P2-I net new — 52 server tests / 401 core envelope.
+Подтверждённый baseline (перепроверен 2026-08-08): typecheck clean; core 446/446;
+Web 144/144; mocked Chromium 26/26; build, markdownlint 31 files/0 issues и diff
+check — всё зелёное. P2-J net new — 45 server / 27 Web / 1 Chromium.
 
 Полный исторический ledger повторов хранится в `PHASE_STATUS.md` и здесь больше
-не дублируется. Repeat-политика: повторяй 10× **только** новую P2-J group и те
+не дублируется. Repeat-политика: повторяй 10× **только** новую P2-K group и те
 файлы, которые твой diff реально задевает. Не повторяй по 10 раз всю
-унаследованную цепочку P1-E…P2-I. Flaky результат фиксируй, диагностируй и только
+унаследованную цепочку P1-E…P2-J. Flaky результат фиксируй, диагностируй и только
 потом переходи дальше.
 
-## Уроки P2-I, которые сэкономят тебе время
+## Уроки P2-J, которые сэкономят тебе время
 
 - `npm test | grep` под memory pressure даёт exit 137 без вывода. Пиши вывод в
   файл (`npm test > /tmp/out.txt 2>&1`), потом читай файл. Это окружение, а не
   продукт;
 - browser gate запускается только из корня или `packages/web`; прямой
   `npx playwright` из корня получает `Cannot navigate to invalid URL`;
+- **Node type-stripping не поддерживает TypeScript parameter properties**
+  (`constructor(readonly x: T)`) — объявляй поле явно, иначе `node --test` падает
+  с `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` до запуска тестов;
+- `HeadersInit` недоступен в server tsconfig lib; используй
+  `Record<string, string>`;
+- **любое новое поле в `AppContext` ломает шесть inherited fixtures**
+  (`routes.test.ts`, `runtime-routes.test.ts`, `job-routes.test.ts`,
+  `chat-job-execution.test.ts`, `chat-job-recovery.test.ts`,
+  `inference-concurrency.test.ts`). Добавляй inert stub, который **бросает** при
+  обращении: тогда unrelated flow, случайно дошедший до новой границы, падает
+  громко, а не тихо делает работу;
 - любая новая migration ломает inherited fixtures: version expectations и
   downgrade helpers в `migration.test.ts`, `job-migration.test.ts`,
   `observation-migration.test.ts`, `installed-evidence-migration.test.ts`,
-  `completion-probe-migration.test.ts` придётся обновить. Это не product
-  regression, но зафиксируй как первый failure;
+  `completion-probe-migration.test.ts`, `capability-override-migration.test.ts`
+  придётся обновить. Это не product regression, но зафиксируй как первый failure;
 - `toBeDisabled` отсутствует в текущем matcher setup — используй `.disabled` плюс
   явную проверку инертности;
+- **`Button` из `ui.tsx` при `loading` ставит `disabled`, браузер уводит
+  фокус на `<body>`, и никто его не возвращает.** Это нашёл reviewer в P2-J.
+  Если твой slice добавляет loading-кнопку, восстанавливай фокус явно и проверяй
+  это assertion-ом, иначе клавиатурный пользователь теряет позицию на странице;
+- **mutation-проверка обязательна и находит реальные дыры.** В P2-J она нашла
+  недостижимый late-response guard (in-flight guard блокировал любой повторный
+  submit, поэтому guard был мёртвым кодом) и два непокрытых свойства транспорта.
+  Но «выживший» мутант не всегда дефект: два выживших в парсере оказались
+  дублирующими defense-in-depth гейтами — проверяй, падает ли suite при удалении
+  соседнего гейта, прежде чем писать новый тест;
+- **проверяй `file` на новых файлах перед commit.** В P2-J два файла попали в
+  историю с literal NUL bytes, git считал их binary и `git diff` не показывал
+  содержимое. `python3 -c` со сканом байтов < 0x20 ловит это сразу;
 - reviewer-субагент может создать файлы в worktree. Проверяй `git status` перед
-  commit и явно запрещай reviewer-у писать в дерево;
-- проверяй каждый свой fix мутацией исходника: в P2-I один «исправленный» дефект
-  остался в коде именно потому, что mutation-правка не была откатана.
+  commit и явно запрещай reviewer-у писать в дерево (в P2-J оба reviewer-а
+  требование выполнили);
+- **table rows в markdown должны совпадать по ширине с header**, иначе
+  markdownlint даёт `MD060/table-column-style`.
 
 Owner session 2026-08-07 закрыла Q-25–Q-36 (см. `plans/OPEN_QUESTIONS.md`). Ни
-один вопрос больше не блокирует slice. Что из этого важно **для P2-J**:
+один вопрос не блокирует slice. Что важно **для P2-K**:
 
 - **Q-25 accepted: только exact GGUF file/revision.** Safetensors conversion и
-  GGUF adapters вне scope и не обещаются. Non-GGUF repository получает explicit
-  unsupported state, а не пустой список;
+  GGUF adapters вне scope и не обещаются;
 - HF URL нельзя обещать как direct `ollama pull`. Полный pipeline — metadata →
   exact GGUF → download/checksum → local Ollama import → probe — разбит на
-  P2-J..P2-M. **P2-J делает только первый шаг**;
-- `apps=ollama` — hint, не доказательство. `EVIDENCE.md` фиксирует, что metadata
-  optional, заполняется автором и требует runtime validation;
+  P2-J..P2-M. **P2-J сделал первый шаг; P2-K делает только второй**;
+- `apps=ollama` — hint, не доказательство;
 - CI пока нет: все gates — твоя ответственность, включая browser gate;
-- Открыт только Q-27a (`wrap up and report` как durable state) — это Phase 5/8, к
-  P2-J не относится.
+- Открыт только Q-27a (`wrap up and report` как durable state) — Phase 5/8, к
+  P2-K не относится.
 
 ## Current gap
 
-Строк кода для Hugging Face нет: `huggingface`/`gguf` дают 0 файлов в `src`.
-Current import — только P2-D/P2-E bounded mutable-tag pull из local Ollama, и
-Marketplace знает исключительно stale local cache либо dated bundled snapshot.
-ADR-0006 и MOD-010 требуют HF discovery как отдельного provider с явной
-provenance, но ни contract, ни server, ни Web такого provider не имеют.
+P2-J публикует repository-level факты: identity, revision, gated/license state,
+GGUF inventory (`files.ggufFiles` с `path`, `sizeBytes`, `sizeSource`) и вердикт
+`supported | unsupported | unknown`. Но **выбрать конкретный файл нельзя**:
+`requiresExactFileSelection: true` стоит на каждом вердикте, а UI прямо говорит,
+что выбор файла — следующий шаг. Ни contract, ни server, ни Web не имеют понятия
+«выбранный exact GGUF file + revision».
 
-P2-J — **read-only discovery slice**. Он не выбирает файл, не качает, не считает
-checksum и не импортирует: это P2-K, P2-L и P2-M. Без exact GGUF selection
-repository остаётся candidate, а не installable target.
+Кроме того, у P2-J нет size/fit preview: `sizeBytes` показывается как факт файла,
+но не превращается в вердикт влезаемости, и `fitVerdictSchema` к HF файлам не
+применяется. `dryRun` — 0 файлов в src.
 
-## Цель P2-J
+## Цель P2-K
 
-Пользователь ищет модели в Hugging Face из Marketplace, видит truthful repository
-metadata с явным source/time, и для каждого repository видит одно из трёх
-состояний: содержит exact GGUF files (candidate для P2-K), не содержит GGUF
-(explicit unsupported), либо metadata недоступна/неоднозначна (unknown). Ни одно
-состояние не обещает `ollama pull`, installation, capability или fit.
+Пользователь выбирает **один exact GGUF file на одной exact revision** внутри
+repository, который P2-J признал `supported`, и до любой загрузки видит truthful
+preview: точный размер файла, вердикт влезаемости под выбранное окно контекста,
+license/gated state и что именно ещё потребуется. Выбор — это **намерение**, а не
+установка: P2-K ничего не скачивает и не импортирует.
 
 ## Обязательный scope
 
-### Additive contract и provider identity
+### Additive contract
 
-- Добавь strict versioned HF discovery contract: search query (текст, bounded
-  page/pageSize по образцу P2-H), repository identity (`owner/name`), revision
-  reference, gated state, license state, GGUF-file inventory и explicit
-  `supported | unsupported | unknown` verdict с reason.
-- Repository identity нормализуется одним pure server-side parser, как P2-D
-  `ollama-reference.ts`. Разреши только strict `owner/name` shapes и exact HTTPS
-  `huggingface.co` model-page URL. Whitespace/control, credentials, port,
-  query/fragment, arbitrary/lookalike host, encoded separator, literal traversal
-  и ambiguous grammar fail-closed.
-- Unknown/future enum, extra field, malformed identity/revision/timestamp
-  fail-closed. Отсутствие GGUF не означает «модель плохая»; отсутствие metadata
-  не означает unsupported — это разные states.
-- Не смешивай HF facts с P2-E catalog variants и P2-A installed descriptor. HF
-  repository — отдельный provider с собственной provenance, а не catalog row.
+- Добавь strict versioned contract выбора: repository identity (переиспользуй
+  `huggingFaceRepositoryIdentitySchema`), **exact revision commit** (только
+  `state: 'exact_commit'` — mutable branch не является выбираемой целью), exact
+  file path из опубликованного inventory, размер и его source.
+- Selection валидна только если file реально присутствует в inventory этой
+  revision. Файл «по имени», файл из другой revision, файл из truncated listing и
+  файл из repository с вердиктом `unsupported`/`unknown` — fail-closed.
+- Fit preview: переиспользуй `fitVerdictSchema` и существующий расчёт, но
+  `basis` обязан честно отражать, что считалось по **заявленному размеру файла**,
+  а не по загруженной модели. Если размер `not_reported` — вердикт `unknown` с
+  reason, а не оптимистичная оценка.
+- Не смешивай HF selection с P2-E catalog variants и P2-A installed descriptor.
 
-### Bounded server-owned HF access
+### Server
 
-- Только server обращается к HF. Web не делает cross-origin request и не получает
-  HF endpoint. Используй документированный public Hub API, никакого scraping
-  HTML.
-- Один explicit search — один bounded request: fixed timeout, response byte
-  limit, максимум страниц, caller AbortSignal. Malformed/oversized/slow/
-  unavailable/rate-limited ответы дают typed redacted states, а не guessed
-  metadata.
-- Никаких credentials в этом slice: только anonymous public access. Gated
-  repository распознаётся и показывается как gated, но token flow, acceptance и
-  authenticated download — **не** этот slice.
-- Не кэшируй persistent-но в SQLite, если не докажешь необходимость: P2-J может
-  остаться request-scoped. Если добавляешь migration 10 — она append-only, без
-  backfill, с fresh/v9→v10/reopen/failed/rollback tests.
-- HF request не запускает Ollama chat/pull/load/unload, Governor admission,
-  probe, catalog refresh или background Job.
+- Selection и preview считает server, из тех же bounded transport данных.
+  Не добавляй второй outbound путь и не расширяй HF доступ: token/gated
+  acceptance по-прежнему **вне scope**.
+- Если для проверки файла нужен повторный Hub read — он bounded теми же
+  правилами (timeout, byte cap, AbortSignal, redacted failures) и не превращается
+  в download.
+- Selection не запускает pull/create/probe/load/unload, Governor admission,
+  catalog refresh или background Job.
+- Persist только если докажешь необходимость. Если добавляешь migration 10 — она
+  append-only, без backfill, с fresh/v9→v10/reopen/failed/rollback tests.
 
-### Marketplace Web
+### Web
 
-- Добавь HF discovery как явно отдельный source внутри Marketplace, не
-  подмешивая результаты в существующий catalog list. Пользователь всегда видит,
-  что это Hugging Face, когда metadata получена и что она может быть неполной.
-- Search требует explicit action (submit/Enter), bounded debounce, AbortSignal и
-  late-response guard. Mount, hover, focus, navigation и reload не выполняют
-  network request.
-- Для каждого repository покажи owner/name, revision basis, gated state, license
-  state, GGUF inventory и explicit verdict. `unsupported` объясняет, что scope —
-  GGUF-only, а не что модель нерабочая. `unknown` не показывается как supported.
-- Никакой кнопки Install/Pull в этом slice: exact GGUF selection — P2-K. Явно
-  скажи пользователю, что дальше требуется выбор файла, и не обещай one-click.
-- Loading/empty/no-results/error/rate-limited/offline/retry states различимы. Все
-  новые strings через locale keys: English source/fallback и curated Russian.
+- Внутри HF секции: выбор файла из опубликованного inventory (не текстовый ввод
+  пути), показ точного размера, fit вердикта под текущее окно, license/gated и
+  явного «что дальше».
+- Никакой кнопки Download/Install/Pull: загрузка — P2-L. Скажи прямо, что выбран
+  только target и что скачивание пока недоступно.
+- `unsupported`/`unknown` repository не даёт выбрать файл вообще.
+- Selection требует explicit action, bounded debounce не нужен (данные уже есть),
+  но late-response guard нужен, если делаешь server round-trip.
+- Все новые strings через locale keys: English source/fallback и curated Russian.
+  **Не используй внутренние слова «срез»/«slice» в пользовательском тексте.**
 - Keyboard/screen reader, focus containment и restore для любого нового
-  dialog/disclosure, 390 px, 200%, no horizontal overflow, reduced motion.
+  dialog/disclosure, 390 px, 200%, no horizontal overflow, reduced motion,
+  **44 px touch targets** (в P2-J это был reviewer finding).
 
 ## Failure matrix и тесты
 
 Минимальные deterministic cases:
 
-- strict identity parser: valid `owner/name`, valid HTTPS model page, case
-  normalization, и fail-closed для whitespace/control, credentials, port,
-  query/fragment, foreign/lookalike host, encoded separator, traversal, пустых
-  segments и multi-slash;
+- selection valid только для файла, присутствующего в inventory этой exact
+  revision; чужой путь, traversal-подобный путь, файл из другой revision, файл из
+  truncated listing, файл из `unsupported`/`unknown` repository — fail-closed;
+- mutable branch вместо exact commit — fail-closed;
+- **`rfilename` из провайдера не валидируется по форме в P2-J** — reviewer это
+  зафиксировал как risk. В P2-K добавь bound/валидацию формы пути, потому что
+  P2-L будет качать именно по нему. Покрой hostile path (traversal, absolute,
+  очень длинный, с control characters);
+- size `not_reported` → fit `unknown` с reason, не оптимистичная оценка;
+- fit пересчитывается при смене окна контекста и честно помечен как расчёт по
+  заявленному размеру;
+- gated/license не превращают selection в разрешение на скачивание;
 - strict query/response contract, legacy-safe additive defaults, unknown/future
   enum, extra field;
-- GGUF inventory: repository только с GGUF, смешанный, без GGUF, с 0 files, с
-  malformed file entries, с очень большим числом files внутри bounded page;
-- verdict matrix: `supported` только при exact GGUF evidence; `unsupported`
-  только при доказанном отсутствии GGUF; всё остальное — `unknown` с reason;
-- gated repository и license absent/present не меняют verdict сами по себе;
-- transport: unavailable, timeout, malformed JSON, oversized body, rate-limited,
-  partial page — все дают typed redacted states без raw body, endpoint и token;
-- AbortSignal: caller abort прекращает own wait и не пишет ничего;
-- отсутствие pull/probe/prewarm/load/unload/catalog fetch/Governor action;
-- Web: no request на mount/hover/focus/navigation/reload; explicit search делает
-  ровно один request; double submit — один intent; late response игнорируется;
-- English/Russian, keyboard/focus/Escape, 390 px, 200%, overflow, reduced motion;
-- HF результаты не попадают в installed list и не меняют P2-A descriptor или
+- отсутствие pull/create/probe/prewarm/load/unload/catalog fetch/Governor action;
+- Web: no request на mount/hover/focus/navigation/reload; selection не даёт
+  Download; double activation — один intent; late response игнорируется;
+- English/Russian, keyboard/focus/Escape, 390 px, 200%, overflow, reduced motion,
+  44 px targets;
+- HF selection не попадает в installed list и не меняет P2-A descriptor или
   P2-E catalog rows.
 
 Не используй live HF network, live Ollama, GPU в обязательных tests. Fake HTTP
@@ -187,19 +208,19 @@ transport, recorded safe fixtures и mocked browser routes должны дока
 boundaries. Если добавишь live-network integration test — только за explicit
 opt-in envelope, вне default `npm test`.
 
-## Не входит в P2-J
+## Не входит в P2-K
 
-- выбор exact GGUF file/revision, size/license/fit preview — это P2-K;
 - download, checksum, provenance, resume, disk reservation — это P2-L;
 - local Ollama import через `/api/create` и probe — это P2-M;
 - token/authenticated download, gated acceptance flow;
 - safetensors conversion, GGUF adapters, quantization на стороне приложения;
 - feature flags и estimated parallel-admission — это P2-N/P2-O;
 - full Capability Registry, OperationResolution/Task Adapter wiring;
-- negative capability override, confidence, audit history — вне P2-I scope;
 - HTML scraping HF или Ollama, live catalog provider для существующего
   Marketplace list;
 - persistent HF cache/history, saved searches, recommendations, ranking;
+- bounded concurrency для HF (известный residual risk P2-J) — реши отдельно, если
+  докажешь необходимость, но не выдавай за scope P2-K;
 - NVIDIA calibration, NVML/MIG, scheduler/parallelism.
 
 ## Проверка
@@ -209,10 +230,10 @@ opt-in envelope, вне default `npm test`.
 
 ```bash
 npm run typecheck
+node --test packages/server/test/hugging-face-reference.test.ts \
+  packages/server/test/hugging-face-transport.test.ts \
+  packages/server/test/hugging-face-routes.test.ts
 node --test packages/server/test/capability-override-contract.test.ts \
-  packages/server/test/capability-override-migration.test.ts \
-  packages/server/test/capability-override-store.test.ts \
-  packages/server/test/capability-override-service.test.ts \
   packages/server/test/capability-override-routes.test.ts
 node --test packages/server/test/ollama-reference.test.ts \
   packages/server/test/ollama-reference-contract.test.ts \
@@ -221,7 +242,8 @@ node --test packages/server/test/catalog-pagination.test.ts \
   packages/server/test/catalog-facets.test.ts \
   packages/server/test/catalog-variant-contract.test.ts
 node --test packages/server/test/migration.test.ts \
-  packages/server/test/model-descriptor.test.ts
+  packages/server/test/model-descriptor.test.ts \
+  packages/server/test/fit.test.ts
 npm test --workspace @alamo/web
 npm run test:web:browser
 npm test
@@ -234,40 +256,41 @@ Browser gate требует заранее установленный Chromium
 (`npx playwright install chromium`) и запускается из корня либо из
 `packages/web`; прямой `npx playwright` из корня не получает workspace `baseURL`.
 
-Добавь exact P2-J parser/transport/route/Web/Chromium commands. Повтори 10×
-только новую P2-J group и файлы, реально затронутые твоим diff, с exit/count
-checking. Первый failing/flaky result сохрани, диагностируй и исправь; повторный
-green не скрывает первую ошибку. Не запускай десятки Node/Vitest processes
-одновременно — под memory pressure Vitest даёт exit 137 без вывода.
+Добавь exact P2-K contract/server/Web/Chromium commands. Повтори 10× только новую
+P2-K group и файлы, реально затронутые твоим diff, с exit/count checking. Первый
+failing/flaky result сохрани, диагностируй и исправь; повторный green не скрывает
+первую ошибку. Не запускай десятки Node/Vitest processes одновременно — под
+memory pressure Vitest даёт exit 137 без вывода.
 
 ## Completion и handoff
 
 После bounded slice:
 
 - **вызови reviewer-субагента** (`sde-agent:implementation-reviewer` для
-  contract/parser/transport/routes, `frontend-agent:accessibility-reviewer` для
-  Marketplace Web; при желании `sre-agent:defensive-security-review` для внешнего
-  network boundary), передай ему точный diff и заявленные свойства, исправь
-  findings отдельным `fix(...)`/`test(...)` commit и запусти browser gate после
-  фикса. Явно запрети reviewer-у создавать файлы в worktree;
+  contract/server, `frontend-agent:accessibility-reviewer` для Web; при желании
+  `sre-agent:test-actor` для path-валидации), передай ему точный diff и
+  заявленные свойства, исправь findings отдельным `fix(...)`/`test(...)` commit и
+  запусти browser gate после фикса. Явно запрети reviewer-у создавать файлы в
+  worktree;
 - проверь, что каждое заявленное свойство имеет падающий assertion, и подтверди
   это мутацией исходника, а не только зелёным прогоном;
-- согласованно обнови contract, server, Web, locale, tests и current-state docs;
+- согласованно обнови contract, server, Web, locale, tests и current-state docs
+  (в P2-J потребовались правки `HLD.md`, `LLD.md`, `UX_IA.md` и счётчика browser
+  тестов в `AGENTS.md`);
 - обнови таблицу «Phase 2 — что реально осталось» в `PHASE_STATUS.md`;
 - запиши counts как `N new / M envelope`, не смешивая regression envelope с новой
   работой;
-- добавь P2-J evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-I;
-- обнови статус P2-J в таблице «Планируемая последовательность Phase 2»;
-- Phase 2 оставь `in progress`: discovery не закрывает P2-K..P2-M, flag infra
+- добавь P2-K evidence в `plans/PHASE_STATUS.md`, сохранив Phase 0/1/P2-A–P2-J;
+- обнови статус P2-K в таблице «Планируемая последовательность Phase 2»;
+- Phase 2 оставь `in progress`: выбор файла не закрывает P2-L/P2-M, flag infra
   (P2-N/P2-O) или ROADMAP exit gate;
-- полностью перепиши этот файл под **P2-K — выбор exact GGUF file/revision и
-  size/license/fit preview**: это следующий slice цепочки. Если P2-J
-  заблокирован, оставь файл на P2-J с blocker и recovery steps;
+- полностью перепиши этот файл под **P2-L — download с checksum/provenance,
+  bounded и cancel-safe**: это следующий slice цепочки. Если P2-K заблокирован,
+  оставь файл на P2-K с blocker и recovery steps;
 - используй небольшие conventional commits и не включай `.idea/`.
 
 В финале сообщи ровно `status successful` либо `status blocked`, commits, exact
 test counts, first failures/fixes, residual risks и подтверждение обоих handoff
 docs. Не называй HF metadata доказательством `ollama pull`, `apps=ollama` —
-подтверждением совместимости, отсутствие GGUF — сломанной моделью, отсутствие
-metadata — unsupported, local fake tests — production validation, а Phase 2 —
-завершённой.
+подтверждением совместимости, заявленный размер файла — измеренным fit, selection
+— установкой, local fake tests — production validation, а Phase 2 — завершённой.
