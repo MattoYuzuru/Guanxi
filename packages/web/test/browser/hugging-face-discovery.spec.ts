@@ -191,7 +191,8 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
   await expect(section.getByText(/Metadata репозитория прочитать не удалось/u)).toBeVisible()
   await expect(section.getByText(/это не «нашлось меньше»/u)).toBeVisible()
   await expect(section.getByText(/Gated — ручное одобрение/u)).toBeVisible()
-  await expect(section.getByText(/не запрашивает token/u)).toBeVisible()
+  await expect(section.getByText(/token не запрашивается и доступ не открывается/u))
+    .toBeVisible()
 
   // No install affordance exists in this slice.
   for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Скачать/u]) {
@@ -216,6 +217,26 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
   await expect(retry).toBeVisible()
   await retry.press('Enter')
   await expect(alert).toContainText(/ограничивает частоту запросов/u)
+
+  // Primary touch targets in this section meet the documented 44 px minimum.
+  const targets = await section.evaluate((root) => {
+    const names = ['Искать', 'Повторить', 'Загрузить следующую страницу']
+    const found: Array<{ label: string; height: number }> = []
+    for (const element of root.querySelectorAll('button')) {
+      const label = (element.textContent ?? '').trim()
+      if (!names.some((name) => label.includes(name))) continue
+      found.push({ label, height: element.getBoundingClientRect().height })
+    }
+    const input = root.querySelector('input')
+    if (input) {
+      found.push({ label: 'input', height: input.getBoundingClientRect().height })
+    }
+    return found
+  })
+  expect(targets.length).toBeGreaterThan(0)
+  for (const target of targets) {
+    expect(target.height, `${target.label} height`).toBeGreaterThanOrEqual(44)
+  }
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const layout = await page.evaluate(() => ({

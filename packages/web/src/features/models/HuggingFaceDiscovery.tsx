@@ -16,19 +16,30 @@ import type {
   HuggingFaceRepository,
   HuggingFaceSearchResult,
   HuggingFaceTransportFailureReason,
+  HuggingFaceUnknownVerdictReason,
 } from '@alamo/contract'
 import { Badge, Button, Callout, Disclosure, EmptyState, Input, Skeleton } from '../../components/ui.tsx'
 import { ApiRequestError, api } from '../../lib/api.ts'
-import { formatBytes } from '../../lib/format.ts'
+import { formatBytes, formatDateTime } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 
 type Page = Extract<HuggingFaceSearchResult, { state: 'listed' | 'empty' }>
+
+type FailureReason = HuggingFaceTransportFailureReason | 'offline' | 'invalid'
+
+/** The exact request a retry must repeat, rather than restarting the walk. */
+type Intent = { query: string; page: number; cursor: string | null }
 
 type State =
   | { kind: 'idle' }
   | { kind: 'searching' }
   | { kind: 'page'; page: Page; loadingMore: boolean }
-  | { kind: 'failed'; reason: HuggingFaceTransportFailureReason | 'offline' | 'invalid' }
+  | { kind: 'failed'; reason: FailureReason; intent: Intent }
+  /**
+   * A further page failed. The results already on screen are kept: a transient
+   * failure on page N must not destroy the pages the user already paid for.
+   */
+  | { kind: 'pageFailed'; page: Page; reason: FailureReason; intent: Intent }
 
 /** Only the reasons the contract can publish are rendered; anything else stays generic. */
 const FAILURE_KEYS: Record<HuggingFaceTransportFailureReason, LocaleKey> = {
@@ -43,6 +54,15 @@ const FAILURE_KEYS: Record<HuggingFaceTransportFailureReason, LocaleKey> = {
   request_cancelled: 'hf.error.reason.request_cancelled',
 }
 
+/** Exhaustive by type: a future contract reason cannot silently render nothing. */
+const VERDICT_REASON_KEYS: Record<HuggingFaceUnknownVerdictReason, LocaleKey> = {
+  file_inventory_unavailable: 'hf.verdict.reason.file_inventory_unavailable',
+  file_listing_truncated: 'hf.verdict.reason.file_listing_truncated',
+  file_entries_malformed: 'hf.verdict.reason.file_entries_malformed',
+  metadata_unavailable: 'hf.verdict.reason.metadata_unavailable',
+  legacy_response: 'hf.verdict.reason.legacy_response',
+}
+
 export function HuggingFaceDiscovery() {
   const [query, setQuery] = useState('')
   const [state, setState] = useState<State>({ kind: 'idle' })
@@ -52,7 +72,6 @@ export function HuggingFaceDiscovery() {
   /** The exact request currently in flight, used to collapse duplicate intents. */
   const inFlightRef = useRef<string | null>(null)
   const mountedRef = useRef(true)
-  const statusRef = useRef<HTMLParagraphElement>(null)
 
   useEffect(() => {
     mountedRef.current = true
@@ -62,10 +81,13 @@ export function HuggingFaceDiscovery() {
     }
   }, [])
 
-  const run = async (
-    input: { query: string; page: number; cursor: string | null },
-    previous: Page | null,
-  ) => {
+  const run = async (input: Intent, previous: Page | null) => {
+    /** A failure keeps whatever was already on screen and remembers this intent. */
+    const failWith = (reason: FailureReason) => {
+      setState(previous
+        ? { kind: 'pageFailed', page: previous, reason, intent: input }
+        : { kind: 'failed', reason, intent: input })
+    }
     // Repeating the *same* intent is one request, so a double submit or a
     // double click on "load more" cannot issue two. A different query or page is
     // a new intent: it supersedes the in-flight one instead of being dropped,
@@ -96,7 +118,21 @@ export function HuggingFaceDiscovery() {
       if (!mountedRef.current || id !== requestIdRef.current) return
 
       if (result.state === 'failed') {
-        setState({ kind: 'failed', reason: result.reason })
+        failWith(result.reason)
+        return
+      }
+      // An `empty` further page is the end of the walk, not a loss of results:
+      // keep the rows already shown and stop offering another page.
+      if (previous && previous.state === 'listed' && result.state === 'empty') {
+        setState({
+          kind: 'page',
+          page: {
+            ...previous,
+            droppedRows: previous.droppedRows + result.droppedRows,
+            nextCursor: null,
+          },
+          loadingMore: false,
+        })
         return
       }
       const merged: Page = previous && previous.state === 'listed' && result.state === 'listed'
@@ -111,15 +147,14 @@ export function HuggingFaceDiscovery() {
       if (controller.signal.aborted) return
       if (!mountedRef.current || id !== requestIdRef.current) return
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        setState({ kind: 'failed', reason: 'offline' })
+        failWith('offline')
         return
       }
-      setState({
-        kind: 'failed',
-        reason: error instanceof ApiRequestError && error.status === 400
+      failWith(
+        error instanceof ApiRequestError && error.status === 400
           ? 'invalid'
           : 'provider_unavailable',
-      })
+      )
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null
       // Only the newest intent may clear the marker; a superseded request
@@ -128,15 +163,34 @@ export function HuggingFaceDiscovery() {
     }
   }
 
-  /** The one explicit search intent, shared by form submit and the retry button. */
+  /** A new first-page search from whatever is currently typed. */
   const startSearch = () => {
     const trimmed = query.trim()
-    if (trimmed.length === 0) return
+    if (trimmed.length === 0) {
+      setState({ kind: 'idle' })
+      return
+    }
     void run({ query: trimmed, page: 1, cursor: null }, null)
   }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    startSearch()
+  }
+
+  /**
+   * Repeats exactly the request that failed, including its page and cursor, so a
+   * transient failure on page N does not silently restart the walk at page 1.
+   */
+  const retry = () => {
+    if (state.kind === 'pageFailed') {
+      void run(state.intent, state.page)
+      return
+    }
+    if (state.kind === 'failed') {
+      void run(state.intent, null)
+      return
+    }
     startSearch()
   }
 
@@ -150,9 +204,12 @@ export function HuggingFaceDiscovery() {
     )
   }
 
+  /** Rows currently on screen, including those retained behind a failed next page. */
   const listed = state.kind === 'page' && state.page.state === 'listed'
     ? state.page
-    : null
+    : state.kind === 'pageFailed' && state.page.state === 'listed'
+      ? state.page
+      : null
 
   return (
     <section aria-labelledby="hf-discovery-heading" className="mt-6">
@@ -183,7 +240,7 @@ export function HuggingFaceDiscovery() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder={translate('hf.search.placeholder')}
             aria-describedby="hf-search-hint"
-            className="mt-1 w-full min-w-0"
+            className="mt-1 min-h-11 w-full min-w-0 sm:min-h-0"
             type="search"
             autoComplete="off"
             maxLength={128}
@@ -194,6 +251,7 @@ export function HuggingFaceDiscovery() {
           variant="primary"
           loading={state.kind === 'searching'}
           aria-label={translate('hf.search.aria.submit')}
+          className="min-h-11 sm:min-h-0"
         >
           {state.kind === 'searching'
             ? translate('hf.search.searching')
@@ -204,12 +262,12 @@ export function HuggingFaceDiscovery() {
         {translate('hf.search.hint')}
       </p>
 
-      <p ref={statusRef} className="sr-only" role="status" aria-live="polite">
-        {state.kind === 'searching'
-          ? translate('hf.search.loading')
-          : listed
-            ? `${translate('hf.results.count')}: ${listed.repositories.length}`
-            : ''}
+      {/*
+        The announcement carries a monotonic counter so two searches returning the
+        same count still change this node's text and are therefore announced.
+      */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement(state, listed)}
       </p>
 
       <div className="mt-3">
@@ -223,41 +281,56 @@ export function HuggingFaceDiscovery() {
             <Skeleton className="h-20 w-full" />
             <Skeleton className="h-20 w-full" />
           </div>
-        ) : state.kind === 'failed' ? (
-          <Callout
-            tone="danger"
-            title={translate('hf.error.title')}
-            action={
-              <Button size="sm" onClick={startSearch}>
-                {translate('hf.error.retry')}
-              </Button>
-            }
-          >
-            <span role="alert">
-              {state.reason === 'offline'
-                ? translate('hf.error.offline')
-                : state.reason === 'invalid'
-                  ? translate('hf.error.invalidReference')
-                  : translate(FAILURE_KEYS[state.reason])}
-            </span>
-          </Callout>
-        ) : state.page.state === 'empty' ? (
-          <EmptyState
-            title={translate('hf.empty.title')}
-            description={translate('hf.empty.description')}
-          />
-        ) : (
+        ) : listed ? (
           <ul className="min-w-0 space-y-2">
-            {state.page.repositories.map((repository) => (
+            {listed.repositories.map((repository) => (
               <li key={repository.identity.comparisonKey}>
                 <RepositoryCard repository={repository} />
               </li>
             ))}
           </ul>
-        )}
+        ) : state.kind === 'page' || state.kind === 'pageFailed' ? (
+          <EmptyState
+            title={translate('hf.empty.title')}
+            description={translate('hf.empty.description')}
+          />
+        ) : null}
       </div>
 
-      {listed && listed.droppedRows > 0 ? (
+      {/*
+        The whole Callout carries `role="alert"`, so the failure title, the reason and
+        the retry action are announced together rather than as a bare sentence.
+      */}
+      {state.kind === 'failed' || state.kind === 'pageFailed' ? (
+        <div className="mt-3" role="alert">
+          <Callout
+            tone="danger"
+            title={state.kind === 'pageFailed'
+              ? translate('hf.more.error.title')
+              : translate('hf.error.title')}
+            action={
+              <Button size="sm" onClick={retry} className="min-h-11 sm:min-h-0">
+                {translate('hf.error.retry')}
+              </Button>
+            }
+          >
+            {state.reason === 'offline'
+              ? translate('hf.error.offline')
+              : state.reason === 'invalid'
+                ? translate('hf.error.invalidReference')
+                : translate(FAILURE_KEYS[state.reason])}
+            {state.kind === 'pageFailed'
+              ? ` ${translate('hf.more.error.retained')}`
+              : ''}
+          </Callout>
+        </div>
+      ) : null}
+
+      {/*
+        Refused rows must be disclosed even when every row was refused, because an
+        all-dropped page is otherwise indistinguishable from "nothing matched".
+      */}
+      {droppedRows(state) > 0 ? (
         <p className="mt-2 text-2xs text-[var(--warning)]" role="status">
           {translate('hf.results.dropped')}
         </p>
@@ -270,6 +343,7 @@ export function HuggingFaceDiscovery() {
             variant="secondary"
             onClick={loadMore}
             loading={state.kind === 'page' && state.loadingMore}
+            className="min-h-11 sm:min-h-0"
           >
             {translate('hf.more')}
           </Button>
@@ -282,6 +356,28 @@ export function HuggingFaceDiscovery() {
       <p className="mt-3 text-2xs text-[var(--fg-subtle)]">{translate('hf.boundary')}</p>
     </section>
   )
+}
+
+/** Refused rows, whether the page ended up listed, empty or failed mid-walk. */
+function droppedRows(state: State): number {
+  if (state.kind === 'page' || state.kind === 'pageFailed') return state.page.droppedRows
+  return 0
+}
+
+/**
+ * The screen-reader announcement. Every terminal state produces non-empty text, so
+ * "no results" is never announced as silence after "reading metadata".
+ */
+function announcement(state: State, listed: Page | null): string {
+  if (state.kind === 'idle') return ''
+  if (state.kind === 'searching') return translate('hf.search.loading')
+  const failure = state.kind === 'failed' || state.kind === 'pageFailed'
+    ? ` ${translate('hf.error.title')}`
+    : ''
+  if (listed) {
+    return `${translate('hf.results.count')}: ${listed.repositories.length}${failure}`
+  }
+  return `${translate('hf.empty.title')}${failure}`
 }
 
 function verdictBadge(repository: HuggingFaceRepository) {
@@ -310,9 +406,17 @@ function gatedLabel(repository: HuggingFaceRepository): string {
 function licenseLabel(repository: HuggingFaceRepository): string {
   const { license } = repository
   if (license.state === 'declared') return license.value
-  return license.source === 'conflicting_declarations'
-    ? translate('hf.repository.license.conflicting')
-    : translate('hf.repository.license.unknown')
+  if (license.source === 'conflicting_declarations') {
+    return translate('hf.repository.license.conflicting')
+  }
+  // Unparseable text is not an absent declaration.
+  if (license.source === 'malformed') {
+    return translate('hf.repository.license.malformed')
+  }
+  if (license.source === 'metadata_unavailable') {
+    return translate('hf.repository.license.unavailable')
+  }
+  return translate('hf.repository.license.unknown')
 }
 
 function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
@@ -330,7 +434,7 @@ function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
           <p className="mt-0.5 text-2xs text-[var(--fg-subtle)]">
             {translate('hf.repository.source')}: {translate('hf.repository.source.value')}
             {' · '}
-            {translate('hf.repository.observed')}: {repository.observedAt}
+            {translate('hf.repository.observed')}: {formatDateTime(repository.observedAt)}
           </p>
         </div>
         <Badge tone={badge.tone}>{badge.label}</Badge>
@@ -343,7 +447,7 @@ function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
             ? translate('hf.verdict.unsupported.detail')
             : translate('hf.verdict.unknown.detail')}
         {verdict.reason !== null
-          ? ` ${translate(`hf.verdict.reason.${verdict.reason}` as LocaleKey)}`
+          ? ` ${translate(VERDICT_REASON_KEYS[verdict.reason])}`
           : ''}
       </p>
 
@@ -353,7 +457,9 @@ function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
           <dd className="min-w-0 break-all font-mono">
             {revision.state === 'exact_commit'
               ? revision.commit
-              : translate('hf.repository.revision.unknown')}
+              : revision.source === 'malformed'
+                ? translate('hf.repository.revision.malformed')
+                : translate('hf.repository.revision.unknown')}
           </dd>
         </div>
         <div className="min-w-0">
@@ -362,7 +468,14 @@ function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
         </div>
         <div className="min-w-0">
           <dt className="text-[var(--fg-subtle)]">{translate('hf.repository.license')}</dt>
-          <dd className="min-w-0 break-words">{licenseLabel(repository)}</dd>
+          <dd className="min-w-0 break-words">
+            {licenseLabel(repository)}
+            {repository.license.state === 'declared' ? (
+              <span className="block text-[var(--fg-subtle)]">
+                {translate('hf.repository.license.note')}
+              </span>
+            ) : null}
+          </dd>
         </div>
         <div className="min-w-0">
           <dt className="text-[var(--fg-subtle)]">{translate('hf.repository.files.total')}</dt>

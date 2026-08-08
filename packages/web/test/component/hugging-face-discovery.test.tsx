@@ -290,7 +290,8 @@ describe('Marketplace Hugging Face discovery section', () => {
 
     expect(await screen.findByText(/Gated — ручное одобрение/u)).toBeTruthy()
     expect(screen.getByText(/Противоречивые заявления/u)).toBeTruthy()
-    expect(screen.getByText(/не запрашивает token/u)).toBeTruthy()
+    expect(screen.getByText(/token не запрашивается и доступ не открывается/u))
+      .toBeTruthy()
     // The GGUF evidence is unchanged, so the verdict stays supported.
     expect(screen.getByText(/Содержит файлы GGUF/u)).toBeTruthy()
   })
@@ -345,7 +346,10 @@ describe('Marketplace Hugging Face discovery section', () => {
     })))
     render(<HuggingFaceDiscovery />)
     submitSearch()
-    expect(await screen.findByText(/Подходящих репозиториев нет/u)).toBeTruthy()
+    expect(await screen.findAllByText(/Подходящих репозиториев нет/u))
+      .toHaveLength(2)
+    expect(screen.getByText(/пригодных репозиториев по этому запросу не вернул/u))
+      .toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -465,6 +469,161 @@ describe('Marketplace Hugging Face discovery section', () => {
     submitSearch()
     expect(await screen.findByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
     expect(screen.queryByText('thebloke/llama-2-7b-gguf')).toBeNull()
+  })
+
+  it('keeps found rows when a further page fails and retries that exact page', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(json(listed([repository()], 'CURSOR-2')))
+      .mockResolvedValueOnce(json(failed('rate_limited')))
+      .mockResolvedValueOnce(json({
+        result: {
+          ...listed([repository({
+            identity: {
+              provider: 'hugging_face', owner: 'Second', name: 'Repo-GGUF',
+              repositoryId: 'Second/Repo-GGUF', comparisonKey: 'second/repo-gguf',
+            },
+          })]).result,
+          page: 2,
+        },
+      }))
+    vi.stubGlobal('fetch', fetch)
+    render(<HuggingFaceDiscovery />)
+    submitSearch()
+    await screen.findByText('TheBloke/Llama-2-7B-GGUF')
+
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить следующую страницу/u }))
+    await screen.findByRole('alert')
+    // A transient failure on page 2 must not destroy page 1.
+    expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
+    expect(screen.queryByText(/Подходящих репозиториев нет/u)).toBeNull()
+
+    // Retry repeats the failed page and cursor, not a fresh page-1 search.
+    fireEvent.click(screen.getByRole('button', { name: /Повторить/u }))
+    expect(await screen.findByText('Second/Repo-GGUF')).toBeTruthy()
+    expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({
+      query: 'llama gguf', page: 2, pageSize: 10, cursor: 'CURSOR-2',
+    })
+    expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
+  })
+
+  it('keeps found rows when a further page comes back empty and stops the walk', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(json(listed([repository()], 'CURSOR-2')))
+      .mockResolvedValueOnce(json({
+        result: {
+          state: 'empty', version: 1, page: 2, pageSize: 10,
+          source: {
+            state: 'available', source: 'hugging_face_public_api',
+            observedAt: OBSERVED_AT, reason: null,
+          },
+          droppedRows: 0, repositories: [], nextCursor: null, reason: null,
+        },
+      }))
+    vi.stubGlobal('fetch', fetch)
+    render(<HuggingFaceDiscovery />)
+    submitSearch()
+    await screen.findByText('TheBloke/Llama-2-7B-GGUF')
+
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить следующую страницу/u }))
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Загрузить следующую/u })).toBeNull()
+    })
+    // The end of the walk is not "nothing matched".
+    expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
+    expect(screen.queryByText(/Подходящих репозиториев нет/u)).toBeNull()
+  })
+
+  it('discloses refused rows even when every row on the page was refused', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(json({
+      result: {
+        state: 'empty', version: 1, page: 1, pageSize: 10,
+        source: {
+          state: 'available', source: 'hugging_face_public_api',
+          observedAt: OBSERVED_AT, reason: null,
+        },
+        droppedRows: 9, repositories: [], nextCursor: null, reason: null,
+      },
+    })))
+    render(<HuggingFaceDiscovery />)
+    submitSearch()
+    // Nine unreadable repositories must not be reported as "nothing matched".
+    expect(await screen.findByText(/это не «нашлось меньше»/u)).toBeTruthy()
+  })
+
+  it('announces a terminal state instead of falling silent', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(json({
+      result: {
+        state: 'empty', version: 1, page: 1, pageSize: 10,
+        source: {
+          state: 'available', source: 'hugging_face_public_api',
+          observedAt: OBSERVED_AT, reason: null,
+        },
+        droppedRows: 0, repositories: [], nextCursor: null, reason: null,
+      },
+    }))
+    vi.stubGlobal('fetch', fetch)
+    render(<HuggingFaceDiscovery />)
+    const live = document.querySelector('[role="status"][aria-live="polite"]')!
+    expect(live.textContent).toBe('')
+    submitSearch()
+    await waitFor(() => {
+      // "No results" must be announced, not represented by returning to silence.
+      expect(live.textContent).not.toBe('')
+    })
+    expect(live.textContent).toMatch(/Подходящих репозиториев нет/u)
+  })
+
+  it('announces the failure title together with the reason', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValue(json(failed('rate_limited'))))
+    render(<HuggingFaceDiscovery />)
+    submitSearch()
+    const alert = await screen.findByRole('alert')
+    // The alert carries the framing and the retry, not just a bare sentence.
+    expect(alert.textContent).toMatch(/Не удалось прочитать Hugging Face/u)
+    expect(alert.textContent).toMatch(/ограничивает частоту запросов/u)
+    expect(alert.querySelector('button')).toBeTruthy()
+  })
+
+  it('distinguishes unreadable metadata from an absent declaration', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      json(listed([repository({
+        revision: { state: 'unknown', commit: null, source: 'malformed' },
+        license: {
+          state: 'unknown', value: null, source: 'malformed', confidence: 'unknown',
+        },
+      })])),
+    ))
+    render(<HuggingFaceDiscovery />)
+    submitSearch()
+    // "Unreadable" is a different fact from "not declared".
+    expect(await screen.findByText(/Заявлена, но не читается/u)).toBeTruthy()
+    expect(screen.getByText(/Сообщённый commit не читается/u)).toBeTruthy()
+    expect(screen.queryByText('Не заявлена')).toBeNull()
+  })
+
+  it('shows the author-declared license caveat and a formatted observation time', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(json(listed())))
+    render(<HuggingFaceDiscovery />)
+    submitSearch()
+    await screen.findByText('TheBloke/Llama-2-7B-GGUF')
+    expect(screen.getByText(/Заявление автора, а не юридическая проверка/u)).toBeTruthy()
+    // A raw ISO timestamp is not a user-facing date.
+    expect(screen.queryByText(new RegExp(OBSERVED_AT, 'u'))).toBeNull()
+  })
+
+  it('keeps internal release vocabulary out of user copy', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValue(json(listed([repository({
+        gated: { state: 'gated', mode: 'manual' },
+      })], 'CURSOR-2'))))
+    render(<HuggingFaceDiscovery />)
+    submitSearch()
+    await screen.findByText('TheBloke/Llama-2-7B-GGUF')
+    const text = document.body.textContent ?? ''
+    for (const forbidden of ['срез', 'slice', '`ollama pull`']) {
+      expect(text).not.toContain(forbidden)
+    }
   })
 
   it('states the read-only boundary of the whole section', async () => {
