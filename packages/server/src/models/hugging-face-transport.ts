@@ -15,6 +15,7 @@
  */
 import {
   HUGGING_FACE_DISCOVERY_VERSION,
+  HUGGING_FACE_SEARCH_MAX_PAGE_SIZE,
   HUGGING_FACE_SEARCH_MAX_PAGES,
   type HuggingFaceFileInventory,
   type HuggingFaceGatedState,
@@ -31,6 +32,7 @@ import {
   type HuggingFaceTransportFailureReason,
   type HuggingFaceUnknownVerdictReason,
 } from '@alamo/contract'
+import { parseHuggingFaceRepositoryId } from './hugging-face-reference.ts'
 
 /** The documented public Hub origin. It is a constant, never caller-supplied. */
 const HUB_ORIGIN = 'https://huggingface.co'
@@ -235,8 +237,12 @@ export class HuggingFaceTransport {
     cursor: string | null
     signal?: AbortSignal
   }): Promise<HuggingFaceSearchResult> {
-    const { query, page, pageSize, cursor, signal } = input
-    if (page > HUGGING_FACE_SEARCH_MAX_PAGES) {
+    const { query, cursor, signal } = input
+    // The published page/pageSize must stay inside the contract bounds even when a
+    // direct caller asks beyond them, or the result itself would be unrepresentable.
+    const page = Math.min(input.page, HUGGING_FACE_SEARCH_MAX_PAGES)
+    const pageSize = Math.min(input.pageSize, HUGGING_FACE_SEARCH_MAX_PAGE_SIZE)
+    if (input.page > HUGGING_FACE_SEARCH_MAX_PAGES) {
       return this.failedPage(page, pageSize, 'provider_error')
     }
 
@@ -267,7 +273,14 @@ export class HuggingFaceTransport {
     const observedAt = this.now().toISOString()
     const repositories: HuggingFaceRepository[] = []
     let droppedRows = 0
+    // `limit` is only a request hint: a provider may answer with more rows than were
+    // asked for. The published page is bounded here so one response cannot grow
+    // without limit, and the surplus is reported as dropped rather than hidden.
     for (const row of payload.value) {
+      if (repositories.length >= pageSize) {
+        droppedRows += 1
+        continue
+      }
       const repository = buildRepositoryFromHub(row, observedAt)
       if (repository) repositories.push(repository)
       else droppedRows += 1
@@ -429,26 +442,17 @@ export function unavailableRepository(
   }
 }
 
+/**
+ * Reuses the one strict local grammar rather than restating it, so a provider row can
+ * never carry an identity that `normalizeHuggingFaceReference` would refuse — including
+ * reserved Hub route names such as `datasets/...`.
+ */
 function parseIdentity(
   row: Record<string, unknown>,
 ): HuggingFaceRepositoryIdentity | null {
   const id = typeof row['id'] === 'string' ? row['id'] : null
   if (!id) return null
-  const segments = id.split('/')
-  if (segments.length !== 2) return null
-  const [owner, name] = segments
-  if (!owner || !name) return null
-  // Reject anything that could not have come from the strict local grammar.
-  if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u.test(owner)) return null
-  if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u.test(name)) return null
-  const repositoryId = `${owner}/${name}`
-  return {
-    provider: 'hugging_face',
-    owner,
-    name,
-    repositoryId,
-    comparisonKey: repositoryId.toLowerCase(),
-  }
+  return parseHuggingFaceRepositoryId(id)
 }
 
 function parseRevision(row: Record<string, unknown>): HuggingFaceRevision {
@@ -687,8 +691,14 @@ export function buildRepositoryFromHub(
 /**
  * Extracts the opaque `cursor` value from a Hub `Link: <…>; rel="next"` header.
  *
- * The cursor is treated as opaque and only ever echoed back. The Link URL must point at
- * the documented Hub origin, so a hostile header cannot redirect the next page read.
+ * The Link URL must point at the documented Hub origin, so a hostile header cannot
+ * redirect the next page read. `rel` is matched as a whole token, not a substring, so
+ * `rel="next-page"` is a different relation and is ignored.
+ *
+ * The cursor is opaque and only ever echoed back, but it is still character-checked:
+ * a control character or whitespace in a value that later reaches a log line or a
+ * header would be an injection vector, so such a cursor is refused outright rather
+ * than relying on re-encoding at the point of use.
  */
 export function nextCursorFromLink(link: string | null): string | null {
   if (!link) return null
@@ -697,7 +707,13 @@ export function nextCursorFromLink(link: string | null): string | null {
     if (!match) continue
     const [, target, attributes] = match
     if (!target || !attributes) continue
-    if (!/rel\s*=\s*"?next"?/iu.test(attributes)) continue
+    const isNext = attributes
+      .split(';')
+      .some((attribute) => {
+        const relation = /^\s*rel\s*=\s*"?([^";]*)"?\s*$/u.exec(attribute)?.[1]
+        return relation !== undefined && relation.trim().toLowerCase() === 'next'
+      })
+    if (!isNext) continue
     let url: URL
     try {
       url = new URL(target, HUB_ORIGIN)
@@ -707,6 +723,7 @@ export function nextCursorFromLink(link: string | null): string | null {
     if (url.origin !== HUB_ORIGIN) return null
     const cursor = url.searchParams.get('cursor')
     if (!cursor || cursor.length === 0 || cursor.length > 2_048) return null
+    if (/[\u0000-\u0020\u007f\s]/u.test(cursor)) return null
     return cursor
   }
   return null

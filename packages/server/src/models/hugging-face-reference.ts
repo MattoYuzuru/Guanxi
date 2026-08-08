@@ -136,6 +136,32 @@ function parseModelPageUrl(input: string): HuggingFaceReferencePreview {
 }
 
 /**
+ * Parses a provider-reported `owner/name` with exactly the local grammar, so a Hub
+ * response can never introduce an identity the local parser would refuse. Returns
+ * `null` instead of throwing: a bad row is dropped, not an error for the whole page.
+ */
+export function parseHuggingFaceRepositoryId(
+  input: string,
+): HuggingFaceReferencePreview['identity'] | null {
+  if (
+    input.length === 0
+    || input !== input.trim()
+    || input.normalize('NFKC') !== input
+    || /[\u0000-\u001f\u007f\s]/u.test(input)
+    || input.includes('%')
+    || input.includes('\\')
+  ) {
+    return null
+  }
+  try {
+    const { owner, name } = parseRepositoryId(input, 'invalid_repository_id')
+    return identityOf(owner, name)
+  } catch {
+    return null
+  }
+}
+
+/**
  * The single entry point for turning untrusted text into a repository identity.
  * A successful parse states only that the identity is well-formed — never that the
  * repository exists, is public, contains GGUF files or can be installed.

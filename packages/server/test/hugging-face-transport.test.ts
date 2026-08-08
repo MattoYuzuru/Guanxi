@@ -609,6 +609,85 @@ describe('bounded server-owned Hugging Face transport', () => {
     }
   })
 
+  it('keeps a page beyond the bound representable in the contract', async () => {
+    // A direct caller asking past the bound must still get a contract-valid refusal,
+    // not an object whose own page number the schema rejects.
+    const { transport, calls } = transportWith(async () => json([hubRow()]))
+    const beyond = await transport.search({
+      query: 'x', page: 9, pageSize: 999, cursor: 'c',
+    })
+    assert.equal(beyond.state, 'failed')
+    assert.deepEqual(huggingFaceSearchResultSchema.parse(beyond), beyond)
+    // Refused before the bound is crossed: no outbound read happened.
+    assert.equal(calls.length, 0)
+  })
+
+  it('bounds the published rows by pageSize and reports the surplus as dropped', async () => {
+    // `limit` is only a request hint, so a provider may answer with far more rows.
+    const rows = Array.from({ length: 40 }, (_unused, index) => hubRow({
+      id: `owner${index}/model-gguf`,
+    }))
+    const { transport } = transportWith(async () => json(rows))
+    const result = await transport.search({
+      query: 'x', page: 1, pageSize: 10, cursor: null,
+    })
+    assert.equal(result.state, 'listed')
+    assert.equal(result.repositories.length, 10)
+    assert.equal(result.droppedRows, 30)
+    assert.deepEqual(huggingFaceSearchResultSchema.parse(result), result)
+  })
+
+  it('refuses a provider row whose owner is a reserved Hub route', async () => {
+    // The transport must not admit an identity the strict local parser would refuse.
+    const { transport } = transportWith(async () => json([
+      hubRow({ id: 'datasets/squad' }),
+      hubRow({ id: 'settings/tokens' }),
+      hubRow({ id: 'spaces/demo' }),
+      hubRow(),
+    ]))
+    const result = await transport.search({
+      query: 'x', page: 1, pageSize: 10, cursor: null,
+    })
+    assert.equal(result.state, 'listed')
+    assert.deepEqual(
+      result.repositories.map((repository) => repository.identity.repositoryId),
+      ['TheBloke/Llama-2-7B-GGUF'],
+    )
+    assert.equal(result.droppedRows, 3)
+  })
+
+  it('matches rel="next" as a whole token and refuses an unsafe cursor', async () => {
+    // A substring match would accept an unrelated relation as pagination.
+    assert.equal(
+      nextCursorFromLink('<https://huggingface.co/api/models?cursor=abc>; rel="next-page"'),
+      null,
+    )
+    assert.equal(
+      nextCursorFromLink('<https://huggingface.co/api/models?cursor=abc>; rel="nextfoo"'),
+      null,
+    )
+    // A whole-token match still works with extra attributes in any order.
+    assert.equal(
+      nextCursorFromLink('<https://huggingface.co/api/models?cursor=abc>; type="x"; rel="next"'),
+      'abc',
+    )
+    assert.equal(
+      nextCursorFromLink('<https://huggingface.co/api/models?cursor=abc>; rel=next'),
+      'abc',
+    )
+    // A cursor carrying control characters or whitespace is refused outright rather
+    // than relying on re-encoding wherever it is later used.
+    for (const encoded of ['a%0D%0Ab', 'a%00b', 'a%20b', 'a%09b']) {
+      assert.equal(
+        nextCursorFromLink(
+          `<https://huggingface.co/api/models?cursor=${encoded}>; rel="next"`,
+        ),
+        null,
+        encoded,
+      )
+    }
+  })
+
   it('reaches no Ollama, Governor, probe, catalog or Job surface', async () => {
     const { calls, transport } = transportWith(async () => json([hubRow()]))
     await transport.search({ query: 'x', page: 1, pageSize: 10, cursor: null })
