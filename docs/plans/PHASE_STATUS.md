@@ -1,7 +1,7 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-07
+**Проверено:** 2026-08-08
 **Текущая фаза:** Phase 2 — Models, Capability Registry и import
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
@@ -373,6 +373,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-G Truthful Linux/NVIDIA telemetry | implemented, locally validated | `a4a3ead`, `3f1a533`, `6ceae50`; P2-G 38/38, core 339/339, Web 88/88, Chromium 22/22, all required gates |
 | P2-H Catalog pagination/bounded rendering | implemented, locally validated | `3c4960d`, `cc40d14`; P2-H 10/10, core 349/349, Web 95/95, Chromium 23/23, all required gates |
 | P2-I Exact installed capability user override | independently verified | `6b98d37`..`6cc4504`; P2-I 52 new / 401 core envelope, Web 117/117, Chromium 25/25, all required gates |
+| P2-J Read-only Hugging Face discovery (GGUF-only) | independently verified | `e544c7c`..`2f13e31`; P2-J 45 new / 446 core envelope, Web 27 new / 144 envelope, Chromium 1 new / 26 envelope, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -820,6 +821,124 @@ verified-green» в состоянии, когда declaration действит�
 fixtures держат provider evidence degraded, а verified-green треатмент в
 Installed evidence сейчас не существует.
 
+P2-J добавляет Hugging Face как отдельный read-only provider. Один pure
+server-side parser (`hugging-face-reference.ts`) нормализует identity: разрешены
+только strict `owner/name` и exact HTTPS `huggingface.co` model page. Whitespace,
+control characters, NFKC-нормализуемый текст, credentials, port, query/fragment,
+foreign и lookalike host, encoded separator, traversal, пустые segments,
+multi-slash, reserved Hub routes (`datasets/...`) и revision/file suffixes
+fail-closed с typed reason. Hub path case-sensitive: exact owner/name сохраняются,
+а `comparisonKey` — только локальный case-folded dedup key, он не уходит в Hub и
+не показывается как path.
+
+`hugging-face-transport.ts` — единственная outbound HF граница. Один explicit
+search = один bounded request: connect deadline 8s, response deadline 12s, hard
+byte cap 2 MiB на streamed body, максимум 512 file entries на repository,
+максимум 5 ordinal pages, bounded число published rows на страницу и caller
+AbortSignal. Доступ только anonymous public: ни `Authorization`, ни cookie, ни
+token; `redirect: 'error'` не даёт уйти на другой origin. Все failures —
+typed redacted states (`provider_unavailable`, `connect_timeout`,
+`response_timeout`, `response_too_large`, `provider_malformed`, `provider_error`,
+`rate_limited`, `not_found`, `request_cancelled`) без raw body, endpoint, host,
+path или credentials. Cursor opaque: он только echo-ится назад, проверяется на
+origin, whole-token `rel="next"`, длину и control characters.
+
+Verdict discipline — единственное support-утверждение среза, и только про
+GGUF-only import scope: `supported` требует exact GGUF evidence, `unsupported`
+требует complete listing, доказавшего отсутствие, всё остальное — `unknown` с
+reason. Truncated listing и malformed entries никогда не дают `unsupported`;
+отсутствие metadata тоже даёт `unknown`, а не `unsupported`. Gated state и
+license сами по себе не меняют verdict. Дублирование правила в
+`huggingFaceRepositorySchema.superRefine` не даёт опубликовать несогласованную
+строку. `totalFiles` — число рассмотренных bounded listing entries, а не
+provider total, и это зафиксировано в контракте.
+
+Marketplace показывает HF отдельной секцией, не подмешивая rows в catalog list и
+не меняя P2-A descriptor или P2-E rows. Mount, hover, focus, typing, navigation и
+reload не делают request; search требует explicit submit; double submit — один
+intent; late response superseded поиска отбрасывается. Кнопок Install/Pull нет:
+UI прямо говорит, что дальше нужен выбор точного GGUF file, и не обещает ни
+one-click install, ни direct Ollama pull. `unsupported` объясняет scope и не
+называет модель сломанной; `unknown` не показывается как supported. Failed
+дальнейшая страница сохраняет уже найденные rows, а retry повторяет ровно тот
+page/cursor, который упал.
+
+Required evidence through revision `2f13e31`: typecheck; P2-J 45 new / 446 core
+envelope (parser 7, transport 27, routes 11); Web 27 new / 144 envelope; mocked
+Chromium 1 new / 26 envelope; production build; markdownlint 31 files/0 issues;
+diff check. Sequential repeats with exit/count checking: P2-J server 10x45/45,
+Web component 10x27/27, Chromium 10x1/1, затронутые AppContext fixtures 10x64/64.
+Migration 10 не добавлена: P2-J остался request-scoped, HF данные не пишутся в
+SQLite.
+
+Первые failures не скрыты. Node type-stripping отверг TypeScript parameter
+property в transport — переписано на explicit field. `HeadersInit` отсутствует в
+server tsconfig lib — заменён на portable тип. Первый `npm run typecheck` после
+wiring дал 6 inherited AppContext failures: fixtures не знали нового поля
+`huggingface`; во все шесть добавлен inert stub, который бросает при обращении,
+поэтому unrelated flow, дошедший до HF границы, упал бы громко. Два уже
+закоммиченных файла содержали literal NUL bytes (git считал их binary) —
+заменены на explicit escapes отдельным commit `985db43`. Mutation-проверка
+парсера сначала показала два «выживших» мутанта (port, percent-escape); проверка
+показала, что это дублирующие defense-in-depth гейты — при удалении соседнего
+гейта или обоих сразу tests падают, то есть свойства проверяются. Mutation
+транспорта показала два реально не покрытых свойства (точный `.gguf` suffix и
+unavailable source health при failed repository read) — добавлены assertions.
+Mutation Web показала, что late-response guard был недостижим: in-flight guard
+блокировал любой повторный submit, поэтому guard был мёртвым кодом; guard
+переписан на per-intent, и теперь другой запрос вытесняет предыдущий.
+
+Независимая verification выполнена двумя reviewer-субагентами
+(`sde-agent:implementation-reviewer` для contract/parser/transport/routes,
+`frontend-agent:accessibility-reviewer` для Marketplace Web); обоим было явно
+запрещено писать в worktree, и `git status` это подтвердил. Reviewer server-лейна
+не нашёл blocking findings, но нашёл: `failedPage` за пределами bound публиковал
+contract-invalid объект; число published rows не было ограничено `pageSize`
+(provider мог вернуть 5000 строк на запрос 10); `parseIdentity` дублировал
+grammar и не применял `RESERVED_OWNERS`, поэтому `datasets/squad` из search
+принимался, хотя парсер тот же самый string отвергает; `rel="next"` матчился как
+substring, поэтому `rel="next-page"` считался пагинацией; cursor не проверялся на
+control characters. Исправлено в `2428475`. Reviewer Web-лейна нашёл три
+blocking дефекта: failed или empty вторая страница уничтожала уже найденные
+результаты и при empty ещё и заявляла «ничего не найдено»; retry игнорировал
+упавший intent и молча перезапускал walk с первой страницы, а после правки текста
+в поле — запускал вообще другой запрос; все три primary action теряли клавиатурный
+фокус на `<body>` и не восстанавливали его. Также: dropped rows не раскрывались,
+когда отброшены были все строки, то есть total metadata failure выглядел как
+«ничего не найдено»; live region замолкал на empty; `role="alert"` на внутреннем
+span озвучивал причину без заголовка и без retry; malformed license/revision
+показывались как «не заявлена»; `observedAt` рендерился сырым ISO; написанный
+license caveat не выводился; touch targets были 16–32 px против требуемых 44;
+внутреннее слово «срез»/«slice» попало в пользовательский текст; `statusRef` был
+мёртвым кодом; `as LocaleKey` cast обходил проверку типов. Исправлено в
+`2f13e31`. Каждый fix подтверждён мутацией исходника: 4 server и 9 Web reverts,
+все поймано, ни одного выжившего.
+
+Остаточные риски P2-J названы прямо. **Live Hub API не проверялся**:
+`huggingface.co` и web-поиск недоступны из этого окружения, поэтому форма ответа
+(`id`, `sha`, `gated`, `tags` с `license:`, `siblings[].rfilename`/`.size`,
+`Link: rel="next"` с `cursor`, параметр `full=true`) взята из документированного
+Hub API и `research/EVIDENCE.md`, а не подтверждена реальным ответом. Reviewer
+отдельно проверил degradation: при неверном предположении каждое поле уходит в
+`unknown`, а не в ложный `supported`/`unsupported`. Единственный silent случай —
+если Hub не присылает `rel="next"`, пагинация просто не появляется и это
+неотличимо от честной одной страницы. HF metadata не является доказательством
+`ollama pull`; `apps=ollama` — hint, не подтверждение совместимости; отсутствие
+GGUF не значит, что модель сломана; отсутствие metadata не значит unsupported.
+Ordinal `page` bound ограничивает честного клиента, а не сервер: cursor не
+привязан к ordinal, поэтому прямой caller может пройти больше страниц. Bounded
+concurrency не реализована: 50 одновременных запросов дадут 50 Hub reads.
+Detail route `/api/models/discovery/hugging-face/repository` проверен серверными
+тестами, но не имеет UI, и клиентский метод `readHuggingFaceRepository` пока без
+вызывающей стороны. `rfilename` публикуется без проверки формы — в P2-J ничего не
+скачивается, но P2-L будет качать именно по этому path. Identity pin сравнивает
+case-folded key, поэтому published `repositoryId` — написание пользователя, а не
+authoritative case Hub. Не реализованы и не проверены: выбор exact GGUF
+file/revision, download/checksum/provenance, local import через `/api/create`,
+probe, token/gated acceptance, safetensors conversion, persistent HF cache,
+saved searches и ranking. Все tests используют fake HTTP transport, recorded
+fixtures и mocked browser routes; live Ollama, GPU и network не задействованы.
+
 P2-A, P2-B, P2-C, P2-D, P2-E, P2-F, P2-G и P2-H остаются `implemented, locally
 validated`, а не independently verified или production-validated. Не проверены
 live Ollama/model/hardware, NVIDIA driver/GPU/MIG, provider-version matrix,
@@ -836,9 +955,8 @@ live load evidence или inferred license/quantization/task facts. Legacy clien
 Phase 2 остаётся `in progress`. Запись выше отражала состояние на 2026-08-04;
 owner session 2026-08-07 закрыла Q-25 (GGUF-only), поэтому HF import больше не
 заблокирован и разбит на P2-J..P2-M, а hardware-зависимые пункты вынесены за
-Phase 4. Следующий handoff — bounded P2-I exact installed capability user
-override foundation по MOD-008/ADR-0003, не full Capability Registry, remote
-provider или inferred capability resolver.
+Phase 4. Следующий handoff — bounded P2-K выбор exact GGUF file/revision с
+size/license/fit preview, не download, не local import и не probe.
 
 ## Phase 2 — что реально осталось
 
@@ -848,7 +966,7 @@ slice: без неё читатель делает вывод, что до ко�
 
 | ROADMAP scope item                               | Состояние                                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| HF search + exact GGUF/revision import (MOD-010) | **нет кода**: `huggingface`/`gguf` — 0 файлов в src; Q-25 закрыт, unblocked → P2-J..P2-M                     |
+| HF search + exact GGUF/revision import (MOD-010) | **discovery сделан в P2-J** (`e544c7c`..`2f13e31`); файл/download/import — P2-K..P2-M                        |
 | license/gated/size/dry-run/fit preview           | **нет кода**: `dryRun`/`gated` — 0 файлов; `license` только display                                          |
 | local Ollama create/import + checksum/provenance | **нет кода**: `/api/create` отсутствует; все `sha256:` — internal keys                                       |
 | measured-parallel за feature flag (RES-009)      | flag infra → P2-N; estimated admission → P2-O; measured вынесен за Phase 4 (Q-34a)                           |
@@ -857,13 +975,15 @@ slice: без неё читатель делает вывод, что до ко�
 | user override (MOD-008)                          | **сделано в P2-I** (`6b98d37`..`6cc4504`): migration 9, exact-identity ownership, Installed UI, safe export  |
 | bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
 
-Итог на 2026-08-07 после P2-I: из 14 scope bullets — 10 delivered, 1 сделан
-Phase 1, 1 половина (calibration не связана с catalog fit), 3 без единой строки
-кода. После owner decisions ни один пункт не заблокирован вопросом: HF
-разблокирован Q-25, а hardware-зависимые пункты вынесены за Phase 4 и убраны из
-exit gate. Остаток фазы — шесть slices P2-J..P2-O. Из exit-gate bullets закрыт
-«user override видим, экспортируем и не выдаётся за provider/runtime facts»;
-остаются HF-цепочка и estimated parallel-admission.
+Итог на 2026-08-08 после P2-J: из 14 scope bullets — 10 delivered, 1 сделан
+Phase 1, 2 половины (calibration не связана с catalog fit; HF-цепочка имеет
+discovery, но не выбор файла/download/import), 2 без единой строки кода. После
+owner decisions ни один пункт не заблокирован вопросом: HF разблокирован Q-25, а
+hardware-зависимые пункты вынесены за Phase 4 и убраны из exit gate. Остаток
+фазы — пять slices P2-K..P2-O. Из exit-gate bullets закрыт «user override видим,
+экспортируем и не выдаётся за provider/runtime facts»; остаются остаток
+HF-цепочки (P2-K..P2-M) и estimated parallel-admission. P2-J закрывает только
+discovery: repository остаётся candidate, а не installable target.
 
 ## Планируемая последовательность Phase 2
 
@@ -875,8 +995,8 @@ exit gate. Остаток фазы — шесть slices P2-J..P2-O. Из exit-g
 | Slice | Outcome                                                            | Статус                 |
 | ----- | ------------------------------------------------------------------ | ---------------------- |
 | P2-I  | exact installed capability user override (MOD-008)                 | independently verified |
-| P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | ready                  |
-| P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | blocked by P2-J        |
+| P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | independently verified |
+| P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | ready                  |
 | P2-L  | download с checksum/provenance, bounded и cancel-safe              | blocked by P2-K        |
 | P2-M  | local Ollama import через `/api/create` + probe                    | blocked by P2-L        |
 | P2-N  | feature-flag infrastructure (без обещания measured)                | ready                  |

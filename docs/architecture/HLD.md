@@ -397,7 +397,8 @@ single-user scale. Модульные границы нужны для correctne
 - использует stale-while-revalidate;
 - отделяет discovery claim от installability/runtime verification.
 - нормализует user-supplied Ollama name/page URL;
-- ищет и скачивает exact Hugging Face GGUF через официальный API;
+- ищет exact Hugging Face GGUF через официальный API; **current state (P2-J):**
+  реализован только read-only discovery/metadata, download — P2-L;
 - не выполняет Ollama catalog scraping.
 
 #### Agent Engine
@@ -471,6 +472,11 @@ Governor может выгрузить speech model перед Chat model; Workb
 pipeline progress, не притворяясь одним непрерывным model call.
 
 ### Import GGUF из Hugging Face
+
+Target pipeline. Current state (P2-J): реализованы только первые два шага —
+bounded server-owned search и metadata/revision/file-list чтение с explicit
+GGUF-only вердиктом. Выбор файла, dry-run preview, download, checksum и local
+import не реализованы (P2-K..P2-M), и HF URL не обещается как `ollama pull`.
 
 ```text
 HF URL/search

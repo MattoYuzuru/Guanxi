@@ -81,11 +81,12 @@ npm run build
 
 `npm test` проверяет server, CLI и web component regression tests.
 Deterministic Chromium tests запускаются отдельно через
-`npm run test:web:browser`: на текущей revision это 25 mocked тестов, покрывающих
-P0-A–P2-I (crash containment, first stream, terminal reload, runtime bar,
+`npm run test:web:browser`: на текущей revision это 26 mocked тестов, покрывающих
+P0-A–P2-J (crash containment, first stream, terminal reload, runtime bar,
 resource conflict, prewarm, context limits, model evidence, catalog, user
-capability overrides). Это по-прежнему mocked gate без live Ollama/GPU/network —
-не называйте его полным regression suite и не выдавайте за production validation.
+capability overrides, Hugging Face discovery). Это по-прежнему mocked gate без
+live Ollama/GPU/network — не называйте его полным regression suite и не
+выдавайте за production validation.
 
 Browser gate требует заранее установленный Chromium: `npx playwright install
 chromium` (postinstall hook отсутствует). Запускайте gate только из корня или из

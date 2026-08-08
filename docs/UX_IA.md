@@ -78,7 +78,11 @@ Provider `template`/`Modelfile` показываются как техничес
 - Ollama full catalog не scrape-ится: доступны local/curated data и внешний link;
 - `Add from Ollama` принимает model name/page URL и показывает normalized preview;
 - `Add from Hugging Face` позволяет выбрать exact GGUF/revision, license, size,
-  fit и import progress.
+  fit и import progress. **Current state (P2-J):** реализован только
+  read-only discovery — отдельная секция Marketplace ищет repositories и
+  показывает metadata, gated/license state, GGUF inventory и explicit
+  `supported | unsupported | unknown` вердикт. Кнопки Install/Pull нет:
+  выбор файла, download и import — P2-K..P2-M.
 
 Для сотен моделей используется pagination/virtualization, а не бесконечная
 carousel с dot на каждую карточку.

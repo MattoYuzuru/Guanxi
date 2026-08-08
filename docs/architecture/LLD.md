@@ -750,6 +750,16 @@ Pipeline:
 Path не принимается напрямую от remote metadata. Gated token хранится в protected
 secret adapter и не попадает в Job Events.
 
+Current state (P2-J, 2026-08-08): реализован только шаг 1 как отдельный
+read-only discovery provider — bounded server-owned search и repository
+metadata через documented public Hub API, плюс explicit
+`supported | unsupported | unknown` вердикт про GGUF-only import scope.
+Шаги 2–10 (exact revision/file, dry-run, download, checksum, Modelfile,
+`ollama create`, probe, staging cleanup) не реализованы: это P2-K..P2-M.
+`HuggingFaceImportRequest` выше — target shape, а не текущий contract:
+current routes принимают только search query либо repository reference.
+Token/gated acceptance не реализованы; доступ только anonymous public.
+
 ### Artifact Service
 
 ```ts
