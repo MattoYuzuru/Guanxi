@@ -11,6 +11,8 @@ import {
   contextStateSchema,
   fitLevelSchema,
   fitVerdictSchema,
+  FEATURE_FLAG_REGISTRY_VERSION,
+  featureFlagProjectionSchema,
   completionProbeEvidenceSchema,
   healthSchema,
   HUGGING_FACE_DISCOVERY_VERSION,
@@ -43,6 +45,7 @@ import {
 
 export const ROUTES = {
   health: () => '/api/health',
+  featureFlags: () => '/api/feature-flags',
 
   jobs: () => '/api/jobs',
   job: (jobId: string) => `/api/jobs/${encodeURIComponent(jobId)}`,
@@ -90,6 +93,26 @@ export const ROUTES = {
 
 export const getHealthResponse = healthSchema
 export type GetHealthResponse = z.infer<typeof getHealthResponse>
+
+/* ───────────────────────────── Feature flags ────────────────────────────── */
+
+export const getFeatureFlagsResponse = z
+  .object({
+    version: z.literal(FEATURE_FLAG_REGISTRY_VERSION),
+    flags: z.array(featureFlagProjectionSchema),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const keys = value.flags.map((flag) => flag.key)
+    if (new Set(keys).size !== keys.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['flags'],
+        message: 'Duplicate feature flag keys are not allowed',
+      })
+    }
+  })
+export type GetFeatureFlagsResponse = z.infer<typeof getFeatureFlagsResponse>
 
 /* ───────────────────────────── Durable Jobs ─────────────────────────────── */
 

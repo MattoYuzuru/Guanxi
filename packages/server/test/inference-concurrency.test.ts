@@ -8,6 +8,7 @@ import {
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { createApp } from '../src/app.ts'
+import { FeatureFlagRegistry } from '../src/config/feature-flags.ts'
 import type { AppContext } from '../src/context.ts'
 import { PrefillTracker } from '../src/context/usage.ts'
 import { UnsupportedHostTelemetry } from '../src/hardware/telemetry.ts'
@@ -125,6 +126,7 @@ function testContext(options: {
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
     settings,
+    featureFlags: new FeatureFlagRegistry({ environment: { state: 'available', values: {} } }),
     calibration: new CalibrationStore(db),
     approvals: new ApprovalGate(),
     tracker: new PrefillTracker(),

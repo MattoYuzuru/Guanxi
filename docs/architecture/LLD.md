@@ -115,6 +115,14 @@ capability в прежнем `declared | degraded | unknown` состоянии.
 `applied | cleared | absent | conflict`, а conflict по contract не может нести ни
 identity, ни override.
 
+P2-N добавляет `FeatureFlagProjection` version 1: closed boolean key,
+`effectiveValue`, resolution `resolved | invalid | unavailable`, effective
+source, observation time и versioned registry/declaration basis. Strict schema
+отклоняет unknown key/state/source, future version, extra field и duplicate key.
+Default не маскируется под operator choice: missing env публикует
+`safe_default`, а invalid/unavailable operator source остаётся видимым reason,
+но effective value fail-closed возвращается к declaration default.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -129,6 +137,10 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `app.ts`: Hono composition, health, routes, SPA;
 - `context.ts`: Ollama client, stores, tools, approvals, один
   `ResourceGovernor` и один `ChatJobExecutionOwner`;
+- `config/feature-flags.ts`: immutable process-start registry. Compiled
+  declaration → exact `enabled | disabled` operator env override → redacted
+  client projection; SQLite, network, localStorage и runtime side effects
+  отсутствуют;
 - `runtime/resource-governor.ts`: typed immutable request/ticket, один
   process-local permit, normal-before-prewarm admission, active lease, bounded
   live snapshot/explanation, unload guard и graceful close;

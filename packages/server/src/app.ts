@@ -13,6 +13,7 @@ import type { AppContext } from './context.ts'
 import { getOllamaStatus } from './ollama/status.ts'
 import { fail } from './http/errors.ts'
 import { jobsRoutes } from './http/jobs-routes.ts'
+import { featureFlagsRoutes } from './http/feature-flags-routes.ts'
 import { modelsRoutes } from './http/models-routes.ts'
 import { runtimeRoutes } from './http/runtime-routes.ts'
 import { threadsRoutes } from './http/threads-routes.ts'
@@ -69,6 +70,7 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   })
 
   server.route('/api/models', modelsRoutes(app))
+  server.route('/api/feature-flags', featureFlagsRoutes(app))
   server.route('/api/runtime', runtimeRoutes(app))
   server.route('/api/jobs', jobsRoutes(app))
   server.route('/api/threads', threadsRoutes(app))

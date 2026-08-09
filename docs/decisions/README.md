@@ -19,6 +19,7 @@ ADR фиксируют целевые решения. `accepted` означае�
 | [0008](0008-agent-execution-and-integrations.md) | superseded | прежний external-agent-first proposal                 |
 | [0009](0009-application-service-lifecycle.md)    | accepted   | background service, settings и opt-in autostart       |
 | [0010](0010-first-party-coding-agent.md)         | accepted   | независимый first-party coding agent                  |
+| [0011](0011-server-owned-feature-flags.md)       | accepted   | typed process-start flags и redacted read projection  |
 
 Принятые продуктовые ответы: [итерация 2026-08-02](2026-08-02-product-decisions.md).
 

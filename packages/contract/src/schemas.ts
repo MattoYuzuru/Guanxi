@@ -2688,6 +2688,62 @@ export const settingsSchema = z.object({
 })
 export type Settings = z.infer<typeof settingsSchema>
 
+/* ───────────────────────────── Feature flags ────────────────────────────── */
+
+/** P2-N closed registry. Adding a key requires a versioned contract change. */
+export const FEATURE_FLAG_REGISTRY_VERSION = 1
+export const FEATURE_FLAG_DECLARATION_VERSION = 1
+export const featureFlagKeySchema = z.enum(['estimated_parallel_admission_policy'])
+export type FeatureFlagKey = z.infer<typeof featureFlagKeySchema>
+
+export const featureFlagBasisSchema = z
+  .object({
+    registryVersion: z.literal(FEATURE_FLAG_REGISTRY_VERSION),
+    declarationVersion: z.literal(FEATURE_FLAG_DECLARATION_VERSION),
+  })
+  .strict()
+export type FeatureFlagBasis = z.infer<typeof featureFlagBasisSchema>
+
+const featureFlagProjectionBaseSchema = z.object({
+  key: featureFlagKeySchema,
+  effectiveValue: z.boolean(),
+  observedAt: z.string().datetime(),
+  basis: featureFlagBasisSchema,
+})
+
+/**
+ * Safe client projection. Invalid/unavailable operator input is observable, but
+ * its effective source remains the compiled safe default and never the raw env.
+ */
+export const featureFlagProjectionSchema = z.discriminatedUnion('state', [
+  featureFlagProjectionBaseSchema
+    .extend({
+      state: z.literal('resolved'),
+      source: z.enum(['safe_default', 'operator_environment']),
+      reason: z.null(),
+    })
+    .strict(),
+  featureFlagProjectionBaseSchema
+    .extend({
+      state: z.literal('invalid'),
+      effectiveValue: z.literal(false),
+      source: z.literal('safe_default'),
+      rejectedSource: z.literal('operator_environment'),
+      reason: z.literal('invalid_operator_value'),
+    })
+    .strict(),
+  featureFlagProjectionBaseSchema
+    .extend({
+      state: z.literal('unavailable'),
+      effectiveValue: z.literal(false),
+      source: z.literal('safe_default'),
+      rejectedSource: z.literal('operator_environment'),
+      reason: z.literal('operator_source_unavailable'),
+    })
+    .strict(),
+])
+export type FeatureFlagProjection = z.infer<typeof featureFlagProjectionSchema>
+
 /* ─────────────────────────────── Состояние сервиса ───────────────────────── */
 
 export const ollamaStatusSchema = z.object({

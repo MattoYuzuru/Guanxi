@@ -11,6 +11,10 @@ import { ApprovalGate } from './agent/approvals.ts'
 import { PrefillTracker } from './context/usage.ts'
 import { probeHardware } from './hardware/probe.ts'
 import { createHostTelemetry, type HostTelemetry } from './hardware/telemetry.ts'
+import {
+  FeatureFlagRegistry,
+  type FeatureFlagEnvironment,
+} from './config/feature-flags.ts'
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
@@ -49,6 +53,8 @@ export interface AppContext {
   threads: ThreadStore
   workspaces: WorkspaceStore
   settings: SettingsStore
+  /** Immutable server-owned effective policy sampled once during process startup. */
+  featureFlags: FeatureFlagRegistry
   calibration: CalibrationStore
   completionProbe: CompletionProbeService
   /** Owner of explicit positive user capability assertions; it runs no model work. */
@@ -86,6 +92,7 @@ export interface AppContext {
 export interface CreateContextOptions {
   dbPath: string
   appVersion: string
+  featureFlagEnvironment?: FeatureFlagEnvironment
 }
 
 export async function createAppContext(options: CreateContextOptions): Promise<AppContext> {
@@ -96,6 +103,12 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     const hostTelemetry = createHostTelemetry(hardware)
 
     const settings = new SettingsStore(db, { ollamaHost: DEFAULT_OLLAMA_HOST })
+    const featureFlags = new FeatureFlagRegistry({
+      environment: options.featureFlagEnvironment ?? {
+        state: 'available',
+        values: process.env,
+      },
+    })
     const calibration = new CalibrationStore(db)
     const completionProbeStore = new CompletionProbeStore(db)
     const capabilityOverrideStore = new ModelCapabilityOverrideStore(db)
@@ -140,6 +153,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       threads: new ThreadStore(db),
       workspaces: new WorkspaceStore(db),
       settings,
+      featureFlags,
       calibration,
       approvals: new ApprovalGate(),
       tracker: new PrefillTracker(),
