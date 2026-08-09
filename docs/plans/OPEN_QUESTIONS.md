@@ -2,7 +2,7 @@
 
 **Статус:** question register; Q-01–Q-36 отвечены, открыты только sub-questions
 
-**Проверено:** 2026-08-07
+**Проверено:** 2026-08-09
 
 Ответы Q-01–Q-21 зафиксированы в
 [decision log](../decisions/2026-08-02-product-decisions.md). Ни один исходный
@@ -12,6 +12,14 @@
 
 После owner session 2026-08-07 **ни один продуктовый вопрос не открыт и не
 блокирует следующий slice**. Q-28a и Q-34a закрыты в той же сессии.
+
+Release-readiness audit 2026-08-09 дополнительно сверил `variant-first install
+и calibration`: это две отдельные exact-variant capabilities. Marketplace
+сохраняет accepted claimed-size preview до download, а installed/runtime
+calibration использует exact digest/context/runtime/hardware evidence. Ни один
+актуальный Phase 2 exit bullet не требует смешивать эти источники в один fit.
+Такое объединение было бы новой policy с freshness, precedence, thresholds и
+compatibility решениями, а не незакрытым требованием Phase 2.
 
 Единственный незакрытый пункт — **Q-27a**: `wrap up and report` требует нового
 durable Job state, а не UI-флага, и нужно определить поведение при падении

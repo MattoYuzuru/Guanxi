@@ -4,121 +4,90 @@
 
 **Проверено:** 2026-08-09
 
-**Назначение:** Phase 2 exit/recovery — явно разрешить расхождение между exact
-variant calibration и Marketplace fit, затем выполнить полный release-readiness
-gate; Phase 3 не начинать до зелёного exit verdict
+**Назначение:** начать Phase 3 bounded slice P3-A — logical Project identity и
+additive Workspace compatibility bridge; не расширять slice до всей Phase 3
 
 ## Сначала
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui`. Прочитай `AGENTS.md`,
 `docs/NAVIGATION.md`, обязательный `plans/WORKFLOW.md`, затем `PRODUCT.md`,
 `DOMAIN_MODEL.md`, `UX_IA.md`, current HLD/LLD, `DEVELOPMENT.md`, `TESTING.md`,
-`architecture/RUNTIME_LIFECYCLE.md`, ADR-0002/0003/0006/0011/0012,
-`research/EVIDENCE.md`, `plans/PHASE_STATUS.md`, `plans/ROADMAP.md`,
-`plans/OPEN_QUESTIONS.md` и accepted owner decisions.
+`architecture/RUNTIME_LIFECYCLE.md`, ADR-0001/0004/0005/0007,
+`plans/PHASE_STATUS.md`, `plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted
+owner decisions D-008/D-019.
 
-Зафиксируй clean starting revision/status и последние commits. Последний
-independently verified slice P2-O состоит из:
+Зафиксируй clean starting revision/status и последние commits. Phase 2 exit
+закрыт mocked/local evidence: **0 new test cases + 2 strengthened direct
+assertions / 546 core regression envelope**, **0 new / 173 Web envelope**,
+**0 new / 28 mocked Chromium envelope**. `aaaf7b7` добавляет прямые assertions
+для Installed/Marketplace separation и полного HF staged-source provenance;
+обе assertions проверены failing mutation. Final independent review — PASS.
+Это не live Ollama/GPU, production provider или deployment validation.
 
-- `0dc5c71` — strict estimated parallel-admission query;
-- `2f08b78` — evidence/identity/provenance review fixes;
-- `7b5101c` — coherent exact-calibration allow contract;
-- current docs commit — current-state evidence и этот handoff.
+Release audit также исправил ложный blocker: accepted Marketplace fit остаётся
+claimed-size preview, а exact calibration — отдельное installed/runtime
+evidence. Ни один Phase 2 exit bullet не требует объединённого fit. Не возвращай
+этот вопрос как blocker без нового owner requirement/ADR.
 
-Baseline после P2-O: **14 new / 546 full core envelope**, **0 new / 173 full Web
-envelope**, **0 new / 28 full mocked Chromium envelope**; final independent
-review — PASS. P2-O не добавляет второй Governor permit, Web consumer или
-production allow. До edits составь bounded plan по `WORKFLOW.md` и сначала
-перепроверь фактическое расхождение ниже по code, contract, tests и accepted
-requirements.
+## Bounded outcome P3-A
 
-## Подтверждённый exit blocker
+Ввести Project как логический контейнер, который может существовать без
+filesystem root, и сохранить compatibility текущего Workspace API/data. Slice
+должен быть vertical: additive contract + append-only migration/store/service +
+REST + минимальная Web projection + failure/migration tests + current docs.
 
-Phase 2 всё ещё `no-go`, хотя именованных P2 slices больше нет:
+До edits сопоставь текущие `Workspace` schemas/routes/store/UI и accepted target.
+Если существующая identity допускает безопасный one-to-one bridge, сохрани ID и
+создай additive Project/binding rows без удаления либо переименования старых
+tables, public routes, localStorage keys и paths. Если identity неоднозначна,
+оставь exact migration blocker вместо guessing.
 
-- `ModelService.listLocal/detail` читает exact `CalibrationStore` и показывает
-  calibration только при полном совпадении reference, digest, context,
-  runtime/backend и hardware observation key;
-- Marketplace exact variant fit в `packages/server/src/models/catalog.ts`
-  использует catalog-claimed bytes/context и host capacity, но calibration не
-  читает вовсе;
-- поэтому требование MOD-004/ROADMAP «variant-level selection and calibration»
-  закрыто только наполовину. Нельзя молча объявить его выполненным и перейти к
-  Phase 3.
+Минимальные свойства:
 
-## Bounded outcome
+- Project имеет stable ID, editable non-empty name и timestamps;
+- Project создаётся без filesystem binding;
+- legacy Workspace может быть связан с Project как optional filesystem binding,
+  но path не становится Project identity;
+- reopen/restart сохраняет Project и связь;
+- повторный migration/backfill идемпотентен и не дублирует Project/binding;
+- broken/duplicate legacy rows fail controlled и rollback transaction целиком;
+- legacy Workspace REST/client остаётся byte-compatible по текущему contract;
+- server владеет SQLite/filesystem boundary; Web не читает их напрямую;
+- Project UI имеет loading/empty/error/retry, keyboard/focus, 390 px, 200% и
+  reduced-motion assertions;
+- новые strings идут через English source/fallback и curated Russian locale keys.
 
-Сначала выбери по существующим accepted требованиям и архитектуре один честный
-вариант:
+## Non-goals
 
-1. Additive связать exact installed Marketplace variant с exact calibration и
-   учитывать её в variant fit с полной provenance/unknown semantics; либо
-2. доказать, что calibration не должна участвовать в Marketplace fit, и получить
-   явное owner/ADR/ROADMAP решение, которое изменяет exit criterion.
+- icon library, color palette и final Project picker polish — отдельный P3 slice;
+- Recipe/Artifact persistence, attachment blobs и Project vocabulary;
+- Chat reparent/move, retention/Trash/reasoning TTL и maintenance Jobs;
+- filesystem tools/allowed roots, MCP/Skills и Agent permissions;
+- target navigation shell redesign;
+- удаление/rename legacy Workspace API, table, package, path или localStorage;
+- Phase 4 service/CLI/TUI и любые live Ollama/hardware changes.
 
-Не подменяй второй вариант собственным предположением. Если product choice
-действительно отсутствует и оба поведения существенно различаются, оставь
-точный blocker и recovery steps. Если current requirements однозначно требуют
-первый вариант, реализуй его vertical slice и независимо проверь.
-
-При implementation сохраняй:
-
-- exact canonical reference + installed digest + requested context;
-- exact runtime/backend version/fingerprint и hardware fingerprint;
-- calibration timestamp/source/confidence/basis без cross-variant, cross-digest,
-  cross-context или stale credit;
-- distinct catalog claim, current host observation и historical calibration;
-- offline/stale/unavailable/ambiguous states как typed unknown, не optimistic
-  green fit;
-- compatibility старых clients и legacy catalog response;
-- server authority; Web не читает SQLite/Ollama напрямую;
-- отсутствие произвольного context/device/memory ceiling;
-- отсутствие model load/probe, Governor, queue, import или persistence side
-  effects у read-only Marketplace query.
-
-Historical exact calibration может улучшить estimate, но не становится
-`measured` будущего запуска и не доказывает parallel admission. Не переиспользуй
-P2-O admission margin или legacy 70/80% fit threshold без явной действующей
-policy. Не расширяй задачу до live hardware, durable import Job, Phase 3 UI или
-post-Phase-4 measured parallelism.
-
-## Требуемые assertions при code change
+## Обязательные assertions
 
 Минимум должны падать при нарушении:
 
-- exact variant/digest/context/runtime/hardware calibration получает только свой
-  credit;
-- соседний tag, другой digest/context/runtime/backend/hardware, stale/future или
-  corrupt row не получает credit;
-- catalog claim и calibration не double-count-ятся;
-- missing calibration сохраняет совместимое claimed/unknown поведение;
-- calibration source/time/confidence/basis видимы и не повышаются до measured;
-- offline/provider failure не маскируется исторической row;
-- duplicate/ambiguous exact variants остаются fail closed;
-- filters, stable sort, total/page metadata и legacy full response используют
-  один и тот же variant-fit predicate;
-- request cancellation и repeated reads не запускают load/probe/import;
-- нет новых Governor, queue, SQLite write, analytics, remote flag или Web
-  localStorage side effects;
-- contract/server/Web locale states согласованы, если меняется public projection.
+- logical Project создаётся и читается без path/binding;
+- exact legacy Workspace получает ровно один Project и ровно одну binding row;
+- fresh DB, upgrade DB, reopen и повторный migration дают одинаковую projection;
+- injected mid-migration failure оставляет предыдущую schema/data без partial
+  Project rows, а повторный startup восстанавливается;
+- два Workspace с distinct identity не сливаются по name/path normalization;
+- старые Workspace REST responses и current Web flow не меняются;
+- invalid/empty/oversized input отклоняется до DB mutation;
+- rename меняет только Project metadata и не переписывает Workspace path;
+- Project-less legacy fixture остаётся читаемым через compatibility boundary;
+- UI различает loading/empty/error и не создаёт Project повторным activation;
+- никакой Project read/create не запускает Ollama, Governor, Job, tool, network
+  provider или filesystem mutation.
 
-Сделай mutation checks для exact-key drift, stale calibration, double-count и
-confidence promotion. Каждое свойство, заявленное в docs или Phase 2 exit gate,
-должно иметь assertion, который реально падает при его нарушении.
-
-## Полный Phase 2 release-readiness gate
-
-После blocker fix либо явного owner decision составь evidence matrix для
-**каждого** актуального Phase 2 exit bullet из `ROADMAP.md`: requirement → code
-boundary → failing assertion → gate evidence → residual risk/status. Не считай
-hardware-dependent items, явно перенесённые accepted decisions за Phase 4,
-текущим Phase 2 blocker; не выдавай mocked/local evidence за production
-validation.
-
-Отдельно проверь, что `PHASE_STATUS.md`, ROADMAP, HLD/LLD, Runtime Lifecycle,
-DEVELOPMENT/TESTING и UI copy не противоречат коду. Если хоть один обязательный
-exit property не реализован или не имеет direct assertion, verdict остаётся
-`no-go`, а следующий prompt снова должен быть Phase 2 recovery, не Phase 3.
+Сделай mutation checks минимум для duplicate backfill, Project-without-path,
+transaction rollback и legacy response compatibility. Каждое свойство, заявленное
+в docs/ROADMAP, должно иметь direct assertion.
 
 ## Gates
 
@@ -131,24 +100,18 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-Если меняется Web, browser gate обязателен и новые/изменённые states должны иметь
-locale keys, keyboard/focus/live, 390 px, 200% и reduced-motion assertions по
-реальному scope.
+Browser gate обязателен, если P3-A меняет Web. Не выдавай mocked SQLite/Web
+fixtures за production migration validation.
 
 ## Workflow и handoff
 
-После vertical implementation запусти отдельную read-only independent
-verification по `plans/WORKFLOW.md`. Reviewer проверяет exact identity,
-provenance/freshness, catalog filter/page coherence, no-effects, compatibility и
-полную Phase 2 exit matrix. Findings исправляет автор отдельным fix commit.
+После implementation запусти отдельную read-only independent verification по
+`plans/WORKFLOW.md`: migration/contract reviewer и Web/a11y reviewer проверяют
+точный diff и заявленные properties. Findings исправляет автор отдельным
+`fix(...)`/`test(...)` commit.
 
-Сделай небольшие conventional commits: implementation, verification fix и
-current-state docs. Обнови `plans/PHASE_STATUS.md` с real new/regression envelope,
-first failures, independent verdict и residual risks. Только если вся exit matrix
-зелёная, можно закрыть Phase 2 и переписать следующий prompt на первый bounded
-slice Phase 3. Иначе оставь prompt на конкретный Phase 2 blocker с recovery
-steps.
-
-В финале сообщи `status successful` только если blocker/decision,
-implementation при необходимости, independent verification, full gates, docs и
-commits реально завершены.
+Сделай небольшие conventional commits: contract/migration/server, Web/tests,
+review fix и current-state docs. Обнови `plans/PHASE_STATUS.md` с real
+new/regression envelope, first failures, independent verdict и residual risks.
+Перепиши этот файл на следующий незавершённый P3 slice; если migration semantics
+заблокированы, оставь P3-A с exact blocker и recovery steps.

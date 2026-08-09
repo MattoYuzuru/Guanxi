@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-09
-**Текущая фаза:** Phase 2 — Models, Capability Registry и import
+**Текущая фаза:** Phase 3 — P3-A logical Project identity ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1184,13 +1184,13 @@ P2-H работает только с current local/bundled response: нет rem
 immutable multi-request snapshot, saved filters, generic virtualization, 10k/
 live load evidence или inferred license/quantization/task facts. Legacy client
 может по-прежнему запросить полный list; page-size policy не является total cap.
-Phase 2 остаётся `in progress`. Запись выше отражала состояние на 2026-08-04;
-owner session 2026-08-07 закрыла Q-25 (GGUF-only), поэтому HF import больше не
-заблокирован и разбит на P2-J..P2-M, а hardware-зависимые пункты вынесены за
-Phase 4. P2-O independently verified; именованных product slices больше нет, но
-Phase 2 exit/release gate не закрыт из-за variant-calibration discrepancy ниже.
+Эта запись отражала состояние до final exit audit. Owner session 2026-08-07
+закрыла Q-25 (GGUF-only), HF import реализован P2-J..P2-M, hardware-dependent
+пункты явно вынесены за Phase 4, а P2-N/P2-O закрыли текущий estimated-policy
+scope. Audit ниже подтвердил все актуальные exit bullets; Phase 2 теперь
+`independently verified`, а P3-A готов к началу.
 
-## Phase 2 — что реально осталось
+## Phase 2 — final scope и release evidence
 
 **Проверено кодом 2026-08-09.** Таблица обязательна к обновлению каждым Phase 2
 slice: без неё читатель делает вывод, что до конца фазы остался один HF slice, а
@@ -1202,19 +1202,60 @@ slice: без неё читатель делает вывод, что до ко�
 | license/gated/size/dry-run/fit preview           | P2-K claims/fit и P2-L observed size/checksum готовы; disk reservation и gated token не реализованы          |
 | local Ollama create/import + checksum/provenance | сделано P2-L/P2-M; blob/create + exact tags + forced probe                                                   |
 | measured-parallel за feature flag (RES-009)      | P2-N flag + P2-O estimated query сделаны; measured execution вынесен за Phase 4 (Q-34a)                      |
-| variant calibration (MOD-004)                    | **половина**: variant-first install есть, calibration не связана с catalog fit (`catalog.ts` — 0 упоминаний) |
+| exact variant selection/fit (MOD-002)            | сделано P2-E/P2-K: selected exact row/file владеет своим claimed-size fit и install target                   |
+| exact installed calibration (ROADMAP scope)      | сделано P1-L: exact reference/digest/context/runtime/hardware observation; Marketplace claim не повышается   |
 | Linux/NVIDIA verified tier (PLAT-002)            | prototype есть; verified tier вынесен за Phase 4 (Q-35), убран из exit gate                                  |
 | user override (MOD-008)                          | **сделано в P2-I** (`6b98d37`..`6cc4504`): migration 9, exact-identity ownership, Installed UI, safe export  |
 | bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
 
 Итог на 2026-08-09 после P2-O: HF public-GGUF chain, user override, feature-flag
 infrastructure и conservative estimated query закрыты mocked/local evidence.
-Именованных product slices больше нет, но variant calibration всё ещё не связана
-с exact Marketplace variant fit. Поэтому полный Phase 2 release-readiness
-verdict — `no-go`, а переход к Phase 3 пока запрещён. Hardware-dependent measured
-claims вынесены за Phase 4. P2-M создаёт provider-observed installation evidence,
-но не durable import Job, persistent Artifact/Installation registry или
-production validation.
+Именованных product slices больше нет. Release-readiness audit исправил прежнюю
+ошибочную привязку calibration к MOD-004: MOD-002 требует fit для exact variant,
+а MOD-004 описывает facets. Accepted D-006, DOMAIN_MODEL, HLD, LLD и Runtime
+Lifecycle согласованно разделяют pre-download Marketplace claimed-size preview
+и post-install exact calibration/runtime evidence. ROADMAP scope реализован как
+две variant-owned capabilities; ни один exit bullet не требует объединённого
+effective fit. Новая связь потребовала бы отдельной freshness/precedence/
+threshold/compatibility policy и не блокирует Phase 2. Hardware-dependent
+measured claims вынесены за Phase 4. P2-M создаёт provider-observed installation
+evidence, но не durable import Job, persistent Artifact/Installation registry
+или production validation.
+
+### Phase 2 exit audit 2026-08-09
+
+Audit не менял runtime code. Независимый reviewer отверг invented calibration
+blocker, но нашёл два заявленных свойства без mutation-catching assertions;
+отдельный test fix добавил их без изменения production behavior. Ниже
+перечислены только актуальные ROADMAP exit bullets; `npm test` и mocked Chromium
+являются regression envelope, а не production/live-hardware validation.
+
+| Exit property | Code boundary | Direct failing assertion | Evidence/status |
+| --- | --- | --- | --- |
+| Installed и Marketplace разделены | `LauncherPage`, installed/model catalog projections | `catalog-variant-install.spec.ts` считает exact row: 0 в Installed/1 в Marketplace до pull, затем 1/1 в разных regions | locally validated; installed-before-pull mutation fails |
+| Selected GGUF/quantization совпадает с fit/install | HF selection/download/import + exact catalog row | selection/import/variant tests проверяют exact file/commit/target; completed import deep-equal сохраняет весь staged source | locally validated; source-path mutation fails |
+| Unknown не становится supported | descriptor/HF/catalog schemas и UI | `model-evidence`, `capability-override-service`, `hugging-face-transport` явно проверяют unknown вместо unsupported | locally validated |
+| Provider offline не ломает local | local/bundled catalog fallback и installed error isolation | `catalog.test` проверяет no-network fallback/unavailable; browser HF flow сохраняет local Marketplace row | locally validated |
+| HF exact revision/checksum/license, non-GGUF unsupported | selection, staging download, import provenance | `hugging-face-selection-contract`, `hugging-face-download`, `hugging-face-import` проверяют commit/file/checksum/license/GGUF refusal | locally validated |
+| Arbitrary URL не server-side fetch-ится | strict Ollama/HF reference parsers and routes | `ollama-reference`, `hugging-face-reference`, `hugging-face-routes` отклоняют foreign/traversal до network work | locally validated |
+| Ollama human catalog не scrape-ится | local recommendations + bundled catalog only | `catalog.test` ставит network sentinel и требует zero fetch calls | locally validated |
+| User override видим/exportable и не masquerade-ится | exact override store/service/Installed UI | capability-override contract/service/component/browser suites проверяют separate user evidence и safe export | locally validated |
+| Parallel verdict только estimated | strict P2-O query/response | `estimated-parallel-admission.test` запрещает measured/future guarantee и double-count | locally validated; live hardware deferred by Q-35 |
+
+Review fix `aaaf7b7` добавил **0 new test cases + 2 strengthened direct
+assertions / 546 core regression envelope**, **0 new / 173 Web envelope** и
+**0 new / 28 mocked Chromium envelope**. Targeted server 12/12 и browser 1/1
+зелёные. Две mutation-проверки дали ожидаемый non-zero: подмена staged HF
+`remotePath` сломала full-source deep equality, а преждевременная Installed row
+сломала region-scoped empty/count assertion; mutations полностью восстановлены.
+
+Full gates после fix: typecheck, `npm test` 546+173, Chromium 28/28, build,
+markdownlint и diff-check — PASS. Первый independent review отверг invented
+calibration blocker и нашёл оба assertion gaps; follow-up подтвердил исправления,
+MOD split, все девять exit bullets и bounded P3-A handoff — final verdict PASS.
+Phase 2 release-readiness verdict — **GO для перехода к Phase 3**, не production
+deployment/validation. Hardware items, вынесенные Q-35, не являются Phase 2
+blocker; mocked/local evidence не является live Ollama/GPU validation.
 
 ## Планируемая последовательность Phase 2
 
@@ -1314,8 +1355,8 @@ Phase 4.
 | Phase                                   | Статус                 |
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
-| Phase 2 — Models/Capability/import      | in progress            |
-| Phase 3 — Text/Projects/retention/i18n  | not started            |
+| Phase 2 — Models/Capability/import      | independently verified |
+| Phase 3 — Text/Projects/retention/i18n  | ready: P3-A            |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |
