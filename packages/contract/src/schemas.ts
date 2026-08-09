@@ -2667,19 +2667,23 @@ export type Workspace = z.infer<typeof workspaceSchema>
 
 export const projectFilesystemBindingSchema = z
   .object({
-    id: z.string(),
-    workspaceId: z.string(),
-    createdAt: z.string(),
+    id: z.string().min(1),
+    workspaceId: z.string().min(1),
+    createdAt: z.string().datetime(),
   })
   .strict()
 export type ProjectFilesystemBinding = z.infer<typeof projectFilesystemBindingSchema>
 
 export const projectSchema = z
   .object({
-    id: z.string(),
-    name: z.string(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
+    id: z.string().min(1),
+    name: z
+      .string()
+      .min(1)
+      .max(120)
+      .refine((name) => name === name.trim(), 'Project name must be normalized'),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
     filesystemBindings: z.array(projectFilesystemBindingSchema),
   })
   .strict()

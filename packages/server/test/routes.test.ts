@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import type { HardwareInfo } from '@alamo/contract'
+import { workspaceSchema, type HardwareInfo } from '@alamo/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import { FeatureFlagRegistry } from '../src/config/feature-flags.ts'
@@ -589,14 +589,29 @@ describe('project routes', () => {
       body: JSON.stringify({ rootPath: root, name: 'Legacy exact response' }),
     })
     assert.equal(createdResponse.status, 201)
-    const legacy = await createdResponse.json() as Record<string, unknown>
-    assert.deepEqual(Object.keys(legacy).sort(), [
-      'createdAt', 'exists', 'id', 'lastUsedAt', 'name', 'rootPath',
-    ])
+    const createdBytes = await createdResponse.text()
+    const legacy = workspaceSchema.parse(JSON.parse(createdBytes))
+    assert.match(
+      legacy.id,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    assert.equal(Number.isNaN(Date.parse(legacy.createdAt)), false)
+    const exactLegacy = {
+      id: legacy.id,
+      name: 'Legacy exact response',
+      rootPath: root,
+      createdAt: legacy.createdAt,
+      lastUsedAt: null,
+      exists: true,
+    }
+    assert.equal(createdBytes, JSON.stringify(exactLegacy))
 
     const legacyListBefore = await (await app.request('/api/workspaces')).text()
+    assert.equal(legacyListBefore, JSON.stringify({ workspaces: [exactLegacy] }))
     const projectList = await app.request('/api/projects')
-    const projects = (await projectList.json() as { projects: Array<Record<string, unknown>> }).projects
+    const projects = (
+      await projectList.json() as { projects: Array<Record<string, unknown>> }
+    ).projects
     const bridged = projects.filter((project) => project.id === legacy.id)
     assert.equal(bridged.length, 1)
     assert.deepEqual(bridged[0]?.filesystemBindings, [{
@@ -623,7 +638,55 @@ describe('project routes', () => {
     context.db.prepare('DELETE FROM projects WHERE id = ?').run(projectless)
     const readable = await app.request(`/api/workspaces/${projectless}`)
     assert.equal(readable.status, 200)
-    assert.deepEqual(await readable.json(), legacy)
+    assert.equal(await readable.text(), JSON.stringify(exactLegacy))
+  })
+
+  it('preserves literal legacy Workspace GET bytes across the compatibility bridge', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-workspace-bytes-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const context = testContext()
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    const legacy = {
+      id: 'legacy-byte-baseline',
+      name: 'Literal legacy Workspace',
+      rootPath: root,
+      createdAt: '2026-08-09T10:00:00.000Z',
+      lastUsedAt: null,
+      exists: true,
+    }
+    context.db.prepare(
+      `INSERT INTO workspaces (id, name, root_path, created_at, last_used_at)
+       VALUES (?, ?, ?, ?, NULL)`,
+    ).run(legacy.id, legacy.name, legacy.rootPath, legacy.createdAt)
+
+    assert.equal(
+      await (await app.request(`/api/workspaces/${legacy.id}`)).text(),
+      JSON.stringify(legacy),
+    )
+    const expectedListBytes = JSON.stringify({ workspaces: [legacy] })
+    assert.equal(await (await app.request('/api/workspaces')).text(), expectedListBytes)
+
+    context.projects.reconcileLegacyWorkspaces()
+    assert.equal(
+      (context.db.prepare(
+        'SELECT COUNT(*) AS count FROM projects WHERE id = ?',
+      ).get(legacy.id) as { count: number }).count,
+      1,
+    )
+    assert.equal(
+      (context.db.prepare(
+        'SELECT COUNT(*) AS count FROM project_filesystem_bindings WHERE workspace_id = ?',
+      ).get(legacy.id) as { count: number }).count,
+      1,
+    )
+    assert.equal(await (await app.request('/api/workspaces')).text(), expectedListBytes)
+
+    context.db.prepare('DELETE FROM projects WHERE id = ?').run(legacy.id)
+    assert.equal(
+      await (await app.request(`/api/workspaces/${legacy.id}`)).text(),
+      JSON.stringify(legacy),
+    )
   })
 
   it('renames only Project metadata without changing a Workspace path', async (test) => {

@@ -997,7 +997,7 @@ const russian: Messages = {
   'projects.empty.description': 'Создайте проект без выбора папки в файловой системе.',
   'projects.list': 'Список проектов',
   'projects.name.label': 'Название проекта',
-  'projects.name.hint': 'Название — редактируемая metadata, его можно изменить позже.',
+  'projects.name.hint': 'Название — редактируемые метаданные, его можно изменить позже.',
   'projects.name.required': 'Введите название проекта.',
   'projects.create': 'Создать проект',
   'projects.rename': 'Переименовать',

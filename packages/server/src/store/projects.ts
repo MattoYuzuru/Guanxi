@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Project, ProjectFilesystemBinding } from '@alamo/contract'
+import { projectSchema, type Project, type ProjectFilesystemBinding } from '@alamo/contract'
 import type { Db } from './db.ts'
 
 interface ProjectRow {
@@ -22,6 +22,11 @@ function toBinding(row: BindingRow): ProjectFilesystemBinding {
     workspaceId: row.workspace_id,
     createdAt: row.created_at,
   }
+}
+
+function legacyProjectName(name: string): string {
+  const normalized = name.trim()
+  return normalized.length > 0 && normalized.length <= 120 ? normalized : 'Untitled Project'
 }
 
 export class ProjectStore {
@@ -84,7 +89,7 @@ export class ProjectStore {
       )
 
       for (const workspace of workspaces) {
-        const projectName = workspace.name.trim().length > 0 ? workspace.name : 'Untitled Project'
+        const projectName = legacyProjectName(workspace.name)
         insertProject.run(workspace.id, projectName, workspace.created_at, workspace.created_at)
         const project = this.db
           .prepare('SELECT created_at FROM projects WHERE id = ?')
@@ -129,12 +134,12 @@ export class ProjectStore {
          ORDER BY created_at, id`,
       )
       .all(row.id) as unknown as BindingRow[]
-    return {
+    return projectSchema.parse({
       id: row.id,
       name: row.name,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       filesystemBindings: bindings.map(toBinding),
-    }
+    })
   }
 }

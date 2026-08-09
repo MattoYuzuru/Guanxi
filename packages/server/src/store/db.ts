@@ -343,9 +343,15 @@ const MIGRATIONS: readonly string[] = [
   `
   CREATE TABLE projects (
     id         TEXT NOT NULL PRIMARY KEY,
-    name       TEXT NOT NULL CHECK (length(trim(name)) > 0),
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
+    created_at TEXT NOT NULL CHECK (
+      created_at GLOB '????-??-??T??:??:??.???Z'
+      AND julianday(created_at) IS NOT NULL
+    ),
+    updated_at TEXT NOT NULL CHECK (
+      updated_at GLOB '????-??-??T??:??:??.???Z'
+      AND julianday(updated_at) IS NOT NULL
+    )
   );
 
   CREATE TABLE project_filesystem_bindings (
@@ -362,7 +368,20 @@ const MIGRATIONS: readonly string[] = [
   -- absent from the identity mapping.
   INSERT INTO projects (id, name, created_at, updated_at)
   SELECT id,
-         CASE WHEN length(trim(name)) > 0 THEN name ELSE 'Untitled Project' END,
+         CASE
+           WHEN length(trim(name, char(9) || char(10) || char(11) || char(12) ||
+             char(13) || ' ' || char(160) || char(5760) || char(8192) || char(8193) ||
+             char(8194) || char(8195) || char(8196) || char(8197) || char(8198) ||
+             char(8199) || char(8200) || char(8201) || char(8202) || char(8232) ||
+             char(8233) || char(8239) || char(8287) || char(12288) || char(65279)))
+             BETWEEN 1 AND 120
+           THEN trim(name, char(9) || char(10) || char(11) || char(12) ||
+             char(13) || ' ' || char(160) || char(5760) || char(8192) || char(8193) ||
+             char(8194) || char(8195) || char(8196) || char(8197) || char(8198) ||
+             char(8199) || char(8200) || char(8201) || char(8202) || char(8232) ||
+             char(8233) || char(8239) || char(8287) || char(12288) || char(65279))
+           ELSE 'Untitled Project'
+         END,
          created_at,
          created_at
   FROM workspaces;

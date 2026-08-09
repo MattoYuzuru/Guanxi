@@ -32,6 +32,9 @@ describe('ProjectsPage', () => {
 
     await act(async () => request.resolve({ projects: [] }))
     expect(await screen.findByText('Проектов пока нет')).toBeTruthy()
+    expect(
+      screen.getByText('Название — редактируемые метаданные, его можно изменить позже.'),
+    ).toBeTruthy()
     expect(screen.queryByLabelText(/пап|path|root/iu)).toBeNull()
     expect(screen.getByRole('textbox', { name: 'Название проекта' })).toBeTruthy()
   })

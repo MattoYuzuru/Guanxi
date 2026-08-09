@@ -19,6 +19,11 @@ interface WorkspaceRow {
   last_used_at: string | null
 }
 
+function legacyProjectName(name: string): string {
+  const normalized = name.trim()
+  return normalized.length > 0 && normalized.length <= 120 ? normalized : 'Untitled Project'
+}
+
 function toWorkspace(row: WorkspaceRow): Workspace {
   return {
     id: row.id,
@@ -116,7 +121,7 @@ export class WorkspaceStore {
   }
 
   private insertProjectBridge(workspace: WorkspaceRow): void {
-    const projectName = workspace.name.trim().length > 0 ? workspace.name : 'Untitled Project'
+    const projectName = legacyProjectName(workspace.name)
     this.db
       .prepare(
         `INSERT INTO projects (id, name, created_at, updated_at)

@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { projectSchema } from '@alamo/contract'
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 
@@ -32,6 +33,32 @@ function downgradeToV9(db: DatabaseSync): void {
 }
 
 describe('SQLite logical Project migration 10', () => {
+  it('keeps the public Project projection strict and timestamped', () => {
+    const valid = {
+      id: 'project-1',
+      name: 'Project',
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+      filesystemBindings: [],
+    }
+    assert.equal(projectSchema.safeParse(valid).success, true)
+    for (const invalid of [
+      { ...valid, id: '' },
+      { ...valid, name: '   ' },
+      { ...valid, name: ' Project ' },
+      { ...valid, name: 'x'.repeat(121) },
+      { ...valid, createdAt: '' },
+      { ...valid, updatedAt: 'not-a-time' },
+      { ...valid, rootPath: '/must-not-exist' },
+      {
+        ...valid,
+        filesystemBindings: [{ id: '', workspaceId: 'workspace-1', createdAt: CREATED_AT }],
+      },
+    ]) {
+      assert.equal(projectSchema.safeParse(invalid).success, false)
+    }
+  })
+
   it('keeps fresh and reopened projection identical without inventing a binding', async (test) => {
     const path = await temporaryDbPath(test, 'fresh')
     const first = openDb(path)
@@ -51,10 +78,11 @@ describe('SQLite logical Project migration 10', () => {
     const fixture = openDb(path)
     fixture.prepare(
       `INSERT INTO workspaces (id, name, root_path, created_at, last_used_at)
-       VALUES (?, ?, ?, ?, NULL), (?, ?, ?, ?, NULL)`,
+       VALUES (?, ?, ?, ?, NULL), (?, ?, ?, ?, NULL), (?, ?, ?, ?, NULL)`,
     ).run(
       'workspace-a', 'Same', '/tmp/project', CREATED_AT,
       'workspace-b', 'Same', '/tmp/../tmp/project', CREATED_AT,
+      'workspace-whitespace', '\t\u00a0', '/tmp/whitespace', CREATED_AT,
     )
     downgradeToV9(fixture)
     fixture.close()
@@ -71,14 +99,19 @@ describe('SQLite logical Project migration 10', () => {
       [
         { id: 'workspace-a', name: 'Same', bindings: ['workspace-a'] },
         { id: 'workspace-b', name: 'Same', bindings: ['workspace-b'] },
+        {
+          id: 'workspace-whitespace',
+          name: 'Untitled Project',
+          bindings: ['workspace-whitespace'],
+        },
       ],
     )
-    assert.equal(count(upgraded, 'projects'), 2)
-    assert.equal(count(upgraded, 'project_filesystem_bindings'), 2)
+    assert.equal(count(upgraded, 'projects'), 3)
+    assert.equal(count(upgraded, 'project_filesystem_bindings'), 3)
     new ProjectStore(upgraded).reconcileLegacyWorkspaces()
     new ProjectStore(upgraded).reconcileLegacyWorkspaces()
-    assert.equal(count(upgraded, 'projects'), 2)
-    assert.equal(count(upgraded, 'project_filesystem_bindings'), 2)
+    assert.equal(count(upgraded, 'projects'), 3)
+    assert.equal(count(upgraded, 'project_filesystem_bindings'), 3)
     upgraded.close()
 
     const reopened = openDb(path)
@@ -124,6 +157,38 @@ describe('SQLite logical Project migration 10', () => {
     assert.equal(count(recovered, 'projects'), 2)
     assert.equal(count(recovered, 'project_filesystem_bindings'), 2)
     recovered.close()
+  })
+
+  it('rolls back malformed legacy timestamps without partial Project tables', async (test) => {
+    const path = await temporaryDbPath(test, 'timestamp-rollback')
+    const broken = new DatabaseSync(path)
+    broken.exec(`
+      CREATE TABLE workspaces (
+        id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        root_path TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        last_used_at TEXT
+      );
+      INSERT INTO workspaces VALUES
+        ('valid-workspace', 'Valid', '/tmp/valid', '${CREATED_AT}', NULL),
+        ('broken-workspace', 'Broken', '/tmp/broken', '', NULL);
+      PRAGMA user_version = 9;
+    `)
+    broken.close()
+
+    assert.throws(() => openDb(path), /Миграция 10 не применилась/u)
+    const repair = new DatabaseSync(path)
+    assert.equal(version(repair), 9)
+    assert.equal(
+      (repair.prepare(
+        `SELECT COUNT(*) AS count FROM sqlite_schema
+         WHERE type = 'table' AND name IN ('projects', 'project_filesystem_bindings')`,
+      ).get() as { count: number }).count,
+      0,
+    )
+    assert.equal(count(repair, 'workspaces'), 2)
+    repair.close()
   })
 
   it('rejects a conflicting duplicate bridge and rolls reconciliation back atomically', () => {
