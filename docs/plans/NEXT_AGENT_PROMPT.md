@@ -4,121 +4,125 @@
 
 **Проверено:** 2026-08-09
 
-**Назначение:** Phase 2 slice P2-N — централизованная local-first
-feature-flag infrastructure с безопасными defaults, provenance и наблюдаемой
-effective policy; P2-O estimated parallel admission и любой measured behavior не
-начинать
+**Назначение:** Phase 2 slice P2-O — объяснимый conservative
+`estimated` parallel-admission verdict поверх P2-N feature flag; measured
+parallelism, второй Governor permit и фактический parallel execution не начинать
 
 ## Сначала
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui`. Прочитай `AGENTS.md`,
 `docs/NAVIGATION.md`, обязательный `plans/WORKFLOW.md`, затем `PRODUCT.md`,
-`DOMAIN_MODEL.md`, `UX_IA.md`, current-state HLD/LLD, `DEVELOPMENT.md`,
-`TESTING.md`, `architecture/RUNTIME_LIFECYCLE.md`, ADR-0003/0006/0007,
+`DOMAIN_MODEL.md`, `UX_IA.md`, current HLD/LLD, `DEVELOPMENT.md`, `TESTING.md`,
+`architecture/RUNTIME_LIFECYCLE.md`, ADR-0002/0003/0011,
 `research/EVIDENCE.md`, `plans/PHASE_STATUS.md`, `plans/ROADMAP.md`,
-`plans/OPEN_QUESTIONS.md` и accepted owner decisions, особенно Q-34/Q-34a.
+`plans/OPEN_QUESTIONS.md` и accepted owner decisions, особенно D-003 и Q-34a.
 
-Зафиксируй clean starting revision после P2-M docs commit, status и последние
-commits. P2-M implementation/review-fix — `62a41c6` и `5b3d71d`. До edits
-составь bounded plan по `WORKFLOW.md`. Проверь текущие settings/config/contract/
-context boundaries и актуальные первичные источники выбранной технологии. Не
-добавляй SaaS flag provider или dependency без доказанной необходимости.
+Зафиксируй clean starting revision/status/последние commits. P2-N implementation
+и review-fix — `ac928a3` и `b0b7248`. До edits составь bounded plan по
+`WORKFLOW.md`, проверь реальные fit/calibration/runtime/host/flag contracts и
+актуальные первичные Ollama/Node/platform sources. Не начинай Phase 3 и не
+закрывай variant-calibration debt молча.
 
-## Baseline P2-M
+## Baseline P2-N
 
-- P2-J–P2-M public GGUF chain independently verified mocked evidence;
-- core 520/520, Web 173/173, Chromium 28/28;
-- P2-M connection/process-owned, loopback-only, без Job/SQLite replay;
-- live Ollama/HF/GPU и production hardware не validated;
-- Phase 2 осталось два bounded slices: P2-N flag infrastructure и P2-O
-  **estimated** parallel-admission policy.
+- один server-owned typed registry, один
+  `estimated_parallel_admission_policy`, default-off;
+- exact startup env `enabled | disabled`, operator > safe default, restart-only;
+- invalid/unavailable/unknown/future input fail closed;
+- strict read-only redacted `/api/feature-flags`, без migration/write API/Web;
+- P2-N: 12 new / 532 core envelope; Web 173/173; mocked Chromium 28/28;
+- feature flag ещё не имеет consumer и не меняет Governor/runtime behavior;
+- live Ollama/GPU/hardware, service restart и production operator flow не
+  validated.
 
-P2-N не должен менять Resource Governor, добавлять второй permit, запускать две
-модели, реализовывать STT либо публиковать fit/admission verdict. Его outcome —
-только инфраструктура, которой P2-O сможет безопасно владеть.
+## Outcome P2-O
 
-## Outcome P2-N
+Server-owned policy может для конкретного конфликтующего pair/request вернуть
+объяснимый verdict, помеченный только `estimated`, используя исключительно
+доступные sourced facts и P2-N effective flag. Verdict имеет observation time,
+confidence, полный input/basis breakdown и conservative unknown/denied states.
+Он не выдаётся за measured факт или гарантию будущего admission и не добавляет
+второй permit.
 
-В проекте существует один server-owned typed registry feature flags. Для каждого
-известного flag он вычисляет effective value по явно документированному
-precedence, сохраняет safe default, source и observation time, отдаёт redacted
-read-only projection clients и fail-closed обрабатывает неизвестные/сломанные
-значения. Первый зарезервированный consumer для P2-O присутствует как
-default-off declaration, но не меняет runtime behavior.
+Перед кодом зафиксируй ADR/LLD-решение:
 
-Перед кодом выбери и зафиксируй ADR/LLD-решение:
+- exact request/pair identity: active/queued owner, model reference/digest,
+  runtime fingerprint и context;
+- какие inputs действительно доступны сейчас: declared model bytes,
+  `estimateKvCacheBytes`/`computeFit`, exact `CalibrationStore`, observed
+  `/api/ps` VRAM и host sample;
+- freshness/identity coherence и поведение при mixed timestamps;
+- safe arithmetic, unknown overhead, safety margin и double-counting rules;
+- flag-off/invalid/unavailable semantics;
+- read contract/consumer: отдельная query или additive Runtime projection;
+- cache/single-flight/cancellation, если они нужны;
+- почему persistence и write UI нужны либо не нужны.
 
-- какие scopes нужны сейчас: build, process/operator, persisted local setting;
-- нужен ли persistence. Если да — только append-only migration с rollback/reopen
-  tests; если нет — не симулируй durability;
-- precedence и restart semantics;
-- кто может мутировать flag и нужен ли в этом slice write API/UI;
-- какие поля безопасно публиковать Web/CLI и какие остаются server-only.
-
-Если это требует нового owner choice, которого нет в Q-34/Q-34a, не закрывай его
-молча: оставь typed blocker и recovery steps. Простая implementation detail в
-рамках accepted local-first/default-safe policy не требует расширения scope.
+Если margin, admissible confidence или policy threshold требуют нового owner
+choice, которого нет в Q-34a/D-003, не выбирай число молча: оставь typed blocker
+и recovery steps. Implementation detail, которая лишь сохраняет conservative
+unknown, owner choice не требует.
 
 ## Обязательные границы
 
-1. Registry и keys централизованы в одном typed boundary. Не разбрасывай
-   `process.env`, localStorage или строковые flag names по components/services.
-2. Unknown flag, invalid value, unavailable source и future schema fail closed.
-   Experimental parallel-admission declaration по default выключена.
-3. Effective projection содержит source, observedAt и schema/version basis.
-   Default не выдаётся за user choice, runtime observation или measured fact.
-4. Server остаётся authority. Web не принимает решение о runtime admission и не
-   может скрытым localStorage override включить server behavior.
-5. Не добавляй remote flag SaaS, analytics/telemetry, device/user fingerprint,
-   network fetch, секреты или plaintext credential fields.
-6. Если env/operator override разрешён, parser принимает только exact
-   documented values, не логирует raw environment и имеет deterministic
-   precedence. Изменение env после startup не притворяется live update.
-7. Если persistence разрешён, migration append-only, store strict, mutation
-   atomic/idempotent, а corrupt row не включает feature. Compatibility старой DB
-   и rollback/reopen обязательны.
-8. Read API не раскрывает server-only flags или arbitrary config. Write API, если
-   он действительно нужен, требует strict allowlist/schema и typed outcomes.
-9. Не вводи флаг вокруг security checks, authentication, filesystem ownership,
-   data migrations или других safety invariants.
-10. Не реализуй P2-O calculations, measured parallelism, second Governor permit,
-    pin/TTL, STT/audio, live hardware experiment или remote configuration.
+1. P2-N flag читается только через typed registry. Raw env и string key не
+   появляются в calculator/Governor/Web.
+2. Default-off, invalid/unavailable flag, unknown identity, stale/conflicting
+   facts, unsafe arithmetic и future schema fail closed.
+3. Basis различает declared, estimated, calibrated/observed и unknown; observed
+   component не превращает весь future verdict в measured.
+4. Не суммируй несвязанные NVIDIA devices, Apple free pages, legacy calibration
+   или ambiguous `/api/ps` rows как safe available capacity.
+5. Не учитывай одни и те же model/KV/runtime bytes дважды. Любой исключённый
+   overhead видим в explanation и снижает confidence.
+6. Verdict read-only: он не acquire/release lease, не запускает load/probe,
+   не меняет queue, не отменяет Job и не вызывает Ollama/model lifecycle.
+7. `ResourceGovernor` сохраняет ровно один permit. Никакой второй ticket/lease,
+   pin/TTL, measured calibration run или automatic parallel dispatch.
+8. Server остаётся authority; Web/localStorage не может включить behavior.
+9. Нет remote flags, analytics, telemetry export, fingerprinting, secrets или
+   новых plaintext settings.
+10. Не начинай STT/audio, live hardware experiment, Phase 3 UI либо Phase 4
+    service lifecycle.
 
 ## Contract и наблюдаемость
 
-- Название первого declaration должно описывать feature/policy, а не обещать
-  measured parallelism. Оно является reserved/default-off infrastructure input.
-- Contract различает declared key, effective boolean/value, source, observedAt и
-  unavailable/invalid state; arbitrary keys и future enums rejected.
-- Health/settings/UI не должны говорить «enabled by measurement» без measured
-  evidence. Если Web surface добавлен, он только объясняет effective flag и
-  source, с English fallback и curated Russian locale keys.
-- Нужна диагностируемость без секретов: tests или safe projection позволяют
-  понять, почему effective value on/off.
+- closed/versioned request и response; arbitrary keys/future enums rejected;
+- verdict минимум различает `disabled | estimated_allow | estimated_deny |
+  unknown`, но naming должен соответствовать реальной semantics;
+- source, observedAt, confidence и exact basis обязательны для каждого числового
+  input; unavailable reason typed/redacted;
+- `estimated_allow` никогда не называется safe/measured/verified и не означает,
+  что текущий single-permit Governor пропустит второй Job;
+- clients могут понять flag state, missing/stale fact, расчет и причину отказа
+  без raw provider/environment content.
 
 ## Тестовый envelope
 
 Нужны deterministic assertions минимум для:
 
-- registry completeness, unique keys и default-off reserved P2-O declaration;
-- exact parser и rejection unknown key/value/extra field/future version;
-- precedence каждой выбранной source и stable startup snapshot;
-- invalid/corrupt/unavailable source → safe default, не optimistic enable;
-- old DB/reopen/rollback, если есть migration;
-- read projection redaction и отсутствие server-only flags;
-- mutation idempotency/conflict/cancellation, если есть write boundary;
-- два независимых AppContext/requests без global mutable test leakage;
-- no network/analytics/localStorage/runtime model/Governor side effects;
-- compatibility существующих settings/health/CLI/Web;
-- exact count assertions для единственного registry entry/projection и
-  отсутствия duplicate keys/rows.
+- flag default-off/invalid/unavailable → disabled без calculator side effect;
+- exact enabled path и один typed consumer P2-N key;
+- request/parser unknown/extra/future/duplicate/unsafe numeric rejection;
+- каждый доступный source отдельно и coherent combined estimate;
+- missing/stale/conflicting/identity-drift inputs → unknown/deny, не allow;
+- overflow/underflow/NaN/negative/zero, boundary equality и no double count;
+- declared/calibrated/observed provenance не повышается до measured verdict;
+- два независимых contexts/requests, cancellation и stable observation basis;
+- exact projection redaction;
+- no DB/network/analytics/localStorage/load/probe/model/Governor/queue side
+  effects и неизменный one-permit snapshot;
+- compatibility settings/health/runtime/CLI/Web;
+- exact count assertions для единственного verdict/flag consumer и отсутствия
+  duplicate rows/keys.
 
-Каждое заявленное свойство получает assertion, который падает при нарушении.
-Сделай mutation checks для default-off, unknown fail-closed, precedence,
-projection redaction и отсутствия runtime side effects.
+Сделай mutation checks для flag fail-close, stale/identity rejection,
+double-count protection, estimated-not-measured и отсутствия Governor side
+effects. Каждое свойство docs/ROADMAP должно иметь падающий assertion.
 
-Если Web меняется, обязательны component/browser cases: keyboard/focus/live,
-390 px, 200%, reduced motion, English/Russian и отсутствие скрытого enable.
+Web surface не добавляй без доказанной необходимости. Если Web всё же меняется,
+обязательны locale keys, keyboard/focus/live, 390 px, 200%, reduced motion и
+полный browser gate.
 
 ## Gates
 
@@ -134,13 +138,16 @@ git diff --check
 ## Workflow и handoff
 
 После vertical implementation запусти независимую read-only verification по
-`plans/WORKFLOW.md`: contract/config/persistence/security и Web/CLI/operational
-projection (если затронуты). Findings исправляет автор отдельным fix commit.
+`plans/WORKFLOW.md`: contract/arithmetic/freshness/identity, security/no-effects
+и compatibility. Findings исправляет автор отдельным fix commit.
 
 Сделай небольшие conventional commits: feature, verification fix и current-state
 docs. Обнови `plans/PHASE_STATUS.md` с real new/regression envelope, first
-failures и residual risks. Полностью перепиши этот prompt на P2-O только если все
-gates green; иначе оставь P2-N blocked с recovery steps.
+failures и residual risks. После P2-O отдельно переоцени весь Phase 2 exit gate и
+не переходи к Phase 3, пока variant-calibration/current ROADMAP discrepancy и
+release-readiness не имеют явного verdict. Если gate неполон, следующий prompt
+остаётся на Phase 2 exit/recovery; только полностью зелёный exit может передать
+первый bounded slice Phase 3.
 
 В финале сообщи `status successful` только если implementation, independent
-verification, browser/root gates, docs и commits реально завершены.
+verification, gates, docs и commits реально завершены.

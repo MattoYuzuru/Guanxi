@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-09
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -226,6 +226,7 @@ background Job.
 | Состояние                            | Владелец                                | Durability                  |
 | ------------------------------------ | --------------------------------------- | --------------------------- |
 | Threads/messages/settings/workspaces | SQLite stores                           | persistent                  |
+| Effective feature-flag policy        | `FeatureFlagRegistry` startup snapshot  | process memory              |
 | Message terminal bridge              | SQLite `messages` v3 columns            | persistent                  |
 | Job/event/output store               | SQLite `jobs`/`job_events` v5           | persistent                  |
 | Chat input/Message association       | SQLite `chat_job_inputs`/`messages`     | persistent                  |
@@ -310,6 +311,9 @@ background Job.
     unsupported. Полный Capability Registry, generic precedence/conflict
     resolver, negative override, audit history, multi-user profile и
     sync/cloud export не реализованы.
+21. P2-N feature flags снимаются один раз при startup и не имеют persisted user
+    choice или live reload. Первый declaration default-off и ещё не читается
+    Governor; estimated verdict и любое изменение admission остаются P2-O.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 

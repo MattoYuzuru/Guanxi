@@ -452,6 +452,12 @@ server не нужен.
   reconciliation и существующий forced completion probe. Он не принимает
   path/Modelfile/options, не является Job/replay/resume и обновляет Installed/
   catalog только после terminal verified provenance.
+- P2-N держит feature flags в одном server-owned typed registry. Compiled
+  default-off declaration и exact operator env снимаются один раз при
+  `AppContext` startup; `GET /api/feature-flags` публикует только strict
+  versioned effective value/source/time/basis. SQLite setting, write API, Web
+  override, network provider и Governor consumer отсутствуют до следующих
+  slices.
 
 ### CLI
 

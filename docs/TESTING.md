@@ -5,9 +5,9 @@
 
 ## Текущий baseline
 
-На 2026-08-09 после independently verified P2-M:
+На 2026-08-09 после independently verified P2-N:
 
-- полный core с CLI reuse: 520/520; Web component/parser: 173/173;
+- полный core с CLI reuse: 532/532; Web component/parser: 173/173;
 - `npm run test:web:browser`: 28/28 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
@@ -259,6 +259,14 @@
   200% и reduced motion. Поэтому browser evidence — **0 новых tests / 28 full
   envelope**, а не новый headline case. Всё mocked/synthetic; live Ollama, GPU,
   HF network и large-file import не проверялись;
+- P2-N добавляет **12 new / 532 full core envelope** без Web tests. Contract,
+  registry и route fixtures покрывают exact единственный key/count, default-off,
+  strict version/basis/parser, operator precedence, invalid/unavailable/future
+  fail-close, immutable startup snapshot, два реальных `AppContext`, GET-only
+  projection, raw/server metadata redaction и отсутствие DB/network/model/
+  Governor consumers. Пять mutation checks (default-on, unknown enable,
+  precedence inversion, projection leak, Governor access) упали на ожидаемых
+  assertions. Chromium не расширялся: **0 new / 28 full mocked envelope**;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,

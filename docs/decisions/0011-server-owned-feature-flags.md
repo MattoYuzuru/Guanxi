@@ -1,6 +1,6 @@
 # ADR-0011: Server-owned feature flags
 
-**Статус:** accepted
+**Статус:** implemented, locally validated
 
 **Проверено:** 2026-08-09
 

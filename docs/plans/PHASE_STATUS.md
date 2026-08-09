@@ -377,6 +377,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-K Exact GGUF file/revision + preview | independently verified | `9f3990d`, `9f3f19c`; 29 new / 475 core envelope, 17 new / 161 Web envelope, Chromium 1 new / 27 envelope, all required gates |
 | P2-L Bounded exact GGUF download + provenance | independently verified | `8bb65c9`, `e1d4e66`; 29 new / 504 core envelope, 6 new / 167 Web envelope, Chromium 1 new / 28 envelope, all required gates |
 | P2-M Local staged GGUF import + probe | independently verified | `62a41c6`, `5b3d71d`; 16 new / 520 core envelope, 6 new / 173 Web envelope, Chromium 0 new + 1 expanded / 28 envelope, all required gates |
+| P2-N Server-owned feature flags | independently verified | `ac928a3`, `b0b7248`; 12 new / 532 core envelope, 0 new / 173 Web envelope, Chromium 0 new / 28 envelope, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -1088,6 +1089,38 @@ swap-window. Registry/attempt state process-local; restart делает staging 
 unowned, не resume-ит import и не удаляет уже созданную model. Screen-reader API,
 forced colors, реальный touch и provider-version matrix не проверены.
 
+P2-N реализован в `ac928a3`, а три findings независимого read-only reviewer
+исправлены отдельным `b0b7248`. Один immutable server-owned registry содержит
+ровно один closed declaration `estimated_parallel_admission_policy`: compiled
+default `false`, exact process env `enabled | disabled`, deterministic operator
+precedence и один observation time на startup. Invalid, unavailable, unknown и
+future input fail closed; public GET projection strict/versioned и не содержит
+raw env, env name, default metadata или arbitrary/server-only key. Persistence,
+write API, Web/localStorage, network/analytics, model и Governor consumers
+отсутствуют; P2-N не меняет admission.
+
+Evidence по `WORKFLOW.md`: **12 new / 532 full core regression envelope**,
+**0 new / 173 full Web envelope**, **0 new / 28 full mocked Chromium envelope**.
+Targeted final P2-N — 12/12; root typecheck, build, markdownlint и diff-check
+зелёные. Chromium 28/28 прошёл после feature commit и не повторялся после
+server-only review fix по согласованному сокращённому режиму. Reviewer нашёл:
+optimistic `safe_default:true` и empty v1 contract acceptance; partial cast
+вместо двух production contexts; неполный no-side-effect evidence. Fix связал
+safe default с false/exact count, использует два реальных `createAppContext` и
+добавил network sentinel + production composition inventory.
+
+Первые failures не скрыты: initial targeted redaction assertion искал строку
+`false` и ошибочно совпал с JSON boolean; assertion заменён на exact keys и
+private sentinel. Пять mutation checks намеренно включали default-on, unknown
+key, inverted precedence, server-only projection leak и Governor access; все
+пять дали ожидаемый non-zero exit, после восстановления 12/12 зелёные.
+
+Residual risks P2-N: operator env требует restart и не является persisted user
+choice; live process/service restart не проверялся, только независимые in-memory
+`AppContext`; remote bind/auth profile и production operator workflow не
+валидированы. Flag пока не имеет consumer, поэтому estimated calculation,
+admission semantics и второй permit остаются P2-O либо позже.
+
 P2-A, P2-B, P2-C, P2-D, P2-E, P2-F, P2-G и P2-H остаются `implemented, locally
 validated`, а не independently verified или production-validated. Не проверены
 live Ollama/model/hardware, NVIDIA driver/GPU/MIG, provider-version matrix,
@@ -1104,7 +1137,7 @@ live load evidence или inferred license/quantization/task facts. Legacy clien
 Phase 2 остаётся `in progress`. Запись выше отражала состояние на 2026-08-04;
 owner session 2026-08-07 закрыла Q-25 (GGUF-only), поэтому HF import больше не
 заблокирован и разбит на P2-J..P2-M, а hardware-зависимые пункты вынесены за
-Phase 4. P2-M independently verified; следующий product slice P2-N передан.
+Phase 4. P2-N independently verified; следующий product slice P2-O передан.
 
 ## Phase 2 — что реально осталось
 
@@ -1117,15 +1150,15 @@ slice: без неё читатель делает вывод, что до ко�
 | HF search + exact GGUF/revision import (MOD-010) | сделано P2-J–P2-M; mocked public GGUF + loopback Ollama                                                      |
 | license/gated/size/dry-run/fit preview           | P2-K claims/fit и P2-L observed size/checksum готовы; disk reservation и gated token не реализованы          |
 | local Ollama create/import + checksum/provenance | сделано P2-L/P2-M; blob/create + exact tags + forced probe                                                   |
-| measured-parallel за feature flag (RES-009)      | flag infra → P2-N; estimated admission → P2-O; measured вынесен за Phase 4 (Q-34a)                           |
+| measured-parallel за feature flag (RES-009)      | flag infra сделана P2-N; estimated admission → P2-O; measured вынесен за Phase 4 (Q-34a)                     |
 | variant calibration (MOD-004)                    | **половина**: variant-first install есть, calibration не связана с catalog fit (`catalog.ts` — 0 упоминаний) |
 | Linux/NVIDIA verified tier (PLAT-002)            | prototype есть; verified tier вынесен за Phase 4 (Q-35), убран из exit gate                                  |
 | user override (MOD-008)                          | **сделано в P2-I** (`6b98d37`..`6cc4504`): migration 9, exact-identity ownership, Installed UI, safe export  |
 | bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
 
-Итог на 2026-08-09 после P2-M: HF public-GGUF chain и user override exit-gate
-части закрыты mocked evidence. Остались P2-N feature-flag infrastructure и P2-O
-estimated parallel-admission; variant calibration всё ещё не связана с catalog
+Итог на 2026-08-09 после P2-N: HF public-GGUF chain, user override и feature-flag
+infrastructure закрыты mocked/local evidence. Остался P2-O estimated
+parallel-admission; variant calibration всё ещё не связана с catalog
 fit. Hardware-dependent measured claims вынесены за Phase 4. P2-M создаёт
 provider-observed installation evidence, но не durable import Job, persistent
 Artifact/Installation registry или production validation.
@@ -1144,8 +1177,8 @@ Artifact/Installation registry или production validation.
 | P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | independently verified                               |
 | P2-L  | download с checksum/provenance, bounded и cancel-safe              | independently verified                               |
 | P2-M  | local Ollama import через `/api/create` + probe                    | independently verified                               |
-| P2-N  | feature-flag infrastructure (без обещания measured)                | ready                                                |
-| P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | blocked by P2-N                                      |
+| P2-N  | feature-flag infrastructure (без обещания measured)                | independently verified                               |
+| P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | ready                                                |
 
 `/api/create` добавлен P2-M как documented files-map endpoint, а не pull или
 shell/Modelfile path. P2-N/P2-O закрывают
