@@ -2663,6 +2663,28 @@ export const workspaceSchema = z.object({
 })
 export type Workspace = z.infer<typeof workspaceSchema>
 
+/* ───────────────────────────────── Проекты ──────────────────────────────── */
+
+export const projectFilesystemBindingSchema = z
+  .object({
+    id: z.string(),
+    workspaceId: z.string(),
+    createdAt: z.string(),
+  })
+  .strict()
+export type ProjectFilesystemBinding = z.infer<typeof projectFilesystemBindingSchema>
+
+export const projectSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    filesystemBindings: z.array(projectFilesystemBindingSchema),
+  })
+  .strict()
+export type Project = z.infer<typeof projectSchema>
+
 /* ──────────────────────────────── Настройки ──────────────────────────────── */
 
 export const webSearchProviderSchema = z.enum(['none', 'ollama', 'searxng', 'brave', 'tavily'])
@@ -3247,6 +3269,7 @@ export const apiErrorSchema = z.object({
     'storage_error',
     'thread_not_found',
     'workspace_not_found',
+    'project_not_found',
     'path_outside_workspace',
     'tool_disabled',
     'validation_failed',

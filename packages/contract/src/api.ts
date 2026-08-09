@@ -35,6 +35,7 @@ import {
   modelCapabilityOverrideSchema,
   modelDetailSchema,
   positiveSafeIntegerSchema,
+  projectSchema,
   runningModelSchema,
   runtimeSnapshotSchema,
   settingsSchema,
@@ -87,6 +88,9 @@ export const ROUTES = {
   workspaces: () => '/api/workspaces',
   workspace: (id: string) => `/api/workspaces/${id}`,
   workspaceBrowse: () => '/api/workspaces/browse',
+
+  projects: () => '/api/projects',
+  project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
 
   approval: (toolCallId: string) => `/api/approvals/${toolCallId}`,
 
@@ -833,6 +837,27 @@ export const createWorkspaceBody = z.object({
   name: z.string().optional(),
 })
 export type CreateWorkspaceBody = z.infer<typeof createWorkspaceBody>
+
+/* ───────────────────────────────── Проекты ──────────────────────────────── */
+
+export const PROJECT_NAME_MAX_LENGTH = 120
+
+export const listProjectsResponse = z
+  .object({
+    projects: z.array(projectSchema),
+  })
+  .strict()
+export type ListProjectsResponse = z.infer<typeof listProjectsResponse>
+
+export const createProjectBody = z
+  .object({
+    name: z.string().trim().min(1).max(PROJECT_NAME_MAX_LENGTH),
+  })
+  .strict()
+export type CreateProjectBody = z.infer<typeof createProjectBody>
+
+export const updateProjectBody = createProjectBody
+export type UpdateProjectBody = z.infer<typeof updateProjectBody>
 
 /**
  * GET /api/workspaces/browse?path= — листинг директорий для пикера.

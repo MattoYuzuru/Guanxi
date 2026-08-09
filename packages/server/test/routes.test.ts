@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import type { HardwareInfo } from '@alamo/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
@@ -23,6 +26,8 @@ import { JobStore } from '../src/store/jobs.ts'
 import { SettingsStore } from '../src/store/settings.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 import { WorkspaceStore } from '../src/store/workspaces.ts'
+import { ProjectStore } from '../src/store/projects.ts'
+import { ProjectService } from '../src/projects/service.ts'
 
 const HARDWARE: HardwareInfo = {
   platform: 'darwin',
@@ -50,6 +55,7 @@ function testContext(
     jobService: new JobService(jobs),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
+    projects: new ProjectService(new ProjectStore(db)),
     settings,
     featureFlags: new FeatureFlagRegistry({ environment: { state: 'available', values: {} } }),
     calibration: new CalibrationStore(db),
@@ -507,5 +513,141 @@ describe('thread routes', () => {
     } finally {
       context.db.close()
     }
+  })
+})
+
+describe('project routes', () => {
+  it('creates and reads a logical Project without path, binding or external side effects', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-project-route-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const beforeEntries = await readdir(root)
+    const context = testContext()
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    const jobCountBefore = (
+      context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }
+    ).count
+
+    const response = await app.request('/api/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '  Logical container  ' }),
+    })
+    assert.equal(response.status, 201)
+    const created = (await response.json()) as Record<string, unknown>
+    assert.equal(created.name, 'Logical container')
+    assert.deepEqual(created.filesystemBindings, [])
+    assert.equal(Object.hasOwn(created, 'rootPath'), false)
+    assert.equal(Object.hasOwn(created, 'path'), false)
+
+    const loaded = await app.request(`/api/projects/${String(created.id)}`)
+    assert.equal(loaded.status, 200)
+    assert.deepEqual(await loaded.json(), created)
+    assert.deepEqual(await readdir(root), beforeEntries)
+    assert.equal(
+      (context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count,
+      jobCountBefore,
+    )
+    assert.equal(context.governor.snapshot().activeLease, null)
+  })
+
+  it('rejects invalid Project names before any database mutation', async (test) => {
+    const context = testContext()
+    test.after(() => context.db.close())
+    const app = createApp(context)
+
+    for (const body of [
+      { name: '' },
+      { name: '   ' },
+      { name: 'x'.repeat(121) },
+      { name: 'valid', rootPath: '/must-not-be-accepted' },
+    ]) {
+      const response = await app.request('/api/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      assert.equal(response.status, 400)
+      assert.equal((await response.json() as { code: string }).code, 'validation_failed')
+    }
+    assert.equal(
+      (context.db.prepare('SELECT COUNT(*) AS count FROM projects').get() as { count: number }).count,
+      0,
+    )
+  })
+
+  it('keeps legacy Workspace JSON byte-compatible and maps it exactly once', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-workspace-bridge-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const context = testContext()
+    test.after(() => context.db.close())
+    const app = createApp(context)
+
+    const createdResponse = await app.request('/api/workspaces', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootPath: root, name: 'Legacy exact response' }),
+    })
+    assert.equal(createdResponse.status, 201)
+    const legacy = await createdResponse.json() as Record<string, unknown>
+    assert.deepEqual(Object.keys(legacy).sort(), [
+      'createdAt', 'exists', 'id', 'lastUsedAt', 'name', 'rootPath',
+    ])
+
+    const legacyListBefore = await (await app.request('/api/workspaces')).text()
+    const projectList = await app.request('/api/projects')
+    const projects = (await projectList.json() as { projects: Array<Record<string, unknown>> }).projects
+    const bridged = projects.filter((project) => project.id === legacy.id)
+    assert.equal(bridged.length, 1)
+    assert.deepEqual(bridged[0]?.filesystemBindings, [{
+      id: `workspace:${String(legacy.id)}`,
+      workspaceId: legacy.id,
+      createdAt: legacy.createdAt,
+    }])
+    assert.equal(
+      (context.db.prepare(
+        'SELECT COUNT(*) AS count FROM project_filesystem_bindings WHERE workspace_id = ?',
+      ).get(String(legacy.id)) as { count: number }).count,
+      1,
+    )
+
+    const unrelated = await app.request('/api/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Independent Project' }),
+    })
+    assert.equal(unrelated.status, 201)
+    assert.equal(await (await app.request('/api/workspaces')).text(), legacyListBefore)
+
+    const projectless = String(legacy.id)
+    context.db.prepare('DELETE FROM projects WHERE id = ?').run(projectless)
+    const readable = await app.request(`/api/workspaces/${projectless}`)
+    assert.equal(readable.status, 200)
+    assert.deepEqual(await readable.json(), legacy)
+  })
+
+  it('renames only Project metadata without changing a Workspace path', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-project-rename-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const context = testContext()
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    const workspace = context.workspaces.create(root, 'Bound name')
+    context.db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(
+      '2026-08-01T00:00:00.000Z',
+      workspace.id,
+    )
+
+    const response = await app.request(`/api/projects/${workspace.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed Project' }),
+    })
+    assert.equal(response.status, 200)
+    const renamed = await response.json() as { name: string; updatedAt: string }
+    assert.equal(renamed.name, 'Renamed Project')
+    assert.notEqual(renamed.updatedAt, '2026-08-01T00:00:00.000Z')
+    assert.equal(context.workspaces.get(workspace.id)?.rootPath, root)
+    assert.equal(context.workspaces.get(workspace.id)?.name, 'Bound name')
   })
 })

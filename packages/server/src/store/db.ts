@@ -338,6 +338,39 @@ const MIGRATIONS: readonly string[] = [
       override_schema_version
     );
   `,
+  // 10 — logical Project identity and additive legacy Workspace binding bridge.
+  // Existing Workspace tables/routes remain authoritative for legacy clients.
+  `
+  CREATE TABLE projects (
+    id         TEXT NOT NULL PRIMARY KEY,
+    name       TEXT NOT NULL CHECK (length(trim(name)) > 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE project_filesystem_bindings (
+    id           TEXT NOT NULL PRIMARY KEY,
+    project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    UNIQUE (project_id, workspace_id)
+  );
+  CREATE INDEX idx_project_filesystem_bindings_project
+    ON project_filesystem_bindings(project_id, created_at, id);
+
+  -- Preserve exact legacy identity. Path and normalized name are deliberately
+  -- absent from the identity mapping.
+  INSERT INTO projects (id, name, created_at, updated_at)
+  SELECT id,
+         CASE WHEN length(trim(name)) > 0 THEN name ELSE 'Untitled Project' END,
+         created_at,
+         created_at
+  FROM workspaces;
+
+  INSERT INTO project_filesystem_bindings (id, project_id, workspace_id, created_at)
+  SELECT 'workspace:' || id, id, id, created_at
+  FROM workspaces;
+  `,
 ]
 
 export function openDb(path: string): Db {

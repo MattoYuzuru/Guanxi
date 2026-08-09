@@ -18,6 +18,7 @@ import {
 import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
+import { ProjectService } from './projects/service.ts'
 import { HuggingFaceTransport } from './models/hugging-face-transport.ts'
 import { HuggingFaceDownloadService } from './models/hugging-face-download.ts'
 import { HuggingFaceImportService } from './models/hugging-face-import.ts'
@@ -33,6 +34,7 @@ import { ModelCapabilityOverrideStore } from './store/capability-override.ts'
 import { CompletionProbeStore } from './store/completion-probe.ts'
 import { openDb, type Db } from './store/db.ts'
 import { JobStore } from './store/jobs.ts'
+import { ProjectStore } from './store/projects.ts'
 import { SettingsStore } from './store/settings.ts'
 import { ThreadStore } from './store/threads.ts'
 import { WorkspaceStore } from './store/workspaces.ts'
@@ -53,6 +55,7 @@ export interface AppContext {
   chatExecution: ChatJobExecutionOwner
   threads: ThreadStore
   workspaces: WorkspaceStore
+  projects: ProjectService
   settings: SettingsStore
   /** Immutable server-owned effective policy sampled once during process startup. */
   featureFlags: FeatureFlagRegistry
@@ -144,6 +147,8 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     }
 
     const jobs = new JobStore(db)
+    const projects = new ProjectService(new ProjectStore(db))
+    projects.reconcileLegacyWorkspaces()
 
     const activeTurns = new Map<string, AbortController>()
     const governor = new ResourceGovernor()
@@ -162,6 +167,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       jobService,
       threads: new ThreadStore(db),
       workspaces: new WorkspaceStore(db),
+      projects,
       settings,
       featureFlags,
       calibration,

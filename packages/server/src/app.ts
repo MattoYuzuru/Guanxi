@@ -18,6 +18,7 @@ import { modelsRoutes } from './http/models-routes.ts'
 import { runtimeRoutes } from './http/runtime-routes.ts'
 import { threadsRoutes } from './http/threads-routes.ts'
 import { workspacesRoutes } from './http/workspaces-routes.ts'
+import { projectsRoutes } from './http/projects-routes.ts'
 import type { OllamaStatusOptions } from './ollama/status.ts'
 
 export interface CreateAppOptions {
@@ -75,6 +76,7 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   server.route('/api/jobs', jobsRoutes(app))
   server.route('/api/threads', threadsRoutes(app))
   server.route('/api/workspaces', workspacesRoutes(app))
+  server.route('/api/projects', projectsRoutes(app))
 
   server.post('/api/approvals/:id', async (context) => {
     const parsed = approvalBody.safeParse(await context.req.json().catch(() => null))

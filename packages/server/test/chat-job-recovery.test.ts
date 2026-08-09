@@ -40,6 +40,8 @@ import {
 import { SettingsStore } from '../src/store/settings.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 import { WorkspaceStore } from '../src/store/workspaces.ts'
+import { ProjectStore } from '../src/store/projects.ts'
+import { ProjectService } from '../src/projects/service.ts'
 
 const HARDWARE: HardwareInfo = {
   platform: 'darwin',
@@ -166,6 +168,7 @@ function runtimeFixture(
     jobService: new JobService(jobs, { replayPageSize: 2 }),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
+    projects: new ProjectService(new ProjectStore(db)),
     settings,
     featureFlags: new FeatureFlagRegistry({ environment: { state: 'available', values: {} } }),
     calibration: new CalibrationStore(db),

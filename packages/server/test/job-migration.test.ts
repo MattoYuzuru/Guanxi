@@ -19,6 +19,8 @@ function schemaObjects(db: DatabaseSync, names: string[]): Array<{ name: string;
 
 function downgradeToV4(db: DatabaseSync): void {
   db.exec(`
+    DROP TABLE project_filesystem_bindings;
+    DROP TABLE projects;
     DROP TABLE model_capability_user_overrides;
     DROP TABLE completion_probe_evidence;
     DROP TABLE installed_model_evidence_cache;
@@ -40,7 +42,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 9 })
+    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 10 })
     assert.deepEqual(
       schemaObjects(first, [
         'jobs',
@@ -66,7 +68,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 9 })
+    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 10 })
     assert.equal(
       schemaObjects(reopened, ['jobs', 'job_events']).filter((row) => row.type === 'table').length,
       2,
@@ -119,7 +121,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 9 })
+    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 10 })
     assert.deepEqual(
       {
         ...upgraded.prepare('SELECT id, title, mode, model FROM threads WHERE id = ?').get('thread-v3'),
@@ -181,7 +183,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 9 })
+    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 10 })
     assert.equal(schemaObjects(recovered, ['jobs', 'job_events', 'chat_job_inputs']).length, 3)
     recovered.close()
   })

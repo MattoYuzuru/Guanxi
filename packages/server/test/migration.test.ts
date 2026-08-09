@@ -7,6 +7,13 @@ import { describe, it } from 'node:test'
 import { openDb } from '../src/store/db.ts'
 
 const VERSION_2_MESSAGES = `
+  CREATE TABLE workspaces (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    root_path    TEXT NOT NULL UNIQUE,
+    created_at   TEXT NOT NULL,
+    last_used_at TEXT
+  );
   CREATE TABLE messages (
     id            TEXT PRIMARY KEY,
     thread_id     TEXT NOT NULL,
@@ -51,7 +58,7 @@ describe('SQLite turn-state migration', () => {
 
     const version = db.prepare('PRAGMA user_version').get() as { user_version: number }
     const columns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
-    assert.equal(version.user_version, 9)
+    assert.equal(version.user_version, 10)
     assert.deepEqual(
       columns
         .map((column) => column.name)
@@ -160,7 +167,7 @@ describe('SQLite turn-state migration', () => {
 
     const recovered = openDb(path)
     const version = recovered.prepare('PRAGMA user_version').get() as { user_version: number }
-    assert.equal(version.user_version, 9)
+    assert.equal(version.user_version, 10)
     recovered.close()
   })
 })

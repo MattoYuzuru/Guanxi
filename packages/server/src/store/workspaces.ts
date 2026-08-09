@@ -65,12 +65,31 @@ export class WorkspaceStore {
     const existing = this.db
       .prepare('SELECT * FROM workspaces WHERE root_path = ?')
       .get(absolute) as unknown as WorkspaceRow | undefined
-    if (existing) return toWorkspace(existing)
+    if (existing) {
+      this.ensureProjectBridge(existing)
+      return toWorkspace(existing)
+    }
 
     const id = randomUUID()
-    this.db
-      .prepare('INSERT INTO workspaces (id, name, root_path, created_at, last_used_at) VALUES (?, ?, ?, ?, NULL)')
-      .run(id, name ?? basename(absolute), absolute, new Date().toISOString())
+    const workspaceName = name ?? basename(absolute)
+    const createdAt = new Date().toISOString()
+    this.db.exec('BEGIN')
+    try {
+      this.db
+        .prepare('INSERT INTO workspaces (id, name, root_path, created_at, last_used_at) VALUES (?, ?, ?, ?, NULL)')
+        .run(id, workspaceName, absolute, createdAt)
+      this.insertProjectBridge({
+        id,
+        name: workspaceName,
+        root_path: absolute,
+        created_at: createdAt,
+        last_used_at: null,
+      })
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
 
     return this.get(id)!
   }
@@ -83,5 +102,54 @@ export class WorkspaceStore {
 
   delete(id: string): boolean {
     return this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(id).changes > 0
+  }
+
+  private ensureProjectBridge(workspace: WorkspaceRow): void {
+    this.db.exec('BEGIN')
+    try {
+      this.insertProjectBridge(workspace)
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  private insertProjectBridge(workspace: WorkspaceRow): void {
+    const projectName = workspace.name.trim().length > 0 ? workspace.name : 'Untitled Project'
+    this.db
+      .prepare(
+        `INSERT INTO projects (id, name, created_at, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run(workspace.id, projectName, workspace.created_at, workspace.created_at)
+    const project = this.db
+      .prepare('SELECT created_at FROM projects WHERE id = ?')
+      .get(workspace.id) as { created_at: string } | undefined
+    if (!project || project.created_at !== workspace.created_at) {
+      throw new Error(`Conflicting Project identity for legacy Workspace ${workspace.id}`)
+    }
+    this.db
+      .prepare(
+        `INSERT INTO project_filesystem_bindings (id, project_id, workspace_id, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(workspace_id) DO NOTHING`,
+      )
+      .run(`workspace:${workspace.id}`, workspace.id, workspace.id, workspace.created_at)
+
+    const mapping = this.db
+      .prepare(
+        `SELECT id, project_id FROM project_filesystem_bindings
+         WHERE workspace_id = ?`,
+      )
+      .get(workspace.id) as { id: string; project_id: string } | undefined
+    if (
+      !mapping ||
+      mapping.id !== `workspace:${workspace.id}` ||
+      mapping.project_id !== workspace.id
+    ) {
+      throw new Error(`Conflicting Project binding for legacy Workspace ${workspace.id}`)
+    }
   }
 }

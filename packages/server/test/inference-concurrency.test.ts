@@ -25,6 +25,8 @@ import { JobStore } from '../src/store/jobs.ts'
 import { SettingsStore } from '../src/store/settings.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 import { WorkspaceStore } from '../src/store/workspaces.ts'
+import { ProjectStore } from '../src/store/projects.ts'
+import { ProjectService } from '../src/projects/service.ts'
 
 const HARDWARE: HardwareInfo = {
   platform: 'darwin',
@@ -125,6 +127,7 @@ function testContext(options: {
     jobService: new JobService(jobs),
     threads: new ThreadStore(db),
     workspaces: new WorkspaceStore(db),
+    projects: new ProjectService(new ProjectStore(db)),
     settings,
     featureFlags: new FeatureFlagRegistry({ environment: { state: 'available', values: {} } }),
     calibration: new CalibrationStore(db),
