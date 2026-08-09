@@ -190,7 +190,7 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
   await expect(section.getByText(/не значит, что модель сломана/u)).toBeVisible()
   await expect(section.getByText(/Metadata репозитория прочитать не удалось/u)).toBeVisible()
   await expect(section.getByText(/это не «нашлось меньше»/u)).toBeVisible()
-  await expect(section.getByText(/Gated — ручное одобрение/u)).toBeVisible()
+  await expect(section.getByText('Gated — ручное одобрение', { exact: true })).toBeVisible()
   await expect(section.getByText(/token не запрашивается и доступ не открывается/u))
     .toBeVisible()
 
@@ -198,11 +198,14 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
   for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Скачать/u]) {
     await expect(section.getByRole('button', { name })).toHaveCount(0)
   }
-  await expect(section.getByText(/нужно выбрать точный файл GGUF/u).first()).toBeVisible()
+  await expect(section.getByText(/Выберите один ниже/u).first()).toBeVisible()
 
   // The GGUF list is a keyboard-operable disclosure with focus retained.
   const disclosure = section.getByRole('button', { name: /Файлы GGUF: 1/u })
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+  await disclosure.press('Enter')
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(disclosure).toBeFocused()
   await disclosure.press('Enter')
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
   await expect(disclosure).toBeFocused()
@@ -220,7 +223,7 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
 
   // Primary touch targets in this section meet the documented 44 px minimum.
   const targets = await section.evaluate((root) => {
-    const names = ['Искать', 'Повторить', 'Загрузить следующую страницу']
+    const names = ['Искать', 'Повторить', 'Загрузить следующую страницу', 'Выбрать']
     const found: Array<{ label: string; height: number }> = []
     for (const element of root.querySelectorAll('button')) {
       const label = (element.textContent ?? '').trim()
@@ -268,4 +271,188 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
 
   // The browser never talks to the provider directly.
   expect(requests.every((entry) => entry.path.startsWith('/api/'))).toBe(true)
+})
+
+test('Marketplace confirms one exact GGUF target without downloading or installing it', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const observedAt = '2026-08-09T12:00:00.000Z'
+  const commit = 'a'.repeat(40)
+  const requests: Array<{ path: string; method: string; body: string | null }> = []
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  const identity = {
+    provider: 'hugging_face',
+    owner: 'TheBloke',
+    name: 'Llama-2-7B-GGUF',
+    repositoryId: 'TheBloke/Llama-2-7B-GGUF',
+    comparisonKey: 'thebloke/llama-2-7b-gguf',
+  }
+  const revision = {
+    state: 'exact_commit', commit, source: 'hugging_face_api_model',
+  }
+  const repository = {
+    version: 1, provider: 'hugging_face', identity,
+    metadata: 'resolved', observedAt, revision,
+    gated: { state: 'gated', mode: 'manual' },
+    license: {
+      state: 'declared', value: 'apache-2.0',
+      source: 'hugging_face_model_tags', confidence: 'declared',
+    },
+    files: {
+      state: 'listed', source: 'hugging_face_api_model', totalFiles: 1,
+      malformedEntries: 0, truncated: false,
+      ggufFiles: [{
+        path: 'llama-2-7b.Q4_K_M.gguf', sizeBytes: 4_000_000_000,
+        sizeSource: 'hugging_face_api_model',
+      }],
+    },
+    verdict: {
+      state: 'supported', scope: 'exact_gguf_file_only',
+      basis: 'exact_gguf_files_listed', reason: null,
+      requiresExactFileSelection: true,
+    },
+  }
+  const json = (body: unknown, status = 200) => ({
+    status, contentType: 'application/json', body: JSON.stringify(body),
+  })
+  const health = {
+    ok: true, appVersion: 'test',
+    application: { state: 'reachable', source: 'application_http', observedAt },
+    ollama: {
+      installed: true, installSource: 'runtime_response', running: true,
+      state: 'reachable', source: 'ollama_api_version', observedAt,
+      version: '0.12.6', host: 'http://127.0.0.1:11434', installHint: null,
+    },
+    hardware: {
+      platform: 'darwin', arch: 'arm64', cpuModel: 'fixture', cpuCores: 8,
+      totalMemoryBytes: 16_000_000_000, usableMemoryBytes: 12_000_000_000,
+      accelerator: 'metal', acceleratorName: 'Fixture Metal', unifiedMemory: true,
+      freeDiskBytes: null,
+    },
+    network: {
+      ollamaComReachable: null, checkedAt: null,
+      status: 'unknown', source: 'not_checked',
+    },
+  }
+
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    requests.push({ path, method: request.method(), body: request.postData() ?? null })
+    if (path === '/api/health') return route.fulfill(json(health))
+    if (path === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (path === '/api/models') return route.fulfill(json({ models: [] }))
+    if (path === '/api/models/catalog') {
+      return route.fulfill(json({
+        models: [], live: false,
+        source: {
+          state: 'stale_cache', source: 'ollama_recommendations_cache',
+          observedAt, fetchedAt: observedAt,
+        },
+      }))
+    }
+    if (path === '/api/models/discovery/hugging-face/search') {
+      return route.fulfill(json({
+        result: {
+          state: 'listed', version: 1, page: 1, pageSize: 10,
+          source: {
+            state: 'available', source: 'hugging_face_public_api',
+            observedAt, reason: null,
+          },
+          droppedRows: 0, repositories: [repository], nextCursor: null, reason: null,
+        },
+      }))
+    }
+    if (path === '/api/models/discovery/hugging-face/selection') {
+      return route.fulfill(json({
+        result: {
+          state: 'confirmed', version: 1, repository,
+          selection: {
+            identity, revision, filePath: 'llama-2-7b.Q4_K_M.gguf',
+            sizeBytes: 4_000_000_000, sizeSource: 'hugging_face_api_model',
+          },
+          fit: {
+            state: 'calculated', contextLength: 32_768,
+            basis: 'reported_file_size_only',
+            calculatedAt: '2026-08-09T12:00:01.000Z',
+            hardware: {
+              source: 'application_startup_hardware_probe',
+              observedAt: '2026-08-09T11:59:00.000Z',
+              confidence: 'estimated',
+            },
+            verdict: {
+              level: 'green', summary: 'fixture', contextLength: 32_768,
+              modelBytes: 4_000_000_000, kvCacheBytes: 0,
+              requiredBytes: 4_000_000_000, usableBytes: 12_000_000_000,
+              utilization: 1 / 3, basis: 'vendor_hint', measured: null,
+            },
+          },
+          reason: null,
+        },
+      }))
+    }
+    return route.fulfill(json({ code: 'internal_error', message: path, details: null }, 500))
+  })
+
+  await page.goto('/')
+  const section = page.getByRole('region', { name: 'Hugging Face' })
+  const search = page.getByLabel('Поиск репозиториев Hugging Face')
+  await search.fill('llama gguf')
+  await search.press('Enter')
+  const select = section.getByRole('button', {
+    name: 'Выбрать этот файл llama-2-7b.Q4_K_M.gguf',
+  })
+  await expect(select).toBeVisible()
+  expect(requests.filter((request) => request.path.endsWith('/selection'))).toHaveLength(0)
+
+  await select.focus()
+  await select.press('Enter')
+  await expect(section.getByText('Выбранная цель', { exact: true })).toBeVisible()
+  const selectionCalls = requests.filter((request) => request.path.endsWith('/selection'))
+  expect(selectionCalls).toHaveLength(1)
+  expect(JSON.parse(selectionCalls[0]!.body ?? '{}')).toEqual({
+    identity,
+    revision,
+    filePath: 'llama-2-7b.Q4_K_M.gguf',
+    contextLength: 32_768,
+  })
+
+  await expect(section.getByText(/сообщён API файловых metadata Hugging Face/u))
+    .toBeVisible()
+  await expect(section.getByText(/не замер и не гарантия влезаемости/u)).toBeVisible()
+  await expect(section.getByText(/стартовая проверка железа приложением/u)).toBeVisible()
+  await expect(section.getByText(/оценочная уверенность/u)).toBeVisible()
+  await expect(section.getByText('Gated — ручное одобрение', { exact: true })).toBeVisible()
+  await expect(section.getByRole('paragraph').filter({
+    hasText: /^Заявление автора, а не юридическая проверка\.$/u,
+  })).toBeVisible()
+  for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Скачать/u, /^Download/u]) {
+    await expect(section.getByRole('button', { name })).toHaveCount(0)
+  }
+
+  const change = section.getByRole('button', { name: 'Выбрать другой файл' })
+  await expect(change).toBeFocused()
+  const targetHeights = await Promise.all([select, change].map(async (locator) =>
+    locator.evaluate((element) => element.getBoundingClientRect().height)))
+  for (const height of targetHeights) expect(height).toBeGreaterThanOrEqual(44)
+
+  // Keep the new confirmed preview open while proving the constrained zoom layout.
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+
+  await change.press('Enter')
+  await expect(select).toBeFocused()
+  expect(pageErrors).toEqual([])
+
+  const forbidden = requests.filter((request) =>
+    /\/(pull|prewarm|warm|stop|probes|create|imports)\b/u.test(request.path)
+    || ['DELETE', 'PUT', 'PATCH'].includes(request.method))
+  expect(forbidden).toEqual([])
+  expect(requests.every((request) => request.path.startsWith('/api/'))).toBe(true)
 })
