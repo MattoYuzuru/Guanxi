@@ -1,4 +1,22 @@
 const english = {
+  'projects.navigation': 'Projects',
+  'projects.title': 'Projects',
+  'projects.description':
+    'Logical containers for work and context. A Project does not require a filesystem folder.',
+  'projects.loading': 'Loading Projects',
+  'projects.error.title': 'Projects could not be loaded',
+  'projects.retry': 'Retry',
+  'projects.refresh.error': 'The Project list could not be refreshed',
+  'projects.empty.title': 'No Projects yet',
+  'projects.empty.description': 'Create a Project without choosing a filesystem folder.',
+  'projects.list': 'Project list',
+  'projects.name.label': 'Project name',
+  'projects.name.hint': 'The name is metadata and can be changed later.',
+  'projects.name.required': 'Enter a Project name.',
+  'projects.create': 'Create Project',
+  'projects.rename': 'Rename',
+  'projects.binding.none': 'No filesystem binding',
+  'projects.binding.present': '{count} filesystem binding(s)',
   'error.root.title': 'The application could not be displayed',
   'error.root.summary':
     'A client error was contained before it could leave an unexplained blank screen.',
@@ -967,6 +985,24 @@ export type LocaleKey = keyof typeof english
 type Messages = Record<LocaleKey, string>
 
 const russian: Messages = {
+  'projects.navigation': 'Проекты',
+  'projects.title': 'Проекты',
+  'projects.description':
+    'Логические контейнеры для работы и контекста. Проекту не требуется папка в файловой системе.',
+  'projects.loading': 'Загружаем проекты',
+  'projects.error.title': 'Не удалось загрузить проекты',
+  'projects.retry': 'Повторить',
+  'projects.refresh.error': 'Не удалось обновить список проектов',
+  'projects.empty.title': 'Проектов пока нет',
+  'projects.empty.description': 'Создайте проект без выбора папки в файловой системе.',
+  'projects.list': 'Список проектов',
+  'projects.name.label': 'Название проекта',
+  'projects.name.hint': 'Название — редактируемая metadata, его можно изменить позже.',
+  'projects.name.required': 'Введите название проекта.',
+  'projects.create': 'Создать проект',
+  'projects.rename': 'Переименовать',
+  'projects.binding.none': 'Нет привязки к файловой системе',
+  'projects.binding.present': 'Привязок к файловой системе: {count}',
   'error.root.title': 'Не удалось показать приложение',
   'error.root.summary':
     'Ошибка интерфейса остановлена до того, как экран стал необъяснимо пустым.',

@@ -28,6 +28,7 @@ import {
   huggingFaceImportStreamEventSchema,
   listCatalogResponse,
   listModelsResponse,
+  listProjectsResponse,
   listRunningResponse,
   listThreadsResponse,
   listWorkspacesResponse,
@@ -39,6 +40,7 @@ import {
   prewarmModelResponse,
   warmModelResponse,
   workspaceSchema,
+  projectSchema,
   type ApiError,
   type ApprovalBody,
   type ChatStreamEvent,
@@ -54,11 +56,13 @@ import {
   type JobStreamEvent,
   type CreateThreadBody,
   type CreateWorkspaceBody,
+  type CreateProjectBody,
   type PullStreamEvent,
   type PrewarmModelBody,
   type SendMessageBody,
   type UpdateSettingsBody,
   type UpdateThreadBody,
+  type UpdateProjectBody,
   type ListCatalogQuery,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
@@ -346,6 +350,17 @@ export const api = {
 
   deleteWorkspace: (id: string, signal?: AbortSignal) =>
     request(ROUTES.workspace(id), approvalResponse, { method: 'DELETE', signal }),
+
+  /* Проекты */
+
+  listProjects: (signal?: AbortSignal) =>
+    request(ROUTES.projects(), listProjectsResponse, { signal }),
+
+  createProject: (body: CreateProjectBody, signal?: AbortSignal) =>
+    request(ROUTES.projects(), projectSchema, { method: 'POST', body, signal }),
+
+  updateProject: (id: string, body: UpdateProjectBody, signal?: AbortSignal) =>
+    request(ROUTES.project(id), projectSchema, { method: 'PATCH', body, signal }),
 
   /**
    * Единственный способ увидеть файловую систему. Фронт её сам не читает —

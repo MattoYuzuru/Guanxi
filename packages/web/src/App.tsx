@@ -19,6 +19,8 @@ import { LauncherPage } from './features/launcher/LauncherPage.tsx'
 import { ModelPage } from './features/models/ModelPage.tsx'
 import { ChatPage } from './features/chat/ChatPage.tsx'
 import { SettingsPage } from './features/settings/SettingsPage.tsx'
+import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
+import { translate } from './lib/locale.ts'
 
 export function App() {
   const route = useRoute()
@@ -63,6 +65,7 @@ export function App() {
             </ErrorBoundary>
           )}
           {route.name === 'settings' && <SettingsPage />}
+          {route.name === 'projects' && <ProjectsPage />}
           {route.name === 'notFound' && (
             <EmptyState
               title="Страница не найдена"
@@ -90,6 +93,7 @@ function TopBar() {
   const tabs = [
     { to: paths.launcher(), label: 'Модели', active: route.name === 'launcher' || route.name === 'model' },
     { to: paths.chat(), label: 'Чат', active: route.name === 'chat' },
+    { to: paths.projects(), label: translate('projects.navigation'), active: route.name === 'projects' },
     { to: paths.settings(), label: 'Настройки', active: route.name === 'settings' },
   ]
 
@@ -98,11 +102,11 @@ function TopBar() {
 
   return (
     <header className="sticky top-0 z-30 flex h-11 w-full min-w-0 shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg)]/85 px-2 backdrop-blur-md sm:gap-4 sm:px-4">
-      <div className="flex min-w-0 items-center gap-1 sm:gap-4">
-        <Link to={paths.launcher()} className="text-xs font-semibold tracking-tight">
+      <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-4">
+        <Link to={paths.launcher()} className="shrink-0 text-xs font-semibold tracking-tight">
           Alamo
         </Link>
-        <nav className="flex items-center gap-0.5">
+        <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
           {tabs.map((tab) => (
             <Link
               key={tab.to}
