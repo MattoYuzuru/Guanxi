@@ -123,6 +123,38 @@ Default не маскируется под operator choice: missing env публ
 `safe_default`, а invalid/unavailable operator source остаётся видимым reason,
 но effective value fail-closed возвращается к declaration default.
 
+### P2-O implemented contract
+
+ADR-0012 выбирает отдельный strict version-1
+`POST /api/runtime/estimated-parallel-admission`. Это pair-scoped read query, а
+не additive polling projection и не admission command. Request содержит expected
+Runtime `observedAt`, exact active/queued owners, canonical Ollama references,
+digests и contexts. Server revalidate-ит active lease, ровно один queued entry,
+current `/api/ps`, `/api/tags`, `/api/version` и candidate `/api/show` identity.
+
+Policy сначала читает P2-N key через typed registry. Disabled/invalid/unavailable
+возвращает `disabled` до calculator/provider access. Enabled path использует один
+coherent Runtime snapshot, exact `CalibrationStore` и safe integer arithmetic.
+Candidate reservation выбирает ровно один source: exact calibration total либо
+lower-bound `declared weights + estimated KV`; два пути не суммируются. Active
+allocation не добавляется к observed current available memory второй раз.
+
+Contract резервирует `estimated_allow` только для coherent exact-calibration
+positive headroom, но current calculator его не выпускает: Apple available
+memory остаётся advisory, а owner-approved admission capacity/margin отсутствует.
+Formula positive headroom даёт `formula_overhead_unknown`, exact-calibrated —
+`admission_capacity_policy_unapproved`; equality/shortfall дают conservative
+`estimated_deny`. Apple free pages, legacy 70% estimate и несвязанные NVIDIA
+device rows никогда не становятся admission capacity. Любой response сохраняет
+per-number source/time/confidence/basis, excluded overhead и
+`futureAdmissionGuarantee:false`.
+
+Service не cache-ит и не persist-ит verdict. Existing Runtime single-flight
+ограничивает overlapping source sample; caller cancellation прекращает только
+query wait. `ResourceGovernor` API и snapshot остаются неизменными с одним
+permit; route не enqueue/acquire/release-ит ticket, не запускает model/probe и не
+меняет queue.
+
 P1-A добавил canonical Job states, terminal states, kind, safe structured
 error/outcome metadata и persisted event envelope. P1-C добавил strict public
 create/query/cancel/path/cursor schemas, Job route constants, response schemas и
@@ -164,7 +196,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   `/api/version` + host telemetry single-flight, common timestamp linearization,
   exact artifact matching, independent source failure redaction, current fit
   explanation и compatibility projection;
-- `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query;
+- `runtime/estimated-parallel-admission.ts`: default-off typed-flag consumer,
+  exact active/queued identity revalidation, sourced lower-bound arithmetic и
+  read-only conservative verdict без Governor/model mutation;
+- `http/runtime-routes.ts`: additive `GET /api/runtime` sampled query и strict
+  pair-scoped `POST /estimated-parallel-admission`;
 - `http/models-routes.ts`: list/show/pull/delete/explicit warm/prewarm/unload/
   running, P2-D reference preview/confirmed connection-owned pull и P2-I
   POST/DELETE `capability-overrides`, зарегистрированные до generic `/:name`,
@@ -211,8 +247,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   identity или нечитаемой row не показывает ничего;
 - `store/completion-probe.ts`: fail-closed exact key/timing/outcome validation и
   atomic latest-row upsert;
-- `store/calibration.ts`: complete-key-only record и same-artifact/runtime/
-  hardware context curve; changed identity получает отдельную row;
+- `store/calibration.ts`: complete-key-only record, exact total/VRAM/time read и
+  same-artifact/runtime/hardware context curve; changed identity получает
+  отдельную row;
 - `store/jobs.ts`: atomic create + initial event, ordered replay page, event
   sequence CAS, canonical non-terminal state + lifecycle event CAS и terminal
   state + event CAS;

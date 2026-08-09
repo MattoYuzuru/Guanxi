@@ -169,6 +169,13 @@ export class FeatureFlagRegistry {
     return this.effective.get(key)?.effectiveValue === true
   }
 
+  /** Typed consumer projection preserves invalid/unavailable provenance. */
+  projection(key: FeatureFlagKey): FeatureFlagProjection {
+    const value = this.effective.get(key)
+    if (!value) throw new Error('Unknown feature flag key')
+    return value
+  }
+
   /** Already redacted, immutable, and safe for Web/CLI serialization. */
   publicProjection(): GetFeatureFlagsResponse {
     return this.publicResponse

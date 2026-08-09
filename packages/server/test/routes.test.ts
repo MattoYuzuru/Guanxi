@@ -82,6 +82,7 @@ function testContext(
       hostTelemetry: base.hostTelemetry,
       models: base.models,
     }),
+    estimatedParallelAdmission: null as never,
   }
   return {
     ...runtimeBase,

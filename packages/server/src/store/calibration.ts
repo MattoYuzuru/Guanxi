@@ -7,6 +7,18 @@ interface CalibrationRow {
   size_bytes: number
 }
 
+interface ExactCalibrationRow extends CalibrationRow {
+  size_vram_bytes: number
+  measured_at: string
+}
+
+export interface ExactCalibrationObservation {
+  contextLength: number
+  sizeBytes: number
+  sizeVramBytes: number
+  measuredAt: string
+}
+
 type CompleteObservationKey = Extract<ModelObservationKey, { state: 'complete' }>
 
 /** Durable measured samples are accepted and queried only through one exact key boundary. */
@@ -57,6 +69,36 @@ export class CalibrationStore {
       )
       .get(key.id) as CalibrationRow | undefined
     return row ? { contextLength: row.context_length, sizeBytes: row.size_bytes } : null
+  }
+
+  exactObservation(key: ModelObservationKey): ExactCalibrationObservation | null {
+    if (key.state !== 'complete') return null
+    const row = this.db
+      .prepare(
+        `SELECT context_length, size_bytes, size_vram_bytes, measured_at
+         FROM model_calibration_observations
+         WHERE observation_key = ?`,
+      )
+      .get(key.id) as ExactCalibrationRow | undefined
+    if (
+      !row
+      || !Number.isSafeInteger(row.context_length)
+      || row.context_length <= 0
+      || !Number.isSafeInteger(row.size_bytes)
+      || row.size_bytes <= 0
+      || !Number.isSafeInteger(row.size_vram_bytes)
+      || row.size_vram_bytes < 0
+      || Number.isNaN(Date.parse(row.measured_at))
+      || new Date(row.measured_at).toISOString() !== row.measured_at
+    ) {
+      return null
+    }
+    return {
+      contextLength: row.context_length,
+      sizeBytes: row.size_bytes,
+      sizeVramBytes: row.size_vram_bytes,
+      measuredAt: row.measured_at,
+    }
   }
 
   /** Same exact observation replaces itself; another context/digest/runtime/host is a new row. */

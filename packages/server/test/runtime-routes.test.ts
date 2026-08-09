@@ -67,6 +67,7 @@ function testContext(client: OllamaClient): AppContext {
       hostTelemetry: base.hostTelemetry,
       models: base.models,
     }),
+    estimatedParallelAdmission: null as never,
   }
   return {
     ...runtimeBase,

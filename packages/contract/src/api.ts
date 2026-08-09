@@ -12,6 +12,9 @@ import {
   fitLevelSchema,
   fitVerdictSchema,
   FEATURE_FLAG_REGISTRY_VERSION,
+  ESTIMATED_PARALLEL_ADMISSION_VERSION,
+  estimatedParallelAdmissionResponseSchema,
+  estimatedParallelPairMemberSchema,
   featureFlagProjectionSchema,
   completionProbeEvidenceSchema,
   healthSchema,
@@ -56,6 +59,7 @@ export const ROUTES = {
   modelsCatalog: () => '/api/models/catalog',
   modelsRunning: () => '/api/models/running',
   runtime: () => '/api/runtime',
+  estimatedParallelAdmission: () => '/api/runtime/estimated-parallel-admission',
   model: (name: string) => `/api/models/${encodeURIComponent(name)}`,
   modelPull: (name: string) => `/api/models/${encodeURIComponent(name)}/pull`,
   modelWarm: (name: string) => `/api/models/${encodeURIComponent(name)}/warm`,
@@ -113,6 +117,28 @@ export const getFeatureFlagsResponse = z
     }
   })
 export type GetFeatureFlagsResponse = z.infer<typeof getFeatureFlagsResponse>
+
+export const estimatedParallelAdmissionBody = z
+  .object({
+    version: z.literal(ESTIMATED_PARALLEL_ADMISSION_VERSION),
+    expectedRuntimeObservedAt: z.string().datetime().nullable(),
+    active: estimatedParallelPairMemberSchema,
+    candidate: estimatedParallelPairMemberSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (JSON.stringify(value.active.owner) === JSON.stringify(value.candidate.owner)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['candidate', 'owner'],
+        message: 'Active and candidate owners must be different',
+      })
+    }
+  })
+export type EstimatedParallelAdmissionBody = z.infer<
+  typeof estimatedParallelAdmissionBody
+>
+export const estimatedParallelAdmissionResponse = estimatedParallelAdmissionResponseSchema
 
 /* ───────────────────────────── Durable Jobs ─────────────────────────────── */
 

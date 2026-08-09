@@ -2756,6 +2756,349 @@ export const featureFlagProjectionSchema = z.discriminatedUnion('state', [
 })
 export type FeatureFlagProjection = z.infer<typeof featureFlagProjectionSchema>
 
+/* ─────────────────── Estimated parallel-admission query ─────────────────── */
+
+export const ESTIMATED_PARALLEL_ADMISSION_VERSION = 1
+
+const canonicalEstimatedOllamaReferenceSchema = z.string().min(1).superRefine((value, context) => {
+  const canonical = value.normalize('NFKC').trim().toLowerCase()
+  const segments = canonical.split('/')
+  const lastSlash = canonical.lastIndexOf('/')
+  if (
+    canonical !== value
+    || canonical.startsWith('/')
+    || canonical.endsWith('/')
+    || canonical.includes('\\')
+    || /\s|[^a-z0-9._:/@-]/u.test(canonical)
+    || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
+    || (!canonical.includes('@') && canonical.lastIndexOf(':') <= lastSlash)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Expected a canonical exact Ollama model reference',
+    })
+  }
+})
+
+export const estimatedParallelPairMemberSchema = z
+  .object({
+    owner: runtimeResourceOwnerSchema,
+    model: z
+      .object({
+        provider: z.literal('ollama'),
+        normalizedReference: canonicalEstimatedOllamaReferenceSchema,
+        artifactDigest: z.string().regex(/^[a-z0-9]+:[A-Za-z0-9._-]+$/u),
+      })
+      .strict(),
+    contextLength: positiveSafeIntegerSchema,
+  })
+  .strict()
+export type EstimatedParallelPairMember = z.infer<typeof estimatedParallelPairMemberSchema>
+
+export const estimatedParallelMemoryFactSourceSchema = z.enum([
+  'ollama_api_ps_total_allocation',
+  'ollama_api_ps_accelerator_allocation',
+  'ollama_api_tags_declared_artifact_size',
+  'ollama_api_show_architecture_kv_estimate',
+  'exact_calibration_total',
+  'host_observed_available_memory',
+  'policy_zero_margin',
+  'not_available',
+])
+export type EstimatedParallelMemoryFactSource = z.infer<
+  typeof estimatedParallelMemoryFactSourceSchema
+>
+
+export const estimatedParallelMemoryFactBasisSchema = z.enum([
+  'current_loaded_runtime_allocation',
+  'current_loaded_accelerator_allocation',
+  'installed_artifact_declared_size',
+  'architecture_kv_lower_bound',
+  'historical_exact_fingerprint_total',
+  'current_available_memory_advisory',
+  'no_owner_margin_configured',
+  'fact_not_available',
+])
+
+export const estimatedParallelMemoryFactUnavailableReasonSchema = z.enum([
+  'not_reported',
+  'identity_unavailable',
+  'calibration_missing',
+  'architecture_unknown',
+  'host_capacity_unknown',
+  'unsafe_numeric_input',
+])
+
+export const estimatedParallelMemoryFactSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('available'),
+      bytes: z.number().int().nonnegative().safe(),
+      source: estimatedParallelMemoryFactSourceSchema.exclude(['not_available']),
+      observedAt: z.string().datetime(),
+      confidence: z.enum(['declared', 'estimated', 'calibrated', 'observed']),
+      basis: estimatedParallelMemoryFactBasisSchema.exclude(['fact_not_available']),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unavailable'),
+      bytes: z.null(),
+      source: z.literal('not_available'),
+      observedAt: z.string().datetime().nullable(),
+      confidence: z.literal('unknown'),
+      basis: z.literal('fact_not_available'),
+      reason: estimatedParallelMemoryFactUnavailableReasonSchema,
+    })
+    .strict(),
+])
+export type EstimatedParallelMemoryFact = z.infer<typeof estimatedParallelMemoryFactSchema>
+
+export const estimatedParallelPairResolutionReasonSchema = z.enum([
+  'not_evaluated',
+  'active_owner_mismatch',
+  'active_model_mismatch',
+  'active_identity_unavailable',
+  'queued_owner_missing',
+  'queued_owner_ambiguous',
+  'queued_model_mismatch',
+  'candidate_identity_unavailable',
+  'candidate_identity_changed',
+])
+
+export const estimatedParallelPairResolutionSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('matched'),
+      reason: z.null(),
+      runtimeVersion: z.string().min(1),
+      observationKey: modelObservationKeySchema,
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unavailable'),
+      reason: estimatedParallelPairResolutionReasonSchema,
+      runtimeVersion: z.string().nullable(),
+      observationKey: modelObservationKeySchema.nullable(),
+    })
+    .strict(),
+])
+export type EstimatedParallelPairResolution = z.infer<
+  typeof estimatedParallelPairResolutionSchema
+>
+
+export const estimatedParallelAdmissionReasonSchema = z.enum([
+  'flag_disabled',
+  'flag_invalid',
+  'flag_unavailable',
+  'stale_runtime_sample',
+  'runtime_source_unavailable',
+  'active_pair_unavailable',
+  'candidate_pair_unavailable',
+  'candidate_provider_unavailable',
+  'host_capacity_unavailable',
+  'admission_capacity_policy_unapproved',
+  'host_pressure_unavailable',
+  'host_pressure_elevated',
+  'host_topology_ambiguous',
+  'unsafe_arithmetic',
+  'estimated_positive_headroom',
+  'estimated_capacity_equal',
+  'estimated_capacity_shortfall',
+  'formula_overhead_unknown',
+])
+export type EstimatedParallelAdmissionReason = z.infer<
+  typeof estimatedParallelAdmissionReasonSchema
+>
+
+export const estimatedParallelAdmissionExclusionSchema = z.enum([
+  'active_allocation_already_reflected_in_available_memory',
+  'apple_free_pages_not_capacity',
+  'legacy_usable_estimate_not_capacity',
+  'nvidia_device_aggregation_forbidden',
+  'runtime_backend_overhead_unknown',
+  'future_admission_not_guaranteed',
+])
+
+export const estimatedParallelAdmissionCalculationSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('calculated'),
+      reservationBasis: z.enum(['exact_calibration', 'formula_lower_bound', 'declared_lower_bound']),
+      candidateReservation: estimatedParallelMemoryFactSchema,
+      availableCapacity: estimatedParallelMemoryFactSchema,
+      safetyMargin: estimatedParallelMemoryFactSchema,
+      comparison: z.enum(['positive_headroom', 'boundary_equal', 'shortfall']),
+      activeAlreadyReflectedInCapacity: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('unavailable'),
+      reason: estimatedParallelAdmissionReasonSchema,
+    })
+    .strict(),
+])
+export type EstimatedParallelAdmissionCalculation = z.infer<
+  typeof estimatedParallelAdmissionCalculationSchema
+>
+
+const estimatedParallelAdmissionResponseBaseSchema = z
+  .object({
+    version: z.literal(ESTIMATED_PARALLEL_ADMISSION_VERSION),
+    observedAt: z.string().datetime(),
+    confidence: z.enum(['estimated', 'unknown']),
+    futureAdmissionGuarantee: z.literal(false),
+    governorAcceleratorPermits: z.literal(1),
+    featureFlag: featureFlagProjectionSchema,
+    request: z
+      .object({
+        version: z.literal(ESTIMATED_PARALLEL_ADMISSION_VERSION),
+        expectedRuntimeObservedAt: z.string().datetime().nullable(),
+        active: estimatedParallelPairMemberSchema,
+        candidate: estimatedParallelPairMemberSchema,
+      })
+      .strict(),
+    runtimeObservedAt: z.string().datetime().nullable(),
+    pair: z
+      .object({
+        active: estimatedParallelPairResolutionSchema,
+        candidate: estimatedParallelPairResolutionSchema,
+      })
+      .strict(),
+    facts: z
+      .object({
+        activeRuntimeAllocation: estimatedParallelMemoryFactSchema,
+        activeAcceleratorAllocation: estimatedParallelMemoryFactSchema,
+        candidateDeclaredModel: estimatedParallelMemoryFactSchema,
+        candidateKvCache: estimatedParallelMemoryFactSchema,
+        candidateCalibration: estimatedParallelMemoryFactSchema,
+        hostAvailableCapacity: estimatedParallelMemoryFactSchema,
+      })
+      .strict(),
+    calculation: estimatedParallelAdmissionCalculationSchema,
+    exclusions: z.array(estimatedParallelAdmissionExclusionSchema),
+  })
+  .strict()
+
+export const estimatedParallelAdmissionResponseSchema = z.discriminatedUnion('verdict', [
+  estimatedParallelAdmissionResponseBaseSchema.extend({
+    verdict: z.literal('disabled'),
+    confidence: z.literal('unknown'),
+    reason: z.enum(['flag_disabled', 'flag_invalid', 'flag_unavailable']),
+  }),
+  estimatedParallelAdmissionResponseBaseSchema.extend({
+    verdict: z.literal('estimated_allow'),
+    confidence: z.literal('estimated'),
+    reason: z.literal('estimated_positive_headroom'),
+  }),
+  estimatedParallelAdmissionResponseBaseSchema.extend({
+    verdict: z.literal('estimated_deny'),
+    confidence: z.literal('estimated'),
+    reason: z.enum(['estimated_capacity_equal', 'estimated_capacity_shortfall']),
+  }),
+  estimatedParallelAdmissionResponseBaseSchema.extend({
+    verdict: z.literal('unknown'),
+    confidence: z.literal('unknown'),
+    reason: estimatedParallelAdmissionReasonSchema.exclude([
+      'flag_disabled',
+      'flag_invalid',
+      'flag_unavailable',
+      'estimated_positive_headroom',
+      'estimated_capacity_equal',
+      'estimated_capacity_shortfall',
+    ]),
+  }),
+]).superRefine((response, context) => {
+  const calculation = response.calculation
+  if (
+    calculation.state === 'calculated'
+    && (
+      calculation.candidateReservation.state !== 'available'
+      || calculation.availableCapacity.state !== 'available'
+      || calculation.safetyMargin.state !== 'available'
+      || calculation.safetyMargin.bytes !== 0
+      || calculation.safetyMargin.source !== 'policy_zero_margin'
+      || JSON.stringify(calculation.availableCapacity)
+        !== JSON.stringify(response.facts.hostAvailableCapacity)
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['calculation'],
+      message: 'A calculation requires coherent available numeric inputs',
+    })
+  }
+  if (
+    response.verdict === 'estimated_allow'
+    && (
+      calculation.state !== 'calculated'
+      || calculation.reservationBasis !== 'exact_calibration'
+      || calculation.comparison !== 'positive_headroom'
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['verdict'],
+      message: 'An estimated allow requires exact calibration and positive headroom',
+    })
+  }
+  if (
+    response.verdict === 'estimated_deny'
+    && (
+      calculation.state !== 'calculated'
+      || (response.reason === 'estimated_capacity_equal'
+        ? calculation.comparison !== 'boundary_equal'
+        : calculation.comparison !== 'shortfall')
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['verdict'],
+      message: 'An estimated deny must match its calculated boundary comparison',
+    })
+  }
+  if (
+    response.verdict === 'disabled'
+    && (calculation.state !== 'unavailable' || calculation.reason !== response.reason)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['calculation'],
+      message: 'A disabled response must preserve its flag reason',
+    })
+  }
+  for (const member of [response.pair.active, response.pair.candidate]) {
+    if (
+      member.state === 'matched'
+      && (
+        member.observationKey.state !== 'complete'
+        || member.observationKey.components.runtimeBackend.version !== member.runtimeVersion
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pair'],
+        message: 'A matched pair member requires one complete current runtime fingerprint',
+      })
+    }
+  }
+  if (
+    !response.exclusions.includes('future_admission_not_guaranteed')
+    || new Set(response.exclusions).size !== response.exclusions.length
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['exclusions'],
+      message: 'Exclusions must be unique and preserve the future-admission limitation',
+    })
+  }
+})
+export type EstimatedParallelAdmissionResponse = z.infer<
+  typeof estimatedParallelAdmissionResponseSchema
+>
+
 /* ─────────────────────────────── Состояние сервиса ───────────────────────── */
 
 export const ollamaStatusSchema = z.object({

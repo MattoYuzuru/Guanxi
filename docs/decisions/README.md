@@ -2,7 +2,7 @@
 
 **Статус:** mixed decision index
 
-**Проверено:** 2026-08-02
+**Проверено:** 2026-08-09
 
 ADR фиксируют целевые решения. `accepted` означает выбранное target-поведение, но
 не его наличие в текущем коде.
@@ -20,6 +20,9 @@ ADR фиксируют целевые решения. `accepted` означае�
 | [0009](0009-application-service-lifecycle.md)    | accepted    | background service, settings и opt-in autostart       |
 | [0010](0010-first-party-coding-agent.md)         | accepted    | независимый first-party coding agent                  |
 | [0011](0011-server-owned-feature-flags.md)       | implemented | typed process-start flags и redacted read projection  |
+| [0012][adr-0012]                                 | implemented | read-only explainable estimated pair verdict          |
+
+[adr-0012]: 0012-estimated-parallel-admission-verdict.md
 
 Принятые продуктовые ответы: [итерация 2026-08-02](2026-08-02-product-decisions.md).
 

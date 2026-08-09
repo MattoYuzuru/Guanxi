@@ -111,6 +111,7 @@ function fixture(
       hostTelemetry: base.hostTelemetry,
       models: base.models,
     }),
+    estimatedParallelAdmission: null as never,
   }
   const context: AppContext = {
     ...runtimeBase,

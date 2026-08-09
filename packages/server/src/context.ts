@@ -27,6 +27,7 @@ import { recoverChatJobs } from './jobs/chat-recovery.ts'
 import { ResourceGovernor } from './runtime/resource-governor.ts'
 import { CompletionProbeService } from './runtime/completion-probe.ts'
 import { RuntimeReconciliationService } from './runtime/reconciliation.ts'
+import { EstimatedParallelAdmissionService } from './runtime/estimated-parallel-admission.ts'
 import { CalibrationStore } from './store/calibration.ts'
 import { ModelCapabilityOverrideStore } from './store/capability-override.ts'
 import { CompletionProbeStore } from './store/completion-probe.ts'
@@ -85,6 +86,8 @@ export interface AppContext {
   governor: ResourceGovernor
   /** One sampled `/api/ps` + Governor reconciliation boundary for public queries. */
   runtime: RuntimeReconciliationService
+  /** Flag-gated read-only estimate for one explicit active + queued pair. */
+  estimatedParallelAdmission: EstimatedParallelAdmissionService
   ollama(): OllamaClient
   models(): ModelService
 }
@@ -145,6 +148,13 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     const activeTurns = new Map<string, AbortController>()
     const governor = new ResourceGovernor()
     const runtime = new RuntimeReconciliationService({ governor, hostTelemetry, models })
+    const estimatedParallelAdmission = new EstimatedParallelAdmissionService({
+      featureFlags,
+      runtime,
+      calibration,
+      ollama,
+      hardware,
+    })
     const jobService = new JobService(jobs)
     const base = {
       db,
@@ -164,6 +174,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       activeTurns,
       governor,
       runtime,
+      estimatedParallelAdmission,
       ollama,
       models,
     }

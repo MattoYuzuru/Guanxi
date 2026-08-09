@@ -77,6 +77,7 @@ function fixture(): { app: ReturnType<typeof createApp>; context: AppContext } {
       hostTelemetry: base.hostTelemetry,
       models: base.models,
     }),
+    estimatedParallelAdmission: null as never,
   }
   const context: AppContext = {
     ...runtimeBase,
