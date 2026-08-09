@@ -94,6 +94,7 @@ function testContext(
       repository: async () => { throw new Error('not invoked') },
     } as never,
     huggingFaceDownloads: { download: async function* () {} } as never,
+    huggingFaceImports: { import: async function* () {} } as never,
     chatExecution: new ChatJobExecutionOwner(runtimeBase),
   }
 }

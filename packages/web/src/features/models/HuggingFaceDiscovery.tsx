@@ -29,6 +29,7 @@ import { Badge, Button, Callout, Disclosure, EmptyState, Input, Meter, Skeleton 
 import { ApiRequestError, api, streamHuggingFaceDownload } from '../../lib/api.ts'
 import { formatBytes, formatContextLength, formatDateTime, formatUtilization } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
+import { HuggingFaceImportControl } from './HuggingFaceImportControl.tsx'
 
 type Page = Extract<HuggingFaceSearchResult, { state: 'listed' | 'empty' }>
 
@@ -114,7 +115,13 @@ const DOWNLOAD_FAILURE_KEYS: Record<HuggingFaceDownloadFailureReason, LocaleKey>
   filesystem_error: 'hf.download.failed.filesystem_error',
 }
 
-export function HuggingFaceDiscovery({ contextLength }: { contextLength: number }) {
+export function HuggingFaceDiscovery({
+  contextLength,
+  onInstalled,
+}: {
+  contextLength: number
+  onInstalled?: () => void
+}) {
   const [query, setQuery] = useState('')
   const [state, setState] = useState<State>({ kind: 'idle' })
   const controllerRef = useRef<AbortController | null>(null)
@@ -336,7 +343,11 @@ export function HuggingFaceDiscovery({ contextLength }: { contextLength: number 
           <ul className="min-w-0 space-y-2">
             {listed.repositories.map((repository) => (
               <li key={repository.identity.comparisonKey}>
-                <RepositoryCard repository={repository} contextLength={contextLength} />
+                <RepositoryCard
+                  repository={repository}
+                  contextLength={contextLength}
+                  onInstalled={onInstalled}
+                />
               </li>
             ))}
           </ul>
@@ -531,8 +542,10 @@ function downloadAnnouncement(state: DownloadState): string {
 
 function HuggingFaceDownloadControl({
   result,
+  onInstalled,
 }: {
   result: Extract<HuggingFaceSelectionResult, { state: 'confirmed' }>
+  onInstalled?: () => void
 }) {
   const [state, setState] = useState<DownloadState>({ kind: 'idle' })
   const controllerRef = useRef<AbortController | null>(null)
@@ -745,6 +758,11 @@ function HuggingFaceDownloadControl({
           <p className="mt-1 min-w-0 break-all font-mono">
             {translate('hf.download.artifact')}: {state.provenance.artifact.id}
           </p>
+          <HuggingFaceImportControl
+            artifact={state.provenance}
+            contextLength={result.fit.contextLength}
+            onInstalled={onInstalled}
+          />
         </div>
       ) : state.kind === 'refused' ? (
         <p className="mt-1 text-2xs text-[var(--danger)]">
@@ -775,9 +793,11 @@ function HuggingFaceDownloadControl({
 export function RepositoryCard({
   repository,
   contextLength,
+  onInstalled,
 }: {
   repository: HuggingFaceRepository
   contextLength: number
+  onInstalled?: () => void
 }) {
   const badge = verdictBadge(repository)
   const { files, verdict, revision } = repository
@@ -1131,7 +1151,7 @@ export function RepositoryCard({
                   {translate('hf.select.next.detail')}
                 </p>
               </div>
-              <HuggingFaceDownloadControl result={state.result} />
+          <HuggingFaceDownloadControl result={state.result} onInstalled={onInstalled} />
               <Button
                 ref={changeButtonRef}
                 size="sm"

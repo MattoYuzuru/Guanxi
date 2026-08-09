@@ -468,7 +468,7 @@ export function LauncherPage({ health }: { health: Health }) {
         Hugging Face discovery is its own source, deliberately outside the catalog
         section: its rows have different provenance and are not installable here.
       */}
-      <HuggingFaceDiscovery contextLength={contextLength} />
+      <HuggingFaceDiscovery contextLength={contextLength} onInstalled={onInstalled} />
     </div>
   )
 }

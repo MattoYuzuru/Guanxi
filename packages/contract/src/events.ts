@@ -6,6 +6,7 @@
  */
 import { z } from 'zod'
 import {
+  completionProbeEvidenceSchema,
   contextStateSchema,
   jobEventSchema,
   toolCallSchema,
@@ -19,6 +20,11 @@ import {
   huggingFaceDownloadFailureReasonSchema,
   huggingFaceDownloadProvenanceSchema,
   huggingFaceDownloadRefusalReasonSchema,
+  HUGGING_FACE_IMPORT_VERSION,
+  huggingFaceImportConflictReasonSchema,
+  huggingFaceImportFailureReasonSchema,
+  huggingFaceImportProvenanceSchema,
+  huggingFaceImportTargetObservationSchema,
 } from './schemas.ts'
 
 /* ────────────────────── Стрим ответа: /api/threads/:id/messages ──────────── */
@@ -272,6 +278,69 @@ export const huggingFaceDownloadStreamEventSchema = z.discriminatedUnion('type',
 ])
 export type HuggingFaceDownloadStreamEvent = z.infer<
   typeof huggingFaceDownloadStreamEventSchema
+>
+
+/* ───── Connection-owned local Ollama import: POST .../gguf/start ─────── */
+
+const huggingFaceImportBaseSchema = z.object({
+  version: z.literal(HUGGING_FACE_IMPORT_VERSION),
+})
+
+export const huggingFaceImportStreamEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('state'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceImportBaseSchema.extend({
+      state: z.enum(['preparing', 'importing', 'verifying', 'probing']),
+      phase: z.enum([
+        'validating_artifact',
+        'checking_target',
+        'checking_blob',
+        'uploading_blob',
+        'creating_model',
+        'observing_installation',
+        'running_completion_probe',
+      ]),
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('completed'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceImportBaseSchema.extend({
+      state: z.literal('completed'),
+      provenance: huggingFaceImportProvenanceSchema,
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('cancelled'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceImportBaseSchema.extend({
+      state: z.literal('cancelled'),
+      reason: z.enum(['user_requested', 'connection_closed', 'request_cancelled']),
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('conflict'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceImportBaseSchema.extend({
+      state: z.literal('conflict'),
+      reason: huggingFaceImportConflictReasonSchema,
+      target: huggingFaceImportTargetObservationSchema,
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('failed'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceImportBaseSchema.extend({
+      state: z.literal('failed'),
+      reason: huggingFaceImportFailureReasonSchema,
+      target: huggingFaceImportTargetObservationSchema.nullable(),
+      probe: completionProbeEvidenceSchema.nullable(),
+    }).strict(),
+  }).strict(),
+])
+export type HuggingFaceImportStreamEvent = z.infer<
+  typeof huggingFaceImportStreamEventSchema
 >
 
 /* ──────────────────────────────── Помощники ──────────────────────────────── */

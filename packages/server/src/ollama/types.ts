@@ -133,6 +133,14 @@ export interface OllamaPullChunk {
   error?: string
 }
 
+export interface OllamaCreateChunk {
+  status?: string
+  digest?: string
+  total?: number
+  completed?: number
+  error?: string
+}
+
 export interface OllamaVersionResponse {
   version: string
 }

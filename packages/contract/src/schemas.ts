@@ -2206,6 +2206,109 @@ export type HuggingFaceDownloadProvenance = z.infer<
   typeof huggingFaceDownloadProvenanceSchema
 >
 
+/* ──────── Hugging Face staged GGUF → local Ollama import (P2-M) ────────── */
+
+export const HUGGING_FACE_IMPORT_VERSION = 1
+
+export const huggingFaceImportConflictReasonSchema = z.enum([
+  'duplicate_active',
+  'target_preexisting',
+  'target_changed',
+  'target_ambiguous',
+  'cancelled_after_create',
+  'outcome_unknown',
+])
+export type HuggingFaceImportConflictReason = z.infer<
+  typeof huggingFaceImportConflictReasonSchema
+>
+
+export const huggingFaceImportFailureReasonSchema = z.enum([
+  'artifact_not_found',
+  'artifact_changed',
+  'artifact_corrupt',
+  'filesystem_error',
+  'provider_unavailable',
+  'connect_timeout',
+  'stream_idle_timeout',
+  'overall_timeout',
+  'blob_upload_failed',
+  'create_provider_error',
+  'create_protocol_error',
+  'installation_missing',
+  'probe_not_verified',
+])
+export type HuggingFaceImportFailureReason = z.infer<
+  typeof huggingFaceImportFailureReasonSchema
+>
+
+export const huggingFaceImportTargetObservationSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('absent'), observedAt: z.string().datetime() }).strict(),
+  z.object({
+    state: z.literal('exact'),
+    normalizedModelReference: z.string().min(1),
+    digest: z.string().min(1),
+    observedAt: z.string().datetime(),
+  }).strict(),
+  z.object({ state: z.literal('ambiguous'), observedAt: z.string().datetime() }).strict(),
+  z.object({ state: z.literal('unavailable'), observedAt: z.string().datetime() }).strict(),
+])
+export type HuggingFaceImportTargetObservation = z.infer<
+  typeof huggingFaceImportTargetObservationSchema
+>
+
+export const huggingFaceImportProvenanceSchema = z
+  .object({
+    version: z.literal(HUGGING_FACE_IMPORT_VERSION),
+    source: huggingFaceDownloadProvenanceSchema,
+    targetModelName: z.string().min(1),
+    create: z.object({
+      endpoint: z.literal('/api/create'),
+      input: z.literal('uploaded_sha256_blob_files_map'),
+      terminalStatus: z.literal('success'),
+      startedAt: z.string().datetime(),
+      terminalAt: z.string().datetime(),
+    }).strict(),
+    installation: z.object({
+      source: z.literal('ollama_api_tags'),
+      normalizedModelReference: z.string().min(1),
+      digest: z.string().min(1),
+      runtimeVersion: z.string().min(1),
+      observedAt: z.string().datetime(),
+    }).strict(),
+    probe: completionProbeEvidenceSchema,
+    staging: z.object({
+      artifactId: z.string().uuid(),
+      retention: z.literal('deleted_after_verified_success'),
+    }).strict(),
+    completedAt: z.string().datetime(),
+  })
+  .strict()
+  .superRefine((provenance, context) => {
+    if (provenance.probe.status !== 'verified' || provenance.probe.historical) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['probe'],
+        message: 'completed import requires a fresh verified completion probe',
+      })
+      return
+    }
+    if (
+      provenance.probe.basis.state !== 'exact'
+      || provenance.probe.basis.normalizedModelReference !== provenance.installation.normalizedModelReference
+      || provenance.probe.basis.artifactDigest !== provenance.installation.digest
+      || provenance.probe.basis.runtimeVersion !== provenance.installation.runtimeVersion
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['probe', 'basis'],
+        message: 'probe identity must match the observed installation',
+      })
+    }
+  })
+export type HuggingFaceImportProvenance = z.infer<
+  typeof huggingFaceImportProvenanceSchema
+>
+
 export const modelDetailSchema = localModelSchema.extend({
   /** Сырой блок из /api/show — архитектурные параметры. */
   modelInfo: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),

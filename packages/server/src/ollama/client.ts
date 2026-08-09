@@ -7,6 +7,7 @@
 import type {
   OllamaChatChunk,
   OllamaChatRequest,
+  OllamaCreateChunk,
   OllamaPsResponse,
   OllamaPullChunk,
   OllamaShowResponse,
@@ -89,6 +90,9 @@ export interface OllamaStreamTimeoutPolicy {
   connectTimeoutMs: number
   loadTimeoutMs: number
   streamIdleTimeoutMs: number
+  /** Provider-frame resource bounds; not user-facing output limits. */
+  maxLineBytes?: number
+  maxFrames?: number
 }
 
 const versionResponseSchema = z.object({
@@ -171,6 +175,22 @@ const pullChunkSchema = z.union([
     })
     .passthrough(),
 ])
+
+const createChunkSchema = z.union([
+  z.object({
+    status: z.string().min(1),
+    error: z.never().optional(),
+    digest: z.string().min(1).optional(),
+    total: z.number().int().nonnegative().optional(),
+    completed: z.number().int().nonnegative().optional(),
+  }).strict(),
+  z.object({
+    error: z.string().min(1),
+    status: z.never().optional(),
+  }).strict(),
+])
+
+const SHA256_DIGEST = /^sha256:[a-f0-9]{64}$/u
 
 export class OllamaClient {
   readonly host: string
@@ -354,6 +374,9 @@ export class OllamaClient {
     const decoder = new TextDecoder()
     let buffer = ''
     let observedProgress = false
+    let frames = 0
+    const maxLineBytes = timeoutPolicy?.maxLineBytes ?? 64 * 1024
+    const maxFrames = timeoutPolicy?.maxFrames ?? 10_000
     const loadTimeoutMs = timeoutPolicy?.loadTimeoutMs ?? this.loadTimeoutMs
     const streamIdleTimeoutMs =
       timeoutPolicy?.streamIdleTimeoutMs ?? this.streamIdleTimeoutMs
@@ -378,6 +401,9 @@ export class OllamaClient {
         if (!value || value.byteLength === 0) continue
 
         buffer += decoder.decode(value, { stream: true })
+        if (Buffer.byteLength(buffer, 'utf8') > maxLineBytes && !buffer.includes('\n')) {
+          throw new OllamaProtocolError(path, 'Ollama NDJSON frame exceeded the safe bound')
+        }
         const lines = buffer.split('\n')
         // Последний элемент — возможно неполная строка, оставляем в буфере.
         buffer = lines.pop() ?? ''
@@ -385,7 +411,15 @@ export class OllamaClient {
         for (const line of lines) {
           const trimmed = line.trim()
           if (!trimmed) continue
-          const parsed = JSON.parse(trimmed) as T
+          if (Buffer.byteLength(trimmed, 'utf8') > maxLineBytes || ++frames > maxFrames) {
+            throw new OllamaProtocolError(path, 'Ollama NDJSON stream exceeded the safe bound')
+          }
+          let parsed: T
+          try {
+            parsed = JSON.parse(trimmed) as T
+          } catch {
+            throw new OllamaProtocolError(path, 'Ollama returned malformed NDJSON')
+          }
           observedProgress = true
           progressDeadline = Date.now() + streamIdleTimeoutMs
           yield parsed
@@ -393,12 +427,25 @@ export class OllamaClient {
       }
 
       const tail = buffer.trim()
-      if (tail) yield JSON.parse(tail) as T
+      if (tail) {
+        if (Buffer.byteLength(tail, 'utf8') > maxLineBytes || ++frames > maxFrames) {
+          throw new OllamaProtocolError(path, 'Ollama NDJSON stream exceeded the safe bound')
+        }
+        try {
+          yield JSON.parse(tail) as T
+        } catch {
+          throw new OllamaProtocolError(path, 'Ollama returned malformed NDJSON')
+        }
+      }
     } catch (error) {
       // Preserve abort identity for runTurn's authoritative cancellation
       // classification. Other body/read/parse failures came from the provider
       // stream and must not be mistaken for an internal application failure.
-      if (signal?.aborted || error instanceof OllamaTimeoutError) throw error
+      if (
+        signal?.aborted
+        || error instanceof OllamaTimeoutError
+        || error instanceof OllamaProtocolError
+      ) throw error
       throw new OllamaError('Ollama response stream failed', response.status, error)
     } finally {
       if (!controller.signal.aborted) controller.abort('alamo:ollama-stream-cleanup')
@@ -463,6 +510,92 @@ export class OllamaClient {
     )) {
       const parsed = pullChunkSchema.safeParse(raw)
       if (!parsed.success) throw new OllamaProtocolError('/api/pull')
+      yield parsed.data
+    }
+  }
+
+  async blobExists(digest: string, signal?: AbortSignal): Promise<boolean> {
+    if (!SHA256_DIGEST.test(digest)) throw new OllamaProtocolError('/api/blobs/:digest')
+    const controller = new AbortController()
+    const externalSignal = signal ?? null
+    const composed = externalSignal
+      ? AbortSignal.any([externalSignal, controller.signal])
+      : controller.signal
+    let response: Response
+    try {
+      response = await this.withinDeadline(
+        'connect',
+        Math.min(this.connectTimeoutMs, 10_000),
+        controller,
+        externalSignal,
+        () => this.fetchImpl(`${this.host}/api/blobs/${digest}`, {
+          method: 'HEAD', signal: composed,
+        }),
+      )
+    } catch (error) {
+      if (externalSignal?.aborted || error instanceof OllamaTimeoutError) throw error
+      throw new OllamaUnavailableError(this.host, error)
+    }
+    await response.body?.cancel().catch(() => {})
+    if (response.status === 200) return true
+    if (response.status === 404) return false
+    throw new OllamaError('Ollama could not check the import blob', response.status)
+  }
+
+  async pushBlob(
+    digest: string,
+    body: NonNullable<RequestInit['body']>,
+    contentLength: number,
+    signal: AbortSignal,
+    overallTimeoutMs: number,
+  ): Promise<void> {
+    if (!SHA256_DIGEST.test(digest)) throw new OllamaProtocolError('/api/blobs/:digest')
+    const controller = new AbortController()
+    const composed = AbortSignal.any([signal, controller.signal])
+    let response: Response
+    try {
+      response = await this.withinDeadline(
+        'load',
+        overallTimeoutMs,
+        controller,
+        signal,
+        () => this.fetchImpl(`${this.host}/api/blobs/${digest}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/octet-stream',
+            'content-length': String(contentLength),
+          },
+          body,
+          signal: composed,
+          duplex: 'half',
+        } as RequestInit),
+      )
+    } catch (error) {
+      if (signal.aborted || error instanceof OllamaTimeoutError) throw error
+      throw new OllamaUnavailableError(this.host, error)
+    }
+    await response.body?.cancel().catch(() => {})
+    if (response.status !== 201) {
+      throw new OllamaError('Ollama rejected the import blob', response.status)
+    }
+  }
+
+  async *createModelFromBlob(
+    model: string,
+    filename: string,
+    digest: string,
+    signal?: AbortSignal,
+    timeoutPolicy?: OllamaStreamTimeoutPolicy,
+  ): AsyncGenerator<OllamaCreateChunk> {
+    if (!SHA256_DIGEST.test(digest)) throw new OllamaProtocolError('/api/create')
+    for await (const raw of this.streamNdjson<unknown>(
+      '/api/create',
+      { model, files: { [filename]: digest }, stream: true },
+      signal,
+      timeoutPolicy,
+    )) {
+      const parsed = createChunkSchema.safeParse(raw)
+      if (!parsed.success) throw new OllamaProtocolError('/api/create')
       yield parsed.data
     }
   }

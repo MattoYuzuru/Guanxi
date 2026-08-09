@@ -191,9 +191,9 @@ describe('Marketplace Hugging Face discovery section', () => {
       expect(screen.queryByRole('button', { name })).toBeNull()
     }
     // The user is told what is still required instead of being promised one click.
-    expect(screen.getByText(/явное bounded-скачивание может проверить staging artifact/u)).toBeTruthy()
-    expect(screen.getByText(/Локальный импорт в Ollama пока недоступен/u)).toBeTruthy()
-    expect(screen.getByText(/не обещает установку в один клик/u)).toBeTruthy()
+    expect(screen.getByText(/явное bounded-скачивание проверяет staging artifact/u)).toBeTruthy()
+    expect(screen.getByText(/отдельный подтверждённый локальный импорт Ollama/u)).toBeTruthy()
+    expect(screen.getByText(/Download пишет managed staging/u)).toBeTruthy()
   })
 
   it('distinguishes supported, unsupported and unknown verdicts truthfully', async () => {
@@ -1259,7 +1259,7 @@ describe('P2-L exact GGUF download projection', () => {
     })
     expect(screen.getByText(new RegExp('d'.repeat(64), 'u'))).toBeTruthy()
     expect(screen.getByText(/совпал с LFS claim/u)).toBeTruthy()
-    expect(screen.getByText(/не установлен, не подтверждён runtime/u)).toBeTruthy()
+    expect(screen.getByText(/не Installed и не runtime verified/u)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Установить|Install|Pull/u })).toBeNull()
     await waitFor(() => {
       expect(document.activeElement?.textContent).toContain('Staging artifact скачан и проверен')

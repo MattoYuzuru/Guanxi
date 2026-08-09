@@ -801,7 +801,7 @@ const english = {
   'hf.verdict.reason.legacy_response': 'The response predates this evidence contract.',
   'hf.next': 'Next step',
   'hf.next.detail':
-    'After selection, an explicit bounded download can verify a staging artifact. Local Ollama import is still unavailable, and no result promises one-click installation or a direct Ollama pull.',
+    'After selection, an explicit bounded download verifies a staging artifact. Only then can a separate confirmed local Ollama import create, observe and probe the exact target.',
   'hf.select.action': 'Select',
   'hf.select.aria': 'Select the file',
   'hf.select.selecting': 'Checking…',
@@ -825,7 +825,7 @@ const english = {
     'Fit is unknown: the startup hardware profile did not report usable capacity.',
   'hf.select.next': 'Ready for an explicit download',
   'hf.select.next.detail':
-    'Download rechecks this target, verifies SHA-256 and the bounded GGUF header, then keeps a managed staging artifact. Local import remains a later step.',
+    'Download rechecks this target, verifies SHA-256 and the bounded GGUF header, then keeps a managed staging artifact for a separate explicit local import.',
   'hf.select.error.title': 'Selection could not be confirmed',
   'hf.select.refused.repository_not_supported':
     'A fresh check shows this repository no longer qualifies for exact GGUF import.',
@@ -857,7 +857,7 @@ const english = {
   'hf.download.format': 'GGUF header',
   'hf.download.artifact': 'Managed staging artifact',
   'hf.download.boundary':
-    'This is a verified staging artifact only. It is not installed, runtime-capable or ready to run; no Ollama create, pull, probe, catalog or Governor work was started.',
+    'Download alone creates only a verified staging artifact. It is not Installed or runtime verified until the separate confirmed import observes /api/tags and completes its controlled probe.',
   'hf.download.refused.selection_stale': 'The exact selection could not be confirmed again.',
   'hf.download.refused.gated_repository':
     'This public anonymous flow cannot download a gated repository.',
@@ -877,6 +877,63 @@ const english = {
   'hf.download.failed.invalid_gguf_header': 'The GGUF header is truncated.',
   'hf.download.failed.unsupported_gguf_version': 'The GGUF header version is outside the supported inspection scope.',
   'hf.download.failed.filesystem_error': 'The managed staging write could not be completed safely.',
+
+  /* P2-M staged GGUF import */
+  'hf.import.title': 'Import into local Ollama',
+  'hf.import.description':
+    'Choose a local model reference. A separate confirmation revalidates this server-owned artifact, creates the model, observes its exact digest, and runs the controlled completion probe.',
+  'hf.import.target': 'Local Ollama model reference',
+  'hf.import.target.placeholder': 'owner/model:tag',
+  'hf.import.target.hint': 'Names use the same strict local Ollama reference grammar. Existing targets are never overwritten silently.',
+  'hf.import.action': 'Review local import',
+  'hf.import.cancel': 'Cancel import',
+  'hf.import.retry': 'Retry import',
+  'hf.import.confirm.title': 'Create this local Ollama model?',
+  'hf.import.confirm.description':
+    'This uploads the verified staging bytes to local Ollama, calls documented /api/create, then loads the exact result briefly for a controlled probe. It does not use a shell command or Hugging Face pull.',
+  'hf.import.confirm.artifact': 'Staging artifact',
+  'hf.import.confirm.target': 'Target reference',
+  'hf.import.confirm.context': 'Probe context',
+  'hf.import.confirm.close': 'Close import confirmation',
+  'hf.import.confirm.back': 'Back',
+  'hf.import.confirm.run': 'Create and verify',
+  'hf.import.phase.validatingArtifact': 'Revalidating staging ownership, size, SHA-256 and GGUF header…',
+  'hf.import.phase.checkingTarget': 'Checking that the target does not already exist…',
+  'hf.import.phase.checkingBlob': 'Checking the local Ollama content-addressed blob…',
+  'hf.import.phase.uploadingBlob': 'Uploading verified bytes to local Ollama…',
+  'hf.import.phase.creatingModel': 'Creating the local Ollama model…',
+  'hf.import.phase.observingInstallation': 'Reading a fresh exact installation observation…',
+  'hf.import.phase.runningProbe': 'Running the controlled completion probe…',
+  'hf.import.completed': 'Installed and runtime verified',
+  'hf.import.installed': 'Installed was observed from a fresh local /api/tags sample after create.',
+  'hf.import.runtimeVerified': 'The fixed completion probe returned a fresh terminal response',
+  'hf.import.observed': 'Installation observed',
+  'hf.import.cancelled': 'Import cancelled before create',
+  'hf.import.cancelled.detail': 'No local model create was started. The verified staging artifact remains available for an explicit retry.',
+  'hf.import.conflict': 'Import outcome needs attention',
+  'hf.import.failed': 'Import did not complete',
+  'hf.import.conflict.duplicate_active': 'One import already owns this artifact/target or target reference.',
+  'hf.import.conflict.target_preexisting': 'The exact target already existed, so it was not overwritten.',
+  'hf.import.conflict.target_changed': 'The target changed during the no-overwrite checks; it was not accepted as this import’s success.',
+  'hf.import.conflict.target_ambiguous': 'More than one provider row normalizes to this target, so identity is ambiguous.',
+  'hf.import.conflict.cancelled_after_create': 'Cancellation raced with create and the target was observed. It is not reported as a clean cancellation; retry continues verification without another create.',
+  'hf.import.conflict.outcome_unknown': 'Create may have started, but a fresh provider observation could not prove the outcome. No model is deleted automatically.',
+  'hf.import.failed.artifact_not_found': 'The server no longer owns this staging artifact. Download it again after a restart or cleanup.',
+  'hf.import.failed.artifact_changed': 'The staging path or file identity changed before import. Ollama was not called with it.',
+  'hf.import.failed.artifact_corrupt': 'Size, SHA-256 or GGUF header no longer matches the verified download.',
+  'hf.import.failed.filesystem_error': 'The server could not safely read or retire the owned staging artifact.',
+  'hf.import.failed.provider_unavailable': 'Local Ollama was unavailable during import.',
+  'hf.import.failed.connect_timeout': 'Local Ollama did not accept the connection before the deadline.',
+  'hf.import.failed.stream_idle_timeout': 'Ollama create stopped producing progress before the idle deadline.',
+  'hf.import.failed.overall_timeout': 'The bounded import deadline elapsed.',
+  'hf.import.failed.blob_upload_failed': 'Ollama did not accept the verified content-addressed blob.',
+  'hf.import.failed.create_provider_error': 'Ollama rejected model creation.',
+  'hf.import.failed.create_protocol_error': 'Ollama create did not produce the required ordered terminal protocol.',
+  'hf.import.failed.installation_missing': 'Create ended, but a fresh exact /api/tags installation could not be observed.',
+  'hf.import.failed.probe_not_verified': 'The model was observed, but the controlled completion probe was not verified. Retry does not create it again.',
+  'hf.import.target.absent': 'No exact target was observed.',
+  'hf.import.target.ambiguous': 'The target observation is ambiguous.',
+  'hf.import.target.unavailable': 'The target observation is unavailable.',
 
   'hf.error.title': 'Hugging Face could not be read',
   'hf.error.retry': 'Try again',
@@ -899,7 +956,7 @@ const english = {
   'hf.error.invalidReference':
     'Enter a repository as owner/name, or an exact HTTPS huggingface.co model-page URL.',
   'hf.boundary':
-    'Search and selection are read-only. Only explicit exact-file Download writes managed staging; nothing here installs, pulls through Ollama, probes, warms, or changes Installed/catalog.',
+    'Search and selection are read-only. Download writes managed staging; a separate confirmed import uses local Ollama blob/create and the controlled probe. It never uses Hugging Face pull, shell, or remote Ollama.',
 } as const
 
 export type LocaleKey = keyof typeof english
@@ -1709,7 +1766,7 @@ const russian: Messages = {
   'hf.verdict.reason.legacy_response': 'Ответ старше текущего контракта доказательств.',
   'hf.next': 'Что дальше',
   'hf.next.detail':
-    'После выбора файла явное bounded-скачивание может проверить staging artifact. Локальный импорт в Ollama пока недоступен, и ни один результат не обещает установку в один клик или прямой Ollama pull.',
+    'После выбора явное bounded-скачивание проверяет staging artifact. Только затем отдельный подтверждённый локальный импорт Ollama может создать, наблюдать и probe-ить точную цель.',
   'hf.select.action': 'Выбрать',
   'hf.select.aria': 'Выбрать этот файл',
   'hf.select.selecting': 'Проверяем…',
@@ -1733,7 +1790,7 @@ const russian: Messages = {
     'Влезаемость неизвестна: стартовый профиль железа не сообщил доступную ёмкость.',
   'hf.select.next': 'Можно явно начать скачивание',
   'hf.select.next.detail':
-    'Скачивание повторно проверит цель, SHA-256 и ограниченный заголовок GGUF, затем сохранит managed staging artifact. Локальный импорт остаётся следующим шагом.',
+    'Скачивание повторно проверит цель, SHA-256 и ограниченный заголовок GGUF, затем сохранит managed staging artifact для отдельного явного локального импорта.',
   'hf.select.error.title': 'Не удалось подтвердить выбор',
   'hf.select.refused.repository_not_supported':
     'Повторная проверка показала, что репозиторий больше не подходит для точного импорта GGUF.',
@@ -1765,7 +1822,7 @@ const russian: Messages = {
   'hf.download.format': 'Заголовок GGUF',
   'hf.download.artifact': 'Управляемый staging artifact',
   'hf.download.boundary':
-    'Это только проверенный staging artifact. Он не установлен, не подтверждён runtime и не готов к запуску; Ollama create/pull, probe, catalog и Governor не запускались.',
+    'Одно скачивание создаёт только проверенный staging artifact. Он не Installed и не runtime verified, пока отдельный подтверждённый импорт не наблюдает /api/tags и не завершит controlled probe.',
   'hf.download.refused.selection_stale': 'Точную выбранную цель не удалось подтвердить повторно.',
   'hf.download.refused.gated_repository':
     'Публичный anonymous flow не скачивает gated-репозитории.',
@@ -1786,6 +1843,63 @@ const russian: Messages = {
   'hf.download.failed.unsupported_gguf_version': 'Версия заголовка GGUF вне поддерживаемой inspection scope.',
   'hf.download.failed.filesystem_error': 'Безопасно завершить запись в managed staging не удалось.',
 
+  /* P2-M staged GGUF import */
+  'hf.import.title': 'Импортировать в локальный Ollama',
+  'hf.import.description':
+    'Задайте локальную ссылку модели. Отдельное подтверждение повторно проверит server-owned artifact, создаст модель, прочитает точный digest и запустит контролируемый completion probe.',
+  'hf.import.target': 'Локальная ссылка модели Ollama',
+  'hf.import.target.placeholder': 'owner/model:tag',
+  'hf.import.target.hint': 'Имя проходит ту же строгую локальную грамматику Ollama. Существующая цель молча не перезаписывается.',
+  'hf.import.action': 'Проверить локальный импорт',
+  'hf.import.cancel': 'Отменить импорт',
+  'hf.import.retry': 'Повторить импорт',
+  'hf.import.confirm.title': 'Создать эту локальную модель Ollama?',
+  'hf.import.confirm.description':
+    'Проверенные staging-байты загружаются в локальный Ollama, затем вызывается documented /api/create и точный результат кратко загружается для controlled probe. Shell и Hugging Face pull не используются.',
+  'hf.import.confirm.artifact': 'Staging artifact',
+  'hf.import.confirm.target': 'Целевая ссылка',
+  'hf.import.confirm.context': 'Контекст probe',
+  'hf.import.confirm.close': 'Закрыть подтверждение импорта',
+  'hf.import.confirm.back': 'Назад',
+  'hf.import.confirm.run': 'Создать и проверить',
+  'hf.import.phase.validatingArtifact': 'Повторно проверяем ownership staging, размер, SHA-256 и заголовок GGUF…',
+  'hf.import.phase.checkingTarget': 'Проверяем, что целевая модель ещё не существует…',
+  'hf.import.phase.checkingBlob': 'Проверяем content-addressed blob в локальном Ollama…',
+  'hf.import.phase.uploadingBlob': 'Передаём проверенные байты локальному Ollama…',
+  'hf.import.phase.creatingModel': 'Создаём локальную модель Ollama…',
+  'hf.import.phase.observingInstallation': 'Читаем новое точное наблюдение установки…',
+  'hf.import.phase.runningProbe': 'Запускаем controlled completion probe…',
+  'hf.import.completed': 'Установлено и проверено runtime',
+  'hf.import.installed': 'Установка наблюдалась в новом локальном sample /api/tags после create.',
+  'hf.import.runtimeVerified': 'Фиксированный completion probe получил свежий terminal response',
+  'hf.import.observed': 'Установка наблюдалась',
+  'hf.import.cancelled': 'Импорт отменён до create',
+  'hf.import.cancelled.detail': 'Создание локальной модели не начиналось. Проверенный staging artifact сохранён для явного повтора.',
+  'hf.import.conflict': 'Результат импорта требует внимания',
+  'hf.import.failed': 'Импорт не завершён',
+  'hf.import.conflict.duplicate_active': 'Один импорт уже владеет этим artifact/target либо целевой ссылкой.',
+  'hf.import.conflict.target_preexisting': 'Точная цель уже существовала, поэтому она не перезаписана.',
+  'hf.import.conflict.target_changed': 'Цель изменилась между no-overwrite проверками и не принята как успех этого импорта.',
+  'hf.import.conflict.target_ambiguous': 'Несколько provider rows нормализуются в одну цель, поэтому identity неоднозначна.',
+  'hf.import.conflict.cancelled_after_create': 'Отмена пересеклась с create, и цель уже наблюдалась. Это не чистая отмена; повтор продолжит verification без второго create.',
+  'hf.import.conflict.outcome_unknown': 'Create мог начаться, но новое наблюдение provider не доказало результат. Модель автоматически не удаляется.',
+  'hf.import.failed.artifact_not_found': 'Сервер больше не владеет этим staging artifact. После restart или cleanup скачайте его заново.',
+  'hf.import.failed.artifact_changed': 'Путь или identity staging-файла изменились до импорта. Ollama не получил этот файл.',
+  'hf.import.failed.artifact_corrupt': 'Размер, SHA-256 или заголовок GGUF больше не совпадают с проверенным download.',
+  'hf.import.failed.filesystem_error': 'Сервер не смог безопасно прочитать или удалить собственный staging artifact.',
+  'hf.import.failed.provider_unavailable': 'Локальный Ollama был недоступен во время импорта.',
+  'hf.import.failed.connect_timeout': 'Локальный Ollama не принял соединение до deadline.',
+  'hf.import.failed.stream_idle_timeout': 'Ollama create перестал сообщать progress до idle deadline.',
+  'hf.import.failed.overall_timeout': 'Истёк bounded deadline импорта.',
+  'hf.import.failed.blob_upload_failed': 'Ollama не принял проверенный content-addressed blob.',
+  'hf.import.failed.create_provider_error': 'Ollama отклонил создание модели.',
+  'hf.import.failed.create_protocol_error': 'Ollama create не выдал обязательный упорядоченный terminal protocol.',
+  'hf.import.failed.installation_missing': 'Create завершился, но свежая точная установка в /api/tags не наблюдалась.',
+  'hf.import.failed.probe_not_verified': 'Модель наблюдалась, но controlled completion probe не стал verified. Повтор не создаёт модель заново.',
+  'hf.import.target.absent': 'Точная цель не наблюдалась.',
+  'hf.import.target.ambiguous': 'Наблюдение цели неоднозначно.',
+  'hf.import.target.unavailable': 'Наблюдение цели недоступно.',
+
   'hf.error.title': 'Не удалось прочитать Hugging Face',
   'hf.error.retry': 'Повторить',
   'hf.error.reason.provider_unavailable': 'Провайдер недоступен.',
@@ -1805,7 +1919,7 @@ const russian: Messages = {
   'hf.error.invalidReference':
     'Укажите репозиторий как owner/name или точный HTTPS-URL страницы модели на huggingface.co.',
   'hf.boundary':
-    'Поиск и выбор только читают. Только явная кнопка скачивания пишет managed staging; здесь нет установки, Ollama pull, probe, прогрева или изменения Installed/catalog.',
+    'Поиск и выбор только читают. Download пишет managed staging; отдельный confirmed import использует local Ollama blob/create и controlled probe. Hugging Face pull, shell и remote Ollama не используются.',
 }
 
 export function translate(key: LocaleKey): string {

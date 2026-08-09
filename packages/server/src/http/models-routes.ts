@@ -9,6 +9,7 @@ import {
   huggingFaceRepositoryBody,
   huggingFaceSearchBody,
   huggingFaceDownloadBody,
+  huggingFaceImportBody,
   huggingFaceSelectionBody,
   listCatalogQuery,
   listModelsQuery,
@@ -21,6 +22,7 @@ import {
   HUGGING_FACE_DOWNLOAD_VERSION,
   type HuggingFaceDownloadBody,
   type HuggingFaceDownloadStreamEvent,
+  type HuggingFaceImportStreamEvent,
   type ModelCapabilityOverrideMutationBody,
   type ModelCapabilityOverrideOutcome,
 } from '@alamo/contract'
@@ -33,6 +35,7 @@ import {
 } from '../models/hugging-face-reference.ts'
 import { selectHuggingFaceGgufFile } from '../models/hugging-face-selection.ts'
 import {
+  normalizeOllamaModelName,
   normalizeOllamaReference,
   OllamaReferenceError,
 } from '../models/ollama-reference.ts'
@@ -380,6 +383,45 @@ export function modelsRoutes(app: AppContext): Hono {
   })
 
   /**
+   * P2-M explicit connection-owned import. Only a server-issued artifact UUID and a
+   * strict local Ollama reference cross this boundary; no path, Modelfile, provider
+   * URL, arbitrary create option or shell command can be represented.
+   */
+  routes.post('/imports/hugging-face-gguf/start', async (context) => {
+    const body = huggingFaceImportBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) return invalidHuggingFaceImportResponse(context)
+
+    let targetModelName: string
+    try {
+      targetModelName = normalizeOllamaModelName(body.data.targetModelName)
+    } catch (error) {
+      if (error instanceof OllamaReferenceError) {
+        return invalidHuggingFaceImportResponse(context, error.reason)
+      }
+      return invalidHuggingFaceImportResponse(context)
+    }
+
+    const controller = new AbortController()
+    const abortFromRequest = () => controller.abort(
+      context.req.raw.signal.reason ?? 'hf-import-connection-closed',
+    )
+    if (context.req.raw.signal.aborted) abortFromRequest()
+    else context.req.raw.signal.addEventListener('abort', abortFromRequest, { once: true })
+    return sseResponse(
+      withImportRequestCleanup(
+        app.huggingFaceImports.import(
+          { ...body.data, targetModelName },
+          controller.signal,
+        ),
+        () => context.req.raw.signal.removeEventListener('abort', abortFromRequest),
+      ),
+      { onAbort: () => controller.abort('hf-import-connection-closed') },
+    )
+  })
+
+  /**
    * P2-I user assertions. Write and clear share one strict body so the caller
    * always states the exact identity it rendered; the service revalidates it at
    * the mutation point. Registered before the generic `/:name` routes so the
@@ -723,6 +765,17 @@ async function* withDownloadRequestCleanup(
   }
 }
 
+async function* withImportRequestCleanup(
+  source: AsyncGenerator<HuggingFaceImportStreamEvent>,
+  cleanup: () => void,
+): AsyncGenerator<HuggingFaceImportStreamEvent> {
+  try {
+    yield* source
+  } finally {
+    cleanup()
+  }
+}
+
 async function* connectionOwnedPullEvents(
   app: AppContext,
   modelName: string,
@@ -771,5 +824,19 @@ function invalidHuggingFaceRequestResponse(
       details: { reason },
     },
     status,
+  )
+}
+
+function invalidHuggingFaceImportResponse(
+  context: Context,
+  reason = 'invalid_request',
+): Response {
+  return context.json(
+    {
+      code: 'validation_failed',
+      message: 'The staged GGUF import request is invalid',
+      details: { reason },
+    },
+    400,
   )
 }

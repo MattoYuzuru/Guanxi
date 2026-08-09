@@ -209,6 +209,7 @@ function runtimeFixture(
       repository: async () => { throw new Error('not invoked') },
     } as never,
     huggingFaceDownloads: { download: async function* () {} } as never,
+    huggingFaceImports: { import: async function* () {} } as never,
     chatExecution: new ChatJobExecutionOwner(runtimeBase),
   }
   return { context, calls: () => callCount }

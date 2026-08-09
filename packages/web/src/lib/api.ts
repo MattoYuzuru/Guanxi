@@ -25,6 +25,7 @@ import {
   huggingFaceSearchResponse,
   huggingFaceSelectionResponse,
   huggingFaceDownloadStreamEventSchema,
+  huggingFaceImportStreamEventSchema,
   listCatalogResponse,
   listModelsResponse,
   listRunningResponse,
@@ -46,6 +47,8 @@ import {
   type HuggingFaceSelectionBody,
   type HuggingFaceDownloadBody,
   type HuggingFaceDownloadStreamEvent,
+  type HuggingFaceImportBody,
+  type HuggingFaceImportStreamEvent,
   type ModelCapabilityOverrideMutationBody,
   type OllamaReferenceStartBody,
   type JobStreamEvent,
@@ -470,6 +473,21 @@ export function streamHuggingFaceDownload(
   return sseStream<HuggingFaceDownloadStreamEvent>({
     url: ROUTES.huggingFaceDownload(),
     schema: huggingFaceDownloadStreamEventSchema,
+    method: 'POST',
+    body,
+    signal,
+    maxRetries: 0,
+  })
+}
+
+/** Explicit staged GGUF import is connection-owned and never auto-retried. */
+export function streamHuggingFaceImport(
+  body: HuggingFaceImportBody,
+  signal?: AbortSignal,
+): AsyncGenerator<HuggingFaceImportStreamEvent, void, void> {
+  return sseStream<HuggingFaceImportStreamEvent>({
+    url: ROUTES.huggingFaceImport(),
+    schema: huggingFaceImportStreamEventSchema,
     method: 'POST',
     body,
     signal,

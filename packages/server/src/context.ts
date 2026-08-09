@@ -16,6 +16,7 @@ import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
 import { HuggingFaceTransport } from './models/hugging-face-transport.ts'
 import { HuggingFaceDownloadService } from './models/hugging-face-download.ts'
+import { HuggingFaceImportService } from './models/hugging-face-import.ts'
 import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
@@ -59,6 +60,8 @@ export interface AppContext {
   huggingFace: HuggingFaceTransport
   /** Connection-owned P2-L writer into a server-managed staging boundary. */
   huggingFaceDownloads: HuggingFaceDownloadService
+  /** Connection-owned P2-M staging → Ollama create/reconcile/probe owner. */
+  huggingFaceImports: HuggingFaceImportService
   approvals: ApprovalGate
   tracker: PrefillTracker
   hardware: HardwareInfo
@@ -150,21 +153,28 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       ollama,
       models,
     }
-    const context = {
-      ...base,
-      completionProbe: new CompletionProbeService({
+    const completionProbe = new CompletionProbeService({
         governor,
         models,
         ollama,
         store: completionProbeStore,
-      }),
+      })
+    const huggingFaceDownloads = new HuggingFaceDownloadService({
+      rootDir: join(dirname(options.dbPath), 'staging', 'hugging-face'),
+    })
+    const context = {
+      ...base,
+      completionProbe,
       capabilityOverrides: new ModelCapabilityOverrideService({
         models,
         store: capabilityOverrideStore,
       }),
       huggingFace: new HuggingFaceTransport(),
-      huggingFaceDownloads: new HuggingFaceDownloadService({
-        rootDir: join(dirname(options.dbPath), 'staging', 'hugging-face'),
+      huggingFaceDownloads,
+      huggingFaceImports: new HuggingFaceImportService({
+        downloads: huggingFaceDownloads,
+        ollama,
+        completionProbe,
       }),
       chatExecution: new ChatJobExecutionOwner(base),
     }

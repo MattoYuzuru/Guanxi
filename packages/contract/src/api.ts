@@ -67,6 +67,7 @@ export const ROUTES = {
   huggingFaceRepository: () => '/api/models/discovery/hugging-face/repository',
   huggingFaceSelection: () => '/api/models/discovery/hugging-face/selection',
   huggingFaceDownload: () => '/api/models/discovery/hugging-face/download',
+  huggingFaceImport: () => '/api/models/imports/hugging-face-gguf/start',
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
@@ -685,6 +686,20 @@ export type HuggingFaceSelectionResponse = z.infer<
 /** P2-L connection-owned POST+SSE command; the server revalidates this P2-K tuple. */
 export const huggingFaceDownloadBody = huggingFaceSelectionBody
 export type HuggingFaceDownloadBody = z.infer<typeof huggingFaceDownloadBody>
+
+/**
+ * P2-M explicit connection-owned import. The browser can name only a server-issued
+ * staging artifact and a desired Ollama reference; paths, Modelfiles, provider URLs,
+ * create options and shell commands are deliberately unrepresentable.
+ */
+export const huggingFaceImportBody = z
+  .object({
+    artifactId: z.string().uuid(),
+    targetModelName: z.string().min(1).max(255),
+    contextLength: positiveSafeIntegerSchema,
+  })
+  .strict()
+export type HuggingFaceImportBody = z.infer<typeof huggingFaceImportBody>
 
 
 /** POST /api/models/:name/pull → SSE (PullStreamEvent) */

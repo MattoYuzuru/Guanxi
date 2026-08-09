@@ -10,6 +10,7 @@ import {
   type HuggingFaceRepositoryResult,
   type HuggingFaceSearchResult,
   huggingFaceDownloadStreamEventSchema,
+  huggingFaceImportStreamEventSchema,
 } from '@alamo/contract'
 import type { AppContext } from '../src/context.ts'
 import { modelsRoutes } from '../src/http/models-routes.ts'
@@ -109,6 +110,7 @@ interface Calls {
   search: SearchInput[]
   repository: RepositoryInput[]
   download: unknown[]
+  import: unknown[]
   forbidden: string[]
 }
 
@@ -116,7 +118,7 @@ function appWith(handlers: {
   search?: (input: SearchInput) => Promise<HuggingFaceSearchResult>
   repository?: (input: RepositoryInput) => Promise<HuggingFaceRepositoryResult>
 } = {}): { app: Hono; calls: Calls } {
-  const calls: Calls = { search: [], repository: [], download: [], forbidden: [] }
+  const calls: Calls = { search: [], repository: [], download: [], import: [], forbidden: [] }
   const forbid = (label: string) => (...args: unknown[]) => {
     calls.forbidden.push(label)
     void args
@@ -145,6 +147,15 @@ function appWith(handlers: {
         yield {
           type: 'refused', seq: 1,
           data: { version: 1, state: 'refused', reason: 'redirect_not_allowed' },
+        }
+      },
+    },
+    huggingFaceImports: {
+      import: async function* (request: unknown) {
+        calls.import.push(request)
+        yield {
+          type: 'cancelled', seq: 0,
+          data: { version: 1, state: 'cancelled', reason: 'request_cancelled' },
         }
       },
     },
@@ -186,6 +197,7 @@ const SEARCH_PATH = ROUTES.huggingFaceSearch()
 const REPOSITORY_PATH = ROUTES.huggingFaceRepository()
 const SELECTION_PATH = ROUTES.huggingFaceSelection()
 const DOWNLOAD_PATH = ROUTES.huggingFaceDownload()
+const IMPORT_PATH = ROUTES.huggingFaceImport()
 
 describe('Hugging Face discovery routes', () => {
   it('registers exactly the contract paths', () => {
@@ -193,6 +205,35 @@ describe('Hugging Face discovery routes', () => {
     assert.equal(SEARCH_PATH, '/api/models/discovery/hugging-face/search')
     assert.equal(REPOSITORY_PATH, '/api/models/discovery/hugging-face/repository')
     assert.equal(DOWNLOAD_PATH, '/api/models/discovery/hugging-face/download')
+    assert.equal(IMPORT_PATH, '/api/models/imports/hugging-face-gguf/start')
+  })
+
+  it('accepts only artifact UUID/target/context and normalizes the target before import', async () => {
+    const artifactId = '11111111-1111-4111-8111-111111111111'
+    const { app, calls } = appWith()
+    const response = await app.fetch(post(IMPORT_PATH, {
+      artifactId, targetModelName: 'Owner/Model', contextLength: 8_192,
+    }))
+    assert.equal(response.status, 200)
+    const text = await response.text()
+    const payload = JSON.parse(text.match(/^data: (.+)$/mu)?.[1] ?? 'null')
+    assert.deepEqual(huggingFaceImportStreamEventSchema.parse(payload), payload)
+    assert.deepEqual(calls.import, [{
+      artifactId, targetModelName: 'owner/model:latest', contextLength: 8_192,
+    }])
+
+    for (const body of [
+      { artifactId, targetModelName: '/tmp/model.gguf', contextLength: 8_192 },
+      { artifactId, targetModelName: 'model:latest', contextLength: 8_192, path: '/tmp/x' },
+      { artifactId, targetModelName: 'model:latest', contextLength: 8_192, modelfile: 'FROM /tmp/x' },
+      { artifactId: 'not-a-uuid', targetModelName: 'model:latest', contextLength: 8_192 },
+      { artifactId, targetModelName: 'model:latest', contextLength: 0 },
+    ]) {
+      const candidate = appWith()
+      const refused = await candidate.app.fetch(post(IMPORT_PATH, body))
+      assert.equal(refused.status, 400, JSON.stringify(body))
+      assert.equal(candidate.calls.import.length, 0, JSON.stringify(body))
+    }
   })
 
   it('serves one bounded search and returns a contract-valid page', async () => {

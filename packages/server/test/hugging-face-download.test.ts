@@ -116,6 +116,32 @@ function terminal(events: HuggingFaceDownloadStreamEvent[]) {
 }
 
 describe('bounded cancel-safe exact Hugging Face GGUF download', () => {
+  it('does not discard a foreign replacement at a formerly owned artifact path', async () => {
+    const bytes = gguf()
+    const rootDir = await root()
+    const service = new HuggingFaceDownloadService({
+      rootDir,
+      fetch: (async () => response(bytes)) as typeof fetch,
+      randomId: (() => {
+        const ids = [
+          '11111111-1111-4111-8111-111111111111',
+          '22222222-2222-4222-8222-222222222222',
+        ]
+        return () => ids.shift()!
+      })(),
+    })
+    const events = await collect(service, confirmed(bytes))
+    assert.equal(terminal(events).type, 'completed')
+    const artifact = service.artifact('11111111-1111-4111-8111-111111111111')!
+    await rm(artifact.path)
+    const foreign = Buffer.from('foreign replacement')
+    await writeFile(artifact.path, foreign)
+
+    assert.equal(await service.discard(artifact.id), false)
+    assert.deepEqual(await readFile(artifact.path), foreign)
+    assert.notEqual(service.artifact(artifact.id), null)
+  })
+
   it('encodes owner/name and every file segment independently', () => {
     const selection = confirmed(gguf(), { path: 'folder/100% café/model name.gguf' })
     selection.selection.identity.owner = 'Ow ner'

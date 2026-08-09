@@ -58,6 +58,19 @@ export interface HuggingFaceDownloadOptions {
   randomId?: () => string
 }
 
+/**
+ * Server-only handoff to P2-M. This registry is intentionally process-local: a
+ * restart cannot turn an unindexed orphan file into an importable artifact.
+ */
+export interface ManagedHuggingFaceArtifact {
+  id: string
+  path: string
+  rootDir: string
+  device: number
+  inode: number
+  provenance: HuggingFaceDownloadProvenance
+}
+
 class DownloadRefusal extends Error {
   readonly reason: HuggingFaceDownloadRefusalReason
 
@@ -115,7 +128,7 @@ function expectedChecksum(selection: ConfirmedSelection): string | null {
   return file?.sha256Source === 'hugging_face_lfs_oid' ? file.sha256 ?? null : null
 }
 
-function inspectGguf(header: Uint8Array): { version: 2 | 3 } {
+export function inspectGguf(header: Uint8Array): { version: 2 | 3 } {
   if (header.byteLength < 8) throw new DownloadFailure('invalid_gguf_header')
   if (
     header[0] !== 0x47
@@ -176,6 +189,7 @@ export class HuggingFaceDownloadService {
   private readonly now: () => Date
   private readonly randomId: () => string
   private readonly active = new Set<string>()
+  private readonly artifacts = new Map<string, ManagedHuggingFaceArtifact>()
 
   constructor(options: HuggingFaceDownloadOptions) {
     this.rootDir = resolve(options.rootDir)
@@ -186,6 +200,32 @@ export class HuggingFaceDownloadService {
     this.maxBytes = options.maxBytes ?? HUGGING_FACE_DOWNLOAD_MAX_BYTES
     this.now = options.now ?? (() => new Date())
     this.randomId = options.randomId ?? randomUUID
+  }
+
+  artifact(id: string): ManagedHuggingFaceArtifact | null {
+    const artifact = this.artifacts.get(id)
+    return artifact ? { ...artifact, provenance: structuredClone(artifact.provenance) } : null
+  }
+
+  /** Delete only the exact artifact that this process registered as owned. */
+  async discard(id: string): Promise<boolean> {
+    const artifact = this.artifacts.get(id)
+    if (!artifact) return false
+    let current
+    try {
+      current = await lstat(artifact.path)
+    } catch {
+      return false
+    }
+    if (
+      !current.isFile()
+      || current.isSymbolicLink()
+      || current.dev !== artifact.device
+      || current.ino !== artifact.inode
+    ) return false
+    await unlink(artifact.path)
+    this.artifacts.delete(id)
+    return true
   }
 
   async *download(
@@ -235,6 +275,8 @@ export class HuggingFaceDownloadService {
       temporaryPath = join(this.rootDir, `.${temporaryId}.partial`)
       const finalPath = join(this.rootDir, `${artifactId}.gguf`)
       let file: FileHandle | null = null
+      let committedDevice: number | null = null
+      let committedInode: number | null = null
 
       try {
         file = await open(temporaryPath, 'wx', 0o600)
@@ -354,6 +396,12 @@ export class HuggingFaceDownloadService {
           // link() is an atomic no-overwrite commit: collision/symlink targets fail EEXIST.
           await link(temporaryPath, finalPath)
           committed = true
+          const committedStat = await lstat(finalPath)
+          if (!committedStat.isFile() || committedStat.isSymbolicLink()) {
+            throw new DownloadFailure('filesystem_error')
+          }
+          committedDevice = committedStat.dev
+          committedInode = committedStat.ino
           await unlink(temporaryPath).catch(() => {})
           temporaryOwned = false
           temporaryPath = null
@@ -388,6 +436,14 @@ export class HuggingFaceDownloadService {
           observedAt: this.now().toISOString(),
           terminalState: 'completed',
         }
+        this.artifacts.set(artifactId, {
+          id: artifactId,
+          path: finalPath,
+          rootDir: this.rootDir,
+          device: committedDevice!,
+          inode: committedInode!,
+          provenance,
+        })
         yield event({
           type: 'completed',
           data: { version: HUGGING_FACE_DOWNLOAD_VERSION, state: 'completed', provenance },

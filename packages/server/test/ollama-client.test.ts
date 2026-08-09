@@ -59,6 +59,62 @@ function partialLine(content = 'partial'): string {
 }
 
 describe('Ollama client timeout and protocol boundaries', () => {
+  it('uses documented blob and create HTTP bodies without a path, Modelfile or arbitrary options', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const digest = `sha256:${'a'.repeat(64)}`
+    const client = clientWith(async (input, init) => {
+      calls.push({ url: String(input), init })
+      if (init?.method === 'HEAD') return new Response(null, { status: 404 })
+      if (String(input).includes('/api/blobs/')) return new Response(null, { status: 201 })
+      return new Response([
+        JSON.stringify({ status: 'parsing GGUF' }),
+        JSON.stringify({ status: `using existing layer ${digest}` }),
+        JSON.stringify({ status: 'writing manifest' }),
+        JSON.stringify({ status: 'success' }),
+      ].join('\n'))
+    })
+
+    assert.equal(await client.blobExists(digest), false)
+    await client.pushBlob(digest, Buffer.from('GGUF'), 4, new AbortController().signal, 50)
+    const frames = []
+    for await (const frame of client.createModelFromBlob(
+      'owner/model:latest', 'model.gguf', digest,
+    )) frames.push(frame)
+
+    assert.equal(calls.length, 3)
+    assert.equal(calls[0]?.url, `http://fixture.invalid/api/blobs/${digest}`)
+    assert.equal(calls[0]?.init?.method, 'HEAD')
+    assert.equal(calls[1]?.init?.method, 'POST')
+    assert.equal(new Headers(calls[1]?.init?.headers).get('content-type'), 'application/octet-stream')
+    assert.equal(calls[2]?.url, 'http://fixture.invalid/api/create')
+    const body = JSON.parse(String(calls[2]?.init?.body))
+    assert.deepEqual(body, {
+      model: 'owner/model:latest', files: { 'model.gguf': digest }, stream: true,
+    })
+    assert.equal('path' in body, false)
+    assert.equal('modelfile' in body, false)
+    assert.equal('parameters' in body, false)
+    assert.equal(frames.at(-1)?.status, 'success')
+  })
+
+  it('bounds create frame count/bytes and rejects malformed provider frames', async () => {
+    const digest = `sha256:${'a'.repeat(64)}`
+    for (const response of [
+      new Response(`${JSON.stringify({ status: 'x'.repeat(100) })}\n`),
+      new Response(`${JSON.stringify({ status: 'ok', arbitrary: true })}\n`),
+    ]) {
+      const client = clientWith(async () => response)
+      const stream = client.createModelFromBlob(
+        'model:latest', 'model.gguf', digest, undefined,
+        { connectTimeoutMs: 20, loadTimeoutMs: 20, streamIdleTimeoutMs: 20, maxLineBytes: 32, maxFrames: 2 },
+      )
+      await assert.rejects(
+        stream.next(),
+        (error) => error instanceof OllamaProtocolError,
+      )
+    }
+  })
+
   it('classifies a transport that never returns headers as connect timeout', async () => {
     let providerSignal: AbortSignal | null | undefined
     const client = clientWith((_input, init) => {

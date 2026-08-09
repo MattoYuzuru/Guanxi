@@ -509,6 +509,23 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   const json = (body: unknown, status = 200) => ({
     status, contentType: 'application/json', body: JSON.stringify(body),
   })
+  const downloadProvenance = {
+    version: 1, identity, revision, remotePath: 'nested/model Q4.gguf',
+    license: repository.license, gated: repository.gated,
+    sourceUrlPolicy: 'hugging_face_exact_revision_explicit_hosts_v1',
+    expectedSizeBytes: 4_000, observedSizeBytes: 4_000,
+    checksum: {
+      algorithm: 'sha256', expectedDigest: digest,
+      observedDigest: digest, relation: 'matched_provider_claim',
+    },
+    format: {
+      kind: 'gguf', magic: 'GGUF', version: 3, inspection: 'bounded_header_only',
+    },
+    artifact: {
+      state: 'managed_staging', id: '11111111-1111-4111-8111-111111111111',
+    },
+    observedAt, terminalState: 'completed',
+  }
   const sseEvents = [
     { type: 'state', seq: 0, data: { version: 1, state: 'preparing' } },
     {
@@ -520,27 +537,51 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
       type: 'completed', seq: 3,
       data: {
         version: 1, state: 'completed',
+        provenance: downloadProvenance,
+      },
+    },
+  ]
+  const importEvents = [
+    {
+      type: 'state', seq: 0,
+      data: { version: 1, state: 'importing', phase: 'creating_model' },
+    },
+    {
+      type: 'completed', seq: 1,
+      data: {
+        version: 1, state: 'completed',
         provenance: {
-          version: 1, identity, revision, remotePath: 'nested/model Q4.gguf',
-          license: repository.license, gated: repository.gated,
-          sourceUrlPolicy: 'hugging_face_exact_revision_explicit_hosts_v1',
-          expectedSizeBytes: 4_000, observedSizeBytes: 4_000,
-          checksum: {
-            algorithm: 'sha256', expectedDigest: digest,
-            observedDigest: digest, relation: 'matched_provider_claim',
+          version: 1, source: downloadProvenance,
+          targetModelName: 'owner/model:latest',
+          create: {
+            endpoint: '/api/create', input: 'uploaded_sha256_blob_files_map',
+            terminalStatus: 'success', startedAt: observedAt, terminalAt: observedAt,
           },
-          format: {
-            kind: 'gguf', magic: 'GGUF', version: 3, inspection: 'bounded_header_only',
+          installation: {
+            source: 'ollama_api_tags', normalizedModelReference: 'owner/model:latest',
+            digest: 'manifest-digest', runtimeVersion: '0.12.6', observedAt,
           },
-          artifact: {
-            state: 'managed_staging', id: '11111111-1111-4111-8111-111111111111',
+          probe: {
+            status: 'verified', reason: 'terminal_response', capability: 'completion',
+            source: 'runtime_probe', confidence: 'verified', observedAt,
+            completedAt: observedAt, durationMs: 1, historical: false,
+            basis: {
+              state: 'exact', keyVersion: 1, probeDefinitionVersion: 1,
+              provider: 'ollama', normalizedModelReference: 'owner/model:latest',
+              artifactDigest: 'manifest-digest', runtimeVersion: '0.12.6',
+              contextLength: 32_768, id: `sha256:${'b'.repeat(64)}`,
+            },
           },
-          observedAt, terminalState: 'completed',
+          staging: {
+            artifactId: '11111111-1111-4111-8111-111111111111',
+            retention: 'deleted_after_verified_success',
+          },
+          completedAt: observedAt,
         },
       },
     },
   ]
-  await page.addInitScript((events) => {
+  await page.addInitScript(({ downloadEvents, importEvents }) => {
     const nativeFetch = window.fetch.bind(window)
     window.fetch = async (input, init) => {
       const raw = input instanceof Request ? input.url : String(input)
@@ -560,20 +601,20 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
         let secondTimer = 0
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            const send = (event: (typeof events)[number]) => controller.enqueue(encoder.encode(
+            const send = (event: (typeof downloadEvents)[number]) => controller.enqueue(encoder.encode(
               `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`,
             ))
-            send(events[0]!)
-            send(events[1]!)
+            send(downloadEvents[0]!)
+            send(downloadEvents[1]!)
             firstTimer = window.setTimeout(() => {
-              send(events[2]!)
+              send(downloadEvents[2]!)
               secondTimer = window.setTimeout(() => {
                 send(attempt === 1
                   ? {
                       type: 'failed', seq: 3,
                       data: { version: 1, state: 'failed', reason: 'provider_unavailable' },
                     }
-                  : events[3]!)
+                  : downloadEvents[3]!)
                 controller.close()
               }, 1_000)
             }, 1_000)
@@ -585,9 +626,31 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
         })
         return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
       }
+      if (url.pathname === '/api/models/imports/hugging-face-gguf/start') {
+        const target = window as unknown as {
+          __p2mRequests?: Array<{ url: string; body: string }>
+        }
+        target.__p2mRequests ??= []
+        target.__p2mRequests.push({ url: url.href, body: String(init?.body ?? '') })
+        const attempt = target.__p2mRequests.length
+        const encoder = new TextEncoder()
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const send = (event: (typeof importEvents)[number]) => controller.enqueue(encoder.encode(
+              `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`,
+            ))
+            send(importEvents[0]!)
+            if (attempt > 1) {
+              send(importEvents[1]!)
+              controller.close()
+            }
+          },
+        })
+        return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
       return nativeFetch(input, init)
     }
-  }, sseEvents)
+  }, { downloadEvents: sseEvents, importEvents })
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -711,7 +774,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   const completed = section.getByText('Staging artifact скачан и проверен')
   await expect(completed).toBeVisible()
   await expect(section.getByText(new RegExp(digest, 'u'))).toBeVisible()
-  await expect(section.getByText(/не установлен, не подтверждён runtime/u)).toBeVisible()
+  await expect(section.getByText(/не Installed и не runtime verified/u)).toBeVisible()
   const downloadCalls = await page.evaluate(() => (
     window as unknown as { __p2lRequests?: Array<{ url: string; body: string }> }
   ).__p2lRequests ?? [])
@@ -725,9 +788,55 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
     })
   }
   await expect(completed.locator('..')).toBeFocused()
-  for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Create/u]) {
-    await expect(section.getByRole('button', { name })).toHaveCount(0)
+  await expect(section.getByRole('button', { name: 'Проверить локальный импорт' })).toHaveCount(1)
+
+  // P2-M is a separate explicit mutation: editing the target is inert and the
+  // confirmation shows the exact owned artifact/target/context tuple.
+  const importCalls = async () => page.evaluate(() => (
+    window as unknown as { __p2mRequests?: Array<{ url: string; body: string }> }
+  ).__p2mRequests ?? [])
+  const target = section.getByLabel('Локальная ссылка модели Ollama')
+  await target.fill('Owner/Model')
+  expect(await importCalls()).toHaveLength(0)
+  await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
+  const dialog = page.getByRole('dialog', { name: 'Создать эту локальную модель Ollama?' })
+  await expect(dialog).toContainText('11111111-1111-4111-8111-111111111111')
+  await expect(dialog).toContainText('Owner/Model')
+  expect(await importCalls()).toHaveLength(0)
+
+  const modelsBeforeImport = requests.filter((request) => request.path === '/api/models').length
+  await dialog.getByRole('button', { name: 'Создать и проверить' }).press('Enter')
+  await expect(section.getByText('Создаём локальную модель Ollama…')).toHaveCount(1)
+  const cancelImport = section.getByRole('button', { name: 'Отменить импорт' })
+  await expect(cancelImport).toHaveCount(1)
+  expect(await cancelImport.evaluate((element) => element.getBoundingClientRect().height))
+    .toBeGreaterThanOrEqual(44)
+  await cancelImport.press('Enter')
+  await expect(section.getByText('Результат импорта требует внимания')).toHaveCount(1)
+  await expect(section.getByText(/Create мог начаться/u)).toHaveCount(1)
+  await expect(section.getByText('Установлено и проверено runtime')).toHaveCount(0)
+  expect(requests.filter((request) => request.path === '/api/models')).toHaveLength(modelsBeforeImport)
+
+  await section.getByRole('button', { name: 'Повторить импорт' }).press('Enter')
+  await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
+  await page.getByRole('dialog').getByRole('button', { name: 'Создать и проверить' }).press('Enter')
+  const installed = section.getByText('Установлено и проверено runtime')
+  await expect(installed).toHaveCount(1)
+  await expect(section.getByText(/новом локальном sample \/api\/tags/u)).toHaveCount(1)
+  await expect(section.getByText(/completion probe получил свежий/u)).toHaveCount(1)
+  await expect(section.getByText(/owner\/model:latest · manifest-digest/u)).toHaveCount(1)
+  await expect.poll(() => requests.filter((request) => request.path === '/api/models').length)
+    .toBe(modelsBeforeImport + 1)
+  const p2mCalls = await importCalls()
+  expect(p2mCalls).toHaveLength(2)
+  for (const importCall of p2mCalls) {
+    expect(new URL(importCall.url).pathname).toBe('/api/models/imports/hugging-face-gguf/start')
+    expect(JSON.parse(importCall.body)).toEqual({
+      artifactId: '11111111-1111-4111-8111-111111111111',
+      targetModelName: 'Owner/Model', contextLength: 32_768,
+    })
   }
+  await expect(installed.locator('..').locator('..')).toBeFocused()
 
   const layout = await page.evaluate(() => ({
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
