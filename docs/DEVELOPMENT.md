@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-09
+**Проверено:** 2026-08-10
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -317,7 +317,7 @@ server не нужен.
   4,000-variant local diagnostic response bytes/time без live provider и SLA;
 - `hardware/` — legacy profile/static fit и injectable sampled Apple/NVIDIA
   telemetry adapters с fixed command boundaries и pure parsers;
-- `http/` — models, runtime, Jobs, threads, workspaces, SSE;
+- `http/` — models, runtime, Jobs, threads, Projects, workspaces, SSE;
 - `store/` — SQLite migrations и stores;
 - migration 3 добавляет nullable `turn_status/turn_error/stop_reason` и не
   переписывает старые migrations;
@@ -337,6 +337,12 @@ server не нужен.
 - migration 9 additive создаёт `model_capability_user_overrides` без backfill из
   declarations или probe results; failed migration остаётся на v8, старый code
   игнорирует table, а schema rollback не удаляет user data;
+- migration 10 additive создаёт logical `projects` и
+  `project_filesystem_bindings`, backfill-ит exact legacy Workspace ID в одной
+  transaction и оставляет старые tables/routes без rename/delete; startup
+  reconciliation идемпотентно подхватывает Workspace, записанный старым binary;
+- `projects/service.ts` и `store/projects.ts` владеют strict metadata,
+  no-path create/rename и fail-closed compatibility mapping;
 - `store/capability-override.ts` принимает только compatible exact identity,
   делает identical write идемпотентным без изменения timestamps, удаляет ровно
   одну row и fail-closed читает corrupted/incompatible row;

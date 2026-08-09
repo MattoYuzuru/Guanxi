@@ -1,8 +1,8 @@
 # Доменная модель
 
-**Статус:** mixed — accepted target, current P1/P2 subsets implemented
+**Статус:** mixed — accepted target, current P1/P2/P3 subsets implemented
 
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-10
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -37,8 +37,10 @@ Presentation metadata: локализуемое display name, icon key и access
 token. Они не влияют на identity, routing или permissions.
 
 Текущая code-сущность `Workspace` означает разрешённый filesystem root для agent
-tools. В target model это **Filesystem Binding** внутри Project, а не синоним
-Project. Переименование требует миграции API/DB/UI, а не мгновенной замены.
+tools. P3-A реализовал независимую Project identity/name/timestamps и additive
+one-to-one **Filesystem Binding** для каждого legacy Workspace. Project можно
+создать без binding; path не является identity. Legacy Workspace API/table пока
+сохранены byte-compatible, а icon/color и final client cutover не реализованы.
 
 ### Recipe
 

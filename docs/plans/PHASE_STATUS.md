@@ -1,8 +1,8 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-09
-**Текущая фаза:** Phase 3 — P3-A logical Project identity ready
+**Проверено:** 2026-08-10
+**Текущая фаза:** Phase 3 — P3-B Project presentation metadata ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1257,6 +1257,53 @@ Phase 2 release-readiness verdict — **GO для перехода к Phase 3**,
 deployment/validation. Hardware items, вынесенные Q-35, не являются Phase 2
 blocker; mocked/local evidence не является live Ollama/GPU validation.
 
+## Phase 3 — P3-A logical Project identity
+
+**Статус:** independently verified (`0e00ee3`, `6f68501`, review fix
+`ba63ff4`).
+
+Migration 10 additive создаёт strict `projects` и
+`project_filesystem_bindings`. Existing Workspace получает Project с тем же
+stable ID и отдельную deterministic binding row; path не участвует в Project
+identity. New Project создаётся без path/binding, name редактируется отдельно от
+Workspace metadata. Legacy tables, `/api/workspaces`, Web client и filesystem
+paths не удалены и не переименованы. Startup reconciliation повторяемо
+подхватывает Workspace, который мог записать старый binary после schema upgrade;
+identity/binding conflict и malformed timestamps откатывают transaction целиком.
+
+Minimal `/projects` Web projection добавляет loading/empty/error/retry, no-path
+create, rename, synchronous repeated-activation guard, error focus и EN source/
+fallback + curated RU strings. Browser assertion покрывает 390 px, 200% scale,
+no horizontal document overflow и reduced-motion policy; это не final Project
+picker/navigation polish.
+
+Evidence разделено по правилу WORKFLOW: **12 new / 558 core regression
+envelope**, **4 new / 177 Web component/parser envelope**, **1 new / 29 mocked
+Chromium envelope**. Full typecheck, `npm test`, browser gate, build,
+markdownlint и diff-check — PASS. Targeted migration/routes — 21/21; Project Web
+component — 4/4.
+
+Первые targeted browser попытки нашли два fixture defects: Strict Mode создал
+два initial GET, а не-exact retry selector пересёкся с Runtime Bar. После
+исправления fixture product code не менялся, targeted и full browser gates
+прошли. Mutation checks дали ожидаемый non-zero для Project-with-path,
+duplicate binding acceptance, отключённых migration rollback constraints,
+изменённого legacy Workspace JSON, malformed timestamp acceptance и
+непереведённой RU строки; все mutations восстановлены.
+
+Независимый reviewer сначала дал `NEEDS FIX`: contract/store пропускали
+whitespace/malformed metadata, legacy byte-compatibility assertion сравнивал
+новый код с самим собой, а RU copy содержал `metadata`. `ba63ff4` добавил strict
+IDs/normalized name/datetime, runtime parse, whitespace fallback, literal raw
+Workspace bytes и exact RU assertion. Follow-up reviewer: **PASS**, новых
+findings нет.
+
+Остаточный риск: validation локальная на mocked/fixture SQLite и Chromium; нет
+production migration corpus, multi-process race, real mobile/screen-reader/
+forced-colors/visual-baseline validation. Project icon/color/defaults,
+Chat/Recipe/Artifact ownership и final Workspace cutover не реализованы. Следующий
+bounded slice — P3-B presentation metadata и accessible built-in picker.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1356,7 +1403,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | ready: P3-A            |
+| Phase 3 — Text/Projects/retention/i18n  | P3-A done; P3-B ready  |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

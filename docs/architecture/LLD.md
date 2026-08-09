@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-10
 
 ## Current package design
 
@@ -11,7 +11,7 @@
 Исходник: [lld-contract.mmd](diagrams/lld-contract.mmd).
 
 - `schemas.ts`: models, hardware fit, health, threads/messages, settings,
-  workspaces, tool calls, approvals и durable Job/event records;
+  strict Projects, workspaces, tool calls, approvals и durable Job/event records;
 - `api.ts`: route paths и request/response Zod;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
   output;
@@ -212,6 +212,10 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
+- `http/projects-routes.ts`: logical Project list/create/read/rename без
+  filesystem requirement; legacy Workspace route shape не меняется;
+- `projects/service.ts` + `store/projects.ts`: Project metadata owner и atomic
+  idempotent legacy Workspace reconciliation;
 - `models/service.ts`: installed `/api/tags`, sampled `/api/ps`, sourced
   `/api/version`, digest-aware LRU на 64 normalized references и не более четырёх
   параллельных `/api/show` workers на installed-list projection;
@@ -245,6 +249,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   exact `(provider, reference, digest, runtime version, capability)` с CHECK на
   key/schema version, provider, source, state, value и capability enum; никакого
   backfill из declaration или probe, rollback не удаляет user data;
+- migration 10: additive `projects`/`project_filesystem_bindings`; exact
+  Workspace ID backfill выполняется transactionally, path не входит в Project
+  identity, а malformed legacy metadata откатывает migration целиком;
 - `store/capability-override.ts`: fail-closed exact key/timestamp validation,
   idempotent create без изменения timestamps, exact-row clear, deterministic
   capability order и `exactCapabilityOverrides` projection, которая при неполной
@@ -956,9 +963,11 @@ prompt, reasoning или output content.
 ## Persistence status
 
 Migrations 4–5 и `JobStore` реализуют `jobs`, `job_events`, private
-`chat_job_inputs` и additive Message association. Остальные target tables ниже
-не реализованы. Legacy `threads/messages/workspaces` сохранены без destructive
-backfill или route cutover.
+`chat_job_inputs` и additive Message association. Migration 10 реализует
+минимальные `projects` и `project_filesystem_bindings`; Project пока не хранит
+icon/color/defaults и не владеет Chats/Recipes/Artifacts. Остальные target tables
+ниже не реализованы. Legacy `threads/messages/workspaces` сохранены без
+destructive route cutover.
 
 Логические таблицы:
 
