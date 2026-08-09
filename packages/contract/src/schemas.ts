@@ -2223,6 +2223,8 @@ export type HuggingFaceImportConflictReason = z.infer<
 >
 
 export const huggingFaceImportFailureReasonSchema = z.enum([
+  'invalid_target',
+  'remote_provider_not_allowed',
   'artifact_not_found',
   'artifact_changed',
   'artifact_corrupt',
@@ -2284,6 +2286,20 @@ export const huggingFaceImportProvenanceSchema = z
   })
   .strict()
   .superRefine((provenance, context) => {
+    if (provenance.source.artifact.id !== provenance.staging.artifactId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['staging', 'artifactId'],
+        message: 'staging artifact must match the source provenance',
+      })
+    }
+    if (provenance.targetModelName !== provenance.installation.normalizedModelReference) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['installation', 'normalizedModelReference'],
+        message: 'installed reference must match the requested target',
+      })
+    }
     if (provenance.probe.status !== 'verified' || provenance.probe.historical) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

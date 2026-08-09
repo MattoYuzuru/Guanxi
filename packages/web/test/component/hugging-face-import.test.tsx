@@ -44,6 +44,23 @@ function event(type: string, data: Record<string, unknown>, seq = 0) {
   return { type, seq, data: { version: 1, ...data } }
 }
 
+function probeEvidence(status: 'verified' | 'degraded' = 'verified') {
+  return {
+    status,
+    reason: status === 'verified' ? 'terminal_response' : 'provider_error',
+    capability: 'completion', source: 'runtime_probe',
+    confidence: status === 'verified' ? 'verified' : 'degraded',
+    observedAt: OBSERVED_AT, completedAt: OBSERVED_AT, durationMs: 0,
+    historical: false,
+    basis: {
+      state: 'exact', keyVersion: 1, probeDefinitionVersion: 1,
+      provider: 'ollama', normalizedModelReference: 'owner/model:latest',
+      artifactDigest: 'manifest-digest', runtimeVersion: '0.32.0',
+      contextLength: 8_192, id: `sha256:${'d'.repeat(64)}`,
+    },
+  }
+}
+
 function successEvents() {
   const target = 'owner/model:latest'
   const digest = 'manifest-digest'
@@ -66,17 +83,7 @@ function successEvents() {
           source: 'ollama_api_tags', normalizedModelReference: target, digest,
           runtimeVersion: '0.32.0', observedAt: OBSERVED_AT,
         },
-        probe: {
-          status: 'verified', reason: 'terminal_response', capability: 'completion',
-          source: 'runtime_probe', confidence: 'verified', observedAt: OBSERVED_AT,
-          completedAt: OBSERVED_AT, durationMs: 0, historical: false,
-          basis: {
-            state: 'exact', keyVersion: 1, probeDefinitionVersion: 1,
-            provider: 'ollama', normalizedModelReference: target, artifactDigest: digest,
-            runtimeVersion: '0.32.0', contextLength: 8_192,
-            id: `sha256:${'d'.repeat(64)}`,
-          },
-        },
+        probe: probeEvidence(),
         staging: { artifactId: ARTIFACT_ID, retention: 'deleted_after_verified_success' },
         completedAt: OBSERVED_AT,
       },
@@ -113,6 +120,9 @@ describe('explicit Hugging Face staged import control', () => {
     const dialog = fillAndConfirm()
     expect(dialog.textContent).toContain(ARTIFACT_ID)
     expect(dialog.textContent).toContain('Owner/Model')
+    for (const name of ['Закрыть подтверждение импорта', 'Назад', 'Создать и проверить']) {
+      expect(screen.getByRole('button', { name }).className).toContain('min-h-11')
+    }
     expect(fetch).not.toHaveBeenCalled()
 
     const confirm = screen.getByRole('button', { name: 'Создать и проверить' })
@@ -180,11 +190,57 @@ describe('explicit Hugging Face staged import control', () => {
     expect(onInstalled).not.toHaveBeenCalled()
   })
 
+  it('shows invalid target validation and failed probe evidence without a provider-unavailable claim', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 'validation_failed', message: 'invalid', details: { reason: 'invalid_name' },
+      }), { status: 400, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(sse([event('failed', {
+        state: 'failed', reason: 'probe_not_verified',
+        target: {
+          state: 'exact', normalizedModelReference: 'owner/model:latest',
+          digest: 'manifest-digest', observedAt: OBSERVED_AT,
+        },
+        probe: probeEvidence('degraded'),
+      })])))
+    render(<HuggingFaceImportControl artifact={artifact()} contextLength={8_192} />)
+
+    fillAndConfirm('../bad')
+    fireEvent.click(screen.getByRole('button', { name: 'Создать и проверить' }))
+    expect(await screen.findByText(/Укажите корректную локальную ссылку/u)).toBeTruthy()
+    expect(screen.queryByText(/Ollama был недоступен/u)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить импорт' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', {
+      name: 'Локальная ссылка модели Ollama',
+    })))
+    fillAndConfirm('owner/model:latest')
+    fireEvent.click(screen.getByRole('button', { name: 'Создать и проверить' }))
+    expect(await screen.findByText('Evidence controlled completion probe')).toBeTruthy()
+    expect(screen.getByText(/Неполный результат/u)).toBeTruthy()
+    expect(screen.getByText(/Ollama вернула ошибку/u)).toBeTruthy()
+    expect(screen.queryByText('Установлено и проверено runtime')).toBeNull()
+  })
+
   it('cancels the owned request without a false clean-cancel claim and keeps retry keyboard-reachable', async () => {
     let signal: AbortSignal | undefined
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined
+    const encoder = new TextEncoder()
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation((_input, init) => {
       signal = init?.signal ?? undefined
-      return new Promise<Response>(() => {})
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          streamController = controller
+          controller.enqueue(encoder.encode(
+            `data: ${JSON.stringify(event('state', {
+              state: 'importing', phase: 'creating_model',
+            }))}\n\n`,
+          ))
+        },
+      })
+      return Promise.resolve(new Response(stream, {
+        headers: { 'content-type': 'text/event-stream' },
+      }))
     })
     vi.stubGlobal('fetch', fetch)
     render(<HuggingFaceImportControl artifact={artifact()} contextLength={8_192} />)
@@ -194,12 +250,17 @@ describe('explicit Hugging Face staged import control', () => {
     expect(cancel.className).toContain('min-h-11')
     fireEvent.click(cancel)
     expect(signal?.aborted).toBe(true)
+    streamController?.enqueue(encoder.encode(
+      `data: ${JSON.stringify(successEvents().at(-1))}\n\n`,
+    ))
+    streamController?.close()
     expect(await screen.findByText('Результат импорта требует внимания')).toBeTruthy()
     expect(screen.getByText(/Create мог начаться/u)).toBeTruthy()
-    const retry = screen.getByRole('button', { name: 'Повторить импорт' })
     await waitFor(() => expect(document.activeElement).not.toBe(document.body))
-    retry.focus()
-    expect(document.activeElement).toBe(retry)
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить импорт' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', {
+      name: 'Локальная ссылка модели Ollama',
+    })))
     expect(screen.queryByText('Установлено и проверено runtime')).toBeNull()
   })
 

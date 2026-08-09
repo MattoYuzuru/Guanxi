@@ -18,7 +18,6 @@ import {
   type CompletionProbeEvidence,
   type HuggingFaceImportBody,
   type HuggingFaceImportFailureReason,
-  type HuggingFaceImportProvenance,
   type HuggingFaceImportStreamEvent,
   type HuggingFaceImportTargetObservation,
 } from '@alamo/contract'
@@ -54,14 +53,13 @@ interface Attempt {
   createStartedAt?: string
   createTerminalAt?: string
   installed?: ExactTarget
-  completed?: HuggingFaceImportProvenance
 }
 
 export interface HuggingFaceImportDependencies {
   downloads: Pick<HuggingFaceDownloadService, 'artifact' | 'discard'>
   ollama(): Pick<
     OllamaClient,
-    'tags' | 'blobExists' | 'pushBlob' | 'createModelFromBlob'
+    'host' | 'tags' | 'blobExists' | 'pushBlob' | 'createModelFromBlob'
   >
   completionProbe: Pick<CompletionProbeService, 'execute'>
   now?: () => Date
@@ -88,6 +86,7 @@ interface VerifiedArtifact {
 export class HuggingFaceImportService {
   private readonly dependencies: HuggingFaceImportDependencies
   private readonly activeKeys = new Set<string>()
+  private readonly activeArtifacts = new Set<string>()
   private readonly activeTargets = new Set<string>()
   private readonly attempts = new Map<string, Attempt>()
 
@@ -105,18 +104,24 @@ export class HuggingFaceImportService {
     )
     const key = `${request.artifactId}\n${request.targetModelName}`
     const previous = this.attempts.get(key)
-    if (previous?.completed) {
+    if (!isLoopbackOllamaHost(this.dependencies.ollama().host)) {
       yield emit({
-        type: 'completed',
+        type: 'failed',
         data: {
           version: HUGGING_FACE_IMPORT_VERSION,
-          state: 'completed',
-          provenance: previous.completed,
+          state: 'failed',
+          reason: 'remote_provider_not_allowed',
+          target: null,
+          probe: null,
         },
       })
       return
     }
-    if (this.activeKeys.has(key) || this.activeTargets.has(request.targetModelName)) {
+    if (
+      this.activeKeys.has(key)
+      || this.activeArtifacts.has(request.artifactId)
+      || this.activeTargets.has(request.targetModelName)
+    ) {
       yield emit({
         type: 'conflict',
         data: {
@@ -130,9 +135,9 @@ export class HuggingFaceImportService {
     }
 
     this.activeKeys.add(key)
+    this.activeArtifacts.add(request.artifactId)
     this.activeTargets.add(request.targetModelName)
     const attempt = previous ?? {}
-    this.attempts.set(key, attempt)
     const controller = new AbortController()
     const abortFromRequest = () => controller.abort(
       requestSignal.reason ?? 'hf-import-request-cancelled',
@@ -290,6 +295,7 @@ export class HuggingFaceImportService {
           },
         })
         attempt.createStartedAt = this.now()
+        this.attempts.set(key, attempt)
         createStarted = true
         await this.createModel(
           request.targetModelName,
@@ -412,19 +418,17 @@ export class HuggingFaceImportService {
         },
         completedAt: this.now(),
       })
-      // The in-memory terminal record is the P2-M provenance commit. Only then may
-      // the exact owned staging artifact be removed.
-      attempt.completed = provenance
+      // Construct and validate terminal provenance before retiring the exact
+      // owned staging artifact. This remains connection/process-owned evidence.
       try {
         if (!await this.dependencies.downloads.discard(request.artifactId)) {
-          attempt.completed = undefined
           throw new ImportFailure('filesystem_error')
         }
       } catch (error) {
-        attempt.completed = undefined
         if (error instanceof ImportFailure) throw error
         throw new ImportFailure('filesystem_error')
       }
+      this.attempts.delete(key)
       yield emit({
         type: 'completed',
         data: {
@@ -503,6 +507,7 @@ export class HuggingFaceImportService {
       requestSignal.removeEventListener('abort', abortFromRequest)
       await verified?.handle.close().catch(() => {})
       this.activeKeys.delete(key)
+      this.activeArtifacts.delete(request.artifactId)
       this.activeTargets.delete(request.targetModelName)
     }
   }
@@ -704,6 +709,16 @@ export class HuggingFaceImportService {
 
   private now(): string {
     return (this.dependencies.now ?? (() => new Date()))().toISOString()
+  }
+}
+
+export function isLoopbackOllamaHost(host: string): boolean {
+  try {
+    const url = new URL(host)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false
+    return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname.toLowerCase())
+  } catch {
+    return false
   }
 }
 

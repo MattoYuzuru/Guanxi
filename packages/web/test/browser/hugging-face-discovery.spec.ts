@@ -547,6 +547,27 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
       data: { version: 1, state: 'importing', phase: 'creating_model' },
     },
     {
+      type: 'failed', seq: 1,
+      data: {
+        version: 1, state: 'failed', reason: 'probe_not_verified',
+        target: {
+          state: 'exact', normalizedModelReference: 'owner/model:latest',
+          digest: 'manifest-digest', observedAt,
+        },
+        probe: {
+          status: 'degraded', reason: 'provider_error', capability: 'completion',
+          source: 'runtime_probe', confidence: 'degraded', observedAt,
+          completedAt: observedAt, durationMs: 1, historical: false,
+          basis: {
+            state: 'exact', keyVersion: 1, probeDefinitionVersion: 1,
+            provider: 'ollama', normalizedModelReference: 'owner/model:latest',
+            artifactDigest: 'manifest-digest', runtimeVersion: '0.12.6',
+            contextLength: 32_768, id: `sha256:${'c'.repeat(64)}`,
+          },
+        },
+      },
+    },
+    {
       type: 'completed', seq: 1,
       data: {
         version: 1, state: 'completed',
@@ -581,11 +602,51 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
       },
     },
   ]
-  await page.addInitScript(({ downloadEvents, importEvents }) => {
+  const installedModel = {
+    name: 'owner/model:latest', digest: 'manifest-digest', sizeBytes: 4_000,
+    modifiedAt: observedAt, family: 'fixture', parameterSize: '1B', quantization: 'Q4',
+    contextLength: 32_768, capabilities: ['completion'], isCloud: false,
+    fit: {
+      level: 'green', summary: 'fixture', contextLength: 32_768,
+      modelBytes: 4_000, kvCacheBytes: 0, requiredBytes: 4_000,
+      usableBytes: 12_000_000_000, utilization: 4_000 / 12_000_000_000,
+      basis: 'vendor_hint', measured: null,
+    },
+    descriptor: {
+      reference: {
+        state: 'canonical', provider: 'ollama', original: 'owner/model:latest',
+        normalized: 'owner/model:latest',
+      },
+      artifact: { state: 'exact_digest', digest: 'manifest-digest' },
+      installation: {
+        state: 'installed', source: 'ollama_api_tags', observedAt, confidence: 'observed',
+      },
+      capabilities: {
+        state: 'unknown', reason: 'field_not_reported', observedAt, declarations: [],
+      },
+      freshness: {
+        state: 'unknown', source: 'provider', observedAt,
+        reason: 'identity_unavailable', offline: false,
+      },
+    },
+  }
+  await page.addInitScript(({ downloadEvents, importEvents, installedModel }) => {
     const nativeFetch = window.fetch.bind(window)
     window.fetch = async (input, init) => {
       const raw = input instanceof Request ? input.url : String(input)
       const url = new URL(raw, window.location.href)
+      const state = window as unknown as {
+        __p2mInstalled?: boolean
+        __p2mModelRequests?: number
+      }
+      if (url.pathname === '/api/models') {
+        state.__p2mModelRequests = (state.__p2mModelRequests ?? 0) + 1
+        if (state.__p2mInstalled) {
+          return new Response(JSON.stringify({ models: [installedModel] }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+          })
+        }
+      }
       if (url.pathname === '/api/models/discovery/hugging-face/download') {
         const target = window as unknown as {
           __p2lRequests?: Array<{ url: string; body: string }>
@@ -640,8 +701,12 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
               `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`,
             ))
             send(importEvents[0]!)
-            if (attempt > 1) {
+            if (attempt === 1) {
               send(importEvents[1]!)
+              controller.close()
+            } else if (attempt > 2) {
+              state.__p2mInstalled = true
+              send(importEvents[2]!)
               controller.close()
             }
           },
@@ -650,7 +715,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
       }
       return nativeFetch(input, init)
     }
-  }, { downloadEvents: sseEvents, importEvents })
+  }, { downloadEvents: sseEvents, importEvents, installedModel })
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -789,6 +854,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   }
   await expect(completed.locator('..')).toBeFocused()
   await expect(section.getByRole('button', { name: 'Проверить локальный импорт' })).toHaveCount(1)
+  await page.evaluate(() => { document.documentElement.style.fontSize = '100%' })
 
   // P2-M is a separate explicit mutation: editing the target is inert and the
   // confirmation shows the exact owned artifact/target/context tuple.
@@ -802,11 +868,31 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   const dialog = page.getByRole('dialog', { name: 'Создать эту локальную модель Ollama?' })
   await expect(dialog).toContainText('11111111-1111-4111-8111-111111111111')
   await expect(dialog).toContainText('Owner/Model')
+  const confirmationHeights = await dialog.getByRole('button').evaluateAll((buttons) =>
+    buttons.map((button) => button.getBoundingClientRect().height))
+  expect(confirmationHeights.length).toBeGreaterThanOrEqual(3)
+  for (const height of confirmationHeights) expect(height).toBeGreaterThanOrEqual(44)
   expect(await importCalls()).toHaveLength(0)
 
-  const modelsBeforeImport = requests.filter((request) => request.path === '/api/models').length
+  const modelCalls = () => page.evaluate(() => (
+    window as unknown as { __p2mModelRequests?: number }
+  ).__p2mModelRequests ?? 0)
+  const modelsBeforeImport = await modelCalls()
   await dialog.getByRole('button', { name: 'Создать и проверить' }).press('Enter')
-  await expect(section.getByText('Создаём локальную модель Ollama…')).toHaveCount(1)
+  const failedImport = section.getByRole('alert')
+  await expect(failedImport).toContainText('Импорт не завершён')
+  await expect(failedImport).toContainText('Evidence controlled completion probe')
+  await expect(failedImport).toContainText('Неполный результат')
+  await expect(failedImport).toBeFocused()
+  expect(await modelCalls()).toBe(modelsBeforeImport)
+
+  await section.getByRole('button', { name: 'Повторить импорт' }).press('Enter')
+  await expect(target).toBeFocused()
+  await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
+  await page.getByRole('dialog').getByRole('button', { name: 'Создать и проверить' }).press('Enter')
+  const runningImport = section.getByText('Создаём локальную модель Ollama…', { exact: true })
+  await expect(runningImport).toHaveCount(1)
+  await expect(runningImport).toHaveAttribute('role', 'status')
   const cancelImport = section.getByRole('button', { name: 'Отменить импорт' })
   await expect(cancelImport).toHaveCount(1)
   expect(await cancelImport.evaluate((element) => element.getBoundingClientRect().height))
@@ -815,9 +901,10 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(section.getByText('Результат импорта требует внимания')).toHaveCount(1)
   await expect(section.getByText(/Create мог начаться/u)).toHaveCount(1)
   await expect(section.getByText('Установлено и проверено runtime')).toHaveCount(0)
-  expect(requests.filter((request) => request.path === '/api/models')).toHaveLength(modelsBeforeImport)
+  expect(await modelCalls()).toBe(modelsBeforeImport)
 
   await section.getByRole('button', { name: 'Повторить импорт' }).press('Enter')
+  await expect(target).toBeFocused()
   await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await page.getByRole('dialog').getByRole('button', { name: 'Создать и проверить' }).press('Enter')
   const installed = section.getByText('Установлено и проверено runtime')
@@ -825,10 +912,14 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(section.getByText(/новом локальном sample \/api\/tags/u)).toHaveCount(1)
   await expect(section.getByText(/completion probe получил свежий/u)).toHaveCount(1)
   await expect(section.getByText(/owner\/model:latest · manifest-digest/u)).toHaveCount(1)
-  await expect.poll(() => requests.filter((request) => request.path === '/api/models').length)
+  await expect.poll(modelCalls)
     .toBe(modelsBeforeImport + 1)
+  const installedRegion = page.getByRole('heading', { name: 'Установленные' })
+    .locator('xpath=ancestor::section[1]')
+  await expect(installedRegion.getByText('owner/model:latest', { exact: true })).toHaveCount(1)
+  await expect(installedRegion.getByText('1 модель', { exact: true })).toHaveCount(1)
   const p2mCalls = await importCalls()
-  expect(p2mCalls).toHaveLength(2)
+  expect(p2mCalls).toHaveLength(3)
   for (const importCall of p2mCalls) {
     expect(new URL(importCall.url).pathname).toBe('/api/models/imports/hugging-face-gguf/start')
     expect(JSON.parse(importCall.body)).toEqual({
@@ -838,6 +929,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   }
   await expect(installed.locator('..').locator('..')).toBeFocused()
 
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const layout = await page.evaluate(() => ({
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -846,7 +938,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   expect(layout.reducedMotion).toBe(true)
 
   const forbidden = requests.filter((request) =>
-    /\/(pull|prewarm|warm|stop|probes|create|imports)\b/u.test(request.path)
+    /\/(pull|prewarm|warm|stop|probes|create)\b/u.test(request.path)
     || ['DELETE', 'PUT', 'PATCH'].includes(request.method))
   expect(forbidden).toEqual([])
   const applicationOrigin = new URL(page.url()).origin

@@ -290,18 +290,24 @@ export const huggingFaceImportStreamEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('state'),
     seq: z.number().int().nonnegative(),
-    data: huggingFaceImportBaseSchema.extend({
-      state: z.enum(['preparing', 'importing', 'verifying', 'probing']),
-      phase: z.enum([
-        'validating_artifact',
-        'checking_target',
-        'checking_blob',
-        'uploading_blob',
-        'creating_model',
-        'observing_installation',
-        'running_completion_probe',
-      ]),
-    }).strict(),
+    data: z.discriminatedUnion('state', [
+      huggingFaceImportBaseSchema.extend({
+        state: z.literal('preparing'),
+        phase: z.enum(['validating_artifact', 'checking_target']),
+      }).strict(),
+      huggingFaceImportBaseSchema.extend({
+        state: z.literal('importing'),
+        phase: z.enum(['checking_blob', 'uploading_blob', 'creating_model']),
+      }).strict(),
+      huggingFaceImportBaseSchema.extend({
+        state: z.literal('verifying'),
+        phase: z.literal('observing_installation'),
+      }).strict(),
+      huggingFaceImportBaseSchema.extend({
+        state: z.literal('probing'),
+        phase: z.literal('running_completion_probe'),
+      }).strict(),
+    ]),
   }).strict(),
   z.object({
     type: z.literal('completed'),

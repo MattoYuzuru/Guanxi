@@ -18,6 +18,7 @@ const ARTIFACT_ID = '11111111-1111-4111-8111-111111111111'
 const TARGET = 'owner/model:latest'
 const SOURCE_SHA = 'a'.repeat(40)
 const OBSERVED_AT = '2026-08-09T12:00:00.000Z'
+const LOCAL_HOST = 'http://127.0.0.1:11434'
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -125,10 +126,11 @@ function createFrames(options: { abort?: AbortController; malformed?: boolean } 
 async function collect(
   service: HuggingFaceImportService,
   signal = new AbortController().signal,
+  targetModelName = TARGET,
 ): Promise<HuggingFaceImportStreamEvent[]> {
   const events: HuggingFaceImportStreamEvent[] = []
   for await (const event of service.import({
-    artifactId: ARTIFACT_ID, targetModelName: TARGET, contextLength: 8_192,
+    artifactId: ARTIFACT_ID, targetModelName, contextLength: 8_192,
   }, signal)) {
     assert.deepEqual(huggingFaceImportStreamEventSchema.parse(event), event)
     events.push(event)
@@ -137,12 +139,50 @@ async function collect(
 }
 
 describe('server-owned staged GGUF import', () => {
+  it('rejects incompatible state/phase and completed provenance identities', () => {
+    assert.throws(() => huggingFaceImportStreamEventSchema.parse({
+      type: 'state', seq: 0,
+      data: { version: 1, state: 'preparing', phase: 'creating_model' },
+    }))
+    const source = sourceProvenance(gguf())
+    const provenance = {
+      version: 1, source, targetModelName: TARGET,
+      create: {
+        endpoint: '/api/create', input: 'uploaded_sha256_blob_files_map',
+        terminalStatus: 'success', startedAt: OBSERVED_AT, terminalAt: OBSERVED_AT,
+      },
+      installation: {
+        source: 'ollama_api_tags', normalizedModelReference: TARGET,
+        digest: 'manifest-digest', runtimeVersion: '0.32.0', observedAt: OBSERVED_AT,
+      },
+      probe: verifiedProbe(),
+      staging: { artifactId: ARTIFACT_ID, retention: 'deleted_after_verified_success' },
+      completedAt: OBSERVED_AT,
+    }
+    for (const inconsistent of [
+      { ...provenance, targetModelName: 'other/model:latest' },
+      {
+        ...provenance,
+        staging: {
+          ...provenance.staging,
+          artifactId: '22222222-2222-4222-8222-222222222222',
+        },
+      },
+    ]) {
+      assert.throws(() => huggingFaceImportStreamEventSchema.parse({
+        type: 'completed', seq: 0,
+        data: { version: 1, state: 'completed', provenance: inconsistent },
+      }))
+    }
+  })
+
   it('collapses a concurrent artifact/target activation before any mutation', async () => {
     const staged = await staging()
     let mutations = 0
     const service = new HuggingFaceImportService({
       downloads: staged.downloads,
       ollama: () => ({
+        host: LOCAL_HOST,
         tags: async () => tags(),
         blobExists: async () => { mutations += 1; return true },
         pushBlob: async () => { mutations += 1 },
@@ -154,11 +194,36 @@ describe('server-owned staged GGUF import', () => {
       artifactId: ARTIFACT_ID, targetModelName: TARGET, contextLength: 8_192,
     }, new AbortController().signal)
     assert.equal((await first.next()).value?.type, 'state')
-    const duplicate = (await collect(service)).at(-1)!
+    const duplicate = (await collect(
+      service,
+      new AbortController().signal,
+      'other/model:latest',
+    )).at(-1)!
     assert.equal(duplicate.type, 'conflict')
     if (duplicate.type === 'conflict') assert.equal(duplicate.data.reason, 'duplicate_active')
     assert.equal(mutations, 0)
     await first.return(undefined)
+  })
+
+  it('refuses a remote Ollama host before artifact or provider effects', async () => {
+    let effects = 0
+    const service = new HuggingFaceImportService({
+      downloads: {
+        artifact: () => { effects += 1; return null },
+        discard: async () => { effects += 1; return false },
+      },
+      ollama: () => ({
+        host: 'http://192.0.2.10:11434',
+        tags: async () => { effects += 1; return tags() },
+      }),
+      completionProbe: { execute: async () => { effects += 1; return verifiedProbe() } },
+    } as never)
+    const terminal = (await collect(service)).at(-1)!
+    assert.equal(terminal.type, 'failed')
+    if (terminal.type === 'failed') {
+      assert.equal(terminal.data.reason, 'remote_provider_not_allowed')
+    }
+    assert.equal(effects, 0)
   })
 
   it('revalidates the artifact, uploads exact bytes, creates once, observes tags, probes and cleans up', async () => {
@@ -168,6 +233,7 @@ describe('server-owned staged GGUF import', () => {
     const service = new HuggingFaceImportService({
       downloads: staged.downloads,
       ollama: () => ({
+        host: LOCAL_HOST,
         tags: async () => {
           calls.tags += 1
           return calls.tags < 3 ? tags() : tags([{ name: TARGET, digest: 'manifest-digest' }])
@@ -223,11 +289,19 @@ describe('server-owned staged GGUF import', () => {
       assert.equal(terminal.data.provenance.staging.retention, 'deleted_after_verified_success')
     }
     assert.equal(events.filter((event) => event.type === 'completed').length, 1)
+
+    const repeated = (await collect(service)).at(-1)!
+    assert.equal(repeated.type, 'failed')
+    if (repeated.type === 'failed') assert.equal(repeated.data.reason, 'artifact_not_found')
+    assert.deepEqual(calls, { tags: 3, blob: 1, push: 1, create: 1, probe: 1 })
   })
 
-  it('fails closed for missing, symlinked, replaced and checksum-corrupt artifacts before Ollama', async () => {
-    const cases: Array<['missing' | 'symlink' | 'replaced' | 'corrupt', string]> = [
+  it('fails closed for missing, foreign, symlinked, replaced and checksum-corrupt artifacts before Ollama', async () => {
+    const cases: Array<[
+      'missing' | 'foreign' | 'symlink' | 'replaced' | 'corrupt', string,
+    ]> = [
       ['missing', 'artifact_not_found'],
+      ['foreign', 'artifact_changed'],
       ['symlink', 'artifact_changed'],
       ['replaced', 'artifact_changed'],
       ['corrupt', 'artifact_corrupt'],
@@ -248,9 +322,21 @@ describe('server-owned staged GGUF import', () => {
         await writeFile(staged.path, bytes)
       }
       let providerCalls = 0
+      const downloads = kind === 'foreign'
+        ? {
+            ...staged.downloads,
+            artifact: (id: string) => {
+              const record = staged.downloads.artifact(id)
+              return record ? { ...record, path: join(staged.root, 'foreign.gguf') } : null
+            },
+          }
+        : staged.downloads
       const service = new HuggingFaceImportService({
-        downloads: staged.downloads,
-        ollama: () => ({ tags: async () => { providerCalls += 1; return tags() } }),
+        downloads,
+        ollama: () => ({
+          host: LOCAL_HOST,
+          tags: async () => { providerCalls += 1; return tags() },
+        }),
         completionProbe: { execute: async () => { throw new Error('not called') } },
       } as never)
       const terminal = (await collect(service)).at(-1)!
@@ -270,6 +356,7 @@ describe('server-owned staged GGUF import', () => {
       const service = new HuggingFaceImportService({
         downloads: staged.downloads,
         ollama: () => ({
+          host: LOCAL_HOST,
           tags: async () => tags(models),
           blobExists: async () => { effects += 1; return false },
           pushBlob: async () => { effects += 1 },
@@ -293,6 +380,7 @@ describe('server-owned staged GGUF import', () => {
     const service = new HuggingFaceImportService({
       downloads: staged.downloads,
       ollama: () => ({
+        host: LOCAL_HOST,
         tags: async () => { tagsCalls += 1; return tags() },
         blobExists: async () => true,
         pushBlob: async () => { throw new Error('not called') },
@@ -321,6 +409,7 @@ describe('server-owned staged GGUF import', () => {
       const service = new HuggingFaceImportService({
         downloads: staged.downloads,
         ollama: () => ({
+          host: LOCAL_HOST,
           tags: async () => tags(),
           blobExists: async () => true,
           pushBlob: async () => { throw new Error('not called') },
@@ -345,6 +434,7 @@ describe('server-owned staged GGUF import', () => {
     const service = new HuggingFaceImportService({
       downloads: staged.downloads,
       ollama: () => ({
+        host: LOCAL_HOST,
         tags: async () => tags(),
         blobExists: async () => true,
         pushBlob: async () => { throw new Error('not called') },
@@ -376,6 +466,7 @@ describe('server-owned staged GGUF import', () => {
     const service = new HuggingFaceImportService({
       downloads: staged.downloads,
       ollama: () => ({
+        host: LOCAL_HOST,
         tags: async () => {
           tagsCalls += 1
           return tagsCalls < 3 ? tags() : tags([{ name: TARGET, digest: 'manifest-digest' }])
@@ -403,6 +494,7 @@ describe('server-owned staged GGUF import', () => {
     const service = new HuggingFaceImportService({
       downloads: staged.downloads,
       ollama: () => ({
+        host: LOCAL_HOST,
         tags: async () => {
           tagsCalls += 1
           return tagsCalls < 3 ? tags() : tags([{ name: TARGET, digest: 'manifest-digest' }])
@@ -444,7 +536,10 @@ describe('server-owned staged GGUF import', () => {
     let calls = 0
     const service = new HuggingFaceImportService({
       downloads: staged.downloads,
-      ollama: () => ({ tags: async () => { calls += 1; return tags() } }),
+      ollama: () => ({
+        host: LOCAL_HOST,
+        tags: async () => { calls += 1; return tags() },
+      }),
       completionProbe: { execute: async () => { calls += 1; return verifiedProbe() } },
     } as never)
     const terminal = (await collect(service, controller.signal)).at(-1)!

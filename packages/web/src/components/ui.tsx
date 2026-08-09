@@ -520,7 +520,13 @@ export function Modal({
               {title}
             </h2>
             {dismissable && (
-              <Button variant="ghost" size="sm" onClick={onClose} aria-label={closeLabel}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClose}
+                aria-label={closeLabel}
+                className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
+              >
                 ✕
               </Button>
             )}

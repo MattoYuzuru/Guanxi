@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type {
+  CompletionProbeEvidence,
   HuggingFaceDownloadProvenance,
   HuggingFaceImportConflictReason,
   HuggingFaceImportFailureReason,
@@ -9,6 +10,7 @@ import type {
 } from '@alamo/contract'
 import { Badge, Button, Input, Modal } from '../../components/ui.tsx'
 import { streamHuggingFaceImport } from '../../lib/api.ts'
+import { SseHttpError } from '../../lib/sse.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 
@@ -27,6 +29,7 @@ type ImportState =
       kind: 'failed'
       reason: HuggingFaceImportFailureReason
       target: HuggingFaceImportTargetObservation | null
+      probe: CompletionProbeEvidence | null
     }
 
 const PHASE_KEYS: Record<Phase, LocaleKey> = {
@@ -49,6 +52,8 @@ const CONFLICT_KEYS: Record<HuggingFaceImportConflictReason, LocaleKey> = {
 }
 
 const FAILURE_KEYS: Record<HuggingFaceImportFailureReason, LocaleKey> = {
+  invalid_target: 'hf.import.failed.invalid_target',
+  remote_provider_not_allowed: 'hf.import.failed.remote_provider_not_allowed',
   artifact_not_found: 'hf.import.failed.artifact_not_found',
   artifact_changed: 'hf.import.failed.artifact_changed',
   artifact_corrupt: 'hf.import.failed.artifact_corrupt',
@@ -79,8 +84,10 @@ export function HuggingFaceImportControl({
   const controllerRef = useRef<AbortController | null>(null)
   const attemptRef = useRef(0)
   const runningRef = useRef(false)
+  const focusTargetOnIdleRef = useRef(false)
   const mountedRef = useRef(true)
   const launchRef = useRef<HTMLButtonElement>(null)
+  const targetRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const statusRef = useRef<HTMLDivElement>(null)
 
@@ -94,6 +101,10 @@ export function HuggingFaceImportControl({
   }, [])
 
   useEffect(() => {
+    if (state.kind === 'idle' && focusTargetOnIdleRef.current) {
+      focusTargetOnIdleRef.current = false
+      targetRef.current?.focus()
+    }
     if (state.kind === 'idle' || state.kind === 'running') return
     statusRef.current?.focus()
   }, [state.kind])
@@ -137,7 +148,12 @@ export function HuggingFaceImportControl({
           break
         } else if (event.type === 'failed') {
           terminal = true
-          setState({ kind: 'failed', reason: event.data.reason, target: event.data.target })
+          setState({
+            kind: 'failed',
+            reason: event.data.reason,
+            target: event.data.target,
+            probe: event.data.probe,
+          })
           break
         }
       }
@@ -146,13 +162,22 @@ export function HuggingFaceImportControl({
         && !controller.signal.aborted
         && mountedRef.current
         && attemptRef.current === attempt
-      ) setState({ kind: 'failed', reason: 'provider_unavailable', target: null })
-    } catch {
+      ) setState({
+        kind: 'failed', reason: 'provider_unavailable', target: null, probe: null,
+      })
+    } catch (error) {
       if (
         !controller.signal.aborted
         && mountedRef.current
         && attemptRef.current === attempt
-      ) setState({ kind: 'failed', reason: 'provider_unavailable', target: null })
+      ) setState({
+        kind: 'failed',
+        reason: error instanceof SseHttpError && error.status === 400
+          ? 'invalid_target'
+          : 'provider_unavailable',
+        target: null,
+        probe: null,
+      })
     } finally {
       if (controllerRef.current === controller && attemptRef.current === attempt) {
         controllerRef.current = null
@@ -190,6 +215,7 @@ export function HuggingFaceImportControl({
             {translate('hf.import.target')}
           </label>
           <Input
+            ref={targetRef}
             id={`hf-import-target-${artifact.artifact.id}`}
             value={target}
             disabled={state.kind === 'running'}
@@ -237,7 +263,10 @@ export function HuggingFaceImportControl({
         <ImportTerminal
           state={state}
           statusRef={statusRef}
-          onRetry={() => setState({ kind: 'idle' })}
+          onRetry={() => {
+            focusTargetOnIdleRef.current = true
+            setState({ kind: 'idle' })
+          }}
         />
       )}
 
@@ -251,10 +280,19 @@ export function HuggingFaceImportControl({
         closeLabel={translate('hf.import.confirm.close')}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirming(false)}
+              className="min-h-11 sm:min-h-0"
+            >
               {translate('hf.import.confirm.back')}
             </Button>
-            <Button ref={confirmRef} variant="primary" onClick={() => void start()}>
+            <Button
+              ref={confirmRef}
+              variant="primary"
+              onClick={() => void start()}
+              className="min-h-11 sm:min-h-0"
+            >
               {translate('hf.import.confirm.run')}
             </Button>
           </>
@@ -313,7 +351,10 @@ function ImportTerminal({
             {state.provenance.installation.normalizedModelReference} · {state.provenance.installation.digest}
           </p>
           <p className="mt-1">
-            {translate('hf.import.runtimeVerified')} · Ollama {state.provenance.installation.runtimeVersion}
+            {translate('hf.import.runtimeVerified')}
+          </p>
+          <p className="mt-1">
+            {translate('hf.import.runtimeVersion')} · {state.provenance.installation.runtimeVersion}
           </p>
           <p className="mt-1">
             {translate('hf.import.observed')} {formatDateTime(state.provenance.installation.observedAt)}
@@ -328,6 +369,7 @@ function ImportTerminal({
         <>
           <p className="mt-2 text-2xs">{translate(FAILURE_KEYS[state.reason])}</p>
           {state.target ? <TargetObservation target={state.target} /> : null}
+          {state.probe ? <ProbeObservation probe={state.probe} /> : null}
         </>
       ) : (
         <p className="mt-2 text-2xs">{translate('hf.import.cancelled.detail')}</p>
@@ -337,6 +379,19 @@ function ImportTerminal({
           {translate('hf.import.retry')}
         </Button>
       ) : null}
+    </div>
+  )
+}
+
+function ProbeObservation({ probe }: { probe: CompletionProbeEvidence }) {
+  return (
+    <div className="mt-2 text-2xs text-[var(--fg-subtle)]">
+      <p>{translate('hf.import.probeEvidence')}</p>
+      <p className="mt-1">
+        {translate(`models.probe.state.${probe.status}` as LocaleKey)} ·{' '}
+        {translate(`models.probe.reason.${probe.reason}` as LocaleKey)}
+      </p>
+      <p className="mt-1">{translate('models.probe.observed')} {formatDateTime(probe.observedAt)}</p>
     </div>
   )
 }
