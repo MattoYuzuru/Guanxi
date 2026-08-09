@@ -99,6 +99,13 @@ anonymous Node и `curl` requests 2026-08-09 получили HTTP 503 с вне
   license и author metadata.
 - [Hub download](https://huggingface.co/docs/huggingface_hub/en/guides/download)
   поддерживает exact file/revision, local cache и dry-run.
+- [Downloading models — firewall requirements](https://huggingface.co/docs/hub/models-downloading)
+  на 2026-08-09 перечисляет HTTPS/443 download boundary:
+  `huggingface.co`, `cas-server.xethub.hf.co`,
+  `cas-server.xethub-eu.hf.co`, `transfer.xethub.hf.co`,
+  `transfer.xethub-eu.hf.co`, `us.aws.cdn.hf.co`, `us.gcp.cdn.hf.co`,
+  `cdn-lfs-us-1.hf.co`, `cdn-lfs-eu-1.hf.co`. P2-L использует exact host set,
+  а не suffix allowlist; live redirect chain из текущего окружения не получен.
 - [Ollama import](https://docs.ollama.com/import) официально импортирует local
   GGUF через `Modelfile FROM /path/file.gguf` и `ollama create`.
 

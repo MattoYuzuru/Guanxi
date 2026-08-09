@@ -5,12 +5,11 @@
 
 ## Текущий baseline
 
-На 2026-08-09 после independently verified P2-K:
+На 2026-08-09 после independently verified P2-L:
 
-- server-only tests: 472/472; полный core с CLI reuse: 475/475; Web
-  component/parser: 161/161;
-- `npm run test:web:browser`: 27/27 deterministic Chromium tests с mocked
-  REST/SSE, включая exact-selection P2-K case. Требует заранее установленный
+- полный core с CLI reuse: 504/504; Web component/parser: 167/167;
+- `npm run test:web:browser`: 28/28 deterministic Chromium tests с mocked
+  REST/SSE, включая exact-selection P2-K и exact-download P2-L cases. Требует заранее установленный
   browser binary
   (`npx playwright install chromium`) — postinstall hook отсутствует, поэтому на
   чистой машине `npm install` этого не делает. Запускать из корня либо из
@@ -232,8 +231,18 @@
   disclosure reset при новой evidence, fresh license caveat, scoped polite live
   terminal states, English/Russian, focus restore и отсутствие Download/Install.
   Новый Chromium case компилируется и проверяет exact body, 390 px, открытый
-  preview при 200%, 44 px, reduced motion и no resource effects, но runtime gate
-  остаётся blocked текущим запретом loopback listen;
+  preview при 200%, 44 px, reduced motion и no resource effects;
+- P2-L contract/server fixtures покрывают strict stream states/provenance,
+  segment encoding, все девять documented HTTPS/443 hosts, hostile redirects,
+  полный HTTP 200, known/unknown/mismatched length, byte/connect/body bounds,
+  LFS-claim match/mismatch/observed-only SHA-256, GGUF v2/v3 и malformed header,
+  cancellation, duplicate writer, atomic finalization, root/partial collision и
+  доказанное ownership cleanup. Web fixtures ловят stale terminal frame после
+  cancel/retry и наблюдают preparing/progress/verifying/terminal live/focus.
+  Chromium case проверяет explicit same-origin download, provider-failure
+  retention локального catalog, keyboard retry, 390 px/200%, 44 px target и
+  computed reduced-motion transition. Все P2-L fixtures mocked/synthetic: они не
+  являются live HF/Ollama/GPU либо production filesystem validation;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,

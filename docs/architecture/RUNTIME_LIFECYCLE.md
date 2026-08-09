@@ -1137,8 +1137,11 @@ P1-J bounded Queue/exact Job Stop action реализованы. P1-K допол
 model/digest/context/runtime/hardware observation key, exact-only calibration и
 digest-aware bounded `/api/show` cache. P2-C показывает typed `model_probe`
 operation и manual exact result без Job Stop. P2-D/P2-E pull не входит в Governor
-projection: это connection-owned download, а не inference lease/Job. P2-F
-filter/compare вообще не создаёт operation owner. Production pressure/available
+projection: это connection-owned download, а не inference lease/Job. P2-L exact
+HF download следует той же non-Job ownership semantics: POST+SSE disconnect или
+explicit cancel abort-ит writer и чистит owned partial; reload/restart не даёт
+replay/resume. Проверенный blob остаётся managed staging, но не runtime model и
+не Governor lease. P2-F filter/compare вообще не создаёт operation owner. Production pressure/available
 memory, continuous durable runtime history, safe parallel и full resource
 actions ещё не реализованы. P2-G Runtime Bar показывает sourced Linux/NVIDIA
 devices с redacted UUID и contained scrolling, но не aggregate capacity либо

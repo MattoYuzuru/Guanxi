@@ -397,9 +397,10 @@ single-user scale. Модульные границы нужны для correctne
 - использует stale-while-revalidate;
 - отделяет discovery claim от installability/runtime verification.
 - нормализует user-supplied Ollama name/page URL;
-- ищет exact Hugging Face GGUF через официальный API; **current state (P2-K):**
-  read-only discovery дополнен выбором exact file/commit и claimed-size fit
-  preview; download остаётся P2-L;
+- ищет exact Hugging Face GGUF через официальный API; **current state (P2-L):**
+  read-only discovery и exact file/commit preview дополнены explicit
+  connection-owned download в managed staging с streamed SHA-256 и bounded GGUF
+  header inspection. Download не создаёт Installation/Job и не является import;
 - не выполняет Ollama catalog scraping.
 
 #### Agent Engine
@@ -474,19 +475,21 @@ pipeline progress, не притворяясь одним непрерывным
 
 ### Import GGUF из Hugging Face
 
-Target pipeline. Current state (P2-K): реализованы первые четыре шага — bounded
+Target pipeline. Current state (P2-L): реализованы первые шесть шагов — bounded
 server-owned search, metadata/revision/file-list, explicit GGUF-only verdict и
 request-scoped выбор exact file на exact commit с size/license/gated и
 claimed-size-only fit preview. Preview показывает source/time/confidence
-стартового hardware profile и не выдаётся за measured fit. Download, checksum и
-local import не реализованы (P2-L/P2-M), и HF URL не обещается как `ollama pull`.
+стартового hardware profile и не выдаётся за measured fit. P2-L download
+restart-from-zero, connection-owned и не replayable: он принимает только full
+HTTP 200, пишет generated staging file, считает SHA-256 и проверяет GGUF v2/v3
+header. Local import остаётся P2-M, и HF URL не обещается как `ollama pull`.
 
 ```text
 HF URL/search
   → metadata + revision + file list
   → user selects GGUF
   → dry-run size/fit/license preview
-  → resumable download
+  → bounded restart-from-zero download
   → checksum/format inspection
   → local Ollama GGUF import
   → capability probe

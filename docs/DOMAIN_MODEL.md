@@ -152,6 +152,16 @@ Variant, Installation, capability claim или availability proof. Confirmed pul
 создать observed Installation/digest fact. Import Job, resume, checksum,
 provenance record и recent catalog entry ещё не реализованы.
 
+P2-L добавляет transient connection-owned `HuggingFaceDownload` и managed
+staging artifact, но не `Installation`, `ModelVariant` registry или durable
+`Job`. Terminal completed provenance связывает exact HF identity/commit/path,
+fresh license/gated claims, expected/observed size, observed SHA-256 relation,
+bounded GGUF header result, server-generated artifact id и observation time.
+SQLite row не создаётся; UI reload/process restart не replay/resume-ит download.
+Cancel/error удаляет только owned partial, а hard process crash всё ещё может
+оставить orphan partial для будущей retention policy. Только P2-M сможет
+превратить проверенный staging artifact в Ollama installation evidence.
+
 P2-E добавляет variant-first projection текущего local/bundled Marketplace, но
 не persistent `ModelVariant` registry. Каждая валидная catalog row получает
 server-derived exact normalized target, собственный claimed-size fit и exact

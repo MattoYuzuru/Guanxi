@@ -740,7 +740,7 @@ Pipeline:
 2. validate immutable revision и exact file;
 3. dry-run size/cache/fit;
 4. show license/gated status;
-5. resumable download в managed staging;
+5. bounded restart-from-zero download в managed staging;
 6. checksum и GGUF format inspection;
 7. generate internal Modelfile with staged local path;
 8. create model through Ollama adapter;
@@ -750,7 +750,7 @@ Pipeline:
 Path не принимается напрямую от remote metadata. Gated token хранится в protected
 secret adapter и не попадает в Job Events.
 
-Current state (P2-K, 2026-08-09): шаг 1 и bounded часть шагов 2–4 реализованы
+Current state (P2-L, 2026-08-09): шаг 1 и bounded часть шагов 2–6 реализованы
 как отдельный provider. Strict selection contract принимает только published
 repository identity, lowercase 40-hex commit, exact safe GGUF path и context;
 server перечитывает `/api/models/{repo}/revision/{commit}?blobs=true` через ту же
@@ -761,10 +761,18 @@ fit использует только этот размер, исключает 
 hardware source/observedAt/confidence и становится unknown при отсутствии размера
 или usable capacity.
 
-Шаги 5–10 (download, checksum, Modelfile, `ollama create`, probe, staging
-cleanup) не реализованы: это P2-L/P2-M. `HuggingFaceImportRequest` выше — target
-shape, а не текущий contract: current routes поддерживают search, repository
-reference и request-scoped exact selection, но не import command.
+Шаги 5–6 реализованы отдельным strict POST+SSE contract. Server заново
+подтверждает exact target, строит resolve URL по сегментам, следует только exact
+documented HTTPS/443 hosts, принимает только full 200 и stream-ит в generated
+managed staging с timeout/maximum-byte/size bounds. SHA-256 различает matched
+LFS claim и locally observed-only digest; GGUF inspection ограничена magic и
+version 2/3. Cancel/error удаляет только owned partial, duplicate exact target
+имеет один process-local writer, а restart/reload не resume-ит операцию.
+
+Шаги 7–10 (Modelfile, `ollama create`, probe и post-import staging policy) не
+реализованы: это P2-M. `HuggingFaceImportRequest` выше — target shape, а не
+текущий contract: current routes поддерживают search, repository reference,
+request-scoped exact selection и staging download, но не import command.
 Token/gated acceptance не реализованы; доступ только anonymous public.
 
 ### Artifact Service
