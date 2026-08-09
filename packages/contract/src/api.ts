@@ -99,7 +99,7 @@ export type GetHealthResponse = z.infer<typeof getHealthResponse>
 export const getFeatureFlagsResponse = z
   .object({
     version: z.literal(FEATURE_FLAG_REGISTRY_VERSION),
-    flags: z.array(featureFlagProjectionSchema),
+    flags: z.array(featureFlagProjectionSchema).length(1),
   })
   .strict()
   .superRefine((value, context) => {

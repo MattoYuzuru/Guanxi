@@ -40,8 +40,6 @@ export type FeatureFlagEnvironment =
 export interface FeatureFlagRegistryOptions {
   readonly environment: FeatureFlagEnvironment
   readonly observedAt?: string
-  /** Test-only policy projection hook; keys still remain closed and complete. */
-  readonly declarations?: readonly FeatureFlagDeclaration[]
 }
 
 function validateDeclarations(declarations: readonly FeatureFlagDeclaration[]): void {
@@ -143,7 +141,7 @@ export class FeatureFlagRegistry {
   private readonly publicResponse: GetFeatureFlagsResponse
 
   constructor(options: FeatureFlagRegistryOptions) {
-    const declarations = options.declarations ?? FEATURE_FLAG_DECLARATIONS
+    const declarations = FEATURE_FLAG_DECLARATIONS
     validateDeclarations(declarations)
     const observedAt = options.observedAt ?? new Date().toISOString()
     const resolved = declarations.map((declaration) => ({

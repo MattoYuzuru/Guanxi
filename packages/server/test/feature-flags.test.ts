@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import {
   FEATURE_FLAG_DECLARATION_VERSION,
@@ -12,21 +13,18 @@ import {
   ESTIMATED_PARALLEL_ADMISSION_ENV,
   FEATURE_FLAG_DECLARATIONS,
   FeatureFlagRegistry,
-  type FeatureFlagDeclaration,
 } from '../src/config/feature-flags.ts'
-import type { AppContext } from '../src/context.ts'
+import { createAppContext, type AppContext } from '../src/context.ts'
 
 const OBSERVED_AT = '2026-08-09T12:00:00.000Z'
 const KEY = 'estimated_parallel_admission_policy' as const
 
 function registry(
   values: Readonly<Record<string, string | undefined>> = {},
-  declarations?: readonly FeatureFlagDeclaration[],
 ): FeatureFlagRegistry {
   return new FeatureFlagRegistry({
     environment: { state: 'available', values },
     observedAt: OBSERVED_AT,
-    declarations,
   })
 }
 
@@ -75,7 +73,9 @@ describe('P2-N feature flag contract and registry', () => {
       { ...exact, flags: [exactProjection({ effectiveValue: 'disabled' })] },
       { ...exact, flags: [exactProjection({ state: 'future_state' })] },
       { ...exact, flags: [exactProjection({ source: 'user_choice' })] },
+      { ...exact, flags: [exactProjection({ effectiveValue: true })] },
       { ...exact, flags: [exactProjection({ extra: 'raw-config' })] },
+      { ...exact, flags: [] },
       {
         ...exact,
         flags: [exactProjection(), exactProjection()],
@@ -88,8 +88,16 @@ describe('P2-N feature flag contract and registry', () => {
           }),
         ],
       },
+      {
+        ...exact,
+        flags: [
+          exactProjection({
+            basis: { registryVersion: 1, declarationVersion: 2 },
+          }),
+        ],
+      },
     ]
-    assert.equal(rejected.length, 9)
+    assert.equal(rejected.length, 12)
     for (const candidate of rejected) {
       assert.equal(getFeatureFlagsResponse.safeParse(candidate).success, false)
     }
@@ -174,53 +182,74 @@ describe('P2-N feature flag contract and registry', () => {
     assert.equal(Object.isFrozen(current.publicProjection().flags[0]), true)
   })
 
-  it('fails closed for an unknown runtime key and rejects duplicate or incomplete registries', () => {
+  it('fails closed for an unknown runtime key', () => {
     const current = registry({ [ESTIMATED_PARALLEL_ADMISSION_ENV]: 'enabled' })
     assert.equal(current.isEnabled('unknown_policy' as typeof KEY), false)
-    assert.throws(
-      () => registry({}, [...FEATURE_FLAG_DECLARATIONS, ...FEATURE_FLAG_DECLARATIONS]),
-      /Duplicate feature flag declaration/u,
-    )
-    assert.throws(() => registry({}, []), /Feature flag registry is incomplete/u)
   })
 
-  it('redacts raw/default/operator metadata and excludes a server-only declaration', () => {
-    const serverOnly = FEATURE_FLAG_DECLARATIONS.map((item) => ({
-      ...item,
-      clientReadable: false,
-    }))
-    const current = registry(
-      { [ESTIMATED_PARALLEL_ADMISSION_ENV]: 'enabled' },
-      serverOnly,
-    )
+  it('redacts raw/default/operator metadata and rejects server-only or arbitrary keys', () => {
+    const current = registry({ [ESTIMATED_PARALLEL_ADMISSION_ENV]: 'enabled' })
     const projection = current.publicProjection()
 
     assert.equal(current.isEnabled(KEY), true)
-    assert.equal(projection.flags.length, 0)
+    assert.equal(projection.flags.length, 1)
+    assert.equal(FEATURE_FLAG_DECLARATIONS.filter((item) => !item.clientReadable).length, 0)
+    assert.equal(featureFlagKeySchema.safeParse('server_only_fixture').success, false)
+    assert.deepEqual(Object.keys(projection.flags[0]!).sort(), [
+      'basis',
+      'effectiveValue',
+      'key',
+      'observedAt',
+      'reason',
+      'source',
+      'state',
+    ])
     assert.equal(JSON.stringify(projection).includes(ESTIMATED_PARALLEL_ADMISSION_ENV), false)
     assert.equal(JSON.stringify(projection).includes('safeDefault'), false)
-    assert.equal(JSON.stringify(projection).includes('enabled'), false)
+    const sentinel = registry({
+      [ESTIMATED_PARALLEL_ADMISSION_ENV]: 'private-sentinel-invalid-value',
+    }).publicProjection()
+    assert.equal(JSON.stringify(sentinel).includes('private-sentinel-invalid-value'), false)
   })
 
-  it('keeps two application contexts and requests isolated without global mutable state', async () => {
-    const contextA = {
-      featureFlags: registry({ [ESTIMATED_PARALLEL_ADMISSION_ENV]: 'enabled' }),
-    } as AppContext
-    const contextB = { featureFlags: registry() } as AppContext
-    const [responseA, responseB] = await Promise.all([
-      createApp(contextA).request(ROUTES.featureFlags()),
-      createApp(contextB).request(ROUTES.featureFlags()),
+  it('keeps two real application contexts and requests isolated without global mutable state', async () => {
+    const [contextA, contextB] = await Promise.all([
+      createAppContext({
+        dbPath: ':memory:',
+        appVersion: 'feature-a',
+        featureFlagEnvironment: {
+          state: 'available',
+          values: { [ESTIMATED_PARALLEL_ADMISSION_ENV]: 'enabled' },
+        },
+      }),
+      createAppContext({
+        dbPath: ':memory:',
+        appVersion: 'feature-b',
+        featureFlagEnvironment: { state: 'available', values: {} },
+      }),
     ])
-    const bodyA = getFeatureFlagsResponse.parse(await responseA.json())
-    const bodyB = getFeatureFlagsResponse.parse(await responseB.json())
+    try {
+      const [responseA, responseB] = await Promise.all([
+        createApp(contextA).request(ROUTES.featureFlags()),
+        createApp(contextB).request(ROUTES.featureFlags()),
+      ])
+      const bodyA = getFeatureFlagsResponse.parse(await responseA.json())
+      const bodyB = getFeatureFlagsResponse.parse(await responseB.json())
 
-    assert.equal(responseA.status, 200)
-    assert.equal(responseB.status, 200)
-    assert.equal(bodyA.flags.length, 1)
-    assert.equal(bodyB.flags.length, 1)
-    assert.equal(bodyA.flags[0]!.effectiveValue, true)
-    assert.equal(bodyB.flags[0]!.effectiveValue, false)
-    assert.notStrictEqual(contextA.featureFlags, contextB.featureFlags)
+      assert.equal(responseA.status, 200)
+      assert.equal(responseB.status, 200)
+      assert.equal(bodyA.flags.length, 1)
+      assert.equal(bodyB.flags.length, 1)
+      assert.equal(bodyA.flags[0]!.effectiveValue, true)
+      assert.equal(bodyB.flags[0]!.effectiveValue, false)
+      assert.notStrictEqual(contextA.featureFlags, contextB.featureFlags)
+    } finally {
+      await Promise.all([contextA.chatExecution.shutdown(), contextB.chatExecution.shutdown()])
+      contextA.jobService.closeSubscriptions()
+      contextB.jobService.closeSubscriptions()
+      contextA.db.close()
+      contextB.db.close()
+    }
   })
 
   it('exposes no write method and cannot mutate the startup snapshot through HTTP', async () => {
@@ -253,6 +282,12 @@ describe('P2-N feature flag contract and registry', () => {
         },
       },
     )
+    let networkCalls = 0
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () => {
+      networkCalls += 1
+      throw new Error('unexpected network access')
+    }) as typeof fetch
     const featureFlags = registry(environment)
     const accessed: PropertyKey[] = []
     const context = new Proxy(
@@ -266,10 +301,39 @@ describe('P2-N feature flag contract and registry', () => {
       },
     ) as AppContext
 
-    const response = await createApp(context).request(ROUTES.featureFlags())
-    assert.equal(response.status, 200)
-    assert.deepEqual(reads, [ESTIMATED_PARALLEL_ADMISSION_ENV])
-    assert.deepEqual(accessed, ['featureFlags'])
-    assert.equal(getFeatureFlagsResponse.parse(await response.json()).flags.length, 1)
+    try {
+      const response = await createApp(context).request(ROUTES.featureFlags())
+      assert.equal(response.status, 200)
+      assert.deepEqual(reads, [ESTIMATED_PARALLEL_ADMISSION_ENV])
+      assert.deepEqual(accessed, ['featureFlags'])
+      assert.equal(networkCalls, 0)
+      assert.equal(getFeatureFlagsResponse.parse(await response.json()).flags.length, 1)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('keeps persistence, model and Governor owners free of flag consumers or effect imports', () => {
+    const featureSource = readFileSync(
+      new URL('../src/config/feature-flags.ts', import.meta.url),
+      'utf8',
+    )
+    const moduleSpecifiers = [...featureSource.matchAll(/from\s+['"]([^'"]+)['"]/gu)]
+      .map((match) => match[1])
+    assert.deepEqual(moduleSpecifiers, ['@alamo/contract'])
+
+    for (const relativePath of [
+      '../src/runtime/resource-governor.ts',
+      '../src/runtime/prewarm.ts',
+      '../src/runtime/completion-probe.ts',
+      '../src/jobs/chat-execution.ts',
+      '../src/store/db.ts',
+      '../src/store/settings.ts',
+    ]) {
+      const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+      assert.equal(source.includes('featureFlags'), false, relativePath)
+      assert.equal(source.includes(KEY), false, relativePath)
+      assert.equal(source.includes(ESTIMATED_PARALLEL_ADMISSION_ENV), false, relativePath)
+    }
   })
 })

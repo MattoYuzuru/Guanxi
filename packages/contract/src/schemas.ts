@@ -2741,7 +2741,19 @@ export const featureFlagProjectionSchema = z.discriminatedUnion('state', [
       reason: z.literal('operator_source_unavailable'),
     })
     .strict(),
-])
+]).superRefine((value, context) => {
+  if (
+    value.state === 'resolved'
+    && value.source === 'safe_default'
+    && value.effectiveValue !== false
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['effectiveValue'],
+      message: 'The version 1 safe default is disabled',
+    })
+  }
+})
 export type FeatureFlagProjection = z.infer<typeof featureFlagProjectionSchema>
 
 /* ─────────────────────────────── Состояние сервиса ───────────────────────── */
