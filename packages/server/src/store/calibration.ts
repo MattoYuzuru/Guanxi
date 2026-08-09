@@ -8,6 +8,11 @@ interface CalibrationRow {
 }
 
 interface ExactCalibrationRow extends CalibrationRow {
+  provider: string
+  normalized_model_reference: string
+  artifact_digest: string
+  runtime_backend_fingerprint: string
+  hardware_fingerprint: string
   size_vram_bytes: number
   measured_at: string
 }
@@ -75,13 +80,21 @@ export class CalibrationStore {
     if (key.state !== 'complete') return null
     const row = this.db
       .prepare(
-        `SELECT context_length, size_bytes, size_vram_bytes, measured_at
+        `SELECT provider, normalized_model_reference, artifact_digest,
+                context_length, runtime_backend_fingerprint, hardware_fingerprint,
+                size_bytes, size_vram_bytes, measured_at
          FROM model_calibration_observations
          WHERE observation_key = ?`,
       )
       .get(key.id) as ExactCalibrationRow | undefined
     if (
       !row
+      || row.provider !== key.components.provider
+      || row.normalized_model_reference !== key.components.normalizedModelReference
+      || row.artifact_digest !== key.components.artifactDigest
+      || row.context_length !== key.components.contextLength
+      || row.runtime_backend_fingerprint !== key.components.runtimeBackend.fingerprint
+      || row.hardware_fingerprint !== key.components.hardware.fingerprint
       || !Number.isSafeInteger(row.context_length)
       || row.context_length <= 0
       || !Number.isSafeInteger(row.size_bytes)

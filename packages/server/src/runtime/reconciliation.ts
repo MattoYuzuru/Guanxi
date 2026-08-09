@@ -40,8 +40,15 @@ const INVALID_OWNER_ID = '[redacted]'
 
 interface ReconciliationOutcome {
   snapshot: RuntimeSnapshot
+  runtimeHost: string | null
   compatibilityModels: RunningModel[] | null
   error: unknown | null
+}
+
+export interface RuntimeSnapshotWithIdentity {
+  snapshot: RuntimeSnapshot
+  /** Server-internal endpoint identity; never included in the public projection. */
+  runtimeHost: string | null
 }
 
 export interface RuntimeReconciliationOptions {
@@ -372,6 +379,13 @@ export class RuntimeReconciliationService {
     return (await this.waitForOutcome(options.signal)).snapshot
   }
 
+  async snapshotWithIdentity(
+    options: RuntimeSnapshotOptions = {},
+  ): Promise<RuntimeSnapshotWithIdentity> {
+    const outcome = await this.waitForOutcome(options.signal)
+    return { snapshot: outcome.snapshot, runtimeHost: outcome.runtimeHost }
+  }
+
   async runningModels(options: RuntimeSnapshotOptions = {}): Promise<ListRunningResponse> {
     const outcome = await this.waitForOutcome(options.signal)
     if (outcome.error) throw outcome.error
@@ -439,6 +453,7 @@ export class RuntimeReconciliationService {
 
     if (runtimeResult.status === 'rejected') {
       return {
+        runtimeHost: modelSource.runtimeHost ?? null,
         snapshot: {
           observedAt,
           source: sourceFailure(runtimeResult.reason, observedAt),
@@ -461,6 +476,7 @@ export class RuntimeReconciliationService {
       hardware: modelSource.hardwareProfile ?? this.hostTelemetry.profile,
     })
     return {
+      runtimeHost: modelSource.runtimeHost ?? null,
       snapshot: {
         observedAt,
         source: {

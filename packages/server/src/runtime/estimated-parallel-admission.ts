@@ -31,7 +31,7 @@ type AvailableFact = Extract<EstimatedParallelMemoryFact, { state: 'available' }
 
 export interface EstimatedParallelAdmissionOptions {
   featureFlags: FeatureFlagRegistry
-  runtime: Pick<RuntimeReconciliationService, 'snapshot'>
+  runtime: Pick<RuntimeReconciliationService, 'snapshotWithIdentity'>
   calibration: CalibrationStore
   ollama(): OllamaClient
   hardware: HardwareInfo
@@ -130,7 +130,7 @@ function unavailableCalculation(
  */
 export class EstimatedParallelAdmissionService {
   private readonly featureFlags: FeatureFlagRegistry
-  private readonly runtime: Pick<RuntimeReconciliationService, 'snapshot'>
+  private readonly runtime: Pick<RuntimeReconciliationService, 'snapshotWithIdentity'>
   private readonly calibration: CalibrationStore
   private readonly ollama: () => OllamaClient
   private readonly hardware: HardwareInfo
@@ -171,7 +171,8 @@ export class EstimatedParallelAdmissionService {
       })
     }
 
-    const runtime = await this.runtime.snapshot({ signal })
+    const runtimeSample = await this.runtime.snapshotWithIdentity({ signal })
+    const runtime = runtimeSample.snapshot
     const base = this.base(request, featureFlag, runtime)
     if (
       request.expectedRuntimeObservedAt !== null
@@ -263,6 +264,7 @@ export class EstimatedParallelAdmissionService {
     const candidate = await this.candidateEvidence(
       request.candidate,
       activeRow.observationKey,
+      runtimeSample.runtimeHost,
       signal,
     )
     if (candidate.state === 'unavailable') {
@@ -277,7 +279,9 @@ export class EstimatedParallelAdmissionService {
             ...candidate.facts,
           },
         },
-        'candidate_provider_unavailable',
+        candidate.resolution.reason === 'candidate_runtime_changed'
+          ? 'runtime_identity_changed'
+          : 'candidate_provider_unavailable',
       )
     }
 
@@ -362,6 +366,7 @@ export class EstimatedParallelAdmissionService {
   private async candidateEvidence(
     requested: EstimatedParallelPairMember,
     activeObservationKey: Extract<ModelObservationKey, { state: 'complete' }>,
+    runtimeHost: string | null,
     signal?: AbortSignal,
   ): Promise<
     | {
@@ -386,6 +391,22 @@ export class EstimatedParallelAdmissionService {
       }
   > {
     const client = this.ollama()
+    if (runtimeHost === null || client.host !== runtimeHost) {
+      return {
+        state: 'unavailable',
+        resolution: {
+          state: 'unavailable',
+          reason: 'candidate_runtime_changed',
+          runtimeVersion: null,
+          observationKey: null,
+        },
+        facts: {
+          candidateDeclaredModel: unavailableFact('identity_unavailable'),
+          candidateKvCache: unavailableFact('identity_unavailable'),
+          candidateCalibration: unavailableFact('identity_unavailable'),
+        },
+      }
+    }
     try {
       const [beforeTags, beforeVersion] = await Promise.all([
         client.tags(signal),
@@ -454,6 +475,22 @@ export class EstimatedParallelAdmissionService {
         hardware: this.hardware,
       })
       const observationKey = key
+      if (observationKey.state !== 'complete') {
+        return {
+          state: 'unavailable',
+          resolution: {
+            state: 'unavailable',
+            reason: 'candidate_identity_unavailable',
+            runtimeVersion: afterVersion,
+            observationKey,
+          },
+          facts: {
+            candidateDeclaredModel: unavailableFact('identity_unavailable', observedAt),
+            candidateKvCache: unavailableFact('identity_unavailable', observedAt),
+            candidateCalibration: unavailableFact('identity_unavailable', observedAt),
+          },
+        }
+      }
       const resolution: EstimatedParallelPairResolution = {
         state: 'matched',
         reason: null,
@@ -483,6 +520,7 @@ export class EstimatedParallelAdmissionService {
       }
       const calibrated = this.calibration.exactObservation(observationKey)
       const calibration: EstimatedParallelMemoryFact = calibrated
+        && calibrated.measuredAt <= observedAt
         ? this.fact({
             bytes: calibrated.sizeBytes,
             source: 'exact_calibration_total',
@@ -490,7 +528,10 @@ export class EstimatedParallelAdmissionService {
             confidence: 'calibrated',
             basis: 'historical_exact_fingerprint_total',
           })
-        : unavailableFact('calibration_missing', observedAt)
+        : unavailableFact(
+            calibrated ? 'calibration_timestamp_invalid' : 'calibration_missing',
+            observedAt,
+          )
 
       if (calibration.state === 'available') {
         return {
@@ -517,7 +558,13 @@ export class EstimatedParallelAdmissionService {
           },
           reservation: required === null
             ? null
-            : { ...kv, bytes: required },
+            : this.fact({
+                bytes: required,
+                source: 'derived_declared_plus_kv_lower_bound',
+                observedAt,
+                confidence: 'estimated',
+                basis: 'declared_plus_architecture_kv_lower_bound',
+              }),
           reservationBasis: 'formula_lower_bound',
         }
       }

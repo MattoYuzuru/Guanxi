@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import {
   ESTIMATED_PARALLEL_ADMISSION_VERSION,
@@ -231,6 +231,11 @@ interface HarnessOptions {
   calibrationBytes?: number
   identityDrift?: boolean
   noArchitecture?: boolean
+  ambiguousQueue?: boolean
+  candidateRuntimeHost?: string
+  calibrationMeasuredAt?: string
+  queryObservedAt?: string
+  blockCandidateShow?: boolean
 }
 
 async function harness(options: HarnessOptions = {}) {
@@ -245,10 +250,17 @@ async function harness(options: HarnessOptions = {}) {
   })
   const activeTicket = governor.enqueue(admission('active-owner', 'active:latest'))
   const lease = await governor.acquire(activeTicket)
-  const queued = governor.enqueue(admission('candidate-owner', 'candidate:latest'))
+  const queued = [governor.enqueue(admission('candidate-owner', 'candidate:latest'))]
+  if (options.ambiguousQueue) {
+    queued.push(governor.enqueue(admission('candidate-owner', 'candidate:latest')))
+  }
   let runtimeCalls = 0
   let providerCalls = 0
   let tagsCalls = 0
+  let showStartedResolve!: () => void
+  const showStarted = new Promise<void>((resolve) => {
+    showStartedResolve = resolve
+  })
   const hostTelemetry: HostTelemetry = {
     profile: HARDWARE,
     sample: async () => appleHost(
@@ -270,7 +282,7 @@ async function harness(options: HarnessOptions = {}) {
     now: () => new Date(OBSERVED_AT),
   })
   const client = {
-    host: 'http://127.0.0.1:11434',
+    host: options.candidateRuntimeHost ?? 'http://127.0.0.1:11434',
     tags: async () => {
       providerCalls += 1
       tagsCalls += 1
@@ -286,8 +298,22 @@ async function harness(options: HarnessOptions = {}) {
       providerCalls += 1
       return RUNTIME_VERSION
     },
-    show: async () => {
+    show: async (_name: string, signal?: AbortSignal) => {
       providerCalls += 1
+      showStartedResolve()
+      if (options.blockCandidateShow) {
+        await new Promise<never>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException('Aborted', 'AbortError'))
+            return
+          }
+          signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          )
+        })
+      }
       return {
         model_info: options.noArchitecture
           ? {}
@@ -320,15 +346,15 @@ async function harness(options: HarnessOptions = {}) {
   const service = new EstimatedParallelAdmissionService({
     featureFlags,
     runtime: {
-      snapshot: async (input) => {
+      snapshotWithIdentity: async (input) => {
         runtimeCalls += 1
-        return reconciliation.snapshot(input)
+        return reconciliation.snapshotWithIdentity(input)
       },
     },
     calibration,
     ollama: () => client,
     hardware: HARDWARE,
-    now: () => new Date(OBSERVED_AT),
+    now: () => new Date(options.queryObservedAt ?? OBSERVED_AT),
   })
   if (options.calibrationBytes !== undefined) {
     const key = buildCompleteObservationKey({
@@ -340,24 +366,44 @@ async function harness(options: HarnessOptions = {}) {
       hardware: HARDWARE,
     })
     assert.equal(
-      calibration.record(key, options.calibrationBytes, options.calibrationBytes, OBSERVED_AT),
+      calibration.record(
+        key,
+        options.calibrationBytes,
+        options.calibrationBytes,
+        options.calibrationMeasuredAt ?? OBSERVED_AT,
+      ),
       true,
     )
   }
   return {
     db,
     service,
+    calibration,
     governor,
     lease,
     queued,
+    showStarted,
     calls: () => ({ runtime: runtimeCalls, provider: providerCalls }),
   }
 }
 
 function closeHarness(value: Awaited<ReturnType<typeof harness>>): void {
   value.lease.release()
-  value.governor.cancel(value.queued)
+  for (const queued of value.queued) value.governor.cancel(queued)
   value.db.close()
+}
+
+function sourceTree(directory: URL): string {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const child = new URL(entry.isDirectory() ? `${entry.name}/` : entry.name, directory)
+      if (entry.isDirectory()) return [sourceTree(child)]
+      return entry.isFile()
+        && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))
+        ? [readFileSync(child, 'utf8')]
+        : []
+    })
+    .join('\n')
 }
 
 describe('estimated parallel-admission contract', () => {
@@ -393,12 +439,79 @@ describe('estimated parallel-admission contract', () => {
       assert.equal(response.success, true)
       assert.equal(response.success && response.data.futureAdmissionGuarantee, false)
       assert.equal(response.success && response.data.governorAcceleratorPermits, 1)
-
-      const incoherent = estimatedParallelAdmissionResponseSchema.safeParse({
-        ...(response.success ? response.data : {}),
-        calculation: { state: 'unavailable', reason: 'host_capacity_unavailable' },
-      })
-      assert.equal(incoherent.success, false)
+      assert.ok(response.success)
+      const exact = response.data
+      const unavailable = {
+        state: 'unavailable',
+        bytes: null,
+        source: 'not_available',
+        observedAt: null,
+        confidence: 'unknown',
+        basis: 'fact_not_available',
+        reason: 'calibration_missing',
+      }
+      assert.equal(exact.calculation.state, 'calculated')
+      const calculation = exact.calculation.state === 'calculated'
+        ? exact.calculation
+        : null
+      assert.ok(calculation)
+      const disabledFlag = new FeatureFlagRegistry({
+        environment: { state: 'available', values: {} },
+        observedAt: OBSERVED_AT,
+      }).projection(ESTIMATED_PARALLEL_ADMISSION_FLAG)
+      const incoherent = [
+        { ...exact, featureFlag: disabledFlag },
+        {
+          ...exact,
+          pair: {
+            ...exact.pair,
+            active: {
+              state: 'unavailable', reason: 'not_evaluated',
+              runtimeVersion: null, observationKey: null,
+            },
+          },
+        },
+        {
+          ...exact,
+          request: { ...exact.request, expectedRuntimeObservedAt: '2026-08-09T11:00:00.000Z' },
+        },
+        { ...exact, facts: { ...exact.facts, candidateCalibration: unavailable } },
+        {
+          ...exact,
+          facts: {
+            ...exact.facts,
+            hostAvailableCapacity: { ...exact.facts.hostAvailableCapacity, bytes: 50 },
+          },
+          calculation: {
+            ...calculation,
+            availableCapacity: { ...calculation.availableCapacity, bytes: 50 },
+          },
+        },
+        {
+          ...exact,
+          calculation: {
+            ...calculation,
+            candidateReservation: {
+              ...calculation.candidateReservation,
+              bytes: calculation.candidateReservation.bytes! + 1,
+            },
+          },
+        },
+        {
+          ...exact,
+          request: {
+            ...exact.request,
+            candidate: {
+              ...exact.request.candidate,
+              model: { ...exact.request.candidate.model, artifactDigest: 'sha256:other' },
+            },
+          },
+        },
+      ]
+      assert.equal(incoherent.length, 7)
+      for (const mutation of incoherent) {
+        assert.equal(estimatedParallelAdmissionResponseSchema.safeParse(mutation).success, false)
+      }
     } finally {
       closeHarness(value)
     }
@@ -476,6 +589,14 @@ describe('estimated parallel-admission policy', () => {
       assert.equal(result.calculation.state, 'calculated')
       if (result.calculation.state === 'calculated') {
         assert.equal(result.calculation.candidateReservation.bytes, FORMULA_RESERVATION)
+        assert.equal(
+          result.calculation.candidateReservation.source,
+          'derived_declared_plus_kv_lower_bound',
+        )
+        assert.equal(
+          result.calculation.candidateReservation.basis,
+          'declared_plus_architecture_kv_lower_bound',
+        )
         assert.equal(result.calculation.activeAlreadyReflectedInCapacity, true)
       }
       assert.equal(result.futureAdmissionGuarantee, false)
@@ -525,6 +646,62 @@ describe('estimated parallel-admission policy', () => {
     }
   })
 
+  it('rejects corrupt or future calibration while preserving coherent mixed timestamps', async () => {
+    const corrupt = await harness({
+      availableMemoryBytes: FORMULA_RESERVATION,
+      calibrationBytes: 9_000,
+    })
+    const mixed = await harness({
+      availableMemoryBytes: 9_000,
+      calibrationBytes: 9_000,
+      calibrationMeasuredAt: '2026-08-09T11:00:00.000Z',
+      queryObservedAt: '2026-08-09T12:00:01.000Z',
+    })
+    const future = await harness({
+      availableMemoryBytes: FORMULA_RESERVATION,
+      calibrationBytes: 9_000,
+      calibrationMeasuredAt: '2026-08-09T13:00:00.000Z',
+    })
+    try {
+      corrupt.db.prepare(
+        'UPDATE model_calibration_observations SET context_length = 4096',
+      ).run()
+      const key = buildCompleteObservationKey({
+        normalizedModelReference: 'candidate:latest',
+        artifactDigest: CANDIDATE_DIGEST,
+        contextLength: CONTEXT_LENGTH,
+        runtimeVersion: RUNTIME_VERSION,
+        runtimeHost: 'http://127.0.0.1:11434',
+        hardware: HARDWARE,
+      })
+      assert.equal(corrupt.calibration.exactObservation(key), null)
+      const corruptResult = await corrupt.service.estimate(REQUEST)
+      assert.equal(corruptResult.facts.candidateCalibration.state, 'unavailable')
+      assert.equal(corruptResult.calculation.state, 'calculated')
+      if (corruptResult.calculation.state === 'calculated') {
+        assert.equal(corruptResult.calculation.reservationBasis, 'formula_lower_bound')
+      }
+
+      const mixedResult = await mixed.service.estimate(REQUEST)
+      assert.equal(mixedResult.verdict, 'estimated_deny')
+      assert.equal(mixedResult.runtimeObservedAt, OBSERVED_AT)
+      assert.equal(mixedResult.facts.candidateDeclaredModel.observedAt, '2026-08-09T12:00:01.000Z')
+      assert.equal(mixedResult.facts.candidateCalibration.observedAt, '2026-08-09T11:00:00.000Z')
+
+      const futureResult = await future.service.estimate(REQUEST)
+      assert.equal(futureResult.facts.candidateCalibration.state, 'unavailable')
+      assert.equal(futureResult.facts.candidateCalibration.reason, 'calibration_timestamp_invalid')
+      assert.equal(futureResult.calculation.state, 'calculated')
+      if (futureResult.calculation.state === 'calculated') {
+        assert.equal(futureResult.calculation.reservationBasis, 'formula_lower_bound')
+      }
+    } finally {
+      closeHarness(corrupt)
+      closeHarness(mixed)
+      closeHarness(future)
+    }
+  })
+
   it('never allows stale, drifting, missing, pressured or ambiguous-topology facts', async () => {
     const cases: Array<{
       options?: HarnessOptions
@@ -547,6 +724,115 @@ describe('estimated parallel-admission policy', () => {
         const result = await value.service.estimate(testCase.request ?? REQUEST)
         assert.equal(result.verdict, 'unknown')
         assert.equal(result.reason, testCase.reason)
+      } finally {
+        closeHarness(value)
+      }
+    }
+  })
+
+  it('rejects every active/queued pair mismatch and ambiguous candidate owner', async () => {
+    const cases: Array<{
+      request: EstimatedParallelAdmissionBody
+      options?: HarnessOptions
+      pair: 'active' | 'candidate'
+      pairReason: string
+    }> = [
+      {
+        request: {
+          ...REQUEST,
+          active: { ...REQUEST.active, owner: { kind: 'operation', operationId: 'wrong' } },
+        },
+        pair: 'active',
+        pairReason: 'active_owner_mismatch',
+      },
+      {
+        request: {
+          ...REQUEST,
+          active: {
+            ...REQUEST.active,
+            model: { ...REQUEST.active.model, normalizedReference: 'wrong:latest' },
+          },
+        },
+        pair: 'active',
+        pairReason: 'active_model_mismatch',
+      },
+      {
+        request: { ...REQUEST, active: { ...REQUEST.active, contextLength: 4_096 } },
+        pair: 'active',
+        pairReason: 'active_model_mismatch',
+      },
+      {
+        request: {
+          ...REQUEST,
+          active: {
+            ...REQUEST.active,
+            model: { ...REQUEST.active.model, artifactDigest: 'sha256:wrong' },
+          },
+        },
+        pair: 'active',
+        pairReason: 'active_identity_unavailable',
+      },
+      {
+        request: {
+          ...REQUEST,
+          candidate: {
+            ...REQUEST.candidate,
+            owner: { kind: 'operation', operationId: 'missing' },
+          },
+        },
+        pair: 'candidate',
+        pairReason: 'queued_owner_missing',
+      },
+      {
+        request: {
+          ...REQUEST,
+          candidate: {
+            ...REQUEST.candidate,
+            model: { ...REQUEST.candidate.model, normalizedReference: 'wrong:latest' },
+          },
+        },
+        pair: 'candidate',
+        pairReason: 'queued_model_mismatch',
+      },
+      {
+        request: { ...REQUEST, candidate: { ...REQUEST.candidate, contextLength: 4_096 } },
+        pair: 'candidate',
+        pairReason: 'queued_model_mismatch',
+      },
+      {
+        request: REQUEST,
+        options: { ambiguousQueue: true },
+        pair: 'candidate',
+        pairReason: 'queued_owner_ambiguous',
+      },
+    ]
+    for (const testCase of cases) {
+      const value = await harness(testCase.options)
+      try {
+        const result = await value.service.estimate(testCase.request)
+        assert.equal(result.verdict, 'unknown')
+        assert.equal(result.pair[testCase.pair].state, 'unavailable')
+        assert.equal(result.pair[testCase.pair].reason, testCase.pairReason)
+      } finally {
+        closeHarness(value)
+      }
+    }
+  })
+
+  it('binds candidate evidence to the same internal Ollama endpoint', async () => {
+    for (const candidateRuntimeHost of [
+      'http://127.0.0.1:11435',
+      'https://remote.invalid',
+    ]) {
+      const value = await harness({ candidateRuntimeHost })
+      try {
+        const result = estimatedParallelAdmissionResponseSchema.parse(
+          await value.service.estimate(REQUEST),
+        )
+        assert.equal(result.verdict, 'unknown')
+        assert.equal(result.reason, 'runtime_identity_changed')
+        assert.equal(result.pair.candidate.reason, 'candidate_runtime_changed')
+        assert.deepEqual(value.calls(), { runtime: 1, provider: 0 })
       } finally {
         closeHarness(value)
       }
@@ -576,7 +862,7 @@ describe('estimated parallel-admission policy', () => {
   it('keeps independent contexts stable and cancellation leaves Governor state unchanged', async () => {
     const first = await harness({ availableMemoryBytes: FORMULA_RESERVATION })
     const second = await harness({ availableMemoryBytes: FORMULA_RESERVATION + 1 })
-    const cancelled = await harness()
+    const cancelled = await harness({ blockCandidateShow: true })
     const before = cancelled.governor.snapshot()
     try {
       const [one, two] = await Promise.all([
@@ -586,11 +872,14 @@ describe('estimated parallel-admission policy', () => {
       assert.equal(one.verdict, 'estimated_deny')
       assert.equal(two.verdict, 'unknown')
       const controller = new AbortController()
+      const pending = cancelled.service.estimate(REQUEST, controller.signal)
+      await cancelled.showStarted
       controller.abort()
       await assert.rejects(
-        cancelled.service.estimate(REQUEST, controller.signal),
+        pending,
         { name: 'AbortError' },
       )
+      assert.deepEqual(cancelled.calls(), { runtime: 1, provider: 3 })
       assert.deepEqual(cancelled.governor.snapshot(), before)
     } finally {
       closeHarness(first)
@@ -608,5 +897,25 @@ describe('estimated parallel-admission policy', () => {
     assert.equal((source.match(/ALAMO_FEATURE_|process\.env/gu) ?? []).length, 0)
     assert.equal((source.match(/\.acquire\(|\.release\(|\.enqueue\(|\.cancel\(/gu) ?? []).length, 0)
     assert.equal((source.match(/\.record\(|INSERT|UPDATE|DELETE|localStorage|analytics/gu) ?? []).length, 0)
+    const serverSource = sourceTree(new URL('../src/', import.meta.url))
+    const webSource = sourceTree(new URL('../../web/src/', import.meta.url))
+    assert.equal(
+      (serverSource.match(
+        /\.projection\(ESTIMATED_PARALLEL_ADMISSION_FLAG\)/gu,
+      ) ?? []).length,
+      1,
+    )
+    assert.equal(
+      (serverSource.match(/new EstimatedParallelAdmissionService\(/gu) ?? []).length,
+      1,
+    )
+    assert.equal(
+      (serverSource.match(/estimatedParallelAdmission\.estimate\(/gu) ?? []).length,
+      1,
+    )
+    assert.equal(
+      (webSource.match(/estimated-parallel-admission|EstimatedParallelAdmission/gu) ?? []).length,
+      0,
+    )
   })
 })

@@ -2800,6 +2800,7 @@ export const estimatedParallelMemoryFactSourceSchema = z.enum([
   'ollama_api_ps_accelerator_allocation',
   'ollama_api_tags_declared_artifact_size',
   'ollama_api_show_architecture_kv_estimate',
+  'derived_declared_plus_kv_lower_bound',
   'exact_calibration_total',
   'host_observed_available_memory',
   'policy_zero_margin',
@@ -2814,6 +2815,7 @@ export const estimatedParallelMemoryFactBasisSchema = z.enum([
   'current_loaded_accelerator_allocation',
   'installed_artifact_declared_size',
   'architecture_kv_lower_bound',
+  'declared_plus_architecture_kv_lower_bound',
   'historical_exact_fingerprint_total',
   'current_available_memory_advisory',
   'no_owner_margin_configured',
@@ -2824,6 +2826,7 @@ export const estimatedParallelMemoryFactUnavailableReasonSchema = z.enum([
   'not_reported',
   'identity_unavailable',
   'calibration_missing',
+  'calibration_timestamp_invalid',
   'architecture_unknown',
   'host_capacity_unknown',
   'unsafe_numeric_input',
@@ -2864,6 +2867,7 @@ export const estimatedParallelPairResolutionReasonSchema = z.enum([
   'queued_model_mismatch',
   'candidate_identity_unavailable',
   'candidate_identity_changed',
+  'candidate_runtime_changed',
 ])
 
 export const estimatedParallelPairResolutionSchema = z.discriminatedUnion('state', [
@@ -2897,6 +2901,7 @@ export const estimatedParallelAdmissionReasonSchema = z.enum([
   'active_pair_unavailable',
   'candidate_pair_unavailable',
   'candidate_provider_unavailable',
+  'runtime_identity_changed',
   'host_capacity_unavailable',
   'admission_capacity_policy_unapproved',
   'host_pressure_unavailable',
@@ -3012,12 +3017,14 @@ export const estimatedParallelAdmissionResponseSchema = z.discriminatedUnion('ve
   }),
 ]).superRefine((response, context) => {
   const calculation = response.calculation
+  const calculationInputsAvailable = calculation.state === 'calculated'
+    && calculation.candidateReservation.state === 'available'
+    && calculation.availableCapacity.state === 'available'
+    && calculation.safetyMargin.state === 'available'
   if (
     calculation.state === 'calculated'
     && (
-      calculation.candidateReservation.state !== 'available'
-      || calculation.availableCapacity.state !== 'available'
-      || calculation.safetyMargin.state !== 'available'
+      !calculationInputsAvailable
       || calculation.safetyMargin.bytes !== 0
       || calculation.safetyMargin.source !== 'policy_zero_margin'
       || JSON.stringify(calculation.availableCapacity)
@@ -3031,11 +3038,63 @@ export const estimatedParallelAdmissionResponseSchema = z.discriminatedUnion('ve
     })
   }
   if (
+    calculation.state === 'calculated'
+    && calculation.candidateReservation.state === 'available'
+    && calculation.availableCapacity.state === 'available'
+    && calculation.safetyMargin.state === 'available'
+  ) {
+    const required = calculation.candidateReservation.bytes + calculation.safetyMargin.bytes
+    const expectedComparison = required < calculation.availableCapacity.bytes
+      ? 'positive_headroom'
+      : required === calculation.availableCapacity.bytes
+        ? 'boundary_equal'
+        : 'shortfall'
+    if (!Number.isSafeInteger(required) || calculation.comparison !== expectedComparison) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['calculation', 'comparison'],
+        message: 'The comparison must match checked reservation arithmetic',
+      })
+    }
+  }
+  const exactPairMatch = (
+    resolution: EstimatedParallelPairResolution,
+    requested: EstimatedParallelPairMember,
+  ): boolean => resolution.state === 'matched'
+    && resolution.observationKey.state === 'complete'
+    && resolution.observationKey.components.normalizedModelReference
+      === requested.model.normalizedReference
+    && resolution.observationKey.components.artifactDigest === requested.model.artifactDigest
+    && resolution.observationKey.components.contextLength === requested.contextLength
+  if (
     response.verdict === 'estimated_allow'
     && (
       calculation.state !== 'calculated'
       || calculation.reservationBasis !== 'exact_calibration'
       || calculation.comparison !== 'positive_headroom'
+      || response.featureFlag.state !== 'resolved'
+      || response.featureFlag.effectiveValue !== true
+      || !exactPairMatch(response.pair.active, response.request.active)
+      || !exactPairMatch(response.pair.candidate, response.request.candidate)
+      || response.runtimeObservedAt === null
+      || response.runtimeObservedAt !== response.observedAt
+      || response.request.expectedRuntimeObservedAt !== response.runtimeObservedAt
+      || response.facts.candidateCalibration.state !== 'available'
+      || calculation.candidateReservation.state !== 'available'
+      || (
+        response.facts.candidateCalibration.state === 'available'
+        && calculation.candidateReservation.state === 'available'
+        && (
+          response.facts.candidateCalibration.bytes
+            !== calculation.candidateReservation.bytes
+          || response.facts.candidateCalibration.source
+            !== calculation.candidateReservation.source
+          || response.facts.candidateCalibration.observedAt
+            !== calculation.candidateReservation.observedAt
+          || response.facts.candidateCalibration.basis
+            !== calculation.candidateReservation.basis
+        )
+      )
     )
   ) {
     context.addIssue({
