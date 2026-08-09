@@ -750,14 +750,21 @@ Pipeline:
 Path не принимается напрямую от remote metadata. Gated token хранится в protected
 secret adapter и не попадает в Job Events.
 
-Current state (P2-J, 2026-08-08): реализован только шаг 1 как отдельный
-read-only discovery provider — bounded server-owned search и repository
-metadata через documented public Hub API, плюс explicit
-`supported | unsupported | unknown` вердикт про GGUF-only import scope.
-Шаги 2–10 (exact revision/file, dry-run, download, checksum, Modelfile,
-`ollama create`, probe, staging cleanup) не реализованы: это P2-K..P2-M.
-`HuggingFaceImportRequest` выше — target shape, а не текущий contract:
-current routes принимают только search query либо repository reference.
+Current state (P2-K, 2026-08-09): шаг 1 и bounded часть шагов 2–4 реализованы
+как отдельный provider. Strict selection contract принимает только published
+repository identity, lowercase 40-hex commit, exact safe GGUF path и context;
+server перечитывает `/api/models/{repo}/revision/{commit}?blobs=true` через ту же
+anonymous bounded transport boundary и подтверждает complete well-formed file
+inventory. Truncated/malformed/foreign inventory, mutable/changed revision и
+unsupported/unknown repository fail-closed. Размер остаётся provider claim;
+fit использует только этот размер, исключает KV/runtime overhead, содержит
+hardware source/observedAt/confidence и становится unknown при отсутствии размера
+или usable capacity.
+
+Шаги 5–10 (download, checksum, Modelfile, `ollama create`, probe, staging
+cleanup) не реализованы: это P2-L/P2-M. `HuggingFaceImportRequest` выше — target
+shape, а не текущий contract: current routes поддерживают search, repository
+reference и request-scoped exact selection, но не import command.
 Token/gated acceptance не реализованы; доступ только anonymous public.
 
 ### Artifact Service

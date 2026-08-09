@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-09
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -47,7 +47,7 @@ npm run link:cli
 | `dev:web`           | Vite:5173 с API proxy                                |
 | `typecheck`         | TypeScript workspaces                                |
 | `test`              | server + CLI + узкие web component regression tests  |
-| `test:web:browser`  | deterministic Chromium P0-A–P2-H regression gate     |
+| `test:web:browser`  | deterministic Chromium P0-A–P2-K mocked gate         |
 | `build`             | contract, web, server и CLI production artifacts     |
 | `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
 | `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
@@ -432,6 +432,14 @@ server не нужен.
   P2-H — legacy/paged contract, 1,000+ stable pages, exact totals/out-of-range,
   cross-page compare, atomic page reset, active-pull pager block и bounded DOM/
   listener behavior в component, Chromium и benchmark fixtures.
+- P2-J/P2-K держат Hugging Face отдельным от catalog/Installed. Search и exact
+  selection используют только server-owned anonymous transport с timeout/byte/
+  file/page bounds и AbortSignal. Selection перечитывает exact immutable commit
+  с `blobs=true`, принимает путь только из complete well-formed inventory и не
+  сохраняется. Host profile получает startup observation timestamp; calculated
+  preview содержит source/time/estimated confidence и явно исключает KV cache и
+  runtime overhead. Ни один HF action не вызывает pull/create/probe/Governor,
+  download или catalog refresh.
 
 ### CLI
 

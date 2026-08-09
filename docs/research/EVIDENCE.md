@@ -78,8 +78,23 @@ registry, включая one-time snapshot job.
 
 ## Hugging Face
 
+Повторная проверка официальных источников 2026-08-09: public Hub API остаётся
+документированной границей, а текущий `huggingface_hub.HfApi.model_info` строит
+exact-revision path `/api/models/{repo}/revision/{revision}` и при
+`files_metadata=True` добавляет query `blobs=true`. Документация `RepoSibling`
+отдельно предупреждает, что list/repository metadata обычно гарантирует имена,
+а size заполняется только при file-metadata mode. Поэтому P2-K re-read использует
+exact commit + `blobs=true`, но size всё равно остаётся nullable/untrusted claim.
+Raw live API sample получить не удалось. После снятия sandbox network block
+anonymous Node и `curl` requests 2026-08-09 получили HTTP 503 с внешней HTML
+страницей «Сайт заблокирован», а не JSON Hub. Вывод основан на актуальной
+официальной документации и source, а не на свежем production response.
+
 - [Hub API](https://huggingface.co/docs/huggingface_hub/en/package_reference/hf_api)
   поддерживает search, filters, tags, pipeline metadata, files и gated state.
+- [Current `huggingface_hub` API source](https://raw.githubusercontent.com/huggingface/huggingface_hub/refs/heads/main/src/huggingface_hub/hf_api.py)
+  связывает exact revision с `/revision/{revision}`, а file metadata — с
+  `blobs=true`.
 - [Model Cards](https://huggingface.co/docs/hub/model-cards) дают intended use,
   license и author metadata.
 - [Hub download](https://huggingface.co/docs/huggingface_hub/en/guides/download)

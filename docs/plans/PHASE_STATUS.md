@@ -374,6 +374,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-H Catalog pagination/bounded rendering | implemented, locally validated | `3c4960d`, `cc40d14`; P2-H 10/10, core 349/349, Web 95/95, Chromium 23/23, all required gates |
 | P2-I Exact installed capability user override | independently verified | `6b98d37`..`6cc4504`; P2-I 52 new / 401 core envelope, Web 117/117, Chromium 25/25, all required gates |
 | P2-J Read-only Hugging Face discovery (GGUF-only) | independently verified | `e544c7c`..`2f13e31`; P2-J 45 new / 446 core envelope, Web 27 new / 144 envelope, Chromium 1 new / 26 envelope, all required gates |
+| P2-K Exact GGUF file/revision + preview | independently verified | `9f3990d`, `9f3f19c`; 29 new / 475 core envelope, 17 new / 161 Web envelope, Chromium 1 new / 27 envelope, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -939,6 +940,57 @@ probe, token/gated acceptance, safetensors conversion, persistent HF cache,
 saved searches и ranking. Все tests используют fake HTTP transport, recorded
 fixtures и mocked browser routes; live Ollama, GPU и network не задействованы.
 
+P2-K реализован в `9f3990d`, verification hardening зафиксирован отдельным
+`9f3f19c`; обязательная независимая read-only verification выполнена двумя
+reviewer-субагентами. Strict additive
+contract связывает exact repository identity, lowercase 40-hex commit и один
+portable-safe `.gguf` path. Server перечитывает exact revision через существующую
+anonymous bounded HF boundary с `blobs=true`; complete well-formed inventory,
+revision и file membership проверяются заново. Truncated/malformed inventory,
+mutable/changed revision, foreign path и unsupported/unknown repository
+fail-closed. Selection request-scoped: SQLite migration, download, checksum,
+Ollama create/pull/probe, Governor, catalog refresh и Job не добавлены.
+
+Claimed-size preview не выдаётся за measured fit: dedicated refinements требуют
+`measured:null`, нулевой KV, `requiredBytes === modelBytes`, coherent
+utilization/level и обязательные source/observedAt/estimated-confidence
+стартового hardware probe. Size и capacity могут дать typed unknown; UI прямо
+говорит, что KV/runtime overhead не учтены. Fresh gated/license claims показаны
+с access/legal caveats. Web требует explicit action, collapses duplicate intent,
+abort-ит initial/repeated stale context и same-key evidence, восстанавливает
+focus и не показывает Download/Install/Pull.
+
+Evidence 2026-08-09: typecheck clean; P2-K server 29 new, полный server-only
+envelope 472/472 и root core 475/475; Web 17 new / 161 envelope, exact P2-K
+component 16/16; affected AppContext fixtures 64/64; production build;
+exact Hugging Face Chromium 2/2 и полный mocked Chromium 27/27, включая 1 новый
+P2-K case. Sequential repeats с
+exit/count checking: server 10×29/29, Web 10×16/16, AppContext 10×64/64.
+Mutation checks поймали удаление `blobs=true`, encoded/portable path gates,
+inventory refusal, fit coherence/hardware evidence, cancellation forwarding,
+initial-context supersession, same-key disclosure reset, fresh license caveat и
+context refit.
+
+Первые failures не скрыты. Два новых test-файла прошлого агента содержали literal
+NUL — заменены на source escapes; первый targeted Web run был 35/36 из-за
+устаревшего duplicate assertion, затем 34/36 из-за incoherent unknown-size/
+summary fixtures — fixtures исправлены. Первый исполняемый browser gate также
+нашёл три ambiguous strict locator в новом case; assertions были привязаны к
+точным видимым и paragraph targets, после чего exact/full Chromium стали
+зелёными. Reviewer нашёл hardware provenance,
+initial pending-context race, fresh-license caveat, open-preview scaling,
+stale browser copy, Disclosure reset, live-region assertions, portable Windows/
+C1 paths, claimed-size fit coherence, signal-forwarding и mutable-revision gaps;
+все findings исправлены и повторно проверены локальными suites/mutations.
+
+P2-K independently verified и передан P2-L. Raw live HF JSON остаётся
+неполученным: после снятия sandbox DNS/loopback ограничений anonymous запросы
+дошли до внешнего egress filter, но вернули HTTP 503 с HTML «Сайт заблокирован».
+Текущие official docs/source подтверждают exact revision path и
+`files_metadata=True → blobs=true`; это не production validation, поэтому
+provider-wire drift остаётся residual risk. Runtime gates используют mocked HF
+routes и не доказывают live Ollama, GPU, download или network behavior.
+
 P2-A, P2-B, P2-C, P2-D, P2-E, P2-F, P2-G и P2-H остаются `implemented, locally
 validated`, а не independently verified или production-validated. Не проверены
 live Ollama/model/hardware, NVIDIA driver/GPU/MIG, provider-version matrix,
@@ -955,19 +1007,18 @@ live load evidence или inferred license/quantization/task facts. Legacy clien
 Phase 2 остаётся `in progress`. Запись выше отражала состояние на 2026-08-04;
 owner session 2026-08-07 закрыла Q-25 (GGUF-only), поэтому HF import больше не
 заблокирован и разбит на P2-J..P2-M, а hardware-зависимые пункты вынесены за
-Phase 4. Следующий handoff — bounded P2-K выбор exact GGUF file/revision с
-size/license/fit preview, не download, не local import и не probe.
+Phase 4. P2-K independently verified; следующий product slice P2-L передан.
 
 ## Phase 2 — что реально осталось
 
-**Проверено кодом 2026-08-07.** Таблица обязательна к обновлению каждым Phase 2
+**Проверено кодом 2026-08-09.** Таблица обязательна к обновлению каждым Phase 2
 slice: без неё читатель делает вывод, что до конца фазы остался один HF slice, а
 это неверно.
 
 | ROADMAP scope item                               | Состояние                                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| HF search + exact GGUF/revision import (MOD-010) | **discovery сделан в P2-J** (`e544c7c`..`2f13e31`); файл/download/import — P2-K..P2-M                        |
-| license/gated/size/dry-run/fit preview           | **нет кода**: `dryRun`/`gated` — 0 файлов; `license` только display                                          |
+| HF search + exact GGUF/revision import (MOD-010) | discovery P2-J + exact file/commit selection P2-K реализованы; download/import остаются P2-L/P2-M            |
+| license/gated/size/dry-run/fit preview           | P2-K показывает fresh claims и request-scoped claimed-size fit; download/cache/disk dry-run остаётся P2-L    |
 | local Ollama create/import + checksum/provenance | **нет кода**: `/api/create` отсутствует; все `sha256:` — internal keys                                       |
 | measured-parallel за feature flag (RES-009)      | flag infra → P2-N; estimated admission → P2-O; measured вынесен за Phase 4 (Q-34a)                           |
 | variant calibration (MOD-004)                    | **половина**: variant-first install есть, calibration не связана с catalog fit (`catalog.ts` — 0 упоминаний) |
@@ -975,15 +1026,16 @@ slice: без неё читатель делает вывод, что до ко�
 | user override (MOD-008)                          | **сделано в P2-I** (`6b98d37`..`6cc4504`): migration 9, exact-identity ownership, Installed UI, safe export  |
 | bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
 
-Итог на 2026-08-08 после P2-J: из 14 scope bullets — 10 delivered, 1 сделан
-Phase 1, 2 половины (calibration не связана с catalog fit; HF-цепочка имеет
-discovery, но не выбор файла/download/import), 2 без единой строки кода. После
+Итог на 2026-08-09 после P2-K: из 14 scope bullets — 10
+delivered, 1 сделан Phase 1, 2 частичных (calibration не связана с catalog fit;
+HF-цепочка имеет discovery/selection/preview, но не download/import), 2 без
+единой строки кода. После
 owner decisions ни один пункт не заблокирован вопросом: HF разблокирован Q-25, а
-hardware-зависимые пункты вынесены за Phase 4 и убраны из exit gate. Остаток
-фазы — пять slices P2-K..P2-O. Из exit-gate bullets закрыт «user override видим,
+hardware-зависимые пункты вынесены за Phase 4 и убраны из exit gate. После
+P2-K остаток фазы — четыре slices P2-L..P2-O. Из exit-gate bullets закрыт «user override видим,
 экспортируем и не выдаётся за provider/runtime facts»; остаются остаток
-HF-цепочки (P2-K..P2-M) и estimated parallel-admission. P2-J закрывает только
-discovery: repository остаётся candidate, а не installable target.
+HF-цепочки (P2-L/P2-M) и estimated parallel-admission. P2-K делает exact target
+выбираемым, но selection остаётся request-scoped intent, а не installable model.
 
 ## Планируемая последовательность Phase 2
 
@@ -992,15 +1044,15 @@ discovery: repository остаётся candidate, а не installable target.
 `research/EVIDENCE.md` следует, что HF URL нельзя обещать как direct
 `ollama pull`, и каждый шаг имеет свои failure states.
 
-| Slice | Outcome                                                            | Статус                 |
-| ----- | ------------------------------------------------------------------ | ---------------------- |
-| P2-I  | exact installed capability user override (MOD-008)                 | independently verified |
-| P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | independently verified |
-| P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | ready                  |
-| P2-L  | download с checksum/provenance, bounded и cancel-safe              | blocked by P2-K        |
-| P2-M  | local Ollama import через `/api/create` + probe                    | blocked by P2-L        |
-| P2-N  | feature-flag infrastructure (без обещания measured)                | ready                  |
-| P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | blocked by P2-N        |
+| Slice | Outcome                                                            | Статус                                               |
+| ----- | ------------------------------------------------------------------ | ---------------------------------------------------- |
+| P2-I  | exact installed capability user override (MOD-008)                 | independently verified                               |
+| P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | independently verified                               |
+| P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | independently verified                               |
+| P2-L  | download с checksum/provenance, bounded и cancel-safe              | ready                                                |
+| P2-M  | local Ollama import через `/api/create` + probe                    | blocked by P2-L                                      |
+| P2-N  | feature-flag infrastructure (без обещания measured)                | ready                                                |
+| P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | blocked by P2-N                                      |
 
 `/api/create` в текущем `ollama/client.ts` отсутствует — P2-M добавляет его как
 новый documented endpoint, а не переиспользует pull. P2-N/P2-O закрывают

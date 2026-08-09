@@ -1,15 +1,17 @@
 # Стратегия проверки
 
 **Статус:** implemented для current-state, proposed для target matrix  
-**Проверено:** 2026-08-07
+**Проверено:** 2026-08-09
 
 ## Текущий baseline
 
-На 2026-08-07 после P2-I:
+На 2026-08-09 после independently verified P2-K:
 
-- `npm test`: 401/401 server/CLI и 117/117 web component/parser tests;
-- `npm run test:web:browser`: 25/25 deterministic Chromium tests с mocked
-  REST/SSE. Требует заранее установленный browser binary
+- server-only tests: 472/472; полный core с CLI reuse: 475/475; Web
+  component/parser: 161/161;
+- `npm run test:web:browser`: 27/27 deterministic Chromium tests с mocked
+  REST/SSE, включая exact-selection P2-K case. Требует заранее установленный
+  browser binary
   (`npx playwright install chromium`) — postinstall hook отсутствует, поэтому на
   чистой машине `npm install` этого не делает. Запускать из корня либо из
   `packages/web`: прямой `npx playwright` из корня не получает workspace
@@ -219,6 +221,19 @@
   связан с control, focus не отскакивает при rerender с открытым dialog (add и
   remove), focus не теряется на `<body>` после removal, Tab заворачивается внутри
   dialog, retry очищает прошлую ошибку и navigation/reload не мутируют;
+- P2-K contract/server fixtures покрывают strict exact identity/commit/path,
+  POSIX/Windows/encoded traversal и control characters, exact-revision
+  `blobs=true` read, complete inventory, revision/file drift, truncated/malformed
+  refusal, nullable/zero size, hardware-capacity unknown, coherent claimed-size
+  fit с source/observedAt/confidence, cancellation forwarding и отсутствие
+  download/Ollama/Governor/catalog/Job effects;
+- P2-K Web fixtures покрывают explicit one-intent selection, initial и repeated
+  context supersession, late response, same-key reset уже confirmed state,
+  disclosure reset при новой evidence, fresh license caveat, scoped polite live
+  terminal states, English/Russian, focus restore и отсутствие Download/Install.
+  Новый Chromium case компилируется и проверяет exact body, 390 px, открытый
+  preview при 200%, 44 px, reduced motion и no resource effects, но runtime gate
+  остаётся blocked текущим запретом loopback listen;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,

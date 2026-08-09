@@ -397,8 +397,9 @@ single-user scale. Модульные границы нужны для correctne
 - использует stale-while-revalidate;
 - отделяет discovery claim от installability/runtime verification.
 - нормализует user-supplied Ollama name/page URL;
-- ищет exact Hugging Face GGUF через официальный API; **current state (P2-J):**
-  реализован только read-only discovery/metadata, download — P2-L;
+- ищет exact Hugging Face GGUF через официальный API; **current state (P2-K):**
+  read-only discovery дополнен выбором exact file/commit и claimed-size fit
+  preview; download остаётся P2-L;
 - не выполняет Ollama catalog scraping.
 
 #### Agent Engine
@@ -473,10 +474,12 @@ pipeline progress, не притворяясь одним непрерывным
 
 ### Import GGUF из Hugging Face
 
-Target pipeline. Current state (P2-J): реализованы только первые два шага —
-bounded server-owned search и metadata/revision/file-list чтение с explicit
-GGUF-only вердиктом. Выбор файла, dry-run preview, download, checksum и local
-import не реализованы (P2-K..P2-M), и HF URL не обещается как `ollama pull`.
+Target pipeline. Current state (P2-K): реализованы первые четыре шага — bounded
+server-owned search, metadata/revision/file-list, explicit GGUF-only verdict и
+request-scoped выбор exact file на exact commit с size/license/gated и
+claimed-size-only fit preview. Preview показывает source/time/confidence
+стартового hardware profile и не выдаётся за measured fit. Download, checksum и
+local import не реализованы (P2-L/P2-M), и HF URL не обещается как `ollama pull`.
 
 ```text
 HF URL/search
