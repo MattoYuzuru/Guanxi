@@ -58,6 +58,8 @@ export interface AppContext {
   approvals: ApprovalGate
   tracker: PrefillTracker
   hardware: HardwareInfo
+  /** Timestamp of the startup probe that produced the static compatibility profile. */
+  hardwareObservedAt: string
   /** One infrastructure boundary for sampled host facts; it has no admission side effects. */
   hostTelemetry: HostTelemetry
   appVersion: string
@@ -83,6 +85,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
   const db = openDb(options.dbPath)
   try {
     const hardware = await probeHardware()
+    const hardwareObservedAt = new Date().toISOString()
     const hostTelemetry = createHostTelemetry(hardware)
 
     const settings = new SettingsStore(db, { ollamaHost: DEFAULT_OLLAMA_HOST })
@@ -134,6 +137,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       approvals: new ApprovalGate(),
       tracker: new PrefillTracker(),
       hardware,
+      hardwareObservedAt,
       hostTelemetry,
       appVersion: options.appVersion,
       activeTurns,

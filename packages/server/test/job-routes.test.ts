@@ -60,6 +60,7 @@ function fixture(): { app: ReturnType<typeof createApp>; context: AppContext } {
     approvals: new ApprovalGate(),
     tracker: new PrefillTracker(),
     hardware: HARDWARE,
+    hardwareObservedAt: '2026-08-09T12:00:00.000Z',
     hostTelemetry: new UnsupportedHostTelemetry(HARDWARE),
     appVersion: 'job-route-fixture',
     activeTurns: new Map(),

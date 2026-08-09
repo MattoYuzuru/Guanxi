@@ -13,14 +13,18 @@
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
+  FitLevel,
+  HuggingFaceGgufFile,
   HuggingFaceRepository,
   HuggingFaceSearchResult,
+  HuggingFaceSelectionRefusalReason,
+  HuggingFaceSelectionResult,
   HuggingFaceTransportFailureReason,
   HuggingFaceUnknownVerdictReason,
 } from '@alamo/contract'
 import { Badge, Button, Callout, Disclosure, EmptyState, Input, Skeleton } from '../../components/ui.tsx'
 import { ApiRequestError, api } from '../../lib/api.ts'
-import { formatBytes, formatDateTime } from '../../lib/format.ts'
+import { formatBytes, formatContextLength, formatDateTime, formatUtilization } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 
 type Page = Extract<HuggingFaceSearchResult, { state: 'listed' | 'empty' }>
@@ -63,7 +67,28 @@ const VERDICT_REASON_KEYS: Record<HuggingFaceUnknownVerdictReason, LocaleKey> = 
   legacy_response: 'hf.verdict.reason.legacy_response',
 }
 
-export function HuggingFaceDiscovery() {
+/**
+ * P2-K refusal reasons. Every one is a live re-check outcome — the repository,
+ * revision or inventory may have changed since the caller last saw it — never a
+ * request-shape error.
+ */
+const SELECTION_REFUSAL_KEYS: Record<HuggingFaceSelectionRefusalReason, LocaleKey> = {
+  repository_not_supported: 'hf.select.refused.repository_not_supported',
+  revision_not_exact: 'hf.select.refused.revision_not_exact',
+  revision_mismatch: 'hf.select.refused.revision_mismatch',
+  file_inventory_truncated: 'hf.select.refused.file_inventory_truncated',
+  file_inventory_malformed: 'hf.select.refused.file_inventory_malformed',
+  file_not_in_current_inventory: 'hf.select.refused.file_not_in_current_inventory',
+}
+
+const SELECTION_FIT_LEVEL_KEYS: Record<FitLevel, LocaleKey> = {
+  green: 'catalog.filters.value.green',
+  yellow: 'catalog.filters.value.yellow',
+  red: 'catalog.filters.value.red',
+  unknown: 'catalog.filters.value.unknown',
+}
+
+export function HuggingFaceDiscovery({ contextLength }: { contextLength: number }) {
   const [query, setQuery] = useState('')
   const [state, setState] = useState<State>({ kind: 'idle' })
   const controllerRef = useRef<AbortController | null>(null)
@@ -285,7 +310,7 @@ export function HuggingFaceDiscovery() {
           <ul className="min-w-0 space-y-2">
             {listed.repositories.map((repository) => (
               <li key={repository.identity.comparisonKey}>
-                <RepositoryCard repository={repository} />
+                <RepositoryCard repository={repository} contextLength={contextLength} />
               </li>
             ))}
           </ul>
@@ -419,9 +444,197 @@ function licenseLabel(repository: HuggingFaceRepository): string {
   return translate('hf.repository.license.unknown')
 }
 
-function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
+/** A live re-check outcome, not a request-shape failure: `offline` is client-detected. */
+type SelectionFailureReason = HuggingFaceTransportFailureReason | 'offline'
+
+type SelectionState =
+  | { kind: 'idle' }
+  | { kind: 'selecting'; filePath: string }
+  | {
+      kind: 'confirmed'
+      filePath: string
+      result: Extract<HuggingFaceSelectionResult, { state: 'confirmed' }>
+    }
+  | { kind: 'refused'; filePath: string; reason: HuggingFaceSelectionRefusalReason }
+  | { kind: 'failed'; filePath: string; reason: SelectionFailureReason }
+
+/** Announces every terminal selection state, so a screen-reader user never hears silence. */
+function selectionAnnouncement(state: SelectionState): string {
+  if (state.kind === 'selecting') return translate('hf.select.selecting')
+  if (state.kind === 'confirmed') return `${translate('hf.select.heading')}: ${state.filePath}`
+  if (state.kind === 'refused') return translate(SELECTION_REFUSAL_KEYS[state.reason])
+  if (state.kind === 'failed') {
+    return state.reason === 'offline'
+      ? translate('hf.error.offline')
+      : translate(FAILURE_KEYS[state.reason])
+  }
+  return ''
+}
+
+export function RepositoryCard({
+  repository,
+  contextLength,
+}: {
+  repository: HuggingFaceRepository
+  contextLength: number
+}) {
   const badge = verdictBadge(repository)
   const { files, verdict, revision } = repository
+  const canSelect =
+    verdict.state === 'supported'
+    && revision.state === 'exact_commit'
+    && files.state === 'listed'
+    && !files.truncated
+    && files.malformedEntries === 0
+
+  const [state, setState] = useState<SelectionState>({ kind: 'idle' })
+
+  const fileButtonRefs = useRef(new Map<string, HTMLButtonElement | null>())
+  const changeButtonRef = useRef<HTMLButtonElement>(null)
+  const lastActivatedPathRef = useRef<string | null>(null)
+  /** Set right before an `idle` transition, so focus returns to the file it named. */
+  const pendingFocusPathRef = useRef<string | null>(null)
+  const controllerRef = useRef<AbortController | null>(null)
+  const requestIdRef = useRef(0)
+  const inFlightRef = useRef<string | null>(null)
+  const mountedRef = useRef(true)
+  /**
+   * The last confirmed file, kept even while a context-window re-check is itself
+   * in flight — reading live `state` instead would miss a second window change that
+   * arrives before the first re-check settles.
+   */
+  const confirmedFilePathRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      controllerRef.current?.abort('hf-selection-unmount')
+    }
+  }, [])
+
+  // A new search can publish a newer sample for the same case-folded repository key.
+  // Never keep a confirmed target or in-flight response across that evidence boundary.
+  useEffect(() => {
+    requestIdRef.current += 1
+    controllerRef.current?.abort('hf-selection-repository-changed')
+    controllerRef.current = null
+    inFlightRef.current = null
+    confirmedFilePathRef.current = null
+    lastActivatedPathRef.current = null
+    setState({ kind: 'idle' })
+  }, [repository])
+
+  const runSelection = async (filePath: string) => {
+    if (revision.state !== 'exact_commit') return
+    const revisionCommit = revision.commit
+    // Repeating the same exact intent collapses to one request.
+    const intent = JSON.stringify([filePath, revisionCommit, contextLength])
+    if (inFlightRef.current === intent) return
+    inFlightRef.current = intent
+    const id = ++requestIdRef.current
+    controllerRef.current?.abort('hf-selection-superseded')
+    const controller = new AbortController()
+    controllerRef.current = controller
+    lastActivatedPathRef.current = filePath
+
+    setState({ kind: 'selecting', filePath })
+    try {
+      const { result } = await api.selectHuggingFaceGgufFile(
+        {
+          identity: repository.identity,
+          revision,
+          filePath,
+          contextLength,
+        },
+        controller.signal,
+      )
+      if (!mountedRef.current || id !== requestIdRef.current) return
+      if (result.state === 'confirmed') {
+        confirmedFilePathRef.current = filePath
+        setState({ kind: 'confirmed', filePath, result })
+      } else if (result.state === 'refused') {
+        setState({ kind: 'refused', filePath, reason: result.reason })
+      } else {
+        setState({ kind: 'failed', filePath, reason: result.reason })
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return
+      if (!mountedRef.current || id !== requestIdRef.current) return
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      setState({
+        kind: 'failed',
+        filePath,
+        reason: offline
+          ? 'offline'
+          : error instanceof ApiRequestError && error.status === 400
+            ? 'provider_error'
+            : 'provider_unavailable',
+      })
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null
+      if (id === requestIdRef.current) inFlightRef.current = null
+    }
+  }
+
+  // Restores focus once the confirmed panel (and its own "change" control) unmounts.
+  useEffect(() => {
+    if (state.kind !== 'idle' || pendingFocusPathRef.current === null) return
+    const path = pendingFocusPathRef.current
+    pendingFocusPathRef.current = null
+    fileButtonRefs.current.get(path)?.focus()
+  }, [state.kind])
+
+  /*
+   * `Button` sets `disabled` while `loading`, and a disabled focused element loses
+   * focus to `<body>` in the browser. Once the request settles, move focus back to
+   * the control the user actually activated instead of leaving it stranded.
+   */
+  useEffect(() => {
+    if (state.kind === 'selecting') return
+    if (typeof document === 'undefined' || document.activeElement !== document.body) return
+    if (state.kind === 'confirmed') {
+      changeButtonRef.current?.focus()
+      return
+    }
+    if (lastActivatedPathRef.current) {
+      fileButtonRefs.current.get(lastActivatedPathRef.current)?.focus()
+    }
+  }, [state.kind])
+
+  // The fit preview is computed for the current context window; a confirmed
+  // selection re-checks itself when that window changes rather than going stale.
+  // A second window change arriving before the first re-check settles simply
+  // supersedes it, via the same intent/abort guard `runSelection` already applies.
+  const contextLengthRef = useRef(contextLength)
+  useEffect(() => {
+    if (contextLengthRef.current === contextLength) return
+    contextLengthRef.current = contextLength
+    const pendingPath = state.kind === 'selecting' ? state.filePath : null
+    const filePath = confirmedFilePathRef.current ?? pendingPath
+    if (filePath) void runSelection(filePath)
+  }, [contextLength])
+
+  const selectButton = (file: HuggingFaceGgufFile) => {
+    const isThisFile = (state.kind === 'confirmed' || state.kind === 'selecting') && state.filePath === file.path
+    const selected = state.kind === 'confirmed' && state.filePath === file.path
+    return (
+      <Button
+        ref={(node) => {
+          fileButtonRefs.current.set(file.path, node)
+        }}
+        size="sm"
+        variant={selected ? 'secondary' : 'primary'}
+        loading={state.kind === 'selecting' && isThisFile}
+        disabled={selected || (state.kind === 'selecting' && !isThisFile)}
+        onClick={() => void runSelection(file.path)}
+        aria-label={`${translate('hf.select.aria')} ${file.path}`}
+        className="min-h-11 shrink-0 sm:min-h-0"
+      >
+        {selected ? translate('hf.select.selected') : translate('hf.select.action')}
+      </Button>
+    )
+  }
 
   return (
     <article className="min-w-0 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-3">
@@ -488,7 +701,9 @@ function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
       </dl>
 
       <Disclosure
+        key={repository.observedAt}
         className="mt-2"
+        defaultOpen={canSelect}
         summary={`${translate('hf.repository.files')}: ${
           files.state === 'listed'
             ? files.ggufFiles.length === 0
@@ -500,13 +715,19 @@ function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
         {files.state === 'listed' && files.ggufFiles.length > 0 ? (
           <ul className="min-w-0 space-y-1">
             {files.ggufFiles.map((file) => (
-              <li key={file.path} className="min-w-0 break-all font-mono text-2xs">
-                {file.path}
-                <span className="ml-2 font-sans text-[var(--fg-subtle)]">
-                  {file.sizeBytes === null
-                    ? translate('hf.repository.files.size.unknown')
-                    : formatBytes(file.sizeBytes)}
+              <li
+                key={file.path}
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2 font-mono text-2xs"
+              >
+                <span className="min-w-0 break-all">
+                  {file.path}
+                  <span className="ml-2 font-sans text-[var(--fg-subtle)]">
+                    {file.sizeBytes === null
+                      ? translate('hf.repository.files.size.unknown')
+                      : formatBytes(file.sizeBytes)}
+                  </span>
                 </span>
+                {canSelect ? selectButton(file) : null}
               </li>
             ))}
           </ul>
@@ -527,7 +748,127 @@ function RepositoryCard({ repository }: { repository: HuggingFaceRepository }) {
             {translate('hf.repository.files.malformed')}
           </p>
         ) : null}
+        {verdict.state === 'supported' && revision.state !== 'exact_commit' ? (
+          <p className="mt-1 text-2xs text-[var(--warning)]">
+            {translate('hf.select.revisionUnavailable')}
+          </p>
+        ) : null}
       </Disclosure>
+
+      {canSelect ? (
+        <div className="mt-2">
+          <p className="sr-only" role="status" aria-live="polite">
+            {selectionAnnouncement(state)}
+          </p>
+          {state.kind === 'confirmed' ? (
+            <div className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2">
+              <p className="text-2xs font-semibold">{translate('hf.select.heading')}</p>
+              <p className="mt-1 min-w-0 break-all font-mono text-2xs">
+                {state.result.selection.filePath}
+              </p>
+              <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+                {translate('hf.select.size')}:{' '}
+                {state.result.selection.sizeBytes === null
+                  ? translate('hf.repository.files.size.unknown')
+                  : `${formatBytes(state.result.selection.sizeBytes)} · ${translate('hf.select.size.source')}`}
+              </p>
+              <div className="mt-2">
+                {state.result.fit.state === 'calculated' ? (
+                  <div className="text-2xs">
+                    <p className="font-medium">
+                      {translate(SELECTION_FIT_LEVEL_KEYS[state.result.fit.verdict.level])}
+                      {' · '}
+                      {formatUtilization(state.result.fit.verdict.utilization)}
+                    </p>
+                    <p className="mt-0.5 text-[var(--fg-subtle)]">
+                      {formatBytes(state.result.fit.verdict.requiredBytes)} /{' '}
+                      {formatBytes(state.result.fit.verdict.usableBytes)}
+                      {' · '}
+                      {translate('hf.select.fit.context')}{' '}
+                      {formatContextLength(state.result.fit.contextLength)}
+                    </p>
+                    <p className="mt-1 text-[var(--warning)]">
+                      {translate('hf.select.fit.reportedSizeOnly')}
+                    </p>
+                    <p className="mt-1 text-[var(--fg-subtle)]">
+                      {translate('hf.select.fit.hardware')}:{' '}
+                      {translate('hf.select.fit.hardware.source')}
+                      {' · '}
+                      {translate('hf.repository.observed')}:{' '}
+                      {formatDateTime(state.result.fit.hardware.observedAt)}
+                      {' · '}
+                      {translate('hf.select.fit.hardware.confidence')}
+                      {' · '}
+                      {translate('hf.select.fit.calculated')}:{' '}
+                      {formatDateTime(state.result.fit.calculatedAt)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-2xs text-[var(--warning)]">
+                    {state.result.fit.reason === 'size_not_reported'
+                      ? translate('hf.select.fit.unknown')
+                      : translate('hf.select.fit.hardwareUnavailable')}
+                  </p>
+                )}
+              </div>
+              <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+                {translate('hf.repository.gated')}: {gatedLabel(state.result.repository)}
+                {' · '}
+                {translate('hf.repository.license')}: {licenseLabel(state.result.repository)}
+              </p>
+              {state.result.repository.license.state === 'declared' ? (
+                <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+                  {translate('hf.repository.license.note')}
+                </p>
+              ) : null}
+              <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+                {translate('hf.repository.gated.note')}
+              </p>
+              <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-2">
+                <p className="text-2xs font-medium">{translate('hf.select.next')}</p>
+                <p className="mt-0.5 text-2xs text-[var(--fg-subtle)]">
+                  {translate('hf.select.next.detail')}
+                </p>
+              </div>
+              <Button
+                ref={changeButtonRef}
+                size="sm"
+                variant="ghost"
+                className="mt-2 min-h-11 sm:min-h-0"
+                onClick={() => {
+                  pendingFocusPathRef.current = state.filePath
+                  confirmedFilePathRef.current = null
+                  setState({ kind: 'idle' })
+                }}
+              >
+                {translate('hf.select.change')}
+              </Button>
+            </div>
+          ) : state.kind === 'refused' || state.kind === 'failed' ? (
+            <div role="alert">
+              <Callout
+                tone="danger"
+                title={translate('hf.select.error.title')}
+                action={
+                  <Button
+                    size="sm"
+                    className="min-h-11 sm:min-h-0"
+                    onClick={() => void runSelection(state.filePath)}
+                  >
+                    {translate('hf.error.retry')}
+                  </Button>
+                }
+              >
+                {state.kind === 'refused'
+                  ? translate(SELECTION_REFUSAL_KEYS[state.reason])
+                  : state.reason === 'offline'
+                    ? translate('hf.error.offline')
+                    : translate(FAILURE_KEYS[state.reason])}
+              </Callout>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {repository.gated.state === 'gated' ? (
         <p className="mt-2 text-2xs text-[var(--fg-subtle)]">

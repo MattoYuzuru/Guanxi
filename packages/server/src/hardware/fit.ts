@@ -275,7 +275,7 @@ export function computeFit(input: ComputeFitInput): FitVerdict {
     }
   }
 
-  if (input.vramHintBytes) {
+  if (input.vramHintBytes !== undefined && input.vramHintBytes !== null) {
     const requiredBytes = input.vramHintBytes
     const utilization = usableBytes > 0 ? requiredBytes / usableBytes : Number.POSITIVE_INFINITY
     const level = levelFor(utilization)

@@ -8,6 +8,7 @@ import {
   getModelQuery,
   huggingFaceRepositoryBody,
   huggingFaceSearchBody,
+  huggingFaceSelectionBody,
   listCatalogQuery,
   listModelsQuery,
   modelCapabilityOverrideMutationBody,
@@ -26,6 +27,7 @@ import {
   HuggingFaceReferenceError,
   normalizeHuggingFaceReference,
 } from '../models/hugging-face-reference.ts'
+import { selectHuggingFaceGgufFile } from '../models/hugging-face-selection.ts'
 import {
   normalizeOllamaReference,
   OllamaReferenceError,
@@ -266,6 +268,63 @@ export function modelsRoutes(app: AppContext): Hono {
         {
           code: 'internal_error',
           message: 'The Hugging Face repository could not be read safely',
+          details: null,
+        },
+        500,
+      )
+    }
+  })
+
+  /**
+   * P2-K exact GGUF file/revision selection. The client identity is re-derived from its
+   * repositoryId through the same strict local grammar as the repository route above;
+   * the exact commit is then re-read through the same bounded transport. Selection
+   * starts no download, checksum, `ollama create` or probe, and it is never persisted.
+   */
+  routes.post('/discovery/hugging-face/selection', async (context) => {
+    const body = huggingFaceSelectionBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) return invalidHuggingFaceRequestResponse(context)
+
+    let preview: HuggingFaceReferencePreview
+    try {
+      preview = normalizeHuggingFaceReference(body.data.identity.repositoryId)
+    } catch (error) {
+      if (error instanceof HuggingFaceReferenceError) {
+        return invalidHuggingFaceRequestResponse(context, error.reason)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The Hugging Face reference could not be checked safely',
+          details: null,
+        },
+        500,
+      )
+    }
+
+    try {
+      return context.json({
+        result: await selectHuggingFaceGgufFile({
+          huggingFace: app.huggingFace,
+          hardware: app.hardware,
+          hardwareObservedAt: app.hardwareObservedAt,
+          preview,
+          revision: body.data.revision,
+          filePath: body.data.filePath,
+          contextLength: body.data.contextLength,
+          signal: context.req.raw.signal,
+        }),
+      })
+    } catch {
+      if (context.req.raw.signal.aborted) {
+        return invalidHuggingFaceRequestResponse(context, 'request_cancelled', 409)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The Hugging Face selection could not be completed safely',
           details: null,
         },
         500,

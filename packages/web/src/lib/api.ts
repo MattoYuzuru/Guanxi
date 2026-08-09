@@ -23,6 +23,7 @@ import {
   getThreadResponse,
   huggingFaceRepositoryResponse,
   huggingFaceSearchResponse,
+  huggingFaceSelectionResponse,
   listCatalogResponse,
   listModelsResponse,
   listRunningResponse,
@@ -41,6 +42,7 @@ import {
   type ChatStreamEvent,
   type CompletionProbeBody,
   type HuggingFaceSearchBody,
+  type HuggingFaceSelectionBody,
   type ModelCapabilityOverrideMutationBody,
   type OllamaReferenceStartBody,
   type JobStreamEvent,
@@ -282,6 +284,20 @@ export const api = {
     request(ROUTES.huggingFaceRepository(), huggingFaceRepositoryResponse, {
       method: 'POST',
       body: { reference },
+      signal,
+    }),
+
+  /**
+   * P2-K exact GGUF file/revision selection. This is an intent, not an install: it
+   * starts no download, checksum, local import or probe, and nothing here is persisted.
+   */
+  selectHuggingFaceGgufFile: (
+    body: HuggingFaceSelectionBody,
+    signal?: AbortSignal,
+  ) =>
+    request(ROUTES.huggingFaceSelection(), huggingFaceSelectionResponse, {
+      method: 'POST',
+      body,
       signal,
     }),
 

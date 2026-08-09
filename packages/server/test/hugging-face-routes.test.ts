@@ -5,6 +5,8 @@ import {
   ROUTES,
   huggingFaceRepositoryResponse,
   huggingFaceSearchResponse,
+  huggingFaceSelectionResponse,
+  type HardwareInfo,
   type HuggingFaceRepositoryResult,
   type HuggingFaceSearchResult,
 } from '@alamo/contract'
@@ -13,6 +15,12 @@ import { modelsRoutes } from '../src/http/models-routes.ts'
 import { HuggingFaceTransport } from '../src/models/hugging-face-transport.ts'
 
 const OBSERVED_AT = '2026-08-07T12:00:00.000Z'
+const HARDWARE: HardwareInfo = {
+  platform: 'darwin', arch: 'arm64', cpuModel: 'fixture', cpuCores: 8,
+  totalMemoryBytes: 32_000_000_000, usableMemoryBytes: 24_000_000_000,
+  accelerator: 'metal', acceleratorName: 'fixture', unifiedMemory: true,
+  freeDiskBytes: null,
+}
 
 type SearchInput = Parameters<HuggingFaceTransport['search']>[0]
 type RepositoryInput = Parameters<HuggingFaceTransport['repository']>[0]
@@ -125,6 +133,8 @@ function appWith(handlers: {
         return (handlers.repository ?? (async () => resolvedRepository()))(input)
       },
     },
+    hardware: HARDWARE,
+    hardwareObservedAt: OBSERVED_AT,
     // Every neighbouring capability is wired to fail loudly if discovery touches it.
     models: () => ({
       detail: forbid('models.detail'),
@@ -159,9 +169,11 @@ function post(path: string, body: unknown, signal?: AbortSignal): Request {
 
 const SEARCH_PATH = ROUTES.huggingFaceSearch()
 const REPOSITORY_PATH = ROUTES.huggingFaceRepository()
+const SELECTION_PATH = ROUTES.huggingFaceSelection()
 
 describe('Hugging Face discovery routes', () => {
   it('registers exactly the contract paths', () => {
+    assert.equal(SELECTION_PATH, '/api/models/discovery/hugging-face/selection')
     assert.equal(SEARCH_PATH, '/api/models/discovery/hugging-face/search')
     assert.equal(REPOSITORY_PATH, '/api/models/discovery/hugging-face/repository')
   })
@@ -358,5 +370,173 @@ describe('Hugging Face discovery routes', () => {
     assert.deepEqual(calls.forbidden, [])
     assert.equal(calls.search.length, 1)
     assert.equal(calls.repository.length, 1)
+  })
+
+  describe('P2-K exact GGUF file/revision selection', () => {
+    const validBody = () => ({
+      identity: {
+        provider: 'hugging_face',
+        owner: 'TheBloke',
+        name: 'Llama-2-7B-GGUF',
+        repositoryId: 'TheBloke/Llama-2-7B-GGUF',
+        comparisonKey: 'thebloke/llama-2-7b-gguf',
+      },
+      revision: {
+        state: 'exact_commit',
+        commit: 'a'.repeat(40),
+        source: 'hugging_face_api_model',
+      },
+      filePath: 'llama-2-7b.Q4_K_M.gguf',
+      contextLength: 8_192,
+    })
+
+    it('confirms an exact selection through the same bounded repository re-read as the repository route', async () => {
+      const { app, calls } = appWith()
+      const response = await app.fetch(post(SELECTION_PATH, validBody()))
+      assert.equal(response.status, 200)
+      const body = await response.json()
+      assert.deepEqual(huggingFaceSelectionResponse.parse(body), body)
+      assert.equal((body as { result: { state: string } }).result.state, 'confirmed')
+      // Selection reuses the same repository() boundary as the repository route: no
+      // second outbound Hub read path exists.
+      assert.equal(calls.repository.length, 1)
+      assert.deepEqual(calls.repository[0]?.revision, validBody().revision)
+      assert.equal(calls.search.length, 0)
+      assert.deepEqual(calls.forbidden, [])
+    })
+
+    it('fails closed on a malformed, oversized or out-of-bounds selection body', async () => {
+      const rejected: unknown[] = [
+        null,
+        'not json',
+        {},
+        { ...validBody(), identity: { ...validBody().identity, repositoryId: '' } },
+        { ...validBody(), revision: { ...validBody().revision, commit: 'short' } },
+        {
+          ...validBody(),
+          revision: { ...validBody().revision, commit: 'A'.repeat(40) },
+        }, // uppercase hex is not accepted
+        { ...validBody(), revision: { state: 'branch', name: 'main' } },
+        {
+          ...validBody(),
+          revision: { state: 'unknown', commit: null, source: 'not_reported' },
+        },
+        { ...validBody(), filePath: '' },
+        { ...validBody(), filePath: '/etc/passwd.gguf' },
+        { ...validBody(), filePath: '../secret.gguf' },
+        { ...validBody(), filePath: '%2e%2e/secret.gguf' },
+        { ...validBody(), filePath: 'dir%2fmodel.gguf' },
+        { ...validBody(), filePath: 'model?download.gguf' },
+        { ...validBody(), filePath: 'model.bin' }, // no .gguf suffix
+        { ...validBody(), filePath: `${'a'.repeat(1020)}.gguf` },
+        { ...validBody(), filePath: 'model\u0000.gguf' },
+        { ...validBody(), contextLength: 0 },
+        { ...validBody(), contextLength: -1 },
+        { ...validBody(), extra: true },
+      ]
+      for (const body of rejected) {
+        const { app, calls } = appWith()
+        const response = await app.fetch(post(SELECTION_PATH, body))
+        assert.equal(response.status, 400, JSON.stringify(body))
+        const payload = await response.json() as Record<string, unknown>
+        assert.equal(payload['code'], 'validation_failed', JSON.stringify(body))
+        assert.equal(calls.repository.length, 0, JSON.stringify(body))
+        assert.deepEqual(calls.forbidden, [])
+      }
+    })
+
+    it('refuses a repository the fresh re-read shows as unsupported', async () => {
+      const { app } = appWith({
+        repository: async (input) => {
+          const page = listedPage()
+          assert.equal(page.state, 'listed')
+          const repository = {
+            ...page.repositories[0]!,
+            files: {
+              state: 'listed' as const, source: 'hugging_face_api_model' as const,
+              totalFiles: 1, malformedEntries: 0, truncated: false, ggufFiles: [],
+            },
+            verdict: {
+              state: 'unsupported' as const, scope: 'exact_gguf_file_only' as const,
+              basis: 'complete_listing_without_gguf' as const, reason: null,
+              requiresExactFileSelection: true as const,
+            },
+          }
+          return {
+            state: 'resolved' as const, version: 1, preview: input.preview,
+            repository, source: page.source, reason: null,
+          }
+        },
+      })
+      const response = await app.fetch(post(SELECTION_PATH, validBody()))
+      assert.equal(response.status, 200)
+      const body = await response.json() as { result: { state: string; reason: string } }
+      assert.equal(body.result.state, 'refused')
+      assert.equal(body.result.reason, 'repository_not_supported')
+    })
+
+    it('refuses when the fresh revision no longer matches the requested commit', async () => {
+      const { app } = appWith()
+      const response = await app.fetch(post(SELECTION_PATH, {
+        ...validBody(),
+        revision: { ...validBody().revision, commit: 'b'.repeat(40) },
+      }))
+      const body = await response.json() as { result: { state: string; reason: string } }
+      assert.equal(body.result.state, 'refused')
+      assert.equal(body.result.reason, 'revision_mismatch')
+    })
+
+    it('refuses a file path absent from the fresh inventory', async () => {
+      const { app } = appWith()
+      const response = await app.fetch(post(SELECTION_PATH, {
+        ...validBody(), filePath: 'never-listed.gguf',
+      }))
+      const body = await response.json() as { result: { state: string; reason: string } }
+      assert.equal(body.result.state, 'refused')
+      assert.equal(body.result.reason, 'file_not_in_current_inventory')
+    })
+
+    it('reports a caller disconnect as a cancellation, not a provider verdict', async () => {
+      const controller = new AbortController()
+      let receivedSignal: AbortSignal | undefined
+      const { app } = appWith({
+        repository: async (input) => {
+          receivedSignal = input.signal
+          if (!receivedSignal) throw new Error('selection did not forward the caller signal')
+          if (receivedSignal.aborted) throw new DOMException('Aborted', 'AbortError')
+          return new Promise((_resolve, reject) => {
+            receivedSignal!.addEventListener('abort', () => {
+              reject(new DOMException('Aborted', 'AbortError'))
+            }, { once: true })
+          })
+        },
+      })
+      const pending = app.fetch(post(SELECTION_PATH, validBody(), controller.signal))
+      await Promise.resolve()
+      controller.abort('client-disconnected')
+      const response = await pending
+      assert.equal(receivedSignal?.aborted, true)
+      assert.equal(response.status, 409)
+      const payload = await response.json() as { details?: { reason?: string } }
+      assert.equal(payload.details?.reason, 'request_cancelled')
+    })
+
+    it('reports an unexpected transport throw as a redacted internal error', async () => {
+      const secret = 'SECRET https://internal.example/hub'
+      const { app } = appWith({ repository: async () => { throw new Error(secret) } })
+      const response = await app.fetch(post(SELECTION_PATH, validBody()))
+      assert.equal(response.status, 500)
+      const payload = await response.json() as Record<string, unknown>
+      assert.equal(payload['code'], 'internal_error')
+      const text = JSON.stringify(payload)
+      assert.equal(text.includes('SECRET'), false)
+      assert.equal(text.includes('internal.example'), false)
+    })
+
+    it('starts no pull, probe, prewarm, load, unload, create, catalog or Job work', async () => {
+      const { app, calls } = appWith()
+      await app.fetch(post(SELECTION_PATH, validBody()))
+      assert.deepEqual(calls.forbidden, [])
+    })
   })
 })

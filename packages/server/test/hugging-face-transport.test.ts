@@ -72,6 +72,7 @@ describe('bounded server-owned Hugging Face transport', () => {
     assert.equal(url.searchParams.get('search'), 'llama gguf')
     assert.equal(url.searchParams.get('limit'), '10')
     assert.equal(url.searchParams.get('full'), 'true')
+    assert.equal(url.searchParams.has('blobs'), false)
     // Anonymous public access only: no token may be attached in this slice.
     const headers = new Headers(call.init?.headers as Record<string, string>)
     assert.equal(headers.get('authorization'), null)
@@ -493,8 +494,34 @@ describe('bounded server-owned Hugging Face transport', () => {
       new URL(calls[0]!.url).pathname,
       '/api/models/TheBloke/Llama-2-7B-GGUF',
     )
+    assert.equal(new URL(calls[0]!.url).searchParams.has('blobs'), false)
     assert.equal(result.state, 'resolved')
     assert.equal(result.repository.verdict.state, 'supported')
+    assert.deepEqual(huggingFaceRepositoryResultSchema.parse(result), result)
+  })
+
+  it('P2-K reads an exact immutable revision with file metadata enabled for selection', async () => {
+    const { calls, transport } = transportWith(async () => json(hubRow()))
+    const result = await transport.repository({
+      preview: preview(),
+      revision: {
+        state: 'exact_commit', commit: SHA, source: 'hugging_face_api_model',
+      },
+    })
+
+    assert.equal(calls.length, 1)
+    const url = new URL(calls[0]!.url)
+    assert.equal(
+      url.pathname,
+      `/api/models/TheBloke/Llama-2-7B-GGUF/revision/${SHA}`,
+    )
+    assert.equal(url.searchParams.get('blobs'), 'true')
+    assert.equal(url.searchParams.has('full'), false)
+    const headers = new Headers(calls[0]!.init?.headers as Record<string, string>)
+    assert.equal(headers.get('authorization'), null)
+    assert.equal(calls[0]!.init?.redirect, 'error')
+    assert.equal(result.state, 'resolved')
+    assert.equal(result.repository.revision.state, 'exact_commit')
     assert.deepEqual(huggingFaceRepositoryResultSchema.parse(result), result)
   })
 

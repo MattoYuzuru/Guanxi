@@ -1508,14 +1508,17 @@ export type HuggingFaceReferencePreview = z.infer<
  * A revision is only exact when the Hub reported one full commit SHA. A branch name such
  * as `main` is mutable and is therefore never published here as an exact revision.
  */
+export const huggingFaceExactRevisionSchema = z
+  .object({
+    state: z.literal('exact_commit'),
+    commit: z.string().regex(/^[a-f0-9]{40}$/u),
+    source: z.literal('hugging_face_api_model'),
+  })
+  .strict()
+export type HuggingFaceExactRevision = z.infer<typeof huggingFaceExactRevisionSchema>
+
 export const huggingFaceRevisionSchema = z.discriminatedUnion('state', [
-  z
-    .object({
-      state: z.literal('exact_commit'),
-      commit: z.string().regex(/^[a-f0-9]{40}$/u),
-      source: z.literal('hugging_face_api_model'),
-    })
-    .strict(),
+  huggingFaceExactRevisionSchema,
   z
     .object({
       state: z.literal('unknown'),
@@ -1573,10 +1576,45 @@ export const huggingFaceLicenseStateSchema = z.discriminatedUnion('state', [
 ])
 export type HuggingFaceLicenseState = z.infer<typeof huggingFaceLicenseStateSchema>
 
+export const HUGGING_FACE_GGUF_PATH_MAX_LENGTH = 1024
+
+/**
+ * Bound and shape check for one `rfilename`-derived GGUF path. P2-J published this path
+ * without validating its form; P2-K makes it a selection target, and P2-L will download by
+ * exactly this path, so a traversal-shaped, absolute, oversized or control-character path
+ * must fail closed here rather than downstream.
+ */
+export const huggingFaceGgufPathSchema = z
+  .string()
+  .min(1)
+  .max(HUGGING_FACE_GGUF_PATH_MAX_LENGTH)
+  .refine((value) => !value.startsWith('/'), 'must not be an absolute path')
+  .refine((value) => !value.includes('\\'), 'must not contain a backslash')
+  .refine((value) => !value.includes(':'), 'must not contain a drive or stream delimiter')
+  .refine((value) => !/[?#]/u.test(value), 'must not contain URL delimiters')
+  .refine(
+    (value) => !/%(?:2e|2f|5c)/iu.test(value),
+    'must not contain encoded dot or separator bytes',
+  )
+  .refine(
+    (value) => !/\p{Cc}/u.test(value),
+    'must not contain control characters',
+  )
+  .refine(
+    (value) => value.split('/').every((segment) =>
+      segment.length > 0
+      && segment === segment.trim()
+      && !segment.endsWith('.')
+      && segment !== '.'
+      && segment !== '..'),
+    'must not contain an empty, normalized-current or normalized-parent path segment',
+  )
+  .refine((value) => value.toLowerCase().endsWith('.gguf'), 'must end with .gguf')
+
 /** One exact GGUF file path inside one repository listing. Size stays nullable. */
 export const huggingFaceGgufFileSchema = z
   .object({
-    path: z.string().min(1),
+    path: huggingFaceGgufPathSchema,
     sizeBytes: z.number().int().nonnegative().safe().nullable(),
     sizeSource: z.enum(['hugging_face_api_model', 'not_reported']),
   })
@@ -1792,6 +1830,255 @@ export const huggingFaceSourceHealthSchema = z.discriminatedUnion('state', [
     .strict(),
 ])
 export type HuggingFaceSourceHealth = z.infer<typeof huggingFaceSourceHealthSchema>
+
+/* ─────────── Hugging Face exact GGUF file/revision selection (P2-K) ────────── */
+
+/**
+ * P2-K lets the user pick one exact GGUF file on one exact revision inside a
+ * repository P2-J already found `supported`. Selection is an intent, not an
+ * install: it starts no download, checksum, `ollama create` or probe (P2-L/P2-M),
+ * and it is never persisted — every request re-reads the bounded repository facts
+ * so a selection can never outlive the inventory it was validated against.
+ */
+
+/** A confirmed exact target: identity, exact commit and exact GGUF path together. */
+export const huggingFaceGgufSelectionSchema = z
+  .object({
+    identity: huggingFaceRepositoryIdentitySchema,
+    revision: huggingFaceExactRevisionSchema,
+    filePath: huggingFaceGgufPathSchema,
+    sizeBytes: z.number().int().nonnegative().safe().nullable(),
+    sizeSource: z.enum(['hugging_face_api_model', 'not_reported']),
+  })
+  .strict()
+  .superRefine((selection, context) => {
+    if ((selection.sizeBytes === null) !== (selection.sizeSource === 'not_reported')) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sizeSource'],
+        message: 'a selected file size and its source must be reported together',
+      })
+    }
+  })
+export type HuggingFaceGgufSelection = z.infer<typeof huggingFaceGgufSelectionSchema>
+
+export const huggingFaceSelectionHardwareEvidenceSchema = z
+  .object({
+    source: z.literal('application_startup_hardware_probe'),
+    observedAt: z.string().datetime(),
+    confidence: z.literal('estimated'),
+  })
+  .strict()
+export type HuggingFaceSelectionHardwareEvidence = z.infer<
+  typeof huggingFaceSelectionHardwareEvidenceSchema
+>
+
+/**
+ * The fit preview is always computed from the provider-reported file size, never a
+ * measured install. The wrapper basis makes that limitation explicit even though the
+ * reused legacy verdict represents the size as a vendor hint. An unreported size yields
+ * `unknown` with a reason instead of an optimistic estimate.
+ */
+export const huggingFaceSelectionFitPreviewSchema = z
+  .discriminatedUnion('state', [
+    z
+      .object({
+        state: z.literal('calculated'),
+        contextLength: positiveSafeIntegerSchema,
+        basis: z.literal('reported_file_size_only'),
+        calculatedAt: z.string().datetime(),
+        hardware: huggingFaceSelectionHardwareEvidenceSchema,
+        verdict: fitVerdictSchema.strict(),
+      })
+      .strict(),
+    z
+      .object({
+        state: z.literal('unknown'),
+        contextLength: positiveSafeIntegerSchema,
+        basis: z.enum(['size_not_reported', 'hardware_capacity_unavailable']),
+        verdict: z.null(),
+        reason: z.enum(['size_not_reported', 'hardware_capacity_unavailable']),
+      })
+      .strict(),
+  ])
+  .superRefine((fit, context) => {
+    if (fit.state === 'calculated' && fit.verdict.basis !== 'vendor_hint') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['verdict', 'basis'],
+        message: 'a claimed-size selection preview is never a measured fit',
+      })
+    }
+    if (fit.state === 'unknown' && fit.basis !== fit.reason) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reason'],
+        message: 'an unknown fit basis and reason must match',
+      })
+    }
+    if (fit.state === 'calculated') {
+      const { verdict } = fit
+      const expectedUtilization = verdict.requiredBytes / verdict.usableBytes
+      const expectedLevel = expectedUtilization < 0.8
+        ? 'green'
+        : expectedUtilization < 1
+          ? 'yellow'
+          : 'red'
+      const tolerance = Number.EPSILON * Math.max(1, Math.abs(expectedUtilization)) * 4
+      if (
+        verdict.measured !== null
+        || verdict.kvCacheBytes !== 0
+        || verdict.requiredBytes !== verdict.modelBytes
+        || verdict.usableBytes <= 0
+        || !Number.isFinite(expectedUtilization)
+        || Math.abs(verdict.utilization - expectedUtilization) > tolerance
+        || verdict.level !== expectedLevel
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['verdict'],
+          message: 'a claimed-size fit must contain only coherent unmeasured file-size facts',
+        })
+      }
+    }
+  })
+export type HuggingFaceSelectionFitPreview = z.infer<
+  typeof huggingFaceSelectionFitPreviewSchema
+>
+
+/**
+ * Every reason here is a live-Hub re-check outcome, not a request-shape error: the
+ * repository, its revision or its inventory may have changed since the caller last
+ * saw them, so the same well-formed request can legitimately be refused later.
+ */
+export const huggingFaceSelectionRefusalReasonSchema = z.enum([
+  'repository_not_supported',
+  'revision_not_exact',
+  'revision_mismatch',
+  'file_inventory_truncated',
+  'file_inventory_malformed',
+  'file_not_in_current_inventory',
+])
+export type HuggingFaceSelectionRefusalReason = z.infer<
+  typeof huggingFaceSelectionRefusalReasonSchema
+>
+
+export const huggingFaceSelectionResultSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('confirmed'),
+      version: z.literal(HUGGING_FACE_DISCOVERY_VERSION),
+      /** The exact repository facts the selection was validated against, just now. */
+      repository: huggingFaceRepositorySchema,
+      selection: huggingFaceGgufSelectionSchema,
+      fit: huggingFaceSelectionFitPreviewSchema,
+      reason: z.null(),
+    })
+    .strict(),
+  /** The re-read succeeded, but the exact target could not be confirmed. */
+  z
+    .object({
+      state: z.literal('refused'),
+      version: z.literal(HUGGING_FACE_DISCOVERY_VERSION),
+      repository: huggingFaceRepositorySchema,
+      selection: z.null(),
+      fit: z.null(),
+      reason: huggingFaceSelectionRefusalReasonSchema,
+    })
+    .strict(),
+  /** The bounded re-read itself failed: no fresh repository facts exist to check. */
+  z
+    .object({
+      state: z.literal('failed'),
+      version: z.literal(HUGGING_FACE_DISCOVERY_VERSION),
+      repository: z.null(),
+      selection: z.null(),
+      fit: z.null(),
+      reason: huggingFaceTransportFailureReasonSchema,
+    })
+    .strict(),
+]).superRefine((result, context) => {
+  if (result.state !== 'confirmed') return
+
+  const { repository, selection, fit } = result
+  if (repository.verdict.state !== 'supported') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repository', 'verdict'],
+      message: 'a confirmed selection requires a supported repository',
+    })
+  }
+  if (
+    repository.files.state !== 'listed'
+    || repository.files.truncated
+    || repository.files.malformedEntries > 0
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repository', 'files'],
+      message: 'a confirmed selection requires a complete well-formed listed inventory',
+    })
+    return
+  }
+  if (
+    repository.identity.repositoryId !== selection.identity.repositoryId
+    || repository.identity.comparisonKey !== selection.identity.comparisonKey
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['selection', 'identity'],
+      message: 'the selected identity must match the validated repository',
+    })
+  }
+  if (
+    repository.revision.state !== 'exact_commit'
+    || repository.revision.commit !== selection.revision.commit
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['selection', 'revision'],
+      message: 'the selected revision must match the validated repository',
+    })
+  }
+
+  const file = repository.files.ggufFiles.find((candidate) => candidate.path === selection.filePath)
+  if (
+    !file
+    || file.sizeBytes !== selection.sizeBytes
+    || file.sizeSource !== selection.sizeSource
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['selection', 'filePath'],
+      message: 'the selected file facts must match the validated inventory',
+    })
+  }
+  if (fit.state === 'calculated' && fit.contextLength !== fit.verdict.contextLength) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fit', 'contextLength'],
+      message: 'the fit wrapper and verdict context must match',
+    })
+  }
+  if (selection.sizeBytes === null && fit.state !== 'unknown') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fit'],
+      message: 'an unreported file size cannot produce a calculated fit',
+    })
+  }
+  if (
+    selection.sizeBytes !== null
+    && (fit.state !== 'calculated' || fit.verdict.modelBytes !== selection.sizeBytes)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fit'],
+      message: 'a calculated fit must use the selected reported file size',
+    })
+  }
+})
+export type HuggingFaceSelectionResult = z.infer<typeof huggingFaceSelectionResultSchema>
 
 export const modelDetailSchema = localModelSchema.extend({
   /** Сырой блок из /api/show — архитектурные параметры. */

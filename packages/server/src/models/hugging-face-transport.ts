@@ -17,7 +17,9 @@ import {
   HUGGING_FACE_DISCOVERY_VERSION,
   HUGGING_FACE_SEARCH_MAX_PAGE_SIZE,
   HUGGING_FACE_SEARCH_MAX_PAGES,
+  huggingFaceGgufPathSchema,
   type HuggingFaceFileInventory,
+  type HuggingFaceExactRevision,
   type HuggingFaceGatedState,
   type HuggingFaceGgufFile,
   type HuggingFaceLicenseState,
@@ -342,16 +344,22 @@ export class HuggingFaceTransport {
    */
   async repository(input: {
     preview: HuggingFaceReferencePreview
+    revision?: HuggingFaceExactRevision
     signal?: AbortSignal
   }): Promise<HuggingFaceRepositoryResult> {
-    const { preview, signal } = input
+    const { preview, revision, signal } = input
     let payload: { value: unknown; headers: Headers }
     try {
+      const repositoryPath = `/api/models/${encodeURIComponent(preview.identity.owner)}/${
+        encodeURIComponent(preview.identity.name)
+      }`
       payload = await this.get(
-        `/api/models/${encodeURIComponent(preview.identity.owner)}/${
-          encodeURIComponent(preview.identity.name)
-        }`,
-        new URLSearchParams(),
+        revision === undefined
+          ? repositoryPath
+          : `${repositoryPath}/revision/${encodeURIComponent(revision.commit)}`,
+        revision === undefined
+          ? new URLSearchParams()
+          : new URLSearchParams({ blobs: 'true' }),
         signal,
       )
     } catch (error) {
@@ -559,6 +567,13 @@ function parseFiles(row: Record<string, unknown>): HuggingFaceFileInventory {
       continue
     }
     if (!isGgufPath(path)) continue
+    // A hostile-shaped path (traversal, absolute, oversized, control characters) is
+    // never a selectable P2-K target, and P2-L will download by exactly this path —
+    // so it is treated as malformed evidence here rather than accepted silently.
+    if (!huggingFaceGgufPathSchema.safeParse(path).success) {
+      malformedEntries += 1
+      continue
+    }
     // A duplicate path is a malformed listing, not two files.
     if (seen.has(path)) {
       malformedEntries += 1

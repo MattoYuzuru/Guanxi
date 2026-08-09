@@ -84,6 +84,7 @@ function fixture(
     approvals: new ApprovalGate(),
     tracker: new PrefillTracker(),
     hardware: HARDWARE,
+    hardwareObservedAt: '2026-08-09T12:00:00.000Z',
     hostTelemetry: new UnsupportedHostTelemetry(HARDWARE),
     appVersion: 'chat-job-fixture',
     activeTurns: new Map<string, AbortController>(),

@@ -787,7 +787,7 @@ const english = {
   'hf.repository.files.size.unknown': 'Size not reported',
   'hf.verdict.supported': 'Contains GGUF files',
   'hf.verdict.supported.detail':
-    'Exact GGUF files are listed. Choosing one is a later step and is not available yet.',
+    'Exact GGUF files are listed. Select one below to preview its size, fit and license.',
   'hf.verdict.unsupported': 'Outside this application’s GGUF-only scope',
   'hf.verdict.unsupported.detail':
     'The complete listing contains no GGUF file. This application imports exact GGUF files only — it does not mean the model is broken, bad or unavailable elsewhere.',
@@ -801,7 +801,44 @@ const english = {
   'hf.verdict.reason.legacy_response': 'The response predates this evidence contract.',
   'hf.next': 'Next step',
   'hf.next.detail':
-    'Installing still requires choosing an exact GGUF file and revision, then a download and a local import. None of that is available in this version, and no result here promises a one-click install or a direct Ollama pull.',
+    'Installing still requires a download, checksum and local import after you select a file below. None of that is available in this version, and no result here promises a one-click install or a direct Ollama pull.',
+  'hf.select.action': 'Select',
+  'hf.select.aria': 'Select the file',
+  'hf.select.selecting': 'Checking…',
+  'hf.select.selected': 'Selected',
+  'hf.select.change': 'Choose a different file',
+  'hf.select.revisionUnavailable':
+    'Selection needs an exact commit, and this repository did not report one.',
+  'hf.select.heading': 'Selected target',
+  'hf.select.size': 'Exact file size',
+  'hf.select.size.source': 'reported by the Hugging Face file metadata API',
+  'hf.select.fit.context': 'selected context',
+  'hf.select.fit.reportedSizeOnly':
+    'Preliminary estimate from the reported file size only. KV cache and runtime overhead are not included, so this is not a measured or guaranteed fit.',
+  'hf.select.fit.hardware': 'Hardware capacity basis',
+  'hf.select.fit.hardware.source': 'application startup hardware probe',
+  'hf.select.fit.hardware.confidence': 'estimated confidence',
+  'hf.select.fit.calculated': 'calculated',
+  'hf.select.fit.unknown':
+    'Fit is unknown: this file’s size was not reported, so no estimate is shown.',
+  'hf.select.fit.hardwareUnavailable':
+    'Fit is unknown: the startup hardware profile did not report usable capacity.',
+  'hf.select.next': 'No download yet',
+  'hf.select.next.detail':
+    'This confirms the exact target only. Download, checksum and local import are a later step.',
+  'hf.select.error.title': 'Selection could not be confirmed',
+  'hf.select.refused.repository_not_supported':
+    'A fresh check shows this repository no longer qualifies for exact GGUF import.',
+  'hf.select.refused.revision_not_exact':
+    'A fresh check could not confirm an exact commit for this repository.',
+  'hf.select.refused.revision_mismatch':
+    'The repository’s exact commit has changed since this page was read.',
+  'hf.select.refused.file_inventory_truncated':
+    'The fresh file listing was truncated, so this exact target is not confirmed.',
+  'hf.select.refused.file_inventory_malformed':
+    'The fresh file listing contains unreadable paths, so this exact target is not confirmed.',
+  'hf.select.refused.file_not_in_current_inventory':
+    'A fresh check no longer lists this exact file.',
   'hf.error.title': 'Hugging Face could not be read',
   'hf.error.retry': 'Try again',
   'hf.error.reason.provider_unavailable': 'The provider could not be reached.',
@@ -1619,7 +1656,7 @@ const russian: Messages = {
   'hf.repository.files.size.unknown': 'Размер не сообщён',
   'hf.verdict.supported': 'Содержит файлы GGUF',
   'hf.verdict.supported.detail':
-    'Точные файлы GGUF перечислены. Выбор конкретного файла — следующий шаг, он пока недоступен.',
+    'Точные файлы GGUF перечислены. Выберите один ниже, чтобы увидеть предпросмотр размера, влезаемости и лицензии.',
   'hf.verdict.unsupported': 'Вне GGUF-only scope этого приложения',
   'hf.verdict.unsupported.detail':
     'В полном перечне нет ни одного файла GGUF. Это приложение импортирует только точные файлы GGUF — это не значит, что модель сломана, плохая или недоступна где-то ещё.',
@@ -1633,7 +1670,44 @@ const russian: Messages = {
   'hf.verdict.reason.legacy_response': 'Ответ старше текущего контракта доказательств.',
   'hf.next': 'Что дальше',
   'hf.next.detail':
-    'Для установки всё ещё нужно выбрать точный файл GGUF и ревизию, затем скачать и импортировать локально. Ничего из этого в текущей версии нет, и ни один результат здесь не обещает установку в один клик или прямой Ollama pull.',
+    'После выбора файла ниже для установки всё ещё нужны скачивание, проверка контрольной суммы и локальный импорт. Этого пока нет, и ни один результат здесь не обещает установку в один клик или прямой Ollama pull.',
+  'hf.select.action': 'Выбрать',
+  'hf.select.aria': 'Выбрать этот файл',
+  'hf.select.selecting': 'Проверяем…',
+  'hf.select.selected': 'Выбран',
+  'hf.select.change': 'Выбрать другой файл',
+  'hf.select.revisionUnavailable':
+    'Для выбора нужен точный commit, а этот репозиторий его не сообщил.',
+  'hf.select.heading': 'Выбранная цель',
+  'hf.select.size': 'Точный размер файла',
+  'hf.select.size.source': 'сообщён API файловых metadata Hugging Face',
+  'hf.select.fit.context': 'выбранный контекст',
+  'hf.select.fit.reportedSizeOnly':
+    'Предварительная оценка только по сообщённому размеру файла. KV-кэш и runtime overhead не учтены, поэтому это не замер и не гарантия влезаемости.',
+  'hf.select.fit.hardware': 'Основа данных о доступной памяти',
+  'hf.select.fit.hardware.source': 'стартовая проверка железа приложением',
+  'hf.select.fit.hardware.confidence': 'оценочная уверенность',
+  'hf.select.fit.calculated': 'рассчитано',
+  'hf.select.fit.unknown':
+    'Влезаемость неизвестна: размер файла не сообщён, поэтому оценки нет.',
+  'hf.select.fit.hardwareUnavailable':
+    'Влезаемость неизвестна: стартовый профиль железа не сообщил доступную ёмкость.',
+  'hf.select.next': 'Скачивание пока недоступно',
+  'hf.select.next.detail':
+    'Здесь подтверждается только точная цель. Скачивание, проверка контрольной суммы и локальный импорт — следующий шаг.',
+  'hf.select.error.title': 'Не удалось подтвердить выбор',
+  'hf.select.refused.repository_not_supported':
+    'Повторная проверка показала, что репозиторий больше не подходит для точного импорта GGUF.',
+  'hf.select.refused.revision_not_exact':
+    'Повторная проверка не подтвердила точный commit для этого репозитория.',
+  'hf.select.refused.revision_mismatch':
+    'Точный commit репозитория изменился с момента последнего чтения страницы.',
+  'hf.select.refused.file_inventory_truncated':
+    'Повторный перечень файлов был обрезан, поэтому точную цель подтвердить нельзя.',
+  'hf.select.refused.file_inventory_malformed':
+    'В повторном перечне есть нечитаемые пути, поэтому точную цель подтвердить нельзя.',
+  'hf.select.refused.file_not_in_current_inventory':
+    'Повторная проверка больше не находит этот файл в перечне.',
   'hf.error.title': 'Не удалось прочитать Hugging Face',
   'hf.error.retry': 'Повторить',
   'hf.error.reason.provider_unavailable': 'Провайдер недоступен.',

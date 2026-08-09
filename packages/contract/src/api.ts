@@ -14,8 +14,12 @@ import {
   completionProbeEvidenceSchema,
   healthSchema,
   HUGGING_FACE_DISCOVERY_VERSION,
+  huggingFaceExactRevisionSchema,
+  huggingFaceGgufPathSchema,
   huggingFaceReferencePreviewSchema,
+  huggingFaceRepositoryIdentitySchema,
   huggingFaceRepositorySchema,
+  huggingFaceSelectionResultSchema,
   huggingFaceSourceHealthSchema,
   huggingFaceTransportFailureReasonSchema,
   jobKindSchema,
@@ -61,6 +65,7 @@ export const ROUTES = {
   ollamaReferenceStart: () => '/api/models/imports/ollama-reference/start',
   huggingFaceSearch: () => '/api/models/discovery/hugging-face/search',
   huggingFaceRepository: () => '/api/models/discovery/hugging-face/repository',
+  huggingFaceSelection: () => '/api/models/discovery/hugging-face/selection',
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
@@ -651,6 +656,29 @@ export const huggingFaceRepositoryResponse = z
   .strict()
 export type HuggingFaceRepositoryResponse = z.infer<
   typeof huggingFaceRepositoryResponse
+>
+
+/**
+ * P2-K exact GGUF file/revision selection. The server re-parses `identity.repositoryId`
+ * through the same strict local grammar as the repository route, re-derives identity,
+ * and reads this exact immutable revision from the Hub. A mutable branch cannot be
+ * represented by this body.
+ */
+export const huggingFaceSelectionBody = z
+  .object({
+    identity: huggingFaceRepositoryIdentitySchema,
+    revision: huggingFaceExactRevisionSchema,
+    filePath: huggingFaceGgufPathSchema,
+    contextLength: positiveSafeIntegerSchema,
+  })
+  .strict()
+export type HuggingFaceSelectionBody = z.infer<typeof huggingFaceSelectionBody>
+
+export const huggingFaceSelectionResponse = z
+  .object({ result: huggingFaceSelectionResultSchema })
+  .strict()
+export type HuggingFaceSelectionResponse = z.infer<
+  typeof huggingFaceSelectionResponse
 >
 
 /** POST /api/models/:name/pull → SSE (PullStreamEvent) */
