@@ -116,6 +116,18 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
   })
 
   await page.goto('/')
+  const installedSection = page
+    .getByRole('heading', { name: 'Установленные' })
+    .locator('xpath=ancestor::section[1]')
+  const marketplaceSection = page
+    .getByRole('heading', { name: 'Каталог' })
+    .locator('xpath=ancestor::section[1]')
+  await expect(installedSection.getByText('Пока ничего не установлено')).toBeVisible()
+  await expect(installedSection.locator('article[aria-label="fixture:small"]')).toHaveCount(0)
+  await expect(marketplaceSection.locator('article[aria-label="fixture"]')).toHaveCount(1)
+  await expect(
+    marketplaceSection.getByRole('button', { name: 'Выбрать вариант small' }),
+  ).toHaveCount(1)
   const carousel = page.getByRole('group', { name: 'Каталог моделей' })
   await carousel.focus()
   await carousel.press('ArrowRight')
@@ -146,6 +158,8 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
   await review.press('Enter')
   await dialog.getByRole('button', { name: /Подтвердить точную цель/u }).dblclick()
   await expect(dialog.getByText('sha256:exact-small')).toBeVisible()
+  await expect(installedSection.locator('article[aria-label="fixture:small"]')).toHaveCount(1)
+  await expect(marketplaceSection.locator('article[aria-label="fixture"]')).toHaveCount(1)
   expect(pulls).toEqual([{
     reference: 'fixture:small', confirmedModelName: 'fixture:small',
   }])

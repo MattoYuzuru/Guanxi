@@ -283,6 +283,7 @@ describe('server-owned staged GGUF import', () => {
     assert.deepEqual(uploaded, Buffer.from(gguf()))
     await assert.rejects(readFile(staged.path), { code: 'ENOENT' })
     if (terminal.type === 'completed') {
+      assert.deepEqual(terminal.data.provenance.source, staged.provenance)
       assert.equal(terminal.data.provenance.targetModelName, TARGET)
       assert.equal(terminal.data.provenance.installation.digest, 'manifest-digest')
       assert.equal(terminal.data.provenance.probe.status, 'verified')
