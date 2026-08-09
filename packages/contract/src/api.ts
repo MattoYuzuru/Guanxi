@@ -66,6 +66,7 @@ export const ROUTES = {
   huggingFaceSearch: () => '/api/models/discovery/hugging-face/search',
   huggingFaceRepository: () => '/api/models/discovery/hugging-face/repository',
   huggingFaceSelection: () => '/api/models/discovery/hugging-face/selection',
+  huggingFaceDownload: () => '/api/models/discovery/hugging-face/download',
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
@@ -680,6 +681,11 @@ export const huggingFaceSelectionResponse = z
 export type HuggingFaceSelectionResponse = z.infer<
   typeof huggingFaceSelectionResponse
 >
+
+/** P2-L connection-owned POST+SSE command; the server revalidates this P2-K tuple. */
+export const huggingFaceDownloadBody = huggingFaceSelectionBody
+export type HuggingFaceDownloadBody = z.infer<typeof huggingFaceDownloadBody>
+
 
 /** POST /api/models/:name/pull → SSE (PullStreamEvent) */
 export const pullModelBody = z.object({

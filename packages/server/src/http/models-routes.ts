@@ -8,6 +8,7 @@ import {
   getModelQuery,
   huggingFaceRepositoryBody,
   huggingFaceSearchBody,
+  huggingFaceDownloadBody,
   huggingFaceSelectionBody,
   listCatalogQuery,
   listModelsQuery,
@@ -17,6 +18,9 @@ import {
   prewarmModelBody,
   warmModelBody,
   type HuggingFaceReferencePreview,
+  HUGGING_FACE_DOWNLOAD_VERSION,
+  type HuggingFaceDownloadBody,
+  type HuggingFaceDownloadStreamEvent,
   type ModelCapabilityOverrideMutationBody,
   type ModelCapabilityOverrideOutcome,
 } from '@alamo/contract'
@@ -333,6 +337,49 @@ export function modelsRoutes(app: AppContext): Hono {
   })
 
   /**
+   * P2-L connection-owned POST+SSE command. The same exact target is revalidated
+   * inside the stream before the download service may create a temporary file.
+   */
+  routes.post('/discovery/hugging-face/download', async (context) => {
+    const body = huggingFaceDownloadBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!body.success) return invalidHuggingFaceRequestResponse(context)
+
+    let preview: HuggingFaceReferencePreview
+    try {
+      preview = normalizeHuggingFaceReference(body.data.identity.repositoryId)
+    } catch (error) {
+      if (error instanceof HuggingFaceReferenceError) {
+        return invalidHuggingFaceRequestResponse(context, error.reason)
+      }
+      return context.json(
+        {
+          code: 'internal_error',
+          message: 'The Hugging Face download target could not be checked safely',
+          details: null,
+        },
+        500,
+      )
+    }
+
+    const controller = new AbortController()
+    const abortFromRequest = () => controller.abort(
+      context.req.raw.signal.reason ?? 'hf-download-connection-closed',
+    )
+    if (context.req.raw.signal.aborted) abortFromRequest()
+    else context.req.raw.signal.addEventListener('abort', abortFromRequest, { once: true })
+
+    return sseResponse(
+      withDownloadRequestCleanup(
+        connectionOwnedHuggingFaceDownloadEvents(app, body.data, preview, controller.signal),
+        () => context.req.raw.signal.removeEventListener('abort', abortFromRequest),
+      ),
+      { onAbort: () => controller.abort('hf-download-connection-closed') },
+    )
+  })
+
+  /**
    * P2-I user assertions. Write and clear share one strict body so the caller
    * always states the exact identity it rendered; the service revalidates it at
    * the mutation point. Registered before the generic `/:name` routes so the
@@ -596,6 +643,84 @@ export function modelsRoutes(app: AppContext): Hono {
   })
 
   return routes
+}
+
+async function* connectionOwnedHuggingFaceDownloadEvents(
+  app: AppContext,
+  body: HuggingFaceDownloadBody,
+  preview: HuggingFaceReferencePreview,
+  signal: AbortSignal,
+): AsyncGenerator<HuggingFaceDownloadStreamEvent> {
+  try {
+    const result = await selectHuggingFaceGgufFile({
+      huggingFace: app.huggingFace,
+      hardware: app.hardware,
+      hardwareObservedAt: app.hardwareObservedAt,
+      preview,
+      revision: body.revision,
+      filePath: body.filePath,
+      contextLength: body.contextLength,
+      signal,
+    })
+    if (signal.aborted) {
+      yield {
+        type: 'cancelled', seq: 0,
+        data: {
+          version: HUGGING_FACE_DOWNLOAD_VERSION,
+          state: 'cancelled',
+          reason: signal.reason === 'hf-download-user-cancelled'
+            ? 'user_requested'
+            : 'request_cancelled',
+        },
+      }
+      return
+    }
+    if (result.state !== 'confirmed') {
+      yield {
+        type: 'refused', seq: 0,
+        data: {
+          version: HUGGING_FACE_DOWNLOAD_VERSION,
+          state: 'refused',
+          reason: 'selection_stale',
+        },
+      }
+      return
+    }
+    yield* app.huggingFaceDownloads.download(result, signal)
+  } catch {
+    if (signal.aborted) {
+      yield {
+        type: 'cancelled', seq: 0,
+        data: {
+          version: HUGGING_FACE_DOWNLOAD_VERSION,
+          state: 'cancelled',
+          reason: signal.reason === 'hf-download-user-cancelled'
+            ? 'user_requested'
+            : 'request_cancelled',
+        },
+      }
+      return
+    }
+    yield {
+      type: 'failed', seq: 0,
+      data: {
+        version: HUGGING_FACE_DOWNLOAD_VERSION,
+        state: 'failed',
+        reason: 'provider_unavailable',
+      },
+    }
+  }
+}
+
+async function* withDownloadRequestCleanup(
+  source: AsyncGenerator<HuggingFaceDownloadStreamEvent>,
+  cleanup: () => void,
+): AsyncGenerator<HuggingFaceDownloadStreamEvent> {
+  try {
+    yield* source
+  } finally {
+    cleanup()
+  }
 }
 
 async function* connectionOwnedPullEvents(

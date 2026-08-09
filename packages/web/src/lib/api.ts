@@ -24,6 +24,7 @@ import {
   huggingFaceRepositoryResponse,
   huggingFaceSearchResponse,
   huggingFaceSelectionResponse,
+  huggingFaceDownloadStreamEventSchema,
   listCatalogResponse,
   listModelsResponse,
   listRunningResponse,
@@ -43,6 +44,8 @@ import {
   type CompletionProbeBody,
   type HuggingFaceSearchBody,
   type HuggingFaceSelectionBody,
+  type HuggingFaceDownloadBody,
+  type HuggingFaceDownloadStreamEvent,
   type ModelCapabilityOverrideMutationBody,
   type OllamaReferenceStartBody,
   type JobStreamEvent,
@@ -452,6 +455,21 @@ export function streamOllamaReferencePull(
   return sseStream<PullStreamEvent>({
     url: ROUTES.ollamaReferenceStart(),
     schema: pullStreamEventSchema,
+    method: 'POST',
+    body,
+    signal,
+    maxRetries: 0,
+  })
+}
+
+/** Exact HF download is connection-owned and intentionally has no reconnect/resume. */
+export function streamHuggingFaceDownload(
+  body: HuggingFaceDownloadBody,
+  signal?: AbortSignal,
+): AsyncGenerator<HuggingFaceDownloadStreamEvent, void, void> {
+  return sseStream<HuggingFaceDownloadStreamEvent>({
+    url: ROUTES.huggingFaceDownload(),
+    schema: huggingFaceDownloadStreamEventSchema,
     method: 'POST',
     body,
     signal,

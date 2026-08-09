@@ -9,6 +9,7 @@ import {
   type HardwareInfo,
   type HuggingFaceRepositoryResult,
   type HuggingFaceSearchResult,
+  huggingFaceDownloadStreamEventSchema,
 } from '@alamo/contract'
 import type { AppContext } from '../src/context.ts'
 import { modelsRoutes } from '../src/http/models-routes.ts'
@@ -107,6 +108,7 @@ function resolvedRepository(): HuggingFaceRepositoryResult {
 interface Calls {
   search: SearchInput[]
   repository: RepositoryInput[]
+  download: unknown[]
   forbidden: string[]
 }
 
@@ -114,7 +116,7 @@ function appWith(handlers: {
   search?: (input: SearchInput) => Promise<HuggingFaceSearchResult>
   repository?: (input: RepositoryInput) => Promise<HuggingFaceRepositoryResult>
 } = {}): { app: Hono; calls: Calls } {
-  const calls: Calls = { search: [], repository: [], forbidden: [] }
+  const calls: Calls = { search: [], repository: [], download: [], forbidden: [] }
   const forbid = (label: string) => (...args: unknown[]) => {
     calls.forbidden.push(label)
     void args
@@ -131,6 +133,19 @@ function appWith(handlers: {
       repository: async (input: RepositoryInput) => {
         calls.repository.push(input)
         return (handlers.repository ?? (async () => resolvedRepository()))(input)
+      },
+    },
+    huggingFaceDownloads: {
+      download: async function* (selection: unknown) {
+        calls.download.push(selection)
+        yield {
+          type: 'state', seq: 0,
+          data: { version: 1, state: 'preparing' },
+        }
+        yield {
+          type: 'refused', seq: 1,
+          data: { version: 1, state: 'refused', reason: 'redirect_not_allowed' },
+        }
       },
     },
     hardware: HARDWARE,
@@ -170,12 +185,14 @@ function post(path: string, body: unknown, signal?: AbortSignal): Request {
 const SEARCH_PATH = ROUTES.huggingFaceSearch()
 const REPOSITORY_PATH = ROUTES.huggingFaceRepository()
 const SELECTION_PATH = ROUTES.huggingFaceSelection()
+const DOWNLOAD_PATH = ROUTES.huggingFaceDownload()
 
 describe('Hugging Face discovery routes', () => {
   it('registers exactly the contract paths', () => {
     assert.equal(SELECTION_PATH, '/api/models/discovery/hugging-face/selection')
     assert.equal(SEARCH_PATH, '/api/models/discovery/hugging-face/search')
     assert.equal(REPOSITORY_PATH, '/api/models/discovery/hugging-face/repository')
+    assert.equal(DOWNLOAD_PATH, '/api/models/discovery/hugging-face/download')
   })
 
   it('serves one bounded search and returns a contract-valid page', async () => {
@@ -536,6 +553,115 @@ describe('Hugging Face discovery routes', () => {
     it('starts no pull, probe, prewarm, load, unload, create, catalog or Job work', async () => {
       const { app, calls } = appWith()
       await app.fetch(post(SELECTION_PATH, validBody()))
+      assert.deepEqual(calls.forbidden, [])
+    })
+  })
+
+  describe('P2-L exact GGUF download route', () => {
+    const validBody = () => ({
+      identity: {
+        provider: 'hugging_face', owner: 'TheBloke', name: 'Llama-2-7B-GGUF',
+        repositoryId: 'TheBloke/Llama-2-7B-GGUF',
+        comparisonKey: 'thebloke/llama-2-7b-gguf',
+      },
+      revision: {
+        state: 'exact_commit', commit: 'a'.repeat(40),
+        source: 'hugging_face_api_model',
+      },
+      filePath: 'llama-2-7b.Q4_K_M.gguf',
+      contextLength: 8_192,
+    })
+
+    const events = async (response: Response) => (await response.text())
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => huggingFaceDownloadStreamEventSchema.parse(JSON.parse(line.slice(6))))
+
+    it('revalidates the exact target, starts one writer and exposes only typed SSE', async () => {
+      const { app, calls } = appWith()
+      const response = await app.fetch(post(DOWNLOAD_PATH, validBody()))
+      assert.equal(response.status, 200)
+      const streamed = await events(response)
+      assert.deepEqual(streamed.map((event) => event.type), ['state', 'refused'])
+      assert.equal(calls.repository.length, 1)
+      assert.deepEqual(calls.repository[0]?.revision, validBody().revision)
+      assert.equal(calls.download.length, 1)
+      assert.equal(calls.search.length, 0)
+      assert.deepEqual(calls.forbidden, [])
+    })
+
+    it('rejects malformed or traversal-shaped targets before metadata, file or network work', async () => {
+      for (const body of [
+        null,
+        { ...validBody(), filePath: '../secret.gguf' },
+        { ...validBody(), revision: { ...validBody().revision, commit: 'main' } },
+        { ...validBody(), extra: true },
+      ]) {
+        const { app, calls } = appWith()
+        const response = await app.fetch(post(DOWNLOAD_PATH, body))
+        assert.equal(response.status, 400)
+        assert.equal(calls.repository.length, 0)
+        assert.equal(calls.download.length, 0)
+        assert.deepEqual(calls.forbidden, [])
+      }
+    })
+
+    it('refuses stale selection evidence without creating a staging writer', async () => {
+      const { app, calls } = appWith({
+        repository: async (input) => {
+          const page = listedPage()
+          assert.equal(page.state, 'listed')
+          const repository = {
+            ...page.repositories[0]!,
+            files: {
+              state: 'listed' as const, source: 'hugging_face_api_model' as const,
+              totalFiles: 0, malformedEntries: 0, truncated: false, ggufFiles: [],
+            },
+            verdict: {
+              state: 'unsupported' as const, scope: 'exact_gguf_file_only' as const,
+              basis: 'complete_listing_without_gguf' as const, reason: null,
+              requiresExactFileSelection: true as const,
+            },
+          }
+          return {
+            state: 'resolved' as const, version: 1, preview: input.preview,
+            repository, source: page.source, reason: null,
+          }
+        },
+      })
+      const response = await app.fetch(post(DOWNLOAD_PATH, validBody()))
+      const streamed = await events(response)
+      assert.equal(streamed.length, 1)
+      assert.equal(streamed[0]?.type, 'refused')
+      if (streamed[0]?.type === 'refused') {
+        assert.equal(streamed[0].data.reason, 'selection_stale')
+      }
+      assert.equal(calls.download.length, 0)
+      assert.deepEqual(calls.forbidden, [])
+    })
+
+    it('cancels during the metadata re-read before creating a staging writer', async () => {
+      const controller = new AbortController()
+      let metadataSignal: AbortSignal | undefined
+      const { app, calls } = appWith({
+        repository: async (input) => {
+          metadataSignal = input.signal
+          return new Promise((_resolve, reject) => {
+            metadataSignal?.addEventListener('abort', () => {
+              reject(new DOMException('Aborted', 'AbortError'))
+            }, { once: true })
+          })
+        },
+      })
+      const response = await app.fetch(post(DOWNLOAD_PATH, validBody(), controller.signal))
+      const reading = events(response)
+      await Promise.resolve()
+      controller.abort('client-disconnected')
+      const streamed = await reading
+      assert.equal(metadataSignal?.aborted, true)
+      assert.equal(streamed.length, 1)
+      assert.equal(streamed[0]?.type, 'cancelled')
+      assert.equal(calls.download.length, 0)
       assert.deepEqual(calls.forbidden, [])
     })
   })

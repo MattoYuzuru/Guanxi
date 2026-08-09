@@ -6,6 +6,7 @@
  * тот же сервер сможет работать с Ollama на другой машине.
  */
 import type { HardwareInfo } from '@alamo/contract'
+import { dirname, join } from 'node:path'
 import { ApprovalGate } from './agent/approvals.ts'
 import { PrefillTracker } from './context/usage.ts'
 import { probeHardware } from './hardware/probe.ts'
@@ -14,6 +15,7 @@ import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
 import { HuggingFaceTransport } from './models/hugging-face-transport.ts'
+import { HuggingFaceDownloadService } from './models/hugging-face-download.ts'
 import { JobService } from './jobs/service.ts'
 import { ChatJobExecutionOwner } from './jobs/chat-execution.ts'
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
@@ -55,6 +57,8 @@ export interface AppContext {
    * Ollama, the Governor, the catalog or any Job, and it holds no credentials.
    */
   huggingFace: HuggingFaceTransport
+  /** Connection-owned P2-L writer into a server-managed staging boundary. */
+  huggingFaceDownloads: HuggingFaceDownloadService
   approvals: ApprovalGate
   tracker: PrefillTracker
   hardware: HardwareInfo
@@ -159,6 +163,9 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
         store: capabilityOverrideStore,
       }),
       huggingFace: new HuggingFaceTransport(),
+      huggingFaceDownloads: new HuggingFaceDownloadService({
+        rootDir: join(dirname(options.dbPath), 'staging', 'hugging-face'),
+      }),
       chatExecution: new ChatJobExecutionOwner(base),
     }
     await recoverChatJobs(context)

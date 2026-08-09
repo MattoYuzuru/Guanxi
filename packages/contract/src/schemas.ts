@@ -1617,6 +1617,9 @@ export const huggingFaceGgufFileSchema = z
     path: huggingFaceGgufPathSchema,
     sizeBytes: z.number().int().nonnegative().safe().nullable(),
     sizeSource: z.enum(['hugging_face_api_model', 'not_reported']),
+    /** P2-L additive provider claim. A repository commit is never substituted for it. */
+    sha256: z.string().regex(/^[a-f0-9]{64}$/u).nullable().optional(),
+    sha256Source: z.enum(['hugging_face_lfs_oid', 'not_reported']).optional(),
   })
   .strict()
   .superRefine((file, context) => {
@@ -1625,6 +1628,23 @@ export const huggingFaceGgufFileSchema = z
         code: z.ZodIssueCode.custom,
         path: ['sizeSource'],
         message: 'a GGUF file size and its source must be reported together',
+      })
+    }
+    if ((file.sha256 === undefined) !== (file.sha256Source === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sha256Source'],
+        message: 'an additive provider checksum and its source must be published together',
+      })
+    }
+    if (
+      file.sha256Source !== undefined
+      && (file.sha256 === null) !== (file.sha256Source === 'not_reported')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sha256Source'],
+        message: 'a provider checksum claim and its source must agree',
       })
     }
   })
@@ -2079,6 +2099,112 @@ export const huggingFaceSelectionResultSchema = z.discriminatedUnion('state', [
   }
 })
 export type HuggingFaceSelectionResult = z.infer<typeof huggingFaceSelectionResultSchema>
+
+/* ───────── Hugging Face bounded exact GGUF download/provenance (P2-L) ─────── */
+
+export const HUGGING_FACE_DOWNLOAD_VERSION = 1
+
+export const huggingFaceDownloadRefusalReasonSchema = z.enum([
+  'selection_stale',
+  'gated_repository',
+  'duplicate_active',
+  'redirect_not_allowed',
+  'redirect_limit_exceeded',
+])
+export type HuggingFaceDownloadRefusalReason = z.infer<
+  typeof huggingFaceDownloadRefusalReasonSchema
+>
+
+export const huggingFaceDownloadFailureReasonSchema = z.enum([
+  'provider_unavailable',
+  'connect_timeout',
+  'body_timeout',
+  'provider_error',
+  'content_length_invalid',
+  'maximum_bytes_exceeded',
+  'size_mismatch',
+  'checksum_mismatch',
+  'invalid_gguf_magic',
+  'invalid_gguf_header',
+  'unsupported_gguf_version',
+  'filesystem_error',
+])
+export type HuggingFaceDownloadFailureReason = z.infer<
+  typeof huggingFaceDownloadFailureReasonSchema
+>
+
+export const huggingFaceDownloadProvenanceSchema = z
+  .object({
+    version: z.literal(HUGGING_FACE_DOWNLOAD_VERSION),
+    identity: huggingFaceRepositoryIdentitySchema,
+    revision: huggingFaceExactRevisionSchema,
+    remotePath: huggingFaceGgufPathSchema,
+    license: huggingFaceLicenseStateSchema,
+    gated: huggingFaceGatedStateSchema,
+    sourceUrlPolicy: z.literal('hugging_face_exact_revision_explicit_hosts_v1'),
+    expectedSizeBytes: z.number().int().nonnegative().safe().nullable(),
+    observedSizeBytes: z.number().int().nonnegative().safe(),
+    checksum: z
+      .object({
+        algorithm: z.literal('sha256'),
+        expectedDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
+        observedDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+        relation: z.enum(['matched_provider_claim', 'locally_observed_only']),
+      })
+      .strict(),
+    format: z
+      .object({
+        kind: z.literal('gguf'),
+        magic: z.literal('GGUF'),
+        version: z.number().int().min(2).max(3),
+        inspection: z.literal('bounded_header_only'),
+      })
+      .strict(),
+    artifact: z
+      .object({
+        state: z.literal('managed_staging'),
+        id: z.string().uuid(),
+      })
+      .strict(),
+    observedAt: z.string().datetime(),
+    terminalState: z.literal('completed'),
+  })
+  .strict()
+  .superRefine((provenance, context) => {
+    const relation = provenance.checksum.expectedDigest === null
+      ? 'locally_observed_only'
+      : 'matched_provider_claim'
+    if (provenance.checksum.relation !== relation) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['checksum', 'relation'],
+        message: 'checksum relation must follow the presence of a provider claim',
+      })
+    }
+    if (
+      provenance.checksum.expectedDigest !== null
+      && provenance.checksum.expectedDigest !== provenance.checksum.observedDigest
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['checksum', 'observedDigest'],
+        message: 'completed provenance cannot contain a checksum mismatch',
+      })
+    }
+    if (
+      provenance.expectedSizeBytes !== null
+      && provenance.expectedSizeBytes !== provenance.observedSizeBytes
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['observedSizeBytes'],
+        message: 'completed provenance cannot contain a size mismatch',
+      })
+    }
+  })
+export type HuggingFaceDownloadProvenance = z.infer<
+  typeof huggingFaceDownloadProvenanceSchema
+>
 
 export const modelDetailSchema = localModelSchema.extend({
   /** Сырой блок из /api/show — архитектурные параметры. */

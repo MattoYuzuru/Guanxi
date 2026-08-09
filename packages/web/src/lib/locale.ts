@@ -801,7 +801,7 @@ const english = {
   'hf.verdict.reason.legacy_response': 'The response predates this evidence contract.',
   'hf.next': 'Next step',
   'hf.next.detail':
-    'Installing still requires a download, checksum and local import after you select a file below. None of that is available in this version, and no result here promises a one-click install or a direct Ollama pull.',
+    'After selection, an explicit bounded download can verify a staging artifact. Local Ollama import is still unavailable, and no result promises one-click installation or a direct Ollama pull.',
   'hf.select.action': 'Select',
   'hf.select.aria': 'Select the file',
   'hf.select.selecting': 'Checking…',
@@ -823,9 +823,9 @@ const english = {
     'Fit is unknown: this file’s size was not reported, so no estimate is shown.',
   'hf.select.fit.hardwareUnavailable':
     'Fit is unknown: the startup hardware profile did not report usable capacity.',
-  'hf.select.next': 'No download yet',
+  'hf.select.next': 'Ready for an explicit download',
   'hf.select.next.detail':
-    'This confirms the exact target only. Download, checksum and local import are a later step.',
+    'Download rechecks this target, verifies SHA-256 and the bounded GGUF header, then keeps a managed staging artifact. Local import remains a later step.',
   'hf.select.error.title': 'Selection could not be confirmed',
   'hf.select.refused.repository_not_supported':
     'A fresh check shows this repository no longer qualifies for exact GGUF import.',
@@ -839,6 +839,45 @@ const english = {
     'The fresh file listing contains unreadable paths, so this exact target is not confirmed.',
   'hf.select.refused.file_not_in_current_inventory':
     'A fresh check no longer lists this exact file.',
+  'hf.download.action': 'Download exact GGUF',
+  'hf.download.cancel': 'Cancel download',
+  'hf.download.retry': 'Try download again',
+  'hf.download.preparing': 'Rechecking the exact target…',
+  'hf.download.downloading': 'Downloading exact GGUF…',
+  'hf.download.verifying': 'Verifying checksum and GGUF header…',
+  'hf.download.completed': 'Downloaded and verified staging artifact',
+  'hf.download.cancelled': 'Download cancelled',
+  'hf.download.refused': 'Download refused',
+  'hf.download.failed': 'Download failed',
+  'hf.download.progress': 'Exact GGUF download progress',
+  'hf.download.totalUnknown': 'Total size remains unknown',
+  'hf.download.checksum': 'Observed SHA-256',
+  'hf.download.checksum.matched': 'matched the provider LFS claim',
+  'hf.download.checksum.observedOnly': 'locally observed; no provider checksum was reported',
+  'hf.download.format': 'GGUF header',
+  'hf.download.artifact': 'Managed staging artifact',
+  'hf.download.boundary':
+    'This is a verified staging artifact only. It is not installed, runtime-capable or ready to run; no Ollama create, pull, probe, catalog or Governor work was started.',
+  'hf.download.refused.selection_stale': 'The exact selection could not be confirmed again.',
+  'hf.download.refused.gated_repository':
+    'This public anonymous flow cannot download a gated repository.',
+  'hf.download.refused.duplicate_active': 'This exact file already has one active writer.',
+  'hf.download.refused.redirect_not_allowed':
+    'The provider redirected to an origin outside the explicit HTTPS policy.',
+  'hf.download.refused.redirect_limit_exceeded': 'The provider exceeded the redirect limit.',
+  'hf.download.failed.provider_unavailable': 'The provider connection failed.',
+  'hf.download.failed.connect_timeout': 'The provider did not connect before the deadline.',
+  'hf.download.failed.body_timeout': 'The provider stopped sending file bytes before the deadline.',
+  'hf.download.failed.provider_error': 'The provider refused the exact file request.',
+  'hf.download.failed.content_length_invalid': 'The provider reported an invalid content length.',
+  'hf.download.failed.maximum_bytes_exceeded': 'The file exceeded the explicit download byte policy.',
+  'hf.download.failed.size_mismatch': 'The observed file size did not match the exact-file evidence.',
+  'hf.download.failed.checksum_mismatch': 'The observed SHA-256 did not match the provider LFS claim.',
+  'hf.download.failed.invalid_gguf_magic': 'The downloaded file does not have GGUF magic.',
+  'hf.download.failed.invalid_gguf_header': 'The GGUF header is truncated.',
+  'hf.download.failed.unsupported_gguf_version': 'The GGUF header version is outside the supported inspection scope.',
+  'hf.download.failed.filesystem_error': 'The managed staging write could not be completed safely.',
+
   'hf.error.title': 'Hugging Face could not be read',
   'hf.error.retry': 'Try again',
   'hf.error.reason.provider_unavailable': 'The provider could not be reached.',
@@ -860,7 +899,7 @@ const english = {
   'hf.error.invalidReference':
     'Enter a repository as owner/name, or an exact HTTPS huggingface.co model-page URL.',
   'hf.boundary':
-    'Discovery is read-only. It starts no download, install, pull, probe or warm-up, and it changes nothing in Installed or the catalog.',
+    'Search and selection are read-only. Only explicit exact-file Download writes managed staging; nothing here installs, pulls through Ollama, probes, warms, or changes Installed/catalog.',
 } as const
 
 export type LocaleKey = keyof typeof english
@@ -1670,7 +1709,7 @@ const russian: Messages = {
   'hf.verdict.reason.legacy_response': 'Ответ старше текущего контракта доказательств.',
   'hf.next': 'Что дальше',
   'hf.next.detail':
-    'После выбора файла ниже для установки всё ещё нужны скачивание, проверка контрольной суммы и локальный импорт. Этого пока нет, и ни один результат здесь не обещает установку в один клик или прямой Ollama pull.',
+    'После выбора файла явное bounded-скачивание может проверить staging artifact. Локальный импорт в Ollama пока недоступен, и ни один результат не обещает установку в один клик или прямой Ollama pull.',
   'hf.select.action': 'Выбрать',
   'hf.select.aria': 'Выбрать этот файл',
   'hf.select.selecting': 'Проверяем…',
@@ -1692,9 +1731,9 @@ const russian: Messages = {
     'Влезаемость неизвестна: размер файла не сообщён, поэтому оценки нет.',
   'hf.select.fit.hardwareUnavailable':
     'Влезаемость неизвестна: стартовый профиль железа не сообщил доступную ёмкость.',
-  'hf.select.next': 'Скачивание пока недоступно',
+  'hf.select.next': 'Можно явно начать скачивание',
   'hf.select.next.detail':
-    'Здесь подтверждается только точная цель. Скачивание, проверка контрольной суммы и локальный импорт — следующий шаг.',
+    'Скачивание повторно проверит цель, SHA-256 и ограниченный заголовок GGUF, затем сохранит managed staging artifact. Локальный импорт остаётся следующим шагом.',
   'hf.select.error.title': 'Не удалось подтвердить выбор',
   'hf.select.refused.repository_not_supported':
     'Повторная проверка показала, что репозиторий больше не подходит для точного импорта GGUF.',
@@ -1708,6 +1747,45 @@ const russian: Messages = {
     'В повторном перечне есть нечитаемые пути, поэтому точную цель подтвердить нельзя.',
   'hf.select.refused.file_not_in_current_inventory':
     'Повторная проверка больше не находит этот файл в перечне.',
+  'hf.download.action': 'Скачать точный GGUF',
+  'hf.download.cancel': 'Отменить скачивание',
+  'hf.download.retry': 'Повторить скачивание',
+  'hf.download.preparing': 'Повторно проверяем точную цель…',
+  'hf.download.downloading': 'Скачиваем точный GGUF…',
+  'hf.download.verifying': 'Проверяем checksum и заголовок GGUF…',
+  'hf.download.completed': 'Staging artifact скачан и проверен',
+  'hf.download.cancelled': 'Скачивание отменено',
+  'hf.download.refused': 'Скачивание отклонено',
+  'hf.download.failed': 'Скачивание завершилось ошибкой',
+  'hf.download.progress': 'Прогресс скачивания точного GGUF',
+  'hf.download.totalUnknown': 'Общий размер остаётся неизвестным',
+  'hf.download.checksum': 'Наблюдаемый SHA-256',
+  'hf.download.checksum.matched': 'совпал с LFS claim провайдера',
+  'hf.download.checksum.observedOnly': 'наблюдался локально; provider checksum не сообщён',
+  'hf.download.format': 'Заголовок GGUF',
+  'hf.download.artifact': 'Управляемый staging artifact',
+  'hf.download.boundary':
+    'Это только проверенный staging artifact. Он не установлен, не подтверждён runtime и не готов к запуску; Ollama create/pull, probe, catalog и Governor не запускались.',
+  'hf.download.refused.selection_stale': 'Точную выбранную цель не удалось подтвердить повторно.',
+  'hf.download.refused.gated_repository':
+    'Публичный anonymous flow не скачивает gated-репозитории.',
+  'hf.download.refused.duplicate_active': 'Для этого точного файла уже работает один writer.',
+  'hf.download.refused.redirect_not_allowed':
+    'Provider перенаправил запрос на origin вне явной HTTPS policy.',
+  'hf.download.refused.redirect_limit_exceeded': 'Provider превысил предел перенаправлений.',
+  'hf.download.failed.provider_unavailable': 'Соединение с provider не установлено.',
+  'hf.download.failed.connect_timeout': 'Provider не подключился до deadline.',
+  'hf.download.failed.body_timeout': 'Provider перестал передавать байты файла до deadline.',
+  'hf.download.failed.provider_error': 'Provider отклонил запрос точного файла.',
+  'hf.download.failed.content_length_invalid': 'Provider сообщил некорректную длину содержимого.',
+  'hf.download.failed.maximum_bytes_exceeded': 'Файл превысил явную byte policy скачивания.',
+  'hf.download.failed.size_mismatch': 'Наблюдаемый размер не совпал с evidence точного файла.',
+  'hf.download.failed.checksum_mismatch': 'Наблюдаемый SHA-256 не совпал с LFS claim провайдера.',
+  'hf.download.failed.invalid_gguf_magic': 'Скачанный файл не содержит magic GGUF.',
+  'hf.download.failed.invalid_gguf_header': 'Заголовок GGUF обрезан.',
+  'hf.download.failed.unsupported_gguf_version': 'Версия заголовка GGUF вне поддерживаемой inspection scope.',
+  'hf.download.failed.filesystem_error': 'Безопасно завершить запись в managed staging не удалось.',
+
   'hf.error.title': 'Не удалось прочитать Hugging Face',
   'hf.error.retry': 'Повторить',
   'hf.error.reason.provider_unavailable': 'Провайдер недоступен.',
@@ -1727,7 +1805,7 @@ const russian: Messages = {
   'hf.error.invalidReference':
     'Укажите репозиторий как owner/name или точный HTTPS-URL страницы модели на huggingface.co.',
   'hf.boundary':
-    'Discovery только читает. Он не запускает загрузку, установку, pull, probe или прогрев и ничего не меняет в установленных моделях и каталоге.',
+    'Поиск и выбор только читают. Только явная кнопка скачивания пишет managed staging; здесь нет установки, Ollama pull, probe, прогрева или изменения Installed/catalog.',
 }
 
 export function translate(key: LocaleKey): string {

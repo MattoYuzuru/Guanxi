@@ -112,6 +112,30 @@ describe('bounded server-owned Hugging Face transport', () => {
     assert.equal(repository.gated.state, 'open')
   })
 
+  it('publishes only a trusted-shape LFS SHA-256 claim and never the repository commit as one', async () => {
+    const digest = 'b'.repeat(64)
+    const { transport } = transportWith(async () => json([hubRow({
+      siblings: [
+        { rfilename: 'claimed.gguf', size: 8, lfs: { oid: `sha256:${digest}` } },
+        { rfilename: 'bare.gguf', size: 8, lfs: { oid: digest } },
+        { rfilename: 'malformed.gguf', size: 8, lfs: { oid: SHA } },
+      ],
+    })]))
+    const result = await transport.search({
+      query: 'x', page: 1, pageSize: 10, cursor: null,
+    })
+    assert.equal(result.state, 'listed')
+    const files = result.repositories[0]!.files
+    assert.equal(files.state, 'listed')
+    assert.deepEqual(files.ggufFiles.map((file) => ({
+      path: file.path, sha256: file.sha256, source: file.sha256Source,
+    })), [
+      { path: 'claimed.gguf', sha256: digest, source: 'hugging_face_lfs_oid' },
+      { path: 'bare.gguf', sha256: digest, source: 'hugging_face_lfs_oid' },
+      { path: 'malformed.gguf', sha256: null, source: 'not_reported' },
+    ])
+  })
+
   it('separates no-GGUF, truncated, malformed and empty listings', async () => {
     const cases: Array<[string, unknown, string, string | null]> = [
       [
@@ -628,10 +652,12 @@ describe('bounded server-owned Hugging Face transport', () => {
     const byPath = new Map(files.ggufFiles.map((file) => [file.path, file]))
     assert.deepEqual(byPath.get('sized.gguf'), {
       path: 'sized.gguf', sizeBytes: 100, sizeSource: 'hugging_face_api_model',
+      sha256: null, sha256Source: 'not_reported',
     })
     for (const path of ['unsized.gguf', 'negative.gguf', 'fractional.gguf']) {
       assert.deepEqual(byPath.get(path), {
         path, sizeBytes: null, sizeSource: 'not_reported',
+        sha256: null, sha256Source: 'not_reported',
       }, path)
     }
   })

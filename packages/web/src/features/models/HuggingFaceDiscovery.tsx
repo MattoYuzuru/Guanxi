@@ -8,13 +8,16 @@
  * navigation and reload issue no request. Every request carries an AbortSignal, and a
  * late response from a superseded search is discarded rather than rendered.
  *
- * Nothing here offers Install or Pull: choosing an exact GGUF file is a later slice, so
- * the UI says what is still required instead of implying a one-click install.
+ * P2-L adds an explicit connection-owned exact-file download after P2-K confirmation.
+ * It still offers no Install/Pull/Create action and never projects success as runtime-ready.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
   FitLevel,
   HuggingFaceGgufFile,
+  HuggingFaceDownloadFailureReason,
+  HuggingFaceDownloadProvenance,
+  HuggingFaceDownloadRefusalReason,
   HuggingFaceRepository,
   HuggingFaceSearchResult,
   HuggingFaceSelectionRefusalReason,
@@ -22,8 +25,8 @@ import type {
   HuggingFaceTransportFailureReason,
   HuggingFaceUnknownVerdictReason,
 } from '@alamo/contract'
-import { Badge, Button, Callout, Disclosure, EmptyState, Input, Skeleton } from '../../components/ui.tsx'
-import { ApiRequestError, api } from '../../lib/api.ts'
+import { Badge, Button, Callout, Disclosure, EmptyState, Input, Meter, Skeleton } from '../../components/ui.tsx'
+import { ApiRequestError, api, streamHuggingFaceDownload } from '../../lib/api.ts'
 import { formatBytes, formatContextLength, formatDateTime, formatUtilization } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 
@@ -86,6 +89,29 @@ const SELECTION_FIT_LEVEL_KEYS: Record<FitLevel, LocaleKey> = {
   yellow: 'catalog.filters.value.yellow',
   red: 'catalog.filters.value.red',
   unknown: 'catalog.filters.value.unknown',
+}
+
+const DOWNLOAD_REFUSAL_KEYS: Record<HuggingFaceDownloadRefusalReason, LocaleKey> = {
+  selection_stale: 'hf.download.refused.selection_stale',
+  gated_repository: 'hf.download.refused.gated_repository',
+  duplicate_active: 'hf.download.refused.duplicate_active',
+  redirect_not_allowed: 'hf.download.refused.redirect_not_allowed',
+  redirect_limit_exceeded: 'hf.download.refused.redirect_limit_exceeded',
+}
+
+const DOWNLOAD_FAILURE_KEYS: Record<HuggingFaceDownloadFailureReason, LocaleKey> = {
+  provider_unavailable: 'hf.download.failed.provider_unavailable',
+  connect_timeout: 'hf.download.failed.connect_timeout',
+  body_timeout: 'hf.download.failed.body_timeout',
+  provider_error: 'hf.download.failed.provider_error',
+  content_length_invalid: 'hf.download.failed.content_length_invalid',
+  maximum_bytes_exceeded: 'hf.download.failed.maximum_bytes_exceeded',
+  size_mismatch: 'hf.download.failed.size_mismatch',
+  checksum_mismatch: 'hf.download.failed.checksum_mismatch',
+  invalid_gguf_magic: 'hf.download.failed.invalid_gguf_magic',
+  invalid_gguf_header: 'hf.download.failed.invalid_gguf_header',
+  unsupported_gguf_version: 'hf.download.failed.unsupported_gguf_version',
+  filesystem_error: 'hf.download.failed.filesystem_error',
 }
 
 export function HuggingFaceDiscovery({ contextLength }: { contextLength: number }) {
@@ -418,7 +444,10 @@ function verdictBadge(repository: HuggingFaceRepository) {
 }
 
 function gatedLabel(repository: HuggingFaceRepository): string {
-  const { gated } = repository
+  return gatedStateLabel(repository.gated)
+}
+
+function gatedStateLabel(gated: HuggingFaceRepository['gated']): string {
   if (gated.state === 'open') return translate('hf.repository.gated.open')
   if (gated.state === 'unknown') return translate('hf.repository.gated.unknown')
   return gated.mode === 'auto'
@@ -429,7 +458,10 @@ function gatedLabel(repository: HuggingFaceRepository): string {
 }
 
 function licenseLabel(repository: HuggingFaceRepository): string {
-  const { license } = repository
+  return licenseStateLabel(repository.license)
+}
+
+function licenseStateLabel(license: HuggingFaceRepository['license']): string {
   if (license.state === 'declared') return license.value
   if (license.source === 'conflicting_declarations') {
     return translate('hf.repository.license.conflicting')
@@ -469,6 +501,251 @@ function selectionAnnouncement(state: SelectionState): string {
       : translate(FAILURE_KEYS[state.reason])
   }
   return ''
+}
+
+type DownloadState =
+  | { kind: 'idle' }
+  | {
+      kind: 'running'
+      phase: 'preparing' | 'downloading' | 'verifying'
+      completedBytes: number
+      totalBytes: number | null
+    }
+  | { kind: 'completed'; provenance: HuggingFaceDownloadProvenance }
+  | { kind: 'cancelled' }
+  | { kind: 'refused'; reason: HuggingFaceDownloadRefusalReason }
+  | { kind: 'failed'; reason: HuggingFaceDownloadFailureReason }
+
+function downloadAnnouncement(state: DownloadState): string {
+  if (state.kind === 'running') {
+    if (state.phase === 'preparing') return translate('hf.download.preparing')
+    if (state.phase === 'verifying') return translate('hf.download.verifying')
+    return translate('hf.download.downloading')
+  }
+  if (state.kind === 'completed') return translate('hf.download.completed')
+  if (state.kind === 'cancelled') return translate('hf.download.cancelled')
+  if (state.kind === 'refused') return translate('hf.download.refused')
+  if (state.kind === 'failed') return translate('hf.download.failed')
+  return ''
+}
+
+function HuggingFaceDownloadControl({
+  result,
+}: {
+  result: Extract<HuggingFaceSelectionResult, { state: 'confirmed' }>
+}) {
+  const [state, setState] = useState<DownloadState>({ kind: 'idle' })
+  const controllerRef = useRef<AbortController | null>(null)
+  const runningRef = useRef(false)
+  const mountedRef = useRef(true)
+  const statusRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      controllerRef.current?.abort('hf-download-connection-closed')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (state.kind === 'idle' || state.kind === 'running') return
+    if (typeof document !== 'undefined' && document.activeElement === document.body) {
+      statusRef.current?.focus()
+    }
+  }, [state.kind])
+
+  const start = async () => {
+    if (runningRef.current) return
+    runningRef.current = true
+    const controller = new AbortController()
+    controllerRef.current = controller
+    setState({
+      kind: 'running', phase: 'preparing', completedBytes: 0, totalBytes: null,
+    })
+    let terminal = false
+    try {
+      for await (const event of streamHuggingFaceDownload(
+        {
+          identity: result.selection.identity,
+          revision: result.selection.revision,
+          filePath: result.selection.filePath,
+          contextLength: result.fit.contextLength,
+        },
+        controller.signal,
+      )) {
+        if (!mountedRef.current) return
+        if (event.type === 'state') {
+          setState((current) => ({
+            kind: 'running',
+            phase: event.data.state,
+            completedBytes: current.kind === 'running' ? current.completedBytes : 0,
+            totalBytes: current.kind === 'running' ? current.totalBytes : null,
+          }))
+        } else if (event.type === 'progress') {
+          setState({
+            kind: 'running', phase: 'downloading',
+            completedBytes: event.data.completedBytes,
+            totalBytes: event.data.totalBytes,
+          })
+        } else if (event.type === 'completed') {
+          terminal = true
+          setState({ kind: 'completed', provenance: event.data.provenance })
+        } else if (event.type === 'cancelled') {
+          terminal = true
+          setState({ kind: 'cancelled' })
+        } else if (event.type === 'refused') {
+          terminal = true
+          setState({ kind: 'refused', reason: event.data.reason })
+        } else if (event.type === 'failed') {
+          terminal = true
+          setState({ kind: 'failed', reason: event.data.reason })
+        }
+      }
+      if (!terminal && !controller.signal.aborted && mountedRef.current) {
+        setState({ kind: 'failed', reason: 'provider_unavailable' })
+      }
+    } catch {
+      if (!controller.signal.aborted && mountedRef.current) {
+        setState({ kind: 'failed', reason: 'provider_unavailable' })
+      }
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null
+      runningRef.current = false
+    }
+  }
+
+  const cancel = () => {
+    controllerRef.current?.abort('hf-download-user-cancelled')
+    controllerRef.current = null
+    runningRef.current = false
+    setState({ kind: 'cancelled' })
+  }
+
+  if (state.kind === 'idle') {
+    return (
+      <div className="mt-2">
+        <Button
+          size="sm"
+          className="min-h-11 sm:min-h-0"
+          onClick={() => void start()}
+        >
+          {translate('hf.download.action')}
+        </Button>
+        <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+          {translate('hf.download.boundary')}
+        </p>
+      </div>
+    )
+  }
+
+  if (state.kind === 'running') {
+    const ratio = state.totalBytes !== null && state.totalBytes > 0
+      ? state.completedBytes / state.totalBytes
+      : null
+    return (
+      <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-2">
+        <p className="sr-only" role="status" aria-live="polite">
+          {downloadAnnouncement(state)}
+        </p>
+        <p className="text-2xs font-medium">
+          {state.phase === 'preparing'
+            ? translate('hf.download.preparing')
+            : state.phase === 'verifying'
+              ? translate('hf.download.verifying')
+              : translate('hf.download.downloading')}
+        </p>
+        {state.phase === 'downloading' ? (
+          <div className="mt-2">
+            {ratio === null ? (
+              <p className="text-2xs text-[var(--fg-subtle)]">
+                {formatBytes(state.completedBytes)} · {translate('hf.download.totalUnknown')}
+              </p>
+            ) : (
+              <>
+                <Meter value={ratio} label={translate('hf.download.progress')} height={4} />
+                <p className="mt-1 font-mono text-2xs text-[var(--fg-subtle)]">
+                  {formatBytes(state.completedBytes)} / {formatBytes(state.totalBytes!)}
+                </p>
+              </>
+            )}
+          </div>
+        ) : null}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="mt-2 min-h-11 sm:min-h-0"
+          onClick={cancel}
+        >
+          {translate('hf.download.cancel')}
+        </Button>
+      </div>
+    )
+  }
+
+  const title = state.kind === 'completed'
+    ? translate('hf.download.completed')
+    : state.kind === 'cancelled'
+      ? translate('hf.download.cancelled')
+      : state.kind === 'refused'
+        ? translate('hf.download.refused')
+        : translate('hf.download.failed')
+  return (
+    <div
+      ref={statusRef}
+      tabIndex={-1}
+      role={state.kind === 'completed' || state.kind === 'cancelled' ? 'status' : 'alert'}
+      aria-live="polite"
+      className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+    >
+      <p className="text-2xs font-semibold">{title}</p>
+      {state.kind === 'completed' ? (
+        <div className="mt-1 min-w-0 text-2xs text-[var(--fg-subtle)]">
+          <p>
+            {formatBytes(state.provenance.observedSizeBytes)} · {translate('hf.download.format')}{' '}
+            v{state.provenance.format.version}
+          </p>
+          <p className="mt-1 min-w-0 break-all font-mono">
+            {translate('hf.download.checksum')}: {state.provenance.checksum.observedDigest}
+          </p>
+          <p className="mt-0.5">
+            {state.provenance.checksum.relation === 'matched_provider_claim'
+              ? translate('hf.download.checksum.matched')
+              : translate('hf.download.checksum.observedOnly')}
+          </p>
+          <p className="mt-1">
+            {translate('hf.repository.license')}: {licenseStateLabel(state.provenance.license)}
+            {' · '}
+            {translate('hf.repository.gated')}: {gatedStateLabel(state.provenance.gated)}
+          </p>
+          <p className="mt-1 min-w-0 break-all font-mono">
+            {translate('hf.download.artifact')}: {state.provenance.artifact.id}
+          </p>
+        </div>
+      ) : state.kind === 'refused' ? (
+        <p className="mt-1 text-2xs text-[var(--danger)]">
+          {translate(DOWNLOAD_REFUSAL_KEYS[state.reason])}
+        </p>
+      ) : state.kind === 'failed' ? (
+        <p className="mt-1 text-2xs text-[var(--danger)]">
+          {translate(DOWNLOAD_FAILURE_KEYS[state.reason])}
+        </p>
+      ) : null}
+      <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+        {translate('hf.download.boundary')}
+      </p>
+      {state.kind !== 'completed' ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="mt-2 min-h-11 sm:min-h-0"
+          onClick={() => void start()}
+        >
+          {translate('hf.download.retry')}
+        </Button>
+      ) : null}
+    </div>
+  )
 }
 
 export function RepositoryCard({
@@ -830,6 +1107,7 @@ export function RepositoryCard({
                   {translate('hf.select.next.detail')}
                 </p>
               </div>
+              <HuggingFaceDownloadControl result={state.result} />
               <Button
                 ref={changeButtonRef}
                 size="sm"

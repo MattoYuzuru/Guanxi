@@ -430,13 +430,15 @@ test('Marketplace confirms one exact GGUF target without downloading or installi
   await expect(section.getByRole('paragraph').filter({
     hasText: /^Заявление автора, а не юридическая проверка\.$/u,
   })).toBeVisible()
-  for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Скачать/u, /^Download/u]) {
+  const download = section.getByRole('button', { name: 'Скачать точный GGUF' })
+  await expect(download).toBeVisible()
+  for (const name of [/^Установить/u, /^Install/u, /^Pull/u]) {
     await expect(section.getByRole('button', { name })).toHaveCount(0)
   }
 
   const change = section.getByRole('button', { name: 'Выбрать другой файл' })
   await expect(change).toBeFocused()
-  const targetHeights = await Promise.all([select, change].map(async (locator) =>
+  const targetHeights = await Promise.all([select, download, change].map(async (locator) =>
     locator.evaluate((element) => element.getBoundingClientRect().height)))
   for (const height of targetHeights) expect(height).toBeGreaterThanOrEqual(44)
 
@@ -449,6 +451,197 @@ test('Marketplace confirms one exact GGUF target without downloading or installi
   await change.press('Enter')
   await expect(select).toBeFocused()
   expect(pageErrors).toEqual([])
+
+  const forbidden = requests.filter((request) =>
+    /\/(pull|prewarm|warm|stop|probes|create|imports)\b/u.test(request.path)
+    || ['DELETE', 'PUT', 'PATCH'].includes(request.method))
+  expect(forbidden).toEqual([])
+  expect(requests.every((request) => request.path.startsWith('/api/'))).toBe(true)
+})
+
+test('Marketplace explicitly downloads and verifies staging provenance without install side effects', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const observedAt = '2026-08-09T12:00:00.000Z'
+  const commit = 'a'.repeat(40)
+  const digest = 'd'.repeat(64)
+  const requests: Array<{ path: string; method: string; body: string | null }> = []
+  const identity = {
+    provider: 'hugging_face', owner: 'Owner', name: 'Model-GGUF',
+    repositoryId: 'Owner/Model-GGUF', comparisonKey: 'owner/model-gguf',
+  }
+  const revision = { state: 'exact_commit', commit, source: 'hugging_face_api_model' }
+  const repository = {
+    version: 1, provider: 'hugging_face', identity, metadata: 'resolved', observedAt,
+    revision, gated: { state: 'open', mode: null },
+    license: {
+      state: 'declared', value: 'apache-2.0',
+      source: 'hugging_face_model_tags', confidence: 'declared',
+    },
+    files: {
+      state: 'listed', source: 'hugging_face_api_model', totalFiles: 1,
+      malformedEntries: 0, truncated: false,
+      ggufFiles: [{
+        path: 'nested/model Q4.gguf', sizeBytes: 4_000,
+        sizeSource: 'hugging_face_api_model', sha256: digest,
+        sha256Source: 'hugging_face_lfs_oid',
+      }],
+    },
+    verdict: {
+      state: 'supported', scope: 'exact_gguf_file_only',
+      basis: 'exact_gguf_files_listed', reason: null, requiresExactFileSelection: true,
+    },
+  }
+  const json = (body: unknown, status = 200) => ({
+    status, contentType: 'application/json', body: JSON.stringify(body),
+  })
+  const sseEvents = [
+    { type: 'state', seq: 0, data: { version: 1, state: 'preparing' } },
+    {
+      type: 'progress', seq: 1,
+      data: { version: 1, state: 'downloading', completedBytes: 2_000, totalBytes: 4_000 },
+    },
+    { type: 'state', seq: 2, data: { version: 1, state: 'verifying' } },
+    {
+      type: 'completed', seq: 3,
+      data: {
+        version: 1, state: 'completed',
+        provenance: {
+          version: 1, identity, revision, remotePath: 'nested/model Q4.gguf',
+          license: repository.license, gated: repository.gated,
+          sourceUrlPolicy: 'hugging_face_exact_revision_explicit_hosts_v1',
+          expectedSizeBytes: 4_000, observedSizeBytes: 4_000,
+          checksum: {
+            algorithm: 'sha256', expectedDigest: digest,
+            observedDigest: digest, relation: 'matched_provider_claim',
+          },
+          format: {
+            kind: 'gguf', magic: 'GGUF', version: 3, inspection: 'bounded_header_only',
+          },
+          artifact: {
+            state: 'managed_staging', id: '11111111-1111-4111-8111-111111111111',
+          },
+          observedAt, terminalState: 'completed',
+        },
+      },
+    },
+  ]
+  const sse = sseEvents.map((event) =>
+    `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`).join('')
+
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    requests.push({ path, method: request.method(), body: request.postData() ?? null })
+    if (path === '/api/health') {
+      return route.fulfill(json({
+        ok: true, appVersion: 'test',
+        application: { state: 'reachable', source: 'application_http', observedAt },
+        ollama: {
+          installed: true, installSource: 'runtime_response', running: true,
+          state: 'reachable', source: 'ollama_api_version', observedAt,
+          version: '0.12.6', host: 'http://127.0.0.1:11434', installHint: null,
+        },
+        hardware: {
+          platform: 'darwin', arch: 'arm64', cpuModel: 'fixture', cpuCores: 8,
+          totalMemoryBytes: 16_000_000_000, usableMemoryBytes: 12_000_000_000,
+          accelerator: 'metal', acceleratorName: 'Fixture Metal', unifiedMemory: true,
+          freeDiskBytes: null,
+        },
+        network: {
+          ollamaComReachable: null, checkedAt: null, status: 'unknown', source: 'not_checked',
+        },
+      }))
+    }
+    if (path === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (path === '/api/models') return route.fulfill(json({ models: [] }))
+    if (path === '/api/models/catalog') {
+      return route.fulfill(json({
+        models: [], live: false,
+        source: {
+          state: 'bundled_fallback', source: 'bundled_snapshot',
+          observedAt, fetchedAt: observedAt,
+        },
+      }))
+    }
+    if (path.endsWith('/search')) {
+      return route.fulfill(json({
+        result: {
+          state: 'listed', version: 1, page: 1, pageSize: 10,
+          source: {
+            state: 'available', source: 'hugging_face_public_api', observedAt, reason: null,
+          },
+          droppedRows: 0, repositories: [repository], nextCursor: null, reason: null,
+        },
+      }))
+    }
+    if (path.endsWith('/selection')) {
+      return route.fulfill(json({
+        result: {
+          state: 'confirmed', version: 1, repository,
+          selection: {
+            identity, revision, filePath: 'nested/model Q4.gguf',
+            sizeBytes: 4_000, sizeSource: 'hugging_face_api_model',
+          },
+          fit: {
+            state: 'calculated', contextLength: 32_768,
+            basis: 'reported_file_size_only', calculatedAt: observedAt,
+            hardware: {
+              source: 'application_startup_hardware_probe',
+              observedAt, confidence: 'estimated',
+            },
+            verdict: {
+              level: 'green', summary: 'fixture', contextLength: 32_768,
+              modelBytes: 4_000, kvCacheBytes: 0, requiredBytes: 4_000,
+              usableBytes: 12_000_000_000, utilization: 4_000 / 12_000_000_000,
+              basis: 'vendor_hint', measured: null,
+            },
+          },
+          reason: null,
+        },
+      }))
+    }
+    if (path.endsWith('/download')) {
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse })
+    }
+    return route.fulfill(json({ code: 'internal_error', message: path, details: null }, 500))
+  })
+
+  await page.goto('/')
+  const section = page.getByRole('region', { name: 'Hugging Face' })
+  const search = page.getByLabel('Поиск репозиториев Hugging Face')
+  await search.fill('owner model gguf')
+  await search.press('Enter')
+  const select = section.getByRole('button', { name: 'Выбрать этот файл nested/model Q4.gguf' })
+  await select.press('Enter')
+  const download = section.getByRole('button', { name: 'Скачать точный GGUF' })
+  await expect(download).toBeVisible()
+  expect(requests.filter((request) => request.path.endsWith('/download'))).toHaveLength(0)
+
+  await download.press('Enter')
+  const completed = section.getByText('Staging artifact скачан и проверен')
+  await expect(completed).toBeVisible()
+  await expect(section.getByText(new RegExp(digest, 'u'))).toBeVisible()
+  await expect(section.getByText(/не установлен, не подтверждён runtime/u)).toBeVisible()
+  const downloadCalls = requests.filter((request) => request.path.endsWith('/download'))
+  expect(downloadCalls).toHaveLength(1)
+  expect(JSON.parse(downloadCalls[0]!.body ?? '{}')).toEqual({
+    identity, revision, filePath: 'nested/model Q4.gguf', contextLength: 32_768,
+  })
+  await expect(completed.locator('..')).toBeFocused()
+  for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Create/u]) {
+    await expect(section.getByRole('button', { name })).toHaveCount(0)
+  }
+
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const layout = await page.evaluate(() => ({
+    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+  }))
+  expect(layout.overflow).toBeLessThanOrEqual(1)
+  expect(layout.reducedMotion).toBe(true)
 
   const forbidden = requests.filter((request) =>
     /\/(pull|prewarm|warm|stop|probes|create|imports)\b/u.test(request.path)

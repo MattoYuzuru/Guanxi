@@ -15,6 +15,10 @@ import {
   turnErrorSchema,
   turnStopReasonSchema,
   turnTerminalOutcomeSchema,
+  HUGGING_FACE_DOWNLOAD_VERSION,
+  huggingFaceDownloadFailureReasonSchema,
+  huggingFaceDownloadProvenanceSchema,
+  huggingFaceDownloadRefusalReasonSchema,
 } from './schemas.ts'
 
 /* ────────────────────── Стрим ответа: /api/threads/:id/messages ──────────── */
@@ -201,6 +205,74 @@ export const pullStreamEventSchema = z.discriminatedUnion('type', [
   }),
 ])
 export type PullStreamEvent = z.infer<typeof pullStreamEventSchema>
+
+/* ───── Connection-owned exact HF GGUF download: POST .../download ─────── */
+
+const huggingFaceDownloadBaseSchema = z.object({
+  version: z.literal(HUGGING_FACE_DOWNLOAD_VERSION),
+})
+
+export const huggingFaceDownloadStreamEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('state'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceDownloadBaseSchema.extend({
+      state: z.enum(['preparing', 'verifying']),
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('progress'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceDownloadBaseSchema.extend({
+      state: z.literal('downloading'),
+      completedBytes: z.number().int().nonnegative().safe(),
+      totalBytes: z.number().int().nonnegative().safe().nullable(),
+    }).strict().superRefine((progress, context) => {
+      if (progress.totalBytes !== null && progress.completedBytes > progress.totalBytes) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['completedBytes'],
+          message: 'download progress cannot exceed its observed total',
+        })
+      }
+    }),
+  }).strict(),
+  z.object({
+    type: z.literal('completed'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceDownloadBaseSchema.extend({
+      state: z.literal('completed'),
+      provenance: huggingFaceDownloadProvenanceSchema,
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('cancelled'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceDownloadBaseSchema.extend({
+      state: z.literal('cancelled'),
+      reason: z.enum(['user_requested', 'connection_closed', 'request_cancelled']),
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('refused'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceDownloadBaseSchema.extend({
+      state: z.literal('refused'),
+      reason: huggingFaceDownloadRefusalReasonSchema,
+    }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('failed'),
+    seq: z.number().int().nonnegative(),
+    data: huggingFaceDownloadBaseSchema.extend({
+      state: z.literal('failed'),
+      reason: huggingFaceDownloadFailureReasonSchema,
+    }).strict(),
+  }).strict(),
+])
+export type HuggingFaceDownloadStreamEvent = z.infer<
+  typeof huggingFaceDownloadStreamEventSchema
+>
 
 /* ──────────────────────────────── Помощники ──────────────────────────────── */
 

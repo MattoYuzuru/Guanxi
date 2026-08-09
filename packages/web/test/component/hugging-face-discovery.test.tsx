@@ -191,7 +191,8 @@ describe('Marketplace Hugging Face discovery section', () => {
       expect(screen.queryByRole('button', { name })).toBeNull()
     }
     // The user is told what is still required instead of being promised one click.
-    expect(screen.getByText(/скачивание, проверка контрольной суммы и локальный импорт/u)).toBeTruthy()
+    expect(screen.getByText(/явное bounded-скачивание может проверить staging artifact/u)).toBeTruthy()
+    expect(screen.getByText(/Локальный импорт в Ollama пока недоступен/u)).toBeTruthy()
     expect(screen.getByText(/не обещает установку в один клик/u)).toBeTruthy()
   })
 
@@ -661,7 +662,7 @@ describe('Marketplace Hugging Face discovery section', () => {
   it('states the read-only boundary of the whole section', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(json(listed())))
     render(<HuggingFaceDiscovery contextLength={8_192} />)
-    expect(screen.getByText(/Discovery только читает/u)).toBeTruthy()
+    expect(screen.getByText(/Поиск и выбор только читают/u)).toBeTruthy()
     expect(screen.getByText(/Отдельный источник, не каталог выше/u)).toBeTruthy()
   })
 })
@@ -745,6 +746,7 @@ function failedSelectionResult(reason: string) {
 function routedFetch(handlers: {
   search?: (body: unknown) => unknown
   selection?: (body: unknown) => unknown
+  download?: (body: unknown, signal: AbortSignal | null) => Response | Promise<Response>
 }) {
   return vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, init) => {
     const url = String(input)
@@ -754,6 +756,9 @@ function routedFetch(handlers: {
     }
     if (url.includes('/discovery/hugging-face/selection')) {
       return json((handlers.selection ?? (() => confirmedSelectionResult()))(body))
+    }
+    if (url.includes('/discovery/hugging-face/download') && handlers.download) {
+      return handlers.download(body, init?.signal ?? null)
     }
     throw new Error(`unexpected fetch: ${url}`)
   })
@@ -784,7 +789,7 @@ describe('P2-K exact GGUF file/revision selection', () => {
     })
   })
 
-  it('confirms an exact file selection and shows size, fit and license, with no download control', async () => {
+  it('confirms an exact file selection and offers Download but no Install or Pull', async () => {
     vi.stubGlobal('fetch', routedFetch({}))
     render(<HuggingFaceDiscovery contextLength={8_192} />)
     const select = await searchAndOpenFileList()
@@ -797,12 +802,13 @@ describe('P2-K exact GGUF file/revision selection', () => {
     // The path and size appear twice: once in the file list, once in the confirmed panel.
     expect(screen.getAllByText('llama-2-7b.Q4_K_M.gguf').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText(/4 КБ/u).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('Скачивание пока недоступно')).toBeTruthy()
+    expect(screen.getByText('Можно явно начать скачивание')).toBeTruthy()
     expect(screen.getAllByText(/apache-2.0/u)).toHaveLength(2)
     expect(screen.getByText(/стартовая проверка железа приложением/u)).toBeTruthy()
     expect(screen.getByText(/оценочная уверенность/u)).toBeTruthy()
 
-    for (const name of [/Установить/u, /Install/u, /Pull/u, /Скачать/u, /Download/u]) {
+    expect(screen.getByRole('button', { name: 'Скачать точный GGUF' })).toBeTruthy()
+    for (const name of [/Установить/u, /Install/u, /^Pull$/u]) {
       expect(screen.queryByRole('button', { name })).toBeNull()
     }
   })
@@ -1177,5 +1183,156 @@ describe('P2-K exact GGUF file/revision selection', () => {
     for (const forbidden of ['Выбранная цель', 'Скачивание', 'влезаемости']) {
       expect(text).not.toContain(forbidden)
     }
+  })
+})
+
+function downloadEvents(
+  terminal: Record<string, unknown> = {
+    type: 'completed', seq: 3,
+    data: {
+      version: 1, state: 'completed',
+      provenance: {
+        version: 1,
+        identity: repository().identity,
+        revision: repository().revision,
+        remotePath: 'llama-2-7b.Q4_K_M.gguf',
+        license: repository().license,
+        gated: repository().gated,
+        sourceUrlPolicy: 'hugging_face_exact_revision_explicit_hosts_v1',
+        expectedSizeBytes: 4_000,
+        observedSizeBytes: 4_000,
+        checksum: {
+          algorithm: 'sha256', expectedDigest: 'd'.repeat(64),
+          observedDigest: 'd'.repeat(64), relation: 'matched_provider_claim',
+        },
+        format: { kind: 'gguf', magic: 'GGUF', version: 3, inspection: 'bounded_header_only' },
+        artifact: { state: 'managed_staging', id: '11111111-1111-4111-8111-111111111111' },
+        observedAt: OBSERVED_AT,
+        terminalState: 'completed',
+      },
+    },
+  },
+): Response {
+  const events = [
+    { type: 'state', seq: 0, data: { version: 1, state: 'preparing' } },
+    {
+      type: 'progress', seq: 1,
+      data: { version: 1, state: 'downloading', completedBytes: 2_000, totalBytes: 4_000 },
+    },
+    { type: 'state', seq: 2, data: { version: 1, state: 'verifying' } },
+    terminal,
+  ]
+  const body = events.map((event) => `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`).join('')
+  return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+}
+
+async function confirmTarget() {
+  fireEvent.click(await searchAndOpenFileList())
+  await screen.findByText('Выбранная цель')
+  return screen.getByRole('button', { name: 'Скачать точный GGUF' })
+}
+
+describe('P2-L exact GGUF download projection', () => {
+  it('starts only on explicit Download, sends the exact confirmed tuple and shows provenance', async () => {
+    let body: unknown = null
+    let calls = 0
+    vi.stubGlobal('fetch', routedFetch({
+      download: (input) => {
+        calls += 1
+        body = input
+        return downloadEvents()
+      },
+    }))
+    render(<HuggingFaceDiscovery contextLength={8_192} />)
+    const download = await confirmTarget()
+    expect(calls).toBe(0)
+
+    download.focus()
+    fireEvent.click(download)
+    expect(await screen.findByText('Staging artifact скачан и проверен')).toBeTruthy()
+    expect(calls).toBe(1)
+    expect(body).toEqual({
+      identity: repository().identity,
+      revision: repository().revision,
+      filePath: 'llama-2-7b.Q4_K_M.gguf',
+      contextLength: 8_192,
+    })
+    expect(screen.getByText(new RegExp('d'.repeat(64), 'u'))).toBeTruthy()
+    expect(screen.getByText(/совпал с LFS claim/u)).toBeTruthy()
+    expect(screen.getByText(/не установлен, не подтверждён runtime/u)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Установить|Install|Pull/u })).toBeNull()
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toContain('Staging artifact скачан и проверен')
+    })
+  })
+
+  it('collapses duplicate activation and cancels one connection-owned stream', async () => {
+    let calls = 0
+    let signal: AbortSignal | null = null
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const event = {
+          type: 'progress', seq: 0,
+          data: { version: 1, state: 'downloading', completedBytes: 512, totalBytes: null },
+        }
+        controller.enqueue(encoder.encode(`id: 0\ndata: ${JSON.stringify(event)}\n\n`))
+      },
+    })
+    vi.stubGlobal('fetch', routedFetch({
+      download: (_body, currentSignal) => {
+        calls += 1
+        signal = currentSignal
+        return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
+      },
+    }))
+    render(<HuggingFaceDiscovery contextLength={8_192} />)
+    const download = await confirmTarget()
+    fireEvent.click(download)
+    fireEvent.click(download)
+    fireEvent.click(download)
+    expect(await screen.findByText(/Общий размер остаётся неизвестным/u)).toBeTruthy()
+    expect(calls).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить скачивание' }))
+    expect(await screen.findByText('Скачивание отменено')).toBeTruthy()
+    expect(signal?.aborted).toBe(true)
+    expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+  })
+
+  it('renders strict refused and failed reasons while retaining the local Marketplace row', async () => {
+    const cases = [
+      [
+        { type: 'refused', seq: 3, data: { version: 1, state: 'refused', reason: 'redirect_not_allowed' } },
+        /origin вне явной HTTPS policy/u,
+      ],
+      [
+        { type: 'failed', seq: 3, data: { version: 1, state: 'failed', reason: 'checksum_mismatch' } },
+        /SHA-256 не совпал/u,
+      ],
+    ] as const
+    for (const [event, message] of cases) {
+      const view = render(<HuggingFaceDiscovery contextLength={8_192} />)
+      vi.stubGlobal('fetch', routedFetch({ download: () => downloadEvents(event) }))
+      fireEvent.click(await confirmTarget())
+      expect(await screen.findByText(message)).toBeTruthy()
+      expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+      view.unmount()
+    }
+  })
+
+  it('uses curated English download copy without bilingual hardcode', async () => {
+    document.documentElement.lang = 'en'
+    vi.stubGlobal('fetch', routedFetch({ download: () => downloadEvents() }))
+    render(<HuggingFaceDiscovery contextLength={8_192} />)
+    const input = screen.getByRole('searchbox', { name: 'Search Hugging Face repositories' })
+    fireEvent.change(input, { target: { value: 'llama gguf' } })
+    fireEvent.submit(input.closest('form')!)
+    fireEvent.click(await screen.findByRole('button', { name: /Select the file/u }))
+    const download = await screen.findByRole('button', { name: 'Download exact GGUF' })
+    fireEvent.click(download)
+    expect(await screen.findByText('Downloaded and verified staging artifact')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('Скачивание')
   })
 })

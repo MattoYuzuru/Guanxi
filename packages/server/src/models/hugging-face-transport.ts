@@ -586,10 +586,20 @@ function parseFiles(row: Record<string, unknown>): HuggingFaceFileInventory {
       typeof rawSize === 'number'
       && Number.isSafeInteger(rawSize)
       && rawSize >= 0
+    const lfs = record['lfs']
+    const lfsRecord = typeof lfs === 'object' && lfs !== null && !Array.isArray(lfs)
+      ? lfs as Record<string, unknown>
+      : null
+    const rawOid = lfsRecord?.['oid']
+    const sha256 = typeof rawOid === 'string'
+      ? /^(?:sha256:)?([a-f0-9]{64})$/u.exec(rawOid)?.[1] ?? null
+      : null
     ggufFiles.push({
       path,
       sizeBytes: sizeReported ? rawSize : null,
       sizeSource: sizeReported ? 'hugging_face_api_model' : 'not_reported',
+      sha256,
+      sha256Source: sha256 === null ? 'not_reported' : 'hugging_face_lfs_oid',
     })
   }
 
