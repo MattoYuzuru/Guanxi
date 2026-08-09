@@ -11,6 +11,7 @@ import {
 } from '@alamo/contract'
 import {
   exactHuggingFaceDownloadUrl,
+  HUGGING_FACE_DOWNLOAD_ALLOWED_HOSTS,
   HuggingFaceDownloadService,
 } from '../src/models/hugging-face-download.ts'
 
@@ -152,6 +153,47 @@ describe('bounded cancel-safe exact Hugging Face GGUF download', () => {
       assert.equal(call.init?.redirect, 'manual')
       assert.equal(headers.get('authorization'), null)
       assert.equal(headers.get('cookie'), null)
+      assert.equal(headers.get('range'), null)
+      assert.equal(headers.get('last-event-id'), null)
+    }
+  })
+
+  it('allows every documented host on default HTTPS and refuses non-default ports', async () => {
+    const bytes = gguf()
+    for (const host of HUGGING_FACE_DOWNLOAD_ALLOWED_HOSTS) {
+      let calls = 0
+      const service = new HuggingFaceDownloadService({
+        rootDir: await root(),
+        fetch: (async () => {
+          calls += 1
+          return calls === 1
+            ? new Response(null, {
+                status: 302,
+                headers: { location: `https://${host}:443/object` },
+              })
+            : response(bytes)
+        }) as typeof fetch,
+      })
+      assert.equal(terminal(await collect(service, confirmed(bytes))).type, 'completed', host)
+      assert.equal(calls, 2, host)
+
+      for (const port of ['444', '8443']) {
+        calls = 0
+        const refused = new HuggingFaceDownloadService({
+          rootDir: await root(),
+          fetch: (async () => {
+            calls += 1
+            return new Response(null, {
+              status: 302,
+              headers: { location: `https://${host}:${port}/object` },
+            })
+          }) as typeof fetch,
+        })
+        const end = terminal(await collect(refused, confirmed(bytes)))
+        assert.equal(end.type, 'refused', `${host}:${port}`)
+        if (end.type === 'refused') assert.equal(end.data.reason, 'redirect_not_allowed')
+        assert.equal(calls, 1)
+      }
     }
   })
 
@@ -225,6 +267,68 @@ describe('bounded cancel-safe exact Hugging Face GGUF download', () => {
     }
   })
 
+  it('bounds connect wait and rejects an oversized declared response before reading it', async () => {
+    const stalledRoot = await root()
+    const stalled = new HuggingFaceDownloadService({
+      rootDir: stalledRoot, connectTimeoutMs: 5,
+      fetch: ((_input: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      })) as typeof fetch,
+    })
+    const timeout = terminal(await collect(stalled, confirmed(gguf())))
+    assert.equal(timeout.type, 'failed')
+    if (timeout.type === 'failed') assert.equal(timeout.data.reason, 'connect_timeout')
+    assert.deepEqual(await readdir(stalledRoot), [])
+
+    const oversizedRoot = await root()
+    const stream = new ReadableStream<Uint8Array>({})
+    const oversized = new HuggingFaceDownloadService({
+      rootDir: oversizedRoot, maxBytes: 8,
+      fetch: (async () => new Response(stream, {
+        status: 200, headers: { 'content-length': '9' },
+      })) as typeof fetch,
+    })
+    const tooLarge = terminal(await collect(
+      oversized, confirmed(gguf(), { size: null, digest: null }),
+    ))
+    assert.equal(tooLarge.type, 'failed')
+    if (tooLarge.type === 'failed') assert.equal(tooLarge.data.reason, 'maximum_bytes_exceeded')
+    assert.deepEqual(await readdir(oversizedRoot), [])
+  })
+
+  it('never emits progress beyond a declared Content-Length', async () => {
+    const bytes = gguf()
+    const service = new HuggingFaceDownloadService({
+      rootDir: await root(),
+      fetch: (async () => response(bytes, { 'content-length': '1' })) as typeof fetch,
+    })
+    const events = await collect(service, confirmed(bytes, { size: null, digest: null }))
+    assert.equal(events.some((current) => current.type === 'progress'), false)
+    const end = terminal(events)
+    assert.equal(end.type, 'failed')
+    if (end.type === 'failed') assert.equal(end.data.reason, 'size_mismatch')
+  })
+
+  it('accepts only a complete HTTP 200 response and never commits partial 2xx bodies', async () => {
+    const bytes = gguf()
+    for (const status of [201, 202, 203, 206]) {
+      const staging = await root()
+      const service = new HuggingFaceDownloadService({
+        rootDir: staging,
+        fetch: (async () => new Response(bytes, {
+          status,
+          headers: status === 206 ? { 'content-range': `bytes 0-${bytes.byteLength - 1}/100` } : {},
+        })) as typeof fetch,
+      })
+      const events = await collect(service, confirmed(bytes, { size: null, digest: null }))
+      assert.equal(events.some((current) => current.type === 'completed'), false, String(status))
+      const end = terminal(events)
+      assert.equal(end.type, 'failed', String(status))
+      if (end.type === 'failed') assert.equal(end.data.reason, 'provider_error')
+      assert.deepEqual(await readdir(staging), [])
+    }
+  })
+
   it('distinguishes provider SHA-256 match, mismatch and observed-only digest', async () => {
     const bytes = gguf()
     const digest = createHash('sha256').update(bytes).digest('hex')
@@ -267,6 +371,16 @@ describe('bounded cancel-safe exact Hugging Face GGUF download', () => {
       assert.equal(end.type, 'failed')
       if (end.type === 'failed') assert.equal(end.data.reason, reason)
     }
+  })
+
+  it('accepts the supported GGUF v2 header and records the observed version', async () => {
+    const bytes = gguf(2)
+    const service = new HuggingFaceDownloadService({
+      rootDir: await root(), fetch: (async () => response(bytes)) as typeof fetch,
+    })
+    const end = terminal(await collect(service, confirmed(bytes)))
+    assert.equal(end.type, 'completed')
+    if (end.type === 'completed') assert.equal(end.data.provenance.format.version, 2)
   })
 
   it('times out a stalled body and deletes its owned partial file', async () => {
@@ -395,6 +509,37 @@ describe('bounded cancel-safe exact Hugging Face GGUF download', () => {
       assert.deepEqual(names, [`${completed.data.provenance.artifact.id}.gguf`])
       assert.deepEqual(await readFile(join(successRoot, names[0]!)), Buffer.from(bytes))
       assert.equal(names.some((name) => name.endsWith('.partial')), false)
+    }
+  })
+
+  it('never deletes a foreign regular file or symlink on a partial-name collision', async () => {
+    const bytes = gguf()
+    for (const kind of ['file', 'symlink'] as const) {
+      const staging = await root()
+      const artifact = kind === 'file'
+        ? '33333333-3333-4333-8333-333333333333'
+        : '55555555-5555-4555-8555-555555555555'
+      const partial = kind === 'file'
+        ? '44444444-4444-4444-8444-444444444444'
+        : '66666666-6666-4666-8666-666666666666'
+      const foreign = join(staging, 'foreign.txt')
+      const partialPath = join(staging, `.${partial}.partial`)
+      await writeFile(foreign, 'FOREIGN-DATA')
+      if (kind === 'file') await writeFile(partialPath, 'SENTINEL')
+      else await symlink(foreign, partialPath)
+      let fetchCalls = 0
+      const ids = [artifact, partial]
+      const service = new HuggingFaceDownloadService({
+        rootDir: staging,
+        randomId: () => ids.shift()!,
+        fetch: (async () => { fetchCalls += 1; return response(bytes) }) as typeof fetch,
+      })
+      const end = terminal(await collect(service, confirmed(bytes)))
+      assert.equal(end.type, 'failed')
+      if (end.type === 'failed') assert.equal(end.data.reason, 'filesystem_error')
+      assert.equal(fetchCalls, 0)
+      assert.equal(await readFile(foreign, 'utf8'), 'FOREIGN-DATA')
+      assert.equal(await readFile(partialPath, 'utf8'), kind === 'file' ? 'SENTINEL' : 'FOREIGN-DATA')
     }
   })
 

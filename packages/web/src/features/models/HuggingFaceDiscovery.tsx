@@ -536,6 +536,7 @@ function HuggingFaceDownloadControl({
 }) {
   const [state, setState] = useState<DownloadState>({ kind: 'idle' })
   const controllerRef = useRef<AbortController | null>(null)
+  const attemptRef = useRef(0)
   const runningRef = useRef(false)
   const mountedRef = useRef(true)
   const statusRef = useRef<HTMLDivElement>(null)
@@ -544,21 +545,21 @@ function HuggingFaceDownloadControl({
     mountedRef.current = true
     return () => {
       mountedRef.current = false
+      attemptRef.current += 1
       controllerRef.current?.abort('hf-download-connection-closed')
     }
   }, [])
 
   useEffect(() => {
     if (state.kind === 'idle' || state.kind === 'running') return
-    if (typeof document !== 'undefined' && document.activeElement === document.body) {
-      statusRef.current?.focus()
-    }
+    statusRef.current?.focus()
   }, [state.kind])
 
   const start = async () => {
     if (runningRef.current) return
     runningRef.current = true
     const controller = new AbortController()
+    const attempt = ++attemptRef.current
     controllerRef.current = controller
     setState({
       kind: 'running', phase: 'preparing', completedBytes: 0, totalBytes: null,
@@ -574,7 +575,12 @@ function HuggingFaceDownloadControl({
         },
         controller.signal,
       )) {
-        if (!mountedRef.current) return
+        if (
+          !mountedRef.current
+          || controller.signal.aborted
+          || attemptRef.current !== attempt
+          || controllerRef.current !== controller
+        ) return
         if (event.type === 'state') {
           setState((current) => ({
             kind: 'running',
@@ -591,31 +597,49 @@ function HuggingFaceDownloadControl({
         } else if (event.type === 'completed') {
           terminal = true
           setState({ kind: 'completed', provenance: event.data.provenance })
+          break
         } else if (event.type === 'cancelled') {
           terminal = true
           setState({ kind: 'cancelled' })
+          break
         } else if (event.type === 'refused') {
           terminal = true
           setState({ kind: 'refused', reason: event.data.reason })
+          break
         } else if (event.type === 'failed') {
           terminal = true
           setState({ kind: 'failed', reason: event.data.reason })
+          break
         }
       }
-      if (!terminal && !controller.signal.aborted && mountedRef.current) {
+      if (
+        !terminal
+        && !controller.signal.aborted
+        && mountedRef.current
+        && attemptRef.current === attempt
+        && controllerRef.current === controller
+      ) {
         setState({ kind: 'failed', reason: 'provider_unavailable' })
       }
     } catch {
-      if (!controller.signal.aborted && mountedRef.current) {
+      if (
+        !controller.signal.aborted
+        && mountedRef.current
+        && attemptRef.current === attempt
+        && controllerRef.current === controller
+      ) {
         setState({ kind: 'failed', reason: 'provider_unavailable' })
       }
     } finally {
-      if (controllerRef.current === controller) controllerRef.current = null
-      runningRef.current = false
+      if (controllerRef.current === controller && attemptRef.current === attempt) {
+        controllerRef.current = null
+        runningRef.current = false
+      }
     }
   }
 
   const cancel = () => {
+    attemptRef.current += 1
     controllerRef.current?.abort('hf-download-user-cancelled')
     controllerRef.current = null
     runningRef.current = false

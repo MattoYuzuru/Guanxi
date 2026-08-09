@@ -280,7 +280,7 @@ test('Marketplace confirms one exact GGUF target without downloading or installi
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const observedAt = '2026-08-09T12:00:00.000Z'
   const commit = 'a'.repeat(40)
-  const requests: Array<{ path: string; method: string; body: string | null }> = []
+  const requests: Array<{ url: string; path: string; method: string; body: string | null }> = []
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
@@ -342,7 +342,7 @@ test('Marketplace confirms one exact GGUF target without downloading or installi
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
-    requests.push({ path, method: request.method(), body: request.postData() ?? null })
+    requests.push({ url: request.url(), path, method: request.method(), body: request.postData() ?? null })
     if (path === '/api/health') return route.fulfill(json(health))
     if (path === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (path === '/api/models') return route.fulfill(json({ models: [] }))
@@ -467,7 +467,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   const observedAt = '2026-08-09T12:00:00.000Z'
   const commit = 'a'.repeat(40)
   const digest = 'd'.repeat(64)
-  const requests: Array<{ path: string; method: string; body: string | null }> = []
+  const requests: Array<{ url: string; path: string; method: string; body: string | null }> = []
   const identity = {
     provider: 'hugging_face', owner: 'Owner', name: 'Model-GGUF',
     repositoryId: 'Owner/Model-GGUF', comparisonKey: 'owner/model-gguf',
@@ -493,6 +493,18 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
       state: 'supported', scope: 'exact_gguf_file_only',
       basis: 'exact_gguf_files_listed', reason: null, requiresExactFileSelection: true,
     },
+  }
+  const localCatalogModel = {
+    name: 'local-retention-fixture', description: 'Bundled local row retained across HF failure',
+    variants: [], contextLength: 32_768, capabilities: ['completion'], vramBytes: null,
+    isCloud: false, requiredPlan: null, installed: false,
+    fit: {
+      level: 'green', summary: 'fixture', contextLength: 8_192, modelBytes: 4_000,
+      kvCacheBytes: 0, requiredBytes: 4_000, usableBytes: 12_000_000_000,
+      utilization: 4_000 / 12_000_000_000, basis: 'estimate', measured: null,
+    },
+    source: 'bundled', freshness: 'fallback', sourceObservedAt: observedAt,
+    sourceFetchedAt: observedAt,
   }
   const json = (body: unknown, status = 200) => ({
     status, contentType: 'application/json', body: JSON.stringify(body),
@@ -528,13 +540,59 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
       },
     },
   ]
-  const sse = sseEvents.map((event) =>
-    `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`).join('')
+  await page.addInitScript((events) => {
+    const nativeFetch = window.fetch.bind(window)
+    window.fetch = async (input, init) => {
+      const raw = input instanceof Request ? input.url : String(input)
+      const url = new URL(raw, window.location.href)
+      if (url.pathname === '/api/models/discovery/hugging-face/download') {
+        const target = window as unknown as {
+          __p2lRequests?: Array<{ url: string; body: string }>
+        }
+        target.__p2lRequests ??= []
+        target.__p2lRequests.push({
+          url: url.href,
+          body: String(init?.body ?? ''),
+        })
+        const attempt = target.__p2lRequests.length
+        const encoder = new TextEncoder()
+        let firstTimer = 0
+        let secondTimer = 0
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const send = (event: (typeof events)[number]) => controller.enqueue(encoder.encode(
+              `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`,
+            ))
+            send(events[0]!)
+            send(events[1]!)
+            firstTimer = window.setTimeout(() => {
+              send(events[2]!)
+              secondTimer = window.setTimeout(() => {
+                send(attempt === 1
+                  ? {
+                      type: 'failed', seq: 3,
+                      data: { version: 1, state: 'failed', reason: 'provider_unavailable' },
+                    }
+                  : events[3]!)
+                controller.close()
+              }, 1_000)
+            }, 1_000)
+          },
+          cancel() {
+            window.clearTimeout(firstTimer)
+            window.clearTimeout(secondTimer)
+          },
+        })
+        return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
+      return nativeFetch(input, init)
+    }
+  }, sseEvents)
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
-    requests.push({ path, method: request.method(), body: request.postData() ?? null })
+    requests.push({ url: request.url(), path, method: request.method(), body: request.postData() ?? null })
     if (path === '/api/health') {
       return route.fulfill(json({
         ok: true, appVersion: 'test',
@@ -559,7 +617,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
     if (path === '/api/models') return route.fulfill(json({ models: [] }))
     if (path === '/api/models/catalog') {
       return route.fulfill(json({
-        models: [], live: false,
+        models: [localCatalogModel], live: false,
         source: {
           state: 'bundled_fallback', source: 'bundled_snapshot',
           observedAt, fetchedAt: observedAt,
@@ -603,9 +661,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
         },
       }))
     }
-    if (path.endsWith('/download')) {
-      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse })
-    }
+    if (path.endsWith('/download')) throw new Error('download must use the same-origin browser fetch')
     return route.fulfill(json({ code: 'internal_error', message: path, details: null }, 500))
   })
 
@@ -619,23 +675,60 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   const download = section.getByRole('button', { name: 'Скачать точный GGUF' })
   await expect(download).toBeVisible()
   expect(requests.filter((request) => request.path.endsWith('/download'))).toHaveLength(0)
+  const catalogCallsBeforeDownload = requests.filter(
+    (request) => request.path === '/api/models/catalog',
+  ).length
 
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   await download.press('Enter')
+  const meter = section.getByRole('meter', { name: 'Прогресс скачивания точного GGUF' })
+  await expect(meter).toHaveAttribute('aria-valuenow', '50')
+  await expect(section.getByText(/2.*КБ.*4.*КБ/u)).toBeVisible()
+  const runningLayout = await page.evaluate(() => {
+    const meterElement = document.querySelector('[role="meter"]')
+    const cancel = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('Отменить скачивание'),
+    )
+    const box = cancel?.getBoundingClientRect()
+    return {
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      cancelHeight: box?.height ?? 0,
+      transitionMs: meterElement?.firstElementChild
+        ? Number.parseFloat(getComputedStyle(meterElement.firstElementChild).transitionDuration) * 1_000
+        : Number.POSITIVE_INFINITY,
+    }
+  })
+  expect(runningLayout.overflow).toBeLessThanOrEqual(1)
+  expect(runningLayout.cancelHeight).toBeGreaterThanOrEqual(44)
+  expect(runningLayout.transitionMs).toBeLessThanOrEqual(0.01)
+  await expect(section.getByText(/Соединение с provider не установлено/u)).toBeVisible()
+  await expect(page.getByText('Bundled local row retained across HF failure')).toHaveCount(1)
+  expect(requests.filter((request) => request.path === '/api/models/catalog')).toHaveLength(
+    catalogCallsBeforeDownload,
+  )
+  const retry = section.getByRole('button', { name: 'Повторить скачивание' })
+  await retry.press('Enter')
   const completed = section.getByText('Staging artifact скачан и проверен')
   await expect(completed).toBeVisible()
   await expect(section.getByText(new RegExp(digest, 'u'))).toBeVisible()
   await expect(section.getByText(/не установлен, не подтверждён runtime/u)).toBeVisible()
-  const downloadCalls = requests.filter((request) => request.path.endsWith('/download'))
-  expect(downloadCalls).toHaveLength(1)
-  expect(JSON.parse(downloadCalls[0]!.body ?? '{}')).toEqual({
-    identity, revision, filePath: 'nested/model Q4.gguf', contextLength: 32_768,
-  })
+  const downloadCalls = await page.evaluate(() => (
+    window as unknown as { __p2lRequests?: Array<{ url: string; body: string }> }
+  ).__p2lRequests ?? [])
+  expect(downloadCalls).toHaveLength(2)
+  for (const downloadCall of downloadCalls) {
+    expect(downloadCall.url).toBe(
+      new URL('/api/models/discovery/hugging-face/download', page.url()).href,
+    )
+    expect(JSON.parse(downloadCall.body)).toEqual({
+      identity, revision, filePath: 'nested/model Q4.gguf', contextLength: 32_768,
+    })
+  }
   await expect(completed.locator('..')).toBeFocused()
   for (const name of [/^Установить/u, /^Install/u, /^Pull/u, /^Create/u]) {
     await expect(section.getByRole('button', { name })).toHaveCount(0)
   }
 
-  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const layout = await page.evaluate(() => ({
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -647,5 +740,8 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
     /\/(pull|prewarm|warm|stop|probes|create|imports)\b/u.test(request.path)
     || ['DELETE', 'PUT', 'PATCH'].includes(request.method))
   expect(forbidden).toEqual([])
-  expect(requests.every((request) => request.path.startsWith('/api/'))).toBe(true)
+  const applicationOrigin = new URL(page.url()).origin
+  expect(requests.every((request) => (
+    request.path.startsWith('/api/') && new URL(request.url).origin === applicationOrigin
+  ))).toBe(true)
 })

@@ -89,7 +89,11 @@ export function exactHuggingFaceDownloadUrl(selection: ConfirmedSelection): URL 
 }
 
 function assertAllowedRedirect(url: URL): void {
-  if (url.protocol !== 'https:' || !HUGGING_FACE_DOWNLOAD_ALLOWED_HOSTS.has(url.hostname)) {
+  if (
+    url.protocol !== 'https:'
+    || (url.port !== '' && url.port !== '443')
+    || !HUGGING_FACE_DOWNLOAD_ALLOWED_HOSTS.has(url.hostname)
+  ) {
     throw new DownloadRefusal('redirect_not_allowed')
   }
   if (url.username || url.password) throw new DownloadRefusal('redirect_not_allowed')
@@ -195,6 +199,7 @@ export class HuggingFaceDownloadService {
     const key = targetKey(selection)
     let owned = false
     let temporaryPath: string | null = null
+    let temporaryOwned = false
     let committed = false
 
     yield event({
@@ -233,6 +238,7 @@ export class HuggingFaceDownloadService {
 
       try {
         file = await open(temporaryPath, 'wx', 0o600)
+        temporaryOwned = true
         const response = await this.fetchExact(exactHuggingFaceDownloadUrl(selection), signal)
         const contentLength = parseContentLength(response.headers.get('content-length'))
         if (contentLength !== null && contentLength > this.maxBytes) {
@@ -277,6 +283,9 @@ export class HuggingFaceDownloadService {
             if (!chunk || chunk.byteLength === 0) continue
             observedSize += chunk.byteLength
             if (observedSize > this.maxBytes) throw new DownloadFailure('maximum_bytes_exceeded')
+            if (contentLength !== null && observedSize > contentLength) {
+              throw new DownloadFailure('size_mismatch')
+            }
             if (expectedSize !== null && observedSize > expectedSize) {
               throw new DownloadFailure('size_mismatch')
             }
@@ -346,6 +355,7 @@ export class HuggingFaceDownloadService {
           await link(temporaryPath, finalPath)
           committed = true
           await unlink(temporaryPath).catch(() => {})
+          temporaryOwned = false
           temporaryPath = null
         } catch (error) {
           if (error instanceof DownloadFailure) throw error
@@ -411,7 +421,9 @@ export class HuggingFaceDownloadService {
         })
       }
     } finally {
-      if (!committed && temporaryPath !== null) await unlink(temporaryPath).catch(() => {})
+      if (!committed && temporaryOwned && temporaryPath !== null) {
+        await unlink(temporaryPath).catch(() => {})
+      }
       if (owned) this.active.delete(key)
     }
   }
@@ -463,7 +475,8 @@ export class HuggingFaceDownloadService {
         url = next
         continue
       }
-      if (!response.ok) {
+      // P2-L has no Range/resume semantics: only a complete 200 response can be committed.
+      if (response.status !== 200) {
         await response.body?.cancel().catch(() => {})
         throw new DownloadFailure('provider_error')
       }

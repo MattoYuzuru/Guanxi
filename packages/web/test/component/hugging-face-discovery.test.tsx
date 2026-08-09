@@ -1295,9 +1295,110 @@ describe('P2-L exact GGUF download projection', () => {
     expect(calls).toBe(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Отменить скачивание' }))
-    expect(await screen.findByText('Скачивание отменено')).toBeTruthy()
+    const cancelled = await screen.findByText('Скачивание отменено')
+    expect(cancelled).toBeTruthy()
     expect(signal?.aborted).toBe(true)
     expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+    await waitFor(() => expect(document.activeElement?.textContent).toContain('Скачивание отменено'))
+  })
+
+  it('discards terminal frames from a cancelled attempt after an immediate retry', async () => {
+    let releaseOld!: () => void
+    const oldGate = new Promise<void>((resolve) => { releaseOld = resolve })
+    let calls = 0
+    let oldSignal: AbortSignal | null = null
+    const encoder = new TextEncoder()
+    const oldStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const progress = {
+          type: 'progress', seq: 0,
+          data: { version: 1, state: 'downloading', completedBytes: 512, totalBytes: null },
+        }
+        controller.enqueue(encoder.encode(`id: 0\ndata: ${JSON.stringify(progress)}\n\n`))
+      },
+      async pull(controller) {
+        await oldGate
+        const late = {
+          type: 'failed', seq: 1,
+          data: { version: 1, state: 'failed', reason: 'checksum_mismatch' },
+        }
+        controller.enqueue(encoder.encode(`id: 1\ndata: ${JSON.stringify(late)}\n\n`))
+        controller.close()
+      },
+    })
+    vi.stubGlobal('fetch', routedFetch({
+      download: (_body, signal) => {
+        calls += 1
+        if (calls === 1) {
+          oldSignal = signal
+          return new Response(oldStream, { headers: { 'content-type': 'text/event-stream' } })
+        }
+        return downloadEvents()
+      },
+    }))
+    render(<HuggingFaceDiscovery contextLength={8_192} />)
+    fireEvent.click(await confirmTarget())
+    expect(await screen.findByText(/Общий размер остаётся неизвестным/u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить скачивание' }))
+    expect(await screen.findByText('Скачивание отменено')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить скачивание' }))
+    expect(await screen.findByText('Staging artifact скачан и проверен')).toBeTruthy()
+    expect(calls).toBe(2)
+    expect(oldSignal?.aborted).toBe(true)
+
+    releaseOld()
+    await waitFor(() => {
+      expect(screen.getByText('Staging artifact скачан и проверен')).toBeTruthy()
+      expect(screen.queryByText(/SHA-256 не совпал/u)).toBeNull()
+    })
+  })
+
+  it('exposes preparing, known progress, verifying and failed focus through scoped live semantics', async () => {
+    let streamController!: ReadableStreamDefaultController<Uint8Array>
+    const encoder = new TextEncoder()
+    const send = (event: Record<string, unknown>) => {
+      const seq = Number(event.seq)
+      streamController.enqueue(encoder.encode(`id: ${seq}\ndata: ${JSON.stringify(event)}\n\n`))
+    }
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { streamController = controller },
+    })
+    vi.stubGlobal('fetch', routedFetch({
+      download: () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+    }))
+    render(<HuggingFaceDiscovery contextLength={8_192} />)
+    fireEvent.click(await confirmTarget())
+
+    await screen.findAllByText('Повторно проверяем точную цель…')
+    const preparing = screen.getAllByRole('status').find(
+      (node) => node.textContent === 'Повторно проверяем точную цель…',
+    )
+    expect(preparing).toBeTruthy()
+    expect(preparing?.getAttribute('aria-live')).toBe('polite')
+
+    send({
+      type: 'progress', seq: 0,
+      data: { version: 1, state: 'downloading', completedBytes: 2_000, totalBytes: 4_000 },
+    })
+    const meter = await screen.findByRole('meter', { name: 'Прогресс скачивания точного GGUF' })
+    expect(meter.getAttribute('aria-valuenow')).toBe('50')
+    expect(screen.getByText(/2 КБ \/ 4 КБ/u)).toBeTruthy()
+
+    send({ type: 'state', seq: 1, data: { version: 1, state: 'verifying' } })
+    expect(await screen.findAllByText('Проверяем checksum и заголовок GGUF…')).toHaveLength(2)
+    const verifying = screen.getAllByRole('status').find(
+      (node) => node.textContent === 'Проверяем checksum и заголовок GGUF…',
+    )
+    expect(verifying?.getAttribute('aria-live')).toBe('polite')
+
+    send({
+      type: 'failed', seq: 2,
+      data: { version: 1, state: 'failed', reason: 'checksum_mismatch' },
+    })
+    const failure = await screen.findByRole('alert')
+    expect(failure.getAttribute('aria-live')).toBe('polite')
+    expect(failure.textContent).toContain('SHA-256 не совпал')
+    await waitFor(() => expect(document.activeElement).toBe(failure))
   })
 
   it('renders strict refused and failed reasons while retaining the local Marketplace row', async () => {
@@ -1318,6 +1419,7 @@ describe('P2-L exact GGUF download projection', () => {
       expect(await screen.findByText(message)).toBeTruthy()
       expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
       expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+      await waitFor(() => expect(document.activeElement?.textContent).toMatch(message))
       view.unmount()
     }
   })
