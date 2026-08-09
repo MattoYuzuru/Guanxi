@@ -131,6 +131,8 @@ ADR-0012 выбирает отдельный strict version-1
 Runtime `observedAt`, exact active/queued owners, canonical Ollama references,
 digests и contexts. Server revalidate-ит active lease, ровно один queued entry,
 current `/api/ps`, `/api/tags`, `/api/version` и candidate `/api/show` identity.
+Runtime sample и candidate reads привязаны к тому же internal Ollama endpoint;
+active/candidate pair требует одинаковые runtime/backend и hardware fingerprints.
 
 Policy сначала читает P2-N key через typed registry. Disabled/invalid/unavailable
 возвращает `disabled` до calculator/provider access. Enabled path использует один
@@ -140,8 +142,10 @@ lower-bound `declared weights + estimated KV`; два пути не суммир
 allocation не добавляется к observed current available memory второй раз.
 
 Contract резервирует `estimated_allow` только для coherent exact-calibration
-positive headroom, но current calculator его не выпускает: Apple available
-memory остаётся advisory, а owner-approved admission capacity/margin отсутствует.
+positive headroom: exact historical source/basis, calibrated candidate fact,
+estimated reservation и cross-pair runtime/hardware identity обязательны. Current
+calculator его не выпускает: Apple available memory остаётся advisory, а
+owner-approved admission capacity/margin отсутствует.
 Formula positive headroom даёт `formula_overhead_unknown`, exact-calibrated —
 `admission_capacity_policy_unapproved`; equality/shortfall дают conservative
 `estimated_deny`. Apple free pages, legacy 70% estimate и несвязанные NVIDIA

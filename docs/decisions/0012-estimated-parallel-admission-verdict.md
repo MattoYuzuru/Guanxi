@@ -22,8 +22,9 @@ topology и runtime-to-device identity; Apple free pages не являются c
 P2-O вводит отдельный strict version-1 `POST` query для одной уже наблюдаемой
 конфликтующей пары `active + queued`. Request фиксирует expected runtime sample,
 owners, canonical model references, exact digests и contexts. Server заново
-сопоставляет пару с одним `ResourceGovernor` snapshot и provider identity; client
-не выбирает facts и не может включить policy.
+сопоставляет пару с одним `ResourceGovernor` snapshot и тем же internal Ollama
+endpoint. Active и candidate обязаны иметь одинаковые runtime/backend и hardware
+fingerprints; client не выбирает facts и не может включить policy.
 
 Verdict имеет состояния `disabled | estimated_allow | estimated_deny | unknown`.
 Каждый ответ содержит observation time, `estimated | unknown` confidence,
@@ -48,13 +49,15 @@ numeric facts с source/time/confidence/basis, calculation и exclusions. Ни �
   `unknown`, не allow.
 
 Contract резервирует и строго валидирует `estimated_allow` только для exact
-candidate calibration, coherent pair и positive headroom. Реализованный P2-O
-calculator его не выпускает: Apple current available-memory остаётся advisory,
-а owner-approved admission-capacity/margin policy отсутствует. Поэтому formula
-positive headroom даёт `formula_overhead_unknown`, а exact-calibrated positive
-headroom — `admission_capacity_policy_unapproved`. Это typed blocker, а не
-скрытый числовой threshold. Equality/shortfall остаются conservative
-`estimated_deny` по известному lower bound.
+candidate calibration с source `exact_calibration_total`, historical exact-key
+basis, calibrated candidate fact, estimated reservation, coherent cross-pair
+runtime/hardware identity и positive headroom. Реализованный P2-O calculator его
+не выпускает: Apple current available-memory остаётся advisory, а owner-approved
+admission-capacity/margin policy отсутствует. Поэтому formula positive headroom
+даёт `formula_overhead_unknown`, а exact-calibrated positive headroom —
+`admission_capacity_policy_unapproved`. Это typed blocker, а не скрытый числовой
+threshold. Equality/shortfall остаются conservative `estimated_deny` по
+известному lower bound.
 
 Flag проверяется до calculator/runtime/provider access. Missing, disabled,
 invalid, unavailable или future flag input возвращает `disabled` без model work.
@@ -107,6 +110,8 @@ Policy не имеет cache/persistence/write UI: existing runtime single-fligh
 - flag fail-close occurs before calculator/provider access;
 - each numeric source and coherent combined calculation is asserted;
 - stale/identity drift/unknown overhead/topology/unsafe arithmetic never allow;
+- synthetic allow requires exact-calibration provenance and cross-pair
+  runtime/hardware coherence;
 - boundary equality denies and no-double-count mutation fails;
 - cancellation preserves one stable observation basis;
 - before/after Governor snapshots remain byte-equivalent with one permit.

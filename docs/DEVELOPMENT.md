@@ -456,8 +456,13 @@ server не нужен.
   default-off declaration и exact operator env снимаются один раз при
   `AppContext` startup; `GET /api/feature-flags` публикует только strict
   versioned effective value/source/time/basis. SQLite setting, write API, Web
-  override, network provider и Governor consumer отсутствуют до следующих
-  slices.
+  override и network provider отсутствуют.
+- P2-O читает этот flag через typed registry в отдельном strict
+  `POST /api/runtime/estimated-parallel-admission`. Query revalidate-ит explicit
+  active/queued pair, internal Ollama endpoint и exact-key calibration, сохраняет
+  per-number provenance и возвращает только conservative estimated/unknown
+  explanation. Он не меняет queue/lease/model lifecycle, не пишет SQLite, не
+  добавляет Web consumer и оставляет Governor с одним permit.
 
 ### CLI
 

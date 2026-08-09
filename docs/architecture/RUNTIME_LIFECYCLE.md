@@ -647,6 +647,32 @@ response, selection удаляется с visible notice, а не rebound-итс
 index. Filter, clear, retry, swap, remove, Escape и reload не запускают pull,
 probe, prewarm/load, provider fetch или timestamp refresh.
 
+P2-O добавляет read-only explanation поверх текущего one-permit conflict:
+
+```text
+strict active + queued request → typed P2-N flag
+  → disabled: no Runtime/provider/calculator work
+  → enabled: one Runtime snapshot + internal endpoint identity
+      → exact active /api/ps + candidate tags/version/show coherence
+      → exact calibration OR derived declared+KV lower bound
+      → compare with advisory available memory without active double count
+      → estimated_deny on equality/shortfall; otherwise typed unknown
+```
+
+Runtime и candidate обязаны использовать тот же loopback Ollama endpoint,
+runtime/hardware fingerprints и requested reference/digest/context. Exact
+calibration row дополнительно сверяет все denormalized key columns и timestamp;
+formula публикует отдельный combined source. Contract резервирует coherent
+`estimated_allow`, но current calculator его не возвращает без owner-approved
+capacity/margin. Production Apple не даёт observed available-memory/pressure, а
+Linux/NVIDIA не связывает `/api/ps` row с device, поэтому production verdict
+сейчас `unknown`; injected fixtures доказывают только arithmetic branches.
+
+Query не cache/persist-ит result, не acquire/release/enqueue/cancel-ит Governor,
+не запускает load/probe и не меняет current single permit. Caller cancellation
+прекращает только его wait/provider reads; shared Runtime sampling semantics не
+меняются.
+
 Output-budget control и media upload в current Chat flow не реализованы; UI не
 подставляет guessed maxima. Это не отменяет существующие safety/transport bounds:
 

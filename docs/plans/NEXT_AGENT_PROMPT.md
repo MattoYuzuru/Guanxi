@@ -4,125 +4,121 @@
 
 **Проверено:** 2026-08-09
 
-**Назначение:** Phase 2 slice P2-O — объяснимый conservative
-`estimated` parallel-admission verdict поверх P2-N feature flag; measured
-parallelism, второй Governor permit и фактический parallel execution не начинать
+**Назначение:** Phase 2 exit/recovery — явно разрешить расхождение между exact
+variant calibration и Marketplace fit, затем выполнить полный release-readiness
+gate; Phase 3 не начинать до зелёного exit verdict
 
 ## Сначала
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui`. Прочитай `AGENTS.md`,
 `docs/NAVIGATION.md`, обязательный `plans/WORKFLOW.md`, затем `PRODUCT.md`,
 `DOMAIN_MODEL.md`, `UX_IA.md`, current HLD/LLD, `DEVELOPMENT.md`, `TESTING.md`,
-`architecture/RUNTIME_LIFECYCLE.md`, ADR-0002/0003/0011,
+`architecture/RUNTIME_LIFECYCLE.md`, ADR-0002/0003/0006/0011/0012,
 `research/EVIDENCE.md`, `plans/PHASE_STATUS.md`, `plans/ROADMAP.md`,
-`plans/OPEN_QUESTIONS.md` и accepted owner decisions, особенно D-003 и Q-34a.
+`plans/OPEN_QUESTIONS.md` и accepted owner decisions.
 
-Зафиксируй clean starting revision/status/последние commits. P2-N implementation
-и review-fix — `ac928a3` и `b0b7248`. До edits составь bounded plan по
-`WORKFLOW.md`, проверь реальные fit/calibration/runtime/host/flag contracts и
-актуальные первичные Ollama/Node/platform sources. Не начинай Phase 3 и не
-закрывай variant-calibration debt молча.
+Зафиксируй clean starting revision/status и последние commits. Последний
+independently verified slice P2-O состоит из:
 
-## Baseline P2-N
+- `0dc5c71` — strict estimated parallel-admission query;
+- `2f08b78` — evidence/identity/provenance review fixes;
+- `7b5101c` — coherent exact-calibration allow contract;
+- current docs commit — current-state evidence и этот handoff.
 
-- один server-owned typed registry, один
-  `estimated_parallel_admission_policy`, default-off;
-- exact startup env `enabled | disabled`, operator > safe default, restart-only;
-- invalid/unavailable/unknown/future input fail closed;
-- strict read-only redacted `/api/feature-flags`, без migration/write API/Web;
-- P2-N: 12 new / 532 core envelope; Web 173/173; mocked Chromium 28/28;
-- feature flag ещё не имеет consumer и не меняет Governor/runtime behavior;
-- live Ollama/GPU/hardware, service restart и production operator flow не
-  validated.
+Baseline после P2-O: **14 new / 546 full core envelope**, **0 new / 173 full Web
+envelope**, **0 new / 28 full mocked Chromium envelope**; final independent
+review — PASS. P2-O не добавляет второй Governor permit, Web consumer или
+production allow. До edits составь bounded plan по `WORKFLOW.md` и сначала
+перепроверь фактическое расхождение ниже по code, contract, tests и accepted
+requirements.
 
-## Outcome P2-O
+## Подтверждённый exit blocker
 
-Server-owned policy может для конкретного конфликтующего pair/request вернуть
-объяснимый verdict, помеченный только `estimated`, используя исключительно
-доступные sourced facts и P2-N effective flag. Verdict имеет observation time,
-confidence, полный input/basis breakdown и conservative unknown/denied states.
-Он не выдаётся за measured факт или гарантию будущего admission и не добавляет
-второй permit.
+Phase 2 всё ещё `no-go`, хотя именованных P2 slices больше нет:
 
-Перед кодом зафиксируй ADR/LLD-решение:
+- `ModelService.listLocal/detail` читает exact `CalibrationStore` и показывает
+  calibration только при полном совпадении reference, digest, context,
+  runtime/backend и hardware observation key;
+- Marketplace exact variant fit в `packages/server/src/models/catalog.ts`
+  использует catalog-claimed bytes/context и host capacity, но calibration не
+  читает вовсе;
+- поэтому требование MOD-004/ROADMAP «variant-level selection and calibration»
+  закрыто только наполовину. Нельзя молча объявить его выполненным и перейти к
+  Phase 3.
 
-- exact request/pair identity: active/queued owner, model reference/digest,
-  runtime fingerprint и context;
-- какие inputs действительно доступны сейчас: declared model bytes,
-  `estimateKvCacheBytes`/`computeFit`, exact `CalibrationStore`, observed
-  `/api/ps` VRAM и host sample;
-- freshness/identity coherence и поведение при mixed timestamps;
-- safe arithmetic, unknown overhead, safety margin и double-counting rules;
-- flag-off/invalid/unavailable semantics;
-- read contract/consumer: отдельная query или additive Runtime projection;
-- cache/single-flight/cancellation, если они нужны;
-- почему persistence и write UI нужны либо не нужны.
+## Bounded outcome
 
-Если margin, admissible confidence или policy threshold требуют нового owner
-choice, которого нет в Q-34a/D-003, не выбирай число молча: оставь typed blocker
-и recovery steps. Implementation detail, которая лишь сохраняет conservative
-unknown, owner choice не требует.
+Сначала выбери по существующим accepted требованиям и архитектуре один честный
+вариант:
 
-## Обязательные границы
+1. Additive связать exact installed Marketplace variant с exact calibration и
+   учитывать её в variant fit с полной provenance/unknown semantics; либо
+2. доказать, что calibration не должна участвовать в Marketplace fit, и получить
+   явное owner/ADR/ROADMAP решение, которое изменяет exit criterion.
 
-1. P2-N flag читается только через typed registry. Raw env и string key не
-   появляются в calculator/Governor/Web.
-2. Default-off, invalid/unavailable flag, unknown identity, stale/conflicting
-   facts, unsafe arithmetic и future schema fail closed.
-3. Basis различает declared, estimated, calibrated/observed и unknown; observed
-   component не превращает весь future verdict в measured.
-4. Не суммируй несвязанные NVIDIA devices, Apple free pages, legacy calibration
-   или ambiguous `/api/ps` rows как safe available capacity.
-5. Не учитывай одни и те же model/KV/runtime bytes дважды. Любой исключённый
-   overhead видим в explanation и снижает confidence.
-6. Verdict read-only: он не acquire/release lease, не запускает load/probe,
-   не меняет queue, не отменяет Job и не вызывает Ollama/model lifecycle.
-7. `ResourceGovernor` сохраняет ровно один permit. Никакой второй ticket/lease,
-   pin/TTL, measured calibration run или automatic parallel dispatch.
-8. Server остаётся authority; Web/localStorage не может включить behavior.
-9. Нет remote flags, analytics, telemetry export, fingerprinting, secrets или
-   новых plaintext settings.
-10. Не начинай STT/audio, live hardware experiment, Phase 3 UI либо Phase 4
-    service lifecycle.
+Не подменяй второй вариант собственным предположением. Если product choice
+действительно отсутствует и оба поведения существенно различаются, оставь
+точный blocker и recovery steps. Если current requirements однозначно требуют
+первый вариант, реализуй его vertical slice и независимо проверь.
 
-## Contract и наблюдаемость
+При implementation сохраняй:
 
-- closed/versioned request и response; arbitrary keys/future enums rejected;
-- verdict минимум различает `disabled | estimated_allow | estimated_deny |
-  unknown`, но naming должен соответствовать реальной semantics;
-- source, observedAt, confidence и exact basis обязательны для каждого числового
-  input; unavailable reason typed/redacted;
-- `estimated_allow` никогда не называется safe/measured/verified и не означает,
-  что текущий single-permit Governor пропустит второй Job;
-- clients могут понять flag state, missing/stale fact, расчет и причину отказа
-  без raw provider/environment content.
+- exact canonical reference + installed digest + requested context;
+- exact runtime/backend version/fingerprint и hardware fingerprint;
+- calibration timestamp/source/confidence/basis без cross-variant, cross-digest,
+  cross-context или stale credit;
+- distinct catalog claim, current host observation и historical calibration;
+- offline/stale/unavailable/ambiguous states как typed unknown, не optimistic
+  green fit;
+- compatibility старых clients и legacy catalog response;
+- server authority; Web не читает SQLite/Ollama напрямую;
+- отсутствие произвольного context/device/memory ceiling;
+- отсутствие model load/probe, Governor, queue, import или persistence side
+  effects у read-only Marketplace query.
 
-## Тестовый envelope
+Historical exact calibration может улучшить estimate, но не становится
+`measured` будущего запуска и не доказывает parallel admission. Не переиспользуй
+P2-O admission margin или legacy 70/80% fit threshold без явной действующей
+policy. Не расширяй задачу до live hardware, durable import Job, Phase 3 UI или
+post-Phase-4 measured parallelism.
 
-Нужны deterministic assertions минимум для:
+## Требуемые assertions при code change
 
-- flag default-off/invalid/unavailable → disabled без calculator side effect;
-- exact enabled path и один typed consumer P2-N key;
-- request/parser unknown/extra/future/duplicate/unsafe numeric rejection;
-- каждый доступный source отдельно и coherent combined estimate;
-- missing/stale/conflicting/identity-drift inputs → unknown/deny, не allow;
-- overflow/underflow/NaN/negative/zero, boundary equality и no double count;
-- declared/calibrated/observed provenance не повышается до measured verdict;
-- два независимых contexts/requests, cancellation и stable observation basis;
-- exact projection redaction;
-- no DB/network/analytics/localStorage/load/probe/model/Governor/queue side
-  effects и неизменный one-permit snapshot;
-- compatibility settings/health/runtime/CLI/Web;
-- exact count assertions для единственного verdict/flag consumer и отсутствия
-  duplicate rows/keys.
+Минимум должны падать при нарушении:
 
-Сделай mutation checks для flag fail-close, stale/identity rejection,
-double-count protection, estimated-not-measured и отсутствия Governor side
-effects. Каждое свойство docs/ROADMAP должно иметь падающий assertion.
+- exact variant/digest/context/runtime/hardware calibration получает только свой
+  credit;
+- соседний tag, другой digest/context/runtime/backend/hardware, stale/future или
+  corrupt row не получает credit;
+- catalog claim и calibration не double-count-ятся;
+- missing calibration сохраняет совместимое claimed/unknown поведение;
+- calibration source/time/confidence/basis видимы и не повышаются до measured;
+- offline/provider failure не маскируется исторической row;
+- duplicate/ambiguous exact variants остаются fail closed;
+- filters, stable sort, total/page metadata и legacy full response используют
+  один и тот же variant-fit predicate;
+- request cancellation и repeated reads не запускают load/probe/import;
+- нет новых Governor, queue, SQLite write, analytics, remote flag или Web
+  localStorage side effects;
+- contract/server/Web locale states согласованы, если меняется public projection.
 
-Web surface не добавляй без доказанной необходимости. Если Web всё же меняется,
-обязательны locale keys, keyboard/focus/live, 390 px, 200%, reduced motion и
-полный browser gate.
+Сделай mutation checks для exact-key drift, stale calibration, double-count и
+confidence promotion. Каждое свойство, заявленное в docs или Phase 2 exit gate,
+должно иметь assertion, который реально падает при его нарушении.
+
+## Полный Phase 2 release-readiness gate
+
+После blocker fix либо явного owner decision составь evidence matrix для
+**каждого** актуального Phase 2 exit bullet из `ROADMAP.md`: requirement → code
+boundary → failing assertion → gate evidence → residual risk/status. Не считай
+hardware-dependent items, явно перенесённые accepted decisions за Phase 4,
+текущим Phase 2 blocker; не выдавай mocked/local evidence за production
+validation.
+
+Отдельно проверь, что `PHASE_STATUS.md`, ROADMAP, HLD/LLD, Runtime Lifecycle,
+DEVELOPMENT/TESTING и UI copy не противоречат коду. Если хоть один обязательный
+exit property не реализован или не имеет direct assertion, verdict остаётся
+`no-go`, а следующий prompt снова должен быть Phase 2 recovery, не Phase 3.
 
 ## Gates
 
@@ -135,19 +131,24 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
+Если меняется Web, browser gate обязателен и новые/изменённые states должны иметь
+locale keys, keyboard/focus/live, 390 px, 200% и reduced-motion assertions по
+реальному scope.
+
 ## Workflow и handoff
 
-После vertical implementation запусти независимую read-only verification по
-`plans/WORKFLOW.md`: contract/arithmetic/freshness/identity, security/no-effects
-и compatibility. Findings исправляет автор отдельным fix commit.
+После vertical implementation запусти отдельную read-only independent
+verification по `plans/WORKFLOW.md`. Reviewer проверяет exact identity,
+provenance/freshness, catalog filter/page coherence, no-effects, compatibility и
+полную Phase 2 exit matrix. Findings исправляет автор отдельным fix commit.
 
-Сделай небольшие conventional commits: feature, verification fix и current-state
-docs. Обнови `plans/PHASE_STATUS.md` с real new/regression envelope, first
-failures и residual risks. После P2-O отдельно переоцени весь Phase 2 exit gate и
-не переходи к Phase 3, пока variant-calibration/current ROADMAP discrepancy и
-release-readiness не имеют явного verdict. Если gate неполон, следующий prompt
-остаётся на Phase 2 exit/recovery; только полностью зелёный exit может передать
-первый bounded slice Phase 3.
+Сделай небольшие conventional commits: implementation, verification fix и
+current-state docs. Обнови `plans/PHASE_STATUS.md` с real new/regression envelope,
+first failures, independent verdict и residual risks. Только если вся exit matrix
+зелёная, можно закрыть Phase 2 и переписать следующий prompt на первый bounded
+slice Phase 3. Иначе оставь prompt на конкретный Phase 2 blocker с recovery
+steps.
 
-В финале сообщи `status successful` только если implementation, independent
-verification, gates, docs и commits реально завершены.
+В финале сообщи `status successful` только если blocker/decision,
+implementation при необходимости, independent verification, full gates, docs и
+commits реально завершены.

@@ -312,8 +312,14 @@ background Job.
     resolver, negative override, audit history, multi-user profile и
     sync/cloud export не реализованы.
 21. P2-N feature flags снимаются один раз при startup и не имеют persisted user
-    choice или live reload. Первый declaration default-off и ещё не читается
-    Governor; estimated verdict и любое изменение admission остаются P2-O.
+    choice или live reload. Первый declaration default-off; P2-O читает его
+    только через typed registry, но Governor по-прежнему не меняется.
+22. P2-O добавляет отдельный strict pair-scoped read query. Он revalidate-ит
+    active/queued identity, internal Ollama endpoint, exact calibration и
+    sourced host/model facts, но не выдаёт positive headroom за approved
+    capacity. Current production adapters возвращают `unknown`; arithmetic deny
+    доказан только injected fixtures. Второго permit, Web consumer, persistence
+    и model lifecycle side effects нет.
 
 Подробности: [RUNTIME_LIFECYCLE](RUNTIME_LIFECYCLE.md).
 
