@@ -3066,6 +3066,14 @@ export const estimatedParallelAdmissionResponseSchema = z.discriminatedUnion('ve
       === requested.model.normalizedReference
     && resolution.observationKey.components.artifactDigest === requested.model.artifactDigest
     && resolution.observationKey.components.contextLength === requested.contextLength
+  const coherentPairFingerprints = response.pair.active.state === 'matched'
+    && response.pair.candidate.state === 'matched'
+    && response.pair.active.observationKey.state === 'complete'
+    && response.pair.candidate.observationKey.state === 'complete'
+    && response.pair.active.observationKey.components.runtimeBackend.fingerprint
+      === response.pair.candidate.observationKey.components.runtimeBackend.fingerprint
+    && response.pair.active.observationKey.components.hardware.fingerprint
+      === response.pair.candidate.observationKey.components.hardware.fingerprint
   if (
     response.verdict === 'estimated_allow'
     && (
@@ -3076,11 +3084,30 @@ export const estimatedParallelAdmissionResponseSchema = z.discriminatedUnion('ve
       || response.featureFlag.effectiveValue !== true
       || !exactPairMatch(response.pair.active, response.request.active)
       || !exactPairMatch(response.pair.candidate, response.request.candidate)
+      || !coherentPairFingerprints
       || response.runtimeObservedAt === null
       || response.runtimeObservedAt !== response.observedAt
       || response.request.expectedRuntimeObservedAt !== response.runtimeObservedAt
       || response.facts.candidateCalibration.state !== 'available'
       || calculation.candidateReservation.state !== 'available'
+      || (
+        response.facts.candidateCalibration.state === 'available'
+        && (
+          response.facts.candidateCalibration.source !== 'exact_calibration_total'
+          || response.facts.candidateCalibration.basis
+            !== 'historical_exact_fingerprint_total'
+          || response.facts.candidateCalibration.confidence !== 'calibrated'
+        )
+      )
+      || (
+        calculation.candidateReservation.state === 'available'
+        && (
+          calculation.candidateReservation.source !== 'exact_calibration_total'
+          || calculation.candidateReservation.basis
+            !== 'historical_exact_fingerprint_total'
+          || calculation.candidateReservation.confidence !== 'estimated'
+        )
+      )
       || (
         response.facts.candidateCalibration.state === 'available'
         && calculation.candidateReservation.state === 'available'

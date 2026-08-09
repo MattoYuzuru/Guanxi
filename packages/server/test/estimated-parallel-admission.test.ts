@@ -507,8 +507,75 @@ describe('estimated parallel-admission contract', () => {
             },
           },
         },
+        {
+          ...exact,
+          facts: {
+            ...exact.facts,
+            candidateCalibration: {
+              ...exact.facts.candidateCalibration,
+              source: 'derived_declared_plus_kv_lower_bound',
+              basis: 'declared_plus_architecture_kv_lower_bound',
+              confidence: 'observed',
+            },
+          },
+          calculation: {
+            ...calculation,
+            candidateReservation: {
+              ...calculation.candidateReservation,
+              source: 'derived_declared_plus_kv_lower_bound',
+              basis: 'declared_plus_architecture_kv_lower_bound',
+              confidence: 'declared',
+            },
+          },
+        },
+        exact.pair.candidate.state === 'matched'
+          && exact.pair.candidate.observationKey.state === 'complete'
+          ? {
+              ...exact,
+              pair: {
+                ...exact.pair,
+                candidate: {
+                  ...exact.pair.candidate,
+                  runtimeVersion: '0.13.0',
+                  observationKey: {
+                    ...exact.pair.candidate.observationKey,
+                    components: {
+                      ...exact.pair.candidate.observationKey.components,
+                      runtimeBackend: {
+                        ...exact.pair.candidate.observationKey.components.runtimeBackend,
+                        version: '0.13.0',
+                        fingerprint: `sha256:${'a'.repeat(64)}`,
+                      },
+                    },
+                  },
+                },
+              },
+            }
+          : {},
+        exact.pair.candidate.state === 'matched'
+          && exact.pair.candidate.observationKey.state === 'complete'
+          ? {
+              ...exact,
+              pair: {
+                ...exact.pair,
+                candidate: {
+                  ...exact.pair.candidate,
+                  observationKey: {
+                    ...exact.pair.candidate.observationKey,
+                    components: {
+                      ...exact.pair.candidate.observationKey.components,
+                      hardware: {
+                        ...exact.pair.candidate.observationKey.components.hardware,
+                        fingerprint: `sha256:${'b'.repeat(64)}`,
+                      },
+                    },
+                  },
+                },
+              },
+            }
+          : {},
       ]
-      assert.equal(incoherent.length, 7)
+      assert.equal(incoherent.length, 10)
       for (const mutation of incoherent) {
         assert.equal(estimatedParallelAdmissionResponseSchema.safeParse(mutation).success, false)
       }
