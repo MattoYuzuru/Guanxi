@@ -1141,7 +1141,14 @@ projection: это connection-owned download, а не inference lease/Job. P2-L 
 HF download следует той же non-Job ownership semantics: POST+SSE disconnect или
 explicit cancel abort-ит writer и чистит owned partial; reload/restart не даёт
 replay/resume. Проверенный blob остаётся managed staging, но не runtime model и
-не Governor lease. P2-F filter/compare вообще не создаёт operation owner. Production pressure/available
+не Governor lease. P2-M import также connection/process-owned и non-replayable:
+blob/create не являются inference lease, но последующий controlled completion
+probe входит в существующий `model_probe` Governor flow. Disconnect до create
+может дать clean cancel; после create server выполняет independent bounded tags
+reconciliation и возвращает conflict/unknown вместо ложного cancel. Retry после
+пересечения create boundary не создаёт модель повторно. Success требует fresh
+exact tags + forced probe и только затем удаляет staging. P2-F filter/compare
+вообще не создаёт operation owner. Production pressure/available
 memory, continuous durable runtime history, safe parallel и full resource
 actions ещё не реализованы. P2-G Runtime Bar показывает sourced Linux/NVIDIA
 devices с redacted UUID и contained scrolling, но не aggregate capacity либо

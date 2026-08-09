@@ -4,135 +4,123 @@
 
 **Проверено:** 2026-08-09
 
-**Назначение:** Phase 2 slice P2-M — импорт verified P2-L staging GGUF в
-локальный Ollama через documented `/api/create`, exact post-create observation и
-controlled completion probe; P2-N feature flags не начинать
+**Назначение:** Phase 2 slice P2-N — централизованная local-first
+feature-flag infrastructure с безопасными defaults, provenance и наблюдаемой
+effective policy; P2-O estimated parallel admission и любой measured behavior не
+начинать
 
 ## Сначала
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui`. Прочитай `AGENTS.md`,
 `docs/NAVIGATION.md`, обязательный `plans/WORKFLOW.md`, затем `PRODUCT.md`,
 `DOMAIN_MODEL.md`, `UX_IA.md`, current-state HLD/LLD, `DEVELOPMENT.md`,
-`TESTING.md`, `architecture/RUNTIME_LIFECYCLE.md`, ADR-0003/0006,
+`TESTING.md`, `architecture/RUNTIME_LIFECYCLE.md`, ADR-0003/0006/0007,
 `research/EVIDENCE.md`, `plans/PHASE_STATUS.md`, `plans/ROADMAP.md`,
-`plans/OPEN_QUESTIONS.md` и accepted owner decisions.
+`plans/OPEN_QUESTIONS.md` и accepted owner decisions, особенно Q-34/Q-34a.
 
-Зафиксируй clean starting revision после P2-L docs commit, status и последние
-commits. P2-L implementation/fixes — `8bb65c9` и `e1d4e66`. До edits составь
-bounded plan по `WORKFLOW.md` и явно выбери lifecycle import/cancel/reconcile.
-Не называй операцию durable/replayable/resumable без новой доказанной semantics.
+Зафиксируй clean starting revision после P2-M docs commit, status и последние
+commits. P2-M implementation/review-fix — `62a41c6` и `5b3d71d`. До edits
+составь bounded plan по `WORKFLOW.md`. Проверь текущие settings/config/contract/
+context boundaries и актуальные первичные источники выбранной технологии. Не
+добавляй SaaS flag provider или dependency без доказанной необходимости.
 
-До проектирования проверь актуальную официальную Ollama API/import документацию
-и текущую local adapter shape. Не копируй CLI syntax в HTTP contract по памяти:
-зафиксируй точные `/api/create` request/stream/terminal/cancel semantics и версию
-источника. Если они не подтверждаются, оставь typed blocker, а не shell fallback.
+## Baseline P2-M
 
-## Baseline P2-L
+- P2-J–P2-M public GGUF chain independently verified mocked evidence;
+- core 520/520, Web 173/173, Chromium 28/28;
+- P2-M connection/process-owned, loopback-only, без Job/SQLite replay;
+- live Ollama/HF/GPU и production hardware не validated;
+- Phase 2 осталось два bounded slices: P2-N flag infrastructure и P2-O
+  **estimated** parallel-admission policy.
 
-- exact target — HF identity + lowercase 40-hex commit + portable-safe GGUF path;
-- server повторно подтверждает target и строит download URL сам;
-- P2-L принимает только full HTTP 200 через exact HTTPS/443 host set, stream-ит
-  в generated managed staging, считает SHA-256 и проверяет GGUF v2/v3 header;
-- completed provenance содержит exact source tuple, sizes, checksum relation,
-  GGUF format, artifact UUID и observedAt, но не Installation/capability proof;
-- download connection-owned, без Job/SQLite/replay/resume; hard crash может
-  оставить orphan partial, duplicate writer только process-local;
-- Web показывает verified staging artifact без Install/Create/Pull;
-- baseline: 504/504 core, 167/167 Web, 28/28 mocked Chromium.
+P2-N не должен менять Resource Governor, добавлять второй permit, запускать две
+модели, реализовывать STT либо публиковать fit/admission verdict. Его outcome —
+только инфраструктура, которой P2-O сможет безопасно владеть.
 
-Live HF/Ollama/GPU и большие файлы P2-L не проверялись. Official HF host set
-подтверждён документацией, но live redirect chain заблокирован egress HTTP 503.
+## Outcome P2-N
 
-## Outcome P2-M
+В проекте существует один server-owned typed registry feature flags. Для каждого
+известного flag он вычисляет effective value по явно документированному
+precedence, сохраняет safe default, source и observation time, отдаёт redacted
+read-only projection clients и fail-closed обрабатывает неизвестные/сломанные
+значения. Первый зарезервированный consumer для P2-O присутствует как
+default-off declaration, но не меняет runtime behavior.
 
-После P2-L completed пользователь отдельным явным действием задаёт/подтверждает
-безопасное local Ollama model reference. Server использует только server-owned
-verified staging artifact, создаёт внутренний import request/Modelfile через
-documented Ollama `/api/create`, наблюдает terminal create, заново подтверждает
-exact installed reference/digest через provider facts и выполняет существующий
-controlled completion probe. Только после всех наблюдаемых шагов UI может
-показать Installed + probe result с provenance.
+Перед кодом выбери и зафиксируй ADR/LLD-решение:
+
+- какие scopes нужны сейчас: build, process/operator, persisted local setting;
+- нужен ли persistence. Если да — только append-only migration с rollback/reopen
+  tests; если нет — не симулируй durability;
+- precedence и restart semantics;
+- кто может мутировать flag и нужен ли в этом slice write API/UI;
+- какие поля безопасно публиковать Web/CLI и какие остаются server-only.
+
+Если это требует нового owner choice, которого нет в Q-34/Q-34a, не закрывай его
+молча: оставь typed blocker и recovery steps. Простая implementation detail в
+рамках accepted local-first/default-safe policy не требует расширения scope.
 
 ## Обязательные границы
 
-1. Web не передаёт filesystem path, raw Modelfile, arbitrary create parameters,
-   provider URL или shell command. Artifact UUID разрешается только через
-   server-owned handoff, связанный с P2-L provenance; claims от Web не являются
-   доказательством. Если для этого нужен sidecar/in-memory registry, опиши его
-   ownership, restart, tamper и cleanup semantics и покрой assertions.
-2. Перед create server заново открывает artifact внутри managed staging без
-   symlink/path escape, проверяет identity/manifest, size, SHA-256 и GGUF header.
-   TOCTOU replacement или missing/corrupt artifact fail-closed до Ollama call.
-3. Target Ollama reference проходит существующую strict normalization boundary.
-   Не перезаписывай существующую model/tag молча: pre-existing, changed или
-   ambiguous target получает typed conflict/refusal. No-overwrite либо explicit
-   confirmation должны быть доказаны contract и tests.
-4. Используй documented local Ollama HTTP adapter, не `ollama` shell и не HF
-   `pull`. Bounded connect/stream-idle/overall deadlines, response/frame limits,
-   terminal protocol validation, redaction и AbortSignal обязательны.
-5. `create` terminal status сам по себе не доказывает Installation. После него
-   перечитай `/api/tags`/descriptor и свяжи exact normalized reference с новым
-   digest. Missing/ambiguous/changed identity не становится success.
-6. Completion probe использует существующий fixed controlled probe и Governor
-   semantics; не дублируй probe protocol и не обходи exact digest/runtime/context
-   key. Provider declaration, user override и probe evidence остаются разными.
-7. Cancel/disconnect race с Ollama create обязан reconciliate provider state.
-   Нельзя сообщить чистый `cancelled`, если target уже появился или outcome
-   unknown. Не удаляй чужую/pre-existing model. Повторный intent не должен
-   запускать второй create для того же artifact/target.
-8. Определи staging retention до кода: success cleanup только после exact
-   installed observation/provenance commit; failure/cancel/retry не удаляет
-   чужие файлы и не оставляет ложный usable artifact. Hard crash и restart
-   behavior назови честно. Не добавляй GC/общий Artifact Service сверх slice.
-9. Provenance связывает HF identity/commit/path, staging SHA-256/GGUF, target
-   Ollama reference, observed installed digest/runtime, create terminal evidence,
-   probe outcome и timestamps. Не выводи tools/vision/thinking/media либо
-   semantic quality из GGUF header или одного completion probe.
-10. Gated/token/license acceptance, safetensors conversion, arbitrary Modelfile,
-    remote Ollama, model deletion/overwrite UI, generic Artifact Service и P2-N
-    feature flags вне P2-M.
+1. Registry и keys централизованы в одном typed boundary. Не разбрасывай
+   `process.env`, localStorage или строковые flag names по components/services.
+2. Unknown flag, invalid value, unavailable source и future schema fail closed.
+   Experimental parallel-admission declaration по default выключена.
+3. Effective projection содержит source, observedAt и schema/version basis.
+   Default не выдаётся за user choice, runtime observation или measured fact.
+4. Server остаётся authority. Web не принимает решение о runtime admission и не
+   может скрытым localStorage override включить server behavior.
+5. Не добавляй remote flag SaaS, analytics/telemetry, device/user fingerprint,
+   network fetch, секреты или plaintext credential fields.
+6. Если env/operator override разрешён, parser принимает только exact
+   documented values, не логирует raw environment и имеет deterministic
+   precedence. Изменение env после startup не притворяется live update.
+7. Если persistence разрешён, migration append-only, store strict, mutation
+   atomic/idempotent, а corrupt row не включает feature. Compatibility старой DB
+   и rollback/reopen обязательны.
+8. Read API не раскрывает server-only flags или arbitrary config. Write API, если
+   он действительно нужен, требует strict allowlist/schema и typed outcomes.
+9. Не вводи флаг вокруг security checks, authentication, filesystem ownership,
+   data migrations или других safety invariants.
+10. Не реализуй P2-O calculations, measured parallelism, second Governor permit,
+    pin/TTL, STT/audio, live hardware experiment или remote configuration.
 
-## Contract и UX
+## Contract и наблюдаемость
 
-- Contract/server/Web меняются согласованно; states strict, redacted и отделяют
-  preparing/importing/verifying/probing/completed/cancelled/conflict/failed.
-- Import/Create появляется только для current P2-L completed artifact и требует
-  отдельного explicit action. Duplicate activation collapses.
-- UI показывает target reference, источник staging artifact, create/probe phase,
-  typed conflict/reconciliation и terminal provenance. До fresh `/api/tags`
-  observation нельзя писать Installed; до probe нельзя писать runtime verified.
-- Focus/live region, keyboard cancel/retry, narrow viewport, 200%, reduced motion,
-  English fallback и curated Russian обязательны. Все strings — locale keys.
-- Local Marketplace/Installed rows сохраняются при Ollama/create/probe failure;
-  refresh выполняется только после observed success и не дублирует exact row.
+- Название первого declaration должно описывать feature/policy, а не обещать
+  measured parallelism. Оно является reserved/default-off infrastructure input.
+- Contract различает declared key, effective boolean/value, source, observedAt и
+  unavailable/invalid state; arbitrary keys и future enums rejected.
+- Health/settings/UI не должны говорить «enabled by measurement» без measured
+  evidence. Если Web surface добавлен, он только объясняет effective flag и
+  source, с English fallback и curated Russian locale keys.
+- Нужна диагностируемость без секретов: tests или safe projection позволяют
+  понять, почему effective value on/off.
 
 ## Тестовый envelope
 
-Не используй live большую модель. Нужны generated temp staging и deterministic
-fake Ollama streams с маленьким synthetic GGUF, включая:
+Нужны deterministic assertions минимум для:
 
-- server-owned artifact handoff, missing/foreign/symlink/replaced/corrupt file;
-- checksum/size/header revalidation перед единственным create call;
-- strict target grammar, pre-existing/changed/ambiguous target и no-overwrite;
-- exact documented create body без arbitrary options/path leakage;
-- progress, malformed/regressing frames, missing terminal, provider error и
-  connect/idle/overall timeout;
-- cancel до create, mid-stream, after terminal и during reconciliation; late
-  frame/stale retry не меняет новый state;
-- post-create `/api/tags` missing/ambiguous/exact digest и descriptor projection;
-- controlled probe queued/running/success/failure/cancel с Governor release;
-- staging cleanup/retention на каждом terminal edge и restart semantics;
-- exact count assertions: one artifact/target → at most one create, one Installed
-  row, one probe, no HF download/pull/shell/catalog mutation;
-- browser success/failure/conflict/cancel/retry, focus/live, responsive/motion и
-  absence of duplicate or premature Installed/runtime claims.
+- registry completeness, unique keys и default-off reserved P2-O declaration;
+- exact parser и rejection unknown key/value/extra field/future version;
+- precedence каждой выбранной source и stable startup snapshot;
+- invalid/corrupt/unavailable source → safe default, не optimistic enable;
+- old DB/reopen/rollback, если есть migration;
+- read projection redaction и отсутствие server-only flags;
+- mutation idempotency/conflict/cancellation, если есть write boundary;
+- два независимых AppContext/requests без global mutable test leakage;
+- no network/analytics/localStorage/runtime model/Governor side effects;
+- compatibility существующих settings/health/CLI/Web;
+- exact count assertions для единственного registry entry/projection и
+  отсутствия duplicate keys/rows.
 
-Каждое ROADMAP/документированное свойство получает assertion, которое падает при
-нарушении. Добавь mutation checks минимум для path ownership, checksum recheck,
-no-overwrite, create terminal validation, post-create identity, cancel reconcile,
-probe boundary и no-shell/no-pull.
+Каждое заявленное свойство получает assertion, который падает при нарушении.
+Сделай mutation checks для default-off, unknown fail-closed, precedence,
+projection redaction и отсутствия runtime side effects.
 
-Если Web меняется, обязательны exact component/browser cases и полный gate:
+Если Web меняется, обязательны component/browser cases: keyboard/focus/live,
+390 px, 200%, reduced motion, English/Russian и отсутствие скрытого enable.
+
+## Gates
 
 ```bash
 npm run typecheck
@@ -146,13 +134,13 @@ git diff --check
 ## Workflow и handoff
 
 После vertical implementation запусти независимую read-only verification по
-`plans/WORKFLOW.md`: server/Ollama adapter/filesystem lifecycle и Web/a11y.
-Validate findings, исправь их отдельным fix commit и повтори gates.
+`plans/WORKFLOW.md`: contract/config/persistence/security и Web/CLI/operational
+projection (если затронуты). Findings исправляет автор отдельным fix commit.
 
-Сделай небольшие conventional commits: feature, отдельный verification fix и
-current-state docs. Обнови `plans/PHASE_STATUS.md` с real new/regression envelope,
-commit hashes, first failures и residual risks. Полностью перепиши этот prompt
-на P2-N только если все gates green; иначе оставь P2-M blocked с recovery steps.
+Сделай небольшие conventional commits: feature, verification fix и current-state
+docs. Обнови `plans/PHASE_STATUS.md` с real new/regression envelope, first
+failures и residual risks. Полностью перепиши этот prompt на P2-O только если все
+gates green; иначе оставь P2-N blocked с recovery steps.
 
 В финале сообщи `status successful` только если implementation, independent
 verification, browser/root gates, docs и commits реально завершены.

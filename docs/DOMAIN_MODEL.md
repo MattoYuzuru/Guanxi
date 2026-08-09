@@ -159,8 +159,17 @@ fresh license/gated claims, expected/observed size, observed SHA-256 relation,
 bounded GGUF header result, server-generated artifact id и observation time.
 SQLite row не создаётся; UI reload/process restart не replay/resume-ит download.
 Cancel/error удаляет только owned partial, а hard process crash всё ещё может
-оставить orphan partial для будущей retention policy. Только P2-M сможет
-превратить проверенный staging artifact в Ollama installation evidence.
+оставить orphan partial для будущей retention policy.
+
+P2-M добавляет transient `HuggingFaceImport`, но не durable `Job` или persistent
+`Installation` entity. Command связывает process-owned artifact UUID с
+нормализованной loopback Ollama target и context. Terminal provenance включает
+P2-L source, documented create evidence, fresh exact target/digest/runtime,
+non-historical controlled probe и cleanup state. Create status отдельно не
+является Installation. Success не replay-ится: повтор требует живого artifact и
+новых provider observations. Unknown/cancel/failure сохраняет staging; restart
+теряет registry и attempt memory, а уже созданная Ollama model остаётся обычной
+provider-owned установкой без автоматического rollback/delete.
 
 P2-E добавляет variant-first projection текущего local/bundled Marketplace, но
 не persistent `ModelVariant` registry. Каждая валидная catalog row получает

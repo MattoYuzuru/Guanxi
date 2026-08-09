@@ -727,10 +727,9 @@ entry. После terminal success только `/api/tags` даёт installed/d
 
 ```ts
 type HuggingFaceImportRequest = {
-  repoId: string;
-  revision: string;
-  filename: string;
+  artifactId: string;
   targetModelName: string;
+  contextLength: number;
 };
 ```
 
@@ -742,15 +741,15 @@ Pipeline:
 4. show license/gated status;
 5. bounded restart-from-zero download в managed staging;
 6. checksum и GGUF format inspection;
-7. generate internal Modelfile with staged local path;
-8. create model through Ollama adapter;
-9. probe/descriptor;
-10. remove staging согласно cache policy.
+7. upload the exact verified inode to `/api/blobs/sha256:<digest>`;
+8. create through `/api/create` with `{ model, files, stream: true }`;
+9. observe exact `/api/tags` identity and run the existing forced probe;
+10. remove the exact owned staging inode only after verified provenance.
 
 Path не принимается напрямую от remote metadata. Gated token хранится в protected
 secret adapter и не попадает в Job Events.
 
-Current state (P2-L, 2026-08-09): шаг 1 и bounded часть шагов 2–6 реализованы
+P2-L (2026-08-09) реализовал шаг 1 и bounded часть шагов 2–6
 как отдельный provider. Strict selection contract принимает только published
 repository identity, lowercase 40-hex commit, exact safe GGUF path и context;
 server перечитывает `/api/models/{repo}/revision/{commit}?blobs=true` через ту же
@@ -769,11 +768,25 @@ LFS claim и locally observed-only digest; GGUF inspection ограничена 
 version 2/3. Cancel/error удаляет только owned partial, duplicate exact target
 имеет один process-local writer, а restart/reload не resume-ит операцию.
 
-Шаги 7–10 (Modelfile, `ollama create`, probe и post-import staging policy) не
-реализованы: это P2-M. `HuggingFaceImportRequest` выше — target shape, а не
-текущий contract: current routes поддерживают search, repository reference,
-request-scoped exact selection и staging download, но не import command.
-Token/gated acceptance не реализованы; доступ только anonymous public.
+Current state (P2-M, 2026-08-09): шаги 7–10 реализованы отдельным strict
+POST+SSE command. Web передаёт только artifact UUID, target reference и exact
+positive context. Server разрешает UUID через process-local P2-L registry,
+проверяет managed root/path/inode/size/SHA-256/GGUF, запрещает remote Ollama и
+делает два no-overwrite `/api/tags` sample. Adapter сначала проверяет/загружает
+SHA-256 blob, затем отправляет только documented files-map body в `/api/create`;
+ordered progress, terminal, frame count/bytes и connect/idle/overall deadlines
+строго валидируются. Create terminal не равен Installation: success требует
+одну exact target/digest observation и свежий non-historical controlled probe с
+тем же reference/digest/runtime/context.
+
+Import connection/process-owned: нет Job, SQLite, replay или resume. Один
+artifact и target имеют по одному process-local owner. После пересечения create
+boundary retry только reconciliate-ит/probe-ит и никогда не вызывает второй
+create. Clean cancel возможен только до create; поздний abort даёт conflict или
+unknown outcome. Success удаляет только exact owned staging inode после
+валидации terminal provenance; остальные terminal edges сохраняют staging.
+Restart забывает registry/attempt state, поэтому orphan staging не становится
+автоматически importable. Token/gated acceptance по-прежнему не реализованы.
 
 ### Artifact Service
 

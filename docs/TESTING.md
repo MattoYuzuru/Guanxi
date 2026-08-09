@@ -5,11 +5,12 @@
 
 ## Текущий baseline
 
-На 2026-08-09 после independently verified P2-L:
+На 2026-08-09 после independently verified P2-M:
 
-- полный core с CLI reuse: 504/504; Web component/parser: 167/167;
+- полный core с CLI reuse: 520/520; Web component/parser: 173/173;
 - `npm run test:web:browser`: 28/28 deterministic Chromium tests с mocked
-  REST/SSE, включая exact-selection P2-K и exact-download P2-L cases. Требует заранее установленный
+  REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
+  P2-M cases. Требует заранее установленный
   browser binary
   (`npx playwright install chromium`) — postinstall hook отсутствует, поэтому на
   чистой машине `npm install` этого не делает. Запускать из корня либо из
@@ -243,6 +244,21 @@
   retention локального catalog, keyboard retry, 390 px/200%, 44 px target и
   computed reduced-motion transition. Все P2-L fixtures mocked/synthetic: они не
   являются live HF/Ollama/GPU либо production filesystem validation;
+- P2-M добавляет 16 новых core tests и 6 новых Web component tests. Они покрывают
+  strict request/state/provenance contract, loopback-only host, server-owned
+  root/path/inode/size/SHA/GGUF revalidation, foreign replacement cleanup,
+  same-artifact/different-target exclusion, pre-existing/ambiguous target,
+  exact blob/create body без path/Modelfile/options, bounded/malformed/regressing
+  provider frames, missing terminal, no stale completed replay, cancel reconcile,
+  no-second-create retry, exact tags, fresh matching probe и success-only cleanup.
+  Web проверяет confirmation/no-side-effect, typed validation/conflict/failure,
+  degraded probe evidence, client-abort unknown outcome, late terminal isolation,
+  retry focus, EN/RU и success-only refresh. Один существующий Chromium case
+  P2-L расширен P2-M assertions: failed → retry → cancel/conflict → retry →
+  success, exact request counts, one Installed row, live roles, 44 px at 390 px,
+  200% и reduced motion. Поэтому browser evidence — **0 новых tests / 28 full
+  envelope**, а не новый headline case. Всё mocked/synthetic; live Ollama, GPU,
+  HF network и large-file import не проверялись;
 - integration P1-F matrix покрывает same/cross-thread Chat, Chat ↔ compaction,
   Chat ↔ warm/load, compaction ↔ warm/load в обоих направлениях, два compaction,
   cancelled waiter, provider/protocol/storage failure, connect/load/idle timeout,

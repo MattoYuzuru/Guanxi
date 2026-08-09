@@ -376,6 +376,7 @@ remote telemetry, safe parallel и generic eviction не проверены. О�
 | P2-J Read-only Hugging Face discovery (GGUF-only) | independently verified | `e544c7c`..`2f13e31`; P2-J 45 new / 446 core envelope, Web 27 new / 144 envelope, Chromium 1 new / 26 envelope, all required gates |
 | P2-K Exact GGUF file/revision + preview | independently verified | `9f3990d`, `9f3f19c`; 29 new / 475 core envelope, 17 new / 161 Web envelope, Chromium 1 new / 27 envelope, all required gates |
 | P2-L Bounded exact GGUF download + provenance | independently verified | `8bb65c9`, `e1d4e66`; 29 new / 504 core envelope, 6 new / 167 Web envelope, Chromium 1 new / 28 envelope, all required gates |
+| P2-M Local staged GGUF import + probe | independently verified | `62a41c6`, `5b3d71d`; 16 new / 520 core envelope, 6 new / 173 Web envelope, Chromium 0 new + 1 expanded / 28 envelope, all required gates |
 
 P2-A additive расширяет `LocalModel`/`ModelDetail` canonical/unknown Ollama
 reference, exact/unknown installed artifact, `/api/tags` installation fact и
@@ -1034,7 +1035,58 @@ HTTP 503 egress filter; fixtures synthetic/mocked и не доказывают r
 pressure, screen reader, socket disconnect или live Ollama/GPU. Duplicate writer
 только process-local; hard crash может оставить orphan `.partial`; restart не
 resume-ит и не индексирует staging. Semantic GGUF/Ollama compatibility,
-Modelfile, `/api/create`, probe и post-import cleanup остаются P2-M.
+Semantic GGUF/Ollama compatibility тогда оставалась P2-M.
+
+P2-M реализован в `62a41c6`, findings независимой verification исправлены
+отдельным `5b3d71d`. Два read-only reviewer-субагента независимо проверили
+contract/server/filesystem/Ollama lifecycle и Web/a11y/browser assertions.
+Strict command принимает только P2-L artifact UUID, target reference и context;
+server повторно проверяет managed root/path/inode/size/SHA-256/GGUF, запрещает
+remote Ollama, владеет одним artifact и target на процесс и делает no-overwrite
+samples до documented blob + files-map `/api/create`. Ordered create terminal
+ещё не Installation: после него обязательны fresh exact `/api/tags` digest и
+fresh forced completion probe с совпадающими reference/digest/runtime/context.
+Success-only cleanup проверяет inode ownership; failure/cancel/conflict сохраняют
+staging. После пересечения create boundary retry не вызывает второй create, а
+abort reconciliate-ит tags и не выдаётся за clean cancel.
+
+Web показывает import только после current P2-L completed, требует отдельного
+target confirmation и до него не делает mutation. Preparing/importing/verifying/
+probing, invalid target, provider/identity/probe failure, no-overwrite conflict,
+clean server cancel и client-abort unknown outcome различимы. Installed/runtime
+verified появляются только из completed provenance; refresh вызывается один раз
+после success. Locale, late-event isolation, focus после retry, live roles,
+mobile 44 px, 200% и reduced motion имеют exact assertions.
+
+Evidence 2026-08-09 по правилу `WORKFLOW.md`: **16 new / 520 full core regression
+envelope**, **6 new / 173 full Web component/parser envelope**, **0 new + 1
+expanded / 28 full mocked Chromium envelope**. Расширенный existing P2-L browser
+case выполняет P2-M failed → retry → cancel/conflict → retry → success и
+проверяет exact bodies/counts, один Installed row и success-only refresh.
+Targeted final: server/contract/adapter/filesystem 68/68, import 12/12, component
+6/6, exact HF Chromium 3/3. Typecheck, full tests, full Chromium, build и
+diff-check зелёные.
+
+Первые failures не скрыты: initial component ожидал старую cancel copy; browser
+содержал старую P2-L boundary copy; первый полный `npm test` обнаружил
+несовместимый с Node strip-only parameter property; усиленный live-role browser
+assertion сначала посчитал вложенный ancestor status дважды. Независимые reviewer
+нашли stale completed replay, concurrent same-artifact/different-target create,
+remote Ollama scope leak, несогласованные contract state/provenance, invalid
+target как provider unavailable, потерю retry focus, 32 px confirmation targets,
+скрытый degraded probe result и browser count gaps. Всё воспроизведено и закрыто
+в `5b3d71d`. Mutation run намеренно ослабил checksum, pre-existing no-overwrite,
+create frame order и cancel reconciliation: 4/12 tests упали на соответствующих
+assertions; production guards восстановлены, 12/12 прошли.
+
+Residual risks P2-M: fixtures synthetic/mocked и не проверяют live Ollama/HF/GPU,
+большой GGUF, disk pressure, socket/kernel cancellation или semantic quality.
+Ollama `/api/create` не предоставляет CAS: внешний client может изменить target
+в узком окне после последнего tags sample, поэтому cross-process no-overwrite
+остаётся best-effort. `lstat` + path-based `unlink` имеет узкое недоказанное
+swap-window. Registry/attempt state process-local; restart делает staging orphan/
+unowned, не resume-ит import и не удаляет уже созданную model. Screen-reader API,
+forced colors, реальный touch и provider-version matrix не проверены.
 
 P2-A, P2-B, P2-C, P2-D, P2-E, P2-F, P2-G и P2-H остаются `implemented, locally
 validated`, а не independently verified или production-validated. Не проверены
@@ -1052,7 +1104,7 @@ live load evidence или inferred license/quantization/task facts. Legacy clien
 Phase 2 остаётся `in progress`. Запись выше отражала состояние на 2026-08-04;
 owner session 2026-08-07 закрыла Q-25 (GGUF-only), поэтому HF import больше не
 заблокирован и разбит на P2-J..P2-M, а hardware-зависимые пункты вынесены за
-Phase 4. P2-L independently verified; следующий product slice P2-M передан.
+Phase 4. P2-M independently verified; следующий product slice P2-N передан.
 
 ## Phase 2 — что реально осталось
 
@@ -1062,25 +1114,21 @@ slice: без неё читатель делает вывод, что до ко�
 
 | ROADMAP scope item                               | Состояние                                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| HF search + exact GGUF/revision import (MOD-010) | P2-J/P2-K discovery/selection и P2-L staging download реализованы; Ollama import остаётся P2-M               |
-| license/gated/size/dry-run/fit preview           | P2-K claims/fit и P2-L observed size/checksum готовы; disk reservation/import dry-run остаётся P2-M          |
-| local Ollama create/import + checksum/provenance | checksum/provenance сделаны в P2-L; `/api/create`, probe и Installation evidence отсутствуют до P2-M         |
+| HF search + exact GGUF/revision import (MOD-010) | сделано P2-J–P2-M; mocked public GGUF + loopback Ollama                                                      |
+| license/gated/size/dry-run/fit preview           | P2-K claims/fit и P2-L observed size/checksum готовы; disk reservation и gated token не реализованы          |
+| local Ollama create/import + checksum/provenance | сделано P2-L/P2-M; blob/create + exact tags + forced probe                                                   |
 | measured-parallel за feature flag (RES-009)      | flag infra → P2-N; estimated admission → P2-O; measured вынесен за Phase 4 (Q-34a)                           |
 | variant calibration (MOD-004)                    | **половина**: variant-first install есть, calibration не связана с catalog fit (`catalog.ts` — 0 упоминаний) |
 | Linux/NVIDIA verified tier (PLAT-002)            | prototype есть; verified tier вынесен за Phase 4 (Q-35), убран из exit gate                                  |
 | user override (MOD-008)                          | **сделано в P2-I** (`6b98d37`..`6cc4504`): migration 9, exact-identity ownership, Installed UI, safe export  |
 | bounded `/api/show` concurrency                  | **сделано в P1-M** (`c86e537`), не Phase 2                                                                   |
 
-Итог на 2026-08-09 после P2-L: из 14 scope bullets — 10
-delivered, 1 сделан Phase 1, 2 частичных (calibration не связана с catalog fit;
-HF-цепочка имеет discovery/selection/preview/download, но не import), 2 без
-единой строки кода. После
-owner decisions ни один пункт не заблокирован вопросом: HF разблокирован Q-25, а
-hardware-зависимые пункты вынесены за Phase 4 и убраны из exit gate. После
-P2-L остаток фазы — три slices P2-M..P2-O. Из exit-gate bullets закрыт «user override видим,
-экспортируем и не выдаётся за provider/runtime facts»; остаются остаток
-HF-цепочки (P2-M) и estimated parallel-admission. P2-L создаёт verified managed
-staging artifact, но он остаётся transient provenance, а не installable model.
+Итог на 2026-08-09 после P2-M: HF public-GGUF chain и user override exit-gate
+части закрыты mocked evidence. Остались P2-N feature-flag infrastructure и P2-O
+estimated parallel-admission; variant calibration всё ещё не связана с catalog
+fit. Hardware-dependent measured claims вынесены за Phase 4. P2-M создаёт
+provider-observed installation evidence, но не durable import Job, persistent
+Artifact/Installation registry или production validation.
 
 ## Планируемая последовательность Phase 2
 
@@ -1095,12 +1143,12 @@ staging artifact, но он остаётся transient provenance, а не insta
 | P2-J  | HF search + repository metadata, GGUF-only; non-GGUF → unsupported | independently verified                               |
 | P2-K  | выбор exact GGUF file/revision + size/license/fit preview          | independently verified                               |
 | P2-L  | download с checksum/provenance, bounded и cancel-safe              | independently verified                               |
-| P2-M  | local Ollama import через `/api/create` + probe                    | ready                                                |
+| P2-M  | local Ollama import через `/api/create` + probe                    | independently verified                               |
 | P2-N  | feature-flag infrastructure (без обещания measured)                | ready                                                |
 | P2-O  | estimated parallel-admission вердикт, всегда `estimated`           | blocked by P2-N                                      |
 
-`/api/create` в текущем `ollama/client.ts` отсутствует — P2-M добавляет его как
-новый documented endpoint, а не переиспользует pull. P2-N/P2-O закрывают
+`/api/create` добавлен P2-M как documented files-map endpoint, а не pull или
+shell/Modelfile path. P2-N/P2-O закрывают
 мотивацию owner про параллельный LLM + STT на уровне инфраструктуры и estimate;
 сам STT остаётся в Phase 6 по cross-phase rule, а measured подтверждение — после
 Phase 4.

@@ -397,10 +397,12 @@ single-user scale. Модульные границы нужны для correctne
 - использует stale-while-revalidate;
 - отделяет discovery claim от installability/runtime verification.
 - нормализует user-supplied Ollama name/page URL;
-- ищет exact Hugging Face GGUF через официальный API; **current state (P2-L):**
+- ищет exact Hugging Face GGUF через официальный API; **current state (P2-M):**
   read-only discovery и exact file/commit preview дополнены explicit
   connection-owned download в managed staging с streamed SHA-256 и bounded GGUF
-  header inspection. Download не создаёт Installation/Job и не является import;
+  header inspection, а отдельный confirmed local import использует Ollama blob +
+  `/api/create`, exact `/api/tags` observation и controlled completion probe.
+  Обе операции остаются connection/process-owned, а не Job;
 - не выполняет Ollama catalog scraping.
 
 #### Agent Engine
@@ -475,14 +477,18 @@ pipeline progress, не притворяясь одним непрерывным
 
 ### Import GGUF из Hugging Face
 
-Target pipeline. Current state (P2-L): реализованы первые шесть шагов — bounded
+Target pipeline. Current state (P2-M): pipeline реализован для public GGUF — bounded
 server-owned search, metadata/revision/file-list, explicit GGUF-only verdict и
 request-scoped выбор exact file на exact commit с size/license/gated и
 claimed-size-only fit preview. Preview показывает source/time/confidence
 стартового hardware profile и не выдаётся за measured fit. P2-L download
 restart-from-zero, connection-owned и не replayable: он принимает только full
 HTTP 200, пишет generated staging file, считает SHA-256 и проверяет GGUF v2/v3
-header. Local import остаётся P2-M, и HF URL не обещается как `ollama pull`.
+header. Отдельный confirmed import повторно валидирует server-owned inode/size/
+SHA-256/header, загружает content-addressed blob, вызывает documented
+`/api/create`, затем требует exact fresh `/api/tags` и fresh controlled probe.
+Только после этого staging удаляется и UI показывает Installed/runtime verified.
+HF URL не обещается как `ollama pull`.
 
 ```text
 HF URL/search
@@ -495,6 +501,13 @@ HF URL/search
   → capability probe
   → installed descriptor with provenance
 ```
+
+Import действует только с loopback Ollama, не принимает path/Modelfile/options,
+не перезаписывает уже наблюдаемую target и не replay-ит terminal success. Abort
+после начала create reconciliate-ит provider state и не называется clean cancel.
+No-overwrite против внешнего Ollama client остаётся best-effort из-за отсутствия
+CAS в `/api/create`; окно между последней проверкой и create явно считается
+остаточным риском.
 
 Никакой remote model code не исполняется. Safetensors conversion и adapters
 требуют отдельных capabilities.

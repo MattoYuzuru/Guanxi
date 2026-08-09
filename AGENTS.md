@@ -81,11 +81,12 @@ npm run build
 
 `npm test` проверяет server, CLI и web component regression tests.
 Deterministic Chromium tests запускаются отдельно через
-`npm run test:web:browser`: текущий suite перечисляет 27 mocked тестов, покрывающих
+`npm run test:web:browser`: текущий suite перечисляет 28 mocked тестов, покрывающих
 P0-A–P2-K (crash containment, first stream, terminal reload, runtime bar,
 resource conflict, prewarm, context limits, model evidence, catalog, user
-capability overrides, Hugging Face discovery и exact GGUF selection). Последний
-runtime-confirmed baseline — 27/27 через P2-K на 2026-08-09. Это по-прежнему
+capability overrides, Hugging Face discovery, exact GGUF selection/download и
+локальный staged import). Последний runtime-confirmed baseline — 28/28 через
+P2-M на 2026-08-09. Это по-прежнему
 mocked gate без live Ollama/GPU/network — не называйте его полным regression
 suite и не выдавайте за production validation.
 

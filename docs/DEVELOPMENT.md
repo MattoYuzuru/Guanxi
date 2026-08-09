@@ -47,7 +47,7 @@ npm run link:cli
 | `dev:web`           | Vite:5173 с API proxy                                |
 | `typecheck`         | TypeScript workspaces                                |
 | `test`              | server + CLI + узкие web component regression tests  |
-| `test:web:browser`  | deterministic Chromium P0-A–P2-L mocked gate         |
+| `test:web:browser`  | deterministic Chromium P0-A–P2-M mocked gate         |
 | `build`             | contract, web, server и CLI production artifacts     |
 | `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
 | `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
@@ -432,20 +432,26 @@ server не нужен.
   P2-H — legacy/paged contract, 1,000+ stable pages, exact totals/out-of-range,
   cross-page compare, atomic page reset, active-pull pager block и bounded DOM/
   listener behavior в component, Chromium и benchmark fixtures.
-- P2-J–P2-L держат Hugging Face отдельным от catalog/Installed. Search и exact
+- P2-J–P2-M держат Hugging Face отдельным от catalog/Installed. Search и exact
   selection используют только server-owned anonymous transport с timeout/byte/
   file/page bounds и AbortSignal. Selection перечитывает exact immutable commit
   с `blobs=true`, принимает путь только из complete well-formed inventory и не
   сохраняется. Host profile получает startup observation timestamp; calculated
   preview содержит source/time/estimated confidence и явно исключает KV cache и
-  runtime overhead. Ни один HF action не вызывает pull/create/probe/Governor,
-  catalog refresh. P2-L добавляет только explicit exact-file POST+SSE download:
+  runtime overhead. Discovery/selection/download не вызывают Ollama pull/create/
+  probe/Governor или catalog refresh. P2-L добавляет explicit exact-file
+  POST+SSE download:
   server строит URL из validated tuple, принимает полный HTTP 200 через exact
   HTTPS/443 host allowlist, stream-ит bytes в generated managed staging,
   одновременно считает SHA-256 и проверяет bounded GGUF v2/v3 header. Операция
   connection-owned, не имеет reconnect/resume/Job/SQLite semantics; cancel и
-  ошибка удаляют только доказанно owned partial. `completed` означает verified
-  staging artifact, а не Installed/runtime-ready model.
+  ошибка удаляют только доказанно owned partial. Его `completed` означает
+  verified staging artifact, а не Installed/runtime-ready model. P2-M добавляет
+  отдельный confirmed POST+SSE import только из process-owned artifact UUID в
+  loopback Ollama: blob upload, strict files-map `/api/create`, exact tags
+  reconciliation и существующий forced completion probe. Он не принимает
+  path/Modelfile/options, не является Job/replay/resume и обновляет Installed/
+  catalog только после terminal verified provenance.
 
 ### CLI
 

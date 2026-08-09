@@ -78,7 +78,7 @@ Provider `template`/`Modelfile` показываются как техничес
 - Ollama full catalog не scrape-ится: доступны local/curated data и внешний link;
 - `Add from Ollama` принимает model name/page URL и показывает normalized preview;
 - `Add from Hugging Face` позволяет выбрать exact GGUF/revision, license, size,
-  fit и import progress. **Current state (P2-L):** отдельная секция Marketplace
+  fit и import progress. **Current state (P2-M):** отдельная секция Marketplace
   ищет repositories, показывает metadata, gated/license state, GGUF inventory и
   explicit `supported | unsupported | unknown` вердикт. Для supported exact
   revision пользователь явным действием подтверждает один файл и видит свежие
@@ -87,8 +87,13 @@ Provider `template`/`Modelfile` показываются как техничес
   не дают Select. После confirmed target отдельная explicit Download показывает
   preparing/downloading/verifying, truthful known/unknown progress и typed
   terminal result. Success назван verified staging artifact и показывает
-  checksum/GGUF/provenance; он не означает Installed/runtime-ready. Кнопок
-  Install/Create/Pull нет: local import — P2-M.
+  checksum/GGUF/provenance; один download ещё не означает Installed/runtime-ready.
+  Только для current completed staging artifact показывается отдельный target
+  input и confirmation. UI различает create/observation/probe phases,
+  validation/failure/conflict/cancel, возвращает keyboard focus на retry и
+  показывает Installed/runtime verified только после exact tags + fresh probe.
+  Client abort после старта консервативно показывает unknown outcome, поскольку
+  закрытый stream не может получить server reconciliation.
 
 Для сотен моделей используется pagination/virtualization, а не бесконечная
 carousel с dot на каждую карточку.

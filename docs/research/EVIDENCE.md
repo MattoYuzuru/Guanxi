@@ -106,8 +106,17 @@ anonymous Node и `curl` requests 2026-08-09 получили HTTP 503 с вне
   `transfer.xethub-eu.hf.co`, `us.aws.cdn.hf.co`, `us.gcp.cdn.hf.co`,
   `cdn-lfs-us-1.hf.co`, `cdn-lfs-eu-1.hf.co`. P2-L использует exact host set,
   а не suffix allowlist; live redirect chain из текущего окружения не получен.
-- [Ollama import](https://docs.ollama.com/import) официально импортирует local
-  GGUF через `Modelfile FROM /path/file.gguf` и `ollama create`.
+- [Ollama import](https://docs.ollama.com/import) описывает пользовательский CLI
+  flow с `Modelfile FROM /path/file.gguf`, но путь и shell не являются P2-M HTTP
+  contract.
+- [Create a model](https://docs.ollama.com/api/create) и
+  [Blobs](https://docs.ollama.com/api/blobs) повторно проверены 2026-08-09.
+  Документированный HTTP flow сначала делает `POST /api/blobs/sha256:<digest>`,
+  затем `POST /api/create` с `{ model, files: { "model.gguf":
+  "sha256:<digest>" }, stream: true }`. Пример create stream последовательно
+  показывает `parsing GGUF`, `using existing layer sha256:…`, `writing manifest`
+  и terminal `success`. P2-M валидирует именно эту files-map границу и не
+  переносит CLI Modelfile path в browser/server contract.
 
 Ограничения:
 
