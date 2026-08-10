@@ -1,7 +1,7 @@
 # Research evidence
 
 **Статус:** locally validated research  
-**Проверено:** 2026-08-03
+**Проверено:** 2026-08-10
 **Правило:** upstream facts могут меняться; проверять перед реализацией
 
 ## Рекомендация
@@ -128,6 +128,27 @@ anonymous Node и `curl` requests 2026-08-09 получили HTTP 503 с вне
 
 Следствие для UI: HF URL нельзя обещать как direct `ollama pull`. Нужен pipeline
 metadata → exact GGUF → download/checksum → local Ollama import → probe.
+
+## Project icon source
+
+Проверено 2026-08-10 по primary upstream sources. P3-B использует
+`lucide-react@1.27.0` и сохраняет не имя React component, а app-owned stable key
+из versioned subset manifest. Это отделяет persisted Project data от возможного
+upstream rename/removal. В manifest входят 48 визуально однородных outline icons
+с собственными EN/RU locale keys; произвольный SVG/URL не принимается.
+
+- [Lucide repository](https://github.com/lucide-icons/lucide) описывает набор как
+  единообразную библиотеку SVG icons и является canonical source package;
+- [Lucide license](https://github.com/lucide-icons/lucide/blob/main/LICENSE) —
+  ISC; source/license metadata также зафиксированы рядом с contract manifest;
+- [lucide-react package](https://www.npmjs.com/package/lucide-react) — React
+  distribution, exact installed version зафиксирована lockfile.
+
+Палитра не заимствована у Lucide: это восемь app-owned semantic tokens со
+статическими light/dark foreground/background pairs. Contract/SQLite проверяют
+exact allowlist, а browser gate — visible selection, forced-colors и отсутствие
+layout overflow. Это local deterministic evidence, не independent production
+contrast audit, user preference study или real assistive-technology validation.
 
 ## Что можно и нельзя autodetect
 

@@ -38,9 +38,12 @@ token. Они не влияют на identity, routing или permissions.
 
 Текущая code-сущность `Workspace` означает разрешённый filesystem root для agent
 tools. P3-A реализовал независимую Project identity/name/timestamps и additive
-one-to-one **Filesystem Binding** для каждого legacy Workspace. Project можно
-создать без binding; path не является identity. Legacy Workspace API/table пока
-сохранены byte-compatible, а icon/color и final client cutover не реализованы.
+one-to-one **Filesystem Binding** для каждого legacy Workspace. P3-B добавил
+versioned `iconKey` из canonical Lucide subset и `colorToken` из встроенной
+accessible palette; оба поля изменяются отдельно от identity/binding. Project
+можно создать без binding; path не является identity. Legacy Workspace API/table
+и strict legacy Project response пока сохранены byte-compatible; Project
+ownership/defaults и final client cutover не реализованы.
 
 ### Recipe
 

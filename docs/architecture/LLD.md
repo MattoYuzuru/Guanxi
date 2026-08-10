@@ -213,9 +213,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
 - `http/projects-routes.ts`: logical Project list/create/read/rename без
-  filesystem requirement; legacy Workspace route shape не меняется;
-- `projects/service.ts` + `store/projects.ts`: Project metadata owner и atomic
-  idempotent legacy Workspace reconciliation;
+  filesystem requirement, opt-in `presentationVersion=1` projection и isolated
+  presentation PATCH; legacy Project/Workspace route shapes не меняются;
+- `projects/service.ts` + `store/projects.ts`: Project identity/presentation
+  metadata owner, idempotent presentation update и atomic legacy Workspace
+  reconciliation;
 - `models/service.ts`: installed `/api/tags`, sampled `/api/ps`, sourced
   `/api/version`, digest-aware LRU на 64 normalized references и не более четырёх
   параллельных `/api/show` workers на installed-list projection;
@@ -252,6 +254,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 10: additive `projects`/`project_filesystem_bindings`; exact
   Workspace ID backfill выполняется transactionally, path не входит в Project
   identity, а malformed legacy metadata откатывает migration целиком;
+- migration 11: additive constrained `icon_key`/`color_token` с deterministic
+  defaults; allowlists совпадают с versioned contract manifest, а failed ALTER
+  откатывает schema целиком;
 - `store/capability-override.ts`: fail-closed exact key/timestamp validation,
   idempotent create без изменения timestamps, exact-row clear, deterministic
   capability order и `exactCapabilityOverrides` projection, которая при неполной
@@ -964,10 +969,11 @@ prompt, reasoning или output content.
 
 Migrations 4–5 и `JobStore` реализуют `jobs`, `job_events`, private
 `chat_job_inputs` и additive Message association. Migration 10 реализует
-минимальные `projects` и `project_filesystem_bindings`; Project пока не хранит
-icon/color/defaults и не владеет Chats/Recipes/Artifacts. Остальные target tables
-ниже не реализованы. Legacy `threads/messages/workspaces` сохранены без
-destructive route cutover.
+минимальные `projects` и `project_filesystem_bindings`; migration 11 добавляет
+versioned built-in icon/color presentation metadata. Project пока не хранит
+defaults и не владеет Chats/Recipes/Artifacts. Остальные target tables ниже не
+реализованы. Legacy `threads/messages/workspaces` и strict legacy Project list
+сохранены без destructive route cutover.
 
 Логические таблицы:
 

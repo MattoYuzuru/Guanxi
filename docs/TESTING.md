@@ -5,10 +5,10 @@
 
 ## Текущий baseline
 
-На 2026-08-10 после independently verified P3-A:
+На 2026-08-10 после independently verified P3-B:
 
-- полный core с CLI reuse: 558/558; Web component/parser: 177/177;
-- `npm run test:web:browser`: 29/29 deterministic Chromium tests с mocked
+- полный core с CLI reuse: 565/565; Web component/parser: 181/181;
+- `npm run test:web:browser`: 30/30 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
   browser binary
@@ -45,6 +45,13 @@
   conflicting identity/binding, literal legacy Workspace REST bytes, Project без
   path, rename metadata и отсутствие runtime/filesystem side effects; Web fixtures
   покрывают loading/empty/error/retry, focus, repeated activation и EN/RU locale;
+- deterministic P3-B tests покрывают exact canonical icon/palette manifest и
+  вычисляемый WCAG contrast ratio не ниже 4.5 для каждой light/dark пары,
+  fresh/v10→v11/reopen/retry/rollback, strict unknown/future input, versioned
+  Project read и isolated idempotent presentation update без Workspace/Job/
+  provider side effects; Web fixtures покрывают bounded search/category/page,
+  grid/radio keyboard patterns, focus trap/return, one-mutation Save, EN/RU
+  accessible names, 390 px, 200%, forced colors и reduced motion;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;

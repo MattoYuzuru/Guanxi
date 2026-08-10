@@ -341,8 +341,12 @@ server не нужен.
   `project_filesystem_bindings`, backfill-ит exact legacy Workspace ID в одной
   transaction и оставляет старые tables/routes без rename/delete; startup
   reconciliation идемпотентно подхватывает Workspace, записанный старым binary;
-- `projects/service.ts` и `store/projects.ts` владеют strict metadata,
-  no-path create/rename и fail-closed compatibility mapping;
+- migration 11 additive добавляет constrained Project `icon_key`/`color_token`
+  с deterministic defaults; canonical manifest и SQLite CHECK allowlists
+  проверяются exact-set assertion, а legacy Project response остаётся opt-out;
+- `projects/service.ts` и `store/projects.ts` владеют strict identity/
+  presentation metadata, no-path create/rename, isolated idempotent appearance
+  update и fail-closed compatibility mapping;
 - `store/capability-override.ts` принимает только compatible exact identity,
   делает identical write идемпотентным без изменения timestamps, удаляет ровно
   одну row и fail-closed читает corrupted/incompatible row;

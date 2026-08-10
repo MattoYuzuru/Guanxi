@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-10
-**Текущая фаза:** Phase 3 — P3-B Project presentation metadata ready
+**Текущая фаза:** Phase 3 — P3-C Project-owned Chat grouping ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1298,11 +1298,64 @@ IDs/normalized name/datetime, runtime parse, whitespace fallback, literal raw
 Workspace bytes и exact RU assertion. Follow-up reviewer: **PASS**, новых
 findings нет.
 
-Остаточный риск: validation локальная на mocked/fixture SQLite и Chromium; нет
-production migration corpus, multi-process race, real mobile/screen-reader/
-forced-colors/visual-baseline validation. Project icon/color/defaults,
-Chat/Recipe/Artifact ownership и final Workspace cutover не реализованы. Следующий
-bounded slice — P3-B presentation metadata и accessible built-in picker.
+Остаточный риск на момент P3-A: validation локальная на mocked/fixture SQLite и
+Chromium; нет production migration corpus, multi-process race, real mobile/
+screen-reader/forced-colors/visual-baseline validation. Project icon/color были
+следующим bounded slice и закрыты P3-B ниже; defaults, Chat/Recipe/Artifact
+ownership и final Workspace cutover по-прежнему не реализованы.
+
+## Phase 3 — P3-B Project presentation metadata
+
+**Статус:** independently verified (`b8eec80`, `6557c86`, test hardening
+`29e75ba`, review fixes `4ab7a6a` и `794fc64`).
+
+Migration 11 additive добавляет `icon_key` и `color_token` к Project с
+deterministic defaults `folder`/`slate` и exact SQLite CHECK allowlists.
+Versioned contract manifest фиксирует 48 stable Lucide icon keys, шесть
+категорий, EN/RU accessible names, source/license metadata и восемь app-owned
+palette tokens. Strict legacy Project v1 shape и `/api/projects` без query
+остались byte-compatible; opt-in `presentationVersion=1` и отдельный
+presentation PATCH не меняют Project identity, Workspace binding или path.
+
+Web picker использует static Lucide imports, search/category filter, bounded
+12-icon page, grid Arrow/Home/End/Page navigation, radio-group roving focus,
+modal focus trap/return и synchronous one-mutation guard. Light/dark/forced-
+colors styles используют только palette tokens; arbitrary SVG/URL/color и
+user-facing bilingual hardcode не добавлены.
+
+Evidence разделено по правилу WORKFLOW: **7 new / 565 core regression
+envelope**, **4 new / 181 Web component/parser envelope**, **1 new / 30 mocked
+Chromium envelope**. Full typecheck, `npm test`, browser gate, build,
+markdownlint и diff-check — PASS. Build сохранил non-blocking Vite warning:
+main chunk 816.38 kB minified / 216.76 kB gzip при warning threshold 500 kB.
+
+Первые проверки нашли три fixture/assertion defects: browser long-name fixture
+превышал strict 120-character contract; rollback fixture оставлял
+`user_version=10` при уже существующих v11 columns; SQLite row имел null
+prototype и требовал явной projection перед deep equality. После исправления
+fixtures targeted и full gates прошли.
+
+Первый independent review дал `NEEDS_FIX`: color radios не имели Arrow roving
+pattern; SQL allowlist assertion доказывал только subset; modal name/trap/оба
+close-control focus returns были неполными; responsive/forced-colors измерялись
+после закрытия picker; reopen и unchanged-boundary evidence были недостаточны.
+`4ab7a6a` закрыл findings. Follow-up нашёл один Low gap: provider counters не
+охватывали versioned GET; `794fc64` добавил явный read+edit sequence. Финальный
+reviewer verdict — **PASS**, все пять групп findings закрыты.
+
+Mutation checks дали ожидаемый non-zero при разрыве transaction между двумя
+ALTER, добавлении неизвестного SQL icon key, изменении Project name из
+presentation PATCH, выдаче versioned fields legacy GET и снятии repeated-Save
+guard. После восстановления targeted rollback/manifest/compatibility/isolation/
+single-mutation tests снова прошли.
+
+Остаточный риск: fixtures не являются production DB corpus или concurrent
+multi-client PATCH validation; mocked Chromium не заменяет real screen reader,
+touch/mobile и visual baseline; source/license mapping и palette contrast имеют
+static/local evidence, а bundle size не имеет отдельного budget gate. Project
+ownership/defaults и final Workspace cutover не реализованы. Следующий bounded
+slice — P3-C Project-owned Chat grouping без reparent/move; после него retention
+может одинаково доказать default для Project и projectless Chat.
 
 ## Планируемая последовательность Phase 2
 
@@ -1403,7 +1456,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-A done; P3-B ready  |
+| Phase 3 — Text/Projects/retention/i18n  | P3-C ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |
