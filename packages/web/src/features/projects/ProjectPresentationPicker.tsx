@@ -134,6 +134,33 @@ export function ProjectPresentationPicker({
     focusCell(next)
   }
 
+  const focusColor = (index: number) => {
+    const count = PROJECT_COLOR_PALETTE.length
+    const wrapped = ((index % count) + count) % count
+    const color = PROJECT_COLOR_PALETTE[wrapped]!
+    setColorToken(color.token)
+    requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector<HTMLButtonElement>(`[data-project-color-index="${wrapped}"]`)
+        ?.focus()
+    })
+  }
+
+  const onColorKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next: number | null = null
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown': next = index + 1; break
+      case 'ArrowLeft':
+      case 'ArrowUp': next = index - 1; break
+      case 'Home': next = 0; break
+      case 'End': next = PROJECT_COLOR_PALETTE.length - 1; break
+      default: return
+    }
+    event.preventDefault()
+    focusColor(next)
+  }
+
   const handleDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -314,15 +341,18 @@ export function ProjectPresentationPicker({
 
           <div className="mt-4" role="radiogroup" aria-label={translate('projects.color.group')}>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-              {PROJECT_COLOR_PALETTE.map((color) => {
+              {PROJECT_COLOR_PALETTE.map((color, index) => {
                 const selected = color.token === colorToken
                 return (
                   <button
                     key={color.token}
                     type="button"
                     role="radio"
+                    data-project-color-index={index}
                     aria-label={message(color.nameKey)}
                     aria-checked={selected}
+                    tabIndex={selected ? 0 : -1}
+                    onKeyDown={(event) => onColorKeyDown(event, index)}
                     onClick={() => setColorToken(color.token)}
                     style={projectColorStyle(color.token)}
                     className="project-color-chip flex min-h-10 items-center justify-center rounded-md border-2 p-1 text-2xs font-semibold"

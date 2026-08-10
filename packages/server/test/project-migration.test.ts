@@ -9,6 +9,7 @@ import {
   DEFAULT_PROJECT_COLOR_TOKEN,
   DEFAULT_PROJECT_ICON_KEY,
   PROJECT_COLOR_PALETTE,
+  PROJECT_COLOR_TOKENS,
   PROJECT_ICON_KEYS,
   PROJECT_ICON_MANIFEST,
   PROJECT_ICON_SOURCE,
@@ -68,6 +69,19 @@ function contrastRatio(foreground: string, background: string): number {
   const lighter = Math.max(first, second)
   const darker = Math.min(first, second)
   return (lighter + 0.05) / (darker + 0.05)
+}
+
+function sqliteCheckValues(db: DatabaseSync, column: string): string[] {
+  const row = db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'projects'").get() as {
+    sql: string
+  }
+  const escaped = column.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const match = new RegExp(
+    `CHECK \\(${escaped} IN \\(\\s*([\\s\\S]*?)\\s*\\)\\)`,
+    'u',
+  ).exec(row.sql)
+  assert.ok(match, `Missing ${column} CHECK allowlist`)
+  return Array.from(match[1]!.matchAll(/'([^']+)'/gu), (value) => value[1]!)
 }
 
 describe('SQLite logical Project migration 10', () => {
@@ -374,7 +388,14 @@ describe('SQLite Project presentation migration 11', () => {
 
     const reopened = openDb(path)
     assert.equal(version(reopened), 11)
-    assert.equal(new ProjectStore(reopened).getWithPresentation('project-v10')?.iconKey, 'folder')
+    const reopenedProject = new ProjectStore(reopened).getWithPresentation('project-v10')
+    assert.deepEqual(
+      reopenedProject && {
+        iconKey: reopenedProject.iconKey,
+        colorToken: reopenedProject.colorToken,
+      },
+      { iconKey: 'folder', colorToken: 'slate' },
+    )
     assert.equal(count(reopened, 'projects'), 1)
     reopened.close()
   })
@@ -383,6 +404,14 @@ describe('SQLite Project presentation migration 11', () => {
     const db = openDb(':memory:')
     const projects = new ProjectStore(db)
     const project = projects.create('Manifest boundary', CREATED_AT)
+    assert.deepEqual(
+      sqliteCheckValues(db, 'icon_key').sort(),
+      [...PROJECT_ICON_KEYS].sort(),
+    )
+    assert.deepEqual(
+      sqliteCheckValues(db, 'color_token').sort(),
+      [...PROJECT_COLOR_TOKENS].sort(),
+    )
     for (const icon of PROJECT_ICON_MANIFEST) {
       assert.equal(
         projects.updatePresentation(project.id, icon.key, 'slate', CREATED_AT)?.iconKey,

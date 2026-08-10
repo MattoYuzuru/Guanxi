@@ -82,8 +82,29 @@ test('Project presentation picker is bounded, accessible and single-mutation', a
   const appearance = page.getByRole('button', { name: 'Изменить оформление' })
   await expect(appearance).toBeVisible()
   await appearance.press('Enter')
-  const dialog = page.getByRole('dialog')
+  const dialogName = `Оформление проекта — ${project.name}`
+  const dialog = page.getByRole('dialog', { name: dialogName })
   const iconSearch = page.getByRole('textbox', { name: 'Поиск иконок' })
+  await expect(iconSearch).toBeFocused()
+  const closeControls = page.getByRole('button', { name: 'Закрыть выбор оформления' })
+  const saveControl = page.getByRole('button', { name: 'Сохранить оформление' })
+  await expect(closeControls).toHaveCount(2)
+  await saveControl.focus()
+  await page.keyboard.press('Tab')
+  await expect(closeControls.first()).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(saveControl).toBeFocused()
+  await closeControls.first().press('Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(appearance).toBeFocused()
+
+  await appearance.press('Enter')
+  await expect(iconSearch).toBeFocused()
+  await closeControls.last().press('Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(appearance).toBeFocused()
+
+  await appearance.press('Enter')
   await expect(iconSearch).toBeFocused()
   await expect(page.getByRole('gridcell')).toHaveCount(12)
   await expect(page.getByText('Страница иконок 1 из 4')).toBeVisible()
@@ -117,13 +138,46 @@ test('Project presentation picker is bounded, accessible and single-mutation', a
   const rocket = page.getByRole('gridcell', { name: 'Ракета' })
   await rocket.press('Enter')
   await expect(rocket).toHaveAttribute('aria-selected', 'true')
+  const slate = page.getByRole('radio', { name: 'Графитовый' })
   const blue = page.getByRole('radio', { name: 'Синий' })
-  await blue.press('Space')
+  const violet = page.getByRole('radio', { name: 'Фиолетовый' })
+  await slate.focus()
+  await slate.press('ArrowLeft')
+  await expect(violet).toBeFocused()
+  await expect(violet).toHaveAttribute('aria-checked', 'true')
+  await violet.press('ArrowRight')
+  await expect(slate).toBeFocused()
+  await slate.press('ArrowRight')
+  await expect(blue).toBeFocused()
   await expect(blue).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('radio', { checked: true })).toHaveCount(1)
 
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   expect(await page.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
   expect(await blue.evaluate((element) => getComputedStyle(element).borderStyle)).not.toBe('none')
+
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '200%'
+  })
+  await expect(page.getByRole('heading', { name: dialogName })).toBeVisible()
+  const layout = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    bodyWidth: document.body.scrollWidth,
+  }))
+  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport)
+  expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
+  const dialogLayout = await dialog.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }))
+  expect(dialogLayout.scrollWidth).toBeLessThanOrEqual(dialogLayout.clientWidth)
+  const motion = await dialog.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { animationDuration: style.animationDuration, transitionDuration: style.transitionDuration }
+  })
+  expect(['0s', '1e-05s']).toContain(motion.animationDuration)
+  expect(['0s', '1e-05s']).toContain(motion.transitionDuration)
 
   const save = page.getByRole('button', { name: 'Сохранить оформление' })
   await save.evaluate((button) => {
@@ -136,23 +190,6 @@ test('Project presentation picker is bounded, accessible and single-mutation', a
   releasePresentation()
   await expect(dialog).toHaveCount(0)
   await expect(appearance).toBeFocused()
-
-  await page.evaluate(() => {
-    document.documentElement.style.fontSize = '200%'
-  })
-  const layout = await page.evaluate(() => ({
-    viewport: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-    bodyWidth: document.body.scrollWidth,
-  }))
-  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport)
-  expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
-  const motion = await page.locator('article').evaluate((element) => {
-    const style = getComputedStyle(element)
-    return { animationDuration: style.animationDuration, transitionDuration: style.transitionDuration }
-  })
-  expect(['0s', '1e-05s']).toContain(motion.animationDuration)
-  expect(['0s', '1e-05s']).toContain(motion.transitionDuration)
   expect(unexpectedMutations).toEqual([])
   expect(presentationMutations).toBe(1)
 })

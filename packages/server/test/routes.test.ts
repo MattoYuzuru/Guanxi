@@ -781,7 +781,18 @@ describe('project routes', () => {
   it('rejects invalid presentation before mutation and changes only metadata once', async (test) => {
     const root = await mkdtemp(join(tmpdir(), 'alamo-project-presentation-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const context = testContext()
+    let ollamaBoundaryCalls = 0
+    let modelBoundaryCalls = 0
+    const context = testContext({
+      ollama: () => {
+        ollamaBoundaryCalls += 1
+        throw new Error('Project presentation must not resolve Ollama')
+      },
+      models: () => {
+        modelBoundaryCalls += 1
+        throw new Error('Project presentation must not read model providers')
+      },
+    })
     test.after(() => context.db.close())
     const app = createApp(context)
     const workspace = context.workspaces.create(root, 'Bound identity')
@@ -805,6 +816,7 @@ describe('project routes', () => {
     )
 
     const projectBefore = context.db.prepare('SELECT * FROM projects WHERE id = ?').get(workspace.id)
+    const workspaceBefore = context.db.prepare('SELECT * FROM workspaces WHERE id = ?').get(workspace.id)
     const bindingBefore = context.db.prepare(
       'SELECT * FROM project_filesystem_bindings WHERE project_id = ?',
     ).get(workspace.id)
@@ -871,11 +883,17 @@ describe('project routes', () => {
       context.db.prepare('SELECT * FROM project_filesystem_bindings WHERE project_id = ?').get(workspace.id),
       bindingBefore,
     )
+    assert.deepEqual(
+      context.db.prepare('SELECT * FROM workspaces WHERE id = ?').get(workspace.id),
+      workspaceBefore,
+    )
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM threads').all()), threadBefore)
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM jobs').all()), jobsBefore)
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM job_events').all()), eventsBefore)
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM settings ORDER BY key').all()), settingsBefore)
     assert.deepEqual(await readdir(root), rootBefore)
     assert.equal(context.governor.snapshot().activeLease, null)
+    assert.equal(ollamaBoundaryCalls, 0)
+    assert.equal(modelBoundaryCalls, 0)
   })
 })
