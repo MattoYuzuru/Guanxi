@@ -1,7 +1,7 @@
 /**
  * Canonical Project presentation manifest.
  *
- * Persisted keys are owned by Alamo and remain stable even when the rendering
+ * Persisted keys are application-owned and remain stable even when the rendering
  * library changes. `sourceIcon` is presentation-only and must never be used as
  * Project identity or a permission input.
  */

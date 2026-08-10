@@ -379,6 +379,37 @@ describe('SQLite Project presentation migration 11', () => {
     reopened.close()
   })
 
+  it('keeps the canonical manifest and SQLite allowlists in lockstep', () => {
+    const db = openDb(':memory:')
+    const projects = new ProjectStore(db)
+    const project = projects.create('Manifest boundary', CREATED_AT)
+    for (const icon of PROJECT_ICON_MANIFEST) {
+      assert.equal(
+        projects.updatePresentation(project.id, icon.key, 'slate', CREATED_AT)?.iconKey,
+        icon.key,
+      )
+    }
+    for (const color of PROJECT_COLOR_PALETTE) {
+      assert.equal(
+        projects.updatePresentation(project.id, 'folder', color.token, CREATED_AT)?.colorToken,
+        color.token,
+      )
+    }
+    assert.throws(
+      () => db.prepare("UPDATE projects SET icon_key = 'future-icon' WHERE id = ?").run(project.id),
+      /CHECK constraint failed/u,
+    )
+    assert.throws(
+      () => db.prepare("UPDATE projects SET color_token = 'future-color' WHERE id = ?").run(project.id),
+      /CHECK constraint failed/u,
+    )
+    assert.deepEqual(
+      { ...db.prepare('SELECT icon_key, color_token FROM projects WHERE id = ?').get(project.id) },
+      { icon_key: 'folder', color_token: 'violet' },
+    )
+    db.close()
+  })
+
   it('rolls back a mid-migration failure and recovers from unchanged v10', async (test) => {
     const path = await temporaryDbPath(test, 'presentation-rollback')
     const fixture = openDb(path)

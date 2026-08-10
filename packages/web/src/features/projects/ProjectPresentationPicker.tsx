@@ -251,28 +251,40 @@ export function ProjectPresentationPicker({
               aria-colcount={GRID_COLUMNS}
               className="mt-4 grid grid-cols-4 gap-2"
             >
-              {pageIcons.map((icon, index) => {
-                const name = message(icon.nameKey)
-                const selected = icon.key === iconKey
-                return (
-                  <button
-                    key={icon.key}
-                    type="button"
-                    role="gridcell"
-                    data-project-icon-index={index}
-                    aria-label={name}
-                    aria-selected={selected}
-                    tabIndex={index === activeIndex ? 0 : -1}
-                    onFocus={() => setActiveIndex(index)}
-                    onKeyDown={(event) => onGridKeyDown(event, index)}
-                    onClick={() => setIconKey(icon.key)}
-                    className="project-icon-cell flex min-w-0 flex-col items-center gap-1 rounded-md border p-2 text-2xs"
-                  >
-                    <ProjectIcon iconKey={icon.key} size={22} />
-                    <span className="w-full truncate text-center">{name}</span>
-                  </button>
-                )
-              })}
+              {Array.from(
+                { length: Math.ceil(pageIcons.length / GRID_COLUMNS) },
+                (_, rowIndex) => (
+                  <div key={rowIndex} role="row" className="contents">
+                    {pageIcons
+                      .slice(rowIndex * GRID_COLUMNS, (rowIndex + 1) * GRID_COLUMNS)
+                      .map((icon, columnIndex) => {
+                        const index = rowIndex * GRID_COLUMNS + columnIndex
+                        const name = message(icon.nameKey)
+                        const selected = icon.key === iconKey
+                        return (
+                          <button
+                            key={icon.key}
+                            type="button"
+                            role="gridcell"
+                            data-project-icon-index={index}
+                            aria-rowindex={rowIndex + 1}
+                            aria-colindex={columnIndex + 1}
+                            aria-label={name}
+                            aria-selected={selected}
+                            tabIndex={index === activeIndex ? 0 : -1}
+                            onFocus={() => setActiveIndex(index)}
+                            onKeyDown={(event) => onGridKeyDown(event, index)}
+                            onClick={() => setIconKey(icon.key)}
+                            className="project-icon-cell flex min-w-0 flex-col items-center gap-1 rounded-md border p-2 text-2xs"
+                          >
+                            <ProjectIcon iconKey={icon.key} size={22} />
+                            <span className="w-full truncate text-center">{name}</span>
+                          </button>
+                        )
+                      })}
+                  </div>
+                ),
+              )}
             </div>
           )}
 

@@ -139,6 +139,7 @@ describe('ProjectsPage', () => {
     const search = screen.getByRole('textbox', { name: 'Поиск иконок' })
     expect(search).toBe(document.activeElement)
     expect(screen.getAllByRole('gridcell')).toHaveLength(12)
+    expect(screen.getAllByRole('row')).toHaveLength(3)
     expect(screen.getByText('Страница иконок 1 из 4')).toBeTruthy()
 
     const folder = screen.getByRole('gridcell', { name: 'Папка' })
