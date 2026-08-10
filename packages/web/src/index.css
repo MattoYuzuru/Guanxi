@@ -481,6 +481,44 @@
   animation: alamo-sheen 1.4s ease-in-out infinite;
 }
 
+.project-color-chip {
+  background: var(--project-color-light-bg);
+  color: var(--project-color-light-fg);
+  border-color: color-mix(in srgb, var(--project-color-light-fg) 38%, transparent);
+}
+
+.dark .project-color-chip {
+  background: var(--project-color-dark-bg);
+  color: var(--project-color-dark-fg);
+  border-color: color-mix(in srgb, var(--project-color-dark-fg) 48%, transparent);
+}
+
+.project-icon-cell[aria-selected='true'],
+.project-color-chip[aria-checked='true'] {
+  box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 4px var(--accent);
+}
+
+.project-icon-cell:hover {
+  background: var(--bg-subtle);
+}
+
+@media (forced-colors: active) {
+  .project-color-chip,
+  .dark .project-color-chip {
+    background: Canvas;
+    color: CanvasText;
+    border-color: ButtonText;
+    forced-color-adjust: auto;
+  }
+
+  .project-icon-cell[aria-selected='true'],
+  .project-color-chip[aria-checked='true'] {
+    outline: 3px solid Highlight;
+    outline-offset: 1px;
+    box-shadow: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

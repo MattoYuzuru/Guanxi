@@ -29,6 +29,7 @@ import {
   listCatalogResponse,
   listModelsResponse,
   listProjectsResponse,
+  listProjectsWithPresentationResponse,
   listRunningResponse,
   listThreadsResponse,
   listWorkspacesResponse,
@@ -41,6 +42,8 @@ import {
   warmModelResponse,
   workspaceSchema,
   projectSchema,
+  projectWithPresentationSchema,
+  PROJECT_PRESENTATION_VERSION,
   type ApiError,
   type ApprovalBody,
   type ChatStreamEvent,
@@ -63,6 +66,7 @@ import {
   type UpdateSettingsBody,
   type UpdateThreadBody,
   type UpdateProjectBody,
+  type UpdateProjectPresentationBody,
   type ListCatalogQuery,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
@@ -356,11 +360,27 @@ export const api = {
   listProjects: (signal?: AbortSignal) =>
     request(ROUTES.projects(), listProjectsResponse, { signal }),
 
+  listProjectsWithPresentation: (signal?: AbortSignal) =>
+    request(ROUTES.projects(), listProjectsWithPresentationResponse, {
+      query: { presentationVersion: PROJECT_PRESENTATION_VERSION },
+      signal,
+    }),
+
   createProject: (body: CreateProjectBody, signal?: AbortSignal) =>
     request(ROUTES.projects(), projectSchema, { method: 'POST', body, signal }),
 
   updateProject: (id: string, body: UpdateProjectBody, signal?: AbortSignal) =>
     request(ROUTES.project(id), projectSchema, { method: 'PATCH', body, signal }),
+
+  updateProjectPresentation: (
+    id: string,
+    body: UpdateProjectPresentationBody,
+    signal?: AbortSignal,
+  ) => request(ROUTES.projectPresentation(id), projectWithPresentationSchema, {
+    method: 'PATCH',
+    body,
+    signal,
+  }),
 
   /**
    * Единственный способ увидеть файловую систему. Фронт её сам не читает —

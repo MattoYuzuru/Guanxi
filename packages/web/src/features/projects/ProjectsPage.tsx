@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { Project } from '@alamo/contract'
+import {
+  PROJECT_PRESENTATION_VERSION,
+  type ProjectColorToken,
+  type ProjectIconKey,
+  type ProjectWithPresentation,
+} from '@alamo/contract'
 import { Button, Callout, EmptyState, Input, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { translate } from '../../lib/locale.ts'
 import { useAsync } from '../../lib/useAsync.ts'
+import { ProjectIcon, projectColorStyle } from './ProjectIcon.tsx'
+import { ProjectPresentationPicker } from './ProjectPresentationPicker.tsx'
 
 export function ProjectsPage() {
-  const projects = useAsync((signal) => api.listProjects(signal), [])
+  const projects = useAsync((signal) => api.listProjectsWithPresentation(signal), [])
   const [name, setName] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -144,11 +151,19 @@ export function ProjectsPage() {
   )
 }
 
-function ProjectCard({ project, onUpdated }: { project: Project; onUpdated: () => void }) {
+function ProjectCard({
+  project,
+  onUpdated,
+}: {
+  project: ProjectWithPresentation
+  onUpdated: () => void
+}) {
   const [name, setName] = useState(project.name)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const savingRef = useRef(false)
+  const pickerTriggerRef = useRef<HTMLButtonElement>(null)
 
   const rename = async (event: FormEvent) => {
     event.preventDefault()
@@ -168,8 +183,46 @@ function ProjectCard({ project, onUpdated }: { project: Project; onUpdated: () =
     }
   }
 
+  const closePicker = () => {
+    setPickerOpen(false)
+    requestAnimationFrame(() => pickerTriggerRef.current?.focus())
+  }
+
+  const savePresentation = async (
+    iconKey: ProjectIconKey,
+    colorToken: ProjectColorToken,
+  ) => {
+    await api.updateProjectPresentation(project.id, {
+      presentationVersion: PROJECT_PRESENTATION_VERSION,
+      iconKey,
+      colorToken,
+    })
+    onUpdated()
+    closePicker()
+  }
+
   return (
     <article className="surface min-w-0 rounded-lg border border-[var(--border)] p-3">
+      <div className="mb-3 flex min-w-0 items-center gap-2">
+        <span
+          className="project-color-chip flex size-10 shrink-0 items-center justify-center rounded-md border"
+          style={projectColorStyle(project.colorToken)}
+          aria-hidden="true"
+        >
+          <ProjectIcon iconKey={project.iconKey} size={22} />
+        </span>
+        <strong className="min-w-0 flex-1 break-words text-sm">{project.name}</strong>
+        <Button
+          ref={pickerTriggerRef}
+          type="button"
+          size="sm"
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+          onClick={() => setPickerOpen(true)}
+        >
+          {translate('projects.presentation.edit')}
+        </Button>
+      </div>
       <form onSubmit={rename} className="flex min-w-0 flex-col gap-2">
         <label className="min-w-0 text-2xs text-[var(--fg-subtle)]">
           {translate('projects.name.label')}
@@ -198,6 +251,15 @@ function ProjectCard({ project, onUpdated }: { project: Project; onUpdated: () =
         </div>
         {error && <p role="alert" className="break-words text-2xs text-[var(--danger)]">{error}</p>}
       </form>
+      {pickerOpen && (
+        <ProjectPresentationPicker
+          projectName={project.name}
+          initialIconKey={project.iconKey}
+          initialColorToken={project.colorToken}
+          onClose={closePicker}
+          onSave={savePresentation}
+        />
+      )}
     </article>
   )
 }

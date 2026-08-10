@@ -11,6 +11,16 @@ test('Projects exposes resilient keyboard flow without requiring a filesystem ro
     createdAt: observedAt,
     updatedAt: observedAt,
     filesystemBindings: [],
+    presentationVersion: 1,
+    iconKey: 'folder',
+    colorToken: 'slate',
+  }
+  const legacyProject = {
+    id: project.id,
+    name: project.name,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    filesystemBindings: project.filesystemBindings,
   }
   const health = {
     ok: true,
@@ -66,16 +76,17 @@ test('Projects exposes resilient keyboard flow without requiring a filesystem ro
     if (url.pathname === '/api/health') return route.fulfill(json(health))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/projects' && request.method() === 'GET') {
+      expect(url.searchParams.get('presentationVersion')).toBe('1')
       const mode = projectMode
       if (mode === 'loading') {
         await initialGate
         return route.fulfill(json({ code: 'internal_error', message: 'safe fixture failure', details: null }, 500))
       }
-      return route.fulfill(json({ projects: projectCreates === 0 ? [] : [project] }))
+      return route.fulfill(json({ presentationVersion: 1, projects: projectCreates === 0 ? [] : [project] }))
     }
     if (url.pathname === '/api/projects' && request.method() === 'POST') {
       projectCreates += 1
-      return route.fulfill(json(project, 201))
+      return route.fulfill(json(legacyProject, 201))
     }
     if (request.method() !== 'GET') sideEffects.push(`${request.method()} ${url.pathname}`)
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
@@ -102,6 +113,7 @@ test('Projects exposes resilient keyboard flow without requiring a filesystem ro
   await expect(page.getByRole('textbox', { name: 'Переименовать — Keyboard Project' })).toBeVisible()
   await expect(page.getByText('Нет привязки к файловой системе')).toBeVisible()
   await expect(page.getByLabel(/path|root|папк/iu)).toHaveCount(0)
+
 
   await page.evaluate(() => {
     document.documentElement.style.fontSize = '200%'
