@@ -826,6 +826,19 @@ describe('project routes', () => {
     const settingsBefore = JSON.stringify(context.db.prepare('SELECT * FROM settings ORDER BY key').all())
     const rootBefore = await readdir(root)
 
+    const presentationRead = await app.request(
+      `/api/projects?presentationVersion=${PROJECT_PRESENTATION_VERSION}`,
+    )
+    assert.equal(presentationRead.status, 200)
+    assert.deepEqual(
+      (await presentationRead.json() as {
+        projects: Array<{ id: string; iconKey: string; colorToken: string }>
+      }).projects.map(({ id, iconKey, colorToken }) => ({ id, iconKey, colorToken })),
+      [{ id: workspace.id, iconKey: 'folder', colorToken: 'slate' }],
+    )
+    assert.equal(ollamaBoundaryCalls, 0)
+    assert.equal(modelBoundaryCalls, 0)
+
     for (const body of [
       { presentationVersion: 2, iconKey: 'rocket', colorToken: 'blue' },
       { presentationVersion: 1, iconKey: 'future-icon', colorToken: 'blue' },
