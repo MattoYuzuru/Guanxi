@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { projectSchema } from '@alamo/contract'
+import {
+  DEFAULT_PROJECT_COLOR_TOKEN,
+  DEFAULT_PROJECT_ICON_KEY,
+  PROJECT_COLOR_PALETTE,
+  PROJECT_ICON_KEYS,
+  PROJECT_ICON_MANIFEST,
+  PROJECT_ICON_SOURCE,
+  PROJECT_PRESENTATION_VERSION,
+  listProjectsResponse,
+  listProjectsWithPresentationResponse,
+  projectSchema,
+  projectWithPresentationSchema,
+  updateProjectPresentationBody,
+} from '@alamo/contract'
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 
@@ -30,6 +44,30 @@ function downgradeToV9(db: DatabaseSync): void {
     DROP TABLE projects;
     PRAGMA user_version = 9;
   `)
+}
+
+function downgradeToV10(db: DatabaseSync): void {
+  db.exec(`
+    ALTER TABLE projects DROP COLUMN color_token;
+    ALTER TABLE projects DROP COLUMN icon_key;
+    PRAGMA user_version = 10;
+  `)
+}
+
+function relativeLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
+  const [red, green, blue] = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  )
+  return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const first = relativeLuminance(foreground)
+  const second = relativeLuminance(background)
+  const lighter = Math.max(first, second)
+  const darker = Math.min(first, second)
+  return (lighter + 0.05) / (darker + 0.05)
 }
 
 describe('SQLite logical Project migration 10', () => {
@@ -62,13 +100,13 @@ describe('SQLite logical Project migration 10', () => {
   it('keeps fresh and reopened projection identical without inventing a binding', async (test) => {
     const path = await temporaryDbPath(test, 'fresh')
     const first = openDb(path)
-    assert.equal(version(first), 10)
+    assert.equal(version(first), 11)
     assert.equal(count(first, 'projects'), 0)
     assert.equal(count(first, 'project_filesystem_bindings'), 0)
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 10)
+    assert.equal(version(reopened), 11)
     assert.deepEqual(new ProjectStore(reopened).list(), [])
     reopened.close()
   })
@@ -88,7 +126,7 @@ describe('SQLite logical Project migration 10', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 10)
+    assert.equal(version(upgraded), 11)
     const projection = new ProjectStore(upgraded).list()
     assert.deepEqual(
       projection.map((project) => ({
@@ -153,7 +191,7 @@ describe('SQLite logical Project migration 10', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 10)
+    assert.equal(version(recovered), 11)
     assert.equal(count(recovered, 'projects'), 2)
     assert.equal(count(recovered, 'project_filesystem_bindings'), 2)
     recovered.close()
@@ -241,5 +279,134 @@ describe('SQLite logical Project migration 10', () => {
     )
     assert.equal(count(db, 'project_filesystem_bindings'), 0)
     db.close()
+  })
+})
+
+describe('SQLite Project presentation migration 11', () => {
+  it('keeps manifest v1 stable, unique, sourced and AA-contrasting in both themes', () => {
+    assert.equal(PROJECT_PRESENTATION_VERSION, 1)
+    assert.equal(PROJECT_ICON_MANIFEST.length, 48)
+    assert.equal(new Set(PROJECT_ICON_KEYS).size, PROJECT_ICON_KEYS.length)
+    assert.equal(
+      createHash('sha256').update(JSON.stringify(PROJECT_ICON_KEYS)).digest('hex'),
+      '8df658dfaa467520ab007309b3d4167afd74cd89fbe61a2401ba3f34eed2ddde',
+    )
+    assert.equal(PROJECT_ICON_SOURCE.library, 'Lucide')
+    assert.equal(PROJECT_ICON_SOURCE.license, 'ISC')
+    assert.match(PROJECT_ICON_SOURCE.licenseUrl, /^https:\/\/github\.com\/lucide-icons\/lucide/u)
+    for (const icon of PROJECT_ICON_MANIFEST) {
+      assert.equal(icon.nameKey.startsWith('projects.icon.'), true)
+    }
+    assert.equal(new Set(PROJECT_COLOR_PALETTE.map((color) => color.token)).size, 8)
+    for (const color of PROJECT_COLOR_PALETTE) {
+      assert.equal(contrastRatio(color.light.foreground, color.light.background) >= 4.5, true)
+      assert.equal(contrastRatio(color.dark.foreground, color.dark.background) >= 4.5, true)
+    }
+  })
+
+  it('uses an explicit projection version while preserving the strict legacy response', () => {
+    const legacy = {
+      id: 'project-1',
+      name: 'Project',
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+      filesystemBindings: [],
+    }
+    const current = {
+      ...legacy,
+      presentationVersion: PROJECT_PRESENTATION_VERSION,
+      iconKey: DEFAULT_PROJECT_ICON_KEY,
+      colorToken: DEFAULT_PROJECT_COLOR_TOKEN,
+    }
+    assert.equal(projectSchema.safeParse(legacy).success, true)
+    assert.equal(projectSchema.safeParse(current).success, false)
+    assert.equal(projectWithPresentationSchema.safeParse(current).success, true)
+    assert.equal(listProjectsResponse.safeParse({ projects: [legacy] }).success, true)
+    assert.equal(
+      listProjectsWithPresentationResponse.safeParse({
+        presentationVersion: PROJECT_PRESENTATION_VERSION,
+        projects: [current],
+      }).success,
+      true,
+    )
+    for (const invalid of [
+      { ...current, iconKey: 'future-icon' },
+      { ...current, colorToken: 'future-color' },
+      { ...current, iconKey: 'x'.repeat(10_000) },
+      { ...current, extra: true },
+    ]) {
+      assert.equal(projectWithPresentationSchema.safeParse(invalid).success, false)
+    }
+    for (const invalid of [
+      { presentationVersion: 2, iconKey: 'folder', colorToken: 'slate' },
+      { presentationVersion: 1, iconKey: 'future-icon', colorToken: 'slate' },
+      { presentationVersion: 1, iconKey: 'folder', colorToken: 'future-color' },
+      { presentationVersion: 1, iconKey: 'folder', colorToken: 'slate', extra: true },
+    ]) {
+      assert.equal(updateProjectPresentationBody.safeParse(invalid).success, false)
+    }
+  })
+
+  it('backfills v10 once with deterministic defaults and preserves them across reopen and retry', async (test) => {
+    const path = await temporaryDbPath(test, 'presentation-upgrade')
+    const fixture = openDb(path)
+    fixture.prepare(
+      `INSERT INTO projects (id, name, created_at, updated_at)
+       VALUES ('project-v10', 'Existing', ?, ?)`,
+    ).run(CREATED_AT, CREATED_AT)
+    downgradeToV10(fixture)
+    fixture.close()
+
+    const upgraded = openDb(path)
+    assert.equal(version(upgraded), 11)
+    const projects = new ProjectStore(upgraded)
+    assert.deepEqual(projects.listWithPresentation().map((project) => ({
+      id: project.id,
+      iconKey: project.iconKey,
+      colorToken: project.colorToken,
+      bindings: project.filesystemBindings.length,
+    })), [{ id: 'project-v10', iconKey: 'folder', colorToken: 'slate', bindings: 0 }])
+    projects.reconcileLegacyWorkspaces()
+    projects.reconcileLegacyWorkspaces()
+    assert.equal(count(upgraded, 'projects'), 1)
+    assert.equal(count(upgraded, 'project_filesystem_bindings'), 0)
+    upgraded.close()
+
+    const reopened = openDb(path)
+    assert.equal(version(reopened), 11)
+    assert.equal(new ProjectStore(reopened).getWithPresentation('project-v10')?.iconKey, 'folder')
+    assert.equal(count(reopened, 'projects'), 1)
+    reopened.close()
+  })
+
+  it('rolls back a mid-migration failure and recovers from unchanged v10', async (test) => {
+    const path = await temporaryDbPath(test, 'presentation-rollback')
+    const fixture = openDb(path)
+    fixture.prepare(
+      `INSERT INTO projects (id, name, created_at, updated_at)
+       VALUES ('project-v10', 'Existing', ?, ?)`,
+    ).run(CREATED_AT, CREATED_AT)
+    downgradeToV10(fixture)
+    fixture.exec("ALTER TABLE projects ADD COLUMN color_token TEXT DEFAULT 'rogue'")
+    fixture.close()
+
+    assert.throws(() => openDb(path), /Миграция 11 не применилась/u)
+    const repair = new DatabaseSync(path)
+    assert.equal(version(repair), 10)
+    const columns = repair.prepare('PRAGMA table_info(projects)').all() as Array<{ name: string }>
+    assert.equal(columns.some((column) => column.name === 'icon_key'), false)
+    assert.equal(columns.some((column) => column.name === 'color_token'), true)
+    assert.equal(count(repair, 'projects'), 1)
+    repair.exec('ALTER TABLE projects DROP COLUMN color_token')
+    repair.close()
+
+    const recovered = openDb(path)
+    assert.equal(version(recovered), 11)
+    assert.deepEqual(
+      { ...recovered.prepare('SELECT icon_key, color_token FROM projects WHERE id = ?').get('project-v10') },
+      { icon_key: 'folder', color_token: 'slate' },
+    )
+    assert.equal(count(recovered, 'projects'), 1)
+    recovered.close()
   })
 })

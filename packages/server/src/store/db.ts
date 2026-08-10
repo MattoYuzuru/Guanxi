@@ -390,6 +390,24 @@ const MIGRATIONS: readonly string[] = [
   SELECT 'workspace:' || id, id, id, created_at
   FROM workspaces;
   `,
+  // 11 — versioned Project presentation metadata. Defaults keep old writers
+  // compatible and deterministically backfill all v10 rows.
+  `
+  ALTER TABLE projects ADD COLUMN icon_key TEXT NOT NULL DEFAULT 'folder'
+    CHECK (icon_key IN (
+      'folder','briefcase','star','home','bookmark','flag','target','rocket',
+      'code','terminal','braces','git-branch','database','server','binary','wrench',
+      'book-open','search','microscope','flask','graduation-cap','library','telescope','notebook',
+      'palette','pen-tool','music','camera','film','shapes','sparkles','wand',
+      'settings','gauge','network','cloud','hard-drive','box','layers','workflow',
+      'heart','users','user','calendar','coffee','plane','mountain','dumbbell'
+    ));
+
+  ALTER TABLE projects ADD COLUMN color_token TEXT NOT NULL DEFAULT 'slate'
+    CHECK (color_token IN (
+      'slate','blue','cyan','green','amber','orange','rose','violet'
+    ));
+  `,
 ]
 
 export function openDb(path: string): Db {

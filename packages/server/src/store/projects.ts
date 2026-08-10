@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { projectSchema, type Project, type ProjectFilesystemBinding } from '@alamo/contract'
+import {
+  PROJECT_PRESENTATION_VERSION,
+  projectSchema,
+  projectWithPresentationSchema,
+  type Project,
+  type ProjectColorToken,
+  type ProjectFilesystemBinding,
+  type ProjectIconKey,
+  type ProjectWithPresentation,
+} from '@alamo/contract'
 import type { Db } from './db.ts'
 
 interface ProjectRow {
@@ -7,6 +16,8 @@ interface ProjectRow {
   name: string
   created_at: string
   updated_at: string
+  icon_key: string
+  color_token: string
 }
 
 interface BindingRow {
@@ -50,6 +61,20 @@ export class ProjectStore {
     return row ? this.toProject(row) : null
   }
 
+  listWithPresentation(): ProjectWithPresentation[] {
+    const rows = this.db
+      .prepare('SELECT * FROM projects ORDER BY updated_at DESC, id')
+      .all() as unknown as ProjectRow[]
+    return rows.map((row) => this.toProjectWithPresentation(row))
+  }
+
+  getWithPresentation(id: string): ProjectWithPresentation | null {
+    const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as unknown as
+      | ProjectRow
+      | undefined
+    return row ? this.toProjectWithPresentation(row) : null
+  }
+
   create(name: string, now = new Date().toISOString()): Project {
     const id = randomUUID()
     this.db
@@ -63,6 +88,26 @@ export class ProjectStore {
       .prepare('UPDATE projects SET name = ?, updated_at = ? WHERE id = ?')
       .run(name, now, id)
     return result.changes === 0 ? null : this.get(id)
+  }
+
+  updatePresentation(
+    id: string,
+    iconKey: ProjectIconKey,
+    colorToken: ProjectColorToken,
+    now = new Date().toISOString(),
+  ): ProjectWithPresentation | null {
+    const existing = this.getWithPresentation(id)
+    if (!existing) return null
+    if (existing.iconKey === iconKey && existing.colorToken === colorToken) return existing
+
+    this.db
+      .prepare(
+        `UPDATE projects
+         SET icon_key = ?, color_token = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(iconKey, colorToken, now, id)
+    return this.getWithPresentation(id)
   }
 
   /**
@@ -140,6 +185,15 @@ export class ProjectStore {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       filesystemBindings: bindings.map(toBinding),
+    })
+  }
+
+  private toProjectWithPresentation(row: ProjectRow): ProjectWithPresentation {
+    return projectWithPresentationSchema.parse({
+      ...this.toProject(row),
+      presentationVersion: PROJECT_PRESENTATION_VERSION,
+      iconKey: row.icon_key,
+      colorToken: row.color_token,
     })
   }
 }

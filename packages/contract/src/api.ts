@@ -5,6 +5,7 @@
  * Опечатка в URL становится ошибкой компиляции, а не багом в рантайме.
  */
 import { z } from 'zod'
+import { PROJECT_PRESENTATION_VERSION } from './project-presentation.ts'
 import {
   catalogModelSchema,
   catalogSourceHealthSchema,
@@ -36,6 +37,7 @@ import {
   modelDetailSchema,
   positiveSafeIntegerSchema,
   projectSchema,
+  projectWithPresentationSchema,
   runningModelSchema,
   runtimeSnapshotSchema,
   settingsSchema,
@@ -91,6 +93,8 @@ export const ROUTES = {
 
   projects: () => '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
+  projectPresentation: (id: string) =>
+    `/api/projects/${encodeURIComponent(id)}/presentation`,
 
   approval: (toolCallId: string) => `/api/approvals/${toolCallId}`,
 
@@ -849,6 +853,16 @@ export const listProjectsResponse = z
   .strict()
 export type ListProjectsResponse = z.infer<typeof listProjectsResponse>
 
+export const listProjectsWithPresentationResponse = z
+  .object({
+    presentationVersion: z.literal(PROJECT_PRESENTATION_VERSION),
+    projects: z.array(projectWithPresentationSchema),
+  })
+  .strict()
+export type ListProjectsWithPresentationResponse = z.infer<
+  typeof listProjectsWithPresentationResponse
+>
+
 export const createProjectBody = z
   .object({
     name: z.string().trim().min(1).max(PROJECT_NAME_MAX_LENGTH),
@@ -858,6 +872,15 @@ export type CreateProjectBody = z.infer<typeof createProjectBody>
 
 export const updateProjectBody = createProjectBody
 export type UpdateProjectBody = z.infer<typeof updateProjectBody>
+
+export const updateProjectPresentationBody = z
+  .object({
+    presentationVersion: z.literal(PROJECT_PRESENTATION_VERSION),
+    iconKey: projectWithPresentationSchema.shape.iconKey,
+    colorToken: projectWithPresentationSchema.shape.colorToken,
+  })
+  .strict()
+export type UpdateProjectPresentationBody = z.infer<typeof updateProjectPresentationBody>
 
 /**
  * GET /api/workspaces/browse?path= — листинг директорий для пикера.

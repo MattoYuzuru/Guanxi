@@ -3,7 +3,13 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { workspaceSchema, type HardwareInfo } from '@alamo/contract'
+import {
+  PROJECT_PRESENTATION_VERSION,
+  listProjectsResponse,
+  listProjectsWithPresentationResponse,
+  workspaceSchema,
+  type HardwareInfo,
+} from '@alamo/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import { FeatureFlagRegistry } from '../src/config/feature-flags.ts'
@@ -543,6 +549,26 @@ describe('project routes', () => {
     const loaded = await app.request(`/api/projects/${String(created.id)}`)
     assert.equal(loaded.status, 200)
     assert.deepEqual(await loaded.json(), created)
+    const presentationList = await app.request('/api/projects?presentationVersion=1')
+    const presentationProject = (
+      await presentationList.json() as { projects: Array<Record<string, unknown>> }
+    ).projects.find((project) => project.id === created.id)
+    assert.equal(presentationProject?.iconKey, 'folder')
+    assert.equal(presentationProject?.colorToken, 'slate')
+    assert.deepEqual(presentationProject?.filesystemBindings, [])
+    const presentationUpdate = await app.request(
+      `/api/projects/${String(created.id)}/presentation`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ presentationVersion: 1, iconKey: 'star', colorToken: 'green' }),
+      },
+    )
+    assert.equal(presentationUpdate.status, 200)
+    const presented = await presentationUpdate.json() as Record<string, unknown>
+    assert.equal(presented.iconKey, 'star')
+    assert.equal(presented.colorToken, 'green')
+    assert.deepEqual(presented.filesystemBindings, [])
     assert.deepEqual(await readdir(root), beforeEntries)
     assert.equal(
       (context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count,
@@ -712,5 +738,144 @@ describe('project routes', () => {
     assert.notEqual(renamed.updatedAt, '2026-08-01T00:00:00.000Z')
     assert.equal(context.workspaces.get(workspace.id)?.rootPath, root)
     assert.equal(context.workspaces.get(workspace.id)?.name, 'Bound name')
+  })
+
+  it('opts into presentation v1 without changing strict legacy Project or Workspace bytes', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-project-versioned-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const context = testContext()
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    context.workspaces.create(root, 'Legacy bridge')
+
+    const legacyWorkspaceBytes = await (await app.request('/api/workspaces')).text()
+    const legacyProjectBytes = await (await app.request('/api/projects')).text()
+    assert.equal(listProjectsResponse.safeParse(JSON.parse(legacyProjectBytes)).success, true)
+    assert.equal(legacyProjectBytes.includes('iconKey'), false)
+    assert.equal(legacyProjectBytes.includes('colorToken'), false)
+
+    const current = await app.request(
+      `/api/projects?presentationVersion=${PROJECT_PRESENTATION_VERSION}`,
+    )
+    assert.equal(current.status, 200)
+    const currentBody = await current.json()
+    assert.equal(listProjectsWithPresentationResponse.safeParse(currentBody).success, true)
+    assert.deepEqual(
+      (currentBody as { projects: Array<{ iconKey: string; colorToken: string }> }).projects
+        .map(({ iconKey, colorToken }) => ({ iconKey, colorToken })),
+      [{ iconKey: 'folder', colorToken: 'slate' }],
+    )
+    assert.equal(await (await app.request('/api/projects')).text(), legacyProjectBytes)
+    assert.equal(await (await app.request('/api/workspaces')).text(), legacyWorkspaceBytes)
+
+    for (const query of [
+      'presentationVersion=2',
+      'presentationVersion=1&presentationVersion=1',
+      'presentationVersion=1&extra=true',
+      'unknown=true',
+    ]) {
+      assert.equal((await app.request(`/api/projects?${query}`)).status, 400)
+    }
+  })
+
+  it('rejects invalid presentation before mutation and changes only metadata once', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-project-presentation-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const context = testContext()
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    const workspace = context.workspaces.create(root, 'Bound identity')
+    context.threads.create({
+      title: 'Unrelated thread',
+      mode: 'chat',
+      model: 'test:latest',
+      workspaceId: workspace.id,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    context.jobs.create({
+      kind: 'inference',
+      operation: 'unrelated',
+      idempotencyScope: 'project-presentation-test',
+      idempotencyKey: 'unrelated-job',
+    })
+    context.db.prepare("INSERT INTO settings (key, value) VALUES ('permission-sentinel', 'unchanged')").run()
+    context.db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(
+      '2026-08-01T00:00:00.000Z',
+      workspace.id,
+    )
+
+    const projectBefore = context.db.prepare('SELECT * FROM projects WHERE id = ?').get(workspace.id)
+    const bindingBefore = context.db.prepare(
+      'SELECT * FROM project_filesystem_bindings WHERE project_id = ?',
+    ).get(workspace.id)
+    const threadBefore = JSON.stringify(context.db.prepare('SELECT * FROM threads').all())
+    const jobsBefore = JSON.stringify(context.db.prepare('SELECT * FROM jobs').all())
+    const eventsBefore = JSON.stringify(context.db.prepare('SELECT * FROM job_events').all())
+    const settingsBefore = JSON.stringify(context.db.prepare('SELECT * FROM settings ORDER BY key').all())
+    const rootBefore = await readdir(root)
+
+    for (const body of [
+      { presentationVersion: 2, iconKey: 'rocket', colorToken: 'blue' },
+      { presentationVersion: 1, iconKey: 'future-icon', colorToken: 'blue' },
+      { presentationVersion: 1, iconKey: 'rocket', colorToken: 'future-color' },
+      { presentationVersion: 1, iconKey: 'x'.repeat(10_000), colorToken: 'blue' },
+      { presentationVersion: 1, iconKey: 'rocket', colorToken: 'blue', extra: true },
+    ]) {
+      const response = await app.request(`/api/projects/${workspace.id}/presentation`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      assert.equal(response.status, 400)
+      assert.deepEqual(
+        context.db.prepare('SELECT * FROM projects WHERE id = ?').get(workspace.id),
+        projectBefore,
+      )
+    }
+
+    const mutation = {
+      presentationVersion: PROJECT_PRESENTATION_VERSION,
+      iconKey: 'rocket',
+      colorToken: 'blue',
+    } as const
+    const first = await app.request(`/api/projects/${workspace.id}/presentation`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(mutation),
+    })
+    assert.equal(first.status, 200)
+    const firstBody = await first.json() as Record<string, unknown>
+    assert.equal(firstBody.id, workspace.id)
+    assert.equal(firstBody.name, 'Bound identity')
+    assert.equal(firstBody.iconKey, 'rocket')
+    assert.equal(firstBody.colorToken, 'blue')
+    assert.notEqual(firstBody.updatedAt, '2026-08-01T00:00:00.000Z')
+    const updatedAt = firstBody.updatedAt
+
+    const retry = await app.request(`/api/projects/${workspace.id}/presentation`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(mutation),
+    })
+    assert.equal(retry.status, 200)
+    assert.equal((await retry.json() as { updatedAt: string }).updatedAt, updatedAt)
+
+    const projectAfter = context.db.prepare('SELECT * FROM projects WHERE id = ?').get(workspace.id) as Record<string, unknown>
+    assert.equal(projectAfter.id, (projectBefore as Record<string, unknown>).id)
+    assert.equal(projectAfter.name, (projectBefore as Record<string, unknown>).name)
+    assert.equal(projectAfter.created_at, (projectBefore as Record<string, unknown>).created_at)
+    assert.equal(projectAfter.icon_key, 'rocket')
+    assert.equal(projectAfter.color_token, 'blue')
+    assert.notEqual(projectAfter.updated_at, (projectBefore as Record<string, unknown>).updated_at)
+    assert.deepEqual(
+      context.db.prepare('SELECT * FROM project_filesystem_bindings WHERE project_id = ?').get(workspace.id),
+      bindingBefore,
+    )
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM threads').all()), threadBefore)
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM jobs').all()), jobsBefore)
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM job_events').all()), eventsBefore)
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM settings ORDER BY key').all()), settingsBefore)
+    assert.deepEqual(await readdir(root), rootBefore)
+    assert.equal(context.governor.snapshot().activeLease, null)
   })
 })

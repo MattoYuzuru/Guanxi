@@ -8,6 +8,11 @@
  * фронт, обязано быть описано здесь, а не «подразумеваться».
  */
 import { z } from 'zod'
+import {
+  PROJECT_COLOR_TOKENS,
+  PROJECT_ICON_KEYS,
+  PROJECT_PRESENTATION_VERSION,
+} from './project-presentation.ts'
 
 /** JSON/SQLite transport boundary for user-selected counts without a product ceiling. */
 export const positiveSafeIntegerSchema = z.number().int().positive().safe()
@@ -2688,6 +2693,22 @@ export const projectSchema = z
   })
   .strict()
 export type Project = z.infer<typeof projectSchema>
+
+export const projectIconKeySchema = z.enum(PROJECT_ICON_KEYS)
+export const projectColorTokenSchema = z.enum(PROJECT_COLOR_TOKENS)
+
+/**
+ * Opt-in v1 presentation projection. The legacy strict Project schema remains
+ * byte-compatible for clients that do not request presentation metadata.
+ */
+export const projectWithPresentationSchema = projectSchema
+  .extend({
+    presentationVersion: z.literal(PROJECT_PRESENTATION_VERSION),
+    iconKey: projectIconKeySchema,
+    colorToken: projectColorTokenSchema,
+  })
+  .strict()
+export type ProjectWithPresentation = z.infer<typeof projectWithPresentationSchema>
 
 /* ──────────────────────────────── Настройки ──────────────────────────────── */
 
