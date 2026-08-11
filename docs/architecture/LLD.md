@@ -931,11 +931,14 @@ Auto mode проверяет immutable policy snapshot на каждом tool ca
 
 Lifecycle: [retention-state.mmd](diagrams/retention-state.mmd).
 
-Current P3-D реализует только Chat foundation: policy `{keep | ttl(7 days) |
-session}`, source/update time, sourced create/user-message activity и exact
-server-side expiry. Existing rows совместимо читаются как Keep. Ни expiry query,
-ни tombstone/Trash, ни Session leave detection, ни Artifact GC пока не
-реализованы; следующий тип ниже описывает accepted target lifecycle.
+Current P3-D/P3-E реализует Chat policy и recoverable TTL enforcement: policy
+`{keep | ttl(7 days) | session}`, source/update time, sourced create/user-message/
+restore activity, exact server-side expiry, stable bounded eligibility scan,
+`active | trash`, audit и scoped Restore. Existing rows совместимо читаются как
+Keep и остаются active. Keep/Session не выбираются TTL Maintenance, каждый
+non-terminal Chat Job блокирует tombstone. Session leave detection, TTL/Session
+grace, hard deletion и Artifact GC пока не реализованы; следующий тип ниже
+описывает принятые части target lifecycle за current границей.
 
 Chat/Quick Run metadata:
 
@@ -997,10 +1000,13 @@ versioned built-in icon/color presentation metadata. Migrations 12–13 доба
 nullable immutable Project ownership к current `threads`; nested Chat API и Web
 group используют эту связь без move/reparent или filesystem inference. Project
 пока не хранит defaults и не владеет Recipes/Artifacts. Migration 14 хранит
-current Chat retention policy/source и user-activity basis; projection честно
-помечает enforcement как `not_implemented`. Остальные target tables
-ниже не реализованы. Legacy `threads/messages/workspaces`, raw Thread REST и
-strict legacy Project list сохранены без destructive route cutover.
+current Chat retention policy/source и user-activity basis. Migration 15
+additive хранит lifecycle/tombstone basis, audit и eligibility/Trash indexes;
+projection помечает enforcement как `rolling_ttl_trash`. Один startup/periodic
+owner выполняет bounded TTL passes после Chat Job recovery и останавливает timer
+при shutdown. Остальные target tables и hard deletion ниже не реализованы.
+Legacy `threads/messages/workspaces`, raw Thread REST и strict legacy Project
+list сохранены без destructive route cutover.
 
 Логические таблицы:
 

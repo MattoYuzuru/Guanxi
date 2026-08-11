@@ -5,10 +5,10 @@
 
 ## Текущий baseline
 
-На 2026-08-11 после P3-D implementation и independent verification:
+На 2026-08-11 после P3-E implementation и independent verification:
 
-- полный core с CLI reuse: 580/580; Web component/parser: 191/191;
-- `npm run test:web:browser`: 32/32 deterministic Chromium tests с mocked
+- полный core с CLI reuse: 589/589; Web component/parser: 197/197;
+- `npm run test:web:browser`: 33/33 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
   browser binary
@@ -66,6 +66,16 @@
   fail-closed Chat/Project identity, distinct GET/PATCH retry, repeated Save,
   exact ISO expiry при Honolulu timezone и двух fake clocks, hard reload,
   390 px/200%, forced colors и reduced motion;
+- deterministic P3-E tests покрывают fresh/v14→v15/reopen/retry/rollback и exact
+  lifecycle schema, обе inclusive TTL boundaries, Keep/Session exclusion,
+  каждый canonical Job state, equal-basis cursor tie, bounded single owner,
+  atomic tombstone/audit, active/Trash exact scope/order и legacy Thread bytes.
+  Restore и policy-change assertions фиксируют один новый basis/audit без
+  Ollama/model/Governor/Job/Message/filesystem effects. Web fixtures проверяют
+  scoped loading/empty/error/retry, Restore failure и post-Restore refresh
+  failure без actionable stale duplicate, focus, long title и truthful no-hard-
+  delete state; mocked Chromium добавляет projectless/Project Trash/Restore
+  reload flow;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;

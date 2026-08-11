@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-11
-**Текущая фаза:** Phase 3 — P3-E retention enforcement ready
+**Текущая фаза:** Phase 3 — P3-F reasoning Artifact foundation ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1475,6 +1475,58 @@ expiry query, Maintenance scheduler, Trash/grace, restore, Session leave
 detection, active-Job deletion guard и hard deletion не реализованы. Следующий
 bounded slice — P3-E TTL Maintenance/Trash enforcement foundation.
 
+## Phase 3 — P3-E Chat TTL Maintenance и recoverable Trash
+
+**Статус:** independently verified (`01c8b3f`, `da7519a`, review fix
+`fed4ac6`).
+
+Migration 15 append-only добавляет `active | trash`, sourced tombstone basis,
+lifecycle audit и eligibility/Trash indexes. Existing rows остаются active.
+Один server-owned owner после Chat Job recovery выполняет startup и periodic
+stable bounded passes с injected clock и shutdown cleanup. Только expired TTL
+Chat eligible; Keep/Session, unexpired Chat и Chat с любым canonical
+non-terminal Job исключаются. Tombstone и audit атомарны, повторный pass
+сходится без duplicate effects.
+
+Active global/projectless/Project lists скрывают Trash. Versioned boundary
+возвращает exact projectless либо Project scope без leakage. Explicit Restore и
+смена policy из Trash на Keep/7 days атомарно активируют Chat, задают новый
+rolling basis и создают один sourced audit event. Raw legacy Thread JSON не
+изменён. Web показывает bounded Trash в обеих областях, exact reason/time,
+truthful отсутствие hard deletion и focused load/Restore retry. После успешного
+Restore stale item скрывается даже при failed refresh и больше не остаётся
+actionable.
+
+Evidence по правилу WORKFLOW: **9 new / 589 core regression envelope**, **6 new
+/ 197 Web component/parser envelope**, **1 new / 33 mocked Chromium envelope**.
+Targeted P3-E server — 9/9; focused Web retention/Trash — 12/12. Full typecheck,
+`npm test`, browser gate, build, markdownlint и diff-check — PASS. Build сохранил
+non-blocking Vite warning: main chunk 841.18 kB minified / 222.66 kB gzip при
+threshold 500 kB.
+
+Первые проверки выявили три fixture/assertion проблемы: старые migration tests
+ожидали v14, один Project Chat fixture не включал новую lifecycle projection, а
+первый root-relative Vitest filter не нашёл файлов. После исправления полный
+baseline прошёл. Independent reviewer затем дал `NEEDS_FIX`: failed reload
+после Restore сохранял stale actionable row, а TTL policy restore, обе boundary
+scope, terminal states, cursor tie, global/projectless visibility, exact schema,
+non-lifecycle Thread payload и no-effect boundary не имели достаточных direct
+assertions. Отдельный `fed4ac6` закрыл findings; follow-up reviewer запустил
+server 40/40 и Web 21/21 и дал **READY** без открытых findings.
+
+Mutation checks дали ожидаемый non-zero для migration rollback, Keep/Session
+leakage, active-Job guard, batch cap, active-list leakage, repeated Restore,
+legacy Thread bytes и stale post-Restore UI duplicate; все mutations
+восстановлены. Injected transaction faults отдельно подтверждают общий rollback
+lifecycle/audit и Restore/audit.
+
+Остаточный риск: SQLite corpus синтетический, Web evidence jsdom/mocked
+Chromium; нет production DB corpus, concurrent-client lifecycle races, real
+device/screen reader/visual baseline или live Ollama/GPU/network validation.
+Hard deletion, TTL grace, Session leave/24-hour recovery, Artifact/blob GC и
+reasoning retention не реализованы. Следующий bounded slice — P3-F typed
+Reasoning Artifact persistence foundation без cleanup enforcement.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1574,7 +1626,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-E ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-F ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

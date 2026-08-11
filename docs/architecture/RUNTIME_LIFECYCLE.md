@@ -1047,12 +1047,15 @@ no-progress loop.
 
 Исходник: [retention-state.mmd](diagrams/retention-state.mmd).
 
-Current P3-D реализует policy/activity projection до первой стрелки lifecycle:
-новые Chats получают rolling seven-day default, existing rows — explicit Keep,
-а accepted user message атомарно обновляет sourced basis вместе с durable Chat
-command. Exact expiry вычисляется server-side. Enforcement остаётся
-`not_implemented`: Maintenance, eligibility, Trash/grace и hard deletion ниже —
-accepted target, не текущее поведение.
+Current P3-D/P3-E реализует policy/activity projection и recoverable переход
+`active → tombstoned in Trash`: новые Chats получают rolling seven-day default,
+existing rows — explicit Keep, а accepted user message либо explicit Restore
+обновляет sourced basis. Exact expiry вычисляется server-side. Один
+startup/periodic owner после Chat Job recovery сканирует stable bounded pages;
+любой non-terminal Job блокирует tombstone. Keep/Session не выбираются этим
+scan. Scoped Trash и Restore реализованы. Expiring intermediate state,
+TTL/Session grace, metadata deletion и blob GC ниже — accepted target, не
+текущее поведение.
 
 ```text
 active
@@ -1071,7 +1074,8 @@ active
 - Session Chat хранится в Trash 24 часа перед hard deletion.
 - Reasoning Artifact по default истекает через 7 дней.
 - Active/non-terminal Job блокирует deletion.
-- Startup и periodic Maintenance Jobs обрабатывают bounded batches.
+- Startup и periodic Maintenance owner обрабатывает bounded batches для TTL
+  Chat; generic durable Maintenance Job ещё не реализован.
 - Policy change до hard deletion может восстановить record.
 - Cleanup event не продлевает user TTL.
 

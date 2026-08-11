@@ -58,8 +58,13 @@ P3-D migration 14 additive хранит `Keep | ttl(7 days) | Session`, исто
 policy и последний accepted user-activity timestamp. Existing Threads получают
 conservative `Keep / legacy_compatibility`; новые Project и projectless Chats —
 одинаковый TTL default. Exact expiry вычисляет server. GET/PATCH retention не
-вызывает Job, Ollama, Governor, tool или filesystem boundary; cleanup/Trash и
-Session leave detection пока не реализованы.
+вызывает Job, Ollama, Governor, tool или filesystem boundary. P3-E migration 15
+добавляет recoverable `active | trash`, sourced tombstone/audit и indexes для
+stable TTL scan. Один server-owned startup/periodic owner обрабатывает bounded
+batches, исключает каждый non-terminal Chat Job и не вызывает Ollama, Governor,
+tools или filesystem. Trash scoped по Project либо projectless; Restore и смена
+policy на Keep/7 days возвращают Chat и начинают новый rolling basis. Session
+leave detection, hard deletion, grace и blob GC пока не реализованы.
 
 ### As-is execution boundary
 
@@ -537,11 +542,15 @@ CAS в `/api/create`; окно между последней проверкой 
 
 ### Retention cleanup
 
-1. Startup/periodic trigger создаёт bounded Maintenance Job.
-2. Job выбирает expired Chat/Artifacts, исключая active work.
-3. Records получают tombstone/Trash timestamp.
-4. После grace удаляются только blobs без живых references.
-5. Audit event фиксирует count/bytes/errors; retry идемпотентен.
+Current P3-E реализует только recoverable Chat TTL часть:
+
+1. Startup/periodic owner запускает bounded Maintenance pass.
+2. Pass выбирает expired TTL Chat, исключая active work.
+3. Chat атомарно получает tombstone/Trash timestamp и audit row; retry
+   идемпотентен, Restore доступен через versioned boundary.
+
+После grace удалять metadata и только blobs без живых references, считать
+bytes/errors и применять Artifact/Session policy — target, не current behavior.
 
 ## Consistency и availability
 
