@@ -46,7 +46,7 @@ export function toReasoningArtifact(
     throw new Error(`Reasoning Artifact ${row.id} failed content integrity validation`)
   }
   const parentMode = currentParent?.mode ?? row.parent_retention_mode
-  const parentExpiresAt = currentParent?.expiresAt ?? row.parent_retention_expires_at
+  const parentExpiresAt = currentParent ? currentParent.expiresAt : row.parent_retention_expires_at
   const effectiveExpiresAt = parentExpiresAt && parentExpiresAt < row.artifact_expires_at
     ? parentExpiresAt
     : row.artifact_expires_at

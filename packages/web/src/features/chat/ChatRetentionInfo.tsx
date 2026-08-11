@@ -25,6 +25,7 @@ export function ChatRetentionInfo({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [projection, setProjection] = useState<ChatRetentionProjection | null>(null)
+  const [reasoningRevision, setReasoningRevision] = useState(0)
   const [selected, setSelected] = useState<PolicyMode>('ttl')
   const [error, setError] = useState<string | null>(null)
   const [retryKind, setRetryKind] = useState<'load' | 'save' | null>(null)
@@ -85,6 +86,7 @@ export function ChatRetentionInfo({
       }
       setProjection(next)
       setSelected(next.policy.mode)
+      setReasoningRevision((revision) => revision + 1)
       retryPolicyRef.current = null
     } catch (reason) {
       setError(errorMessage(reason))
@@ -216,7 +218,11 @@ export function ChatRetentionInfo({
               </div>
             </form>
           ) : null}
-          <ChatReasoningArtifacts chatId={chatId} projectId={projectId} />
+          <ChatReasoningArtifacts
+            chatId={chatId}
+            projectId={projectId}
+            retentionRevision={reasoningRevision}
+          />
         </div>
       </Modal>
     </>

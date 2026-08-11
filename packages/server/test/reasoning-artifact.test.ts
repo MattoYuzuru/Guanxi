@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -216,6 +216,10 @@ describe('P3-F reasoning Artifact persistence', () => {
     assert.equal(row.source_job_id, association.job.id)
     assert.equal(row.source_message_id, association.assistantMessageId)
     assert.equal(threads.getMessage(association.assistantMessageId)?.thinking, reasoning)
+    const canonicalBeforeDuplicate = db.prepare(
+      `SELECT checksum, created_at, artifact_expires_at
+       FROM reasoning_artifacts WHERE source_job_id = ?`,
+    ).get(association.job.id)
     assert.throws(
       () => db.prepare(
         `INSERT INTO reasoning_artifacts
@@ -233,6 +237,13 @@ describe('P3-F reasoning Artifact persistence', () => {
     assert.equal((db.prepare('SELECT COUNT(*) AS count FROM reasoning_artifacts').get() as { count: number }).count, 1)
     assert.equal(threads.getMessage(association.assistantMessageId)?.content, 'only final answer')
     assert.equal(threads.getMessage(association.assistantMessageId)?.thinking, reasoning)
+    assert.deepEqual(
+      db.prepare(
+        `SELECT checksum, created_at, artifact_expires_at
+         FROM reasoning_artifacts WHERE source_job_id = ?`,
+      ).get(association.job.id),
+      canonicalBeforeDuplicate,
+    )
     db.close()
   })
 
@@ -349,7 +360,17 @@ describe('P3-F reasoning Artifact persistence', () => {
       return association
     })
     const store = new ReasoningArtifactStore(db)
-    assert.equal(store.list(projectless.chat.id, { scope: 'projectless', projectId: null }).artifacts?.length, 1)
+    const projectlessSecond = createChatJob(db, projectless.chat.id, 'scope-projectless-second', jobs)
+    terminalize(jobs, projectlessSecond, { thinking: 'reasoning-projectless-second' })
+    const expectedProjectlessOrder = db.prepare(
+      `SELECT id FROM reasoning_artifacts WHERE chat_id = ? ORDER BY created_at, id`,
+    ).all(projectless.chat.id).map((row) => (row as { id: string }).id)
+    const projectlessList = store.list(projectless.chat.id, {
+      scope: 'projectless',
+      projectId: null,
+    }).artifacts!
+    assert.equal(projectlessList.length, 2)
+    assert.deepEqual(projectlessList.map((artifact) => artifact.id), expectedProjectlessOrder)
     assert.equal(store.list(inA.chat.id, { scope: 'project', projectId: projectA.id }).artifacts?.length, 1)
     assert.equal(store.list(inA.chat.id, { scope: 'project', projectId: projectB.id }).status, 'scope_mismatch')
     assert.equal(store.list(inB.chat.id, { scope: 'projectless', projectId: null }).status, 'scope_mismatch')
@@ -357,6 +378,22 @@ describe('P3-F reasoning Artifact persistence', () => {
     const artifactA = store.list(inA.chat.id, { scope: 'project', projectId: projectA.id }).artifacts![0]!
     assert.equal(store.get(inA.chat.id, artifactA.id, { scope: 'project', projectId: projectA.id }).status, 'ok')
     assert.equal(store.get(inB.chat.id, artifactA.id, { scope: 'project', projectId: projectB.id }).status, 'not_found')
+    db.prepare("UPDATE threads SET retention_policy = 'keep' WHERE id = ?").run(inA.chat.id)
+    const kept = store.list(inA.chat.id, {
+      scope: 'project',
+      projectId: projectA.id,
+    }).artifacts![0]!
+    assert.equal(kept.retention.parentMode, 'keep')
+    assert.equal(kept.retention.parentExpiresAt, null)
+    assert.equal(kept.retention.effectiveExpiresAt, kept.retention.artifactExpiresAt)
+    db.prepare("UPDATE threads SET retention_policy = 'session' WHERE id = ?").run(inA.chat.id)
+    const session = store.list(inA.chat.id, {
+      scope: 'project',
+      projectId: projectA.id,
+    }).artifacts![0]!
+    assert.equal(session.retention.parentMode, 'session')
+    assert.equal(session.retention.parentExpiresAt, null)
+    assert.equal(session.retention.effectiveExpiresAt, session.retention.artifactExpiresAt)
     db.prepare(
       `UPDATE threads SET retention_policy = 'ttl',
          last_user_activity_at = '2026-08-10T12:00:00.000Z'
@@ -458,5 +495,30 @@ describe('P3-F reasoning Artifact persistence', () => {
     assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM reasoning_artifacts').get() as { count: number }).count, 1)
     assert.deepEqual({ ollamaCalls, modelCalls }, { ollamaCalls: 0, modelCalls: 0 })
     assert.equal(JSON.stringify(context.governor.snapshot(governorObservedAt)), governorBefore)
+  })
+
+  it('keeps the Artifact store and scoped routes outside external effect owners', async () => {
+    const storeSource = await readFile(
+      new URL('../src/store/reasoning-artifacts.ts', import.meta.url),
+      'utf8',
+    )
+    assert.doesNotMatch(
+      storeSource,
+      /node:fs|fetch\(|Ollama|Governor|tool|workspace|analytics|maintenance|cleanup/i,
+    )
+    const routesSource = await readFile(
+      new URL('../src/http/threads-routes.ts', import.meta.url),
+      'utf8',
+    )
+    const start = routesSource.indexOf("routes.get('/:id/reasoning-artifacts'")
+    const artifactRoutes = routesSource.slice(
+      start,
+      routesSource.indexOf("routes.get('/:id'", start),
+    )
+    assert.ok(artifactRoutes.length > 0)
+    assert.doesNotMatch(
+      artifactRoutes,
+      /app\.(ollama|models|governor|workspaces|approvals|maintenance)|fetch\(|analytics|cleanup/i,
+    )
   })
 })

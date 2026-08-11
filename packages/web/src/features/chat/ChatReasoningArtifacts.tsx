@@ -18,9 +18,11 @@ function scopeQuery(projectId: string | null): ListReasoningArtifactsQuery {
 export function ChatReasoningArtifacts({
   chatId,
   projectId,
+  retentionRevision,
 }: {
   chatId: string
   projectId: string | null
+  retentionRevision: number
 }) {
   const [data, setData] = useState<ListReasoningArtifactsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -54,7 +56,7 @@ export function ChatReasoningArtifacts({
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [chatId, projectId])
+  }, [chatId, projectId, retentionRevision])
 
   useEffect(() => {
     const controller = new AbortController()

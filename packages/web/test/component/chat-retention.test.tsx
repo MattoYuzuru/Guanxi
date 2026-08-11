@@ -6,6 +6,7 @@ import { api } from '../../src/lib/api.ts'
 
 const ACTIVITY_AT = '2026-08-11T10:00:00.000Z'
 const EXPIRES_AT = '2026-08-18T10:00:00.000Z'
+const ARTIFACT_EXPIRES_AT = '2026-08-20T10:00:00.000Z'
 const TTL: ChatRetentionProjection = {
   retentionVersion: 1,
   chatId: 'chat-1',
@@ -47,7 +48,7 @@ const REASONING: ListReasoningArtifactsResponse = {
     retention: {
       basis: 'diagnostic_7_days',
       expiresAfterDays: 7,
-      artifactExpiresAt: EXPIRES_AT,
+      artifactExpiresAt: ARTIFACT_EXPIRES_AT,
       parentMode: 'ttl',
       parentExpiresAt: EXPIRES_AT,
       effectiveExpiresAt: EXPIRES_AT,
@@ -105,6 +106,20 @@ describe('Chat retention info', () => {
   it('coalesces repeated form activation into one isolated mutation', async () => {
     const mutation = deferred<ChatRetentionProjection>()
     vi.spyOn(api, 'updateChatRetention').mockReturnValue(mutation.promise)
+    vi.mocked(api.listReasoningArtifacts)
+      .mockResolvedValueOnce(REASONING)
+      .mockResolvedValueOnce({
+        ...REASONING,
+        artifacts: REASONING.artifacts.map((artifact) => ({
+          ...artifact,
+          retention: {
+            ...artifact.retention,
+            parentMode: 'keep' as const,
+            parentExpiresAt: null,
+            effectiveExpiresAt: ARTIFACT_EXPIRES_AT,
+          },
+        })),
+      })
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="Retention" projectId={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
     await screen.findByRole('dialog')
@@ -131,6 +146,9 @@ describe('Chat retention info', () => {
       element?.tagName === 'DD' && element.textContent?.startsWith('Нет временного истечения') === true,
     )).toBeTruthy()
     expect(api.getChatRetention).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(api.listReasoningArtifacts).toHaveBeenCalledTimes(2))
+    expect(document.querySelector(`time[datetime="${ARTIFACT_EXPIRES_AT}"]`)).toBeTruthy()
+    expect(document.querySelector(`li time[datetime="${EXPIRES_AT}"]`)).toBeNull()
   })
 
   it('focuses a safe error, retries GET and rejects a mismatched Chat identity', async () => {
@@ -231,6 +249,56 @@ describe('Chat retention info', () => {
     expect(document.body.textContent).not.toContain('final answer secret')
     expect(document.body.textContent).not.toContain('prompt secret')
     expect(document.body.textContent).not.toContain('tool credential')
+  })
+
+  it('exports only exact scoped Artifact text and focuses a safe action failure', async () => {
+    let clickedDownload: { download: string; href: string } | null = null
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reasoning-export')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+      clickedDownload = { download: this.download, href: this.href }
+    })
+    vi.spyOn(api, 'getReasoningArtifact')
+      .mockResolvedValueOnce({
+        ...REASONING.artifacts[0]!,
+        content: 'exported diagnostic only',
+      })
+      .mockRejectedValueOnce(new Error('safe Artifact action failure'))
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Export" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Экспортировать рассуждение' }))
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
+    expect(createObjectURL.mock.calls[0]?.[0]).toBeInstanceOf(Blob)
+    expect(clickedDownload).toEqual({
+      download: `reasoning-${REASONING.artifacts[0]!.id}.md`,
+      href: 'blob:reasoning-export',
+    })
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:reasoning-export')
+    expect(api.getReasoningArtifact).toHaveBeenNthCalledWith(
+      1,
+      'chat-1',
+      REASONING.artifacts[0]!.id,
+      { artifactVersion: 1, scope: 'projectless' },
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Копировать рассуждение' }))
+    const error = await screen.findByText('safe Artifact action failure')
+    await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    expect(api.getReasoningArtifact).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows distinct empty answer and reasoning states without actions', async () => {
+    vi.mocked(api.listReasoningArtifacts).mockResolvedValue({
+      ...REASONING,
+      generatedAnswers: [],
+      artifacts: [],
+    })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Empty" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    expect(await screen.findByText('Сгенерированных ответов пока нет.')).toBeTruthy()
+    expect(screen.getByText('В этом Chat нет сохранённых рассуждений.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Копировать рассуждение' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Экспортировать рассуждение' })).toBeNull()
   })
 
   it('focuses reasoning load errors and retries with exact Project scope', async () => {
