@@ -268,7 +268,15 @@ describe('Chat retention info', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Экспортировать рассуждение' }))
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
-    expect(createObjectURL.mock.calls[0]?.[0]).toBeInstanceOf(Blob)
+    const exportedBlob = createObjectURL.mock.calls[0]?.[0]
+    expect(exportedBlob).toBeInstanceOf(Blob)
+    const exportedText = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.addEventListener('load', () => resolve(String(reader.result)))
+      reader.addEventListener('error', () => reject(reader.error))
+      reader.readAsText(exportedBlob!)
+    })
+    expect(exportedText).toBe('exported diagnostic only')
     expect(clickedDownload).toEqual({
       download: `reasoning-${REASONING.artifacts[0]!.id}.md`,
       href: 'blob:reasoning-export',
