@@ -37,7 +37,7 @@ function tables(db: DatabaseSync, name: string): number {
 
 function downgradeToV8(db: DatabaseSync): void {
   db.exec(
-    'DROP INDEX idx_threads_project_updated; ALTER TABLE threads DROP COLUMN project_id; DROP TABLE project_filesystem_bindings; DROP TABLE projects; DROP TABLE model_capability_user_overrides; PRAGMA user_version = 8;',
+    'DROP TRIGGER threads_project_chat_update_valid; DROP TRIGGER threads_project_chat_insert_valid; DROP TRIGGER threads_project_ownership_immutable; DROP INDEX idx_threads_project_updated; ALTER TABLE threads DROP COLUMN project_id; DROP TABLE project_filesystem_bindings; DROP TABLE projects; DROP TABLE model_capability_user_overrides; PRAGMA user_version = 8;',
   )
 }
 
@@ -51,7 +51,7 @@ describe('SQLite capability override migration 9', () => {
   it('creates the additive table on fresh and reopened databases', async (test) => {
     const path = await temporaryDbPath(test, 'fresh')
     const first = openDb(path)
-    assert.equal(version(first), 12)
+    assert.equal(version(first), 13)
     assert.equal(tables(first, 'model_capability_user_overrides'), 1)
     assert.equal(count(first, 'model_capability_user_overrides'), 0)
     assert.equal(
@@ -64,7 +64,7 @@ describe('SQLite capability override migration 9', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 12)
+    assert.equal(version(reopened), 13)
     assert.equal(count(reopened, 'model_capability_user_overrides'), 0)
     reopened.close()
   })
@@ -106,7 +106,7 @@ describe('SQLite capability override migration 9', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 12)
+    assert.equal(version(upgraded), 13)
     // Two adjacent provider/probe rows exist for the very same exact identity and
     // neither one becomes a user assertion.
     assert.equal(count(upgraded, 'installed_model_evidence_cache'), 1)
@@ -138,7 +138,7 @@ describe('SQLite capability override migration 9', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 12)
+    assert.equal(version(recovered), 13)
     assert.equal(count(recovered, 'model_capability_user_overrides'), 0)
     recovered.close()
   })
@@ -165,11 +165,11 @@ describe('SQLite capability override migration 9', () => {
     assert.throws(() => openDb(path), /Миграция 9 не применилась/u)
     const repair = new DatabaseSync(path)
     assert.equal(count(repair, 'model_capability_user_overrides'), 1)
-    repair.exec('PRAGMA user_version = 12')
+    repair.exec('PRAGMA user_version = 13')
     repair.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 12)
+    assert.equal(version(reopened), 13)
     const records = new ModelCapabilityOverrideStore(reopened).list(IDENTITY)
     assert.equal(records.length, 1)
     assert.equal(records[0]!.capability, 'tools')

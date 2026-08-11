@@ -70,9 +70,7 @@ export class ProjectChatService {
 
     return this.threads.createWithOwnership({
       title: input.title ?? 'Новый диалог',
-      mode: 'chat',
       model: input.model,
-      workspaceId: null,
       projectId,
       options,
     })

@@ -7,7 +7,7 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
   const observedAt = '2026-08-10T10:00:00.000Z'
   const first = {
     id: 'project-chat-first',
-    name: `Long Project ${'context-'.repeat(11)}`,
+    name: 'P'.repeat(120),
     createdAt: observedAt,
     updatedAt: observedAt,
     filesystemBindings: [],
@@ -93,7 +93,7 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
 
   let createCalls = 0
   let createBody: unknown = null
-  let mismatch = false
+  let mismatch: 'none' | 'malformed' | 'typed' = 'none'
   let workspaceReads = 0
   const unexpectedMutations: string[] = []
 
@@ -145,12 +145,21 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
       return route.fulfill(json(created, 201))
     }
     if (url.pathname === `/api/projects/${first.id}/chats/${created.id}` && method === 'GET') {
-      if (mismatch) {
+      if (mismatch === 'typed') {
         return route.fulfill(json({
           code: 'project_chat_mismatch',
           message: 'Chat does not belong to this Project',
           details: null,
         }, 409))
+      }
+      if (mismatch === 'malformed') {
+        return route.fulfill(json({
+          ownershipVersion: 1,
+          project: first,
+          thread: { ...created, projectId: second.id },
+          messages: [],
+          context,
+        }))
       }
       return route.fulfill(json({
         ownershipVersion: 1,
@@ -181,6 +190,12 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
   await expect(page).toHaveURL(`/projects/${first.id}/chats`)
   const newHeading = page.getByRole('heading', { name: `Новый чат в проекте «${first.name}»` })
   await expect(newHeading).toBeFocused()
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const headingWidth = await newHeading.evaluate((heading) => ({
+    client: heading.clientWidth,
+    scroll: heading.scrollWidth,
+  }))
+  expect(headingWidth.scroll).toBeLessThanOrEqual(headingWidth.client)
 
   const create = page.getByRole('button', { name: 'Создать диалог' })
   await create.evaluate((button) => {
@@ -202,7 +217,6 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
   await expect(page.getByText(`Проект: ${first.name}`)).toHaveCount(1)
   await expect(page.getByText(second.name)).toHaveCount(0)
 
-  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const layout = await page.evaluate(() => ({
     viewport: window.innerWidth,
     documentWidth: document.documentElement.scrollWidth,
@@ -216,10 +230,13 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
   await page.reload()
   await expect(page).toHaveURL(`/projects/${first.id}/chats/${created.id}`)
   await expect(page.getByText(`Проект: ${first.name}`)).toHaveCount(1)
-  mismatch = true
+  mismatch = 'malformed'
   await page.reload()
   const safeState = page.getByRole('heading', { name: 'Не удалось безопасно открыть чат проекта' })
   await expect(safeState).toBeFocused()
+  await expect(page.getByText(/не соответствует контракту/u)).toHaveCount(1)
+  mismatch = 'typed'
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click()
   await expect(page.getByText('Chat does not belong to this Project')).toHaveCount(1)
   expect(createCalls).toBe(2)
   expect(workspaceReads).toBe(0)

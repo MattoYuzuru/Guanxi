@@ -209,7 +209,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
         <h1
           ref={project ? projectHeadingRef : undefined}
           tabIndex={project ? -1 : undefined}
-          className="text-base font-semibold outline-none"
+          className="break-words text-base font-semibold outline-none"
         >
           {project
             ? translate('projects.chats.newFor').replace('{name}', project.name)

@@ -7,6 +7,7 @@ import { describe, it } from 'node:test'
 import {
   PROJECT_CHAT_OWNERSHIP_VERSION,
   createProjectChatBody,
+  getProjectChatResponse,
   listProjectChatsResponse,
   listProjectlessChatsResponse,
   threadSchema,
@@ -30,9 +31,21 @@ function columnNames(db: DatabaseSync): string[] {
 
 function downgradeToV11(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER threads_project_chat_update_valid;
+    DROP TRIGGER threads_project_chat_insert_valid;
+    DROP TRIGGER threads_project_ownership_immutable;
     DROP INDEX idx_threads_project_updated;
     ALTER TABLE threads DROP COLUMN project_id;
     PRAGMA user_version = 11;
+  `)
+}
+
+function downgradeToV12(db: DatabaseSync): void {
+  db.exec(`
+    DROP TRIGGER threads_project_chat_update_valid;
+    DROP TRIGGER threads_project_chat_insert_valid;
+    DROP TRIGGER threads_project_ownership_immutable;
+    PRAGMA user_version = 12;
   `)
 }
 
@@ -42,7 +55,7 @@ async function temporaryDbPath(test: { after: (fn: () => unknown) => void }, lab
   return join(root, 'alamo.db')
 }
 
-describe('SQLite Project Chat ownership migration 12', () => {
+describe('SQLite Project Chat ownership migrations 12–13', () => {
   it('uses a strict versioned projection while preserving the legacy Thread shape', () => {
     const legacy = {
       id: 'thread-1',
@@ -63,12 +76,20 @@ describe('SQLite Project Chat ownership migration 12', () => {
     assert.equal(threadSchema.safeParse(legacy).success, true)
     assert.equal(threadWithOwnershipSchema.safeParse(owned).success, true)
     assert.equal(threadWithOwnershipSchema.safeParse({ ...owned, extra: true }).success, false)
+    assert.equal(
+      threadWithOwnershipSchema.safeParse({
+        ...owned,
+        options: { ...owned.options, futureField: true },
+      }).success,
+      false,
+    )
     assert.equal(createProjectChatBody.safeParse({ model: 'model' }).success, true)
     for (const invalid of [
       { model: 'model', projectId: 'project-2' },
       { model: 'model', workspaceId: 'workspace-1' },
       { model: 'model', mode: 'agent' },
       { model: 'model', extra: true },
+      { model: 'model', options: { futureField: true } },
     ]) {
       assert.equal(createProjectChatBody.safeParse(invalid).success, false)
     }
@@ -85,6 +106,44 @@ describe('SQLite Project Chat ownership migration 12', () => {
         chats: [owned],
       }).success,
       true,
+    )
+    assert.equal(
+      listProjectChatsResponse.safeParse({
+        ownershipVersion: 1,
+        project: {
+          id: 'project-2',
+          name: 'Other Project',
+          createdAt: CREATED_AT,
+          updatedAt: CREATED_AT,
+          filesystemBindings: [],
+        },
+        chats: [owned],
+      }).success,
+      false,
+    )
+    assert.equal(
+      getProjectChatResponse.safeParse({
+        ownershipVersion: 1,
+        project: {
+          id: 'project-2',
+          name: 'Other Project',
+          createdAt: CREATED_AT,
+          updatedAt: CREATED_AT,
+          filesystemBindings: [],
+        },
+        thread: owned,
+        messages: [],
+        context: {
+          usedTokens: 0,
+          allocatedTokens: 8192,
+          percent: 0,
+          cacheHit: false,
+          cachedTokens: 0,
+          compactable: false,
+          estimatedRepefillMs: 0,
+        },
+      }).success,
+      false,
     )
     assert.equal(
       listProjectlessChatsResponse.safeParse({
@@ -112,7 +171,7 @@ describe('SQLite Project Chat ownership migration 12', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 12)
+    assert.equal(version(upgraded), 13)
     assert.equal(columnNames(upgraded).filter((name) => name === 'project_id').length, 1)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(legacy.id)?.projectId, null)
     const afterRows = upgraded.prepare('SELECT * FROM threads').all() as Array<
@@ -126,12 +185,86 @@ describe('SQLite Project Chat ownership migration 12', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 12)
+    assert.equal(version(reopened), 13)
     assert.equal(columnNames(reopened).filter((name) => name === 'project_id').length, 1)
+    assert.equal(
+      (reopened.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'threads_project_%'",
+      ).get() as { count: number }).count,
+      3,
+    )
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count,
       1,
     )
+    reopened.close()
+  })
+
+  it('hardens an already-applied v12 database and recovers a mid-v13 failure', async (test) => {
+    const path = await temporaryDbPath(test, 'v13-hardening')
+    const fixture = openDb(path)
+    const project = new ProjectStore(fixture).create('V12 owner', CREATED_AT)
+    const owned = new ThreadStore(fixture).createWithOwnership({
+      title: 'Existing v12 ownership',
+      model: 'model',
+      projectId: project.id,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    downgradeToV12(fixture)
+    fixture.close()
+
+    const upgraded = openDb(path)
+    assert.equal(version(upgraded), 13)
+    assert.equal(new ThreadStore(upgraded).getWithOwnership(owned.id)?.projectId, project.id)
+    assert.equal(
+      (upgraded.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'threads_project_%'",
+      ).get() as { count: number }).count,
+      3,
+    )
+    upgraded.close()
+
+    const conflicted = new DatabaseSync(path)
+    downgradeToV12(conflicted)
+    conflicted.exec(`
+      CREATE TRIGGER threads_project_chat_insert_valid
+        BEFORE INSERT ON threads
+        BEGIN
+          SELECT 1;
+        END;
+    `)
+    conflicted.close()
+
+    assert.throws(() => openDb(path), /Миграция 13 не применилась/u)
+    const repair = new DatabaseSync(path)
+    assert.equal(version(repair), 12)
+    assert.equal(
+      (repair.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'threads_project_%'",
+      ).get() as { count: number }).count,
+      1,
+    )
+    assert.equal(
+      (repair.prepare('SELECT project_id FROM threads WHERE id = ?').get(owned.id) as {
+        project_id: string
+      }).project_id,
+      project.id,
+    )
+    repair.exec('DROP TRIGGER threads_project_chat_insert_valid')
+    repair.close()
+
+    const recovered = openDb(path)
+    assert.equal(version(recovered), 13)
+    assert.equal(new ThreadStore(recovered).getWithOwnership(owned.id)?.projectId, project.id)
+    assert.throws(
+      () => recovered.prepare('UPDATE threads SET project_id = NULL WHERE id = ?').run(owned.id),
+      /thread project ownership is immutable/u,
+    )
+    recovered.close()
+
+    const reopened = openDb(path)
+    assert.equal(version(reopened), 13)
+    assert.equal(new ThreadStore(reopened).getWithOwnership(owned.id)?.projectId, project.id)
     reopened.close()
   })
 
@@ -152,6 +285,12 @@ describe('SQLite Project Chat ownership migration 12', () => {
     assert.equal(version(repair), 11)
     assert.equal(columnNames(repair).includes('project_id'), false)
     assert.equal(
+      (repair.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'threads_project_%'",
+      ).get() as { count: number }).count,
+      0,
+    )
+    assert.equal(
       (repair.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count,
       1,
     )
@@ -159,7 +298,7 @@ describe('SQLite Project Chat ownership migration 12', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 12)
+    assert.equal(version(recovered), 13)
     assert.equal(new ThreadStore(recovered).getWithOwnership('legacy-thread')?.projectId, null)
     recovered.close()
   })
@@ -172,20 +311,62 @@ describe('SQLite Project Chat ownership migration 12', () => {
     const second = projects.create('Second', CREATED_AT)
     const owned = threads.createWithOwnership({
       title: 'Owned',
-      mode: 'chat',
       model: 'model',
-      workspaceId: null,
       projectId: first.id,
       options: { numCtx: 8192, temperature: 0.7, think: 'off' },
     })
+    const tied = threads.createWithOwnership({
+      title: 'Tied',
+      model: 'model',
+      projectId: first.id,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    db.prepare('UPDATE threads SET updated_at = ? WHERE id IN (?, ?)').run(
+      CREATED_AT,
+      owned.id,
+      tied.id,
+    )
     assert.equal(owned.projectId, first.id)
     assert.equal(owned.workspaceId, null)
-    assert.deepEqual(threads.listByProject(first.id).map((thread) => thread.id), [owned.id])
+    assert.deepEqual(
+      threads.listByProject(first.id).map((thread) => thread.id),
+      [owned.id, tied.id].sort(),
+    )
     assert.deepEqual(threads.listByProject(second.id), [])
     assert.deepEqual(threads.listProjectless(), [])
     assert.throws(
-      () => db.prepare('UPDATE threads SET project_id = ? WHERE id = ?').run('missing', owned.id),
+      () => db.prepare(
+        `INSERT INTO threads (
+          id, title, mode, model, workspace_id, project_id,
+          num_ctx, temperature, think, created_at, updated_at
+        ) VALUES ('missing-owner', 'Missing', 'chat', 'model', NULL, 'missing', 8192, 0.7, 'off', ?, ?)`,
+      ).run(CREATED_AT, CREATED_AT),
       /FOREIGN KEY constraint failed/u,
+    )
+    assert.throws(
+      () => db.prepare('UPDATE threads SET project_id = ? WHERE id = ?').run(second.id, owned.id),
+      /thread project ownership is immutable/u,
+    )
+    assert.throws(
+      () => db.prepare('UPDATE threads SET project_id = NULL WHERE id = ?').run(owned.id),
+      /thread project ownership is immutable/u,
+    )
+    assert.throws(
+      () => db.prepare("UPDATE threads SET mode = 'agent' WHERE id = ?").run(owned.id),
+      /Project-owned thread must be a Chat without Workspace scope/u,
+    )
+    assert.throws(
+      () => db.prepare("UPDATE threads SET workspace_id = 'scope' WHERE id = ?").run(owned.id),
+      /Project-owned thread must be a Chat without Workspace scope/u,
+    )
+    assert.throws(
+      () => db.prepare(
+        `INSERT INTO threads (
+          id, title, mode, model, workspace_id, project_id,
+          num_ctx, temperature, think, created_at, updated_at
+        ) VALUES ('invalid-owned', 'Invalid', 'agent', 'model', NULL, ?, 8192, 0.7, 'off', ?, ?)`,
+      ).run(first.id, CREATED_AT, CREATED_AT),
+      /Project-owned thread must be a Chat without Workspace scope/u,
     )
     assert.throws(
       () => db.prepare('DELETE FROM projects WHERE id = ?').run(first.id),

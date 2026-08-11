@@ -910,12 +910,100 @@ describe('project routes', () => {
     assert.equal(modelBoundaryCalls, 0)
   })
 
-  it('creates and reads Project Chats through one immutable scoped boundary', async (test) => {
-    let modelValidationCalls = 0
+  it('pins legacy Thread create/list/read/update bytes and rejects ownership query drift', async (test) => {
     const context = testContext({
       models: () => ({
         supportsTools: async () => false,
-        assertContextAllowed: async () => { modelValidationCalls += 1 },
+        assertContextAllowed: async () => undefined,
+      }) as unknown as ModelService,
+    })
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    const createdResponse = await app.request('/api/threads', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: 'Legacy raw',
+        mode: 'chat',
+        model: 'model',
+        options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+      }),
+    })
+    const createBytes = await createdResponse.text()
+    const created = JSON.parse(createBytes) as {
+      id: string
+      createdAt: string
+      updatedAt: string
+    }
+    const expectedCreated = {
+      id: created.id,
+      title: 'Legacy raw',
+      mode: 'chat',
+      model: 'model',
+      workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
+      messageCount: 0,
+    }
+    assert.equal(createdResponse.status, 201)
+    assert.equal(createBytes, JSON.stringify(expectedCreated))
+    assert.equal(
+      await (await app.request('/api/threads')).text(),
+      JSON.stringify({ threads: [expectedCreated] }),
+    )
+
+    const updatedResponse = await app.request(`/api/threads/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Legacy updated' }),
+    })
+    const updateBytes = await updatedResponse.text()
+    const updated = JSON.parse(updateBytes) as { updatedAt: string }
+    const expectedUpdated = {
+      ...expectedCreated,
+      title: 'Legacy updated',
+      updatedAt: updated.updatedAt,
+    }
+    assert.equal(updatedResponse.status, 200)
+    assert.equal(updateBytes, JSON.stringify(expectedUpdated))
+    assert.equal(
+      await (await app.request(`/api/threads/${created.id}`)).text(),
+      JSON.stringify({
+        thread: expectedUpdated,
+        messages: [],
+        context: {
+          usedTokens: 0,
+          allocatedTokens: 8192,
+          percent: 0,
+          cacheHit: false,
+          cachedTokens: 0,
+          compactable: false,
+          estimatedRepefillMs: 0,
+        },
+      }),
+    )
+    for (const query of [
+      '?ownershipVersion=2&scope=projectless',
+      '?ownershipVersion=1&scope=projectless&future=1',
+      '?ownershipVersion=1&ownershipVersion=1&scope=projectless',
+    ]) {
+      assert.equal((await app.request(`/api/threads${query}`)).status, 400)
+    }
+    assert.equal(
+      (context.db.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count,
+      1,
+    )
+  })
+
+  it('creates and reads Project Chats through one immutable scoped boundary', async (test) => {
+    const modelValidationCalls: Array<[string, number]> = []
+    const context = testContext({
+      models: () => ({
+        supportsTools: async () => false,
+        assertContextAllowed: async (model: string, numCtx: number) => {
+          modelValidationCalls.push([model, numCtx])
+        },
       }) as unknown as ModelService,
     })
     test.after(() => context.db.close())
@@ -963,6 +1051,8 @@ describe('project routes', () => {
       projectId: string
       workspaceId: string | null
       mode: string
+      model: string
+      options: { numCtx: number; temperature: number; think: string }
       ownershipVersion: number
     }
     assert.deepEqual(
@@ -970,11 +1060,20 @@ describe('project routes', () => {
         projectId: created.projectId,
         workspaceId: created.workspaceId,
         mode: created.mode,
+        model: created.model,
+        options: created.options,
         ownershipVersion: created.ownershipVersion,
       },
-      { projectId: first.id, workspaceId: null, mode: 'chat', ownershipVersion: 1 },
+      {
+        projectId: first.id,
+        workspaceId: null,
+        mode: 'chat',
+        model: 'model',
+        options: { numCtx: 4096, temperature: 0.25, think: 'off' },
+        ownershipVersion: 1,
+      },
     )
-    assert.equal(modelValidationCalls, 1)
+    assert.deepEqual(modelValidationCalls, [['model', 4096]])
     assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count, 2)
     assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count, 0)
     assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count, 0)
@@ -1027,6 +1126,7 @@ describe('project routes', () => {
       { model: 'model', workspaceId: 'workspace-1' },
       { model: 'model', mode: 'agent' },
       { model: 'model', extra: true },
+      { model: 'model', options: { futureField: true } },
     ]) {
       const response = await app.request(`/api/projects/${first.id}/chats`, {
         method: 'POST',
@@ -1035,6 +1135,32 @@ describe('project routes', () => {
       })
       assert.equal(response.status, 400)
     }
+    const countsBeforeInvalidReferences = {
+      threads: (context.db.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count,
+      messages: (context.db.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count,
+      jobs: (context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count,
+    }
+    for (const request of [
+      { path: '/api/projects//chats', method: 'POST', status: 404 },
+      { path: '/api/projects/%20/chats', method: 'POST', status: 400 },
+      { path: `/api/projects/${'p'.repeat(256)}/chats`, method: 'POST', status: 400 },
+      { path: `/api/projects/${first.id}/chats/%20`, method: 'GET', status: 400 },
+    ]) {
+      const response = await app.request(request.path, {
+        method: request.method,
+        headers: { 'content-type': 'application/json' },
+        body: request.method === 'POST' ? JSON.stringify({ model: 'model' }) : undefined,
+      })
+      assert.equal(response.status, request.status)
+    }
+    assert.deepEqual(
+      {
+        threads: (context.db.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count,
+        messages: (context.db.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count,
+        jobs: (context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count,
+      },
+      countsBeforeInvalidReferences,
+    )
     for (const patch of [{ projectId: second.id }, { workspaceId: 'workspace-1' }]) {
       const rejected = await app.request(`/api/threads/${created.id}`, {
         method: 'PATCH',
@@ -1044,12 +1170,63 @@ describe('project routes', () => {
       assert.equal(rejected.status, 400)
     }
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM threads WHERE id = ?').get(created.id)), rowBefore)
-    assert.equal(modelValidationCalls, 1)
+    assert.deepEqual(modelValidationCalls, [['model', 4096]])
     assert.equal(await (await app.request(`/api/threads/${legacy.id}`)).text(), legacyBytes)
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all()), projectBefore)
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM project_filesystem_bindings ORDER BY id').all()), bindingsBefore)
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM workspaces').all()), workspacesBefore)
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM settings ORDER BY key').all()), settingsBefore)
     assert.equal(context.governor.snapshot().activeLease, null)
+  })
+
+  it('keeps the durable Message and Job lifecycle unchanged for a Project-owned Chat', async (test) => {
+    const context = streamingContext(() =>
+      (async function* () {
+        yield terminalChunk('owned route success')
+      })(),
+    )
+    test.after(() => context.db.close())
+    const project = context.projects.create('Owned lifecycle')
+    const owned = context.threads.createWithOwnership({
+      title: 'Owned lifecycle Chat',
+      model: 'qwen',
+      projectId: project.id,
+      options: { numCtx: 4096, temperature: 0, think: 'off' },
+    })
+    const app = createApp(context)
+
+    const response = await app.request(`/api/threads/${owned.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'owned hello' }),
+    })
+    const events = parseSse(await response.text())
+    assert.equal(
+      (events.find((event) => event['type'] === 'done')?.['data'] as { outcome?: string }).outcome,
+      'completed',
+    )
+
+    const reloaded = await app.request(`/api/projects/${project.id}/chats/${owned.id}`)
+    assert.equal(reloaded.status, 200)
+    const body = await reloaded.json() as {
+      thread: { id: string; projectId: string }
+      messages: Array<{ role: string; content: string; turnStatus: string | null }>
+    }
+    assert.deepEqual(
+      body.messages.map(({ role, content, turnStatus }) => ({ role, content, turnStatus })),
+      [
+        { role: 'user', content: 'owned hello', turnStatus: null },
+        { role: 'assistant', content: 'owned route success', turnStatus: 'completed' },
+      ],
+    )
+    assert.deepEqual(
+      { id: body.thread.id, projectId: body.thread.projectId },
+      { id: owned.id, projectId: project.id },
+    )
+    assert.equal(
+      (context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count,
+      1,
+    )
+    assert.equal(context.threads.getWithOwnership(owned.id)?.projectId, project.id)
   })
 })

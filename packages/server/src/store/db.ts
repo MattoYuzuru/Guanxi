@@ -416,6 +416,30 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX idx_threads_project_updated
     ON threads(project_id, updated_at DESC, id);
   `,
+  // 13 — append-only integrity hardening for v12 ownership. It prevents local
+  // or future writers from reparenting Project Chats or attaching agent scope.
+  `
+  CREATE TRIGGER threads_project_ownership_immutable
+    BEFORE UPDATE OF project_id ON threads
+    WHEN OLD.project_id IS NOT NEW.project_id
+    BEGIN
+      SELECT RAISE(ABORT, 'thread project ownership is immutable');
+    END;
+  CREATE TRIGGER threads_project_chat_insert_valid
+    BEFORE INSERT ON threads
+    WHEN NEW.project_id IS NOT NULL
+      AND (NEW.mode <> 'chat' OR NEW.workspace_id IS NOT NULL)
+    BEGIN
+      SELECT RAISE(ABORT, 'Project-owned thread must be a Chat without Workspace scope');
+    END;
+  CREATE TRIGGER threads_project_chat_update_valid
+    BEFORE UPDATE OF mode, workspace_id ON threads
+    WHEN NEW.project_id IS NOT NULL
+      AND (NEW.mode <> 'chat' OR NEW.workspace_id IS NOT NULL)
+    BEGIN
+      SELECT RAISE(ABORT, 'Project-owned thread must be a Chat without Workspace scope');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

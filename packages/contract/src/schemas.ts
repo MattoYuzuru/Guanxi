@@ -2371,6 +2371,7 @@ export type Thread = z.infer<typeof threadSchema>
 export const PROJECT_CHAT_OWNERSHIP_VERSION = 1 as const
 export const threadWithOwnershipSchema = threadSchema
   .extend({
+    options: threadOptionsSchema.strict(),
     ownershipVersion: z.literal(PROJECT_CHAT_OWNERSHIP_VERSION),
     projectId: z.string().min(1).nullable(),
   })

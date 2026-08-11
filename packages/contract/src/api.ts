@@ -902,7 +902,7 @@ export const createProjectChatBody = z
   .object({
     title: z.string().optional(),
     model: z.string().min(1),
-    options: threadOptionsSchema.partial().optional(),
+    options: threadOptionsSchema.partial().strict().optional(),
   })
   .strict()
 export type CreateProjectChatBody = z.infer<typeof createProjectChatBody>
@@ -920,6 +920,17 @@ export const listProjectChatsResponse = z
     chats: z.array(projectChatSchema),
   })
   .strict()
+  .superRefine((response, context) => {
+    response.chats.forEach((chat, index) => {
+      if (chat.projectId !== response.project.id) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Project Chat owner must match the sourced Project',
+          path: ['chats', index, 'projectId'],
+        })
+      }
+    })
+  })
 export type ListProjectChatsResponse = z.infer<typeof listProjectChatsResponse>
 
 export const createProjectChatResponse = projectChatSchema
@@ -933,6 +944,15 @@ export const getProjectChatResponse = z
     context: contextStateSchema,
   })
   .strict()
+  .superRefine((response, context) => {
+    if (response.thread.projectId !== response.project.id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Project Chat owner must match the sourced Project',
+        path: ['thread', 'projectId'],
+      })
+    }
+  })
 export type GetProjectChatResponse = z.infer<typeof getProjectChatResponse>
 
 export const listProjectlessChatsQuery = z

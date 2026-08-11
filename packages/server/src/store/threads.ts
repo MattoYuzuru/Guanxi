@@ -189,9 +189,30 @@ export class ThreadStore {
     mode: ThreadMode
     model: string
     workspaceId: string | null
-    projectId?: string | null
     options: ThreadOptions
   }): Thread {
+    const id = this.insert({ ...input, projectId: null })
+    return this.get(id)!
+  }
+
+  createWithOwnership(input: {
+    title: string
+    model: string
+    projectId: string
+    options: ThreadOptions
+  }): ThreadWithOwnership {
+    const id = this.insert({ ...input, mode: 'chat', workspaceId: null })
+    return this.getWithOwnership(id)!
+  }
+
+  private insert(input: {
+    title: string
+    mode: ThreadMode
+    model: string
+    workspaceId: string | null
+    projectId: string | null
+    options: ThreadOptions
+  }): string {
     const now = new Date().toISOString()
     const id = randomUUID()
 
@@ -208,7 +229,7 @@ export class ThreadStore {
         input.mode,
         input.model,
         input.workspaceId,
-        input.projectId ?? null,
+        input.projectId,
         input.options.numCtx,
         input.options.temperature,
         input.options.think,
@@ -216,18 +237,7 @@ export class ThreadStore {
         now,
       )
 
-    return this.get(id)!
-  }
-  createWithOwnership(input: {
-    title: string
-    mode: ThreadMode
-    model: string
-    workspaceId: string | null
-    projectId: string
-    options: ThreadOptions
-  }): ThreadWithOwnership {
-    const created = this.create(input)
-    return this.getWithOwnership(created.id)!
+    return id
   }
 
   update(

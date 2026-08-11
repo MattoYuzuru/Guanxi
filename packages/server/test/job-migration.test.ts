@@ -19,6 +19,9 @@ function schemaObjects(db: DatabaseSync, names: string[]): Array<{ name: string;
 
 function downgradeToV4(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER threads_project_chat_update_valid;
+    DROP TRIGGER threads_project_chat_insert_valid;
+    DROP TRIGGER threads_project_ownership_immutable;
     DROP INDEX idx_threads_project_updated;
     ALTER TABLE threads DROP COLUMN project_id;
     DROP TABLE project_filesystem_bindings;
@@ -44,7 +47,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 12 })
+    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 13 })
     assert.deepEqual(
       schemaObjects(first, [
         'jobs',
@@ -70,7 +73,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 12 })
+    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 13 })
     assert.equal(
       schemaObjects(reopened, ['jobs', 'job_events']).filter((row) => row.type === 'table').length,
       2,
@@ -123,7 +126,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 12 })
+    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 13 })
     assert.deepEqual(
       {
         ...upgraded.prepare('SELECT id, title, mode, model FROM threads WHERE id = ?').get('thread-v3'),
@@ -185,7 +188,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 12 })
+    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 13 })
     assert.equal(schemaObjects(recovered, ['jobs', 'job_events', 'chat_job_inputs']).length, 3)
     recovered.close()
   })
