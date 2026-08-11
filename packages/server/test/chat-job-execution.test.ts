@@ -287,7 +287,7 @@ describe('durable Chat Job execution owner', () => {
         yield {
           model: 'fixture',
           created_at: '2026-08-03T10:00:00.000Z',
-          message: { role: 'assistant', content: 'partial ' },
+          message: { role: 'assistant', content: 'partial ', thinking: 'why ' },
           done: false,
         }
         await release.promise
@@ -310,6 +310,33 @@ describe('durable Chat Job execution owner', () => {
     const assistant = context.threads.messages(threadId).at(-1)!
     assert.equal(assistant.turnStatus, 'completed')
     assert.equal(assistant.content, 'partial complete')
+    assert.equal(assistant.thinking, 'why ')
+    assert.equal(
+      (context.db.prepare('SELECT COUNT(*) AS count FROM reasoning_artifacts WHERE source_job_id = ?')
+        .get(job.id) as { count: number }).count,
+      1,
+    )
+    assert.equal(
+      (context.db.prepare('SELECT thinking FROM messages WHERE id = ?').get(assistant.id) as { thinking: string | null }).thinking,
+      null,
+    )
+
+    const reloaded = await (await app.request(`/api/threads/${threadId}`)).json() as {
+      messages: Array<{ id: string; content: string; thinking: string | null }>
+    }
+    assert.deepEqual(
+      reloaded.messages.slice(-1).map(({ id, content, thinking }) => ({ id, content, thinking })),
+      [{ id: assistant.id, content: 'partial complete', thinking: 'why ' }],
+    )
+    const artifacts = await (await app.request(
+      `/api/threads/${threadId}/reasoning-artifacts?artifactVersion=1&scope=projectless`,
+    )).json() as { artifacts: Array<{ source: { jobId: string; messageId: string } }> }
+    assert.equal(artifacts.artifacts.length, 1)
+    assert.deepEqual(artifacts.artifacts[0]?.source, {
+      jobId: job.id,
+      messageId: assistant.id,
+      chatId: threadId,
+    })
 
     const replay = await app.request(`/api/jobs/${job.id}/events`, {
       headers: { 'Last-Event-ID': '3' },
@@ -335,6 +362,13 @@ describe('durable Chat Job execution owner', () => {
         .map((event) => event.output?.event.data.delta ?? '')
         .join(''),
       'partial complete',
+    )
+    assert.equal(
+      frames
+        .filter((event) => event.output?.event.type === 'thinking')
+        .map((event) => event.output?.event.data.delta ?? '')
+        .join(''),
+      'why ',
     )
     context.db.close()
   })

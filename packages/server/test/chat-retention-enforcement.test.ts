@@ -77,6 +77,10 @@ function nonLifecycleThreadPayload(db: DatabaseSync): string {
 
 function downgradeToV14(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER reasoning_artifacts_immutable;
+    DROP TRIGGER reasoning_artifacts_source_insert_valid;
+    DROP INDEX idx_reasoning_artifacts_chat;
+    DROP TABLE reasoning_artifacts;
     DROP INDEX idx_threads_chat_trash_scope;
     DROP INDEX idx_threads_chat_ttl_eligibility;
     DROP INDEX idx_chat_lifecycle_audit_chat;
@@ -223,23 +227,26 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 15)
+    assert.equal(version(upgraded), 16)
     assert.equal(lifecycleColumns(upgraded).length, 5)
     assert.deepEqual(lifecycleSchemaObjects(upgraded), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     assert.equal((upgraded.prepare(
       "SELECT COUNT(*) AS count FROM threads WHERE chat_lifecycle_state = 'active'",
     ).get() as { count: number }).count, 2)
     assert.equal((upgraded.prepare('SELECT COUNT(*) AS count FROM chat_lifecycle_audit').get() as { count: number }).count, 0)
-    assert.equal(allTablesPayload(upgraded, new Set(['threads', 'chat_lifecycle_audit'])), before)
+    assert.equal(
+      allTablesPayload(upgraded, new Set(['threads', 'chat_lifecycle_audit', 'reasoning_artifacts'])),
+      before,
+    )
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 15)
+    assert.equal(version(reopened), 16)
     assert.deepEqual(lifecycleSchemaObjects(reopened), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 15)
+    assert.equal(version(fresh), 16)
     assert.equal(lifecycleColumns(fresh).length, 5)
     assert.deepEqual(lifecycleSchemaObjects(fresh), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     fresh.close()

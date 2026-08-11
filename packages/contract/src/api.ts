@@ -17,6 +17,12 @@ import {
   restoredChatLifecycleSchema,
 } from './retention.ts'
 import {
+  REASONING_ARTIFACT_VERSION,
+  generatedAnswerProjectionSchema,
+  reasoningArtifactSchema,
+  reasoningArtifactWithContentSchema,
+} from './reasoning-artifacts.ts'
+import {
   catalogModelSchema,
   catalogSourceHealthSchema,
   contextStateSchema,
@@ -101,6 +107,10 @@ export const ROUTES = {
   threadRetention: (id: string) => `/api/threads/${encodeURIComponent(id)}/retention`,
   chatTrash: () => '/api/threads/trash',
   threadRestore: (id: string) => `/api/threads/${encodeURIComponent(id)}/restore`,
+  threadReasoningArtifacts: (id: string) =>
+    `/api/threads/${encodeURIComponent(id)}/reasoning-artifacts`,
+  threadReasoningArtifact: (id: string, artifactId: string) =>
+    `/api/threads/${encodeURIComponent(id)}/reasoning-artifacts/${encodeURIComponent(artifactId)}`,
 
   workspaces: () => '/api/workspaces',
   workspace: (id: string) => `/api/workspaces/${id}`,
@@ -854,6 +864,52 @@ export const getContextResponse = contextStateSchema
 /** Explicit opt-in Chat retention boundary; legacy Thread JSON remains unchanged. */
 export const getChatRetentionResponse = chatRetentionProjectionSchema
 export type GetChatRetentionResponse = z.infer<typeof getChatRetentionResponse>
+
+const reasoningArtifactScopeQueryFields = {
+  artifactVersion: z.coerce.number().pipe(z.literal(REASONING_ARTIFACT_VERSION)),
+}
+
+export const listReasoningArtifactsQuery = z.discriminatedUnion('scope', [
+  z.object({ ...reasoningArtifactScopeQueryFields, scope: z.literal('projectless') }).strict(),
+  z
+    .object({
+      ...reasoningArtifactScopeQueryFields,
+      scope: z.literal('project'),
+      projectId: z.string().min(1).max(255),
+    })
+    .strict(),
+])
+export type ListReasoningArtifactsQuery = z.infer<typeof listReasoningArtifactsQuery>
+
+export const listReasoningArtifactsResponse = z
+  .object({
+    artifactVersion: z.literal(REASONING_ARTIFACT_VERSION),
+    chatId: z.string().min(1),
+    scope: z.enum(['projectless', 'project']),
+    projectId: z.string().min(1).nullable(),
+    generatedAnswers: z.array(generatedAnswerProjectionSchema),
+    artifacts: z.array(reasoningArtifactSchema),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const expectedProjectId = value.scope === 'project' ? value.projectId : null
+    if ((value.scope === 'project') !== (value.projectId !== null)) {
+      context.addIssue({ code: 'custom', path: ['projectId'], message: 'Artifact scope mismatch' })
+    }
+    value.artifacts.forEach((artifact, index) => {
+      if (
+        artifact.source.chatId !== value.chatId ||
+        artifact.ownership.scope !== value.scope ||
+        artifact.ownership.projectId !== expectedProjectId
+      ) {
+        context.addIssue({ code: 'custom', path: ['artifacts', index], message: 'Artifact crossed Chat scope' })
+      }
+    })
+  })
+export type ListReasoningArtifactsResponse = z.infer<typeof listReasoningArtifactsResponse>
+
+export const getReasoningArtifactResponse = reasoningArtifactWithContentSchema
+export type GetReasoningArtifactResponse = z.infer<typeof getReasoningArtifactResponse>
 
 export const updateChatRetentionBody = z
   .object({

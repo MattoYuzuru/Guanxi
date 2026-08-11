@@ -11,6 +11,9 @@ import {
   getChatRetentionResponse,
   listChatTrashQuery,
   listChatTrashResponse,
+  listReasoningArtifactsQuery,
+  listReasoningArtifactsResponse,
+  getReasoningArtifactResponse,
   listProjectlessChatsQuery,
   PROJECT_CHAT_OWNERSHIP_VERSION,
   sendMessageBody,
@@ -32,6 +35,7 @@ import {
   type ResourceLease,
 } from '../runtime/resource-governor.ts'
 import { JobStoreError } from '../store/jobs.ts'
+import { ReasoningArtifactStore } from '../store/reasoning-artifacts.ts'
 import { fail, notFound } from './errors.ts'
 import { lastEventId, sseResponse } from './sse.ts'
 
@@ -59,6 +63,21 @@ async function* compatibilityEvents(
 
 export function threadsRoutes(app: AppContext): Hono {
   const routes = new Hono()
+  const reasoningArtifacts = () => new ReasoningArtifactStore(app.db)
+
+  const reasoningScope = (context: { req: { url: string } }) => {
+    const query = new URL(context.req.url).searchParams
+    const parsed = listReasoningArtifactsQuery.safeParse(Object.fromEntries(query))
+    const allowed = new Set(['artifactVersion', 'scope', 'projectId'])
+    if (
+      !parsed.success ||
+      [...query.keys()].some((key) => !allowed.has(key)) ||
+      [...new Set(query.keys())].some((key) => query.getAll(key).length !== 1)
+    ) return null
+    return parsed.data.scope === 'project'
+      ? { query: parsed.data, store: { scope: 'project' as const, projectId: parsed.data.projectId } }
+      : { query: parsed.data, store: { scope: 'projectless' as const, projectId: null } }
+  }
 
   routes.get('/', (context) => {
     const query = new URL(context.req.url).searchParams
@@ -231,6 +250,59 @@ export function threadsRoutes(app: AppContext): Hono {
       )
     }
     return context.json(restoreChatResponse.parse(result.lifecycle))
+  })
+
+  routes.get('/:id/reasoning-artifacts', (context) => {
+    const scope = reasoningScope(context)
+    if (!scope) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid reasoning Artifact scope', details: null },
+        400,
+      )
+    }
+    const result = reasoningArtifacts().list(context.req.param('id'), scope.store)
+    if (result.status === 'scope_mismatch') {
+      return context.json(
+        { code: 'validation_failed', message: 'Reasoning Artifact Chat scope mismatch', details: null },
+        400,
+      )
+    }
+    if (result.status !== 'ok') {
+      return notFound(context, 'thread_not_found', 'Chat was not found in active work')
+    }
+    return context.json(listReasoningArtifactsResponse.parse({
+      artifactVersion: scope.query.artifactVersion,
+      chatId: context.req.param('id'),
+      scope: scope.query.scope,
+      projectId: scope.query.scope === 'project' ? scope.query.projectId : null,
+      generatedAnswers: result.generatedAnswers,
+      artifacts: result.artifacts,
+    }))
+  })
+
+  routes.get('/:id/reasoning-artifacts/:artifactId', (context) => {
+    const scope = reasoningScope(context)
+    if (!scope) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid reasoning Artifact scope', details: null },
+        400,
+      )
+    }
+    const result = reasoningArtifacts().get(
+      context.req.param('id'),
+      context.req.param('artifactId'),
+      scope.store,
+    )
+    if (result.status === 'scope_mismatch') {
+      return context.json(
+        { code: 'validation_failed', message: 'Reasoning Artifact Chat scope mismatch', details: null },
+        400,
+      )
+    }
+    if (result.status !== 'ok') {
+      return notFound(context, 'thread_not_found', 'Reasoning Artifact was not found in active Chat')
+    }
+    return context.json(getReasoningArtifactResponse.parse(result.artifact))
   })
 
   routes.get('/:id', (context) => {

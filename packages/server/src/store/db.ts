@@ -526,6 +526,65 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX idx_threads_chat_trash_scope
     ON threads(chat_lifecycle_state, project_id, chat_tombstoned_at DESC, id);
   `,
+  // 16 — canonical diagnostic reasoning Artifact metadata/content. Existing
+  // messages.thinking remains untouched as a literal compatibility source.
+  `
+  CREATE TABLE reasoning_artifacts (
+    id                         TEXT PRIMARY KEY,
+    artifact_version           INTEGER NOT NULL CHECK (artifact_version = 1),
+    chat_id                    TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    project_id                 TEXT REFERENCES projects(id) ON DELETE RESTRICT,
+    source_message_id          TEXT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+    source_job_id              TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+    media_type                 TEXT NOT NULL CHECK (media_type = 'text/markdown; charset=utf-8'),
+    storage_kind               TEXT NOT NULL CHECK (storage_kind = 'sqlite_text'),
+    content_text               TEXT NOT NULL CHECK (length(content_text) > 0),
+    byte_size                  INTEGER NOT NULL CHECK (byte_size > 0),
+    checksum                   TEXT NOT NULL CHECK (
+      checksum GLOB 'sha256:*'
+      AND length(checksum) = 71
+      AND substr(checksum, 8) NOT GLOB '*[^0-9a-f]*'
+    ),
+    created_at                 TEXT NOT NULL,
+    artifact_expires_at        TEXT NOT NULL,
+    parent_retention_mode      TEXT NOT NULL CHECK (parent_retention_mode IN ('keep','ttl','session')),
+    parent_retention_expires_at TEXT,
+    effective_expires_at       TEXT NOT NULL,
+    CHECK (effective_expires_at <= artifact_expires_at),
+    CHECK (
+      (parent_retention_mode = 'ttl' AND parent_retention_expires_at IS NOT NULL)
+      OR (parent_retention_mode <> 'ttl' AND parent_retention_expires_at IS NULL)
+    )
+  );
+  CREATE INDEX idx_reasoning_artifacts_chat
+    ON reasoning_artifacts(chat_id, created_at, id);
+
+  CREATE TRIGGER reasoning_artifacts_source_insert_valid
+    BEFORE INSERT ON reasoning_artifacts
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM messages m
+      JOIN chat_job_inputs i
+        ON i.job_id = NEW.source_job_id
+       AND i.thread_id = NEW.chat_id
+      JOIN threads t ON t.id = NEW.chat_id
+      WHERE m.id = NEW.source_message_id
+        AND m.thread_id = NEW.chat_id
+        AND m.job_id = NEW.source_job_id
+        AND m.role = 'assistant'
+        AND t.mode = 'chat'
+        AND t.project_id IS NEW.project_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid reasoning Artifact source ownership');
+    END;
+
+  CREATE TRIGGER reasoning_artifacts_immutable
+    BEFORE UPDATE ON reasoning_artifacts
+    BEGIN
+      SELECT RAISE(ABORT, 'reasoning Artifact is immutable');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

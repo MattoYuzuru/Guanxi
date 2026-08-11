@@ -45,6 +45,8 @@ interface MessageRow {
   role: string
   content: string
   thinking: string | null
+  artifact_thinking?: string | null
+  artifact_version?: number | null
   tool_calls: string
   usage: string | null
   is_compaction: number
@@ -81,13 +83,16 @@ function toThreadWithOwnership(row: ThreadRow): ThreadWithOwnership {
 }
 
 function toMessage(row: MessageRow): Message {
+  if (row.artifact_version !== undefined && row.artifact_version !== null && row.artifact_version !== 1) {
+    throw new Error(`Message ${row.id} references an unsupported reasoning Artifact version`)
+  }
   return {
     id: row.id,
     threadId: row.thread_id,
     jobId: row.job_id,
     role: row.role as Message['role'],
     content: row.content,
-    thinking: row.thinking,
+    thinking: row.artifact_thinking ?? row.thinking,
     toolCalls: JSON.parse(row.tool_calls) as ToolCall[],
     usage: row.usage ? (JSON.parse(row.usage) as Usage) : null,
     createdAt: row.created_at,
@@ -304,7 +309,13 @@ export class ThreadStore {
 
   messages(threadId: string): Message[] {
     const rows = this.db
-      .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq')
+      .prepare(
+        `SELECT m.*, a.content_text AS artifact_thinking, a.artifact_version
+         FROM messages m
+         LEFT JOIN reasoning_artifacts a ON a.source_message_id = m.id
+         WHERE m.thread_id = ?
+         ORDER BY m.seq`,
+      )
       .all(threadId) as unknown as MessageRow[]
     return rows.map(toMessage)
   }
@@ -317,7 +328,10 @@ export class ThreadStore {
    */
   compactionCandidates(threadId: string, keepTail: number): CompactionCandidates | null {
     const rows = this.db
-      .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq')
+      .prepare(
+        `SELECT m.*, NULL AS artifact_thinking, NULL AS artifact_version
+         FROM messages m WHERE m.thread_id = ? ORDER BY m.seq`,
+      )
       .all(threadId) as unknown as MessageRow[]
 
     if (rows.length <= keepTail + 1) return null
@@ -431,7 +445,12 @@ export class ThreadStore {
   }
 
   getMessage(id: string): Message | null {
-    const row = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as unknown as
+    const row = this.db.prepare(
+      `SELECT m.*, a.content_text AS artifact_thinking, a.artifact_version
+       FROM messages m
+       LEFT JOIN reasoning_artifacts a ON a.source_message_id = m.id
+       WHERE m.id = ?`,
+    ).get(id) as unknown as
       | MessageRow
       | undefined
     return row ? toMessage(row) : null
@@ -440,9 +459,11 @@ export class ThreadStore {
   latestPendingAssistantForJob(jobId: string): Message | null {
     const row = this.db
       .prepare(
-        `SELECT * FROM messages
-         WHERE job_id = ? AND role = 'assistant' AND turn_status = 'pending'
-         ORDER BY seq DESC
+        `SELECT m.*, a.content_text AS artifact_thinking, a.artifact_version
+         FROM messages m
+         LEFT JOIN reasoning_artifacts a ON a.source_message_id = m.id
+         WHERE m.job_id = ? AND m.role = 'assistant' AND m.turn_status = 'pending'
+         ORDER BY m.seq DESC
          LIMIT 1`,
       )
       .get(jobId) as unknown as MessageRow | undefined
@@ -452,9 +473,11 @@ export class ThreadStore {
   pendingAssistantsForJob(jobId: string): Message[] {
     const rows = this.db
       .prepare(
-        `SELECT * FROM messages
-         WHERE job_id = ? AND role = 'assistant' AND turn_status = 'pending'
-         ORDER BY seq ASC`,
+        `SELECT m.*, a.content_text AS artifact_thinking, a.artifact_version
+         FROM messages m
+         LEFT JOIN reasoning_artifacts a ON a.source_message_id = m.id
+         WHERE m.job_id = ? AND m.role = 'assistant' AND m.turn_status = 'pending'
+         ORDER BY m.seq ASC`,
       )
       .all(jobId) as unknown as MessageRow[]
     return rows.map(toMessage)

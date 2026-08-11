@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   chatJobInputSnapshotSchema,
   jobErrorSchema,
@@ -294,9 +294,12 @@ function toJobEvent(row: JobEventRow): JobStreamEvent {
 
 export class JobStore {
   private readonly db: Db
+  private readonly reasoningChecksum: (content: string) => string
 
-  constructor(db: Db) {
+  constructor(db: Db, options: { reasoningChecksum?: (content: string) => string } = {}) {
     this.db = db
+    this.reasoningChecksum = options.reasoningChecksum ?? ((content) =>
+      `sha256:${createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')}`)
   }
 
   create(input: CreateJobInput): CreateJobResult {
@@ -806,6 +809,8 @@ export class JobStore {
         return { applied: false, job: existing }
       }
 
+      const finishedAt = new Date().toISOString()
+      const reasoning = input.message.thinking
       const projected = this.db
         .prepare(
           `UPDATE messages
@@ -815,7 +820,7 @@ export class JobStore {
         )
         .run(
           input.message.content,
-          input.message.thinking,
+          null,
           JSON.stringify(input.message.toolCalls),
           input.message.usage ? JSON.stringify(input.message.usage) : null,
           input.message.outcome,
@@ -831,7 +836,70 @@ export class JobStore {
         )
       }
 
-      const finishedAt = new Date().toISOString()
+      if (reasoning) {
+        const source = this.db
+          .prepare(
+            `SELECT t.id AS chat_id, t.project_id, t.retention_policy,
+                    t.last_user_activity_at, t.created_at
+             FROM chat_job_inputs i
+             JOIN threads t ON t.id = i.thread_id
+             WHERE i.job_id = ?`,
+          )
+          .get(input.jobId) as unknown as {
+            chat_id: string
+            project_id: string | null
+            retention_policy: 'keep' | 'ttl' | 'session'
+            last_user_activity_at: string | null
+            created_at: string
+          } | undefined
+        if (!source) {
+          throw new JobStoreError('stored_data_invalid', 'Reasoning Artifact source is unavailable')
+        }
+        const artifactExpiresAt = new Date(Date.parse(finishedAt) + 7 * 24 * 60 * 60 * 1_000)
+          .toISOString()
+        const parentExpiresAt = source.retention_policy === 'ttl'
+          ? new Date(
+              Date.parse(source.last_user_activity_at ?? source.created_at) +
+                7 * 24 * 60 * 60 * 1_000,
+            ).toISOString()
+          : null
+        const effectiveExpiresAt = parentExpiresAt && parentExpiresAt < artifactExpiresAt
+          ? parentExpiresAt
+          : artifactExpiresAt
+        const checksum = this.reasoningChecksum(reasoning)
+        const expectedChecksum = `sha256:${createHash('sha256')
+          .update(Buffer.from(reasoning, 'utf8'))
+          .digest('hex')}`
+        if (checksum !== expectedChecksum) {
+          throw new JobStoreError('stored_data_invalid', 'Reasoning Artifact checksum mismatch')
+        }
+        this.db
+          .prepare(
+            `INSERT INTO reasoning_artifacts (
+               id, artifact_version, chat_id, project_id, source_message_id,
+               source_job_id, media_type, storage_kind, content_text, byte_size,
+               checksum, created_at, artifact_expires_at, parent_retention_mode,
+               parent_retention_expires_at, effective_expires_at
+             ) VALUES (?, 1, ?, ?, ?, ?, 'text/markdown; charset=utf-8',
+               'sqlite_text', ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            randomUUID(),
+            source.chat_id,
+            source.project_id,
+            input.messageId,
+            input.jobId,
+            reasoning,
+            Buffer.byteLength(reasoning, 'utf8'),
+            checksum,
+            finishedAt,
+            artifactExpiresAt,
+            source.retention_policy,
+            parentExpiresAt,
+            effectiveExpiresAt,
+          )
+      }
+
       const terminalSequence = existing.lastEventSequence + 1
       const updated = this.db
         .prepare(
