@@ -35,6 +35,13 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  vi.spyOn(api, 'listChatTrash').mockImplementation(async (query) => ({
+    lifecycleVersion: 1,
+    scope: query.scope,
+    projectId: query.scope === 'project' ? query.projectId : null,
+    chats: [],
+    hasMore: false,
+  }))
   vi.spyOn(api, 'listProjectChats').mockResolvedValue({
     ownershipVersion: 1,
     project: {

@@ -16,7 +16,7 @@ const TTL: ChatRetentionProjection = {
   lastUserActivity: { at: ACTIVITY_AT, source: 'chat_created' },
   expiresAt: EXPIRES_AT,
   expirySource: 'server_calculated',
-  enforcement: 'not_implemented',
+  enforcement: 'rolling_ttl_trash',
 }
 
 function deferred<T>() {
@@ -44,8 +44,8 @@ describe('Chat retention info', () => {
     expect(dialog.textContent).toContain('7 дней')
     expect(dialog.textContent).toContain('основание — создание чата')
     expect(dialog.textContent).toContain('вычислено сервером')
-    expect(dialog.textContent).toContain('Настроено, но ещё не применяется')
-    expect(dialog.textContent).toContain('Cleanup и Корзина ещё не реализованы')
+    expect(dialog.textContent).toContain('Восстанавливаемое истечение применяется')
+    expect(dialog.textContent).toContain('Безвозвратное удаление не реализовано')
     expect(dialog.querySelector(`time[datetime="${ACTIVITY_AT}"]`)).toBeTruthy()
     expect(dialog.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeTruthy()
     expect(dialog.textContent).toContain('Ч'.repeat(120))
@@ -61,7 +61,7 @@ describe('Chat retention info', () => {
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="Retention" projectId={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
     await screen.findByRole('dialog')
-    await screen.findByText('Настроено, но ещё не применяется')
+    await screen.findByText('Восстанавливаемое истечение применяется')
     fireEvent.click(screen.getByRole('radio', { name: 'Хранить' }))
     const save = screen.getByRole('button', { name: 'Сохранить retention' })
     const form = save.closest('form')!
@@ -95,7 +95,7 @@ describe('Chat retention info', () => {
     const error = await screen.findByText('Retention относится к другому Chat scope.')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
     fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
-    await screen.findByText('Настроено, но ещё не применяется')
+    await screen.findByText('Восстанавливаемое истечение применяется')
     expect(api.getChatRetention).toHaveBeenCalledTimes(2)
     expect(screen.queryByText('Retention относится к другому Chat scope.')).toBeNull()
   })
@@ -149,7 +149,7 @@ describe('Chat retention info', () => {
     expect(document.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeNull()
     expect(api.updateChatRetention).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
-    await screen.findByText('Настроено, но ещё не применяется')
+    await screen.findByText('Восстанавливаемое истечение применяется')
     expect(api.getChatRetention).toHaveBeenCalledTimes(2)
     expect(api.updateChatRetention).toHaveBeenCalledTimes(1)
   })
@@ -159,7 +159,7 @@ describe('Chat retention info', () => {
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="English" projectId={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'Chat info' }))
     const dialog = await screen.findByRole('dialog', { name: 'Chat retention' })
-    expect(dialog.textContent).toContain('Configured, not enforced yet')
+    expect(dialog.textContent).toContain('Recoverable expiry is active')
     expect(dialog.textContent).toContain('calculated by the server')
   })
 })

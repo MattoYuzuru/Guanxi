@@ -73,7 +73,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
     lastUserActivity: { at: observedAt, source: 'chat_created' },
     expiresAt: policy === 'ttl' ? expiresAt : null,
     expirySource: policy === 'ttl' ? 'server_calculated' : 'policy_without_time_expiry',
-    enforcement: 'not_implemented',
+    enforcement: 'rolling_ttl_trash',
   })
 
   await page.route('**/api/**', async (route) => {
@@ -119,8 +119,8 @@ test('Chat retention survives reload and contains repeated save, error and narro
   const dialog = page.getByRole('dialog', { name: 'Хранение чата' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByText('7 дней', { exact: true })).toHaveCount(2)
-  await expect(dialog.getByText('Настроено, но ещё не применяется')).toHaveCount(1)
-  await expect(dialog.getByText(/Cleanup и Корзина ещё не реализованы/u)).toHaveCount(1)
+  await expect(dialog.getByText('Восстанавливаемое истечение применяется')).toHaveCount(1)
+  await expect(dialog.getByText(/Безвозвратное удаление не реализовано/u)).toHaveCount(1)
   await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
   await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
   await expect(dialog.getByText(thread.title)).toHaveCount(1)
@@ -165,7 +165,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await page.reload()
   await page.getByRole('button', { name: 'Информация о чате' }).click()
   await expect(page.getByRole('dialog').getByText('Хранить', { exact: true })).toHaveCount(2)
-  await expect(page.getByRole('dialog').getByText('Настроено, но ещё не применяется')).toHaveCount(1)
+  await expect(page.getByRole('dialog').getByText('Восстанавливаемое истечение применяется')).toHaveCount(1)
   expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Pacific/Honolulu')
   await expect(page.getByRole('dialog').locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
   await expect(page.getByRole('dialog').locator(`time[datetime="${expiresAt}"]`)).toHaveCount(0)

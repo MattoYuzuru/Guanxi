@@ -12,6 +12,7 @@ import { Link, paths } from '../../lib/router.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 import { ProjectIcon, projectColorStyle } from './ProjectIcon.tsx'
 import { ProjectPresentationPicker } from './ProjectPresentationPicker.tsx'
+import { ChatTrashList } from '../chat/ChatTrashList.tsx'
 
 export function ProjectsPage() {
   const projects = useAsync((signal) => api.listProjectsWithPresentation(signal), [])
@@ -135,6 +136,8 @@ export function ProjectsPage() {
           </Callout>
         </div>
       )}
+
+      <ChatTrashList projectId={null} />
 
       {list.length === 0 ? (
         <EmptyState
@@ -312,6 +315,7 @@ function ProjectChats({ projectId }: { projectId: string }) {
           ))}
         </ol>
       )}
+      <ChatTrashList projectId={projectId} onRestored={chats.reload} />
     </section>
   )
 }

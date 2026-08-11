@@ -30,6 +30,7 @@ import {
   huggingFaceDownloadStreamEventSchema,
   huggingFaceImportStreamEventSchema,
   listCatalogResponse,
+  listChatTrashResponse,
   listModelsResponse,
   listProjectsResponse,
   listProjectsWithPresentationResponse,
@@ -48,6 +49,7 @@ import {
   workspaceSchema,
   projectSchema,
   projectWithPresentationSchema,
+  restoreChatResponse,
   PROJECT_PRESENTATION_VERSION,
   PROJECT_CHAT_OWNERSHIP_VERSION,
   type ApiError,
@@ -76,6 +78,8 @@ import {
   type UpdateProjectBody,
   type UpdateProjectPresentationBody,
   type ListCatalogQuery,
+  type ListChatTrashQuery,
+  type RestoreChatBody,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
 import { translate } from './locale.ts'
@@ -367,6 +371,24 @@ export const api = {
   updateChatRetention: (id: string, body: UpdateChatRetentionBody, signal?: AbortSignal) =>
     request(ROUTES.threadRetention(id), getChatRetentionResponse, {
       method: 'PATCH',
+      body,
+      signal,
+    }),
+
+  listChatTrash: (query: ListChatTrashQuery, signal?: AbortSignal) =>
+    request(ROUTES.chatTrash(), listChatTrashResponse, {
+      query: {
+        lifecycleVersion: query.lifecycleVersion,
+        scope: query.scope,
+        projectId: query.scope === 'project' ? query.projectId : undefined,
+        limit: query.limit,
+      },
+      signal,
+    }),
+
+  restoreChat: (id: string, body: RestoreChatBody, signal?: AbortSignal) =>
+    request(ROUTES.threadRestore(id), restoreChatResponse, {
+      method: 'POST',
       body,
       signal,
     }),

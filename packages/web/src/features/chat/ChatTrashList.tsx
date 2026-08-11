@@ -1,0 +1,142 @@
+import { useEffect, useRef, useState } from 'react'
+import { CHAT_LIFECYCLE_VERSION, type ChatTrashItem } from '@alamo/contract'
+import { Button, Callout } from '../../components/ui.tsx'
+import { api, errorMessage } from '../../lib/api.ts'
+import { formatDateTime } from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
+import { useAsync } from '../../lib/useAsync.ts'
+
+export function ChatTrashList({
+  projectId,
+  onRestored,
+}: {
+  projectId: string | null
+  onRestored?: () => void
+}) {
+  const trash = useAsync(
+    (signal) => api.listChatTrash(
+      projectId === null
+        ? { lifecycleVersion: CHAT_LIFECYCLE_VERSION, scope: 'projectless', limit: 20 }
+        : { lifecycleVersion: CHAT_LIFECYCLE_VERSION, scope: 'project', projectId, limit: 20 },
+      signal,
+    ),
+    [projectId],
+  )
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [retryChat, setRetryChat] = useState<ChatTrashItem | null>(null)
+  const restoringRef = useRef(false)
+  const errorRef = useRef<HTMLDivElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (restoreError) requestAnimationFrame(() => errorRef.current?.focus())
+  }, [restoreError])
+
+  const restore = async (chat: ChatTrashItem) => {
+    if (restoringRef.current) return
+    restoringRef.current = true
+    setRestoringId(chat.chatId)
+    setRestoreError(null)
+    setRetryChat(null)
+    try {
+      const result = await api.restoreChat(chat.chatId, {
+        lifecycleVersion: CHAT_LIFECYCLE_VERSION,
+      })
+      if (result.chatId !== chat.chatId || result.projectId !== projectId) {
+        throw new Error(translate('chat.trash.scopeMismatch'))
+      }
+      trash.reload()
+      onRestored?.()
+      requestAnimationFrame(() => headingRef.current?.focus())
+    } catch (error) {
+      setRestoreError(errorMessage(error))
+      setRetryChat(chat)
+    } finally {
+      restoringRef.current = false
+      setRestoringId(null)
+    }
+  }
+
+  const chats = trash.data?.chats ?? []
+  return (
+    <section
+      aria-label={translate('chat.trash.title')}
+      className="mt-3 min-w-0 border-t border-[var(--border)] pt-3"
+    >
+      <h3 ref={headingRef} tabIndex={-1} className="text-xs font-semibold outline-none">
+        {translate('chat.trash.title')}
+      </h3>
+      <p className="mt-1 break-words text-2xs text-[var(--fg-subtle)]">
+        {translate('chat.trash.hardDeletion')}
+      </p>
+      {trash.loading && !trash.data ? (
+        <p role="status" className="mt-2 text-2xs text-[var(--fg-subtle)]">
+          {translate('chat.trash.loading')}
+        </p>
+      ) : null}
+      {trash.error && !trash.data ? (
+        <div className="mt-2" role="alert">
+          <p className="break-words text-2xs text-[var(--danger)]">
+            {translate('chat.trash.loadError')}: {errorMessage(trash.error)}
+          </p>
+          <Button className="mt-1" size="sm" onClick={trash.reload}>
+            {translate('chat.trash.retryList')}
+          </Button>
+        </div>
+      ) : null}
+      {restoreError ? (
+        <div ref={errorRef} tabIndex={-1} className="mt-2 outline-none" role="alert">
+          <Callout tone="danger" title={translate('chat.trash.restoreError')}>
+            <span className="break-words">{restoreError}</span>
+          </Callout>
+          {retryChat ? (
+            <Button className="mt-1" size="sm" onClick={() => void restore(retryChat)}>
+              {translate('chat.trash.retryRestore')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {!trash.loading && !trash.error && chats.length === 0 ? (
+        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+          {translate('chat.trash.empty')}
+        </p>
+      ) : null}
+      {chats.length > 0 ? (
+        <ol className="mt-2 min-w-0 space-y-2">
+          {chats.map((chat) => (
+            <li
+              key={chat.chatId}
+              className="min-w-0 rounded-md border border-[var(--border)] p-2 text-2xs"
+            >
+              <strong className="block min-w-0 break-words text-xs">{chat.title}</strong>
+              <span className="mt-1 block break-words text-[var(--fg-subtle)]">
+                {translate(`chat.trash.reason.${chat.reason}`)} ·{' '}
+                <time dateTime={chat.tombstonedAt}>{formatDateTime(chat.tombstonedAt)}</time>
+              </span>
+              <span className="block break-words text-[var(--fg-subtle)]">
+                {translate('chat.trash.activity')}:{' '}
+                <time dateTime={chat.activityBasis.at}>{formatDateTime(chat.activityBasis.at)}</time>
+                {' · '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
+              </span>
+              <Button
+                className="mt-2"
+                size="sm"
+                loading={restoringId === chat.chatId}
+                disabled={restoringId !== null}
+                onClick={() => void restore(chat)}
+              >
+                {translate('chat.trash.restore')}
+              </Button>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {trash.data?.hasMore ? (
+        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+          {translate('chat.trash.bounded')}
+        </p>
+      ) : null}
+    </section>
+  )
+}

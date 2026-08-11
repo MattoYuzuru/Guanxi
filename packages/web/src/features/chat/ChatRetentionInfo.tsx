@@ -196,8 +196,17 @@ export function ChatRetentionInfo({
                 </dd>
               </dl>
 
-              <Callout tone="warning" title={translate('chat.retention.notEnforced.title')}>
-                {translate('chat.retention.notEnforced.description')}
+              <Callout
+                tone={projection.enforcement === 'rolling_ttl_trash' ? 'info' : 'warning'}
+                title={translate(
+                  projection.enforcement === 'rolling_ttl_trash'
+                    ? 'chat.retention.enforced.title'
+                    : 'chat.retention.notEnforced.title',
+                )}
+              >
+                {projection.enforcement === 'rolling_ttl_trash'
+                  ? translate('chat.retention.enforced.description')
+                  : translate('chat.retention.notEnforced.description')}
               </Callout>
               <div className="flex justify-end">
                 <Button type="submit" variant="primary" loading={saving} disabled={loading}>
