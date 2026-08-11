@@ -12,6 +12,12 @@ function version(db: DatabaseSync): number {
 
 function downgradeToV6(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_threads_retention_policy;
+    ALTER TABLE threads DROP COLUMN last_user_activity_source;
+    ALTER TABLE threads DROP COLUMN last_user_activity_at;
+    ALTER TABLE threads DROP COLUMN retention_policy_updated_at;
+    ALTER TABLE threads DROP COLUMN retention_policy_source;
+    ALTER TABLE threads DROP COLUMN retention_policy;
     DROP TRIGGER threads_project_chat_update_valid;
     DROP TRIGGER threads_project_chat_insert_valid;
     DROP TRIGGER threads_project_ownership_immutable;
@@ -33,7 +39,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 13)
+    assert.equal(version(first), 14)
     assert.equal(
       (first.prepare(
         `SELECT COUNT(*) AS count FROM sqlite_schema
@@ -44,7 +50,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 13)
+    assert.equal(version(reopened), 14)
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -68,7 +74,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 13)
+    assert.equal(version(upgraded), 14)
     assert.equal(
       (upgraded.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -107,7 +113,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 13)
+    assert.equal(version(recovered), 14)
     recovered.close()
   })
 })

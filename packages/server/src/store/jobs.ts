@@ -362,7 +362,9 @@ export class JobStore {
         return { created: false, ...association }
       }
 
-      const thread = this.db.prepare('SELECT id FROM threads WHERE id = ?').get(threadId)
+      const thread = this.db
+        .prepare('SELECT id, mode FROM threads WHERE id = ?')
+        .get(threadId) as unknown as { id: string; mode: string } | undefined
       if (!thread) throw new JobStoreError('invalid_input', `Thread ${threadId} was not found`)
 
       const id = randomUUID()
@@ -437,10 +439,24 @@ export class JobStore {
         .get(threadId, id) as unknown as { count: number }
       if (priorCount.count === 0) {
         this.db
-          .prepare('UPDATE threads SET title = ?, updated_at = ? WHERE id = ?')
-          .run(derivedTitle, createdAt, threadId)
+          .prepare(
+            `UPDATE threads
+             SET title = ?, updated_at = ?,
+                 last_user_activity_at = CASE WHEN mode = 'chat' THEN ? ELSE last_user_activity_at END,
+                 last_user_activity_source = CASE WHEN mode = 'chat' THEN 'user_message' ELSE last_user_activity_source END
+             WHERE id = ?`,
+          )
+          .run(derivedTitle, createdAt, createdAt, threadId)
       } else {
-        this.db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(createdAt, threadId)
+        this.db
+          .prepare(
+            `UPDATE threads
+             SET updated_at = ?,
+                 last_user_activity_at = CASE WHEN mode = 'chat' THEN ? ELSE last_user_activity_at END,
+                 last_user_activity_source = CASE WHEN mode = 'chat' THEN 'user_message' ELSE last_user_activity_source END
+             WHERE id = ?`,
+          )
+          .run(createdAt, createdAt, threadId)
       }
 
       return { created: true, ...this.requireChatInput(id) }

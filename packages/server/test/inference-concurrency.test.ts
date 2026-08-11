@@ -27,6 +27,8 @@ import { ThreadStore } from '../src/store/threads.ts'
 import { WorkspaceStore } from '../src/store/workspaces.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ProjectService } from '../src/projects/service.ts'
+import { ChatRetentionService } from '../src/retention/service.ts'
+import { ChatRetentionStore } from '../src/store/chat-retention.ts'
 
 const HARDWARE: HardwareInfo = {
   platform: 'darwin',
@@ -126,6 +128,7 @@ function testContext(options: {
     jobs,
     jobService: new JobService(jobs),
     threads: new ThreadStore(db),
+    retention: new ChatRetentionService(new ChatRetentionStore(db)),
     workspaces: new WorkspaceStore(db),
     projects: new ProjectService(new ProjectStore(db)),
     settings,

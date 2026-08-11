@@ -8,10 +8,12 @@ import {
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
   createThreadBody,
+  getChatRetentionResponse,
   listProjectlessChatsQuery,
   PROJECT_CHAT_OWNERSHIP_VERSION,
   sendMessageBody,
   updateThreadBody,
+  updateChatRetentionBody,
   type ChatStreamEvent,
   type JobStreamEvent,
   type ThreadOptions,
@@ -118,6 +120,41 @@ export function threadsRoutes(app: AppContext): Hono {
     })
 
     return context.json(thread, 201)
+  })
+
+  routes.get('/:id/retention', (context) => {
+    const result = app.retention.get(context.req.param('id'))
+    if (result.status === 'not_found') {
+      return notFound(context, 'thread_not_found', 'Chat was not found')
+    }
+    if (result.status === 'not_chat') {
+      return context.json(
+        { code: 'validation_failed', message: 'Retention is available only for Chat', details: null },
+        400,
+      )
+    }
+    return context.json(getChatRetentionResponse.parse(result.retention))
+  })
+
+  routes.patch('/:id/retention', async (context) => {
+    const parsed = updateChatRetentionBody.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Chat retention request', details: null },
+        400,
+      )
+    }
+    const result = app.retention.update(context.req.param('id'), parsed.data.policy)
+    if (result.status === 'not_found') {
+      return notFound(context, 'thread_not_found', 'Chat was not found')
+    }
+    if (result.status === 'not_chat') {
+      return context.json(
+        { code: 'validation_failed', message: 'Retention is available only for Chat', details: null },
+        400,
+      )
+    }
+    return context.json(getChatRetentionResponse.parse(result.retention))
   })
 
   routes.get('/:id', (context) => {

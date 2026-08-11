@@ -31,6 +31,12 @@ function columnNames(db: DatabaseSync): string[] {
 
 function downgradeToV11(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_threads_retention_policy;
+    ALTER TABLE threads DROP COLUMN last_user_activity_source;
+    ALTER TABLE threads DROP COLUMN last_user_activity_at;
+    ALTER TABLE threads DROP COLUMN retention_policy_updated_at;
+    ALTER TABLE threads DROP COLUMN retention_policy_source;
+    ALTER TABLE threads DROP COLUMN retention_policy;
     DROP TRIGGER threads_project_chat_update_valid;
     DROP TRIGGER threads_project_chat_insert_valid;
     DROP TRIGGER threads_project_ownership_immutable;
@@ -42,6 +48,12 @@ function downgradeToV11(db: DatabaseSync): void {
 
 function downgradeToV12(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_threads_retention_policy;
+    ALTER TABLE threads DROP COLUMN last_user_activity_source;
+    ALTER TABLE threads DROP COLUMN last_user_activity_at;
+    ALTER TABLE threads DROP COLUMN retention_policy_updated_at;
+    ALTER TABLE threads DROP COLUMN retention_policy_source;
+    ALTER TABLE threads DROP COLUMN retention_policy;
     DROP TRIGGER threads_project_chat_update_valid;
     DROP TRIGGER threads_project_chat_insert_valid;
     DROP TRIGGER threads_project_ownership_immutable;
@@ -171,21 +183,31 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 13)
+    assert.equal(version(upgraded), 14)
     assert.equal(columnNames(upgraded).filter((name) => name === 'project_id').length, 1)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(legacy.id)?.projectId, null)
     const afterRows = upgraded.prepare('SELECT * FROM threads').all() as Array<
-      Record<string, unknown> & { project_id: unknown }
+      Record<string, unknown> & { project_id: unknown; retention_policy: unknown }
     >
-    const withoutOwnership = afterRows.map(({ project_id: projectId, ...row }) => {
+    const withoutAdditiveFields = afterRows.map(({
+      project_id: projectId,
+      retention_policy: retentionPolicy,
+      retention_policy_source: retentionPolicySource,
+      retention_policy_updated_at: _retentionPolicyUpdatedAt,
+      last_user_activity_at: _lastUserActivityAt,
+      last_user_activity_source: _lastUserActivitySource,
+      ...row
+    }) => {
       assert.equal(projectId, null)
+      assert.equal(retentionPolicy, 'keep')
+      assert.equal(retentionPolicySource, 'legacy_compatibility')
       return row
     })
-    assert.equal(JSON.stringify(withoutOwnership), before)
+    assert.equal(JSON.stringify(withoutAdditiveFields), before)
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 13)
+    assert.equal(version(reopened), 14)
     assert.equal(columnNames(reopened).filter((name) => name === 'project_id').length, 1)
     assert.equal(
       (reopened.prepare(
@@ -214,7 +236,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 13)
+    assert.equal(version(upgraded), 14)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(owned.id)?.projectId, project.id)
     assert.equal(
       (upgraded.prepare(
@@ -254,7 +276,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 13)
+    assert.equal(version(recovered), 14)
     assert.equal(new ThreadStore(recovered).getWithOwnership(owned.id)?.projectId, project.id)
     assert.throws(
       () => recovered.prepare('UPDATE threads SET project_id = NULL WHERE id = ?').run(owned.id),
@@ -263,7 +285,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     recovered.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 13)
+    assert.equal(version(reopened), 14)
     assert.equal(new ThreadStore(reopened).getWithOwnership(owned.id)?.projectId, project.id)
     reopened.close()
   })
@@ -298,7 +320,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 13)
+    assert.equal(version(recovered), 14)
     assert.equal(new ThreadStore(recovered).getWithOwnership('legacy-thread')?.projectId, null)
     recovered.close()
   })

@@ -34,6 +34,8 @@ import { ThreadStore } from '../src/store/threads.ts'
 import { WorkspaceStore } from '../src/store/workspaces.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ProjectService } from '../src/projects/service.ts'
+import { ChatRetentionService } from '../src/retention/service.ts'
+import { ChatRetentionStore } from '../src/store/chat-retention.ts'
 
 const HARDWARE: HardwareInfo = {
   platform: 'darwin',
@@ -60,6 +62,7 @@ function testContext(
     jobs,
     jobService: new JobService(jobs),
     threads: new ThreadStore(db),
+    retention: new ChatRetentionService(new ChatRetentionStore(db)),
     workspaces: new WorkspaceStore(db),
     projects: new ProjectService(new ProjectStore(db)),
     settings,
@@ -948,6 +951,10 @@ describe('project routes', () => {
     }
     assert.equal(createdResponse.status, 201)
     assert.equal(createBytes, JSON.stringify(expectedCreated))
+    assert.deepEqual(
+      (await (await app.request(`/api/threads/${created.id}/retention`)).json() as { policy: unknown }).policy,
+      { mode: 'ttl', expiresAfterDays: 7 },
+    )
     assert.equal(
       await (await app.request('/api/threads')).text(),
       JSON.stringify({ threads: [expectedCreated] }),
@@ -1074,6 +1081,13 @@ describe('project routes', () => {
       },
     )
     assert.deepEqual(modelValidationCalls, [['model', 4096]])
+    const createdRetention = await (
+      await app.request(`/api/threads/${created.id}/retention`)
+    ).json() as { policy: unknown; projectId: string }
+    assert.deepEqual(
+      { policy: createdRetention.policy, projectId: createdRetention.projectId },
+      { policy: { mode: 'ttl', expiresAfterDays: 7 }, projectId: first.id },
+    )
     assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count, 2)
     assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count, 0)
     assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count, 0)
@@ -1228,5 +1242,112 @@ describe('project routes', () => {
       1,
     )
     assert.equal(context.threads.getWithOwnership(owned.id)?.projectId, project.id)
+  })
+
+  it('reads and mutates strict retention without crossing Chat or runtime boundaries', async (test) => {
+    let modelCalls = 0
+    let ollamaCalls = 0
+    const context = testContext({
+      models: () => {
+        modelCalls += 1
+        throw new Error('retention must not construct ModelService')
+      },
+      ollama: () => {
+        ollamaCalls += 1
+        throw new Error('retention must not construct OllamaClient')
+      },
+    })
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    const projectA = context.projects.create('A')
+    const projectB = context.projects.create('B')
+    const projectless = context.threads.create({
+      title: 'Projectless',
+      mode: 'chat',
+      model: 'fixture',
+      workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    const ownedA = context.threads.createWithOwnership({
+      title: 'Owned A', model: 'fixture', projectId: projectA.id,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    const ownedB = context.threads.createWithOwnership({
+      title: 'Owned B', model: 'fixture', projectId: projectB.id,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    const unrelatedBefore = {
+      projects: JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all()),
+      messages: JSON.stringify(context.db.prepare('SELECT * FROM messages').all()),
+      jobs: JSON.stringify(context.db.prepare('SELECT * FROM jobs').all()),
+      settings: JSON.stringify(context.db.prepare('SELECT * FROM settings').all()),
+    }
+
+    for (const [chatId, projectId] of [
+      [projectless.id, null], [ownedA.id, projectA.id], [ownedB.id, projectB.id],
+    ] as const) {
+      const response = await app.request(`/api/threads/${chatId}/retention`)
+      assert.equal(response.status, 200)
+      const body = await response.json() as {
+        chatId: string
+        projectId: string | null
+        policy: unknown
+        enforcement: string
+      }
+      assert.deepEqual(
+        { chatId: body.chatId, projectId: body.projectId, policy: body.policy, enforcement: body.enforcement },
+        {
+          chatId,
+          projectId,
+          policy: { mode: 'ttl', expiresAfterDays: 7 },
+          enforcement: 'not_implemented',
+        },
+      )
+    }
+
+    const beforeInvalid = JSON.stringify(context.db.prepare('SELECT * FROM threads ORDER BY id').all())
+    for (const body of [
+      { retentionVersion: 2, policy: { mode: 'keep' } },
+      { retentionVersion: 1, policy: { mode: 'unknown' } },
+      { retentionVersion: 1, policy: { mode: 'ttl', expiresAfterDays: 7, future: true } },
+      { retentionVersion: 1, policy: { mode: 'keep' }, future: true },
+    ]) {
+      const response = await app.request(`/api/threads/${projectless.id}/retention`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      assert.equal(response.status, 400)
+    }
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM threads ORDER BY id').all()), beforeInvalid)
+
+    const keep = await app.request(`/api/threads/${projectless.id}/retention`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ retentionVersion: 1, policy: { mode: 'keep' } }),
+    })
+    const session = await app.request(`/api/threads/${ownedA.id}/retention`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ retentionVersion: 1, policy: { mode: 'session' } }),
+    })
+    assert.deepEqual((await keep.json() as { policy: unknown }).policy, { mode: 'keep' })
+    assert.deepEqual((await session.json() as { policy: unknown }).policy, { mode: 'session' })
+    assert.deepEqual(
+      (await (await app.request(`/api/threads/${ownedB.id}/retention`)).json() as { policy: unknown }).policy,
+      { mode: 'ttl', expiresAfterDays: 7 },
+    )
+    assert.deepEqual(
+      {
+        projects: JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all()),
+        messages: JSON.stringify(context.db.prepare('SELECT * FROM messages').all()),
+        jobs: JSON.stringify(context.db.prepare('SELECT * FROM jobs').all()),
+        settings: JSON.stringify(context.db.prepare('SELECT * FROM settings').all()),
+      },
+      unrelatedBefore,
+    )
+    assert.equal(context.governor.snapshot().activeLease, null)
+    assert.equal(modelCalls, 0)
+    assert.equal(ollamaCalls, 0)
   })
 })

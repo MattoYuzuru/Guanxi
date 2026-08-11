@@ -19,6 +19,7 @@ import { OllamaClient } from './ollama/client.ts'
 import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
 import { ProjectService } from './projects/service.ts'
+import { ChatRetentionService } from './retention/service.ts'
 import { HuggingFaceTransport } from './models/hugging-face-transport.ts'
 import { HuggingFaceDownloadService } from './models/hugging-face-download.ts'
 import { HuggingFaceImportService } from './models/hugging-face-import.ts'
@@ -37,6 +38,7 @@ import { JobStore } from './store/jobs.ts'
 import { ProjectStore } from './store/projects.ts'
 import { SettingsStore } from './store/settings.ts'
 import { ThreadStore } from './store/threads.ts'
+import { ChatRetentionStore } from './store/chat-retention.ts'
 import { WorkspaceStore } from './store/workspaces.ts'
 
 export const DEFAULT_OLLAMA_HOST = process.env['OLLAMA_HOST']
@@ -54,6 +56,7 @@ export interface AppContext {
   jobService: JobService
   chatExecution: ChatJobExecutionOwner
   threads: ThreadStore
+  retention: ChatRetentionService
   workspaces: WorkspaceStore
   projects: ProjectService
   settings: SettingsStore
@@ -147,6 +150,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     }
 
     const jobs = new JobStore(db)
+    const threads = new ThreadStore(db)
     const projects = new ProjectService(new ProjectStore(db))
     projects.reconcileLegacyWorkspaces()
 
@@ -165,7 +169,8 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       db,
       jobs,
       jobService,
-      threads: new ThreadStore(db),
+      threads,
+      retention: new ChatRetentionService(new ChatRetentionStore(db)),
       workspaces: new WorkspaceStore(db),
       projects,
       settings,

@@ -220,8 +220,10 @@ export class ThreadStore {
       .prepare(
         `INSERT INTO threads (
            id, title, mode, model, workspace_id, project_id,
-           num_ctx, temperature, think, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           num_ctx, temperature, think, created_at, updated_at,
+           retention_policy, retention_policy_source, retention_policy_updated_at,
+           last_user_activity_at, last_user_activity_source
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'default', ?, ?, 'chat_created')`,
       )
       .run(
         id,
@@ -233,6 +235,9 @@ export class ThreadStore {
         input.options.numCtx,
         input.options.temperature,
         input.options.think,
+        now,
+        now,
+        input.mode === 'chat' ? 'ttl' : 'keep',
         now,
         now,
       )

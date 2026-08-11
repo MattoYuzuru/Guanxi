@@ -12,7 +12,7 @@ function version(db: DatabaseSync): number {
 
 function downgradeToV7(db: DatabaseSync): void {
   db.exec(
-    'DROP TRIGGER threads_project_chat_update_valid; DROP TRIGGER threads_project_chat_insert_valid; DROP TRIGGER threads_project_ownership_immutable; DROP INDEX idx_threads_project_updated; ALTER TABLE threads DROP COLUMN project_id; DROP TABLE project_filesystem_bindings; DROP TABLE projects; DROP TABLE model_capability_user_overrides; DROP TABLE completion_probe_evidence; PRAGMA user_version = 7;',
+    'DROP INDEX idx_threads_retention_policy; ALTER TABLE threads DROP COLUMN last_user_activity_source; ALTER TABLE threads DROP COLUMN last_user_activity_at; ALTER TABLE threads DROP COLUMN retention_policy_updated_at; ALTER TABLE threads DROP COLUMN retention_policy_source; ALTER TABLE threads DROP COLUMN retention_policy; DROP TRIGGER threads_project_chat_update_valid; DROP TRIGGER threads_project_chat_insert_valid; DROP TRIGGER threads_project_ownership_immutable; DROP INDEX idx_threads_project_updated; ALTER TABLE threads DROP COLUMN project_id; DROP TABLE project_filesystem_bindings; DROP TABLE projects; DROP TABLE model_capability_user_overrides; DROP TABLE completion_probe_evidence; PRAGMA user_version = 7;',
   )
 }
 
@@ -22,7 +22,7 @@ describe('SQLite completion probe migration 8', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const first = openDb(path)
-    assert.equal(version(first), 13)
+    assert.equal(version(first), 14)
     assert.equal(
       (first.prepare(
         `SELECT COUNT(*) AS count FROM sqlite_schema
@@ -32,7 +32,7 @@ describe('SQLite completion probe migration 8', () => {
     )
     first.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 13)
+    assert.equal(version(reopened), 14)
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM completion_probe_evidence').get() as {
         count: number
@@ -69,7 +69,7 @@ describe('SQLite completion probe migration 8', () => {
     downgradeToV7(fixture)
     fixture.close()
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 13)
+    assert.equal(version(upgraded), 14)
     assert.equal(
       (upgraded.prepare('SELECT COUNT(*) AS count FROM completion_probe_evidence').get() as {
         count: number
@@ -106,7 +106,7 @@ describe('SQLite completion probe migration 8', () => {
     repair.exec('DROP TABLE completion_probe_evidence')
     repair.close()
     const recovered = openDb(path)
-    assert.equal(version(recovered), 13)
+    assert.equal(version(recovered), 14)
     recovered.close()
   })
 })

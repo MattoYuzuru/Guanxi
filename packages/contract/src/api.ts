@@ -7,6 +7,11 @@
 import { z } from 'zod'
 import { PROJECT_PRESENTATION_VERSION } from './project-presentation.ts'
 import {
+  CHAT_RETENTION_VERSION,
+  chatRetentionPolicySchema,
+  chatRetentionProjectionSchema,
+} from './retention.ts'
+import {
   catalogModelSchema,
   catalogSourceHealthSchema,
   contextStateSchema,
@@ -88,6 +93,7 @@ export const ROUTES = {
   threadCompact: (id: string) => `/api/threads/${id}/compact`,
   threadStop: (id: string) => `/api/threads/${id}/stop`,
   threadContext: (id: string) => `/api/threads/${id}/context`,
+  threadRetention: (id: string) => `/api/threads/${encodeURIComponent(id)}/retention`,
 
   workspaces: () => '/api/workspaces',
   workspace: (id: string) => `/api/workspaces/${id}`,
@@ -837,6 +843,18 @@ export const compactThreadResponse = z.object({
 export type CompactThreadResponse = z.infer<typeof compactThreadResponse>
 
 export const getContextResponse = contextStateSchema
+
+/** Explicit opt-in Chat retention boundary; legacy Thread JSON remains unchanged. */
+export const getChatRetentionResponse = chatRetentionProjectionSchema
+export type GetChatRetentionResponse = z.infer<typeof getChatRetentionResponse>
+
+export const updateChatRetentionBody = z
+  .object({
+    retentionVersion: z.literal(CHAT_RETENTION_VERSION),
+    policy: chatRetentionPolicySchema,
+  })
+  .strict()
+export type UpdateChatRetentionBody = z.infer<typeof updateChatRetentionBody>
 
 /* ──────────────────────────────── Воркспейсы ─────────────────────────────── */
 

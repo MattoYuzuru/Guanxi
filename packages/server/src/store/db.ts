@@ -440,6 +440,28 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Project-owned thread must be a Chat without Workspace scope');
     END;
   `,
+  // 14 — canonical Chat retention foundation. Existing rows are projected as
+  // Keep explicitly so no pre-v14 history becomes cleanup-eligible. New Chats
+  // are written with the seven-day default by ThreadStore; no cleanup exists yet.
+  `
+  ALTER TABLE threads ADD COLUMN retention_policy TEXT
+    CHECK (retention_policy IN ('keep','ttl','session'));
+  ALTER TABLE threads ADD COLUMN retention_policy_source TEXT
+    CHECK (retention_policy_source IN ('default','user','legacy_compatibility'));
+  ALTER TABLE threads ADD COLUMN retention_policy_updated_at TEXT;
+  ALTER TABLE threads ADD COLUMN last_user_activity_at TEXT;
+  ALTER TABLE threads ADD COLUMN last_user_activity_source TEXT
+    CHECK (last_user_activity_source IN ('chat_created','user_message'));
+
+  UPDATE threads
+  SET retention_policy = 'keep',
+      retention_policy_source = 'legacy_compatibility',
+      retention_policy_updated_at = created_at,
+      last_user_activity_at = created_at,
+      last_user_activity_source = 'chat_created';
+  CREATE INDEX idx_threads_retention_policy
+    ON threads(retention_policy, last_user_activity_at, id);
+  `,
 ]
 
 export function openDb(path: string): Db {
