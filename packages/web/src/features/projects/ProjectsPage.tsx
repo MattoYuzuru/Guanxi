@@ -8,6 +8,7 @@ import {
 import { Button, Callout, EmptyState, Input, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { translate } from '../../lib/locale.ts'
+import { Link, paths } from '../../lib/router.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 import { ProjectIcon, projectColorStyle } from './ProjectIcon.tsx'
 import { ProjectPresentationPicker } from './ProjectPresentationPicker.tsx'
@@ -251,6 +252,7 @@ function ProjectCard({
         </div>
         {error && <p role="alert" className="break-words text-2xs text-[var(--danger)]">{error}</p>}
       </form>
+      <ProjectChats projectId={project.id} />
       {pickerOpen && (
         <ProjectPresentationPicker
           projectName={project.name}
@@ -261,5 +263,55 @@ function ProjectCard({
         />
       )}
     </article>
+  )
+}
+
+function ProjectChats({ projectId }: { projectId: string }) {
+  const chats = useAsync((signal) => api.listProjectChats(projectId, signal), [projectId])
+
+  return (
+    <section aria-label={translate('projects.chats.group')} className="mt-3 min-w-0 border-t border-[var(--border)] pt-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold">{translate('projects.chats.group')}</h3>
+        <Link
+          to={paths.projectChat(projectId)}
+          className="rounded-md border border-[var(--border-strong)] px-2 py-1 text-2xs font-medium text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
+        >
+          {translate('projects.chats.new')}
+        </Link>
+      </div>
+      {chats.loading ? (
+        <p role="status" className="mt-2 text-2xs text-[var(--fg-subtle)]">
+          {translate('projects.chats.loading')}
+        </p>
+      ) : chats.error ? (
+        <div className="mt-2" role="alert">
+          <p className="break-words text-2xs text-[var(--danger)]">
+            {translate('projects.chats.error')}: {errorMessage(chats.error)}
+          </p>
+          <Button className="mt-1" size="sm" onClick={chats.reload}>
+            {translate('projects.retry')}
+          </Button>
+        </div>
+      ) : (chats.data?.chats.length ?? 0) === 0 ? (
+        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">{translate('projects.chats.empty')}</p>
+      ) : (
+        <ol className="mt-2 space-y-1">
+          {chats.data?.chats.map((chat) => (
+            <li key={chat.id}>
+              <Link
+                to={paths.projectChat(projectId, chat.id)}
+                className="block min-w-0 rounded px-2 py-1 text-xs hover:bg-[var(--bg-subtle)]"
+              >
+                <span className="block truncate font-medium">{chat.title}</span>
+                <span className="text-2xs text-[var(--fg-subtle)]">
+                  {translate('projects.chats.messageCount').replace('{count}', String(chat.messageCount))}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }

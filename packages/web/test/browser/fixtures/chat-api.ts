@@ -595,10 +595,17 @@ export async function installChatApiFixture(
             readState() === 'terminal' ||
             (fixtureScenario === 'durable_navigation' && readState() === 'running')
           return json({
-            threads:
+            ownershipVersion: 1,
+            scope: 'projectless',
+            chats:
               readState() === 'new'
                 ? []
-                : [{ ...thread, messageCount: hasMessages ? 2 : 0 }],
+                : [{
+                    ...thread,
+                    messageCount: hasMessages ? 2 : 0,
+                    ownershipVersion: 1,
+                    projectId: null,
+                  }],
           })
         }
         if (url.pathname === `/api/threads/${threadId}` && method === 'GET') {

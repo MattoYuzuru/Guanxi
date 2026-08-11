@@ -46,7 +46,15 @@ async function installFixture(
     if (url.pathname === '/api/workspaces') return fulfillJson(route, { workspaces: [] })
     if (url.pathname === '/api/settings') return fulfillJson(route, settings())
     if (url.pathname === '/api/threads' && method === 'GET') {
-      return fulfillJson(route, { threads: [thread(control.messageCalls > 0 ? 2 : 0)] })
+      return fulfillJson(route, {
+        ownershipVersion: 1,
+        scope: 'projectless',
+        chats: [{
+          ...thread(control.messageCalls > 0 ? 2 : 0),
+          ownershipVersion: 1,
+          projectId: null,
+        }],
+      })
     }
     if (url.pathname === `/api/threads/${threadId}` && method === 'GET') {
       return fulfillJson(route, {

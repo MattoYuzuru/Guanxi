@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   PROJECT_ICON_MANIFEST,
   PROJECT_PRESENTATION_VERSION,
@@ -32,6 +32,20 @@ function deferred<T>() {
 
 afterEach(() => {
   document.documentElement.lang = 'ru'
+})
+
+beforeEach(() => {
+  vi.spyOn(api, 'listProjectChats').mockResolvedValue({
+    ownershipVersion: 1,
+    project: {
+      id: PROJECT.id,
+      name: PROJECT.name,
+      createdAt: PROJECT.createdAt,
+      updatedAt: PROJECT.updatedAt,
+      filesystemBindings: [],
+    },
+    chats: [],
+  })
 })
 
 describe('ProjectsPage', () => {
@@ -108,6 +122,66 @@ describe('ProjectsPage', () => {
     }))
     expect(await screen.findByDisplayValue('Logical Project')).toBeTruthy()
     expect(api.listProjectsWithPresentation).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows an exact bounded Chat group and contains error/retry per Project', async () => {
+    vi.spyOn(api, 'listProjectsWithPresentation').mockResolvedValue({
+      presentationVersion: 1,
+      projects: [PROJECT],
+    })
+    vi.mocked(api.listProjectChats)
+      .mockRejectedValueOnce(new Error('scoped list failed'))
+      .mockResolvedValue({
+        ownershipVersion: 1,
+        project: {
+          id: PROJECT.id,
+          name: PROJECT.name,
+          createdAt: PROJECT.createdAt,
+          updatedAt: PROJECT.updatedAt,
+          filesystemBindings: [],
+        },
+        chats: [
+          {
+            id: 'chat-newer',
+            title: 'Newer Chat',
+            mode: 'chat',
+            model: 'model',
+            workspaceId: null,
+            options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+            createdAt: '2026-08-10T11:00:00.000Z',
+            updatedAt: '2026-08-10T11:00:00.000Z',
+            messageCount: 2,
+            ownershipVersion: 1,
+            projectId: PROJECT.id,
+          },
+          {
+            id: 'chat-older',
+            title: 'Older Chat',
+            mode: 'chat',
+            model: 'model',
+            workspaceId: null,
+            options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+            createdAt: '2026-08-10T10:00:00.000Z',
+            updatedAt: '2026-08-10T10:00:00.000Z',
+            messageCount: 0,
+            ownershipVersion: 1,
+            projectId: PROJECT.id,
+          },
+        ],
+      })
+
+    render(<ProjectsPage />)
+    expect(await screen.findByText(/scoped list failed/u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await screen.findByText('Newer Chat')
+    const group = screen.getByRole('region', { name: 'Чаты проекта' })
+    const links = Array.from(group.querySelectorAll('a'))
+    expect(links.map((link) => link.textContent)).toEqual([
+      'Новый чат',
+      'Newer ChatСообщений: 2',
+      'Older ChatСообщений: 0',
+    ])
+    expect(api.listProjectChats).toHaveBeenCalledTimes(2)
   })
 
   it('renames Project metadata through the typed client and keeps English fallback curated', async () => {

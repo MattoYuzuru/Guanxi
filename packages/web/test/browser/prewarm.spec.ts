@@ -216,7 +216,11 @@ async function installFixture(page: Page, enabled = true): Promise<void> {
           return json(thread)
         }
         if (url.pathname === '/api/threads' && method === 'GET') {
-          return json({ threads: [thread] })
+          return json({
+            ownershipVersion: 1,
+            scope: 'projectless',
+            chats: [{ ...thread, ownershipVersion: 1, projectId: null }],
+          })
         }
         if (url.pathname === `/api/threads/${threadId}` && method === 'GET') {
           const terminal = readNumber(chatsKey) > 0

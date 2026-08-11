@@ -14,6 +14,7 @@ import {
   compactThreadResponse,
   completionProbeResponse,
   createThreadResponse,
+  createProjectChatResponse,
   getContextResponse,
   getHealthResponse,
   getJobResponse,
@@ -21,6 +22,7 @@ import {
   getRuntimeResponse,
   getSettingsResponse,
   getThreadResponse,
+  getProjectChatResponse,
   huggingFaceRepositoryResponse,
   huggingFaceSearchResponse,
   huggingFaceSelectionResponse,
@@ -30,6 +32,8 @@ import {
   listModelsResponse,
   listProjectsResponse,
   listProjectsWithPresentationResponse,
+  listProjectChatsResponse,
+  listProjectlessChatsResponse,
   listRunningResponse,
   listThreadsResponse,
   listWorkspacesResponse,
@@ -44,6 +48,7 @@ import {
   projectSchema,
   projectWithPresentationSchema,
   PROJECT_PRESENTATION_VERSION,
+  PROJECT_CHAT_OWNERSHIP_VERSION,
   type ApiError,
   type ApprovalBody,
   type ChatStreamEvent,
@@ -60,6 +65,7 @@ import {
   type CreateThreadBody,
   type CreateWorkspaceBody,
   type CreateProjectBody,
+  type CreateProjectChatBody,
   type PullStreamEvent,
   type PrewarmModelBody,
   type SendMessageBody,
@@ -323,6 +329,15 @@ export const api = {
   listThreads: (signal?: AbortSignal) =>
     request(ROUTES.threads(), listThreadsResponse, { signal }),
 
+  listProjectlessChats: (signal?: AbortSignal) =>
+    request(ROUTES.threads(), listProjectlessChatsResponse, {
+      query: {
+        ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
+        scope: 'projectless',
+      },
+      signal,
+    }),
+
   createThread: (body: CreateThreadBody, signal?: AbortSignal) =>
     request(ROUTES.threads(), createThreadResponse, { method: 'POST', body, signal }),
 
@@ -381,6 +396,22 @@ export const api = {
     body,
     signal,
   }),
+
+  listProjectChats: (projectId: string, signal?: AbortSignal) =>
+    request(ROUTES.projectChats(projectId), listProjectChatsResponse, { signal }),
+
+  createProjectChat: (
+    projectId: string,
+    body: CreateProjectChatBody,
+    signal?: AbortSignal,
+  ) => request(ROUTES.projectChats(projectId), createProjectChatResponse, {
+    method: 'POST',
+    body,
+    signal,
+  }),
+
+  getProjectChat: (projectId: string, threadId: string, signal?: AbortSignal) =>
+    request(ROUTES.projectChat(projectId, threadId), getProjectChatResponse, { signal }),
 
   /**
    * Единственный способ увидеть файловую систему. Фронт её сам не читает —

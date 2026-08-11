@@ -54,6 +54,7 @@ export type Route =
   | { name: 'launcher' }
   | { name: 'model'; modelName: string }
   | { name: 'chat'; threadId: string | null }
+  | { name: 'projectChat'; projectId: string; threadId: string | null }
   | { name: 'projects' }
   | { name: 'settings' }
   | { name: 'notFound'; path: string }
@@ -75,6 +76,17 @@ export function parseRoute(pathWithSearch: string): Route {
     return { name: 'chat', threadId: rest.length > 0 ? (rest[0] as string) : null }
   }
   if (first === 'projects' && rest.length === 0) return { name: 'projects' }
+  if (
+    first === 'projects' &&
+    (rest.length === 2 || rest.length === 3) &&
+    rest[1] === 'chats'
+  ) {
+    return {
+      name: 'projectChat',
+      projectId: rest[0] as string,
+      threadId: rest.length === 3 ? (rest[2] as string) : null,
+    }
+  }
   if (first === 'settings' && rest.length === 0) return { name: 'settings' }
 
   return { name: 'notFound', path }
@@ -86,6 +98,10 @@ export const paths = {
   chat: (threadId?: string | null) =>
     threadId ? `/chat/${encodeURIComponent(threadId)}` : '/chat',
   projects: () => '/projects',
+  projectChat: (projectId: string, threadId?: string | null) => {
+    const base = `/projects/${encodeURIComponent(projectId)}/chats`
+    return threadId ? `${base}/${encodeURIComponent(threadId)}` : base
+  },
   settings: () => '/settings',
 }
 

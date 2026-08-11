@@ -60,6 +60,10 @@ test('Project presentation picker is bounded, accessible and single-mutation', a
       expect(url.searchParams.toString()).toBe('presentationVersion=1')
       return route.fulfill(json({ presentationVersion: 1, projects: [project] }))
     }
+    if (url.pathname === `/api/projects/${project.id}/chats` && request.method() === 'GET') {
+      const { presentationVersion: _version, iconKey: _icon, colorToken: _color, ...legacy } = project
+      return route.fulfill(json({ ownershipVersion: 1, project: legacy, chats: [] }))
+    }
     if (
       url.pathname === `/api/projects/${project.id}/presentation` &&
       request.method() === 'PATCH'

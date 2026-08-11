@@ -88,6 +88,9 @@ test('Projects exposes resilient keyboard flow without requiring a filesystem ro
       projectCreates += 1
       return route.fulfill(json(legacyProject, 201))
     }
+    if (url.pathname === `/api/projects/${project.id}/chats` && request.method() === 'GET') {
+      return route.fulfill(json({ ownershipVersion: 1, project: legacyProject, chats: [] }))
+    }
     if (request.method() !== 'GET') sideEffects.push(`${request.method()} ${url.pathname}`)
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })

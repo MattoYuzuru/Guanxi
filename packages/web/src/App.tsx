@@ -64,6 +64,18 @@ export function App() {
               <ChatPage threadId={route.threadId} health={data} />
             </ErrorBoundary>
           )}
+          {route.name === 'projectChat' && (
+            <ErrorBoundary
+              key={`${route.projectId}:${route.threadId ?? 'new-chat'}`}
+              scope="chat"
+            >
+              <ChatPage
+                threadId={route.threadId}
+                projectId={route.projectId}
+                health={data}
+              />
+            </ErrorBoundary>
+          )}
           {route.name === 'settings' && <SettingsPage />}
           {route.name === 'projects' && <ProjectsPage />}
           {route.name === 'notFound' && (
@@ -93,7 +105,11 @@ function TopBar() {
   const tabs = [
     { to: paths.launcher(), label: 'Модели', active: route.name === 'launcher' || route.name === 'model' },
     { to: paths.chat(), label: 'Чат', active: route.name === 'chat' },
-    { to: paths.projects(), label: translate('projects.navigation'), active: route.name === 'projects' },
+    {
+      to: paths.projects(),
+      label: translate('projects.navigation'),
+      active: route.name === 'projects' || route.name === 'projectChat',
+    },
     { to: paths.settings(), label: 'Настройки', active: route.name === 'settings' },
   ]
 

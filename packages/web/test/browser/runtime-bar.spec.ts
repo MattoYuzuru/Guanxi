@@ -72,7 +72,7 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
     }
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))
     if (url.pathname === '/api/workspaces') return route.fulfill(json({ workspaces: [] }))
-    if (url.pathname === '/api/threads') return route.fulfill(json({ threads: [] }))
+    if (url.pathname === '/api/threads') return route.fulfill(json({ ownershipVersion: 1, scope: 'projectless', chats: [] }))
     if (url.pathname === '/api/settings') {
       return route.fulfill(
         json({
@@ -187,7 +187,7 @@ test('Runtime Bar truthfully groups Linux NVIDIA devices and preserves a stale s
     }
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))
     if (url.pathname === '/api/workspaces') return route.fulfill(json({ workspaces: [] }))
-    if (url.pathname === '/api/threads') return route.fulfill(json({ threads: [] }))
+    if (url.pathname === '/api/threads') return route.fulfill(json({ ownershipVersion: 1, scope: 'projectless', chats: [] }))
     if (url.pathname === '/api/settings') {
       return route.fulfill(json({
         ollamaHost: health.ollama.host, defaultModel: null, defaultNumCtx: 8_192,

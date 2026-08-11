@@ -13,6 +13,7 @@ import type {
   ContextState,
   Message,
   JobState,
+  Project,
   Thread,
   ToolCall,
   TurnTerminalOutcome,
@@ -54,6 +55,7 @@ export type ChatSendOptions = {
 
 export type ChatState = {
   thread: Thread | null
+  project: Project | null
   messages: Message[]
   context: ContextState | null
   loading: boolean
@@ -75,7 +77,7 @@ export type ChatState = {
   reconnecting: boolean
 }
 
-export function useChat(threadId: string | null) {
+export function useChat(threadId: string | null, projectId: string | null = null) {
   const [state, setState] = useState<ChatState>(initialState)
 
   // Буфер переживает перерисовки и не участвует в реконсиляции.
@@ -86,17 +88,30 @@ export function useChat(threadId: string | null) {
   const threadIdRef = useRef(threadId)
   threadIdRef.current = threadId
 
+  const readThread = useCallback(
+    async (id: string, signal?: AbortSignal) => {
+      if (projectId) {
+        const data = await api.getProjectChat(projectId, id, signal)
+        return { ...data, project: data.project as Project }
+      }
+      const data = await api.getThread(id, signal)
+      return { ...data, project: null }
+    },
+    [projectId],
+  )
+
   /* ─────────────────────────── Загрузка треда ─────────────────────────── */
 
   const followPersistedJob = useCallback(
     async (id: string, jobId: string, signal: AbortSignal) => {
       const refresh = async () => {
-        const data = await api.getThread(id, signal)
+        const data = await readThread(id, signal)
         if (signal.aborted || threadIdRef.current !== id) return
         bufferRef.current.reset()
         setState((previous) => ({
           ...previous,
           thread: data.thread,
+          project: data.project,
           messages: data.messages,
           context: data.context,
           phase: 'idle',
@@ -160,18 +175,19 @@ export function useChat(threadId: string | null) {
       await finished
       if (!signal.aborted) await refresh()
     },
-    [],
+    [readThread],
   )
 
   const load = useCallback(async (id: string, signal: AbortSignal) => {
     setState((previous) => ({ ...previous, loading: true, loadError: null }))
     try {
-      const data = await api.getThread(id, signal)
+      const data = await readThread(id, signal)
       if (signal.aborted) return
       bufferRef.current.reset()
       setState((previous) => ({
         ...previous,
         thread: data.thread,
+        project: data.project,
         messages: data.messages,
         context: data.context,
         loading: false,
@@ -191,7 +207,7 @@ export function useChat(threadId: string | null) {
       if (signal.aborted) return
       setState((previous) => ({ ...previous, loading: false, loadError: error }))
     }
-  }, [followPersistedJob])
+  }, [followPersistedJob, readThread])
 
   useEffect(() => {
     // Смена треда обрывает незавершённый стрим предыдущего.
@@ -330,12 +346,13 @@ export function useChat(threadId: string | null) {
       }))
 
       try {
-        const data = await api.getThread(id)
+        const data = await readThread(id)
         if (threadIdRef.current !== id) return
         buffer.reset()
         setState((previous) => ({
           ...previous,
           thread: data.thread,
+          project: data.project,
           messages: data.messages,
           context: data.context,
           phase: 'idle',
@@ -366,7 +383,7 @@ export function useChat(threadId: string | null) {
         }))
       }
     },
-    [followPersistedJob],
+    [followPersistedJob, readThread],
   )
 
   /* ─────────────────────────────── Стоп ───────────────────────────────── */
@@ -419,11 +436,12 @@ export function useChat(threadId: string | null) {
     setCompacting(true)
     try {
       const result = await api.compactThread(id)
-      const data = await api.getThread(id)
+      const data = await readThread(id)
       if (threadIdRef.current !== id) return
       setState((previous) => ({
         ...previous,
         thread: data.thread,
+        project: data.project,
         messages: data.messages,
         context: result.context,
       }))
@@ -431,7 +449,7 @@ export function useChat(threadId: string | null) {
     } finally {
       setCompacting(false)
     }
-  }, [])
+  }, [readThread])
 
   const reload = useCallback(() => {
     const id = threadIdRef.current
@@ -608,6 +626,7 @@ function jobPhase(status: JobState): TurnPhase {
 function initialState(): ChatState {
   return {
     thread: null,
+    project: null,
     messages: [],
     context: null,
     loading: false,

@@ -65,27 +65,45 @@ import {
 
 export function ChatPage({
   threadId,
+  projectId = null,
   health,
 }: {
   threadId: string | null
+  projectId?: string | null
   health: Health
 }) {
-  if (!threadId) return <NewThreadPage />
-  return <ThreadPage threadId={threadId} health={health} />
+  if (!threadId) return <NewThreadPage projectId={projectId} />
+  return <ThreadPage threadId={threadId} projectId={projectId} health={health} />
 }
 
 /* ───────────────────────────── Новый тред ─────────────────────────────── */
 
-function NewThreadPage() {
+function NewThreadPage({ projectId }: { projectId: string | null }) {
   const navigate = useNavigate()
   const query = useMemo(() => new URLSearchParams(window.location.search), [])
   const settings = useAsync((signal) => api.getSettings(signal), [])
+  const projectContext = useAsync(
+    async (signal) => (projectId ? api.listProjectChats(projectId, signal) : null),
+    [projectId],
+  )
 
   const [mode, setMode] = useState<ThreadMode>('chat')
   const [model, setModel] = useState(query.get('model') ?? '')
   const [workspaceId, setWorkspaceId] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const creatingRef = useRef(false)
+  const createErrorRef = useRef<HTMLDivElement>(null)
+  const projectHeadingRef = useRef<HTMLHeadingElement>(null)
+  const projectContextErrorRef = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (projectId && projectContext.data) {
+      requestAnimationFrame(() => projectHeadingRef.current?.focus())
+    } else if (projectId && projectContext.error) {
+      requestAnimationFrame(() => projectContextErrorRef.current?.focus())
+    }
+  }, [projectId, projectContext.data, projectContext.error])
 
   const requestedContextText = query.get('numCtx')
   const requestedContext = parsePositiveSafeInteger(requestedContextText)
@@ -99,7 +117,10 @@ function NewThreadPage() {
       ? requestedContext
       : defaultContext
   const models = useAsync((signal) => api.listModels(numCtx, signal), [numCtx])
-  const workspaces = useAsync((signal) => api.listWorkspaces(signal), [])
+  const workspaces = useAsync(
+    (signal) => projectId ? Promise.resolve({ workspaces: [] }) : api.listWorkspaces(signal),
+    [projectId],
+  )
   const availableModels = models.data?.models ?? []
   const selectedModel =
     availableModels.find(
@@ -126,49 +147,93 @@ function NewThreadPage() {
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
-    if (!model || contextBlocked || contextInputInvalid) return
+    if (creatingRef.current || !model || contextBlocked || contextInputInvalid) return
 
+    creatingRef.current = true
     setCreating(true)
     setCreateError(null)
     try {
-      const thread = await api.createThread({
-        mode,
-        model,
-        workspaceId: mode === 'agent' && workspaceId ? workspaceId : null,
-        options: {
-          numCtx,
-          temperature: mode === 'agent' ? DEFAULT_AGENT_TEMPERATURE : DEFAULT_TEMPERATURE,
-          think: 'off',
-        },
-      })
-      navigate(paths.chat(thread.id), { replace: true })
+      const thread = projectId
+        ? await api.createProjectChat(projectId, {
+            model,
+            options: { numCtx, temperature: DEFAULT_TEMPERATURE, think: 'off' },
+          })
+        : await api.createThread({
+            mode,
+            model,
+            workspaceId: mode === 'agent' && workspaceId ? workspaceId : null,
+            options: {
+              numCtx,
+              temperature: mode === 'agent' ? DEFAULT_AGENT_TEMPERATURE : DEFAULT_TEMPERATURE,
+              think: 'off',
+            },
+          })
+      navigate(
+        projectId ? paths.projectChat(projectId, thread.id) : paths.chat(thread.id),
+        { replace: true },
+      )
     } catch (error) {
       setCreateError(errorMessage(error))
+      requestAnimationFrame(() => createErrorRef.current?.focus())
     } finally {
+      creatingRef.current = false
       setCreating(false)
     }
   }
 
+  if (projectId && projectContext.loading) {
+    return <div role="status" aria-label={translate('projects.chats.loading')} className="p-5"><Skeleton className="h-8 w-72" /></div>
+  }
+
+  if (projectId && (projectContext.error || !projectContext.data)) {
+    return (
+      <div className="mx-auto max-w-3xl px-5 py-6" role="alert">
+        <h1 ref={projectContextErrorRef} tabIndex={-1} className="text-base font-semibold outline-none">
+          {translate('projects.chats.safeState')}
+        </h1>
+        <p className="mt-2 break-words text-xs text-[var(--fg-muted)]">
+          {errorMessage(projectContext.error)}
+        </p>
+        <Button className="mt-3" onClick={projectContext.reload}>{translate('projects.retry')}</Button>
+      </div>
+    )
+  }
+
+  const project = projectContext.data?.project ?? null
+
   return (
     <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-5 px-4 py-5 sm:px-5 md:grid-cols-[240px_minmax(0,1fr)]">
-      <ThreadSidebar currentId={null} />
+      <ThreadSidebar currentId={null} projectId={projectId} />
 
       <section className="surface min-w-0 rounded-xl p-4">
-        <h1 className="text-base font-semibold">Новый диалог</h1>
+        <h1
+          ref={project ? projectHeadingRef : undefined}
+          tabIndex={project ? -1 : undefined}
+          className="text-base font-semibold outline-none"
+        >
+          {project
+            ? translate('projects.chats.newFor').replace('{name}', project.name)
+            : 'Новый диалог'}
+        </h1>
         <p className="mt-0.5 mb-4 text-xs text-[var(--fg-muted)]">
-          Чат отвечает на вопросы. Агент дополнительно читает и меняет файлы выбранного проекта.
+          {projectId
+            ? translate('projects.chats.newDescription')
+            : 'Чат отвечает на вопросы. Агент дополнительно читает и меняет файлы выбранного проекта.'}
         </p>
 
         {createError && (
-          <div className="mb-3">
-            <Callout tone="danger" title="Не удалось создать тред">
+          <div ref={createErrorRef} tabIndex={-1} className="mb-3 outline-none">
+            <Callout
+              tone="danger"
+              title={projectId ? translate('projects.chats.createError') : 'Не удалось создать тред'}
+            >
               {createError}
             </Callout>
           </div>
         )}
 
         <form onSubmit={create} className="w-full min-w-0 max-w-xl space-y-4">
-          <fieldset>
+          {!projectId && <fieldset>
             <legend className="mb-1.5 text-xs font-medium">Режим</legend>
             <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2">
               <ModeButton
@@ -184,7 +249,7 @@ function NewThreadPage() {
                 onClick={() => setMode('agent')}
               />
             </div>
-          </fieldset>
+          </fieldset>}
 
           <label className="block">
             <span className="mb-1 block text-xs font-medium">Модель</span>
@@ -329,10 +394,22 @@ function ModeButton({
 
 /* ─────────────────────────────── Тред ─────────────────────────────────── */
 
-function ThreadPage({ threadId, health }: { threadId: string; health: Health }) {
-  const chat = useChat(threadId)
+function ThreadPage({
+  threadId,
+  projectId,
+  health,
+}: {
+  threadId: string
+  projectId: string | null
+  health: Health
+}) {
+  const chat = useChat(threadId, projectId)
   const composerRef = useRef<HTMLTextAreaElement>(null)
-  const workspaces = useAsync((signal) => api.listWorkspaces(signal), [chat.thread?.workspaceId])
+  const loadErrorHeadingRef = useRef<HTMLHeadingElement>(null)
+  const workspaces = useAsync(
+    (signal) => projectId ? Promise.resolve({ workspaces: [] }) : api.listWorkspaces(signal),
+    [chat.thread?.workspaceId, projectId],
+  )
   const [pickerOpen, setPickerOpen] = useState(false)
   const [autoApprove, setAutoApprove] = useLocalStorage('alamo.autoApproveTurn', false)
   const dispatchChat = useCallback(
@@ -355,6 +432,10 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
   const workspace =
     workspaces.data?.workspaces.find((item) => item.id === chat.thread?.workspaceId) ?? null
 
+  useEffect(() => {
+    if (chat.loadError) loadErrorHeadingRef.current?.focus()
+  }, [chat.loadError])
+
   const pickWorkspace = async (next: Workspace | null) => {
     setPickerOpen(false)
     if (!chat.thread) return
@@ -370,7 +451,7 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
   if (chat.loading) {
     return (
       <div className="grid h-full md:grid-cols-[240px_minmax(0,1fr)]">
-        <ThreadSidebar currentId={threadId} />
+        <ThreadSidebar currentId={threadId} projectId={projectId} />
         <div className="space-y-3 p-5">
           <Skeleton className="h-8 w-72" />
           <Skeleton className="h-24 w-3/4" />
@@ -382,25 +463,24 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
 
   if (chat.loadError || !chat.thread) {
     return (
-      <div className="mx-auto max-w-3xl px-5 py-6">
-        <Callout
-          tone="danger"
-          title="Не удалось открыть тред"
-          action={
-            <Button size="sm" onClick={chat.reload}>
-              Повторить
-            </Button>
-          }
-        >
+      <div className="mx-auto max-w-3xl px-5 py-6" role="alert">
+        <h1 ref={loadErrorHeadingRef} tabIndex={-1} className="text-base font-semibold outline-none">
+          {projectId ? translate('projects.chats.safeState') : 'Не удалось открыть тред'}
+        </h1>
+        <p className="mt-2 break-words text-xs text-[var(--fg-muted)]">
           {errorMessage(chat.loadError)}
-        </Callout>
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" onClick={chat.reload}>{translate('projects.retry')}</Button>
+          {projectId && <Link to={paths.projects()} className="text-xs text-[var(--accent)] underline">{translate('projects.chats.back')}</Link>}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="grid h-full min-h-0 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]">
-      <ThreadSidebar currentId={threadId} />
+      <ThreadSidebar currentId={threadId} projectId={projectId} />
 
       <section className="flex min-h-0 min-w-0 flex-col border-l border-[var(--border)]">
         <header className="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-1.5">
@@ -411,6 +491,14 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
                 {chat.thread.mode === 'agent' ? 'агент' : 'чат'}
               </Badge>
             </div>
+            {chat.project && (
+              <Link
+                to={paths.projects()}
+                className="mt-0.5 block max-w-full truncate text-2xs text-[var(--accent)] underline underline-offset-2"
+              >
+                {translate('projects.chats.context').replace('{name}', chat.project.name)}
+              </Link>
+            )}
             <div className="mt-0.5 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
               <span className="truncate font-mono">{chat.thread.model}</span>
               <ContextChip context={chat.context} />
@@ -422,7 +510,7 @@ function ThreadPage({ threadId, health }: { threadId: string; health: Health }) 
               <WorkspaceChip workspace={workspace} onClick={() => setPickerOpen(true)} />
             )}
             <Link
-              to={paths.chat()}
+              to={projectId ? paths.projectChat(projectId) : paths.chat()}
               className="flex h-6 items-center rounded-[5px] border border-[var(--border-strong)] px-2 text-2xs font-medium hover:bg-[var(--bg-subtle)]"
             >
               Новый
@@ -986,15 +1074,31 @@ function Composer({
 
 /* ───────────────────────────── Список тредов ──────────────────────────── */
 
-function ThreadSidebar({ currentId }: { currentId: string | null }) {
-  const threads = useAsync((signal) => api.listThreads(signal), [currentId])
+function ThreadSidebar({
+  currentId,
+  projectId,
+}: {
+  currentId: string | null
+  projectId: string | null
+}) {
+  const threads = useAsync(
+    async (signal) => {
+      const result = projectId
+        ? await api.listProjectChats(projectId, signal)
+        : await api.listProjectlessChats(signal)
+      return { threads: result.chats }
+    },
+    [currentId, projectId],
+  )
 
   return (
     <aside className="hidden min-h-0 overflow-y-auto p-2 md:block">
       <div className="mb-2 flex items-center justify-between gap-2 px-1">
-        <span className="text-2xs font-semibold text-[var(--fg-muted)]">Диалоги</span>
+        <span className="text-2xs font-semibold text-[var(--fg-muted)]">
+          {projectId ? translate('projects.chats.group') : translate('projects.chats.projectless')}
+        </span>
         <Link
-          to={paths.chat()}
+          to={projectId ? paths.projectChat(projectId) : paths.chat()}
           className="rounded px-1.5 py-0.5 text-2xs text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
         >
           + Новый
@@ -1016,7 +1120,7 @@ function ThreadSidebar({ currentId }: { currentId: string | null }) {
           {threads.data?.threads.map((thread) => (
             <Link
               key={thread.id}
-              to={paths.chat(thread.id)}
+              to={projectId ? paths.projectChat(projectId, thread.id) : paths.chat(thread.id)}
               aria-current={thread.id === currentId ? 'page' : undefined}
               className={cx(
                 'block rounded-md px-2 py-1.5',
