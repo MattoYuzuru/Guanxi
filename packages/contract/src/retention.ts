@@ -2,6 +2,9 @@ import { z } from 'zod'
 
 export const CHAT_RETENTION_VERSION = 1 as const
 export const CHAT_RETENTION_DAYS = 7 as const
+export const CHAT_LIFECYCLE_VERSION = 1 as const
+export const CHAT_TRASH_DEFAULT_LIMIT = 20 as const
+export const CHAT_TRASH_MAX_LIMIT = 100 as const
 
 export const chatRetentionPolicySchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('keep') }).strict(),
@@ -26,12 +29,12 @@ export const chatRetentionProjectionSchema = z
     lastUserActivity: z
       .object({
         at: z.string().datetime(),
-        source: z.enum(['chat_created', 'user_message']),
+        source: z.enum(['chat_created', 'user_message', 'chat_restored']),
       })
       .strict(),
     expiresAt: z.string().datetime().nullable(),
     expirySource: z.enum(['server_calculated', 'policy_without_time_expiry']),
-    enforcement: z.literal('not_implemented'),
+    enforcement: z.enum(['not_implemented', 'rolling_ttl_trash']),
   })
   .strict()
   .superRefine((value, context) => {
@@ -72,3 +75,47 @@ export const chatRetentionProjectionSchema = z
     }
   })
 export type ChatRetentionProjection = z.infer<typeof chatRetentionProjectionSchema>
+
+export const chatTrashReasonSchema = z.literal('ttl_expired')
+export type ChatTrashReason = z.infer<typeof chatTrashReasonSchema>
+
+export const chatTrashItemSchema = z
+  .object({
+    lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION),
+    chatId: z.string().min(1),
+    title: z.string(),
+    projectId: z.string().min(1).nullable(),
+    state: z.literal('trash'),
+    reason: chatTrashReasonSchema,
+    tombstonedAt: z.string().datetime(),
+    activityBasis: z
+      .object({
+        at: z.string().datetime(),
+        source: z.enum(['chat_created', 'user_message', 'chat_restored']),
+      })
+      .strict(),
+    source: z.literal('server_maintenance'),
+    hardDeletion: z.literal('not_implemented'),
+  })
+  .strict()
+export type ChatTrashItem = z.infer<typeof chatTrashItemSchema>
+
+export const restoredChatLifecycleSchema = z
+  .object({
+    lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION),
+    chatId: z.string().min(1),
+    projectId: z.string().min(1).nullable(),
+    state: z.literal('active'),
+    restored: z.boolean(),
+    restoredAt: z.string().datetime(),
+    activityBasis: z
+      .object({
+        at: z.string().datetime(),
+        source: z.literal('chat_restored'),
+      })
+      .strict(),
+    source: z.literal('user_restore'),
+    hardDeletion: z.literal('not_implemented'),
+  })
+  .strict()
+export type RestoredChatLifecycle = z.infer<typeof restoredChatLifecycleSchema>

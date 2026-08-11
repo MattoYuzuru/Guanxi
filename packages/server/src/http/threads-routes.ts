@@ -9,11 +9,15 @@ import {
   DEFAULT_TEMPERATURE,
   createThreadBody,
   getChatRetentionResponse,
+  listChatTrashQuery,
+  listChatTrashResponse,
   listProjectlessChatsQuery,
   PROJECT_CHAT_OWNERSHIP_VERSION,
   sendMessageBody,
   updateThreadBody,
   updateChatRetentionBody,
+  restoreChatBody,
+  restoreChatResponse,
   type ChatStreamEvent,
   type JobStreamEvent,
   type ThreadOptions,
@@ -122,6 +126,38 @@ export function threadsRoutes(app: AppContext): Hono {
     return context.json(thread, 201)
   })
 
+  routes.get('/trash', (context) => {
+    const query = new URL(context.req.url).searchParams
+    const raw = Object.fromEntries(query)
+    const parsed = listChatTrashQuery.safeParse(raw)
+    const allowedKeys = new Set(['lifecycleVersion', 'scope', 'projectId', 'limit'])
+    if (
+      !parsed.success ||
+      [...query.keys()].some((key) => !allowedKeys.has(key)) ||
+      [...new Set(query.keys())].some((key) => query.getAll(key).length !== 1)
+    ) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Chat Trash query', details: null },
+        400,
+      )
+    }
+    if (parsed.data.scope === 'project' && !app.projects.get(parsed.data.projectId)) {
+      return notFound(context, 'project_not_found', 'Project was not found')
+    }
+    const page = app.retention.listTrash(
+      parsed.data.scope === 'project'
+        ? { scope: 'project', projectId: parsed.data.projectId }
+        : { scope: 'projectless' },
+      parsed.data.limit,
+    )
+    return context.json(listChatTrashResponse.parse({
+      lifecycleVersion: parsed.data.lifecycleVersion,
+      scope: parsed.data.scope,
+      projectId: parsed.data.scope === 'project' ? parsed.data.projectId : null,
+      ...page,
+    }))
+  })
+
   routes.get('/:id/retention', (context) => {
     const result = app.retention.get(context.req.param('id'))
     if (result.status === 'not_found') {
@@ -132,6 +168,9 @@ export function threadsRoutes(app: AppContext): Hono {
         { code: 'validation_failed', message: 'Retention is available only for Chat', details: null },
         400,
       )
+    }
+    if (result.status === 'in_trash') {
+      return notFound(context, 'thread_not_found', 'Chat was not found in active work')
     }
     return context.json(getChatRetentionResponse.parse(result.retention))
   })
@@ -154,7 +193,44 @@ export function threadsRoutes(app: AppContext): Hono {
         400,
       )
     }
+    if (result.status === 'in_trash') {
+      return context.json(
+        {
+          code: 'validation_failed',
+          message: 'A Chat in Trash can be restored only to Keep or 7 days',
+          details: null,
+        },
+        409,
+      )
+    }
     return context.json(getChatRetentionResponse.parse(result.retention))
+  })
+
+  routes.post('/:id/restore', async (context) => {
+    const parsed = restoreChatBody.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Chat restore request', details: null },
+        400,
+      )
+    }
+    const result = app.retention.restore(context.req.param('id'))
+    if (result.status === 'not_found') {
+      return notFound(context, 'thread_not_found', 'Chat was not found')
+    }
+    if (result.status === 'not_chat') {
+      return context.json(
+        { code: 'validation_failed', message: 'Restore is available only for Chat', details: null },
+        400,
+      )
+    }
+    if (result.status === 'not_in_trash') {
+      return context.json(
+        { code: 'validation_failed', message: 'Chat is not in Trash', details: null },
+        409,
+      )
+    }
+    return context.json(restoreChatResponse.parse(result.lifecycle))
   })
 
   routes.get('/:id', (context) => {

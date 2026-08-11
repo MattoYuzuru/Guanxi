@@ -16,4 +16,15 @@ export class ChatRetentionService {
   update(chatId: string, policy: ChatRetentionPolicy) {
     return this.store.update(chatId, policy)
   }
+
+  listTrash(
+    scope: { scope: 'projectless' } | { scope: 'project'; projectId: string },
+    limit: number,
+  ) {
+    return this.store.listTrash(scope, limit)
+  }
+
+  restore(chatId: string) {
+    return this.store.restore(chatId)
+  }
 }

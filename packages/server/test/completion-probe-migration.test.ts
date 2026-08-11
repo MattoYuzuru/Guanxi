@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { openDb } from '../src/store/db.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 function version(db: DatabaseSync): number {
   return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
 }
 
 function downgradeToV7(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(
     'DROP INDEX idx_threads_retention_policy; ALTER TABLE threads DROP COLUMN last_user_activity_source; ALTER TABLE threads DROP COLUMN last_user_activity_at; ALTER TABLE threads DROP COLUMN retention_policy_updated_at; ALTER TABLE threads DROP COLUMN retention_policy_source; ALTER TABLE threads DROP COLUMN retention_policy; DROP TRIGGER threads_project_chat_update_valid; DROP TRIGGER threads_project_chat_insert_valid; DROP TRIGGER threads_project_ownership_immutable; DROP INDEX idx_threads_project_updated; ALTER TABLE threads DROP COLUMN project_id; DROP TABLE project_filesystem_bindings; DROP TABLE projects; DROP TABLE model_capability_user_overrides; DROP TABLE completion_probe_evidence; PRAGMA user_version = 7;',
   )
@@ -22,7 +24,7 @@ describe('SQLite completion probe migration 8', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const first = openDb(path)
-    assert.equal(version(first), 14)
+    assert.equal(version(first), 15)
     assert.equal(
       (first.prepare(
         `SELECT COUNT(*) AS count FROM sqlite_schema
@@ -32,7 +34,7 @@ describe('SQLite completion probe migration 8', () => {
     )
     first.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 14)
+    assert.equal(version(reopened), 15)
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM completion_probe_evidence').get() as {
         count: number
@@ -69,7 +71,7 @@ describe('SQLite completion probe migration 8', () => {
     downgradeToV7(fixture)
     fixture.close()
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 14)
+    assert.equal(version(upgraded), 15)
     assert.equal(
       (upgraded.prepare('SELECT COUNT(*) AS count FROM completion_probe_evidence').get() as {
         count: number
@@ -106,7 +108,7 @@ describe('SQLite completion probe migration 8', () => {
     repair.exec('DROP TABLE completion_probe_evidence')
     repair.close()
     const recovered = openDb(path)
-    assert.equal(version(recovered), 14)
+    assert.equal(version(recovered), 15)
     recovered.close()
   })
 })

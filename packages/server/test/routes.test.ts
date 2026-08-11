@@ -1346,7 +1346,7 @@ describe('project routes', () => {
           chatId,
           projectId,
           policy: { mode: 'ttl', expiresAfterDays: 7 },
-          enforcement: 'not_implemented',
+          enforcement: 'rolling_ttl_trash',
         },
       )
     }

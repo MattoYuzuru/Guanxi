@@ -20,6 +20,10 @@ import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
 import { ProjectService } from './projects/service.ts'
 import { ChatRetentionService } from './retention/service.ts'
+import {
+  RetentionMaintenanceOwner,
+  type RetentionMaintenanceOptions,
+} from './retention/maintenance.ts'
 import { HuggingFaceTransport } from './models/hugging-face-transport.ts'
 import { HuggingFaceDownloadService } from './models/hugging-face-download.ts'
 import { HuggingFaceImportService } from './models/hugging-face-import.ts'
@@ -57,6 +61,8 @@ export interface AppContext {
   chatExecution: ChatJobExecutionOwner
   threads: ThreadStore
   retention: ChatRetentionService
+  /** Single startup/periodic owner for bounded recoverable TTL enforcement. */
+  maintenance?: RetentionMaintenanceOwner
   workspaces: WorkspaceStore
   projects: ProjectService
   settings: SettingsStore
@@ -102,10 +108,12 @@ export interface CreateContextOptions {
   dbPath: string
   appVersion: string
   featureFlagEnvironment?: FeatureFlagEnvironment
+  retentionMaintenance?: RetentionMaintenanceOptions
 }
 
 export async function createAppContext(options: CreateContextOptions): Promise<AppContext> {
   const db = openDb(options.dbPath)
+  let maintenance: RetentionMaintenanceOwner | null = null
   try {
     const hardware = await probeHardware()
     const hardwareObservedAt = new Date().toISOString()
@@ -151,6 +159,10 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
     const jobs = new JobStore(db)
     const threads = new ThreadStore(db)
+    const retentionStore = new ChatRetentionStore(db, {
+      clock: options.retentionMaintenance?.clock,
+    })
+    maintenance = new RetentionMaintenanceOwner(retentionStore, options.retentionMaintenance)
     const projects = new ProjectService(new ProjectStore(db))
     projects.reconcileLegacyWorkspaces()
 
@@ -170,7 +182,8 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       jobs,
       jobService,
       threads,
-      retention: new ChatRetentionService(new ChatRetentionStore(db)),
+      retention: new ChatRetentionService(retentionStore),
+      maintenance,
       workspaces: new WorkspaceStore(db),
       projects,
       settings,
@@ -215,8 +228,10 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       chatExecution: new ChatJobExecutionOwner(base),
     }
     await recoverChatJobs(context)
+    await maintenance.start()
     return context
   } catch (error) {
+    await maintenance?.close().catch(() => undefined)
     db.close()
     throw error
   }

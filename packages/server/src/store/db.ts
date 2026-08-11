@@ -462,6 +462,70 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX idx_threads_retention_policy
     ON threads(retention_policy, last_user_activity_at, id);
   `,
+  // 15 — recoverable Chat lifecycle enforcement. Existing rows remain active;
+  // no metadata, Message, Job, Artifact or blob is physically deleted here.
+  `
+  ALTER TABLE threads ADD COLUMN chat_lifecycle_state TEXT NOT NULL DEFAULT 'active'
+    CHECK (chat_lifecycle_state IN ('active','trash'));
+  ALTER TABLE threads ADD COLUMN chat_tombstoned_at TEXT;
+  ALTER TABLE threads ADD COLUMN chat_tombstone_reason TEXT
+    CHECK (chat_tombstone_reason IS NULL OR chat_tombstone_reason = 'ttl_expired');
+  ALTER TABLE threads ADD COLUMN chat_tombstone_activity_at TEXT;
+  ALTER TABLE threads ADD COLUMN last_user_restore_at TEXT;
+
+  CREATE TRIGGER threads_chat_lifecycle_insert_valid
+    BEFORE INSERT ON threads
+    WHEN NOT (
+      (NEW.chat_lifecycle_state = 'active'
+        AND NEW.chat_tombstoned_at IS NULL
+        AND NEW.chat_tombstone_reason IS NULL
+        AND NEW.chat_tombstone_activity_at IS NULL)
+      OR
+      (NEW.chat_lifecycle_state = 'trash'
+        AND NEW.mode = 'chat'
+        AND NEW.chat_tombstoned_at IS NOT NULL
+        AND NEW.chat_tombstone_reason = 'ttl_expired'
+        AND NEW.chat_tombstone_activity_at IS NOT NULL)
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid Chat lifecycle state');
+    END;
+  CREATE TRIGGER threads_chat_lifecycle_update_valid
+    BEFORE UPDATE OF chat_lifecycle_state, chat_tombstoned_at,
+      chat_tombstone_reason, chat_tombstone_activity_at ON threads
+    WHEN NOT (
+      (NEW.chat_lifecycle_state = 'active'
+        AND NEW.chat_tombstoned_at IS NULL
+        AND NEW.chat_tombstone_reason IS NULL
+        AND NEW.chat_tombstone_activity_at IS NULL)
+      OR
+      (NEW.chat_lifecycle_state = 'trash'
+        AND NEW.mode = 'chat'
+        AND NEW.chat_tombstoned_at IS NOT NULL
+        AND NEW.chat_tombstone_reason = 'ttl_expired'
+        AND NEW.chat_tombstone_activity_at IS NOT NULL)
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid Chat lifecycle state');
+    END;
+
+  CREATE TABLE chat_lifecycle_audit (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id           TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    event_type        TEXT NOT NULL CHECK (event_type IN ('tombstoned','restored')),
+    reason            TEXT NOT NULL CHECK (reason IN ('ttl_expired','user_restore','policy_change')),
+    occurred_at       TEXT NOT NULL,
+    activity_basis_at TEXT NOT NULL,
+    source            TEXT NOT NULL CHECK (source IN ('server_maintenance','user_action')),
+    UNIQUE (chat_id, event_type, occurred_at)
+  );
+  CREATE INDEX idx_chat_lifecycle_audit_chat
+    ON chat_lifecycle_audit(chat_id, id);
+  CREATE INDEX idx_threads_chat_ttl_eligibility
+    ON threads(chat_lifecycle_state, retention_policy, last_user_activity_at, id);
+  CREATE INDEX idx_threads_chat_trash_scope
+    ON threads(chat_lifecycle_state, project_id, chat_tombstoned_at DESC, id);
+  `,
 ]
 
 export function openDb(path: string): Db {

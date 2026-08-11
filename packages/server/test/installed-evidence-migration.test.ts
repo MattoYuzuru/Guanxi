@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { openDb } from '../src/store/db.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 function version(db: DatabaseSync): number {
   return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
 }
 
 function downgradeToV6(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -39,7 +41,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 14)
+    assert.equal(version(first), 15)
     assert.equal(
       (first.prepare(
         `SELECT COUNT(*) AS count FROM sqlite_schema
@@ -50,7 +52,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 14)
+    assert.equal(version(reopened), 15)
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -74,7 +76,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 14)
+    assert.equal(version(upgraded), 15)
     assert.equal(
       (upgraded.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -113,7 +115,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 14)
+    assert.equal(version(recovered), 15)
     recovered.close()
   })
 })

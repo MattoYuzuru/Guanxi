@@ -134,6 +134,7 @@ export class ThreadStore {
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
          FROM threads t
+         WHERE t.chat_lifecycle_state = 'active'
          ORDER BY t.updated_at DESC`,
       )
       .all() as unknown as ThreadRow[]
@@ -145,7 +146,7 @@ export class ThreadStore {
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
          FROM threads t
-         WHERE t.project_id IS NULL
+         WHERE t.project_id IS NULL AND t.chat_lifecycle_state = 'active'
          ORDER BY t.updated_at DESC, t.id`,
       )
       .all() as unknown as ThreadRow[]
@@ -157,7 +158,7 @@ export class ThreadStore {
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
          FROM threads t
-         WHERE t.project_id = ?
+         WHERE t.project_id = ? AND t.chat_lifecycle_state = 'active'
          ORDER BY t.updated_at DESC, t.id`,
       )
       .all(projectId) as unknown as ThreadRow[]
@@ -168,7 +169,7 @@ export class ThreadStore {
     const row = this.db
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
-         FROM threads t WHERE t.id = ?`,
+         FROM threads t WHERE t.id = ? AND t.chat_lifecycle_state = 'active'`,
       )
       .get(id) as unknown as ThreadRow | undefined
     return row ? toThread(row) : null
@@ -178,7 +179,7 @@ export class ThreadStore {
     const row = this.db
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
-         FROM threads t WHERE t.id = ?`,
+         FROM threads t WHERE t.id = ? AND t.chat_lifecycle_state = 'active'`,
       )
       .get(id) as unknown as ThreadRow | undefined
     return row ? toThreadWithOwnership(row) : null
@@ -287,7 +288,9 @@ export class ThreadStore {
   }
 
   delete(id: string): boolean {
-    const result = this.db.prepare('DELETE FROM threads WHERE id = ?').run(id)
+    const result = this.db
+      .prepare("DELETE FROM threads WHERE id = ? AND chat_lifecycle_state = 'active'")
+      .run(id)
     return result.changes > 0
   }
 

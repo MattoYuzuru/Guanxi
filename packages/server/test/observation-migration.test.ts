@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { openDb } from '../src/store/db.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 function downgradeToV5(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -40,7 +42,7 @@ describe('SQLite exact observation-key migration 6', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 14)
+    assert.equal(version(first), 15)
     assert.equal(
       (
         first
@@ -55,7 +57,7 @@ describe('SQLite exact observation-key migration 6', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 14)
+    assert.equal(version(reopened), 15)
     assert.equal(
       (
         reopened
@@ -83,7 +85,7 @@ describe('SQLite exact observation-key migration 6', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 14)
+    assert.equal(version(upgraded), 15)
     assert.deepEqual(
       {
         ...upgraded
@@ -140,7 +142,7 @@ describe('SQLite exact observation-key migration 6', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 14)
+    assert.equal(version(recovered), 15)
     recovered.close()
   })
 })

@@ -14,6 +14,7 @@ import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ThreadStore } from '../src/store/threads.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
 const OPTIONS = { numCtx: 8_192, temperature: 0.7, think: 'off' as const }
@@ -50,6 +51,7 @@ function tablesPayload(db: DatabaseSync, names: string[]): string {
 }
 
 function downgradeToV13(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -178,7 +180,7 @@ describe('P3-D Chat retention contract and migration 14', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal(dbVersion(upgraded), 14)
+    assert.equal(dbVersion(upgraded), 15)
     assert.equal(retentionColumns(upgraded).length, 5)
     assert.equal(migrationPayload(upgraded), exactLegacyPayload)
     assert.equal(
@@ -202,14 +204,14 @@ describe('P3-D Chat retention contract and migration 14', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(dbVersion(reopened), 14)
+    assert.equal(dbVersion(reopened), 15)
     assert.equal(retentionColumns(reopened).length, 5)
     assert.equal((reopened.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count, 2)
     assert.equal((reopened.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count, 2)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(dbVersion(fresh), 14)
+    assert.equal(dbVersion(fresh), 15)
     assert.equal(retentionColumns(fresh).length, 5)
     fresh.close()
   })

@@ -119,6 +119,7 @@ export async function start(options: StartOptions = {}) {
       instance.once('error', onError)
     })
   } catch (error) {
+    await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
     context.db.close()
@@ -138,9 +139,14 @@ export async function start(options: StartOptions = {}) {
       })
       let shutdownError: unknown = null
       try {
-        await context.chatExecution.shutdown()
+        await context.maintenance?.close()
       } catch (error) {
         shutdownError = error
+      }
+      try {
+        await context.chatExecution.shutdown()
+      } catch (error) {
+        shutdownError ??= error
       } finally {
         context.jobService.closeSubscriptions()
         await listenerClosed

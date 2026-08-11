@@ -16,6 +16,7 @@ import {
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ThreadStore } from '../src/store/threads.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 const CREATED_AT = '2026-08-10T10:00:00.000Z'
 
@@ -30,6 +31,7 @@ function columnNames(db: DatabaseSync): string[] {
 }
 
 function downgradeToV11(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -47,6 +49,7 @@ function downgradeToV11(db: DatabaseSync): void {
 }
 
 function downgradeToV12(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -183,7 +186,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 14)
+    assert.equal(version(upgraded), 15)
     assert.equal(columnNames(upgraded).filter((name) => name === 'project_id').length, 1)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(legacy.id)?.projectId, null)
     const afterRows = upgraded.prepare('SELECT * FROM threads').all() as Array<
@@ -196,18 +199,28 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
       retention_policy_updated_at: _retentionPolicyUpdatedAt,
       last_user_activity_at: _lastUserActivityAt,
       last_user_activity_source: _lastUserActivitySource,
+      chat_lifecycle_state: lifecycleState,
+      chat_tombstoned_at: tombstonedAt,
+      chat_tombstone_reason: tombstoneReason,
+      chat_tombstone_activity_at: tombstoneActivityAt,
+      last_user_restore_at: lastUserRestoreAt,
       ...row
     }) => {
       assert.equal(projectId, null)
       assert.equal(retentionPolicy, 'keep')
       assert.equal(retentionPolicySource, 'legacy_compatibility')
+      assert.equal(lifecycleState, 'active')
+      assert.equal(tombstonedAt, null)
+      assert.equal(tombstoneReason, null)
+      assert.equal(tombstoneActivityAt, null)
+      assert.equal(lastUserRestoreAt, null)
       return row
     })
     assert.equal(JSON.stringify(withoutAdditiveFields), before)
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 14)
+    assert.equal(version(reopened), 15)
     assert.equal(columnNames(reopened).filter((name) => name === 'project_id').length, 1)
     assert.equal(
       (reopened.prepare(
@@ -236,7 +249,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 14)
+    assert.equal(version(upgraded), 15)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(owned.id)?.projectId, project.id)
     assert.equal(
       (upgraded.prepare(
@@ -276,7 +289,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 14)
+    assert.equal(version(recovered), 15)
     assert.equal(new ThreadStore(recovered).getWithOwnership(owned.id)?.projectId, project.id)
     assert.throws(
       () => recovered.prepare('UPDATE threads SET project_id = NULL WHERE id = ?').run(owned.id),
@@ -285,7 +298,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     recovered.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 14)
+    assert.equal(version(reopened), 15)
     assert.equal(new ThreadStore(reopened).getWithOwnership(owned.id)?.projectId, project.id)
     reopened.close()
   })
@@ -320,7 +333,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 14)
+    assert.equal(version(recovered), 15)
     assert.equal(new ThreadStore(recovered).getWithOwnership('legacy-thread')?.projectId, null)
     recovered.close()
   })

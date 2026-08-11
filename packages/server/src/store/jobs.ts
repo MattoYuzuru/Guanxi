@@ -443,7 +443,8 @@ export class JobStore {
             `UPDATE threads
              SET title = ?, updated_at = ?,
                  last_user_activity_at = CASE WHEN mode = 'chat' THEN ? ELSE last_user_activity_at END,
-                 last_user_activity_source = CASE WHEN mode = 'chat' THEN 'user_message' ELSE last_user_activity_source END
+                 last_user_activity_source = CASE WHEN mode = 'chat' THEN 'user_message' ELSE last_user_activity_source END,
+                 last_user_restore_at = CASE WHEN mode = 'chat' THEN NULL ELSE last_user_restore_at END
              WHERE id = ?`,
           )
           .run(derivedTitle, createdAt, createdAt, threadId)
@@ -453,7 +454,8 @@ export class JobStore {
             `UPDATE threads
              SET updated_at = ?,
                  last_user_activity_at = CASE WHEN mode = 'chat' THEN ? ELSE last_user_activity_at END,
-                 last_user_activity_source = CASE WHEN mode = 'chat' THEN 'user_message' ELSE last_user_activity_source END
+                 last_user_activity_source = CASE WHEN mode = 'chat' THEN 'user_message' ELSE last_user_activity_source END,
+                 last_user_restore_at = CASE WHEN mode = 'chat' THEN NULL ELSE last_user_restore_at END
              WHERE id = ?`,
           )
           .run(createdAt, createdAt, threadId)

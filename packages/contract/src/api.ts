@@ -7,9 +7,14 @@
 import { z } from 'zod'
 import { PROJECT_PRESENTATION_VERSION } from './project-presentation.ts'
 import {
+  CHAT_LIFECYCLE_VERSION,
   CHAT_RETENTION_VERSION,
+  CHAT_TRASH_DEFAULT_LIMIT,
+  CHAT_TRASH_MAX_LIMIT,
   chatRetentionPolicySchema,
   chatRetentionProjectionSchema,
+  chatTrashItemSchema,
+  restoredChatLifecycleSchema,
 } from './retention.ts'
 import {
   catalogModelSchema,
@@ -94,6 +99,8 @@ export const ROUTES = {
   threadStop: (id: string) => `/api/threads/${id}/stop`,
   threadContext: (id: string) => `/api/threads/${id}/context`,
   threadRetention: (id: string) => `/api/threads/${encodeURIComponent(id)}/retention`,
+  chatTrash: () => '/api/threads/trash',
+  threadRestore: (id: string) => `/api/threads/${encodeURIComponent(id)}/restore`,
 
   workspaces: () => '/api/workspaces',
   workspace: (id: string) => `/api/workspaces/${id}`,
@@ -855,6 +862,79 @@ export const updateChatRetentionBody = z
   })
   .strict()
 export type UpdateChatRetentionBody = z.infer<typeof updateChatRetentionBody>
+
+export const listChatTrashQuery = z
+  .discriminatedUnion('scope', [
+    z
+      .object({
+        lifecycleVersion: z.coerce.number().pipe(z.literal(CHAT_LIFECYCLE_VERSION)),
+        scope: z.literal('projectless'),
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(CHAT_TRASH_MAX_LIMIT)
+          .optional()
+          .default(CHAT_TRASH_DEFAULT_LIMIT),
+      })
+      .strict(),
+    z
+      .object({
+        lifecycleVersion: z.coerce.number().pipe(z.literal(CHAT_LIFECYCLE_VERSION)),
+        scope: z.literal('project'),
+        projectId: z
+          .string()
+          .min(1)
+          .max(255)
+          .refine((value) => value === value.trim(), 'Project reference must be normalized'),
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(CHAT_TRASH_MAX_LIMIT)
+          .optional()
+          .default(CHAT_TRASH_DEFAULT_LIMIT),
+      })
+      .strict(),
+  ])
+export type ListChatTrashQuery = z.infer<typeof listChatTrashQuery>
+
+export const listChatTrashResponse = z
+  .object({
+    lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION),
+    scope: z.enum(['projectless', 'project']),
+    projectId: z.string().min(1).nullable(),
+    chats: z.array(chatTrashItemSchema).max(CHAT_TRASH_MAX_LIMIT),
+    hasMore: z.boolean(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const expectedProject = value.scope === 'project' ? value.projectId : null
+    if ((value.scope === 'project') !== (value.projectId !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['projectId'],
+        message: 'Project Trash scope requires exactly one Project identity',
+      })
+    }
+    value.chats.forEach((chat, index) => {
+      if (chat.projectId !== expectedProject) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['chats', index, 'projectId'],
+          message: 'Trash item crossed its requested Project scope',
+        })
+      }
+    })
+  })
+export type ListChatTrashResponse = z.infer<typeof listChatTrashResponse>
+
+export const restoreChatBody = z
+  .object({ lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION) })
+  .strict()
+export type RestoreChatBody = z.infer<typeof restoreChatBody>
+export const restoreChatResponse = restoredChatLifecycleSchema
+export type RestoreChatResponse = z.infer<typeof restoreChatResponse>
 
 /* ──────────────────────────────── Воркспейсы ─────────────────────────────── */
 

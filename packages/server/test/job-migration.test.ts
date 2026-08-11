@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { openDb } from '../src/store/db.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 function schemaObjects(db: DatabaseSync, names: string[]): Array<{ name: string; type: string }> {
   return db
@@ -18,6 +19,7 @@ function schemaObjects(db: DatabaseSync, names: string[]): Array<{ name: string;
 }
 
 function downgradeToV4(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -53,7 +55,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 14 })
+    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 15 })
     assert.deepEqual(
       schemaObjects(first, [
         'jobs',
@@ -79,7 +81,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 14 })
+    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 15 })
     assert.equal(
       schemaObjects(reopened, ['jobs', 'job_events']).filter((row) => row.type === 'table').length,
       2,
@@ -132,7 +134,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 14 })
+    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 15 })
     assert.deepEqual(
       {
         ...upgraded.prepare('SELECT id, title, mode, model FROM threads WHERE id = ?').get('thread-v3'),
@@ -194,7 +196,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 14 })
+    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 15 })
     assert.equal(schemaObjects(recovered, ['jobs', 'job_events', 'chat_job_inputs']).length, 3)
     recovered.close()
   })

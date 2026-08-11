@@ -22,6 +22,7 @@ import {
 } from '@alamo/contract'
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 const CREATED_AT = '2026-08-09T10:00:00.000Z'
 
@@ -40,6 +41,7 @@ async function temporaryDbPath(test: { after: (fn: () => unknown) => void }, lab
 }
 
 function downgradeToV9(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -59,6 +61,7 @@ function downgradeToV9(db: DatabaseSync): void {
 }
 
 function downgradeToV10(db: DatabaseSync): void {
+  downgradeRetentionLifecycleToV14(db)
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
     ALTER TABLE threads DROP COLUMN last_user_activity_source;
@@ -136,13 +139,13 @@ describe('SQLite logical Project migration 10', () => {
   it('keeps fresh and reopened projection identical without inventing a binding', async (test) => {
     const path = await temporaryDbPath(test, 'fresh')
     const first = openDb(path)
-    assert.equal(version(first), 14)
+    assert.equal(version(first), 15)
     assert.equal(count(first, 'projects'), 0)
     assert.equal(count(first, 'project_filesystem_bindings'), 0)
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 14)
+    assert.equal(version(reopened), 15)
     assert.deepEqual(new ProjectStore(reopened).list(), [])
     reopened.close()
   })
@@ -162,7 +165,7 @@ describe('SQLite logical Project migration 10', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 14)
+    assert.equal(version(upgraded), 15)
     const projection = new ProjectStore(upgraded).list()
     assert.deepEqual(
       projection.map((project) => ({
@@ -239,7 +242,7 @@ describe('SQLite logical Project migration 10', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 14)
+    assert.equal(version(recovered), 15)
     assert.equal(count(recovered, 'projects'), 2)
     assert.equal(count(recovered, 'project_filesystem_bindings'), 2)
     recovered.close()
@@ -406,7 +409,7 @@ describe('SQLite Project presentation migration 11', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 14)
+    assert.equal(version(upgraded), 15)
     const projects = new ProjectStore(upgraded)
     assert.deepEqual(projects.listWithPresentation().map((project) => ({
       id: project.id,
@@ -421,7 +424,7 @@ describe('SQLite Project presentation migration 11', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 14)
+    assert.equal(version(reopened), 15)
     const reopenedProject = new ProjectStore(reopened).getWithPresentation('project-v10')
     assert.deepEqual(
       reopenedProject && {
@@ -495,7 +498,7 @@ describe('SQLite Project presentation migration 11', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 14)
+    assert.equal(version(recovered), 15)
     assert.deepEqual(
       { ...recovered.prepare('SELECT icon_key, color_token FROM projects WHERE id = ?').get('project-v10') },
       { icon_key: 'folder', color_token: 'slate' },
