@@ -57,6 +57,7 @@ import { ContextChip, ContextPanel } from '../context/ContextPanel.tsx'
 import type { StreamBuffer } from './streamBuffer.ts'
 import { useChat, type ChatSendOptions, type TurnPhase } from './useChat.ts'
 import { useModelPrewarm, type ModelPrewarmState } from './useModelPrewarm.ts'
+import { ChatRetentionInfo } from './ChatRetentionInfo.tsx'
 import {
   ResourceConflictDialog,
   useResourceConflictDecision,
@@ -506,6 +507,13 @@ function ThreadPage({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
+            {chat.thread.mode === 'chat' && (
+              <ChatRetentionInfo
+                chatId={chat.thread.id}
+                chatTitle={chat.thread.title}
+                projectId={projectId}
+              />
+            )}
             {chat.thread.mode === 'agent' && (
               <WorkspaceChip workspace={workspace} onClick={() => setPickerOpen(true)} />
             )}

@@ -16,6 +16,7 @@ import {
   createThreadResponse,
   createProjectChatResponse,
   getContextResponse,
+  getChatRetentionResponse,
   getHealthResponse,
   getJobResponse,
   getModelResponse,
@@ -71,6 +72,7 @@ import {
   type SendMessageBody,
   type UpdateSettingsBody,
   type UpdateThreadBody,
+  type UpdateChatRetentionBody,
   type UpdateProjectBody,
   type UpdateProjectPresentationBody,
   type ListCatalogQuery,
@@ -358,6 +360,16 @@ export const api = {
 
   getContext: (id: string, signal?: AbortSignal) =>
     request(ROUTES.threadContext(id), getContextResponse, { signal }),
+
+  getChatRetention: (id: string, signal?: AbortSignal) =>
+    request(ROUTES.threadRetention(id), getChatRetentionResponse, { signal }),
+
+  updateChatRetention: (id: string, body: UpdateChatRetentionBody, signal?: AbortSignal) =>
+    request(ROUTES.threadRetention(id), getChatRetentionResponse, {
+      method: 'PATCH',
+      body,
+      signal,
+    }),
 
   /* Воркспейсы */
 
