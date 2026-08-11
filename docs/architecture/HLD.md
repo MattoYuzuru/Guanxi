@@ -39,7 +39,8 @@ Contract package ─ Zod types ─ browser + server
 
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
 SQLite хранит settings, threads/messages, nullable immutable Project ownership,
-workspaces, logical Projects, versioned Project presentation metadata и
+versioned Chat retention policy/user-activity basis, workspaces, logical
+Projects, versioned Project presentation metadata и
 filesystem bindings, tool journal,
 legacy
 calibration, exact P1-L observation samples, `jobs`/`job_events` и P1-D private
@@ -52,6 +53,13 @@ subscriber wake-ups, typed Resource Governor tickets/leases и approvals ост�
 в памяти, но command intent, lifecycle и replay output находятся в SQLite. P1-E
 startup coordinator bounded-страницами reconciles v5 Chat associations до HTTP
 listen.
+
+P3-D migration 14 additive хранит `Keep | ttl(7 days) | Session`, источник
+policy и последний accepted user-activity timestamp. Existing Threads получают
+conservative `Keep / legacy_compatibility`; новые Project и projectless Chats —
+одинаковый TTL default. Exact expiry вычисляет server. GET/PATCH retention не
+вызывает Job, Ollama, Governor, tool или filesystem boundary; cleanup/Trash и
+Session leave detection пока не реализованы.
 
 ### As-is execution boundary
 

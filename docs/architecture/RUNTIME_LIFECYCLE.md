@@ -1047,6 +1047,13 @@ no-progress loop.
 
 Исходник: [retention-state.mmd](diagrams/retention-state.mmd).
 
+Current P3-D реализует policy/activity projection до первой стрелки lifecycle:
+новые Chats получают rolling seven-day default, existing rows — explicit Keep,
+а accepted user message атомарно обновляет sourced basis вместе с durable Chat
+command. Exact expiry вычисляется server-side. Enforcement остаётся
+`not_implemented`: Maintenance, eligibility, Trash/grace и hard deletion ниже —
+accepted target, не текущее поведение.
+
 ```text
 active
   → expiring

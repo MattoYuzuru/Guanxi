@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-11
-**Текущая фаза:** Phase 3 — P3-D Chat retention policy ready
+**Текущая фаза:** Phase 3 — P3-E retention enforcement ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1417,9 +1417,63 @@ nested future fields, exact ordering, malformed references и owned Job reload.
 production DB corpus, concurrent multi-client create, real device/screen reader
 или visual baseline. Server create не получил отдельный idempotency key: one-
 create guarantee принадлежит текущему synchronous Web boundary. Project delete,
-move/reparent UI, retention/Trash и final navigation shell не реализованы.
+move/reparent UI и final navigation shell не реализованы; retention policy
+реализована в P3-D ниже, а Trash ещё отсутствует.
 Следующий bounded slice — P3-D canonical Chat retention policy/default/activity
 projection без cleanup/Trash enforcement.
+
+## Phase 3 — P3-D Chat retention policy foundation
+
+**Статус:** independently verified (`c9913c8`, `5c6670b`, review fix
+`cc41001`).
+
+Migration 14 append-only добавляет policy/source/update и sourced
+last-user-activity basis к `threads`. Existing rows получают explicit
+`Keep / legacy_compatibility`, поэтому upgrade не делает старую историю
+cleanup-eligible. Новый projectless и Project Chat получает один rolling
+seven-day default. Первый accepted user message атомарно двигает basis вместе с
+durable Job/Message command; duplicate key, model/tool/background/reload события
+TTL не продлевают.
+
+Strict contract и Chat-only GET/PATCH возвращают sourced activity, exact
+server-calculated ISO expiry и `enforcement: not_implemented`, не меняя raw
+legacy Thread bytes. Policy mutation изолирована от ownership, Workspace,
+Project/binding, Message/Job/tool/settings, provider, Governor и filesystem.
+Chat Info поддерживает `Keep | 7 days | Session`, explicit one-mutation Save,
+раздельный GET/PATCH retry, fail-closed Chat/Project identity и честно сообщает,
+что cleanup/Trash ещё отсутствуют.
+
+Evidence по правилу WORKFLOW: **7 new / 580 core regression envelope**, **6 new
+/ 191 Web component/parser envelope**, **1 new / 32 mocked Chromium envelope**.
+Targeted server routes/retention — 26/26; Chat retention component — 6/6;
+targeted browser — 1/1. Full typecheck, `npm test`, browser gate, build,
+markdownlint и diff-check — PASS. Build сохранил non-blocking Vite warning: main
+chunk 833.32 kB minified / 220.83 kB gzip при threshold 500 kB.
+
+Первый full `npm test` выявил 26 stale artificial-downgrade fixtures: они
+понижали `user_version`, но оставляли v14 columns. Fixtures теперь выполняют
+точный v14→v13 schema downgrade, а baseline migration assertion обновлён на 14.
+Других pre-review full-gate failures не осталось.
+
+Independent reviewer сначала дал `NEEDS_FIX`: Web не сверял response `chatId`,
+failed Save retry выполнял GET, а atomic command rollback, полный migration
+payload, side-effect envelope и timezone/clock independence не имели достаточных
+direct assertions. `cc41001` закрыл все шесть findings. Follow-up reviewer
+повторно запустил server 26/26 и component 6/6 и дал **PASS** без открытых
+findings.
+
+Mutation checks дали ожидаемый non-zero для migration rollback, Project-vs-
+projectless default drift, background-event TTL extension, literal legacy bytes
+и repeated Save; все mutations восстановлены. Дополнительный trigger fault
+доказывает общий rollback activity/Message/Job/event/input, а browser fixture
+сохраняет sourced ISO при Honolulu timezone и fake clock 1999→2040.
+
+Остаточный риск: SQLite migration corpus синтетический, Chromium mocked; нет
+production DB corpus, concurrent multi-client PATCH, real device/screen reader,
+visual baseline или live Ollama/GPU/network validation. Policy только настроена:
+expiry query, Maintenance scheduler, Trash/grace, restore, Session leave
+detection, active-Job deletion guard и hard deletion не реализованы. Следующий
+bounded slice — P3-E TTL Maintenance/Trash enforcement foundation.
 
 ## Планируемая последовательность Phase 2
 
@@ -1520,7 +1574,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-D ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-E ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

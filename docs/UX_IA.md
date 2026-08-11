@@ -120,8 +120,8 @@ Retention control — простой segmented switch:
 [ Keep | 7 days | Session ]
 ```
 
-Exact expiry видим рядом. Policy меняется без отдельной Save-кнопки; pending
-cleanup можно отменить до окончания Trash/grace. Default любого нового Chat —
+Exact expiry видим рядом. Policy меняется isolated действием `Save retention`;
+pending cleanup можно отменить до окончания Trash/grace. Default любого нового Chat —
 `7 days`, даже внутри Project. TTL продлевает только user activity. Session Chat
 после ухода и terminal state активной Job получает 24 часа на восстановление.
 

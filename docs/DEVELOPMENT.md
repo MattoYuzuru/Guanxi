@@ -243,6 +243,7 @@ server не нужен.
 - `schemas.ts` — domain Zod schemas;
 - `api.ts` — route constants и request/response schemas;
 - `events.ts` — Chat/Job SSE unions и classified private Chat output;
+- `retention.ts` — strict Chat policy/activity/expiry projection version 1;
 - `index.ts` — public exports.
 - Durable Job record/state/error/outcome, event envelope и P1-C public
   create/query/cancel/cursor/SSE schemas экспортируются из contract.
@@ -350,6 +351,11 @@ server не нужен.
 - migration 13 append-only добавляет ownership immutability и Project Chat
   mode/Workspace integrity triggers; v12 databases получают hardening без
   переписывания уже применённой migration 12;
+- migration 14 additive добавляет Chat retention policy/source/update и sourced
+  user-activity basis. Existing rows backfill-ятся conservative Keep, а новые
+  Project/projectless Chats получают один seven-day default;
+- `store/chat-retention.ts` и `retention/service.ts` владеют Chat-only
+  projection/PATCH; expiry вычисляет server, cleanup side effects отсутствуют;
 - `projects/service.ts` и `store/projects.ts` владеют strict identity/
   presentation metadata, no-path create/rename, isolated idempotent appearance
   update и fail-closed compatibility mapping;
@@ -406,17 +412,20 @@ server не нужен.
   command key; Stop использует только typed Runtime/public Job query/cancel;
   New Chat prewarm использует exact-context debounce и cleanup owner; P3-C
   добавляет sourced Project route/create/reload без Workspace read и synchronous
-  repeated-activation guard;
+  repeated-activation guard; P3-D добавляет Chat Info retention modal с
+  fail-closed identity, one-mutation Save/retry, sourced expiry и truthful
+  not-enforced state;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-C projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-D projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
-  Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging и P3-C Project Chat,
+  Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
+  P3-D retention,
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

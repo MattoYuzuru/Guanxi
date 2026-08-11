@@ -49,6 +49,14 @@ versioned Project-scoped boundary. Project можно создать без bind
 сохранены byte-compatible. Project defaults, Recipe/Artifact ownership и final
 client cutover ещё не реализованы.
 
+P3-D добавил к current `Thread` versioned Chat-only retention boundary. Новый
+projectless и Project Chat получает одинаковый rolling `7 days`; existing rows
+проецируются как explicit `Keep / legacy_compatibility`, поэтому migration сама
+не делает старую историю eligible. Server хранит sourced create/user-message
+activity и вычисляет exact expiry; policy пока имеет
+`enforcement: not_implemented`. Trash, cleanup и Session-leave lifecycle ниже
+остаются accepted target.
+
 ### Recipe
 
 Повторно используемая конфигурация задачи:

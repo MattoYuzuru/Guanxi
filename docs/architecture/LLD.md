@@ -14,6 +14,7 @@
   ownership, settings, strict Projects, workspaces, tool calls, approvals и
   durable Job/event records;
 - `api.ts`: route paths и request/response Zod;
+- `retention.ts`: strict version 1 policy и sourced Chat retention projection;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
   output;
 - `index.ts`: public exports.
@@ -211,7 +212,7 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   POST/DELETE `capability-overrides`, зарегистрированные до generic `/:name`,
   чтобы жадный name pattern не поглотил suffix;
 - `http/threads-routes.ts`: CRUD, durable Chat command/compatibility SSE, stop,
-  compact;
+  compact и isolated Chat retention GET/PATCH;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
 - `http/projects-routes.ts`: logical Project list/create/read/rename без
   filesystem requirement, opt-in `presentationVersion=1` projection, isolated
@@ -268,6 +269,11 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 13: append-only triggers запрещают reparent/nullification и
   Project-owned agent/Workspace scope; отдельный v12→v13 test доказывает
   transactional failure recovery без изменения ownership data;
+- migration 14: additive policy/source/update и sourced user-activity columns;
+  existing Threads получают safe `Keep / legacy_compatibility`, новые Chats
+  записывают rolling seven-day default через store boundary;
+- `store/chat-retention.ts` + `retention/service.ts`: Chat-only policy owner,
+  server-calculated exact expiry и isolated mutation без cleanup effects;
 - `store/capability-override.ts`: fail-closed exact key/timestamp validation,
   idempotent create без изменения timestamps, exact-row clear, deterministic
   capability order и `exactCapabilityOverrides` projection, которая при неполной
@@ -925,6 +931,12 @@ Auto mode проверяет immutable policy snapshot на каждом tool ca
 
 Lifecycle: [retention-state.mmd](diagrams/retention-state.mmd).
 
+Current P3-D реализует только Chat foundation: policy `{keep | ttl(7 days) |
+session}`, source/update time, sourced create/user-message activity и exact
+server-side expiry. Existing rows совместимо читаются как Keep. Ни expiry query,
+ни tombstone/Trash, ни Session leave detection, ни Artifact GC пока не
+реализованы; следующий тип ниже описывает accepted target lifecycle.
+
 Chat/Quick Run metadata:
 
 ```ts
@@ -984,7 +996,9 @@ Migrations 4–5 и `JobStore` реализуют `jobs`, `job_events`, private
 versioned built-in icon/color presentation metadata. Migrations 12–13 добавляют
 nullable immutable Project ownership к current `threads`; nested Chat API и Web
 group используют эту связь без move/reparent или filesystem inference. Project
-пока не хранит defaults и не владеет Recipes/Artifacts. Остальные target tables
+пока не хранит defaults и не владеет Recipes/Artifacts. Migration 14 хранит
+current Chat retention policy/source и user-activity basis; projection честно
+помечает enforcement как `not_implemented`. Остальные target tables
 ниже не реализованы. Legacy `threads/messages/workspaces`, raw Thread REST и
 strict legacy Project list сохранены без destructive route cutover.
 
