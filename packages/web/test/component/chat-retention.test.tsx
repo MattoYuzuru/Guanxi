@@ -86,9 +86,9 @@ describe('Chat retention info', () => {
     expect(api.getChatRetention).toHaveBeenCalledTimes(1)
   })
 
-  it('focuses a safe error, retries explicitly and rejects a mismatched Project scope', async () => {
+  it('focuses a safe error, retries GET and rejects a mismatched Chat identity', async () => {
     vi.mocked(api.getChatRetention)
-      .mockResolvedValueOnce({ ...TTL, projectId: 'project-b' })
+      .mockResolvedValueOnce({ ...TTL, chatId: 'chat-other', projectId: 'project-a' })
       .mockResolvedValueOnce({ ...TTL, projectId: 'project-a' })
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="Scoped" projectId="project-a" />)
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
@@ -98,6 +98,60 @@ describe('Chat retention info', () => {
     await screen.findByText('Настроено, но ещё не применяется')
     expect(api.getChatRetention).toHaveBeenCalledTimes(2)
     expect(screen.queryByText('Retention относится к другому Chat scope.')).toBeNull()
+  })
+
+  it('retries a failed Save as the same PATCH without an extra GET', async () => {
+    vi.spyOn(api, 'updateChatRetention')
+      .mockRejectedValueOnce(new Error('safe write failure'))
+      .mockResolvedValueOnce({
+        ...TTL,
+        policy: { mode: 'keep' },
+        policySource: 'user',
+        expiresAt: null,
+        expirySource: 'policy_without_time_expiry',
+      })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Retry" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    await screen.findByRole('dialog')
+    fireEvent.click(await screen.findByRole('radio', { name: 'Хранить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить retention' }))
+    const error = await screen.findByText('safe write failure')
+    await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    await waitFor(() => expect(api.updateChatRetention).toHaveBeenCalledTimes(2))
+    expect(api.updateChatRetention).toHaveBeenNthCalledWith(1, 'chat-1', {
+      retentionVersion: 1,
+      policy: { mode: 'keep' },
+    })
+    expect(api.updateChatRetention).toHaveBeenNthCalledWith(2, 'chat-1', {
+      retentionVersion: 1,
+      policy: { mode: 'keep' },
+    })
+    expect(api.getChatRetention).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a mismatched PATCH identity and recovers with GET without another mutation', async () => {
+    vi.spyOn(api, 'updateChatRetention').mockResolvedValue({
+      ...TTL,
+      chatId: 'chat-other',
+      policy: { mode: 'keep' },
+      policySource: 'user',
+      expiresAt: null,
+      expirySource: 'policy_without_time_expiry',
+    })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Scoped save" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    await screen.findByRole('dialog')
+    fireEvent.click(await screen.findByRole('radio', { name: 'Хранить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить retention' }))
+    await screen.findByText('Retention относится к другому Chat scope.')
+    expect(screen.queryByRole('button', { name: 'Сохранить retention' })).toBeNull()
+    expect(document.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeNull()
+    expect(api.updateChatRetention).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    await screen.findByText('Настроено, но ещё не применяется')
+    expect(api.getChatRetention).toHaveBeenCalledTimes(2)
+    expect(api.updateChatRetention).toHaveBeenCalledTimes(1)
   })
 
   it('uses English source/fallback copy', async () => {

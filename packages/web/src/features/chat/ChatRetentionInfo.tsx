@@ -26,7 +26,9 @@ export function ChatRetentionInfo({
   const [projection, setProjection] = useState<ChatRetentionProjection | null>(null)
   const [selected, setSelected] = useState<PolicyMode>('ttl')
   const [error, setError] = useState<string | null>(null)
+  const [retryKind, setRetryKind] = useState<'load' | 'save' | null>(null)
   const savingRef = useRef(false)
+  const retryPolicyRef = useRef<ChatRetentionPolicy | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
 
@@ -37,14 +39,19 @@ export function ChatRetentionInfo({
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setError(null)
+    setRetryKind(null)
+    setProjection(null)
     try {
       const next = await api.getChatRetention(chatId, signal)
-      if (next.projectId !== projectId) throw new Error(translate('chat.retention.scopeMismatch'))
+      if (next.chatId !== chatId || next.projectId !== projectId) {
+        throw new Error(translate('chat.retention.scopeMismatch'))
+      }
       setProjection(next)
       setSelected(next.policy.mode)
     } catch (reason) {
       if (signal?.aborted) return
       setError(errorMessage(reason))
+      setRetryKind('load')
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
@@ -57,28 +64,49 @@ export function ChatRetentionInfo({
     return () => controller.abort('retention-info-closed')
   }, [open, load])
 
-  const save = async (event: FormEvent) => {
-    event.preventDefault()
+  const savePolicy = async (policy: ChatRetentionPolicy) => {
     if (savingRef.current || !projection) return
     savingRef.current = true
     setSaving(true)
     setError(null)
-    const policy: ChatRetentionPolicy = selected === 'ttl'
-      ? { mode: 'ttl', expiresAfterDays: 7 }
-      : { mode: selected }
+    setRetryKind(null)
     try {
       const next = await api.updateChatRetention(chatId, {
         retentionVersion: CHAT_RETENTION_VERSION,
         policy,
       })
-      if (next.projectId !== projectId) throw new Error(translate('chat.retention.scopeMismatch'))
+      if (next.chatId !== chatId || next.projectId !== projectId) {
+        setError(translate('chat.retention.scopeMismatch'))
+        setProjection(null)
+        retryPolicyRef.current = null
+        setRetryKind('load')
+        return
+      }
       setProjection(next)
       setSelected(next.policy.mode)
+      retryPolicyRef.current = null
     } catch (reason) {
       setError(errorMessage(reason))
+      retryPolicyRef.current = policy
+      setRetryKind('save')
     } finally {
       savingRef.current = false
       setSaving(false)
+    }
+  }
+
+  const save = (event: FormEvent) => {
+    event.preventDefault()
+    const policy: ChatRetentionPolicy = selected === 'ttl'
+      ? { mode: 'ttl', expiresAfterDays: 7 }
+      : { mode: selected }
+    void savePolicy(policy)
+  }
+
+  const retry = () => {
+    if (retryKind === 'load') void load()
+    if (retryKind === 'save' && retryPolicyRef.current) {
+      void savePolicy(retryPolicyRef.current)
     }
   }
 
@@ -108,9 +136,11 @@ export function ChatRetentionInfo({
               <Callout tone="danger" title={translate('chat.retention.error')}>
                 <span className="break-words">{error}</span>
               </Callout>
-              <Button className="mt-2" size="sm" onClick={() => void load()}>
-                {translate('chat.retention.retry')}
-              </Button>
+              {retryKind ? (
+                <Button className="mt-2" size="sm" onClick={retry}>
+                  {translate('chat.retention.retry')}
+                </Button>
+              ) : null}
             </div>
           ) : null}
           {projection ? (

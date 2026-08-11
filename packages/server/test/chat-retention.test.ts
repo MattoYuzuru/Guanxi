@@ -28,6 +28,27 @@ function retentionColumns(db: DatabaseSync): string[] {
     .filter((name) => name.includes('retention') || name.includes('user_activity'))
 }
 
+function migrationPayload(db: DatabaseSync): string {
+  return JSON.stringify({
+    threads: db.prepare(
+      `SELECT id, title, mode, model, workspace_id, project_id, num_ctx,
+              temperature, think, created_at, updated_at
+       FROM threads ORDER BY id`,
+    ).all(),
+    messages: db.prepare('SELECT * FROM messages ORDER BY id').all(),
+    projects: db.prepare('SELECT * FROM projects ORDER BY id').all(),
+    workspaces: db.prepare('SELECT * FROM workspaces ORDER BY id').all(),
+    bindings: db.prepare('SELECT * FROM project_filesystem_bindings ORDER BY id').all(),
+  })
+}
+
+function tablesPayload(db: DatabaseSync, names: string[]): string {
+  return JSON.stringify(Object.fromEntries(names.map((name) => [
+    name,
+    db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+  ])))
+}
+
 function downgradeToV13(db: DatabaseSync): void {
   db.exec(`
     DROP INDEX idx_threads_retention_policy;
@@ -126,7 +147,17 @@ describe('P3-D Chat retention contract and migration 14', () => {
     const owner = new ProjectStore(fixture).create('Existing owner', '2026-08-01T00:00:00.000Z')
     const owned = createChat(threads, 'Existing owned history', owner.id)
     threads.addMessage({ threadId: owned.id, role: 'user', content: 'preserve ownership' })
+    fixture.prepare(
+      `INSERT INTO workspaces (id, name, root_path, created_at, last_used_at)
+       VALUES ('workspace-extra', 'Extra root', '/fixture/root', ?, NULL)`,
+    ).run('2026-08-01T00:00:00.000Z')
+    const boundProject = new ProjectStore(fixture).create('Bound project', '2026-08-02T00:00:00.000Z')
+    fixture.prepare(
+      `INSERT INTO project_filesystem_bindings (id, project_id, workspace_id, created_at)
+       VALUES ('binding-extra', ?, 'workspace-extra', ?)`,
+    ).run(boundProject.id, '2026-08-02T00:00:00.000Z')
     downgradeToV13(fixture)
+    const exactLegacyPayload = migrationPayload(fixture)
     fixture.exec('CREATE INDEX idx_threads_retention_policy ON threads(title)')
     fixture.close()
 
@@ -134,6 +165,7 @@ describe('P3-D Chat retention contract and migration 14', () => {
     const rolledBack = new DatabaseSync(path)
     assert.equal(dbVersion(rolledBack), 13)
     assert.deepEqual(retentionColumns(rolledBack), [])
+    assert.equal(migrationPayload(rolledBack), exactLegacyPayload)
     assert.equal(
       (rolledBack.prepare('SELECT content FROM messages WHERE id = ?').get(message.id) as { content: string }).content,
       'preserve me',
@@ -148,6 +180,7 @@ describe('P3-D Chat retention contract and migration 14', () => {
     const upgraded = openDb(path)
     assert.equal(dbVersion(upgraded), 14)
     assert.equal(retentionColumns(upgraded).length, 5)
+    assert.equal(migrationPayload(upgraded), exactLegacyPayload)
     assert.equal(
       (upgraded.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'index' AND name = 'idx_threads_retention_policy'").get() as { count: number }).count,
       1,
@@ -275,6 +308,51 @@ describe('P3-D Chat retention contract and migration 14', () => {
     if (reopened.status === 'ok') {
       assert.equal(reopened.retention.lastUserActivity.at, created.createdAt)
       assert.equal(reopened.retention.expiresAt, afterUser.retention.expiresAt)
+    }
+    db.close()
+  })
+
+  it('rolls back Job, Message and activity together when accepted command persistence fails', () => {
+    const db = openDb(':memory:')
+    const threads = new ThreadStore(db)
+    const chat = createChat(threads, 'Atomic title')
+    const jobs = new JobStore(db)
+    const command = {
+      threadId: chat.id,
+      idempotencyScope: `chat:${chat.id}:send:v1`,
+      idempotencyKey: 'atomic-command',
+      requestFingerprint: 'atomic-fingerprint',
+      input: { content: 'atomic hello', attachments: [], autoApprove: null },
+      derivedTitle: 'changed title',
+    }
+    const tables = ['threads', 'messages', 'jobs', 'job_events', 'chat_job_inputs']
+    const before = tablesPayload(db, tables)
+    const retentionBefore = new ChatRetentionStore(db).get(chat.id)
+    db.exec(`
+      CREATE TRIGGER fail_chat_activity_update
+      BEFORE UPDATE OF last_user_activity_at ON threads
+      WHEN NEW.last_user_activity_source = 'user_message'
+      BEGIN
+        SELECT RAISE(ABORT, 'injected activity persistence failure');
+      END;
+    `)
+
+    assert.throws(() => jobs.createChat(command), /injected activity persistence failure/)
+    assert.equal(tablesPayload(db, tables), before)
+    assert.deepEqual(new ChatRetentionStore(db).get(chat.id), retentionBefore)
+
+    db.exec('DROP TRIGGER fail_chat_activity_update')
+    const recovered = jobs.createChat(command)
+    assert.equal(recovered.created, true)
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count, 1)
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM job_events').get() as { count: number }).count, 1)
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM chat_job_inputs').get() as { count: number }).count, 1)
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count, 2)
+    const retentionAfter = new ChatRetentionStore(db).get(chat.id)
+    assert.equal(retentionAfter.status, 'ok')
+    if (retentionAfter.status === 'ok') {
+      assert.equal(retentionAfter.retention.lastUserActivity.source, 'user_message')
+      assert.equal(retentionAfter.retention.lastUserActivity.at, recovered.createdAt)
     }
     db.close()
   })

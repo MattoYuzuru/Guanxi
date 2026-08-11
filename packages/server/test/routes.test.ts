@@ -1258,7 +1258,9 @@ describe('project routes', () => {
       },
     })
     test.after(() => context.db.close())
-    const app = createApp(context)
+    const allowedRoot = await mkdtemp(join(tmpdir(), 'alamo-retention-side-effects-'))
+    test.after(() => rm(allowedRoot, { recursive: true, force: true }))
+    context.workspaces.create(allowedRoot, 'Retention fixture root')
     const projectA = context.projects.create('A')
     const projectB = context.projects.create('B')
     const projectless = context.threads.create({
@@ -1276,12 +1278,56 @@ describe('project routes', () => {
       title: 'Owned B', model: 'fixture', projectId: projectB.id,
       options: { numCtx: 8192, temperature: 0.7, think: 'off' },
     })
-    const unrelatedBefore = {
-      projects: JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all()),
-      messages: JSON.stringify(context.db.prepare('SELECT * FROM messages').all()),
-      jobs: JSON.stringify(context.db.prepare('SELECT * FROM jobs').all()),
-      settings: JSON.stringify(context.db.prepare('SELECT * FROM settings').all()),
-    }
+    const fixtureMessage = context.threads.addMessage({
+      threadId: ownedB.id, role: 'assistant', content: 'fixture output',
+    })
+    context.threads.recordToolRun(ownedB.id, fixtureMessage.id, {
+      id: 'retention-route-tool', name: 'fixture', arguments: {}, status: 'ok',
+      result: 'fixture result', error: null, durationMs: 1, source: 'builtin',
+      parsedFrom: 'native', diff: null,
+    })
+    context.jobs.createChat({
+      threadId: ownedB.id,
+      idempotencyScope: `chat:${ownedB.id}:send:v1`,
+      idempotencyKey: 'retention-side-effect-fixture',
+      requestFingerprint: 'retention-side-effect-fingerprint',
+      input: { content: 'fixture input', attachments: [], autoApprove: null },
+      derivedTitle: 'fixture input',
+    })
+    const protectedTables = [
+      'projects', 'project_filesystem_bindings', 'workspaces', 'messages', 'tool_runs',
+      'jobs', 'job_events', 'chat_job_inputs', 'settings',
+    ]
+    const snapshotProtectedTables = () => JSON.stringify(Object.fromEntries(
+      protectedTables.map((name) => [
+        name,
+        context.db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+      ]),
+    ))
+    const unrelatedBefore = snapshotProtectedTables()
+    const filesystemBefore = await readdir(allowedRoot)
+    let jobServiceCalls = 0
+    let workspaceCalls = 0
+    let executionCalls = 0
+    context.jobService = new Proxy(context.jobService, {
+      get() {
+        jobServiceCalls += 1
+        throw new Error('retention must not invoke JobService')
+      },
+    })
+    context.workspaces = new Proxy(context.workspaces, {
+      get() {
+        workspaceCalls += 1
+        throw new Error('retention must not invoke WorkspaceStore/filesystem')
+      },
+    })
+    context.chatExecution = new Proxy(context.chatExecution, {
+      get() {
+        executionCalls += 1
+        throw new Error('retention must not invoke Chat execution')
+      },
+    })
+    const app = createApp(context)
 
     for (const [chatId, projectId] of [
       [projectless.id, null], [ownedA.id, projectA.id], [ownedB.id, projectB.id],
@@ -1331,22 +1377,26 @@ describe('project routes', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ retentionVersion: 1, policy: { mode: 'session' } }),
     })
+    const ttl = await app.request(`/api/threads/${ownedB.id}/retention`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        retentionVersion: 1,
+        policy: { mode: 'ttl', expiresAfterDays: 7 },
+      }),
+    })
     assert.deepEqual((await keep.json() as { policy: unknown }).policy, { mode: 'keep' })
     assert.deepEqual((await session.json() as { policy: unknown }).policy, { mode: 'session' })
     assert.deepEqual(
-      (await (await app.request(`/api/threads/${ownedB.id}/retention`)).json() as { policy: unknown }).policy,
+      (await ttl.json() as { policy: unknown }).policy,
       { mode: 'ttl', expiresAfterDays: 7 },
     )
-    assert.deepEqual(
-      {
-        projects: JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all()),
-        messages: JSON.stringify(context.db.prepare('SELECT * FROM messages').all()),
-        jobs: JSON.stringify(context.db.prepare('SELECT * FROM jobs').all()),
-        settings: JSON.stringify(context.db.prepare('SELECT * FROM settings').all()),
-      },
-      unrelatedBefore,
-    )
+    assert.equal(snapshotProtectedTables(), unrelatedBefore)
+    assert.deepEqual(await readdir(allowedRoot), filesystemBefore)
     assert.equal(context.governor.snapshot().activeLease, null)
+    assert.equal(jobServiceCalls, 0)
+    assert.equal(workspaceCalls, 0)
+    assert.equal(executionCalls, 0)
     assert.equal(modelCalls, 0)
     assert.equal(ollamaCalls, 0)
   })

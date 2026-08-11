@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
+test.use({ timezoneId: 'Pacific/Honolulu' })
+
 test('Chat retention survives reload and contains repeated save, error and narrow zoom states', async ({ page }) => {
+  await page.clock.install({ time: new Date('1999-01-01T00:00:00.000Z') })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-11T10:00:00.000Z'
@@ -121,6 +124,9 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
   await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
   await expect(dialog.getByText(thread.title)).toHaveCount(1)
+  await page.clock.setFixedTime(new Date('2040-12-31T23:59:59.000Z'))
+  await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
+  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const initialLayout = await page.evaluate(() => ({
@@ -145,8 +151,9 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(error).toBeVisible()
   await expect(error.locator('xpath=ancestor::*[@role="alert"][1]')).toBeFocused()
 
-  await save.press('Enter')
+  await dialog.getByRole('button', { name: 'Повторить retention' }).press('Enter')
   await expect.poll(() => retentionPatches).toBe(2)
+  expect(retentionReads).toBe(1)
   expect(patchBodies).toEqual([
     { retentionVersion: 1, policy: { mode: 'keep' } },
     { retentionVersion: 1, policy: { mode: 'keep' } },
@@ -159,6 +166,9 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await page.getByRole('button', { name: 'Информация о чате' }).click()
   await expect(page.getByRole('dialog').getByText('Хранить', { exact: true })).toHaveCount(2)
   await expect(page.getByRole('dialog').getByText('Настроено, но ещё не применяется')).toHaveCount(1)
+  expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Pacific/Honolulu')
+  await expect(page.getByRole('dialog').locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
+  await expect(page.getByRole('dialog').locator(`time[datetime="${expiresAt}"]`)).toHaveCount(0)
   expect(retentionReads).toBeGreaterThanOrEqual(2)
   expect(unexpectedMutations).toEqual([])
 })
