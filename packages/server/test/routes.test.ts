@@ -930,6 +930,20 @@ describe('project routes', () => {
       options: { numCtx: 8192, temperature: 0.7, think: 'off' },
     })
     const legacyBytes = await (await app.request(`/api/threads/${legacy.id}`)).text()
+    const expectedLegacyBytes = JSON.stringify({
+      thread: legacy,
+      messages: [],
+      context: {
+        usedTokens: 0,
+        allocatedTokens: 8192,
+        percent: 0,
+        cacheHit: false,
+        cachedTokens: 0,
+        compactable: false,
+        estimatedRepefillMs: 0,
+      },
+    })
+    assert.equal(legacyBytes, expectedLegacyBytes)
     const projectBefore = JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all())
     const bindingsBefore = JSON.stringify(context.db.prepare('SELECT * FROM project_filesystem_bindings ORDER BY id').all())
     const workspacesBefore = JSON.stringify(context.db.prepare('SELECT * FROM workspaces').all())
