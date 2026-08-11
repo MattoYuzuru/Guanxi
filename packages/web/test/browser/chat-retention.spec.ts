@@ -4,6 +4,7 @@ import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 test.use({ timezoneId: 'Pacific/Honolulu' })
 
 test('Chat retention survives reload and contains repeated save, error and narrow zoom states', async ({ page }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.clock.install({ time: new Date('1999-01-01T00:00:00.000Z') })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
@@ -62,6 +63,33 @@ test('Chat retention survives reload and contains repeated save, error and narro
   let retentionPatches = 0
   const patchBodies: unknown[] = []
   const unexpectedMutations: string[] = []
+  let reasoningLists = 0
+  let reasoningReads = 0
+  const reasoningContent = 'reasoning only'
+  const artifactId = '22222222-2222-4222-8222-222222222222'
+  const jobId = '11111111-1111-4111-8111-111111111111'
+  const artifact = {
+    artifactVersion: 1,
+    id: artifactId,
+    type: 'reasoning',
+    mediaType: 'text/markdown; charset=utf-8',
+    storageKind: 'sqlite_text',
+    byteSize: 14,
+    checksum: `sha256:${'a'.repeat(64)}`,
+    createdAt: observedAt,
+    source: { chatId: thread.id, messageId: 'message-1', jobId },
+    ownership: { scope: 'projectless', projectId: null },
+    retention: {
+      basis: 'diagnostic_7_days',
+      expiresAfterDays: 7,
+      artifactExpiresAt: expiresAt,
+      parentMode: 'ttl',
+      parentExpiresAt: expiresAt,
+      effectiveExpiresAt: expiresAt,
+      relationship: 'shorter_parent_retention_wins',
+      automaticDeletion: 'not_implemented',
+    },
+  }
 
   const retention = () => ({
     retentionVersion: 1,
@@ -110,6 +138,22 @@ test('Chat retention survives reload and contains repeated save, error and narro
       policy = 'keep'
       return route.fulfill(json(retention()))
     }
+    if (url.pathname === `/api/threads/${thread.id}/reasoning-artifacts` && method === 'GET') {
+      reasoningLists += 1
+      expect(Object.fromEntries(url.searchParams)).toEqual({ artifactVersion: '1', scope: 'projectless' })
+      return route.fulfill(json({
+        artifactVersion: 1,
+        chatId: thread.id,
+        scope: 'projectless',
+        projectId: null,
+        generatedAnswers: [{ messageId: 'message-1', jobId, createdAt: observedAt, byteSize: 12 }],
+        artifacts: [artifact],
+      }))
+    }
+    if (url.pathname === `/api/threads/${thread.id}/reasoning-artifacts/${artifactId}` && method === 'GET') {
+      reasoningReads += 1
+      return route.fulfill(json({ ...artifact, content: reasoningContent }))
+    }
     if (method !== 'GET') unexpectedMutations.push(`${method} ${url.pathname}`)
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })
@@ -121,12 +165,16 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(dialog.getByText('7 дней', { exact: true })).toHaveCount(2)
   await expect(dialog.getByText('Восстанавливаемое истечение применяется')).toHaveCount(1)
   await expect(dialog.getByText(/Безвозвратное удаление не реализовано/u)).toHaveCount(1)
-  await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
-  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
+  await expect(dialog.getByText('Сгенерированные ответы', { exact: true })).toHaveCount(1)
+  await expect(dialog.getByText('Результаты с рассуждениями', { exact: true })).toHaveCount(1)
+  await expect(dialog.getByText(/Автоматическое удаление не реализовано/u)).toHaveCount(1)
+  await expect(dialog.getByRole('button', { name: 'Копировать рассуждение' })).toHaveCount(1)
+  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(2)
+  await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(2)
   await expect(dialog.getByText(thread.title)).toHaveCount(1)
   await page.clock.setFixedTime(new Date('2040-12-31T23:59:59.000Z'))
-  await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
-  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
+  await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(2)
+  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(2)
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   const initialLayout = await page.evaluate(() => ({
@@ -138,6 +186,10 @@ test('Chat retention survives reload and contains repeated save, error and narro
   expect(initialLayout.bodyWidth).toBeLessThanOrEqual(initialLayout.viewport)
   expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
   expect(await page.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
+
+  await dialog.getByRole('button', { name: 'Копировать рассуждение' }).press('Enter')
+  await expect.poll(() => reasoningReads).toBe(1)
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(reasoningContent)
 
   await dialog.getByRole('radio', { name: 'Хранить' }).check()
   const save = dialog.getByRole('button', { name: 'Сохранить retention' })
@@ -159,7 +211,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
     { retentionVersion: 1, policy: { mode: 'keep' } },
   ])
   await expect(dialog.locator('dd').filter({ hasText: 'Нет временного истечения' })).toHaveCount(1)
-  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(0)
+  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
 
   await page.getByRole('button', { name: 'Закрыть настройки хранения чата' }).click()
   await page.reload()
@@ -167,8 +219,11 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(page.getByRole('dialog').getByText('Хранить', { exact: true })).toHaveCount(2)
   await expect(page.getByRole('dialog').getByText('Восстанавливаемое истечение применяется')).toHaveCount(1)
   expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Pacific/Honolulu')
-  await expect(page.getByRole('dialog').locator(`time[datetime="${observedAt}"]`)).toHaveCount(1)
-  await expect(page.getByRole('dialog').locator(`time[datetime="${expiresAt}"]`)).toHaveCount(0)
+  await expect(page.getByRole('dialog').locator(`time[datetime="${observedAt}"]`)).toHaveCount(2)
+  await expect(page.getByRole('dialog').locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Копировать рассуждение' })).toHaveCount(1)
+  expect(reasoningLists).toBeGreaterThanOrEqual(2)
+  expect(reasoningReads).toBe(1)
   expect(retentionReads).toBeGreaterThanOrEqual(2)
   expect(unexpectedMutations).toEqual([])
 })

@@ -8,6 +8,7 @@ import { Button, Callout, Modal, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { ChatReasoningArtifacts } from './ChatReasoningArtifacts.tsx'
 
 type PolicyMode = ChatRetentionPolicy['mode']
 
@@ -215,6 +216,7 @@ export function ChatRetentionInfo({
               </div>
             </form>
           ) : null}
+          <ChatReasoningArtifacts chatId={chatId} projectId={projectId} />
         </div>
       </Modal>
     </>

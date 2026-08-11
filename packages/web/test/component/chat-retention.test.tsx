@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatRetentionProjection } from '@alamo/contract'
+import type { ChatRetentionProjection, ListReasoningArtifactsResponse } from '@alamo/contract'
 import { ChatRetentionInfo } from '../../src/features/chat/ChatRetentionInfo.tsx'
 import { api } from '../../src/lib/api.ts'
 
@@ -18,6 +18,44 @@ const TTL: ChatRetentionProjection = {
   expirySource: 'server_calculated',
   enforcement: 'rolling_ttl_trash',
 }
+const REASONING: ListReasoningArtifactsResponse = {
+  artifactVersion: 1,
+  chatId: 'chat-1',
+  scope: 'projectless',
+  projectId: null,
+  generatedAnswers: [{
+    messageId: 'message-1',
+    jobId: '11111111-1111-4111-8111-111111111111',
+    createdAt: ACTIVITY_AT,
+    byteSize: 12,
+  }],
+  artifacts: [{
+    artifactVersion: 1,
+    id: '22222222-2222-4222-8222-222222222222',
+    type: 'reasoning',
+    mediaType: 'text/markdown; charset=utf-8',
+    storageKind: 'sqlite_text',
+    byteSize: 15,
+    checksum: `sha256:${'a'.repeat(64)}`,
+    createdAt: ACTIVITY_AT,
+    source: {
+      chatId: 'chat-1',
+      messageId: 'message-1',
+      jobId: '11111111-1111-4111-8111-111111111111',
+    },
+    ownership: { scope: 'projectless', projectId: null },
+    retention: {
+      basis: 'diagnostic_7_days',
+      expiresAfterDays: 7,
+      artifactExpiresAt: EXPIRES_AT,
+      parentMode: 'ttl',
+      parentExpiresAt: EXPIRES_AT,
+      effectiveExpiresAt: EXPIRES_AT,
+      relationship: 'shorter_parent_retention_wins',
+      automaticDeletion: 'not_implemented',
+    },
+  }],
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -32,6 +70,7 @@ function deferred<T>() {
 beforeEach(() => {
   document.documentElement.lang = 'ru'
   vi.spyOn(api, 'getChatRetention').mockResolvedValue(TTL)
+  vi.spyOn(api, 'listReasoningArtifacts').mockResolvedValue(REASONING)
 })
 
 describe('Chat retention info', () => {
@@ -49,6 +88,14 @@ describe('Chat retention info', () => {
     expect(dialog.querySelector(`time[datetime="${ACTIVITY_AT}"]`)).toBeTruthy()
     expect(dialog.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeTruthy()
     expect(dialog.textContent).toContain('Ч'.repeat(120))
+    expect(dialog.textContent).toContain('Сгенерированные ответы')
+    expect(dialog.textContent).toContain('Результаты с рассуждениями')
+    expect(dialog.textContent).toContain('Автоматическое удаление не реализовано')
+    expect(api.listReasoningArtifacts).toHaveBeenCalledWith(
+      'chat-1',
+      { artifactVersion: 1, scope: 'projectless' },
+      expect.any(AbortSignal),
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Закрыть настройки хранения чата' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -146,7 +193,7 @@ describe('Chat retention info', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить retention' }))
     await screen.findByText('Retention относится к другому Chat scope.')
     expect(screen.queryByRole('button', { name: 'Сохранить retention' })).toBeNull()
-    expect(document.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeNull()
+    expect(document.querySelector(`form time[datetime="${EXPIRES_AT}"]`)).toBeNull()
     expect(api.updateChatRetention).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
     await screen.findByText('Восстанавливаемое истечение применяется')
@@ -161,5 +208,55 @@ describe('Chat retention info', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Chat retention' })
     expect(dialog.textContent).toContain('Recoverable expiry is active')
     expect(dialog.textContent).toContain('calculated by the server')
+    expect(dialog.textContent).toContain('Automatic deletion is not implemented')
+  })
+
+  it('copies only exact scoped Artifact text and does not expose answer/prompt/tool data', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    vi.spyOn(api, 'getReasoningArtifact').mockResolvedValue({
+      ...REASONING.artifacts[0]!,
+      content: 'private diagnostic',
+    })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Copy" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    const copy = await screen.findByRole('button', { name: 'Копировать рассуждение' })
+    fireEvent.click(copy)
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('private diagnostic'))
+    expect(api.getReasoningArtifact).toHaveBeenCalledWith(
+      'chat-1',
+      REASONING.artifacts[0]!.id,
+      { artifactVersion: 1, scope: 'projectless' },
+    )
+    expect(document.body.textContent).not.toContain('final answer secret')
+    expect(document.body.textContent).not.toContain('prompt secret')
+    expect(document.body.textContent).not.toContain('tool credential')
+  })
+
+  it('focuses reasoning load errors and retries with exact Project scope', async () => {
+    vi.mocked(api.getChatRetention).mockResolvedValue({ ...TTL, projectId: 'project-a' })
+    vi.mocked(api.listReasoningArtifacts)
+      .mockRejectedValueOnce(new Error('safe Artifact load failure'))
+      .mockResolvedValueOnce({
+        ...REASONING,
+        scope: 'project',
+        projectId: 'project-a',
+        artifacts: REASONING.artifacts.map((artifact) => ({
+          ...artifact,
+          ownership: { scope: 'project', projectId: 'project-a' },
+        })),
+      })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Artifacts" projectId="project-a" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    const error = await screen.findByText('safe Artifact load failure')
+    await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку рассуждений' }))
+    await screen.findByRole('button', { name: 'Копировать рассуждение' })
+    expect(api.listReasoningArtifacts).toHaveBeenLastCalledWith(
+      'chat-1',
+      { artifactVersion: 1, scope: 'project', projectId: 'project-a' },
+      undefined,
+    )
+    expect(api.listReasoningArtifacts).toHaveBeenCalledTimes(2)
   })
 })

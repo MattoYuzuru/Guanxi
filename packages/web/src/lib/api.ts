@@ -31,6 +31,8 @@ import {
   huggingFaceImportStreamEventSchema,
   listCatalogResponse,
   listChatTrashResponse,
+  listReasoningArtifactsResponse,
+  getReasoningArtifactResponse,
   listModelsResponse,
   listProjectsResponse,
   listProjectsWithPresentationResponse,
@@ -79,6 +81,7 @@ import {
   type UpdateProjectPresentationBody,
   type ListCatalogQuery,
   type ListChatTrashQuery,
+  type ListReasoningArtifactsQuery,
   type RestoreChatBody,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
@@ -392,6 +395,37 @@ export const api = {
       body,
       signal,
     }),
+
+  listReasoningArtifacts: (
+    id: string,
+    query: ListReasoningArtifactsQuery,
+    signal?: AbortSignal,
+  ) => request(ROUTES.threadReasoningArtifacts(id), listReasoningArtifactsResponse, {
+    query: {
+      artifactVersion: query.artifactVersion,
+      scope: query.scope,
+      projectId: query.scope === 'project' ? query.projectId : undefined,
+    },
+    signal,
+  }),
+
+  getReasoningArtifact: (
+    chatId: string,
+    artifactId: string,
+    query: ListReasoningArtifactsQuery,
+    signal?: AbortSignal,
+  ) => request(
+    ROUTES.threadReasoningArtifact(chatId, artifactId),
+    getReasoningArtifactResponse,
+    {
+      query: {
+        artifactVersion: query.artifactVersion,
+        scope: query.scope,
+        projectId: query.scope === 'project' ? query.projectId : undefined,
+      },
+      signal,
+    },
+  ),
 
   /* Воркспейсы */
 
