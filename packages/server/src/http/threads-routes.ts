@@ -8,6 +8,8 @@ import {
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
   createThreadBody,
+  listProjectlessChatsQuery,
+  PROJECT_CHAT_OWNERSHIP_VERSION,
   sendMessageBody,
   updateThreadBody,
   type ChatStreamEvent,
@@ -52,7 +54,27 @@ async function* compatibilityEvents(
 export function threadsRoutes(app: AppContext): Hono {
   const routes = new Hono()
 
-  routes.get('/', (context) => context.json({ threads: app.threads.list() }))
+  routes.get('/', (context) => {
+    const query = new URL(context.req.url).searchParams
+    if (query.size === 0) return context.json({ threads: app.threads.list() })
+    const parsed = listProjectlessChatsQuery.safeParse(Object.fromEntries(query))
+    if (
+      !parsed.success ||
+      query.size !== 2 ||
+      query.getAll('ownershipVersion').length !== 1 ||
+      query.getAll('scope').length !== 1
+    ) {
+      return context.json(
+        { code: 'validation_failed', message: 'Unsupported Chat ownership query', details: null },
+        400,
+      )
+    }
+    return context.json({
+      ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
+      scope: 'projectless' as const,
+      chats: app.threads.listProjectless(),
+    })
+  })
 
   routes.post('/', async (context) => {
     const parsed = createThreadBody.safeParse(await context.req.json().catch(() => null))
@@ -130,6 +152,17 @@ export function threadsRoutes(app: AppContext): Hono {
       return context.json(
         { code: 'validation_failed', message: 'Нельзя менять тред во время генерации', details: null },
         409,
+      )
+    }
+    const ownership = app.threads.getWithOwnership(id)
+    if (ownership?.projectId && parsed.data.workspaceId !== undefined) {
+      return context.json(
+        {
+          code: 'validation_failed',
+          message: 'Project Chat filesystem scope is not configurable through Thread update',
+          details: null,
+        },
+        400,
       )
     }
     if (parsed.data.workspaceId && !app.workspaces.get(parsed.data.workspaceId)) {

@@ -909,4 +909,133 @@ describe('project routes', () => {
     assert.equal(ollamaBoundaryCalls, 0)
     assert.equal(modelBoundaryCalls, 0)
   })
+
+  it('creates and reads Project Chats through one immutable scoped boundary', async (test) => {
+    let modelValidationCalls = 0
+    const context = testContext({
+      models: () => ({
+        supportsTools: async () => false,
+        assertContextAllowed: async () => { modelValidationCalls += 1 },
+      }) as unknown as ModelService,
+    })
+    test.after(() => context.db.close())
+    const app = createApp(context)
+    const first = context.projects.create('First Project')
+    const second = context.projects.create('Second Project')
+    const legacy = context.threads.create({
+      title: 'Legacy projectless',
+      mode: 'chat',
+      model: 'model',
+      workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    const legacyBytes = await (await app.request(`/api/threads/${legacy.id}`)).text()
+    const projectBefore = JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all())
+    const bindingsBefore = JSON.stringify(context.db.prepare('SELECT * FROM project_filesystem_bindings ORDER BY id').all())
+    const workspacesBefore = JSON.stringify(context.db.prepare('SELECT * FROM workspaces').all())
+    const settingsBefore = JSON.stringify(context.db.prepare('SELECT * FROM settings ORDER BY key').all())
+
+    const createdResponse = await app.request(`/api/projects/${first.id}/chats`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'model',
+        options: { numCtx: 4096, temperature: 0.25, think: 'off' },
+      }),
+    })
+    assert.equal(createdResponse.status, 201)
+    const created = await createdResponse.json() as {
+      id: string
+      projectId: string
+      workspaceId: string | null
+      mode: string
+      ownershipVersion: number
+    }
+    assert.deepEqual(
+      {
+        projectId: created.projectId,
+        workspaceId: created.workspaceId,
+        mode: created.mode,
+        ownershipVersion: created.ownershipVersion,
+      },
+      { projectId: first.id, workspaceId: null, mode: 'chat', ownershipVersion: 1 },
+    )
+    assert.equal(modelValidationCalls, 1)
+    assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM threads').get() as { count: number }).count, 2)
+    assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count, 0)
+    assert.equal((context.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count, 0)
+
+    const firstBody = await (await app.request(`/api/projects/${first.id}/chats`)).json() as {
+      project: { id: string }
+      chats: Array<{ id: string; projectId: string }>
+    }
+    assert.equal(firstBody.project.id, first.id)
+    assert.deepEqual(firstBody.chats.map(({ id, projectId }) => ({ id, projectId })), [
+      { id: created.id, projectId: first.id },
+    ])
+    assert.deepEqual(
+      (await (await app.request(`/api/projects/${second.id}/chats`)).json() as { chats: unknown[] }).chats,
+      [],
+    )
+    const projectless = await app.request('/api/threads?ownershipVersion=1&scope=projectless')
+    assert.equal(projectless.status, 200)
+    assert.deepEqual(
+      (await projectless.json() as { chats: Array<{ id: string; projectId: null }> }).chats.map(
+        ({ id, projectId }) => ({ id, projectId }),
+      ),
+      [{ id: legacy.id, projectId: null }],
+    )
+
+    const exactRead = await app.request(`/api/projects/${first.id}/chats/${created.id}`)
+    assert.equal(exactRead.status, 200)
+    const exactBody = await exactRead.json() as {
+      project: { id: string }
+      thread: { id: string; projectId: string; workspaceId: null }
+      messages: unknown[]
+    }
+    assert.deepEqual(
+      {
+        projectId: exactBody.project.id,
+        threadId: exactBody.thread.id,
+        owner: exactBody.thread.projectId,
+        workspaceId: exactBody.thread.workspaceId,
+        messages: exactBody.messages,
+      },
+      { projectId: first.id, threadId: created.id, owner: first.id, workspaceId: null, messages: [] },
+    )
+    const mismatch = await app.request(`/api/projects/${second.id}/chats/${created.id}`)
+    assert.equal(mismatch.status, 409)
+    assert.equal((await mismatch.json() as { code: string }).code, 'project_chat_mismatch')
+
+    const rowBefore = JSON.stringify(context.db.prepare('SELECT * FROM threads WHERE id = ?').get(created.id))
+    for (const invalid of [
+      { model: 'model', projectId: second.id },
+      { model: 'model', workspaceId: 'workspace-1' },
+      { model: 'model', mode: 'agent' },
+      { model: 'model', extra: true },
+    ]) {
+      const response = await app.request(`/api/projects/${first.id}/chats`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(invalid),
+      })
+      assert.equal(response.status, 400)
+    }
+    for (const patch of [{ projectId: second.id }, { workspaceId: 'workspace-1' }]) {
+      const rejected = await app.request(`/api/threads/${created.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      assert.equal(rejected.status, 400)
+    }
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM threads WHERE id = ?').get(created.id)), rowBefore)
+    assert.equal(modelValidationCalls, 1)
+    assert.equal(await (await app.request(`/api/threads/${legacy.id}`)).text(), legacyBytes)
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM projects ORDER BY id').all()), projectBefore)
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM project_filesystem_bindings ORDER BY id').all()), bindingsBefore)
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM workspaces').all()), workspacesBefore)
+    assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM settings ORDER BY key').all()), settingsBefore)
+    assert.equal(context.governor.snapshot().activeLease, null)
+  })
 })

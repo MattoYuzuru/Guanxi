@@ -408,6 +408,14 @@ const MIGRATIONS: readonly string[] = [
       'slate','blue','cyan','green','amber','orange','rose','violet'
     ));
   `,
+  // 12 — immutable nullable Project ownership for Chat. Existing Threads stay
+  // projectless and old writers can keep omitting the additive column.
+  `
+  ALTER TABLE threads ADD COLUMN project_id TEXT
+    REFERENCES projects(id) ON DELETE RESTRICT;
+  CREATE INDEX idx_threads_project_updated
+    ON threads(project_id, updated_at DESC, id);
+  `,
 ]
 
 export function openDb(path: string): Db {

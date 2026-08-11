@@ -38,12 +38,14 @@ import {
   positiveSafeIntegerSchema,
   projectSchema,
   projectWithPresentationSchema,
+  PROJECT_CHAT_OWNERSHIP_VERSION,
   runningModelSchema,
   runtimeSnapshotSchema,
   settingsSchema,
   threadModeSchema,
   threadOptionsSchema,
   threadSchema,
+  threadWithOwnershipSchema,
   workspaceSchema,
 } from './schemas.ts'
 
@@ -95,6 +97,9 @@ export const ROUTES = {
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
   projectPresentation: (id: string) =>
     `/api/projects/${encodeURIComponent(id)}/presentation`,
+  projectChats: (id: string) => `/api/projects/${encodeURIComponent(id)}/chats`,
+  projectChat: (projectId: string, threadId: string) =>
+    `/api/projects/${encodeURIComponent(projectId)}/chats/${encodeURIComponent(threadId)}`,
 
   approval: (toolCallId: string) => `/api/approvals/${toolCallId}`,
 
@@ -771,13 +776,15 @@ export const listThreadsResponse = z.object({
 })
 export type ListThreadsResponse = z.infer<typeof listThreadsResponse>
 
-export const createThreadBody = z.object({
-  title: z.string().optional(),
-  mode: threadModeSchema,
-  model: z.string(),
-  workspaceId: z.string().nullable().optional(),
-  options: threadOptionsSchema.partial().optional(),
-})
+export const createThreadBody = z
+  .object({
+    title: z.string().optional(),
+    mode: threadModeSchema,
+    model: z.string(),
+    workspaceId: z.string().nullable().optional(),
+    options: threadOptionsSchema.partial().optional(),
+  })
+  .strict()
 export type CreateThreadBody = z.infer<typeof createThreadBody>
 export const createThreadResponse = threadSchema
 
@@ -788,12 +795,14 @@ export const getThreadResponse = z.object({
 })
 export type GetThreadResponse = z.infer<typeof getThreadResponse>
 
-export const updateThreadBody = z.object({
-  title: z.string().optional(),
-  model: z.string().optional(),
-  workspaceId: z.string().nullable().optional(),
-  options: threadOptionsSchema.partial().optional(),
-})
+export const updateThreadBody = z
+  .object({
+    title: z.string().optional(),
+    model: z.string().optional(),
+    workspaceId: z.string().nullable().optional(),
+    options: threadOptionsSchema.partial().optional(),
+  })
+  .strict()
 export type UpdateThreadBody = z.infer<typeof updateThreadBody>
 
 /** POST /api/threads/:id/messages → SSE (ChatStreamEvent) */
@@ -881,6 +890,71 @@ export const updateProjectPresentationBody = z
   })
   .strict()
 export type UpdateProjectPresentationBody = z.infer<typeof updateProjectPresentationBody>
+
+export const projectReferenceSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => value === value.trim(), 'Project reference must be normalized')
+
+/** Project Chat creation is deliberately Chat-only and cannot carry a filesystem scope. */
+export const createProjectChatBody = z
+  .object({
+    title: z.string().optional(),
+    model: z.string().min(1),
+    options: threadOptionsSchema.partial().optional(),
+  })
+  .strict()
+export type CreateProjectChatBody = z.infer<typeof createProjectChatBody>
+
+export const projectChatSchema = threadWithOwnershipSchema.refine(
+  (thread) => thread.projectId !== null,
+  'Project Chat must have an owner',
+)
+export type ProjectChat = z.infer<typeof projectChatSchema>
+
+export const listProjectChatsResponse = z
+  .object({
+    ownershipVersion: z.literal(PROJECT_CHAT_OWNERSHIP_VERSION),
+    project: projectSchema,
+    chats: z.array(projectChatSchema),
+  })
+  .strict()
+export type ListProjectChatsResponse = z.infer<typeof listProjectChatsResponse>
+
+export const createProjectChatResponse = projectChatSchema
+
+export const getProjectChatResponse = z
+  .object({
+    ownershipVersion: z.literal(PROJECT_CHAT_OWNERSHIP_VERSION),
+    project: projectSchema,
+    thread: projectChatSchema,
+    messages: z.array(messageSchema),
+    context: contextStateSchema,
+  })
+  .strict()
+export type GetProjectChatResponse = z.infer<typeof getProjectChatResponse>
+
+export const listProjectlessChatsQuery = z
+  .object({
+    ownershipVersion: z.coerce.number().pipe(z.literal(PROJECT_CHAT_OWNERSHIP_VERSION)),
+    scope: z.literal('projectless'),
+  })
+  .strict()
+
+export const listProjectlessChatsResponse = z
+  .object({
+    ownershipVersion: z.literal(PROJECT_CHAT_OWNERSHIP_VERSION),
+    scope: z.literal('projectless'),
+    chats: z.array(
+      threadWithOwnershipSchema.refine(
+        (thread) => thread.projectId === null,
+        'Projectless Chat cannot have an owner',
+      ),
+    ),
+  })
+  .strict()
+export type ListProjectlessChatsResponse = z.infer<typeof listProjectlessChatsResponse>
 
 /**
  * GET /api/workspaces/browse?path= — листинг директорий для пикера.

@@ -41,6 +41,8 @@ async function temporaryDbPath(test: { after: (fn: () => unknown) => void }, lab
 
 function downgradeToV9(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_threads_project_updated;
+    ALTER TABLE threads DROP COLUMN project_id;
     DROP TABLE project_filesystem_bindings;
     DROP TABLE projects;
     PRAGMA user_version = 9;
@@ -49,6 +51,8 @@ function downgradeToV9(db: DatabaseSync): void {
 
 function downgradeToV10(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_threads_project_updated;
+    ALTER TABLE threads DROP COLUMN project_id;
     ALTER TABLE projects DROP COLUMN color_token;
     ALTER TABLE projects DROP COLUMN icon_key;
     PRAGMA user_version = 10;
@@ -114,13 +118,13 @@ describe('SQLite logical Project migration 10', () => {
   it('keeps fresh and reopened projection identical without inventing a binding', async (test) => {
     const path = await temporaryDbPath(test, 'fresh')
     const first = openDb(path)
-    assert.equal(version(first), 11)
+    assert.equal(version(first), 12)
     assert.equal(count(first, 'projects'), 0)
     assert.equal(count(first, 'project_filesystem_bindings'), 0)
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 11)
+    assert.equal(version(reopened), 12)
     assert.deepEqual(new ProjectStore(reopened).list(), [])
     reopened.close()
   })
@@ -140,7 +144,7 @@ describe('SQLite logical Project migration 10', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 11)
+    assert.equal(version(upgraded), 12)
     const projection = new ProjectStore(upgraded).list()
     assert.deepEqual(
       projection.map((project) => ({
@@ -182,6 +186,18 @@ describe('SQLite logical Project migration 10', () => {
         created_at TEXT NOT NULL,
         last_used_at TEXT
       );
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('chat','agent')),
+        model TEXT NOT NULL,
+        workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
+        num_ctx INTEGER NOT NULL,
+        temperature REAL NOT NULL,
+        think TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       INSERT INTO workspaces VALUES
         ('valid-workspace', 'Valid', '/tmp/valid', '${CREATED_AT}', NULL),
         (NULL, 'Broken', '/tmp/broken', '${CREATED_AT}', NULL);
@@ -205,7 +221,7 @@ describe('SQLite logical Project migration 10', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 11)
+    assert.equal(version(recovered), 12)
     assert.equal(count(recovered, 'projects'), 2)
     assert.equal(count(recovered, 'project_filesystem_bindings'), 2)
     recovered.close()
@@ -372,7 +388,7 @@ describe('SQLite Project presentation migration 11', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 11)
+    assert.equal(version(upgraded), 12)
     const projects = new ProjectStore(upgraded)
     assert.deepEqual(projects.listWithPresentation().map((project) => ({
       id: project.id,
@@ -387,7 +403,7 @@ describe('SQLite Project presentation migration 11', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 11)
+    assert.equal(version(reopened), 12)
     const reopenedProject = new ProjectStore(reopened).getWithPresentation('project-v10')
     assert.deepEqual(
       reopenedProject && {
@@ -461,7 +477,7 @@ describe('SQLite Project presentation migration 11', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 11)
+    assert.equal(version(recovered), 12)
     assert.deepEqual(
       { ...recovered.prepare('SELECT icon_key, color_token FROM projects WHERE id = ?').get('project-v10') },
       { icon_key: 'folder', color_token: 'slate' },

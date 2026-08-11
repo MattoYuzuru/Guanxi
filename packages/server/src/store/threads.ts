@@ -6,9 +6,11 @@
  */
 import { randomUUID } from 'node:crypto'
 import {
+  PROJECT_CHAT_OWNERSHIP_VERSION,
   turnErrorSchema,
   type Message,
   type Thread,
+  type ThreadWithOwnership,
   type ThreadMode,
   type ThreadOptions,
   type ToolCall,
@@ -26,6 +28,7 @@ interface ThreadRow {
   mode: string
   model: string
   workspace_id: string | null
+  project_id: string | null
   num_ctx: number
   temperature: number
   think: string
@@ -66,6 +69,14 @@ function toThread(row: ThreadRow): Thread {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     messageCount: row.message_count ?? 0,
+  }
+}
+
+function toThreadWithOwnership(row: ThreadRow): ThreadWithOwnership {
+  return {
+    ...toThread(row),
+    ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
+    projectId: row.project_id,
   }
 }
 
@@ -129,6 +140,30 @@ export class ThreadStore {
     return rows.map(toThread)
   }
 
+  listProjectless(): ThreadWithOwnership[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
+         FROM threads t
+         WHERE t.project_id IS NULL
+         ORDER BY t.updated_at DESC, t.id`,
+      )
+      .all() as unknown as ThreadRow[]
+    return rows.map(toThreadWithOwnership)
+  }
+
+  listByProject(projectId: string): ThreadWithOwnership[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
+         FROM threads t
+         WHERE t.project_id = ?
+         ORDER BY t.updated_at DESC, t.id`,
+      )
+      .all(projectId) as unknown as ThreadRow[]
+    return rows.map(toThreadWithOwnership)
+  }
+
   get(id: string): Thread | null {
     const row = this.db
       .prepare(
@@ -139,11 +174,22 @@ export class ThreadStore {
     return row ? toThread(row) : null
   }
 
+  getWithOwnership(id: string): ThreadWithOwnership | null {
+    const row = this.db
+      .prepare(
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
+         FROM threads t WHERE t.id = ?`,
+      )
+      .get(id) as unknown as ThreadRow | undefined
+    return row ? toThreadWithOwnership(row) : null
+  }
+
   create(input: {
     title: string
     mode: ThreadMode
     model: string
     workspaceId: string | null
+    projectId?: string | null
     options: ThreadOptions
   }): Thread {
     const now = new Date().toISOString()
@@ -151,8 +197,10 @@ export class ThreadStore {
 
     this.db
       .prepare(
-        `INSERT INTO threads (id, title, mode, model, workspace_id, num_ctx, temperature, think, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO threads (
+           id, title, mode, model, workspace_id, project_id,
+           num_ctx, temperature, think, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -160,6 +208,7 @@ export class ThreadStore {
         input.mode,
         input.model,
         input.workspaceId,
+        input.projectId ?? null,
         input.options.numCtx,
         input.options.temperature,
         input.options.think,
@@ -168,6 +217,17 @@ export class ThreadStore {
       )
 
     return this.get(id)!
+  }
+  createWithOwnership(input: {
+    title: string
+    mode: ThreadMode
+    model: string
+    workspaceId: string | null
+    projectId: string
+    options: ThreadOptions
+  }): ThreadWithOwnership {
+    const created = this.create(input)
+    return this.getWithOwnership(created.id)!
   }
 
   update(

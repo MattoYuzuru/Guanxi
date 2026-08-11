@@ -2367,6 +2367,16 @@ export const threadSchema = z.object({
 })
 export type Thread = z.infer<typeof threadSchema>
 
+/** Explicit opt-in ownership projection; legacy Thread JSON intentionally omits it. */
+export const PROJECT_CHAT_OWNERSHIP_VERSION = 1 as const
+export const threadWithOwnershipSchema = threadSchema
+  .extend({
+    ownershipVersion: z.literal(PROJECT_CHAT_OWNERSHIP_VERSION),
+    projectId: z.string().min(1).nullable(),
+  })
+  .strict()
+export type ThreadWithOwnership = z.infer<typeof threadWithOwnershipSchema>
+
 export const toolCallStatusSchema = z.enum([
   'pending_approval',
   'running',
@@ -3295,6 +3305,7 @@ export const apiErrorSchema = z.object({
     'thread_not_found',
     'workspace_not_found',
     'project_not_found',
+    'project_chat_mismatch',
     'path_outside_workspace',
     'tool_disabled',
     'validation_failed',

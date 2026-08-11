@@ -1,15 +1,27 @@
 import {
   PROJECT_PRESENTATION_VERSION,
+  PROJECT_CHAT_OWNERSHIP_VERSION,
   createProjectBody,
+  createProjectChatBody,
+  projectReferenceSchema,
   updateProjectBody,
   updateProjectPresentationBody,
 } from '@alamo/contract'
 import { Hono } from 'hono'
 import type { AppContext } from '../context.ts'
-import { notFound } from './errors.ts'
+import { buildContextState, estimateTokens } from '../context/usage.ts'
+import { ProjectChatService } from '../projects/chat-service.ts'
+import { fail, notFound } from './errors.ts'
 
 export function projectsRoutes(app: AppContext): Hono {
   const routes = new Hono()
+  let projectChatService: ProjectChatService | null = null
+  const projectChats = () => {
+    projectChatService ??= new ProjectChatService(app.threads, app.projects, app.models)
+    return projectChatService
+  }
+
+  const validReference = (value: string) => projectReferenceSchema.safeParse(value).success
 
   routes.get('/', (context) => {
     const query = new URL(context.req.url).searchParams
@@ -39,6 +51,90 @@ export function projectsRoutes(app: AppContext): Hono {
       )
     }
     return context.json(app.projects.create(parsed.data.name), 201)
+  })
+
+  routes.get('/:id/chats', (context) => {
+    const projectId = context.req.param('id')
+    if (!validReference(projectId)) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Project reference', details: null },
+        400,
+      )
+    }
+    const result = projectChats().list(projectId)
+    if (!result) return notFound(context, 'project_not_found', 'Project was not found')
+    return context.json({
+      ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
+      project: result.project,
+      chats: result.chats,
+    })
+  })
+
+  routes.post('/:id/chats', async (context) => {
+    const projectId = context.req.param('id')
+    if (!validReference(projectId)) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Project reference', details: null },
+        400,
+      )
+    }
+    const parsed = createProjectChatBody.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Project Chat request', details: null },
+        400,
+      )
+    }
+    try {
+      const thread = await projectChats().create(projectId, parsed.data, context.req.raw.signal)
+      return thread
+        ? context.json(thread, 201)
+        : notFound(context, 'project_not_found', 'Project was not found')
+    } catch (error) {
+      return fail(context, error)
+    }
+  })
+
+  routes.get('/:id/chats/:threadId', (context) => {
+    const projectId = context.req.param('id')
+    const threadId = context.req.param('threadId')
+    if (!validReference(projectId) || !validReference(threadId)) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Project Chat reference', details: null },
+        400,
+      )
+    }
+    const result = projectChats().get(projectId, threadId)
+    if (result.status === 'project_not_found') {
+      return notFound(context, 'project_not_found', 'Project was not found')
+    }
+    if (result.status === 'chat_not_found') {
+      return notFound(context, 'thread_not_found', 'Chat was not found')
+    }
+    if (result.status === 'ownership_mismatch') {
+      return context.json(
+        { code: 'project_chat_mismatch', message: 'Chat does not belong to this Project', details: null },
+        409,
+      )
+    }
+
+    const messages = app.threads.messages(result.thread.id)
+    const lastUsage = [...messages].reverse().find((message) => message.usage)?.usage ?? null
+    return context.json({
+      ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
+      project: result.project,
+      thread: result.thread,
+      messages,
+      context: buildContextState({
+        usedTokens:
+          lastUsage?.promptTokens ??
+          messages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
+        allocatedTokens: result.thread.options.numCtx,
+        usage: lastUsage,
+        model: result.thread.model,
+        tracker: app.tracker,
+      }),
+    })
   })
 
   routes.get('/:id', (context) => {
