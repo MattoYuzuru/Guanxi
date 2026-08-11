@@ -326,6 +326,28 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
       owned.id,
       tied.id,
     )
+    const projectlessOlder = threads.create({
+      title: 'Projectless older',
+      mode: 'chat',
+      model: 'model',
+      workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    const projectlessNewer = threads.create({
+      title: 'Projectless newer',
+      mode: 'chat',
+      model: 'model',
+      workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    })
+    db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(
+      CREATED_AT,
+      projectlessOlder.id,
+    )
+    db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(
+      '2026-08-10T11:00:00.000Z',
+      projectlessNewer.id,
+    )
     assert.equal(owned.projectId, first.id)
     assert.equal(owned.workspaceId, null)
     assert.deepEqual(
@@ -333,7 +355,10 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
       [owned.id, tied.id].sort(),
     )
     assert.deepEqual(threads.listByProject(second.id), [])
-    assert.deepEqual(threads.listProjectless(), [])
+    assert.deepEqual(
+      threads.listProjectless().map((thread) => thread.id),
+      [projectlessNewer.id, projectlessOlder.id],
+    )
     assert.throws(
       () => db.prepare(
         `INSERT INTO threads (
