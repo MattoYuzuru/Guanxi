@@ -40,6 +40,41 @@ function lifecycleColumns(db: DatabaseSync): string[] {
     .filter((name) => name.includes('lifecycle') || name.includes('tombstone') || name === 'last_user_restore_at')
 }
 
+function lifecycleSchemaObjects(db: DatabaseSync): Array<{ type: string; name: string }> {
+  return (db.prepare(
+    `SELECT type, name
+     FROM sqlite_master
+     WHERE name IN (
+       'chat_lifecycle_audit',
+       'idx_chat_lifecycle_audit_chat',
+       'idx_threads_chat_ttl_eligibility',
+       'idx_threads_chat_trash_scope',
+       'threads_chat_lifecycle_insert_valid',
+       'threads_chat_lifecycle_update_valid'
+     )
+     ORDER BY type, name`,
+  ).all() as Array<{ type: string; name: string }>).map(({ type, name }) => ({ type, name }))
+}
+
+const EXPECTED_LIFECYCLE_SCHEMA_OBJECTS = [
+  { type: 'index', name: 'idx_chat_lifecycle_audit_chat' },
+  { type: 'index', name: 'idx_threads_chat_trash_scope' },
+  { type: 'index', name: 'idx_threads_chat_ttl_eligibility' },
+  { type: 'table', name: 'chat_lifecycle_audit' },
+  { type: 'trigger', name: 'threads_chat_lifecycle_insert_valid' },
+  { type: 'trigger', name: 'threads_chat_lifecycle_update_valid' },
+]
+
+function nonLifecycleThreadPayload(db: DatabaseSync): string {
+  return JSON.stringify(db.prepare(
+    `SELECT id, title, mode, model, workspace_id, project_id, num_ctx, temperature, think,
+            created_at, updated_at, retention_policy, retention_policy_source,
+            retention_policy_updated_at, last_user_activity_at, last_user_activity_source,
+            last_user_restore_at
+     FROM threads ORDER BY id`,
+  ).all())
+}
+
 function downgradeToV14(db: DatabaseSync): void {
   db.exec(`
     DROP INDEX idx_threads_chat_trash_scope;
@@ -73,9 +108,10 @@ function setBasis(db: DatabaseSync, chatId: string, basis: string, policy = 'ttl
   db.prepare(
     `UPDATE threads
      SET retention_policy = ?, last_user_activity_at = ?,
-         last_user_activity_source = 'user_message', last_user_restore_at = NULL
+         retention_policy_updated_at = ?, last_user_activity_source = 'user_message',
+         last_user_restore_at = NULL
      WHERE id = ?`,
-  ).run(policy, basis, chatId)
+  ).run(policy, basis, basis, chatId)
 }
 
 function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string {
@@ -174,6 +210,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     const rolledBack = new DatabaseSync(path)
     assert.equal(version(rolledBack), 14)
     assert.deepEqual(lifecycleColumns(rolledBack), [])
+    assert.deepEqual(lifecycleSchemaObjects(rolledBack), [{ type: 'table', name: 'chat_lifecycle_audit' }])
     rolledBack.exec('DROP TABLE chat_lifecycle_audit')
     assert.equal(allTablesPayload(rolledBack, new Set(['threads'])), before)
     assert.equal(JSON.stringify(rolledBack.prepare(
@@ -188,6 +225,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     const upgraded = openDb(path)
     assert.equal(version(upgraded), 15)
     assert.equal(lifecycleColumns(upgraded).length, 5)
+    assert.deepEqual(lifecycleSchemaObjects(upgraded), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     assert.equal((upgraded.prepare(
       "SELECT COUNT(*) AS count FROM threads WHERE chat_lifecycle_state = 'active'",
     ).get() as { count: number }).count, 2)
@@ -197,14 +235,13 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
 
     const reopened = openDb(path)
     assert.equal(version(reopened), 15)
-    assert.equal((reopened.prepare(
-      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'chat_lifecycle_audit'",
-    ).get() as { count: number }).count, 1)
+    assert.deepEqual(lifecycleSchemaObjects(reopened), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     reopened.close()
 
     const fresh = openDb(':memory:')
     assert.equal(version(fresh), 15)
     assert.equal(lifecycleColumns(fresh).length, 5)
+    assert.deepEqual(lifecycleSchemaObjects(fresh), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     fresh.close()
   })
 
@@ -214,20 +251,25 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     const projects = new ProjectStore(db)
     const project = projects.create('Boundary', NOW)
     const older = createChat(threads, 'Older')
-    const exact = createChat(threads, 'Exact', project.id)
+    const exactProjectless = createChat(threads, 'Exact projectless')
+    const exactProject = createChat(threads, 'Exact Project', project.id)
     const unexpired = createChat(threads, 'Fresh')
     const keep = createChat(threads, 'Keep')
     const session = createChat(threads, 'Session')
     setBasis(db, older.id, OLD)
-    setBasis(db, exact.id, EXACT_BOUNDARY)
+    setBasis(db, exactProjectless.id, EXACT_BOUNDARY)
+    setBasis(db, exactProject.id, EXACT_BOUNDARY)
     setBasis(db, unexpired.id, new Date(Date.parse(EXACT_BOUNDARY) + 1).toISOString())
     setBasis(db, keep.id, OLD, 'keep')
     setBasis(db, session.id, OLD, 'session')
     const store = new ChatRetentionStore(db)
-    assert.deepEqual(store.eligiblePage(NOW, null, 20).map(({ chatId }) => chatId), [older.id, exact.id])
-    assert.equal(store.tombstoneEligible(store.eligiblePage(NOW, null, 20), NOW), 2)
+    const eligibleIds = store.eligiblePage(NOW, null, 20).map(({ chatId }) => chatId)
+    assert.equal(eligibleIds[0], older.id)
+    assert.deepEqual(eligibleIds.slice(1).sort(), [exactProjectless.id, exactProject.id].sort())
+    assert.equal(store.tombstoneEligible(store.eligiblePage(NOW, null, 20), NOW), 3)
     assert.equal(store.get(older.id).status, 'in_trash')
-    assert.equal(store.get(exact.id).status, 'in_trash')
+    assert.equal(store.get(exactProjectless.id).status, 'in_trash')
+    assert.equal(store.get(exactProject.id).status, 'in_trash')
     assert.equal(store.get(unexpired.id).status, 'ok')
     assert.equal(store.get(keep.id).status, 'ok')
     assert.equal(store.get(session.id).status, 'ok')
@@ -257,23 +299,27 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
       setBasis(db, chat.id, OLD)
       blocked.push(chat.id)
     }
-    const terminal = createChat(threads, 'Terminal')
-    const terminalJob = jobs.createChat({
-      threadId: terminal.id,
-      idempotencyScope: `chat:${terminal.id}:send:v1`,
-      idempotencyKey: 'terminal-fixture',
-      requestFingerprint: 'terminal-fingerprint',
-      input: { content: 'done', attachments: [], autoApprove: null },
-      derivedTitle: 'done',
-    })
-    db.prepare(
-      "UPDATE jobs SET status = 'completed', phase = 'completed', finished_at = ? WHERE id = ?",
-    ).run(NOW, terminalJob.job.id)
-    setBasis(db, terminal.id, OLD)
+    const terminalStates = ['completed', 'failed', 'cancelled', 'interrupted'] as const
+    const terminalIds: string[] = []
+    for (const [index, state] of terminalStates.entries()) {
+      const terminal = createChat(threads, `Terminal ${state}`)
+      const terminalJob = jobs.createChat({
+        threadId: terminal.id,
+        idempotencyScope: `chat:${terminal.id}:send:v1`,
+        idempotencyKey: `terminal-${index}`,
+        requestFingerprint: `terminal-fingerprint-${index}`,
+        input: { content: state, attachments: [], autoApprove: null },
+        derivedTitle: state,
+      })
+      db.prepare('UPDATE jobs SET status = ?, phase = ?, finished_at = ? WHERE id = ?')
+        .run(state, state, NOW, terminalJob.job.id)
+      setBasis(db, terminal.id, OLD)
+      terminalIds.push(terminal.id)
+    }
     const store = new ChatRetentionStore(db)
-    assert.deepEqual(store.eligiblePage(NOW, null, 100).map(({ chatId }) => chatId), [terminal.id])
-    assert.equal(store.tombstoneEligible(store.eligiblePage(NOW, null, 100), NOW), 1)
-    assert.equal(store.get(terminal.id).status, 'in_trash')
+    assert.deepEqual(store.eligiblePage(NOW, null, 100).map(({ chatId }) => chatId).sort(), terminalIds.sort())
+    assert.equal(store.tombstoneEligible(store.eligiblePage(NOW, null, 100), NOW), 4)
+    assert.deepEqual(terminalIds.map((id) => store.get(id).status), terminalStates.map(() => 'in_trash'))
     assert.deepEqual(blocked.map((id) => store.get(id).status), states.map(() => 'ok'))
     db.close()
   })
@@ -281,10 +327,18 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
   it('bounds stable batches, coalesces one owner, converges once and clears periodic work on close', async () => {
     const db = openDb(':memory:')
     const threads = new ThreadStore(db)
+    const chatIds: string[] = []
     for (let index = 0; index < 5; index += 1) {
       const chat = createChat(threads, `Batch ${index}`)
-      setBasis(db, chat.id, new Date(Date.parse(OLD) + index).toISOString())
+      setBasis(db, chat.id, OLD)
+      chatIds.push(chat.id)
     }
+    const pagingStore = new ChatRetentionStore(db)
+    const expectedOrder = chatIds.toSorted()
+    const firstPage = pagingStore.eligiblePage(NOW, null, 2)
+    const secondPage = pagingStore.eligiblePage(NOW, firstPage.at(-1)!, 2)
+    const thirdPage = pagingStore.eligiblePage(NOW, secondPage.at(-1)!, 2)
+    assert.deepEqual([...firstPage, ...secondPage, ...thirdPage].map(({ chatId }) => chatId), expectedOrder)
     const scheduler = new FakeScheduler()
     const owner = new RetentionMaintenanceOwner(new ChatRetentionStore(db), {
       clock: () => new Date(NOW),
@@ -355,11 +409,15 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     const ownedANew = createChat(threads, 'A new', projectA.id)
     const ownedB = createChat(threads, 'B Trash', projectB.id)
     const active = createChat(threads, 'Active', projectA.id)
+    const activeProjectless = createChat(threads, 'Active projectless')
+    db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run('2026-08-11T11:00:00.000Z', active.id)
+    db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run('2026-08-11T11:01:00.000Z', activeProjectless.id)
     threads.addMessage({ threadId: ownedANew.id, role: 'assistant', content: 'retained metadata' })
     for (const chat of [projectless, ownedAOld, ownedANew, ownedB]) setBasis(db, chat.id, OLD)
     const store = new ChatRetentionStore(db)
     const candidates = store.eligiblePage(NOW, null, 20)
     const before = allTablesPayload(db, new Set(['threads', 'chat_lifecycle_audit']))
+    const beforeThreads = nonLifecycleThreadPayload(db)
     const projectlessCandidate = candidates.find(({ chatId }) => chatId === projectless.id)!
     const aOldCandidate = candidates.find(({ chatId }) => chatId === ownedAOld.id)!
     const aNewCandidate = candidates.find(({ chatId }) => chatId === ownedANew.id)!
@@ -368,6 +426,8 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     store.tombstoneEligible([bCandidate], '2026-08-11T11:59:00.000Z')
     store.tombstoneEligible([aNewCandidate], NOW)
 
+    assert.deepEqual(threads.list().map(({ id }) => id), [activeProjectless.id, active.id])
+    assert.deepEqual(threads.listProjectless().map(({ id }) => id), [activeProjectless.id])
     assert.deepEqual(threads.listByProject(projectA.id).map(({ id }) => id), [active.id])
     assert.deepEqual(threads.listByProject(projectB.id), [])
     assert.equal(threads.get(ownedANew.id), null)
@@ -379,6 +439,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     assert.deepEqual(store.listTrash({ scope: 'project', projectId: projectB.id }, 20).chats.map(({ chatId }) => chatId), [ownedB.id])
     assert.deepEqual(store.listTrash({ scope: 'projectless' }, 20).chats.map(({ chatId }) => chatId), [projectless.id])
     assert.equal(allTablesPayload(db, new Set(['threads', 'chat_lifecycle_audit'])), before)
+    assert.equal(nonLifecycleThreadPayload(db), beforeThreads)
     assert.equal((db.prepare('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(ownedANew.id) as { count: number }).count, 1)
     db.close()
   })
@@ -387,9 +448,10 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     const db = openDb(':memory:')
     const threads = new ThreadStore(db)
     const explicit = createChat(threads, 'Explicit restore')
-    const policyChat = createChat(threads, 'Policy restore')
+    const policyKeep = createChat(threads, 'Keep policy restore')
+    const policyTtl = createChat(threads, 'TTL policy restore')
     const sessionBlocked = createChat(threads, 'Session blocked')
-    for (const chat of [explicit, policyChat, sessionBlocked]) setBasis(db, chat.id, OLD)
+    for (const chat of [explicit, policyKeep, policyTtl, sessionBlocked]) setBasis(db, chat.id, OLD)
     const store = new ChatRetentionStore(db, { clock: () => new Date('2026-08-11T13:00:00.000Z') })
     store.tombstoneEligible(store.eligiblePage(NOW, null, 20), NOW)
     const beforeOtherTables = allTablesPayload(db, new Set(['threads', 'chat_lifecycle_audit']))
@@ -425,12 +487,24 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
       assert.equal(projection.retention.expiresAt, '2026-08-18T13:00:00.000Z')
     }
 
-    const keep = store.update(policyChat.id, { mode: 'keep' })
+    const keep = store.update(policyKeep.id, { mode: 'keep' })
     assert.equal(keep.status, 'ok')
     if (keep.status === 'ok') {
       assert.deepEqual(keep.retention.policy, { mode: 'keep' })
       assert.equal(keep.retention.lastUserActivity.source, 'chat_restored')
     }
+    const ttl = store.update(policyTtl.id, { mode: 'ttl', expiresAfterDays: 7 })
+    assert.equal(ttl.status, 'ok')
+    if (ttl.status === 'ok') {
+      assert.deepEqual(ttl.retention.policy, { mode: 'ttl', expiresAfterDays: 7 })
+      assert.equal(ttl.retention.lastUserActivity.at, '2026-08-11T13:00:00.000Z')
+      assert.equal(ttl.retention.lastUserActivity.source, 'chat_restored')
+      assert.equal(ttl.retention.expiresAt, '2026-08-18T13:00:00.000Z')
+    }
+    assert.equal(store.update(policyTtl.id, { mode: 'ttl', expiresAfterDays: 7 }).status, 'ok')
+    assert.equal((db.prepare(
+      "SELECT COUNT(*) AS count FROM chat_lifecycle_audit WHERE chat_id = ? AND event_type = 'restored' AND reason = 'policy_change'",
+    ).get(policyTtl.id) as { count: number }).count, 1)
     assert.equal(store.update(sessionBlocked.id, { mode: 'session' }).status, 'in_trash')
     assert.equal(store.get(sessionBlocked.id).status, 'in_trash')
     assert.equal(allTablesPayload(db, new Set(['threads', 'chat_lifecycle_audit'])), beforeOtherTables)
@@ -467,6 +541,23 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
       context.db.close()
     })
     assert.equal(scheduler.callbacks.length, 1)
+    let ollamaCalls = 0
+    let modelCalls = 0
+    context.ollama = () => {
+      ollamaCalls += 1
+      throw new Error('Retention must not call Ollama')
+    }
+    context.models = () => {
+      modelCalls += 1
+      throw new Error('Retention must not call model services')
+    }
+    const governorBefore = JSON.stringify(context.governor.snapshot(NOW))
+    const laterExpired = createChat(context.threads, 'Post-start Maintenance')
+    setBasis(context.db, laterExpired.id, OLD)
+    assert.equal((await context.maintenance!.runOnce()).tombstoned, 1)
+    assert.deepEqual({ ollamaCalls, modelCalls }, { ollamaCalls: 0, modelCalls: 0 })
+    assert.equal(JSON.stringify(context.governor.snapshot(NOW)), governorBefore)
+    assert.equal(context.retention.restore(laterExpired.id).status, 'ok')
     const app = createApp(context)
     assert.equal((await app.request(`/api/threads/${projectless.id}`)).status, 404)
     assert.deepEqual(

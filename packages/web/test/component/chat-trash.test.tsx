@@ -114,6 +114,44 @@ describe('Chat Trash list', () => {
     expect(api.restoreChat).toHaveBeenNthCalledWith(2, 'trash-chat', { lifecycleVersion: 1 })
   })
 
+  it('removes a restored stale item, focuses failed refresh, and converges through explicit list retry', async () => {
+    vi.spyOn(api, 'listChatTrash')
+      .mockResolvedValueOnce({
+        lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
+      })
+      .mockRejectedValueOnce(new Error('post-restore refresh failed'))
+      .mockResolvedValueOnce({
+        lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [], hasMore: false,
+      })
+    vi.spyOn(api, 'restoreChat').mockResolvedValue(RESTORED)
+    const onRestored = vi.fn()
+    render(<ChatTrashList projectId="project-a" onRestored={onRestored} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Восстановить чат' }))
+    const refreshError = await screen.findByText(/post-restore refresh failed/u)
+    await waitFor(() => expect(refreshError.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    expect(screen.queryByText(ITEM.title)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Восстановить чат' })).toBeNull()
+    expect(onRestored).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку Корзины' }))
+    await screen.findByText('В этой области Корзина пуста.')
+    expect(api.listChatTrash).toHaveBeenCalledTimes(3)
+    expect(api.restoreChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('focuses an initial list error and recovers only after explicit retry', async () => {
+    vi.spyOn(api, 'listChatTrash')
+      .mockRejectedValueOnce(new Error('initial Trash failure'))
+      .mockResolvedValueOnce({
+        lifecycleVersion: 1, scope: 'projectless', projectId: null, chats: [], hasMore: false,
+      })
+    render(<ChatTrashList projectId={null} />)
+    const error = await screen.findByText(/initial Trash failure/u)
+    await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку Корзины' }))
+    await screen.findByText('В этой области Корзина пуста.')
+    expect(api.listChatTrash).toHaveBeenCalledTimes(2)
+  })
+
   it('rejects a mismatched Restore scope and uses curated English fallback', async () => {
     document.documentElement.lang = 'fr'
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({

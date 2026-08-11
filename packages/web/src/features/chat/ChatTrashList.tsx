@@ -25,13 +25,28 @@ export function ChatTrashList({
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [retryChat, setRetryChat] = useState<ChatTrashItem | null>(null)
+  const [restoredIds, setRestoredIds] = useState<ReadonlySet<string>>(() => new Set())
   const restoringRef = useRef(false)
   const errorRef = useRef<HTMLDivElement>(null)
+  const listErrorRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     if (restoreError) requestAnimationFrame(() => errorRef.current?.focus())
   }, [restoreError])
+
+  useEffect(() => {
+    if (trash.error) requestAnimationFrame(() => listErrorRef.current?.focus())
+  }, [trash.error])
+
+  useEffect(() => {
+    if (!trash.data || trash.error) return
+    const visibleIds = new Set(trash.data.chats.map(({ chatId }) => chatId))
+    setRestoredIds((current) => {
+      const unresolved = new Set([...current].filter((chatId) => visibleIds.has(chatId)))
+      return unresolved.size === current.size ? current : unresolved
+    })
+  }, [trash.data, trash.error])
 
   const restore = async (chat: ChatTrashItem) => {
     if (restoringRef.current) return
@@ -46,6 +61,7 @@ export function ChatTrashList({
       if (result.chatId !== chat.chatId || result.projectId !== projectId) {
         throw new Error(translate('chat.trash.scopeMismatch'))
       }
+      setRestoredIds((current) => new Set(current).add(chat.chatId))
       trash.reload()
       onRestored?.()
       requestAnimationFrame(() => headingRef.current?.focus())
@@ -58,7 +74,7 @@ export function ChatTrashList({
     }
   }
 
-  const chats = trash.data?.chats ?? []
+  const chats = (trash.data?.chats ?? []).filter((chat) => !restoredIds.has(chat.chatId))
   return (
     <section
       aria-label={translate('chat.trash.title')}
@@ -75,8 +91,8 @@ export function ChatTrashList({
           {translate('chat.trash.loading')}
         </p>
       ) : null}
-      {trash.error && !trash.data ? (
-        <div className="mt-2" role="alert">
+      {trash.error ? (
+        <div ref={listErrorRef} tabIndex={-1} className="mt-2 outline-none" role="alert">
           <p className="break-words text-2xs text-[var(--danger)]">
             {translate('chat.trash.loadError')}: {errorMessage(trash.error)}
           </p>
