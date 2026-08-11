@@ -1477,8 +1477,8 @@ bounded slice — P3-E TTL Maintenance/Trash enforcement foundation.
 
 ## Phase 3 — P3-E Chat TTL Maintenance и recoverable Trash
 
-**Статус:** independently verified (`01c8b3f`, `da7519a`, review fix
-`fed4ac6`).
+**Статус:** independently verified (`01c8b3f`, `da7519a`, review fixes
+`fed4ac6`, `1965feb`).
 
 Migration 15 append-only добавляет `active | trash`, sourced tombstone basis,
 lifecycle audit и eligibility/Trash indexes. Existing rows остаются active.
@@ -1497,11 +1497,11 @@ truthful отсутствие hard deletion и focused load/Restore retry. По�
 Restore stale item скрывается даже при failed refresh и больше не остаётся
 actionable.
 
-Evidence по правилу WORKFLOW: **9 new / 589 core regression envelope**, **6 new
-/ 197 Web component/parser envelope**, **1 new / 33 mocked Chromium envelope**.
-Targeted P3-E server — 9/9; focused Web retention/Trash — 12/12. Full typecheck,
+Evidence по правилу WORKFLOW: **9 new / 589 core regression envelope**, **7 new
+/ 198 Web component/parser envelope**, **1 new / 33 mocked Chromium envelope**.
+Targeted P3-E server — 9/9; focused Web retention/Trash — 13/13. Full typecheck,
 `npm test`, browser gate, build, markdownlint и diff-check — PASS. Build сохранил
-non-blocking Vite warning: main chunk 841.18 kB minified / 222.66 kB gzip при
+non-blocking Vite warning: main chunk 841.73 kB minified / 222.85 kB gzip при
 threshold 500 kB.
 
 Первые проверки выявили три fixture/assertion проблемы: старые migration tests
@@ -1513,6 +1513,15 @@ scope, terminal states, cursor tie, global/projectless visibility, exact schema,
 non-lifecycle Thread payload и no-effect boundary не имели достаточных direct
 assertions. Отдельный `fed4ac6` закрыл findings; follow-up reviewer запустил
 server 40/40 и Web 21/21 и дал **READY** без открытых findings.
+
+Первый финальный Chromium gate затем выявил старый P3-B cross-flow: background
+initial Trash errors могли перехватить focus у внешней keyboard activation,
+поэтому Project presentation case упал 1/33. `1965feb` ограничил error focus
+нейтральным body либо текущей Trash region и добавил direct assertion, что
+внешний active control сохраняется. Targeted component 7/7, targeted browser
+1/1 и повторный full browser 33/33 прошли. Reviewer проверил exact fix diff и
+component 7/7, дал READY; его browser retry не стартовал из-за занятого dev
+port, поэтому full Chromium rerun остаётся evidence основной сессии.
 
 Mutation checks дали ожидаемый non-zero для migration rollback, Keep/Session
 leakage, active-Job guard, batch cap, active-list leakage, repeated Restore,

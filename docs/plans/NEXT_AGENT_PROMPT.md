@@ -19,8 +19,9 @@ store или Chat search/archive
 owner decision D-010/Q-10.
 
 Зафиксируй clean starting revision/status и последние commits. P3-E реализован
-commits `01c8b3f`, `da7519a`, review fix `fed4ac6`: **9 new / 589 core**, **6
-new / 197 Web**, **1 new / 33 mocked Chromium**. Full typecheck, tests, browser
+commits `01c8b3f`, `da7519a`, review fixes `fed4ac6`, `1965feb`: **9 new / 589
+core**, **7 new / 198 Web**, **1 new / 33 mocked Chromium**. Full typecheck,
+tests, browser
 gate, build, markdownlint и diff-check прошли; follow-up independent reviewer
 дал READY. Это synthetic/mock evidence, не production migration corpus,
 concurrent-client, real screen-reader/device или live Ollama/GPU validation.

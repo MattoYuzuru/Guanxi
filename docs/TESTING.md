@@ -7,7 +7,7 @@
 
 На 2026-08-11 после P3-E implementation и independent verification:
 
-- полный core с CLI reuse: 589/589; Web component/parser: 197/197;
+- полный core с CLI reuse: 589/589; Web component/parser: 198/198;
 - `npm run test:web:browser`: 33/33 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
