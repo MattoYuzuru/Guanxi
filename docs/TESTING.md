@@ -1,14 +1,14 @@
 # Стратегия проверки
 
 **Статус:** implemented для current-state, proposed для target matrix  
-**Проверено:** 2026-08-10
+**Проверено:** 2026-08-11
 
 ## Текущий baseline
 
-На 2026-08-10 после independently verified P3-B:
+На 2026-08-11 после P3-C implementation и independent verification:
 
-- полный core с CLI reuse: 565/565; Web component/parser: 181/181;
-- `npm run test:web:browser`: 30/30 deterministic Chromium tests с mocked
+- полный core с CLI reuse: 573/573; Web component/parser: 185/185;
+- `npm run test:web:browser`: 31/31 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
   browser binary
@@ -52,6 +52,12 @@
   provider side effects; Web fixtures покрывают bounded search/category/page,
   grid/radio keyboard patterns, focus trap/return, one-mutation Save, EN/RU
   accessible names, 390 px, 200%, forced colors и reduced motion;
+- deterministic P3-C tests покрывают fresh/v11→v12→v13/reopen/retry/rollback,
+  nullable restrictive ownership, exact legacy Thread bytes, strict versioned
+  nested Project Chat boundary, projectless/cross-Project isolation, one model
+  validation и отсутствие Workspace/Job/provider side effects; Web fixtures
+  проверяют exact grouping/order/count/empty, one-create guard, sourced reload,
+  typed mismatch, focus/retry, 390 px, 200%, forced colors и reduced motion;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;

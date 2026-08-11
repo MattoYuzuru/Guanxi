@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-10
+**Проверено:** 2026-08-11
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -38,8 +38,9 @@ Contract package ─ Zod types ─ browser + server
 | `cli`      | foreground launcher и reuse уже запущенного server |
 
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
-SQLite хранит settings, threads/messages, workspaces, logical Projects,
-versioned Project presentation metadata и filesystem bindings, tool journal,
+SQLite хранит settings, threads/messages, nullable immutable Project ownership,
+workspaces, logical Projects, versioned Project presentation metadata и
+filesystem bindings, tool journal,
 legacy
 calibration, exact P1-L observation samples, `jobs`/`job_events` и P1-D private
 Chat input association. Message bridge хранит
@@ -229,6 +230,7 @@ background Job.
 | ------------------------------------ | --------------------------------------- | --------------------------- |
 | Threads/messages/settings/workspaces | SQLite stores                           | persistent                  |
 | Project metadata/bindings            | SQLite migrations 10–11                 | persistent additive bridge  |
+| Project Chat ownership               | SQLite migrations 12–13                 | nullable immutable relation |
 | Effective feature-flag policy        | `FeatureFlagRegistry` startup snapshot  | process memory              |
 | Message terminal bridge              | SQLite `messages` v3 columns            | persistent                  |
 | Job/event/output store               | SQLite `jobs`/`job_events` v5           | persistent                  |

@@ -1,8 +1,8 @@
 # UX и информационная архитектура
 
-**Статус:** accepted direction, not implemented
+**Статус:** mixed — accepted direction, current P3 subsets implemented
 
-**Проверено:** 2026-08-02  
+**Проверено:** 2026-08-11
 **Направление:** Warm Instrument Panel
 
 ## Цель интерфейса
@@ -148,6 +148,11 @@ Project header имеет editable name, icon и color. Icon picker:
 - небольшая pagination вместо длинного linear scroll;
 - keyboard navigation и accessible names;
 - color palette с проверенным contrast.
+
+Current P3-C projection показывает bounded Chat group на Project card и ведёт
+`New Chat`/hard reload через sourced Project route. Она не является final
+overview/navigation shell и пока не включает search, move/reparent, retention,
+Trash или Project deletion.
 
 ### Recipes
 

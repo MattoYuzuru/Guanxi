@@ -2,11 +2,11 @@
 
 **Статус:** ready
 
-**Проверено:** 2026-08-10
+**Проверено:** 2026-08-11
 
-**Назначение:** продолжить Phase 3 bounded slice P3-C — связать Chat с logical
-Project и показать Project grouping; не расширять slice до retention/Trash,
-Project deletion или navigation-shell redesign
+**Назначение:** продолжить Phase 3 bounded slice P3-D — добавить canonical Chat
+retention policy, одинаковый 7-day default и sourced activity/expiry projection;
+не расширять slice до cleanup/Trash, Session leave detection или reasoning TTL
 
 ## Сначала
 
@@ -14,85 +14,97 @@ Project deletion или navigation-shell redesign
 `docs/NAVIGATION.md`, обязательный `plans/WORKFLOW.md`, затем `PRODUCT.md`,
 `DOMAIN_MODEL.md`, `UX_IA.md`, current HLD/LLD, `DEVELOPMENT.md`, `TESTING.md`,
 ADR-0005/0007, `plans/PHASE_STATUS.md`, `plans/ROADMAP.md`,
-`plans/OPEN_QUESTIONS.md` и accepted owner decisions D-008/D-009/Q-22.
+`plans/OPEN_QUESTIONS.md` и accepted owner decisions D-009/D-010/Q-22–Q-24.
 
-Зафиксируй clean starting revision/status и последние commits. P3-B реализован
-commits `b8eec80`, `6557c86`, test hardening `29e75ba`, review fixes `4ab7a6a`
-и `794fc64`: **7 new / 565 core**, **4 new / 181 Web**, **1 new / 30 mocked
-Chromium**. Full gates прошли; independent review закрыл все findings и дал
-PASS. Это local/mock evidence, не production migration, concurrent-client,
-real mobile или screen-reader validation.
+Зафиксируй clean starting revision/status и последние commits. P3-C реализован
+commits `c3521ed`, `71a48fa`, test hardening `0d01fbe`, review fix `99cc556` и
+follow-up test `83dafbc`: **8 new / 573 core**, **4 new / 185 Web**, **1 new /
+31 mocked Chromium**. Full typecheck, tests, browser gate, build, markdownlint и
+diff-check прошли; independent reviewer дал PASS. Это local/mock evidence, не
+production migration, concurrent-client, real mobile/screen-reader или live
+Ollama/GPU validation.
 
-## Bounded outcome P3-C
+## Bounded outcome P3-D
 
-Добавить минимальную persistent ownership-связь `Project → Chat`, необходимую
-для WORK-003/WORK-006 и будущей проверки единого retention default:
+Добавить минимальную retention foundation, одинаковую для Project и projectless
+Chat и достаточную для будущего Maintenance/Trash slice:
 
-- Chat может быть projectless либо принадлежать ровно одному logical Project;
-- existing Threads остаются projectless, migration append-only поверх v11;
-- Project Chat создаётся из явного Project context и остаётся обычным Chat с тем
-  же durable Message/Job lifecycle;
-- ownership не выводится из Workspace/path и не создаёт filesystem binding;
-- association неизменяема в этом slice: move/reparent отсутствует, а не
-  маскируется под rename/update;
-- strict contract/store/application/REST и Web projection используют одну
-  canonical ownership boundary;
-- Project UI показывает bounded Chat group и явный `New Chat` flow; Chat UI
-  правдиво показывает Project context и сохраняет его при create/redirect/reload;
-- legacy projectless Thread REST bytes и current Chat execution остаются
-  compatibility-safe.
+- canonical policy использует только accepted `Keep | 7 days | Session`;
+- любой новый Chat получает `7 days`, включая Chat внутри Project;
+- append-only migration начинается поверх v13 и не переписывает migrations
+  1–13;
+- existing Threads не становятся cleanup-eligible молча: выбери explicit
+  compatibility projection, которая сохраняет данные, и зафиксируй её в docs;
+- server хранит policy и sourced last user activity; create time является
+  initial user-owned basis до первого сообщения;
+- rolling 7-day expiry меняется только от принятой user activity. Model, tool,
+  maintenance, background event, reload и reconnect не продлевают TTL;
+- exact expiry вычисляется server-side из stored basis, возвращается как sourced
+  ISO timestamp и не зависит от browser clock/timezone;
+- strict versioned contract/store/application/REST boundary не добавляет поля в
+  raw legacy Thread responses;
+- retention change из Chat Info является одной isolated mutation и одинаково
+  работает для projectless и Project Chat;
+- UI правдиво различает configured policy/expiry от enforcement: cleanup и Trash
+  ещё не реализованы и не должны отображаться как работающие;
+- EN source/fallback и curated RU проходят locale keys; keyboard/focus/error/
+  retry/mobile states остаются доступны.
 
-До edits инвентаризируй Thread create/list/read/update paths, Chat route query/
-redirect state, Project service и v1–v11 migrations. Запиши явную additive или
-versioned response strategy: не добавляй поле в strict legacy output молча.
-Project deletion ещё не реализован, поэтому не придумывай cascade/orphan UX;
-выбери restrictive schema behavior и зафиксируй deferred deletion decision.
+До edits инвентаризируй оба Chat create path, Message/Job acceptance transaction,
+all Thread list/read/update responses, Project Chat versioned boundary и current
+Chat info/settings surfaces. Запиши explicit compatibility strategy для existing
+Threads и legacy clients. Не используй Project ownership, Workspace/path, model
+events или `updated_at` как замену user activity.
 
 ## Non-goals
 
-- Chat move/reparent, bulk assignment, cross-Project drag-and-drop;
-- Project deletion, archive, Trash и orphan recovery;
-- Keep/7 days/Session, rolling TTL, maintenance cleanup и reasoning retention;
-- Project defaults для model/context/Recipe/permissions;
-- автоматическое наследование Workspace, filesystem roots, tools/MCP/Skills;
-- Agent Run/Recipe/Artifact/file/vocabulary ownership;
-- final Project overview, global Chat search или navigation-shell redesign;
-- удаление/rename legacy Workspace API/table/path/localStorage;
-- brand rename, Phase 4 service/CLI/TUI и live Ollama/hardware changes.
+- удаление данных, Maintenance Job, scheduler, Trash/grace и restore;
+- завершение Session при уходе, route/navigation presence или active Job wait;
+- reasoning Artifact retention и отделение thinking от final answer;
+- Chat delete/archive/search, Project delete или move/reparent;
+- Quick Run retention до появления canonical Quick Run persistence;
+- Project defaults, Recipe/Artifact/file ownership;
+- notification policy, final Chat Info redesign или navigation shell;
+- legacy Workspace/Thread API cutover, brand rename, Phase 4 service/CLI/TUI;
+- live model/GPU/network calls.
+
+Не называй policy enforcement реализованным: этот slice хранит policy и честно
+показывает basis/expiry, а физический cleanup остаётся следующим lifecycle slice.
 
 ## Обязательные assertions
 
 Минимум должны падать при нарушении:
 
-- fresh, v11→v12, reopen и retry сохраняют nullable ownership без duplicate
-  Project/Chat/binding и без переписывания existing Threads;
-- mid-migration failure откатывает schema/data целиком, повторный startup
-  восстанавливается, invalid Project reference не записывается;
-- projectless legacy create/list/read/update raw JSON остаются по выбранной
-  explicit compatibility strategy;
-- Project Chat create связывает exact Project и Chat один раз; repeated keyboard/
-  form activation не создаёт второй Thread, Message или Job;
-- missing/malformed Project ID, extra/future fields и attempt reparent
-  отклоняются до mutation;
-- association не меняет Project identity/presentation, Workspace row/path/
-  binding, Chat model/options/messages, Jobs, permissions или settings;
-- Project без filesystem binding создаёт и читает Chat; `workspaceId` остаётся
-  `null`, пока пользователь отдельно не выбрал разрешённый filesystem scope;
-- projectless и два разных Project scopes не смешиваются; list order/count/
-  empty state проверены exact assertions, не только visibility;
-- Project list/read association не запускает Ollama, Governor, Job, tool,
-  filesystem/network provider или analytics side effects;
-- create использует существующий model/context validation ровно один раз и не
-  меняет durable Chat/Job semantics;
-- Project `New Chat` keyboard flow, initial/return focus, error/retry, long names,
-  390 px, 200%, reduced motion и forced-colors не создают horizontal overflow;
-- hard reload exact Project Chat route восстанавливает sourced ownership, а
-  stale/deleted/mismatched Project reference показывает typed safe state, не
-  угадывает ownership.
+- fresh, v13→next, reopen и retry создают retention schema ровно один раз;
+- mid-migration failure откатывает schema/data целиком и recovery сохраняет все
+  existing Threads/messages/ownership;
+- existing Chat compatibility state не делает историю eligible для удаления;
+- Project и projectless create получают exact один и тот же `7 days` default;
+- default записывается один раз без дополнительного Message/Job/provider call;
+- accepted user message сдвигает activity basis/expiry ровно один раз в той же
+  durable command boundary; duplicate idempotency key не сдвигает повторно;
+- assistant/model/tool/background/maintenance events, reload и reconnect не
+  меняют activity basis или expiry;
+- `Keep`, `7 days` и `Session` round-trip strict contract/store/API; unknown,
+  nested extra/future fields и malformed timestamps отклоняются до mutation;
+- retention PATCH меняет только policy/retention timestamp, не ownership,
+  Project/Workspace/binding, model/options/messages, Job, settings или runtime;
+- projectless и два Project scopes не смешивают policy/activity/expiry;
+- raw legacy Thread create/list/read/update bytes остаются literal compatible;
+- exact expiry использует stored server timestamp + seven days и одинаков при
+  browser timezone/clock drift;
+- repeated keyboard/form activation делает одну mutation; failure получает
+  focused safe error и явный retry;
+- Chat Info показывает current policy, sourced expiry и truthful not-enforced
+  state при hard reload, long name, 390 px, 200%, reduced motion/forced colors
+  без horizontal overflow;
+- retention read/edit не запускает Ollama, Governor, Job, tool, filesystem,
+  network provider или analytics side effects.
 
-Сделай mutation checks минимум для migration rollback, cross-Project leakage,
-ownership-vs-filesystem separation, legacy compatibility и repeated activation.
-Каждое свойство, заявленное в docs/ROADMAP, должно иметь direct assertion.
+Сделай mutation checks минимум для migration rollback, Project-vs-projectless
+default drift, background-event TTL extension, legacy byte compatibility и
+repeated Save. Каждое свойство, заявленное в docs/ROADMAP, должно иметь direct
+assertion.
 
 ## Gates
 
@@ -112,11 +124,11 @@ screen-reader, production migration corpus или user validation.
 
 После implementation запусти отдельную read-only independent verification по
 `plans/WORKFLOW.md`: reviewer проверяет exact diff, migration/compatibility,
-ownership isolation, idempotency и Web accessibility. Findings исправляет автор
-отдельным `fix(...)`/`test(...)` commit.
+default parity, activity semantics, idempotency и Web accessibility. Findings
+исправляет автор отдельным `fix(...)`/`test(...)` commit.
 
-Сделай небольшие conventional commits: contract/migration/application, Web/tests,
-review fix и current-state docs. Обнови `plans/PHASE_STATUS.md` с real new/
-regression envelope, first failures, independent verdict и residual risks.
-Перепиши этот файл на следующий незавершённый P3 slice; при blocker оставь P3-C
+Сделай небольшие conventional commits: contract/migration/application,
+Web/tests, review fix и current-state docs. Обнови `plans/PHASE_STATUS.md` с real
+new/regression envelope, first failures, independent verdict и residual risks.
+Перепиши этот файл на следующий незавершённый P3 slice; при blocker оставь P3-D
 с exact evidence и recovery steps.

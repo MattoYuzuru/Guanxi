@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-10
+**Проверено:** 2026-08-11
 
 ## Current package design
 
@@ -10,8 +10,9 @@
 
 Исходник: [lld-contract.mmd](diagrams/lld-contract.mmd).
 
-- `schemas.ts`: models, hardware fit, health, threads/messages, settings,
-  strict Projects, workspaces, tool calls, approvals и durable Job/event records;
+- `schemas.ts`: models, hardware fit, health, threads/messages, versioned Chat
+  ownership, settings, strict Projects, workspaces, tool calls, approvals и
+  durable Job/event records;
 - `api.ts`: route paths и request/response Zod;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
   output;
@@ -213,8 +214,12 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   compact;
 - `http/workspaces-routes.ts`: current filesystem workspace CRUD;
 - `http/projects-routes.ts`: logical Project list/create/read/rename без
-  filesystem requirement, opt-in `presentationVersion=1` projection и isolated
-  presentation PATCH; legacy Project/Workspace route shapes не меняются;
+  filesystem requirement, opt-in `presentationVersion=1` projection, isolated
+  presentation PATCH и versioned nested Chat list/create/read; legacy
+  Project/Workspace route shapes не меняются;
+- `projects/chat-service.ts`: canonical immutable Project Chat ownership
+  boundary; create вызывает existing model/context validation ровно один раз и
+  не создаёт Workspace, Message, Job или runtime operation;
 - `projects/service.ts` + `store/projects.ts`: Project identity/presentation
   metadata owner, idempotent presentation update и atomic legacy Workspace
   reconciliation;
@@ -257,6 +262,12 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 11: additive constrained `icon_key`/`color_token` с deterministic
   defaults; allowlists совпадают с versioned contract manifest, а failed ALTER
   откатывает schema целиком;
+- migration 12: additive nullable `threads.project_id` с restrictive Project FK
+  и stable list index; existing Threads не переписываются, а legacy Thread
+  projection не получает ownership fields;
+- migration 13: append-only triggers запрещают reparent/nullification и
+  Project-owned agent/Workspace scope; отдельный v12→v13 test доказывает
+  transactional failure recovery без изменения ownership data;
 - `store/capability-override.ts`: fail-closed exact key/timestamp validation,
   idempotent create без изменения timestamps, exact-row clear, deterministic
   capability order и `exactCapabilityOverrides` projection, которая при неполной
@@ -970,10 +981,12 @@ prompt, reasoning или output content.
 Migrations 4–5 и `JobStore` реализуют `jobs`, `job_events`, private
 `chat_job_inputs` и additive Message association. Migration 10 реализует
 минимальные `projects` и `project_filesystem_bindings`; migration 11 добавляет
-versioned built-in icon/color presentation metadata. Project пока не хранит
-defaults и не владеет Chats/Recipes/Artifacts. Остальные target tables ниже не
-реализованы. Legacy `threads/messages/workspaces` и strict legacy Project list
-сохранены без destructive route cutover.
+versioned built-in icon/color presentation metadata. Migrations 12–13 добавляют
+nullable immutable Project ownership к current `threads`; nested Chat API и Web
+group используют эту связь без move/reparent или filesystem inference. Project
+пока не хранит defaults и не владеет Recipes/Artifacts. Остальные target tables
+ниже не реализованы. Legacy `threads/messages/workspaces`, raw Thread REST и
+strict legacy Project list сохранены без destructive route cutover.
 
 Логические таблицы:
 

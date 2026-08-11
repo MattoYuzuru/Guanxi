@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted target, current P1/P2/P3 subsets implemented
 
-**Проверено:** 2026-08-10
+**Проверено:** 2026-08-11
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -40,10 +40,14 @@ token. Они не влияют на identity, routing или permissions.
 tools. P3-A реализовал независимую Project identity/name/timestamps и additive
 one-to-one **Filesystem Binding** для каждого legacy Workspace. P3-B добавил
 versioned `iconKey` из canonical Lucide subset и `colorToken` из встроенной
-accessible palette; оба поля изменяются отдельно от identity/binding. Project
-можно создать без binding; path не является identity. Legacy Workspace API/table
-и strict legacy Project response пока сохранены byte-compatible; Project
-ownership/defaults и final client cutover не реализованы.
+accessible palette; оба поля изменяются отдельно от identity/binding. P3-C
+добавил nullable immutable ownership `Thread.project_id`: existing Threads
+остаются projectless, а новый Project Chat создаётся и читается только через
+versioned Project-scoped boundary. Project можно создать без binding; path не
+является identity, а Project Chat сохраняет `workspaceId=null` без отдельного
+выбора filesystem scope. Legacy Workspace API/table и raw Thread REST response
+сохранены byte-compatible. Project defaults, Recipe/Artifact ownership и final
+client cutover ещё не реализованы.
 
 ### Recipe
 

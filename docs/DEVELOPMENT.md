@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-10
+**Проверено:** 2026-08-11
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -47,7 +47,7 @@ npm run link:cli
 | `dev:web`           | Vite:5173 с API proxy                                |
 | `typecheck`         | TypeScript workspaces                                |
 | `test`              | server + CLI + узкие web component regression tests  |
-| `test:web:browser`  | deterministic Chromium P0-A–P2-M mocked gate         |
+| `test:web:browser`  | deterministic Chromium P0-A–P3-C mocked gate         |
 | `build`             | contract, web, server и CLI production artifacts     |
 | `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
 | `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
@@ -344,9 +344,18 @@ server не нужен.
 - migration 11 additive добавляет constrained Project `icon_key`/`color_token`
   с deterministic defaults; canonical manifest и SQLite CHECK allowlists
   проверяются exact-set assertion, а legacy Project response остаётся opt-out;
+- migration 12 additive добавляет nullable restrictive `threads.project_id` и
+  stable `(project_id, updated_at, id)` index; existing Threads остаются
+  projectless, failed migration откатывает schema/data и безопасно retry-ится;
+- migration 13 append-only добавляет ownership immutability и Project Chat
+  mode/Workspace integrity triggers; v12 databases получают hardening без
+  переписывания уже применённой migration 12;
 - `projects/service.ts` и `store/projects.ts` владеют strict identity/
   presentation metadata, no-path create/rename, isolated idempotent appearance
   update и fail-closed compatibility mapping;
+- `projects/chat-service.ts` и versioned nested Project Chat routes владеют
+  immutable ownership create/list/read; queryless legacy Thread REST использует
+  прежнюю projection, а projectless opt-in boundary versioned явно;
 - `store/capability-override.ts` принимает только compatible exact identity,
   делает identical write идемпотентным без изменения timestamps, удаляет ровно
   одну row и fail-closed читает corrupted/incompatible row;
@@ -395,18 +404,20 @@ server не нужен.
 - `features/chat` — creation, timeline, composer, UUID command key, durable Job
   discovery/reattach state и P1-J conflict decision. Queue сохраняет canonical
   command key; Stop использует только typed Runtime/public Job query/cancel;
-  New Chat prewarm использует exact-context debounce и cleanup owner;
+  New Chat prewarm использует exact-context debounce и cleanup owner; P3-C
+  добавляет sourced Project route/create/reload без Workspace read и synchronous
+  repeated-activation guard;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-C projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
-  Chat-dispatch flows, P2-G NVIDIA и P2-H catalog paging, narrow viewport,
-  200% scaling и reduced motion.
+  Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging и P3-C Project Chat,
+  narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
   health/catalog/running/timeout envelope; P1-A/P1-B/P1-C temporary SQLite и

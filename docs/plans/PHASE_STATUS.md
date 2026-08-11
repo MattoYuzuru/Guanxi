@@ -1,8 +1,8 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-10
-**Текущая фаза:** Phase 3 — P3-C Project-owned Chat grouping ready
+**Проверено:** 2026-08-11
+**Текущая фаза:** Phase 3 — P3-D Chat retention policy ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1357,6 +1357,70 @@ ownership/defaults и final Workspace cutover не реализованы. Сл�
 slice — P3-C Project-owned Chat grouping без reparent/move; после него retention
 может одинаково доказать default для Project и projectless Chat.
 
+## Phase 3 — P3-C Project-owned Chat grouping
+
+**Статус:** independently verified (`c3521ed`, `71a48fa`, test hardening
+`0d01fbe`, review fix `99cc556`, follow-up test `83dafbc`).
+
+Migration 12 additive добавляет nullable `threads.project_id`, restrictive
+Project FK и stable scoped-list index; existing Threads остаются projectless.
+После independent review migration 13 append-only добавляет triggers, которые
+запрещают reparent/nullification и не допускают mode/Workspace scope у
+Project-owned Chat. Отдельный v12→v13 fixture доказывает mid-migration rollback,
+recovery и reopen без переписывания уже применённой migration 12.
+
+Versioned contract и nested `/api/projects/:id/chats` list/create/read владеют
+canonical sourced ownership. Queryless Thread REST и literal create/list/read/
+update bytes сохранены; projectless clients opt-in через explicit ownership
+version. Store API не принимает произвольные owner/mode/workspace combinations,
+response schema проверяет exact совпадение Project и Chat owner. Project-owned
+Chat использует прежний durable Message/Job execution lifecycle.
+
+Web показывает bounded Chat group на Project card, exact New Chat route и
+sourced hard reload. Synchronous guard не допускает duplicate create; malformed
+200, typed mismatch, stale reference и create failure переходят в safe focused
+state. Project flow не читает Workspace и не выводит ownership из path/binding.
+Long unbroken 120-character name переносится при 390 px и 200%; browser fixture
+также проверяет forced colors и reduced motion.
+
+Evidence по правилу WORKFLOW: **8 new / 573 core regression envelope**, **4 new
+/ 185 Web component/parser envelope**, **1 new / 31 mocked Chromium envelope**.
+Targeted migration/routes — 24/24; Project Web component — 12/12. Full
+typecheck, `npm test`, browser gate, build, markdownlint и diff-check — PASS.
+Build сохранил non-blocking Vite warning: main chunk 824.55 kB minified /
+218.70 kB gzip при warning threshold 500 kB.
+
+Первые implementation проверки нашли stale migration fixtures, которые
+оставляли v12 column при artificial downgrade, eager Project Chat service
+construction, hidden mobile sidebar assertion, отсутствующий typed mismatch code
+и лишний Workspace read. Mutation legacy GET показала, что первоначальное
+byte-assertion сравнивало mutated handler с ним же; `0d01fbe` закрепил literal
+expected payload. Все defects исправлены до full gates.
+
+Первый independent review дал `NEEDS_FIX`: DB не запрещала valid reparent/
+nullification; nested schemas могли принять mismatched owner/future options;
+long unbroken Project name переполнял heading; legacy CRUD/query/order,
+malformed references и owned durable lifecycle не имели прямых assertions.
+`99cc556` закрыл findings через append-only migration 13, narrow store boundary,
+strict sourced schemas, element-level responsive check и точные server tests.
+Follow-up нашёл один оставшийся assertion gap для multi-row projectless order;
+`83dafbc` добавил exact count/order и mutation evidence. Финальный reviewer
+verdict — **PASS**, открытых findings нет.
+
+Mutation checks дали ожидаемый non-zero для migration rollback, cross-Project
+leakage, ownership-vs-filesystem Workspace read, legacy raw response и repeated
+form activation; все mutations восстановлены. Review findings дополнительно
+имеют direct assertions для v12→v13 recovery/immutability, mismatched 200,
+nested future fields, exact ordering, malformed references и owned Job reload.
+
+Остаточный риск: SQLite и Chromium evidence остаются local/fixture/mock; нет
+production DB corpus, concurrent multi-client create, real device/screen reader
+или visual baseline. Server create не получил отдельный idempotency key: one-
+create guarantee принадлежит текущему synchronous Web boundary. Project delete,
+move/reparent UI, retention/Trash и final navigation shell не реализованы.
+Следующий bounded slice — P3-D canonical Chat retention policy/default/activity
+projection без cleanup/Trash enforcement.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1456,7 +1520,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-C ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-D ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |
