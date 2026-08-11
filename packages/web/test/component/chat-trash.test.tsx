@@ -152,6 +152,22 @@ describe('Chat Trash list', () => {
     expect(api.listChatTrash).toHaveBeenCalledTimes(2)
   })
 
+  it('does not steal focus from an active control outside its region on background failure', async () => {
+    const request = deferred<never>()
+    vi.spyOn(api, 'listChatTrash').mockReturnValue(request.promise)
+    render(
+      <>
+        <button type="button">External action</button>
+        <ChatTrashList projectId={null} />
+      </>,
+    )
+    const external = screen.getByRole('button', { name: 'External action' })
+    external.focus()
+    await act(async () => request.reject(new Error('background Trash failure')))
+    await screen.findByText(/background Trash failure/u)
+    await waitFor(() => expect(external).toBe(document.activeElement))
+  })
+
   it('rejects a mismatched Restore scope and uses curated English fallback', async () => {
     document.documentElement.lang = 'fr'
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({

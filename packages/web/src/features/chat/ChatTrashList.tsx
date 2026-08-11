@@ -27,6 +27,7 @@ export function ChatTrashList({
   const [retryChat, setRetryChat] = useState<ChatTrashItem | null>(null)
   const [restoredIds, setRestoredIds] = useState<ReadonlySet<string>>(() => new Set())
   const restoringRef = useRef(false)
+  const sectionRef = useRef<HTMLElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const listErrorRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -36,7 +37,17 @@ export function ChatTrashList({
   }, [restoreError])
 
   useEffect(() => {
-    if (trash.error) requestAnimationFrame(() => listErrorRef.current?.focus())
+    if (!trash.error) return
+    requestAnimationFrame(() => {
+      const activeElement = document.activeElement
+      if (
+        activeElement === null ||
+        activeElement === document.body ||
+        sectionRef.current?.contains(activeElement)
+      ) {
+        listErrorRef.current?.focus()
+      }
+    })
   }, [trash.error])
 
   useEffect(() => {
@@ -77,6 +88,7 @@ export function ChatTrashList({
   const chats = (trash.data?.chats ?? []).filter((chat) => !restoredIds.has(chat.chatId))
   return (
     <section
+      ref={sectionRef}
       aria-label={translate('chat.trash.title')}
       className="mt-3 min-w-0 border-t border-[var(--border)] pt-3"
     >
