@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted target, current P1/P2/P3 subsets implemented
 
-**Проверено:** 2026-08-11
+**Проверено:** 2026-08-12
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -353,6 +353,14 @@ Typed result: `text`, `reasoning`, `transcript`, `audio`, `image`, `video`,
 Artifact хранит media type, size, checksum, source Job, derivation chain,
 storage reference, preview metadata и export options. Большие бинарные данные
 предлагается держать в content-addressed filesystem; SQLite хранит metadata.
+
+**Current P3-F subset:** version 1 `reasoning` Artifact хранится как SQLite UTF-8
+text с exact byte size/SHA-256 и immutable source Chat/Message/Job. Один terminal
+Job/Message имеет не более одного canonical row. Final answer остаётся отдельным
+Message content; legacy `messages.thinking` читается без destructive backfill.
+Project/projectless ownership immutable, active read exact-Chat scoped. Seven-day
+и shorter-current-parent expiry публикуются, но automatic deletion ещё не
+реализован.
 
 ### Tool, MCP Connection и Skill
 

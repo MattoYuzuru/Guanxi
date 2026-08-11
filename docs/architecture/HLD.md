@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-11
+**Проверено:** 2026-08-12
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -66,6 +66,16 @@ tools или filesystem. Trash scoped по Project либо projectless; Restore
 policy на Keep/7 days возвращают Chat и начинают новый rolling basis. Session
 leave detection, hard deletion, grace и blob GC пока не реализованы.
 
+P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
+Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,
+immutable Project/projectless ownership и seven-day diagnostic expiry. Final
+answer остаётся в `messages.content`; новый terminal row не дублирует reasoning
+в `messages.thinking`, а compatibility Message projection читает Artifact и
+fallback-ит только на literal legacy column. Artifact list/read доступны только
+для exact active Chat scope и не запускают runtime effects. Current retention
+projection учитывает текущую parent policy, но automatic expiry/delete и generic
+blob GC по-прежнему не реализованы.
+
 ### As-is execution boundary
 
 Текущий `POST /threads/:id/messages`:
@@ -87,8 +97,10 @@ Browser disconnect/route change закрывает только subscription. П
 находит `jobId` в pending assistant, читает canonical Job и replay-ит ordered
 private output из SQLite. Explicit Stop и public cancel проходят через owner:
 durable `cancelling`, provider abort, затем один `cancelled/stopped_by_user`.
-Assistant projection и terminal Job/event commit-ятся атомарно; injected failure
-не публикует completed.
+Assistant projection, optional Reasoning Artifact и terminal Job/event
+commit-ятся атомарно; injected Artifact/checksum failure не публикует terminal
+state. Pending/replay thinking остаётся private Job output, а terminal reload
+проецирует те же bytes из canonical Artifact.
 
 После открытия/migration SQLite, но до публикации HTTP health, startup recovery
 сначала сканирует все non-terminal typed Chat Jobs в стабильном порядке. Unsafe

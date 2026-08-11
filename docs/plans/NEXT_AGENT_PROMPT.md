@@ -2,12 +2,11 @@
 
 **Статус:** ready
 
-**Проверено:** 2026-08-11
+**Проверено:** 2026-08-12
 
-**Назначение:** продолжить Phase 3 bounded slice P3-F — заложить typed
-Reasoning Artifact persistence и отделить новые terminal thinking records от
-final answer; не расширять slice до expiry deletion, generic binary Artifact
-store или Chat search/archive
+**Назначение:** продолжить Phase 3 bounded slice P3-G — включить automatic
+Reasoning Artifact expiry enforcement поверх P3-F, не расширяя slice до generic
+blob GC, Chat hard deletion, Session leave detection или общего Artifact store
 
 ## Сначала
 
@@ -18,104 +17,105 @@ store или Chat search/archive
 `plans/PHASE_STATUS.md`, `plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted
 owner decision D-010/Q-10.
 
-Зафиксируй clean starting revision/status и последние commits. P3-E реализован
-commits `01c8b3f`, `da7519a`, review fixes `fed4ac6`, `1965feb`: **9 new / 589
-core**, **7 new / 198 Web**, **1 new / 33 mocked Chromium**. Full typecheck,
-tests, browser
-gate, build, markdownlint и diff-check прошли; follow-up independent reviewer
-дал READY. Это synthetic/mock evidence, не production migration corpus,
-concurrent-client, real screen-reader/device или live Ollama/GPU validation.
+Зафиксируй clean starting revision/status и последние commits. P3-F реализован
+commits `425f252`, `18d019c`, review fixes `7af5b86`, `d9333a3`: **9 new / 598
+core**, **4 new / 202 Web**, **0 new, 1 extended / 33 mocked Chromium**. Full
+typecheck, tests, browser gate, build, markdownlint и diff-check прошли;
+independent reviewer дал READY. Это synthetic/mock evidence, не production DB
+corpus, concurrent-client, real screen-reader/device или live Ollama/GPU/network
+validation.
 
-## Bounded outcome P3-F
+## Bounded outcome P3-G
 
-Реализовать минимальный diagnostic Reasoning Artifact vertical slice:
+Реализовать server-owned automatic deletion только для P3-F diagnostic
+Reasoning Artifacts:
 
-- append-only migration начинается поверх v15 и не переписывает migrations
-  1–15;
-- contract вводит versioned sourced reasoning Artifact projection с immutable
-  identity, source Job/Message/Chat, media type, byte size, checksum, createdAt,
-  retention basis `7 days`, parent-retention relationship и storage kind;
-- новые terminal assistant reasoning bytes сохраняются отдельно от final answer
-  в атомарной Message/Job terminal transaction; один Job/Message владеет не
-  более чем одним canonical reasoning Artifact;
-- final answer остаётся в Message content. Новые terminal rows не дублируют
-  reasoning bytes в `messages.thinking`; legacy rows с existing thinking
-  продолжают читаться без destructive backfill;
-- raw legacy Message REST/SSE shape остаётся совместимым: для нового terminal
-  Message поле `thinking` проецируется из Artifact, для legacy — из прежнего
-  column. Versioned Artifact boundary является canonical additive read surface;
-- pending/replay streaming продолжает показывать thinking из bounded private Job
-  output; terminal reload сходится на persisted Artifact без duplicate bytes;
-- Chat Info отдельно показывает generated answers и reasoning Artifacts с exact
-  sourced expiry, copy/export-safe text и truthful state `automatic deletion not
-  implemented`;
-- Artifact read/list строго scoped к exact Chat и immutable ownership, включая
-  Project/projectless isolation; Trash Chat не протекает в active Chat surface;
-- malformed/future/cross-Chat identity fail closed и ничего не меняют;
-- ни persist/read/copy, ни Chat Info не запускают Ollama, Governor, tools,
-  filesystem, network provider, analytics или cleanup side effects;
-- EN source/fallback и curated RU используют locale keys; loading/empty/error/
-  retry, keyboard/focus, long content, 390 px, 200%, forced colors и reduced
-  motion доступны.
+- current seven-day Artifact expiry и shorter **current** parent retention
+  становятся исполняемой policy, а не только projection;
+- один startup/periodic Maintenance owner выполняет stable bounded scan с
+  injected clock, inclusive boundary, coalescing и shutdown cleanup; не создавай
+  второй несогласованный scheduler, расширь current retention owner/service;
+- eligible Artifact удаляется атомарно и ровно один раз; final answer,
+  Message/Job, legacy thinking rows, Chat lifecycle и любые non-reasoning данные
+  остаются неизменными;
+- любой canonical non-terminal Job того же Chat блокирует destructive cleanup;
+  retry после terminal state сходится без duplicate effect;
+- Keep и Session без parent time expiry по-прежнему применяют собственные семь
+  дней Artifact; TTL parent может только сократить effective expiry. Policy/user
+  activity, изменившая current parent expiry до scan, учитывается заново;
+- active и Trash Chat обрабатываются согласованно по effective expiry; Restore
+  не возвращает уже истёкшие diagnostic bytes;
+- удаление наблюдаемо без content leakage: durable metadata/audit либо другой
+  crash-safe bounded evidence содержит reason, source identity, due/occurredAt,
+  но не prompt, reasoning, final answer, tools, paths или secrets;
+- Chat Info и contract правдиво сообщают active automatic deletion и после
+  cleanup показывают отдельный empty reasoning state, сохраняя generated answer;
+- versioned API не меняет смысл существующего strict version молча. До edits
+  явно выбери и зафиксируй compatibility strategy для enforcement-state
+  эволюции (additive versioned projection/field либо доказуемо совместимый
+  boundary); malformed/future version fail closed;
+- migration, если нужна persisted audit/checkpoint schema, только append-only
+  поверх v16. Не переписывай migrations 1–16 и не backfill-ь legacy thinking в
+  Artifact;
+- Maintenance не вызывает Ollama, Governor, tools, workspace filesystem,
+  provider network, analytics или generic blob cleanup.
 
-До edits инвентаризируй terminal Message/Job transaction, private output replay,
-все Message serializers, compaction inputs, Chat Info ownership checks и текущую
-semantics `messages.thinking`. Явно опиши compatibility read policy и checksum/
-byte-size algorithm. Не вводи скрытый reasoning size ceiling: limits должны
-приходить из runtime/policy, а persistence обязана fail atomically.
+Сначала инвентаризируй current `RetentionMaintenanceOwner`, ordering startup
+recovery→maintenance, P3-F effective-expiry calculation, foreign keys/cascades,
+raw Message projection и strict contract version semantics. Явно опиши crash
+point, atomic delete/audit transaction, cursor/order и behavior при policy race.
 
 ## Non-goals
 
-- automatic reasoning expiry/deletion, Maintenance integration и Trash/grace;
-- удаление legacy `messages.thinking` column или массовый backfill старой БД;
-- arbitrary user delete/rename reasoning Artifact;
-- generic content-addressed filesystem/blob GC, attachments или media preview;
-- text/file/image/audio/video/document/checkpoint/report Artifact types кроме
-  contract-safe foundation, необходимой reasoning;
-- изменение Chat retention, Session leave/24-hour recovery или hard deletion;
-- Quick Run persistence, Recipe, Project defaults, search/archive/move/reparent;
-- reasoning export с tool credentials/secrets или unrestricted host paths;
+- generic content-addressed blob/file GC и другие Artifact types;
+- удаление final answer, Message, Job, Chat metadata или legacy thinking;
+- Chat TTL grace/hard delete, Session leave detection/24-hour recovery;
+- arbitrary user delete/restore/rename Reasoning Artifact;
+- Quick Run, Recipe, Project defaults, attachments, search/archive/move/reparent;
+- изменение reasoning capture/checksum/storage format P3-F без доказанной
+  необходимости;
+- unrestricted export paths, credentials либо private Job input в audit/API;
 - final navigation shell, brand rename, Phase 4 service/CLI/TUI и live provider.
 
-Не называй reasoning cleanup реализованным: P3-F делает новые reasoning bytes
-отдельно persisted и независимо адресуемыми, но не удаляет их по времени.
+Не называй generic Artifact GC или Chat hard deletion реализованными: P3-G
+удаляет только due diagnostic Reasoning Artifact bytes и сохраняет final answer.
 
 ## Обязательные assertions
 
 Минимум должны падать при нарушении:
 
-- fresh, v15→next, reopen и retry создают schema ровно один раз; mid-migration
-  failure откатывает schema/data и сохраняет exact legacy payload;
-- legacy terminal Message с `thinking` читается literal compatible без Artifact;
-- новый terminal Message атомарно создаёт ровно один reasoning Artifact, хранит
-  final answer отдельно и не дублирует reasoning в Message column;
-- zero-thinking terminal Message не создаёт пустой Artifact;
-- failed/cancelled/interrupted terminal partial reasoning policy определена
-  явно и проверена для каждого state;
-- injected Artifact write/checksum failure не публикует terminal Job/Message и
-  retry создаёт один canonical Artifact;
-- duplicate terminalization/replay/reload не создаёт второй Artifact и не
-  меняет checksum/timestamps;
-- byte size/checksum считаются по exact UTF-8 bytes для ASCII, Unicode и long
-  reasoning без произвольного truncation;
-- legacy Message projection нового row берёт exact Artifact bytes, versioned
-  Artifact boundary возвращает source/provenance/expiry без private Job input;
-- Project/projectless и Chat A/Chat B list/read isolation имеют exact count/order;
-- Trash Chat не виден через active nested surface, но lifecycle не удаляет
-  Artifact;
-- compaction/context сохраняет текущее явно принятое поведение и не теряет final
-  answer при отсутствии/ошибке Artifact;
-- hard reload сходится с streamed thinking на один terminal Artifact; UI
-  различает answers/reasoning, exact expiry и no-cleanup state;
-- loading/error получают focused safe retry; copy не включает final answer,
-  prompt, tool credentials или другой Chat;
-- persistence/read/UI не вызывают provider, Governor, tool, filesystem, network,
-  analytics или cleanup effects.
+- fresh, v16→next/reopen/retry и mid-migration rollback сохраняют exact P3-F и
+  legacy payload; migration/schema создаются один раз;
+- inclusive `effectiveExpiresAt <= now`, one millisecond before/at/after и
+  injected clock проверены без wall-clock sleeps;
+- Keep/Session используют own seven-day expiry; current TTL shorter wins;
+  TTL→Keep/Session сбрасывает старый parent expiry, user activity race не удаляет
+  Artifact по stale parent basis;
+- stable exact order при equal expiry/id, finite batch cap, multiple batches,
+  concurrent/repeated tick coalescing и restart convergence не пропускают и не
+  дублируют effects;
+- каждый canonical non-terminal Job state блокирует delete; после terminal retry
+  удаляет один раз;
+- delete и audit/evidence атомарны: injected failure не оставляет ни silent
+  deletion, ни ложный success; retry converges;
+- expired Artifact исчезает из list/read/raw compatibility thinking, но exact
+  final answer, Message/Job, generated-answer count и compaction остаются;
+- legacy `messages.thinking`, non-reasoning tables и соседние Chat/Project scopes
+  byte-compatible; Chat A cleanup не затрагивает Chat B;
+- active и Trash behavior, Restore after expiry и Project/projectless isolation
+  имеют exact counts/order;
+- audit/response не содержит prompt, reasoning, final answer, tool data,
+  credentials, paths или arbitrary provider errors;
+- version compatibility/future/malformed enforcement state fail closed;
+- Chat Info показывает truthful automatic deletion, refresh после cleanup,
+  empty reasoning при сохранённом generated answer, loading/error/retry и EN/RU;
+- scheduler startup/periodic/shutdown и no Ollama/Governor/tool/filesystem/
+  provider-network/analytics/generic-cleanup effects проверены прямо.
 
-Сделай mutation checks минимум для migration rollback, terminal atomicity,
-reasoning/final swap, duplicate Artifact, checksum bytes, legacy projection и
-cross-Chat leakage. Каждое свойство, заявленное в docs/ROADMAP, должно иметь
-direct assertion.
+Сделай mutation checks минимум для inclusive boundary, stale parent expiry,
+active-Job guard, batch cap/order, delete/audit atomicity, final-answer survival,
+cross-Chat leakage и truthful UI enforcement/empty state. Каждое свойство,
+заявленное в docs/ROADMAP, должно иметь direct assertion.
 
 ## Gates
 
@@ -134,13 +134,13 @@ screen-reader, production migration corpus или user validation.
 ## Workflow и handoff
 
 После implementation запусти отдельную read-only independent verification по
-`plans/WORKFLOW.md`: reviewer проверяет exact diff, migration/rollback,
-terminal transaction, compatibility projection, duplicate ownership,
-checksum/size, Chat isolation и Web accessibility. Findings исправляет автор
-отдельным `fix(...)`/`test(...)` commit.
+`plans/WORKFLOW.md`: reviewer проверяет exact diff, contract compatibility,
+migration/rollback, effective-expiry races, bounded scheduler, active-Job guard,
+atomic delete/evidence, final-answer survival, scope и Web truthfulness. Findings
+исправляет автор отдельным `fix(...)`/`test(...)` commit.
 
-Сделай небольшие conventional commits: contract/migration/application,
+Сделай небольшие conventional commits: contract/migration/maintenance,
 Web/tests, review fix и current-state docs. Обнови `plans/PHASE_STATUS.md` с real
 new/regression envelope, first failures, independent verdict и residual risks.
-Перепиши этот файл на следующий незавершённый P3 slice; при blocker оставь P3-F
+Перепиши этот файл на следующий незавершённый P3 slice; при blocker оставь P3-G
 с exact evidence и recovery steps.

@@ -2,7 +2,7 @@
 
 **Статус:** mixed — diagnosis locally validated, lifecycle target accepted
 
-**Проверено:** 2026-08-04
+**Проверено:** 2026-08-12
 **Критичность:** основной correctness и safety boundary
 
 ## Подтверждённое current behavior
@@ -1055,7 +1055,10 @@ startup/periodic owner после Chat Job recovery сканирует stable bo
 любой non-terminal Job блокирует tombstone. Keep/Session не выбираются этим
 scan. Scoped Trash и Restore реализованы. Expiring intermediate state,
 TTL/Session grace, metadata deletion и blob GC ниже — accepted target, не
-текущее поведение.
+текущее поведение. Current P3-F создаёт один immutable Reasoning Artifact в
+terminal Message/Job transaction, хранит final answer отдельно и публикует
+seven-day/effective parent expiry. Artifact остаётся скрытым вместе с Trash
+Chat, но time-based reasoning deletion ещё не подключён к Maintenance.
 
 ```text
 active
@@ -1072,7 +1075,8 @@ active
 - `Session` становится eligible после ухода пользователя и terminal state
   связанной Job; reload/reconnect не завершают Session.
 - Session Chat хранится в Trash 24 часа перед hard deletion.
-- Reasoning Artifact по default истекает через 7 дней.
+- Reasoning Artifact имеет отдельный default expiry через 7 дней; P3-F хранит и
+  показывает этот срок, но автоматическое удаление остаётся target.
 - Active/non-terminal Job блокирует deletion.
 - Startup и periodic Maintenance owner обрабатывает bounded batches для TTL
   Chat; generic durable Maintenance Job ещё не реализован.

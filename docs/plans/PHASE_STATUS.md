@@ -1,8 +1,8 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-11
-**Текущая фаза:** Phase 3 — P3-F reasoning Artifact foundation ready
+**Проверено:** 2026-08-12
+**Текущая фаза:** Phase 3 — P3-G reasoning expiry enforcement ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1536,6 +1536,66 @@ Hard deletion, TTL grace, Session leave/24-hour recovery, Artifact/blob GC и
 reasoning retention не реализованы. Следующий bounded slice — P3-F typed
 Reasoning Artifact persistence foundation без cleanup enforcement.
 
+## Phase 3 — P3-F typed Reasoning Artifact persistence
+
+**Статус:** independently verified (`425f252`, `18d019c`, review fix
+`7af5b86`, test fix `d9333a3`).
+
+Migration 16 append-only добавляет immutable version 1 diagnostic
+`reasoning_artifacts`: exact UTF-8 text, byte size/SHA-256, source
+Chat/Message/Job, Project/projectless ownership и UNIQUE canonical source keys.
+Terminal Job/Message/optional Artifact commit-ятся одной transaction. Final
+answer остаётся в Message content, новый row не дублирует reasoning в legacy
+column; raw Message projection читает Artifact, затем literal legacy fallback.
+Pending/replay thinking остаётся bounded private Job output, terminal reload
+сходится на persisted Artifact. Compaction использует final answers независимо
+от отсутствующего либо malformed Artifact.
+
+Strict active list/read scoped к exact Chat и ownership, скрывает Trash и не
+возвращает private Job input. Projection проверяет content byte size/hash,
+показывает diagnostic seven-day и shorter-current-parent expiry, включая
+TTL→Keep/Session. Automatic deletion честно остаётся `not_implemented`. Chat
+Info отдельно показывает answers/reasoning, exact expiry, size/checksum,
+loading/empty/error/retry и exact scoped copy/export; успешный retention Save
+перечитывает Artifact projection.
+
+Evidence по правилу WORKFLOW: **9 new / 598 core regression envelope**, **4 new
+/ 202 Web component/parser envelope**, **0 new, 1 materially extended / 33
+mocked Chromium envelope**. Targeted reasoning + durable reload — 20/20;
+focused Chat Info — 10/10; targeted Chromium — 1/1. Full typecheck, `npm test`,
+browser gate, build, markdownlint и diff-check — PASS. Build сохранил
+non-blocking Vite warning: main chunk 851.04 kB minified / 224.80 kB gzip при
+threshold 500 kB.
+
+Первые implementation runs выявили старые migration fixtures с ожиданием v15,
+один неполный rollback sentinel и неверные focused filter/regex ожидания; после
+исправления targeted и full envelopes прошли. Mutation checks дали ожидаемый
+non-zero для UTF-8 byte size, reasoning/final swap, terminal Artifact omission,
+UNIQUE duplicate, migration rollback, legacy projection и cross-Chat scope; все
+mutations восстановлены. Injected checksum/insert faults отдельно подтвердили
+rollback Message/Job/Artifact и canonical retry.
+
+Первый post-review full Chromium gate, запущенный параллельно с core/typecheck,
+дал 32/33 на старом Marketplace exact-variant case. Изолированный полный rerun
+без изменений прошёл 33/33; P3-F targeted retention case отдельно прошёл 1/1.
+
+Independent reviewer сначала дал **NEEDS_FIX**: current Keep/Session ошибочно
+мог наследовать persisted TTL expiry, Chat Info не refresh-ил Artifact после
+Save, а duplicate order/export/empty/action-error/no-effect claims не имели
+полных direct assertions. Отдельный `7af5b86` исправил behavior и assertions;
+follow-up нашёл только непрочитанный Blob payload. `d9333a3` проверяет exact
+export content через `FileReader`; финальный reviewer verdict — **READY**.
+
+Остаточный риск: SQLite corpus синтетический, Web evidence jsdom/mocked
+Chromium; нет production DB corpus, concurrent-client terminal/retention races,
+real device/screen reader/visual baseline или live Ollama/GPU/network
+validation. Intermediate tool-call reasoning всё ещё следует legacy multi-step
+Message semantics; P3-F Artifact-изирует final terminal Message/Job transaction.
+Automatic reasoning deletion, Session leave/24-hour recovery, Chat hard delete
+и generic blob GC не реализованы. Следующий bounded slice — P3-G automatic
+Reasoning Artifact expiry enforcement без generic blob store либо Chat hard
+delete.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1635,7 +1695,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-F ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-G ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

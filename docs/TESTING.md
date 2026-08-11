@@ -1,13 +1,13 @@
 # Стратегия проверки
 
 **Статус:** implemented для current-state, proposed для target matrix  
-**Проверено:** 2026-08-11
+**Проверено:** 2026-08-12
 
 ## Текущий baseline
 
-На 2026-08-11 после P3-E implementation и independent verification:
+На 2026-08-12 после P3-F implementation и independent verification:
 
-- полный core с CLI reuse: 589/589; Web component/parser: 198/198;
+- полный core с CLI reuse: 598/598; Web component/parser: 202/202;
 - `npm run test:web:browser`: 33/33 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
@@ -76,6 +76,15 @@
   failure без actionable stale duplicate, focus, long title и truthful no-hard-
   delete state; mocked Chromium добавляет projectless/Project Trash/Restore
   reload flow;
+- deterministic P3-F tests покрывают strict versioned contract,
+  fresh/v15→v16/reopen/mid-migration rollback/retry, literal legacy thinking,
+  atomic Message/Job/Artifact write и injected checksum/insert rollback,
+  completed/failed/cancelled/interrupted/zero policy, exact Unicode bytes/hash,
+  duplicate immutability, ordered Project/projectless/cross-Chat/Trash scope,
+  current-parent expiry и compaction independence. Web fixtures покрывают
+  answers/reasoning separation, loading/empty/error/retry, exact copy/export
+  payload, action focus и refresh после retention Save; существующий mocked
+  Chromium retention case расширен hard-reload/copy/narrow/200% assertions;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
@@ -525,6 +534,10 @@ process lock. P0-D health остаётся sampled observation; обязател
   page-memory projection двух exact rows, а legacy compatibility path сохраняет
   full response. Page size 12/maximum 100 — response/render policy, не catalog
   total limit; benchmark — local synthetic diagnostic, не production SLA.
+- P3-F Reasoning Artifact migration проверена на synthetic SQLite fixtures;
+  нет production corpus либо multi-process terminal races. Automatic reasoning
+  deletion, generic blob GC и intermediate multi-step tool Artifact semantics
+  остаются за current границей.
 
 ## Существующее покрытие
 
@@ -542,14 +555,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                                    |
 | Static web serving                 | test                                     |
 | CLI existing-server logic          | tests                                    |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P2-H      |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P2-H mocked   |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-F      |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P3-F mocked   |
 | Catalog provider/cache/pages       | P0-D/P2-E–P2-H local/bundled fixtures    |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane                |
 | Job replay/reattach                | HTTP SSE; browser durable replay         |
 | Chat startup recovery              | reopened SQLite, fail-closed pages       |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web           |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P2-H      |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-F      |
 
 ## Обязательная target matrix
 

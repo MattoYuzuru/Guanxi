@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-11
+**Проверено:** 2026-08-12
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -358,6 +358,11 @@ server не нужен.
 - migration 15 additive добавляет recoverable Chat lifecycle/tombstone basis,
   audit и eligibility/Trash indexes. Existing rows остаются active; schema
   rollback/retry не переписывает migrations 1–14;
+- migration 16 additive добавляет immutable diagnostic `reasoning_artifacts`
+  с exact UTF-8 byte size/SHA-256 и UNIQUE source Message/Job. Terminal write
+  атомарен с Message/Job; legacy `messages.thinking` не переписывается;
+- `store/reasoning-artifacts.ts` владеет active exact-Chat scoped list/read,
+  integrity validation и current-parent effective expiry. Cleanup отсутствует;
 - `store/chat-retention.ts` и `retention/service.ts` владеют Chat-only
   projection/PATCH, bounded TTL eligibility, tombstone, scoped Trash и Restore;
   `retention/maintenance.ts` — один startup/periodic owner с injected clock,
@@ -421,18 +426,20 @@ server не нужен.
   repeated-activation guard; P3-D добавляет Chat Info retention modal с
   fail-closed identity, one-mutation Save/retry и sourced expiry; P3-E добавляет
   Project/projectless Trash list, focused load/Restore failures, stale-item
-  suppression и explicit idempotent Restore без hard-delete claim;
+  suppression и explicit idempotent Restore без hard-delete claim; P3-F
+  добавляет separate generated-answer/reasoning lists, exact expiry,
+  copy/export и refresh после retention Save без cleanup claim;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-E projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-F projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
-  P3-D retention и P3-E scoped Trash/Restore,
+  P3-D retention, P3-E scoped Trash/Restore и P3-F reasoning Chat Info,
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

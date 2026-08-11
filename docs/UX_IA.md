@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted direction, current P3 subsets implemented
 
-**Проверено:** 2026-08-11
+**Проверено:** 2026-08-12
 **Направление:** Warm Instrument Panel
 
 ## Цель интерфейса
@@ -108,7 +108,10 @@ carousel с dot на каждую карточку.
 - status каждого turn восстанавливается после reload;
 - sidebar/drawer доступен на mobile.
 - Chat Info объединяет rename/delete, retention, notification policy, generated
-  answers и reasoning Artifacts.
+  answers и reasoning Artifacts. Current P3-F показывает эти списки раздельно,
+  exact effective expiry, size/checksum и scoped copy/export text; после Save
+  retention Artifact projection перечитывается. Loading, empty/error/retry
+  доступны, а UI честно сообщает, что automatic deletion ещё не реализован.
 
 Thinking рендерится как отдельно очищенный Markdown. На desktop его можно открыть
 в side inspector, на mobile — в sheet. UI явно показывает, сохраняется ли этот
