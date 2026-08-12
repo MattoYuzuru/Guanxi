@@ -149,7 +149,10 @@ describe('Chat retention info', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
     expect(await screen.findByText('safe leave failure')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
-    await screen.findByText('Выход зафиксирован; активная работа должна завершиться')
+    const result = (await screen.findByText(
+      'Выход зафиксирован; активная работа должна завершиться',
+    )).closest('[role="status"]')!
+    await waitFor(() => expect(result).toBe(document.activeElement))
     expect(api.leaveSessionChat).toHaveBeenCalledTimes(3)
     for (const call of vi.mocked(api.leaveSessionChat).mock.calls) {
       expect(call).toEqual(['chat-1', {
@@ -177,7 +180,10 @@ describe('Chat retention info', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Завершить сессию' }))
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить выход' }))
-    expect(await screen.findByText('Чат-сессия перемещён в Корзину')).toBeTruthy()
+    const result = (await screen.findByText(
+      'Чат-сессия перемещён в Корзину',
+    )).closest('[role="status"]')!
+    await waitFor(() => expect(result).toBe(document.activeElement))
     expect(document.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeTruthy()
     expect(screen.getAllByText(/Безвозвратное удаление не реализовано/u)).toHaveLength(2)
     expect(screen.queryByRole('button', { name: 'Завершить сессию' })).toBeNull()

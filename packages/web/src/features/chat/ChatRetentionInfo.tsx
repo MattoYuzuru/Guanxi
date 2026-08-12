@@ -41,10 +41,15 @@ export function ChatRetentionInfo({
   const errorRef = useRef<HTMLDivElement>(null)
   const confirmLeaveRef = useRef<HTMLButtonElement>(null)
   const leaveTriggerRef = useRef<HTMLButtonElement>(null)
+  const leaveResultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (error) requestAnimationFrame(() => errorRef.current?.focus())
   }, [error])
+
+  useEffect(() => {
+    if (leaveResult) requestAnimationFrame(() => leaveResultRef.current?.focus())
+  }, [leaveResult])
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
@@ -284,20 +289,27 @@ export function ChatRetentionInfo({
                 </Callout>
               ) : null}
               {leaveResult ? (
-                <Callout
-                  tone={leaveResult.state === 'trash' ? 'info' : 'warning'}
-                  title={translate(`chat.retention.leave.${leaveResult.state}.title`)}
+                <div
+                  ref={leaveResultRef}
+                  role="status"
+                  tabIndex={-1}
+                  className="outline-none"
                 >
-                  {leaveResult.recoveryDeadline ? (
-                    <>
-                      {translate('chat.retention.leave.recoverUntil')}:{' '}
-                      <time dateTime={leaveResult.recoveryDeadline}>
-                        {formatDateTime(leaveResult.recoveryDeadline)}
-                      </time>.{' '}
-                    </>
-                  ) : null}
-                  {translate('chat.retention.leave.noHardDelete')}
-                </Callout>
+                  <Callout
+                    tone={leaveResult.state === 'trash' ? 'info' : 'warning'}
+                    title={translate(`chat.retention.leave.${leaveResult.state}.title`)}
+                  >
+                    {leaveResult.recoveryDeadline ? (
+                      <>
+                        {translate('chat.retention.leave.recoverUntil')}:{' '}
+                        <time dateTime={leaveResult.recoveryDeadline}>
+                          {formatDateTime(leaveResult.recoveryDeadline)}
+                        </time>.{' '}
+                      </>
+                    ) : null}
+                    {translate('chat.retention.leave.noHardDelete')}
+                  </Callout>
+                </div>
               ) : null}
               {projection.policy.mode === 'session' && !projection.sessionLeave && !leaveResult ? (
                 confirmLeave ? (

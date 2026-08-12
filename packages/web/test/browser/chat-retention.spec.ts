@@ -379,6 +379,19 @@ test('explicit Session leave confirms, retries exact scope and records pending M
 
   await page.goto(`/chat/${thread.id}`)
   await page.reload()
+  await page.evaluate(async (chatId) => {
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('pagehide'))
+    window.dispatchEvent(new Event('offline'))
+    window.dispatchEvent(new Event('online'))
+    const controller = new AbortController()
+    const pending = fetch(`/api/threads/${chatId}/retention`, { signal: controller.signal })
+      .catch(() => undefined)
+    controller.abort()
+    await pending
+  }, thread.id)
+  await page.goto('/projects')
+  await page.goto(`/chat/${thread.id}`)
   expect(leaveCalls).toBe(0)
   await page.getByRole('button', { name: 'Информация о чате' }).press('Enter')
   const dialog = page.getByRole('dialog', { name: 'Хранение чата' })
@@ -405,6 +418,7 @@ test('explicit Session leave confirms, retries exact scope and records pending M
     { leaveVersion: 1, chatId: thread.id, scope: 'projectless' },
   ])
   await expect(dialog.getByText('Выход зафиксирован; ожидается Maintenance')).toHaveCount(1)
+  await expect(dialog.getByRole('status')).toBeFocused()
   await expect(dialog.getByText('Безвозвратное удаление не реализовано.', { exact: true })).toHaveCount(1)
   await expect(dialog.getByRole('button', { name: 'Завершить сессию' })).toHaveCount(0)
 

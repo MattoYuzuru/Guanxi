@@ -640,7 +640,11 @@ const MIGRATIONS: readonly string[] = [
             AND NEW.chat_tombstone_reason = 'ttl_expired')
           OR
           (NEW.chat_lifecycle_reason = 'session_left'
-            AND NEW.chat_tombstone_reason IS NULL)
+            AND NEW.chat_tombstone_reason IS NULL
+            AND NEW.retention_policy = 'session'
+            AND NEW.session_leave_at IS NOT NULL
+            AND NEW.session_leave_source = 'explicit_user_action'
+            AND NEW.chat_tombstone_activity_at = NEW.session_leave_at)
         ))
     )
     BEGIN
@@ -665,7 +669,11 @@ const MIGRATIONS: readonly string[] = [
             AND NEW.chat_tombstone_reason = 'ttl_expired')
           OR
           (NEW.chat_lifecycle_reason = 'session_left'
-            AND NEW.chat_tombstone_reason IS NULL)
+            AND NEW.chat_tombstone_reason IS NULL
+            AND NEW.retention_policy = 'session'
+            AND NEW.session_leave_at IS NOT NULL
+            AND NEW.session_leave_source = 'explicit_user_action'
+            AND NEW.chat_tombstone_activity_at = NEW.session_leave_at)
         ))
     )
     BEGIN

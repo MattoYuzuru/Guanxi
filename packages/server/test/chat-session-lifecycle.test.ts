@@ -244,16 +244,19 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     reopened.close()
   })
 
-  it('records exactly one server-time leave basis with exact scope and no implicit lifecycle guesses', () => {
+  it('records exactly one server-time leave basis with exact scope and no implicit lifecycle guesses', async (test) => {
     let clock = new Date(NOW)
-    const db = openDb(':memory:')
+    const root = await mkdtemp(join(tmpdir(), 'alamo-session-basis-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const path = join(root, 'alamo.db')
+    let db = openDb(path)
     const threads = new ThreadStore(db)
     const projects = new ProjectStore(db)
     const project = projects.create('Owner', NOW)
     const projectless = createChat(threads, 'Projectless')
     const owned = createChat(threads, 'Owned', project.id)
     const neighbor = createChat(threads, 'Neighbor')
-    const store = new ChatRetentionStore(db, { clock: () => clock })
+    let store = new ChatRetentionStore(db, { clock: () => clock })
     makeSession(store, projectless.id)
     makeSession(store, owned.id)
     makeSession(store, neighbor.id)
@@ -263,9 +266,21 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     assert.equal(store.leaveSession(owned.id, { scope: 'project', projectId: 'other' }).status, 'scope_mismatch')
     assert.equal(row(db, projectless.id).session_leave_at, null)
     assert.equal(row(db, owned.id).session_leave_at, null)
+    assert.throws(() => db.prepare(
+      `UPDATE threads
+       SET chat_lifecycle_state = 'trash', chat_tombstoned_at = ?,
+           chat_tombstone_reason = NULL, chat_tombstone_activity_at = ?,
+           chat_lifecycle_reason = 'session_left'
+       WHERE id = ?`,
+    ).run(NOW, NOW, projectless.id), /invalid Chat lifecycle state/)
 
-    // Read/reload/reconnect/abort/visibility/restart have no write path: repeated projections stay null.
+    // Reads and a real database close/reopen have no leave write path.
     assert.equal(store.get(projectless.id).status, 'ok')
+    assert.equal(store.get(projectless.id).status, 'ok')
+    assert.equal(row(db, projectless.id).session_leave_at, null)
+    db.close()
+    db = openDb(path)
+    store = new ChatRetentionStore(db, { clock: () => clock })
     assert.equal(store.get(projectless.id).status, 'ok')
     assert.equal(row(db, projectless.id).session_leave_at, null)
     const first = store.leaveSession(projectless.id, { scope: 'projectless' })
@@ -273,12 +288,22 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     if (first.status !== 'ok') return
     assert.equal(first.lifecycle.leaveBasis.at, NOW)
     assert.equal(first.lifecycle.leaveBasis.source, 'explicit_user_action')
+    assert.throws(() => db.prepare(
+      `UPDATE threads
+       SET chat_lifecycle_state = 'trash', chat_tombstoned_at = ?,
+           chat_tombstone_reason = NULL, chat_tombstone_activity_at = ?,
+           chat_lifecycle_reason = 'session_left'
+       WHERE id = ?`,
+    ).run(NOW, new Date(Date.parse(NOW) + 1).toISOString(), projectless.id),
+    /invalid Chat lifecycle state/)
     clock = new Date(Date.parse(NOW) + 10_000)
     const repeated = store.leaveSession(projectless.id, { scope: 'projectless' })
     assert.equal(repeated.status, 'ok')
     if (repeated.status === 'ok') assert.deepEqual(repeated.lifecycle, first.lifecycle)
     assert.equal(row(db, neighbor.id).session_leave_at, null)
 
+    db.close()
+    db = openDb(path)
     const reopenedStore = new ChatRetentionStore(db, { clock: () => clock })
     const persisted = reopenedStore.get(projectless.id)
     assert.equal(persisted.status, 'ok')
@@ -590,8 +615,36 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     makeSession(store, projectless.id)
     makeSession(store, owned.id)
     assert.equal(store.update(notSession.id, { mode: 'keep' }).status, 'ok')
+    const reasoningJobId = createChatJob(context.db, owned.id, 'route-reasoning', 'completed')
+    const reasoningMessageId = (context.db.prepare(
+      "SELECT id FROM messages WHERE job_id = ? AND role = 'assistant'",
+    ).get(reasoningJobId) as { id: string }).id
+    const reasoningContent = 'route diagnostic remains until owner pass'
+    context.db.prepare(
+      `INSERT INTO reasoning_artifacts (
+         id, artifact_version, chat_id, project_id, source_message_id, source_job_id,
+         media_type, storage_kind, content_text, byte_size, checksum, created_at,
+         artifact_expires_at, parent_retention_mode, parent_retention_expires_at,
+         effective_expires_at
+       ) VALUES (?, 1, ?, ?, ?, ?, 'text/markdown; charset=utf-8', 'sqlite_text',
+                 ?, ?, ?, ?, ?, 'session', NULL, ?)`,
+    ).run(
+      '99999999-9999-4999-8999-999999999999',
+      owned.id,
+      project.id,
+      reasoningMessageId,
+      reasoningJobId,
+      reasoningContent,
+      Buffer.byteLength(reasoningContent, 'utf8'),
+      `sha256:${createHash('sha256').update(reasoningContent).digest('hex')}`,
+      new Date(Date.parse(NOW) - 8 * DAY_MS).toISOString(),
+      NOW,
+      NOW,
+    )
     let ollamaCalls = 0
     let modelCalls = 0
+    let workspaceCalls = 0
+    let maintenanceCalls = 0
     context.ollama = () => {
       ollamaCalls += 1
       throw new Error('Session lifecycle must not call Ollama')
@@ -599,6 +652,16 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     context.models = () => {
       modelCalls += 1
       throw new Error('Session lifecycle must not call model services')
+    }
+    const workspaceGet = context.workspaces.get.bind(context.workspaces)
+    context.workspaces.get = (id) => {
+      workspaceCalls += 1
+      return workspaceGet(id)
+    }
+    const runMaintenance = context.maintenance!.runOnce.bind(context.maintenance)
+    context.maintenance!.runOnce = () => {
+      maintenanceCalls += 1
+      return runMaintenance()
     }
     const governorBefore = JSON.stringify(context.governor.snapshot(NOW))
     const app = createApp(context)
@@ -647,7 +710,17 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     assert.equal(lifecycle.state, 'pending_maintenance')
     assert.equal(lifecycle.recoveryDeadline, null)
     assert.equal(row(context.db, owned.id).chat_lifecycle_state, 'active')
-    assert.equal((await context.maintenance!.runOnce()).tombstoned, 1)
+    assert.equal(maintenanceCalls, 0)
+    assert.equal((context.db.prepare(
+      'SELECT COUNT(*) AS count FROM reasoning_artifacts WHERE chat_id = ?',
+    ).get(owned.id) as { count: number }).count, 1)
+    assert.equal((context.db.prepare(
+      'SELECT COUNT(*) AS count FROM reasoning_artifact_deletion_audit WHERE chat_id = ?',
+    ).get(owned.id) as { count: number }).count, 0)
+    const maintenance = await context.maintenance!.runOnce()
+    assert.equal(maintenanceCalls, 1)
+    assert.equal(maintenance.tombstoned, 1)
+    assert.equal(maintenance.reasoningDeleted, 1)
     const repeated = leaveSessionChatResponse.parse(await (await request(owned.id, {
       leaveVersion: 1,
       chatId: owned.id,
@@ -673,7 +746,10 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     assert.equal(context.threads.listByProject(project.id).some(({ id }) => id === owned.id), false)
     assert.equal(context.threads.listProjectless().some(({ id }) => id === projectless.id), true)
     assert.equal(await (await app.request(`/api/threads/${notSession.id}`)).text(), legacyNeighborBefore)
-    assert.deepEqual({ ollamaCalls, modelCalls }, { ollamaCalls: 0, modelCalls: 0 })
+    assert.deepEqual(
+      { ollamaCalls, modelCalls, workspaceCalls },
+      { ollamaCalls: 0, modelCalls: 0, workspaceCalls: 0 },
+    )
     assert.equal(JSON.stringify(context.governor.snapshot(NOW)), governorBefore)
   })
 })
