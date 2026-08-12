@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted direction, current P3 subsets implemented
 
-**Проверено:** 2026-08-12
+**Проверено:** 2026-08-13
 **Направление:** Warm Instrument Panel
 
 ## Цель интерфейса
@@ -108,7 +108,7 @@ carousel с dot на каждую карточку.
 - status каждого turn восстанавливается после reload;
 - sidebar/drawer доступен на mobile.
 - Chat Info объединяет rename/delete, retention, notification policy, generated
-  answers и reasoning Artifacts. Current P3-G показывает эти списки раздельно,
+  answers и reasoning Artifacts. Current P3-H показывает эти списки раздельно,
   exact effective expiry, size/checksum и scoped copy/export text; после Save
   retention Artifact projection перечитывается. Loading, empty/error/retry и
   explicit reasoning refresh доступны. UI сообщает об active server-owned
@@ -126,9 +126,13 @@ Retention control — простой segmented switch:
 ```
 
 Exact expiry видим рядом. Policy меняется isolated действием `Save retention`;
-pending cleanup можно отменить до окончания Trash/grace. Default любого нового Chat —
-`7 days`, даже внутри Project. TTL продлевает только user activity. Session Chat
-после ухода и terminal state активной Job получает 24 часа на восстановление.
+pending cleanup можно отменить до окончания Trash/recovery. Default любого нового
+Chat — `7 days`, даже внутри Project. TTL продлевает только user activity. Для
+сохранённой policy Session Chat Info показывает отдельную confirmation-команду
+Leave session; reload/reconnect/закрытие вкладки её не подменяют. Pending basis и
+active-Job blocker видимы после reload. После Maintenance tombstone UI показывает
+exact 24-hour recovery deadline; после него Restore недоступен, но UI честно
+сообщает, что hard deletion ещё не реализован.
 
 ### Projects
 

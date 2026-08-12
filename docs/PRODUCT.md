@@ -2,7 +2,7 @@
 
 **Статус:** mixed — direction/ADRs accepted, requirements not implemented
 
-**Проверено:** 2026-08-02  
+**Проверено:** 2026-08-13
 **Горизонт:** от стабилизации alpha до локальной model workbench platform
 
 Принятые ответы владельца проекта:
@@ -325,11 +325,11 @@ And expiry продлевается только пользовательско�
 ```
 
 ```gherkin
-Given Session Chat больше не открыт пользователем
+Given пользователь подтвердил явную команду Leave session для Session Chat
 When связанная Job стала terminal
 Then Chat попадает в Trash
 And его можно восстановить в течение 24 часов
-And reload или reconnect сами по себе не завершают Session
+And reload, reconnect, закрытие вкладки или server restart сами по себе не завершают Session
 ```
 
 ### Background notification

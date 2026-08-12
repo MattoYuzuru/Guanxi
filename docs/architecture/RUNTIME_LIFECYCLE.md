@@ -2,7 +2,7 @@
 
 **Статус:** mixed — diagnosis locally validated, lifecycle target accepted
 
-**Проверено:** 2026-08-12
+**Проверено:** 2026-08-13
 **Критичность:** основной correctness и safety boundary
 
 ## Подтверждённое current behavior
@@ -1047,15 +1047,20 @@ no-progress loop.
 
 Исходник: [retention-state.mmd](diagrams/retention-state.mmd).
 
-Current P3-D/P3-E реализует policy/activity projection и recoverable переход
+Current P3-D–P3-H реализует policy/activity projection и recoverable переход
 `active → tombstoned in Trash`: новые Chats получают rolling seven-day default,
 existing rows — explicit Keep, а accepted user message либо explicit Restore
 обновляет sourced basis. Exact expiry вычисляется server-side. Один
 startup/periodic owner после Chat Job recovery сканирует stable bounded pages;
-любой non-terminal Job блокирует tombstone. Keep/Session не выбираются этим
-scan. Scoped Trash и Restore реализованы. Expiring intermediate state,
-TTL/Session grace, Chat metadata deletion и blob GC ниже — accepted target, не
-текущее поведение. Current P3-F создаёт один immutable Reasoning Artifact в
+любой non-terminal Job блокирует tombstone. Keep и Session без explicit leave
+basis не выбираются этим scan. P3-H добавляет durable server-time basis только
+из versioned confirmed Leave session command; reload/reconnect/transport/
+visibility/restart не создают его. Тот же owner повторно проверяет basis, policy
+и Jobs в CAS, затем scoped Trash показывает exact 24-hour recovery deadline.
+Restore/Keep/7 days до deadline очищают basis; после deadline recovery закрыт,
+но metadata не удаляются. Expiring intermediate state, TTL grace, Chat metadata
+deletion и blob GC ниже — accepted target, не текущее поведение. Current P3-F
+создаёт один immutable Reasoning Artifact в
 terminal Message/Job transaction и хранит final answer отдельно. P3-G подключает
 его seven-day/shorter-current-parent expiry к тому же bounded Maintenance owner:
 active и Trash Chat проверяются по current policy, любой non-terminal Job Chat
@@ -1073,9 +1078,11 @@ active
 - `Keep` не получает automatic expiry.
 - `7 days` — default любого нового Chat, включая Chat внутри Project.
 - `7 days` использует rolling TTL только от user activity.
-- `Session` становится eligible после ухода пользователя и terminal state
-  связанной Job; reload/reconnect не завершают Session.
-- Session Chat хранится в Trash 24 часа перед hard deletion.
+- `Session` становится eligible только после подтверждённой Leave session
+  команды и terminal state всех canonical Jobs; reload/reconnect не завершают
+  Session.
+- Session Chat восстанавливается из Trash в течение ровно 24 часов; hard deletion
+  после deadline ещё не реализован.
 - Reasoning Artifact имеет отдельный default expiry через 7 дней; shorter current
   parent TTL wins. P3-G автоматически удаляет due diagnostic bytes, но сохраняет
   final answer, Message/Job и literal legacy thinking.

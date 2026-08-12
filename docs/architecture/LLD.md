@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-12
+**Проверено:** 2026-08-13
 
 ## Current package design
 
@@ -955,14 +955,21 @@ Auto mode проверяет immutable policy snapshot на каждом tool ca
 
 Lifecycle: [retention-state.mmd](diagrams/retention-state.mmd).
 
-Current P3-D/P3-E реализует Chat policy и recoverable TTL enforcement: policy
+Current P3-D–P3-H реализует Chat policy, recoverable TTL enforcement и explicit
+Session leave: policy
 `{keep | ttl(7 days) | session}`, source/update time, sourced create/user-message/
 restore activity, exact server-side expiry, stable bounded eligibility scan,
 `active | trash`, audit и scoped Restore. Existing rows совместимо читаются как
 Keep и остаются active. Keep/Session не выбираются TTL Maintenance, каждый
-non-terminal Chat Job блокирует tombstone. Session leave detection, TTL/Session
-grace, hard deletion и Artifact GC пока не реализованы; следующий тип ниже
-описывает принятые части target lifecycle за current границей. P3-F persist-ит
+non-terminal Chat Job блокирует tombstone. Versioned Leave session command
+фиксирует один sourced server timestamp в SQLite только после confirmation и
+exact Chat/Project scope; reload/reconnect/abort/visibility/restart не имеют
+write path. Тот же owner сканирует Session basis stable bounded pages и повторно
+проверяет Jobs/basis/policy в tombstone CAS. Session Trash projection вычисляет
+exact 24-hour recovery deadline; Restore либо Keep/7 days до deadline очищает
+basis и отменяет stale candidate. После deadline recovery закрыт, но hard
+deletion остаётся `not_implemented`. TTL grace и Artifact GC пока не реализованы;
+следующий тип ниже описывает принятые части target lifecycle за current границей. P3-F persist-ит
 Reasoning Artifact; P3-G исполняет его own seven-day/shorter-current-parent
 expiry тем же bounded owner и сохраняет redacted atomic audit. Это не generic
 Artifact GC и не Chat hard deletion.
@@ -991,10 +998,12 @@ eligible → tombstoned → trash grace → metadata delete → orphan blob GC
 ```
 
 User activity обновляет TTL; model/tool/maintenance/background events — нет.
-Уход пользователя из Session Chat делает его eligible после terminal state
-связанной Job; reload/reconnect не считаются уходом. Active/non-terminal Job
-блокирует tombstone. Session Trash grace равен 24 часам. Policy change до hard
-delete снимает tombstone.
+Явная подтверждённая команда Leave session делает Session Chat eligible после
+terminal state всех canonical Jobs; reload/reconnect/transport/visibility/restart
+не считаются уходом. Active/non-terminal Job блокирует scan и CAS tombstone.
+Session Trash recovery равен 24 часам от tombstone. Restore или policy change на
+Keep/7 days до deadline снимает tombstone и pending basis; hard delete после
+deadline остаётся target.
 
 Reasoning Artifact получает default `expires_at = created_at + 7 days`; shorter
 parent retention wins.
@@ -1035,6 +1044,10 @@ owner выполняет bounded TTL passes после Chat Job recovery и ос
 новые terminal reasoning bytes отделены от final Message content без backfill
 либо удаления legacy column. Migration 17 добавляет durable content-free cleanup
 audit, а existing Maintenance owner удаляет только due diagnostic Artifact rows.
+Migration 18 добавляет Session leave basis, lifecycle reason и расширенный audit;
+existing TTL Trash получает совместимый lifecycle reason без изменения payload.
+Migration 19 append-only валидирует weak-v18 rows и пересоздаёт lifecycle
+triggers с exact Session policy/source/activity-basis constraints.
 Остальные target tables, generic Artifact/blob GC и hard deletion ниже не
 реализованы.
 Legacy `threads/messages/workspaces`, raw Thread REST и strict legacy Project

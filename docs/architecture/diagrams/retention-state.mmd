@@ -1,4 +1,5 @@
 stateDiagram-v2
+    %% Current through P3-H ends at recoverable trash. Deleting/GC are accepted target only.
     [*] --> active
     active --> active: user activity refreshes TTL
     active --> expiring: 7-day TTL expires
@@ -8,7 +9,7 @@ stateDiagram-v2
     expiring --> active: policy changed or work active
     expiring --> trash: maintenance tombstone
     trash --> active: user restores within 24 hours
-    trash --> deleting: 24-hour grace expires
-    deleting --> deleted: metadata removed
-    deleted --> collected: no live blob references
+    trash --> deleting: TARGET after grace; not implemented
+    deleting --> deleted: TARGET metadata removal
+    deleted --> collected: TARGET unreferenced blob GC
     collected --> [*]

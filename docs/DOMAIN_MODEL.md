@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted target, current P1/P2/P3 subsets implemented
 
-**Проверено:** 2026-08-12
+**Проверено:** 2026-08-13
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -49,13 +49,16 @@ versioned Project-scoped boundary. Project можно создать без bind
 сохранены byte-compatible. Project defaults, Recipe/Artifact ownership и final
 client cutover ещё не реализованы.
 
-P3-D добавил к current `Thread` versioned Chat-only retention boundary. Новый
-projectless и Project Chat получает одинаковый rolling `7 days`; existing rows
-проецируются как explicit `Keep / legacy_compatibility`, поэтому migration сама
-не делает старую историю eligible. Server хранит sourced create/user-message
-activity и вычисляет exact expiry; policy пока имеет
-`enforcement: not_implemented`. Trash, cleanup и Session-leave lifecycle ниже
-остаются accepted target.
+P3-D–P3-H добавили к current `Thread` versioned Chat-only retention boundary.
+Новый projectless и Project Chat получает одинаковый rolling `7 days`; existing
+rows проецируются как explicit `Keep / legacy_compatibility`, поэтому migration
+сама не делает старую историю eligible. Server хранит sourced create/user-message
+activity и вычисляет exact expiry. Один startup/periodic Maintenance owner
+переводит due TTL Chat и Session Chat с durable explicit leave basis в scoped
+Trash после recheck всех canonical Jobs. Restore и смена policy на Keep/7 days
+восстанавливают metadata; для Session server показывает exact 24-hour recovery
+deadline. Hard deletion metadata, generic Artifact/blob GC и TTL grace не
+реализованы.
 
 ### Recipe
 
@@ -402,9 +405,12 @@ Default любого нового Chat — `{ mode: "ttl", expiresAfterDays: 7,
 refreshOn: "user_activity" }`, независимо от принадлежности Project. `Keep`
 требует явного выбора пользователя.
 
-Session Chat переходит в Trash после ухода пользователя и terminal state
-активной Job. Reload/reconnect не завершают Session. Trash grace — 24 часа.
-Policy можно изменить до окончательной очистки. Она управляет stored
+Session Chat переходит в Trash только после подтверждённой команды Leave session
+и terminal state всех canonical Jobs. Reload/reconnect, transport abort,
+visibility change и restart не завершают Session. Durable leave basis переживает
+restart; Trash recovery — ровно 24 часа от server-owned tombstone time. Restore
+или policy change на Keep/7 days до deadline очищает leave basis. Hard deletion
+после deadline пока не реализован. Policy управляет stored
 Chat/Artifacts, но не model weights, loaded instance или transient KV cache.
 
 ### Maintenance Job

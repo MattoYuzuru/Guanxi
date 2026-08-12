@@ -1,8 +1,8 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-12
-**Текущая фаза:** Phase 3 — P3-H Session leave/recovery ready
+**Проверено:** 2026-08-13
+**Текущая фаза:** Phase 3 — P3-I Session hard deletion ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1656,6 +1656,73 @@ injected dependency envelope. Generic Artifact/blob GC, Chat hard deletion и
 Session leave/24-hour recovery не реализованы. Следующий bounded slice — P3-H
 explicit Session leave и recoverable 24-hour Trash grace без hard deletion.
 
+## Phase 3 — P3-H explicit Session leave и 24-hour recovery
+
+**Статус:** independently verified
+
+Commits: `711dcde` (contract/migration/server), `13fd0da` (Web), `aca57d0`
+(mutation-resistant Job race assertions), `e5703be`, `e1f9650` и `ca59918`
+(independent review fixes).
+
+Migration 18 append-only добавляет nullable sourced `session_leave_at`, exact
+`explicit_user_action` source и совместимый `chat_lifecycle_reason`. Migration
+19 append-only валидирует weak-v18 rows и harden-ит DB triggers: `session_left`
+Trash невозможен без Session policy, durable leave basis и совпадающего activity
+timestamp. Strict versioned POST с exact Chat/Project либо
+projectless scope только фиксирует один server-time basis; reload, reconnect,
+abort, visibility/page lifecycle и restart не являются leave. Active canonical
+Job виден как blocker и исключается как при scan, так и при tombstone CAS.
+
+Existing `RetentionMaintenanceOwner` обрабатывает Session basis теми же stable
+bounded pages, startup/periodic callback, coalescing и shutdown semantics. В
+Trash server вычисляет exact 24-hour recovery deadline от tombstone time.
+Restore или policy change на Keep/7 days до deadline очищает basis и отклоняет
+stale candidate; at/after deadline recovery закрыт. Metadata/blobs не удаляются,
+projection и Web явно сохраняют `hardDeletion: not_implemented`.
+
+Web Chat Info показывает Leave session только для сохранённой Session policy,
+требует confirmation, блокирует параллельный policy Save, coalesces command и
+поддерживает focused error/retry и focused pending/blocked/Trash result. Scoped
+Trash показывает точный recovery deadline, отключает Restore после grace и не
+заявляет удаление. Все новые строки проходят English source/fallback и curated
+Russian locale keys.
+
+Evidence по правилу WORKFLOW: **8 new / 614 core regression envelope**, **5 new
+/ 208 Web component/parser envelope**, **1 new, 1 materially extended / 34
+mocked Chromium envelope**. Targeted P3-H server — 8/8; focused retention/Trash
+Web — 23/23; targeted Chromium — 2/2. Full typecheck, core 614/614, Web 208/208,
+browser 34/34, build, markdownlint и diff-check прошли. Первый full Web pass дал
+unrelated transient focus timing failure в старом Projects test (207/208),
+немедленный unchanged rerun прошёл 208/208; финальный root `npm test` затем
+прошёл 614/614 + 208/208.
+Девять required mutations и follow-up DB/focus/v19/hidden-state mutations дали
+ожидаемый non-zero и были восстановлены.
+
+Первичные failures были полезными: synchronous leave-route Maintenance удалён,
+чтобы explicit POST не запускал общий P3-G cleanup; route fixture перестал
+оставлять соседний due TTL Chat; unsupported matcher заменён literal DOM
+assertion. Self-review обнаружил, что outcome-тест не различал scan guard и CAS;
+`aca57d0` добавил independent eligibility matrix и гонку Job-after-scan.
+
+Independent reviewer дал **FINDINGS**: DB разрешал raw `session_left` без leave
+basis; success/retry терял focus; restart/implicit-event evidence было слабым;
+no-side-effect proof не отделял POST от production-shaped owner. Отдельный
+`e5703be` добавил первый DB trigger/raw-SQL fix, real close/reopen, browser
+visibility/pagehide/offline/online/navigation/aborted-read zero-POST, focused
+`role=status` и direct owner/reasoning/workspace/provider counters. Follow-up
+нашёл нарушение append-only discipline и недостаточный hidden-state stimulus;
+`e1f9650` перенёс hardening в migration 19 с true v18 rollback/retry/reopen и
+сделал hidden visibility assertion mutation-sensitive. Follow-up нашёл три
+старых current-version assertions; `ca59918` согласовал их с v19. Финальный
+reviewer verdict после exact fix diffs — **READY**, новых findings нет.
+
+Остаточный риск: SQLite corpus синтетический, Web evidence jsdom/mocked
+Chromium; нет production DB corpus, multi-process writer/OS-crash race, real
+device/screen-reader/visual baseline или live Ollama/GPU/network validation.
+Hard deletion metadata и unreferenced blobs не реализованы. Следующий bounded
+slice — P3-I Session hard deletion после elapsed recovery с durable audit и
+referential-integrity envelope, без расширения до generic Artifact/blob GC.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1755,7 +1822,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-H ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-I ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

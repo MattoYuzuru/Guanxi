@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-12
+**Проверено:** 2026-08-13
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -63,8 +63,15 @@ conservative `Keep / legacy_compatibility`; новые Project и projectless Ch
 stable TTL scan. Один server-owned startup/periodic owner обрабатывает bounded
 batches, исключает каждый non-terminal Chat Job и не вызывает Ollama, Governor,
 tools или filesystem. Trash scoped по Project либо projectless; Restore и смена
-policy на Keep/7 days возвращают Chat и начинают новый rolling basis. Session
-leave detection, hard deletion, grace и blob GC пока не реализованы.
+policy на Keep/7 days возвращают Chat и начинают новый rolling basis. P3-H
+migration 18 добавляет sourced server-time basis для только явной versioned
+Leave session команды с exact Chat/Project scope. Тот же owner после Job recheck
+переводит Session Chat в Trash; projection вычисляет ровно 24 часа recovery от
+tombstone. Restore/Keep/7 days до deadline очищают basis. Reload, reconnect,
+transport lifecycle и restart сами leave не создают. Hard deletion, TTL grace и
+generic blob GC пока не реализованы. Append-only migration 19 harden-ит уже
+применимую v18 schema: invalid existing Session Trash fail-closed останавливает
+upgrade, а новые raw writes без exact leave basis отклоняются trigger-ом.
 
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,

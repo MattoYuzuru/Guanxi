@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-12
+**Проверено:** 2026-08-13
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -243,8 +243,8 @@ server не нужен.
 - `schemas.ts` — domain Zod schemas;
 - `api.ts` — route constants и request/response schemas;
 - `events.ts` — Chat/Job SSE unions и classified private Chat output;
-- `retention.ts` — strict Chat policy/activity/expiry и lifecycle/Trash/Restore
-  projections version 1;
+- `retention.ts` — strict Chat policy/activity/expiry,
+  lifecycle/Trash/Restore и explicit Session leave/recovery projections version 1;
 - `index.ts` — public exports.
 - Durable Job record/state/error/outcome, event envelope и P1-C public
   create/query/cancel/cursor/SSE schemas экспортируются из contract.
@@ -363,11 +363,17 @@ server не нужен.
   атомарен с Message/Job; legacy `messages.thinking` не переписывается;
 - migration 17 additive добавляет content-free
   `reasoning_artifact_deletion_audit` с UNIQUE Artifact identity;
+- migration 18 additive добавляет nullable sourced Session leave basis,
+  совместимый lifecycle reason и audit support для `session_left`; existing TTL
+  Trash сохраняет legacy reason bytes, migration rollback/retry не меняет v17;
+- migration 19 append-only валидирует уже применённые v18 rows и пересоздаёт
+  lifecycle triggers так, чтобы Session Trash требовал exact explicit basis;
 - `store/reasoning-artifacts.ts` владеет active exact-Chat scoped list/read,
   integrity validation, current-parent effective expiry, stable bounded due
   scan и atomic recheck/delete/audit;
 - `store/chat-retention.ts` и `retention/service.ts` владеют Chat-only
-  projection/PATCH, bounded TTL eligibility, tombstone, scoped Trash и Restore;
+  projection/PATCH, exact scoped idempotent Session leave, bounded TTL/Session
+  eligibility, tombstone CAS, scoped Trash и Restore/Keep/TTL recovery;
   `retention/maintenance.ts` — один startup/periodic owner с injected clock,
   separate stable Chat/reasoning cursors, batch cap, coalescing и shutdown
   cleanup. Chat hard delete/blob GC отсутствуют;
@@ -433,18 +439,21 @@ server не нужен.
   suppression и explicit idempotent Restore без hard-delete claim; P3-F
   добавляет separate generated-answer/reasoning lists, exact expiry, copy/export
   и refresh после retention Save; P3-G добавляет versioned active cleanup
-  projection, explicit reasoning refresh и empty state без потери answer;
+  projection, explicit reasoning refresh и empty state без потери answer; P3-H
+  добавляет confirmation-only Session leave, pending/blocked/Trash states,
+  scoped retry и truthful 24-hour recovery/no-hard-delete projection;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-G projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-H projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
-  P3-D retention, P3-E scoped Trash/Restore и P3-F/P3-G reasoning Chat Info,
+  P3-D retention, P3-E scoped Trash/Restore, P3-F/P3-G reasoning Chat Info и
+  P3-H explicit Session leave/recovery (current SQLite schema version 19),
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
