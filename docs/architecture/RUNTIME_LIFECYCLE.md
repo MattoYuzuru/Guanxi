@@ -1054,11 +1054,12 @@ existing rows — explicit Keep, а accepted user message либо explicit Rest
 startup/periodic owner после Chat Job recovery сканирует stable bounded pages;
 любой non-terminal Job блокирует tombstone. Keep/Session не выбираются этим
 scan. Scoped Trash и Restore реализованы. Expiring intermediate state,
-TTL/Session grace, metadata deletion и blob GC ниже — accepted target, не
+TTL/Session grace, Chat metadata deletion и blob GC ниже — accepted target, не
 текущее поведение. Current P3-F создаёт один immutable Reasoning Artifact в
-terminal Message/Job transaction, хранит final answer отдельно и публикует
-seven-day/effective parent expiry. Artifact остаётся скрытым вместе с Trash
-Chat, но time-based reasoning deletion ещё не подключён к Maintenance.
+terminal Message/Job transaction и хранит final answer отдельно. P3-G подключает
+его seven-day/shorter-current-parent expiry к тому же bounded Maintenance owner:
+active и Trash Chat проверяются по current policy, любой non-terminal Job Chat
+блокирует delete, а exact Artifact delete и content-free audit атомарны.
 
 ```text
 active
@@ -1075,11 +1076,13 @@ active
 - `Session` становится eligible после ухода пользователя и terminal state
   связанной Job; reload/reconnect не завершают Session.
 - Session Chat хранится в Trash 24 часа перед hard deletion.
-- Reasoning Artifact имеет отдельный default expiry через 7 дней; P3-F хранит и
-  показывает этот срок, но автоматическое удаление остаётся target.
+- Reasoning Artifact имеет отдельный default expiry через 7 дней; shorter current
+  parent TTL wins. P3-G автоматически удаляет due diagnostic bytes, но сохраняет
+  final answer, Message/Job и literal legacy thinking.
 - Active/non-terminal Job блокирует deletion.
-- Startup и periodic Maintenance owner обрабатывает bounded batches для TTL
-  Chat; generic durable Maintenance Job ещё не реализован.
+- Startup и periodic Maintenance owner обрабатывает отдельные bounded batches
+  для TTL Chat и reasoning expiry; generic durable Maintenance Job и blob GC ещё
+  не реализованы.
 - Policy change до hard deletion может восстановить record.
 - Cleanup event не продлевает user TTL.
 

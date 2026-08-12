@@ -361,12 +361,16 @@ server не нужен.
 - migration 16 additive добавляет immutable diagnostic `reasoning_artifacts`
   с exact UTF-8 byte size/SHA-256 и UNIQUE source Message/Job. Terminal write
   атомарен с Message/Job; legacy `messages.thinking` не переписывается;
+- migration 17 additive добавляет content-free
+  `reasoning_artifact_deletion_audit` с UNIQUE Artifact identity;
 - `store/reasoning-artifacts.ts` владеет active exact-Chat scoped list/read,
-  integrity validation и current-parent effective expiry. Cleanup отсутствует;
+  integrity validation, current-parent effective expiry, stable bounded due
+  scan и atomic recheck/delete/audit;
 - `store/chat-retention.ts` и `retention/service.ts` владеют Chat-only
   projection/PATCH, bounded TTL eligibility, tombstone, scoped Trash и Restore;
   `retention/maintenance.ts` — один startup/periodic owner с injected clock,
-  stable cursor, batch cap и shutdown cleanup. Hard delete/blob GC отсутствуют;
+  separate stable Chat/reasoning cursors, batch cap, coalescing и shutdown
+  cleanup. Chat hard delete/blob GC отсутствуют;
 - `projects/service.ts` и `store/projects.ts` владеют strict identity/
   presentation metadata, no-path create/rename, isolated idempotent appearance
   update и fail-closed compatibility mapping;
@@ -427,19 +431,20 @@ server не нужен.
   fail-closed identity, one-mutation Save/retry и sourced expiry; P3-E добавляет
   Project/projectless Trash list, focused load/Restore failures, stale-item
   suppression и explicit idempotent Restore без hard-delete claim; P3-F
-  добавляет separate generated-answer/reasoning lists, exact expiry,
-  copy/export и refresh после retention Save без cleanup claim;
+  добавляет separate generated-answer/reasoning lists, exact expiry, copy/export
+  и refresh после retention Save; P3-G добавляет versioned active cleanup
+  projection, explicit reasoning refresh и empty state без потери answer;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-F projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-G projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
-  P3-D retention, P3-E scoped Trash/Restore и P3-F reasoning Chat Info,
+  P3-D retention, P3-E scoped Trash/Restore и P3-F/P3-G reasoning Chat Info,
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

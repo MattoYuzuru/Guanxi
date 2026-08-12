@@ -874,7 +874,7 @@ Restart забывает registry/attempt state, поэтому orphan staging �
 
 ### Artifact Service
 
-Current P3-F реализует bounded SQLite subset только для diagnostic reasoning.
+Current P3-F/P3-G реализует bounded SQLite subset только для diagnostic reasoning.
 `reasoning_artifacts` хранит exact UTF-8 text, byte size/SHA-256, immutable
 Chat/Message/Job source и Project/projectless ownership. `JobStore` создаёт row
 в той же terminal transaction, что Message/Job; UNIQUE source keys не допускают
@@ -882,6 +882,17 @@ Chat/Message/Job source и Project/projectless ownership. `JobStore` созда�
 текущей parent policy, скрывает Trash и не содержит private Job input. Legacy
 Message projection берёт Artifact content, затем literal `messages.thinking`
 fallback; compaction продолжает зависеть только от final answer content.
+
+Migration 17 добавляет `reasoning_artifact_deletion_audit` без content payload.
+Один existing `RetentionMaintenanceOwner` после Chat Job recovery сканирует
+exact current effective expiry в stable `(effective_expires_at, artifact_id)`
+order с inclusive boundary и finite batch cap. Delete path внутри
+`BEGIN IMMEDIATE` повторно вычисляет current parent expiry, проверяет все
+canonical non-terminal Jobs, удаляет ровно один Artifact и пишет один audit row.
+Rollback не оставляет silent deletion либо false audit; retry/restart сходится по
+UNIQUE `artifact_id`. Strict API сохраняет Artifact data version 1 и требует
+отдельную enforcement version 1, поэтому missing/malformed/future input fail
+closed. Scheduler не владеет generic blobs и не вызывает provider/runtime tools.
 
 Следующий filesystem/blob writer остаётся target:
 
@@ -951,9 +962,10 @@ restore activity, exact server-side expiry, stable bounded eligibility scan,
 Keep и остаются active. Keep/Session не выбираются TTL Maintenance, каждый
 non-terminal Chat Job блокирует tombstone. Session leave detection, TTL/Session
 grace, hard deletion и Artifact GC пока не реализованы; следующий тип ниже
-описывает принятые части target lifecycle за current границей. P3-F отдельно
-persist-ит Reasoning Artifact и публикует effective expiry, но ещё не удаляет
-его автоматически.
+описывает принятые части target lifecycle за current границей. P3-F persist-ит
+Reasoning Artifact; P3-G исполняет его own seven-day/shorter-current-parent
+expiry тем же bounded owner и сохраняет redacted atomic audit. Это не generic
+Artifact GC и не Chat hard deletion.
 
 Chat/Quick Run metadata:
 
@@ -1019,10 +1031,12 @@ current Chat retention policy/source и user-activity basis. Migration 15
 additive хранит lifecycle/tombstone basis, audit и eligibility/Trash indexes;
 projection помечает enforcement как `rolling_ttl_trash`. Один startup/periodic
 owner выполняет bounded TTL passes после Chat Job recovery и останавливает timer
-при shutdown. Migration 16 additive добавляет immutable
-`reasoning_artifacts`; новые terminal reasoning bytes отделены от final Message
-content без backfill либо удаления legacy column. Остальные target tables,
-reasoning cleanup и hard deletion ниже не реализованы.
+при shutdown. Migration 16 additive добавляет immutable `reasoning_artifacts`;
+новые terminal reasoning bytes отделены от final Message content без backfill
+либо удаления legacy column. Migration 17 добавляет durable content-free cleanup
+audit, а existing Maintenance owner удаляет только due diagnostic Artifact rows.
+Остальные target tables, generic Artifact/blob GC и hard deletion ниже не
+реализованы.
 Legacy `threads/messages/workspaces`, raw Thread REST и strict legacy Project
 list сохранены без destructive route cutover.
 

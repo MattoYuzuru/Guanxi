@@ -108,10 +108,12 @@ carousel с dot на каждую карточку.
 - status каждого turn восстанавливается после reload;
 - sidebar/drawer доступен на mobile.
 - Chat Info объединяет rename/delete, retention, notification policy, generated
-  answers и reasoning Artifacts. Current P3-F показывает эти списки раздельно,
+  answers и reasoning Artifacts. Current P3-G показывает эти списки раздельно,
   exact effective expiry, size/checksum и scoped copy/export text; после Save
-  retention Artifact projection перечитывается. Loading, empty/error/retry
-  доступны, а UI честно сообщает, что automatic deletion ещё не реализован.
+  retention Artifact projection перечитывается. Loading, empty/error/retry и
+  explicit reasoning refresh доступны. UI сообщает об active server-owned
+  automatic deletion; после cleanup reasoning получает отдельный empty state,
+  а generated answer остаётся видимым.
 
 Thinking рендерится как отдельно очищенный Markdown. На desktop его можно открыть
 в side inspector, на mobile — в sheet. UI явно показывает, сохраняется ли этот

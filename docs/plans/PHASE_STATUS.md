@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-12
-**Текущая фаза:** Phase 3 — P3-G reasoning expiry enforcement ready
+**Текущая фаза:** Phase 3 — P3-H Session leave/recovery ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1596,6 +1596,65 @@ Automatic reasoning deletion, Session leave/24-hour recovery, Chat hard delete
 Reasoning Artifact expiry enforcement без generic blob store либо Chat hard
 delete.
 
+## Phase 3 — P3-G automatic Reasoning Artifact expiry enforcement
+
+**Статус:** independently verified (`0551a3e`, `b4481cf`, review fixes
+`2d7b4bc`, `c6ba8a0`).
+
+Migration 17 append-only добавляет durable
+`reasoning_artifact_deletion_audit`: enforcement/data versions, Artifact/Chat/
+Project/Message/Job identities, reason, due/occurred time и owner без content,
+prompt, final answer, tools, paths либо arbitrary errors. Existing migration
+1–16 и legacy thinking не переписываются; v16 mid-migration failure откатывает
+созданную table, сохраняет exact payload и безопасно retry/reopen-ится.
+
+Один existing `RetentionMaintenanceOwner` после Chat Job recovery исполняет
+reasoning-only expiry отдельными stable bounded pages в порядке
+`(effective_expires_at, artifact_id)`. Inclusive current effective expiry берёт
+own seven-day срок для Keep/Session и только более короткий current parent TTL;
+policy/user-activity повторно проверяются внутри `BEGIN IMMEDIATE`. Любой
+canonical non-terminal Job Chat блокирует delete. Exact Artifact deletion и
+audit атомарны, repeated tick/restart сходятся без duplicate effect. Active и
+Trash, Project/projectless обрабатываются одинаково; Restore не возвращает уже
+истёкшие diagnostic bytes. Final answer, Message/Job, legacy thinking,
+compaction и соседние scopes сохраняются byte-compatible.
+
+Strict API оставляет Artifact data version 1 и требует отдельную enforcement
+version 1; missing/malformed/future значения fail closed. Chat Info показывает
+active claim только после успешной versioned response, скрывает claim во время
+loading/error, даёт explicit refresh и отдельный empty reasoning state при
+сохранённом generated answer. EN source/fallback и curated RU проходят locale
+keys.
+
+Evidence по правилу WORKFLOW: **8 new / 606 core regression envelope**, **1 new
+/ 203 Web component/parser envelope**, **0 new, 1 materially extended / 33
+mocked Chromium envelope**. Targeted P3-F/P3-G server — 17/17; focused Chat Info
+— 11/11; targeted Chromium — 1/1. Full typecheck, `npm test`, browser gate,
+build, markdownlint и diff-check — PASS. Build сохранил non-blocking Vite
+warning: main chunk 852.09 kB minified / 224.99 kB gzip при threshold 500 kB.
+
+Первые implementation runs выявили 18 stale migration/query fixtures и затем
+один оставшийся v16 expectation; после исправлений полный `npm test` прошёл.
+Mutation checks дали ожидаемый non-zero для inclusive boundary, stale parent,
+active-Job guard, batch cap, delete/audit atomicity, final-answer survival,
+cross-Chat scope, truthful UI и empty reasoning; все mutations восстановлены.
+
+Independent reviewer сначала дал **NEEDS_FIX**: UI заявлял active cleanup до
+успешной response; composition recovery→startup/periodic/shutdown, independent
+version failures, настоящий mid-migration rollback, оба cursor key и полный
+non-reasoning/redaction snapshot не имели mutation-resistant assertions.
+Отдельный `2d7b4bc` исправил behavior и основные gaps. Follow-up нашёл manual
+`runOnce()` false positive в periodic assertion; `c6ba8a0` сделал test зависимым
+только от captured scheduler callback. Финальный reviewer verdict — **READY**.
+
+Остаточный риск: SQLite corpus синтетический, Web evidence jsdom/mocked
+Chromium; нет production DB corpus, OS-process crash injection, concurrent
+independent DB clients, real device/screen reader/visual baseline или live
+Ollama/GPU/network validation. Source-regex no-effect guard слабее полностью
+injected dependency envelope. Generic Artifact/blob GC, Chat hard deletion и
+Session leave/24-hour recovery не реализованы. Следующий bounded slice — P3-H
+explicit Session leave и recoverable 24-hour Trash grace без hard deletion.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1695,7 +1754,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-G ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-H ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

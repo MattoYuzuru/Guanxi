@@ -354,13 +354,16 @@ Artifact хранит media type, size, checksum, source Job, derivation chain,
 storage reference, preview metadata и export options. Большие бинарные данные
 предлагается держать в content-addressed filesystem; SQLite хранит metadata.
 
-**Current P3-F subset:** version 1 `reasoning` Artifact хранится как SQLite UTF-8
+**Current P3-G subset:** version 1 `reasoning` Artifact хранится как SQLite UTF-8
 text с exact byte size/SHA-256 и immutable source Chat/Message/Job. Один terminal
 Job/Message имеет не более одного canonical row. Final answer остаётся отдельным
 Message content; legacy `messages.thinking` читается без destructive backfill.
 Project/projectless ownership immutable, active read exact-Chat scoped. Seven-day
-и shorter-current-parent expiry публикуются, но automatic deletion ещё не
-реализован.
+и shorter-current-parent expiry исполняются одним server-owned bounded
+Maintenance owner. Due Artifact удаляется атомарно вместе с redacted audit row;
+final answer, Message/Job и literal legacy thinking не удаляются. Enforcement
+projection имеет отдельную strict version и fail-closed для malformed/future
+input. Generic Artifact/blob GC и Chat hard deletion не реализованы.
 
 ### Tool, MCP Connection и Skill
 

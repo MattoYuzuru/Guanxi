@@ -72,9 +72,13 @@ immutable Project/projectless ownership и seven-day diagnostic expiry. Final
 answer остаётся в `messages.content`; новый terminal row не дублирует reasoning
 в `messages.thinking`, а compatibility Message projection читает Artifact и
 fallback-ит только на literal legacy column. Artifact list/read доступны только
-для exact active Chat scope и не запускают runtime effects. Current retention
-projection учитывает текущую parent policy, но automatic expiry/delete и generic
-blob GC по-прежнему не реализованы.
+для exact active Chat scope и не запускают runtime effects. P3-G migration 17
+добавляет content-free deletion audit. Тот же server-owned Maintenance owner
+исполняет seven-day/shorter-current-parent expiry stable bounded batches,
+повторно проверяет current policy и non-terminal Jobs и атомарно удаляет exact
+Artifact с audit row. Enforcement projection versioned отдельно от Artifact
+data version. Final answer, Message/Job, legacy thinking, generic blob GC и Chat
+hard deletion не затрагиваются.
 
 ### As-is execution boundary
 
