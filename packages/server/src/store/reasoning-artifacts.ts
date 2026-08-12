@@ -45,6 +45,7 @@ export interface ReasoningExpiryCandidate extends ReasoningExpiryCursor {
 }
 
 export interface ReasoningDeletionAuditRow {
+  enforcement_version: number
   artifact_id: string
   artifact_version: number
   chat_id: string
@@ -337,7 +338,7 @@ export class ReasoningArtifactStore {
   deletionAudit(): ReasoningDeletionAuditRow[] {
     return this.db
       .prepare(
-        `SELECT artifact_id, artifact_version, chat_id, project_id,
+        `SELECT enforcement_version, artifact_id, artifact_version, chat_id, project_id,
                 source_message_id, source_job_id, reason, due_at, occurred_at, source
          FROM reasoning_artifact_deletion_audit ORDER BY occurred_at, artifact_id`,
       )

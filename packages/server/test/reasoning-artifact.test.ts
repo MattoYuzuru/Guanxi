@@ -103,9 +103,12 @@ describe('P3-F reasoning Artifact persistence', () => {
       scope: 'projectless',
     }).success, true)
     for (const invalid of [
+      { enforcementVersion: 1, scope: 'projectless' },
+      { artifactVersion: 'malformed', enforcementVersion: 1, scope: 'projectless' },
+      { artifactVersion: 2, enforcementVersion: 1, scope: 'projectless' },
       { artifactVersion: 1, scope: 'projectless' },
+      { artifactVersion: 1, enforcementVersion: 'malformed', scope: 'projectless' },
       { artifactVersion: 1, enforcementVersion: 2, scope: 'projectless' },
-      { artifactVersion: 2, scope: 'projectless' },
       { artifactVersion: 1, enforcementVersion: 1, scope: 'projectless', projectId: 'leak' },
       { artifactVersion: 1, enforcementVersion: 1, scope: 'project' },
       { artifactVersion: 1, enforcementVersion: 1, scope: 'future' },
@@ -140,14 +143,31 @@ describe('P3-F reasoning Artifact persistence', () => {
     assert.equal(reasoningArtifactWithContentSchema.safeParse({ ...artifact, content: 'abc' }).success, true)
     assert.equal(reasoningArtifactWithContentSchema.safeParse({ ...artifact, content: 'абв' }).success, false)
     assert.equal(getReasoningArtifactResponse.safeParse({ ...artifact, content: 'abc', prompt: 'secret' }).success, false)
-    assert.equal(listReasoningArtifactsResponse.safeParse({
+    const response = {
       artifactVersion: 1,
-      chatId: 'chat-b',
+      enforcementVersion: 1,
+      enforcement: {
+        state: 'active',
+        owner: 'server_maintenance',
+        boundary: 'reasoning_artifacts_only',
+        inclusiveDueBoundary: true,
+      },
+      chatId: 'chat-a',
       scope: 'projectless',
       projectId: null,
       generatedAnswers: [],
       artifacts: [artifact],
-    }).success, false)
+    } as const
+    assert.equal(listReasoningArtifactsResponse.safeParse(response).success, true)
+    for (const invalid of [
+      { ...response, artifactVersion: undefined },
+      { ...response, artifactVersion: 'malformed' },
+      { ...response, artifactVersion: 2 },
+      { ...response, enforcementVersion: undefined },
+      { ...response, enforcementVersion: 'malformed' },
+      { ...response, enforcementVersion: 2 },
+      { ...response, chatId: 'chat-b' },
+    ]) assert.equal(listReasoningArtifactsResponse.safeParse(invalid).success, false)
   })
 
   it('creates v16 once on fresh, v15 upgrade, reopen and retry while preserving legacy bytes', async (test) => {
@@ -487,14 +507,20 @@ describe('P3-F reasoning Artifact persistence', () => {
     })
 
     for (const invalid of [
+      '?enforcementVersion=1&scope=projectless',
+      '?artifactVersion=malformed&enforcementVersion=1&scope=projectless',
+      '?artifactVersion=2&enforcementVersion=1&scope=projectless',
       '?artifactVersion=1&scope=projectless',
+      '?artifactVersion=1&enforcementVersion=malformed&scope=projectless',
       '?artifactVersion=1&enforcementVersion=2&scope=projectless',
-      '?artifactVersion=2&scope=projectless',
       '?artifactVersion=1&enforcementVersion=1&scope=projectless&projectId=leak',
       '?artifactVersion=1&enforcementVersion=1&scope=projectless&scope=projectless',
       '?artifactVersion=1&enforcementVersion=1&scope=project&projectId=other',
     ]) {
       assert.equal((await app.request(`/api/threads/${chat.id}/reasoning-artifacts${invalid}`)).status, 400)
+      assert.equal((await app.request(
+        `/api/threads/${chat.id}/reasoning-artifacts/${artifact.id}${invalid}`,
+      )).status, 400)
     }
     const other = createChat(context.db)
     assert.equal((await app.request(

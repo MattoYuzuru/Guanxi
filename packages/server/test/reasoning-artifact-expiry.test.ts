@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { RetentionMaintenanceOwner } from '../src/retention/maintenance.ts'
+import { createAppContext } from '../src/context.ts'
+import { JobService } from '../src/jobs/service.ts'
+import {
+  RetentionMaintenanceOwner,
+  type RetentionMaintenanceScheduler,
+} from '../src/retention/maintenance.ts'
 import { ChatRetentionStore } from '../src/store/chat-retention.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
@@ -27,6 +33,20 @@ const NON_TERMINAL = [
   'finalizing',
   'cancelling',
 ] as const
+
+class FakeScheduler implements RetentionMaintenanceScheduler {
+  readonly callbacks: Array<() => void> = []
+  readonly cleared: unknown[] = []
+
+  setInterval(callback: () => void): unknown {
+    this.callbacks.push(callback)
+    return { index: this.callbacks.length - 1 }
+  }
+
+  clearInterval(handle: unknown): void {
+    this.cleared.push(handle)
+  }
+}
 
 function createChat(db: DatabaseSync, title = 'Expiry', projectId: string | null = null) {
   const threads = new ThreadStore(db)
@@ -123,6 +143,17 @@ function count(db: DatabaseSync, table: string): number {
   return (db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count
 }
 
+function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string {
+  const tables = (db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  ).all() as Array<{ name: string }>).map(({ name }) => name)
+    .filter((name) => !excluded.has(name))
+  return JSON.stringify(Object.fromEntries(tables.map((name) => [
+    name,
+    db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+  ])))
+}
+
 describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
   it('adds v17 once, preserves exact v16/legacy bytes and rolls a failed migration back for retry', async (test) => {
     const root = await mkdtemp(join(tmpdir(), 'alamo-reasoning-expiry-migration-'))
@@ -148,13 +179,21 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
       DROP INDEX idx_reasoning_artifact_deletion_audit_chat;
       DROP TABLE reasoning_artifact_deletion_audit;
       PRAGMA user_version = 16;
-      CREATE TABLE reasoning_artifact_deletion_audit (collision TEXT NOT NULL);
+      CREATE TABLE migration_17_midpoint_sentinel (collision TEXT NOT NULL);
+      CREATE INDEX idx_reasoning_artifact_deletion_audit_chat
+        ON migration_17_midpoint_sentinel(collision);
     `)
     seed.close()
 
     assert.throws(() => openDb(path), /Миграция 17 не применилась/u)
     const rolledBack = new DatabaseSync(path)
     assert.equal((rolledBack.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 16)
+    assert.equal((rolledBack.prepare(
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'reasoning_artifact_deletion_audit'",
+    ).get() as { count: number }).count, 0)
+    assert.equal((rolledBack.prepare(
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'migration_17_midpoint_sentinel'",
+    ).get() as { count: number }).count, 1)
     assert.equal(JSON.stringify({
       artifacts: rolledBack.prepare('SELECT * FROM reasoning_artifacts ORDER BY id').all(),
       messages: rolledBack.prepare('SELECT * FROM messages ORDER BY id').all(),
@@ -163,7 +202,10 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     assert.equal((rolledBack.prepare(
       'SELECT content_text FROM reasoning_artifacts WHERE id = ?',
     ).get(artifact.artifactId) as { content_text: string }).content_text, 'exact diagnostic')
-    rolledBack.exec('DROP TABLE reasoning_artifact_deletion_audit')
+    rolledBack.exec(`
+      DROP INDEX idx_reasoning_artifact_deletion_audit_chat;
+      DROP TABLE migration_17_midpoint_sentinel;
+    `)
     rolledBack.close()
 
     const retried = openDb(path)
@@ -290,12 +332,28 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
       setArtifactExpiry(db, artifact.artifactId, NOW)
       artifactIds.push(artifact.artifactId)
     }
+    const lexicographic = artifactIds.toSorted()
+    const expiryById = new Map([
+      [lexicographic[0]!, NOW],
+      [lexicographic[1]!, new Date(Date.parse(NOW) - 2).toISOString()],
+      [lexicographic[2]!, new Date(Date.parse(NOW) - 1).toISOString()],
+      [lexicographic[3]!, new Date(Date.parse(NOW) - 1).toISOString()],
+      [lexicographic[4]!, new Date(Date.parse(NOW) - 3).toISOString()],
+    ])
+    for (const [artifactId, expiry] of expiryById) setArtifactExpiry(db, artifactId, expiry)
+    const expectedOrder = [
+      lexicographic[4]!,
+      lexicographic[1]!,
+      lexicographic[2]!,
+      lexicographic[3]!,
+      lexicographic[0]!,
+    ]
     const firstPage = reasoning.eligiblePage(NOW, null, 2)
     const secondPage = reasoning.eligiblePage(NOW, firstPage.at(-1)!, 2)
     const thirdPage = reasoning.eligiblePage(NOW, secondPage.at(-1)!, 2)
     assert.deepEqual(
       [...firstPage, ...secondPage, ...thirdPage].map(({ artifactId }) => artifactId),
-      artifactIds.toSorted(),
+      expectedOrder,
     )
     const owner = new RetentionMaintenanceOwner(new ChatRetentionStore(db), {
       reasoningArtifacts: reasoning,
@@ -346,6 +404,23 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
       message: db.prepare('SELECT * FROM messages WHERE id = ?').get(artifact.assistantMessageId),
       job: db.prepare('SELECT * FROM jobs WHERE id = ?').get(artifact.job.id),
     })
+    const seededSecrets = [
+      'seeded private prompt',
+      '/private/seeded/attachment.txt',
+      'credential-seeded-value',
+      'tool-seeded-payload',
+      'provider-seeded-error',
+    ]
+    db.prepare('UPDATE chat_job_inputs SET input_json = ? WHERE job_id = ?').run(JSON.stringify({
+      content: seededSecrets[0],
+      attachments: [{ path: seededSecrets[1], credential: seededSecrets[2] }],
+      toolData: seededSecrets[3],
+      providerError: seededSecrets[4],
+    }), artifact.job.id)
+    const nonReasoningBefore = allTablesPayload(
+      db,
+      new Set(['reasoning_artifacts', 'reasoning_artifact_deletion_audit']),
+    )
     const store = new ReasoningArtifactStore(db)
     const eligible = store.eligiblePage(NOW, null, 10)
     db.exec(`
@@ -364,6 +439,10 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
       message: db.prepare('SELECT * FROM messages WHERE id = ?').get(artifact.assistantMessageId),
       job: db.prepare('SELECT * FROM jobs WHERE id = ?').get(artifact.job.id),
     }), storedBefore)
+    assert.equal(allTablesPayload(
+      db,
+      new Set(['reasoning_artifacts', 'reasoning_artifact_deletion_audit']),
+    ), nonReasoningBefore)
     const messages = threads.messages(chat.id)
     const generated = messages.find(({ id }) => id === artifact.assistantMessageId)!
     assert.equal(generated.content, 'generated answer survives')
@@ -378,17 +457,38 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     const projection = store.list(chat.id, { scope: 'projectless', projectId: null })
     assert.equal(projection.generatedAnswers?.length, 1)
     assert.equal(projection.artifacts?.length, 0)
-    const auditJson = JSON.stringify(store.deletionAudit())
+    const audit = store.deletionAudit()
+    assert.deepEqual(audit.map((row) => ({
+      enforcementVersion: row.enforcement_version,
+      artifactVersion: row.artifact_version,
+      artifactId: row.artifact_id,
+      chatId: row.chat_id,
+      sourceMessageId: row.source_message_id,
+      sourceJobId: row.source_job_id,
+      reason: row.reason,
+      dueAt: row.due_at,
+      occurredAt: row.occurred_at,
+      source: row.source,
+    })), [{
+      enforcementVersion: 1,
+      artifactVersion: 1,
+      artifactId: artifact.artifactId,
+      chatId: chat.id,
+      sourceMessageId: artifact.assistantMessageId,
+      sourceJobId: artifact.job.id,
+      reason: 'diagnostic_ttl_expired',
+      dueAt: NOW,
+      occurredAt: NOW,
+      source: 'server_maintenance',
+    }])
+    const evidenceJson = JSON.stringify({ audit, projection })
     for (const secret of [
       'secret diagnostic',
       'generated answer survives',
       'prompt-atomic',
       'legacy thinking',
-      '/private/path',
-      'credential',
-      'tool',
-      'provider error',
-    ]) assert.equal(auditJson.includes(secret), false, secret)
+      ...seededSecrets,
+    ]) assert.equal(evidenceJson.includes(secret), false, secret)
     db.close()
   })
 
@@ -416,7 +516,15 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
       candidates.map(({ artifactId }) => artifactId).toSorted(),
       [activeArtifact.artifactId, trashArtifact.artifactId].toSorted(),
     )
+    const nonReasoningBefore = allTablesPayload(
+      db,
+      new Set(['reasoning_artifacts', 'reasoning_artifact_deletion_audit']),
+    )
     assert.equal(store.deleteEligible(candidates, NOW), 2)
+    assert.equal(allTablesPayload(
+      db,
+      new Set(['reasoning_artifacts', 'reasoning_artifact_deletion_audit']),
+    ), nonReasoningBefore)
     assert.equal(count(db, 'reasoning_artifacts'), 1)
     assert.equal((db.prepare(
       'SELECT COUNT(*) AS count FROM reasoning_artifacts WHERE chat_id = ?',
@@ -427,6 +535,104 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     assert.equal(store.list(neighbor.id, { scope: 'project', projectId: project.id }).artifacts?.length, 1)
     assert.deepEqual(store.deletionAudit().map(({ chat_id }) => chat_id).toSorted(), [active.id, trash.id].toSorted())
     db.close()
+  })
+
+  it('runs reasoning recovery before startup cleanup, performs periodic cleanup and stops it on shutdown', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-reasoning-expiry-owner-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const path = join(root, 'alamo.db')
+    const seed = openDb(path)
+    const startupChat = createChat(seed, 'Startup reasoning')
+    setPolicy(seed, startupChat.id, 'keep')
+    const startupArtifact = createArtifact(seed, startupChat.id, 'startup-reasoning')
+    setArtifactExpiry(seed, startupArtifact.artifactId, NOW)
+    const recoveryInput = {
+      content: 'recover before cleanup',
+      attachments: [],
+      autoApprove: null,
+    }
+    const recoveryBlocker = new JobStore(seed).createChat({
+      threadId: startupChat.id,
+      idempotencyScope: `chat:${startupChat.id}:send:v1`,
+      idempotencyKey: 'startup-recovery-blocker',
+      requestFingerprint: createHash('sha256')
+        .update(JSON.stringify(recoveryInput))
+        .digest('hex'),
+      input: recoveryInput,
+      derivedTitle: 'Recovery blocker',
+    })
+    assert.equal(new JobService(new JobStore(seed)).transition({
+      jobId: recoveryBlocker.job.id,
+      expectedStatus: 'queued',
+      status: 'reserving',
+      phase: 'reserving',
+      metadata: {},
+    }).applied, true)
+    seed.close()
+
+    const scheduler = new FakeScheduler()
+    const context = await createAppContext({
+      dbPath: path,
+      appVersion: 'test',
+      retentionMaintenance: {
+        clock: () => new Date(NOW),
+        scheduler,
+        intervalMs: 10,
+        batchSize: 10,
+        maxBatchesPerRun: 1,
+      },
+    })
+    test.after(async () => {
+      await context.maintenance?.close()
+      await context.chatExecution.shutdown()
+      context.jobService.closeSubscriptions()
+      context.db.close()
+    })
+
+    assert.equal(scheduler.callbacks.length, 1)
+    assert.equal((context.db.prepare('SELECT status FROM jobs WHERE id = ?').get(
+      recoveryBlocker.job.id,
+    ) as { status: string }).status, 'interrupted')
+    assert.equal((context.db.prepare(
+      'SELECT COUNT(*) AS count FROM reasoning_artifacts WHERE id = ?',
+    ).get(startupArtifact.artifactId) as { count: number }).count, 0)
+    assert.equal(count(context.db, 'reasoning_artifact_deletion_audit'), 1)
+    let ollamaCalls = 0
+    let modelCalls = 0
+    context.ollama = () => {
+      ollamaCalls += 1
+      throw new Error('Reasoning Maintenance must not call Ollama')
+    }
+    context.models = () => {
+      modelCalls += 1
+      throw new Error('Reasoning Maintenance must not call model services')
+    }
+    const governorBefore = JSON.stringify(context.governor.snapshot(NOW))
+
+    const periodicChat = createChat(context.db, 'Periodic reasoning')
+    setPolicy(context.db, periodicChat.id, 'keep')
+    const periodicArtifact = createArtifact(context.db, periodicChat.id, 'periodic-reasoning')
+    setArtifactExpiry(context.db, periodicArtifact.artifactId, NOW)
+    scheduler.callbacks[0]!()
+    const periodicReport = await context.maintenance!.runOnce()
+    assert.equal(periodicReport.reasoningDeleted, 1)
+    assert.equal(count(context.db, 'reasoning_artifact_deletion_audit'), 2)
+    assert.deepEqual({ ollamaCalls, modelCalls }, { ollamaCalls: 0, modelCalls: 0 })
+    assert.equal(JSON.stringify(context.governor.snapshot(NOW)), governorBefore)
+
+    const shutdownChat = createChat(context.db, 'Shutdown reasoning')
+    setPolicy(context.db, shutdownChat.id, 'keep')
+    const shutdownArtifact = createArtifact(context.db, shutdownChat.id, 'shutdown-reasoning')
+    setArtifactExpiry(context.db, shutdownArtifact.artifactId, NOW)
+    await context.maintenance!.close()
+    assert.equal(scheduler.cleared.length, 1)
+    scheduler.callbacks[0]!()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal((context.db.prepare(
+      'SELECT COUNT(*) AS count FROM reasoning_artifacts WHERE id = ?',
+    ).get(shutdownArtifact.artifactId) as { count: number }).count, 1)
+    assert.equal(count(context.db, 'reasoning_artifact_deletion_audit'), 2)
+    await assert.rejects(context.maintenance!.runOnce(), /closed/u)
   })
 
   it('keeps the enforcement owner free of runtime, tool, filesystem, network, analytics and generic cleanup effects', async () => {

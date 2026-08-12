@@ -83,6 +83,8 @@ beforeEach(() => {
 
 describe('Chat retention info', () => {
   it('shows sourced policy/expiry and truthfully separates configuration from enforcement', async () => {
+    const reasoningLoad = deferred<ListReasoningArtifactsResponse>()
+    vi.mocked(api.listReasoningArtifacts).mockReturnValue(reasoningLoad.promise)
     render(<ChatRetentionInfo chatId="chat-1" chatTitle={'Ч'.repeat(120)} projectId={null} />)
     const trigger = screen.getByRole('button', { name: 'Информация о чате' })
     fireEvent.click(trigger)
@@ -96,9 +98,12 @@ describe('Chat retention info', () => {
     expect(dialog.querySelector(`time[datetime="${ACTIVITY_AT}"]`)).toBeTruthy()
     expect(dialog.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeTruthy()
     expect(dialog.textContent).toContain('Ч'.repeat(120))
+    expect(dialog.textContent).not.toContain('Автоматическое удаление применяется')
+    await act(async () => reasoningLoad.resolve(REASONING))
+    await screen.findByText('Результаты с рассуждениями')
     expect(dialog.textContent).toContain('Сгенерированные ответы')
     expect(dialog.textContent).toContain('Результаты с рассуждениями')
-    expect(dialog.textContent).toContain('Автоматическое удаление применяется')
+    expect(screen.getAllByText(/Автоматическое удаление применяется/u)).toHaveLength(1)
     expect(api.listReasoningArtifacts).toHaveBeenCalledWith(
       'chat-1',
       { artifactVersion: 1, enforcementVersion: 1, scope: 'projectless' },
@@ -350,8 +355,10 @@ describe('Chat retention info', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
     const error = await screen.findByText('safe Artifact load failure')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    expect(screen.queryByText(/Автоматическое удаление применяется/u)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку рассуждений' }))
     await screen.findByRole('button', { name: 'Копировать рассуждение' })
+    expect(screen.getByText(/Автоматическое удаление применяется/u)).toBeTruthy()
     expect(api.listReasoningArtifacts).toHaveBeenLastCalledWith(
       'chat-1',
       { artifactVersion: 1, enforcementVersion: 1, scope: 'project', projectId: 'project-a' },

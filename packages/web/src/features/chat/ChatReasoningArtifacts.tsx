@@ -132,9 +132,11 @@ export function ChatReasoningArtifacts({
             {translate('chat.reasoning.refresh')}
           </Button>
         </div>
-        <p className="mt-1 break-words text-xs text-[var(--fg-muted)]">
-          {translate('chat.reasoning.cleanupActive')}
-        </p>
+        {data ? (
+          <p className="mt-1 break-words text-xs text-[var(--fg-muted)]">
+            {translate('chat.reasoning.cleanupActive')}
+          </p>
+        ) : null}
       </div>
       {loading && !data ? (
         <div role="status" aria-label={translate('chat.reasoning.loading')} className="space-y-2">
