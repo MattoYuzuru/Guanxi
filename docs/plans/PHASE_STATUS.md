@@ -1621,8 +1621,9 @@ compaction и соседние scopes сохраняются byte-compatible.
 
 Strict API оставляет Artifact data version 1 и требует отдельную enforcement
 version 1; missing/malformed/future значения fail closed. Chat Info показывает
-active claim только после успешной versioned response, скрывает claim во время
-loading/error, даёт explicit refresh и отдельный empty reasoning state при
+active claim только после первой успешной versioned response и скрывает его до
+неё либо после load error. Explicit refresh сохраняет последнюю successful
+projection во время загрузки и даёт отдельный empty reasoning state при
 сохранённом generated answer. EN source/fallback и curated RU проходят locale
 keys.
 

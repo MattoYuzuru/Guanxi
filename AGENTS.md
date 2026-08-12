@@ -82,7 +82,7 @@ npm run build
 `npm test` проверяет server, CLI и web component regression tests.
 Deterministic Chromium tests запускаются отдельно через
 `npm run test:web:browser`: текущий suite перечисляет 33 mocked тест, покрывающий
-P0-A–P3-C (crash containment, first stream, terminal reload, runtime bar,
+P0-A–P3-G (crash containment, first stream, terminal reload, runtime bar,
 resource conflict, prewarm, context limits, model evidence, catalog, user
 capability overrides, Hugging Face discovery, exact GGUF selection/download и
 локальный staged import, logical Project без filesystem root и Project
