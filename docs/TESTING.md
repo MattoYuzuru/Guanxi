@@ -5,9 +5,9 @@
 
 ## Текущий baseline
 
-На 2026-08-13 после P3-H implementation и independent verification:
+На 2026-08-13 после P3-I implementation и independent verification:
 
-- полный core с CLI reuse: 614/614; Web component/parser: 208/208;
+- полный core с CLI reuse: 623/623; Web component/parser: 210/210;
 - `npm run test:web:browser`: 34/34 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
@@ -105,6 +105,21 @@
   pending/blocked/Trash, EN fallback/RU, exact deadline, expired recovery и
   truthful `hardDeletion: not_implemented`. Mocked Chromium проверяет reload без
   leave, keyboard, 390 px/200%, forced colors и reduced motion;
+- deterministic P3-I tests покрывают additive v20, content-free
+  deletion audit, exact v19 lifecycle/audit payload, late rollback/retry/reopen,
+  inclusive 24-hour boundary, immutable leave-basis/tombstone/policy/Job CAS,
+  все canonical Job states, stable bounded owner pages и reasoning-before-Chat
+  cleanup order. Exact FK inventory фиксирует deletion только directly
+  owned Thread rows, сохранение durable Jobs/events, Project/Workspace/
+  neighboring owned rows и atomic audit+delete rollback. Scoped audit pagination и
+  strict required deletion version проверены через store и route. Legacy
+  Restore v1 остаётся byte-compatible, а truthful active Session deletion state
+  требует explicit `deletionVersion=1` opt-in;
+  application-owner counters и snapshots доказывают отсутствие runtime,
+  provider, Governor, tool, workspace и unrelated-reasoning effects. Web fixtures
+  проверяют EN/RU pending/failure/retry/committed exact counts и no-blob-GC
+  copy; mocked Chromium материально расширен computed forced-colors focus/
+  border и reduced-motion assertions;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
@@ -554,10 +569,10 @@ process lock. P0-D health остаётся sampled observation; обязател
   page-memory projection двух exact rows, а legacy compatibility path сохраняет
   full response. Page size 12/maximum 100 — response/render policy, не catalog
   total limit; benchmark — local synthetic diagnostic, не production SLA.
-- P3-F–P3-H migrations проверены на synthetic SQLite fixtures; нет production
-  corpus либо multi-process terminal/cleanup/leave races. Generic blob GC, Chat
-  hard deletion и intermediate multi-step tool Artifact semantics остаются за
-  current границей.
+- P3-F–P3-I migrations проверены на synthetic SQLite fixtures; нет production
+  corpus либо multi-process terminal/cleanup/leave/delete races. Generic blob GC,
+  TTL Trash hard deletion и intermediate multi-step tool Artifact semantics остаются
+  за current границей.
 
 ## Существующее покрытие
 
@@ -575,14 +590,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                                    |
 | Static web serving                 | test                                     |
 | CLI existing-server logic          | tests                                    |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-H      |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P3-H mocked   |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-I      |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P3-I mocked   |
 | Catalog provider/cache/pages       | P0-D/P2-E–P2-H local/bundled fixtures    |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane                |
 | Job replay/reattach                | HTTP SSE; browser durable replay         |
 | Chat startup recovery              | reopened SQLite, fail-closed pages       |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web           |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-H      |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-I      |
 
 ## Обязательная target matrix
 

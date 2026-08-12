@@ -1047,7 +1047,7 @@ no-progress loop.
 
 Исходник: [retention-state.mmd](diagrams/retention-state.mmd).
 
-Current P3-D–P3-H реализует policy/activity projection и recoverable переход
+Current P3-D–P3-I реализует policy/activity projection и recoverable переход
 `active → tombstoned in Trash`: новые Chats получают rolling seven-day default,
 existing rows — explicit Keep, а accepted user message либо explicit Restore
 обновляет sourced basis. Exact expiry вычисляется server-side. Один
@@ -1057,9 +1057,13 @@ basis не выбираются этим scan. P3-H добавляет durable s
 из versioned confirmed Leave session command; reload/reconnect/transport/
 visibility/restart не создают его. Тот же owner повторно проверяет basis, policy
 и Jobs в CAS, затем scoped Trash показывает exact 24-hour recovery deadline.
-Restore/Keep/7 days до deadline очищают basis; после deadline recovery закрыт,
-но metadata не удаляются. Expiring intermediate state, TTL grace, Chat metadata
-deletion и blob GC ниже — accepted target, не текущее поведение. Current P3-F
+Restore/Keep/7 days до deadline очищают basis; после deadline recovery закрыт.
+Отдельный stable bounded pass того же owner после reasoning cleanup повторно
+проверяет Session reason/policy/tombstone/deadline и non-terminal Jobs, затем
+атомарно пишет content-free deletion audit и удаляет Thread metadata.
+Directly owned rows cascade; durable Jobs/events сохраняются. Expiring
+intermediate state, TTL grace, non-Session metadata deletion и blob GC ниже —
+accepted target, не текущее поведение. Current P3-F
 создаёт один immutable Reasoning Artifact в
 terminal Message/Job transaction и хранит final answer отдельно. P3-G подключает
 его seven-day/shorter-current-parent expiry к тому же bounded Maintenance owner:
@@ -1081,15 +1085,15 @@ active
 - `Session` становится eligible только после подтверждённой Leave session
   команды и terminal state всех canonical Jobs; reload/reconnect не завершают
   Session.
-- Session Chat восстанавливается из Trash в течение ровно 24 часов; hard deletion
-  после deadline ещё не реализован.
+- Session Chat восстанавливается из Trash в течение ровно 24 часов; at/after
+  deadline Restore закрыт и owner удаляет его SQLite metadata с redacted audit.
 - Reasoning Artifact имеет отдельный default expiry через 7 дней; shorter current
   parent TTL wins. P3-G автоматически удаляет due diagnostic bytes, но сохраняет
   final answer, Message/Job и literal legacy thinking.
 - Active/non-terminal Job блокирует deletion.
 - Startup и periodic Maintenance owner обрабатывает отдельные bounded batches
-  для TTL Chat и reasoning expiry; generic durable Maintenance Job и blob GC ещё
-  не реализованы.
+  для TTL/Session tombstone, reasoning expiry и Session metadata deletion;
+  generic durable Maintenance Job, TTL hard deletion и blob GC ещё не реализованы.
 - Policy change до hard deletion может восстановить record.
 - Cleanup event не продлевает user TTL.
 

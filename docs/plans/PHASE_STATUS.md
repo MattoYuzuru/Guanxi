@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-13
-**Текущая фаза:** Phase 3 — P3-I Session hard deletion ready
+**Текущая фаза:** Phase 3 — P3-J Quick Run retention foundation ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1723,6 +1723,74 @@ Hard deletion metadata и unreferenced blobs не реализованы. Сле
 slice — P3-I Session hard deletion после elapsed recovery с durable audit и
 referential-integrity envelope, без расширения до generic Artifact/blob GC.
 
+## Phase 3 — P3-I Session metadata hard deletion
+
+**Статус:** independently verified
+
+Commits: `1686069` (contract/migration/server), `f713430` (Web), `7e655d1`
+(self-review CAS deadline fix), `28703b7` и `7973109` (independent review fixes).
+
+Append-only migration 20 добавляет content-free `chat_deletion_audit` без
+Thread FK. Session Trash выбирается только для `session_left` at/after exact
+24-hour deadline. Scan и transaction CAS повторно связывают Project,
+tombstone, immutable leave/activity basis, Session policy и все canonical Job states.
+Restore/Keep/TTL, new leave generation с тем же tombstone timestamp и Job-after-scan
+выигрывают у stale candidate без partial audit/rows.
+
+Тот же `RetentionMaintenanceOwner` выполняет hard-delete pages после
+tombstone и reasoning passes. Atomic transaction пишет redacted audit и
+удаляет Thread. Exact live-schema inventory фиксирует cascaded directly
+owned `messages`, `tool_runs`, `chat_job_inputs`, `reasoning_artifacts` и
+`chat_lifecycle_audit`. Durable `jobs`, `job_events`, prior reasoning deletion audit,
+Project/Workspace/binding и neighboring Chats сохраняются. Generic blob
+store отсутствует, поэтому audit честно фиксирует
+`blob_gc=not_applicable`; TTL Trash hard deletion и filesystem cleanup не добавлены.
+
+Strict `deletionVersion=1` обязателен для bounded Project/projectless audit
+projection. Legacy Restore v1 сохраняет exact strict response, а explicit
+`deletionVersion=1` opt-in добавляет truthful active Session state:
+capability реализована, но deletion не scheduled; TTL остаётся
+`not_implemented`. Web держит elapsed item как pending до successful sourced
+refresh, сохраняет его при failure/retry и показывает committed deletion
+только после server audit.
+
+Evidence по правилу WORKFLOW: **9 new / 623 core regression envelope**,
+**2 new / 210 Web component/parser envelope**, **0 new, 1 materially extended /
+34 mocked Chromium envelope**. Targeted final backend lifecycle — 26/26, focused
+Web — 10/10, targeted Chromium — 1/1. Full typecheck, core 623/623, Web 210/210,
+browser 34/34, build, markdownlint и diff-check прошли. Девять initial
+implementation mutations и follow-up mutations required-version, leave-basis CAS,
+reasoning-before-delete и forced-colors CSS дали expected non-zero и были
+восстановлены.
+
+Первые full passes выявили три полезных regression gaps: неверный
+root Playwright invocation не нашёл tests; legacy capability rollback fixture
+конфликтовал с v20; семь old Projects mocks не имели additive deletion
+projection. Correct workspace command, v20 fixture и defensive Web read исправили
+их. Self-review также заменил доверие candidate deadline на recompute
+из exact DB tombstone. Первый final full Web pass дал unrelated
+timing-sensitive focus failure в old `project-chat` test (209/210); unchanged
+Web rerun и затем full root rerun прошли 210/210.
+
+Independent reviewer дал initial **NOT READY** с девятью findings:
+optional version opt-in, stale retombstone leave-basis race, stale Restore truth,
+слабые migration/neighbor/pass-order/scope/no-effect assertions и недостаточно
+mutation-sensitive EN/a11y evidence. Отдельный `28703b7` закрыл
+пять findings, но follow-up оставил **NOT READY**: truthful Restore нарушал
+strict v1 compatibility, successful migration retry не сравнивал exact bytes,
+stale-loser targets не имели owned child rows, а no-effect guard не охватывал
+direct store bypass. Отдельный `7973109` ввёл Restore opt-in без v1 drift,
+byte-exact retry/reopen, enriched stale fixtures и source guard. Финальный reviewer
+verdict по exact second fix diff — **READY**, новых findings нет.
+
+Остаточный риск: synthetic SQLite и mocked browser; нет production DB
+corpus, OS-process crash/concurrent-process writers, real assistive technology/device
+или live Ollama/GPU/network. Source counters/snapshots не эквивалентны formal
+whole-program effect proof. Следующий bounded slice — P3-J canonical Quick Run
+identity и shared retention-policy foundation; Quick Run Session completion требует
+orientation gate, потому что D-009/Q-23 определяют explicit leave только
+для Chat.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1822,7 +1890,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-I ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-J ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

@@ -108,7 +108,7 @@ carousel с dot на каждую карточку.
 - status каждого turn восстанавливается после reload;
 - sidebar/drawer доступен на mobile.
 - Chat Info объединяет rename/delete, retention, notification policy, generated
-  answers и reasoning Artifacts. Current P3-H показывает эти списки раздельно,
+  answers и reasoning Artifacts. Current P3-I показывает эти списки раздельно,
   exact effective expiry, size/checksum и scoped copy/export text; после Save
   retention Artifact projection перечитывается. Loading, empty/error/retry и
   explicit reasoning refresh доступны. UI сообщает об active server-owned
@@ -131,8 +131,12 @@ Chat — `7 days`, даже внутри Project. TTL продлевает то�
 сохранённой policy Session Chat Info показывает отдельную confirmation-команду
 Leave session; reload/reconnect/закрытие вкладки её не подменяют. Pending basis и
 active-Job blocker видимы после reload. После Maintenance tombstone UI показывает
-exact 24-hour recovery deadline; после него Restore недоступен, но UI честно
-сообщает, что hard deletion ещё не реализован.
+exact 24-hour recovery deadline; после него Restore недоступен, а Trash item
+остаётся `deletion pending` до sourced server refresh. Только успешный response,
+в котором item уже отсутствует и есть scoped deletion audit, переводит UI
+в `deleted`. Refresh failure сохраняет pending item, показывает focused alert
+и retry. UI не заявляет blob GC: для current SQLite-only boundary он
+`not_applicable`.
 
 ### Projects
 

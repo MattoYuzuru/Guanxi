@@ -68,8 +68,13 @@ migration 18 добавляет sourced server-time basis для только я
 Leave session команды с exact Chat/Project scope. Тот же owner после Job recheck
 переводит Session Chat в Trash; projection вычисляет ровно 24 часа recovery от
 tombstone. Restore/Keep/7 days до deadline очищают basis. Reload, reconnect,
-transport lifecycle и restart сами leave не создают. Hard deletion, TTL grace и
-generic blob GC пока не реализованы. Append-only migration 19 harden-ит уже
+transport lifecycle и restart сами leave не создают. P3-I migration 20
+добавляет content-free `chat_deletion_audit`, а тот же owner после recovery
+deadline stable bounded pages удаляет Session Thread и directly owned SQLite
+metadata. Scan и transaction CAS исключают non-terminal Jobs; audit insert и
+Thread delete атомарны. Durable Jobs/events сохраняются, а их private
+Chat input bridge удаляется по current FK ownership. TTL Trash hard deletion,
+generic blob GC и filesystem cleanup не реализованы. Append-only migration 19 harden-ит уже
 применимую v18 schema: invalid existing Session Trash fail-closed останавливает
 upgrade, а новые raw writes без exact leave basis отклоняются trigger-ом.
 

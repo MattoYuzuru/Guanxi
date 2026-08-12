@@ -955,7 +955,7 @@ Auto mode проверяет immutable policy snapshot на каждом tool ca
 
 Lifecycle: [retention-state.mmd](diagrams/retention-state.mmd).
 
-Current P3-D–P3-H реализует Chat policy, recoverable TTL enforcement и explicit
+Current P3-D–P3-I реализует Chat policy, recoverable TTL enforcement и explicit
 Session leave: policy
 `{keep | ttl(7 days) | session}`, source/update time, sourced create/user-message/
 restore activity, exact server-side expiry, stable bounded eligibility scan,
@@ -967,12 +967,16 @@ exact Chat/Project scope; reload/reconnect/abort/visibility/restart не име�
 write path. Тот же owner сканирует Session basis stable bounded pages и повторно
 проверяет Jobs/basis/policy в tombstone CAS. Session Trash projection вычисляет
 exact 24-hour recovery deadline; Restore либо Keep/7 days до deadline очищает
-basis и отменяет stale candidate. После deadline recovery закрыт, но hard
-deletion остаётся `not_implemented`. TTL grace и Artifact GC пока не реализованы;
-следующий тип ниже описывает принятые части target lifecycle за current границей. P3-F persist-ит
+basis и отменяет stale candidate. После deadline recovery закрыт. P3-I
+добавляет отдельный stable bounded pass того же owner: scan и transaction
+CAS повторно проверяют `session_left`, exact tombstone/deadline, current
+Session policy и отсутствие non-terminal Jobs. Transaction вставляет
+content-free audit и удаляет Thread; directly owned rows удаляются current FK
+cascades, а durable Jobs/events и deletion audit переживают parent. TTL Trash hard
+deletion и generic Artifact/blob GC не реализованы. P3-F persist-ит
 Reasoning Artifact; P3-G исполняет его own seven-day/shorter-current-parent
 expiry тем же bounded owner и сохраняет redacted atomic audit. Это не generic
-Artifact GC и не Chat hard deletion.
+Artifact GC.
 
 Chat/Quick Run metadata:
 
@@ -1002,8 +1006,9 @@ User activity обновляет TTL; model/tool/maintenance/background events �
 terminal state всех canonical Jobs; reload/reconnect/transport/visibility/restart
 не считаются уходом. Active/non-terminal Job блокирует scan и CAS tombstone.
 Session Trash recovery равен 24 часам от tombstone. Restore или policy change на
-Keep/7 days до deadline снимает tombstone и pending basis; hard delete после
-deadline остаётся target.
+Keep/7 days до deadline снимает tombstone и pending basis. At/after deadline
+Restore закрыт, а следующий owner pass атомарно удаляет его SQLite
+metadata с durable redacted audit.
 
 Reasoning Artifact получает default `expires_at = created_at + 7 days`; shorter
 parent retention wins.
@@ -1048,8 +1053,11 @@ Migration 18 добавляет Session leave basis, lifecycle reason и рас�
 existing TTL Trash получает совместимый lifecycle reason без изменения payload.
 Migration 19 append-only валидирует weak-v18 rows и пересоздаёт lifecycle
 triggers с exact Session policy/source/activity-basis constraints.
-Остальные target tables, generic Artifact/blob GC и hard deletion ниже не
-реализованы.
+Migration 20 append-only добавляет не ссылающийся на Thread
+`chat_deletion_audit`: version, Chat/Project scope, `session_recovery_elapsed`,
+tombstone/deadline/deletion timestamps, server-maintenance source, exact SQLite
+metadata boundary и `blob_gc=not_applicable`; content в таблице нет. Остальные
+target tables, generic Artifact/blob GC и TTL hard deletion не реализованы.
 Legacy `threads/messages/workspaces`, raw Thread REST и strict legacy Project
 list сохранены без destructive route cutover.
 

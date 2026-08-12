@@ -4,113 +4,85 @@
 
 **Проверено:** 2026-08-13
 
-**Назначение:** продолжить Phase 3 bounded slice P3-I — реализовать server-owned
-hard deletion metadata только для Session Chat после elapsed 24-hour recovery,
-с durable content-free audit и referential-integrity envelope, не расширяя slice
-до TTL hard deletion, generic Artifact/blob GC, attachments или Project delete
+**Назначение:** продолжить Phase 3 bounded slice P3-J — ввести
+canonical Quick Run identity/persistence и общую с Chat retention-policy boundary,
+не подменяя one-shot work Chat и не закрывая неопределённую Session
+completion semantics без owner decision
 
 ## Сначала
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui`. Прочитай `AGENTS.md`,
 `docs/NAVIGATION.md`, обязательный `plans/WORKFLOW.md`, затем `PRODUCT.md`,
 `DOMAIN_MODEL.md`, `UX_IA.md`, current HLD/LLD, `DEVELOPMENT.md`, `TESTING.md`,
-`architecture/RUNTIME_LIFECYCLE.md`, ADR-0005/0007,
-`plans/PHASE_STATUS.md`, `plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted
-owner decision D-009/Q-23.
+`architecture/RUNTIME_LIFECYCLE.md`, ADR-0005/0007, `plans/PHASE_STATUS.md`,
+`plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted owner decisions.
 
-Зафиксируй clean starting revision/status и последние commits. P3-H реализован
-commits `711dcde`, `13fd0da`, test hardening `aca57d0`, review fixes `e5703be` и
-append-only review fixes `e1f9650`/`ca59918`: **8 new / 614 core**, **5 new / 208
-Web**, **1 new, 1 extended / 34 mocked Chromium**. Full typecheck, tests, browser gate,
-build, markdownlint и diff-check прошли; independent reviewer после fixes дал
-финальный verdict в `PHASE_STATUS.md`. Это synthetic/mock evidence, не production
-DB corpus, OS-process crash, concurrent-process, real screen-reader/device или
-live Ollama/GPU/network validation.
+Зафиксируй clean starting revision/status и latest commits. P3-I завершён
+как independently verified slice: migration 20, exact Session metadata deletion,
+content-free audit, strict scoped projection и truthful Web. Evidence и residual
+limits зафиксированы в `PHASE_STATUS.md`; не выдавай synthetic SQLite,
+jsdom и mocked Chromium за production, real device/screen reader или live
+Ollama/GPU/network validation.
 
-## Bounded outcome P3-I
+## Orientation gate и open decision
 
-Реализовать только окончательное удаление current SQLite metadata для Session
-Chat после уже реализованного recovery deadline:
+До edits составь exact inventory current `Thread`/Job/Artifact/retention APIs и
+проверь, есть ли accepted ответ на вопрос:
 
-- Session Trash становится hard-delete eligible только при
-  `reason=session_left` и `observedAt >= tombstonedAt + 24h`;
-- каждый canonical non-terminal Job этого Chat блокирует deletion и scan, и
-  atomic CAS повторно проверяет lifecycle reason, tombstone timestamp, deadline
-  и Job states;
-- один existing `RetentionMaintenanceOwner` выполняет отдельные stable bounded
-  hard-delete pages после tombstone/reasoning passes; второй scheduler или
-  route-triggered `runOnce()` не создавай;
-- deletion атомарно удаляет Thread metadata и только его directly owned SQLite
-  rows по текущим FK/ownership contracts. До edits составь exact dependency
-  inventory для Message, Job, job events/input, reasoning Artifact/audit,
-  compaction/tool log и Project/Workspace neighbors; не полагайся на
-  неподтверждённый cascade;
-- новый append-only migration 20 создаёт durable content-free deletion audit,
-  который переживает удаление Thread и не содержит message/reasoning/private
-  input. Не переписывай migrations 1–19;
-- Project/projectless identity и deletion reason/time/source остаются
-  наблюдаемыми через bounded audit projection либо другой strict versioned
-  boundary; malformed/future/cross-scope input fail closed;
-- Restore/Keep/TTL до deadline всё ещё выигрывают у stale delete candidate;
-  at/after deadline ручное Restore остаётся закрытым, а следующий owner pass
-  удаляет запись ровно один раз;
-- Web удаляет elapsed Session Trash item только после sourced server response/
-  refresh и правдиво различает `deletion pending`, `deleted` и failure. Не
-  показывай данные как удалённые, пока server mutation не committed;
-- generic blob store для Chat сейчас отсутствует: не изобретай фиктивный GC и не
-  заявляй unreferenced blobs collected. Зафиксируй `not_applicable`/remaining
-  target только если это подтверждено current ownership inventory;
-- deletion не вызывает Ollama, Governor, tools, workspace filesystem, provider
-  network, analytics, model unload или unrelated reasoning/blob cleanup.
+> Какое явное событие заканчивает `Session` для one-shot Quick Run?
 
-До edits явно зафиксируй destructive boundary: какие exact rows удаляются,
-какие audit rows обязаны пережить parent deletion, как обрабатываются current FK
-restrictions/cascades и как recovery/deletion race линеаризуется. Если current
-schema не позволяет сохранить accepted audit без раскрытия private content или
-неясно, должны ли durable generic Jobs пережить Chat deletion, остановись с
-blocker и предложи владельцу минимальные варианты — не закрывай решение молча.
+D-009/Q-23 определяют explicit Leave для Chat, но не Quick Run. Не считай
+Job completion, navigation, reload или export новым Session leave без accepted
+decision. Если ответа нет, реализуй только общую identity/policy
+foundation с truthful `session_enforcement: not_implemented`, добавь в
+`OPEN_QUESTIONS.md` узкий owner question и не создавай automatic deletion path.
+
+## Bounded outcome P3-J
+
+- Добавь append-only migration 21 для minimal canonical Quick Run metadata:
+  immutable id, operation, optional Project ownership, timestamps и explicit retention
+  policy/source. Не переиспользуй `threads` как скрытый Quick Run type.
+- Используй один contract-level `Keep | 7 days | Session` policy shape и
+  один default `7 days` для projectless/Project Quick Run. Не делай
+  type-changing `Save`; policy меняется isolated mutation.
+- Добавь strict versioned create/read/list/update boundary с exact Project или
+  projectless scope. Project не требует filesystem binding; cross-scope и
+  future/malformed input fail closed.
+- Сохранить operation как typed allowlist из уже accepted product model;
+  не создавать по одной таблице/странице на modality.
+- Добавь minimal Web Quick Run surface для create/list и retention control
+  только если он не обещает ещё не реализованное execution. Явно
+  показывай ready/empty/error и effective retention source/state.
+- Не запускать Ollama/Job из metadata/retention routes. Любой будущий
+  Quick Run execution должен использовать canonical durable Job, но это
+  отдельный slice.
 
 ## Non-goals
 
-- hard deletion для rolling TTL Trash или новый TTL grace;
-- generic Artifact/blob/reference GC, attachment store или filesystem cleanup;
-- Project/Workspace deletion, Chat move/reparent, archive/search или Quick Run;
-- изменение P3-G reasoning expiry policy либо удаление unrelated Artifacts;
-- daemon/multi-process ownership, notifications, Phase 4 service/CLI/TUI;
-- live provider/model/GPU/network behavior.
+- Quick Run model execution, streaming, Artifact media/blob storage и export;
+- invented Session completion/leave, TTL/Session cleanup для Quick Run;
+- Recipe snapshots, attachments, document batch, audio/image/OCR flows;
+- Chat schema/lifecycle или P3-I deletion semantics;
+- Project/Workspace deletion, service/CLI/TUI и live provider behavior.
 
 ## Обязательные assertions
 
-Минимум должны падать при нарушении:
+- migration 21 fresh/v20→v21/reopen/retry/true rollback с exact v20 bytes;
+- Quick Run не `Thread`, а Project ownership immutable/restrictive и projectless
+  не смешивается с Project scope;
+- default `7 days` одинаков, Keep/TTL/Session round-trip strict, unknown/
+  future/extra fields отклоняются;
+- retention update делает ровно одну mutation и не меняет identity,
+  operation, Project, Job, Artifact или filesystem state;
+- нет `Save` conversion и нет optimistic execution/cleanup claim;
+- Web loading/empty/error/retry, exact scope/count, keyboard/focus, EN fallback/RU,
+  390 px/200%, forced colors и reduced motion имеют direct assertions;
+- zero Ollama/Governor/tool/filesystem/provider/network/model-unload effects.
 
-- migration 20 fresh/v19→v20/reopen/retry и настоящий late rollback сохраняют
-  existing v19 lifecycle/audit/legacy payload byte-compatible;
-- dependency inventory имеет exact assertions на все child/neighbor tables;
-- -1ms не удаляет, at/+1ms удаляет ровно один раз по injected server clock;
-- Keep/TTL/Session active, TTL Trash, Session Trash без valid basis и already
-  deleted audit не выбираются;
-- каждый canonical non-terminal Job блокирует scan и CAS, каждый terminal state
-  допускает один delete после deadline;
-- stale Restore/Keep/TTL, retombstone и Job-after-scan races проигрывают delete
-  CAS без partial rows/audit;
-- startup, periodic callback, coalescing, finite batches/order, retry after
-  injected transaction failure и shutdown доказаны через existing owner;
-- Project/projectless audit scope/order и neighboring Chat/Project/Workspace
-  isolation точны;
-- committed delete удаляет только documented owned metadata; durable audit не
-  содержит final answer, thinking, reasoning, prompts, tool/private input или
-  filesystem paths;
-- UI pending/deleted/failure/retry, focus, exact counts, EN/RU, narrow/200%,
-  forced-colors/reduced-motion и no-false-blob-GC copy имеют direct assertions;
-- no Ollama/Governor/tool/filesystem/provider/analytics/model-unload/unrelated
-  cleanup effects проверены injected counters/snapshots.
+Выполни mutation checks минимум для default, scope, Project FK,
+one-mutation update, strict version, no-Save UI и no-effect boundary.
 
-Сделай mutation checks минимум для deadline boundary, Session-only reason,
-active-Job scan/CAS guards, stale Restore/policy race, delete+audit atomicity,
-child/neighbor scope, batch/order и truthful committed-delete UI. Каждое
-свойство docs/ROADMAP должно иметь assertion, который реально падает при мутации.
-
-## Gates
+## Gates и handoff
 
 ```bash
 npm run typecheck
@@ -121,18 +93,9 @@ npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
 git diff --check
 ```
 
-Browser gate обязателен. Не выдавай jsdom/Chromium fixtures за real device,
-screen-reader, production migration corpus или user validation.
-
-## Workflow и handoff
-
-После implementation запусти отдельную read-only independent verification по
-`plans/WORKFLOW.md`: reviewer проверяет exact diff, destructive/dependency
-boundary, append-only migration, deadline/races, atomic audit, scope и Web
-truthfulness. Findings исправляет автор отдельным `fix(...)`/`test(...)` commit.
-
-Сделай небольшие conventional commits: contract/migration/deletion owner,
-Web/tests, review fix и current-state docs. Обнови `plans/PHASE_STATUS.md` с real
-new/regression envelope, first failures, independent verdict и residual risks.
-Перепиши этот файл на следующий незавершённый P3 slice; при blocker оставь P3-I
-с exact evidence и recovery steps.
+После implementation запусти отдельную read-only independent verification
+по `plans/WORKFLOW.md`; findings исправляет автор отдельным commit.
+Обнови current-state docs, `PHASE_STATUS.md` с new/regression envelope и
+перепиши этот prompt на следующий bounded slice. Если orientation gate
+блокирует более узкую foundation, оставь P3-J с exact blocker и
+recovery steps, а не изобретай owner decision.
