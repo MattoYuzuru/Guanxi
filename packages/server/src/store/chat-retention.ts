@@ -409,7 +409,7 @@ export class ChatRetentionStore {
                  AND job.status NOT IN (${TERMINAL_JOB_STATES})
              )`,
         ).run(
-          candidate.recoveryDeadline,
+          sessionRecoveryDeadline(candidate.tombstonedAt),
           observedAt,
           candidate.chatId,
           candidate.projectId,

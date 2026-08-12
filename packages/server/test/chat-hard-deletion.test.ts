@@ -229,8 +229,16 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       const observedAt = new Date(Date.parse(DEADLINE) + offset).toISOString()
       const candidates = store.hardDeletionEligiblePage(observedAt, null, 10)
       assert.equal(candidates.length, eligible ? 1 : 0, `${offset}ms scan`)
-      assert.equal(store.hardDeleteEligible(candidates, observedAt), eligible ? 1 : 0, `${offset}ms CAS`)
+      const casCandidates = offset === 1 && candidates.length === 1
+        ? [{ ...candidates[0]!, recoveryDeadline: '2099-01-01T00:00:00.000Z' }]
+        : candidates
+      assert.equal(store.hardDeleteEligible(casCandidates, observedAt), eligible ? 1 : 0, `${offset}ms CAS`)
       assert.equal(count(db, 'chat_deletion_audit'), eligible ? 1 : 0)
+      if (offset === 1) {
+        assert.equal((db.prepare(
+          'SELECT recovery_deadline FROM chat_deletion_audit WHERE chat_id = ?',
+        ).get(chat.id) as { recovery_deadline: string }).recovery_deadline, DEADLINE)
+      }
       assert.equal(store.hardDeleteEligible(candidates, observedAt), 0)
       assert.deepEqual(store.hardDeletionEligiblePage(observedAt, null, 10), [])
       assert.equal(count(db, 'threads', 'WHERE id = ?', chat.id), eligible ? 0 : 1)
