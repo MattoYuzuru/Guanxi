@@ -314,6 +314,24 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
       assert.equal(store.leaveSession(chat.id, { scope: 'projectless' }).status, 'ok')
       terminalIds.push(chat.id)
     }
+    assert.deepEqual(
+      store.eligiblePage(NOW, null, 100).map(({ chatId }) => chatId).sort(),
+      [...terminalIds].sort(),
+    )
+
+    const raced = createChat(threads, 'Job starts after eligibility')
+    makeSession(store, raced.id)
+    store.leaveSession(raced.id, { scope: 'projectless' })
+    const racedCandidate = store.eligiblePage(NOW, null, 100)
+      .filter(({ chatId }) => chatId === raced.id)
+    assert.equal(racedCandidate.length, 1)
+    const racedJobId = createChatJob(db, raced.id, 'raced-active-job', 'queued')
+    assert.equal(store.tombstoneEligible(racedCandidate, NOW), 0)
+    assert.equal(row(db, raced.id).chat_lifecycle_state, 'active')
+    db.prepare("UPDATE jobs SET status = 'completed', phase = 'completed', finished_at = ? WHERE id = ?")
+      .run(NOW, racedJobId)
+    assert.equal(store.tombstoneEligible(racedCandidate, NOW), 1)
+    assert.equal(store.tombstoneEligible(racedCandidate, NOW), 0)
 
     const owner = new RetentionMaintenanceOwner(store, {
       clock: () => new Date(NOW),
@@ -335,7 +353,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     assert.equal(third.tombstoned, 0)
     assert.equal((db.prepare(
       "SELECT COUNT(*) AS count FROM chat_lifecycle_audit WHERE reason = 'session_left'",
-    ).get() as { count: number }).count, NON_TERMINAL.length + TERMINAL.length)
+    ).get() as { count: number }).count, NON_TERMINAL.length + TERMINAL.length + 1)
     await owner.close()
     db.close()
   })
