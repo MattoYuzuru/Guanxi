@@ -1,5 +1,6 @@
 import type {
   ChatRetentionStore,
+  HardDeletionCursor,
   RetentionEligibilityCursor,
 } from '../store/chat-retention.ts'
 import type {
@@ -19,6 +20,9 @@ export interface RetentionMaintenanceReport {
   reasoningScanned: number
   reasoningDeleted: number
   reasoningBatches: number
+  hardDeletionScanned: number
+  hardDeleted: number
+  hardDeletionBatches: number
 }
 
 export interface RetentionMaintenanceScheduler {
@@ -149,6 +153,27 @@ export class RetentionMaintenanceOwner {
           }
         }
       }
+      let hardDeletionCursor: HardDeletionCursor | null = null
+      let hardDeletionScanned = 0
+      let hardDeleted = 0
+      let hardDeletionBatches = 0
+      for (; hardDeletionBatches < this.maxBatchesPerRun; hardDeletionBatches += 1) {
+        if (this.closed) break
+        const candidates = this.store.hardDeletionEligiblePage(
+          observedAt,
+          hardDeletionCursor,
+          this.batchSize,
+        )
+        if (candidates.length === 0) break
+        hardDeletionScanned += candidates.length
+        hardDeleted += this.store.hardDeleteEligible(candidates, observedAt)
+        const last = candidates.at(-1)!
+        hardDeletionCursor = { tombstonedAt: last.tombstonedAt, chatId: last.chatId }
+        if (candidates.length < this.batchSize) {
+          hardDeletionBatches += 1
+          break
+        }
+      }
       this.lastFailure = null
       return {
         observedAt,
@@ -158,6 +183,9 @@ export class RetentionMaintenanceOwner {
         reasoningScanned,
         reasoningDeleted,
         reasoningBatches,
+        hardDeletionScanned,
+        hardDeleted,
+        hardDeletionBatches,
       }
     }).finally(() => {
       this.running = null

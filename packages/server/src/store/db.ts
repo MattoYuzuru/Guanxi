@@ -802,6 +802,30 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX idx_threads_chat_session_integrity
     ON threads(chat_lifecycle_reason, retention_policy, session_leave_at, id);
   `,
+  // 20 — durable content-free evidence for Session Chat metadata deletion.
+  // The audit deliberately has no parent FK so it survives the Thread cascade.
+  `
+  CREATE TABLE chat_deletion_audit (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    deletion_version  INTEGER NOT NULL CHECK (deletion_version = 1),
+    chat_id           TEXT NOT NULL UNIQUE,
+    scope             TEXT NOT NULL CHECK (scope IN ('projectless','project')),
+    project_id        TEXT,
+    reason            TEXT NOT NULL CHECK (reason = 'session_recovery_elapsed'),
+    tombstoned_at     TEXT NOT NULL,
+    recovery_deadline TEXT NOT NULL,
+    deleted_at        TEXT NOT NULL,
+    source            TEXT NOT NULL CHECK (source = 'server_maintenance'),
+    boundary          TEXT NOT NULL CHECK (boundary = 'thread_owned_sqlite_metadata'),
+    blob_gc           TEXT NOT NULL CHECK (blob_gc = 'not_applicable'),
+    CHECK (
+      (scope = 'projectless' AND project_id IS NULL)
+      OR (scope = 'project' AND project_id IS NOT NULL)
+    )
+  );
+  CREATE INDEX idx_chat_deletion_audit_scope
+    ON chat_deletion_audit(scope, project_id, deleted_at DESC, chat_id);
+  `,
 ]
 
 export function openDb(path: string): Db {

@@ -7,6 +7,7 @@ export const CHAT_TRASH_DEFAULT_LIMIT = 20 as const
 export const CHAT_TRASH_MAX_LIMIT = 100 as const
 export const SESSION_LEAVE_VERSION = 1 as const
 export const SESSION_TRASH_RECOVERY_HOURS = 24 as const
+export const CHAT_DELETION_VERSION = 1 as const
 
 export const chatRetentionPolicySchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('keep') }).strict(),
@@ -117,7 +118,6 @@ const chatTrashItemBase = {
   state: z.literal('trash'),
   tombstonedAt: z.string().datetime(),
   source: z.literal('server_maintenance'),
-  hardDeletion: z.literal('not_implemented'),
 }
 
 const ttlTrashItemSchema = z
@@ -130,6 +130,7 @@ const ttlTrashItemSchema = z
         source: z.enum(['chat_created', 'user_message', 'chat_restored']),
       })
       .strict(),
+    hardDeletion: z.literal('not_implemented'),
   })
   .strict()
 
@@ -150,6 +151,14 @@ const sessionTrashItemSchema = z
         source: z.literal('server_calculated_24_hours'),
       })
       .strict(),
+    hardDeletion: z
+      .object({
+        state: z.enum(['scheduled_after_recovery', 'pending_maintenance']),
+        eligibleAt: z.string().datetime(),
+        source: z.literal('server_maintenance'),
+        blobGc: z.literal('not_applicable'),
+      })
+      .strict(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -163,6 +172,23 @@ const sessionTrashItemSchema = z
         message: 'Session recovery deadline must be exactly 24 hours after Trash entry',
       })
     }
+    if (value.hardDeletion.eligibleAt !== value.recovery.deadline) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['hardDeletion', 'eligibleAt'],
+        message: 'Session metadata deletion must use the recovery deadline',
+      })
+    }
+    if (
+      (value.recovery.state === 'available') !==
+      (value.hardDeletion.state === 'scheduled_after_recovery')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['hardDeletion', 'state'],
+        message: 'Session metadata deletion state must follow recovery availability',
+      })
+    }
   })
 
 export const chatTrashItemSchema = z.union([ttlTrashItemSchema, sessionTrashItemSchema])
@@ -173,6 +199,50 @@ const normalizedProjectReferenceSchema = z
   .min(1)
   .max(255)
   .refine((value) => value === value.trim(), 'Project reference must be normalized')
+
+export const chatDeletionAuditSchema = z
+  .object({
+    deletionVersion: z.literal(CHAT_DELETION_VERSION),
+    chatId: z.string().min(1),
+    scope: z.enum(['projectless', 'project']),
+    projectId: normalizedProjectReferenceSchema.nullable(),
+    state: z.literal('deleted'),
+    reason: z.literal('session_recovery_elapsed'),
+    tombstonedAt: z.string().datetime(),
+    recoveryDeadline: z.string().datetime(),
+    deletedAt: z.string().datetime(),
+    source: z.literal('server_maintenance'),
+    boundary: z.literal('thread_owned_sqlite_metadata'),
+    blobGc: z.literal('not_applicable'),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.scope === 'project') !== (value.projectId !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['projectId'],
+        message: 'Deletion audit requires exactly one Project or projectless scope',
+      })
+    }
+    if (
+      Date.parse(value.recoveryDeadline) !==
+      Date.parse(value.tombstonedAt) + SESSION_TRASH_RECOVERY_HOURS * 60 * 60 * 1_000
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['recoveryDeadline'],
+        message: 'Deletion audit deadline must be exactly 24 hours after Trash entry',
+      })
+    }
+    if (Date.parse(value.deletedAt) < Date.parse(value.recoveryDeadline)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['deletedAt'],
+        message: 'Session metadata cannot be deleted before recovery ends',
+      })
+    }
+  })
+export type ChatDeletionAudit = z.infer<typeof chatDeletionAuditSchema>
 
 const sessionLeaveScopeSchema = z.discriminatedUnion('scope', [
   z.object({ scope: z.literal('projectless') }).strict(),
@@ -216,7 +286,7 @@ export const leaveSessionChatResponse = z
       .strict(),
     activeJobCount: z.number().int().nonnegative(),
     recoveryDeadline: z.string().datetime().nullable(),
-    hardDeletion: z.literal('not_implemented'),
+    hardDeletion: z.literal('session_metadata_after_recovery'),
   })
   .strict()
   .superRefine((value, context) => {

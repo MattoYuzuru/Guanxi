@@ -1,15 +1,18 @@
 import {
+  CHAT_DELETION_VERSION,
   CHAT_LIFECYCLE_VERSION,
   CHAT_RETENTION_DAYS,
   CHAT_RETENTION_VERSION,
   SESSION_LEAVE_VERSION,
   SESSION_TRASH_RECOVERY_HOURS,
+  chatDeletionAuditSchema,
   chatRetentionProjectionSchema,
   chatTrashItemSchema,
   leaveSessionChatResponse,
   restoredChatLifecycleSchema,
   type ChatRetentionPolicy,
   type ChatRetentionProjection,
+  type ChatDeletionAudit,
   type ChatTrashItem,
   type LeaveSessionChatResponse,
   type RestoredChatLifecycle,
@@ -51,6 +54,16 @@ export interface RetentionEligibilityCandidate extends RetentionEligibilityCurso
   reason: 'ttl_expired' | 'session_left'
 }
 
+export interface HardDeletionCursor {
+  tombstonedAt: string
+  chatId: string
+}
+
+export interface HardDeletionCandidate extends HardDeletionCursor {
+  projectId: string | null
+  recoveryDeadline: string
+}
+
 export type ChatRetentionLookup =
   | { status: 'ok'; retention: ChatRetentionProjection }
   | { status: 'not_found' }
@@ -81,6 +94,8 @@ export type SessionLeaveLookup =
 export interface ChatTrashPage {
   chats: ChatTrashItem[]
   hasMore: boolean
+  deletions: ChatDeletionAudit[]
+  deletionsHaveMore: boolean
 }
 
 export interface ChatRetentionStoreOptions {
@@ -151,19 +166,51 @@ function toTrashItem(row: RetentionRow, observedAt: string): ChatTrashItem {
       source: row.chat_lifecycle_reason === 'session_left' ? 'session_leave' : activitySource(row),
     },
     source: 'server_maintenance',
-    hardDeletion: 'not_implemented',
   }
   if (row.chat_lifecycle_reason !== 'session_left') {
-    return chatTrashItemSchema.parse(base)
+    return chatTrashItemSchema.parse({ ...base, hardDeletion: 'not_implemented' })
   }
   const deadline = sessionRecoveryDeadline(row.chat_tombstoned_at!)
+  const recoveryAvailable = Date.parse(observedAt) < Date.parse(deadline)
   return chatTrashItemSchema.parse({
     ...base,
     recovery: {
       deadline,
-      state: Date.parse(observedAt) < Date.parse(deadline) ? 'available' : 'grace_elapsed',
+      state: recoveryAvailable ? 'available' : 'grace_elapsed',
       source: 'server_calculated_24_hours',
     },
+    hardDeletion: {
+      state: recoveryAvailable ? 'scheduled_after_recovery' : 'pending_maintenance',
+      eligibleAt: deadline,
+      source: 'server_maintenance',
+      blobGc: 'not_applicable',
+    },
+  })
+}
+
+interface DeletionAuditRow {
+  chat_id: string
+  scope: string
+  project_id: string | null
+  tombstoned_at: string
+  recovery_deadline: string
+  deleted_at: string
+}
+
+function toDeletionAudit(row: DeletionAuditRow): ChatDeletionAudit {
+  return chatDeletionAuditSchema.parse({
+    deletionVersion: CHAT_DELETION_VERSION,
+    chatId: row.chat_id,
+    scope: row.scope,
+    projectId: row.project_id,
+    state: 'deleted',
+    reason: 'session_recovery_elapsed',
+    tombstonedAt: row.tombstoned_at,
+    recoveryDeadline: row.recovery_deadline,
+    deletedAt: row.deleted_at,
+    source: 'server_maintenance',
+    boundary: 'thread_owned_sqlite_metadata',
+    blobGc: 'not_applicable',
   })
 }
 
@@ -251,10 +298,131 @@ export class ChatRetentionStore {
     const rows = (scope.scope === 'project'
       ? statement.all(scope.projectId, limit + 1)
       : statement.all(limit + 1)) as unknown as RetentionRow[]
+    const auditWhere = scope.scope === 'project'
+      ? "scope = 'project' AND project_id = ?"
+      : "scope = 'projectless' AND project_id IS NULL"
+    const auditStatement = this.db.prepare(
+      `SELECT chat_id, scope, project_id, tombstoned_at, recovery_deadline, deleted_at
+       FROM chat_deletion_audit
+       WHERE ${auditWhere}
+       ORDER BY deleted_at DESC, chat_id ASC
+       LIMIT ?`,
+    )
+    const auditRows = (scope.scope === 'project'
+      ? auditStatement.all(scope.projectId, limit + 1)
+      : auditStatement.all(limit + 1)) as unknown as DeletionAuditRow[]
     return {
       chats: rows.slice(0, limit).map((row) => toTrashItem(row, this.clock().toISOString())),
       hasMore: rows.length > limit,
+      deletions: auditRows.slice(0, limit).map(toDeletionAudit),
+      deletionsHaveMore: auditRows.length > limit,
     }
+  }
+
+  hardDeletionEligiblePage(
+    observedAt: string,
+    after: HardDeletionCursor | null,
+    limit: number,
+  ): HardDeletionCandidate[] {
+    const cutoff = new Date(
+      Date.parse(observedAt) - SESSION_TRASH_RECOVERY_HOURS * 60 * 60 * 1_000,
+    ).toISOString()
+    const afterTombstone = after?.tombstonedAt ?? ''
+    const afterChatId = after?.chatId ?? ''
+    const rows = this.db.prepare(
+      `SELECT t.id, t.project_id, t.chat_tombstoned_at
+       FROM threads t
+       WHERE t.mode = 'chat'
+         AND t.chat_lifecycle_state = 'trash'
+         AND t.chat_lifecycle_reason = 'session_left'
+         AND t.retention_policy = 'session'
+         AND t.session_leave_at IS NOT NULL
+         AND t.session_leave_source = 'explicit_user_action'
+         AND t.chat_tombstone_activity_at = t.session_leave_at
+         AND t.chat_tombstoned_at <= ?
+         AND (
+           t.chat_tombstoned_at > ?
+           OR (t.chat_tombstoned_at = ? AND t.id > ?)
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM chat_deletion_audit audit WHERE audit.chat_id = t.id
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM chat_job_inputs input
+           JOIN jobs job ON job.id = input.job_id
+           WHERE input.thread_id = t.id
+             AND job.status NOT IN (${TERMINAL_JOB_STATES})
+         )
+       ORDER BY t.chat_tombstoned_at ASC, t.id ASC
+       LIMIT ?`,
+    ).all(cutoff, afterTombstone, afterTombstone, afterChatId, limit) as unknown as Array<{
+      id: string
+      project_id: string | null
+      chat_tombstoned_at: string
+    }>
+    return rows.map((row) => ({
+      chatId: row.id,
+      projectId: row.project_id,
+      tombstonedAt: row.chat_tombstoned_at,
+      recoveryDeadline: sessionRecoveryDeadline(row.chat_tombstoned_at),
+    }))
+  }
+
+  hardDeleteEligible(
+    candidates: readonly HardDeletionCandidate[],
+    observedAt: string,
+  ): number {
+    const cutoff = new Date(
+      Date.parse(observedAt) - SESSION_TRASH_RECOVERY_HOURS * 60 * 60 * 1_000,
+    ).toISOString()
+    return this.transact(() => {
+      let deleted = 0
+      for (const candidate of candidates) {
+        const audit = this.db.prepare(
+          `INSERT INTO chat_deletion_audit (
+             deletion_version, chat_id, scope, project_id, reason,
+             tombstoned_at, recovery_deadline, deleted_at, source, boundary, blob_gc
+           )
+           SELECT 1, t.id,
+                  CASE WHEN t.project_id IS NULL THEN 'projectless' ELSE 'project' END,
+                  t.project_id, 'session_recovery_elapsed', t.chat_tombstoned_at,
+                  ?, ?, 'server_maintenance', 'thread_owned_sqlite_metadata', 'not_applicable'
+           FROM threads t
+           WHERE t.id = ? AND t.project_id IS ? AND t.mode = 'chat'
+             AND t.chat_lifecycle_state = 'trash'
+             AND t.chat_lifecycle_reason = 'session_left'
+             AND t.retention_policy = 'session'
+             AND t.session_leave_at IS NOT NULL
+             AND t.session_leave_source = 'explicit_user_action'
+             AND t.chat_tombstone_activity_at = t.session_leave_at
+             AND t.chat_tombstoned_at = ?
+             AND t.chat_tombstoned_at <= ?
+             AND NOT EXISTS (
+               SELECT 1 FROM chat_deletion_audit existing WHERE existing.chat_id = t.id
+             )
+             AND NOT EXISTS (
+               SELECT 1
+               FROM chat_job_inputs input
+               JOIN jobs job ON job.id = input.job_id
+               WHERE input.thread_id = t.id
+                 AND job.status NOT IN (${TERMINAL_JOB_STATES})
+             )`,
+        ).run(
+          candidate.recoveryDeadline,
+          observedAt,
+          candidate.chatId,
+          candidate.projectId,
+          candidate.tombstonedAt,
+          cutoff,
+        )
+        if (audit.changes === 0) continue
+        const removed = this.db.prepare('DELETE FROM threads WHERE id = ?').run(candidate.chatId)
+        if (removed.changes !== 1) throw new Error('Audited Chat metadata was not deleted')
+        deleted += 1
+      }
+      return deleted
+    })
   }
 
   restore(chatId: string): RestoreChatLookup {
@@ -492,7 +660,7 @@ export class ChatRetentionStore {
       recoveryDeadline: row.chat_lifecycle_state === 'trash'
         ? sessionRecoveryDeadline(row.chat_tombstoned_at!)
         : null,
-      hardDeletion: 'not_implemented',
+      hardDeletion: 'session_metadata_after_recovery',
     })
   }
 

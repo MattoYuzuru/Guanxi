@@ -7,12 +7,14 @@
 import { z } from 'zod'
 import { PROJECT_PRESENTATION_VERSION } from './project-presentation.ts'
 import {
+  CHAT_DELETION_VERSION,
   CHAT_LIFECYCLE_VERSION,
   CHAT_RETENTION_VERSION,
   CHAT_TRASH_DEFAULT_LIMIT,
   CHAT_TRASH_MAX_LIMIT,
   chatRetentionPolicySchema,
   chatRetentionProjectionSchema,
+  chatDeletionAuditSchema,
   chatTrashItemSchema,
   restoredChatLifecycleSchema,
 } from './retention.ts'
@@ -938,6 +940,11 @@ export const listChatTrashQuery = z
     z
       .object({
         lifecycleVersion: z.coerce.number().pipe(z.literal(CHAT_LIFECYCLE_VERSION)),
+        deletionVersion: z.coerce
+          .number()
+          .pipe(z.literal(CHAT_DELETION_VERSION))
+          .optional()
+          .default(CHAT_DELETION_VERSION),
         scope: z.literal('projectless'),
         limit: z.coerce
           .number()
@@ -951,6 +958,11 @@ export const listChatTrashQuery = z
     z
       .object({
         lifecycleVersion: z.coerce.number().pipe(z.literal(CHAT_LIFECYCLE_VERSION)),
+        deletionVersion: z.coerce
+          .number()
+          .pipe(z.literal(CHAT_DELETION_VERSION))
+          .optional()
+          .default(CHAT_DELETION_VERSION),
         scope: z.literal('project'),
         projectId: z
           .string()
@@ -972,10 +984,13 @@ export type ListChatTrashQuery = z.infer<typeof listChatTrashQuery>
 export const listChatTrashResponse = z
   .object({
     lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION),
+    deletionVersion: z.literal(CHAT_DELETION_VERSION),
     scope: z.enum(['projectless', 'project']),
     projectId: z.string().min(1).nullable(),
     chats: z.array(chatTrashItemSchema).max(CHAT_TRASH_MAX_LIMIT),
     hasMore: z.boolean(),
+    deletions: z.array(chatDeletionAuditSchema).max(CHAT_TRASH_MAX_LIMIT),
+    deletionsHaveMore: z.boolean(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -993,6 +1008,15 @@ export const listChatTrashResponse = z
           code: z.ZodIssueCode.custom,
           path: ['chats', index, 'projectId'],
           message: 'Trash item crossed its requested Project scope',
+        })
+      }
+    })
+    value.deletions.forEach((deletion, index) => {
+      if (deletion.scope !== value.scope || deletion.projectId !== expectedProject) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['deletions', index, 'projectId'],
+          message: 'Deletion audit crossed its requested Project scope',
         })
       }
     })

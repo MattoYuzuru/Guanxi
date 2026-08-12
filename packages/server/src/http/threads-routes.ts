@@ -151,7 +151,13 @@ export function threadsRoutes(app: AppContext): Hono {
     const query = new URL(context.req.url).searchParams
     const raw = Object.fromEntries(query)
     const parsed = listChatTrashQuery.safeParse(raw)
-    const allowedKeys = new Set(['lifecycleVersion', 'scope', 'projectId', 'limit'])
+    const allowedKeys = new Set([
+      'lifecycleVersion',
+      'deletionVersion',
+      'scope',
+      'projectId',
+      'limit',
+    ])
     if (
       !parsed.success ||
       [...query.keys()].some((key) => !allowedKeys.has(key)) ||
@@ -173,6 +179,7 @@ export function threadsRoutes(app: AppContext): Hono {
     )
     return context.json(listChatTrashResponse.parse({
       lifecycleVersion: parsed.data.lifecycleVersion,
+      deletionVersion: parsed.data.deletionVersion,
       scope: parsed.data.scope,
       projectId: parsed.data.scope === 'project' ? parsed.data.projectId : null,
       ...page,

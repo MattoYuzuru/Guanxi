@@ -1,7 +1,17 @@
 import type { DatabaseSync } from 'node:sqlite'
 
+/** Remove the additive v20 audit boundary while preserving the exact v19 shape. */
+export function downgradeChatHardDeletionToV19(db: DatabaseSync): void {
+  db.exec(`
+    DROP INDEX IF EXISTS idx_chat_deletion_audit_scope;
+    DROP TABLE IF EXISTS chat_deletion_audit;
+    PRAGMA user_version = 19;
+  `)
+}
+
 /** Restore the original weak v18 lifecycle triggers for a true v18→v19 fixture. */
 export function downgradeSessionLifecycleHardeningToV18(db: DatabaseSync): void {
+  downgradeChatHardDeletionToV19(db)
   db.exec(`
     DROP INDEX idx_threads_chat_session_integrity;
     DROP TRIGGER threads_chat_lifecycle_update_valid;

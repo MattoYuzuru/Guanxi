@@ -159,7 +159,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
       leaveBasis: { at: NOW, source: 'explicit_user_action' },
       activeJobCount: 0,
       recoveryDeadline: new Date(Date.parse(NOW) + DAY_MS).toISOString(),
-      hardDeletion: 'not_implemented',
+      hardDeletion: 'session_metadata_after_recovery',
     }
     assert.equal(leaveSessionChatResponse.safeParse(response).success, true)
     assert.equal(leaveSessionChatResponse.safeParse({
@@ -177,7 +177,12 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
       tombstonedAt: NOW,
       activityBasis: { at: NOW, source: 'session_leave' },
       source: 'server_maintenance',
-      hardDeletion: 'not_implemented',
+      hardDeletion: {
+        state: 'scheduled_after_recovery',
+        eligibleAt: new Date(Date.parse(NOW) + DAY_MS).toISOString(),
+        source: 'server_maintenance',
+        blobGc: 'not_applicable',
+      },
       recovery: {
         deadline: new Date(Date.parse(NOW) + DAY_MS).toISOString(),
         state: 'available',
@@ -194,7 +199,12 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
       tombstonedAt: NOW,
       activityBasis: { at: NOW, source: 'session_leave' },
       source: 'server_maintenance',
-      hardDeletion: 'not_implemented',
+      hardDeletion: {
+        state: 'scheduled_after_recovery',
+        eligibleAt: new Date(Date.parse(NOW) + DAY_MS - 1).toISOString(),
+        source: 'server_maintenance',
+        blobGc: 'not_applicable',
+      },
       recovery: {
         deadline: new Date(Date.parse(NOW) + DAY_MS - 1).toISOString(),
         state: 'available',
@@ -229,7 +239,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 19)
+    assert.equal(version(retried), 20)
     assert.deepEqual({ ...row(retried, chat.id) }, {
       retention_policy: 'ttl',
       chat_lifecycle_state: 'active',
@@ -278,7 +288,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     hardeningRolledBack.close()
 
     const hardened = openDb(path)
-    assert.equal(version(hardened), 19)
+    assert.equal(version(hardened), 20)
     assert.equal(exactPayload(hardened), beforeHardening)
     assert.throws(() => hardened.prepare(
       `UPDATE threads
@@ -289,7 +299,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     ).run(NOW, NOW, chat.id), /invalid Chat lifecycle state/)
     hardened.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 19)
+    assert.equal(version(reopened), 20)
     assert.equal(exactPayload(reopened), before)
     reopened.close()
   })
