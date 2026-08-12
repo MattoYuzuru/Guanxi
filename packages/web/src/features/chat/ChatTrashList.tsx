@@ -118,7 +118,7 @@ export function ChatTrashList({
     <section
       ref={sectionRef}
       aria-label={translate('chat.trash.title')}
-      className="mt-3 min-w-0 border-t border-[var(--border)] pt-3"
+      className="chat-trash-region mt-3 min-w-0 border-t border-[var(--border)] pt-3"
     >
       <h3 ref={headingRef} tabIndex={-1} className="text-xs font-semibold outline-none">
         {translate('chat.trash.title')}
@@ -168,7 +168,7 @@ export function ChatTrashList({
           {chats.map((chat) => (
             <li
               key={chat.chatId}
-              className="min-w-0 rounded-md border border-[var(--border)] p-2 text-2xs"
+              className="chat-trash-item min-w-0 rounded-md border border-[var(--border)] p-2 text-2xs"
             >
               <strong className="block min-w-0 break-words text-xs">{chat.title}</strong>
               <span className="mt-1 block break-words text-[var(--fg-subtle)]">

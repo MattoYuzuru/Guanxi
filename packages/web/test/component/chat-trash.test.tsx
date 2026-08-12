@@ -248,6 +248,53 @@ describe('Chat Trash list', () => {
     expect(api.listChatTrash).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps English pending truth through failure/retry and shows one committed deletion', async () => {
+    document.documentElement.lang = 'en'
+    const pending = {
+      ...SESSION_ITEM,
+      recovery: { ...SESSION_ITEM.recovery, state: 'grace_elapsed' as const },
+      hardDeletion: { ...SESSION_ITEM.hardDeletion, state: 'pending_maintenance' as const },
+    }
+    const committed = {
+      deletionVersion: 1 as const,
+      chatId: pending.chatId,
+      scope: 'projectless' as const,
+      projectId: null,
+      state: 'deleted' as const,
+      reason: 'session_recovery_elapsed' as const,
+      tombstonedAt: pending.tombstonedAt,
+      recoveryDeadline: pending.recovery.deadline,
+      deletedAt: '2026-08-12T12:00:00.001Z',
+      source: 'server_maintenance' as const,
+      boundary: 'thread_owned_sqlite_metadata' as const,
+      blobGc: 'not_applicable' as const,
+    }
+    vi.spyOn(api, 'listChatTrash')
+      .mockResolvedValueOnce({
+        lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'projectless', projectId: null,
+        chats: [pending], hasMore: false,
+      })
+      .mockRejectedValueOnce(new Error('safe English deletion failure'))
+      .mockResolvedValueOnce({
+        lifecycleVersion: 1, deletionVersion: 1, scope: 'projectless', projectId: null,
+        chats: [], hasMore: false, deletions: [committed], deletionsHaveMore: false,
+      })
+    render(<ChatTrashList projectId={null} />)
+    expect(await screen.findAllByText(pending.title)).toHaveLength(1)
+    expect(screen.getAllByText(/metadata deletion is pending server maintenance/u)).toHaveLength(1)
+    expect(screen.getAllByText(/generic blob cleanup is not applicable/u)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh deletion status' }))
+    const failure = await screen.findByText(/safe English deletion failure/u)
+    await waitFor(() => expect(failure.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    expect(screen.getAllByText(pending.title)).toHaveLength(1)
+    expect(screen.queryAllByText(/Session Chat metadata deleted by server maintenance/u)).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Trash' }))
+    expect(await screen.findAllByText(/Session Chat metadata deleted by server maintenance/u)).toHaveLength(1)
+    expect(screen.queryAllByText(pending.title)).toHaveLength(0)
+    expect(screen.getAllByText(/generic blob cleanup is not applicable/u)).toHaveLength(1)
+    expect(api.listChatTrash).toHaveBeenCalledTimes(3)
+  })
+
   it('keeps elapsed metadata pending through refresh failure and removes it only after a sourced committed audit', async () => {
     const pending = {
       ...SESSION_ITEM,

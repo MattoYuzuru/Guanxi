@@ -61,6 +61,7 @@ export interface HardDeletionCursor {
 
 export interface HardDeletionCandidate extends HardDeletionCursor {
   projectId: string | null
+  sessionLeaveAt: string
   recoveryDeadline: string
 }
 
@@ -330,7 +331,7 @@ export class ChatRetentionStore {
     const afterTombstone = after?.tombstonedAt ?? ''
     const afterChatId = after?.chatId ?? ''
     const rows = this.db.prepare(
-      `SELECT t.id, t.project_id, t.chat_tombstoned_at
+      `SELECT t.id, t.project_id, t.chat_tombstoned_at, t.session_leave_at
        FROM threads t
        WHERE t.mode = 'chat'
          AND t.chat_lifecycle_state = 'trash'
@@ -360,11 +361,13 @@ export class ChatRetentionStore {
       id: string
       project_id: string | null
       chat_tombstoned_at: string
+      session_leave_at: string
     }>
     return rows.map((row) => ({
       chatId: row.id,
       projectId: row.project_id,
       tombstonedAt: row.chat_tombstoned_at,
+      sessionLeaveAt: row.session_leave_at,
       recoveryDeadline: sessionRecoveryDeadline(row.chat_tombstoned_at),
     }))
   }
@@ -396,6 +399,7 @@ export class ChatRetentionStore {
              AND t.session_leave_at IS NOT NULL
              AND t.session_leave_source = 'explicit_user_action'
              AND t.chat_tombstone_activity_at = t.session_leave_at
+             AND t.session_leave_at = ?
              AND t.chat_tombstoned_at = ?
              AND t.chat_tombstoned_at <= ?
              AND NOT EXISTS (
@@ -413,6 +417,7 @@ export class ChatRetentionStore {
           observedAt,
           candidate.chatId,
           candidate.projectId,
+          candidate.sessionLeaveAt,
           candidate.tombstonedAt,
           cutoff,
         )
@@ -626,7 +631,9 @@ export class ChatRetentionStore {
       restoredAt,
       activityBasis: { at: restoredAt, source: 'chat_restored' },
       source: 'user_restore',
-      hardDeletion: 'not_implemented',
+      hardDeletion: row.retention_policy === 'session'
+        ? 'session_metadata_after_recovery_not_scheduled'
+        : 'not_implemented',
     })
   }
 

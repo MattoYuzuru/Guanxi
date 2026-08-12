@@ -152,12 +152,24 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
       source: 'user_restore',
       hardDeletion: 'not_implemented',
     }).success, true)
+    assert.equal(restoredChatLifecycleSchema.safeParse({
+      lifecycleVersion: 1,
+      chatId: 'chat-1',
+      projectId: null,
+      state: 'active',
+      restored: true,
+      restoredAt: NOW,
+      activityBasis: { at: NOW, source: 'chat_restored' },
+      source: 'user_restore',
+      hardDeletion: 'session_metadata_after_recovery_not_scheduled',
+    }).success, true)
     for (const invalid of [
       { lifecycleVersion: 2, scope: 'projectless' },
       { lifecycleVersion: 1, scope: 'projectless', projectId: 'leak' },
       { lifecycleVersion: 1, scope: 'project' },
       { lifecycleVersion: 1, scope: 'project', projectId: 'p', limit: 101 },
       { lifecycleVersion: 1, scope: 'future' },
+      { lifecycleVersion: 1, scope: 'projectless', limit: 20 },
     ]) assert.equal(listChatTrashQuery.safeParse(invalid).success, false)
     assert.equal(restoreChatBody.safeParse({ lifecycleVersion: 1 }).success, true)
     assert.equal(restoreChatBody.safeParse({ lifecycleVersion: 2 }).success, false)
@@ -473,6 +485,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
       assert.equal(restored.lifecycle.restored, true)
       assert.equal(restored.lifecycle.activityBasis.source, 'chat_restored')
       assert.equal(restored.lifecycle.restoredAt, '2026-08-11T13:00:00.000Z')
+      assert.equal(restored.lifecycle.hardDeletion, 'not_implemented')
     }
     const repeated = store.restore(explicit.id)
     assert.equal(repeated.status, 'ok')
@@ -561,19 +574,23 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     const app = createApp(context)
     assert.equal((await app.request(`/api/threads/${projectless.id}`)).status, 404)
     assert.deepEqual(
-      (await (await app.request('/api/threads/trash?lifecycleVersion=1&scope=projectless&limit=20')).json() as { chats: Array<{ chatId: string }> }).chats.map(({ chatId }) => chatId),
+      (await (await app.request('/api/threads/trash?lifecycleVersion=1&deletionVersion=1&scope=projectless&limit=20')).json() as { chats: Array<{ chatId: string }> }).chats.map(({ chatId }) => chatId),
       [projectless.id],
     )
     assert.deepEqual(
-      (await (await app.request(`/api/threads/trash?lifecycleVersion=1&scope=project&projectId=${project.id}&limit=20`)).json() as { chats: Array<{ chatId: string }> }).chats.map(({ chatId }) => chatId),
+      (await (await app.request(`/api/threads/trash?lifecycleVersion=1&deletionVersion=1&scope=project&projectId=${project.id}&limit=20`)).json() as { chats: Array<{ chatId: string }> }).chats.map(({ chatId }) => chatId),
       [owned.id],
     )
-    assert.equal((await app.request(`/api/threads/trash?lifecycleVersion=1&scope=project&projectId=missing&limit=20`)).status, 404)
+    assert.equal((await app.request(`/api/threads/trash?lifecycleVersion=1&deletionVersion=1&scope=project&projectId=missing&limit=20`)).status, 404)
     for (const query of [
-      'lifecycleVersion=2&scope=projectless',
-      'lifecycleVersion=1&scope=projectless&projectId=leak',
-      'lifecycleVersion=1&scope=projectless&scope=project',
-      'lifecycleVersion=1&scope=project&projectId=x&future=1',
+      'lifecycleVersion=1&scope=projectless',
+      'lifecycleVersion=2&deletionVersion=1&scope=projectless',
+      'lifecycleVersion=1&deletionVersion=bad&scope=projectless',
+      'lifecycleVersion=1&deletionVersion=2&scope=projectless',
+      'lifecycleVersion=1&deletionVersion=1&deletionVersion=1&scope=projectless',
+      'lifecycleVersion=1&deletionVersion=1&scope=projectless&projectId=leak',
+      'lifecycleVersion=1&deletionVersion=1&scope=projectless&scope=project',
+      'lifecycleVersion=1&deletionVersion=1&scope=project&projectId=x&future=1',
     ]) assert.equal((await app.request(`/api/threads/trash?${query}`)).status, 400)
     const ownedBeforeInvalid = JSON.stringify(context.db.prepare('SELECT * FROM threads WHERE id = ?').get(owned.id))
     for (const body of [

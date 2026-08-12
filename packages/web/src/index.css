@@ -503,6 +503,16 @@
 }
 
 @media (forced-colors: active) {
+  .chat-trash-item {
+    border-color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .chat-trash-region button:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+
   .project-color-chip,
   .dark .project-color-chip {
     background: Canvas;

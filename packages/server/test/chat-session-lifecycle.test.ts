@@ -545,6 +545,9 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     }
     const restored = beforeStore.restore(restoreBefore.id)
     assert.equal(restored.status, 'ok')
+    if (restored.status === 'ok') {
+      assert.equal(restored.lifecycle.hardDeletion, 'session_metadata_after_recovery_not_scheduled')
+    }
     assert.equal(beforeStore.restore(restoreBefore.id).status, 'ok')
     assert.equal(row(db, restoreBefore.id).session_leave_at, null)
     assert.equal(initial.tombstoneEligible(staleCandidate(restoreBefore.id), NOW), 0)
@@ -794,10 +797,10 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
       "SELECT COUNT(*) AS count FROM chat_lifecycle_audit WHERE chat_id = ? AND reason = 'session_left'",
     ).get(owned.id) as { count: number }).count, 1)
     const projectTrash = await (await app.request(
-      `/api/threads/trash?lifecycleVersion=1&scope=project&projectId=${project.id}&limit=20`,
+      `/api/threads/trash?lifecycleVersion=1&deletionVersion=1&scope=project&projectId=${project.id}&limit=20`,
     )).json() as { chats: Array<{ chatId: string; projectId: string | null }> }
     const projectlessTrash = await (await app.request(
-      '/api/threads/trash?lifecycleVersion=1&scope=projectless&limit=20',
+      '/api/threads/trash?lifecycleVersion=1&deletionVersion=1&scope=projectless&limit=20',
     )).json() as { chats: Array<{ chatId: string; projectId: string | null }> }
     assert.deepEqual(projectTrash.chats.map(({ chatId, projectId }) => ({ chatId, projectId })), [
       { chatId: owned.id, projectId: project.id },

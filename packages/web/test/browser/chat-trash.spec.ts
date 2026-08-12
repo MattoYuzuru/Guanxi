@@ -189,8 +189,30 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' })).toHaveCount(3)
   await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' }).last()).toBeDisabled()
 
+  const deletionRefresh = projectlessTrash.getByRole('button', { name: 'Обновить статус удаления' })
+  await deletionRefresh.focus()
+  const adaptiveStyles = await deletionRefresh.evaluate((button) => {
+    const buttonStyle = getComputedStyle(button)
+    return {
+      transitionDuration: buttonStyle.transitionDuration,
+      outlineWidth: buttonStyle.outlineWidth,
+      outlineStyle: buttonStyle.outlineStyle,
+    }
+  })
+  const itemStyles = await projectlessTrash.locator('.chat-trash-item')
+    .filter({ hasText: sessionElapsed.title })
+    .evaluate((item) => ({
+      borderStyle: getComputedStyle(item).borderStyle,
+      borderWidth: getComputedStyle(item).borderWidth,
+    }))
+  expect(Number.parseFloat(adaptiveStyles.transitionDuration)).toBeCloseTo(0.00001, 8)
+  expect(adaptiveStyles.outlineWidth).toBe('3px')
+  expect(adaptiveStyles.outlineStyle).toBe('solid')
+  expect(itemStyles.borderStyle).toBe('solid')
+  expect(itemStyles.borderWidth).not.toBe('0px')
+
   deletionRefreshArmed = true
-  await projectlessTrash.getByRole('button', { name: 'Обновить статус удаления' }).press('Enter')
+  await deletionRefresh.press('Enter')
   const deletionFailure = projectlessTrash.getByText('safe deletion refresh failure')
   await expect(deletionFailure).toBeVisible()
   await expect(deletionFailure.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()

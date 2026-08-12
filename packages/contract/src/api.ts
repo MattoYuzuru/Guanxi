@@ -940,11 +940,7 @@ export const listChatTrashQuery = z
     z
       .object({
         lifecycleVersion: z.coerce.number().pipe(z.literal(CHAT_LIFECYCLE_VERSION)),
-        deletionVersion: z.coerce
-          .number()
-          .pipe(z.literal(CHAT_DELETION_VERSION))
-          .optional()
-          .default(CHAT_DELETION_VERSION),
+        deletionVersion: z.coerce.number().pipe(z.literal(CHAT_DELETION_VERSION)),
         scope: z.literal('projectless'),
         limit: z.coerce
           .number()
@@ -958,11 +954,7 @@ export const listChatTrashQuery = z
     z
       .object({
         lifecycleVersion: z.coerce.number().pipe(z.literal(CHAT_LIFECYCLE_VERSION)),
-        deletionVersion: z.coerce
-          .number()
-          .pipe(z.literal(CHAT_DELETION_VERSION))
-          .optional()
-          .default(CHAT_DELETION_VERSION),
+        deletionVersion: z.coerce.number().pipe(z.literal(CHAT_DELETION_VERSION)),
         scope: z.literal('project'),
         projectId: z
           .string()
