@@ -143,6 +143,14 @@ function count(db: DatabaseSync, table: string): number {
   return (db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count
 }
 
+async function waitFor(predicate: () => boolean, message: string): Promise<void> {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    if (predicate()) return
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  assert.fail(message)
+}
+
 function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string {
   const tables = (db.prepare(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -614,8 +622,10 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     const periodicArtifact = createArtifact(context.db, periodicChat.id, 'periodic-reasoning')
     setArtifactExpiry(context.db, periodicArtifact.artifactId, NOW)
     scheduler.callbacks[0]!()
-    const periodicReport = await context.maintenance!.runOnce()
-    assert.equal(periodicReport.reasoningDeleted, 1)
+    await waitFor(() => (context.db.prepare(
+      'SELECT COUNT(*) AS count FROM reasoning_artifacts WHERE id = ?',
+    ).get(periodicArtifact.artifactId) as { count: number }).count === 0,
+    'periodic scheduler callback did not delete the due reasoning Artifact')
     assert.equal(count(context.db, 'reasoning_artifact_deletion_audit'), 2)
     assert.deepEqual({ ollamaCalls, modelCalls }, { ollamaCalls: 0, modelCalls: 0 })
     assert.equal(JSON.stringify(context.governor.snapshot(NOW)), governorBefore)
