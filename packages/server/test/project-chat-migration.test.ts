@@ -186,7 +186,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 16)
+    assert.equal(version(upgraded), 17)
     assert.equal(columnNames(upgraded).filter((name) => name === 'project_id').length, 1)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(legacy.id)?.projectId, null)
     const afterRows = upgraded.prepare('SELECT * FROM threads').all() as Array<
@@ -220,7 +220,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 16)
+    assert.equal(version(reopened), 17)
     assert.equal(columnNames(reopened).filter((name) => name === 'project_id').length, 1)
     assert.equal(
       (reopened.prepare(
@@ -249,7 +249,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 16)
+    assert.equal(version(upgraded), 17)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(owned.id)?.projectId, project.id)
     assert.equal(
       (upgraded.prepare(
@@ -289,7 +289,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 16)
+    assert.equal(version(recovered), 17)
     assert.equal(new ThreadStore(recovered).getWithOwnership(owned.id)?.projectId, project.id)
     assert.throws(
       () => recovered.prepare('UPDATE threads SET project_id = NULL WHERE id = ?').run(owned.id),
@@ -298,7 +298,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     recovered.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 16)
+    assert.equal(version(reopened), 17)
     assert.equal(new ThreadStore(reopened).getWithOwnership(owned.id)?.projectId, project.id)
     reopened.close()
   })
@@ -333,7 +333,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 16)
+    assert.equal(version(recovered), 17)
     assert.equal(new ThreadStore(recovered).getWithOwnership('legacy-thread')?.projectId, null)
     recovered.close()
   })

@@ -1,8 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite'
 
-/** Remove additive v16/v15 artifacts before an older migration fixture is replayed. */
+/** Remove additive v17/v16/v15 artifacts before an older migration fixture is replayed. */
 export function downgradeRetentionLifecycleToV14(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_reasoning_artifact_deletion_audit_chat;
+    DROP TABLE reasoning_artifact_deletion_audit;
     DROP TRIGGER reasoning_artifacts_immutable;
     DROP TRIGGER reasoning_artifacts_source_insert_valid;
     DROP INDEX idx_reasoning_artifacts_chat;

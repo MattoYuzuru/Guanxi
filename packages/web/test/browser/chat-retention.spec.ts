@@ -65,6 +65,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
   const unexpectedMutations: string[] = []
   let reasoningLists = 0
   let reasoningReads = 0
+  let reasoningExpired = false
   const reasoningContent = 'reasoning only'
   const artifactId = '22222222-2222-4222-8222-222222222222'
   const jobId = '11111111-1111-4111-8111-111111111111'
@@ -87,7 +88,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
       parentExpiresAt: expiresAt,
       effectiveExpiresAt: expiresAt,
       relationship: 'shorter_parent_retention_wins',
-      automaticDeletion: 'not_implemented',
+      automaticDeletion: 'server_maintenance_active',
     },
   }
 
@@ -140,14 +141,25 @@ test('Chat retention survives reload and contains repeated save, error and narro
     }
     if (url.pathname === `/api/threads/${thread.id}/reasoning-artifacts` && method === 'GET') {
       reasoningLists += 1
-      expect(Object.fromEntries(url.searchParams)).toEqual({ artifactVersion: '1', scope: 'projectless' })
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        artifactVersion: '1',
+        enforcementVersion: '1',
+        scope: 'projectless',
+      })
       return route.fulfill(json({
         artifactVersion: 1,
+        enforcementVersion: 1,
+        enforcement: {
+          state: 'active',
+          owner: 'server_maintenance',
+          boundary: 'reasoning_artifacts_only',
+          inclusiveDueBoundary: true,
+        },
         chatId: thread.id,
         scope: 'projectless',
         projectId: null,
         generatedAnswers: [{ messageId: 'message-1', jobId, createdAt: observedAt, byteSize: 12 }],
-        artifacts: [artifact],
+        artifacts: reasoningExpired ? [] : [artifact],
       }))
     }
     if (url.pathname === `/api/threads/${thread.id}/reasoning-artifacts/${artifactId}` && method === 'GET') {
@@ -167,7 +179,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(dialog.getByText(/Безвозвратное удаление не реализовано/u)).toHaveCount(1)
   await expect(dialog.getByText('Сгенерированные ответы', { exact: true })).toHaveCount(1)
   await expect(dialog.getByText('Результаты с рассуждениями', { exact: true })).toHaveCount(1)
-  await expect(dialog.getByText(/Автоматическое удаление не реализовано/u)).toHaveCount(1)
+  await expect(dialog.getByText(/Автоматическое удаление применяется/u)).toHaveCount(1)
   await expect(dialog.getByRole('button', { name: 'Копировать рассуждение' })).toHaveCount(1)
   await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(2)
   await expect(dialog.locator(`time[datetime="${observedAt}"]`)).toHaveCount(2)
@@ -191,6 +203,12 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect.poll(() => reasoningReads).toBe(1)
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(reasoningContent)
 
+  reasoningExpired = true
+  await dialog.getByRole('button', { name: 'Обновить рассуждения' }).press('Enter')
+  await expect(dialog.getByText('В этом Chat нет сохранённых рассуждений.')).toHaveCount(1)
+  await expect(dialog.getByText('Сгенерированные ответы', { exact: true })).toHaveCount(1)
+  await expect(dialog.getByRole('button', { name: 'Копировать рассуждение' })).toHaveCount(0)
+
   await dialog.getByRole('radio', { name: 'Хранить' }).check()
   const save = dialog.getByRole('button', { name: 'Сохранить retention' })
   await save.evaluate((button) => {
@@ -211,7 +229,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
     { retentionVersion: 1, policy: { mode: 'keep' } },
   ])
   await expect(dialog.locator('dd').filter({ hasText: 'Нет временного истечения' })).toHaveCount(1)
-  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
+  await expect(dialog.locator(`time[datetime="${expiresAt}"]`)).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Закрыть настройки хранения чата' }).click()
   await page.reload()
@@ -220,8 +238,9 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(page.getByRole('dialog').getByText('Восстанавливаемое истечение применяется')).toHaveCount(1)
   expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Pacific/Honolulu')
   await expect(page.getByRole('dialog').locator(`time[datetime="${observedAt}"]`)).toHaveCount(2)
-  await expect(page.getByRole('dialog').locator(`time[datetime="${expiresAt}"]`)).toHaveCount(1)
-  await expect(page.getByRole('dialog').getByRole('button', { name: 'Копировать рассуждение' })).toHaveCount(1)
+  await expect(page.getByRole('dialog').locator(`time[datetime="${expiresAt}"]`)).toHaveCount(0)
+  await expect(page.getByRole('dialog').getByText('В этом Chat нет сохранённых рассуждений.')).toHaveCount(1)
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Копировать рассуждение' })).toHaveCount(0)
   expect(reasoningLists).toBeGreaterThanOrEqual(2)
   expect(reasoningReads).toBe(1)
   expect(retentionReads).toBeGreaterThanOrEqual(2)

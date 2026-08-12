@@ -21,6 +21,13 @@ const TTL: ChatRetentionProjection = {
 }
 const REASONING: ListReasoningArtifactsResponse = {
   artifactVersion: 1,
+  enforcementVersion: 1,
+  enforcement: {
+    state: 'active',
+    owner: 'server_maintenance',
+    boundary: 'reasoning_artifacts_only',
+    inclusiveDueBoundary: true,
+  },
   chatId: 'chat-1',
   scope: 'projectless',
   projectId: null,
@@ -53,7 +60,7 @@ const REASONING: ListReasoningArtifactsResponse = {
       parentExpiresAt: EXPIRES_AT,
       effectiveExpiresAt: EXPIRES_AT,
       relationship: 'shorter_parent_retention_wins',
-      automaticDeletion: 'not_implemented',
+      automaticDeletion: 'server_maintenance_active',
     },
   }],
 }
@@ -91,10 +98,10 @@ describe('Chat retention info', () => {
     expect(dialog.textContent).toContain('Ч'.repeat(120))
     expect(dialog.textContent).toContain('Сгенерированные ответы')
     expect(dialog.textContent).toContain('Результаты с рассуждениями')
-    expect(dialog.textContent).toContain('Автоматическое удаление не реализовано')
+    expect(dialog.textContent).toContain('Автоматическое удаление применяется')
     expect(api.listReasoningArtifacts).toHaveBeenCalledWith(
       'chat-1',
-      { artifactVersion: 1, scope: 'projectless' },
+      { artifactVersion: 1, enforcementVersion: 1, scope: 'projectless' },
       expect.any(AbortSignal),
     )
 
@@ -226,7 +233,7 @@ describe('Chat retention info', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Chat retention' })
     expect(dialog.textContent).toContain('Recoverable expiry is active')
     expect(dialog.textContent).toContain('calculated by the server')
-    expect(dialog.textContent).toContain('Automatic deletion is not implemented')
+    expect(dialog.textContent).toContain('Automatic deletion is active')
   })
 
   it('copies only exact scoped Artifact text and does not expose answer/prompt/tool data', async () => {
@@ -244,7 +251,7 @@ describe('Chat retention info', () => {
     expect(api.getReasoningArtifact).toHaveBeenCalledWith(
       'chat-1',
       REASONING.artifacts[0]!.id,
-      { artifactVersion: 1, scope: 'projectless' },
+      { artifactVersion: 1, enforcementVersion: 1, scope: 'projectless' },
     )
     expect(document.body.textContent).not.toContain('final answer secret')
     expect(document.body.textContent).not.toContain('prompt secret')
@@ -286,7 +293,7 @@ describe('Chat retention info', () => {
       1,
       'chat-1',
       REASONING.artifacts[0]!.id,
-      { artifactVersion: 1, scope: 'projectless' },
+      { artifactVersion: 1, enforcementVersion: 1, scope: 'projectless' },
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Копировать рассуждение' }))
@@ -307,6 +314,23 @@ describe('Chat retention info', () => {
     expect(screen.getByText('В этом Chat нет сохранённых рассуждений.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Копировать рассуждение' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Экспортировать рассуждение' })).toBeNull()
+  })
+
+  it('refreshes after server cleanup to a separate empty reasoning state and keeps the answer', async () => {
+    vi.mocked(api.listReasoningArtifacts)
+      .mockResolvedValueOnce(REASONING)
+      .mockResolvedValueOnce({ ...REASONING, artifacts: [] })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Cleanup" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    expect(await screen.findAllByRole('button', { name: 'Копировать рассуждение' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить рассуждения' }))
+    expect(await screen.findByText('В этом Chat нет сохранённых рассуждений.')).toBeTruthy()
+    expect(screen.getByText('Сгенерированные ответы')).toBeTruthy()
+    expect(screen.getByText((_, element) =>
+      element?.tagName === 'LI' && element.textContent?.includes('12') === true,
+    )).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Копировать рассуждение' })).toBeNull()
+    expect(api.listReasoningArtifacts).toHaveBeenCalledTimes(2)
   })
 
   it('focuses reasoning load errors and retries with exact Project scope', async () => {
@@ -330,7 +354,7 @@ describe('Chat retention info', () => {
     await screen.findByRole('button', { name: 'Копировать рассуждение' })
     expect(api.listReasoningArtifacts).toHaveBeenLastCalledWith(
       'chat-1',
-      { artifactVersion: 1, scope: 'project', projectId: 'project-a' },
+      { artifactVersion: 1, enforcementVersion: 1, scope: 'project', projectId: 'project-a' },
       undefined,
     )
     expect(api.listReasoningArtifacts).toHaveBeenCalledTimes(2)

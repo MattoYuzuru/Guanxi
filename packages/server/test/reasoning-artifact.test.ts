@@ -26,6 +26,8 @@ const OPTIONS = { numCtx: 8_192, temperature: 0.7, think: 'high' as const }
 
 function downgradeToV15(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_reasoning_artifact_deletion_audit_chat;
+    DROP TABLE reasoning_artifact_deletion_audit;
     DROP TRIGGER reasoning_artifacts_immutable;
     DROP TRIGGER reasoning_artifacts_source_insert_valid;
     DROP INDEX idx_reasoning_artifacts_chat;
@@ -95,12 +97,18 @@ function terminalize(
 
 describe('P3-F reasoning Artifact persistence', () => {
   it('defines a strict versioned sourced contract and rejects future/cross-Chat shapes', () => {
-    assert.equal(listReasoningArtifactsQuery.safeParse({ artifactVersion: 1, scope: 'projectless' }).success, true)
+    assert.equal(listReasoningArtifactsQuery.safeParse({
+      artifactVersion: 1,
+      enforcementVersion: 1,
+      scope: 'projectless',
+    }).success, true)
     for (const invalid of [
+      { artifactVersion: 1, scope: 'projectless' },
+      { artifactVersion: 1, enforcementVersion: 2, scope: 'projectless' },
       { artifactVersion: 2, scope: 'projectless' },
-      { artifactVersion: 1, scope: 'projectless', projectId: 'leak' },
-      { artifactVersion: 1, scope: 'project' },
-      { artifactVersion: 1, scope: 'future' },
+      { artifactVersion: 1, enforcementVersion: 1, scope: 'projectless', projectId: 'leak' },
+      { artifactVersion: 1, enforcementVersion: 1, scope: 'project' },
+      { artifactVersion: 1, enforcementVersion: 1, scope: 'future' },
     ]) assert.equal(listReasoningArtifactsQuery.safeParse(invalid).success, false)
 
     const artifact = {
@@ -126,7 +134,7 @@ describe('P3-F reasoning Artifact persistence', () => {
         parentExpiresAt: null,
         effectiveExpiresAt: '2026-08-18T12:00:00.000Z',
         relationship: 'shorter_parent_retention_wins',
-        automaticDeletion: 'not_implemented',
+        automaticDeletion: 'server_maintenance_active',
       },
     } as const
     assert.equal(reasoningArtifactWithContentSchema.safeParse({ ...artifact, content: 'abc' }).success, true)
@@ -147,7 +155,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const fresh = openDb(path)
-    assert.equal((fresh.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 16)
+    assert.equal((fresh.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
     const { chat } = createChat(fresh)
     fresh.prepare(
       `INSERT INTO messages (
@@ -160,7 +168,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     fresh.close()
 
     const upgraded = openDb(path)
-    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 16)
+    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
     assert.deepEqual(
       new ThreadStore(upgraded).messages(chat.id).map(({ content, thinking }) => ({ content, thinking })),
       [{ content: 'legacy-final', thinking: 'legacy thinking — literal' }],
@@ -168,7 +176,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     assert.equal((upgraded.prepare('SELECT COUNT(*) AS count FROM reasoning_artifacts').get() as { count: number }).count, 0)
     upgraded.close()
     const reopened = openDb(path)
-    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 16)
+    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
     assert.equal((reopened.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'reasoning_artifacts'").get() as { count: number }).count, 1)
     downgradeToV15(reopened)
     reopened.exec('CREATE TABLE migration_sentinel (legacy_payload TEXT NOT NULL)')
@@ -184,7 +192,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     afterFailure.exec('DROP INDEX idx_reasoning_artifacts_chat; DROP TABLE migration_sentinel')
     afterFailure.close()
     const retried = openDb(path)
-    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 16)
+    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
     retried.close()
   })
 
@@ -447,10 +455,16 @@ describe('P3-F reasoning Artifact persistence', () => {
     const governorObservedAt = '2026-08-11T12:00:00.000Z'
     const governorBefore = JSON.stringify(context.governor.snapshot(governorObservedAt))
     const app = createApp(context)
-    const query = '?artifactVersion=1&scope=projectless'
+    const query = '?artifactVersion=1&enforcementVersion=1&scope=projectless'
     const listResponse = await app.request(`/api/threads/${chat.id}/reasoning-artifacts${query}`)
     assert.equal(listResponse.status, 200)
     const listed = listReasoningArtifactsResponse.parse(await listResponse.json())
+    assert.deepEqual(listed.enforcement, {
+      state: 'active',
+      owner: 'server_maintenance',
+      boundary: 'reasoning_artifacts_only',
+      inclusiveDueBoundary: true,
+    })
     assert.equal(listed.generatedAnswers.length, 1)
     assert.equal(listed.artifacts.length, 1)
     assert.equal(listed.artifacts[0]?.id, artifact.id)
@@ -473,16 +487,18 @@ describe('P3-F reasoning Artifact persistence', () => {
     })
 
     for (const invalid of [
+      '?artifactVersion=1&scope=projectless',
+      '?artifactVersion=1&enforcementVersion=2&scope=projectless',
       '?artifactVersion=2&scope=projectless',
-      '?artifactVersion=1&scope=projectless&projectId=leak',
-      '?artifactVersion=1&scope=projectless&scope=projectless',
-      '?artifactVersion=1&scope=project&projectId=other',
+      '?artifactVersion=1&enforcementVersion=1&scope=projectless&projectId=leak',
+      '?artifactVersion=1&enforcementVersion=1&scope=projectless&scope=projectless',
+      '?artifactVersion=1&enforcementVersion=1&scope=project&projectId=other',
     ]) {
       assert.equal((await app.request(`/api/threads/${chat.id}/reasoning-artifacts${invalid}`)).status, 400)
     }
     const other = createChat(context.db)
     assert.equal((await app.request(
-      `/api/threads/${other.chat.id}/reasoning-artifacts/${artifact.id}?artifactVersion=1&scope=projectless`,
+      `/api/threads/${other.chat.id}/reasoning-artifacts/${artifact.id}${query}`,
     )).status, 404)
     context.db.prepare(
       `UPDATE threads SET chat_lifecycle_state = 'trash',
@@ -504,7 +520,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     )
     assert.doesNotMatch(
       storeSource,
-      /node:fs|fetch\(|Ollama|Governor|tool|workspace|analytics|maintenance|cleanup/i,
+      /node:fs|fetch\(|Ollama|Governor|tool|workspace|analytics|generic.cleanup/i,
     )
     const routesSource = await readFile(
       new URL('../src/http/threads-routes.ts', import.meta.url),

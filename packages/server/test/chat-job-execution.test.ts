@@ -329,7 +329,7 @@ describe('durable Chat Job execution owner', () => {
       [{ id: assistant.id, content: 'partial complete', thinking: 'why ' }],
     )
     const artifacts = await (await app.request(
-      `/api/threads/${threadId}/reasoning-artifacts?artifactVersion=1&scope=projectless`,
+      `/api/threads/${threadId}/reasoning-artifacts?artifactVersion=1&enforcementVersion=1&scope=projectless`,
     )).json() as { artifacts: Array<{ source: { jobId: string; messageId: string } }> }
     assert.equal(artifacts.artifacts.length, 1)
     assert.deepEqual(artifacts.artifacts[0]?.source, {
