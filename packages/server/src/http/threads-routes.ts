@@ -270,6 +270,22 @@ export function threadsRoutes(app: AppContext): Hono {
         409,
       )
     }
+    if ('deletionVersion' in parsed.data) {
+      const retention = app.retention.get(result.lifecycle.chatId)
+      if (retention.status !== 'ok') {
+        return context.json(
+          { code: 'storage_error', message: 'Restored Chat retention is unavailable', details: null },
+          500,
+        )
+      }
+      return context.json(restoreChatResponse.parse({
+        ...result.lifecycle,
+        deletionVersion: parsed.data.deletionVersion,
+        hardDeletion: retention.retention.policy.mode === 'session'
+          ? 'session_metadata_after_recovery_not_scheduled'
+          : 'not_implemented',
+      }))
+    }
     return context.json(restoreChatResponse.parse(result.lifecycle))
   })
 

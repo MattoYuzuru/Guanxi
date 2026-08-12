@@ -322,7 +322,13 @@ export const restoredChatLifecycleSchema = z
       })
       .strict(),
     source: z.literal('user_restore'),
-    hardDeletion: z.enum(['not_implemented', 'session_metadata_after_recovery_not_scheduled']),
+    hardDeletion: z.literal('not_implemented'),
   })
   .strict()
 export type RestoredChatLifecycle = z.infer<typeof restoredChatLifecycleSchema>
+
+export const restoredChatDeletionLifecycleSchema = restoredChatLifecycleSchema.extend({
+  deletionVersion: z.literal(CHAT_DELETION_VERSION),
+  hardDeletion: z.enum(['not_implemented', 'session_metadata_after_recovery_not_scheduled']),
+}).strict()
+export type RestoredChatDeletionLifecycle = z.infer<typeof restoredChatDeletionLifecycleSchema>

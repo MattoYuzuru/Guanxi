@@ -10,6 +10,7 @@ import {
   listChatTrashQuery,
   listChatTrashResponse,
   restoreChatBody,
+  restoredChatDeletionLifecycleSchema,
   restoredChatLifecycleSchema,
 } from '@alamo/contract'
 import { createApp } from '../src/app.ts'
@@ -152,8 +153,9 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
       source: 'user_restore',
       hardDeletion: 'not_implemented',
     }).success, true)
-    assert.equal(restoredChatLifecycleSchema.safeParse({
+    assert.equal(restoredChatDeletionLifecycleSchema.safeParse({
       lifecycleVersion: 1,
+      deletionVersion: 1,
       chatId: 'chat-1',
       projectId: null,
       state: 'active',
@@ -172,6 +174,8 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
       { lifecycleVersion: 1, scope: 'projectless', limit: 20 },
     ]) assert.equal(listChatTrashQuery.safeParse(invalid).success, false)
     assert.equal(restoreChatBody.safeParse({ lifecycleVersion: 1 }).success, true)
+    assert.equal(restoreChatBody.safeParse({ lifecycleVersion: 1, deletionVersion: 1 }).success, true)
+    assert.equal(restoreChatBody.safeParse({ lifecycleVersion: 1, deletionVersion: 2 }).success, false)
     assert.equal(restoreChatBody.safeParse({ lifecycleVersion: 2 }).success, false)
     assert.equal(restoreChatBody.safeParse({ lifecycleVersion: 1, future: true }).success, false)
     assert.equal(listChatTrashResponse.safeParse({

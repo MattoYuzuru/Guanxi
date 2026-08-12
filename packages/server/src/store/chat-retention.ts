@@ -631,9 +631,7 @@ export class ChatRetentionStore {
       restoredAt,
       activityBasis: { at: restoredAt, source: 'chat_restored' },
       source: 'user_restore',
-      hardDeletion: row.retention_policy === 'session'
-        ? 'session_metadata_after_recovery_not_scheduled'
-        : 'not_implemented',
+      hardDeletion: 'not_implemented',
     })
   }
 

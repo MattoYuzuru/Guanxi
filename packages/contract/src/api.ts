@@ -17,6 +17,7 @@ import {
   chatDeletionAuditSchema,
   chatTrashItemSchema,
   restoredChatLifecycleSchema,
+  restoredChatDeletionLifecycleSchema,
 } from './retention.ts'
 import {
   REASONING_ARTIFACT_ENFORCEMENT_VERSION,
@@ -1015,11 +1016,18 @@ export const listChatTrashResponse = z
   })
 export type ListChatTrashResponse = z.infer<typeof listChatTrashResponse>
 
-export const restoreChatBody = z
-  .object({ lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION) })
-  .strict()
+export const restoreChatBody = z.union([
+  z.object({ lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION) }).strict(),
+  z.object({
+    lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION),
+    deletionVersion: z.literal(CHAT_DELETION_VERSION),
+  }).strict(),
+])
 export type RestoreChatBody = z.infer<typeof restoreChatBody>
-export const restoreChatResponse = restoredChatLifecycleSchema
+export const restoreChatResponse = z.union([
+  restoredChatLifecycleSchema,
+  restoredChatDeletionLifecycleSchema,
+])
 export type RestoreChatResponse = z.infer<typeof restoreChatResponse>
 
 /* ──────────────────────────────── Воркспейсы ─────────────────────────────── */

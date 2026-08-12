@@ -546,7 +546,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     const restored = beforeStore.restore(restoreBefore.id)
     assert.equal(restored.status, 'ok')
     if (restored.status === 'ok') {
-      assert.equal(restored.lifecycle.hardDeletion, 'session_metadata_after_recovery_not_scheduled')
+      assert.equal(restored.lifecycle.hardDeletion, 'not_implemented')
     }
     assert.equal(beforeStore.restore(restoreBefore.id).status, 'ok')
     assert.equal(row(db, restoreBefore.id).session_leave_at, null)

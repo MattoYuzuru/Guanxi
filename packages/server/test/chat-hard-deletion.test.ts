@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -263,10 +263,12 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
+    assert.equal(allTablesPayload(retried, new Set(['chat_deletion_audit'])), v19Payload)
     retried.close()
     const reopened = openDb(path)
     assert.equal(version(reopened), 20)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
+    assert.equal(allTablesPayload(reopened, new Set(['chat_deletion_audit'])), v19Payload)
     reopened.close()
   })
 
@@ -420,6 +422,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     for (const mode of ['restore', 'keep', 'ttl'] as const) {
       const db = openDb(':memory:')
       const chat = sessionTrash(db, `Race ${mode}`)
+      seedOwnedRows(db, chat.id, `stale-${mode}`, null)
       const deleting = new ChatRetentionStore(db)
       const stale = deleting.hardDeletionEligiblePage(DEADLINE, null, 10)
       const user = new ChatRetentionStore(db, {
@@ -441,6 +444,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
 
     const policyDb = openDb(':memory:')
     const policyRace = sessionTrash(policyDb, 'Policy-only stale candidate')
+    seedOwnedRows(policyDb, policyRace.id, 'stale-policy-only', null)
     const policyStore = new ChatRetentionStore(policyDb)
     const policyStale = policyStore.hardDeletionEligiblePage(DEADLINE, null, 10)
     policyDb.exec('DROP TRIGGER threads_session_leave_update_valid')
@@ -454,6 +458,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
 
     const retombstoneDb = openDb(':memory:')
     const retombstoned = sessionTrash(retombstoneDb, 'Retombstone')
+    seedOwnedRows(retombstoneDb, retombstoned.id, 'stale-retombstone', null)
     const deleting = new ChatRetentionStore(retombstoneDb)
     const stale = deleting.hardDeletionEligiblePage(DEADLINE, null, 10)
     const newLeave = new Date(Date.parse(TOMBSTONED_AT) - 2 * HOUR_MS).toISOString()
@@ -476,6 +481,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
 
     const jobDb = openDb(':memory:')
     const jobRace = sessionTrash(jobDb, 'Job after scan')
+    seedOwnedRows(jobDb, jobRace.id, 'stale-job', null)
     const jobStore = new ChatRetentionStore(jobDb)
     const jobStale = jobStore.hardDeletionEligiblePage(DEADLINE, null, 10)
     attachJob(jobDb, jobRace.id, 'job-after-scan', 'queued')
@@ -825,6 +831,52 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     db.close()
   })
 
+  it('keeps Restore v1 compatible and opts into truthful Session deletion projection', async () => {
+    const db = openDb(':memory:')
+    const legacyChat = sessionTrash(db, 'Legacy Restore response')
+    const optedInChat = sessionTrash(db, 'Opted-in Restore response')
+    const store = new ChatRetentionStore(db, {
+      clock: () => new Date(Date.parse(DEADLINE) - 1),
+    })
+    const routes = threadsRoutes({ retention: store } as unknown as AppContext)
+    const restore = (chatId: string, body: unknown) => routes.request(`/${chatId}/restore`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const legacyResponse = await restore(legacyChat.id, { lifecycleVersion: 1 })
+    assert.equal(legacyResponse.status, 200)
+    const legacyBody = await legacyResponse.json() as Record<string, unknown>
+    assert.equal(legacyBody['hardDeletion'], 'not_implemented')
+    assert.equal('deletionVersion' in legacyBody, false)
+
+    const optedInResponse = await restore(optedInChat.id, {
+      lifecycleVersion: 1,
+      deletionVersion: 1,
+    })
+    assert.equal(optedInResponse.status, 200)
+    assert.deepEqual(await optedInResponse.json(), {
+      lifecycleVersion: 1,
+      chatId: optedInChat.id,
+      projectId: null,
+      state: 'active',
+      restored: true,
+      restoredAt: new Date(Date.parse(DEADLINE) - 1).toISOString(),
+      activityBasis: {
+        at: new Date(Date.parse(DEADLINE) - 1).toISOString(),
+        source: 'chat_restored',
+      },
+      source: 'user_restore',
+      deletionVersion: 1,
+      hardDeletion: 'session_metadata_after_recovery_not_scheduled',
+    })
+    assert.equal((await restore(optedInChat.id, {
+      lifecycleVersion: 1,
+      deletionVersion: 2,
+    })).status, 400)
+    db.close()
+  })
+
   it('runs hard deletion through the application owner without runtime or external effects', async (test) => {
     const scheduler = new FakeScheduler()
     const context = await createAppContext({
@@ -874,5 +926,13 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     assert.equal(JSON.stringify(context.db.prepare('SELECT * FROM workspaces ORDER BY rowid').all()), workspaceBefore)
     assert.equal(ownedPayload(context.db, [unrelated.id]), protectedBefore)
     assert.equal(count(context.db, 'reasoning_artifact_deletion_audit', 'WHERE chat_id = ?', unrelated.id), 0)
+    const storeSource = await readFile(
+      new URL('../src/store/chat-retention.ts', import.meta.url),
+      'utf8',
+    )
+    for (const forbidden of [
+      'fetch(', "from 'node:fs", 'ollama', 'governor', 'workspace', 'analytics',
+      'model-unload', 'modelUnload', 'toolExecutor', 'toolService',
+    ]) assert.equal(storeSource.includes(forbidden), false, forbidden)
   })
 })
