@@ -640,11 +640,7 @@ const MIGRATIONS: readonly string[] = [
             AND NEW.chat_tombstone_reason = 'ttl_expired')
           OR
           (NEW.chat_lifecycle_reason = 'session_left'
-            AND NEW.chat_tombstone_reason IS NULL
-            AND NEW.retention_policy = 'session'
-            AND NEW.session_leave_at IS NOT NULL
-            AND NEW.session_leave_source = 'explicit_user_action'
-            AND NEW.chat_tombstone_activity_at = NEW.session_leave_at)
+            AND NEW.chat_tombstone_reason IS NULL)
         ))
     )
     BEGIN
@@ -669,11 +665,7 @@ const MIGRATIONS: readonly string[] = [
             AND NEW.chat_tombstone_reason = 'ttl_expired')
           OR
           (NEW.chat_lifecycle_reason = 'session_left'
-            AND NEW.chat_tombstone_reason IS NULL
-            AND NEW.retention_policy = 'session'
-            AND NEW.session_leave_at IS NOT NULL
-            AND NEW.session_leave_source = 'explicit_user_action'
-            AND NEW.chat_tombstone_activity_at = NEW.session_leave_at)
+            AND NEW.chat_tombstone_reason IS NULL)
         ))
     )
     BEGIN
@@ -729,6 +721,86 @@ const MIGRATIONS: readonly string[] = [
     ON chat_lifecycle_audit(chat_id, id);
   CREATE INDEX idx_threads_chat_session_eligibility
     ON threads(chat_lifecycle_state, retention_policy, session_leave_at, id);
+  `,
+  // 19 — harden already-applied v18 Session Trash integrity append-only.
+  `
+  CREATE TABLE migration_19_session_lifecycle_validation (
+    valid INTEGER NOT NULL CHECK (valid = 1)
+  );
+  INSERT INTO migration_19_session_lifecycle_validation(valid)
+  SELECT 0 FROM threads
+  WHERE chat_lifecycle_reason = 'session_left'
+    AND (
+      mode <> 'chat'
+      OR retention_policy <> 'session'
+      OR session_leave_at IS NULL
+      OR session_leave_source IS NOT 'explicit_user_action'
+      OR chat_tombstone_activity_at IS NOT session_leave_at
+    )
+  LIMIT 1;
+  DROP TABLE migration_19_session_lifecycle_validation;
+
+  DROP TRIGGER threads_chat_lifecycle_insert_valid;
+  DROP TRIGGER threads_chat_lifecycle_update_valid;
+  CREATE TRIGGER threads_chat_lifecycle_insert_valid
+    BEFORE INSERT ON threads
+    WHEN NOT (
+      (NEW.chat_lifecycle_state = 'active'
+        AND NEW.chat_tombstoned_at IS NULL
+        AND NEW.chat_tombstone_reason IS NULL
+        AND NEW.chat_tombstone_activity_at IS NULL
+        AND NEW.chat_lifecycle_reason IS NULL)
+      OR
+      (NEW.chat_lifecycle_state = 'trash'
+        AND NEW.mode = 'chat'
+        AND NEW.chat_tombstoned_at IS NOT NULL
+        AND NEW.chat_tombstone_activity_at IS NOT NULL
+        AND (
+          (NEW.chat_lifecycle_reason = 'ttl_expired'
+            AND NEW.chat_tombstone_reason = 'ttl_expired')
+          OR
+          (NEW.chat_lifecycle_reason = 'session_left'
+            AND NEW.chat_tombstone_reason IS NULL
+            AND NEW.retention_policy = 'session'
+            AND NEW.session_leave_at IS NOT NULL
+            AND NEW.session_leave_source = 'explicit_user_action'
+            AND NEW.chat_tombstone_activity_at = NEW.session_leave_at)
+        ))
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid Chat lifecycle state');
+    END;
+  CREATE TRIGGER threads_chat_lifecycle_update_valid
+    BEFORE UPDATE OF chat_lifecycle_state, chat_tombstoned_at,
+      chat_tombstone_reason, chat_tombstone_activity_at, chat_lifecycle_reason ON threads
+    WHEN NOT (
+      (NEW.chat_lifecycle_state = 'active'
+        AND NEW.chat_tombstoned_at IS NULL
+        AND NEW.chat_tombstone_reason IS NULL
+        AND NEW.chat_tombstone_activity_at IS NULL
+        AND NEW.chat_lifecycle_reason IS NULL)
+      OR
+      (NEW.chat_lifecycle_state = 'trash'
+        AND NEW.mode = 'chat'
+        AND NEW.chat_tombstoned_at IS NOT NULL
+        AND NEW.chat_tombstone_activity_at IS NOT NULL
+        AND (
+          (NEW.chat_lifecycle_reason = 'ttl_expired'
+            AND NEW.chat_tombstone_reason = 'ttl_expired')
+          OR
+          (NEW.chat_lifecycle_reason = 'session_left'
+            AND NEW.chat_tombstone_reason IS NULL
+            AND NEW.retention_policy = 'session'
+            AND NEW.session_leave_at IS NOT NULL
+            AND NEW.session_leave_source = 'explicit_user_action'
+            AND NEW.chat_tombstone_activity_at = NEW.session_leave_at)
+        ))
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid Chat lifecycle state');
+    END;
+  CREATE INDEX idx_threads_chat_session_integrity
+    ON threads(chat_lifecycle_reason, retention_policy, session_leave_at, id);
   `,
 ]
 

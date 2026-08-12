@@ -1,7 +1,67 @@
 import type { DatabaseSync } from 'node:sqlite'
 
+/** Restore the original weak v18 lifecycle triggers for a true v18→v19 fixture. */
+export function downgradeSessionLifecycleHardeningToV18(db: DatabaseSync): void {
+  db.exec(`
+    DROP INDEX idx_threads_chat_session_integrity;
+    DROP TRIGGER threads_chat_lifecycle_update_valid;
+    DROP TRIGGER threads_chat_lifecycle_insert_valid;
+    CREATE TRIGGER threads_chat_lifecycle_insert_valid
+      BEFORE INSERT ON threads
+      WHEN NOT (
+        (NEW.chat_lifecycle_state = 'active'
+          AND NEW.chat_tombstoned_at IS NULL
+          AND NEW.chat_tombstone_reason IS NULL
+          AND NEW.chat_tombstone_activity_at IS NULL
+          AND NEW.chat_lifecycle_reason IS NULL)
+        OR
+        (NEW.chat_lifecycle_state = 'trash'
+          AND NEW.mode = 'chat'
+          AND NEW.chat_tombstoned_at IS NOT NULL
+          AND NEW.chat_tombstone_activity_at IS NOT NULL
+          AND (
+            (NEW.chat_lifecycle_reason = 'ttl_expired'
+              AND NEW.chat_tombstone_reason = 'ttl_expired')
+            OR
+            (NEW.chat_lifecycle_reason = 'session_left'
+              AND NEW.chat_tombstone_reason IS NULL)
+          ))
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'invalid Chat lifecycle state');
+      END;
+    CREATE TRIGGER threads_chat_lifecycle_update_valid
+      BEFORE UPDATE OF chat_lifecycle_state, chat_tombstoned_at,
+        chat_tombstone_reason, chat_tombstone_activity_at, chat_lifecycle_reason ON threads
+      WHEN NOT (
+        (NEW.chat_lifecycle_state = 'active'
+          AND NEW.chat_tombstoned_at IS NULL
+          AND NEW.chat_tombstone_reason IS NULL
+          AND NEW.chat_tombstone_activity_at IS NULL
+          AND NEW.chat_lifecycle_reason IS NULL)
+        OR
+        (NEW.chat_lifecycle_state = 'trash'
+          AND NEW.mode = 'chat'
+          AND NEW.chat_tombstoned_at IS NOT NULL
+          AND NEW.chat_tombstone_activity_at IS NOT NULL
+          AND (
+            (NEW.chat_lifecycle_reason = 'ttl_expired'
+              AND NEW.chat_tombstone_reason = 'ttl_expired')
+            OR
+            (NEW.chat_lifecycle_reason = 'session_left'
+              AND NEW.chat_tombstone_reason IS NULL)
+          ))
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'invalid Chat lifecycle state');
+      END;
+    PRAGMA user_version = 18;
+  `)
+}
+
 /** Remove additive v18 Session lifecycle state while preserving the exact v17 shape. */
 export function downgradeSessionLifecycleToV17(db: DatabaseSync): void {
+  downgradeSessionLifecycleHardeningToV18(db)
   db.exec(`
     DROP INDEX idx_threads_chat_session_eligibility;
     DROP TRIGGER threads_session_leave_update_valid;

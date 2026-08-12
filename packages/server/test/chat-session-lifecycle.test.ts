@@ -22,7 +22,10 @@ import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ThreadStore } from '../src/store/threads.ts'
-import { downgradeSessionLifecycleToV17 } from './fixtures/retention-lifecycle-migration.ts'
+import {
+  downgradeSessionLifecycleHardeningToV18,
+  downgradeSessionLifecycleToV17,
+} from './fixtures/retention-lifecycle-migration.ts'
 
 const NOW = '2030-01-02T12:00:00.000Z'
 const DAY_MS = 24 * 60 * 60 * 1_000
@@ -200,7 +203,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     }).success, false)
   })
 
-  it('applies v18 once and rolls a true late migration failure back byte-exact for retry', async (test) => {
+  it('applies append-only v18/v19 and rolls true late failures back byte-exact for retry', async (test) => {
     const root = await mkdtemp(join(tmpdir(), 'alamo-session-v18-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
@@ -226,7 +229,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 18)
+    assert.equal(version(retried), 19)
     assert.deepEqual({ ...row(retried, chat.id) }, {
       retention_policy: 'ttl',
       chat_lifecycle_state: 'active',
@@ -237,9 +240,56 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
       session_leave_source: null,
     })
     assert.equal(exactPayload(retried), before)
+    downgradeSessionLifecycleHardeningToV18(retried)
+    const beforeHardening = exactPayload(retried)
+    retried.prepare(
+      `UPDATE threads
+       SET retention_policy = 'session', chat_lifecycle_state = 'trash',
+           chat_tombstoned_at = ?, chat_tombstone_reason = NULL,
+           chat_tombstone_activity_at = ?, chat_lifecycle_reason = 'session_left'
+       WHERE id = ?`,
+    ).run(NOW, NOW, chat.id)
     retried.close()
+
+    assert.throws(() => openDb(path), /Миграция 19 не применилась/u)
+    const corruptV18 = new DatabaseSync(path)
+    assert.equal(version(corruptV18), 18)
+    assert.equal(row(corruptV18, chat.id).session_leave_at, null)
+    corruptV18.prepare(
+      `UPDATE threads
+       SET retention_policy = 'ttl', chat_lifecycle_state = 'active',
+           chat_tombstoned_at = NULL, chat_tombstone_reason = NULL,
+           chat_tombstone_activity_at = NULL, chat_lifecycle_reason = NULL
+       WHERE id = ?`,
+    ).run(chat.id)
+    assert.equal(exactPayload(corruptV18), beforeHardening)
+    corruptV18.exec('CREATE INDEX idx_threads_chat_session_integrity ON threads(id)')
+    corruptV18.close()
+
+    assert.throws(() => openDb(path), /Миграция 19 не применилась/u)
+    const hardeningRolledBack = new DatabaseSync(path)
+    assert.equal(version(hardeningRolledBack), 18)
+    assert.equal(exactPayload(hardeningRolledBack), beforeHardening)
+    const weakTrigger = (hardeningRolledBack.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'threads_chat_lifecycle_update_valid'",
+    ).get() as { sql: string }).sql
+    assert.equal(weakTrigger.includes('chat_tombstone_activity_at = NEW.session_leave_at'), false)
+    hardeningRolledBack.exec('DROP INDEX idx_threads_chat_session_integrity')
+    hardeningRolledBack.close()
+
+    const hardened = openDb(path)
+    assert.equal(version(hardened), 19)
+    assert.equal(exactPayload(hardened), beforeHardening)
+    assert.throws(() => hardened.prepare(
+      `UPDATE threads
+       SET retention_policy = 'session', chat_lifecycle_state = 'trash',
+           chat_tombstoned_at = ?, chat_tombstone_reason = NULL,
+           chat_tombstone_activity_at = ?, chat_lifecycle_reason = 'session_left'
+       WHERE id = ?`,
+    ).run(NOW, NOW, chat.id), /invalid Chat lifecycle state/)
+    hardened.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 18)
+    assert.equal(version(reopened), 19)
     assert.equal(exactPayload(reopened), before)
     reopened.close()
   })

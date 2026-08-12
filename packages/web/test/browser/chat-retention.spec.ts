@@ -379,7 +379,11 @@ test('explicit Session leave confirms, retries exact scope and records pending M
 
   await page.goto(`/chat/${thread.id}`)
   await page.reload()
+  await expect(page.getByRole('button', { name: 'Информация о чате' })).toBeVisible()
   await page.evaluate(async (chatId) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
     document.dispatchEvent(new Event('visibilitychange'))
     window.dispatchEvent(new Event('pagehide'))
     window.dispatchEvent(new Event('offline'))
