@@ -32,6 +32,7 @@ import {
   listCatalogResponse,
   listChatTrashResponse,
   listReasoningArtifactsResponse,
+  leaveSessionChatResponse,
   getReasoningArtifactResponse,
   listModelsResponse,
   listProjectsResponse,
@@ -82,6 +83,7 @@ import {
   type ListCatalogQuery,
   type ListChatTrashQuery,
   type ListReasoningArtifactsQuery,
+  type LeaveSessionChatBody,
   type RestoreChatBody,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
@@ -391,6 +393,13 @@ export const api = {
 
   restoreChat: (id: string, body: RestoreChatBody, signal?: AbortSignal) =>
     request(ROUTES.threadRestore(id), restoreChatResponse, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  leaveSessionChat: (id: string, body: LeaveSessionChatBody, signal?: AbortSignal) =>
+    request(ROUTES.threadSessionLeave(id), leaveSessionChatResponse, {
       method: 'POST',
       body,
       signal,

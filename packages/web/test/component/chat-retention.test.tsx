@@ -19,6 +19,13 @@ const TTL: ChatRetentionProjection = {
   expirySource: 'server_calculated',
   enforcement: 'rolling_ttl_trash',
 }
+const SESSION: ChatRetentionProjection = {
+  ...TTL,
+  policy: { mode: 'session' },
+  policySource: 'user',
+  expiresAt: null,
+  expirySource: 'policy_without_time_expiry',
+}
 const REASONING: ListReasoningArtifactsResponse = {
   artifactVersion: 1,
   enforcementVersion: 1,
@@ -82,6 +89,120 @@ beforeEach(() => {
 })
 
 describe('Chat retention info', () => {
+  it('offers explicit Session leave only for saved Session policy and restores focus on cancel/Escape', async () => {
+    vi.mocked(api.getChatRetention).mockResolvedValue(SESSION)
+    vi.spyOn(api, 'leaveSessionChat')
+    vi.spyOn(api, 'updateChatRetention').mockResolvedValue(TTL)
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Session" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    const leave = await screen.findByRole('button', { name: 'Завершить сессию' })
+    fireEvent.click(leave)
+    const confirm = screen.getByRole('button', { name: 'Подтвердить выход' })
+    await waitFor(() => expect(confirm).toBe(document.activeElement))
+    expect(screen.getByText(/Перезагрузка, переподключение и закрытие вкладки этого не делают/u)).toBeTruthy()
+    expect((screen.getByRole('radio', { name: '7 дней' }).closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Сохранить retention' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.keyDown(confirm, { key: 'Escape' })
+    await waitFor(() => expect(
+      screen.getByRole('button', { name: 'Завершить сессию' }),
+    ).toBe(document.activeElement))
+    expect(screen.queryByRole('button', { name: 'Подтвердить выход' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('radio', { name: '7 дней' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить retention' }))
+    await waitFor(() => expect(api.updateChatRetention).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('button', { name: 'Завершить сессию' })).toBeNull()
+    expect(api.leaveSessionChat).not.toHaveBeenCalled()
+  })
+
+  it('coalesces exact scoped leave, shows blocked state and retries the same command after failure', async () => {
+    const mutation = deferred<Awaited<ReturnType<typeof api.leaveSessionChat>>>()
+    vi.mocked(api.getChatRetention).mockResolvedValue({ ...SESSION, projectId: 'project-a' })
+    vi.spyOn(api, 'leaveSessionChat')
+      .mockReturnValueOnce(mutation.promise)
+      .mockRejectedValueOnce(new Error('safe leave failure'))
+      .mockResolvedValueOnce({
+        leaveVersion: 1,
+        chatId: 'chat-1',
+        projectId: 'project-a',
+        state: 'blocked_active_job',
+        leaveBasis: { at: ACTIVITY_AT, source: 'explicit_user_action' },
+        activeJobCount: 1,
+        recoveryDeadline: null,
+        hardDeletion: 'not_implemented',
+      })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Project Session" projectId="project-a" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Завершить сессию' }))
+    const confirm = screen.getByRole('button', { name: 'Подтвердить выход' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    expect(api.leaveSessionChat).toHaveBeenCalledTimes(1)
+    expect(api.leaveSessionChat).toHaveBeenCalledWith('chat-1', {
+      leaveVersion: 1,
+      chatId: 'chat-1',
+      scope: 'project',
+      projectId: 'project-a',
+    })
+    await act(async () => mutation.reject(new Error('safe leave failure')))
+    expect(await screen.findByText('safe leave failure')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    expect(await screen.findByText('safe leave failure')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    await screen.findByText('Выход зафиксирован; активная работа должна завершиться')
+    expect(api.leaveSessionChat).toHaveBeenCalledTimes(3)
+    for (const call of vi.mocked(api.leaveSessionChat).mock.calls) {
+      expect(call).toEqual(['chat-1', {
+        leaveVersion: 1,
+        chatId: 'chat-1',
+        scope: 'project',
+        projectId: 'project-a',
+      }])
+    }
+  })
+
+  it('shows exact recovery deadline and truthful no-hard-delete state after Session leave', async () => {
+    vi.mocked(api.getChatRetention).mockResolvedValue(SESSION)
+    vi.spyOn(api, 'leaveSessionChat').mockResolvedValue({
+      leaveVersion: 1,
+      chatId: 'chat-1',
+      projectId: null,
+      state: 'trash',
+      leaveBasis: { at: ACTIVITY_AT, source: 'explicit_user_action' },
+      activeJobCount: 0,
+      recoveryDeadline: EXPIRES_AT,
+      hardDeletion: 'not_implemented',
+    })
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Session" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Завершить сессию' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить выход' }))
+    expect(await screen.findByText('Чат-сессия перемещён в Корзину')).toBeTruthy()
+    expect(document.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeTruthy()
+    expect(screen.getAllByText(/Безвозвратное удаление не реализовано/u)).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Завершить сессию' })).toBeNull()
+  })
+
+  it('reloads durable pending leave with English fallback and no duplicate leave affordance', async () => {
+    document.documentElement.lang = 'fr'
+    vi.mocked(api.getChatRetention).mockResolvedValue({
+      ...SESSION,
+      sessionLeave: {
+        at: ACTIVITY_AT,
+        source: 'explicit_user_action',
+        state: 'pending_maintenance',
+        activeJobCount: 0,
+      },
+    })
+    vi.spyOn(api, 'leaveSessionChat')
+    render(<ChatRetentionInfo chatId="chat-1" chatTitle="Pending Session" projectId={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Chat info' }))
+    expect(await screen.findByText('Leave recorded; waiting for Maintenance')).toBeTruthy()
+    expect(document.querySelector(`time[datetime="${ACTIVITY_AT}"]`)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Leave session' })).toBeNull()
+    expect(api.leaveSessionChat).not.toHaveBeenCalled()
+  })
+
   it('shows sourced policy/expiry and truthfully separates configuration from enforcement', async () => {
     const reasoningLoad = deferred<ListReasoningArtifactsResponse>()
     vi.mocked(api.listReasoningArtifacts).mockReturnValue(reasoningLoad.promise)

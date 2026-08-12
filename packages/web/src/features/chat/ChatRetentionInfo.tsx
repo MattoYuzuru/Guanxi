@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   CHAT_RETENTION_VERSION,
+  SESSION_LEAVE_VERSION,
   type ChatRetentionPolicy,
   type ChatRetentionProjection,
+  type LeaveSessionChatResponse,
 } from '@alamo/contract'
 import { Button, Callout, Modal, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
@@ -24,15 +26,21 @@ export function ChatRetentionInfo({
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  const [leaveResult, setLeaveResult] = useState<LeaveSessionChatResponse | null>(null)
   const [projection, setProjection] = useState<ChatRetentionProjection | null>(null)
   const [reasoningRevision, setReasoningRevision] = useState(0)
   const [selected, setSelected] = useState<PolicyMode>('ttl')
   const [error, setError] = useState<string | null>(null)
-  const [retryKind, setRetryKind] = useState<'load' | 'save' | null>(null)
+  const [retryKind, setRetryKind] = useState<'load' | 'save' | 'leave' | null>(null)
   const savingRef = useRef(false)
+  const leavingRef = useRef(false)
   const retryPolicyRef = useRef<ChatRetentionPolicy | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
+  const confirmLeaveRef = useRef<HTMLButtonElement>(null)
+  const leaveTriggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (error) requestAnimationFrame(() => errorRef.current?.focus())
@@ -50,6 +58,7 @@ export function ChatRetentionInfo({
       }
       setProjection(next)
       setSelected(next.policy.mode)
+      setLeaveResult(null)
     } catch (reason) {
       if (signal?.aborted) return
       setError(errorMessage(reason))
@@ -87,6 +96,8 @@ export function ChatRetentionInfo({
       setProjection(next)
       setSelected(next.policy.mode)
       setReasoningRevision((revision) => revision + 1)
+      setConfirmLeave(false)
+      setLeaveResult(null)
       retryPolicyRef.current = null
     } catch (reason) {
       setError(errorMessage(reason))
@@ -111,6 +122,55 @@ export function ChatRetentionInfo({
     if (retryKind === 'save' && retryPolicyRef.current) {
       void savePolicy(retryPolicyRef.current)
     }
+    if (retryKind === 'leave') void leaveSession()
+  }
+
+  const openLeaveConfirmation = () => {
+    setConfirmLeave(true)
+    requestAnimationFrame(() => confirmLeaveRef.current?.focus())
+  }
+
+  const cancelLeave = () => {
+    setConfirmLeave(false)
+    requestAnimationFrame(() => leaveTriggerRef.current?.focus())
+  }
+
+  const leaveSession = async () => {
+    if (leavingRef.current || projection?.policy.mode !== 'session') return
+    leavingRef.current = true
+    setLeaving(true)
+    setError(null)
+    setRetryKind(null)
+    try {
+      const result = await api.leaveSessionChat(chatId, {
+        leaveVersion: SESSION_LEAVE_VERSION,
+        chatId,
+        scope: projectId === null ? 'projectless' : 'project',
+        ...(projectId === null ? {} : { projectId }),
+      })
+      if (result.chatId !== chatId || result.projectId !== projectId) {
+        throw new Error(translate('chat.retention.scopeMismatch'))
+      }
+      setLeaveResult(result)
+      setConfirmLeave(false)
+      setProjection((current) => current && result.state !== 'trash'
+        ? {
+            ...current,
+            sessionLeave: {
+              at: result.leaveBasis.at,
+              source: 'explicit_user_action',
+              state: result.state,
+              activeJobCount: result.activeJobCount,
+            },
+          }
+        : current)
+    } catch (reason) {
+      setError(errorMessage(reason))
+      setRetryKind('leave')
+    } finally {
+      leavingRef.current = false
+      setLeaving(false)
+    }
   }
 
   return (
@@ -124,6 +184,7 @@ export function ChatRetentionInfo({
         title={translate('chat.retention.title')}
         returnFocusRef={triggerRef}
         closeLabel={translate('chat.retention.close')}
+        dismissable={!confirmLeave && !leaving}
         width={520}
       >
         <div className="min-w-0 space-y-4">
@@ -148,7 +209,7 @@ export function ChatRetentionInfo({
           ) : null}
           {projection ? (
             <form onSubmit={save} className="min-w-0 space-y-4">
-              <fieldset disabled={saving || loading}>
+              <fieldset disabled={saving || loading || leaving || confirmLeave}>
                 <legend className="mb-2 text-xs font-semibold">
                   {translate('chat.retention.policy')}
                 </legend>
@@ -211,8 +272,90 @@ export function ChatRetentionInfo({
                   ? translate('chat.retention.enforced.description')
                   : translate('chat.retention.notEnforced.description')}
               </Callout>
+              {projection.sessionLeave && !leaveResult ? (
+                <Callout
+                  tone="warning"
+                  title={translate(`chat.retention.leave.${projection.sessionLeave.state}.title`)}
+                >
+                  {translate('chat.retention.leave.basis')}:{' '}
+                  <time dateTime={projection.sessionLeave.at}>
+                    {formatDateTime(projection.sessionLeave.at)}
+                  </time>
+                </Callout>
+              ) : null}
+              {leaveResult ? (
+                <Callout
+                  tone={leaveResult.state === 'trash' ? 'info' : 'warning'}
+                  title={translate(`chat.retention.leave.${leaveResult.state}.title`)}
+                >
+                  {leaveResult.recoveryDeadline ? (
+                    <>
+                      {translate('chat.retention.leave.recoverUntil')}:{' '}
+                      <time dateTime={leaveResult.recoveryDeadline}>
+                        {formatDateTime(leaveResult.recoveryDeadline)}
+                      </time>.{' '}
+                    </>
+                  ) : null}
+                  {translate('chat.retention.leave.noHardDelete')}
+                </Callout>
+              ) : null}
+              {projection.policy.mode === 'session' && !projection.sessionLeave && !leaveResult ? (
+                confirmLeave ? (
+                  <div
+                    className="rounded-md border border-[var(--warning)] p-3"
+                    role="group"
+                    aria-labelledby={`session-leave-confirm-${chatId}`}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape' && !leaving) {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        cancelLeave()
+                      }
+                    }}
+                  >
+                    <p id={`session-leave-confirm-${chatId}`} className="text-xs font-semibold">
+                      {translate('chat.retention.leave.confirmTitle')}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--fg-muted)]">
+                      {translate('chat.retention.leave.confirmDescription')}
+                    </p>
+                    <div className="mt-2 flex flex-wrap justify-end gap-2">
+                      <Button type="button" size="sm" disabled={leaving} onClick={cancelLeave}>
+                        {translate('chat.retention.leave.cancel')}
+                      </Button>
+                      <Button
+                        ref={confirmLeaveRef}
+                        type="button"
+                        size="sm"
+                        variant="primary"
+                        loading={leaving}
+                        onClick={() => void leaveSession()}
+                      >
+                        {translate('chat.retention.leave.confirm')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-end">
+                    <Button
+                      ref={leaveTriggerRef}
+                      type="button"
+                      variant="secondary"
+                      disabled={saving || loading}
+                      onClick={openLeaveConfirmation}
+                    >
+                      {translate('chat.retention.leave.open')}
+                    </Button>
+                  </div>
+                )
+              ) : null}
               <div className="flex justify-end">
-                <Button type="submit" variant="primary" loading={saving} disabled={loading}>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={saving}
+                  disabled={loading || leaving || confirmLeave}
+                >
                   {translate('chat.retention.save')}
                 </Button>
               </div>

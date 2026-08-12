@@ -246,3 +246,177 @@ test('Chat retention survives reload and contains repeated save, error and narro
   expect(retentionReads).toBeGreaterThanOrEqual(2)
   expect(unexpectedMutations).toEqual([])
 })
+
+test('explicit Session leave confirms, retries exact scope and records pending Maintenance', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
+  const observedAt = '2026-08-12T10:00:00.000Z'
+  const thread = {
+    id: 'chat-session-leave-browser',
+    title: 'Explicit Session leave',
+    mode: 'chat',
+    model: 'fixture:latest',
+    workspaceId: null,
+    options: { numCtx: 8192, temperature: 0.7, think: 'off' },
+    createdAt: observedAt,
+    updatedAt: observedAt,
+    messageCount: 0,
+  }
+  const context = {
+    usedTokens: 0,
+    allocatedTokens: 8192,
+    percent: 0,
+    cacheHit: false,
+    cachedTokens: 0,
+    compactable: false,
+    estimatedRepefillMs: 0,
+  }
+  const health = {
+    ok: true,
+    appVersion: 'test',
+    application: { state: 'reachable', source: 'application_http', observedAt },
+    ollama: {
+      installed: true,
+      installSource: 'runtime_response',
+      running: true,
+      state: 'reachable',
+      source: 'ollama_api_version',
+      observedAt,
+      version: 'test',
+      host: 'http://127.0.0.1:11434',
+      installHint: null,
+    },
+    hardware: {
+      platform: 'darwin', arch: 'arm64', cpuModel: 'fixture', cpuCores: 8,
+      totalMemoryBytes: 16_000_000_000, usableMemoryBytes: 12_000_000_000,
+      accelerator: 'metal', acceleratorName: 'fixture', unifiedMemory: true,
+      freeDiskBytes: null,
+    },
+    network: { ollamaComReachable: null, checkedAt: null, status: 'unknown', source: 'not_checked' },
+  }
+  const json = (body: unknown, status = 200) => ({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  })
+  let leaveCalls = 0
+  const leaveBodies: unknown[] = []
+  const unexpectedMutations: string[] = []
+
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const method = request.method()
+    if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === '/api/workspaces') return route.fulfill(json({ workspaces: [] }))
+    if (url.pathname === '/api/threads' && method === 'GET') {
+      return route.fulfill(json({
+        ownershipVersion: 1,
+        scope: 'projectless',
+        chats: [{ ...thread, ownershipVersion: 1, projectId: null }],
+      }))
+    }
+    if (url.pathname === `/api/threads/${thread.id}` && method === 'GET') {
+      return route.fulfill(json({ thread, messages: [], context }))
+    }
+    if (url.pathname === `/api/threads/${thread.id}/retention` && method === 'GET') {
+      return route.fulfill(json({
+        retentionVersion: 1,
+        chatId: thread.id,
+        projectId: null,
+        policy: { mode: 'session' },
+        policySource: 'user',
+        policyUpdatedAt: observedAt,
+        lastUserActivity: { at: observedAt, source: 'chat_created' },
+        expiresAt: null,
+        expirySource: 'policy_without_time_expiry',
+        enforcement: 'rolling_ttl_trash',
+        sessionLeave: null,
+      }))
+    }
+    if (url.pathname === `/api/threads/${thread.id}/reasoning-artifacts` && method === 'GET') {
+      return route.fulfill(json({
+        artifactVersion: 1,
+        enforcementVersion: 1,
+        enforcement: {
+          state: 'active',
+          owner: 'server_maintenance',
+          boundary: 'reasoning_artifacts_only',
+          inclusiveDueBoundary: true,
+        },
+        chatId: thread.id,
+        scope: 'projectless',
+        projectId: null,
+        generatedAnswers: [],
+        artifacts: [],
+      }))
+    }
+    if (url.pathname === `/api/threads/${thread.id}/session-leave` && method === 'POST') {
+      leaveCalls += 1
+      leaveBodies.push(request.postDataJSON())
+      if (leaveCalls === 1) {
+        return route.fulfill(json({
+          code: 'storage_error',
+          message: 'safe Session leave failure',
+          details: null,
+        }, 500))
+      }
+      return route.fulfill(json({
+        leaveVersion: 1,
+        chatId: thread.id,
+        projectId: null,
+        state: 'pending_maintenance',
+        leaveBasis: { at: observedAt, source: 'explicit_user_action' },
+        activeJobCount: 0,
+        recoveryDeadline: null,
+        hardDeletion: 'not_implemented',
+      }))
+    }
+    if (method !== 'GET') unexpectedMutations.push(`${method} ${url.pathname}`)
+    return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
+  })
+
+  await page.goto(`/chat/${thread.id}`)
+  await page.reload()
+  expect(leaveCalls).toBe(0)
+  await page.getByRole('button', { name: 'Информация о чате' }).press('Enter')
+  const dialog = page.getByRole('dialog', { name: 'Хранение чата' })
+  const leave = dialog.getByRole('button', { name: 'Завершить сессию' })
+  await expect(leave).toHaveCount(1)
+  await leave.press('Enter')
+  const confirm = dialog.getByRole('button', { name: 'Подтвердить выход' })
+  await expect(confirm).toBeFocused()
+  await expect(dialog.getByText(/Перезагрузка, переподключение и закрытие вкладки этого не делают/u)).toHaveCount(1)
+  await confirm.press('Escape')
+  await expect(dialog.getByRole('button', { name: 'Завершить сессию' })).toBeFocused()
+  expect(leaveCalls).toBe(0)
+
+  await dialog.getByRole('button', { name: 'Завершить сессию' }).press('Enter')
+  await dialog.getByRole('button', { name: 'Подтвердить выход' }).press('Enter')
+  await expect.poll(() => leaveCalls).toBe(1)
+  const error = dialog.getByText('safe Session leave failure')
+  await expect(error).toBeVisible()
+  await expect(error.locator('xpath=ancestor::*[@role="alert"][1]')).toBeFocused()
+  await dialog.getByRole('button', { name: 'Повторить retention' }).press('Enter')
+  await expect.poll(() => leaveCalls).toBe(2)
+  expect(leaveBodies).toEqual([
+    { leaveVersion: 1, chatId: thread.id, scope: 'projectless' },
+    { leaveVersion: 1, chatId: thread.id, scope: 'projectless' },
+  ])
+  await expect(dialog.getByText('Выход зафиксирован; ожидается Maintenance')).toHaveCount(1)
+  await expect(dialog.getByText('Безвозвратное удаление не реализовано.', { exact: true })).toHaveCount(1)
+  await expect(dialog.getByRole('button', { name: 'Завершить сессию' })).toHaveCount(0)
+
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const layout = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    bodyWidth: document.body.scrollWidth,
+  }))
+  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport)
+  expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
+  expect(await page.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
+  expect(unexpectedMutations).toEqual([])
+})

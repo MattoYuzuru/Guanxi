@@ -147,11 +147,20 @@ export function ChatTrashList({
                 <time dateTime={chat.activityBasis.at}>{formatDateTime(chat.activityBasis.at)}</time>
                 {' · '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
               </span>
+              {chat.reason === 'session_left' ? (
+                <span className="block break-words text-[var(--fg-subtle)]">
+                  {translate('chat.trash.recoveryDeadline')}:{' '}
+                  <time dateTime={chat.recovery.deadline}>
+                    {formatDateTime(chat.recovery.deadline)}
+                  </time>
+                  {' · '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
+                </span>
+              ) : null}
               <Button
                 className="mt-2"
                 size="sm"
                 loading={restoringId === chat.chatId}
-                disabled={restoringId !== null}
+                disabled={restoringId !== null || (chat.reason === 'session_left' && chat.recovery.state === 'grace_elapsed')}
                 onClick={() => void restore(chat)}
               >
                 {translate('chat.trash.restore')}

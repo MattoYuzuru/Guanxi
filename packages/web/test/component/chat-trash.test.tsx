@@ -30,6 +30,23 @@ const RESTORED: RestoreChatResponse = {
   source: 'user_restore',
   hardDeletion: 'not_implemented',
 }
+const SESSION_ITEM: ChatTrashItem = {
+  lifecycleVersion: 1,
+  chatId: 'session-trash-chat',
+  title: 'Recoverable Session',
+  projectId: null,
+  state: 'trash',
+  reason: 'session_left',
+  tombstonedAt: TOMBSTONED_AT,
+  activityBasis: { at: TOMBSTONED_AT, source: 'session_leave' },
+  source: 'server_maintenance',
+  hardDeletion: 'not_implemented',
+  recovery: {
+    deadline: '2026-08-12T12:00:00.000Z',
+    state: 'available',
+    source: 'server_calculated_24_hours',
+  },
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -46,6 +63,35 @@ beforeEach(() => {
 })
 
 describe('Chat Trash list', () => {
+  it('shows exact Session recovery and disables stale recovery without claiming hard deletion', async () => {
+    vi.spyOn(api, 'restoreChat')
+    vi.spyOn(api, 'listChatTrash').mockResolvedValue({
+      lifecycleVersion: 1,
+      scope: 'projectless',
+      projectId: null,
+      chats: [
+        SESSION_ITEM,
+        {
+          ...SESSION_ITEM,
+          chatId: 'elapsed-session',
+          title: 'Elapsed Session',
+          recovery: { ...SESSION_ITEM.recovery, state: 'grace_elapsed' },
+        },
+      ],
+      hasMore: false,
+    })
+    render(<ChatTrashList projectId={null} />)
+    const available = (await screen.findByText(SESSION_ITEM.title)).closest('li')!
+    const elapsed = screen.getByText('Elapsed Session').closest('li')!
+    expect(available.querySelector('time[datetime="2026-08-12T12:00:00.000Z"]')).toBeTruthy()
+    expect(available.textContent).toContain('восстановление доступно')
+    expect(elapsed.textContent).toContain('24 часа истекли')
+    expect(elapsed.textContent).toContain('безвозвратное удаление не реализовано')
+    expect((elapsed.querySelector('button') as HTMLButtonElement).disabled).toBe(true)
+    expect((available.querySelector('button') as HTMLButtonElement).disabled).toBe(false)
+    expect(api.restoreChat).not.toHaveBeenCalled()
+  })
+
   it('loads one exact Project scope and shows sourced reason/time with truthful hard-deletion state', async () => {
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1,

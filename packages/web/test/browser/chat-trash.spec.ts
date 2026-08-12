@@ -30,6 +30,25 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   const projectlessItem = {
     ...trashItem, chatId: 'trash-projectless', title: 'Projectless isolated Trash', projectId: null,
   }
+  const recoveryDeadline = '2026-08-12T12:00:00.000Z'
+  const sessionAvailable = {
+    ...projectlessItem,
+    chatId: 'session-trash-available',
+    title: 'Session recovery available',
+    reason: 'session_left',
+    activityBasis: { at: activityAt, source: 'session_leave' },
+    recovery: {
+      deadline: recoveryDeadline,
+      state: 'available',
+      source: 'server_calculated_24_hours',
+    },
+  }
+  const sessionElapsed = {
+    ...sessionAvailable,
+    chatId: 'session-trash-elapsed',
+    title: 'Session recovery elapsed',
+    recovery: { ...sessionAvailable.recovery, state: 'grace_elapsed' },
+  }
   const health = {
     ok: true,
     appVersion: 'test',
@@ -80,7 +99,8 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
       expect(url.searchParams.get('lifecycleVersion')).toBe('1')
       if (scope === 'projectless') {
         return route.fulfill(json({
-          lifecycleVersion: 1, scope, projectId: null, chats: [projectlessItem], hasMore: false,
+          lifecycleVersion: 1, scope, projectId: null,
+          chats: [projectlessItem, sessionAvailable, sessionElapsed], hasMore: false,
         }))
       }
       expect(projectId).toBe(project.id)
@@ -121,6 +141,13 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   await expect(projectTrash.locator(`time[datetime="${activityAt}"]`)).toHaveCount(1)
   await expect(projectlessTrash.getByText(projectlessItem.title)).toHaveCount(1)
   await expect(projectTrash.getByText(projectlessItem.title)).toHaveCount(0)
+  await expect(projectlessTrash.getByText('Session recovery available')).toHaveCount(1)
+  await expect(projectlessTrash.getByText('пользователь явно завершил сессию')).toHaveCount(2)
+  await expect(projectlessTrash.locator(`time[datetime="${recoveryDeadline}"]`)).toHaveCount(2)
+  await expect(projectlessTrash.getByText('восстановление доступно')).toHaveCount(1)
+  await expect(projectlessTrash.getByText(/24 часа истекли/u)).toHaveCount(1)
+  await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' })).toHaveCount(3)
+  await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' }).last()).toBeDisabled()
 
   const restore = projectTrash.getByRole('button', { name: 'Восстановить чат' })
   await restore.press('Enter')
