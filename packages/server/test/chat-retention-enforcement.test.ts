@@ -23,6 +23,7 @@ import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ThreadStore } from '../src/store/threads.ts'
+import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
 const NOW = '2026-08-11T12:00:00.000Z'
@@ -76,26 +77,7 @@ function nonLifecycleThreadPayload(db: DatabaseSync): string {
 }
 
 function downgradeToV14(db: DatabaseSync): void {
-  db.exec(`
-    DROP INDEX idx_reasoning_artifact_deletion_audit_chat;
-    DROP TABLE reasoning_artifact_deletion_audit;
-    DROP TRIGGER reasoning_artifacts_immutable;
-    DROP TRIGGER reasoning_artifacts_source_insert_valid;
-    DROP INDEX idx_reasoning_artifacts_chat;
-    DROP TABLE reasoning_artifacts;
-    DROP INDEX idx_threads_chat_trash_scope;
-    DROP INDEX idx_threads_chat_ttl_eligibility;
-    DROP INDEX idx_chat_lifecycle_audit_chat;
-    DROP TRIGGER threads_chat_lifecycle_update_valid;
-    DROP TRIGGER threads_chat_lifecycle_insert_valid;
-    DROP TABLE chat_lifecycle_audit;
-    ALTER TABLE threads DROP COLUMN last_user_restore_at;
-    ALTER TABLE threads DROP COLUMN chat_tombstone_activity_at;
-    ALTER TABLE threads DROP COLUMN chat_tombstone_reason;
-    ALTER TABLE threads DROP COLUMN chat_tombstoned_at;
-    ALTER TABLE threads DROP COLUMN chat_lifecycle_state;
-    PRAGMA user_version = 14;
-  `)
+  downgradeRetentionLifecycleToV14(db)
 }
 
 function createChat(threads: ThreadStore, title: string, projectId: string | null = null) {
@@ -229,8 +211,8 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 17)
-    assert.equal(lifecycleColumns(upgraded).length, 5)
+    assert.equal(version(upgraded), 18)
+    assert.equal(lifecycleColumns(upgraded).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(upgraded), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     assert.equal((upgraded.prepare(
       "SELECT COUNT(*) AS count FROM threads WHERE chat_lifecycle_state = 'active'",
@@ -248,13 +230,13 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 17)
+    assert.equal(version(reopened), 18)
     assert.deepEqual(lifecycleSchemaObjects(reopened), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 17)
-    assert.equal(lifecycleColumns(fresh).length, 5)
+    assert.equal(version(fresh), 18)
+    assert.equal(lifecycleColumns(fresh).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(fresh), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     fresh.close()
   })

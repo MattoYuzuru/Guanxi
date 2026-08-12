@@ -2,12 +2,16 @@ import {
   CHAT_LIFECYCLE_VERSION,
   CHAT_RETENTION_DAYS,
   CHAT_RETENTION_VERSION,
+  SESSION_LEAVE_VERSION,
+  SESSION_TRASH_RECOVERY_HOURS,
   chatRetentionProjectionSchema,
   chatTrashItemSchema,
+  leaveSessionChatResponse,
   restoredChatLifecycleSchema,
   type ChatRetentionPolicy,
   type ChatRetentionProjection,
   type ChatTrashItem,
+  type LeaveSessionChatResponse,
   type RestoredChatLifecycle,
 } from '@alamo/contract'
 import type { Db } from './db.ts'
@@ -31,6 +35,9 @@ interface RetentionRow {
   chat_tombstoned_at: string | null
   chat_tombstone_reason: string | null
   chat_tombstone_activity_at: string | null
+  chat_lifecycle_reason: string | null
+  session_leave_at: string | null
+  session_leave_source: string | null
 }
 
 export interface RetentionEligibilityCursor {
@@ -40,7 +47,8 @@ export interface RetentionEligibilityCursor {
 
 export interface RetentionEligibilityCandidate extends RetentionEligibilityCursor {
   projectId: string | null
-  activitySource: 'chat_created' | 'user_message' | 'chat_restored'
+  activitySource: 'chat_created' | 'user_message' | 'chat_restored' | 'session_leave'
+  reason: 'ttl_expired' | 'session_left'
 }
 
 export type ChatRetentionLookup =
@@ -49,11 +57,26 @@ export type ChatRetentionLookup =
   | { status: 'not_chat' }
   | { status: 'in_trash' }
 
+export type UpdateChatRetentionLookup = ChatRetentionLookup
+  | { status: 'recovery_expired' }
+
 export type RestoreChatLookup =
   | { status: 'ok'; lifecycle: RestoredChatLifecycle }
   | { status: 'not_found' }
   | { status: 'not_chat' }
   | { status: 'not_in_trash' }
+  | { status: 'recovery_expired' }
+
+export type SessionLeaveScope =
+  | { scope: 'projectless' }
+  | { scope: 'project'; projectId: string }
+
+export type SessionLeaveLookup =
+  | { status: 'ok'; lifecycle: LeaveSessionChatResponse }
+  | { status: 'not_found' }
+  | { status: 'not_chat' }
+  | { status: 'not_session' }
+  | { status: 'scope_mismatch' }
 
 export interface ChatTrashPage {
   chats: ChatTrashItem[]
@@ -68,6 +91,12 @@ function addSevenDays(value: string): string {
   return new Date(Date.parse(value) + CHAT_RETENTION_DAYS * DAY_MS).toISOString()
 }
 
+function sessionRecoveryDeadline(value: string): string {
+  return new Date(
+    Date.parse(value) + SESSION_TRASH_RECOVERY_HOURS * 60 * 60 * 1_000,
+  ).toISOString()
+}
+
 function storedPolicy(row: RetentionRow): ChatRetentionPolicy {
   if (row.retention_policy === 'ttl') return { mode: 'ttl', expiresAfterDays: CHAT_RETENTION_DAYS }
   if (row.retention_policy === 'session') return { mode: 'session' }
@@ -80,7 +109,7 @@ function activitySource(row: RetentionRow): 'chat_created' | 'user_message' | 'c
   return row.last_user_activity_source === 'user_message' ? 'user_message' : 'chat_created'
 }
 
-function toProjection(row: RetentionRow): ChatRetentionProjection {
+function toProjection(row: RetentionRow, activeJobCount: number): ChatRetentionProjection {
   const policy = storedPolicy(row)
   const activityAt = row.last_user_activity_at ?? row.created_at
   return chatRetentionProjectionSchema.parse({
@@ -97,24 +126,44 @@ function toProjection(row: RetentionRow): ChatRetentionProjection {
     expiresAt: policy.mode === 'ttl' ? addSevenDays(activityAt) : null,
     expirySource: policy.mode === 'ttl' ? 'server_calculated' : 'policy_without_time_expiry',
     enforcement: 'rolling_ttl_trash',
+    sessionLeave: row.session_leave_at === null
+      ? null
+      : {
+          at: row.session_leave_at,
+          source: 'explicit_user_action',
+          state: activeJobCount > 0 ? 'blocked_active_job' : 'pending_maintenance',
+          activeJobCount,
+        },
   })
 }
 
-function toTrashItem(row: RetentionRow): ChatTrashItem {
-  return chatTrashItemSchema.parse({
+function toTrashItem(row: RetentionRow, observedAt: string): ChatTrashItem {
+  const base = {
     lifecycleVersion: CHAT_LIFECYCLE_VERSION,
     chatId: row.id,
     title: row.title,
     projectId: row.project_id,
     state: 'trash',
-    reason: row.chat_tombstone_reason,
+    reason: row.chat_lifecycle_reason,
     tombstonedAt: row.chat_tombstoned_at,
     activityBasis: {
       at: row.chat_tombstone_activity_at,
-      source: activitySource(row),
+      source: row.chat_lifecycle_reason === 'session_left' ? 'session_leave' : activitySource(row),
     },
     source: 'server_maintenance',
     hardDeletion: 'not_implemented',
+  }
+  if (row.chat_lifecycle_reason !== 'session_left') {
+    return chatTrashItemSchema.parse(base)
+  }
+  const deadline = sessionRecoveryDeadline(row.chat_tombstoned_at!)
+  return chatTrashItemSchema.parse({
+    ...base,
+    recovery: {
+      deadline,
+      state: Date.parse(observedAt) < Date.parse(deadline) ? 'available' : 'grace_elapsed',
+      source: 'server_calculated_24_hours',
+    },
   })
 }
 
@@ -132,15 +181,18 @@ export class ChatRetentionStore {
     if (!row) return { status: 'not_found' }
     if (row.mode !== 'chat') return { status: 'not_chat' }
     if (!includeTrash && row.chat_lifecycle_state === 'trash') return { status: 'in_trash' }
-    return { status: 'ok', retention: toProjection(row) }
+    return { status: 'ok', retention: toProjection(row, this.activeJobCount(chatId)) }
   }
 
-  update(chatId: string, policy: ChatRetentionPolicy): ChatRetentionLookup {
+  update(chatId: string, policy: ChatRetentionPolicy): UpdateChatRetentionLookup {
     const row = this.row(chatId)
     if (!row) return { status: 'not_found' }
     if (row.mode !== 'chat') return { status: 'not_chat' }
     if (row.chat_lifecycle_state === 'trash' && policy.mode === 'session') {
       return { status: 'in_trash' }
+    }
+    if (row.chat_lifecycle_state === 'trash' && this.sessionRecoveryElapsed(row)) {
+      return { status: 'recovery_expired' }
     }
 
     const previousMutationAt = row.chat_lifecycle_state === 'trash' && row.chat_tombstoned_at
@@ -159,7 +211,8 @@ export class ChatRetentionStore {
                  retention_policy_updated_at = ?, last_user_activity_at = ?,
                  last_user_restore_at = ?, chat_lifecycle_state = 'active',
                  chat_tombstoned_at = NULL, chat_tombstone_reason = NULL,
-                 chat_tombstone_activity_at = NULL
+                 chat_tombstone_activity_at = NULL, chat_lifecycle_reason = NULL,
+                 session_leave_at = NULL, session_leave_source = NULL
              WHERE id = ? AND mode = 'chat' AND chat_lifecycle_state = 'trash'`,
           )
           .run(policy.mode, updatedAt, updatedAt, updatedAt, chatId)
@@ -171,10 +224,12 @@ export class ChatRetentionStore {
         .prepare(
           `UPDATE threads
            SET retention_policy = ?, retention_policy_source = 'user',
-               retention_policy_updated_at = ?
+               retention_policy_updated_at = ?,
+               session_leave_at = CASE WHEN ? = 'session' THEN session_leave_at ELSE NULL END,
+               session_leave_source = CASE WHEN ? = 'session' THEN session_leave_source ELSE NULL END
            WHERE id = ? AND mode = 'chat' AND chat_lifecycle_state = 'active'`,
         )
-        .run(policy.mode, updatedAt, chatId)
+        .run(policy.mode, updatedAt, policy.mode, policy.mode, chatId)
     }
     return this.get(chatId)
   }
@@ -197,7 +252,7 @@ export class ChatRetentionStore {
       ? statement.all(scope.projectId, limit + 1)
       : statement.all(limit + 1)) as unknown as RetentionRow[]
     return {
-      chats: rows.slice(0, limit).map(toTrashItem),
+      chats: rows.slice(0, limit).map((row) => toTrashItem(row, this.clock().toISOString())),
       hasMore: rows.length > limit,
     }
   }
@@ -210,6 +265,7 @@ export class ChatRetentionStore {
       if (row.last_user_restore_at === null) return { status: 'not_in_trash' }
       return { status: 'ok', lifecycle: this.restoredLifecycle(row, false) }
     }
+    if (this.sessionRecoveryElapsed(row)) return { status: 'recovery_expired' }
 
     const restoredAt = this.nextMutationTime(row.chat_tombstoned_at ?? row.created_at)
     this.transact(() => {
@@ -218,7 +274,8 @@ export class ChatRetentionStore {
           `UPDATE threads
            SET chat_lifecycle_state = 'active', chat_tombstoned_at = NULL,
                chat_tombstone_reason = NULL, chat_tombstone_activity_at = NULL,
-               last_user_activity_at = ?, last_user_restore_at = ?
+               chat_lifecycle_reason = NULL, session_leave_at = NULL,
+               session_leave_source = NULL, last_user_activity_at = ?, last_user_restore_at = ?
            WHERE id = ? AND mode = 'chat' AND chat_lifecycle_state = 'trash'`,
         )
         .run(restoredAt, restoredAt, chatId)
@@ -228,6 +285,33 @@ export class ChatRetentionStore {
     const restored = this.row(chatId)
     if (!restored) throw new Error('Restored Chat disappeared')
     return { status: 'ok', lifecycle: this.restoredLifecycle(restored, true) }
+  }
+
+  leaveSession(chatId: string, scope: SessionLeaveScope): SessionLeaveLookup {
+    let row = this.row(chatId)
+    if (!row) return { status: 'not_found' }
+    if (row.mode !== 'chat') return { status: 'not_chat' }
+    const expectedProjectId = scope.scope === 'project' ? scope.projectId : null
+    if (row.project_id !== expectedProjectId) return { status: 'scope_mismatch' }
+    if (row.retention_policy !== 'session') return { status: 'not_session' }
+    if (row.session_leave_at === null) {
+      const leftAt = this.clock().toISOString()
+      const result = this.db.prepare(
+        `UPDATE threads
+         SET session_leave_at = ?, session_leave_source = 'explicit_user_action'
+         WHERE id = ? AND mode = 'chat' AND project_id IS ?
+           AND retention_policy = 'session' AND session_leave_at IS NULL`,
+      ).run(leftAt, chatId, expectedProjectId)
+      if (result.changes !== 1) {
+        row = this.row(chatId)
+        if (!row || row.session_leave_at === null) {
+          throw new Error('Session leave lifecycle changed during command')
+        }
+      } else {
+        row = this.row(chatId)!
+      }
+    }
+    return { status: 'ok', lifecycle: this.sessionLeaveLifecycle(row) }
   }
 
   eligiblePage(
@@ -240,15 +324,26 @@ export class ChatRetentionStore {
     const afterChatId = after?.chatId ?? ''
     const rows = this.db
       .prepare(
-        `SELECT t.*
+        `SELECT t.*,
+                CASE WHEN t.retention_policy = 'session'
+                  THEN t.session_leave_at ELSE t.last_user_activity_at END AS eligibility_at,
+                CASE WHEN t.retention_policy = 'session'
+                  THEN 'session_left' ELSE 'ttl_expired' END AS eligibility_reason
          FROM threads t
          WHERE t.mode = 'chat'
            AND t.chat_lifecycle_state = 'active'
-           AND t.retention_policy = 'ttl'
-           AND t.last_user_activity_at <= ?
            AND (
-             t.last_user_activity_at > ?
-             OR (t.last_user_activity_at = ? AND t.id > ?)
+             (t.retention_policy = 'ttl' AND t.last_user_activity_at <= ?)
+             OR (t.retention_policy = 'session' AND t.session_leave_at IS NOT NULL)
+           )
+           AND (
+             CASE WHEN t.retention_policy = 'session'
+               THEN t.session_leave_at ELSE t.last_user_activity_at END > ?
+             OR (
+               CASE WHEN t.retention_policy = 'session'
+                 THEN t.session_leave_at ELSE t.last_user_activity_at END = ?
+               AND t.id > ?
+             )
            )
            AND NOT EXISTS (
              SELECT 1
@@ -257,15 +352,21 @@ export class ChatRetentionStore {
              WHERE input.thread_id = t.id
                AND job.status NOT IN (${TERMINAL_JOB_STATES})
            )
-         ORDER BY t.last_user_activity_at ASC, t.id ASC
+         ORDER BY eligibility_at ASC, t.id ASC
          LIMIT ?`,
       )
-      .all(cutoff, afterActivity, afterActivity, afterChatId, limit) as unknown as RetentionRow[]
+      .all(cutoff, afterActivity, afterActivity, afterChatId, limit) as unknown as Array<
+        RetentionRow & {
+          eligibility_at: string
+          eligibility_reason: 'ttl_expired' | 'session_left'
+        }
+      >
     return rows.map((row) => ({
       chatId: row.id,
       projectId: row.project_id,
-      activityAt: row.last_user_activity_at ?? row.created_at,
-      activitySource: activitySource(row),
+      activityAt: row.eligibility_at,
+      activitySource: row.eligibility_reason === 'session_left' ? 'session_leave' : activitySource(row),
+      reason: row.eligibility_reason,
     }))
   }
 
@@ -277,17 +378,21 @@ export class ChatRetentionStore {
     return this.transact(() => {
       let tombstoned = 0
       for (const candidate of candidates) {
+        const session = candidate.reason === 'session_left'
         const result = this.db
           .prepare(
             `UPDATE threads
              SET chat_lifecycle_state = 'trash', chat_tombstoned_at = ?,
-                 chat_tombstone_reason = 'ttl_expired',
-                 chat_tombstone_activity_at = last_user_activity_at
+                 chat_tombstone_reason = CASE WHEN ? THEN NULL ELSE 'ttl_expired' END,
+                 chat_lifecycle_reason = ?, chat_tombstone_activity_at = ?
              WHERE id = ? AND mode = 'chat'
                AND chat_lifecycle_state = 'active'
-               AND retention_policy = 'ttl'
-               AND last_user_activity_at = ?
-               AND last_user_activity_at <= ?
+               AND (
+                 (? AND retention_policy = 'session' AND session_leave_at = ?)
+                 OR
+                 (NOT ? AND retention_policy = 'ttl' AND last_user_activity_at = ?
+                   AND last_user_activity_at <= ?)
+               )
                AND NOT EXISTS (
                  SELECT 1
                  FROM chat_job_inputs input
@@ -296,15 +401,26 @@ export class ChatRetentionStore {
                    AND job.status NOT IN (${TERMINAL_JOB_STATES})
                )`,
           )
-          .run(observedAt, candidate.chatId, candidate.activityAt, cutoff)
+          .run(
+            observedAt,
+            session ? 1 : 0,
+            candidate.reason,
+            candidate.activityAt,
+            candidate.chatId,
+            session ? 1 : 0,
+            candidate.activityAt,
+            session ? 1 : 0,
+            candidate.activityAt,
+            cutoff,
+          )
         if (result.changes === 0) continue
         this.db
           .prepare(
             `INSERT INTO chat_lifecycle_audit (
                chat_id, event_type, reason, occurred_at, activity_basis_at, source
-             ) VALUES (?, 'tombstoned', 'ttl_expired', ?, ?, 'server_maintenance')`,
+             ) VALUES (?, 'tombstoned', ?, ?, ?, 'server_maintenance')`,
           )
-          .run(candidate.chatId, observedAt, candidate.activityAt)
+          .run(candidate.chatId, candidate.reason, observedAt, candidate.activityAt)
         tombstoned += 1
       }
       return tombstoned
@@ -318,7 +434,8 @@ export class ChatRetentionStore {
                 retention_policy, retention_policy_source, retention_policy_updated_at,
                 last_user_activity_at, last_user_activity_source, last_user_restore_at,
                 chat_lifecycle_state, chat_tombstoned_at, chat_tombstone_reason,
-                chat_tombstone_activity_at
+                chat_tombstone_activity_at, chat_lifecycle_reason,
+                session_leave_at, session_leave_source
          FROM threads WHERE id = ?`,
       )
       .get(chatId) as unknown as RetentionRow | undefined
@@ -341,6 +458,40 @@ export class ChatRetentionStore {
       restoredAt,
       activityBasis: { at: restoredAt, source: 'chat_restored' },
       source: 'user_restore',
+      hardDeletion: 'not_implemented',
+    })
+  }
+
+  private activeJobCount(chatId: string): number {
+    return (this.db.prepare(
+      `SELECT COUNT(*) AS count
+       FROM chat_job_inputs input
+       JOIN jobs job ON job.id = input.job_id
+       WHERE input.thread_id = ? AND job.status NOT IN (${TERMINAL_JOB_STATES})`,
+    ).get(chatId) as { count: number }).count
+  }
+
+  private sessionRecoveryElapsed(row: RetentionRow): boolean {
+    return row.chat_lifecycle_reason === 'session_left' &&
+      row.chat_tombstoned_at !== null &&
+      this.clock().getTime() >= Date.parse(sessionRecoveryDeadline(row.chat_tombstoned_at))
+  }
+
+  private sessionLeaveLifecycle(row: RetentionRow): LeaveSessionChatResponse {
+    if (row.session_leave_at === null) throw new Error('Session Chat has no leave basis')
+    const activeJobCount = row.chat_lifecycle_state === 'trash' ? 0 : this.activeJobCount(row.id)
+    return leaveSessionChatResponse.parse({
+      leaveVersion: SESSION_LEAVE_VERSION,
+      chatId: row.id,
+      projectId: row.project_id,
+      state: row.chat_lifecycle_state === 'trash'
+        ? 'trash'
+        : activeJobCount > 0 ? 'blocked_active_job' : 'pending_maintenance',
+      leaveBasis: { at: row.session_leave_at, source: 'explicit_user_action' },
+      activeJobCount,
+      recoveryDeadline: row.chat_lifecycle_state === 'trash'
+        ? sessionRecoveryDeadline(row.chat_tombstoned_at!)
+        : null,
       hardDeletion: 'not_implemented',
     })
   }

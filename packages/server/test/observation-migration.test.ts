@@ -42,7 +42,7 @@ describe('SQLite exact observation-key migration 6', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 17)
+    assert.equal(version(first), 18)
     assert.equal(
       (
         first
@@ -57,7 +57,7 @@ describe('SQLite exact observation-key migration 6', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 17)
+    assert.equal(version(reopened), 18)
     assert.equal(
       (
         reopened
@@ -85,7 +85,7 @@ describe('SQLite exact observation-key migration 6', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 17)
+    assert.equal(version(upgraded), 18)
     assert.deepEqual(
       {
         ...upgraded
@@ -142,7 +142,7 @@ describe('SQLite exact observation-key migration 6', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 17)
+    assert.equal(version(recovered), 18)
     recovered.close()
   })
 })

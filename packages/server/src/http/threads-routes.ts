@@ -11,6 +11,8 @@ import {
   getChatRetentionResponse,
   listChatTrashQuery,
   listChatTrashResponse,
+  leaveSessionChatBody,
+  leaveSessionChatResponse,
   listReasoningArtifactsQuery,
   listReasoningArtifactsResponse,
   getReasoningArtifactResponse,
@@ -222,6 +224,12 @@ export function threadsRoutes(app: AppContext): Hono {
         409,
       )
     }
+    if (result.status === 'recovery_expired') {
+      return context.json(
+        { code: 'validation_failed', message: 'Session recovery grace has elapsed', details: null },
+        409,
+      )
+    }
     return context.json(getChatRetentionResponse.parse(result.retention))
   })
 
@@ -249,7 +257,44 @@ export function threadsRoutes(app: AppContext): Hono {
         409,
       )
     }
+    if (result.status === 'recovery_expired') {
+      return context.json(
+        { code: 'validation_failed', message: 'Session recovery grace has elapsed', details: null },
+        409,
+      )
+    }
     return context.json(restoreChatResponse.parse(result.lifecycle))
+  })
+
+  routes.post('/:id/session-leave', async (context) => {
+    const parsed = leaveSessionChatBody.safeParse(await context.req.json().catch(() => null))
+    const chatId = context.req.param('id')
+    if (!parsed.success || parsed.data.chatId !== chatId) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid Session leave command', details: null },
+        400,
+      )
+    }
+    const scope = parsed.data.scope === 'project'
+      ? { scope: 'project' as const, projectId: parsed.data.projectId! }
+      : { scope: 'projectless' as const }
+    const result = app.retention.leaveSession(chatId, scope)
+    if (result.status === 'not_found') {
+      return notFound(context, 'thread_not_found', 'Chat was not found')
+    }
+    if (result.status === 'not_chat' || result.status === 'not_session') {
+      return context.json(
+        { code: 'validation_failed', message: 'Leave is available only for Session Chat', details: null },
+        409,
+      )
+    }
+    if (result.status === 'scope_mismatch') {
+      return context.json(
+        { code: 'validation_failed', message: 'Session leave Chat scope mismatch', details: null },
+        400,
+      )
+    }
+    return context.json(leaveSessionChatResponse.parse(result.lifecycle))
   })
 
   routes.get('/:id/reasoning-artifacts', (context) => {

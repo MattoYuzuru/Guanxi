@@ -1,5 +1,5 @@
 import type { ChatRetentionPolicy } from '@alamo/contract'
-import type { ChatRetentionStore } from '../store/chat-retention.ts'
+import type { ChatRetentionStore, SessionLeaveScope } from '../store/chat-retention.ts'
 
 /** Application boundary for retention commands and projections. */
 export class ChatRetentionService {
@@ -27,4 +27,9 @@ export class ChatRetentionService {
   restore(chatId: string) {
     return this.store.restore(chatId)
   }
+
+  leaveSession(chatId: string, scope: SessionLeaveScope) {
+    return this.store.leaveSession(chatId, scope)
+  }
+
 }

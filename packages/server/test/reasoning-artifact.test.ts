@@ -21,10 +21,12 @@ import { JobStore } from '../src/store/jobs.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ReasoningArtifactStore } from '../src/store/reasoning-artifacts.ts'
 import { ThreadStore } from '../src/store/threads.ts'
+import { downgradeSessionLifecycleToV17 } from './fixtures/retention-lifecycle-migration.ts'
 
 const OPTIONS = { numCtx: 8_192, temperature: 0.7, think: 'high' as const }
 
 function downgradeToV15(db: DatabaseSync): void {
+  downgradeSessionLifecycleToV17(db)
   db.exec(`
     DROP INDEX idx_reasoning_artifact_deletion_audit_chat;
     DROP TABLE reasoning_artifact_deletion_audit;
@@ -175,7 +177,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const fresh = openDb(path)
-    assert.equal((fresh.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
+    assert.equal((fresh.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 18)
     const { chat } = createChat(fresh)
     fresh.prepare(
       `INSERT INTO messages (
@@ -188,7 +190,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     fresh.close()
 
     const upgraded = openDb(path)
-    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
+    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 18)
     assert.deepEqual(
       new ThreadStore(upgraded).messages(chat.id).map(({ content, thinking }) => ({ content, thinking })),
       [{ content: 'legacy-final', thinking: 'legacy thinking — literal' }],
@@ -196,7 +198,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     assert.equal((upgraded.prepare('SELECT COUNT(*) AS count FROM reasoning_artifacts').get() as { count: number }).count, 0)
     upgraded.close()
     const reopened = openDb(path)
-    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
+    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 18)
     assert.equal((reopened.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'reasoning_artifacts'").get() as { count: number }).count, 1)
     downgradeToV15(reopened)
     reopened.exec('CREATE TABLE migration_sentinel (legacy_payload TEXT NOT NULL)')
@@ -212,7 +214,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     afterFailure.exec('DROP INDEX idx_reasoning_artifacts_chat; DROP TABLE migration_sentinel')
     afterFailure.close()
     const retried = openDb(path)
-    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 17)
+    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 18)
     retried.close()
   })
 

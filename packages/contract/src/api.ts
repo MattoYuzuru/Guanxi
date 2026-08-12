@@ -108,6 +108,7 @@ export const ROUTES = {
   threadRetention: (id: string) => `/api/threads/${encodeURIComponent(id)}/retention`,
   chatTrash: () => '/api/threads/trash',
   threadRestore: (id: string) => `/api/threads/${encodeURIComponent(id)}/restore`,
+  threadSessionLeave: (id: string) => `/api/threads/${encodeURIComponent(id)}/session-leave`,
   threadReasoningArtifacts: (id: string) =>
     `/api/threads/${encodeURIComponent(id)}/reasoning-artifacts`,
   threadReasoningArtifact: (id: string, artifactId: string) =>

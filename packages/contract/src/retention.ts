@@ -5,6 +5,8 @@ export const CHAT_RETENTION_DAYS = 7 as const
 export const CHAT_LIFECYCLE_VERSION = 1 as const
 export const CHAT_TRASH_DEFAULT_LIMIT = 20 as const
 export const CHAT_TRASH_MAX_LIMIT = 100 as const
+export const SESSION_LEAVE_VERSION = 1 as const
+export const SESSION_TRASH_RECOVERY_HOURS = 24 as const
 
 export const chatRetentionPolicySchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('keep') }).strict(),
@@ -35,6 +37,17 @@ export const chatRetentionProjectionSchema = z
     expiresAt: z.string().datetime().nullable(),
     expirySource: z.enum(['server_calculated', 'policy_without_time_expiry']),
     enforcement: z.enum(['not_implemented', 'rolling_ttl_trash']),
+    sessionLeave: z
+      .object({
+        at: z.string().datetime(),
+        source: z.literal('explicit_user_action'),
+        state: z.enum(['pending_maintenance', 'blocked_active_job']),
+        activeJobCount: z.number().int().nonnegative(),
+      })
+      .strict()
+      .nullable()
+      .optional()
+      .default(null),
   })
   .strict()
   .superRefine((value, context) => {
@@ -73,32 +86,156 @@ export const chatRetentionProjectionSchema = z
         message: 'Keep and Session have no time expiry in the retention foundation',
       })
     }
+    if (value.policy.mode !== 'session' && value.sessionLeave !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sessionLeave'],
+        message: 'Only Session retention can have a pending leave basis',
+      })
+    }
+    if (
+      value.sessionLeave &&
+      ((value.sessionLeave.state === 'blocked_active_job') !== (value.sessionLeave.activeJobCount > 0))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sessionLeave', 'activeJobCount'],
+        message: 'Blocked Session leave requires a canonical active Job',
+      })
+    }
   })
 export type ChatRetentionProjection = z.infer<typeof chatRetentionProjectionSchema>
 
-export const chatTrashReasonSchema = z.literal('ttl_expired')
+export const chatTrashReasonSchema = z.enum(['ttl_expired', 'session_left'])
 export type ChatTrashReason = z.infer<typeof chatTrashReasonSchema>
 
-export const chatTrashItemSchema = z
+const chatTrashItemBase = {
+  lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION),
+  chatId: z.string().min(1),
+  title: z.string(),
+  projectId: z.string().min(1).nullable(),
+  state: z.literal('trash'),
+  tombstonedAt: z.string().datetime(),
+  source: z.literal('server_maintenance'),
+  hardDeletion: z.literal('not_implemented'),
+}
+
+const ttlTrashItemSchema = z
   .object({
-    lifecycleVersion: z.literal(CHAT_LIFECYCLE_VERSION),
-    chatId: z.string().min(1),
-    title: z.string(),
-    projectId: z.string().min(1).nullable(),
-    state: z.literal('trash'),
-    reason: chatTrashReasonSchema,
-    tombstonedAt: z.string().datetime(),
+    ...chatTrashItemBase,
+    reason: z.literal('ttl_expired'),
     activityBasis: z
       .object({
         at: z.string().datetime(),
         source: z.enum(['chat_created', 'user_message', 'chat_restored']),
       })
       .strict(),
-    source: z.literal('server_maintenance'),
+  })
+  .strict()
+
+const sessionTrashItemSchema = z
+  .object({
+    ...chatTrashItemBase,
+    reason: z.literal('session_left'),
+    activityBasis: z
+      .object({
+        at: z.string().datetime(),
+        source: z.literal('session_leave'),
+      })
+      .strict(),
+    recovery: z
+      .object({
+        deadline: z.string().datetime(),
+        state: z.enum(['available', 'grace_elapsed']),
+        source: z.literal('server_calculated_24_hours'),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      Date.parse(value.recovery.deadline) !==
+      Date.parse(value.tombstonedAt) + SESSION_TRASH_RECOVERY_HOURS * 60 * 60 * 1_000
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['recovery', 'deadline'],
+        message: 'Session recovery deadline must be exactly 24 hours after Trash entry',
+      })
+    }
+  })
+
+export const chatTrashItemSchema = z.union([ttlTrashItemSchema, sessionTrashItemSchema])
+export type ChatTrashItem = z.infer<typeof chatTrashItemSchema>
+
+const normalizedProjectReferenceSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => value === value.trim(), 'Project reference must be normalized')
+
+const sessionLeaveScopeSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('projectless') }).strict(),
+  z.object({ scope: z.literal('project'), projectId: normalizedProjectReferenceSchema }).strict(),
+])
+
+export const leaveSessionChatBody = z
+  .object({
+    leaveVersion: z.literal(SESSION_LEAVE_VERSION),
+    chatId: z.string().min(1),
+    scope: z.enum(['projectless', 'project']),
+    projectId: normalizedProjectReferenceSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const parsedScope = sessionLeaveScopeSchema.safeParse({
+      scope: value.scope,
+      ...(value.projectId === undefined ? {} : { projectId: value.projectId }),
+    })
+    if (!parsedScope.success) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['scope'],
+        message: 'Session leave requires exactly one Project or projectless scope',
+      })
+    }
+  })
+export type LeaveSessionChatBody = z.infer<typeof leaveSessionChatBody>
+
+export const leaveSessionChatResponse = z
+  .object({
+    leaveVersion: z.literal(SESSION_LEAVE_VERSION),
+    chatId: z.string().min(1),
+    projectId: z.string().min(1).nullable(),
+    state: z.enum(['pending_maintenance', 'blocked_active_job', 'trash']),
+    leaveBasis: z
+      .object({
+        at: z.string().datetime(),
+        source: z.literal('explicit_user_action'),
+      })
+      .strict(),
+    activeJobCount: z.number().int().nonnegative(),
+    recoveryDeadline: z.string().datetime().nullable(),
     hardDeletion: z.literal('not_implemented'),
   })
   .strict()
-export type ChatTrashItem = z.infer<typeof chatTrashItemSchema>
+  .superRefine((value, context) => {
+    if ((value.state === 'blocked_active_job') !== (value.activeJobCount > 0)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['activeJobCount'],
+        message: 'Only an active canonical Job can block Session leave',
+      })
+    }
+    if ((value.state === 'trash') !== (value.recoveryDeadline !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['recoveryDeadline'],
+        message: 'Only a trashed Session Chat has a recovery deadline',
+      })
+    }
+  })
+export type LeaveSessionChatResponse = z.infer<typeof leaveSessionChatResponse>
 
 export const restoredChatLifecycleSchema = z
   .object({

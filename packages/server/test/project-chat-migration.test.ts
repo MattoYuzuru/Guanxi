@@ -186,7 +186,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 17)
+    assert.equal(version(upgraded), 18)
     assert.equal(columnNames(upgraded).filter((name) => name === 'project_id').length, 1)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(legacy.id)?.projectId, null)
     const afterRows = upgraded.prepare('SELECT * FROM threads').all() as Array<
@@ -204,6 +204,9 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
       chat_tombstone_reason: tombstoneReason,
       chat_tombstone_activity_at: tombstoneActivityAt,
       last_user_restore_at: lastUserRestoreAt,
+      session_leave_at: sessionLeaveAt,
+      session_leave_source: sessionLeaveSource,
+      chat_lifecycle_reason: lifecycleReason,
       ...row
     }) => {
       assert.equal(projectId, null)
@@ -214,13 +217,16 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
       assert.equal(tombstoneReason, null)
       assert.equal(tombstoneActivityAt, null)
       assert.equal(lastUserRestoreAt, null)
+      assert.equal(sessionLeaveAt, null)
+      assert.equal(sessionLeaveSource, null)
+      assert.equal(lifecycleReason, null)
       return row
     })
     assert.equal(JSON.stringify(withoutAdditiveFields), before)
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 17)
+    assert.equal(version(reopened), 18)
     assert.equal(columnNames(reopened).filter((name) => name === 'project_id').length, 1)
     assert.equal(
       (reopened.prepare(
@@ -249,7 +255,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 17)
+    assert.equal(version(upgraded), 18)
     assert.equal(new ThreadStore(upgraded).getWithOwnership(owned.id)?.projectId, project.id)
     assert.equal(
       (upgraded.prepare(
@@ -289,7 +295,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 17)
+    assert.equal(version(recovered), 18)
     assert.equal(new ThreadStore(recovered).getWithOwnership(owned.id)?.projectId, project.id)
     assert.throws(
       () => recovered.prepare('UPDATE threads SET project_id = NULL WHERE id = ?').run(owned.id),
@@ -298,7 +304,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     recovered.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 17)
+    assert.equal(version(reopened), 18)
     assert.equal(new ThreadStore(reopened).getWithOwnership(owned.id)?.projectId, project.id)
     reopened.close()
   })
@@ -333,7 +339,7 @@ describe('SQLite Project Chat ownership migrations 12–13', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 17)
+    assert.equal(version(recovered), 18)
     assert.equal(new ThreadStore(recovered).getWithOwnership('legacy-thread')?.projectId, null)
     recovered.close()
   })
