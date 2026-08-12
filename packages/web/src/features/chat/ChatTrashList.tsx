@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { CHAT_LIFECYCLE_VERSION, type ChatTrashItem } from '@alamo/contract'
+import {
+  CHAT_DELETION_VERSION,
+  CHAT_LIFECYCLE_VERSION,
+  type ChatTrashItem,
+} from '@alamo/contract'
 import { Button, Callout } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
@@ -16,8 +20,19 @@ export function ChatTrashList({
   const trash = useAsync(
     (signal) => api.listChatTrash(
       projectId === null
-        ? { lifecycleVersion: CHAT_LIFECYCLE_VERSION, scope: 'projectless', limit: 20 }
-        : { lifecycleVersion: CHAT_LIFECYCLE_VERSION, scope: 'project', projectId, limit: 20 },
+        ? {
+            lifecycleVersion: CHAT_LIFECYCLE_VERSION,
+            deletionVersion: CHAT_DELETION_VERSION,
+            scope: 'projectless',
+            limit: 20,
+          }
+        : {
+            lifecycleVersion: CHAT_LIFECYCLE_VERSION,
+            deletionVersion: CHAT_DELETION_VERSION,
+            scope: 'project',
+            projectId,
+            limit: 20,
+          },
       signal,
     ),
     [projectId],
@@ -31,6 +46,7 @@ export function ChatTrashList({
   const errorRef = useRef<HTMLDivElement>(null)
   const listErrorRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const deletionRefreshRef = useRef(false)
 
   useEffect(() => {
     if (restoreError) requestAnimationFrame(() => errorRef.current?.focus())
@@ -57,7 +73,16 @@ export function ChatTrashList({
       const unresolved = new Set([...current].filter((chatId) => visibleIds.has(chatId)))
       return unresolved.size === current.size ? current : unresolved
     })
+    if (deletionRefreshRef.current) {
+      deletionRefreshRef.current = false
+      requestAnimationFrame(() => headingRef.current?.focus())
+    }
   }, [trash.data, trash.error])
+
+  const refreshDeletion = () => {
+    deletionRefreshRef.current = true
+    trash.reload()
+  }
 
   const restore = async (chat: ChatTrashItem) => {
     if (restoringRef.current) return
@@ -86,6 +111,9 @@ export function ChatTrashList({
   }
 
   const chats = (trash.data?.chats ?? []).filter((chat) => !restoredIds.has(chat.chatId))
+  const deletionPending = chats.some(
+    (chat) => chat.reason === 'session_left' && chat.hardDeletion.state === 'pending_maintenance',
+  )
   return (
     <section
       ref={sectionRef}
@@ -101,6 +129,11 @@ export function ChatTrashList({
       {trash.loading && !trash.data ? (
         <p role="status" className="mt-2 text-2xs text-[var(--fg-subtle)]">
           {translate('chat.trash.loading')}
+        </p>
+      ) : null}
+      {trash.refreshing ? (
+        <p role="status" className="mt-2 text-2xs text-[var(--fg-subtle)]">
+          {translate('chat.trash.refreshingDeletion')}
         </p>
       ) : null}
       {trash.error ? (
@@ -148,13 +181,19 @@ export function ChatTrashList({
                 {' · '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
               </span>
               {chat.reason === 'session_left' ? (
-                <span className="block break-words text-[var(--fg-subtle)]">
-                  {translate('chat.trash.recoveryDeadline')}:{' '}
-                  <time dateTime={chat.recovery.deadline}>
-                    {formatDateTime(chat.recovery.deadline)}
-                  </time>
-                  {' · '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
-                </span>
+                <>
+                  <span className="block break-words text-[var(--fg-subtle)]">
+                    {translate('chat.trash.recoveryDeadline')}:{' '}
+                    <time dateTime={chat.recovery.deadline}>
+                      {formatDateTime(chat.recovery.deadline)}
+                    </time>
+                    {' · '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
+                  </span>
+                  <span className="block break-words text-[var(--fg-subtle)]">
+                    {translate(`chat.trash.deletion.${chat.hardDeletion.state}`)}
+                    {' · '}{translate('chat.trash.noBlobGc')}
+                  </span>
+                </>
               ) : null}
               <Button
                 className="mt-2"
@@ -169,9 +208,39 @@ export function ChatTrashList({
           ))}
         </ol>
       ) : null}
+      {deletionPending ? (
+        <Button
+          className="mt-2"
+          size="sm"
+          loading={trash.refreshing}
+          disabled={trash.refreshing}
+          onClick={refreshDeletion}
+        >
+          {translate('chat.trash.refreshDeletion')}
+        </Button>
+      ) : null}
+      {(trash.data?.deletions?.length ?? 0) > 0 ? (
+        <div className="mt-3" aria-live="polite">
+          <h4 className="text-2xs font-semibold">{translate('chat.trash.deleted.title')}</h4>
+          <ol className="mt-1 min-w-0 space-y-1">
+            {(trash.data?.deletions ?? []).map((deletion) => (
+              <li key={deletion.chatId} className="min-w-0 break-words text-2xs text-[var(--fg-subtle)]">
+                {translate('chat.trash.deleted.item')} ·{' '}
+                <time dateTime={deletion.deletedAt}>{formatDateTime(deletion.deletedAt)}</time>
+                {' · '}{translate('chat.trash.noBlobGc')}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
       {trash.data?.hasMore ? (
         <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
           {translate('chat.trash.bounded')}
+        </p>
+      ) : null}
+      {trash.data?.deletionsHaveMore ? (
+        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+          {translate('chat.trash.deleted.bounded')}
         </p>
       ) : null}
     </section>

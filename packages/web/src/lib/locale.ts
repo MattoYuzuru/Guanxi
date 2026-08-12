@@ -157,7 +157,7 @@ const english = {
   'chat.retention.notEnforced.description':
     'This slice stores and explains retention. Cleanup and Trash are not implemented yet, so no Chat is deleted automatically.',
   'chat.retention.enforced.description':
-    'Rolling 7-day expiry and explicit Session leave move eligible Chats to recoverable Trash. Hard deletion is not implemented.',
+    'Rolling 7-day expiry and explicit Session leave move eligible Chats to recoverable Trash. Session metadata is deleted after its 24-hour recovery deadline.',
   'chat.retention.enforced.title': 'Recoverable expiry is active',
   'chat.retention.save': 'Save retention',
   'chat.retention.leave.open': 'Leave session',
@@ -171,7 +171,8 @@ const english = {
   'chat.retention.leave.blocked_active_job.title': 'Leave recorded; active work must finish',
   'chat.retention.leave.trash.title': 'Session Chat moved to Trash',
   'chat.retention.leave.recoverUntil': 'Recover until',
-  'chat.retention.leave.noHardDelete': 'Hard deletion is not implemented.',
+  'chat.retention.leave.noHardDelete':
+    'Session metadata deletion is scheduled after the 24-hour recovery deadline.',
   'chat.reasoning.title': 'Generated answers and reasoning',
   'chat.reasoning.noCleanup':
     'Reasoning is stored as a separate 7-day diagnostic Artifact. Automatic deletion is not implemented.',
@@ -197,7 +198,7 @@ const english = {
   'chat.trash.retryList': 'Retry Trash',
   'chat.trash.empty': 'Trash is empty for this scope.',
   'chat.trash.hardDeletion':
-    'Hard deletion is not implemented. Messages, Jobs, Artifacts, and blobs remain stored.',
+    'Session-owned SQLite metadata is deleted after recovery. 7-day Trash deletion and generic blob cleanup are not implemented.',
   'chat.trash.reason.ttl_expired': '7-day retention expired',
   'chat.trash.reason.session_left': 'Session was explicitly left',
   'chat.trash.activity': 'Expiry basis',
@@ -208,7 +209,15 @@ const english = {
   'chat.trash.bounded': 'Only the first 20 Trash items are shown for this scope.',
   'chat.trash.recoveryDeadline': 'Recovery deadline',
   'chat.trash.recovery.available': 'recovery available',
-  'chat.trash.recovery.grace_elapsed': '24-hour grace elapsed; hard deletion is not implemented',
+  'chat.trash.recovery.grace_elapsed': '24-hour recovery elapsed',
+  'chat.trash.deletion.scheduled_after_recovery': 'metadata deletion is scheduled after recovery',
+  'chat.trash.deletion.pending_maintenance': 'metadata deletion is pending server maintenance',
+  'chat.trash.noBlobGc': 'generic blob cleanup is not applicable in this slice',
+  'chat.trash.refreshDeletion': 'Refresh deletion status',
+  'chat.trash.refreshingDeletion': 'Refreshing deletion status',
+  'chat.trash.deleted.title': 'Committed deletions',
+  'chat.trash.deleted.item': 'Session Chat metadata deleted by server maintenance',
+  'chat.trash.deleted.bounded': 'Only the first 20 deletion audit records are shown.',
   'chat.turn.status.completed': 'Completed',
   'chat.turn.status.failed': 'Failed',
   'chat.turn.status.cancelled': 'Cancelled',
@@ -1314,7 +1323,7 @@ const russian: Messages = {
   'chat.retention.notEnforced.description':
     'Этот slice хранит и объясняет retention. Cleanup и Корзина ещё не реализованы, поэтому Chat не удаляется автоматически.',
   'chat.retention.enforced.description':
-    'Rolling-срок 7 дней и явный выход из Session переносят подходящие чаты в восстанавливаемую Корзину. Безвозвратное удаление не реализовано.',
+    'Rolling-срок 7 дней и явный выход из Session переносят подходящие чаты в восстанавливаемую Корзину. Metadata сессии удаляется после 24-часового срока восстановления.',
   'chat.retention.enforced.title': 'Восстанавливаемое истечение применяется',
   'chat.retention.save': 'Сохранить retention',
   'chat.retention.leave.open': 'Завершить сессию',
@@ -1328,7 +1337,8 @@ const russian: Messages = {
   'chat.retention.leave.blocked_active_job.title': 'Выход зафиксирован; активная работа должна завершиться',
   'chat.retention.leave.trash.title': 'Чат-сессия перемещён в Корзину',
   'chat.retention.leave.recoverUntil': 'Можно восстановить до',
-  'chat.retention.leave.noHardDelete': 'Безвозвратное удаление не реализовано.',
+  'chat.retention.leave.noHardDelete':
+    'Удаление metadata сессии запланировано после 24-часового срока восстановления.',
   'chat.reasoning.title': 'Сгенерированные ответы и рассуждения',
   'chat.reasoning.noCleanup':
     'Рассуждение хранится отдельно как диагностический результат на 7 дней. Автоматическое удаление не реализовано.',
@@ -1354,7 +1364,7 @@ const russian: Messages = {
   'chat.trash.retryList': 'Повторить загрузку Корзины',
   'chat.trash.empty': 'В этой области Корзина пуста.',
   'chat.trash.hardDeletion':
-    'Безвозвратное удаление не реализовано. Сообщения, задания, артефакты и blobs остаются сохранены.',
+    'SQLite metadata сессии удаляется после восстановления. Удаление 7-day Trash и generic blob cleanup не реализованы.',
   'chat.trash.reason.ttl_expired': 'истёк срок хранения 7 дней',
   'chat.trash.reason.session_left': 'пользователь явно завершил сессию',
   'chat.trash.activity': 'Основание истечения',
@@ -1365,7 +1375,15 @@ const russian: Messages = {
   'chat.trash.bounded': 'Для этой области показаны только первые 20 записей Корзины.',
   'chat.trash.recoveryDeadline': 'Срок восстановления',
   'chat.trash.recovery.available': 'восстановление доступно',
-  'chat.trash.recovery.grace_elapsed': '24 часа истекли; безвозвратное удаление не реализовано',
+  'chat.trash.recovery.grace_elapsed': '24 часа восстановления истекли',
+  'chat.trash.deletion.scheduled_after_recovery': 'удаление metadata запланировано после восстановления',
+  'chat.trash.deletion.pending_maintenance': 'удаление metadata ожидает server maintenance',
+  'chat.trash.noBlobGc': 'generic blob cleanup неприменим в этом slice',
+  'chat.trash.refreshDeletion': 'Обновить статус удаления',
+  'chat.trash.refreshingDeletion': 'Обновляем статус удаления',
+  'chat.trash.deleted.title': 'Подтверждённые удаления',
+  'chat.trash.deleted.item': 'Server maintenance удалил metadata чат-сессии',
+  'chat.trash.deleted.bounded': 'Показаны только первые 20 audit-записей удаления.',
   'chat.turn.status.completed': 'завершён',
   'chat.turn.status.failed': 'ошибка',
   'chat.turn.status.cancelled': 'отменён',

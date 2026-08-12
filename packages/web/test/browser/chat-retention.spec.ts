@@ -176,7 +176,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(dialog).toBeVisible()
   await expect(dialog.getByText('7 дней', { exact: true })).toHaveCount(2)
   await expect(dialog.getByText('Восстанавливаемое истечение применяется')).toHaveCount(1)
-  await expect(dialog.getByText(/Безвозвратное удаление не реализовано/u)).toHaveCount(1)
+  await expect(dialog.getByText(/Metadata сессии удаляется после 24-часового срока восстановления/u)).toHaveCount(1)
   await expect(dialog.getByText('Сгенерированные ответы', { exact: true })).toHaveCount(1)
   await expect(dialog.getByText('Результаты с рассуждениями', { exact: true })).toHaveCount(1)
   await expect(dialog.getByText(/Автоматическое удаление применяется/u)).toHaveCount(1)
@@ -370,7 +370,7 @@ test('explicit Session leave confirms, retries exact scope and records pending M
         leaveBasis: { at: observedAt, source: 'explicit_user_action' },
         activeJobCount: 0,
         recoveryDeadline: null,
-        hardDeletion: 'not_implemented',
+        hardDeletion: 'session_metadata_after_recovery',
       }))
     }
     if (method !== 'GET') unexpectedMutations.push(`${method} ${url.pathname}`)
@@ -423,7 +423,10 @@ test('explicit Session leave confirms, retries exact scope and records pending M
   ])
   await expect(dialog.getByText('Выход зафиксирован; ожидается Maintenance')).toHaveCount(1)
   await expect(dialog.getByRole('status')).toBeFocused()
-  await expect(dialog.getByText('Безвозвратное удаление не реализовано.', { exact: true })).toHaveCount(1)
+  await expect(dialog.getByText(
+    'Удаление metadata сессии запланировано после 24-часового срока восстановления.',
+    { exact: true },
+  )).toHaveCount(1)
   await expect(dialog.getByRole('button', { name: 'Завершить сессию' })).toHaveCount(0)
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })

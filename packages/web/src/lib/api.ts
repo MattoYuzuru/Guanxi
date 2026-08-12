@@ -384,6 +384,7 @@ export const api = {
     request(ROUTES.chatTrash(), listChatTrashResponse, {
       query: {
         lifecycleVersion: query.lifecycleVersion,
+        deletionVersion: query.deletionVersion,
         scope: query.scope,
         projectId: query.scope === 'project' ? query.projectId : undefined,
         limit: query.limit,

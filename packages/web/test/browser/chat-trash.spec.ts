@@ -42,12 +42,33 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
       state: 'available',
       source: 'server_calculated_24_hours',
     },
+    hardDeletion: {
+      state: 'scheduled_after_recovery',
+      eligibleAt: recoveryDeadline,
+      source: 'server_maintenance',
+      blobGc: 'not_applicable',
+    },
   }
   const sessionElapsed = {
     ...sessionAvailable,
     chatId: 'session-trash-elapsed',
     title: 'Session recovery elapsed',
     recovery: { ...sessionAvailable.recovery, state: 'grace_elapsed' },
+    hardDeletion: { ...sessionAvailable.hardDeletion, state: 'pending_maintenance' },
+  }
+  const committedDeletion = {
+    deletionVersion: 1,
+    chatId: sessionElapsed.chatId,
+    scope: 'projectless',
+    projectId: null,
+    state: 'deleted',
+    reason: 'session_recovery_elapsed',
+    tombstonedAt: sessionElapsed.tombstonedAt,
+    recoveryDeadline,
+    deletedAt: '2026-08-12T12:00:00.001Z',
+    source: 'server_maintenance',
+    boundary: 'thread_owned_sqlite_metadata',
+    blobGc: 'not_applicable',
   }
   const health = {
     ok: true,
@@ -71,6 +92,9 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
     body: JSON.stringify(body),
   })
   let restored = false
+  let deletionRefreshArmed = false
+  let deletionRefreshFailed = false
+  let deletionCommitted = false
   let restoreCalls = 0
   const restoreBodies: unknown[] = []
   const trashScopes: Array<{ scope: string | null; projectId: string | null; limit: string | null }> = []
@@ -97,16 +121,30 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
       const projectId = url.searchParams.get('projectId')
       trashScopes.push({ scope, projectId, limit: url.searchParams.get('limit') })
       expect(url.searchParams.get('lifecycleVersion')).toBe('1')
+      expect(url.searchParams.get('deletionVersion')).toBe('1')
       if (scope === 'projectless') {
+        if (deletionRefreshArmed && !deletionRefreshFailed) {
+          deletionRefreshFailed = true
+          return route.fulfill(json({
+            code: 'storage_error', message: 'safe deletion refresh failure', details: null,
+          }, 500))
+        }
+        if (deletionRefreshFailed) deletionCommitted = true
         return route.fulfill(json({
-          lifecycleVersion: 1, scope, projectId: null,
-          chats: [projectlessItem, sessionAvailable, sessionElapsed], hasMore: false,
+          lifecycleVersion: 1, deletionVersion: 1, scope, projectId: null,
+          chats: deletionCommitted
+            ? [projectlessItem, sessionAvailable]
+            : [projectlessItem, sessionAvailable, sessionElapsed],
+          hasMore: false,
+          deletions: deletionCommitted ? [committedDeletion] : [],
+          deletionsHaveMore: false,
         }))
       }
       expect(projectId).toBe(project.id)
       return route.fulfill(json({
-        lifecycleVersion: 1, scope, projectId,
+        lifecycleVersion: 1, deletionVersion: 1, scope, projectId,
         chats: restored ? [] : [trashItem], hasMore: false,
+        deletions: [], deletionsHaveMore: false,
       }))
     }
     if (url.pathname === `/api/threads/${activeChat.id}/restore` && method === 'POST') {
@@ -145,9 +183,23 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   await expect(projectlessTrash.getByText('пользователь явно завершил сессию')).toHaveCount(2)
   await expect(projectlessTrash.locator(`time[datetime="${recoveryDeadline}"]`)).toHaveCount(2)
   await expect(projectlessTrash.getByText('восстановление доступно')).toHaveCount(1)
-  await expect(projectlessTrash.getByText(/24 часа истекли/u)).toHaveCount(1)
+  await expect(projectlessTrash.getByText(/24 часа восстановления истекли/u)).toHaveCount(1)
+  await expect(projectlessTrash.getByText(/удаление metadata ожидает server maintenance/u)).toHaveCount(1)
+  await expect(projectlessTrash.getByText(/generic blob cleanup неприменим/u)).toHaveCount(2)
   await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' })).toHaveCount(3)
   await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' }).last()).toBeDisabled()
+
+  deletionRefreshArmed = true
+  await projectlessTrash.getByRole('button', { name: 'Обновить статус удаления' }).press('Enter')
+  const deletionFailure = projectlessTrash.getByText('safe deletion refresh failure')
+  await expect(deletionFailure).toBeVisible()
+  await expect(deletionFailure.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()
+  await expect(projectlessTrash.getByText(sessionElapsed.title)).toHaveCount(1)
+  await expect(projectlessTrash.getByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveCount(0)
+  await projectlessTrash.getByRole('button', { name: 'Повторить загрузку Корзины' }).press('Enter')
+  await expect(projectlessTrash.getByText(sessionElapsed.title)).toHaveCount(0)
+  await expect(projectlessTrash.getByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveCount(1)
+  await expect(projectlessTrash.getByRole('heading', { name: 'Корзина' })).toBeFocused()
 
   const restore = projectTrash.getByRole('button', { name: 'Восстановить чат' })
   await restore.press('Enter')

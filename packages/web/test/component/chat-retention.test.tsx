@@ -129,7 +129,7 @@ describe('Chat retention info', () => {
         leaveBasis: { at: ACTIVITY_AT, source: 'explicit_user_action' },
         activeJobCount: 1,
         recoveryDeadline: null,
-        hardDeletion: 'not_implemented',
+        hardDeletion: 'session_metadata_after_recovery',
       })
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="Project Session" projectId="project-a" />)
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
@@ -164,7 +164,7 @@ describe('Chat retention info', () => {
     }
   })
 
-  it('shows exact recovery deadline and truthful no-hard-delete state after Session leave', async () => {
+  it('shows exact recovery deadline and scheduled Session metadata deletion after leave', async () => {
     vi.mocked(api.getChatRetention).mockResolvedValue(SESSION)
     vi.spyOn(api, 'leaveSessionChat').mockResolvedValue({
       leaveVersion: 1,
@@ -174,7 +174,7 @@ describe('Chat retention info', () => {
       leaveBasis: { at: ACTIVITY_AT, source: 'explicit_user_action' },
       activeJobCount: 0,
       recoveryDeadline: EXPIRES_AT,
-      hardDeletion: 'not_implemented',
+      hardDeletion: 'session_metadata_after_recovery',
     })
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="Session" projectId={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
@@ -185,7 +185,8 @@ describe('Chat retention info', () => {
     )).closest('[role="status"]')!
     await waitFor(() => expect(result).toBe(document.activeElement))
     expect(document.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeTruthy()
-    expect(screen.getAllByText(/Безвозвратное удаление не реализовано/u)).toHaveLength(2)
+    expect(screen.getAllByText(/Metadata сессии удаляется после 24-часового срока восстановления/u)).toHaveLength(1)
+    expect(screen.getAllByText(/Удаление metadata сессии запланировано после 24-часового срока восстановления/u)).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Завершить сессию' })).toBeNull()
   })
 
@@ -221,7 +222,7 @@ describe('Chat retention info', () => {
     expect(dialog.textContent).toContain('основание — создание чата')
     expect(dialog.textContent).toContain('вычислено сервером')
     expect(dialog.textContent).toContain('Восстанавливаемое истечение применяется')
-    expect(dialog.textContent).toContain('Безвозвратное удаление не реализовано')
+    expect(dialog.textContent).toContain('Metadata сессии удаляется после 24-часового срока восстановления')
     expect(dialog.querySelector(`time[datetime="${ACTIVITY_AT}"]`)).toBeTruthy()
     expect(dialog.querySelector(`time[datetime="${EXPIRES_AT}"]`)).toBeTruthy()
     expect(dialog.textContent).toContain('Ч'.repeat(120))

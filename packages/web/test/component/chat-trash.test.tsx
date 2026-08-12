@@ -40,12 +40,23 @@ const SESSION_ITEM: ChatTrashItem = {
   tombstonedAt: TOMBSTONED_AT,
   activityBasis: { at: TOMBSTONED_AT, source: 'session_leave' },
   source: 'server_maintenance',
-  hardDeletion: 'not_implemented',
+  hardDeletion: {
+    state: 'scheduled_after_recovery',
+    eligibleAt: '2026-08-12T12:00:00.000Z',
+    source: 'server_maintenance',
+    blobGc: 'not_applicable',
+  },
   recovery: {
     deadline: '2026-08-12T12:00:00.000Z',
     state: 'available',
     source: 'server_calculated_24_hours',
   },
+}
+
+const EMPTY_DELETIONS = {
+  deletionVersion: 1 as const,
+  deletions: [],
+  deletionsHaveMore: false,
 }
 
 function deferred<T>() {
@@ -63,10 +74,11 @@ beforeEach(() => {
 })
 
 describe('Chat Trash list', () => {
-  it('shows exact Session recovery and disables stale recovery without claiming hard deletion', async () => {
+  it('shows exact Session recovery and truthful pending metadata deletion without blob-GC claims', async () => {
     vi.spyOn(api, 'restoreChat')
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1,
+      ...EMPTY_DELETIONS,
       scope: 'projectless',
       projectId: null,
       chats: [
@@ -76,6 +88,7 @@ describe('Chat Trash list', () => {
           chatId: 'elapsed-session',
           title: 'Elapsed Session',
           recovery: { ...SESSION_ITEM.recovery, state: 'grace_elapsed' },
+          hardDeletion: { ...SESSION_ITEM.hardDeletion, state: 'pending_maintenance' },
         },
       ],
       hasMore: false,
@@ -85,8 +98,9 @@ describe('Chat Trash list', () => {
     const elapsed = screen.getByText('Elapsed Session').closest('li')!
     expect(available.querySelector('time[datetime="2026-08-12T12:00:00.000Z"]')).toBeTruthy()
     expect(available.textContent).toContain('восстановление доступно')
-    expect(elapsed.textContent).toContain('24 часа истекли')
-    expect(elapsed.textContent).toContain('безвозвратное удаление не реализовано')
+    expect(elapsed.textContent).toContain('24 часа восстановления истекли')
+    expect(elapsed.textContent).toContain('удаление metadata ожидает server maintenance')
+    expect(elapsed.textContent).toContain('generic blob cleanup неприменим')
     expect((elapsed.querySelector('button') as HTMLButtonElement).disabled).toBe(true)
     expect((available.querySelector('button') as HTMLButtonElement).disabled).toBe(false)
     expect(api.restoreChat).not.toHaveBeenCalled()
@@ -95,6 +109,8 @@ describe('Chat Trash list', () => {
   it('loads one exact Project scope and shows sourced reason/time with truthful hard-deletion state', async () => {
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1,
+      deletionVersion: 1,
+      ...EMPTY_DELETIONS,
       scope: 'project',
       projectId: 'project-a',
       chats: [ITEM],
@@ -105,12 +121,13 @@ describe('Chat Trash list', () => {
     await screen.findByText(ITEM.title)
     expect(api.listChatTrash).toHaveBeenCalledWith({
       lifecycleVersion: 1,
+      deletionVersion: 1,
       scope: 'project',
       projectId: 'project-a',
       limit: 20,
     }, expect.any(AbortSignal))
     expect(region.textContent).toContain('истёк срок хранения 7 дней')
-    expect(region.textContent).toContain('Безвозвратное удаление не реализовано')
+    expect(region.textContent).toContain('Удаление 7-day Trash и generic blob cleanup не реализованы')
     expect(region.textContent).toContain('первые 20 записей Корзины')
     expect(region.querySelectorAll(`time[datetime="${TOMBSTONED_AT}"]`)).toHaveLength(1)
     expect(region.querySelectorAll(`time[datetime="${ACTIVITY_AT}"]`)).toHaveLength(1)
@@ -120,10 +137,10 @@ describe('Chat Trash list', () => {
   it('coalesces repeated Restore, refreshes active/Trash projections and returns focus safely', async () => {
     vi.spyOn(api, 'listChatTrash')
       .mockResolvedValueOnce({
-        lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
+        lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
       })
       .mockResolvedValue({
-        lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [], hasMore: false,
+        lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'project', projectId: 'project-a', chats: [], hasMore: false,
       })
     const mutation = deferred<RestoreChatResponse>()
     vi.spyOn(api, 'restoreChat').mockReturnValue(mutation.promise)
@@ -144,6 +161,7 @@ describe('Chat Trash list', () => {
   it('focuses a safe Restore error and retries the same mutation without an extra list read', async () => {
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1, scope: 'projectless', projectId: null,
+      ...EMPTY_DELETIONS,
       chats: [{ ...ITEM, projectId: null }], hasMore: false,
     })
     vi.spyOn(api, 'restoreChat')
@@ -163,11 +181,11 @@ describe('Chat Trash list', () => {
   it('removes a restored stale item, focuses failed refresh, and converges through explicit list retry', async () => {
     vi.spyOn(api, 'listChatTrash')
       .mockResolvedValueOnce({
-        lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
+        lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
       })
       .mockRejectedValueOnce(new Error('post-restore refresh failed'))
       .mockResolvedValueOnce({
-        lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [], hasMore: false,
+        lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'project', projectId: 'project-a', chats: [], hasMore: false,
       })
     vi.spyOn(api, 'restoreChat').mockResolvedValue(RESTORED)
     const onRestored = vi.fn()
@@ -188,7 +206,7 @@ describe('Chat Trash list', () => {
     vi.spyOn(api, 'listChatTrash')
       .mockRejectedValueOnce(new Error('initial Trash failure'))
       .mockResolvedValueOnce({
-        lifecycleVersion: 1, scope: 'projectless', projectId: null, chats: [], hasMore: false,
+        lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'projectless', projectId: null, chats: [], hasMore: false,
       })
     render(<ChatTrashList projectId={null} />)
     const error = await screen.findByText(/initial Trash failure/u)
@@ -218,14 +236,73 @@ describe('Chat Trash list', () => {
     document.documentElement.lang = 'fr'
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
+      ...EMPTY_DELETIONS,
     })
     vi.spyOn(api, 'restoreChat').mockResolvedValue({ ...RESTORED, projectId: 'project-b' })
     render(<ChatTrashList projectId="project-a" />)
     expect((await screen.findByRole('region', { name: 'Trash' })).textContent).toContain(
-      'Hard deletion is not implemented',
+      'Session-owned SQLite metadata is deleted after recovery',
     )
     fireEvent.click(screen.getByRole('button', { name: 'Restore Chat' }))
     expect(await screen.findByText('Restore returned a different Chat scope.')).toBeTruthy()
     expect(api.listChatTrash).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps elapsed metadata pending through refresh failure and removes it only after a sourced committed audit', async () => {
+    const pending = {
+      ...SESSION_ITEM,
+      recovery: { ...SESSION_ITEM.recovery, state: 'grace_elapsed' as const },
+      hardDeletion: { ...SESSION_ITEM.hardDeletion, state: 'pending_maintenance' as const },
+    }
+    const committed = {
+      deletionVersion: 1 as const,
+      chatId: pending.chatId,
+      scope: 'projectless' as const,
+      projectId: null,
+      state: 'deleted' as const,
+      reason: 'session_recovery_elapsed' as const,
+      tombstonedAt: pending.tombstonedAt,
+      recoveryDeadline: pending.recovery.deadline,
+      deletedAt: '2026-08-12T12:00:00.001Z',
+      source: 'server_maintenance' as const,
+      boundary: 'thread_owned_sqlite_metadata' as const,
+      blobGc: 'not_applicable' as const,
+    }
+    vi.spyOn(api, 'listChatTrash')
+      .mockResolvedValueOnce({
+        lifecycleVersion: 1,
+        ...EMPTY_DELETIONS,
+        scope: 'projectless',
+        projectId: null,
+        chats: [pending],
+        hasMore: false,
+      })
+      .mockRejectedValueOnce(new Error('safe deletion refresh failure'))
+      .mockResolvedValueOnce({
+        lifecycleVersion: 1,
+        deletionVersion: 1,
+        scope: 'projectless',
+        projectId: null,
+        chats: [],
+        hasMore: false,
+        deletions: [committed],
+        deletionsHaveMore: false,
+      })
+    render(<ChatTrashList projectId={null} />)
+    expect(await screen.findAllByText(pending.title)).toHaveLength(1)
+    expect(screen.queryAllByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить статус удаления' }))
+    const failure = await screen.findByText(/safe deletion refresh failure/u)
+    await waitFor(() => expect(failure.closest('[tabindex="-1"]')).toBe(document.activeElement))
+    expect(screen.getAllByText(pending.title)).toHaveLength(1)
+    expect(screen.queryAllByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку Корзины' }))
+    expect(await screen.findAllByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveLength(1)
+    expect(screen.queryAllByText(pending.title)).toHaveLength(0)
+    expect(screen.getAllByText(/generic blob cleanup неприменим/u)).toHaveLength(1)
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Корзина' })).toBe(document.activeElement))
+    expect(api.listChatTrash).toHaveBeenCalledTimes(3)
   })
 })
