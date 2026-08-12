@@ -2,6 +2,10 @@ import type {
   ChatRetentionStore,
   RetentionEligibilityCursor,
 } from '../store/chat-retention.ts'
+import type {
+  ReasoningArtifactStore,
+  ReasoningExpiryCursor,
+} from '../store/reasoning-artifacts.ts'
 
 export const DEFAULT_RETENTION_MAINTENANCE_BATCH_SIZE = 50
 export const DEFAULT_RETENTION_MAINTENANCE_MAX_BATCHES = 4
@@ -12,6 +16,9 @@ export interface RetentionMaintenanceReport {
   scanned: number
   tombstoned: number
   batches: number
+  reasoningScanned: number
+  reasoningDeleted: number
+  reasoningBatches: number
 }
 
 export interface RetentionMaintenanceScheduler {
@@ -25,6 +32,7 @@ export interface RetentionMaintenanceOptions {
   maxBatchesPerRun?: number
   intervalMs?: number
   scheduler?: RetentionMaintenanceScheduler
+  reasoningArtifacts?: ReasoningArtifactStore
 }
 
 const defaultScheduler: RetentionMaintenanceScheduler = {
@@ -46,6 +54,7 @@ export class RetentionMaintenanceOwner {
   private readonly maxBatchesPerRun: number
   private readonly intervalMs: number
   private readonly scheduler: RetentionMaintenanceScheduler
+  private readonly reasoningArtifacts: ReasoningArtifactStore | null
   private timer: unknown | null = null
   private startPromise: Promise<RetentionMaintenanceReport> | null = null
   private running: Promise<RetentionMaintenanceReport> | null = null
@@ -60,6 +69,7 @@ export class RetentionMaintenanceOwner {
       options.maxBatchesPerRun ?? DEFAULT_RETENTION_MAINTENANCE_MAX_BATCHES
     this.intervalMs = options.intervalMs ?? DEFAULT_RETENTION_MAINTENANCE_INTERVAL_MS
     this.scheduler = options.scheduler ?? defaultScheduler
+    this.reasoningArtifacts = options.reasoningArtifacts ?? null
     if (!Number.isInteger(this.batchSize) || this.batchSize < 1 || this.batchSize > 1_000) {
       throw new Error('Retention Maintenance batchSize must be an integer from 1 to 1000')
     }
@@ -113,8 +123,42 @@ export class RetentionMaintenanceOwner {
           break
         }
       }
+      let reasoningCursor: ReasoningExpiryCursor | null = null
+      let reasoningScanned = 0
+      let reasoningDeleted = 0
+      let reasoningBatches = 0
+      if (this.reasoningArtifacts) {
+        for (; reasoningBatches < this.maxBatchesPerRun; reasoningBatches += 1) {
+          if (this.closed) break
+          const candidates = this.reasoningArtifacts.eligiblePage(
+            observedAt,
+            reasoningCursor,
+            this.batchSize,
+          )
+          if (candidates.length === 0) break
+          reasoningScanned += candidates.length
+          reasoningDeleted += this.reasoningArtifacts.deleteEligible(candidates, observedAt)
+          const last = candidates.at(-1)!
+          reasoningCursor = {
+            effectiveExpiresAt: last.effectiveExpiresAt,
+            artifactId: last.artifactId,
+          }
+          if (candidates.length < this.batchSize) {
+            reasoningBatches += 1
+            break
+          }
+        }
+      }
       this.lastFailure = null
-      return { observedAt, scanned, tombstoned, batches }
+      return {
+        observedAt,
+        scanned,
+        tombstoned,
+        batches,
+        reasoningScanned,
+        reasoningDeleted,
+        reasoningBatches,
+      }
     }).finally(() => {
       this.running = null
     })

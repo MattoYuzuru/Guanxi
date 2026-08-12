@@ -1,4 +1,5 @@
 import {
+  REASONING_ARTIFACT_ENFORCEMENT_VERSION,
   REASONING_ARTIFACT_VERSION,
   REASONING_RETENTION_DAYS,
   reasoningArtifactSchema,
@@ -32,6 +33,43 @@ export interface ReasoningArtifactRow {
 export interface ReasoningArtifactScope {
   scope: 'projectless' | 'project'
   projectId: string | null
+}
+
+export interface ReasoningExpiryCursor {
+  effectiveExpiresAt: string
+  artifactId: string
+}
+
+export interface ReasoningExpiryCandidate extends ReasoningExpiryCursor {
+  chatId: string
+}
+
+export interface ReasoningDeletionAuditRow {
+  artifact_id: string
+  artifact_version: number
+  chat_id: string
+  project_id: string | null
+  source_message_id: string
+  source_job_id: string
+  reason: 'diagnostic_ttl_expired' | 'shorter_parent_ttl_expired'
+  due_at: string
+  occurred_at: string
+  source: 'server_maintenance'
+}
+
+const DAY_MS = 24 * 60 * 60 * 1_000
+const TERMINAL_JOB_STATES = "'completed','failed','cancelled','interrupted'"
+
+function parentExpiry(policy: string, activityAt: string): string | null {
+  return policy === 'ttl'
+    ? new Date(Date.parse(activityAt) + REASONING_RETENTION_DAYS * DAY_MS).toISOString()
+    : null
+}
+
+function effectiveExpiry(artifactExpiresAt: string, currentParentExpiresAt: string | null): string {
+  return currentParentExpiresAt && currentParentExpiresAt < artifactExpiresAt
+    ? currentParentExpiresAt
+    : artifactExpiresAt
 }
 
 export function toReasoningArtifact(
@@ -75,7 +113,7 @@ export function toReasoningArtifact(
       parentExpiresAt,
       effectiveExpiresAt,
       relationship: 'shorter_parent_retention_wins',
-      automaticDeletion: 'not_implemented',
+      automaticDeletion: 'server_maintenance_active',
     },
   })
 }
@@ -170,6 +208,151 @@ export class ReasoningArtifactStore {
         ...projection,
         content: row.content_text,
       }),
+    }
+  }
+
+  eligiblePage(
+    observedAt: string,
+    after: ReasoningExpiryCursor | null,
+    limit: number,
+  ): ReasoningExpiryCandidate[] {
+    const afterExpiry = after?.effectiveExpiresAt ?? ''
+    const afterId = after?.artifactId ?? ''
+    const rows = this.db
+      .prepare(
+        `WITH candidates AS (
+           SELECT a.id AS artifact_id, a.chat_id,
+             CASE
+               WHEN t.retention_policy = 'ttl' THEN MIN(
+                 a.artifact_expires_at,
+                 strftime(
+                   '%Y-%m-%dT%H:%M:%fZ',
+                   julianday(COALESCE(t.last_user_activity_at, t.created_at)) + 7
+                 )
+               )
+               ELSE a.artifact_expires_at
+             END AS effective_expires_at
+           FROM reasoning_artifacts a
+           JOIN threads t ON t.id = a.chat_id
+           WHERE NOT EXISTS (
+             SELECT 1
+             FROM chat_job_inputs input
+             JOIN jobs job ON job.id = input.job_id
+             WHERE input.thread_id = a.chat_id
+               AND job.status NOT IN (${TERMINAL_JOB_STATES})
+           )
+         )
+         SELECT artifact_id, chat_id, effective_expires_at
+         FROM candidates
+         WHERE effective_expires_at <= ?
+           AND (
+             effective_expires_at > ?
+             OR (effective_expires_at = ? AND artifact_id > ?)
+           )
+         ORDER BY effective_expires_at, artifact_id
+         LIMIT ?`,
+      )
+      .all(observedAt, afterExpiry, afterExpiry, afterId, limit) as unknown as Array<{
+        artifact_id: string
+        chat_id: string
+        effective_expires_at: string
+      }>
+
+    return rows.map((row) => ({
+      artifactId: row.artifact_id,
+      chatId: row.chat_id,
+      effectiveExpiresAt: row.effective_expires_at,
+    }))
+  }
+
+  deleteEligible(
+    candidates: readonly ReasoningExpiryCandidate[],
+    observedAt: string,
+  ): number {
+    return this.transact(() => {
+      let deleted = 0
+      for (const candidate of candidates) {
+        const row = this.db
+          .prepare(
+            `SELECT a.id, a.artifact_version, a.chat_id, a.project_id,
+                    a.source_message_id, a.source_job_id, a.artifact_expires_at,
+                    t.retention_policy,
+                    COALESCE(t.last_user_activity_at, t.created_at) AS activity_at
+             FROM reasoning_artifacts a
+             JOIN threads t ON t.id = a.chat_id
+             WHERE a.id = ? AND a.chat_id = ?
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM chat_job_inputs input
+                 JOIN jobs job ON job.id = input.job_id
+                 WHERE input.thread_id = a.chat_id
+                   AND job.status NOT IN (${TERMINAL_JOB_STATES})
+               )`,
+          )
+          .get(candidate.artifactId, candidate.chatId) as unknown as {
+            id: string
+            artifact_version: number
+            chat_id: string
+            project_id: string | null
+            source_message_id: string
+            source_job_id: string
+            artifact_expires_at: string
+            retention_policy: string
+            activity_at: string
+          } | undefined
+        if (!row) continue
+        const currentParentExpiresAt = parentExpiry(row.retention_policy, row.activity_at)
+        const dueAt = effectiveExpiry(row.artifact_expires_at, currentParentExpiresAt)
+        if (dueAt > observedAt) continue
+        const reason = currentParentExpiresAt && currentParentExpiresAt < row.artifact_expires_at
+          ? 'shorter_parent_ttl_expired'
+          : 'diagnostic_ttl_expired'
+        const removal = this.db.prepare('DELETE FROM reasoning_artifacts WHERE id = ?').run(row.id)
+        if (removal.changes !== 1) continue
+        this.db
+          .prepare(
+            `INSERT INTO reasoning_artifact_deletion_audit (
+               enforcement_version, artifact_id, artifact_version, chat_id, project_id,
+               source_message_id, source_job_id, reason, due_at, occurred_at, source
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'server_maintenance')`,
+          )
+          .run(
+            REASONING_ARTIFACT_ENFORCEMENT_VERSION,
+            row.id,
+            row.artifact_version,
+            row.chat_id,
+            row.project_id,
+            row.source_message_id,
+            row.source_job_id,
+            reason,
+            dueAt,
+            observedAt,
+          )
+        deleted += 1
+      }
+      return deleted
+    })
+  }
+
+  deletionAudit(): ReasoningDeletionAuditRow[] {
+    return this.db
+      .prepare(
+        `SELECT artifact_id, artifact_version, chat_id, project_id,
+                source_message_id, source_job_id, reason, due_at, occurred_at, source
+         FROM reasoning_artifact_deletion_audit ORDER BY occurred_at, artifact_id`,
+      )
+      .all() as unknown as ReasoningDeletionAuditRow[]
+  }
+
+  private transact<T>(operation: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const result = operation()
+      this.db.exec('COMMIT')
+      return result
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
     }
   }
 }

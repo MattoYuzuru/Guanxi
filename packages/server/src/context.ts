@@ -44,6 +44,7 @@ import { SettingsStore } from './store/settings.ts'
 import { ThreadStore } from './store/threads.ts'
 import { ChatRetentionStore } from './store/chat-retention.ts'
 import { WorkspaceStore } from './store/workspaces.ts'
+import { ReasoningArtifactStore } from './store/reasoning-artifacts.ts'
 
 export const DEFAULT_OLLAMA_HOST = process.env['OLLAMA_HOST']
   ? normalizeHost(process.env['OLLAMA_HOST'])
@@ -162,7 +163,10 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     const retentionStore = new ChatRetentionStore(db, {
       clock: options.retentionMaintenance?.clock,
     })
-    maintenance = new RetentionMaintenanceOwner(retentionStore, options.retentionMaintenance)
+    maintenance = new RetentionMaintenanceOwner(retentionStore, {
+      ...options.retentionMaintenance,
+      reasoningArtifacts: new ReasoningArtifactStore(db),
+    })
     const projects = new ProjectService(new ProjectStore(db))
     projects.reconcileLegacyWorkspaces()
 

@@ -585,6 +585,28 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'reasoning Artifact is immutable');
     END;
   `,
+  // 17 — redacted crash-safe evidence for automatic diagnostic reasoning
+  // expiry. Source content remains absent and v16 Artifact rows are not backfilled.
+  `
+  CREATE TABLE reasoning_artifact_deletion_audit (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    enforcement_version INTEGER NOT NULL CHECK (enforcement_version = 1),
+    artifact_id         TEXT NOT NULL UNIQUE,
+    artifact_version    INTEGER NOT NULL CHECK (artifact_version = 1),
+    chat_id             TEXT NOT NULL,
+    project_id          TEXT,
+    source_message_id   TEXT NOT NULL,
+    source_job_id       TEXT NOT NULL,
+    reason              TEXT NOT NULL CHECK (
+      reason IN ('diagnostic_ttl_expired','shorter_parent_ttl_expired')
+    ),
+    due_at              TEXT NOT NULL,
+    occurred_at         TEXT NOT NULL,
+    source              TEXT NOT NULL CHECK (source = 'server_maintenance')
+  );
+  CREATE INDEX idx_reasoning_artifact_deletion_audit_chat
+    ON reasoning_artifact_deletion_audit(chat_id, occurred_at, artifact_id);
+  `,
 ]
 
 export function openDb(path: string): Db {

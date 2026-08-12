@@ -68,7 +68,7 @@ export function threadsRoutes(app: AppContext): Hono {
   const reasoningScope = (context: { req: { url: string } }) => {
     const query = new URL(context.req.url).searchParams
     const parsed = listReasoningArtifactsQuery.safeParse(Object.fromEntries(query))
-    const allowed = new Set(['artifactVersion', 'scope', 'projectId'])
+    const allowed = new Set(['artifactVersion', 'enforcementVersion', 'scope', 'projectId'])
     if (
       !parsed.success ||
       [...query.keys()].some((key) => !allowed.has(key)) ||
@@ -272,6 +272,13 @@ export function threadsRoutes(app: AppContext): Hono {
     }
     return context.json(listReasoningArtifactsResponse.parse({
       artifactVersion: scope.query.artifactVersion,
+      enforcementVersion: scope.query.enforcementVersion,
+      enforcement: {
+        state: 'active',
+        owner: 'server_maintenance',
+        boundary: 'reasoning_artifacts_only',
+        inclusiveDueBoundary: true,
+      },
       chatId: context.req.param('id'),
       scope: scope.query.scope,
       projectId: scope.query.scope === 'project' ? scope.query.projectId : null,

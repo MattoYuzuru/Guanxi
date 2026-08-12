@@ -403,6 +403,7 @@ export const api = {
   ) => request(ROUTES.threadReasoningArtifacts(id), listReasoningArtifactsResponse, {
     query: {
       artifactVersion: query.artifactVersion,
+      enforcementVersion: query.enforcementVersion,
       scope: query.scope,
       projectId: query.scope === 'project' ? query.projectId : undefined,
     },
@@ -420,6 +421,7 @@ export const api = {
     {
       query: {
         artifactVersion: query.artifactVersion,
+        enforcementVersion: query.enforcementVersion,
         scope: query.scope,
         projectId: query.scope === 'project' ? query.projectId : undefined,
       },

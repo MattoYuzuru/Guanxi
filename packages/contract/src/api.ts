@@ -17,6 +17,7 @@ import {
   restoredChatLifecycleSchema,
 } from './retention.ts'
 import {
+  REASONING_ARTIFACT_ENFORCEMENT_VERSION,
   REASONING_ARTIFACT_VERSION,
   generatedAnswerProjectionSchema,
   reasoningArtifactSchema,
@@ -867,6 +868,9 @@ export type GetChatRetentionResponse = z.infer<typeof getChatRetentionResponse>
 
 const reasoningArtifactScopeQueryFields = {
   artifactVersion: z.coerce.number().pipe(z.literal(REASONING_ARTIFACT_VERSION)),
+  enforcementVersion: z.coerce
+    .number()
+    .pipe(z.literal(REASONING_ARTIFACT_ENFORCEMENT_VERSION)),
 }
 
 export const listReasoningArtifactsQuery = z.discriminatedUnion('scope', [
@@ -884,6 +888,15 @@ export type ListReasoningArtifactsQuery = z.infer<typeof listReasoningArtifactsQ
 export const listReasoningArtifactsResponse = z
   .object({
     artifactVersion: z.literal(REASONING_ARTIFACT_VERSION),
+    enforcementVersion: z.literal(REASONING_ARTIFACT_ENFORCEMENT_VERSION),
+    enforcement: z
+      .object({
+        state: z.literal('active'),
+        owner: z.literal('server_maintenance'),
+        boundary: z.literal('reasoning_artifacts_only'),
+        inclusiveDueBoundary: z.literal(true),
+      })
+      .strict(),
     chatId: z.string().min(1),
     scope: z.enum(['projectless', 'project']),
     projectId: z.string().min(1).nullable(),

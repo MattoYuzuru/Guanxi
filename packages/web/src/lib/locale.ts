@@ -162,9 +162,12 @@ const english = {
   'chat.reasoning.title': 'Generated answers and reasoning',
   'chat.reasoning.noCleanup':
     'Reasoning is stored as a separate 7-day diagnostic Artifact. Automatic deletion is not implemented.',
+  'chat.reasoning.cleanupActive':
+    'Automatic deletion is active for due diagnostic reasoning only. Generated answers are kept.',
   'chat.reasoning.loading': 'Loading generated answers and reasoning Artifacts',
   'chat.reasoning.error': 'Reasoning Artifacts could not be loaded',
   'chat.reasoning.retry': 'Retry reasoning Artifacts',
+  'chat.reasoning.refresh': 'Refresh reasoning',
   'chat.reasoning.scopeMismatch': 'Reasoning data belongs to a different Chat scope.',
   'chat.reasoning.actionError': 'Reasoning text could not be copied or exported',
   'chat.reasoning.answers': 'Generated answers',
@@ -1299,9 +1302,12 @@ const russian: Messages = {
   'chat.reasoning.title': 'Сгенерированные ответы и рассуждения',
   'chat.reasoning.noCleanup':
     'Рассуждение хранится отдельно как диагностический результат на 7 дней. Автоматическое удаление не реализовано.',
+  'chat.reasoning.cleanupActive':
+    'Автоматическое удаление применяется только к истёкшим диагностическим рассуждениям. Сгенерированные ответы сохраняются.',
   'chat.reasoning.loading': 'Загружаем сгенерированные ответы и результаты с рассуждениями',
   'chat.reasoning.error': 'Не удалось загрузить результаты с рассуждениями',
   'chat.reasoning.retry': 'Повторить загрузку рассуждений',
+  'chat.reasoning.refresh': 'Обновить рассуждения',
   'chat.reasoning.scopeMismatch': 'Рассуждение относится к другому Chat scope.',
   'chat.reasoning.actionError': 'Не удалось скопировать или экспортировать рассуждение',
   'chat.reasoning.answers': 'Сгенерированные ответы',

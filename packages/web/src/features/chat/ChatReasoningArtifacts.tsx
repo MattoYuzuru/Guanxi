@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  REASONING_ARTIFACT_ENFORCEMENT_VERSION,
   REASONING_ARTIFACT_VERSION,
   type ListReasoningArtifactsQuery,
   type ListReasoningArtifactsResponse,
@@ -11,8 +12,17 @@ import { translate } from '../../lib/locale.ts'
 
 function scopeQuery(projectId: string | null): ListReasoningArtifactsQuery {
   return projectId === null
-    ? { artifactVersion: REASONING_ARTIFACT_VERSION, scope: 'projectless' }
-    : { artifactVersion: REASONING_ARTIFACT_VERSION, scope: 'project', projectId }
+    ? {
+        artifactVersion: REASONING_ARTIFACT_VERSION,
+        enforcementVersion: REASONING_ARTIFACT_ENFORCEMENT_VERSION,
+        scope: 'projectless',
+      }
+    : {
+        artifactVersion: REASONING_ARTIFACT_VERSION,
+        enforcementVersion: REASONING_ARTIFACT_ENFORCEMENT_VERSION,
+        scope: 'project',
+        projectId,
+      }
 }
 
 export function ChatReasoningArtifacts({
@@ -114,11 +124,16 @@ export function ChatReasoningArtifacts({
   return (
     <section aria-labelledby="chat-reasoning-title" className="min-w-0 space-y-3 border-t border-[var(--border)] pt-4">
       <div>
-        <h3 id="chat-reasoning-title" className="text-sm font-semibold">
-          {translate('chat.reasoning.title')}
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="chat-reasoning-title" className="text-sm font-semibold">
+            {translate('chat.reasoning.title')}
+          </h3>
+          <Button size="sm" variant="secondary" disabled={loading} onClick={() => void load()}>
+            {translate('chat.reasoning.refresh')}
+          </Button>
+        </div>
         <p className="mt-1 break-words text-xs text-[var(--fg-muted)]">
-          {translate('chat.reasoning.noCleanup')}
+          {translate('chat.reasoning.cleanupActive')}
         </p>
       </div>
       {loading && !data ? (

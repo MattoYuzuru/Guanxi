@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const REASONING_ARTIFACT_VERSION = 1 as const
+export const REASONING_ARTIFACT_ENFORCEMENT_VERSION = 1 as const
 export const REASONING_RETENTION_DAYS = 7 as const
 
 export const reasoningArtifactScopeSchema = z.discriminatedUnion('scope', [
@@ -35,7 +36,7 @@ export const reasoningArtifactSchema = z
         parentExpiresAt: z.string().datetime().nullable(),
         effectiveExpiresAt: z.string().datetime(),
         relationship: z.literal('shorter_parent_retention_wins'),
-        automaticDeletion: z.literal('not_implemented'),
+        automaticDeletion: z.literal('server_maintenance_active'),
       })
       .strict(),
   })
