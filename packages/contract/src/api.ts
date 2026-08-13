@@ -26,6 +26,21 @@ import {
   reasoningArtifactSchema,
   reasoningArtifactWithContentSchema,
 } from './reasoning-artifacts.ts'
+export {
+  createQuickRunBody,
+  createQuickRunResponse,
+  getQuickRunResponse,
+  listQuickRunsResponse,
+  quickRunScopeQuery,
+  updateQuickRunRetentionBody,
+  updateQuickRunRetentionResponse,
+} from './quick-runs.ts'
+export type {
+  CreateQuickRunBody,
+  ListQuickRunsResponse,
+  QuickRunScopeQuery,
+  UpdateQuickRunRetentionBody,
+} from './quick-runs.ts'
 import {
   catalogModelSchema,
   catalogSourceHealthSchema,
@@ -128,6 +143,10 @@ export const ROUTES = {
   projectChats: (id: string) => `/api/projects/${encodeURIComponent(id)}/chats`,
   projectChat: (projectId: string, threadId: string) =>
     `/api/projects/${encodeURIComponent(projectId)}/chats/${encodeURIComponent(threadId)}`,
+
+  quickRuns: () => '/api/quick-runs',
+  quickRun: (id: string) => `/api/quick-runs/${encodeURIComponent(id)}`,
+  quickRunRetention: (id: string) => `/api/quick-runs/${encodeURIComponent(id)}/retention`,
 
   approval: (toolCallId: string) => `/api/approvals/${toolCallId}`,
 

@@ -826,6 +826,33 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX idx_chat_deletion_audit_scope
     ON chat_deletion_audit(scope, project_id, deleted_at DESC, chat_id);
   `,
+  // 21 — canonical metadata-only Quick Run identity and shared retention policy.
+  // No Job, Artifact, Session leave or cleanup path is introduced here.
+  `
+  CREATE TABLE quick_runs (
+    id                          TEXT PRIMARY KEY,
+    quick_run_version           INTEGER NOT NULL CHECK (quick_run_version = 1),
+    operation                   TEXT NOT NULL CHECK (operation IN (
+      'complete','embed','transcribe','textToSpeech','ocr','caption','generateImage'
+    )),
+    project_id                  TEXT REFERENCES projects(id) ON DELETE RESTRICT,
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL,
+    retention_policy           TEXT NOT NULL CHECK (retention_policy IN ('keep','ttl','session')),
+    retention_policy_source    TEXT NOT NULL CHECK (retention_policy_source IN ('default','user')),
+    retention_policy_updated_at TEXT NOT NULL,
+    CHECK (updated_at >= created_at),
+    CHECK (retention_policy_source <> 'default' OR retention_policy = 'ttl')
+  );
+  CREATE INDEX idx_quick_runs_scope_updated
+    ON quick_runs(project_id, updated_at DESC, id);
+
+  CREATE TRIGGER quick_runs_identity_immutable
+    BEFORE UPDATE OF id, quick_run_version, operation, project_id, created_at ON quick_runs
+    BEGIN
+      SELECT RAISE(ABORT, 'Quick Run identity is immutable');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

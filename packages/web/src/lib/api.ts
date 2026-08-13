@@ -15,6 +15,7 @@ import {
   completionProbeResponse,
   createThreadResponse,
   createProjectChatResponse,
+  createQuickRunResponse,
   getContextResponse,
   getChatRetentionResponse,
   getHealthResponse,
@@ -24,6 +25,7 @@ import {
   getSettingsResponse,
   getThreadResponse,
   getProjectChatResponse,
+  getQuickRunResponse,
   huggingFaceRepositoryResponse,
   huggingFaceSearchResponse,
   huggingFaceSelectionResponse,
@@ -39,6 +41,7 @@ import {
   listProjectsWithPresentationResponse,
   listProjectChatsResponse,
   listProjectlessChatsResponse,
+  listQuickRunsResponse,
   listRunningResponse,
   listThreadsResponse,
   listWorkspacesResponse,
@@ -53,6 +56,7 @@ import {
   projectSchema,
   projectWithPresentationSchema,
   restoreChatResponse,
+  updateQuickRunRetentionResponse,
   PROJECT_PRESENTATION_VERSION,
   PROJECT_CHAT_OWNERSHIP_VERSION,
   type ApiError,
@@ -72,6 +76,7 @@ import {
   type CreateWorkspaceBody,
   type CreateProjectBody,
   type CreateProjectChatBody,
+  type CreateQuickRunBody,
   type PullStreamEvent,
   type PrewarmModelBody,
   type SendMessageBody,
@@ -85,6 +90,8 @@ import {
   type ListReasoningArtifactsQuery,
   type LeaveSessionChatBody,
   type RestoreChatBody,
+  type QuickRunScopeQuery,
+  type UpdateQuickRunRetentionBody,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
 import { translate } from './locale.ts'
@@ -492,6 +499,41 @@ export const api = {
 
   getProjectChat: (projectId: string, threadId: string, signal?: AbortSignal) =>
     request(ROUTES.projectChat(projectId, threadId), getProjectChatResponse, { signal }),
+
+  /* Quick Run metadata — these routes never execute model work. */
+
+  listQuickRuns: (query: QuickRunScopeQuery, signal?: AbortSignal) =>
+    request(ROUTES.quickRuns(), listQuickRunsResponse, {
+      query: {
+        quickRunVersion: query.quickRunVersion,
+        scope: query.scope,
+        projectId: query.scope === 'project' ? query.projectId : undefined,
+      },
+      signal,
+    }),
+
+  createQuickRun: (body: CreateQuickRunBody, signal?: AbortSignal) =>
+    request(ROUTES.quickRuns(), createQuickRunResponse, { method: 'POST', body, signal }),
+
+  getQuickRun: (id: string, query: QuickRunScopeQuery, signal?: AbortSignal) =>
+    request(ROUTES.quickRun(id), getQuickRunResponse, {
+      query: {
+        quickRunVersion: query.quickRunVersion,
+        scope: query.scope,
+        projectId: query.scope === 'project' ? query.projectId : undefined,
+      },
+      signal,
+    }),
+
+  updateQuickRunRetention: (
+    id: string,
+    body: UpdateQuickRunRetentionBody,
+    signal?: AbortSignal,
+  ) => request(ROUTES.quickRunRetention(id), updateQuickRunRetentionResponse, {
+    method: 'PATCH',
+    body,
+    signal,
+  }),
 
   /**
    * Единственный способ увидеть файловую систему. Фронт её сам не читает —

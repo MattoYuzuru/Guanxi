@@ -1,7 +1,10 @@
 import { z } from 'zod'
 
-export const CHAT_RETENTION_VERSION = 1 as const
-export const CHAT_RETENTION_DAYS = 7 as const
+export const RETENTION_POLICY_VERSION = 1 as const
+export const RETENTION_DEFAULT_DAYS = 7 as const
+/** Compatibility aliases for the already-published Chat boundary. */
+export const CHAT_RETENTION_VERSION = RETENTION_POLICY_VERSION
+export const CHAT_RETENTION_DAYS = RETENTION_DEFAULT_DAYS
 export const CHAT_LIFECYCLE_VERSION = 1 as const
 export const CHAT_TRASH_DEFAULT_LIMIT = 20 as const
 export const CHAT_TRASH_MAX_LIMIT = 100 as const
@@ -9,7 +12,7 @@ export const SESSION_LEAVE_VERSION = 1 as const
 export const SESSION_TRASH_RECOVERY_HOURS = 24 as const
 export const CHAT_DELETION_VERSION = 1 as const
 
-export const chatRetentionPolicySchema = z.discriminatedUnion('mode', [
+export const retentionPolicySchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('keep') }).strict(),
   z
     .object({
@@ -19,7 +22,10 @@ export const chatRetentionPolicySchema = z.discriminatedUnion('mode', [
     .strict(),
   z.object({ mode: z.literal('session') }).strict(),
 ])
-export type ChatRetentionPolicy = z.infer<typeof chatRetentionPolicySchema>
+export type RetentionPolicy = z.infer<typeof retentionPolicySchema>
+/** Chat and Quick Run intentionally share this exact policy shape. */
+export const chatRetentionPolicySchema = retentionPolicySchema
+export type ChatRetentionPolicy = RetentionPolicy
 
 export const chatRetentionProjectionSchema = z
   .object({

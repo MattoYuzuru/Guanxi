@@ -20,6 +20,7 @@ import { ModelPage } from './features/models/ModelPage.tsx'
 import { ChatPage } from './features/chat/ChatPage.tsx'
 import { SettingsPage } from './features/settings/SettingsPage.tsx'
 import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
+import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { translate } from './lib/locale.ts'
 
 export function App() {
@@ -76,6 +77,7 @@ export function App() {
               />
             </ErrorBoundary>
           )}
+          {route.name === 'quickRuns' && <QuickRunsPage />}
           {route.name === 'settings' && <SettingsPage />}
           {route.name === 'projects' && <ProjectsPage />}
           {route.name === 'notFound' && (
@@ -105,6 +107,11 @@ function TopBar() {
   const tabs = [
     { to: paths.launcher(), label: 'Модели', active: route.name === 'launcher' || route.name === 'model' },
     { to: paths.chat(), label: 'Чат', active: route.name === 'chat' },
+    {
+      to: paths.quickRuns(),
+      label: translate('quickRuns.navigation'),
+      active: route.name === 'quickRuns',
+    },
     {
       to: paths.projects(),
       label: translate('projects.navigation'),

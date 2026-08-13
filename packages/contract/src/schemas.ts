@@ -3306,6 +3306,7 @@ export const apiErrorSchema = z.object({
     'thread_not_found',
     'workspace_not_found',
     'project_not_found',
+    'quick_run_not_found',
     'project_chat_mismatch',
     'path_outside_workspace',
     'tool_disabled',

@@ -15,6 +15,7 @@ import { createAppContext } from './context.ts'
 import { defaultDbPath } from './store/db.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
+export { QuickRunStore } from './store/quick-runs.ts'
 export { JobService, JobServiceError } from './jobs/service.ts'
 export {
   RESOURCE_GOVERNOR_CLOSE_REASON,
