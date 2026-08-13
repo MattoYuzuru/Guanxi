@@ -116,6 +116,17 @@ admission, поэтому concurrent retry не запускает второй 
 destructive summary помечается `legacy_source_unavailable`, а не выдаётся за
 сохранённую историю.
 
+P3-N migration 26 additive создаёт отдельные immutable `artifact_blobs` и
+`artifacts`; существующие diagnostic reasoning rows, context checkpoints и HF
+staging не мигрируют. Server пишет bytes в private temp, сам считает exact
+SHA-256/size, публикует no-overwrite content address и только затем одной SQLite
+transaction фиксирует blob/reference metadata. Одни bytes могут иметь несколько
+Artifact identities. Directory-identity handoff закрывает prefix symlink-swap
+между проверкой и publish/read; final bytes всегда повторно хэшируются.
+Filesystem/SQLite не объявляются одной atomic transaction: post-publish/pre-DB
+orphan не читается по Artifact ID и виден через bounded inventory. Generic GC,
+attachment UI и public upload/download routes пока не реализованы.
+
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,
 immutable Project/projectless ownership и seven-day diagnostic expiry. Final

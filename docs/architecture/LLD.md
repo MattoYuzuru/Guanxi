@@ -25,6 +25,8 @@
   ownership, integrity и retention projection;
 - `context-checkpoints.ts`: strict version 1 summary/source projection и честное
   различение preserved/legacy-unavailable history;
+- `artifacts.ts`: strict generic version 1 kind/media/scope/source/retention/
+  reference/GC projection без storage path;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
   output;
 - `index.ts`: public exports.
@@ -901,7 +903,7 @@ Restart забывает registry/attempt state, поэтому orphan staging �
 
 ### Artifact Service
 
-Current P3-F/P3-G реализует bounded SQLite subset только для diagnostic reasoning.
+Current P3-F/P3-G реализует bounded SQLite subset для diagnostic reasoning.
 `reasoning_artifacts` хранит exact UTF-8 text, byte size/SHA-256, immutable
 Chat/Message/Job source и Project/projectless ownership. `JobStore` создаёт row
 в той же terminal transaction, что Message/Job; UNIQUE source keys не допускают
@@ -921,19 +923,28 @@ UNIQUE `artifact_id`. Strict API сохраняет Artifact data version 1 и �
 отдельную enforcement version 1, поэтому missing/malformed/future input fail
 closed. Scheduler не владеет generic blobs и не вызывает provider/runtime tools.
 
-Следующий filesystem/blob writer остаётся target:
+P3-N добавляет отдельный generic `ArtifactStore`. Migration 26 разделяет
+immutable content metadata (`artifact_blobs`) и Artifact identities
+(`artifacts`). Storage key всегда равен `sha256/<prefix>/<digest>` и никогда не
+выходит в contract. Writer требует explicit per-call `maxBytes`, пишет `0600`
+temp, считает hash/size server-side, выполняет `fsync`, no-overwrite link,
+directory `fsync`, content revalidation и лишь затем `BEGIN IMMEDIATE`. Exact
+write-intent повтор возвращает один Artifact, mismatch конфликтует; разные
+intents над одними bytes создают разные metadata rows и один blob.
 
-```ts
-interface ArtifactWriter {
-  begin(metadata: ArtifactDraft): Promise<ArtifactSink>;
-  commit(sinkId: string): Promise<Artifact>;
-  abort(sinkId: string): Promise<void>;
-}
-```
+Publish/read запускают короткоживущий Node helper с `cwd` в уже открытой target
+directory. Parent и helper сверяют canonical path/device/inode до команды, а
+parent повторяет identity check после неё; относительный link/open с
+`O_NOFOLLOW` поэтому не следует новому prefix symlink. Это compensating
+descriptor-relative boundary для Node API без portable `openat/linkat`.
 
-Blob пишется во временный файл, хэшируется и atomically перемещается. DB row
-создаётся/финализируется после blob commit. Download проходит через validated
-artifact id, а не произвольный filesystem path.
+Filesystem и SQLite остаются двумя ресурсами. Crash после publish, но до DB
+commit оставляет non-readable orphan. `inspectOrphans({limit, scanLimit})`
+возвращает только bounded relative keys и `gc_not_implemented`; он ничего не
+удаляет и не восстанавливает metadata. Read принимает только validated UUID и
+exact Project/projectless scope, повторно проверяет size/hash и возвращает
+content type/length/Digest/ETag без absolute path. Public routes, filename,
+Range/streaming response и attachment UI остаются P3-O.
 
 ### Integration Policy
 

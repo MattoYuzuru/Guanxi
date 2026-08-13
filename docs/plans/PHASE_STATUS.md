@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-14
-**Текущая фаза:** Phase 3 — P3-N generic Artifact/blob foundation ready
+**Текущая фаза:** Phase 3 — P3-O attachment upload/download/export ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1993,6 +1993,54 @@ Thread-owned SQLite entity, не generic Artifact/blob. Следующий bound
 P3-N generic immutable Artifact metadata/content-addressed blob foundation без
 attachment UI или execution routing.
 
+## Phase 3 — P3-N generic Artifact/blob foundation
+
+**Статус:** independently verified.
+
+Commits: `172e1ac` (strict contract, migration 26 и content-addressed store),
+`8200e43` (migration/storage/security evidence), `45a4c66` (generated identity
+hardening) и `0fef5a1` (independent security review fix).
+
+Append-only migration 26 разделяет immutable `artifact_blobs` и `artifacts`.
+Caller передаёт только versioned metadata и bytes; server сам вычисляет exact
+SHA-256/size/storage key. Одни bytes deduplicate-ятся в один blob, но разные
+intents сохраняют отдельные Artifact identities. Exact UUID intent repeat
+возвращает тот же Artifact, changed bytes/metadata конфликтуют. Projectless/
+Project ownership, known Chat/Recipe Job witness и same-scope parent derivation
+fail-closed; unknown Job scope не выдаётся за projectless. Existing
+`reasoning_artifacts`, HF staging и context checkpoints не мигрируют.
+
+Write path использует private `0600` temp, hash/size policy bound, `fsync`,
+no-overwrite publish, directory `fsync`, full content revalidation и только
+потом SQLite `BEGIN IMMEDIATE`. Prefix-directory identity удерживается
+descriptor-relative Node helper и сверяется по canonical path/device/inode до и
+после publish/read; symlink swap не уводит bytes из managed root. Read принимает
+только strict UUID/exact scope, перепроверяет blob и возвращает typed
+Content-Type/Length/Digest/ETag без raw path. Filesystem/SQLite crash window
+описан честно: post-publish/pre-DB file не читается по Artifact ID и попадает в
+bounded relative-key orphan inventory; GC остаётся `not_implemented`.
+
+Evidence по правилу WORKFLOW: **11 new / 658 core regression envelope**,
+**0 new / 223 Web component/parser regression envelope**, **0 new / 37 mocked
+Chromium regression envelope**. Targeted Artifact suite — 11/11; full core
+658/658, Web 223/223, browser 37/37, typecheck и build прошли. Migration fixtures
+доказывают fresh/v25→v26/reopen/retry и late DDL rollback с exact v25 payload.
+
+Independent design review заранее нашёл ложный projectless inference,
+unsafe-size DB boundary и domain enum drift; они закрыты до candidate. Формальный
+SRE/security review затем дал **NO-GO**: validate→link TOCTOU позволял заменить
+prefix каталог symlink-ом и записать outside managed root. `0fef5a1` заменил
+publish/read boundary и добавил deterministic publish/read swap assertion.
+Follow-up reviewer повторил exploit, проверил lstat→realpath hypothesis и дал
+финальный **READY**.
+
+Остаточный риск: SQLite/filesystem и Chromium evidence synthetic/local; нет
+production corpus, hostile multi-process soak или live object store. Один
+короткоживущий Node helper на blob read/write требует capacity/admission review
+до public high-volume endpoint. Public upload/download/export routes, filename,
+streaming/Range и attachment UI намеренно остаются P3-O; generic GC не
+реализован.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -2092,7 +2140,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-N ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-O ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

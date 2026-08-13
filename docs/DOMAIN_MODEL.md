@@ -409,6 +409,15 @@ projection имеет отдельную strict version и fail-closed для ma
 input. Generic Artifact/blob GC и hard deletion для не-Session Chat не
 реализованы.
 
+**Current P3-N generic foundation:** version 1 metadata хранится отдельно от
+`reasoning_artifacts` и ссылается на server-derived content-addressed blob.
+Artifact и source Project/Job/parent immutable; одинаковые bytes разделяют blob,
+но не metadata identity. Generic retention пока только `Keep`, reference state —
+`referenced`, а GC честно `not_implemented`. Writer принимает explicit storage
+policy bound, вычисляет hash/size сам и не принимает path/storage key/checksum как
+факт. Crash между no-overwrite publish и SQLite commit оставляет нечитабельный
+orphan, наблюдаемый bounded inventory; cleanup owner ещё не реализован.
+
 ### Tool, MCP Connection и Skill
 
 - **Tool** — конкретное callable действие с input/output schema и effect class.

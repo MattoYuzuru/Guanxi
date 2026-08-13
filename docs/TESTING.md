@@ -5,9 +5,9 @@
 
 ## Текущий baseline
 
-На 2026-08-14 после P3-M implementation и independent verification:
+На 2026-08-14 после P3-N implementation и independent verification:
 
-- полный core с CLI reuse: 647/647; Web component/parser: 223/223;
+- полный core с CLI reuse: 658/658; Web component/parser: 223/223;
 - `npm run test:web:browser`: 37/37 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
@@ -157,6 +157,15 @@
   originals/один marker, legacy loss, focus/error/retry и exact lost-response
   recovery; mocked Chromium подтверждает один POST, hard reload, 390 px,
   reduced motion и отсутствие horizontal overflow;
+- deterministic P3-N tests покрывают strict path-free Artifact contract,
+  migration 26 fresh/v25→v26/reopen/retry/true rollback с exact v25 payload,
+  binary/Unicode/empty/max-policy hash и size, shared-blob dedup, same-intent
+  concurrency, Project/Job/parent scope и immutable references. Failure fixtures
+  проверяют temp/after-publish/DB/read edges, bounded non-readable orphan
+  inventory, corrupt/missing/symlink targets и redacted headers/errors. Отдельный
+  deterministic race меняет validated prefix directory на outside symlink между
+  admission и publish/read; helper-held directory identity не позволяет commit
+  или outside access;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
@@ -606,7 +615,7 @@ process lock. P0-D health остаётся sampled observation; обязател
   page-memory projection двух exact rows, а legacy compatibility path сохраняет
   full response. Page size 12/maximum 100 — response/render policy, не catalog
   total limit; benchmark — local synthetic diagnostic, не production SLA.
-- P3-F–P3-M migrations проверены на synthetic SQLite fixtures; нет production
+- P3-F–P3-N migrations проверены на synthetic SQLite fixtures; нет production
   corpus либо multi-process terminal/cleanup/leave/delete races. Generic blob GC,
   TTL Trash hard deletion и intermediate multi-step tool Artifact semantics остаются
   за current границей.
@@ -619,7 +628,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Hardware fit                       | unit cases                               |
 | Filesystem tools/jail              | unit cases                               |
 | Server routes                      | integration-style tests                  |
-| SQLite stores/migrations v3–v8     | fresh + prior-version recovery           |
+| SQLite stores/migrations v3–v26    | fresh + prior-version recovery           |
 | Durable Job/event foundation       | atomicity + two-connection races         |
 | Job transitions/service            | canonical matrix + replay/live           |
 | Turn terminal contract/CAS         | compatibility + failures                 |

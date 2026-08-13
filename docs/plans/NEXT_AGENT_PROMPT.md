@@ -1,110 +1,109 @@
-# Handoff: Phase 3 / P3-N generic Artifact and blob foundation
+# Handoff: Phase 3 / P3-O attachment upload, download and export
 
 **Статус:** ready for implementation
 **Проверено:** 2026-08-14
-**Назначение:** реализовать bounded P3-N — общий immutable Artifact metadata и
-content-addressed local blob writer, на котором следующие slices смогут строить
-attachments/export/results без произвольного filesystem доступа.
+**Назначение:** реализовать первый public vertical slice поверх P3-N: безопасно
+загрузить local attachment в exact Project/projectless scope, увидеть committed
+metadata, скачать/export-нуть ровно этот Artifact и пережить retry/reload без
+raw filesystem доступа или ложного обещания model consumption.
 
 ## Сначала прочитать
 
 1. `AGENTS.md`, `docs/NAVIGATION.md`, `docs/plans/WORKFLOW.md`.
 2. `docs/PRODUCT.md`, `docs/DOMAIN_MODEL.md`, `docs/UX_IA.md`.
 3. `docs/DEVELOPMENT.md`, `docs/TESTING.md`, `docs/architecture/HLD.md`,
-   `docs/architecture/LLD.md` и `docs/architecture/RUNTIME_LIFECYCLE.md`.
+   `docs/architecture/LLD.md`, `docs/architecture/RUNTIME_LIFECYCLE.md`.
 4. `docs/plans/PHASE_STATUS.md`, `docs/plans/ROADMAP.md`,
-   `docs/plans/OPEN_QUESTIONS.md` и accepted decisions.
-5. Current Reasoning Artifact (`reasoning_artifacts`) и staged GGUF download/
-   import paths: это evidence и compatibility boundaries, но не разрешение
-   переименовать либо смешать их с новым generic store.
+   `docs/plans/OPEN_QUESTIONS.md` и accepted owner decisions.
+5. P3-N commits `172e1ac..0fef5a1`, generic contract/store/tests и SRE finding
+   про prefix-directory TOCTOU. Не ослабляй descriptor-relative boundary.
 
 Используй `sde-agent:implementation-planning`, `sde-agent:sde-agent`,
 `sde-agent:implementation-evidence`, `architecture-agent:architecture-migration`
-и `sre-agent:verification-strategy`. После implementation обязателен отдельный
-read-only reviewer по `plans/WORKFLOW.md`; findings исправляются отдельным
-commit.
+и `sre-agent:verification-strategy`. После candidate обязателен отдельный
+read-only reviewer; findings исправляются отдельным commit.
 
 ## Current state и границы
 
-- SQLite schema version 25; migrations только append-only.
-- `reasoning_artifacts` — специальный SQLite-text diagnostic store с собственным
-  expiry/audit. Не мигрируй и не выдавай его за generic blob Artifact.
-- Hugging Face staging — connection/process-owned import boundary, не общий
-  пользовательский Artifact store.
-- Server один владеет SQLite/filesystem. Web не получает raw path.
-- Default server loopback-only; никаких новых network/tool/Ollama effects.
-- P3-M независимо подтверждён на `1546537`: stored history и context checkpoint
-  не входят в P3-N migration.
+- SQLite schema version 26; migrations только append-only.
+- `ArtifactStore` принимает strict metadata + bytes, вычисляет hash/size/storage
+  key сам, deduplicate-ит blob и хранит immutable Artifact identity.
+- Post-publish/pre-DB orphan явно нечитабелен и виден только bounded inventory;
+  generic GC всё ещё `not_implemented`.
+- Один short-lived Node helper на store read/write закрывает directory-swap race,
+  но требует bounded admission перед public high-volume endpoint.
+- `reasoning_artifacts`, context checkpoints и HF staging остаются отдельными
+  compatibility/lifecycle boundaries.
+- Server loopback-only и один владеет filesystem/SQLite. Web не получает raw
+  path. Authentication/TLS/remote exposure вне Phase 3.
+- Chat/Recipe/Quick Run adapters ещё не потребляют generic attachment. UI не
+  должен утверждать, что upload уже добавил файл в model context.
 
-## Bounded outcome P3-N
+## Bounded outcome P3-O
 
-- Добавь append-only migration 26 для strict versioned generic Artifact metadata
-  и content-addressed blob reference. Минимальные поля: UUID, kind/media type,
-  exact byte size, `sha256:<hex>`, immutable storage key, nullable immutable
-  Project/Job/source Artifact ownership/derivation, created time и explicit
-  retention/reference state. FK/delete policy должна быть намеренной и
-  проверенной, без silent cross-Project ownership.
-- Реализуй server-owned `ArtifactStore`/writer boundary: bounded stream/bytes
-  поступают во временный файл внутри dedicated Alamo data root, SHA-256 и size
-  считаются server-side, commit использует atomic rename в content-addressed
-  location. Caller не задаёт path/storage key/checksum как факт.
-- Blob dedup допустим только по exact bytes/hash; metadata identities остаются
-  отдельными. Existing blob никогда не перезаписывается. Interrupted/failed
-  write не создаёт committed metadata и не оставляет externally readable partial.
-- Согласуй filesystem/SQLite failure order. После crash-like orphan между rename
-  и DB commit recovery должен быть bounded и безопасным: либо deterministic
-  reconciliation, либо explicit non-readable orphan inventory с последующим
-  cleanup owner. Нельзя объявить transaction atomic между FS и SQLite без
-  доказательства.
-- Добавь strict server-only create/read metadata/content boundary для test/use by
-  following slices. Download разрешает только validated Artifact ID и server
-  storage key, задаёт exact media type/length/checksum headers, не принимает raw
-  filesystem path и не раскрывает absolute data root. Project/projectless scope
-  fail-closed; Range/streaming можно оставить отдельным non-goal, если это явно
-  отражено.
-- Добавь explicit reference/deletion foundation: direct metadata mutation и
-  удаление referenced blob запрещены; GC не удаляет blob, пока существует хоть
-  одна canonical reference либо in-flight writer. Если full GC вынесен дальше,
-  projection честно говорит `gc=not_implemented` и тесты не обещают cleanup.
-- Не добавляй Web attachment UI в этом slice. Новый public API допустим только
-  если он нужен следующему vertical slice; legacy responses остаются byte-
-  compatible.
+- Добавь strict versioned REST contract для upload, scoped metadata read/list и
+  download/export. Transport принимает bytes как body/stream и typed metadata
+  отдельно; client не задаёт trusted checksum, storage key или filesystem path.
+- Введи явную server storage/upload policy projection с source и наблюдаемым
+  `maxBytes`; это resource-policy bound, а не model capability или скрытый UI
+  ceiling. Unknown/disabled policy должен быть видим и fail-closed.
+- Ограничь одновременно активные upload/download helpers bounded admission.
+  Отмена/disconnect освобождает permit и temp; queued request не запускает
+  helper. Не называй endpoint resumable или durable.
+- Если user filename нужен для export, храни только sanitized display metadata в
+  новой append-only migration 27/immutable side table. Filename никогда не
+  участвует в storage path; control characters, separators, bidi controls и
+  header injection отклоняются либо канонически заменяются с visible result.
+- POST использует stable UUID intent. Lost response/retry exact bytes+metadata
+  возвращает один Artifact; changed body/metadata конфликтует. Upload не
+  оставляет public row до полного commit.
+- GET/list требуют exact Project/projectless scope. Download/export принимает
+  только validated Artifact ID, возвращает exact `Content-Type`,
+  `Content-Length`, `Digest`, `ETag`, safe `Content-Disposition` и bytes once.
+  Cross-scope/unknown/corrupt/missing blob выглядит недоступным и не раскрывает
+  existence/path. Range остаётся explicit unsupported, если не реализован.
+- Добавь локализованный Web attachment library/tray для exact current scope:
+  pick/drop, progress/cancel, success/error/retry, empty/loading/offline, reload,
+  download/export и truthful «не добавлено в model context». Не связывай upload
+  с Chat send либо Recipe execution молча.
+- Keyboard, focus return, 390 px/200%, forced colors, reduced motion и duplicate
+  count должны иметь direct component/browser assertions.
 
 ## Non-goals
 
-- Chat attachment picker/upload UX, drag/drop, image preview и export UI;
-- Recipe/Quick Run execution, Workbench routing или OperationDescriptor registry;
-- conversion/OCR/STT/image generation;
-- migration Reasoning Artifact либо P3-M checkpoint в generic rows;
-- TTL Trash hard deletion, Project deletion, generic live GC scheduler;
-- remote/object storage, encryption/keychain, network upload, resumable/range
-  protocol;
-- arbitrary raw-path file serving или client-provided trusted checksum/path.
+- фактическое добавление attachment в Chat prompt/model context;
+- OCR/STT/caption/conversion, preview generation или media inference;
+- Recipe/Quick Run execution и Workbench/OperationDescriptor routing;
+- resumable/chunked session protocol, Range, remote/object storage;
+- generic GC/deletion/TTL, Project deletion или orphan cleanup scheduler;
+- migration existing Reasoning Artifact/checkpoint/HF staging;
+- arbitrary path serving, shell calls, network fetch или trusting MIME/filename
+  as verified content semantics.
 
 ## Обязательные assertions
 
-- migration 26 fresh/v25→v26/reopen/retry/true rollback с exact v25 rows;
-- strict contract rejects future/unknown fields, invalid media/kind/hash/size,
-  cross-Project/source derivation и client storage path;
-- exact bytes → exact SHA-256/size; Unicode/binary/empty/maximum boundary;
-- temp file stays inside dedicated root, symlink/path traversal cannot redirect
-  commit/read, absolute path never appears in response/error/log fixture;
-- concurrent identical bytes: one immutable blob, distinct intended metadata,
-  no overwrite; concurrent same metadata intent is idempotent or conflicts
-  deterministically;
-- injected temp-write/hash/fsync/rename/DB insert/read failure leaves no readable
-  partial or false metadata; retry converges;
-- pre-existing hash collision/mismatched size/content fails closed rather than
-  trusting filename;
-- read by exact scoped Artifact ID returns the committed bytes once with correct
-  headers; unknown/cross-scope/raw-path access is rejected;
-- referenced/shared blob cannot be deleted; unreferenced/orphan state is honest;
-- zero Ollama/Governor/Job execution/tool/workspace/user-file effects;
-- current reasoning, Chat retention/deletion, HF staging/import and P3-M context
-  checkpoint regression remain green.
+- migration 27 fresh/v26→v27/reopen/retry/true rollback с exact v26 rows;
+- strict REST/header/query contract rejects extra/future/path/checksum/storage,
+  malformed UUID/scope/media/filename/size and duplicate parameters;
+- empty/Unicode/binary/exact policy boundary/over-bound upload; streamed count,
+  server checksum и committed size совпадают;
+- same intent exact retry → one metadata/blob; changed bytes/metadata → conflict;
+  concurrent duplicate/different intents converge deterministically;
+- disconnect/cancel/queue/full-admission/helper failure освобождает permit/temp и
+  не создаёт false metadata; no unbounded waiter/listener/process growth;
+- scope isolation, unknown ID, corrupt/missing/symlink blob, directory swap и
+  absolute-path/header redaction fail closed;
+- exact headers/content and safe Content-Disposition; no CRLF/path separator;
+  Range rejection проверена, если Range не реализован;
+- Web counts one uploaded item after lost POST response, retry and hard reload;
+  download activated once; focus/progress/error/cancel/mobile/a11y direct asserts;
+- zero Ollama/Governor/Job execution/tool/workspace/user-file/network effects;
+- P3-N security suite, reasoning retention/deletion, HF staging/import,
+  checkpoint и current full gates остаются green.
 
-Mutation-check минимум: checksum comparison, path containment, rename-before-DB
-failure, scope predicate, shared-reference delete guard и response redaction.
+Mutation-check минимум: size counter, idempotency body comparison, scope
+predicate, admission release, Content-Disposition sanitizer, directory identity
+check и duplicate DOM count.
 
 ## Gates и handoff
 
@@ -118,7 +117,6 @@ git diff --check
 ```
 
 После independent `READY` обнови current-state docs, `PHASE_STATUS.md` с
-new/regression envelope и полностью перепиши этот prompt на P3-O attachment
-upload/download/export vertical slice. Если atomic filesystem/SQLite ordering
-нельзя доказать, оставь P3-N blocked с точным orphan window и recovery plan — не
-называй two-resource write атомарным.
+new/regression envelope и перепиши этот prompt на следующий ещё не закрытый
+Phase 3 slice. Не называй mocked Chromium production validation и не выдавай
+upload за model attachment consumption.

@@ -379,6 +379,11 @@ server не нужен.
 - migration 23 additive добавляет private immutable `recipe_job_snapshots` с
   exact Recipe/revision/Project/Job ownership, queued initial event guards и
   canonical bytes/hash/size;
+- migrations 24–25 additive добавляют non-destructive immutable
+  `context_checkpoints` и запрещают direct deletion вне owning Thread cascade;
+- migration 26 additive добавляет `artifact_blobs`/`artifacts`: server-derived
+  content address, immutable exact metadata, restrictive Project/Job/parent
+  references и explicit `keep`/`referenced`; generic GC не реализован;
 - `store/quick-runs.ts` и `http/quick-runs-routes.ts` владеют exact Project/
   projectless create/list/read/PATCH metadata без Job/runtime/filesystem effects;
 - `store/recipes.ts` и `http/recipes-routes.ts` владеют exact scoped identity,
@@ -389,6 +394,10 @@ server не нужен.
 - `store/reasoning-artifacts.ts` владеет active exact-Chat scoped list/read,
   integrity validation, current-parent effective expiry, stable bounded due
   scan и atomic recheck/delete/audit;
+- `store/artifacts.ts` владеет generic server-only byte writer/read boundary.
+  Temp hash/size, no-overwrite publish, prefix-directory identity и final
+  content проверяются до SQLite commit; crash orphan не читается по Artifact ID
+  и виден только через bounded inventory без cleanup claim;
 - `store/chat-retention.ts` и `retention/service.ts` владеют Chat-only
   projection/PATCH, exact scoped idempotent Session leave, bounded TTL/Session
   eligibility, tombstone CAS, scoped Trash и Restore/Keep/TTL recovery;
@@ -481,7 +490,7 @@ server не нужен.
   P3-D retention, P3-E scoped Trash/Restore, P3-F/P3-G reasoning Chat Info и
   P3-H explicit Session leave/recovery, P3-J Quick Run metadata, P3-L Recipe
   revisions/queued snapshots и P3-M context checkpoint (current SQLite schema
-  version 25),
+  version 26; P3-N не меняет Web),
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider
