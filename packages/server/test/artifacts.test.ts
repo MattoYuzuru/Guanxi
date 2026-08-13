@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -499,6 +500,57 @@ describe('P3-N content-addressed ArtifactStore', () => {
       (error: unknown) => error instanceof ArtifactStoreError && error.code === 'unsafe_storage',
     )
     assert.deepEqual(await readFile(external), symlinkBytes)
+  })
+
+  it('holds the checked directory identity across publish/read TOCTOU swaps', async (test) => {
+    const writeBytes = Buffer.from('descriptor-relative publish')
+    const writeDigest = checksum(writeBytes).slice(7)
+    let writeRoot = ''
+    const writeRace = await fixture(test, 'publish-toctou', {
+      beforePublish: async () => {
+        const prefix = join(writeRoot, 'blobs', 'sha256', writeDigest.slice(0, 2))
+        await rename(prefix, join(writeRoot, 'moved-prefix'))
+        await symlink(join(writeRoot, 'outside'), prefix)
+      },
+    })
+    writeRoot = writeRace.artifactRoot
+    await mkdir(join(writeRoot, 'outside'), { recursive: true })
+    await assert.rejects(
+      writeRace.store.create(metadata(), writeBytes, { maxBytes: writeBytes.byteLength }),
+      (error: unknown) => error instanceof ArtifactStoreError && error.code === 'unsafe_storage',
+    )
+    assert.deepEqual(await readdir(join(writeRoot, 'outside')), [])
+    assert.deepEqual(await readFile(join(writeRoot, 'moved-prefix', writeDigest)), writeBytes)
+    assert.equal(count(writeRace.db, 'artifacts'), 0)
+    assert.equal(count(writeRace.db, 'artifact_blobs'), 0)
+
+    const readRace = await fixture(test, 'read-toctou')
+    const readBytes = Buffer.from('descriptor-relative read')
+    const artifact = await readRace.store.create(metadata(), readBytes, { maxBytes: readBytes.byteLength })
+    const readDigest = artifact.checksum.slice(7)
+    const outside = join(readRace.artifactRoot, 'outside')
+    await mkdir(outside)
+    const racingReader = new ArtifactStore({
+      db: readRace.db,
+      rootDir: readRace.artifactRoot,
+      hooks: {
+        beforeRead: async () => {
+          const prefix = join(
+            readRace.artifactRoot,
+            'blobs',
+            'sha256',
+            readDigest.slice(0, 2),
+          )
+          await rename(prefix, join(readRace.artifactRoot, 'moved-read-prefix'))
+          await symlink(outside, prefix)
+        },
+      },
+    })
+    await assert.rejects(
+      racingReader.read(artifact.id, { scope: 'projectless' }, { maxBytes: readBytes.byteLength }),
+      (error: unknown) => error instanceof ArtifactStoreError && error.code === 'unsafe_storage',
+    )
+    assert.deepEqual(await readdir(outside), [])
   })
 
   it('bounds orphan scans and translates injected read failures without leaking roots', async (test) => {

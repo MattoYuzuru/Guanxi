@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import {
-  link,
   lstat,
   mkdir,
   open,
@@ -11,6 +11,7 @@ import {
   type FileHandle,
 } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
+import { createInterface } from 'node:readline'
 import {
   ARTIFACT_VERSION,
   artifactCreateMetadataSchema,
@@ -24,6 +25,69 @@ import {
 import type { Db } from './db.ts'
 
 const STORAGE_KEY = /^sha256\/([0-9a-f]{2})\/([0-9a-f]{64})$/u
+const RELATIVE_FILE_HELPER = String.raw`
+import { createHash } from 'node:crypto'
+import { constants } from 'node:fs'
+import { link, open, stat } from 'node:fs/promises'
+
+const send = (value) => process.stdout.write(JSON.stringify(value) + '\n')
+const directory = await stat('.')
+send({ state: 'ready', cwd: process.cwd(), dev: String(directory.dev), ino: String(directory.ino) })
+let input = ''
+for await (const chunk of process.stdin) input += chunk
+try {
+  const command = JSON.parse(input)
+  if (!/^[0-9a-f]{64}$/u.test(command.name)) throw new Error('invalid_name')
+  let published = false
+  if (command.action === 'publish') {
+    try {
+      await link(command.source, command.name)
+      published = true
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+    }
+  } else if (command.action !== 'read') {
+    throw new Error('invalid_action')
+  }
+  const file = await open(command.name, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const opened = await file.stat()
+    if (!opened.isFile() || opened.size !== command.byteSize) throw new Error('integrity')
+    const hash = createHash('sha256')
+    const buffers = []
+    let total = 0
+    const buffer = Buffer.allocUnsafe(64 * 1024)
+    for (;;) {
+      const { bytesRead } = await file.read(buffer, 0, buffer.byteLength)
+      if (bytesRead === 0) break
+      total += bytesRead
+      if (!Number.isSafeInteger(total) || total > command.byteSize) throw new Error('integrity')
+      const value = Buffer.from(buffer.subarray(0, bytesRead))
+      hash.update(value)
+      if (command.action === 'read') buffers.push(value)
+    }
+    if (total !== command.byteSize || hash.digest('hex') !== command.digest) {
+      throw new Error('integrity')
+    }
+    if (published) {
+      const parent = await open('.', constants.O_RDONLY)
+      try { await parent.sync() } finally { await parent.close() }
+    }
+    send({
+      state: 'verified',
+      content: command.action === 'read' ? Buffer.concat(buffers, total).toString('base64') : null,
+    })
+  } finally {
+    await file.close()
+  }
+} catch (error) {
+  send({
+    state: 'failed',
+    code: ['ELOOP', 'ENOTDIR'].includes(error?.code) ? 'unsafe' : 'invalid',
+  })
+  process.exitCode = 1
+}
+`
 
 export type ArtifactStoreErrorCode =
   | 'invalid_input'
@@ -60,6 +124,12 @@ interface ArtifactRow {
   retention_mode: string
   reference_state: string
   created_at: string
+}
+
+interface RelativeDirectoryIdentity {
+  canonicalPath: string
+  dev: string
+  ino: string
 }
 
 export interface ArtifactStoreHooks {
@@ -148,6 +218,95 @@ function sameIntentMetadata(row: ArtifactRow, metadata: ArtifactCreateMetadata):
 
 function inside(parent: string, candidate: string): boolean {
   return candidate === parent || candidate.startsWith(`${parent}${sep}`)
+}
+
+async function directoryIdentity(path: string): Promise<RelativeDirectoryIdentity> {
+  const state = await lstat(path)
+  if (!state.isDirectory() || state.isSymbolicLink()) {
+    throw new ArtifactStoreError('unsafe_storage', 'Artifact storage boundary is unsafe')
+  }
+  return {
+    canonicalPath: await realpath(path),
+    dev: String(state.dev),
+    ino: String(state.ino),
+  }
+}
+
+async function relativeFileOperation(input: {
+  parent: string
+  name: string
+  action: 'publish' | 'read'
+  source?: string
+  byteSize: number
+  digest: string
+  ready?(): void | Promise<void>
+}): Promise<Uint8Array | null> {
+  const expected = await directoryIdentity(input.parent)
+  const child = spawn(
+    process.execPath,
+    ['--input-type=module', '--eval', RELATIVE_FILE_HELPER],
+    { cwd: input.parent, stdio: ['pipe', 'pipe', 'ignore'] },
+  )
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit) => {
+    child.once('exit', (code, signal) => resolveExit({ code, signal }))
+    child.once('error', () => resolveExit({ code: null, signal: null }))
+  })
+  const lines = createInterface({ input: child.stdout! })[Symbol.asyncIterator]()
+  try {
+    const ready = await lines.next()
+    if (ready.done) throw new ArtifactStoreError('unsafe_storage', 'Artifact storage helper failed')
+    const identity = JSON.parse(ready.value) as Record<string, unknown>
+    if (
+      identity['state'] !== 'ready'
+      || identity['cwd'] !== expected.canonicalPath
+      || identity['dev'] !== expected.dev
+      || identity['ino'] !== expected.ino
+    ) {
+      throw new ArtifactStoreError('unsafe_storage', 'Artifact storage identity changed')
+    }
+    await input.ready?.()
+    child.stdin!.end(JSON.stringify({
+      action: input.action,
+      source: input.source,
+      name: input.name,
+      byteSize: input.byteSize,
+      digest: input.digest,
+    }))
+    const response = await lines.next()
+    const outcome = response.done ? null : JSON.parse(response.value) as Record<string, unknown>
+    const exit = await exited
+    if (outcome?.['state'] !== 'verified' || exit.code !== 0 || exit.signal !== null) {
+      throw new ArtifactStoreError(
+        outcome?.['code'] === 'unsafe'
+          ? 'unsafe_storage'
+          : outcome?.['code'] === 'invalid'
+            ? 'integrity_mismatch'
+            : 'storage_failure',
+        'Artifact blob integrity check failed',
+      )
+    }
+    const current = await directoryIdentity(input.parent)
+    if (
+      current.canonicalPath !== expected.canonicalPath
+      || current.dev !== expected.dev
+      || current.ino !== expected.ino
+    ) {
+      throw new ArtifactStoreError('unsafe_storage', 'Artifact storage identity changed')
+    }
+    if (input.action === 'publish') return null
+    if (typeof outcome['content'] !== 'string') {
+      throw new ArtifactStoreError('integrity_mismatch', 'Artifact blob integrity check failed')
+    }
+    const content = Buffer.from(outcome['content'], 'base64')
+    if (content.byteLength !== input.byteSize) {
+      throw new ArtifactStoreError('integrity_mismatch', 'Artifact blob integrity check failed')
+    }
+    return content
+  } finally {
+    child.stdin?.destroy()
+    child.stdout?.destroy()
+    if (child.exitCode === null && child.signalCode === null) child.kill()
+  }
 }
 
 async function writeAll(file: FileHandle, chunk: Uint8Array): Promise<void> {
@@ -282,54 +441,6 @@ export class ArtifactStore {
     return { key, path, parent }
   }
 
-  private async assertDirectorySafe(path: string): Promise<void> {
-    if (this.canonicalRoot === null) {
-      throw new ArtifactStoreError('unsafe_storage', 'Artifact storage is unavailable')
-    }
-    const state = await lstat(path)
-    const canonical = await realpath(path)
-    if (!state.isDirectory() || state.isSymbolicLink() || !inside(this.canonicalRoot, canonical)) {
-      throw new ArtifactStoreError('unsafe_storage', 'Artifact storage boundary is unsafe')
-    }
-  }
-
-  private async verifyFile(path: string, checksum: string, byteSize: number): Promise<Uint8Array> {
-    let file: FileHandle | null = null
-    try {
-      const before = await lstat(path)
-      if (!before.isFile() || before.isSymbolicLink()) {
-        throw new ArtifactStoreError('unsafe_storage', 'Artifact blob is not a safe regular file')
-      }
-      file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-      const opened = await file.stat()
-      if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
-        throw new ArtifactStoreError('unsafe_storage', 'Artifact blob identity changed')
-      }
-      const hash = createHash('sha256')
-      const buffers: Buffer[] = []
-      let total = 0
-      const buffer = Buffer.allocUnsafe(64 * 1024)
-      for (;;) {
-        const { bytesRead } = await file.read(buffer, 0, buffer.byteLength)
-        if (bytesRead === 0) break
-        const value = Buffer.from(buffer.subarray(0, bytesRead))
-        hash.update(value)
-        buffers.push(value)
-        total += bytesRead
-        if (!Number.isSafeInteger(total) || total > byteSize) {
-          throw new ArtifactStoreError('integrity_mismatch', 'Artifact blob integrity check failed')
-        }
-      }
-      const actualChecksum = `sha256:${hash.digest('hex')}`
-      if (total !== byteSize || actualChecksum !== checksum || opened.size !== byteSize) {
-        throw new ArtifactStoreError('integrity_mismatch', 'Artifact blob integrity check failed')
-      }
-      return Buffer.concat(buffers, total)
-    } finally {
-      await file?.close().catch(() => undefined)
-    }
-  }
-
   async create(
     rawMetadata: ArtifactCreateMetadata,
     content: ArtifactBytes,
@@ -373,20 +484,15 @@ export class ArtifactStore {
       const checksum = `sha256:${hash.digest('hex')}`
       const target = await this.destination(checksum)
       await this.assertRootStable()
-      await this.hooks.beforePublish?.()
-      await this.assertDirectorySafe(target.parent)
-      try {
-        await link(temporaryPath, target.path)
-        const directory = await open(target.parent, constants.O_RDONLY)
-        try {
-          await directory.sync()
-        } finally {
-          await directory.close()
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      }
-      await this.verifyFile(target.path, checksum, byteSize)
+      await relativeFileOperation({
+        parent: target.parent,
+        name: checksum.slice('sha256:'.length),
+        action: 'publish',
+        source: temporaryPath,
+        byteSize,
+        digest: checksum.slice('sha256:'.length),
+        ready: this.hooks.beforePublish,
+      })
       await this.hooks.afterPublish?.()
       this.hooks.beforeDatabase?.()
 
@@ -496,9 +602,17 @@ export class ArtifactStore {
       if (!inside(root.root, parent)) {
         throw new ArtifactStoreError('unsafe_storage', 'Artifact storage boundary is unsafe')
       }
-      await this.hooks.beforeRead?.()
-      await this.assertDirectorySafe(dirname(path))
-      const content = await this.verifyFile(path, row.blob_checksum, row.byte_size)
+      const content = await relativeFileOperation({
+        parent: dirname(path),
+        name: match[2],
+        action: 'read',
+        byteSize: row.byte_size,
+        digest,
+        ready: this.hooks.beforeRead,
+      })
+      if (content === null) {
+        throw new ArtifactStoreError('integrity_mismatch', 'Artifact blob integrity check failed')
+      }
       const artifact = toArtifact(row)
       const digestHeader = Buffer.from(digest, 'hex').toString('base64')
       return {
