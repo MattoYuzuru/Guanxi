@@ -527,6 +527,16 @@
     outline-offset: 1px;
     box-shadow: none;
   }
+
+  .quick-run-card {
+    border-color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .quick-run-card button:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

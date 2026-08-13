@@ -5,7 +5,6 @@ import { QuickRunsPage } from '../../src/features/quick-runs/QuickRunsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 
 const AT = '2026-08-13T10:00:00.000Z'
-const EXPIRES = '2026-08-20T10:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
 const PROJECT: Project = {
   id: 'project-1',
@@ -32,10 +31,7 @@ function quickRun(
       policy: policy === 'ttl' ? { mode: 'ttl', expiresAfterDays: 7 } : { mode: policy },
       policySource: policy === 'ttl' ? 'default' : 'user',
       policyUpdatedAt: AT,
-      expiresAt: policy === 'ttl' ? EXPIRES : null,
-      expirySource: policy === 'ttl'
-        ? 'server_calculated_from_policy_update'
-        : 'policy_without_time_expiry',
+      expiryCalculation: 'not_implemented',
       automaticCleanup: 'not_implemented',
       sessionEnforcement: 'not_implemented',
     },
@@ -122,7 +118,7 @@ describe('QuickRunsPage', () => {
     await act(async () => creation.resolve(quickRun('ttl', PROJECT.id)))
     expect(await screen.findByText('1 Quick Run(s)')).toBeTruthy()
     expect(screen.getAllByText('Execution not implemented')).toHaveLength(1)
-    expect(screen.getAllByText('Not implemented')).toHaveLength(2)
+    expect(screen.getAllByText('Not implemented')).toHaveLength(3)
     expect(screen.queryByRole('button', { name: /save|run|execute/iu })).toBeNull()
     expect(screen.queryByText(/thread/iu)).toBeNull()
   })

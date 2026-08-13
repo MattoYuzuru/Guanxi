@@ -296,7 +296,7 @@ function QuickRunScopePanel({
             const actionError = actionErrors[quickRun.id]
             return (
               <li key={quickRun.id}>
-                <article className="surface min-w-0 rounded-lg border border-[var(--border)] p-3">
+                <article className="quick-run-card surface min-w-0 rounded-lg border border-[var(--border)] p-3">
                   <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <h3 className="break-words text-xs font-semibold">
@@ -313,11 +313,7 @@ function QuickRunScopePanel({
                     <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.source')}</dt>
                     <dd>{translate(`quickRuns.retention.source.${quickRun.retention.policySource}`)}</dd>
                     <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.expiry')}</dt>
-                    <dd className="min-w-0 break-words">
-                      {quickRun.retention.expiresAt
-                        ? <time dateTime={quickRun.retention.expiresAt}>{formatDateTime(quickRun.retention.expiresAt)}</time>
-                        : translate('quickRuns.retention.expiry.none')}
-                    </dd>
+                    <dd>{translate('quickRuns.retention.notImplemented')}</dd>
                     <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.cleanup')}</dt>
                     <dd>{translate('quickRuns.retention.notImplemented')}</dd>
                     <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.session')}</dt>

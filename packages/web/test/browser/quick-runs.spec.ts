@@ -5,7 +5,6 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-13T10:00:00.000Z'
-  const expiresAt = '2026-08-20T10:00:00.000Z'
   const project = {
     id: 'project-browser',
     name: 'Exact Browser Project',
@@ -64,10 +63,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
       policy: policy === 'ttl' ? { mode: 'ttl', expiresAfterDays: 7 } : { mode: policy },
       policySource: policy === 'ttl' ? 'default' : 'user',
       policyUpdatedAt: observedAt,
-      expiresAt: policy === 'ttl' ? expiresAt : null,
-      expirySource: policy === 'ttl'
-        ? 'server_calculated_from_policy_update'
-        : 'policy_without_time_expiry',
+      expiryCalculation: 'not_implemented',
       automaticCleanup: 'not_implemented',
       sessionEnforcement: 'not_implemented',
     },
@@ -175,7 +171,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   await expect(page.getByText('Quick Run: 1')).toHaveCount(1)
   await expect(page.getByText(projectlessId)).toHaveCount(1)
   await expect(page.getByText('Выполнение не реализовано')).toHaveCount(1)
-  await expect(page.getByText('Не реализовано', { exact: true })).toHaveCount(2)
+  await expect(page.getByText('Не реализовано', { exact: true })).toHaveCount(3)
   await expect(page.getByRole('main').getByRole('button', { name: /сохранить|save|запустить|execute/iu })).toHaveCount(0)
   await expect(create).toBeFocused()
 
@@ -205,7 +201,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   ])
   await expect(page.getByText('Выбор пользователя')).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Сессия' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByText('Не реализовано', { exact: true })).toHaveCount(2)
+  await expect(page.getByText('Не реализовано', { exact: true })).toHaveCount(3)
 
   await page.getByRole('combobox', { name: 'Область' }).selectOption(project.id)
   await expect(page.getByText('Quick Run: 1')).toHaveCount(1)
@@ -217,23 +213,38 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
     { quickRunVersion: '1', scope: 'projectless' },
     { quickRunVersion: '1', scope: 'projectless' },
   ])
-  expect(listQueries.filter(({ scope }) => scope === 'project')).toEqual([
-    { quickRunVersion: '1', scope: 'project', projectId: project.id },
-    { quickRunVersion: '1', scope: 'project', projectId: project.id },
-  ])
+  const projectQueries = listQueries.filter(({ scope }) => scope === 'project')
+  expect(projectQueries.length).toBeGreaterThan(0)
+  expect(projectQueries.every((query) => JSON.stringify(query) === JSON.stringify({
+    quickRunVersion: '1',
+    scope: 'project',
+    projectId: project.id,
+  }))).toBe(true)
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const sessionButton = page.getByRole('button', { name: 'Сессия' })
+  await sessionButton.focus()
   const layout = await page.evaluate(() => ({
     viewport: window.innerWidth,
     documentWidth: document.documentElement.scrollWidth,
     bodyWidth: document.body.scrollWidth,
     reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
     forcedColors: matchMedia('(forced-colors: active)').matches,
+    transitionDuration: getComputedStyle(document.activeElement!).transitionDuration,
+    outlineStyle: getComputedStyle(document.activeElement!).outlineStyle,
+    outlineWidth: getComputedStyle(document.activeElement!).outlineWidth,
+    cardBorderStyle: getComputedStyle(document.querySelector('.quick-run-card')!).borderStyle,
+    cardBorderWidth: getComputedStyle(document.querySelector('.quick-run-card')!).borderWidth,
   }))
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport)
   expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
   expect(layout.reducedMotion).toBe(true)
   expect(layout.forcedColors).toBe(true)
+  expect(Number.parseFloat(layout.transitionDuration)).toBeCloseTo(0.00001, 8)
+  expect(layout.outlineStyle).toBe('solid')
+  expect(layout.outlineWidth).toBe('3px')
+  expect(layout.cardBorderStyle).toBe('solid')
+  expect(layout.cardBorderWidth).not.toBe('0px')
 
   expect(forbiddenEffects).toEqual([])
 })

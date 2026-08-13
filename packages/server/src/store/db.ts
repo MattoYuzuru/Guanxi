@@ -833,7 +833,7 @@ const MIGRATIONS: readonly string[] = [
     id                          TEXT PRIMARY KEY,
     quick_run_version           INTEGER NOT NULL CHECK (quick_run_version = 1),
     operation                   TEXT NOT NULL CHECK (operation IN (
-      'complete','embed','transcribe','textToSpeech','ocr','caption','generateImage'
+      'complete','embed','transcribe','textToSpeech','ocr','caption','generateImage','generateVideo'
     )),
     project_id                  TEXT REFERENCES projects(id) ON DELETE RESTRICT,
     created_at                  TEXT NOT NULL,

@@ -7,6 +7,7 @@ import { describe, it } from 'node:test'
 import { Hono } from 'hono'
 import {
   QUICK_RUN_VERSION,
+  QUICK_RUN_OPERATIONS,
   RETENTION_DEFAULT_DAYS,
   createQuickRunBody,
   listQuickRunsResponse,
@@ -78,8 +79,7 @@ describe('P3-J canonical Quick Run retention foundation', () => {
         policy: { mode: 'ttl', expiresAfterDays: RETENTION_DEFAULT_DAYS },
         policySource: 'default',
         policyUpdatedAt: CREATED_AT,
-        expiresAt: '2026-08-20T10:00:00.000Z',
-        expirySource: 'server_calculated_from_policy_update',
+        expiryCalculation: 'not_implemented',
         automaticCleanup: 'not_implemented',
         sessionEnforcement: 'not_implemented',
       },
@@ -93,19 +93,23 @@ describe('P3-J canonical Quick Run retention foundation', () => {
           ...ttl.retention,
           policy,
           policySource: 'user',
-          expiresAt: null,
-          expirySource: 'policy_without_time_expiry',
         },
       }).success, true)
     }
     for (const invalid of [
       { quickRunVersion: 2, operation: 'complete', scope: 'projectless' },
       { quickRunVersion: 1, operation: 'chat', scope: 'projectless' },
-      { quickRunVersion: 1, operation: 'generateVideo', scope: 'projectless' },
       { quickRunVersion: 1, operation: 'complete', scope: 'projectless', projectId: 'leak' },
       { quickRunVersion: 1, operation: 'complete', scope: 'project', projectId: ' project ' },
       { quickRunVersion: 1, operation: 'complete', scope: 'projectless', future: true },
     ]) assert.equal(createQuickRunBody.safeParse(invalid).success, false)
+    for (const operation of QUICK_RUN_OPERATIONS) {
+      assert.equal(createQuickRunBody.safeParse({
+        quickRunVersion: 1,
+        operation,
+        scope: 'projectless',
+      }).success, true)
+    }
     for (const invalid of [
       { quickRunVersion: 2, scope: 'projectless' },
       { quickRunVersion: 1, scope: 'project', projectId: 'project', extra: true },
@@ -120,7 +124,11 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     assert.equal(quickRunSchema.safeParse({ ...ttl, future: true }).success, false)
     assert.equal(quickRunSchema.safeParse({
       ...ttl,
-      retention: { ...ttl.retention, expiresAt: '2026-08-20T09:59:59.999Z' },
+      retention: { ...ttl.retention, expiresAt: '2026-08-20T10:00:00.000Z' },
+    }).success, false)
+    assert.equal(quickRunSchema.safeParse({
+      ...ttl,
+      retention: { ...ttl.retention, expiryCalculation: 'server_calculated' },
     }).success, false)
     assert.equal(listQuickRunsResponse.safeParse({
       quickRunVersion: 1,
@@ -268,13 +276,19 @@ describe('P3-J canonical Quick Run retention foundation', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const createProjectless = await app.request('/api/quick-runs', json({
-      quickRunVersion: 1,
-      operation: 'complete',
-      scope: 'projectless',
-    }))
-    assert.equal(createProjectless.status, 201)
-    const projectless = quickRunSchema.parse(await createProjectless.json())
+    const projectlessRuns: QuickRun[] = []
+    for (const operation of QUICK_RUN_OPERATIONS) {
+      const response = await app.request('/api/quick-runs', json({
+        quickRunVersion: 1,
+        operation,
+        scope: 'projectless',
+      }))
+      assert.equal(response.status, 201)
+      const created = quickRunSchema.parse(await response.json())
+      assert.equal(created.operation, operation)
+      projectlessRuns.push(created)
+    }
+    const projectless = projectlessRuns.find(({ operation }) => operation === 'complete')!
     const createOwned = await app.request('/api/quick-runs', json({
       quickRunVersion: 1,
       operation: 'ocr',
@@ -287,7 +301,12 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     const listProjectless = await app.request(
       '/api/quick-runs?quickRunVersion=1&scope=projectless',
     )
-    assert.deepEqual((await listProjectless.json() as { quickRuns: QuickRun[] }).quickRuns.map(({ id }) => id), [projectless.id])
+    const listedProjectless = (await listProjectless.json() as { quickRuns: QuickRun[] }).quickRuns
+    assert.equal(listedProjectless.length, QUICK_RUN_OPERATIONS.length)
+    assert.deepEqual(
+      new Set(listedProjectless.map(({ operation }) => operation)),
+      new Set(QUICK_RUN_OPERATIONS),
+    )
     const listOwned = await app.request(
       `/api/quick-runs?quickRunVersion=1&scope=project&projectId=${project.id}`,
     )

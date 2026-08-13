@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import {
-  RETENTION_DEFAULT_DAYS,
   RETENTION_POLICY_VERSION,
   retentionPolicySchema,
 } from './retention.ts'
@@ -16,6 +15,7 @@ export const QUICK_RUN_OPERATIONS = [
   'ocr',
   'caption',
   'generateImage',
+  'generateVideo',
 ] as const
 
 export const quickRunOperationSchema = z.enum(QUICK_RUN_OPERATIONS)
@@ -38,48 +38,11 @@ export const quickRunRetentionSchema = z
     policy: retentionPolicySchema,
     policySource: z.enum(['default', 'user']),
     policyUpdatedAt: z.string().datetime(),
-    expiresAt: z.string().datetime().nullable(),
-    expirySource: z.enum(['server_calculated_from_policy_update', 'policy_without_time_expiry']),
+    expiryCalculation: z.literal('not_implemented'),
     automaticCleanup: z.literal('not_implemented'),
     sessionEnforcement: z.literal('not_implemented'),
   })
   .strict()
-  .superRefine((value, context) => {
-    const ttl = value.policy.mode === 'ttl'
-    if (ttl !== (value.expiresAt !== null)) {
-      context.addIssue({
-        code: 'custom',
-        path: ['expiresAt'],
-        message: 'Only the seven-day policy has a projected expiry',
-      })
-    }
-    if (ttl && value.expirySource !== 'server_calculated_from_policy_update') {
-      context.addIssue({
-        code: 'custom',
-        path: ['expirySource'],
-        message: 'Quick Run TTL must be calculated by the server',
-      })
-    }
-    if (
-      ttl &&
-      value.expiresAt !== null &&
-      Date.parse(value.expiresAt) !==
-        Date.parse(value.policyUpdatedAt) + RETENTION_DEFAULT_DAYS * 24 * 60 * 60 * 1_000
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['expiresAt'],
-        message: 'Quick Run TTL must remain the canonical seven-day policy',
-      })
-    }
-    if (!ttl && value.expirySource !== 'policy_without_time_expiry') {
-      context.addIssue({
-        code: 'custom',
-        path: ['expirySource'],
-        message: 'Keep and Session have no projected time expiry',
-      })
-    }
-  })
 export type QuickRunRetention = z.infer<typeof quickRunRetentionSchema>
 
 export const quickRunSchema = z

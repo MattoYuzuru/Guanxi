@@ -47,12 +47,6 @@ function rowPolicy(row: QuickRunRow): RetentionPolicy {
 
 function toQuickRun(row: QuickRunRow): QuickRun {
   const policy = rowPolicy(row)
-  const expiresAt = policy.mode === 'ttl'
-    ? new Date(
-        Date.parse(row.retention_policy_updated_at) +
-          RETENTION_DEFAULT_DAYS * 24 * 60 * 60 * 1_000,
-      ).toISOString()
-    : null
   return quickRunSchema.parse({
     quickRunVersion: row.quick_run_version,
     id: row.id,
@@ -66,10 +60,7 @@ function toQuickRun(row: QuickRunRow): QuickRun {
       policy,
       policySource: row.retention_policy_source,
       policyUpdatedAt: row.retention_policy_updated_at,
-      expiresAt,
-      expirySource: policy.mode === 'ttl'
-        ? 'server_calculated_from_policy_update'
-        : 'policy_without_time_expiry',
+      expiryCalculation: 'not_implemented',
       automaticCleanup: 'not_implemented',
       sessionEnforcement: 'not_implemented',
     },
