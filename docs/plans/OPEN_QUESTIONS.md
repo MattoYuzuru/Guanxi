@@ -2,7 +2,7 @@
 
 **Статус:** question register; Q-01–Q-36 отвечены, открыты Q-27a и Q-37
 
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-14
 
 Ответы Q-01–Q-21 зафиксированы в
 [decision log](../decisions/2026-08-02-product-decisions.md). Ни один исходный
@@ -11,8 +11,9 @@
 ## Что осталось открытым
 
 После P3-J orientation открыт Q-37 о событии окончания Session для Quick Run.
-Он блокирует только Quick Run Session enforcement/cleanup, но не persistence
-foundation и не следующий Recipe slice. Q-28a и Q-34a закрыты 2026-08-07.
+Он блокирует только Quick Run Session enforcement/cleanup, но не Recipe
+revision или exact Recipe-to-Job snapshot foundation. Q-28a и Q-34a закрыты
+2026-08-07.
 
 Release-readiness audit 2026-08-09 дополнительно сверил `variant-first install
 и calibration`: это две отдельные exact-variant capabilities. Marketplace

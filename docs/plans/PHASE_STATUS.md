@@ -1,8 +1,8 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-13
-**Текущая фаза:** Phase 3 — P3-K Recipe revision foundation ready
+**Проверено:** 2026-08-14
+**Текущая фаза:** Phase 3 — P3-L Recipe-to-Job snapshot foundation ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1839,6 +1839,54 @@ Ollama/GPU/network. Execution/Artifact storage и all Quick Run cleanup наме
 вне slice; Q-37 блокирует только Session enforcement. Следующий bounded slice —
 P3-K canonical Recipe identity и immutable revision snapshots без execution/routing.
 
+## Phase 3 — P3-K Recipe revision foundation
+
+**Статус:** independently verified
+
+Commits: `ca4f9ae` (strict contract, migration 22, store/REST/Web), `9a03d40`
+(deterministic server/component/browser evidence) и `97055f4` (independent
+review fix).
+
+Append-only migration 22 создаёт canonical `recipes` и `recipe_revisions`
+отдельно от Thread/Quick Run. Recipe identity имеет immutable nullable Project
+ownership и mutable normalized presentation name; revision хранит closed
+operation, explicit Ollama reference либо truthful no-model state,
+instructions/default JSON и shared retention snapshot. Server canonicalize-ит
+configuration bytes, фиксирует SHA-256/size, атомарно создаёт revision 1 и через
+`BEGIN IMMEDIATE` + expected revision CAS добавляет ровно N+1. Historical rows
+immutable и читаются exact; rename revision не создаёт.
+
+Strict v1 REST разделяет projectless/Project scopes, читает current и exact
+historical revision и fail-closed отклоняет unknown/future/extra/malformed
+requests. Localized `/recipes` покрывает loading/empty/error/retry, create,
+rename, current revision/provenance, explicit revise и focused conflict reload.
+Surface честно публикует `not_implemented` для automatic routing, execution и
+Job snapshot; Job/Ollama/Governor/provider/tool/filesystem effects отсутствуют.
+
+Evidence по правилу WORKFLOW: **4 new / 631 core regression envelope**,
+**4 new / 217 Web component/parser envelope**, **1 new / 36 mocked Chromium
+envelope**. Targeted backend — 4/4, component — 4/4, Chromium — 1/1; full
+typecheck, core 631/631, Web 217/217, browser 36/36 и build прошли. Девять
+контролируемых mutations (atomic revision 1, immutable history, CAS, Project FK,
+scope, rename/revise separation, strict version, no-effect и combined name
+boundary) дали expected non-zero и были восстановлены; markdownlint и
+`git diff --check` прошли.
+
+Independent reviewer сначала дал **NOT READY**: direct store create/rename не
+применяли contract maximum имени до write, поэтому 256-character value мог
+commit-иться, а parse ответа падал после mutation. Отдельный `97055f4` вынес
+canonical name schema на store boundary, зеркалировал 1..255 в migration 22 и
+добавил assertions на zero-row rejected create и неизменный rejected rename.
+Combined mutation обоих слоёв была убита; follow-up reviewer verdict — **READY**,
+других findings нет.
+
+Остаточный риск: synthetic SQLite и mocked Chromium; нет production DB corpus,
+real screen-reader/device, adversarial JSON depth/size envelope или live
+multi-process contention. Recipe execution, automatic routing, Job snapshot,
+attachments/vocabulary/integration grants и live Ollama/GPU/network намеренно
+вне slice. Следующий bounded slice — P3-L exact Recipe revision → queued Job
+snapshot без adapter execution или automatic model selection.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1938,7 +1986,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-K ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-L ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

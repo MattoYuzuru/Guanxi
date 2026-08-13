@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-14
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -41,7 +41,7 @@ Ollama — отдельный runtime и фактический владелец
 SQLite хранит settings, threads/messages, nullable immutable Project ownership,
 versioned Chat retention policy/user-activity basis, workspaces, logical
 Projects, canonical scoped Quick Run metadata с общей retention policy,
-versioned Project presentation metadata и
+canonical Recipe identities/immutable revisions, versioned Project presentation metadata и
 filesystem bindings, tool journal,
 legacy
 calibration, exact P1-L observation samples, `jobs`/`job_events` и P1-D private
@@ -85,6 +85,15 @@ Project FK restrictive, exact projectless/Project scopes не смешивают
 create/PATCH metadata не вызывают Job, Ollama, Governor, tools, filesystem или
 Chat maintenance. Execution, Artifact/Result storage и Quick Run cleanup не
 подключены; Session enforcement остаётся `not_implemented` до owner decision.
+
+P3-K migration 22 additive создаёт `recipes` и `recipe_revisions`: identity и
+nullable restrictive Project ownership immutable, presentation name изменяется
+отдельно, а configuration хранится canonical immutable numbered bytes с
+SHA-256/size provenance. `BEGIN IMMEDIATE` атомарно создаёт identity + revision 1
+и сериализует expected-revision CAS; stale writer не оставляет partial row.
+Strict scoped REST читает current/exact historical revision, а Web показывает
+current revision. Ни одна граница не создаёт Job, не обращается к Ollama/
+Governor/provider/filesystem и не реализует execution либо automatic routing.
 
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,

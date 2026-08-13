@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted direction, current P3 subsets implemented
 
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-14
 **Направление:** Warm Instrument Panel
 
 ## Цель интерфейса
@@ -181,6 +181,17 @@ Gallery встроенных и пользовательских задач:
 
 Карточка Recipe показывает operation, accepted inputs, output artifacts,
 предпочтительную модель и ограничения. Editor имеет Simple и Advanced sections.
+
+Current P3-K surface `/recipes` — минимальная scoped gallery, а не весь target
+editor. Она разделяет projectless и exact Project, показывает loading/empty/
+error/retry, создаёт Recipe, выводит current revision и canonical SHA-256/byte
+provenance, отдельно переименовывает identity metadata и явно создаёт следующую
+revision через expected-revision. Conflict сохраняет данные server-а, переводит
+фокус на alert и предлагает reload. English fallback и curated Russian,
+keyboard flow, 390 px/200%, forced colors и reduced motion покрыты mocked
+Chromium. Surface явно сообщает, что execution, automatic routing и Job
+attachment не реализованы; accepted inputs/output artifacts и Advanced sections
+пока не проецируются.
 
 ### Agent
 

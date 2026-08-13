@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-14
 
 ## Current package design
 
@@ -18,6 +18,9 @@
   projections;
 - `quick-runs.ts`: strict version 1 metadata, exact scopes, create/list/read/
   retention update и truthful unimplemented execution/cleanup projections;
+- `recipes.ts`: strict version 1 identity/configuration/revision, closed
+  operation/model/default/retention schemas, exact scopes, CAS requests и
+  truthful unimplemented routing/execution/Job projections;
 - `reasoning-artifacts.ts`: strict version 1 sourced diagnostic Artifact,
   ownership, integrity и retention projection;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
@@ -223,6 +226,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
   filesystem requirement, opt-in `presentationVersion=1` projection, isolated
   presentation PATCH и versioned nested Chat list/create/read; legacy
   Project/Workspace route shapes не меняются;
+- `store/recipes.ts` + `http/recipes-routes.ts`: canonical configuration bytes,
+  immutable exact revision reads, atomic revision 1, expected-revision CAS,
+  isolated rename и strict Project/projectless REST без execution effects;
 - `projects/chat-service.ts`: canonical immutable Project Chat ownership
   boundary; create вызывает existing model/context validation ровно один раз и
   не создаёт Workspace, Message, Job или runtime operation;
@@ -280,6 +286,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 21: additive canonical `quick_runs` с restrictive Project FK,
   immutable identity/operation/ownership trigger, strict operation/policy/source
   checks и stable exact-scope index; existing tables/data не переписываются;
+- migration 22: additive `recipes`/`recipe_revisions` с restrictive immutable
+  ownership, normalized name, closed configuration columns, canonical bytes/
+  SHA-256/size, immutable revision triggers и current-revision existence guard;
 - `store/quick-runs.ts` + `http/quick-runs-routes.ts`: exact Project/projectless
   metadata create/list/read и one-update retention mutation без Thread, Job,
   runtime, provider, filesystem или maintenance effects;
@@ -1054,7 +1063,8 @@ Migrations 4–5 и `JobStore` реализуют `jobs`, `job_events`, private
 versioned built-in icon/color presentation metadata. Migrations 12–13 добавляют
 nullable immutable Project ownership к current `threads`; nested Chat API и Web
 group используют эту связь без move/reparent или filesystem inference. Project
-пока не хранит defaults и не владеет Recipes/Artifacts. Migration 14 хранит
+пока не хранит defaults и не владеет Artifacts; Recipe ownership добавлено
+migration 22 без filesystem inference. Migration 14 хранит
 current Chat retention policy/source и user-activity basis. Migration 15
 additive хранит lifecycle/tombstone basis, audit и eligibility/Trash indexes;
 projection помечает enforcement как `rolling_ttl_trash`. Один startup/periodic
@@ -1070,8 +1080,11 @@ triggers с exact Session policy/source/activity-basis constraints.
 Migration 20 append-only добавляет не ссылающийся на Thread
 `chat_deletion_audit`: version, Chat/Project scope, `session_recovery_elapsed`,
 tombstone/deadline/deletion timestamps, server-maintenance source, exact SQLite
-metadata boundary и `blob_gc=not_applicable`; content в таблице нет. Остальные
-target tables, generic Artifact/blob GC и TTL hard deletion не реализованы.
+metadata boundary и `blob_gc=not_applicable`; content в таблице нет. Migration
+21 добавляет canonical Quick Run metadata, а migration 22 — canonical Recipe
+identity и immutable numbered configuration revisions. Recipe execution,
+automatic routing и exact Job snapshot wiring, остальные target tables, generic
+Artifact/blob GC и TTL hard deletion не реализованы.
 Legacy `threads/messages/workspaces`, raw Thread REST и strict legacy Project
 list сохранены без destructive route cutover.
 

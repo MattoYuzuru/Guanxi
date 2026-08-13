@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-14
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -373,8 +373,14 @@ server не нужен.
 - migration 20 additive добавляет content-free Session Chat deletion audit;
 - migration 21 additive добавляет canonical `quick_runs` с restrictive Project
   FK, immutable identity/operation/ownership и strict policy/source constraints;
+- migration 22 additive добавляет canonical `recipes`/`recipe_revisions` с
+  restrictive immutable ownership, normalized name, immutable canonical bytes,
+  digest/size и current-revision guard;
 - `store/quick-runs.ts` и `http/quick-runs-routes.ts` владеют exact Project/
   projectless create/list/read/PATCH metadata без Job/runtime/filesystem effects;
+- `store/recipes.ts` и `http/recipes-routes.ts` владеют exact scoped identity,
+  atomic revision 1, historical read, expected-revision CAS и rename отдельно от
+  immutable configuration;
 - `store/reasoning-artifacts.ts` владеет active exact-Chat scoped list/read,
   integrity validation, current-parent effective expiry, stable bounded due
   scan и atomic recheck/delete/audit;
@@ -452,19 +458,21 @@ server не нужен.
 - `features/quick-runs` — P3-J Project/projectless metadata create/list и direct
   Keep/7 days/Session control без Save conversion; UI явно показывает отсутствие
   execution, cleanup и Session enforcement;
+- `features/recipes` — P3-K Project/projectless create, current revision
+  provenance, rename и explicit revise/conflict flow без execution/routing/Job;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-J projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-K projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
   P3-D retention, P3-E scoped Trash/Restore, P3-F/P3-G reasoning Chat Info и
-  P3-H explicit Session leave/recovery и P3-J Quick Run metadata
-  (current SQLite schema version 21),
+  P3-H explicit Session leave/recovery, P3-J Quick Run metadata и P3-K Recipe
+  revisions (current SQLite schema version 22),
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

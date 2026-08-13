@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted target, current P1/P2/P3 subsets implemented
 
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-14
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -54,8 +54,9 @@ accessible palette; оба поля изменяются отдельно от i
 versioned Project-scoped boundary. Project можно создать без binding; path не
 является identity, а Project Chat сохраняет `workspaceId=null` без отдельного
 выбора filesystem scope. Legacy Workspace API/table и raw Thread REST response
-сохранены byte-compatible. Project defaults, Recipe/Artifact ownership и final
-client cutover ещё не реализованы.
+сохранены byte-compatible. P3-K добавил immutable nullable Project ownership
+для Recipe; Project defaults, Artifact ownership и final client cutover ещё не
+реализованы.
 
 P3-D–P3-I добавили к current `Thread` versioned Chat-only retention boundary.
 Новый projectless и Project Chat получает одинаковый rolling `7 days`; existing
@@ -86,6 +87,20 @@ GC, filesystem cleanup и TTL Trash hard deletion не реализованы.
 
 `Dictation`, `Transcription`, `TTS`, `OCR`, `Image Generate` и
 `Document Batch` — Recipes/operations, а не новые разновидности Chat.
+
+P3-K реализует canonical Recipe identity отдельно от `Thread` и `Quick Run`:
+mutable normalized name, immutable projectless/Project ownership и immutable
+numbered configuration revisions. Revision version 1 хранит closed operation,
+explicit Ollama model reference либо truthful `not_selected`, instructions,
+canonical JSON default parameters и Retention Policy snapshot. Server сохраняет
+canonical UTF-8 bytes, byte size и SHA-256; create атомарно создаёт revision 1,
+revise использует expected-revision CAS, а rename revision не создаёт. Старые
+revisions читаются exact и не переписываются.
+
+Текущий Recipe ещё не исполняется: automatic routing, Job snapshot/attachment,
+input/output schemas, attachments, vocabulary и integration grants остаются
+`not_implemented`. Существующий arbitrary public Job input не считается Recipe
+snapshot.
 
 ### Agent Run
 

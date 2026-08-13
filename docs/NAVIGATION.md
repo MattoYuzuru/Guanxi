@@ -1,7 +1,7 @@
 # Навигация по документации
 
 **Статус:** implemented  
-**Проверено:** 2026-08-03
+**Проверено:** 2026-08-14
 **Назначение:** канонический индекс без дублирования содержания
 
 ## Быстрый маршрут
@@ -43,7 +43,7 @@
 | [ROADMAP](plans/ROADMAP.md)                                    | accepted          | фазы, зависимости и exit gates              |
 | [PHASE_STATUS](plans/PHASE_STATUS.md)                          | implemented       | mutable tracker текущего slice              |
 | [WORKFLOW](plans/WORKFLOW.md)                                  | accepted          | протокол реализации и review                |
-| [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md)                | ready             | bounded prompt для следующего Phase 2 slice |
+| [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md)                | ready             | bounded prompt для следующего slice         |
 | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md)                      | proposed          | решения, требующие подтверждения            |
 | [EVIDENCE](research/EVIDENCE.md)                               | locally validated | внешние факты, риски и источники            |
 

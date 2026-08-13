@@ -2,7 +2,7 @@
 
 **Статус:** mixed — diagnosis locally validated, lifecycle target accepted
 
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-14
 **Критичность:** основной correctness и safety boundary
 
 ## Подтверждённое current behavior
@@ -1076,6 +1076,12 @@ Quick Runs получают одинаковый default `7 days` и могут 
 Session без Save conversion. Execution/Job association, activity basis, expiry,
 Trash/Restore, cleanup и Session enforcement для Quick Run остаются
 `not_implemented`: принятого события завершения Quick Run Session пока нет.
+
+P3-K сохраняет тот же Retention Policy только внутри immutable Recipe revision
+snapshot. Recipe create/rename/revise/read не создаёт Job или lifecycle owner и
+не подключается к Chat/Quick Run Maintenance. Automatic routing, exact Recipe
+revision → Job snapshot и execution остаются `not_implemented`; arbitrary
+public Job `operation` и private Chat input эту границу не заменяют.
 
 ```text
 active
