@@ -5,6 +5,7 @@
  * Опечатка в URL становится ошибкой компиляции, а не багом в рантайме.
  */
 import { z } from 'zod'
+import { contextCheckpointListSchema, contextCheckpointSchema } from './context-checkpoints.ts'
 import { PROJECT_PRESENTATION_VERSION } from './project-presentation.ts'
 import {
   CHAT_DELETION_VERSION,
@@ -876,12 +877,19 @@ export const createThreadBody = z
 export type CreateThreadBody = z.infer<typeof createThreadBody>
 export const createThreadResponse = threadSchema
 
-export const getThreadResponse = z.object({
-  thread: threadSchema,
-  messages: z.array(messageSchema),
-  context: contextStateSchema,
-})
+export const getThreadResponse = z
+  .object({
+    thread: threadSchema,
+    messages: z.array(messageSchema),
+    contextCheckpoints: contextCheckpointListSchema.default([]),
+    context: contextStateSchema,
+  })
+  .strict()
 export type GetThreadResponse = z.infer<typeof getThreadResponse>
+
+export const contextCheckpointQuery = z
+  .object({ contextCheckpointVersion: z.coerce.number().pipe(z.literal(1)) })
+  .strict()
 
 export const updateThreadBody = z
   .object({
@@ -915,13 +923,15 @@ export const chatJobInputSnapshotSchema = z
   .strict()
 export type ChatJobInputSnapshot = z.infer<typeof chatJobInputSnapshotSchema>
 
-export const compactThreadResponse = z.object({
-  message: messageSchema,
-  context: contextStateSchema,
-  /** Сколько токенов свернули и во сколько это обойдётся на следующем ходе. */
-  compactedTokens: z.number().int(),
-  estimatedRepefillMs: z.number().int(),
-})
+export const compactThreadResponse = z
+  .object({
+    checkpoint: contextCheckpointSchema,
+    context: contextStateSchema,
+    /** Сколько токенов свернули и во сколько это обойдётся на следующем ходе. */
+    compactedTokens: z.number().int(),
+    estimatedRepefillMs: z.number().int(),
+  })
+  .strict()
 export type CompactThreadResponse = z.infer<typeof compactThreadResponse>
 
 export const getContextResponse = contextStateSchema
@@ -1193,6 +1203,7 @@ export const getProjectChatResponse = z
     project: projectSchema,
     thread: projectChatSchema,
     messages: z.array(messageSchema),
+    contextCheckpoints: contextCheckpointListSchema.default([]),
     context: contextStateSchema,
   })
   .strict()

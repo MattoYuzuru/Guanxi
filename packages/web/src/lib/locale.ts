@@ -241,6 +241,18 @@ const english = {
   'error.unknown': 'Unknown client error',
   'error.notAvailable': 'Not available',
   'chat.turn.status.pending': 'Pending',
+  'chat.checkpoint.title': 'Context checkpoint',
+  'chat.checkpoint.preserved':
+    'Stored history is preserved: {count} source messages through sequence {sequence}. Only the active model context was shortened.',
+  'chat.checkpoint.legacy':
+    'Legacy checkpoint: the older source messages were removed before non-destructive checkpoints existed.',
+  'chat.checkpoint.cacheCost':
+    'The checkpoint preserves stored history but resets the KV-cache prefix, so the next prompt must be evaluated again.',
+  'chat.checkpoint.confirm':
+    'Create a visible checkpoint, preserve stored messages, and add {duration} to the next turn?',
+  'chat.checkpoint.confirmAction': 'Create checkpoint',
+  'chat.checkpoint.error': 'The context checkpoint was not created',
+  'chat.checkpoint.retry': 'Retry checkpoint',
   'chat.retention.open': 'Chat info',
   'chat.retention.title': 'Chat retention',
   'chat.retention.close': 'Close Chat retention',
@@ -1516,6 +1528,18 @@ const russian: Messages = {
   'error.unknown': 'Неизвестная ошибка интерфейса',
   'error.notAvailable': 'Нет данных',
   'chat.turn.status.pending': 'ожидает итога',
+  'chat.checkpoint.title': 'Контрольная точка контекста',
+  'chat.checkpoint.preserved':
+    'История сохранена: {count} исходных сообщений до sequence {sequence}. Сокращён только активный контекст модели.',
+  'chat.checkpoint.legacy':
+    'Legacy-точка: старые исходные сообщения были удалены до появления недеструктивных checkpoint’ов.',
+  'chat.checkpoint.cacheCost':
+    'Checkpoint сохраняет историю, но сбрасывает префикс KV-кэша: следующий промпт придётся вычислить заново.',
+  'chat.checkpoint.confirm':
+    'Создать видимую контрольную точку, сохранить сообщения и добавить {duration} к следующему ходу?',
+  'chat.checkpoint.confirmAction': 'Создать checkpoint',
+  'chat.checkpoint.error': 'Не удалось создать контрольную точку контекста',
+  'chat.checkpoint.retry': 'Повторить checkpoint',
   'chat.retention.open': 'Информация о чате',
   'chat.retention.title': 'Хранение чата',
   'chat.retention.close': 'Закрыть настройки хранения чата',

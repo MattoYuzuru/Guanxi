@@ -16,10 +16,30 @@ import { ResourceGovernorError } from '../runtime/resource-governor.ts'
 import { ModelContextLimitExceededError } from '../models/service.ts'
 import { PathOutsideWorkspaceError } from '../tools/jail.ts'
 import { ToolError } from '../tools/types.ts'
+import { ContextCheckpointStoreError } from '../store/threads.ts'
 
 type StatusCode = 400 | 403 | 404 | 409 | 500 | 502 | 503 | 504
 
 function classify(error: unknown): { status: StatusCode; body: ApiError } {
+  if (error instanceof ContextCheckpointStoreError) {
+    if (error.code === 'stale_checkpoint') {
+      return {
+        status: 409,
+        body: { code: 'job_conflict', message: error.message, details: null },
+      }
+    }
+    if (error.code === 'invalid_input') {
+      return {
+        status: 400,
+        body: { code: 'validation_failed', message: error.message, details: null },
+      }
+    }
+    return {
+      status: 500,
+      body: { code: 'storage_error', message: error.message, details: null },
+    }
+  }
+
   if (error instanceof ModelContextLimitExceededError) {
     return {
       status: 400,

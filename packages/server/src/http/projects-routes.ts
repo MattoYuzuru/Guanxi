@@ -1,8 +1,10 @@
 import {
   PROJECT_PRESENTATION_VERSION,
   PROJECT_CHAT_OWNERSHIP_VERSION,
+  contextCheckpointQuery,
   createProjectBody,
   createProjectChatBody,
+  getProjectChatResponse,
   projectReferenceSchema,
   updateProjectBody,
   updateProjectPresentationBody,
@@ -96,6 +98,19 @@ export function projectsRoutes(app: AppContext): Hono {
   })
 
   routes.get('/:id/chats/:threadId', (context) => {
+    const query = new URL(context.req.url).searchParams
+    const checkpointProjection = contextCheckpointQuery.safeParse(Object.fromEntries(query))
+    if (
+      query.size > 0 &&
+      (!checkpointProjection.success ||
+        query.getAll('contextCheckpointVersion').length !== 1 ||
+        [...query.keys()].some((key) => key !== 'contextCheckpointVersion'))
+    ) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid context checkpoint projection', details: null },
+        400,
+      )
+    }
     const projectId = context.req.param('id')
     const threadId = context.req.param('threadId')
     if (!validReference(projectId) || !validReference(threadId)) {
@@ -119,8 +134,15 @@ export function projectsRoutes(app: AppContext): Hono {
     }
 
     const messages = app.threads.messages(result.thread.id)
-    const lastUsage = [...messages].reverse().find((message) => message.usage)?.usage ?? null
-    return context.json({
+    const contextCheckpoints = app.threads.contextCheckpoints(result.thread.id)
+    const activeMessages = app.threads.activeContextMessages(result.thread.id)
+    const hasCanonicalCheckpoint = contextCheckpoints.some(
+      (checkpoint) => checkpoint.source.state === 'source_preserved',
+    )
+    const lastUsage = hasCanonicalCheckpoint
+      ? null
+      : [...activeMessages].reverse().find((message) => message.usage)?.usage ?? null
+    const response = {
       ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
       project: result.project,
       thread: result.thread,
@@ -128,13 +150,18 @@ export function projectsRoutes(app: AppContext): Hono {
       context: buildContextState({
         usedTokens:
           lastUsage?.promptTokens ??
-          messages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
+          activeMessages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
         allocatedTokens: result.thread.options.numCtx,
         usage: lastUsage,
         model: result.thread.model,
         tracker: app.tracker,
       }),
-    })
+    }
+    return context.json(
+      query.size === 0
+        ? response
+        : getProjectChatResponse.parse({ ...response, contextCheckpoints }),
+    )
   })
 
   routes.get('/:id', (context) => {

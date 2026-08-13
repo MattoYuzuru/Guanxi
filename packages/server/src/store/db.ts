@@ -1049,6 +1049,93 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Recipe snapshot Job identity is immutable');
     END;
   `,
+  // 24 — visible non-destructive context checkpoints over preserved Messages.
+  `
+  CREATE TABLE context_checkpoints (
+    id                       TEXT PRIMARY KEY,
+    checkpoint_version       INTEGER NOT NULL CHECK (checkpoint_version = 1),
+    thread_id                TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    previous_checkpoint_id   TEXT REFERENCES context_checkpoints(id),
+    up_to_seq                INTEGER NOT NULL CHECK (up_to_seq >= 0),
+    source_state             TEXT NOT NULL CHECK (source_state = 'source_preserved'),
+    source_message_count     INTEGER NOT NULL CHECK (source_message_count > 0),
+    summary_text             TEXT NOT NULL CHECK (length(summary_text) > 0),
+    summary_byte_size        INTEGER NOT NULL CHECK (summary_byte_size > 0),
+    summary_sha256           TEXT NOT NULL CHECK (
+      length(summary_sha256) = 64 AND summary_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    created_at               TEXT NOT NULL,
+    UNIQUE (thread_id, up_to_seq),
+    FOREIGN KEY (thread_id, up_to_seq)
+      REFERENCES messages(thread_id, seq)
+  );
+  CREATE INDEX idx_context_checkpoints_thread
+    ON context_checkpoints(thread_id, up_to_seq, id);
+
+  CREATE TRIGGER context_checkpoints_exact_source
+    BEFORE INSERT ON context_checkpoints
+    WHEN NOT EXISTS (
+      SELECT 1 FROM messages boundary
+      WHERE boundary.thread_id = NEW.thread_id
+        AND boundary.seq = NEW.up_to_seq
+        AND NEW.source_message_count = (
+          SELECT COUNT(*) FROM messages source
+          WHERE source.thread_id = NEW.thread_id AND source.seq <= NEW.up_to_seq
+        )
+        AND (
+          (
+            NEW.previous_checkpoint_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM context_checkpoints current
+              WHERE current.thread_id = NEW.thread_id
+            )
+          )
+          OR
+          EXISTS (
+            SELECT 1 FROM context_checkpoints previous
+            WHERE previous.id = NEW.previous_checkpoint_id
+              AND previous.thread_id = NEW.thread_id
+              AND previous.up_to_seq < NEW.up_to_seq
+              AND NOT EXISTS (
+                SELECT 1 FROM context_checkpoints newer
+                WHERE newer.thread_id = NEW.thread_id
+                  AND newer.up_to_seq > previous.up_to_seq
+              )
+          )
+        )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Context checkpoint source mismatch');
+    END;
+
+  CREATE TRIGGER context_checkpoints_immutable_update
+    BEFORE UPDATE ON context_checkpoints
+    BEGIN
+      SELECT RAISE(ABORT, 'Context checkpoints are immutable');
+    END;
+
+  CREATE TRIGGER checkpointed_messages_immutable_update
+    BEFORE UPDATE ON messages
+    WHEN EXISTS (
+      SELECT 1 FROM context_checkpoints checkpoint
+      WHERE checkpoint.thread_id = OLD.thread_id
+        AND OLD.seq <= checkpoint.up_to_seq
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Checkpointed Messages are immutable');
+    END;
+
+  CREATE TRIGGER checkpointed_messages_immutable_delete
+    BEFORE DELETE ON messages
+    WHEN EXISTS (
+      SELECT 1 FROM context_checkpoints checkpoint
+      WHERE checkpoint.thread_id = OLD.thread_id
+        AND OLD.seq <= checkpoint.up_to_seq
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Checkpointed Messages are immutable');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

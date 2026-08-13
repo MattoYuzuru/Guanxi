@@ -4,10 +4,12 @@
  * Сообщения нумеруются полем `seq` внутри треда, а не сортируются по времени:
  * при стриминге несколько сообщений могут получить одинаковую метку времени.
  */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
+  contextCheckpointSchema,
   PROJECT_CHAT_OWNERSHIP_VERSION,
   turnErrorSchema,
+  type ContextCheckpoint,
   type Message,
   type Thread,
   type ThreadWithOwnership,
@@ -54,6 +56,20 @@ interface MessageRow {
   turn_status: string | null
   turn_error: string | null
   stop_reason: string | null
+}
+
+interface ContextCheckpointRow {
+  id: string
+  checkpoint_version: number
+  thread_id: string
+  previous_checkpoint_id: string | null
+  up_to_seq: number
+  source_state: string
+  source_message_count: number
+  summary_text: string
+  summary_byte_size: number
+  summary_sha256: string
+  created_at: string
 }
 
 function toThread(row: ThreadRow): Thread {
@@ -123,6 +139,19 @@ export interface CompactionCandidates {
   messages: Message[]
   /** Actual persisted sequence of the last message included in the summary. */
   upToSeq: number
+  expectedPreviousCheckpointId: string | null
+}
+
+export class ContextCheckpointStoreError extends Error {
+  readonly code: 'invalid_input' | 'stale_checkpoint' | 'stored_data_invalid'
+
+  constructor(
+    code: 'invalid_input' | 'stale_checkpoint' | 'stored_data_invalid',
+    message: string,
+  ) {
+    super(message)
+    this.code = code
+  }
 }
 
 export class ThreadStore {
@@ -293,10 +322,25 @@ export class ThreadStore {
   }
 
   delete(id: string): boolean {
-    const result = this.db
-      .prepare("DELETE FROM threads WHERE id = ? AND chat_lifecycle_state = 'active'")
-      .run(id)
-    return result.changes > 0
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare(
+        `DELETE FROM context_checkpoints
+         WHERE thread_id = ?
+           AND EXISTS (
+             SELECT 1 FROM threads
+             WHERE id = ? AND chat_lifecycle_state = 'active'
+           )`,
+      ).run(id, id)
+      const result = this.db
+        .prepare("DELETE FROM threads WHERE id = ? AND chat_lifecycle_state = 'active'")
+        .run(id)
+      this.db.exec('COMMIT')
+      return result.changes > 0
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   private touch(threadId: string): void {
@@ -320,11 +364,76 @@ export class ThreadStore {
     return rows.map(toMessage)
   }
 
+  /** Explicit canonical checkpoints plus projections of pre-v24 destructive summaries. */
+  contextCheckpoints(threadId: string): ContextCheckpoint[] {
+    const canonical = (this.db
+      .prepare(
+        `SELECT * FROM context_checkpoints
+         WHERE thread_id = ? ORDER BY up_to_seq, id`,
+      )
+      .all(threadId) as unknown as ContextCheckpointRow[]).map((row) =>
+      this.toContextCheckpoint(row),
+    )
+    const legacy = (this.db
+      .prepare(
+        `SELECT m.*, NULL AS artifact_thinking, NULL AS artifact_version
+         FROM messages m
+         WHERE m.thread_id = ? AND m.is_compaction = 1
+         ORDER BY m.seq, m.id`,
+      )
+      .all(threadId) as unknown as MessageRow[]).map((row) => {
+      const content = row.content.trim()
+      if (!content) {
+        throw new ContextCheckpointStoreError(
+          'stored_data_invalid',
+          `Legacy context checkpoint ${row.id} has empty content`,
+        )
+      }
+      return contextCheckpointSchema.parse({
+        contextCheckpointVersion: 1,
+        id: row.id,
+        threadId: row.thread_id,
+        previousCheckpointId: null,
+        source: {
+          state: 'legacy_source_unavailable',
+          upToSeq: row.seq,
+          messageCount: null,
+        },
+        summary: {
+          format: 'text_utf8_v1',
+          content: row.content,
+          byteSize: Buffer.byteLength(row.content, 'utf8'),
+          sha256: createHash('sha256').update(Buffer.from(row.content, 'utf8')).digest('hex'),
+        },
+        createdAt: row.created_at,
+      })
+    })
+    return [...legacy, ...canonical].sort((left, right) =>
+      left.source.upToSeq - right.source.upToSeq || left.createdAt.localeCompare(right.createdAt),
+    )
+  }
+
+  /** Only the latest summary plus the unsummarized original tail sent to a model. */
+  activeContextMessages(threadId: string): Message[] {
+    const latest = this.latestContextCheckpointRow(threadId)
+    if (!latest) return this.messages(threadId)
+    const checkpoint = this.toContextCheckpoint(latest)
+    const rows = this.db
+      .prepare(
+        `SELECT m.*, a.content_text AS artifact_thinking, a.artifact_version
+         FROM messages m
+         LEFT JOIN reasoning_artifacts a ON a.source_message_id = m.id
+         WHERE m.thread_id = ? AND m.seq > ? ORDER BY m.seq`,
+      )
+      .all(threadId, checkpoint.source.upToSeq) as unknown as MessageRow[]
+    return [this.checkpointMessage(checkpoint), ...rows.map(toMessage)]
+  }
+
   /**
    * Selects the prefix for compaction and preserves its real persisted boundary.
    *
-   * Array indexes stop matching `seq` after the first summary replaces a
-   * prefix, so callers must never derive the delete boundary from length.
+   * Array indexes are not persisted sequence numbers, so callers must never
+   * derive the checkpoint boundary from length.
    */
   compactionCandidates(threadId: string, keepTail: number): CompactionCandidates | null {
     const rows = this.db
@@ -334,14 +443,91 @@ export class ThreadStore {
       )
       .all(threadId) as unknown as MessageRow[]
 
-    if (rows.length <= keepTail + 1) return null
-    const candidates = rows.slice(0, rows.length - keepTail)
-    const boundary = candidates.at(-1)
+    const latestRow = this.latestContextCheckpointRow(threadId)
+    const latest = latestRow ? this.toContextCheckpoint(latestRow) : null
+    const tail = latest ? rows.filter((row) => row.seq > latest.source.upToSeq) : rows
+    const activeCount = tail.length + (latest ? 1 : 0)
+    if (activeCount <= keepTail + 1) return null
+    const originalCount = activeCount - keepTail - (latest ? 1 : 0)
+    const candidateRows = tail.slice(0, originalCount)
+    const boundary = candidateRows.at(-1)
     if (!boundary) return null
+    if (candidateRows.some((row) => row.role === 'assistant' && row.turn_status === 'pending')) {
+      return null
+    }
 
     return {
-      messages: candidates.map(toMessage),
+      messages: [
+        ...(latest ? [this.checkpointMessage(latest)] : []),
+        ...candidateRows.map(toMessage),
+      ],
       upToSeq: boundary.seq,
+      expectedPreviousCheckpointId: latest?.id ?? null,
+    }
+  }
+
+  createContextCheckpoint(input: {
+    threadId: string
+    upToSeq: number
+    expectedPreviousCheckpointId: string | null
+    summary: string
+  }): ContextCheckpoint {
+    const summary = input.summary.trim()
+    if (!summary) {
+      throw new ContextCheckpointStoreError('invalid_input', 'Context checkpoint summary is empty')
+    }
+    if (!Number.isSafeInteger(input.upToSeq) || input.upToSeq < 0) {
+      throw new ContextCheckpointStoreError('invalid_input', 'Context checkpoint boundary is invalid')
+    }
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const latest = this.latestContextCheckpointRow(input.threadId)
+      if ((latest?.id ?? null) !== input.expectedPreviousCheckpointId) {
+        throw new ContextCheckpointStoreError(
+          'stale_checkpoint',
+          'The active context checkpoint changed before persistence',
+        )
+      }
+      const source = this.db.prepare(
+        `SELECT COUNT(*) AS count FROM messages
+         WHERE thread_id = ? AND seq <= ?`,
+      ).get(input.threadId, input.upToSeq) as unknown as { count: number }
+      if (source.count < 1) {
+        throw new ContextCheckpointStoreError(
+          'invalid_input',
+          'Context checkpoint boundary was not found',
+        )
+      }
+      const id = randomUUID()
+      const createdAt = new Date().toISOString()
+      const byteSize = Buffer.byteLength(summary, 'utf8')
+      const sha256 = createHash('sha256').update(Buffer.from(summary, 'utf8')).digest('hex')
+      this.db.prepare(
+        `INSERT INTO context_checkpoints (
+           id, checkpoint_version, thread_id, previous_checkpoint_id, up_to_seq,
+           source_state, source_message_count, summary_text, summary_byte_size,
+           summary_sha256, created_at
+         ) VALUES (?, 1, ?, ?, ?, 'source_preserved', ?, ?, ?, ?, ?)`,
+      ).run(
+        id,
+        input.threadId,
+        input.expectedPreviousCheckpointId,
+        input.upToSeq,
+        source.count,
+        summary,
+        byteSize,
+        sha256,
+        createdAt,
+      )
+      const row = this.latestContextCheckpointRow(input.threadId)
+      if (!row || row.id !== id) throw new Error('Context checkpoint insert was not visible')
+      const checkpoint = this.toContextCheckpoint(row)
+      this.touch(input.threadId)
+      this.db.exec('COMMIT')
+      return checkpoint
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
     }
   }
 
@@ -520,32 +706,64 @@ export class ThreadStore {
     return { applied: result.changes > 0, message }
   }
 
-  /**
-   * Сворачивает начало треда в одно резюме: удаляет сообщения до `upToSeq`
-   * включительно и ставит на освободившуюся позицию резюмирующее сообщение.
-   *
-   * Позицию задаём явно: если бы резюме получило следующий свободный `seq`,
-   * оно оказалось бы в конце треда, после сообщений, которые оно должно предварять.
-   */
-  replaceWithSummary(threadId: string, upToSeq: number, summary: string, usage: Usage | null): Message {
-    this.db.exec('BEGIN')
-    try {
-      this.db
-        .prepare('DELETE FROM messages WHERE thread_id = ? AND seq <= ?')
-        .run(threadId, upToSeq)
-      const message = this.addMessage({
-        threadId,
-        role: 'system',
-        content: summary,
-        usage,
-        isCompaction: true,
-        seq: upToSeq,
-      })
-      this.db.exec('COMMIT')
-      return message
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
+  private latestContextCheckpointRow(threadId: string): ContextCheckpointRow | null {
+    return (this.db.prepare(
+      `SELECT * FROM context_checkpoints
+       WHERE thread_id = ? ORDER BY up_to_seq DESC, id DESC LIMIT 1`,
+    ).get(threadId) as unknown as ContextCheckpointRow | undefined) ?? null
+  }
+
+  private toContextCheckpoint(row: ContextCheckpointRow): ContextCheckpoint {
+    const byteSize = Buffer.byteLength(row.summary_text, 'utf8')
+    const sha256 = createHash('sha256')
+      .update(Buffer.from(row.summary_text, 'utf8'))
+      .digest('hex')
+    const parsed = contextCheckpointSchema.safeParse({
+      contextCheckpointVersion: row.checkpoint_version,
+      id: row.id,
+      threadId: row.thread_id,
+      previousCheckpointId: row.previous_checkpoint_id,
+      source: {
+        state: row.source_state,
+        upToSeq: row.up_to_seq,
+        messageCount: row.source_message_count,
+      },
+      summary: {
+        format: 'text_utf8_v1',
+        content: row.summary_text,
+        byteSize: row.summary_byte_size,
+        sha256: row.summary_sha256,
+      },
+      createdAt: row.created_at,
+    })
+    if (
+      !parsed.success ||
+      byteSize !== row.summary_byte_size ||
+      sha256 !== row.summary_sha256
+    ) {
+      throw new ContextCheckpointStoreError(
+        'stored_data_invalid',
+        `Context checkpoint ${row.id} failed integrity validation`,
+      )
+    }
+    return parsed.data
+  }
+
+  private checkpointMessage(checkpoint: ContextCheckpoint): Message {
+    return {
+      id: `context-checkpoint:${checkpoint.id}`,
+      threadId: checkpoint.threadId,
+      jobId: null,
+      role: 'system',
+      content: checkpoint.summary.content,
+      thinking: null,
+      toolCalls: [],
+      usage: null,
+      createdAt: checkpoint.createdAt,
+      isCompaction: true,
+      turnStatus: null,
+      turnError: null,
+      stopReason: null,
     }
   }
 

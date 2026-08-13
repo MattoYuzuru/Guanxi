@@ -374,7 +374,10 @@ export const api = {
     request(ROUTES.threads(), createThreadResponse, { method: 'POST', body, signal }),
 
   getThread: (id: string, signal?: AbortSignal) =>
-    request(ROUTES.thread(id), getThreadResponse, { signal }),
+    request(ROUTES.thread(id), getThreadResponse, {
+      query: { contextCheckpointVersion: 1 },
+      signal,
+    }),
 
   updateThread: (id: string, body: UpdateThreadBody, signal?: AbortSignal) =>
     request(ROUTES.thread(id), createThreadResponse, { method: 'PATCH', body, signal }),
@@ -512,7 +515,10 @@ export const api = {
   }),
 
   getProjectChat: (projectId: string, threadId: string, signal?: AbortSignal) =>
-    request(ROUTES.projectChat(projectId, threadId), getProjectChatResponse, { signal }),
+    request(ROUTES.projectChat(projectId, threadId), getProjectChatResponse, {
+      query: { contextCheckpointVersion: 1 },
+      signal,
+    }),
 
   /* Quick Run metadata — these routes never execute model work. */
 

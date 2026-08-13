@@ -249,7 +249,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
       : CHAT_SYSTEM_PROMPT
 
   const persistedMessages = store
-    .messages(thread.id)
+    .activeContextMessages(thread.id)
     .filter((message) => message.id !== params.initialAssistantMessageId)
   const working: OllamaChatMessage[] = [
     { role: 'system', content: systemPrompt },

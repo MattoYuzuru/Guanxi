@@ -422,6 +422,7 @@ export class ChatRetentionStore {
           cutoff,
         )
         if (audit.changes === 0) continue
+        this.db.prepare('DELETE FROM context_checkpoints WHERE thread_id = ?').run(candidate.chatId)
         const removed = this.db.prepare('DELETE FROM threads WHERE id = ?').run(candidate.chatId)
         if (removed.changes !== 1) throw new Error('Audited Chat metadata was not deleted')
         deleted += 1

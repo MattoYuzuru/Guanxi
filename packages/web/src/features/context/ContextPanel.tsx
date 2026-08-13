@@ -11,10 +11,12 @@
  *    в обмен на длинный prefill следующего хода. Цену (`estimatedRepefillMs`)
  *    показываем ДО нажатия, а не после.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ContextState, Usage } from '@alamo/contract'
 import { Badge, Button, Meter, Stat, cx } from '../../components/ui.tsx'
+import { errorMessage } from '../../lib/api.ts'
 import { formatDuration, formatPercent, formatTokens, formatTokensPerSecond } from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
 
 /** Замер с целевого железа — им объясняем, почему кэш важен. */
 const CACHE_MISS_REFERENCE_MS = 41_800
@@ -30,10 +32,16 @@ export function ContextPanel({
   context: ContextState | null
   usage: Usage | null
   compacting: boolean
-  onCompact: () => void
+  onCompact: () => Promise<unknown>
   disabled?: boolean
 }) {
   const [confirming, setConfirming] = useState(false)
+  const [compactError, setCompactError] = useState<string | null>(null)
+  const compactErrorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (compactError) compactErrorRef.current?.focus()
+  }, [compactError])
 
   if (!context) {
     return (
@@ -98,17 +106,29 @@ export function ContextPanel({
             </span>
           </div>
           <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
-            Свёрнутая история ломает KV-кэш: следующий промпт придётся считать заново.
-            Это размен, а не бесплатная оптимизация.
+            {translate('chat.checkpoint.cacheCost')}
           </p>
         </div>
 
         {confirming ? (
           <div className="space-y-1.5">
             <p className="text-2xs text-[var(--fg-muted)]">
-              Свернуть историю и заплатить {formatDuration(context.estimatedRepefillMs)} на
-              следующем ходе?
+              {translate('chat.checkpoint.confirm').replace(
+                '{duration}',
+                formatDuration(context.estimatedRepefillMs),
+              )}
             </p>
+            {compactError && (
+              <div
+                ref={compactErrorRef}
+                role="alert"
+                tabIndex={-1}
+                className="rounded-md border border-[var(--color-fit-red)]/50 bg-[var(--color-fit-red)]/8 px-2 py-1.5 text-2xs text-[var(--color-fit-red)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+              >
+                <div className="font-semibold">{translate('chat.checkpoint.error')}</div>
+                <div className="mt-0.5 break-words">{compactError}</div>
+              </div>
+            )}
             <div className="flex gap-1.5">
               <Button
                 variant="primary"
@@ -116,13 +136,28 @@ export function ContextPanel({
                 className="flex-1"
                 loading={compacting}
                 onClick={async () => {
-                  await onCompact()
+                  setCompactError(null)
+                  try {
+                    await onCompact()
+                    setConfirming(false)
+                  } catch (error) {
+                    setCompactError(errorMessage(error))
+                  }
+                }}
+              >
+                {compactError
+                  ? translate('chat.checkpoint.retry')
+                  : translate('chat.checkpoint.confirmAction')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={compacting}
+                onClick={() => {
+                  setCompactError(null)
                   setConfirming(false)
                 }}
               >
-                Да, свернуть
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
                 Отмена
               </Button>
             </div>
@@ -134,7 +169,10 @@ export function ContextPanel({
             className="w-full"
             disabled={!context.compactable || disabled || compacting}
             loading={compacting}
-            onClick={() => setConfirming(true)}
+            onClick={() => {
+              setCompactError(null)
+              setConfirming(true)
+            }}
           >
             Свернуть контекст
           </Button>

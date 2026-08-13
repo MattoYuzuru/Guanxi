@@ -7,8 +7,12 @@ import {
   DEFAULT_CHAT_NUM_CTX,
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
+  compactThreadResponse,
+  contextCheckpointQuery,
   createThreadBody,
+  getContextResponse,
   getChatRetentionResponse,
+  getThreadResponse,
   listChatTrashQuery,
   listChatTrashResponse,
   leaveSessionChatBody,
@@ -381,23 +385,50 @@ export function threadsRoutes(app: AppContext): Hono {
   })
 
   routes.get('/:id', (context) => {
+    const query = new URL(context.req.url).searchParams
+    const checkpointProjection = contextCheckpointQuery.safeParse(Object.fromEntries(query))
+    if (
+      query.size > 0 &&
+      (!checkpointProjection.success ||
+        query.getAll('contextCheckpointVersion').length !== 1 ||
+        [...query.keys()].some((key) => key !== 'contextCheckpointVersion'))
+    ) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid context checkpoint projection', details: null },
+        400,
+      )
+    }
     const thread = app.threads.get(context.req.param('id'))
     if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
 
     const messages = app.threads.messages(thread.id)
-    const lastUsage = [...messages].reverse().find((message) => message.usage)?.usage ?? null
+    const contextCheckpoints = app.threads.contextCheckpoints(thread.id)
+    const activeMessages = app.threads.activeContextMessages(thread.id)
+    const hasCanonicalCheckpoint = contextCheckpoints.some(
+      (checkpoint) => checkpoint.source.state === 'source_preserved',
+    )
+    const lastUsage = hasCanonicalCheckpoint
+      ? null
+      : [...activeMessages].reverse().find((message) => message.usage)?.usage ?? null
 
-    return context.json({
+    const response = {
       thread,
       messages,
       context: buildContextState({
-        usedTokens: lastUsage?.promptTokens ?? messages.reduce((sum, m) => sum + estimateTokens(m.content), 0),
+        usedTokens:
+          lastUsage?.promptTokens ??
+          activeMessages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
         allocatedTokens: thread.options.numCtx,
         usage: lastUsage,
         model: thread.model,
         tracker: app.tracker,
       }),
-    })
+    }
+    return context.json(
+      query.size === 0
+        ? response
+        : getThreadResponse.parse({ ...response, contextCheckpoints }),
+    )
   })
 
   routes.patch('/:id', async (context) => {
@@ -470,17 +501,24 @@ export function threadsRoutes(app: AppContext): Hono {
     const thread = app.threads.get(context.req.param('id'))
     if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
 
-    const messages = app.threads.messages(thread.id)
-    const lastUsage = [...messages].reverse().find((message) => message.usage)?.usage ?? null
+    const messages = app.threads.activeContextMessages(thread.id)
+    const hasCanonicalCheckpoint = app.threads
+      .contextCheckpoints(thread.id)
+      .some((checkpoint) => checkpoint.source.state === 'source_preserved')
+    const lastUsage = hasCanonicalCheckpoint
+      ? null
+      : [...messages].reverse().find((message) => message.usage)?.usage ?? null
 
     return context.json(
-      buildContextState({
-        usedTokens: lastUsage?.promptTokens ?? 0,
+      getContextResponse.parse(buildContextState({
+        usedTokens:
+          lastUsage?.promptTokens ??
+          messages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
         allocatedTokens: thread.options.numCtx,
         usage: lastUsage,
         model: thread.model,
         tracker: app.tracker,
-      }),
+      })),
     )
   })
 
@@ -660,18 +698,18 @@ export function threadsRoutes(app: AppContext): Hono {
         0,
       )
 
-      const message = app.threads.replaceWithSummary(
+      const checkpoint = app.threads.createContextCheckpoint({
         threadId,
-        selection.upToSeq,
-        `Сводка предыдущей части диалога:\n\n${summary}`,
-        null,
-      )
+        upToSeq: selection.upToSeq,
+        expectedPreviousCheckpointId: selection.expectedPreviousCheckpointId,
+        summary: `Сводка предыдущей части диалога:\n\n${summary}`,
+      })
 
-      const remaining = app.threads.messages(threadId)
+      const remaining = app.threads.activeContextMessages(threadId)
       const usedTokens = remaining.reduce((sum, item) => sum + estimateTokens(item.content), 0)
 
-      return context.json({
-        message,
+      return context.json(compactThreadResponse.parse({
+        checkpoint,
         context: buildContextState({
           usedTokens,
           allocatedTokens: thread.options.numCtx,
@@ -686,7 +724,7 @@ export function threadsRoutes(app: AppContext): Hono {
          * при попадании в кэш — умалчивать об этом нельзя.
          */
         estimatedRepefillMs: app.tracker.estimateColdPrefillMs(thread.model, usedTokens),
-      })
+      }))
     } catch (error) {
       if (ownerController.signal.aborted && app.governor.snapshot().accepting) {
         return context.json(

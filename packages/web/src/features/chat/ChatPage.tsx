@@ -15,6 +15,7 @@ import {
   type RefObject,
 } from 'react'
 import type {
+  ContextCheckpoint,
   Health,
   Message,
   ThreadMode,
@@ -528,6 +529,7 @@ function ThreadPage({
 
         <MessageTimeline
           messages={chat.messages}
+          contextCheckpoints={chat.contextCheckpoints}
           buffer={chat.buffer}
           phase={chat.phase}
           liveOutputRetained={chat.liveOutputRetained}
@@ -541,12 +543,12 @@ function ThreadPage({
               <summary className="cursor-pointer px-2 py-1 text-2xs font-medium text-[var(--fg-muted)]">
                 Контекст и скорость
               </summary>
-              <div className="max-h-80 border-t border-[var(--border)]">
+              <div className="h-80 max-h-[45vh] overflow-hidden border-t border-[var(--border)]">
                 <ContextPanel
                   context={chat.context}
                   usage={chat.usage}
                   compacting={chat.compacting}
-                  onCompact={() => void chat.compact()}
+                  onCompact={chat.compact}
                   disabled={chat.isStreaming}
                 />
               </div>
@@ -573,7 +575,7 @@ function ThreadPage({
           context={chat.context}
           usage={chat.usage}
           compacting={chat.compacting}
-          onCompact={() => void chat.compact()}
+          onCompact={chat.compact}
           disabled={chat.isStreaming}
         />
       </aside>
@@ -611,8 +613,9 @@ function ThreadPage({
 
 /* ─────────────────────────── История и стрим ──────────────────────────── */
 
-function MessageTimeline({
+export function MessageTimeline({
   messages,
+  contextCheckpoints,
   buffer,
   phase,
   liveOutputRetained,
@@ -620,6 +623,7 @@ function MessageTimeline({
   streamError,
 }: {
   messages: Message[]
+  contextCheckpoints: ContextCheckpoint[]
   buffer: StreamBuffer
   phase: TurnPhase
   liveOutputRetained: boolean
@@ -627,6 +631,8 @@ function MessageTimeline({
   streamError: string | null
 }) {
   const endRef = useRef<HTMLDivElement>(null)
+  const latestCheckpointRef = useRef<HTMLElement>(null)
+  const previousCheckpointCountRef = useRef(contextCheckpoints.length)
   const showLive = phase !== 'idle' || liveOutputRetained
   const scrollToEnd = useCallback(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -634,7 +640,24 @@ function MessageTimeline({
 
   useEffect(() => {
     scrollToEnd()
-  }, [messages.length, phase, liveToolCalls.length, scrollToEnd])
+  }, [messages.length, contextCheckpoints.length, phase, liveToolCalls.length, scrollToEnd])
+
+  useEffect(() => {
+    if (contextCheckpoints.length > previousCheckpointCountRef.current) {
+      requestAnimationFrame(() => latestCheckpointRef.current?.focus())
+    }
+    previousCheckpointCountRef.current = contextCheckpoints.length
+  }, [contextCheckpoints.length])
+
+  const checkpointsAfterMessage = new Map<number, ContextCheckpoint[]>()
+  for (const checkpoint of contextCheckpoints) {
+    const legacyPosition = messages.findIndex((message) => message.id === checkpoint.id) + 1
+    const position = checkpoint.source.messageCount ?? Math.max(0, legacyPosition)
+    const positioned = checkpointsAfterMessage.get(position) ?? []
+    positioned.push(checkpoint)
+    checkpointsAfterMessage.set(position, positioned)
+  }
+  const latestCheckpointId = contextCheckpoints.at(-1)?.id ?? null
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
@@ -646,9 +669,24 @@ function MessageTimeline({
           />
         )}
 
-        {messages.map((message) => (
-          <MessageView key={message.id} message={message} />
+        {(checkpointsAfterMessage.get(0) ?? []).map((checkpoint) => (
+          <ContextCheckpointMarker
+            key={`checkpoint:${checkpoint.id}`}
+            checkpoint={checkpoint}
+            ref={checkpoint.id === latestCheckpointId ? latestCheckpointRef : undefined}
+          />
         ))}
+
+        {messages.flatMap((message, index) => [
+          ...(message.isCompaction ? [] : [<MessageView key={message.id} message={message} />]),
+          ...(checkpointsAfterMessage.get(index + 1) ?? []).map((checkpoint) => (
+            <ContextCheckpointMarker
+              key={`checkpoint:${checkpoint.id}`}
+              checkpoint={checkpoint}
+              ref={checkpoint.id === latestCheckpointId ? latestCheckpointRef : undefined}
+            />
+          )),
+        ])}
 
         {showLive && (
           <StreamingMessage
@@ -670,6 +708,40 @@ function MessageTimeline({
         <div ref={endRef} />
       </div>
     </div>
+  )
+}
+
+function ContextCheckpointMarker({
+  checkpoint,
+  ref,
+}: {
+  checkpoint: ContextCheckpoint
+  ref?: React.Ref<HTMLElement>
+}) {
+  const evidence =
+    checkpoint.source.state === 'source_preserved'
+      ? translate('chat.checkpoint.preserved')
+          .replace('{count}', String(checkpoint.source.messageCount))
+          .replace('{sequence}', String(checkpoint.source.upToSeq))
+      : translate('chat.checkpoint.legacy')
+
+  return (
+    <article
+      ref={ref}
+      tabIndex={-1}
+      aria-label={translate('chat.checkpoint.title')}
+      className="rounded-lg border border-[var(--color-fit-yellow)]/45 bg-[var(--color-fit-yellow)]/8 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+      data-context-checkpoint={checkpoint.id}
+    >
+      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+        <Badge tone="yellow">{translate('chat.checkpoint.title')}</Badge>
+        <span className="text-2xs text-[var(--fg-subtle)]">
+          {formatTime(checkpoint.createdAt)}
+        </span>
+      </div>
+      <p className="mb-2 text-2xs text-[var(--fg-muted)]">{evidence}</p>
+      <Markdown source={checkpoint.summary.content} />
+    </article>
   )
 }
 

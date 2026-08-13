@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ApiError,
   ChatStreamEvent,
+  ContextCheckpoint,
   ContextState,
   Message,
   JobState,
@@ -57,6 +58,7 @@ export type ChatState = {
   thread: Thread | null
   project: Project | null
   messages: Message[]
+  contextCheckpoints: ContextCheckpoint[]
   context: ContextState | null
   loading: boolean
   loadError: unknown
@@ -79,6 +81,10 @@ export type ChatState = {
 
 export function useChat(threadId: string | null, projectId: string | null = null) {
   const [state, setState] = useState<ChatState>(initialState)
+  const contextCheckpointIdsRef = useRef<Set<string>>(new Set())
+  contextCheckpointIdsRef.current = new Set(
+    state.contextCheckpoints.map((checkpoint) => checkpoint.id),
+  )
 
   // Буфер переживает перерисовки и не участвует в реконсиляции.
   const bufferRef = useRef<StreamBuffer>(null as unknown as StreamBuffer)
@@ -113,6 +119,7 @@ export function useChat(threadId: string | null, projectId: string | null = null
           thread: data.thread,
           project: data.project,
           messages: data.messages,
+          contextCheckpoints: data.contextCheckpoints,
           context: data.context,
           phase: 'idle',
           liveToolCalls: [],
@@ -189,6 +196,7 @@ export function useChat(threadId: string | null, projectId: string | null = null
         thread: data.thread,
         project: data.project,
         messages: data.messages,
+        contextCheckpoints: data.contextCheckpoints,
         context: data.context,
         loading: false,
         loadError: null,
@@ -354,6 +362,7 @@ export function useChat(threadId: string | null, projectId: string | null = null
           thread: data.thread,
           project: data.project,
           messages: data.messages,
+          contextCheckpoints: data.contextCheckpoints,
           context: data.context,
           phase: 'idle',
           liveToolCalls: [],
@@ -435,16 +444,58 @@ export function useChat(threadId: string | null, projectId: string | null = null
     if (!id) return
     setCompacting(true)
     try {
-      const result = await api.compactThread(id)
-      const data = await readThread(id)
-      if (threadIdRef.current !== id) return
+      let result
+      try {
+        result = await api.compactThread(id)
+      } catch (commandError) {
+        try {
+          const recovered = await readThread(id)
+          const committed = recovered.contextCheckpoints.some(
+            (checkpoint) => !contextCheckpointIdsRef.current.has(checkpoint.id),
+          )
+          if (!committed) throw commandError
+          if (threadIdRef.current === id) {
+            setState((previous) => ({
+              ...previous,
+              thread: recovered.thread,
+              project: recovered.project,
+              messages: recovered.messages,
+              contextCheckpoints: recovered.contextCheckpoints,
+              context: recovered.context,
+            }))
+          }
+          return
+        } catch (recoveryError) {
+          if (recoveryError === commandError) throw commandError
+          throw commandError
+        }
+      }
+      if (threadIdRef.current !== id) return result
       setState((previous) => ({
         ...previous,
-        thread: data.thread,
-        project: data.project,
-        messages: data.messages,
+        contextCheckpoints: previous.contextCheckpoints.some(
+          (checkpoint) => checkpoint.id === result.checkpoint.id,
+        )
+          ? previous.contextCheckpoints
+          : [...previous.contextCheckpoints, result.checkpoint],
         context: result.context,
       }))
+      try {
+        const data = await readThread(id)
+        if (threadIdRef.current === id) {
+          setState((previous) => ({
+            ...previous,
+            thread: data.thread,
+            project: data.project,
+            messages: data.messages,
+            contextCheckpoints: data.contextCheckpoints,
+            context: data.context,
+          }))
+        }
+      } catch {
+        // The POST response is the committed projection. A failed refresh must
+        // not turn a successful checkpoint into a duplicate retry intent.
+      }
       return result
     } finally {
       setCompacting(false)
@@ -628,6 +679,7 @@ function initialState(): ChatState {
     thread: null,
     project: null,
     messages: [],
+    contextCheckpoints: [],
     context: null,
     loading: false,
     loadError: null,
