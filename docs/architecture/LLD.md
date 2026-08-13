@@ -14,7 +14,10 @@
   ownership, settings, strict Projects, workspaces, tool calls, approvals и
   durable Job/event records;
 - `api.ts`: route paths и request/response Zod;
-- `retention.ts`: strict version 1 policy и sourced Chat retention projection;
+- `retention.ts`: общий strict version 1 policy/default и Chat compatibility
+  projections;
+- `quick-runs.ts`: strict version 1 metadata, exact scopes, create/list/read/
+  retention update и truthful unimplemented execution/cleanup projections;
 - `reasoning-artifacts.ts`: strict version 1 sourced diagnostic Artifact,
   ownership, integrity и retention projection;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
@@ -274,6 +277,12 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 14: additive policy/source/update и sourced user-activity columns;
   existing Threads получают safe `Keep / legacy_compatibility`, новые Chats
   записывают rolling seven-day default через store boundary;
+- migration 21: additive canonical `quick_runs` с restrictive Project FK,
+  immutable identity/operation/ownership trigger, strict operation/policy/source
+  checks и stable exact-scope index; existing tables/data не переписываются;
+- `store/quick-runs.ts` + `http/quick-runs-routes.ts`: exact Project/projectless
+  metadata create/list/read и one-update retention mutation без Thread, Job,
+  runtime, provider, filesystem или maintenance effects;
 - `store/chat-retention.ts` + `retention/service.ts`: Chat-only policy owner,
   server-calculated exact expiry и isolated mutation без cleanup effects;
 - `store/capability-override.ts`: fail-closed exact key/timestamp validation,
@@ -978,7 +987,7 @@ Reasoning Artifact; P3-G исполняет его own seven-day/shorter-current
 expiry тем же bounded owner и сохраняет redacted atomic audit. Это не generic
 Artifact GC.
 
-Chat/Quick Run metadata:
+Shared Chat/Quick Run policy:
 
 ```ts
 type RetentionPolicy =
@@ -990,6 +999,11 @@ type RetentionPolicy =
     }
   | { mode: "session"; sessionId: string };
 ```
+
+Quick Run metadata сохраняет этот policy object с `retentionVersion=1`, source и
+server timestamps. Его current projection отдельно фиксирует
+`execution`, `cleanup` и `sessionEnforcement` как `not_implemented`; Chat-only
+expiry/session lifecycle ниже на Quick Run не распространяется.
 
 Новый Chat всегда создаётся с TTL семь дней от последней user activity, включая
 Chat внутри Project. `Keep` задаётся только явным изменением policy.

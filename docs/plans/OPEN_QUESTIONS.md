@@ -1,8 +1,8 @@
 # Открытые продуктовые решения
 
-**Статус:** question register; Q-01–Q-36 отвечены, открыты только sub-questions
+**Статус:** question register; Q-01–Q-36 отвечены, открыты Q-27a и Q-37
 
-**Проверено:** 2026-08-09
+**Проверено:** 2026-08-13
 
 Ответы Q-01–Q-21 зафиксированы в
 [decision log](../decisions/2026-08-02-product-decisions.md). Ни один исходный
@@ -10,8 +10,9 @@
 
 ## Что осталось открытым
 
-После owner session 2026-08-07 **ни один продуктовый вопрос не открыт и не
-блокирует следующий slice**. Q-28a и Q-34a закрыты в той же сессии.
+После P3-J orientation открыт Q-37 о событии окончания Session для Quick Run.
+Он блокирует только Quick Run Session enforcement/cleanup, но не persistence
+foundation и не следующий Recipe slice. Q-28a и Q-34a закрыты 2026-08-07.
 
 Release-readiness audit 2026-08-09 дополнительно сверил `variant-first install
 и calibration`: это две отдельные exact-variant capabilities. Marketplace
@@ -21,11 +22,19 @@ calibration использует exact digest/context/runtime/hardware evidence.
 Такое объединение было бы новой policy с freshness, precedence, thresholds и
 compatibility решениями, а не незакрытым требованием Phase 2.
 
-Единственный незакрытый пункт — **Q-27a**: `wrap up and report` требует нового
+Другой незакрытый пункт — **Q-27a**: `wrap up and report` требует нового
 durable Job state, а не UI-флага, и нужно определить поведение при падении
 process во время wind-down (иначе P1-E recovery отнесёт run к `interrupted` и
 потеряет сам отчёт). Это design decision внутри Phase 5/8, к текущему slice
 отношения не имеет; ждёт architecture review 2026-08-07.
+
+### Q-37. Какое явное событие заканчивает Session для Quick Run?
+
+D-009/Q-23 принимают explicit Leave только для Chat. One-shot Quick Run не имеет
+accepted аналога: успешное execution completion, закрытие result view, export или
+отдельная команда могут вести к разным retention ожиданиям. До решения P3-J
+сохраняет выбор Session, но честно публикует `sessionEnforcement=not_implemented`
+и не запускает cleanup. Нужен owner decision до Quick Run Session lifecycle.
 
 ## Resolution Q-01–Q-21
 

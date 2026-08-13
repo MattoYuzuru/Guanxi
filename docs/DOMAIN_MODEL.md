@@ -21,6 +21,14 @@
 Quick Run использует тот же трёхрежимный Retention Policy, что Chat. Отдельная
 кнопка `Save` не создаёт новый тип данных.
 
+P3-J реализует minimal canonical Quick Run metadata отдельно от `Thread`:
+immutable identity, operation, nullable restrictive Project ownership, created/
+updated timestamps и sourced Retention Policy version 1. Projectless и
+Project-owned Quick Runs используют один default `7 days`; create/list/read и
+policy update доступны через exact scoped REST boundary. Execution/streaming,
+durable Job association, Result/Artifact persistence, cleanup и Session
+completion/enforcement ещё не реализованы и так же проецируются клиенту.
+
 ### Chat
 
 Сохраняемая multi-turn Conversation с ordered entries. Chat может использовать
@@ -407,6 +415,11 @@ type RetentionPolicy =
 Default любого нового Chat — `{ mode: "ttl", expiresAfterDays: 7,
 refreshOn: "user_activity" }`, независимо от принадлежности Project. `Keep`
 требует явного выбора пользователя.
+
+P3-J использует тот же versioned policy object и default для Quick Run metadata.
+Quick Run TTL пока не имеет accepted activity/expiry/cleanup semantics, а событие
+окончания Quick Run Session остаётся открытым продуктовым решением; сохранённая
+policy не выдаётся за active enforcement.
 
 Session Chat переходит в Trash только после подтверждённой команды Leave session
 и terminal state всех canonical Jobs. Reload/reconnect, transport abort,

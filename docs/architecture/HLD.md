@@ -40,7 +40,8 @@ Contract package ─ Zod types ─ browser + server
 Ollama — отдельный runtime и фактический владелец model weights/RAM/VRAM.
 SQLite хранит settings, threads/messages, nullable immutable Project ownership,
 versioned Chat retention policy/user-activity basis, workspaces, logical
-Projects, versioned Project presentation metadata и
+Projects, canonical scoped Quick Run metadata с общей retention policy,
+versioned Project presentation metadata и
 filesystem bindings, tool journal,
 legacy
 calibration, exact P1-L observation samples, `jobs`/`job_events` и P1-D private
@@ -77,6 +78,13 @@ Chat input bridge удаляется по current FK ownership. TTL Trash hard d
 generic blob GC и filesystem cleanup не реализованы. Append-only migration 19 harden-ит уже
 применимую v18 schema: invalid existing Session Trash fail-closed останавливает
 upgrade, а новые raw writes без exact leave basis отклоняются trigger-ом.
+
+P3-J migration 21 additive создаёт отдельную `quick_runs` table: immutable
+identity/operation/Project ownership, sourced policy version 1 и timestamps.
+Project FK restrictive, exact projectless/Project scopes не смешиваются, а
+create/PATCH metadata не вызывают Job, Ollama, Governor, tools, filesystem или
+Chat maintenance. Execution, Artifact/Result storage и Quick Run cleanup не
+подключены; Session enforcement остаётся `not_implemented` до owner decision.
 
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,
@@ -570,15 +578,16 @@ CAS в `/api/create`; окно между последней проверкой 
 
 ### Retention cleanup
 
-Current P3-E реализует только recoverable Chat TTL часть:
+Current P3-E–P3-I реализует Chat TTL/Session lifecycle и Session metadata delete;
+P3-J добавляет только Quick Run policy persistence:
 
 1. Startup/periodic owner запускает bounded Maintenance pass.
 2. Pass выбирает expired TTL Chat, исключая active work.
 3. Chat атомарно получает tombstone/Trash timestamp и audit row; retry
    идемпотентен, Restore доступен через versioned boundary.
 
-После grace удалять metadata и только blobs без живых references, считать
-bytes/errors и применять Artifact/Session policy — target, не current behavior.
+Quick Run не включён в эти passes. Его TTL/Session cleanup, metadata deletion и
+blob GC — target, не current behavior.
 
 ## Consistency и availability
 

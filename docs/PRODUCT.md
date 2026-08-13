@@ -325,6 +325,14 @@ And expiry продлевается только пользовательско�
 ```
 
 ```gherkin
+Given пользователь создаёт Quick Run metadata внутри или вне Project
+When пользователь не выбирал другую retention policy
+Then Quick Run получает тот же default 7 days без отдельной кнопки Save
+And текущий foundation не запускает model, Job или cleanup
+And Session completion остаётся not implemented до отдельного решения
+```
+
+```gherkin
 Given пользователь подтвердил явную команду Leave session для Session Chat
 When связанная Job стала terminal
 Then Chat попадает в Trash

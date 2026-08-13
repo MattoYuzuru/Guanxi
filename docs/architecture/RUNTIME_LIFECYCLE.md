@@ -1070,6 +1070,13 @@ terminal Message/Job transaction и хранит final answer отдельно. 
 active и Trash Chat проверяются по current policy, любой non-terminal Job Chat
 блокирует delete, а exact Artifact delete и content-free audit атомарны.
 
+P3-J переиспользует canonical Retention Policy version 1 для Quick Run metadata,
+но не подключает Quick Run к этому lifecycle owner. Projectless и Project-owned
+Quick Runs получают одинаковый default `7 days` и могут явно выбрать Keep/TTL/
+Session без Save conversion. Execution/Job association, activity basis, expiry,
+Trash/Restore, cleanup и Session enforcement для Quick Run остаются
+`not_implemented`: принятого события завершения Quick Run Session пока нет.
+
 ```text
 active
   → expiring

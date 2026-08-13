@@ -243,8 +243,10 @@ server не нужен.
 - `schemas.ts` — domain Zod schemas;
 - `api.ts` — route constants и request/response schemas;
 - `events.ts` — Chat/Job SSE unions и classified private Chat output;
-- `retention.ts` — strict Chat policy/activity/expiry,
-  lifecycle/Trash/Restore и explicit Session leave/recovery projections version 1;
+- `retention.ts` — общий strict retention policy/default version 1 плюс Chat
+  activity/expiry/lifecycle compatibility projections;
+- `quick-runs.ts` — strict canonical Quick Run metadata, exact scopes и truthful
+  execution/cleanup/session capability projection version 1;
 - `index.ts` — public exports.
 - Durable Job record/state/error/outcome, event envelope и P1-C public
   create/query/cancel/cursor/SSE schemas экспортируются из contract.
@@ -368,6 +370,11 @@ server не нужен.
   Trash сохраняет legacy reason bytes, migration rollback/retry не меняет v17;
 - migration 19 append-only валидирует уже применённые v18 rows и пересоздаёт
   lifecycle triggers так, чтобы Session Trash требовал exact explicit basis;
+- migration 20 additive добавляет content-free Session Chat deletion audit;
+- migration 21 additive добавляет canonical `quick_runs` с restrictive Project
+  FK, immutable identity/operation/ownership и strict policy/source constraints;
+- `store/quick-runs.ts` и `http/quick-runs-routes.ts` владеют exact Project/
+  projectless create/list/read/PATCH metadata без Job/runtime/filesystem effects;
 - `store/reasoning-artifacts.ts` владеет active exact-Chat scoped list/read,
   integrity validation, current-parent effective expiry, stable bounded due
   scan и atomic recheck/delete/audit;
@@ -442,18 +449,22 @@ server не нужен.
   projection, explicit reasoning refresh и empty state без потери answer; P3-H
   добавляет confirmation-only Session leave, pending/blocked/Trash states,
   scoped retry и truthful 24-hour recovery/no-hard-delete projection;
+- `features/quick-runs` — P3-J Project/projectless metadata create/list и direct
+  Keep/7 days/Session control без Save conversion; UI явно показывает отсутствие
+  execution, cleanup и Session enforcement;
 - `features/context` — context/cache/compaction;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-H projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-J projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
   P3-D retention, P3-E scoped Trash/Restore, P3-F/P3-G reasoning Chat Info и
-  P3-H explicit Session leave/recovery (current SQLite schema version 19),
+  P3-H explicit Session leave/recovery и P3-J Quick Run metadata
+  (current SQLite schema version 21),
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

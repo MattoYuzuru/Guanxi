@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-13
-**Текущая фаза:** Phase 3 — P3-J Quick Run retention foundation ready
+**Текущая фаза:** Phase 3 — P3-J implemented, independent review pending
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1791,6 +1791,40 @@ identity и shared retention-policy foundation; Quick Run Session completion т�
 orientation gate, потому что D-009/Q-23 определяют explicit leave только
 для Chat.
 
+## Phase 3 — P3-J Quick Run retention foundation
+
+**Статус:** implemented, locally validated; independent review pending
+
+Commits: `ffad811` (contract/migration/server/Web), `cfe8df0` (deterministic
+server/component/browser evidence).
+
+Append-only migration 21 создаёт canonical `quick_runs` отдельно от `threads`:
+immutable identity/operation/nullable Project ownership, restrictive Project FK,
+timestamps и shared Retention Policy version 1. Projectless и Project-owned
+records получают один default `7 days`; strict create/list/read/PATCH boundary
+fail-closed разделяет scopes, а direct policy choice Keep/7 days/Session не
+использует Save conversion.
+
+Web surface `/quick-runs` покрывает scoped loading/empty/error/retry, one-command
+create/update guards, focus return, English fallback и curated Russian. Он честно
+показывает, что execution/streaming, durable Job/Artifact association, cleanup и
+Session enforcement не реализованы. Orientation подтвердил отсутствие accepted
+события окончания Quick Run Session: Q-37 записан в `OPEN_QUESTIONS.md`, поэтому
+P3-J сохраняет policy metadata без выдуманной lifecycle семантики.
+
+Evidence по правилу WORKFLOW: **4 new / 627 core regression envelope**,
+**3 new / 213 Web component/parser envelope**, **1 new / 35 mocked Chromium
+envelope**. Targeted backend — 4/4, component — 3/3, Chromium — 1/1; full
+typecheck, core 627/627, Web 213/213, browser 35/35 и build прошли. Семь
+контролируемых mutations (`default`, `scope`, `project_fk`, `one_mutation`,
+`strict_version`, `no_save`, `no_effect`) дали expected non-zero и были
+восстановлены; `git diff --check` прошёл.
+
+Остаточный риск до review: synthetic SQLite и mocked browser; нет production DB
+corpus, multi-process writer race, real assistive technology/device или live
+Ollama/GPU/network. Execution/Artifact storage и all Quick Run cleanup намеренно
+вне slice; Q-37 блокирует только Session enforcement.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1890,7 +1924,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-J ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-J review pending    |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |
