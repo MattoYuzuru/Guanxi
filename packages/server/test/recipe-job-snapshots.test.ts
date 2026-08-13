@@ -150,7 +150,7 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seeded = openDb(path)
-    assert.equal(version(seeded), 24)
+    assert.equal(version(seeded), 25)
     const project = new ProjectStore(seeded).create('Exact v22 Project', AT)
     new RecipeStore(seeded, { clock: () => AT, createId: () => RECIPE_ID }).create({
       name: 'Exact v22 Recipe',
@@ -181,7 +181,7 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 24)
+    assert.equal(version(retried), 25)
     assert.equal(count(retried, 'recipe_job_snapshots'), 0)
     assert.equal(
       tablesPayload(retried, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
@@ -189,14 +189,14 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     )
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 24)
+    assert.equal(version(reopened), 25)
     assert.equal(
       tablesPayload(reopened, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
       exactV22,
     )
     reopened.close()
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 24)
+    assert.equal(version(fresh), 25)
     fresh.close()
   })
 

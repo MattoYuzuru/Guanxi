@@ -7,6 +7,7 @@ import {
   DEFAULT_CHAT_NUM_CTX,
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
+  compactThreadBody,
   compactThreadResponse,
   contextCheckpointQuery,
   createThreadBody,
@@ -404,12 +405,7 @@ export function threadsRoutes(app: AppContext): Hono {
     const messages = app.threads.messages(thread.id)
     const contextCheckpoints = app.threads.contextCheckpoints(thread.id)
     const activeMessages = app.threads.activeContextMessages(thread.id)
-    const hasCanonicalCheckpoint = contextCheckpoints.some(
-      (checkpoint) => checkpoint.source.state === 'source_preserved',
-    )
-    const lastUsage = hasCanonicalCheckpoint
-      ? null
-      : [...activeMessages].reverse().find((message) => message.usage)?.usage ?? null
+    const lastUsage = [...activeMessages].reverse().find((message) => message.usage)?.usage ?? null
 
     const response = {
       thread,
@@ -502,12 +498,7 @@ export function threadsRoutes(app: AppContext): Hono {
     if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
 
     const messages = app.threads.activeContextMessages(thread.id)
-    const hasCanonicalCheckpoint = app.threads
-      .contextCheckpoints(thread.id)
-      .some((checkpoint) => checkpoint.source.state === 'source_preserved')
-    const lastUsage = hasCanonicalCheckpoint
-      ? null
-      : [...messages].reverse().find((message) => message.usage)?.usage ?? null
+    const lastUsage = [...messages].reverse().find((message) => message.usage)?.usage ?? null
 
     return context.json(
       getContextResponse.parse(buildContextState({
@@ -611,6 +602,13 @@ export function threadsRoutes(app: AppContext): Hono {
 
   routes.post('/:id/compact', async (context) => {
     const threadId = context.req.param('id')
+    const parsed = compactThreadBody.safeParse(await context.req.json().catch(() => ({})))
+    if (!parsed.success) {
+      return context.json(
+        { code: 'validation_failed', message: 'Invalid context checkpoint intent', details: null },
+        400,
+      )
+    }
     if (!app.threads.get(threadId)) {
       return notFound(context, 'thread_not_found', 'Тред не найден')
     }
@@ -699,10 +697,11 @@ export function threadsRoutes(app: AppContext): Hono {
       )
 
       const checkpoint = app.threads.createContextCheckpoint({
+        checkpointId: parsed.data.idempotencyKey,
         threadId,
         upToSeq: selection.upToSeq,
         expectedPreviousCheckpointId: selection.expectedPreviousCheckpointId,
-        summary: `Сводка предыдущей части диалога:\n\n${summary}`,
+        summary,
       })
 
       const remaining = app.threads.activeContextMessages(threadId)

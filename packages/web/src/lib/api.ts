@@ -71,6 +71,7 @@ import {
   type ApprovalBody,
   type ChatStreamEvent,
   type CompletionProbeBody,
+  type CompactThreadBody,
   type HuggingFaceSearchBody,
   type HuggingFaceSelectionBody,
   type HuggingFaceDownloadBody,
@@ -388,8 +389,8 @@ export const api = {
   stopThread: (id: string, signal?: AbortSignal) =>
     request(ROUTES.threadStop(id), approvalResponse, { method: 'POST', signal }),
 
-  compactThread: (id: string, signal?: AbortSignal) =>
-    request(ROUTES.threadCompact(id), compactThreadResponse, { method: 'POST', signal }),
+  compactThread: (id: string, body: CompactThreadBody = {}, signal?: AbortSignal) =>
+    request(ROUTES.threadCompact(id), compactThreadResponse, { method: 'POST', body, signal }),
 
   getContext: (id: string, signal?: AbortSignal) =>
     request(ROUTES.threadContext(id), getContextResponse, { signal }),

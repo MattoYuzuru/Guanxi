@@ -1399,13 +1399,31 @@ describe('exclusive inference routes', () => {
       const thread = createThread(context, 'compact-model')
       seedMessages(context, thread.id, 0, 8)
 
+      for (const body of [
+        { idempotencyKey: 'not-a-uuid' },
+        { idempotencyKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', future: true },
+      ]) {
+        const invalid = await app.request(`/api/threads/${thread.id}/compact`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        assert.equal(invalid.status, 400)
+      }
+
       const firstCompaction = await app.request(`/api/threads/${thread.id}/compact`, {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ idempotencyKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
       })
       assert.equal(firstCompaction.status, 200)
-      const firstProjection = await firstCompaction.json() as Record<string, unknown>
+      const firstProjection = await firstCompaction.json() as {
+        checkpoint: { id: string }
+        [key: string]: unknown
+      }
       assert.equal('checkpoint' in firstProjection, true)
       assert.equal('message' in firstProjection, false)
+      assert.equal(firstProjection.checkpoint.id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
       seedMessages(context, thread.id, 9, 14)
       assert.equal(
         (await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })).status,
@@ -1440,16 +1458,33 @@ describe('exclusive inference routes', () => {
             previous: null,
             upToSeq: 4,
             messageCount: 5,
-            content: 'Сводка предыдущей части диалога:\n\nsummary-1',
+            content: 'summary-1',
           },
           {
             previous: context.threads.contextCheckpoints(thread.id)[0]!.id,
             upToSeq: 10,
             messageCount: 11,
-            content: 'Сводка предыдущей части диалога:\n\nsummary-2',
+            content: 'summary-2',
           },
         ],
       )
+
+      const postCheckpointTail = context.db.prepare(
+        'SELECT id FROM messages WHERE thread_id = ? AND seq = 14',
+      ).get(thread.id) as { id: string }
+      context.threads.updateMessage(postCheckpointTail.id, {
+        usage: {
+          promptTokens: 123,
+          evalTokens: 7,
+          promptEvalDurationMs: 50,
+          evalDurationMs: 10,
+          loadDurationMs: 0,
+          totalDurationMs: 60,
+          tokensPerSecond: 700,
+          cacheHit: true,
+          cachedTokens: 99,
+        },
+      })
 
       const hardReload = await app.request(
         `/api/threads/${thread.id}?contextCheckpointVersion=1`,
@@ -1458,11 +1493,25 @@ describe('exclusive inference routes', () => {
       const hardReloadBody = await hardReload.json() as {
         messages: Array<{ isCompaction: boolean }>
         contextCheckpoints: Array<{ id: string }>
+        context: { usedTokens: number; cacheHit: boolean; cachedTokens: number }
       }
       assert.equal(hardReloadBody.messages.length, 15)
       assert.equal(hardReloadBody.messages.some((message) => message.isCompaction), false)
       assert.equal(hardReloadBody.contextCheckpoints.length, 2)
       assert.equal(new Set(hardReloadBody.contextCheckpoints.map(({ id }) => id)).size, 2)
+      assert.equal(hardReloadBody.context.usedTokens, 123)
+      assert.equal(hardReloadBody.context.cacheHit, true)
+      assert.equal(hardReloadBody.context.cachedTokens, 99)
+      const contextRead = await app.request(`/api/threads/${thread.id}/context`)
+      assert.equal(contextRead.status, 200)
+      const contextBody = await contextRead.json() as {
+        usedTokens: number
+        cacheHit: boolean
+        cachedTokens: number
+      }
+      assert.equal(contextBody.usedTokens, 123)
+      assert.equal(contextBody.cacheHit, true)
+      assert.equal(contextBody.cachedTokens, 99)
       for (const query of [
         'contextCheckpointVersion=2',
         'contextCheckpointVersion=1&future=true',
@@ -1474,7 +1523,7 @@ describe('exclusive inference routes', () => {
       await (await send(app, thread.id, 'original-15')).text()
       const nextContext = turnRequests[0]?.messages.map((message) => message.content) ?? []
       assert.deepEqual(nextContext.slice(1), [
-        'Сводка предыдущей части диалога:\n\nsummary-2',
+        'summary-2',
         'original-11',
         'original-12',
         'original-13',

@@ -1136,6 +1136,18 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Checkpointed Messages are immutable');
     END;
   `,
+  // 25 — checkpoints are immutable unless their owning Thread is being deleted.
+  `
+  CREATE TRIGGER context_checkpoints_immutable_delete
+    BEFORE DELETE ON context_checkpoints
+    WHEN EXISTS (
+      SELECT 1 FROM threads owner
+      WHERE owner.id = OLD.thread_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Context checkpoints are immutable');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

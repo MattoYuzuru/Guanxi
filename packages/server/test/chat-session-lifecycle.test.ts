@@ -239,7 +239,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 24)
+    assert.equal(version(retried), 25)
     assert.deepEqual({ ...row(retried, chat.id) }, {
       retention_policy: 'ttl',
       chat_lifecycle_state: 'active',
@@ -288,7 +288,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     hardeningRolledBack.close()
 
     const hardened = openDb(path)
-    assert.equal(version(hardened), 24)
+    assert.equal(version(hardened), 25)
     assert.equal(exactPayload(hardened), beforeHardening)
     assert.throws(() => hardened.prepare(
       `UPDATE threads
@@ -299,7 +299,7 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
     ).run(NOW, NOW, chat.id), /invalid Chat lifecycle state/)
     hardened.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 24)
+    assert.equal(version(reopened), 25)
     assert.equal(exactPayload(reopened), before)
     reopened.close()
   })

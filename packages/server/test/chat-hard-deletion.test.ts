@@ -201,7 +201,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 24)
+    assert.equal(version(seed), 25)
     const chat = createChat(seed, 'Legacy final answer')
     new ThreadStore(seed).addMessage({
       threadId: chat.id,
@@ -259,7 +259,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 24)
+    assert.equal(version(retried), 25)
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
@@ -269,7 +269,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     ])), v19Payload)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 24)
+    assert.equal(version(reopened), 25)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
     assert.equal(allTablesPayload(reopened, new Set([
       'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
@@ -615,6 +615,36 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       parsedFrom: 'native',
       diff: null,
     })
+    for (let index = 0; index < 8; index += 1) {
+      threads.addMessage({
+        threadId: target.id,
+        role: 'user',
+        content: `private checkpoint source ${index}`,
+      })
+    }
+    const firstCheckpointSelection = threads.compactionCandidates(target.id, 4)!
+    const firstCheckpoint = threads.createContextCheckpoint({
+      threadId: target.id,
+      upToSeq: firstCheckpointSelection.upToSeq,
+      expectedPreviousCheckpointId: null,
+      summary: 'private checkpoint summary one',
+    })
+    for (let index = 8; index < 14; index += 1) {
+      threads.addMessage({
+        threadId: target.id,
+        role: 'user',
+        content: `private checkpoint source ${index}`,
+      })
+    }
+    const secondCheckpointSelection = threads.compactionCandidates(target.id, 4)!
+    threads.createContextCheckpoint({
+      threadId: target.id,
+      upToSeq: secondCheckpointSelection.upToSeq,
+      expectedPreviousCheckpointId: firstCheckpoint.id,
+      summary: 'private checkpoint summary two',
+    })
+    assert.equal(count(db, 'context_checkpoints', 'WHERE thread_id = ?', target.id), 2)
+    const targetMessageCount = count(db, 'messages', 'WHERE thread_id = ?', target.id)
     db.prepare(
       `INSERT INTO reasoning_artifact_deletion_audit (
          enforcement_version, artifact_id, artifact_version, chat_id, project_id,
@@ -647,7 +677,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     assert.throws(() => store.hardDeleteEligible(candidate, DEADLINE), /injected delete audit failure/u)
     assert.equal(allTablesPayload(db, new Set()), beforeAuditFailure)
     assert.equal(count(db, 'threads', 'WHERE id = ?', target.id), 1)
-    assert.equal(count(db, 'messages', 'WHERE thread_id = ?', target.id), 3)
+    assert.equal(count(db, 'messages', 'WHERE thread_id = ?', target.id), targetMessageCount)
     assert.equal(count(db, 'chat_deletion_audit'), 0)
     db.exec('DROP TRIGGER fail_chat_delete_audit')
 
@@ -666,9 +696,9 @@ describe('P3-I Session Chat metadata hard deletion', () => {
 
     assert.equal(store.hardDeleteEligible(candidate, DEADLINE), 1)
     assert.equal(store.hardDeleteEligible(candidate, DEADLINE), 0)
-    for (const table of ['threads', 'messages', 'tool_runs', 'chat_job_inputs', 'reasoning_artifacts', 'chat_lifecycle_audit']) {
+    for (const table of ['threads', 'messages', 'context_checkpoints', 'tool_runs', 'chat_job_inputs', 'reasoning_artifacts', 'chat_lifecycle_audit']) {
       const column = table === 'threads' ? 'id'
-        : table === 'messages' || table === 'tool_runs' ? 'thread_id'
+        : table === 'messages' || table === 'context_checkpoints' || table === 'tool_runs' ? 'thread_id'
           : table === 'chat_job_inputs' ? 'thread_id' : 'chat_id'
       assert.equal(count(db, table, `WHERE ${column} = ?`, target.id), 0, table)
     }
@@ -704,6 +734,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     for (const secret of [
       'Private target title', 'private prompt sentinel', 'private final answer sentinel',
       'private reasoning sentinel', 'private compaction sentinel',
+      'private checkpoint summary one', 'private checkpoint summary two',
       'private tool result sentinel', '/private/workspace/secret.txt',
     ]) assert.equal(serializedAudit.includes(secret), false, secret)
     const page = store.listTrash({ scope: 'project', projectId: project.id }, 20)

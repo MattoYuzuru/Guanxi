@@ -114,12 +114,12 @@ describe('P3-M non-destructive context checkpoints', () => {
     }).success, false)
   })
 
-  it('applies migration 24 on fresh/v23/reopen/retry and rolls back exact v23 bytes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-context-v24-'))
+  it('applies migrations 24-25 on fresh/v23/reopen/retry and rolls back exact v23 bytes', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-context-v25-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seeded = openDb(path)
-    assert.equal(version(seeded), 24)
+    assert.equal(version(seeded), 25)
     const threads = new ThreadStore(seeded)
     const thread = createThread(threads)
     seed(threads, thread.id, 0, 2)
@@ -141,12 +141,12 @@ describe('P3-M non-destructive context checkpoints', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 24)
+    assert.equal(version(retried), 25)
     assert.equal(count(retried, 'context_checkpoints'), 0)
     assert.equal(tablesPayload(retried, new Set(['context_checkpoints'])), exactV23)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 24)
+    assert.equal(version(reopened), 25)
     assert.equal(tablesPayload(reopened, new Set(['context_checkpoints'])), exactV23)
     reopened.close()
   })
@@ -214,6 +214,10 @@ describe('P3-M non-destructive context checkpoints', () => {
       /immutable/u,
     )
     assert.throws(
+      () => db.prepare('DELETE FROM context_checkpoints WHERE id = ?').run(second.id),
+      /immutable/u,
+    )
+    assert.throws(
       () => db.prepare('DELETE FROM messages WHERE thread_id = ? AND seq = ?').run(thread.id, 10),
       /Checkpointed Messages are immutable/u,
     )
@@ -263,13 +267,65 @@ describe('P3-M non-destructive context checkpoints', () => {
       expectedPreviousCheckpointId: null,
       summary: 'integrity',
     })
+    seed(threads, thread.id, 6, 11)
+    const secondSelection = threads.compactionCandidates(thread.id, 4)!
+    const second = threads.createContextCheckpoint({
+      threadId: thread.id,
+      upToSeq: secondSelection.upToSeq,
+      expectedPreviousCheckpointId: checkpoint.id,
+      summary: 'integrity-2',
+    })
     db.exec('DROP TRIGGER context_checkpoints_immutable_update')
-    db.prepare('UPDATE context_checkpoints SET summary_sha256 = ? WHERE id = ?')
-      .run('b'.repeat(64), checkpoint.id)
+    db.prepare('UPDATE context_checkpoints SET previous_checkpoint_id = NULL WHERE id = ?')
+      .run(second.id)
+    assert.throws(
+      () => threads.activeContextMessages(thread.id),
+      (error) => error instanceof ContextCheckpointStoreError && error.code === 'stored_data_invalid',
+    )
+    db.prepare('UPDATE context_checkpoints SET previous_checkpoint_id = ? WHERE id = ?')
+      .run(checkpoint.id, second.id)
+    db.prepare('UPDATE context_checkpoints SET source_message_count = source_message_count + 1 WHERE id = ?')
+      .run(second.id)
+    assert.throws(
+      () => threads.compactionCandidates(thread.id, 4),
+      (error) => error instanceof ContextCheckpointStoreError && error.code === 'stored_data_invalid',
+    )
+    db.prepare('UPDATE context_checkpoints SET source_message_count = source_message_count - 1 WHERE id = ?')
+      .run(second.id)
+    db.prepare('UPDATE context_checkpoints SET up_to_seq = up_to_seq - 1 WHERE id = ?')
+      .run(second.id)
     assert.throws(
       () => threads.contextCheckpoints(thread.id),
       (error) => error instanceof ContextCheckpointStoreError && error.code === 'stored_data_invalid',
     )
+    db.prepare('UPDATE context_checkpoints SET up_to_seq = up_to_seq + 1 WHERE id = ?')
+      .run(second.id)
+    db.prepare('UPDATE context_checkpoints SET summary_sha256 = ? WHERE id = ?')
+      .run('b'.repeat(64), second.id)
+    assert.throws(
+      () => threads.contextCheckpoints(thread.id),
+      (error) => error instanceof ContextCheckpointStoreError && error.code === 'stored_data_invalid',
+    )
+    db.close()
+  })
+
+  it('deduplicates one explicit checkpoint intent without creating another row', () => {
+    const db = openDb(':memory:')
+    const threads = new ThreadStore(db)
+    const thread = createThread(threads)
+    seed(threads, thread.id, 0, 5)
+    const selection = threads.compactionCandidates(thread.id, 4)!
+    const input = {
+      checkpointId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      threadId: thread.id,
+      upToSeq: selection.upToSeq,
+      expectedPreviousCheckpointId: null,
+      summary: 'stable intent',
+    }
+    const first = threads.createContextCheckpoint(input)
+    const repeated = threads.createContextCheckpoint(input)
+    assert.equal(repeated.id, first.id)
+    assert.equal(count(db, 'context_checkpoints'), 1)
     db.close()
   })
 

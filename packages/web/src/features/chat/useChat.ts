@@ -81,10 +81,7 @@ export type ChatState = {
 
 export function useChat(threadId: string | null, projectId: string | null = null) {
   const [state, setState] = useState<ChatState>(initialState)
-  const contextCheckpointIdsRef = useRef<Set<string>>(new Set())
-  contextCheckpointIdsRef.current = new Set(
-    state.contextCheckpoints.map((checkpoint) => checkpoint.id),
-  )
+  const compactionIntentIdRef = useRef<string | null>(null)
 
   // Буфер переживает перерисовки и не участвует в реконсиляции.
   const bufferRef = useRef<StreamBuffer>(null as unknown as StreamBuffer)
@@ -219,6 +216,7 @@ export function useChat(threadId: string | null, projectId: string | null = null
 
   useEffect(() => {
     // Смена треда обрывает незавершённый стрим предыдущего.
+    compactionIntentIdRef.current = null
     abortRef.current?.abort()
     abortRef.current = null
     bufferRef.current.reset()
@@ -442,18 +440,21 @@ export function useChat(threadId: string | null, projectId: string | null = null
   const compact = useCallback(async () => {
     const id = threadIdRef.current
     if (!id) return
+    const intentId = compactionIntentIdRef.current ?? crypto.randomUUID()
+    compactionIntentIdRef.current = intentId
     setCompacting(true)
     try {
       let result
       try {
-        result = await api.compactThread(id)
+        result = await api.compactThread(id, { idempotencyKey: intentId })
       } catch (commandError) {
         try {
           const recovered = await readThread(id)
           const committed = recovered.contextCheckpoints.some(
-            (checkpoint) => !contextCheckpointIdsRef.current.has(checkpoint.id),
+            (checkpoint) => checkpoint.id === intentId,
           )
           if (!committed) throw commandError
+          compactionIntentIdRef.current = null
           if (threadIdRef.current === id) {
             setState((previous) => ({
               ...previous,
@@ -470,6 +471,7 @@ export function useChat(threadId: string | null, projectId: string | null = null
           throw commandError
         }
       }
+      compactionIntentIdRef.current = null
       if (threadIdRef.current !== id) return result
       setState((previous) => ({
         ...previous,

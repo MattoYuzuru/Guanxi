@@ -136,12 +136,7 @@ export function projectsRoutes(app: AppContext): Hono {
     const messages = app.threads.messages(result.thread.id)
     const contextCheckpoints = app.threads.contextCheckpoints(result.thread.id)
     const activeMessages = app.threads.activeContextMessages(result.thread.id)
-    const hasCanonicalCheckpoint = contextCheckpoints.some(
-      (checkpoint) => checkpoint.source.state === 'source_preserved',
-    )
-    const lastUsage = hasCanonicalCheckpoint
-      ? null
-      : [...activeMessages].reverse().find((message) => message.usage)?.usage ?? null
+    const lastUsage = [...activeMessages].reverse().find((message) => message.usage)?.usage ?? null
     const response = {
       ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
       project: result.project,

@@ -3,7 +3,7 @@ import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test.use({ viewport: { width: 390, height: 844 } })
 
-test('context checkpoint preserves history, exposes retry/focus and survives hard reload once', async ({
+test('context checkpoint reconciles a lost POST response exactly and survives hard reload once', async ({
   page,
 }) => {
   const pageErrors: string[] = []
@@ -13,7 +13,6 @@ test('context checkpoint preserves history, exposes retry/focus and survives har
   await page.addInitScript((runtimeSnapshot) => {
     const observedAt = '2026-08-14T10:00:00.000Z'
     const threadId = 'thread-p3-m'
-    const checkpointId = 'checkpoint-p3-m'
     const thread = {
       id: threadId,
       title: 'P3-M preserved history',
@@ -40,7 +39,7 @@ test('context checkpoint preserves history, exposes retry/focus and survives har
       turnError: null,
       stopReason: index % 2 === 0 ? null : 'stop',
     }))
-    const checkpoint = {
+    const checkpoint = (checkpointId: string) => ({
       contextCheckpointVersion: 1,
       id: checkpointId,
       threadId,
@@ -53,7 +52,7 @@ test('context checkpoint preserves history, exposes retry/focus and survives har
         sha256: 'a'.repeat(64),
       },
       createdAt: observedAt,
-    }
+    })
     const beforeContext = {
       usedTokens: 7_000,
       allocatedTokens: 8_192,
@@ -115,6 +114,7 @@ test('context checkpoint preserves history, exposes retry/focus and survives har
     if (sessionStorage.getItem('p3m:created') === null) {
       sessionStorage.setItem('p3m:created', 'false')
       sessionStorage.setItem('p3m:attempts', '0')
+      sessionStorage.removeItem('p3m:checkpoint-id')
     }
 
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
@@ -127,6 +127,7 @@ test('context checkpoint preserves history, exposes retry/focus and survives har
       const method = (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET')
         .toUpperCase()
       const created = sessionStorage.getItem('p3m:created') === 'true'
+      const checkpointId = sessionStorage.getItem('p3m:checkpoint-id')
 
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
@@ -142,27 +143,17 @@ test('context checkpoint preserves history, exposes retry/focus and survives har
         return json({
           thread,
           messages,
-          contextCheckpoints: created ? [checkpoint] : [],
+          contextCheckpoints: created && checkpointId ? [checkpoint(checkpointId)] : [],
           context: created ? afterContext : beforeContext,
         })
       }
       if (url.pathname === `/api/threads/${threadId}/compact` && method === 'POST') {
         const attempts = Number(sessionStorage.getItem('p3m:attempts') ?? '0') + 1
         sessionStorage.setItem('p3m:attempts', String(attempts))
-        if (attempts === 1) {
-          return json({
-            code: 'storage_error',
-            message: 'Injected checkpoint persistence failure',
-            details: null,
-          }, 500)
-        }
+        const body = JSON.parse(String(init?.body)) as { idempotencyKey: string }
+        sessionStorage.setItem('p3m:checkpoint-id', body.idempotencyKey)
         sessionStorage.setItem('p3m:created', 'true')
-        return json({
-          checkpoint,
-          context: afterContext,
-          compactedTokens: 6_880,
-          estimatedRepefillMs: 720,
-        })
+        throw new TypeError('Failed to fetch after committed checkpoint')
       }
       return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
     }
@@ -174,24 +165,20 @@ test('context checkpoint preserves history, exposes retry/focus and survives har
   await page.getByRole('button', { name: 'Свернуть контекст' }).click()
   await page.getByRole('button', { name: 'Создать checkpoint' }).click()
 
-  const error = page.getByRole('alert').filter({ hasText: 'Injected checkpoint persistence failure' })
-  await expect(error).toBeVisible()
-  await expect(error).toBeFocused()
-  expect(await page.evaluate(() => sessionStorage.getItem('p3m:attempts'))).toBe('1')
-
-  await page.getByRole('button', { name: 'Повторить checkpoint' }).click()
-  const marker = page.locator('[data-context-checkpoint="checkpoint-p3-m"]')
+  const checkpointId = await page.evaluate(() => sessionStorage.getItem('p3m:checkpoint-id'))
+  expect(checkpointId).toMatch(/^[0-9a-f-]{36}$/u)
+  const marker = page.locator(`[data-context-checkpoint="${checkpointId}"]`)
   await expect(marker).toBeVisible()
   await expect(marker).toBeFocused()
+  expect(await page.evaluate(() => sessionStorage.getItem('p3m:attempts'))).toBe('1')
   await expect(marker).toContainText('История сохранена: 2 исходных сообщений')
   await expect(page.getByText('Visible checkpoint summary', { exact: true })).toHaveCount(1)
-  expect(await page.evaluate(() => sessionStorage.getItem('p3m:attempts'))).toBe('2')
   for (let index = 0; index < 6; index += 1) {
     await expect(page.getByText(`Original source ${index}`, { exact: true })).toHaveCount(1)
   }
 
   await page.reload()
-  await expect(page.locator('[data-context-checkpoint="checkpoint-p3-m"]')).toHaveCount(1)
+  await expect(page.locator(`[data-context-checkpoint="${checkpointId}"]`)).toHaveCount(1)
   await expect(page.getByText('Visible checkpoint summary', { exact: true })).toHaveCount(1)
   for (let index = 0; index < 6; index += 1) {
     await expect(page.getByText(`Original source ${index}`, { exact: true })).toHaveCount(1)

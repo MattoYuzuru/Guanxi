@@ -923,6 +923,12 @@ export const chatJobInputSnapshotSchema = z
   .strict()
 export type ChatJobInputSnapshot = z.infer<typeof chatJobInputSnapshotSchema>
 
+/** Stable client intent lets a lost POST response be reconciled exactly. */
+export const compactThreadBody = z
+  .object({ idempotencyKey: z.string().uuid().optional() })
+  .strict()
+export type CompactThreadBody = z.infer<typeof compactThreadBody>
+
 export const compactThreadResponse = z
   .object({
     checkpoint: contextCheckpointSchema,

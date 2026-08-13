@@ -322,25 +322,10 @@ export class ThreadStore {
   }
 
   delete(id: string): boolean {
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      this.db.prepare(
-        `DELETE FROM context_checkpoints
-         WHERE thread_id = ?
-           AND EXISTS (
-             SELECT 1 FROM threads
-             WHERE id = ? AND chat_lifecycle_state = 'active'
-           )`,
-      ).run(id, id)
-      const result = this.db
-        .prepare("DELETE FROM threads WHERE id = ? AND chat_lifecycle_state = 'active'")
-        .run(id)
-      this.db.exec('COMMIT')
-      return result.changes > 0
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    const result = this.db
+      .prepare("DELETE FROM threads WHERE id = ? AND chat_lifecycle_state = 'active'")
+      .run(id)
+    return result.changes > 0
   }
 
   private touch(threadId: string): void {
@@ -366,14 +351,7 @@ export class ThreadStore {
 
   /** Explicit canonical checkpoints plus projections of pre-v24 destructive summaries. */
   contextCheckpoints(threadId: string): ContextCheckpoint[] {
-    const canonical = (this.db
-      .prepare(
-        `SELECT * FROM context_checkpoints
-         WHERE thread_id = ? ORDER BY up_to_seq, id`,
-      )
-      .all(threadId) as unknown as ContextCheckpointRow[]).map((row) =>
-      this.toContextCheckpoint(row),
-    )
+    const canonical = this.canonicalContextCheckpoints(threadId)
     const legacy = (this.db
       .prepare(
         `SELECT m.*, NULL AS artifact_thinking, NULL AS artifact_version
@@ -415,9 +393,8 @@ export class ThreadStore {
 
   /** Only the latest summary plus the unsummarized original tail sent to a model. */
   activeContextMessages(threadId: string): Message[] {
-    const latest = this.latestContextCheckpointRow(threadId)
+    const latest = this.canonicalContextCheckpoints(threadId).at(-1)
     if (!latest) return this.messages(threadId)
-    const checkpoint = this.toContextCheckpoint(latest)
     const rows = this.db
       .prepare(
         `SELECT m.*, a.content_text AS artifact_thinking, a.artifact_version
@@ -425,8 +402,8 @@ export class ThreadStore {
          LEFT JOIN reasoning_artifacts a ON a.source_message_id = m.id
          WHERE m.thread_id = ? AND m.seq > ? ORDER BY m.seq`,
       )
-      .all(threadId, checkpoint.source.upToSeq) as unknown as MessageRow[]
-    return [this.checkpointMessage(checkpoint), ...rows.map(toMessage)]
+      .all(threadId, latest.source.upToSeq) as unknown as MessageRow[]
+    return [this.checkpointMessage(latest), ...rows.map(toMessage)]
   }
 
   /**
@@ -443,8 +420,7 @@ export class ThreadStore {
       )
       .all(threadId) as unknown as MessageRow[]
 
-    const latestRow = this.latestContextCheckpointRow(threadId)
-    const latest = latestRow ? this.toContextCheckpoint(latestRow) : null
+    const latest = this.canonicalContextCheckpoints(threadId).at(-1) ?? null
     const tail = latest ? rows.filter((row) => row.seq > latest.source.upToSeq) : rows
     const activeCount = tail.length + (latest ? 1 : 0)
     if (activeCount <= keepTail + 1) return null
@@ -467,6 +443,7 @@ export class ThreadStore {
   }
 
   createContextCheckpoint(input: {
+    checkpointId?: string
     threadId: string
     upToSeq: number
     expectedPreviousCheckpointId: string | null
@@ -481,7 +458,26 @@ export class ThreadStore {
     }
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      const latest = this.latestContextCheckpointRow(input.threadId)
+      const canonical = this.canonicalContextCheckpoints(input.threadId)
+      const existing = input.checkpointId
+        ? canonical.find((checkpoint) => checkpoint.id === input.checkpointId)
+        : null
+      if (existing) {
+        this.db.exec('COMMIT')
+        return existing
+      }
+      if (input.checkpointId) {
+        const collision = this.db
+          .prepare('SELECT thread_id FROM context_checkpoints WHERE id = ?')
+          .get(input.checkpointId) as { thread_id: string } | undefined
+        if (collision) {
+          throw new ContextCheckpointStoreError(
+            'invalid_input',
+            'Context checkpoint idempotency key belongs to another Thread',
+          )
+        }
+      }
+      const latest = canonical.at(-1) ?? null
       if ((latest?.id ?? null) !== input.expectedPreviousCheckpointId) {
         throw new ContextCheckpointStoreError(
           'stale_checkpoint',
@@ -498,7 +494,7 @@ export class ThreadStore {
           'Context checkpoint boundary was not found',
         )
       }
-      const id = randomUUID()
+      const id = input.checkpointId ?? randomUUID()
       const createdAt = new Date().toISOString()
       const byteSize = Buffer.byteLength(summary, 'utf8')
       const sha256 = createHash('sha256').update(Buffer.from(summary, 'utf8')).digest('hex')
@@ -519,9 +515,10 @@ export class ThreadStore {
         sha256,
         createdAt,
       )
-      const row = this.latestContextCheckpointRow(input.threadId)
-      if (!row || row.id !== id) throw new Error('Context checkpoint insert was not visible')
-      const checkpoint = this.toContextCheckpoint(row)
+      const checkpoint = this.canonicalContextCheckpoints(input.threadId).at(-1)
+      if (!checkpoint || checkpoint.id !== id) {
+        throw new Error('Context checkpoint insert was not visible')
+      }
       this.touch(input.threadId)
       this.db.exec('COMMIT')
       return checkpoint
@@ -706,13 +703,6 @@ export class ThreadStore {
     return { applied: result.changes > 0, message }
   }
 
-  private latestContextCheckpointRow(threadId: string): ContextCheckpointRow | null {
-    return (this.db.prepare(
-      `SELECT * FROM context_checkpoints
-       WHERE thread_id = ? ORDER BY up_to_seq DESC, id DESC LIMIT 1`,
-    ).get(threadId) as unknown as ContextCheckpointRow | undefined) ?? null
-  }
-
   private toContextCheckpoint(row: ContextCheckpointRow): ContextCheckpoint {
     const byteSize = Buffer.byteLength(row.summary_text, 'utf8')
     const sha256 = createHash('sha256')
@@ -747,6 +737,49 @@ export class ThreadStore {
       )
     }
     return parsed.data
+  }
+
+  private canonicalContextCheckpoints(threadId: string): ContextCheckpoint[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM context_checkpoints
+         WHERE thread_id = ? ORDER BY up_to_seq, id`,
+      )
+      .all(threadId) as unknown as ContextCheckpointRow[]
+    const checkpoints: ContextCheckpoint[] = []
+    let expectedPreviousCheckpointId: string | null = null
+    for (const row of rows) {
+      const checkpoint = this.toContextCheckpoint(row)
+      const source = this.db
+        .prepare(
+          `SELECT
+             EXISTS (
+               SELECT 1 FROM messages boundary
+               WHERE boundary.thread_id = ? AND boundary.seq = ?
+             ) AS boundary_exists,
+             COUNT(*) AS message_count
+           FROM messages source
+           WHERE source.thread_id = ? AND source.seq <= ?`,
+        )
+        .get(threadId, checkpoint.source.upToSeq, threadId, checkpoint.source.upToSeq) as {
+          boundary_exists: number
+          message_count: number
+        }
+      if (
+        checkpoint.threadId !== threadId ||
+        checkpoint.previousCheckpointId !== expectedPreviousCheckpointId ||
+        source.boundary_exists !== 1 ||
+        source.message_count !== checkpoint.source.messageCount
+      ) {
+        throw new ContextCheckpointStoreError(
+          'stored_data_invalid',
+          `Context checkpoint ${checkpoint.id} failed source-chain validation`,
+        )
+      }
+      checkpoints.push(checkpoint)
+      expectedPreviousCheckpointId = checkpoint.id
+    }
+    return checkpoints
   }
 
   private checkpointMessage(checkpoint: ContextCheckpoint): Message {

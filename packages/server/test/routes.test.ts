@@ -1136,10 +1136,55 @@ describe('project routes', () => {
       `/api/projects/${first.id}/chats/${created.id}?contextCheckpointVersion=1`,
     )
     assert.equal(checkpointRead.status, 200)
-    assert.deepEqual(
-      (await checkpointRead.json() as { contextCheckpoints: unknown[] }).contextCheckpoints,
-      [],
+    assert.deepEqual((await checkpointRead.json() as { contextCheckpoints: unknown[] }).contextCheckpoints, [])
+
+    const projectThreads = new ThreadStore(context.db)
+    for (let index = 0; index < 6; index += 1) {
+      projectThreads.addMessage({
+        threadId: created.id,
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `project source ${index}`,
+        turnStatus: index % 2 === 0 ? null : 'completed',
+      })
+    }
+    const projectSelection = projectThreads.compactionCandidates(created.id, 4)!
+    const projectCheckpoint = projectThreads.createContextCheckpoint({
+      threadId: created.id,
+      upToSeq: projectSelection.upToSeq,
+      expectedPreviousCheckpointId: null,
+      summary: 'project checkpoint',
+    })
+    projectThreads.addMessage({
+      threadId: created.id,
+      role: 'assistant',
+      content: 'post-checkpoint measured tail',
+      turnStatus: 'completed',
+      usage: {
+        promptTokens: 321,
+        evalTokens: 8,
+        promptEvalDurationMs: 50,
+        evalDurationMs: 10,
+        loadDurationMs: 0,
+        totalDurationMs: 60,
+        tokensPerSecond: 800,
+        cacheHit: true,
+        cachedTokens: 222,
+      },
+    })
+    const measuredProjectRead = await app.request(
+      `/api/projects/${first.id}/chats/${created.id}?contextCheckpointVersion=1`,
     )
+    assert.equal(measuredProjectRead.status, 200)
+    const measuredProjectBody = await measuredProjectRead.json() as {
+      messages: unknown[]
+      contextCheckpoints: Array<{ id: string }>
+      context: { usedTokens: number; cacheHit: boolean; cachedTokens: number }
+    }
+    assert.equal(measuredProjectBody.messages.length, 7)
+    assert.deepEqual(measuredProjectBody.contextCheckpoints.map(({ id }) => id), [projectCheckpoint.id])
+    assert.equal(measuredProjectBody.context.usedTokens, 321)
+    assert.equal(measuredProjectBody.context.cacheHit, true)
+    assert.equal(measuredProjectBody.context.cachedTokens, 222)
     for (const query of [
       'contextCheckpointVersion=2',
       'contextCheckpointVersion=1&future=1',
