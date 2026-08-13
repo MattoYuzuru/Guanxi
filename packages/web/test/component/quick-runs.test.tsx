@@ -87,6 +87,11 @@ describe('QuickRunsPage', () => {
 
   it('creates exact Project metadata once, stays truthful and uses English fallback', async () => {
     document.documentElement.lang = 'fr'
+    const animationFrame = vi.spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        callback(0)
+        return 1
+      })
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [PROJECT] })
     vi.spyOn(api, 'listQuickRuns').mockImplementation(async (query) => ({
       quickRunVersion: 1,
@@ -117,10 +122,12 @@ describe('QuickRunsPage', () => {
     })
     await act(async () => creation.resolve(quickRun('ttl', PROJECT.id)))
     expect(await screen.findByText('1 Quick Run(s)')).toBeTruthy()
+    await waitFor(() => expect(create).toBe(document.activeElement))
     expect(screen.getAllByText('Execution not implemented')).toHaveLength(1)
     expect(screen.getAllByText('Not implemented')).toHaveLength(3)
     expect(screen.queryByRole('button', { name: /save|run|execute/iu })).toBeNull()
     expect(screen.queryByText(/thread/iu)).toBeNull()
+    animationFrame.mockRestore()
   })
 
   it('coalesces retention mutation, focuses failure and retries the exact policy without Save', async () => {

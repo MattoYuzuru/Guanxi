@@ -109,6 +109,7 @@ function QuickRunScopePanel({
   const [reload, setReload] = useState(0)
   const [operation, setOperation] = useState<QuickRunOperation>('complete')
   const [creating, setCreating] = useState(false)
+  const [restoreCreateFocus, setRestoreCreateFocus] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
@@ -157,6 +158,13 @@ function QuickRunScopePanel({
     if (loadError) requestAnimationFrame(() => errorHeadingRef.current?.focus())
   }, [loadError])
 
+  useEffect(() => {
+    if (!creating && restoreCreateFocus) {
+      createButtonRef.current?.focus()
+      setRestoreCreateFocus(false)
+    }
+  }, [creating, restoreCreateFocus])
+
   const create = async (event: FormEvent) => {
     event.preventDefault()
     if (creatingRef.current) return
@@ -174,13 +182,12 @@ function QuickRunScopePanel({
         : { quickRunVersion: QUICK_RUN_VERSION, operation, scope: 'projectless' })
       if (!matchesScope(created, scope)) throw new Error(translate('quickRuns.scopeMismatch'))
       setQuickRuns((current) => [created, ...(current ?? [])])
-      requestAnimationFrame(() => createButtonRef.current?.focus())
     } catch (error) {
       setCreateError(errorMessage(error))
-      requestAnimationFrame(() => createButtonRef.current?.focus())
     } finally {
       creatingRef.current = false
       setCreating(false)
+      setRestoreCreateFocus(true)
     }
   }
 
