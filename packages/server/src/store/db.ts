@@ -1148,6 +1148,165 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Context checkpoints are immutable');
     END;
   `,
+  // 26 — immutable generic Artifact metadata and content-addressed blob references.
+  // Files remain server-owned; this schema stores only a canonical relative key.
+  `
+  CREATE TABLE artifact_blobs (
+    checksum    TEXT PRIMARY KEY CHECK (
+      checksum GLOB 'sha256:*'
+      AND length(checksum) = 71
+      AND substr(checksum, 8) NOT GLOB '*[^0-9a-f]*'
+    ),
+    byte_size   INTEGER NOT NULL CHECK (byte_size BETWEEN 0 AND 9007199254740991),
+    storage_key TEXT NOT NULL UNIQUE CHECK (
+      storage_key = 'sha256/' || substr(checksum, 8, 2) || '/' || substr(checksum, 8)
+    ),
+    created_at  TEXT NOT NULL CHECK (
+      created_at GLOB '????-??-??T??:??:??.???Z'
+      AND julianday(created_at) IS NOT NULL
+    )
+  );
+
+  CREATE TABLE artifacts (
+    id                 TEXT PRIMARY KEY CHECK (
+      length(id) = 36
+      AND id = lower(id)
+      AND substr(id, 9, 1) = '-'
+      AND substr(id, 14, 1) = '-'
+      AND substr(id, 19, 1) = '-'
+      AND substr(id, 24, 1) = '-'
+      AND replace(id, '-', '') NOT GLOB '*[^0-9a-f]*'
+    ),
+    artifact_version   INTEGER NOT NULL CHECK (artifact_version = 1),
+    write_intent_key   TEXT NOT NULL UNIQUE CHECK (
+      length(write_intent_key) = 36
+      AND write_intent_key = lower(write_intent_key)
+      AND substr(write_intent_key, 9, 1) = '-'
+      AND substr(write_intent_key, 14, 1) = '-'
+      AND substr(write_intent_key, 19, 1) = '-'
+      AND substr(write_intent_key, 24, 1) = '-'
+      AND replace(write_intent_key, '-', '') NOT GLOB '*[^0-9a-f]*'
+    ),
+    kind               TEXT NOT NULL CHECK (kind IN (
+      'text','reasoning','transcript','image','audio','video','document',
+      'structured','embedding','file','checkpoint','report'
+    )),
+    media_type         TEXT NOT NULL CHECK (
+      length(media_type) BETWEEN 3 AND 255
+      AND media_type = lower(media_type)
+      AND instr(media_type, '/') BETWEEN 2 AND length(media_type) - 1
+      AND instr(media_type, char(0)) = 0
+      AND instr(media_type, char(9)) = 0
+      AND instr(media_type, char(10)) = 0
+      AND instr(media_type, char(13)) = 0
+    ),
+    blob_checksum      TEXT NOT NULL REFERENCES artifact_blobs(checksum) ON DELETE RESTRICT,
+    project_id         TEXT REFERENCES projects(id) ON DELETE RESTRICT,
+    source_job_id      TEXT REFERENCES jobs(id) ON DELETE RESTRICT,
+    parent_artifact_id TEXT REFERENCES artifacts(id) ON DELETE RESTRICT,
+    retention_mode     TEXT NOT NULL CHECK (retention_mode = 'keep'),
+    reference_state    TEXT NOT NULL CHECK (reference_state = 'referenced'),
+    created_at         TEXT NOT NULL CHECK (
+      created_at GLOB '????-??-??T??:??:??.???Z'
+      AND julianday(created_at) IS NOT NULL
+    )
+  );
+  CREATE INDEX idx_artifacts_blob ON artifacts(blob_checksum, id);
+  CREATE INDEX idx_artifacts_project ON artifacts(project_id, created_at, id);
+  CREATE INDEX idx_artifacts_job ON artifacts(source_job_id, created_at, id);
+  CREATE INDEX idx_artifacts_parent ON artifacts(parent_artifact_id, created_at, id);
+
+  CREATE TRIGGER artifacts_parent_scope_insert
+    BEFORE INSERT ON artifacts
+    WHEN NEW.parent_artifact_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM artifacts parent
+      WHERE parent.id = NEW.parent_artifact_id
+        AND parent.project_id IS NEW.project_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Artifact parent ownership mismatch');
+    END;
+
+  CREATE TRIGGER artifacts_job_scope_insert
+    BEFORE INSERT ON artifacts
+    WHEN NEW.source_job_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM jobs job
+      WHERE job.id = NEW.source_job_id
+        AND (
+          (
+            EXISTS (
+              SELECT 1 FROM chat_job_inputs input
+              JOIN threads thread ON thread.id = input.thread_id
+              WHERE input.job_id = job.id AND thread.project_id IS NEW.project_id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM recipe_job_snapshots snapshot WHERE snapshot.job_id = job.id
+            )
+          )
+          OR
+          (
+            EXISTS (
+              SELECT 1 FROM recipe_job_snapshots snapshot
+              WHERE snapshot.job_id = job.id AND snapshot.project_id IS NEW.project_id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM chat_job_inputs input WHERE input.job_id = job.id
+            )
+          )
+        )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Artifact source Job ownership mismatch');
+    END;
+
+  CREATE TRIGGER artifact_chat_job_scope_insert
+    BEFORE INSERT ON chat_job_inputs
+    WHEN EXISTS (
+      SELECT 1 FROM artifacts artifact
+      JOIN threads thread ON thread.id = NEW.thread_id
+      WHERE artifact.source_job_id = NEW.job_id
+        AND artifact.project_id IS NOT thread.project_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Artifact source Job ownership mismatch');
+    END;
+
+  CREATE TRIGGER artifact_recipe_job_scope_insert
+    BEFORE INSERT ON recipe_job_snapshots
+    WHEN EXISTS (
+      SELECT 1 FROM artifacts artifact
+      WHERE artifact.source_job_id = NEW.job_id
+        AND artifact.project_id IS NOT NEW.project_id
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Artifact source Job ownership mismatch');
+    END;
+
+  CREATE TRIGGER artifacts_immutable_update
+    BEFORE UPDATE ON artifacts
+    BEGIN
+      SELECT RAISE(ABORT, 'Artifacts are immutable');
+    END;
+
+  CREATE TRIGGER artifacts_immutable_delete
+    BEFORE DELETE ON artifacts
+    BEGIN
+      SELECT RAISE(ABORT, 'Referenced Artifacts cannot be deleted');
+    END;
+
+  CREATE TRIGGER artifact_blobs_immutable_update
+    BEFORE UPDATE ON artifact_blobs
+    BEGIN
+      SELECT RAISE(ABORT, 'Artifact blobs are immutable');
+    END;
+
+  CREATE TRIGGER referenced_artifact_blobs_delete
+    BEFORE DELETE ON artifact_blobs
+    WHEN EXISTS (SELECT 1 FROM artifacts artifact WHERE artifact.blob_checksum = OLD.checksum)
+    BEGIN
+      SELECT RAISE(ABORT, 'Referenced Artifact blobs cannot be deleted');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

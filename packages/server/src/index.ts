@@ -17,6 +17,16 @@ import { defaultDbPath } from './store/db.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
 export { RecipeStore } from './store/recipes.ts'
+export { ArtifactStore, ArtifactStoreError } from './store/artifacts.ts'
+export type {
+  ArtifactDownloadHeaders,
+  ArtifactOrphanInventory,
+  ArtifactReadOptions,
+  ArtifactStoreErrorCode,
+  ArtifactStoreHooks,
+  ArtifactStoreOptions,
+  ArtifactWriteOptions,
+} from './store/artifacts.ts'
 export { JobService, JobServiceError } from './jobs/service.ts'
 export {
   RESOURCE_GOVERNOR_CLOSE_REASON,

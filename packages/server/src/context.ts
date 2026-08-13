@@ -45,6 +45,7 @@ import { ThreadStore } from './store/threads.ts'
 import { ChatRetentionStore } from './store/chat-retention.ts'
 import { WorkspaceStore } from './store/workspaces.ts'
 import { ReasoningArtifactStore } from './store/reasoning-artifacts.ts'
+import { ArtifactStore } from './store/artifacts.ts'
 
 export const DEFAULT_OLLAMA_HOST = process.env['OLLAMA_HOST']
   ? normalizeHost(process.env['OLLAMA_HOST'])
@@ -57,6 +58,8 @@ function normalizeHost(host: string): string {
 
 export interface AppContext {
   db: Db
+  /** Generic immutable metadata + content-addressed blob boundary; no public raw paths. */
+  artifacts: ArtifactStore
   jobs: JobStore
   jobService: JobService
   chatExecution: ChatJobExecutionOwner
@@ -183,6 +186,10 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     const jobService = new JobService(jobs)
     const base = {
       db,
+      artifacts: new ArtifactStore({
+        db,
+        rootDir: join(dirname(options.dbPath), 'artifacts'),
+      }),
       jobs,
       jobService,
       threads,
