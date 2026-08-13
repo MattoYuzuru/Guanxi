@@ -211,6 +211,12 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await expect.poll(() => snapshotCalls).toBe(1)
   const snapshotError = page.getByRole('alert').filter({ hasText: 'safe Recipe snapshot browser failure' })
   await expect(snapshotError).toBeFocused()
+  const errorOutline = await snapshotError.evaluate((element) => ({
+    style: getComputedStyle(element).outlineStyle,
+    width: getComputedStyle(element).outlineWidth,
+  }))
+  expect(errorOutline.style).toBe('solid')
+  expect(errorOutline.width).not.toBe('0px')
   await page.getByRole('button', { name: 'Повторить тот же запрос Job' }).press('Enter')
   await expect.poll(() => snapshotCalls).toBe(2)
   expect(snapshotBodies[0]).toEqual(snapshotBodies[1])

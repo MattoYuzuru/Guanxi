@@ -387,6 +387,12 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     insertJob(missingEventJob, { event: false })
     assert.throws(() => insertSnapshot(missingEventJob), /Job mismatch/u)
 
+    const malformedEventJob = '66666666-6666-4666-8666-666666666666'
+    insertJob(malformedEventJob)
+    db.prepare('UPDATE job_events SET metadata = ? WHERE job_id = ?')
+      .run('{"unexpected":"private"}', malformedEventJob)
+    assert.throws(() => insertSnapshot(malformedEventJob), /Job mismatch/u)
+
     const wrongIdentityJob = '44444444-4444-4444-8444-444444444444'
     insertJob(wrongIdentityJob, { idempotencyScope: 'public:v1' })
     assert.throws(() => insertSnapshot(wrongIdentityJob), /Job mismatch/u)
