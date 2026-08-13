@@ -21,6 +21,7 @@ import { ChatPage } from './features/chat/ChatPage.tsx'
 import { SettingsPage } from './features/settings/SettingsPage.tsx'
 import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
 import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
+import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { translate } from './lib/locale.ts'
 
 export function App() {
@@ -78,6 +79,7 @@ export function App() {
             </ErrorBoundary>
           )}
           {route.name === 'quickRuns' && <QuickRunsPage />}
+          {route.name === 'recipes' && <RecipesPage />}
           {route.name === 'settings' && <SettingsPage />}
           {route.name === 'projects' && <ProjectsPage />}
           {route.name === 'notFound' && (
@@ -111,6 +113,11 @@ function TopBar() {
       to: paths.quickRuns(),
       label: translate('quickRuns.navigation'),
       active: route.name === 'quickRuns',
+    },
+    {
+      to: paths.recipes(),
+      label: translate('recipes.navigation'),
+      active: route.name === 'recipes',
     },
     {
       to: paths.projects(),

@@ -16,6 +16,7 @@ import {
   createThreadResponse,
   createProjectChatResponse,
   createQuickRunResponse,
+  createRecipeResponse,
   getContextResponse,
   getChatRetentionResponse,
   getHealthResponse,
@@ -26,6 +27,8 @@ import {
   getThreadResponse,
   getProjectChatResponse,
   getQuickRunResponse,
+  getRecipeResponse,
+  getRecipeRevisionResponse,
   huggingFaceRepositoryResponse,
   huggingFaceSearchResponse,
   huggingFaceSelectionResponse,
@@ -42,6 +45,7 @@ import {
   listProjectChatsResponse,
   listProjectlessChatsResponse,
   listQuickRunsResponse,
+  listRecipesResponse,
   listRunningResponse,
   listThreadsResponse,
   listWorkspacesResponse,
@@ -57,6 +61,8 @@ import {
   projectWithPresentationSchema,
   restoreChatResponse,
   updateQuickRunRetentionResponse,
+  renameRecipeResponse,
+  reviseRecipeResponse,
   PROJECT_PRESENTATION_VERSION,
   PROJECT_CHAT_OWNERSHIP_VERSION,
   type ApiError,
@@ -77,6 +83,7 @@ import {
   type CreateProjectBody,
   type CreateProjectChatBody,
   type CreateQuickRunBody,
+  type CreateRecipeBody,
   type PullStreamEvent,
   type PrewarmModelBody,
   type SendMessageBody,
@@ -91,6 +98,9 @@ import {
   type LeaveSessionChatBody,
   type RestoreChatBody,
   type QuickRunScopeQuery,
+  type RecipeScopeQuery,
+  type RenameRecipeBody,
+  type ReviseRecipeBody,
   type UpdateQuickRunRetentionBody,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
@@ -534,6 +544,51 @@ export const api = {
     body,
     signal,
   }),
+
+  /* Recipe identity and immutable revisions; execution remains a separate boundary. */
+
+  listRecipes: (query: RecipeScopeQuery, signal?: AbortSignal) =>
+    request(ROUTES.recipes(), listRecipesResponse, {
+      query: {
+        recipeVersion: query.recipeVersion,
+        scope: query.scope,
+        projectId: query.scope === 'project' ? query.projectId : undefined,
+      },
+      signal,
+    }),
+
+  createRecipe: (body: CreateRecipeBody, signal?: AbortSignal) =>
+    request(ROUTES.recipes(), createRecipeResponse, { method: 'POST', body, signal }),
+
+  getRecipe: (id: string, query: RecipeScopeQuery, signal?: AbortSignal) =>
+    request(ROUTES.recipe(id), getRecipeResponse, {
+      query: {
+        recipeVersion: query.recipeVersion,
+        scope: query.scope,
+        projectId: query.scope === 'project' ? query.projectId : undefined,
+      },
+      signal,
+    }),
+
+  getRecipeRevision: (
+    id: string,
+    revision: number,
+    query: RecipeScopeQuery,
+    signal?: AbortSignal,
+  ) => request(ROUTES.recipeRevision(id, revision), getRecipeRevisionResponse, {
+    query: {
+      recipeVersion: query.recipeVersion,
+      scope: query.scope,
+      projectId: query.scope === 'project' ? query.projectId : undefined,
+    },
+    signal,
+  }),
+
+  renameRecipe: (id: string, body: RenameRecipeBody, signal?: AbortSignal) =>
+    request(ROUTES.recipeName(id), renameRecipeResponse, { method: 'PATCH', body, signal }),
+
+  reviseRecipe: (id: string, body: ReviseRecipeBody, signal?: AbortSignal) =>
+    request(ROUTES.recipeRevisions(id), reviseRecipeResponse, { method: 'POST', body, signal }),
 
   /**
    * Единственный способ увидеть файловую систему. Фронт её сам не читает —

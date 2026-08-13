@@ -16,6 +16,7 @@ import { defaultDbPath } from './store/db.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
+export { RecipeStore } from './store/recipes.ts'
 export { JobService, JobServiceError } from './jobs/service.ts'
 export {
   RESOURCE_GOVERNOR_CLOSE_REASON,

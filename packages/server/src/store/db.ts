@@ -853,6 +853,81 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Quick Run identity is immutable');
     END;
   `,
+  // 22 — canonical Recipe identity and immutable numbered configuration revisions.
+  // Execution, routing policy and Job snapshot wiring deliberately remain absent.
+  `
+  CREATE TABLE recipes (
+    id               TEXT PRIMARY KEY,
+    recipe_version   INTEGER NOT NULL CHECK (recipe_version = 1),
+    project_id       TEXT REFERENCES projects(id) ON DELETE RESTRICT,
+    name             TEXT NOT NULL CHECK (length(trim(name)) > 0 AND name = trim(name)),
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    current_revision INTEGER NOT NULL CHECK (current_revision >= 1),
+    CHECK (updated_at >= created_at)
+  );
+  CREATE INDEX idx_recipes_scope_updated
+    ON recipes(project_id, updated_at DESC, id);
+
+  CREATE TABLE recipe_revisions (
+    recipe_id                TEXT NOT NULL REFERENCES recipes(id) ON DELETE RESTRICT,
+    revision_number          INTEGER NOT NULL CHECK (revision_number >= 1),
+    recipe_revision_version  INTEGER NOT NULL CHECK (recipe_revision_version = 1),
+    operation                TEXT NOT NULL CHECK (operation IN (
+      'complete','embed','transcribe','textToSpeech','ocr','caption','generateImage','generateVideo'
+    )),
+    model_state              TEXT NOT NULL CHECK (model_state IN ('none','explicit')),
+    model_provider           TEXT,
+    model_reference          TEXT,
+    instructions             TEXT NOT NULL,
+    default_parameters_json  TEXT NOT NULL CHECK (json_valid(default_parameters_json)),
+    retention_policy         TEXT NOT NULL CHECK (retention_policy IN ('keep','ttl','session')),
+    configuration_json       TEXT NOT NULL CHECK (json_valid(configuration_json)),
+    configuration_byte_size  INTEGER NOT NULL CHECK (configuration_byte_size >= 0),
+    configuration_sha256     TEXT NOT NULL CHECK (
+      length(configuration_sha256) = 64 AND configuration_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    created_at               TEXT NOT NULL,
+    PRIMARY KEY (recipe_id, revision_number),
+    CHECK (
+      (model_state = 'none' AND model_provider IS NULL AND model_reference IS NULL)
+      OR
+      (model_state = 'explicit' AND model_provider = 'ollama'
+        AND model_reference IS NOT NULL AND length(trim(model_reference)) > 0
+        AND model_reference = trim(model_reference))
+    )
+  );
+  CREATE INDEX idx_recipe_revisions_created
+    ON recipe_revisions(recipe_id, revision_number DESC);
+
+  CREATE TRIGGER recipes_identity_immutable
+    BEFORE UPDATE OF id, recipe_version, project_id, created_at ON recipes
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe identity and Project ownership are immutable');
+    END;
+
+  CREATE TRIGGER recipe_revisions_immutable_update
+    BEFORE UPDATE ON recipe_revisions
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe revisions are immutable');
+    END;
+
+  CREATE TRIGGER recipe_revisions_immutable_delete
+    BEFORE DELETE ON recipe_revisions
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe revisions are immutable');
+    END;
+
+  CREATE TRIGGER recipes_current_revision_must_exist
+    BEFORE UPDATE OF current_revision ON recipes
+    WHEN NOT EXISTS (
+      SELECT 1 FROM recipe_revisions
+      WHERE recipe_id = OLD.id AND revision_number = NEW.current_revision
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe current revision must already exist');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

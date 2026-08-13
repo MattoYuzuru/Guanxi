@@ -41,6 +41,24 @@ export type {
   QuickRunScopeQuery,
   UpdateQuickRunRetentionBody,
 } from './quick-runs.ts'
+export {
+  createRecipeBody,
+  createRecipeResponse,
+  getRecipeResponse,
+  getRecipeRevisionResponse,
+  listRecipesResponse,
+  recipeScopeQuery,
+  renameRecipeBody,
+  renameRecipeResponse,
+  reviseRecipeBody,
+  reviseRecipeResponse,
+} from './recipes.ts'
+export type {
+  CreateRecipeBody,
+  RecipeScopeQuery,
+  RenameRecipeBody,
+  ReviseRecipeBody,
+} from './recipes.ts'
 import {
   catalogModelSchema,
   catalogSourceHealthSchema,
@@ -147,6 +165,13 @@ export const ROUTES = {
   quickRuns: () => '/api/quick-runs',
   quickRun: (id: string) => `/api/quick-runs/${encodeURIComponent(id)}`,
   quickRunRetention: (id: string) => `/api/quick-runs/${encodeURIComponent(id)}/retention`,
+
+  recipes: () => '/api/recipes',
+  recipe: (id: string) => `/api/recipes/${encodeURIComponent(id)}`,
+  recipeName: (id: string) => `/api/recipes/${encodeURIComponent(id)}/name`,
+  recipeRevisions: (id: string) => `/api/recipes/${encodeURIComponent(id)}/revisions`,
+  recipeRevision: (id: string, revision: number) =>
+    `/api/recipes/${encodeURIComponent(id)}/revisions/${revision}`,
 
   approval: (toolCallId: string) => `/api/approvals/${toolCallId}`,
 

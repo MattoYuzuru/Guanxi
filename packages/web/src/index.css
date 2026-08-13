@@ -533,7 +533,18 @@
     forced-color-adjust: auto;
   }
 
+  .recipe-card {
+    border-color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
   .quick-run-card button:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+
+
+  .recipe-card button:focus-visible {
     outline: 3px solid Highlight;
     outline-offset: 2px;
   }
