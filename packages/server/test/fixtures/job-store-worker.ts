@@ -2,6 +2,7 @@ import { parentPort, workerData } from 'node:worker_threads'
 import type {
   AppendJobEventInput,
   CreateJobInput,
+  CreateRecipeJobSnapshotInput,
   TransitionJobInput,
 } from '../../src/store/jobs.ts'
 import { openDb } from '../../src/store/db.ts'
@@ -12,6 +13,7 @@ type WorkerTask =
   | { operation: 'append'; input: AppendJobEventInput }
   | { operation: 'transition'; input: TransitionJobInput }
   | { operation: 'terminalize'; input: TerminalizeJobInput }
+  | { operation: 'createRecipeSnapshot'; input: CreateRecipeJobSnapshotInput }
 
 interface WorkerFixtureData {
   dbPath: string
@@ -35,7 +37,8 @@ try {
   if (fixture.task.operation === 'create') result = jobs.create(fixture.task.input)
   else if (fixture.task.operation === 'append') result = jobs.appendEvent(fixture.task.input)
   else if (fixture.task.operation === 'transition') result = jobs.transition(fixture.task.input)
-  else result = jobs.terminalize(fixture.task.input)
+  else if (fixture.task.operation === 'terminalize') result = jobs.terminalize(fixture.task.input)
+  else result = jobs.createRecipeSnapshot(fixture.task.input)
   db.close()
   parentPort?.postMessage({ ok: true, result })
 } catch (error) {

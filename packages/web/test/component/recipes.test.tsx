@@ -1,11 +1,18 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Project, Recipe, RecipeConfiguration } from '@alamo/contract'
+import type {
+  CreateRecipeJobSnapshotResponse,
+  Project,
+  Recipe,
+  RecipeConfiguration,
+} from '@alamo/contract'
 import { RecipesPage } from '../../src/features/recipes/RecipesPage.tsx'
 import { ApiRequestError, api } from '../../src/lib/api.ts'
 
 const AT = '2026-08-13T12:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
+const JOB_ID = '22222222-2222-4222-8222-222222222222'
+const IDEMPOTENCY_KEY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const PROJECT: Project = {
   id: 'project-1', name: 'Exact Project', createdAt: AT, updatedAt: AT, filesystemBindings: [],
 }
@@ -38,7 +45,46 @@ function recipe(revision = 1, projectId: string | null = null, name = 'Exact Rec
     },
     advancedRouting: 'not_implemented',
     execution: 'not_implemented',
-    jobSnapshot: 'not_implemented',
+    jobSnapshot: 'queued_snapshot_only',
+  }
+}
+
+function snapshotProjection(created = true): CreateRecipeJobSnapshotResponse {
+  const exact = recipe()
+  return {
+    created,
+    job: {
+      id: JOB_ID,
+      kind: 'inference',
+      operation: 'complete',
+      status: 'queued',
+      phase: null,
+      idempotencyScope: 'recipe_job_snapshot:v1',
+      idempotencyKey: IDEMPOTENCY_KEY,
+      createdAt: AT,
+      startedAt: null,
+      finishedAt: null,
+      error: null,
+      outcome: null,
+      stopReason: null,
+      lastEventSequence: 1,
+    },
+    snapshot: {
+      recipeJobSnapshotVersion: 1,
+      jobId: JOB_ID,
+      jobKind: 'inference',
+      recipeId: ID,
+      recipeRevision: 1,
+      scope: 'projectless',
+      projectId: null,
+      operation: 'complete',
+      model: exact.currentRevision.configuration.model,
+      configuration: exact.currentRevision.configuration,
+      canonical: exact.currentRevision.canonical,
+      createdAt: AT,
+      execution: 'not_implemented',
+    },
+    eventsUrl: `/api/jobs/${JOB_ID}/events`,
   }
 }
 
@@ -55,6 +101,7 @@ function deferred<T>() {
 afterEach(() => {
   vi.restoreAllMocks()
   document.documentElement.lang = 'ru'
+  window.history.replaceState(null, '', '/')
 })
 
 describe('RecipesPage', () => {
@@ -90,7 +137,7 @@ describe('RecipesPage', () => {
 
     render(<RecipesPage />)
     expect(await screen.findByRole('heading', { name: 'Recipes' })).toBeTruthy()
-    expect(screen.getByText('Configuration only; execution is not connected')).toBeTruthy()
+    expect(screen.getByText('Queued snapshot foundation; execution is not connected')).toBeTruthy()
     fireEvent.change(screen.getByRole('combobox', { name: 'Scope' }), { target: { value: PROJECT.id } })
     await screen.findByRole('heading', { name: 'Exact Project' })
     fireEvent.change(screen.getByRole('textbox', { name: 'Recipe name' }), { target: { value: 'Project Recipe' } })
@@ -116,7 +163,7 @@ describe('RecipesPage', () => {
     await act(async () => creation.resolve(recipe(1, PROJECT.id, 'Project Recipe')))
     expect(await screen.findByText('Revision 1')).toBeTruthy()
     expect(screen.getByText(/sha256:aaaa/u)).toBeTruthy()
-    expect(screen.getByText('Advanced routing, execution, and Job snapshot attachment are not implemented.')).toBeTruthy()
+    expect(screen.getByText('Advanced routing and adapter execution are not implemented. A created Job remains queued.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /run|execute|route/iu })).toBeNull()
     await waitFor(() => expect(create).toBe(document.activeElement))
   })
@@ -167,5 +214,76 @@ describe('RecipesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Загрузить текущую ревизию' }))
     expect(await screen.findByText('Ревизия 2')).toBeTruthy()
     expect(api.listRecipes).toHaveBeenCalledTimes(2)
+  })
+
+  it('confirms one exact queued snapshot, retries the same key and focuses sourced result', async () => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callback(0); return 1 })
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(IDEMPOTENCY_KEY)
+    vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
+    vi.spyOn(api, 'listRecipes').mockResolvedValue({
+      recipeVersion: 1,
+      scope: 'projectless',
+      projectId: null,
+      recipes: [recipe()],
+    })
+    const retry = deferred<CreateRecipeJobSnapshotResponse>()
+    vi.spyOn(api, 'createRecipeJobSnapshot')
+      .mockRejectedValueOnce(new Error('safe snapshot failure'))
+      .mockReturnValueOnce(retry.promise)
+
+    render(<RecipesPage />)
+    await screen.findByText(ID)
+    fireEvent.click(screen.getByRole('button', { name: 'Подготовить снимок Job в очереди' }))
+    expect(screen.getByText(/точную неизменяемую ревизию/u)).toBeTruthy()
+    const confirm = screen.getByRole('button', { name: 'Создать снимок Job в очереди' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('safe snapshot failure')
+    await waitFor(() => expect(alert).toBe(document.activeElement))
+    expect(api.createRecipeJobSnapshot).toHaveBeenCalledTimes(1)
+    expect(api.createRecipeJobSnapshot).toHaveBeenCalledWith(ID, 1, {
+      recipeJobSnapshotVersion: 1,
+      scope: 'projectless',
+      idempotencyKey: IDEMPOTENCY_KEY,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить тот же запрос Job' }))
+    await act(async () => retry.resolve(snapshotProjection()))
+    const result = await screen.findByRole('heading', { name: 'Снимок Job сохранён в очереди' })
+    expect(result).toBe(document.activeElement)
+    expect(screen.getByText(JOB_ID)).toBeTruthy()
+    expect(screen.getByText('Не реализовано; адаптер и модель не запускались')).toBeTruthy()
+    expect(api.createRecipeJobSnapshot).toHaveBeenCalledTimes(2)
+    expect(window.location.search).toContain(`snapshotJob=${JOB_ID}`)
+  })
+
+  it('uses the URL only as a pointer and reloads the exact association from server', async () => {
+    window.history.replaceState(null, '', `/recipes?snapshotRecipe=${ID}&snapshotRevision=1&snapshotJob=${JOB_ID}&snapshotScope=projectless`)
+    vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
+    vi.spyOn(api, 'listRecipes').mockResolvedValue({
+      recipeVersion: 1,
+      scope: 'projectless',
+      projectId: null,
+      recipes: [recipe()],
+    })
+    vi.spyOn(api, 'getRecipeJobSnapshot')
+      .mockRejectedValueOnce(new Error('snapshot read failed'))
+      .mockResolvedValueOnce(snapshotProjection(false))
+    const create = vi.spyOn(api, 'createRecipeJobSnapshot')
+
+    render(<RecipesPage />)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('snapshot read failed')
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить поиск снимка' }))
+    expect(await screen.findByText(JOB_ID)).toBeTruthy()
+    expect(api.getRecipeJobSnapshot).toHaveBeenCalledWith(
+      ID,
+      1,
+      JOB_ID,
+      { recipeJobSnapshotVersion: 1, scope: 'projectless' },
+      expect.any(AbortSignal),
+    )
+    expect(api.getRecipeJobSnapshot).toHaveBeenCalledTimes(2)
+    expect(create).not.toHaveBeenCalled()
   })
 })

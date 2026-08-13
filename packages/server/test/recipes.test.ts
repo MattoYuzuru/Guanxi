@@ -17,9 +17,11 @@ import {
   type RecipeConfiguration,
 } from '@alamo/contract'
 import { recipesRoutes } from '../src/http/recipes-routes.ts'
+import { JobService } from '../src/jobs/service.ts'
 import { ProjectService } from '../src/projects/service.ts'
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
+import { JobStore } from '../src/store/jobs.ts'
 import { RecipeStore } from '../src/store/recipes.ts'
 
 const CREATED_AT = '2026-08-13T12:00:00.000Z'
@@ -57,6 +59,13 @@ function tablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string 
 
 function downgradeToV21(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER recipe_snapshot_job_identity_immutable;
+    DROP TRIGGER recipe_job_snapshots_immutable_delete;
+    DROP TRIGGER recipe_job_snapshots_immutable_update;
+    DROP TRIGGER recipe_job_snapshots_exact_job;
+    DROP TRIGGER recipe_job_snapshots_exact_source;
+    DROP INDEX idx_recipe_job_snapshots_recipe;
+    DROP TABLE recipe_job_snapshots;
     DROP TRIGGER recipes_current_revision_must_exist;
     DROP TRIGGER recipe_revisions_immutable_delete;
     DROP TRIGGER recipe_revisions_immutable_update;
@@ -74,6 +83,7 @@ function routeApp(db: DatabaseSync): Hono {
   app.route('/api/recipes', recipesRoutes({
     db,
     projects: new ProjectService(new ProjectStore(db)),
+    jobService: new JobService(new JobStore(db)),
   }))
   return app
 }
@@ -122,7 +132,7 @@ describe('P3-K canonical Recipe revision foundation', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 22)
+    assert.equal(version(seed), 23)
     const project = new ProjectStore(seed).create('Exact v21 Project', CREATED_AT)
     seed.prepare(
       `INSERT INTO quick_runs (
@@ -148,17 +158,17 @@ describe('P3-K canonical Recipe revision foundation', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 22)
+    assert.equal(version(retried), 23)
     assert.equal(count(retried, 'recipes'), 0)
     assert.equal(count(retried, 'recipe_revisions'), 0)
-    assert.equal(tablesPayload(retried, new Set(['recipes', 'recipe_revisions'])), exactV21)
+    assert.equal(tablesPayload(retried, new Set(['recipes', 'recipe_revisions', 'recipe_job_snapshots'])), exactV21)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 22)
-    assert.equal(tablesPayload(reopened, new Set(['recipes', 'recipe_revisions'])), exactV21)
+    assert.equal(version(reopened), 23)
+    assert.equal(tablesPayload(reopened, new Set(['recipes', 'recipe_revisions', 'recipe_job_snapshots'])), exactV21)
     reopened.close()
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 22)
+    assert.equal(version(fresh), 23)
     fresh.close()
   })
 

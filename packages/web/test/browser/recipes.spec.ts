@@ -7,6 +7,7 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   const observedAt = '2026-08-13T12:00:00.000Z'
   const id = '11111111-1111-4111-8111-111111111111'
   const ownedId = '22222222-2222-4222-8222-222222222222'
+  const jobId = '33333333-3333-4333-8333-333333333333'
   const project = { id: 'project-browser', name: 'Exact Recipe Project', createdAt: observedAt, updatedAt: observedAt, filesystemBindings: [] }
   const health = {
     ok: true,
@@ -43,7 +44,42 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
     },
     advancedRouting: 'not_implemented',
     execution: 'not_implemented',
-    jobSnapshot: 'not_implemented',
+    jobSnapshot: 'queued_snapshot_only',
+  })
+  const snapshotProjection = (idempotencyKey: string) => ({
+    created: true,
+    job: {
+      id: jobId,
+      kind: 'inference',
+      operation: 'complete',
+      status: 'queued',
+      phase: null,
+      idempotencyScope: 'recipe_job_snapshot:v1',
+      idempotencyKey,
+      createdAt: observedAt,
+      startedAt: null,
+      finishedAt: null,
+      error: null,
+      outcome: null,
+      stopReason: null,
+      lastEventSequence: 1,
+    },
+    snapshot: {
+      recipeJobSnapshotVersion: 1,
+      jobId,
+      jobKind: 'inference',
+      recipeId: id,
+      recipeRevision: 1,
+      scope: 'projectless',
+      projectId: null,
+      operation: 'complete',
+      model: { state: 'none', reason: 'not_selected' },
+      configuration: configuration(1),
+      canonical: { format: 'canonical_json_v1', byteSize: 181, sha256: 'a'.repeat(64) },
+      createdAt: observedAt,
+      execution: 'not_implemented',
+    },
+    eventsUrl: `/api/jobs/${jobId}/events`,
   })
 
   let projectless: ReturnType<typeof recipe>[] = []
@@ -52,8 +88,12 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   let currentRevision = 1
   let createCalls = 0
   let reviseCalls = 0
+  let snapshotFailures = 1
+  let snapshotCalls = 0
+  let snapshotReads = 0
   const createBodies: unknown[] = []
   const reviseBodies: unknown[] = []
+  const snapshotBodies: unknown[] = []
   const listQueries: Array<Record<string, string>> = []
   const forbiddenEffects: string[] = []
 
@@ -96,6 +136,26 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
         details: { expectedRevision: 1, currentRevision: 2 },
       }, 409))
     }
+    if (url.pathname === `/api/recipes/${id}/revisions/1/jobs` && method === 'POST') {
+      snapshotCalls += 1
+      const body = request.postDataJSON() as { idempotencyKey: string }
+      snapshotBodies.push(body)
+      if (snapshotFailures > 0) {
+        snapshotFailures -= 1
+        return route.fulfill(json({
+          code: 'storage_error',
+          message: 'safe Recipe snapshot browser failure',
+          details: null,
+        }, 500))
+      }
+      return route.fulfill(json(snapshotProjection(body.idempotencyKey), 202))
+    }
+    if (url.pathname === `/api/recipes/${id}/revisions/1/jobs/${jobId}` && method === 'GET') {
+      snapshotReads += 1
+      const key = (snapshotBodies[0] as { idempotencyKey: string }).idempotencyKey
+      const { created: _created, ...projection } = snapshotProjection(key)
+      return route.fulfill(json(projection))
+    }
     if (
       method !== 'GET' ||
       /models|jobs|threads|quick-runs|workspaces|artifacts|tools|unload|providers/u.test(url.pathname)
@@ -110,7 +170,7 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await expect(page.getByText('safe Recipe browser failure')).toHaveCount(1)
   await page.getByRole('button', { name: 'Повторить', exact: true }).press('Enter')
   await expect(page.getByText('В этой области нет сценариев')).toHaveCount(1)
-  await expect(page.getByText('Только конфигурация; выполнение не подключено')).toHaveCount(1)
+  await expect(page.getByText('Основа снимка в очереди; выполнение не подключено')).toHaveCount(1)
 
   await page.getByRole('textbox', { name: 'Название сценария' }).fill('Browser Recipe')
   await page.getByRole('textbox', { name: 'Инструкции' }).fill('Browser instructions')
@@ -138,9 +198,36 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await expect(page.getByText(id)).toHaveCount(1)
   await expect(page.getByText('Ревизия 1')).toHaveCount(1)
   await expect(page.getByText(/sha256:aaaa/u)).toHaveCount(1)
-  await expect(page.getByText('Расширенный routing, выполнение и привязка снимка Job не реализованы.')).toHaveCount(1)
+  await expect(page.getByText('Расширенная маршрутизация и выполнение адаптера не реализованы. Созданная Job остаётся в очереди.')).toHaveCount(1)
   await expect(page.getByRole('main').getByRole('button', { name: /запустить|run|execute/iu })).toHaveCount(0)
   await expect(create).toBeFocused()
+
+  await page.getByRole('button', { name: 'Подготовить снимок Job в очереди' }).press('Enter')
+  const confirmSnapshot = page.getByRole('button', { name: 'Создать снимок Job в очереди' })
+  await confirmSnapshot.evaluate((button) => {
+    button.click()
+    button.click()
+  })
+  await expect.poll(() => snapshotCalls).toBe(1)
+  const snapshotError = page.getByRole('alert').filter({ hasText: 'safe Recipe snapshot browser failure' })
+  await expect(snapshotError).toBeFocused()
+  await page.getByRole('button', { name: 'Повторить тот же запрос Job' }).press('Enter')
+  await expect.poll(() => snapshotCalls).toBe(2)
+  expect(snapshotBodies[0]).toEqual(snapshotBodies[1])
+  expect(snapshotBodies[0]).toMatchObject({
+    recipeJobSnapshotVersion: 1,
+    scope: 'projectless',
+  })
+  const snapshotResult = page.getByRole('heading', { name: 'Снимок Job сохранён в очереди' })
+  await expect(snapshotResult).toBeFocused()
+  await expect(page.getByText(jobId)).toHaveCount(1)
+  await expect(page.getByText('Не реализовано; адаптер и модель не запускались')).toHaveCount(1)
+  expect(new URL(page.url()).searchParams.get('snapshotJob')).toBe(jobId)
+
+  await page.reload()
+  await expect(page.getByText(jobId)).toHaveCount(1)
+  await expect.poll(() => snapshotReads).toBeGreaterThan(0)
+  await expect(page.getByText('Ревизия 1')).toHaveCount(1)
 
   await page.getByRole('button', { name: 'Изменить конфигурацию' }).press('Enter')
   await page.getByRole('button', { name: 'Создать следующую ревизию' }).evaluate((button) => {

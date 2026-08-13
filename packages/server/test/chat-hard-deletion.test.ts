@@ -201,7 +201,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 22)
+    assert.equal(version(seed), 23)
     const chat = createChat(seed, 'Legacy final answer')
     new ThreadStore(seed).addMessage({
       threadId: chat.id,
@@ -259,19 +259,21 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 22)
+    assert.equal(version(retried), 23)
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
     assert.equal(allTablesPayload(retried, new Set([
       'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
+      'recipe_job_snapshots',
     ])), v19Payload)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 22)
+    assert.equal(version(reopened), 23)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
     assert.equal(allTablesPayload(reopened, new Set([
       'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
+      'recipe_job_snapshots',
     ])), v19Payload)
     reopened.close()
   })
@@ -533,6 +535,8 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       { child: 'reasoning_artifacts', table: 'messages', from: 'source_message_id', on_delete: 'CASCADE' },
       { child: 'reasoning_artifacts', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'reasoning_artifacts', table: 'threads', from: 'chat_id', on_delete: 'CASCADE' },
+      { child: 'recipe_job_snapshots', table: 'jobs', from: 'job_id', on_delete: 'RESTRICT' },
+      { child: 'recipe_job_snapshots', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'recipes', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'threads', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'threads', table: 'workspaces', from: 'workspace_id', on_delete: 'SET NULL' },
