@@ -503,6 +503,56 @@ describe('exclusive inference routes', () => {
     }
   })
 
+  it('reconciles two overlapping compactions with the same intent before second model work', async () => {
+    const calls: Array<{ release: Deferred }> = []
+    const client: Partial<OllamaClient> = {
+      async chat() {
+        const release = deferred()
+        calls.push({ release })
+        await release.promise
+        return terminalChunk('one exact summary')
+      },
+    }
+    const context = testContext({ client })
+
+    try {
+      const app = createApp(context)
+      const thread = createThread(context, 'same-intent-model')
+      seedMessages(context, thread.id, 0, 6)
+      const request = () => app.request(`/api/threads/${thread.id}/compact`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ idempotencyKey: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }),
+      })
+
+      const firstResponse = request()
+      await waitFor(() => calls.length === 1, 'first same-intent compaction never entered Ollama')
+      const secondResponse = request()
+      await waitFor(() => context.governor.waiting === 1, 'same-intent retry never waited')
+      assert.equal(calls.length, 1)
+
+      calls[0]!.release.resolve()
+      const [first, second] = await Promise.all([firstResponse, secondResponse])
+      assert.equal(first.status, 200)
+      assert.equal(second.status, 200)
+      const firstBody = await first.json() as { checkpoint: { id: string } }
+      const secondBody = await second.json() as {
+        checkpoint: { id: string }
+        compactedTokens: number
+      }
+      assert.equal(firstBody.checkpoint.id, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+      assert.equal(secondBody.checkpoint.id, firstBody.checkpoint.id)
+      assert.equal(secondBody.compactedTokens, 0)
+      assert.equal(calls.length, 1)
+      assert.equal(context.threads.contextCheckpoints(thread.id).length, 1)
+      assert.equal(context.governor.active, false)
+      assert.equal(context.governor.waiting, 0)
+    } finally {
+      calls[0]?.release.resolve()
+      context.db.close()
+    }
+  })
+
   it('serializes explicit model warm/load behind an active turn', async () => {
     const probe = heldTurnClient()
     const warmCalls: Array<{ name: string; signal: AbortSignal | undefined }> = []

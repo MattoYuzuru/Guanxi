@@ -613,35 +613,39 @@ export function threadsRoutes(app: AppContext): Hono {
       return notFound(context, 'thread_not_found', 'Тред не найден')
     }
 
-    if (parsed.data.idempotencyKey) {
-      try {
-        const existing = app.threads.contextCheckpointByIntent(
-          threadId,
-          parsed.data.idempotencyKey,
-        )
-        if (existing) {
-          const thread = app.threads.get(threadId)!
-          const activeMessages = app.threads.activeContextMessages(threadId)
-          const usedTokens = activeMessages.reduce(
-            (sum, message) => sum + estimateTokens(message.content),
-            0,
-          )
-          return context.json(compactThreadResponse.parse({
-            checkpoint: existing,
-            context: buildContextState({
-              usedTokens,
-              allocatedTokens: thread.options.numCtx,
-              usage: null,
-              model: thread.model,
-              tracker: app.tracker,
-            }),
-            compactedTokens: 0,
-            estimatedRepefillMs: app.tracker.estimateColdPrefillMs(thread.model, usedTokens),
-          }))
-        }
-      } catch (error) {
-        return fail(context, error)
-      }
+    const replayCommittedIntent = () => {
+      if (!parsed.data.idempotencyKey) return null
+      const existing = app.threads.contextCheckpointByIntent(
+        threadId,
+        parsed.data.idempotencyKey,
+      )
+      if (!existing) return null
+      const thread = app.threads.get(threadId)
+      if (!thread) return null
+      const activeMessages = app.threads.activeContextMessages(threadId)
+      const usedTokens = activeMessages.reduce(
+        (sum, message) => sum + estimateTokens(message.content),
+        0,
+      )
+      return context.json(compactThreadResponse.parse({
+        checkpoint: existing,
+        context: buildContextState({
+          usedTokens,
+          allocatedTokens: thread.options.numCtx,
+          usage: null,
+          model: thread.model,
+          tracker: app.tracker,
+        }),
+        compactedTokens: 0,
+        estimatedRepefillMs: app.tracker.estimateColdPrefillMs(thread.model, usedTokens),
+      }))
+    }
+
+    try {
+      const replay = replayCommittedIntent()
+      if (replay) return replay
+    } catch (error) {
+      return fail(context, error)
     }
 
     const ownerController = new AbortController()
@@ -688,6 +692,11 @@ export function threadsRoutes(app: AppContext): Hono {
           409,
         )
       }
+
+      // A same-intent waiter may have observed absence before the winner
+      // persisted. Reconcile again under the exclusive inference lease.
+      const replay = replayCommittedIntent()
+      if (replay) return replay
 
       // Хвост оставляем нетронутым: именно он нужен модели для продолжения разговора.
       const selection = app.threads.compactionCandidates(threadId, 4)
