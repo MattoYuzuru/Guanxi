@@ -1305,6 +1305,103 @@ const MIGRATIONS: readonly string[] = [
     WHEN EXISTS (SELECT 1 FROM artifacts artifact WHERE artifact.blob_checksum = OLD.checksum)
     BEGIN
       SELECT RAISE(ABORT, 'Referenced Artifact blobs cannot be deleted');
+  END;
+  `,
+  // 27 — immutable presentation metadata for public local attachment transport.
+  // A display name is never used as a filesystem path or storage key.
+  `
+  CREATE TABLE artifact_attachments (
+    artifact_id       TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE RESTRICT,
+    attachment_version INTEGER NOT NULL CHECK (attachment_version = 1),
+    display_name      TEXT NOT NULL CHECK (
+      length(display_name) BETWEEN 1 AND 120
+      AND length(CAST(display_name AS BLOB)) <= 255
+      AND display_name = trim(display_name)
+      AND display_name NOT IN ('.', '..')
+      AND instr(display_name, '/') = 0
+      AND instr(display_name, char(92)) = 0
+      AND instr(display_name, char(0)) = 0
+      AND instr(display_name, char(9)) = 0
+      AND instr(display_name, char(10)) = 0
+      AND instr(display_name, char(13)) = 0
+      AND display_name NOT GLOB '*' || char(127) || '*'
+      AND display_name NOT GLOB '*' || char(128) || '*'
+      AND display_name NOT GLOB '*' || char(129) || '*'
+      AND display_name NOT GLOB '*' || char(130) || '*'
+      AND display_name NOT GLOB '*' || char(131) || '*'
+      AND display_name NOT GLOB '*' || char(132) || '*'
+      AND display_name NOT GLOB '*' || char(133) || '*'
+      AND display_name NOT GLOB '*' || char(134) || '*'
+      AND display_name NOT GLOB '*' || char(135) || '*'
+      AND display_name NOT GLOB '*' || char(136) || '*'
+      AND display_name NOT GLOB '*' || char(137) || '*'
+      AND display_name NOT GLOB '*' || char(138) || '*'
+      AND display_name NOT GLOB '*' || char(139) || '*'
+      AND display_name NOT GLOB '*' || char(140) || '*'
+      AND display_name NOT GLOB '*' || char(141) || '*'
+      AND display_name NOT GLOB '*' || char(142) || '*'
+      AND display_name NOT GLOB '*' || char(143) || '*'
+      AND display_name NOT GLOB '*' || char(144) || '*'
+      AND display_name NOT GLOB '*' || char(145) || '*'
+      AND display_name NOT GLOB '*' || char(146) || '*'
+      AND display_name NOT GLOB '*' || char(147) || '*'
+      AND display_name NOT GLOB '*' || char(148) || '*'
+      AND display_name NOT GLOB '*' || char(149) || '*'
+      AND display_name NOT GLOB '*' || char(150) || '*'
+      AND display_name NOT GLOB '*' || char(151) || '*'
+      AND display_name NOT GLOB '*' || char(152) || '*'
+      AND display_name NOT GLOB '*' || char(153) || '*'
+      AND display_name NOT GLOB '*' || char(154) || '*'
+      AND display_name NOT GLOB '*' || char(155) || '*'
+      AND display_name NOT GLOB '*' || char(156) || '*'
+      AND display_name NOT GLOB '*' || char(157) || '*'
+      AND display_name NOT GLOB '*' || char(158) || '*'
+      AND display_name NOT GLOB '*' || char(159) || '*'
+      AND instr(display_name, char(1564)) = 0
+      AND instr(display_name, char(8206)) = 0
+      AND instr(display_name, char(8207)) = 0
+      AND instr(display_name, char(8234)) = 0
+      AND instr(display_name, char(8235)) = 0
+      AND instr(display_name, char(8236)) = 0
+      AND instr(display_name, char(8237)) = 0
+      AND instr(display_name, char(8238)) = 0
+      AND instr(display_name, char(8294)) = 0
+      AND instr(display_name, char(8295)) = 0
+      AND instr(display_name, char(8296)) = 0
+      AND instr(display_name, char(8297)) = 0
+    ),
+    created_at        TEXT NOT NULL CHECK (
+      created_at GLOB '????-??-??T??:??:??.???Z'
+      AND julianday(created_at) IS NOT NULL
+    )
+  );
+  CREATE INDEX idx_artifact_attachments_created
+    ON artifact_attachments(created_at DESC, artifact_id DESC);
+
+  CREATE TRIGGER artifact_attachments_source_insert
+    BEFORE INSERT ON artifact_attachments
+    WHEN NOT EXISTS (
+      SELECT 1 FROM artifacts artifact
+      WHERE artifact.id = NEW.artifact_id
+        AND artifact.kind = 'file'
+        AND artifact.source_job_id IS NULL
+        AND artifact.parent_artifact_id IS NULL
+        AND artifact.created_at = NEW.created_at
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Attachment source Artifact is invalid');
+    END;
+
+  CREATE TRIGGER artifact_attachments_immutable_update
+    BEFORE UPDATE ON artifact_attachments
+    BEGIN
+      SELECT RAISE(ABORT, 'Attachments are immutable');
+    END;
+
+  CREATE TRIGGER artifact_attachments_immutable_delete
+    BEFORE DELETE ON artifact_attachments
+    BEGIN
+      SELECT RAISE(ABORT, 'Attachments are immutable');
     END;
   `,
 ]

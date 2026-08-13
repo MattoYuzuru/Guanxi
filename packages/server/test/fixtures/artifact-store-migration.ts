@@ -1,7 +1,21 @@
 import type { DatabaseSync } from 'node:sqlite'
 
+/** Reverse only migration 27 so migration evidence can start from exact v26. */
+export function downgradeAttachmentStoreToV26(db: DatabaseSync): void {
+  db.exec(`
+    DROP TRIGGER artifact_attachments_immutable_delete;
+    DROP TRIGGER artifact_attachments_immutable_update;
+    DROP TRIGGER artifact_attachments_source_insert;
+    DROP INDEX idx_artifact_attachments_created;
+    DROP TABLE artifact_attachments;
+    PRAGMA user_version = 26;
+  `)
+}
+
 /** Reverse only migration 26 so older migration fixtures can start from exact v25. */
 export function downgradeArtifactStoreToV25(db: DatabaseSync): void {
+  const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  if (version >= 27) downgradeAttachmentStoreToV26(db)
   db.exec(`
     DROP TRIGGER referenced_artifact_blobs_delete;
     DROP TRIGGER artifact_blobs_immutable_update;

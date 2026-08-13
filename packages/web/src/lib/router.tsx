@@ -56,6 +56,7 @@ export type Route =
   | { name: 'chat'; threadId: string | null }
   | { name: 'quickRuns' }
   | { name: 'recipes' }
+  | { name: 'attachments' }
   | { name: 'projectChat'; projectId: string; threadId: string | null }
   | { name: 'projects' }
   | { name: 'settings' }
@@ -79,6 +80,7 @@ export function parseRoute(pathWithSearch: string): Route {
   }
   if (first === 'quick-runs' && rest.length === 0) return { name: 'quickRuns' }
   if (first === 'recipes' && rest.length === 0) return { name: 'recipes' }
+  if (first === 'attachments' && rest.length === 0) return { name: 'attachments' }
   if (first === 'projects' && rest.length === 0) return { name: 'projects' }
   if (
     first === 'projects' &&
@@ -103,6 +105,7 @@ export const paths = {
     threadId ? `/chat/${encodeURIComponent(threadId)}` : '/chat',
   quickRuns: () => '/quick-runs',
   recipes: () => '/recipes',
+  attachments: () => '/attachments',
   projects: () => '/projects',
   projectChat: (projectId: string, threadId?: string | null) => {
     const base = `/projects/${encodeURIComponent(projectId)}/chats`

@@ -7,6 +7,7 @@
 import { z } from 'zod'
 import { contextCheckpointListSchema, contextCheckpointSchema } from './context-checkpoints.ts'
 import { PROJECT_PRESENTATION_VERSION } from './project-presentation.ts'
+export { projectReferenceSchema } from './project-reference.ts'
 import {
   CHAT_DELETION_VERSION,
   CHAT_LIFECYCLE_VERSION,
@@ -174,6 +175,11 @@ export const ROUTES = {
   projectChats: (id: string) => `/api/projects/${encodeURIComponent(id)}/chats`,
   projectChat: (projectId: string, threadId: string) =>
     `/api/projects/${encodeURIComponent(projectId)}/chats/${encodeURIComponent(threadId)}`,
+
+  artifactTransferPolicy: () => '/api/artifacts/policy',
+  artifacts: () => '/api/artifacts',
+  artifact: (id: string) => `/api/artifacts/${encodeURIComponent(id)}`,
+  artifactContent: (id: string) => `/api/artifacts/${encodeURIComponent(id)}/content`,
 
   quickRuns: () => '/api/quick-runs',
   quickRun: (id: string) => `/api/quick-runs/${encodeURIComponent(id)}`,
@@ -1158,12 +1164,6 @@ export const updateProjectPresentationBody = z
   })
   .strict()
 export type UpdateProjectPresentationBody = z.infer<typeof updateProjectPresentationBody>
-
-export const projectReferenceSchema = z
-  .string()
-  .min(1)
-  .max(255)
-  .refine((value) => value === value.trim(), 'Project reference must be normalized')
 
 /** Project Chat creation is deliberately Chat-only and cannot carry a filesystem scope. */
 export const createProjectChatBody = z

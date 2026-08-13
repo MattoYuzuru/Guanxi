@@ -14,10 +14,16 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import {
   ARTIFACT_VERSION,
+  ATTACHMENT_VERSION,
+  attachmentDisplayNameSchema,
+  attachmentSchema,
+  artifactMediaTypeSchema,
   artifactCreateMetadataSchema,
   artifactIdSchema,
   artifactSchema,
   artifactScopeSchema,
+  artifactWriteIntentKeySchema,
+  type Attachment,
   type Artifact,
   type ArtifactCreateMetadata,
   type ArtifactScope,
@@ -98,6 +104,7 @@ export type ArtifactStoreErrorCode =
   | 'invalid_reference'
   | 'not_found'
   | 'storage_failure'
+  | 'aborted'
 
 export class ArtifactStoreError extends Error {
   readonly code: ArtifactStoreErrorCode
@@ -126,6 +133,11 @@ interface ArtifactRow {
   created_at: string
 }
 
+interface AttachmentRow extends ArtifactRow {
+  attachment_version: number
+  display_name: string
+}
+
 interface RelativeDirectoryIdentity {
   canonicalPath: string
   dev: string
@@ -146,16 +158,27 @@ export interface ArtifactStoreOptions {
   now?: () => Date
   randomId?: () => string
   hooks?: ArtifactStoreHooks
+  helperTimeoutMs?: number
 }
 
 export interface ArtifactWriteOptions {
   /** Explicit policy envelope supplied by the caller; this is not a UI/capability ceiling. */
   maxBytes: number
+  signal?: AbortSignal
 }
 
 export interface ArtifactReadOptions {
   /** Explicit allocation envelope for this buffered internal read. */
   maxBytes: number
+  signal?: AbortSignal
+}
+
+export interface AttachmentWriteMetadata {
+  attachmentVersion: typeof ATTACHMENT_VERSION
+  idempotencyKey: string
+  displayName: string
+  mediaType: string
+  ownership: ArtifactScope
 }
 
 export interface ArtifactDownloadHeaders {
@@ -216,6 +239,22 @@ function sameIntentMetadata(row: ArtifactRow, metadata: ArtifactCreateMetadata):
     && row.parent_artifact_id === metadata.source.parentArtifactId
 }
 
+function toAttachment(row: AttachmentRow): Attachment {
+  return attachmentSchema.parse({
+    attachmentVersion: row.attachment_version,
+    artifact: toArtifact(row),
+    displayName: row.display_name,
+    modelConsumption: {
+      state: 'not_connected',
+      reason: 'attachment_transport_only',
+    },
+    export: {
+      state: 'available',
+      rangeRequests: 'unsupported',
+    },
+  })
+}
+
 function inside(parent: string, candidate: string): boolean {
   return candidate === parent || candidate.startsWith(`${parent}${sep}`)
 }
@@ -240,6 +279,8 @@ async function relativeFileOperation(input: {
   byteSize: number
   digest: string
   ready?(): void | Promise<void>
+  signal?: AbortSignal
+  timeoutMs: number
 }): Promise<Uint8Array | null> {
   const expected = await directoryIdentity(input.parent)
   const child = spawn(
@@ -252,6 +293,20 @@ async function relativeFileOperation(input: {
     child.once('error', () => resolveExit({ code: null, signal: null }))
   })
   const lines = createInterface({ input: child.stdout! })[Symbol.asyncIterator]()
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  let onAbort: (() => void) | null = null
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new ArtifactStoreError('aborted', 'Artifact storage operation was cancelled'))
+    input.signal?.addEventListener('abort', onAbort, { once: true })
+    timeout = setTimeout(
+      () => reject(new ArtifactStoreError('storage_failure', 'Artifact storage helper timed out')),
+      input.timeoutMs,
+    )
+  })
+  const operation = async (): Promise<Uint8Array | null> => {
+    if (input.signal?.aborted) {
+      throw new ArtifactStoreError('aborted', 'Artifact storage operation was cancelled')
+    }
   try {
     const ready = await lines.next()
     if (ready.done) throw new ArtifactStoreError('unsafe_storage', 'Artifact storage helper failed')
@@ -303,9 +358,19 @@ async function relativeFileOperation(input: {
     }
     return content
   } finally {
+    // Process lifetime cleanup belongs to the outer finally so cancellation and
+    // watchdog paths close the same resources as successful operations.
+  }
+  }
+  try {
+    return await Promise.race([operation(), interrupted])
+  } finally {
+    if (timeout !== null) clearTimeout(timeout)
+    if (onAbort !== null) input.signal?.removeEventListener('abort', onAbort)
     child.stdin?.destroy()
     child.stdout?.destroy()
     if (child.exitCode === null && child.signalCode === null) child.kill()
+    await exited
   }
 }
 
@@ -320,16 +385,45 @@ async function writeAll(file: FileHandle, chunk: Uint8Array): Promise<void> {
   }
 }
 
-async function* chunks(content: ArtifactBytes): AsyncGenerator<Uint8Array> {
+async function* chunks(
+  content: ArtifactBytes,
+  signal?: AbortSignal,
+): AsyncGenerator<Uint8Array> {
+  const check = () => {
+    if (signal?.aborted) {
+      throw new ArtifactStoreError('aborted', 'Artifact storage operation was cancelled')
+    }
+  }
+  check()
   if (content instanceof Uint8Array) {
     yield content
     return
   }
-  for await (const chunk of content) {
-    if (!(chunk instanceof Uint8Array)) {
-      throw new ArtifactStoreError('invalid_input', 'Artifact content must contain bytes')
+  const iterator = content[Symbol.asyncIterator]()
+  try {
+    for (;;) {
+      let onAbort: (() => void) | null = null
+      const aborted = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(
+          new ArtifactStoreError('aborted', 'Artifact storage operation was cancelled'),
+        )
+        signal?.addEventListener('abort', onAbort, { once: true })
+      })
+      let next: IteratorResult<Uint8Array>
+      try {
+        next = await Promise.race([iterator.next(), aborted])
+      } finally {
+        if (onAbort !== null) signal?.removeEventListener('abort', onAbort)
+      }
+      if (next.done) return
+      check()
+      if (!(next.value instanceof Uint8Array)) {
+        throw new ArtifactStoreError('invalid_input', 'Artifact content must contain bytes')
+      }
+      yield next.value
     }
-    yield chunk
+  } finally {
+    await iterator.return?.()
   }
 }
 
@@ -339,6 +433,7 @@ export class ArtifactStore {
   private readonly now: () => Date
   private readonly randomId: () => string
   private readonly hooks: ArtifactStoreHooks
+  private readonly helperTimeoutMs: number
   private canonicalRoot: string | null = null
 
   constructor(options: ArtifactStoreOptions) {
@@ -347,6 +442,10 @@ export class ArtifactStore {
     this.now = options.now ?? (() => new Date())
     this.randomId = options.randomId ?? randomUUID
     this.hooks = options.hooks ?? {}
+    this.helperTimeoutMs = options.helperTimeoutMs ?? 30_000
+    if (!Number.isSafeInteger(this.helperTimeoutMs) || this.helperTimeoutMs < 1) {
+      throw new ArtifactStoreError('invalid_input', 'Artifact helper timeout is invalid')
+    }
   }
 
   private rowByIntent(key: string): ArtifactRow | null {
@@ -356,6 +455,17 @@ export class ArtifactStore {
        JOIN artifact_blobs blob ON blob.checksum = artifact.blob_checksum
        WHERE artifact.write_intent_key = ?`,
     ).get(key) as unknown as ArtifactRow | undefined) ?? null
+  }
+
+  private attachmentRowByIntent(key: string): AttachmentRow | null {
+    return (this.db.prepare(
+      `SELECT artifact.*, blob.byte_size, blob.storage_key,
+              attachment.attachment_version, attachment.display_name
+       FROM artifacts artifact
+       JOIN artifact_blobs blob ON blob.checksum = artifact.blob_checksum
+       JOIN artifact_attachments attachment ON attachment.artifact_id = artifact.id
+       WHERE artifact.write_intent_key = ?`,
+    ).get(key) as unknown as AttachmentRow | undefined) ?? null
   }
 
   private generatedId(): string {
@@ -381,6 +491,27 @@ export class ArtifactStore {
          WHERE artifact.id = ? AND artifact.project_id IS NULL`,
       ).get(id)
     return (scoped as unknown as ArtifactRow | undefined) ?? null
+  }
+
+  private attachmentRowById(id: string, scope: ArtifactScope): AttachmentRow | null {
+    const scoped = scope.scope === 'project'
+      ? this.db.prepare(
+        `SELECT artifact.*, blob.byte_size, blob.storage_key,
+                attachment.attachment_version, attachment.display_name
+         FROM artifacts artifact
+         JOIN artifact_blobs blob ON blob.checksum = artifact.blob_checksum
+         JOIN artifact_attachments attachment ON attachment.artifact_id = artifact.id
+         WHERE artifact.id = ? AND artifact.project_id = ?`,
+      ).get(id, scope.projectId)
+      : this.db.prepare(
+        `SELECT artifact.*, blob.byte_size, blob.storage_key,
+                attachment.attachment_version, attachment.display_name
+         FROM artifacts artifact
+         JOIN artifact_blobs blob ON blob.checksum = artifact.blob_checksum
+         JOIN artifact_attachments attachment ON attachment.artifact_id = artifact.id
+         WHERE artifact.id = ? AND artifact.project_id IS NULL`,
+      ).get(id)
+    return (scoped as unknown as AttachmentRow | undefined) ?? null
   }
 
   private async ensureDirectory(path: string, canonicalParent: string): Promise<string> {
@@ -446,13 +577,62 @@ export class ArtifactStore {
     content: ArtifactBytes,
     options: ArtifactWriteOptions,
   ): Promise<Artifact> {
+    return this.createInternal(rawMetadata, content, options, null)
+  }
+
+  async createAttachment(
+    rawMetadata: AttachmentWriteMetadata,
+    content: ArtifactBytes,
+    options: ArtifactWriteOptions,
+  ): Promise<Attachment> {
+    const attachmentVersion = rawMetadata.attachmentVersion === ATTACHMENT_VERSION
+    const idempotencyKey = artifactWriteIntentKeySchema.safeParse(rawMetadata.idempotencyKey)
+    const displayName = attachmentDisplayNameSchema.safeParse(rawMetadata.displayName)
+    const mediaType = artifactMediaTypeSchema.safeParse(rawMetadata.mediaType)
+    const ownership = artifactScopeSchema.safeParse(rawMetadata.ownership)
+    if (
+      !attachmentVersion
+      || !idempotencyKey.success
+      || !displayName.success
+      || !mediaType.success
+      || !ownership.success
+    ) {
+      throw new ArtifactStoreError('invalid_input', 'Attachment write request is invalid')
+    }
+    const artifact = await this.createInternal({
+      artifactVersion: ARTIFACT_VERSION,
+      idempotencyKey: idempotencyKey.data,
+      kind: 'file',
+      mediaType: mediaType.data,
+      ownership: ownership.data,
+      source: { jobId: null, parentArtifactId: null },
+    }, content, options, {
+      attachmentVersion: ATTACHMENT_VERSION,
+      displayName: displayName.data,
+    })
+    const row = this.attachmentRowById(artifact.id, ownership.data)
+    if (!row) throw new ArtifactStoreError('storage_failure', 'Attachment metadata was not committed')
+    return toAttachment(row)
+  }
+
+  private async createInternal(
+    rawMetadata: ArtifactCreateMetadata,
+    content: ArtifactBytes,
+    options: ArtifactWriteOptions,
+    attachment: { attachmentVersion: typeof ATTACHMENT_VERSION; displayName: string } | null,
+  ): Promise<Artifact> {
     const parsed = artifactCreateMetadataSchema.safeParse(rawMetadata)
     if (!parsed.success || !Number.isSafeInteger(options.maxBytes) || options.maxBytes < 0) {
       throw new ArtifactStoreError('invalid_input', 'Artifact write request is invalid')
     }
     const metadata = parsed.data
     const preexisting = this.rowByIntent(metadata.idempotencyKey)
-    if (preexisting && !sameIntentMetadata(preexisting, metadata)) {
+    const preexistingAttachment = this.attachmentRowByIntent(metadata.idempotencyKey)
+    const extensionMatches = attachment === null
+      ? preexistingAttachment === null
+      : preexistingAttachment?.attachment_version === attachment.attachmentVersion
+        && preexistingAttachment.display_name === attachment.displayName
+    if (preexisting && (!sameIntentMetadata(preexisting, metadata) || !extensionMatches)) {
       throw new ArtifactStoreError('idempotency_conflict', 'Artifact intent conflicts with stored metadata')
     }
 
@@ -468,7 +648,7 @@ export class ArtifactStore {
       )
       const hash = createHash('sha256')
       let byteSize = 0
-      for await (const chunk of chunks(content)) {
+      for await (const chunk of chunks(content, options.signal)) {
         byteSize += chunk.byteLength
         if (!Number.isSafeInteger(byteSize) || byteSize > options.maxBytes) {
           throw new ArtifactStoreError('size_limit_exceeded', 'Artifact exceeds the write policy')
@@ -492,15 +672,29 @@ export class ArtifactStore {
         byteSize,
         digest: checksum.slice('sha256:'.length),
         ready: this.hooks.beforePublish,
+        signal: options.signal,
+        timeoutMs: this.helperTimeoutMs,
       })
       await this.hooks.afterPublish?.()
       this.hooks.beforeDatabase?.()
+      if (options.signal?.aborted) {
+        throw new ArtifactStoreError('aborted', 'Artifact storage operation was cancelled')
+      }
 
       this.db.exec('BEGIN IMMEDIATE')
       try {
         const existing = this.rowByIntent(metadata.idempotencyKey)
         if (existing) {
-          if (!sameIntentMetadata(existing, metadata) || existing.blob_checksum !== checksum) {
+          const existingAttachment = this.attachmentRowByIntent(metadata.idempotencyKey)
+          const exactExtension = attachment === null
+            ? existingAttachment === null
+            : existingAttachment?.attachment_version === attachment.attachmentVersion
+              && existingAttachment.display_name === attachment.displayName
+          if (
+            !sameIntentMetadata(existing, metadata)
+            || existing.blob_checksum !== checksum
+            || !exactExtension
+          ) {
             throw new ArtifactStoreError('idempotency_conflict', 'Artifact intent conflicts with stored content')
           }
           const artifact = toArtifact(existing)
@@ -538,6 +732,13 @@ export class ArtifactStore {
           metadata.source.parentArtifactId,
           createdAt,
         )
+        if (attachment !== null) {
+          this.db.prepare(
+            `INSERT INTO artifact_attachments (
+               artifact_id, attachment_version, display_name, created_at
+             ) VALUES (?, ?, ?, ?)`,
+          ).run(id, attachment.attachmentVersion, attachment.displayName, createdAt)
+        }
         const row = this.rowByIntent(metadata.idempotencyKey)
         if (!row) throw new ArtifactStoreError('storage_failure', 'Artifact metadata was not committed')
         const artifact = toArtifact(row)
@@ -565,6 +766,52 @@ export class ArtifactStore {
     if (!scope.success) throw new ArtifactStoreError('invalid_input', 'Artifact scope is invalid')
     const row = this.rowById(id, scope.data)
     return row ? toArtifact(row) : null
+  }
+
+  getAttachment(id: string, rawScope: ArtifactScope): Attachment | null {
+    if (!artifactIdSchema.safeParse(id).success) {
+      throw new ArtifactStoreError('invalid_input', 'Attachment identifier is invalid')
+    }
+    const scope = artifactScopeSchema.safeParse(rawScope)
+    if (!scope.success) throw new ArtifactStoreError('invalid_input', 'Attachment scope is invalid')
+    const row = this.attachmentRowById(id, scope.data)
+    return row ? toAttachment(row) : null
+  }
+
+  listAttachments(rawScope: ArtifactScope, limit: number): { attachments: Attachment[]; truncated: boolean } {
+    const scope = artifactScopeSchema.safeParse(rawScope)
+    if (
+      !scope.success
+      || !Number.isSafeInteger(limit)
+      || limit < 1
+      || limit > 100
+    ) throw new ArtifactStoreError('invalid_input', 'Attachment list request is invalid')
+    const rows = scope.data.scope === 'project'
+      ? this.db.prepare(
+        `SELECT artifact.*, blob.byte_size, blob.storage_key,
+                attachment.attachment_version, attachment.display_name
+         FROM artifacts artifact
+         JOIN artifact_blobs blob ON blob.checksum = artifact.blob_checksum
+         JOIN artifact_attachments attachment ON attachment.artifact_id = artifact.id
+         WHERE artifact.project_id = ?
+         ORDER BY artifact.created_at DESC, artifact.id DESC
+         LIMIT ?`,
+      ).all(scope.data.projectId, limit + 1)
+      : this.db.prepare(
+        `SELECT artifact.*, blob.byte_size, blob.storage_key,
+                attachment.attachment_version, attachment.display_name
+         FROM artifacts artifact
+         JOIN artifact_blobs blob ON blob.checksum = artifact.blob_checksum
+         JOIN artifact_attachments attachment ON attachment.artifact_id = artifact.id
+         WHERE artifact.project_id IS NULL
+         ORDER BY artifact.created_at DESC, artifact.id DESC
+         LIMIT ?`,
+      ).all(limit + 1)
+    const typed = rows as unknown as AttachmentRow[]
+    return {
+      attachments: typed.slice(0, limit).map(toAttachment),
+      truncated: typed.length > limit,
+    }
   }
 
   async read(
@@ -609,6 +856,8 @@ export class ArtifactStore {
         byteSize: row.byte_size,
         digest,
         ready: this.hooks.beforeRead,
+        signal: options.signal,
+        timeoutMs: this.helperTimeoutMs,
       })
       if (content === null) {
         throw new ArtifactStoreError('integrity_mismatch', 'Artifact blob integrity check failed')

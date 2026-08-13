@@ -21,6 +21,7 @@ import { workspacesRoutes } from './http/workspaces-routes.ts'
 import { projectsRoutes } from './http/projects-routes.ts'
 import { quickRunsRoutes } from './http/quick-runs-routes.ts'
 import { recipesRoutes } from './http/recipes-routes.ts'
+import { artifactsRoutes } from './http/artifacts-routes.ts'
 import type { OllamaStatusOptions } from './ollama/status.ts'
 
 export interface CreateAppOptions {
@@ -34,7 +35,18 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   const server = new Hono()
 
   if (options.devOrigins?.length) {
-    server.use('/api/*', cors({ origin: options.devOrigins, credentials: true }))
+    server.use('/api/*', cors({
+      origin: options.devOrigins,
+      credentials: true,
+      allowHeaders: ['Content-Type', 'Idempotency-Key'],
+      exposeHeaders: [
+        'Accept-Ranges',
+        'Content-Disposition',
+        'Content-Length',
+        'Digest',
+        'ETag',
+      ],
+    }))
   }
 
   /*
@@ -81,6 +93,7 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   server.route('/api/projects', projectsRoutes(app))
   server.route('/api/quick-runs', quickRunsRoutes(app))
   server.route('/api/recipes', recipesRoutes(app))
+  server.route('/api/artifacts', artifactsRoutes(app))
 
   server.post('/api/approvals/:id', async (context) => {
     const parsed = approvalBody.safeParse(await context.req.json().catch(() => null))

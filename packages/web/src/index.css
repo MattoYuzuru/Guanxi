@@ -538,6 +538,19 @@
     forced-color-adjust: auto;
   }
 
+  .attachment-card,
+  .attachment-drop {
+    border-color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .attachment-card a:focus-visible,
+  .attachment-drop input:focus-visible,
+  .attachment-drop button:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+
   .quick-run-card button:focus-visible {
     outline: 3px solid Highlight;
     outline-offset: 2px;

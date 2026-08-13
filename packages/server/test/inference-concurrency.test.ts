@@ -162,6 +162,7 @@ function testContext(options: {
   return {
     ...runtimeBase,
     artifacts: null as never,
+    artifactTransfers: null as never,
     completionProbe: { execute: async () => { throw new Error('not invoked') } } as never,
     capabilityOverrides: {
       apply: async () => { throw new Error('not invoked') },

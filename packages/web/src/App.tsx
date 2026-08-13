@@ -22,6 +22,7 @@ import { SettingsPage } from './features/settings/SettingsPage.tsx'
 import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
 import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { RecipesPage } from './features/recipes/RecipesPage.tsx'
+import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
 import { translate } from './lib/locale.ts'
 
 export function App() {
@@ -80,6 +81,7 @@ export function App() {
           )}
           {route.name === 'quickRuns' && <QuickRunsPage />}
           {route.name === 'recipes' && <RecipesPage />}
+          {route.name === 'attachments' && <AttachmentsPage />}
           {route.name === 'settings' && <SettingsPage />}
           {route.name === 'projects' && <ProjectsPage />}
           {route.name === 'notFound' && (
@@ -118,6 +120,11 @@ function TopBar() {
       to: paths.recipes(),
       label: translate('recipes.navigation'),
       active: route.name === 'recipes',
+    },
+    {
+      to: paths.attachments(),
+      label: translate('attachments.navigation'),
+      active: route.name === 'attachments',
     },
     {
       to: paths.projects(),

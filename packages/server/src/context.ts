@@ -46,6 +46,10 @@ import { ChatRetentionStore } from './store/chat-retention.ts'
 import { WorkspaceStore } from './store/workspaces.ts'
 import { ReasoningArtifactStore } from './store/reasoning-artifacts.ts'
 import { ArtifactStore } from './store/artifacts.ts'
+import {
+  ArtifactTransferService,
+  type ArtifactTransferPolicyOptions,
+} from './artifacts/transfer-service.ts'
 
 export const DEFAULT_OLLAMA_HOST = process.env['OLLAMA_HOST']
   ? normalizeHost(process.env['OLLAMA_HOST'])
@@ -60,6 +64,8 @@ export interface AppContext {
   db: Db
   /** Generic immutable metadata + content-addressed blob boundary; no public raw paths. */
   artifacts: ArtifactStore
+  /** Bounded public attachment byte-transfer owner and observable storage policy. */
+  artifactTransfers: ArtifactTransferService
   jobs: JobStore
   jobService: JobService
   chatExecution: ChatJobExecutionOwner
@@ -113,6 +119,7 @@ export interface CreateContextOptions {
   appVersion: string
   featureFlagEnvironment?: FeatureFlagEnvironment
   retentionMaintenance?: RetentionMaintenanceOptions
+  artifactTransferPolicy?: ArtifactTransferPolicyOptions
 }
 
 export async function createAppContext(options: CreateContextOptions): Promise<AppContext> {
@@ -184,11 +191,16 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       hardware,
     })
     const jobService = new JobService(jobs)
+    const artifacts = new ArtifactStore({
+      db,
+      rootDir: join(dirname(options.dbPath), 'artifacts'),
+    })
     const base = {
       db,
-      artifacts: new ArtifactStore({
-        db,
-        rootDir: join(dirname(options.dbPath), 'artifacts'),
+      artifacts,
+      artifactTransfers: new ArtifactTransferService({
+        store: artifacts,
+        policy: options.artifactTransferPolicy,
       }),
       jobs,
       jobService,

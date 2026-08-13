@@ -59,6 +59,10 @@ import {
   prewarmModelResponse,
   warmModelResponse,
   workspaceSchema,
+  ATTACHMENT_VERSION,
+  createAttachmentResponse,
+  getArtifactTransferPolicyResponse,
+  listAttachmentsResponse,
   projectSchema,
   projectWithPresentationSchema,
   restoreChatResponse,
@@ -107,6 +111,7 @@ import {
   type RenameRecipeBody,
   type ReviseRecipeBody,
   type UpdateQuickRunRetentionBody,
+  type ArtifactScope,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
 import { translate } from './locale.ts'
@@ -520,6 +525,71 @@ export const api = {
       query: { contextCheckpointVersion: 1 },
       signal,
     }),
+
+  /* Local attachment transport; upload does not imply model consumption. */
+
+  artifactTransferPolicy: (signal?: AbortSignal) =>
+    request(
+      ROUTES.artifactTransferPolicy(),
+      getArtifactTransferPolicyResponse,
+      { signal },
+    ),
+
+  listAttachments: (scope: ArtifactScope, limit: number, signal?: AbortSignal) =>
+    request(ROUTES.artifacts(), listAttachmentsResponse, {
+      query: {
+        attachmentVersion: ATTACHMENT_VERSION,
+        scope: scope.scope,
+        projectId: scope.scope === 'project' ? scope.projectId : undefined,
+        limit,
+      },
+      signal,
+    }),
+
+  uploadAttachment: async (
+    scope: ArtifactScope,
+    file: File,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ) => {
+    const url = withQuery(ROUTES.artifacts(), {
+      attachmentVersion: ATTACHMENT_VERSION,
+      scope: scope.scope,
+      projectId: scope.scope === 'project' ? scope.projectId : undefined,
+      displayName: file.name,
+    })
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': file.type || 'application/octet-stream',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: file,
+      signal,
+    })
+    const text = await response.text()
+    if (!response.ok) {
+      const parsed = apiErrorSchema.safeParse(safeJson(text))
+      throw new ApiRequestError(
+        response.status,
+        parsed.success ? parsed.data : null,
+        parsed.success ? parsed.data.message : `HTTP ${response.status}`,
+      )
+    }
+    const parsed = createAttachmentResponse.safeParse(safeJson(text))
+    if (!parsed.success) throw new ApiShapeError(url, parsed.error.issues)
+    return parsed.data
+  },
+
+  attachmentDownloadUrl: (id: string, scope: ArtifactScope) => withQuery(
+    ROUTES.artifactContent(id),
+    {
+      attachmentVersion: ATTACHMENT_VERSION,
+      scope: scope.scope,
+      projectId: scope.scope === 'project' ? scope.projectId : undefined,
+    },
+  ),
 
   /* Quick Run metadata — these routes never execute model work. */
 
