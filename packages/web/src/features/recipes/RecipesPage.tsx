@@ -609,7 +609,12 @@ function RecipeCard({
           <p role="status" className="mt-2 text-xs">{translate('recipes.snapshot.loading')}</p>
         ) : null}
         {snapshotError ? (
-          <div ref={snapshotErrorRef} tabIndex={-1} role="alert" className="mt-2 outline-none">
+          <div
+            ref={snapshotErrorRef}
+            tabIndex={-1}
+            role="alert"
+            className="mt-2 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent)]"
+          >
             <p className="break-words text-xs text-[var(--danger)]">{snapshotError}</p>
             {snapshotKey ? (
               <Button className="mt-2" size="sm" onClick={() => void createSnapshot()}>
@@ -628,7 +633,11 @@ function RecipeCard({
         ) : null}
         {snapshotProjection ? (
           <section className="mt-3 rounded-md border border-[var(--border)] p-2" aria-label={translate('recipes.snapshot.result')}>
-            <h4 ref={snapshotResultRef} tabIndex={-1} className="text-xs font-semibold outline-none">
+            <h4
+              ref={snapshotResultRef}
+              tabIndex={-1}
+              className="text-xs font-semibold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent)]"
+            >
               {translate('recipes.snapshot.queued')}
             </h4>
             <dl className="mt-2 grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs">

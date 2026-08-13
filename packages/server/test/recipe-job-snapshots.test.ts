@@ -292,6 +292,19 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
         .run('ocr', first.job.id),
       /immutable/u,
     )
+    for (const [column, value] of [
+      ['id', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+      ['kind', 'tool'],
+      ['operation', 'ocr'],
+      ['idempotency_scope', 'different:v1'],
+      ['idempotency_key', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+      ['created_at', '2026-08-14T12:00:00.000Z'],
+    ] as const) {
+      assert.throws(
+        () => db.prepare(`UPDATE jobs SET ${column} = ? WHERE id = ?`).run(value, first.job.id),
+        /identity is immutable/u,
+      )
+    }
     assert.throws(
       () => db.prepare('DELETE FROM recipe_revisions WHERE recipe_id = ? AND revision_number = 1')
         .run(RECIPE_ID),
@@ -299,6 +312,108 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     )
     assert.throws(() => db.prepare('DELETE FROM jobs WHERE id = ?').run(first.job.id))
     assert.throws(() => db.prepare('DELETE FROM projects WHERE id = ?').run(project.id))
+    db.close()
+  })
+
+  it('rejects raw snapshot rows unless source, Job, event and restrictive ownership are exact', () => {
+    const db = openDb(':memory:')
+    new RecipeStore(db, { clock: () => AT, createId: () => RECIPE_ID }).create({
+      name: 'Guarded Recipe',
+      scope: { scope: 'projectless' },
+      configuration: configuration(),
+    })
+    const revision = db.prepare(
+      `SELECT operation, model_state, model_provider, model_reference,
+              configuration_json, configuration_byte_size, configuration_sha256
+       FROM recipe_revisions WHERE recipe_id = ? AND revision_number = 1`,
+    ).get(RECIPE_ID) as {
+      operation: string
+      model_state: string
+      model_provider: string | null
+      model_reference: string | null
+      configuration_json: string
+      configuration_byte_size: number
+      configuration_sha256: string
+    }
+    const insertJob = (
+      id: string,
+      options: { event?: boolean; idempotencyScope?: string; operation?: string } = {},
+    ) => {
+      const operation = options.operation ?? revision.operation
+      db.prepare(
+        `INSERT INTO jobs (
+           id, kind, operation, status, phase, idempotency_scope, idempotency_key,
+           created_at, started_at, finished_at, error, outcome, stop_reason,
+           last_event_sequence
+         ) VALUES (?, 'inference', ?, 'queued', NULL, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, 1)`,
+      ).run(
+        id,
+        operation,
+        options.idempotencyScope ?? 'recipe_job_snapshot:v1',
+        id,
+        AT,
+      )
+      if (options.event !== false) {
+        db.prepare(
+          `INSERT INTO job_events (
+             id, job_id, sequence, type, state, phase, metadata, output,
+             output_privacy, created_at
+           ) VALUES (?, ?, 1, 'lifecycle', 'queued', NULL, '{}', NULL, NULL, ?)`,
+        ).run(`event-${id}`, id, AT)
+      }
+    }
+    const insertSnapshot = (jobId: string, operation = revision.operation) => db.prepare(
+      `INSERT INTO recipe_job_snapshots (
+         job_id, snapshot_version, recipe_id, recipe_revision, scope, project_id,
+         job_kind, operation, model_state, model_provider, model_reference,
+         configuration_json, configuration_byte_size, configuration_sha256,
+         request_fingerprint, created_at
+       ) VALUES (?, 1, ?, 1, 'projectless', NULL, 'inference', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      jobId,
+      RECIPE_ID,
+      operation,
+      revision.model_state,
+      revision.model_provider,
+      revision.model_reference,
+      revision.configuration_json,
+      revision.configuration_byte_size,
+      revision.configuration_sha256,
+      'a'.repeat(64),
+      AT,
+    )
+
+    const missingEventJob = '33333333-3333-4333-8333-333333333333'
+    insertJob(missingEventJob, { event: false })
+    assert.throws(() => insertSnapshot(missingEventJob), /Job mismatch/u)
+
+    const wrongIdentityJob = '44444444-4444-4444-8444-444444444444'
+    insertJob(wrongIdentityJob, { idempotencyScope: 'public:v1' })
+    assert.throws(() => insertSnapshot(wrongIdentityJob), /Job mismatch/u)
+
+    const wrongSourceJob = '55555555-5555-4555-8555-555555555555'
+    insertJob(wrongSourceJob, { operation: 'ocr' })
+    assert.throws(() => insertSnapshot(wrongSourceJob, 'ocr'), /source mismatch/u)
+    assert.equal(count(db, 'recipe_job_snapshots'), 0)
+
+    assert.deepEqual(
+      (db.prepare("PRAGMA foreign_key_list('recipe_job_snapshots')").all() as Array<{
+        id: number
+        seq: number
+        table: string
+        from: string
+        to: string
+        on_delete: string
+      }>).map(({ id, seq, table, from, to, on_delete: onDelete }) => ({
+        id, seq, table, from, to, onDelete,
+      })),
+      [
+        { id: 0, seq: 0, table: 'recipe_revisions', from: 'recipe_id', to: 'recipe_id', onDelete: 'RESTRICT' },
+        { id: 0, seq: 1, table: 'recipe_revisions', from: 'recipe_revision', to: 'revision_number', onDelete: 'RESTRICT' },
+        { id: 1, seq: 0, table: 'projects', from: 'project_id', to: 'id', onDelete: 'RESTRICT' },
+        { id: 2, seq: 0, table: 'jobs', from: 'job_id', to: 'id', onDelete: 'RESTRICT' },
+      ],
+    )
     db.close()
   })
 
@@ -354,6 +469,10 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     assert.equal(response.created, true)
     assert.equal(response.snapshot.recipeId, RECIPE_ID)
     assert.equal(response.snapshot.execution, 'not_implemented')
+    assert.deepEqual(response.snapshot.model, { state: 'none', reason: 'not_selected' })
+    assert.deepEqual(response.snapshot.configuration.model, {
+      state: 'none', reason: 'not_selected',
+    })
     assert.equal(response.eventsUrl, `/api/jobs/${response.job.id}/events`)
     const repeat = await app.request(url, json(body))
     assert.equal(repeat.status, 200)

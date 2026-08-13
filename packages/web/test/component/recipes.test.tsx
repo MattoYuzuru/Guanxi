@@ -49,8 +49,11 @@ function recipe(revision = 1, projectId: string | null = null, name = 'Exact Rec
   }
 }
 
-function snapshotProjection(created = true): CreateRecipeJobSnapshotResponse {
-  const exact = recipe()
+function snapshotProjection(
+  created = true,
+  projectId: string | null = null,
+): CreateRecipeJobSnapshotResponse {
+  const exact = recipe(1, projectId)
   return {
     created,
     job: {
@@ -75,8 +78,8 @@ function snapshotProjection(created = true): CreateRecipeJobSnapshotResponse {
       jobKind: 'inference',
       recipeId: ID,
       recipeRevision: 1,
-      scope: 'projectless',
-      projectId: null,
+      scope: projectId === null ? 'projectless' : 'project',
+      projectId,
       operation: 'complete',
       model: exact.currentRevision.configuration.model,
       configuration: exact.currentRevision.configuration,
@@ -134,6 +137,9 @@ describe('RecipesPage', () => {
     }))
     const creation = deferred<Recipe>()
     vi.spyOn(api, 'createRecipe').mockReturnValue(creation.promise)
+    vi.spyOn(api, 'createRecipeJobSnapshot').mockResolvedValue(
+      snapshotProjection(true, PROJECT.id),
+    )
 
     render(<RecipesPage />)
     expect(await screen.findByRole('heading', { name: 'Recipes' })).toBeTruthy()
@@ -166,6 +172,11 @@ describe('RecipesPage', () => {
     expect(screen.getByText('Advanced routing and adapter execution are not implemented. A created Job remains queued.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /run|execute|route/iu })).toBeNull()
     await waitFor(() => expect(create).toBe(document.activeElement))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare queued Job snapshot' }))
+    expect(screen.getByText(/Confirm this exact immutable revision/u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Create queued Job snapshot' }))
+    expect(await screen.findByRole('heading', { name: 'Queued Job snapshot recorded' })).toBeTruthy()
+    expect(screen.getByText('Not implemented; no adapter or model work started')).toBeTruthy()
   })
 
   it('renames without a revision and explicitly revises to N+1', async () => {

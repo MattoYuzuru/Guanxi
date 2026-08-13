@@ -229,6 +229,42 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await expect.poll(() => snapshotReads).toBeGreaterThan(0)
   await expect(page.getByText('Ревизия 1')).toHaveCount(1)
 
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  await snapshotResult.focus()
+  const layout = await page.evaluate(() => {
+    const snapshot = document.querySelector<HTMLElement>(
+      'section[aria-label="Снимок Job сценария"]',
+    )!
+    return {
+      viewport: innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      bodyWidth: document.body.scrollWidth,
+      snapshotCount: document.querySelectorAll(
+        'section[aria-label="Снимок Job сценария"]',
+      ).length,
+      snapshotRight: snapshot.getBoundingClientRect().right,
+      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      forcedColors: matchMedia('(forced-colors: active)').matches,
+      transitionDuration: getComputedStyle(document.activeElement!).transitionDuration,
+      outlineStyle: getComputedStyle(document.activeElement!).outlineStyle,
+      outlineWidth: getComputedStyle(document.activeElement!).outlineWidth,
+      cardBorderStyle: getComputedStyle(document.querySelector('.recipe-card')!).borderStyle,
+      cardBorderWidth: getComputedStyle(document.querySelector('.recipe-card')!).borderWidth,
+    }
+  })
+  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport)
+  expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
+  expect(layout.snapshotCount).toBe(1)
+  expect(layout.snapshotRight).toBeLessThanOrEqual(layout.viewport)
+  expect(layout.reducedMotion).toBe(true)
+  expect(layout.forcedColors).toBe(true)
+  expect(Number.parseFloat(layout.transitionDuration)).toBeCloseTo(0.00001, 8)
+  expect(layout.outlineStyle).toBe('solid')
+  expect(layout.outlineWidth).not.toBe('0px')
+  expect(layout.cardBorderStyle).toBe('solid')
+  expect(layout.cardBorderWidth).not.toBe('0px')
+  await page.evaluate(() => { document.documentElement.style.fontSize = '' })
+
   await page.getByRole('button', { name: 'Изменить конфигурацию' }).press('Enter')
   await page.getByRole('button', { name: 'Создать следующую ревизию' }).evaluate((button) => {
     const form = button.closest('form')!
@@ -252,29 +288,5 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
     recipeVersion: '1', scope: 'project', projectId: project.id,
   }))).toBe(true)
 
-  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
-  const revise = page.getByRole('button', { name: 'Изменить конфигурацию' })
-  await revise.focus()
-  const layout = await page.evaluate(() => ({
-    viewport: innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-    bodyWidth: document.body.scrollWidth,
-    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-    forcedColors: matchMedia('(forced-colors: active)').matches,
-    transitionDuration: getComputedStyle(document.activeElement!).transitionDuration,
-    outlineStyle: getComputedStyle(document.activeElement!).outlineStyle,
-    outlineWidth: getComputedStyle(document.activeElement!).outlineWidth,
-    cardBorderStyle: getComputedStyle(document.querySelector('.recipe-card')!).borderStyle,
-    cardBorderWidth: getComputedStyle(document.querySelector('.recipe-card')!).borderWidth,
-  }))
-  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport)
-  expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
-  expect(layout.reducedMotion).toBe(true)
-  expect(layout.forcedColors).toBe(true)
-  expect(Number.parseFloat(layout.transitionDuration)).toBeCloseTo(0.00001, 8)
-  expect(layout.outlineStyle).toBe('solid')
-  expect(layout.outlineWidth).toBe('3px')
-  expect(layout.cardBorderStyle).toBe('solid')
-  expect(layout.cardBorderWidth).not.toBe('0px')
   expect(forbiddenEffects).toEqual([])
 })
