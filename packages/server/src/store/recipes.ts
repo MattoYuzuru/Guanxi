@@ -259,7 +259,7 @@ export class RecipeStore {
       currentRevision: parseRevision(revisionRow),
       advancedRouting: 'not_implemented',
       execution: 'not_implemented',
-      jobSnapshot: 'not_implemented',
+      jobSnapshot: 'queued_snapshot_only',
     })
   }
 

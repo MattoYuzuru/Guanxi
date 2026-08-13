@@ -17,6 +17,9 @@ import {
   type CreateChatJobResult,
   type CreateJobInput,
   type CreateJobResult,
+  type CreateRecipeJobSnapshotInput,
+  type CreateRecipeJobSnapshotResult,
+  type RecipeJobSnapshotAssociation,
   type TerminalizeJobInput,
   type TerminalizeChatJobInput,
   type TerminalizeJobResult,
@@ -103,6 +106,18 @@ export class JobService {
     const result = this.store.createChat(input)
     if (result.created) this.publish(result.job.id)
     return result
+  }
+
+  createRecipeSnapshot(
+    input: CreateRecipeJobSnapshotInput,
+  ): CreateRecipeJobSnapshotResult {
+    const result = this.store.createRecipeSnapshot(input)
+    if (result.created) this.publish(result.job.id)
+    return result
+  }
+
+  recipeSnapshot(jobId: string): RecipeJobSnapshotAssociation | null {
+    return this.store.recipeSnapshot(jobId)
   }
 
   get(jobId: string): Job | null {

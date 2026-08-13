@@ -17,6 +17,7 @@ import {
   createProjectChatResponse,
   createQuickRunResponse,
   createRecipeResponse,
+  createRecipeJobSnapshotResponse,
   getContextResponse,
   getChatRetentionResponse,
   getHealthResponse,
@@ -29,6 +30,7 @@ import {
   getQuickRunResponse,
   getRecipeResponse,
   getRecipeRevisionResponse,
+  getRecipeJobSnapshotResponse,
   huggingFaceRepositoryResponse,
   huggingFaceSearchResponse,
   huggingFaceSelectionResponse,
@@ -84,6 +86,7 @@ import {
   type CreateProjectChatBody,
   type CreateQuickRunBody,
   type CreateRecipeBody,
+  type CreateRecipeJobSnapshotBody,
   type PullStreamEvent,
   type PrewarmModelBody,
   type SendMessageBody,
@@ -99,6 +102,7 @@ import {
   type RestoreChatBody,
   type QuickRunScopeQuery,
   type RecipeScopeQuery,
+  type RecipeJobSnapshotQuery,
   type RenameRecipeBody,
   type ReviseRecipeBody,
   type UpdateQuickRunRetentionBody,
@@ -589,6 +593,36 @@ export const api = {
 
   reviseRecipe: (id: string, body: ReviseRecipeBody, signal?: AbortSignal) =>
     request(ROUTES.recipeRevisions(id), reviseRecipeResponse, { method: 'POST', body, signal }),
+
+  createRecipeJobSnapshot: (
+    id: string,
+    revision: number,
+    body: CreateRecipeJobSnapshotBody,
+    signal?: AbortSignal,
+  ) => request(
+    ROUTES.recipeRevisionJobs(id, revision),
+    createRecipeJobSnapshotResponse,
+    { method: 'POST', body, signal },
+  ),
+
+  getRecipeJobSnapshot: (
+    id: string,
+    revision: number,
+    jobId: string,
+    query: RecipeJobSnapshotQuery,
+    signal?: AbortSignal,
+  ) => request(
+    ROUTES.recipeRevisionJob(id, revision, jobId),
+    getRecipeJobSnapshotResponse,
+    {
+      query: {
+        recipeJobSnapshotVersion: query.recipeJobSnapshotVersion,
+        scope: query.scope,
+        projectId: query.scope === 'project' ? query.projectId : undefined,
+      },
+      signal,
+    },
+  ),
 
   /**
    * Единственный способ увидеть файловую систему. Фронт её сам не читает —

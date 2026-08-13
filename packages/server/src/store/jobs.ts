@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   chatJobInputSnapshotSchema,
+  createRecipeJobSnapshotBody,
   jobErrorSchema,
   jobEventTypeSchema,
   jobEventOutputSchema,
@@ -10,6 +11,10 @@ import {
   jobStateSchema,
   jobStreamEventSchema,
   jobTerminalStateSchema,
+  recipeJobSnapshotPathParams,
+  recipeJobSnapshotSchema,
+  recipeJobSnapshotScopeSchema,
+  recipeConfigurationSchema,
   safeJobMetadataSchema,
   turnErrorSchema,
   type ChatJobInputSnapshot,
@@ -22,13 +27,44 @@ import {
   type JobState,
   type JobStreamEvent,
   type JobTerminalState,
+  type RecipeJobSnapshot,
+  type RecipeJobSnapshotScope,
+  type RecipeModelReference,
+  type RecipeOperation,
   type SafeJobMetadata,
 } from '@alamo/contract'
 import { isCanonicalNonTerminalTransition } from '../jobs/lifecycle.ts'
 import type { Db } from './db.ts'
+import { canonicalRecipeConfiguration, RecipeStore } from './recipes.ts'
 import type { TerminalMessageUpdate } from './threads.ts'
 
 const TERMINAL_STATES = new Set<JobState>(jobTerminalStateSchema.options)
+
+function recipeSnapshotIdempotencyScope(): string {
+  return 'recipe_job_snapshot:v1'
+}
+
+function recipeSnapshotFingerprint(input: {
+  recipeId: string
+  recipeRevision: number
+  scope: RecipeJobSnapshotScope
+  operation: RecipeOperation
+  model: RecipeModelReference
+  canonicalSha256: string
+}): string {
+  const exactIntent = JSON.stringify({
+    recipeJobSnapshotVersion: 1,
+    jobKind: 'inference',
+    recipeId: input.recipeId,
+    recipeRevision: input.recipeRevision,
+    scope: input.scope.scope,
+    projectId: input.scope.scope === 'project' ? input.scope.projectId : null,
+    operation: input.operation,
+    model: input.model,
+    canonicalSha256: input.canonicalSha256,
+  })
+  return createHash('sha256').update(Buffer.from(exactIntent, 'utf8')).digest('hex')
+}
 
 export type JobStoreErrorCode =
   | 'job_not_found'
@@ -100,6 +136,25 @@ interface ChatRecoveryRow {
   input_created_at: string | null
 }
 
+interface RecipeJobSnapshotRow {
+  job_id: string
+  snapshot_version: number
+  recipe_id: string
+  recipe_revision: number
+  scope: string
+  project_id: string | null
+  job_kind: string
+  operation: string
+  model_state: string
+  model_provider: string | null
+  model_reference: string | null
+  configuration_json: string
+  configuration_byte_size: number
+  configuration_sha256: string
+  request_fingerprint: string
+  created_at: string
+}
+
 export interface CreateJobInput {
   kind: JobKind
   operation: string
@@ -138,6 +193,22 @@ export interface CreateChatJobInput {
 }
 
 export interface CreateChatJobResult extends ChatJobAssociation {
+  created: boolean
+}
+
+export interface RecipeJobSnapshotAssociation {
+  job: Job
+  snapshot: RecipeJobSnapshot
+}
+
+export interface CreateRecipeJobSnapshotInput {
+  recipeId: string
+  recipeRevision: number
+  scope: RecipeJobSnapshotScope
+  idempotencyKey: string
+}
+
+export interface CreateRecipeJobSnapshotResult extends RecipeJobSnapshotAssociation {
   created: boolean
 }
 
@@ -466,6 +537,132 @@ export class JobStore {
 
       return { created: true, ...this.requireChatInput(id) }
     })
+  }
+
+  /**
+   * Atomically materializes one immutable Recipe revision into a queued Job.
+   * Configuration bytes stay in the dedicated snapshot table and never enter
+   * safe Job/event metadata or the private Chat association.
+   */
+  createRecipeSnapshot(input: CreateRecipeJobSnapshotInput): CreateRecipeJobSnapshotResult {
+    const path = parseInput(
+      { id: input.recipeId, revision: input.recipeRevision },
+      recipeJobSnapshotPathParams,
+      'recipe revision',
+    )
+    const scope = parseInput(input.scope, recipeJobSnapshotScopeSchema, 'scope')
+    const body = parseInput(
+      scope.scope === 'project'
+        ? {
+            recipeJobSnapshotVersion: 1,
+            scope: 'project',
+            projectId: scope.projectId,
+            idempotencyKey: input.idempotencyKey,
+          }
+        : {
+            recipeJobSnapshotVersion: 1,
+            scope: 'projectless',
+            idempotencyKey: input.idempotencyKey,
+          },
+      createRecipeJobSnapshotBody,
+      'Recipe Job snapshot command',
+    )
+    const idempotencyScope = recipeSnapshotIdempotencyScope()
+
+    return this.transaction(() => {
+      const revisionResult = new RecipeStore(this.db).getRevision(path.id, path.revision, scope)
+      if (revisionResult.status !== 'ok') {
+        throw new JobStoreError(
+          'invalid_input',
+          `Recipe ${path.id} revision ${path.revision} was not found in this scope`,
+        )
+      }
+      const revision = revisionResult.revision
+      const configurationBytes = canonicalRecipeConfiguration(revision.configuration)
+      const fingerprint = recipeSnapshotFingerprint({
+        recipeId: path.id,
+        recipeRevision: path.revision,
+        scope,
+        operation: revision.configuration.operation,
+        model: revision.configuration.model,
+        canonicalSha256: revision.canonical.sha256,
+      })
+      const existing = this.jobByIdempotency(idempotencyScope, body.idempotencyKey)
+      if (existing) {
+        const association = this.requireRecipeSnapshot(existing.id)
+        if (association.requestFingerprint !== fingerprint) {
+          throw new JobStoreError(
+            'idempotency_conflict',
+            'The Recipe Job idempotency key is already bound to different input',
+          )
+        }
+        return { created: false, job: existing, snapshot: association.snapshot }
+      }
+
+      const id = randomUUID()
+      const createdAt = new Date().toISOString()
+      const operation = revision.configuration.operation
+      this.db
+        .prepare(
+          `INSERT INTO jobs (
+             id, kind, operation, status, phase, idempotency_scope, idempotency_key,
+             created_at, started_at, finished_at, error, outcome, stop_reason,
+             last_event_sequence
+           ) VALUES (?, 'inference', ?, 'queued', NULL, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, 1)`,
+        )
+        .run(id, operation, idempotencyScope, body.idempotencyKey, createdAt)
+
+      this.insertEvent({
+        id: randomUUID(),
+        jobId: id,
+        sequence: 1,
+        type: 'lifecycle',
+        state: 'queued',
+        phase: null,
+        metadata: {},
+        output: null,
+        createdAt,
+      })
+
+      const model = revision.configuration.model
+      this.db
+        .prepare(
+          `INSERT INTO recipe_job_snapshots (
+             job_id, snapshot_version, recipe_id, recipe_revision, scope, project_id,
+             job_kind, operation, model_state, model_provider, model_reference,
+             configuration_json, configuration_byte_size, configuration_sha256,
+             request_fingerprint, created_at
+           ) VALUES (?, 1, ?, ?, ?, ?, 'inference', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          path.id,
+          path.revision,
+          scope.scope,
+          scope.scope === 'project' ? scope.projectId : null,
+          operation,
+          model.state,
+          model.state === 'explicit' ? model.provider : null,
+          model.state === 'explicit' ? model.reference : null,
+          configurationBytes,
+          revision.canonical.byteSize,
+          revision.canonical.sha256,
+          fingerprint,
+          createdAt,
+        )
+
+      const association = this.requireRecipeSnapshot(id)
+      return { created: true, job: association.job, snapshot: association.snapshot }
+    })
+  }
+
+  recipeSnapshot(jobId: string): RecipeJobSnapshotAssociation | null {
+    const row = this.db
+      .prepare('SELECT * FROM recipe_job_snapshots WHERE job_id = ?')
+      .get(jobId) as unknown as RecipeJobSnapshotRow | undefined
+    if (!row) return null
+    const { job, snapshot } = this.toRecipeSnapshot(row)
+    return { job, snapshot }
   }
 
   chatInput(jobId: string): ChatJobAssociation | null {
@@ -981,6 +1178,92 @@ export class JobStore {
       )
     }
     return this.toChatInput(row)
+  }
+
+  private toRecipeSnapshot(
+    row: RecipeJobSnapshotRow,
+  ): RecipeJobSnapshotAssociation & { requestFingerprint: string } {
+    const job = this.requireJob(row.job_id)
+    const configuration = parseStoredJson(
+      row.configuration_json,
+      recipeConfigurationSchema,
+      'Job',
+      row.job_id,
+    )
+    const canonicalBytes = canonicalRecipeConfiguration(configuration)
+    const canonicalSha256 = createHash('sha256')
+      .update(Buffer.from(canonicalBytes, 'utf8'))
+      .digest('hex')
+    if (
+      canonicalBytes !== row.configuration_json ||
+      Buffer.byteLength(canonicalBytes, 'utf8') !== row.configuration_byte_size ||
+      canonicalSha256 !== row.configuration_sha256
+    ) {
+      throw new JobStoreError(
+        'stored_data_invalid',
+        `Recipe Job snapshot ${row.job_id} failed canonical integrity validation`,
+      )
+    }
+    const model = row.model_state === 'explicit'
+      ? { state: 'explicit' as const, provider: row.model_provider, reference: row.model_reference }
+      : { state: 'none' as const, reason: 'not_selected' as const }
+    const parsed = recipeJobSnapshotSchema.safeParse({
+      recipeJobSnapshotVersion: row.snapshot_version,
+      jobId: row.job_id,
+      jobKind: row.job_kind,
+      recipeId: row.recipe_id,
+      recipeRevision: row.recipe_revision,
+      scope: row.scope,
+      projectId: row.project_id,
+      operation: row.operation,
+      model,
+      configuration,
+      canonical: {
+        format: 'canonical_json_v1',
+        byteSize: row.configuration_byte_size,
+        sha256: row.configuration_sha256,
+      },
+      createdAt: row.created_at,
+      execution: 'not_implemented',
+    })
+    if (
+      !parsed.success ||
+      job.id !== parsed.data.jobId ||
+      job.kind !== parsed.data.jobKind ||
+      job.operation !== parsed.data.operation ||
+      job.idempotencyScope !== recipeSnapshotIdempotencyScope() ||
+      row.request_fingerprint !== recipeSnapshotFingerprint({
+        recipeId: row.recipe_id,
+        recipeRevision: row.recipe_revision,
+        scope: parsed.data.scope === 'project'
+          ? { scope: 'project', projectId: parsed.data.projectId! }
+          : { scope: 'projectless' },
+        operation: parsed.data.operation,
+        model: parsed.data.model,
+        canonicalSha256: parsed.data.canonical.sha256,
+      })
+    ) {
+      throw new JobStoreError(
+        'stored_data_invalid',
+        `Recipe Job snapshot ${row.job_id} contains invalid stored data`,
+      )
+    }
+    return { job, snapshot: parsed.data, requestFingerprint: row.request_fingerprint }
+  }
+
+  private requireRecipeSnapshot(
+    jobId: string,
+  ): RecipeJobSnapshotAssociation & { requestFingerprint: string } {
+    const row = this.db
+      .prepare('SELECT * FROM recipe_job_snapshots WHERE job_id = ?')
+      .get(jobId) as unknown as RecipeJobSnapshotRow | undefined
+    if (!row) {
+      throw new JobStoreError(
+        'idempotency_conflict',
+        `Job ${jobId} is not associated with a Recipe snapshot command`,
+      )
+    }
+    return this.toRecipeSnapshot(row)
   }
 
   private requireJob(jobId: string): Job {

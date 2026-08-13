@@ -99,7 +99,7 @@ export const recipeSchema = z
     currentRevision: recipeRevisionSchema,
     advancedRouting: z.literal('not_implemented'),
     execution: z.literal('not_implemented'),
-    jobSnapshot: z.literal('not_implemented'),
+    jobSnapshot: z.enum(['not_implemented', 'queued_snapshot_only']),
   })
   .strict()
   .superRefine((value, context) => {

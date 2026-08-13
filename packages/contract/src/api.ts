@@ -53,6 +53,18 @@ export {
   reviseRecipeBody,
   reviseRecipeResponse,
 } from './recipes.ts'
+export {
+  createRecipeJobSnapshotBody,
+  createRecipeJobSnapshotResponse,
+  getRecipeJobSnapshotResponse,
+  recipeJobSnapshotPathParams,
+  recipeJobSnapshotQuery,
+  recipeJobSnapshotReadPathParams,
+} from './recipe-job-snapshots.ts'
+export type {
+  CreateRecipeJobSnapshotBody,
+  RecipeJobSnapshotQuery,
+} from './recipe-job-snapshots.ts'
 export type {
   CreateRecipeBody,
   RecipeScopeQuery,
@@ -172,6 +184,10 @@ export const ROUTES = {
   recipeRevisions: (id: string) => `/api/recipes/${encodeURIComponent(id)}/revisions`,
   recipeRevision: (id: string, revision: number) =>
     `/api/recipes/${encodeURIComponent(id)}/revisions/${revision}`,
+  recipeRevisionJobs: (id: string, revision: number) =>
+    `/api/recipes/${encodeURIComponent(id)}/revisions/${revision}/jobs`,
+  recipeRevisionJob: (id: string, revision: number, jobId: string) =>
+    `/api/recipes/${encodeURIComponent(id)}/revisions/${revision}/jobs/${encodeURIComponent(jobId)}`,
 
   approval: (toolCallId: string) => `/api/approvals/${toolCallId}`,
 

@@ -2,23 +2,33 @@ import { Hono } from 'hono'
 import {
   createRecipeBody,
   createRecipeResponse,
+  createRecipeJobSnapshotBody,
+  createRecipeJobSnapshotResponse,
   getRecipeResponse,
   getRecipeRevisionResponse,
+  getRecipeJobSnapshotResponse,
   listRecipesResponse,
   recipePathParams,
   recipeRevisionPathParams,
+  recipeJobSnapshotPathParams,
+  recipeJobSnapshotQuery,
+  recipeJobSnapshotReadPathParams,
   recipeScopeQuery,
   renameRecipeBody,
   renameRecipeResponse,
   reviseRecipeBody,
   reviseRecipeResponse,
   type RecipeScope,
+  type RecipeJobSnapshotScope,
+  ROUTES,
 } from '@alamo/contract'
 import type { AppContext } from '../context.ts'
+import { JobStoreError } from '../store/jobs.ts'
 import { RecipeStore } from '../store/recipes.ts'
 import { fail, notFound } from './errors.ts'
 
 const QUERY_KEYS = new Set(['recipeVersion', 'scope', 'projectId'])
+const SNAPSHOT_QUERY_KEYS = new Set(['recipeJobSnapshotVersion', 'scope', 'projectId'])
 
 function parseScope(url: string): RecipeScope | null {
   const query = new URL(url).searchParams
@@ -27,6 +37,19 @@ function parseScope(url: string): RecipeScope | null {
     [...new Set(query.keys())].some((key) => query.getAll(key).length !== 1)
   ) return null
   const parsed = recipeScopeQuery.safeParse(Object.fromEntries(query))
+  if (!parsed.success) return null
+  return parsed.data.scope === 'project'
+    ? { scope: 'project', projectId: parsed.data.projectId }
+    : { scope: 'projectless' }
+}
+
+function parseSnapshotScope(url: string): RecipeJobSnapshotScope | null {
+  const query = new URL(url).searchParams
+  if (
+    [...query.keys()].some((key) => !SNAPSHOT_QUERY_KEYS.has(key)) ||
+    [...new Set(query.keys())].some((key) => query.getAll(key).length !== 1)
+  ) return null
+  const parsed = recipeJobSnapshotQuery.safeParse(Object.fromEntries(query))
   if (!parsed.success) return null
   return parsed.data.scope === 'project'
     ? { scope: 'project', projectId: parsed.data.projectId }
@@ -46,7 +69,7 @@ function validateProject(
   return scope.scope === 'projectless' || app.projects.get(scope.projectId) !== null
 }
 
-export function recipesRoutes(app: Pick<AppContext, 'db' | 'projects'>): Hono {
+export function recipesRoutes(app: Pick<AppContext, 'db' | 'projects' | 'jobService'>): Hono {
   const routes = new Hono()
   const store = () => new RecipeStore(app.db)
 
@@ -115,6 +138,90 @@ export function recipesRoutes(app: Pick<AppContext, 'db' | 'projects'>): Hono {
       }
       if (result.status !== 'ok') return notFound(context, 'recipe_not_found', 'Recipe was not found in this scope')
       return context.json(reviseRecipeResponse.parse(result.recipe))
+    } catch (error) {
+      return fail(context, error)
+    }
+  })
+
+  routes.post('/:id/revisions/:revision/jobs', async (context) => {
+    const path = recipeJobSnapshotPathParams.safeParse(context.req.param())
+    const parsed = createRecipeJobSnapshotBody.safeParse(
+      await context.req.json().catch(() => null),
+    )
+    if (!path.success || !parsed.success) {
+      return context.json({
+        code: 'validation_failed',
+        message: 'Invalid Recipe Job snapshot request',
+        details: null,
+      }, 400)
+    }
+    const scope = bodyScope(parsed.data)
+    if (!validateProject(app, scope)) {
+      return notFound(context, 'project_not_found', 'Project was not found')
+    }
+    if (store().getRevision(path.data.id, path.data.revision, scope).status !== 'ok') {
+      return notFound(
+        context,
+        'recipe_not_found',
+        'Recipe revision was not found in this scope',
+      )
+    }
+
+    try {
+      const result = app.jobService.createRecipeSnapshot({
+        recipeId: path.data.id,
+        recipeRevision: path.data.revision,
+        scope,
+        idempotencyKey: parsed.data.idempotencyKey,
+      })
+      return context.json(createRecipeJobSnapshotResponse.parse({
+        ...result,
+        eventsUrl: ROUTES.jobEvents(result.job.id),
+      }), result.created ? 202 : 200)
+    } catch (error) {
+      if (error instanceof JobStoreError && error.code === 'idempotency_conflict') {
+        return context.json({
+          code: 'recipe_job_conflict',
+          message: 'Recipe Job idempotency key is bound to different input',
+          details: null,
+        }, 409)
+      }
+      return fail(context, error)
+    }
+  })
+
+  routes.get('/:id/revisions/:revision/jobs/:jobId', (context) => {
+    const path = recipeJobSnapshotReadPathParams.safeParse(context.req.param())
+    const scope = parseSnapshotScope(context.req.url)
+    if (!path.success || !scope) {
+      return context.json({
+        code: 'validation_failed',
+        message: 'Invalid Recipe Job snapshot read request',
+        details: null,
+      }, 400)
+    }
+    if (!validateProject(app, scope)) {
+      return notFound(context, 'project_not_found', 'Project was not found')
+    }
+    try {
+      const result = app.jobService.recipeSnapshot(path.data.jobId)
+      if (
+        !result ||
+        result.snapshot.recipeId !== path.data.id ||
+        result.snapshot.recipeRevision !== path.data.revision ||
+        result.snapshot.scope !== scope.scope ||
+        result.snapshot.projectId !== (scope.scope === 'project' ? scope.projectId : null)
+      ) {
+        return notFound(
+          context,
+          'recipe_job_not_found',
+          'Recipe Job snapshot was not found in this scope',
+        )
+      }
+      return context.json(getRecipeJobSnapshotResponse.parse({
+        ...result,
+        eventsUrl: ROUTES.jobEvents(result.job.id),
+      }))
     } catch (error) {
       return fail(context, error)
     }

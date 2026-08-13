@@ -7,6 +7,8 @@ import {
   type Recipe,
   type RecipeConfiguration,
   type RecipeJsonValue,
+  type RecipeJobSnapshot,
+  type Job,
   type RecipeOperation,
   type RecipeScopeQuery,
 } from '@alamo/contract'
@@ -17,6 +19,60 @@ import { translate } from '../../lib/locale.ts'
 import { useAsync } from '../../lib/useAsync.ts'
 
 type Scope = { scope: 'projectless' } | { scope: 'project'; projectId: string }
+
+type SnapshotReference = {
+  recipeId: string
+  recipeRevision: number
+  jobId: string
+  scope: Scope
+}
+
+type SnapshotProjection = {
+  job: Job
+  snapshot: RecipeJobSnapshot
+  eventsUrl: string
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+
+function snapshotReferenceFromLocation(): SnapshotReference | null {
+  const parameters = new URLSearchParams(window.location.search)
+  const recipeId = parameters.get('snapshotRecipe')
+  const jobId = parameters.get('snapshotJob')
+  const rawRevision = parameters.get('snapshotRevision')
+  const rawScope = parameters.get('snapshotScope')
+  const projectId = parameters.get('snapshotProject')
+  const recipeRevision = Number(rawRevision)
+  if (
+    !recipeId ||
+    !jobId ||
+    !UUID_PATTERN.test(recipeId) ||
+    !UUID_PATTERN.test(jobId) ||
+    !Number.isSafeInteger(recipeRevision) ||
+    recipeRevision < 1
+  ) return null
+  if (rawScope === 'projectless' && projectId === null) {
+    return { recipeId, recipeRevision, jobId, scope: { scope: 'projectless' } }
+  }
+  if (rawScope === 'project' && projectId && projectId === projectId.trim()) {
+    return { recipeId, recipeRevision, jobId, scope: { scope: 'project', projectId } }
+  }
+  return null
+}
+
+function rememberSnapshotReference(reference: SnapshotReference): void {
+  const url = new URL(window.location.href)
+  url.searchParams.set('snapshotRecipe', reference.recipeId)
+  url.searchParams.set('snapshotRevision', String(reference.recipeRevision))
+  url.searchParams.set('snapshotJob', reference.jobId)
+  url.searchParams.set('snapshotScope', reference.scope.scope)
+  if (reference.scope.scope === 'project') {
+    url.searchParams.set('snapshotProject', reference.scope.projectId)
+  } else {
+    url.searchParams.delete('snapshotProject')
+  }
+  window.history.replaceState(window.history.state, '', url)
+}
 
 function query(scope: Scope): RecipeScopeQuery {
   return scope.scope === 'project'
@@ -53,8 +109,11 @@ function baseConfiguration(operation: RecipeOperation): RecipeConfiguration {
 }
 
 export function RecipesPage() {
+  const [initialSnapshotReference] = useState(snapshotReferenceFromLocation)
   const projects = useAsync((signal) => api.listProjects(signal), [])
-  const [scope, setScope] = useState<Scope>({ scope: 'projectless' })
+  const [scope, setScope] = useState<Scope>(
+    initialSnapshotReference?.scope ?? { scope: 'projectless' },
+  )
   const selected = scope.scope === 'project' ? scope.projectId : 'projectless'
 
   return (
@@ -100,12 +159,25 @@ export function RecipesPage() {
         </div>
       ) : null}
 
-      <RecipeScopePanel key={selected} scope={scope} projects={projects.data?.projects ?? []} />
+      <RecipeScopePanel
+        key={selected}
+        scope={scope}
+        projects={projects.data?.projects ?? []}
+        initialSnapshotReference={initialSnapshotReference}
+      />
     </div>
   )
 }
 
-function RecipeScopePanel({ scope, projects }: { scope: Scope; projects: Project[] }) {
+function RecipeScopePanel({
+  scope,
+  projects,
+  initialSnapshotReference,
+}: {
+  scope: Scope
+  projects: Project[]
+  initialSnapshotReference: SnapshotReference | null
+}) {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -252,7 +324,17 @@ function RecipeScopePanel({ scope, projects }: { scope: Scope; projects: Project
         <ol aria-label={translate('recipes.list')} className="mt-4 space-y-3">
           {recipes?.map((recipe) => (
             <li key={recipe.id}>
-              <RecipeCard recipe={recipe} scope={scope} onChange={(updated) => setRecipes((current) => current?.map((item) => item.id === updated.id ? updated : item) ?? null)} onReload={() => setReload((value) => value + 1)} />
+              <RecipeCard
+                recipe={recipe}
+                scope={scope}
+                initialSnapshotReference={
+                  initialSnapshotReference?.recipeId === recipe.id
+                    ? initialSnapshotReference
+                    : null
+                }
+                onChange={(updated) => setRecipes((current) => current?.map((item) => item.id === updated.id ? updated : item) ?? null)}
+                onReload={() => setReload((value) => value + 1)}
+              />
             </li>
           ))}
         </ol>
@@ -261,7 +343,19 @@ function RecipeScopePanel({ scope, projects }: { scope: Scope; projects: Project
   )
 }
 
-function RecipeCard({ recipe, scope, onChange, onReload }: { recipe: Recipe; scope: Scope; onChange: (recipe: Recipe) => void; onReload: () => void }) {
+function RecipeCard({
+  recipe,
+  scope,
+  initialSnapshotReference,
+  onChange,
+  onReload,
+}: {
+  recipe: Recipe
+  scope: Scope
+  initialSnapshotReference: SnapshotReference | null
+  onChange: (recipe: Recipe) => void
+  onReload: () => void
+}) {
   const [rename, setRename] = useState(recipe.name)
   const [renaming, setRenaming] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -270,12 +364,67 @@ function RecipeCard({ recipe, scope, onChange, onReload }: { recipe: Recipe; sco
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
+  const [confirmSnapshot, setConfirmSnapshot] = useState(false)
+  const [snapshotKey, setSnapshotKey] = useState<string | null>(null)
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
+  const [snapshotReadAttempt, setSnapshotReadAttempt] = useState(0)
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
+  const [snapshotProjection, setSnapshotProjection] = useState<SnapshotProjection | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
+  const snapshotErrorRef = useRef<HTMLDivElement>(null)
+  const snapshotResultRef = useRef<HTMLHeadingElement>(null)
+  const snapshotActionRef = useRef<HTMLButtonElement>(null)
   const lock = useRef(false)
+  const snapshotLock = useRef(false)
 
   useEffect(() => {
     if (error) requestAnimationFrame(() => errorRef.current?.focus())
   }, [error])
+
+  useEffect(() => {
+    if (snapshotError) requestAnimationFrame(() => snapshotErrorRef.current?.focus())
+  }, [snapshotError])
+
+  useEffect(() => {
+    if (snapshotProjection) requestAnimationFrame(() => snapshotResultRef.current?.focus())
+  }, [snapshotProjection])
+
+  useEffect(() => {
+    if (!initialSnapshotReference) return
+    const expectedProject = scope.scope === 'project' ? scope.projectId : null
+    const referencedProject = initialSnapshotReference.scope.scope === 'project'
+      ? initialSnapshotReference.scope.projectId
+      : null
+    if (
+      initialSnapshotReference.recipeId !== recipe.id ||
+      initialSnapshotReference.scope.scope !== scope.scope ||
+      referencedProject !== expectedProject
+    ) return
+    const controller = new AbortController()
+    setSnapshotLoading(true)
+    setSnapshotError(null)
+    api.getRecipeJobSnapshot(
+      recipe.id,
+      initialSnapshotReference.recipeRevision,
+      initialSnapshotReference.jobId,
+      scope.scope === 'project'
+        ? { recipeJobSnapshotVersion: 1, scope: 'project', projectId: scope.projectId }
+        : { recipeJobSnapshotVersion: 1, scope: 'projectless' },
+      controller.signal,
+    ).then(
+      (projection) => {
+        if (controller.signal.aborted) return
+        setSnapshotProjection(projection)
+        setSnapshotLoading(false)
+      },
+      (nextError) => {
+        if (controller.signal.aborted) return
+        setSnapshotError(errorMessage(nextError))
+        setSnapshotLoading(false)
+      },
+    )
+    return () => controller.abort('recipe-snapshot-reference-changed')
+  }, [initialSnapshotReference, recipe.id, scope, snapshotReadAttempt])
 
   const scoped = <T extends object>(body: T) => scope.scope === 'project'
     ? { ...body, scope: 'project' as const, projectId: scope.projectId }
@@ -331,6 +480,57 @@ function RecipeCard({ recipe, scope, onChange, onReload }: { recipe: Recipe; sco
     }
   }
 
+  const openSnapshotConfirmation = () => {
+    setSnapshotKey(globalThis.crypto.randomUUID())
+    setSnapshotError(null)
+    setConfirmSnapshot(true)
+  }
+
+  const createSnapshot = async () => {
+    if (snapshotLock.current || !snapshotKey) return
+    snapshotLock.current = true
+    setSnapshotLoading(true)
+    setSnapshotError(null)
+    const revision = recipe.currentRevision.revision
+    try {
+      const result = await api.createRecipeJobSnapshot(
+        recipe.id,
+        revision,
+        scope.scope === 'project'
+          ? {
+              recipeJobSnapshotVersion: 1,
+              scope: 'project',
+              projectId: scope.projectId,
+              idempotencyKey: snapshotKey,
+            }
+          : {
+              recipeJobSnapshotVersion: 1,
+              scope: 'projectless',
+              idempotencyKey: snapshotKey,
+            },
+      )
+      if (
+        result.snapshot.recipeId !== recipe.id ||
+        result.snapshot.recipeRevision !== revision ||
+        result.snapshot.scope !== scope.scope ||
+        result.snapshot.projectId !== (scope.scope === 'project' ? scope.projectId : null)
+      ) throw new Error(translate('recipes.snapshot.scopeMismatch'))
+      setSnapshotProjection(result)
+      setConfirmSnapshot(false)
+      rememberSnapshotReference({
+        recipeId: recipe.id,
+        recipeRevision: revision,
+        jobId: result.job.id,
+        scope,
+      })
+    } catch (nextError) {
+      setSnapshotError(errorMessage(nextError))
+    } finally {
+      snapshotLock.current = false
+      setSnapshotLoading(false)
+    }
+  }
+
   const configuration = recipe.currentRevision.configuration
   return (
     <article className="recipe-card surface min-w-0 rounded-lg border border-[var(--border)] p-3">
@@ -371,6 +571,79 @@ function RecipeCard({ recipe, scope, onChange, onReload }: { recipe: Recipe; sco
           {conflict ? <Button className="mt-2" size="sm" onClick={onReload}>{translate('recipes.conflict.reload')}</Button> : null}
         </div>
       ) : null}
+      <div className="mt-4 border-t border-[var(--border)] pt-3">
+        <Button
+          ref={snapshotActionRef}
+          size="sm"
+          variant="secondary"
+          onClick={openSnapshotConfirmation}
+          disabled={snapshotLoading}
+        >
+          {translate('recipes.snapshot.open')}
+        </Button>
+        {confirmSnapshot ? (
+          <div className="mt-2 rounded-md border border-[var(--border-strong)] p-2">
+            <p className="text-xs">{translate('recipes.snapshot.confirmation')}</p>
+            <p className="mt-1 break-all text-2xs text-[var(--fg-subtle)]">
+              {recipe.id} · {translate('recipes.revision')} {recipe.currentRevision.revision}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button size="sm" loading={snapshotLoading} onClick={() => void createSnapshot()}>
+                {translate('recipes.snapshot.confirm')}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setConfirmSnapshot(false)
+                  setSnapshotKey(null)
+                  snapshotActionRef.current?.focus()
+                }}
+              >
+                {translate('recipes.snapshot.cancel')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {snapshotLoading && !confirmSnapshot ? (
+          <p role="status" className="mt-2 text-xs">{translate('recipes.snapshot.loading')}</p>
+        ) : null}
+        {snapshotError ? (
+          <div ref={snapshotErrorRef} tabIndex={-1} role="alert" className="mt-2 outline-none">
+            <p className="break-words text-xs text-[var(--danger)]">{snapshotError}</p>
+            {snapshotKey ? (
+              <Button className="mt-2" size="sm" onClick={() => void createSnapshot()}>
+                {translate('recipes.snapshot.retry')}
+              </Button>
+            ) : initialSnapshotReference ? (
+              <Button
+                className="mt-2"
+                size="sm"
+                onClick={() => setSnapshotReadAttempt((attempt) => attempt + 1)}
+              >
+                {translate('recipes.snapshot.retryRead')}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {snapshotProjection ? (
+          <section className="mt-3 rounded-md border border-[var(--border)] p-2" aria-label={translate('recipes.snapshot.result')}>
+            <h4 ref={snapshotResultRef} tabIndex={-1} className="text-xs font-semibold outline-none">
+              {translate('recipes.snapshot.queued')}
+            </h4>
+            <dl className="mt-2 grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs">
+              <dt className="text-[var(--fg-subtle)]">{translate('recipes.snapshot.jobId')}</dt>
+              <dd className="break-all font-mono">{snapshotProjection.job.id}</dd>
+              <dt className="text-[var(--fg-subtle)]">{translate('recipes.revision')}</dt>
+              <dd>{snapshotProjection.snapshot.recipeRevision}</dd>
+              <dt className="text-[var(--fg-subtle)]">{translate('recipes.provenance')}</dt>
+              <dd className="break-all font-mono">sha256:{snapshotProjection.snapshot.canonical.sha256}</dd>
+              <dt className="text-[var(--fg-subtle)]">{translate('recipes.snapshot.execution')}</dt>
+              <dd>{translate('recipes.snapshot.notImplemented')}</dd>
+            </dl>
+          </section>
+        ) : null}
+      </div>
       <p className="mt-3 text-2xs text-[var(--fg-subtle)]">{translate('recipes.noExecution')}</p>
     </article>
   )

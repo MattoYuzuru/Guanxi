@@ -3309,6 +3309,8 @@ export const apiErrorSchema = z.object({
     'quick_run_not_found',
     'recipe_not_found',
     'recipe_revision_conflict',
+    'recipe_job_not_found',
+    'recipe_job_conflict',
     'project_chat_mismatch',
     'path_outside_workspace',
     'tool_disabled',

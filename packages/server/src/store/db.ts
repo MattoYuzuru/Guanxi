@@ -930,6 +930,125 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Recipe current revision must already exist');
     END;
   `,
+  // 23 — immutable exact Recipe revision materialized into one queued Job snapshot.
+  // The snapshot is a private configuration boundary; Job/event metadata stay content-free.
+  `
+  CREATE TABLE recipe_job_snapshots (
+    job_id                    TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE RESTRICT,
+    snapshot_version          INTEGER NOT NULL CHECK (snapshot_version = 1),
+    recipe_id                 TEXT NOT NULL,
+    recipe_revision           INTEGER NOT NULL CHECK (recipe_revision >= 1),
+    scope                     TEXT NOT NULL CHECK (scope IN ('projectless','project')),
+    project_id                TEXT REFERENCES projects(id) ON DELETE RESTRICT,
+    job_kind                  TEXT NOT NULL CHECK (job_kind = 'inference'),
+    operation                 TEXT NOT NULL CHECK (operation IN (
+      'complete','embed','transcribe','textToSpeech','ocr','caption','generateImage','generateVideo'
+    )),
+    model_state               TEXT NOT NULL CHECK (model_state IN ('none','explicit')),
+    model_provider            TEXT,
+    model_reference           TEXT,
+    configuration_json        TEXT NOT NULL CHECK (json_valid(configuration_json)),
+    configuration_byte_size   INTEGER NOT NULL CHECK (configuration_byte_size >= 0),
+    configuration_sha256      TEXT NOT NULL CHECK (
+      length(configuration_sha256) = 64 AND configuration_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    request_fingerprint       TEXT NOT NULL CHECK (
+      length(request_fingerprint) = 64 AND request_fingerprint NOT GLOB '*[^0-9a-f]*'
+    ),
+    created_at                TEXT NOT NULL,
+    FOREIGN KEY (recipe_id, recipe_revision)
+      REFERENCES recipe_revisions(recipe_id, revision_number) ON DELETE RESTRICT,
+    CHECK (
+      (scope = 'projectless' AND project_id IS NULL)
+      OR (scope = 'project' AND project_id IS NOT NULL)
+    ),
+    CHECK (
+      (model_state = 'none' AND model_provider IS NULL AND model_reference IS NULL)
+      OR
+      (model_state = 'explicit' AND model_provider = 'ollama'
+        AND model_reference IS NOT NULL AND length(trim(model_reference)) > 0
+        AND model_reference = trim(model_reference))
+    )
+  );
+  CREATE INDEX idx_recipe_job_snapshots_recipe
+    ON recipe_job_snapshots(recipe_id, recipe_revision, created_at, job_id);
+
+  CREATE TRIGGER recipe_job_snapshots_exact_source
+    BEFORE INSERT ON recipe_job_snapshots
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM recipes recipe
+      JOIN recipe_revisions revision
+        ON revision.recipe_id = recipe.id
+       AND revision.revision_number = NEW.recipe_revision
+      WHERE recipe.id = NEW.recipe_id
+        AND recipe.project_id IS NEW.project_id
+        AND NEW.scope = CASE WHEN recipe.project_id IS NULL THEN 'projectless' ELSE 'project' END
+        AND revision.operation = NEW.operation
+        AND revision.model_state = NEW.model_state
+        AND revision.model_provider IS NEW.model_provider
+        AND revision.model_reference IS NEW.model_reference
+        AND revision.configuration_json = NEW.configuration_json
+        AND revision.configuration_byte_size = NEW.configuration_byte_size
+        AND revision.configuration_sha256 = NEW.configuration_sha256
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe Job snapshot source mismatch');
+    END;
+
+  CREATE TRIGGER recipe_job_snapshots_exact_job
+    BEFORE INSERT ON recipe_job_snapshots
+    WHEN NOT EXISTS (
+      SELECT 1 FROM jobs job
+      WHERE job.id = NEW.job_id
+        AND job.kind = NEW.job_kind
+        AND job.operation = NEW.operation
+        AND job.status = 'queued'
+        AND job.phase IS NULL
+        AND job.idempotency_scope = 'recipe_job_snapshot:v1'
+        AND job.created_at = NEW.created_at
+        AND job.last_event_sequence = 1
+        AND EXISTS (
+          SELECT 1 FROM job_events event
+          WHERE event.job_id = job.id
+            AND event.sequence = 1
+            AND event.type = 'lifecycle'
+            AND event.state = 'queued'
+            AND event.phase IS NULL
+            AND event.metadata = '{}'
+            AND event.output IS NULL
+            AND event.output_privacy IS NULL
+            AND event.created_at = NEW.created_at
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM job_events event
+          WHERE event.job_id = job.id AND event.sequence <> 1
+        )
+        AND NOT EXISTS (SELECT 1 FROM chat_job_inputs chat WHERE chat.job_id = job.id)
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe Job snapshot Job mismatch');
+    END;
+
+  CREATE TRIGGER recipe_job_snapshots_immutable_update
+    BEFORE UPDATE ON recipe_job_snapshots
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe Job snapshots are immutable');
+    END;
+
+  CREATE TRIGGER recipe_job_snapshots_immutable_delete
+    BEFORE DELETE ON recipe_job_snapshots
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe Job snapshots are immutable');
+    END;
+
+  CREATE TRIGGER recipe_snapshot_job_identity_immutable
+    BEFORE UPDATE OF id, kind, operation, idempotency_scope, idempotency_key, created_at ON jobs
+    WHEN EXISTS (SELECT 1 FROM recipe_job_snapshots snapshot WHERE snapshot.job_id = OLD.id)
+    BEGIN
+      SELECT RAISE(ABORT, 'Recipe snapshot Job identity is immutable');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {
