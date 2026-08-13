@@ -613,6 +613,37 @@ export function threadsRoutes(app: AppContext): Hono {
       return notFound(context, 'thread_not_found', 'Тред не найден')
     }
 
+    if (parsed.data.idempotencyKey) {
+      try {
+        const existing = app.threads.contextCheckpointByIntent(
+          threadId,
+          parsed.data.idempotencyKey,
+        )
+        if (existing) {
+          const thread = app.threads.get(threadId)!
+          const activeMessages = app.threads.activeContextMessages(threadId)
+          const usedTokens = activeMessages.reduce(
+            (sum, message) => sum + estimateTokens(message.content),
+            0,
+          )
+          return context.json(compactThreadResponse.parse({
+            checkpoint: existing,
+            context: buildContextState({
+              usedTokens,
+              allocatedTokens: thread.options.numCtx,
+              usage: null,
+              model: thread.model,
+              tracker: app.tracker,
+            }),
+            compactedTokens: 0,
+            estimatedRepefillMs: app.tracker.estimateColdPrefillMs(thread.model, usedTokens),
+          }))
+        }
+      } catch (error) {
+        return fail(context, error)
+      }
+    }
+
     const ownerController = new AbortController()
     const abortFromRequest = () => ownerController.abort(context.req.raw.signal.reason)
     if (context.req.raw.signal.aborted) abortFromRequest()

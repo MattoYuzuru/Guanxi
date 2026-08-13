@@ -391,6 +391,23 @@ export class ThreadStore {
     )
   }
 
+  /** Resolves one client compaction intent without crossing Thread ownership. */
+  contextCheckpointByIntent(threadId: string, checkpointId: string): ContextCheckpoint | null {
+    const checkpoint = this.canonicalContextCheckpoints(threadId)
+      .find((candidate) => candidate.id === checkpointId)
+    if (checkpoint) return checkpoint
+    const collision = this.db
+      .prepare('SELECT thread_id FROM context_checkpoints WHERE id = ?')
+      .get(checkpointId) as { thread_id: string } | undefined
+    if (collision) {
+      throw new ContextCheckpointStoreError(
+        'invalid_input',
+        'Context checkpoint idempotency key belongs to another Thread',
+      )
+    }
+    return null
+  }
+
   /** Only the latest summary plus the unsummarized original tail sent to a model. */
   activeContextMessages(threadId: string): Message[] {
     const latest = this.canonicalContextCheckpoints(threadId).at(-1)
@@ -466,17 +483,7 @@ export class ThreadStore {
         this.db.exec('COMMIT')
         return existing
       }
-      if (input.checkpointId) {
-        const collision = this.db
-          .prepare('SELECT thread_id FROM context_checkpoints WHERE id = ?')
-          .get(input.checkpointId) as { thread_id: string } | undefined
-        if (collision) {
-          throw new ContextCheckpointStoreError(
-            'invalid_input',
-            'Context checkpoint idempotency key belongs to another Thread',
-          )
-        }
-      }
+      if (input.checkpointId) this.contextCheckpointByIntent(input.threadId, input.checkpointId)
       const latest = canonical.at(-1) ?? null
       if ((latest?.id ?? null) !== input.expectedPreviousCheckpointId) {
         throw new ContextCheckpointStoreError(

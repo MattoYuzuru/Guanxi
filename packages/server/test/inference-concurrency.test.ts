@@ -1425,6 +1425,21 @@ describe('exclusive inference routes', () => {
       assert.equal('message' in firstProjection, false)
       assert.equal(firstProjection.checkpoint.id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
       seedMessages(context, thread.id, 9, 14)
+      const replayedIntent = await app.request(`/api/threads/${thread.id}/compact`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ idempotencyKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+      })
+      assert.equal(replayedIntent.status, 200)
+      const replayedProjection = await replayedIntent.json() as {
+        checkpoint: { id: string }
+        compactedTokens: number
+      }
+      assert.equal(replayedProjection.checkpoint.id, firstProjection.checkpoint.id)
+      assert.equal(replayedProjection.compactedTokens, 0)
+      assert.equal(summaries, 1)
+      assert.equal(context.threads.contextCheckpoints(thread.id).length, 1)
+      assert.equal(context.governor.active, false)
       assert.equal(
         (await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })).status,
         200,
