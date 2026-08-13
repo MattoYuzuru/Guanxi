@@ -169,7 +169,7 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal((seed.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 23)
+    assert.equal((seed.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 24)
     const chat = createChat(seed)
     const artifact = createArtifact(seed, chat.id, 'migration', 'exact final', 'exact diagnostic')
     seed.prepare(
@@ -219,11 +219,11 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 23)
+    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 24)
     assert.equal(count(retried, 'reasoning_artifact_deletion_audit'), 0)
     retried.close()
     const reopened = openDb(path)
-    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 23)
+    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 24)
     assert.equal((reopened.prepare(
       "SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'reasoning_artifact_deletion_audit'",
     ).get() as { count: number }).count, 1)
@@ -410,7 +410,13 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     const artifact = createArtifact(db, chat.id, 'atomic', 'generated answer survives', 'secret diagnostic')
     setArtifactExpiry(db, artifact.artifactId, NOW)
     const threads = new ThreadStore(db)
-    threads.addMessage({ threadId: chat.id, role: 'assistant', content: 'legacy final', thinking: 'legacy thinking' })
+    threads.addMessage({
+      threadId: chat.id,
+      role: 'assistant',
+      content: 'legacy final',
+      thinking: 'legacy thinking',
+      turnStatus: 'completed',
+    })
     threads.addMessage({ threadId: chat.id, role: 'user', content: 'tail one' })
     threads.addMessage({ threadId: chat.id, role: 'assistant', content: 'tail two', turnStatus: 'completed' })
     const storedBefore = JSON.stringify({

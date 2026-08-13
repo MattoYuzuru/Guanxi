@@ -25,6 +25,7 @@ import {
 } from '../src/store/jobs.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { RecipeStore } from '../src/store/recipes.ts'
+import { downgradeContextCheckpointsToV23 } from './fixtures/context-checkpoint-migration.ts'
 
 const AT = '2026-08-14T10:00:00.000Z'
 const RECIPE_ID = '11111111-1111-4111-8111-111111111111'
@@ -63,6 +64,7 @@ function tablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string 
 }
 
 function downgradeToV22(db: DatabaseSync): void {
+  downgradeContextCheckpointsToV23(db)
   db.exec(`
     DROP TRIGGER recipe_snapshot_job_identity_immutable;
     DROP TRIGGER recipe_job_snapshots_immutable_delete;
@@ -148,7 +150,7 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seeded = openDb(path)
-    assert.equal(version(seeded), 23)
+    assert.equal(version(seeded), 24)
     const project = new ProjectStore(seeded).create('Exact v22 Project', AT)
     new RecipeStore(seeded, { clock: () => AT, createId: () => RECIPE_ID }).create({
       name: 'Exact v22 Recipe',
@@ -179,16 +181,22 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 23)
+    assert.equal(version(retried), 24)
     assert.equal(count(retried, 'recipe_job_snapshots'), 0)
-    assert.equal(tablesPayload(retried, new Set(['recipe_job_snapshots'])), exactV22)
+    assert.equal(
+      tablesPayload(retried, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
+      exactV22,
+    )
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 23)
-    assert.equal(tablesPayload(reopened, new Set(['recipe_job_snapshots'])), exactV22)
+    assert.equal(version(reopened), 24)
+    assert.equal(
+      tablesPayload(reopened, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
+      exactV22,
+    )
     reopened.close()
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 23)
+    assert.equal(version(fresh), 24)
     fresh.close()
   })
 

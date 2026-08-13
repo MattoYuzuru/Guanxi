@@ -1351,25 +1351,25 @@ describe('exclusive inference routes', () => {
       const app = createApp(context)
       const thread = createThread(context, 'compact-model')
       seedMessages(context, thread.id, 0, 6)
-      const originalReplace = context.threads.replaceWithSummary.bind(context.threads)
+      const originalCreate = context.threads.createContextCheckpoint.bind(context.threads)
       let failReplace = true
-      context.threads.replaceWithSummary = (...args) => {
+      context.threads.createContextCheckpoint = (...args) => {
         if (failReplace) {
           failReplace = false
           throw new Error('injected compaction persistence failure')
         }
-        return originalReplace(...args)
+        return originalCreate(...args)
       }
 
       const failed = await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })
       assert.equal(failed.status, 500)
       assert.equal(context.governor.active, false)
-      assert.equal(context.threads.messages(thread.id).some((message) => message.isCompaction), false)
+      assert.equal(context.threads.contextCheckpoints(thread.id).length, 0)
 
       const recovered = await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })
       assert.equal(recovered.status, 200)
       assert.equal(context.governor.active, false)
-      assert.equal(context.threads.messages(thread.id).filter((message) => message.isCompaction).length, 1)
+      assert.equal(context.threads.contextCheckpoints(thread.id).length, 1)
     } finally {
       context.db.close()
     }
@@ -1399,10 +1399,13 @@ describe('exclusive inference routes', () => {
       const thread = createThread(context, 'compact-model')
       seedMessages(context, thread.id, 0, 8)
 
-      assert.equal(
-        (await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })).status,
-        200,
-      )
+      const firstCompaction = await app.request(`/api/threads/${thread.id}/compact`, {
+        method: 'POST',
+      })
+      assert.equal(firstCompaction.status, 200)
+      const firstProjection = await firstCompaction.json() as Record<string, unknown>
+      assert.equal('checkpoint' in firstProjection, true)
+      assert.equal('message' in firstProjection, false)
       seedMessages(context, thread.id, 9, 14)
       assert.equal(
         (await app.request(`/api/threads/${thread.id}/compact`, { method: 'POST' })).status,
@@ -1418,19 +1421,55 @@ describe('exclusive inference routes', () => {
 
       assert.deepEqual(
         rows.map((row) => ({ seq: row.seq, content: row.content, compact: row.is_compaction })),
-        [
-          {
-            seq: 10,
-            content: 'Сводка предыдущей части диалога:\n\nsummary-2',
-            compact: 1,
-          },
-          { seq: 11, content: 'original-11', compact: 0 },
-          { seq: 12, content: 'original-12', compact: 0 },
-          { seq: 13, content: 'original-13', compact: 0 },
-          { seq: 14, content: 'original-14', compact: 0 },
-        ],
+        Array.from({ length: 15 }, (_, seq) => ({
+          seq,
+          content: `original-${seq}`,
+          compact: 0,
+        })),
       )
       assert.equal(new Set(rows.map((row) => row.seq)).size, rows.length)
+      assert.deepEqual(
+        context.threads.contextCheckpoints(thread.id).map((checkpoint) => ({
+          previous: checkpoint.previousCheckpointId,
+          upToSeq: checkpoint.source.upToSeq,
+          messageCount: checkpoint.source.messageCount,
+          content: checkpoint.summary.content,
+        })),
+        [
+          {
+            previous: null,
+            upToSeq: 4,
+            messageCount: 5,
+            content: 'Сводка предыдущей части диалога:\n\nsummary-1',
+          },
+          {
+            previous: context.threads.contextCheckpoints(thread.id)[0]!.id,
+            upToSeq: 10,
+            messageCount: 11,
+            content: 'Сводка предыдущей части диалога:\n\nsummary-2',
+          },
+        ],
+      )
+
+      const hardReload = await app.request(
+        `/api/threads/${thread.id}?contextCheckpointVersion=1`,
+      )
+      assert.equal(hardReload.status, 200)
+      const hardReloadBody = await hardReload.json() as {
+        messages: Array<{ isCompaction: boolean }>
+        contextCheckpoints: Array<{ id: string }>
+      }
+      assert.equal(hardReloadBody.messages.length, 15)
+      assert.equal(hardReloadBody.messages.some((message) => message.isCompaction), false)
+      assert.equal(hardReloadBody.contextCheckpoints.length, 2)
+      assert.equal(new Set(hardReloadBody.contextCheckpoints.map(({ id }) => id)).size, 2)
+      for (const query of [
+        'contextCheckpointVersion=2',
+        'contextCheckpointVersion=1&future=true',
+        'contextCheckpointVersion=1&contextCheckpointVersion=1',
+      ]) {
+        assert.equal((await app.request(`/api/threads/${thread.id}?${query}`)).status, 400)
+      }
 
       await (await send(app, thread.id, 'original-15')).text()
       const nextContext = turnRequests[0]?.messages.map((message) => message.content) ?? []

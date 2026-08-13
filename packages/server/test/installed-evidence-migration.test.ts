@@ -41,7 +41,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     const path = join(root, 'alamo.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 23)
+    assert.equal(version(first), 24)
     assert.equal(
       (first.prepare(
         `SELECT COUNT(*) AS count FROM sqlite_schema
@@ -52,7 +52,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 23)
+    assert.equal(version(reopened), 24)
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -76,7 +76,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 23)
+    assert.equal(version(upgraded), 24)
     assert.equal(
       (upgraded.prepare('SELECT COUNT(*) AS count FROM installed_model_evidence_cache').get() as {
         count: number
@@ -115,7 +115,7 @@ describe('SQLite installed evidence cache migration 7', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 23)
+    assert.equal(version(recovered), 24)
     recovered.close()
   })
 })

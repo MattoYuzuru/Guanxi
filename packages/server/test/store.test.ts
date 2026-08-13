@@ -36,12 +36,21 @@ describe('SQLite stores', () => {
       })
     }
 
-    const summary = threads.replaceWithSummary(thread.id, 1, 'summary', null)
+    const summary = threads.createContextCheckpoint({
+      threadId: thread.id,
+      upToSeq: 1,
+      expectedPreviousCheckpointId: null,
+      summary: 'summary',
+    })
     const messages = threads.messages(thread.id)
 
-    assert.equal(summary.isCompaction, true)
+    assert.equal(summary.summary.content, 'summary')
     assert.deepEqual(
       messages.map((message) => message.content),
+      ['message-0', 'message-1', 'message-2', 'message-3', 'message-4', 'message-5'],
+    )
+    assert.deepEqual(
+      threads.activeContextMessages(thread.id).map((message) => message.content),
       ['summary', 'message-2', 'message-3', 'message-4', 'message-5'],
     )
 
@@ -57,8 +66,8 @@ describe('SQLite stores', () => {
       parsedFrom: 'content_json',
       diff: null,
     }
-    threads.recordToolRun(thread.id, summary.id, call)
-    threads.recordToolRun(thread.id, summary.id, {
+    threads.recordToolRun(thread.id, messages[0]!.id, call)
+    threads.recordToolRun(thread.id, messages[0]!.id, {
       ...call,
       status: 'ok',
       result: 'done',
@@ -162,7 +171,12 @@ describe('SQLite stores', () => {
     }
     const first = threads.compactionCandidates(thread.id, 4)
     assert.equal(first?.upToSeq, 4)
-    threads.replaceWithSummary(thread.id, first!.upToSeq, 'summary-1', null)
+    const firstCheckpoint = threads.createContextCheckpoint({
+      threadId: thread.id,
+      upToSeq: first!.upToSeq,
+      expectedPreviousCheckpointId: first!.expectedPreviousCheckpointId,
+      summary: 'summary-1',
+    })
 
     for (let index = 9; index < 15; index += 1) {
       threads.addMessage({ threadId: thread.id, role: 'user', content: `message-${index}` })
@@ -175,17 +189,36 @@ describe('SQLite stores', () => {
       ['summary-1', 'message-5', 'message-6', 'message-7', 'message-8', 'message-9', 'message-10'],
     )
 
-    threads.replaceWithSummary(thread.id, second!.upToSeq, 'summary-2', null)
+    threads.createContextCheckpoint({
+      threadId: thread.id,
+      upToSeq: second!.upToSeq,
+      expectedPreviousCheckpointId: firstCheckpoint.id,
+      summary: 'summary-2',
+    })
     const rows = db
       .prepare('SELECT seq, content FROM messages WHERE thread_id = ? ORDER BY seq')
       .all(thread.id) as Array<{ seq: number; content: string }>
     assert.deepEqual(rows.map((row) => ({ ...row })), [
-      { seq: 10, content: 'summary-2' },
+      { seq: 0, content: 'message-0' },
+      { seq: 1, content: 'message-1' },
+      { seq: 2, content: 'message-2' },
+      { seq: 3, content: 'message-3' },
+      { seq: 4, content: 'message-4' },
+      { seq: 5, content: 'message-5' },
+      { seq: 6, content: 'message-6' },
+      { seq: 7, content: 'message-7' },
+      { seq: 8, content: 'message-8' },
+      { seq: 9, content: 'message-9' },
+      { seq: 10, content: 'message-10' },
       { seq: 11, content: 'message-11' },
       { seq: 12, content: 'message-12' },
       { seq: 13, content: 'message-13' },
       { seq: 14, content: 'message-14' },
     ])
+    assert.deepEqual(
+      threads.activeContextMessages(thread.id).map((message) => message.content),
+      ['summary-2', 'message-11', 'message-12', 'message-13', 'message-14'],
+    )
 
     db.close()
   })

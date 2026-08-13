@@ -1,7 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { downgradeContextCheckpointsToV23 } from './context-checkpoint-migration.ts'
 
 /** Remove the additive v20 audit boundary while preserving the exact v19 shape. */
 export function downgradeChatHardDeletionToV19(db: DatabaseSync): void {
+  downgradeContextCheckpointsToV23(db)
   db.exec(`
     DROP TRIGGER IF EXISTS recipe_snapshot_job_identity_immutable;
     DROP TRIGGER IF EXISTS recipe_job_snapshots_immutable_delete;

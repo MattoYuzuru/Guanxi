@@ -1119,7 +1119,9 @@ describe('project routes', () => {
       project: { id: string }
       thread: { id: string; projectId: string; workspaceId: null }
       messages: unknown[]
+      contextCheckpoints?: unknown[]
     }
+    assert.equal('contextCheckpoints' in exactBody, false)
     assert.deepEqual(
       {
         projectId: exactBody.project.id,
@@ -1130,6 +1132,24 @@ describe('project routes', () => {
       },
       { projectId: first.id, threadId: created.id, owner: first.id, workspaceId: null, messages: [] },
     )
+    const checkpointRead = await app.request(
+      `/api/projects/${first.id}/chats/${created.id}?contextCheckpointVersion=1`,
+    )
+    assert.equal(checkpointRead.status, 200)
+    assert.deepEqual(
+      (await checkpointRead.json() as { contextCheckpoints: unknown[] }).contextCheckpoints,
+      [],
+    )
+    for (const query of [
+      'contextCheckpointVersion=2',
+      'contextCheckpointVersion=1&future=1',
+      'contextCheckpointVersion=1&contextCheckpointVersion=1',
+    ]) {
+      assert.equal(
+        (await app.request(`/api/projects/${first.id}/chats/${created.id}?${query}`)).status,
+        400,
+      )
+    }
     const mismatch = await app.request(`/api/projects/${second.id}/chats/${created.id}`)
     assert.equal(mismatch.status, 409)
     assert.equal((await mismatch.json() as { code: string }).code, 'project_chat_mismatch')

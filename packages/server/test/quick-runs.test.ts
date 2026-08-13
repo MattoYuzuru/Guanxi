@@ -21,6 +21,7 @@ import { ProjectService } from '../src/projects/service.ts'
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { QuickRunStore } from '../src/store/quick-runs.ts'
+import { downgradeContextCheckpointsToV23 } from './fixtures/context-checkpoint-migration.ts'
 
 const CREATED_AT = '2026-08-13T10:00:00.000Z'
 const UPDATED_AT = '2026-08-13T11:00:00.000Z'
@@ -47,6 +48,7 @@ function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): stri
 }
 
 function downgradeToV20(db: DatabaseSync): void {
+  downgradeContextCheckpointsToV23(db)
   db.exec(`
     DROP TRIGGER recipe_snapshot_job_identity_immutable;
     DROP TRIGGER recipe_job_snapshots_immutable_delete;
@@ -164,7 +166,7 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 23)
+    assert.equal(version(seed), 24)
     const project = new ProjectStore(seed).create('Exact v20 Project', CREATED_AT)
     seed.prepare(
       `INSERT INTO workspaces (id, name, root_path, created_at, last_used_at)
@@ -203,24 +205,24 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 23)
+    assert.equal(version(retried), 24)
     assert.equal(count(retried, 'quick_runs'), 0)
     assert.equal(new ProjectStore(retried).get(project.id)?.name, 'Exact v20 Project')
     assert.equal(allTablesPayload(retried, new Set([
-      'quick_runs', 'recipes', 'recipe_revisions', 'recipe_job_snapshots',
+      'quick_runs', 'recipes', 'recipe_revisions', 'recipe_job_snapshots', 'context_checkpoints',
     ])), exactV20)
     retried.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 23)
+    assert.equal(version(reopened), 24)
     assert.equal(count(reopened, 'quick_runs'), 0)
     assert.equal(allTablesPayload(reopened, new Set([
-      'quick_runs', 'recipes', 'recipe_revisions', 'recipe_job_snapshots',
+      'quick_runs', 'recipes', 'recipe_revisions', 'recipe_job_snapshots', 'context_checkpoints',
     ])), exactV20)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 23)
+    assert.equal(version(fresh), 24)
     assert.equal(count(fresh, 'quick_runs'), 0)
     fresh.close()
   })
