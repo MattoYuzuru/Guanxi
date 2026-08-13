@@ -201,7 +201,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 20)
+    assert.equal(version(seed), 21)
     const chat = createChat(seed, 'Legacy final answer')
     new ThreadStore(seed).addMessage({
       threadId: chat.id,
@@ -259,16 +259,16 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 20)
+    assert.equal(version(retried), 21)
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
-    assert.equal(allTablesPayload(retried, new Set(['chat_deletion_audit'])), v19Payload)
+    assert.equal(allTablesPayload(retried, new Set(['chat_deletion_audit', 'quick_runs'])), v19Payload)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 20)
+    assert.equal(version(reopened), 21)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
-    assert.equal(allTablesPayload(reopened, new Set(['chat_deletion_audit'])), v19Payload)
+    assert.equal(allTablesPayload(reopened, new Set(['chat_deletion_audit', 'quick_runs'])), v19Payload)
     reopened.close()
   })
 
@@ -524,6 +524,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       { child: 'messages', table: 'threads', from: 'thread_id', on_delete: 'CASCADE' },
       { child: 'project_filesystem_bindings', table: 'projects', from: 'project_id', on_delete: 'CASCADE' },
       { child: 'project_filesystem_bindings', table: 'workspaces', from: 'workspace_id', on_delete: 'CASCADE' },
+      { child: 'quick_runs', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'reasoning_artifacts', table: 'jobs', from: 'source_job_id', on_delete: 'CASCADE' },
       { child: 'reasoning_artifacts', table: 'messages', from: 'source_message_id', on_delete: 'CASCADE' },
       { child: 'reasoning_artifacts', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },

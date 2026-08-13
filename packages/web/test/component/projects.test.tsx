@@ -96,7 +96,7 @@ describe('ProjectsPage', () => {
 
     render(<ProjectsPage />)
     const heading = await screen.findByRole('heading', { name: 'Не удалось загрузить проекты' })
-    expect(heading).toBe(document.activeElement)
+    await waitFor(() => expect(heading).toBe(document.activeElement))
     expect(screen.getByRole('alert').textContent).toContain('safe list failure')
 
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))

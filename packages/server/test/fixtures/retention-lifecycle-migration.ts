@@ -3,6 +3,9 @@ import type { DatabaseSync } from 'node:sqlite'
 /** Remove the additive v20 audit boundary while preserving the exact v19 shape. */
 export function downgradeChatHardDeletionToV19(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER IF EXISTS quick_runs_identity_immutable;
+    DROP INDEX IF EXISTS idx_quick_runs_scope_updated;
+    DROP TABLE IF EXISTS quick_runs;
     DROP INDEX IF EXISTS idx_chat_deletion_audit_scope;
     DROP TABLE IF EXISTS chat_deletion_audit;
     PRAGMA user_version = 19;
