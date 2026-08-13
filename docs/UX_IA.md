@@ -182,16 +182,19 @@ Gallery встроенных и пользовательских задач:
 Карточка Recipe показывает operation, accepted inputs, output artifacts,
 предпочтительную модель и ограничения. Editor имеет Simple и Advanced sections.
 
-Current P3-K surface `/recipes` — минимальная scoped gallery, а не весь target
+Current P3-L surface `/recipes` — минимальная scoped gallery, а не весь target
 editor. Она разделяет projectless и exact Project, показывает loading/empty/
 error/retry, создаёт Recipe, выводит current revision и canonical SHA-256/byte
 provenance, отдельно переименовывает identity metadata и явно создаёт следующую
 revision через expected-revision. Conflict сохраняет данные server-а, переводит
-фокус на alert и предлагает reload. English fallback и curated Russian,
-keyboard flow, 390 px/200%, forced colors и reduced motion покрыты mocked
-Chromium. Surface явно сообщает, что execution, automatic routing и Job
-attachment не реализованы; accepted inputs/output artifacts и Advanced sections
-пока не проецируются.
+фокус на alert и предлагает reload. Отдельная two-step confirmation создаёт
+только exact queued Job snapshot, сохраняет UUID при retry и показывает
+server-sourced Job ID, revision/hash и `execution: not_implemented`; hard reload
+читает association с server, а не доверяет URL payload. English fallback и
+curated Russian, visible focus, keyboard flow, 390 px/200%, forced colors и
+reduced motion покрыты mocked Chromium. Surface явно сообщает, что execution и
+automatic routing не реализованы; accepted inputs/output artifacts и Advanced
+sections пока не проецируются.
 
 ### Agent
 

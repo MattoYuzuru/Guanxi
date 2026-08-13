@@ -97,10 +97,17 @@ canonical UTF-8 bytes, byte size и SHA-256; create атомарно созда�
 revise использует expected-revision CAS, а rename revision не создаёт. Старые
 revisions читаются exact и не переписываются.
 
-Текущий Recipe ещё не исполняется: automatic routing, Job snapshot/attachment,
-input/output schemas, attachments, vocabulary и integration grants остаются
-`not_implemented`. Существующий arbitrary public Job input не считается Recipe
-snapshot.
+P3-L умеет явно материализовать exact immutable Recipe revision в один
+canonical `inference` Job со статусом `queued`. Private snapshot фиксирует
+Recipe/Project scope, operation, explicit/no-model state, canonical
+configuration bytes, SHA-256/size и source revision. Поздний rename либо revise
+N+1 не меняет старый Job. Snapshot не является Chat input и не публикуется в
+safe Job/event metadata.
+
+Текущий Recipe всё ещё не исполняется: automatic routing, adapter dispatch,
+Artifact result, input/output schemas, attachments, vocabulary и integration
+grants остаются `not_implemented`. Существующий arbitrary public Job input не
+считается Recipe snapshot.
 
 ### Agent Run
 

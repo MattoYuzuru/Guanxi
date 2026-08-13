@@ -1083,6 +1083,23 @@ snapshot. Recipe create/rename/revise/read не создаёт Job или lifecy
 revision → Job snapshot и execution остаются `not_implemented`; arbitrary
 public Job `operation` и private Chat input эту границу не заменяют.
 
+P3-L добавляет отдельную typed materialization command:
+
+```text
+exact Recipe id + revision + scope + UUID key
+→ BEGIN IMMEDIATE
+→ queued inference Job + sequence-1 empty lifecycle event
+→ private immutable recipe_job_snapshots row
+→ commit → sourced POST/GET projection
+```
+
+Одинаковый key + exact intent возвращает ту же association, другой intent даёт
+conflict, а failure откатывает все три rows. Snapshot хранит canonical bytes,
+hash/size, operation и explicit/no-model state; поздние rename/revise его не
+меняют. Ни startup recovery, ни Chat execution owner не подхватывают эту
+association: без будущего Recipe execution owner Job правдиво остаётся
+`queued`, не получает Governor lease и не запускает adapter/Ollama/Artifact.
+
 ```text
 active
   → expiring

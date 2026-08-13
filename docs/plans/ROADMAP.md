@@ -164,7 +164,7 @@ Apple Silicon. Hardware-зависимые пункты вынесены явн�
 
 ### Requirements
 
-`WORK-001..011`, `WB-001..003`, `I18N-001..003`, `NOT-001`, `AGT-001`.
+`WORK-001..013`, `WB-001..003`, `I18N-001..003`, `NOT-001`, `AGT-001`.
 
 ### Exit gate
 

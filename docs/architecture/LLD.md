@@ -289,6 +289,9 @@ input snapshot и private typed Chat output внутри Job event. Public calle
 - migration 22: additive `recipes`/`recipe_revisions` с restrictive immutable
   ownership, normalized name, closed configuration columns, canonical bytes/
   SHA-256/size, immutable revision triggers и current-revision existence guard;
+- migration 23: additive private `recipe_job_snapshots` с restrictive exact
+  Recipe/revision/Project/Job ownership, canonical bytes/hash/size, global UUID
+  idempotency и DB guards для queued Job + content-free initial event;
 - `store/quick-runs.ts` + `http/quick-runs-routes.ts`: exact Project/projectless
   metadata create/list/read и one-update retention mutation без Thread, Job,
   runtime, provider, filesystem или maintenance effects;
@@ -1081,9 +1084,10 @@ Migration 20 append-only добавляет не ссылающийся на Thr
 `chat_deletion_audit`: version, Chat/Project scope, `session_recovery_elapsed`,
 tombstone/deadline/deletion timestamps, server-maintenance source, exact SQLite
 metadata boundary и `blob_gc=not_applicable`; content в таблице нет. Migration
-21 добавляет canonical Quick Run metadata, а migration 22 — canonical Recipe
-identity и immutable numbered configuration revisions. Recipe execution,
-automatic routing и exact Job snapshot wiring, остальные target tables, generic
+21 добавляет canonical Quick Run metadata, migration 22 — canonical Recipe
+identity и immutable numbered configuration revisions, а migration 23 —
+immutable exact Recipe revision → queued Job snapshot. Recipe execution,
+automatic routing, остальные target tables, generic
 Artifact/blob GC и TTL hard deletion не реализованы.
 Legacy `threads/messages/workspaces`, raw Thread REST и strict legacy Project
 list сохранены без destructive route cutover.
@@ -1098,6 +1102,7 @@ list сохранены без destructive route cutover.
 | `recipes`               | versioned reusable config                         |
 | `jobs`                  | lifecycle, snapshot, idempotency, terminal result |
 | `job_events`            | append-only replay sequence                       |
+| `recipe_job_snapshots`  | private exact Recipe revision configuration       |
 | `job_dependencies`      | pipeline DAG                                      |
 | `artifacts`             | type/checksum/storage/derivation                  |
 | `model_variants`        | provider/digest/quantization metadata             |

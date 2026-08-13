@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-14
-**Текущая фаза:** Phase 3 — P3-L Recipe-to-Job snapshot foundation ready
+**Текущая фаза:** Phase 3 — P3-M non-destructive context checkpoint ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1887,6 +1887,57 @@ attachments/vocabulary/integration grants и live Ollama/GPU/network намер�
 вне slice. Следующий bounded slice — P3-L exact Recipe revision → queued Job
 snapshot без adapter execution или automatic model selection.
 
+## Phase 3 — P3-L exact Recipe revision → queued Job snapshot
+
+**Статус:** independently verified
+
+Commits: `69e57e8` (strict contract, migration 23, store/REST/Web), `b65fd9d`
+(server/component/browser evidence), `2401db1` и `10f8cb9` (independent review
+fixes).
+
+Append-only migration 23 добавляет private immutable one-to-one
+`recipe_job_snapshots` с restrictive ссылками на canonical Job, exact Recipe
+identity/revision и nullable Project. Typed application command одной
+`BEGIN IMMEDIATE` transaction материализует canonical configuration bytes,
+SHA-256/size, closed operation и explicit/no-model state в один `inference` Job
+со статусом `queued` и одним content-free lifecycle event. Global UUID
+idempotency key сериализует и process-local, и two-connection duplicate; exact
+intent repeat возвращает тот же Job, а mismatch и injected failure не оставляют
+partial rows. Rename и следующая Recipe revision старый snapshot не меняют.
+
+Strict versioned scoped POST/GET fail-closed отклоняют malformed/extra/future и
+cross-scope input. Snapshot configuration не попадает в public Job/event
+metadata, Chat input или Message. Localized `/recipes` требует explicit
+confirmation, удерживает UUID при retry, блокирует repeated activation, читает
+server association после hard reload и показывает exact Job ID/revision/hash с
+truthful `execution: not_implemented`. Focus/error/result, English fallback,
+curated Russian, 390 px/200%, forced colors и reduced motion имеют прямые
+assertions. Ни Governor, ни Ollama/adapter/tool/provider/filesystem, ни Artifact,
+Thread, Message или Quick Run не запускаются.
+
+Evidence по правилу WORKFLOW: **6 new / 637 core regression envelope**,
+**2 new / 219 Web component/parser envelope**, **0 new, 1 materially extended /
+36 mocked Chromium envelope**. Targeted backend — 6/6 P3-L и 10/10 с P3-K,
+component — 6/6 Recipes, Chromium — 1/1. После review-fix full core 637/637,
+Web 219/219, browser 36/36, typecheck и build прошли; targeted server 6/6 и
+Chromium 1/1 повторены. Markdownlint и diff check также прошли.
+
+Independent reviewer сначала дал **NO-GO**: DB exact-source/exact-Job/event и
+Job identity guards не имели mutation-resistant raw-SQL assertions, no-model
+round-trip был косвенным, а English и 200% evidence не держали новый snapshot в
+DOM. `2401db1` добавил adversarial insert/update/FK inventory, explicit no-model
+и English flow; перенос layout check на snapshot обнаружил отсутствующий visible
+outline программного error/result focus и исправил его. Follow-up потребовал
+malformed sequence-1 event и computed error-outline assertions; `10f8cb9`
+закрыл оба. Финальный reviewer verdict — **READY**, findings нет.
+
+Остаточный риск: synthetic SQLite и mocked Chromium; нет production DB corpus,
+real screen-reader/device, live multi-process deployment или live
+Ollama/GPU/network. Snapshot не имеет execution owner и остаётся queued;
+automatic routing, Artifact result и retention cleanup намеренно вне slice.
+Следующий bounded slice — P3-M non-destructive visible context checkpoint:
+текущее `replaceWithSummary` удаляет исходные Messages и нарушает WORK-007.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -1986,7 +2037,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-L ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-M ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

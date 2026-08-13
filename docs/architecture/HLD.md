@@ -41,7 +41,8 @@ Ollama — отдельный runtime и фактический владелец
 SQLite хранит settings, threads/messages, nullable immutable Project ownership,
 versioned Chat retention policy/user-activity basis, workspaces, logical
 Projects, canonical scoped Quick Run metadata с общей retention policy,
-canonical Recipe identities/immutable revisions, versioned Project presentation metadata и
+canonical Recipe identities/immutable revisions/queued Job snapshots,
+versioned Project presentation metadata и
 filesystem bindings, tool journal,
 legacy
 calibration, exact P1-L observation samples, `jobs`/`job_events` и P1-D private
@@ -94,6 +95,15 @@ SHA-256/size provenance. `BEGIN IMMEDIATE` атомарно создаёт ident
 Strict scoped REST читает current/exact historical revision, а Web показывает
 current revision. Ни одна граница не создаёт Job, не обращается к Ollama/
 Governor/provider/filesystem и не реализует execution либо automatic routing.
+
+P3-L migration 23 additive создаёт private immutable
+`recipe_job_snapshots`. Exact Recipe revision одной transaction становится
+одним canonical `inference` Job в `queued`, sequence-1 content-free lifecycle
+event и snapshot canonical configuration bytes/hash/size. Restrictive FK и DB
+guards связывают scope, Project, Recipe/revision, Job identity и initial event;
+UUID idempotency scope глобален для этой команды. Snapshot не является Chat
+input и не попадает в safe event metadata. Его POST/GET и Web confirmation не
+подключены к execution owner, Governor, Ollama или Artifact storage.
 
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,
@@ -331,7 +341,8 @@ background Job.
    model, но не являются точным unload timer либо гарантией будущей residency.
 4. P1-E восстанавливает single-process Chat truth после restart, но не даёт
    checkpoint/resume executing inference и не координирует второй process.
-5. Generic public Job без Chat adapter остаётся queued и не исполняется.
+5. Generic public Job и P3-L Recipe snapshot Job без execution owner остаются
+   queued и не исполняются.
 6. Private input/output находится в локальной SQLite без отдельного encryption
    boundary; plaintext settings уже остаются известным долгом.
 7. Remote bind открывает filesystem/shell boundaries без реальной authentication.

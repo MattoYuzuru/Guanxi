@@ -5,9 +5,9 @@
 
 ## Текущий baseline
 
-На 2026-08-14 после P3-K implementation и independent verification:
+На 2026-08-14 после P3-L implementation и independent verification:
 
-- полный core с CLI reuse: 631/631; Web component/parser: 217/217;
+- полный core с CLI reuse: 637/637; Web component/parser: 219/219;
 - `npm run test:web:browser`: 36/36 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
@@ -138,6 +138,16 @@
   проверяют loading/empty/error/retry/create/current/revise/conflict,
   provenance, focus, English fallback/curated Russian; mocked Chromium добавляет
   exact scope/count/revision, 390 px, 200%, forced colors и reduced motion;
+- deterministic P3-L tests покрывают strict versioned create/read contract,
+  migration 23 fresh/v22→v23/reopen/retry/true rollback с exact v22 payload,
+  atomic Job/event/snapshot rollback, immutable historical bytes/hash/model,
+  global UUID idempotency и true two-connection duplicate. Raw-SQL assertions
+  отклоняют wrong Recipe source, Job identity, missing/malformed initial event и
+  фиксируют restrictive composite FK/Job identity guards; no-model round-trip и
+  public metadata privacy проверены явно. Web fixtures покрывают confirmation,
+  same-key retry, repeated activation, server read после hard reload, visible
+  error/result focus и English/Russian. Mocked Chromium держит snapshot в DOM
+  при 390 px/200%, forced colors/reduced motion и считает запрещённые effects;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
@@ -587,7 +597,7 @@ process lock. P0-D health остаётся sampled observation; обязател
   page-memory projection двух exact rows, а legacy compatibility path сохраняет
   full response. Page size 12/maximum 100 — response/render policy, не catalog
   total limit; benchmark — local synthetic diagnostic, не production SLA.
-- P3-F–P3-K migrations проверены на synthetic SQLite fixtures; нет production
+- P3-F–P3-L migrations проверены на synthetic SQLite fixtures; нет production
   corpus либо multi-process terminal/cleanup/leave/delete races. Generic blob GC,
   TTL Trash hard deletion и intermediate multi-step tool Artifact semantics остаются
   за current границей.
@@ -608,14 +618,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                                    |
 | Static web serving                 | test                                     |
 | CLI existing-server logic          | tests                                    |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-K      |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P3-K mocked   |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-L      |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P3-L mocked   |
 | Catalog provider/cache/pages       | P0-D/P2-E–P2-H local/bundled fixtures    |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane                |
 | Job replay/reattach                | HTTP SSE; browser durable replay         |
 | Chat startup recovery              | reopened SQLite, fail-closed pages       |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web           |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-K      |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-L      |
 
 ## Обязательная target matrix
 

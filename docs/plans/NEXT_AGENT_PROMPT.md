@@ -4,98 +4,123 @@
 
 **Проверено:** 2026-08-14
 
-**Назначение:** продолжить Phase 3 bounded slice P3-L — атомарно материализовать
-exact immutable Recipe revision в canonical queued Job snapshot, не подключая
-adapter execution, automatic routing/model selection или Artifact output
+**Назначение:** продолжить Phase 3 bounded slice P3-M — заменить destructive
+Chat compaction на видимый non-destructive context checkpoint, сохраняя исходные
+Messages byte-exact и не расширяясь в generic Artifact/blob foundation
 
 ## Сначала
 
 Работай в `/Users/m.ryabushkin/Projects/alamo-ui`. Прочитай `AGENTS.md`,
 `docs/NAVIGATION.md`, обязательный `plans/WORKFLOW.md`, затем `PRODUCT.md`,
 `DOMAIN_MODEL.md`, `UX_IA.md`, current HLD/LLD, `DEVELOPMENT.md`, `TESTING.md`,
-`architecture/RUNTIME_LIFECYCLE.md`, ADR-0002/0005/0008,
-`plans/PHASE_STATUS.md`, `plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted
-owner decisions.
+`architecture/RUNTIME_LIFECYCLE.md`, ADR-0002/0005, `plans/PHASE_STATUS.md`,
+`plans/ROADMAP.md`, `plans/OPEN_QUESTIONS.md` и accepted owner decisions.
 
-Зафиксируй clean starting revision/status и latest commits. P3-K завершён как
-independently verified slice: migration 22, canonical scoped Recipe identity,
-immutable numbered revisions, strict REST и truthful no-execution Web surface.
-Review fix `97055f4` закрывает overlong-name persistence before-response failure.
-Не выдавай synthetic SQLite, jsdom и mocked Chromium за production, real
-device/screen reader или live Ollama/GPU/network validation.
+Зафиксируй clean starting revision/status и latest commits. P3-L завершён как
+independently verified slice: migration 23, exact immutable Recipe revision →
+queued Job snapshot, strict REST и confirmed Web read/reload. Review fixes
+`2401db1`/`10f8cb9` закрывают raw-SQL guard, no-model, English/layout и visible
+focus assertion gaps. Не выдавай synthetic SQLite/jsdom/mocked Chromium за
+production, real assistive technology или live Ollama/GPU/network validation.
 
-## Orientation gate
+## Критический defect и orientation gate
+
+`WORK-007` требует, чтобы context compaction создавала видимый checkpoint/
+summary и не стирала исходную историю. Текущий
+`ThreadStore.replaceWithSummary` сначала выполняет
+`DELETE FROM messages ... seq <= upToSeq`; `store.test.ts` и repeated-compaction
+tests закрепляют это противоположное поведение. Это P0 correctness gap, а не
+косметический feature.
 
 До edits составь exact inventory:
 
-- public arbitrary `POST /api/jobs`, `JobStore.create`, initial event и
-  idempotency scope;
-- private Chat-only `chat_job_inputs`, fingerprint и execution owner;
-- P3-K canonical Recipe revision bytes/digest, exact scope и historical read;
-- safe public Job/event metadata, startup recovery и queued generic Job cancel;
-- accepted Job kind/operation/model snapshot requirements.
+- migration 1 `messages`, unique `(thread_id, seq)`, Message/Job/reasoning/tool
+  ownership и delete cascades;
+- `compactionCandidates`, `replaceWithSummary`, route `/compact`, Governor
+  admission, abort/failure handling и repeated compaction;
+- `runTurn` history projection, reusable-prefix/KV explanation и context token
+  calculation;
+- Thread/Project Chat GET contracts, `useChat` reload и `MessageView` legacy
+  `isCompaction` projection;
+- legacy databases, где source rows уже были удалены: их нельзя восстановить или
+  описать как preserved.
 
-Не считай arbitrary public `operation: string` либо private Chat input готовым
-Recipe snapshot. Не добавляй Recipe content в safe Job metadata/events и не
-переиспользуй Chat association. Если accepted docs не определяют Job kind для
-closed Recipe operations, зафиксируй exact blocker/варианты в
-`OPEN_QUESTIONS.md`; не изобретай mapping молча. Automatic routing/scoring,
-fallback model и capability selection не входят в slice: snapshot сохраняет
-explicit model reference либо truthful no-model state из выбранной revision.
+Не решай defect копированием source rows с последующим DELETE: original Message
+identity, reasoning Artifact, Chat Job association и tool journal должны
+остаться на месте. Generic Artifact/blob store — следующий отдельный slice.
 
-## Bounded outcome P3-L
+## Bounded outcome P3-M
 
-- Добавь append-only migration 23 для immutable one-to-one Recipe Job snapshot,
-  связанного restrictive FK с canonical Job, Recipe identity и exact numbered
-  revision. Храни snapshot version, exact Recipe scope, operation/model state,
-  canonical configuration bytes, byte size/SHA-256 и created timestamp.
-- Добавь typed application command, который одной `BEGIN IMMEDIATE` transaction
-  создаёт queued Job, initial lifecycle event и snapshot exact выбранной
-  revision. Rename/current revise после linearization не меняют snapshot.
-- Добавь strict versioned scoped REST create/read boundary. URL/body должны
-  явно выбирать exact Recipe revision и UUID idempotency key; unknown/future/
-  extra/malformed/cross-scope input отклоняется fail-closed.
-- Идемпотентный repeat того же exact intent возвращает тот же Job/snapshot без
-  второго event. Concurrent two-connection duplicate сериализуется; conflict
-  или injected snapshot failure не оставляет partial Job/event/association.
-- Добавь minimal localized Web action из exact current Recipe revision: explicit
-  confirmation создаёт только queued Job snapshot и показывает sourced Job ID,
-  Recipe revision/provenance и truthful `execution: not_implemented`. Покрой
-  loading/error/retry/repeated activation/focus и hard reload/read association.
-- Не enqueue-ить Resource Governor, не запускать Ollama/adapter/tool/provider,
-  не создавать Artifact/Message/Thread/Quick Run и не изменять current Recipe.
-  Existing public Job и Chat command остаются byte/behavior compatible.
+- Добавь append-only migration 24 для immutable versioned
+  `context_checkpoints`: checkpoint ID, exact Thread, monotonically advanced
+  source boundary `up_to_seq`, optional previous checkpoint link/version,
+  summary UTF-8 bytes/hash/size, source count, created timestamp и explicit
+  legacy/source-preservation state. Новые canonical checkpoints всегда
+  `source_preserved`; legacy summary Messages могут быть отражены только как
+  `legacy_source_unavailable`, без invented source history.
+- Замени destructive write на одну `BEGIN IMMEDIATE` transaction, которая
+  revalidate-ит Thread, exact existing boundary и expected previous checkpoint,
+  затем вставляет checkpoint. Она не UPDATE/DELETE-ит `messages`, reasoning,
+  Jobs/events, Chat inputs или tool runs. Empty/malformed/stale/injected failure
+  оставляет zero checkpoint rows и все source bytes без изменений.
+- Раздели **stored history** и **active model context**. Public Chat history
+  возвращает все original Messages в исходном порядке плюс отдельную typed
+  checkpoint projection. Следующий Ollama turn получает только latest summary
+  как system context + original Messages после boundary; source history до
+  boundary не отправляется модели повторно. Context token projection считается
+  по active context, не по всей сохранённой истории.
+- Repeated compaction использует latest checkpoint summary + новый tail,
+  продвигает boundary по persisted `messages.seq`, не суммирует старые original
+  rows заново и не создаёт duplicate/stale checkpoint при two-connection race.
+- Добавь strict read projection к legacy и nested Project Chat GET без удаления
+  или переименования existing fields. Unknown/future/corrupt checkpoint fail-
+  closed; projectless/Project history не смешивается.
+- Обнови localized Chat timeline/Context surface: видимый checkpoint marker с
+  summary, boundary/source count/time и truthful distinction «история сохранена,
+  active context использует summary». Original Messages остаются доступны после
+  compaction и hard reload. Все новые strings идут через locale keys.
+- Сохрани Governor contract: планирование только после admission, one lease,
+  abort/provider/persistence failure освобождает lease. Не добавляй durable Job,
+  background execution, provider retry, filesystem/blob или cleanup effects.
 
 ## Non-goals
 
-- Recipe execution, worker/adapter dispatch, automatic routing/model selection;
-- Job result/Artifact persistence, attachments, schemas, vocabulary/dictionary;
-- MCP/Skill/tool grants, integration policy, permissions inheritance;
-- Quick Run execution/cleanup или решение Q-37;
-- generic public Job API redesign, Chat input migration или Job state changes;
-- Project/Workspace deletion, service/CLI/TUI и live provider behavior.
+- generic Artifact metadata/content-addressed blob store, attachments/export;
+- Recipe/Quick Run execution, routing или retention cleanup;
+- Agent Run checkpoint/resume и durable Maintenance Job;
+- восстановление уже удалённых pre-v24 source Messages;
+- изменение Message IDs/seq, Job/Reasoning lifecycle, Retention/Trash semantics;
+- automatic compaction policy, hidden thresholds, new context ceilings;
+- live Ollama/GPU/network либо multi-process deployment guarantee.
 
 ## Обязательные assertions
 
-- migration 23 fresh/v22→v23/reopen/retry/true rollback с exact v22 bytes;
-- restrictive immutable Job/Recipe/revision ownership и exact Project/
-  projectless scope; snapshot не является Chat input или safe event metadata;
-- one transaction даёт ровно один queued Job, sequence-1 lifecycle event и один
-  snapshot; injected failure/invalid Recipe оставляет zero rows;
-- exact historical canonical bytes/hash/model/operation переживают Recipe
-  rename, revise N+1 и hard reload without drift;
-- same UUID + exact intent idempotent; concurrent two-connection duplicate даёт
-  один Job/event/snapshot; mismatched scope/revision fail-closed;
-- strict version/path/body, malformed/extra/future fields и missing/no-model
-  projection round-trip без invented fallback;
-- Web confirmation/retry/repeated activation/focus/EN fallback/RU, exact
-  Job/Recipe/revision/provenance, 390 px/200%, forced colors/reduced motion;
-- zero Ollama/Governor/adapter/tool/filesystem/provider/model-unload/Artifact/
-  Message/Thread/Quick Run effects и zero automatic transition beyond queued.
+- migration 24 fresh/v23→v24/reopen/retry/true rollback с exact v23 bytes и
+  honest legacy-source-unavailable projection;
+- после canonical compaction every original `messages` row (включая IDs, seq,
+  roles, content, thinking/tool/usage/terminal/job fields), reasoning Artifact,
+  Job/input/event и tool journal byte-exact сохранён; ни один count не уменьшен;
+- checkpoint immutable/restrictive, exact boundary существует в том же Thread,
+  source count/hash/size exact; wrong Thread/boundary/previous/stale/corrupt row
+  fail-closed;
+- injected insert failure и provider empty/error/abort дают zero partial
+  checkpoints, unchanged history и released Governor lease;
+- repeated checkpoint input = previous summary + only new original tail;
+  boundary monotonic, unique и based on persisted seq; true two-connection stale
+  race даёт один winner без duplicate;
+- next turn request содержит latest summary ровно один раз, не содержит original
+  pre-boundary content и сохраняет ordered post-boundary tail; public GET/UI
+  одновременно содержит original pre-boundary history и visible checkpoint;
+- hard reload, nested Project scope, legacy compaction row, reasoning/final
+  answer separation и Chat retention/Trash regressions;
+- Web loading/error/retry/focus, English fallback/curated Russian, no duplicate
+  checkpoint marker, keyboard, 390 px/200%, forced colors и reduced motion;
+- zero new Job/Ollama call beyond the explicit summarization already requested,
+  zero tool/filesystem/provider-unload/Artifact/Quick Run/Recipe effects.
 
-Выполни mutation checks минимум для transaction atomicity, exact historical
-snapshot, Job/Recipe/revision FK, idempotency/concurrent duplicate, scope,
-strict version/privacy и no-execution/no-effect boundary.
+Выполни mutation checks минимум для source DELETE, active-context filtering,
+checkpoint immutability/boundary, repeated-summary uniqueness, transaction
+rollback, legacy truth, public history presence и visible Web marker count.
 
 ## Gates и handoff
 
@@ -111,6 +136,7 @@ git diff --check
 После implementation запусти отдельную read-only independent verification по
 `plans/WORKFLOW.md`; findings исправляет автор отдельным commit. Обнови
 current-state docs, `PHASE_STATUS.md` с new/regression envelope и перепиши этот
-prompt на следующий bounded slice. Если orientation не подтверждает accepted
-Job kind/privacy/idempotency contract, оставь P3-L с exact blocker и recovery
-steps, а не расширяй generic Job или execution policy предположениями.
+prompt на следующий bounded slice. Если migration 24 не может честно отделить
+legacy loss от new preservation либо active context от stored history, оставь
+P3-M blocked с exact conflict/recovery steps — не скрывай DELETE за новой
+терминологией.
