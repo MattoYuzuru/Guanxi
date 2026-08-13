@@ -23,7 +23,7 @@ function tablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string 
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
   ).all() as Array<{ name: string }>)
     .map(({ name }) => name)
-    .filter((name) => !excluded.has(name))
+    .filter((name) => !excluded.has(name) && name !== 'artifact_blobs' && name !== 'artifacts')
   return JSON.stringify(Object.fromEntries(tables.map((name) => [
     name,
     db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
@@ -119,7 +119,7 @@ describe('P3-M non-destructive context checkpoints', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seeded = openDb(path)
-    assert.equal(version(seeded), 25)
+    assert.equal(version(seeded), 26)
     const threads = new ThreadStore(seeded)
     const thread = createThread(threads)
     seed(threads, thread.id, 0, 2)
@@ -141,12 +141,12 @@ describe('P3-M non-destructive context checkpoints', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 25)
+    assert.equal(version(retried), 26)
     assert.equal(count(retried, 'context_checkpoints'), 0)
     assert.equal(tablesPayload(retried, new Set(['context_checkpoints'])), exactV23)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 25)
+    assert.equal(version(reopened), 26)
     assert.equal(tablesPayload(reopened, new Set(['context_checkpoints'])), exactV23)
     reopened.close()
   })

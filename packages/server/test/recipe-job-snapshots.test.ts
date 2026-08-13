@@ -56,7 +56,7 @@ function tablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string 
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
   ).all() as Array<{ name: string }>)
     .map(({ name }) => name)
-    .filter((name) => !excluded.has(name))
+    .filter((name) => !excluded.has(name) && name !== 'artifact_blobs' && name !== 'artifacts')
   return JSON.stringify(Object.fromEntries(tables.map((name) => [
     name,
     db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
@@ -150,7 +150,7 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seeded = openDb(path)
-    assert.equal(version(seeded), 25)
+    assert.equal(version(seeded), 26)
     const project = new ProjectStore(seeded).create('Exact v22 Project', AT)
     new RecipeStore(seeded, { clock: () => AT, createId: () => RECIPE_ID }).create({
       name: 'Exact v22 Recipe',
@@ -181,7 +181,7 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 25)
+    assert.equal(version(retried), 26)
     assert.equal(count(retried, 'recipe_job_snapshots'), 0)
     assert.equal(
       tablesPayload(retried, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
@@ -189,14 +189,14 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     )
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 25)
+    assert.equal(version(reopened), 26)
     assert.equal(
       tablesPayload(reopened, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
       exactV22,
     )
     reopened.close()
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 25)
+    assert.equal(version(fresh), 26)
     fresh.close()
   })
 

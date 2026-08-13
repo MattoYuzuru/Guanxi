@@ -106,7 +106,8 @@ function setBasis(db: DatabaseSync, chatId: string, basis: string, policy = 'ttl
 function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string {
   const names = (db.prepare(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-  ).all() as Array<{ name: string }>).map(({ name }) => name).filter((name) => !excluded.has(name))
+  ).all() as Array<{ name: string }>).map(({ name }) => name)
+    .filter((name) => !excluded.has(name) && name !== 'artifact_blobs' && name !== 'artifacts')
   return JSON.stringify(Object.fromEntries(names.map((name) => [
     name,
     db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
@@ -230,7 +231,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 25)
+    assert.equal(version(upgraded), 26)
     assert.equal(lifecycleColumns(upgraded).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(upgraded), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     assert.equal((upgraded.prepare(
@@ -255,12 +256,12 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 25)
+    assert.equal(version(reopened), 26)
     assert.deepEqual(lifecycleSchemaObjects(reopened), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 25)
+    assert.equal(version(fresh), 26)
     assert.equal(lifecycleColumns(fresh).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(fresh), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     fresh.close()

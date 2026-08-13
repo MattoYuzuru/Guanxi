@@ -207,6 +207,7 @@ function runtimeFixture(
   }
   const context: AppContext = {
     ...runtimeBase,
+    artifacts: null as never,
     completionProbe: { execute: async () => { throw new Error('not invoked') } } as never,
     capabilityOverrides: {
       apply: async () => { throw new Error('not invoked') },

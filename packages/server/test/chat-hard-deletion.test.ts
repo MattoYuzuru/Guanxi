@@ -119,7 +119,7 @@ function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): stri
   const tables = (db.prepare(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
   ).all() as Array<{ name: string }>).map(({ name }) => name)
-    .filter((name) => !excluded.has(name))
+    .filter((name) => !excluded.has(name) && name !== 'artifact_blobs' && name !== 'artifacts')
   return JSON.stringify(Object.fromEntries(tables.map((name) => [
     name,
     db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
@@ -201,7 +201,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 25)
+    assert.equal(version(seed), 26)
     const chat = createChat(seed, 'Legacy final answer')
     new ThreadStore(seed).addMessage({
       threadId: chat.id,
@@ -259,7 +259,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 25)
+    assert.equal(version(retried), 26)
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
@@ -269,7 +269,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     ])), v19Payload)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 25)
+    assert.equal(version(reopened), 26)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
     assert.equal(allTablesPayload(reopened, new Set([
       'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
@@ -520,6 +520,8 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       `${left.child}:${left.table}:${left.from}`.localeCompare(`${right.child}:${right.table}:${right.from}`),
     )
     assert.deepEqual(dependencyInventory, [
+      { child: 'artifacts', table: 'jobs', from: 'source_job_id', on_delete: 'RESTRICT' },
+      { child: 'artifacts', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'chat_job_inputs', table: 'jobs', from: 'job_id', on_delete: 'CASCADE' },
       { child: 'chat_job_inputs', table: 'messages', from: 'assistant_message_id', on_delete: 'CASCADE' },
       { child: 'chat_job_inputs', table: 'messages', from: 'user_message_id', on_delete: 'CASCADE' },
