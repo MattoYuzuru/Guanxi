@@ -23,6 +23,8 @@
   truthful unimplemented routing/execution/Job projections;
 - `reasoning-artifacts.ts`: strict version 1 sourced diagnostic Artifact,
   ownership, integrity и retention projection;
+- `context-checkpoints.ts`: strict version 1 summary/source projection и честное
+  различение preserved/legacy-unavailable history;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
   output;
 - `index.ts`: public exports.
@@ -555,8 +557,12 @@ backfill-ит как `completed/legacy_terminal_chunk`. Terminal update меня
 P0-A по-прежнему отвечает за безопасный effect и root/Chat Error Boundaries.
 P1-F lease освобождается после terminal/error/abort/generator return. Повторная
 compaction выбирает prefix после admission и использует реальный persisted
-`seq`. P0-D добавляет sampled `/api/ps` projection, но не ownership, lease или
-доказательство unload между observations.
+`seq`. P3-M хранит summary отдельно в `context_checkpoints`, никогда не удаляет
+source Messages, проверяет count/boundary/hash/previous chain на чтении и
+собирает model input из latest summary + post-boundary tail. Stable UUID intent
+reconcile-ится до provider и после lease acquisition, поэтому sequential и
+overlapping retry не повторяют model work. P0-D добавляет sampled `/api/ps`
+projection, но не ownership, lease или доказательство unload между observations.
 
 P1-D отделяет Chat execution от POST/SSE connection и подключает Message bridge
 к durable Job records/replay/cancel. Generic public create без Chat adapter
@@ -997,7 +1003,15 @@ cascades, а durable Jobs/events и deletion audit переживают parent. 
 deletion и generic Artifact/blob GC не реализованы. P3-F persist-ит
 Reasoning Artifact; P3-G исполняет его own seven-day/shorter-current-parent
 expiry тем же bounded owner и сохраняет redacted atomic audit. Это не generic
-Artifact GC.
+Artifact GC. P3-M context checkpoint также остаётся отдельной Thread-owned
+SQLite сущностью, а не generic Artifact/blob implementation.
+
+Context checkpoint: migrations 24–25 добавляют immutable rows с exact Thread,
+persisted Message boundary, source count, previous checkpoint, summary bytes/
+SHA-256 и timestamp. Checkpoint source Messages защищены от direct UPDATE/DELETE,
+но удаляются вместе с явно удаляемым owning Thread. Queryless legacy Thread и
+Project Chat JSON не меняются; typed projection требует
+`contextCheckpointVersion=1`. Corrupt count/boundary/chain/hash fail-closed.
 
 Shared Chat/Quick Run policy:
 

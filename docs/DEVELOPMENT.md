@@ -47,7 +47,7 @@ npm run link:cli
 | `dev:web`           | Vite:5173 с API proxy                                |
 | `typecheck`         | TypeScript workspaces                                |
 | `test`              | server + CLI + узкие web component regression tests  |
-| `test:web:browser`  | deterministic Chromium P0-A–P3-C mocked gate         |
+| `test:web:browser`  | deterministic Chromium P0-A–P3-M mocked gate         |
 | `build`             | contract, web, server и CLI production artifacts     |
 | `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
 | `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
@@ -459,26 +459,29 @@ server не нужен.
   и refresh после retention Save; P3-G добавляет versioned active cleanup
   projection, explicit reasoning refresh и empty state без потери answer; P3-H
   добавляет confirmation-only Session leave, pending/blocked/Trash states,
-  scoped retry и truthful 24-hour recovery/no-hard-delete projection;
+  scoped retry и truthful 24-hour recovery/no-hard-delete projection; P3-M
+  добавляет visible non-destructive checkpoint, exact intent recovery и
+  preserved-history/active-context separation;
 - `features/quick-runs` — P3-J Project/projectless metadata create/list и direct
   Keep/7 days/Session control без Save conversion; UI явно показывает отсутствие
   execution, cleanup и Session enforcement;
 - `features/recipes` — P3-L Project/projectless create, current revision
   provenance, rename, explicit revise/conflict и confirmed queued Job snapshot
   create/retry/hard-reload flow без execution/routing;
-- `features/context` — context/cache/compaction;
+- `features/context` — context/cache и P3-M confirmation/error/retry surface;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-L projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-M projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
   P1-J literal Queue/Stop/unsupported/failure и P1-K selection/debounce/cleanup/
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
   P3-D retention, P3-E scoped Trash/Restore, P3-F/P3-G reasoning Chat Info и
-  P3-H explicit Session leave/recovery, P3-J Quick Run metadata и P3-L Recipe
-  revisions/queued snapshots (current SQLite schema version 23),
+  P3-H explicit Session leave/recovery, P3-J Quick Run metadata, P3-L Recipe
+  revisions/queued snapshots и P3-M context checkpoint (current SQLite schema
+  version 25),
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

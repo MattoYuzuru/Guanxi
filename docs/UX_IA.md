@@ -138,6 +138,15 @@ exact 24-hour recovery deadline; после него Restore недоступе�
 и retry. UI не заявляет blob GC: для current SQLite-only boundary он
 `not_applicable`.
 
+После explicit context compaction Chat timeline не скрывает и не заменяет
+исходные сообщения. На их boundary появляется focusable checkpoint marker с
+summary, source count и временем; copy объясняет, что история сохранена, а
+active context использует summary. Context panel требует confirmation, держит
+ошибку и retry доступными с клавиатуры, а ambiguous transport outcome
+reconcile-ит по exact intent. Hard reload показывает marker ровно один раз.
+Token/cache bar относится к active context и измеренному post-checkpoint tail,
+не к общему размеру stored history.
+
 ### Projects
 
 Один экран объединяет:

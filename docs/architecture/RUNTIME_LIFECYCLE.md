@@ -124,9 +124,14 @@ Release находится в `finally`, поэтому provider/protocol/storag
 timeout и generator return не блокируют следующий request.
 
 Compaction выбирает prefix после admission и получает boundary из реального
-persisted `messages.seq`. После предыдущего summary следующая compaction больше
-не использует array index, не оставляет уже суммированные rows в tail и передаёт
-следующему turn упорядоченный context.
+persisted `messages.seq`. P3-M не заменяет и не удаляет этот prefix: immutable
+checkpoint хранит summary и exact source evidence отдельно. Stored history
+содержит все original Messages, а active model context — только latest summary
+и упорядоченный post-boundary tail; context/KV projection поэтому не равна
+размеру сохранённой истории. Stable client UUID reconcile-ится до provider и
+повторно после exclusive lease acquisition: sequential/overlapping retry одного
+intent возвращает один checkpoint без второго Ollama call. Legacy destructive
+summary видим как `legacy_source_unavailable`.
 
 Governor snapshot/explanation содержит только live queue, active lease, последнюю
 decision, observation time и policy basis; released state не растёт без границ.

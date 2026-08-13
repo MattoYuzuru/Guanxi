@@ -1,7 +1,7 @@
 # Инструкции для агентов
 
 **Статус:** implemented  
-**Проверено:** 2026-08-12
+**Проверено:** 2026-08-14
 **Область:** весь репозиторий
 
 Alamo UI — ранний local-first интерфейс и runtime-control layer поверх Ollama. Не
@@ -81,14 +81,15 @@ npm run build
 
 `npm test` проверяет server, CLI и web component regression tests.
 Deterministic Chromium tests запускаются отдельно через
-`npm run test:web:browser`: текущий suite перечисляет 36 mocked тест, покрывающий
-P0-A–P3-K (crash containment, first stream, terminal reload, runtime bar,
+`npm run test:web:browser`: текущий suite перечисляет 37 mocked тестов, покрывающих
+P0-A–P3-M (crash containment, first stream, terminal reload, runtime bar,
 resource conflict, prewarm, context limits, model evidence, catalog, user
 capability overrides, Hugging Face discovery, exact GGUF selection/download и
 локальный staged import, logical Project без filesystem root и Project
 presentation picker, Project Chat grouping, retention/Trash, reasoning Chat
-Info, Session deletion, Quick Run и Recipe revisions). Последний локально
-подтверждённый baseline — 36/36 через P3-K на 2026-08-14. Это по-прежнему
+Info, Session deletion, Quick Run, Recipe revisions и non-destructive context
+checkpoint). Последний локально подтверждённый baseline — 37/37 через P3-M на
+2026-08-14. Это по-прежнему
 mocked gate без live Ollama/GPU/network — не называйте его полным regression
 suite и не выдавайте за production validation.
 

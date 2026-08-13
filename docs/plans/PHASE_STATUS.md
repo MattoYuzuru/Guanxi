@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-14
-**Текущая фаза:** Phase 3 — P3-M non-destructive context checkpoint ready
+**Текущая фаза:** Phase 3 — P3-N generic Artifact/blob foundation ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1938,6 +1938,61 @@ automatic routing, Artifact result и retention cleanup намеренно вн�
 Следующий bounded slice — P3-M non-destructive visible context checkpoint:
 текущее `replaceWithSummary` удаляет исходные Messages и нарушает WORK-007.
 
+## Phase 3 — P3-M non-destructive context checkpoints
+
+**Статус:** independently verified.
+
+Commits: `cc3f164` (contract/migration/server/Web), `9a22440` (primary
+assertions), `e31c7a2` и `2ad62d3` (first review fixes), `4d15d96` и `1546537`
+(idempotency review fixes).
+
+Append-only migration 24 добавляет versioned `context_checkpoints` с exact
+Thread, persisted Message boundary/source count, previous link, UTF-8 summary
+size/SHA-256 и timestamp. Migration 25 запрещает direct checkpoint deletion,
+сохраняя explicit Thread/retention cascade. Checkpointed source Messages нельзя
+UPDATE/DELETE напрямую; original Message/Job/reasoning/tool rows не заменяются
+и остаются public history. Read path fail-closed перепроверяет hash/size,
+boundary existence, exact source count и всю previous-chain.
+
+Active model context отделён от stored history: Ollama получает latest summary
+ровно один раз и ordered post-boundary tail, тогда как Thread/Project Chat GET и
+timeline сохраняют все originals плюс typed marker. Measured usage/cacheHit
+берутся только из active tail. Legacy destructive summary проецируется честно
+как `legacy_source_unavailable`. Queryless Thread/Project JSON сохранён; новая
+projection требует exact `contextCheckpointVersion=1`.
+
+Web создаёт один stable UUID на explicit compaction intent. Если POST response
+теряется, GET reconciliation принимает только exact checkpoint ID. Server
+проверяет committed intent до Governor/provider и повторно после exclusive
+lease, поэтому sequential и overlapping retry возвращают один checkpoint без
+повторного Ollama call. Confirmation/error/retry и новый marker имеют direct
+focus/count assertions; hard reload и narrow mobile Chromium не дублируют
+marker или originals.
+
+Evidence по правилу WORKFLOW: **10 new / 647 core regression envelope**,
+**4 new / 223 Web component/parser envelope**, **1 new / 37 mocked Chromium
+envelope**. Targeted final backend — 31/31 у independent reviewer; focused Web
+— 4/4, targeted Chromium — 1/1. Full `npm test`, typecheck, browser gate, build,
+markdownlint и diff-check прошли. Initial full gate нашёл девять stale schema
+version fixtures после append-only migration 25; `2ad62d3` согласовал их с
+current v25.
+
+Independent reviewer сначала дал `NO-GO`: post-checkpoint usage терялся,
+ambiguous POST не был intent-bound, corruption validation не проверяла всю
+цепочку, а Project/retention lifecycle assertions были неполными. `e31c7a2`
+закрыл findings. Follow-up дважды нашёл route-level idempotency gaps — сначала
+sequential retry повторял provider work, затем overlapping same-key waiter мог
+вернуть 400. Отдельные `4d15d96`/`1546537` добавили preflight/post-lease
+reconciliation и deferred-provider race assertion. Финальный verdict на
+`1546537` — **READY**.
+
+Остаточный риск: SQLite corpus synthetic, Chromium полностью mocked; нет
+production DB corpus, live Ollama/GPU/network, real screen reader/device или
+multi-process application deployment validation. Context checkpoint пока
+Thread-owned SQLite entity, не generic Artifact/blob. Следующий bounded slice —
+P3-N generic immutable Artifact metadata/content-addressed blob foundation без
+attachment UI или execution routing.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -2037,7 +2092,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-M ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-N ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

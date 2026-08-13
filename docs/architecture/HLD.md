@@ -105,6 +105,17 @@ UUID idempotency scope глобален для этой команды. Snapshot
 input и не попадает в safe event metadata. Его POST/GET и Web confirmation не
 подключены к execution owner, Governor, Ollama или Artifact storage.
 
+P3-M migrations 24–25 additive создают immutable versioned
+`context_checkpoints` поверх сохранённых Messages. Checkpoint фиксирует exact
+Thread/boundary/source count, previous link и UTF-8 summary size/SHA-256; read
+fail-closed проверяет всю цепочку и сохранённый source. Public history оставляет
+original Messages на месте, а model context использует только latest summary и
+post-boundary tail. Client UUID связывает ambiguous/repeated POST; route
+reconcile-ит exact committed intent до provider и повторно после Governor
+admission, поэтому concurrent retry не запускает второй summary call. Legacy
+destructive summary помечается `legacy_source_unavailable`, а не выдаётся за
+сохранённую историю.
+
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,
 immutable Project/projectless ownership и seven-day diagnostic expiry. Final

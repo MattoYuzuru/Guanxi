@@ -71,6 +71,14 @@ content-free deletion audit и удаляет Session Thread с его directly 
 SQLite rows; durable Jobs и Job events переживают Chat. Generic Artifact/blob
 GC, filesystem cleanup и TTL Trash hard deletion не реализованы.
 
+P3-M добавляет current Thread-owned **Context Checkpoint**. Он хранит summary,
+exact persisted Message boundary/source count, previous link, size/hash и время,
+но не заменяет original Messages. Stored history и active context расходятся
+явно: UI/GET показывают всю историю и marker, Ollama получает latest summary +
+tail. Новые checkpoint rows имеют `source_preserved`; старые destructive summary
+Messages проецируются только как `legacy_source_unavailable`. Это ещё не generic
+Artifact/blob store.
+
 ### Recipe
 
 Повторно используемая конфигурация задачи:
