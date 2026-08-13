@@ -5,7 +5,7 @@
 
 ## Текущий baseline
 
-На 2026-08-13 после P3-J local validation (independent review ниже):
+На 2026-08-13 после P3-J implementation и independent verification:
 
 - полный core с CLI reuse: 627/627; Web component/parser: 213/213;
 - `npm run test:web:browser`: 35/35 deterministic Chromium tests с mocked

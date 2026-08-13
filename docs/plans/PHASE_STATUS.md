@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-13
-**Текущая фаза:** Phase 3 — P3-J implemented, independent review pending
+**Текущая фаза:** Phase 3 — P3-K Recipe revision foundation ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -1793,10 +1793,11 @@ orientation gate, потому что D-009/Q-23 определяют explicit l
 
 ## Phase 3 — P3-J Quick Run retention foundation
 
-**Статус:** implemented, locally validated; independent review pending
+**Статус:** independently verified
 
 Commits: `ffad811` (contract/migration/server/Web), `cfe8df0` (deterministic
-server/component/browser evidence).
+server/component/browser evidence), `99a13f1` (current-state docs), `7c2ef34`
+и `ebf4e69` (independent review fixes).
 
 Append-only migration 21 создаёт canonical `quick_runs` отдельно от `threads`:
 immutable identity/operation/nullable Project ownership, restrictive Project FK,
@@ -1815,15 +1816,28 @@ P3-J сохраняет policy metadata без выдуманной lifecycle с
 Evidence по правилу WORKFLOW: **4 new / 627 core regression envelope**,
 **3 new / 213 Web component/parser envelope**, **1 new / 35 mocked Chromium
 envelope**. Targeted backend — 4/4, component — 3/3, Chromium — 1/1; full
-typecheck, core 627/627, Web 213/213, browser 35/35 и build прошли. Семь
+typecheck, core 627/627, Web 213/213, browser 35/35 и build прошли. Targeted
+Chromium focus-race repeat прошёл 10/10. Одиннадцать
 контролируемых mutations (`default`, `scope`, `project_fk`, `one_mutation`,
-`strict_version`, `no_save`, `no_effect`) дали expected non-zero и были
-восстановлены; `git diff --check` прошёл.
+`strict_version`, `no_save`, `no_effect`, `expiry_calculation`,
+`operation_sql_allowlist`, `forced_colors_css`, `create_focus_race`) дали
+expected non-zero и были восстановлены; markdownlint и `git diff --check` прошли.
 
-Остаточный риск до review: synthetic SQLite и mocked browser; нет production DB
+Independent reviewer сначала дал **NOT READY**: projection придумывала expiry от
+policy-update timestamp, operation allowlist пропускал accepted `generateVideo`,
+а forced-colors/reduced-motion assertions проверяли только media flags. Отдельный
+`7c2ef34` убрал invented expiry в пользу strict `not_implemented`, прогнал весь
+manifest через contract/route/SQLite и добавил computed CSS evidence. Follow-up
+нашёл timing-sensitive focus race: rAF мог сработать на disabled Create button.
+Отдельный `ebf4e69` перенёс focus в effect после committed enabled state и добавил
+детерминированную old-code mutation. Финальный reviewer verdict — **READY**,
+remaining findings нет.
+
+Остаточный риск: synthetic SQLite и mocked browser; нет production DB
 corpus, multi-process writer race, real assistive technology/device или live
 Ollama/GPU/network. Execution/Artifact storage и all Quick Run cleanup намеренно
-вне slice; Q-37 блокирует только Session enforcement.
+вне slice; Q-37 блокирует только Session enforcement. Следующий bounded slice —
+P3-K canonical Recipe identity и immutable revision snapshots без execution/routing.
 
 ## Планируемая последовательность Phase 2
 
@@ -1924,7 +1938,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-J review pending    |
+| Phase 3 — Text/Projects/retention/i18n  | P3-K ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |
