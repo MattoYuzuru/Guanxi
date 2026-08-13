@@ -3,6 +3,7 @@ import {
   RECIPE_REVISION_VERSION,
   RECIPE_VERSION,
   recipeConfigurationSchema,
+  recipeNameSchema,
   recipeRevisionSchema,
   recipeSchema,
   type Recipe,
@@ -131,7 +132,7 @@ export class RecipeStore {
 
   create(input: { name: string; scope: RecipeScope; configuration: RecipeConfiguration }): Recipe {
     const configuration = recipeConfigurationSchema.parse(input.configuration)
-    const name = input.name.trim()
+    const name = recipeNameSchema.parse(input.name)
     const id = this.options.createId?.() ?? randomUUID()
     const now = this.options.clock?.() ?? new Date().toISOString()
     this.transaction(() => {
@@ -168,7 +169,7 @@ export class RecipeStore {
   }
 
   rename(id: string, scope: RecipeScope, nameInput: string): RecipeStoreResult {
-    const name = nameInput.trim()
+    const name = recipeNameSchema.parse(nameInput)
     const now = this.options.clock?.() ?? new Date().toISOString()
     const result = this.db.prepare(
       'UPDATE recipes SET name = ?, updated_at = ? WHERE id = ? AND project_id IS ?',

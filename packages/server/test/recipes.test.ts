@@ -178,6 +178,14 @@ describe('P3-K canonical Recipe revision foundation', () => {
     assert.equal(count(db, 'recipe_revisions'), 0)
     db.exec('DROP TRIGGER recipe_create_failure')
 
+    assert.throws(() => store.create({
+      name: 'x'.repeat(256),
+      scope: { scope: 'projectless' },
+      configuration: configuration(),
+    }))
+    assert.equal(count(db, 'recipes'), 0)
+    assert.equal(count(db, 'recipe_revisions'), 0)
+
     const projectless = store.create({ name: 'Projectless Recipe', scope: { scope: 'projectless' }, configuration: configuration() })
     const owned = store.create({
       name: 'Owned Recipe',
@@ -203,6 +211,16 @@ describe('P3-K canonical Recipe revision foundation', () => {
     assert.equal(renamed.status, 'ok')
     assert.equal(count(db, 'recipe_revisions'), 2)
     assert.equal(store.getRevision(OWNED_RECIPE_ID, 1, { scope: 'project', projectId: project.id }).status, 'ok')
+    assert.throws(() => store.rename(
+      OWNED_RECIPE_ID,
+      { scope: 'project', projectId: project.id },
+      'x'.repeat(256),
+    ))
+    const afterRejectedRename = store.get(OWNED_RECIPE_ID, { scope: 'project', projectId: project.id })
+    assert.equal(afterRejectedRename.status, 'ok')
+    if (afterRejectedRename.status === 'ok') {
+      assert.equal(afterRejectedRename.recipe.name, 'Renamed Recipe')
+    }
 
     const second = configuration({ operation: 'ocr', instructions: 'Extract exact text.', retention: { mode: 'keep' } })
     const revised = store.revise(OWNED_RECIPE_ID, { scope: 'project', projectId: project.id }, 1, second)

@@ -860,7 +860,9 @@ const MIGRATIONS: readonly string[] = [
     id               TEXT PRIMARY KEY,
     recipe_version   INTEGER NOT NULL CHECK (recipe_version = 1),
     project_id       TEXT REFERENCES projects(id) ON DELETE RESTRICT,
-    name             TEXT NOT NULL CHECK (length(trim(name)) > 0 AND name = trim(name)),
+    name             TEXT NOT NULL CHECK (
+      length(trim(name)) BETWEEN 1 AND 255 AND name = trim(name)
+    ),
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL,
     current_revision INTEGER NOT NULL CHECK (current_revision >= 1),

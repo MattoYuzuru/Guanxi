@@ -14,7 +14,7 @@ const normalizedReferenceSchema = z
   .max(255)
   .refine((value) => value === value.trim(), 'Reference must be normalized')
 
-const recipeNameSchema = z
+export const recipeNameSchema = z
   .string()
   .min(1)
   .max(255)
