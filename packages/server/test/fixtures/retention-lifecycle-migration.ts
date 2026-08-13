@@ -3,6 +3,14 @@ import type { DatabaseSync } from 'node:sqlite'
 /** Remove the additive v20 audit boundary while preserving the exact v19 shape. */
 export function downgradeChatHardDeletionToV19(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER IF EXISTS recipes_current_revision_must_exist;
+    DROP TRIGGER IF EXISTS recipe_revisions_immutable_delete;
+    DROP TRIGGER IF EXISTS recipe_revisions_immutable_update;
+    DROP TRIGGER IF EXISTS recipes_identity_immutable;
+    DROP INDEX IF EXISTS idx_recipe_revisions_created;
+    DROP TABLE IF EXISTS recipe_revisions;
+    DROP INDEX IF EXISTS idx_recipes_scope_updated;
+    DROP TABLE IF EXISTS recipes;
     DROP TRIGGER IF EXISTS quick_runs_identity_immutable;
     DROP INDEX IF EXISTS idx_quick_runs_scope_updated;
     DROP TABLE IF EXISTS quick_runs;

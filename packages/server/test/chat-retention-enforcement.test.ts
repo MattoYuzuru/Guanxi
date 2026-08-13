@@ -230,7 +230,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 21)
+    assert.equal(version(upgraded), 22)
     assert.equal(lifecycleColumns(upgraded).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(upgraded), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     assert.equal((upgraded.prepare(
@@ -245,18 +245,20 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
         'reasoning_artifacts',
         'reasoning_artifact_deletion_audit',
         'quick_runs',
+        'recipes',
+        'recipe_revisions',
       ])),
       before,
     )
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 21)
+    assert.equal(version(reopened), 22)
     assert.deepEqual(lifecycleSchemaObjects(reopened), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 21)
+    assert.equal(version(fresh), 22)
     assert.equal(lifecycleColumns(fresh).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(fresh), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     fresh.close()

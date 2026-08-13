@@ -48,6 +48,14 @@ function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): stri
 
 function downgradeToV20(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER recipes_current_revision_must_exist;
+    DROP TRIGGER recipe_revisions_immutable_delete;
+    DROP TRIGGER recipe_revisions_immutable_update;
+    DROP TRIGGER recipes_identity_immutable;
+    DROP INDEX idx_recipe_revisions_created;
+    DROP TABLE recipe_revisions;
+    DROP INDEX idx_recipes_scope_updated;
+    DROP TABLE recipes;
     DROP TRIGGER quick_runs_identity_immutable;
     DROP INDEX idx_quick_runs_scope_updated;
     DROP TABLE quick_runs;
@@ -149,7 +157,7 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 21)
+    assert.equal(version(seed), 22)
     const project = new ProjectStore(seed).create('Exact v20 Project', CREATED_AT)
     seed.prepare(
       `INSERT INTO workspaces (id, name, root_path, created_at, last_used_at)
@@ -188,20 +196,20 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 21)
+    assert.equal(version(retried), 22)
     assert.equal(count(retried, 'quick_runs'), 0)
     assert.equal(new ProjectStore(retried).get(project.id)?.name, 'Exact v20 Project')
-    assert.equal(allTablesPayload(retried, new Set(['quick_runs'])), exactV20)
+    assert.equal(allTablesPayload(retried, new Set(['quick_runs', 'recipes', 'recipe_revisions'])), exactV20)
     retried.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 21)
+    assert.equal(version(reopened), 22)
     assert.equal(count(reopened, 'quick_runs'), 0)
-    assert.equal(allTablesPayload(reopened, new Set(['quick_runs'])), exactV20)
+    assert.equal(allTablesPayload(reopened, new Set(['quick_runs', 'recipes', 'recipe_revisions'])), exactV20)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 21)
+    assert.equal(version(fresh), 22)
     assert.equal(count(fresh, 'quick_runs'), 0)
     fresh.close()
   })

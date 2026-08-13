@@ -201,7 +201,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 21)
+    assert.equal(version(seed), 22)
     const chat = createChat(seed, 'Legacy final answer')
     new ThreadStore(seed).addMessage({
       threadId: chat.id,
@@ -259,16 +259,20 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 21)
+    assert.equal(version(retried), 22)
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
-    assert.equal(allTablesPayload(retried, new Set(['chat_deletion_audit', 'quick_runs'])), v19Payload)
+    assert.equal(allTablesPayload(retried, new Set([
+      'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
+    ])), v19Payload)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 21)
+    assert.equal(version(reopened), 22)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
-    assert.equal(allTablesPayload(reopened, new Set(['chat_deletion_audit', 'quick_runs'])), v19Payload)
+    assert.equal(allTablesPayload(reopened, new Set([
+      'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
+    ])), v19Payload)
     reopened.close()
   })
 
@@ -529,6 +533,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       { child: 'reasoning_artifacts', table: 'messages', from: 'source_message_id', on_delete: 'CASCADE' },
       { child: 'reasoning_artifacts', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'reasoning_artifacts', table: 'threads', from: 'chat_id', on_delete: 'CASCADE' },
+      { child: 'recipes', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'threads', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'threads', table: 'workspaces', from: 'workspace_id', on_delete: 'SET NULL' },
       { child: 'tool_runs', table: 'threads', from: 'thread_id', on_delete: 'CASCADE' },
@@ -615,6 +620,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       'project_filesystem_bindings', 'workspaces', 'settings', 'model_calibration',
       'model_calibration_observations', 'installed_model_evidence_cache',
       'completion_probe_evidence', 'model_capability_user_overrides',
+      'recipes', 'recipe_revisions',
     ])
     const protectedBefore = allTablesPayload(db, new Set(
       (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
