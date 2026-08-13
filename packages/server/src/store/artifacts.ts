@@ -14,6 +14,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import {
   ARTIFACT_VERSION,
   artifactCreateMetadataSchema,
+  artifactIdSchema,
   artifactSchema,
   artifactScopeSchema,
   type Artifact,
@@ -198,6 +199,14 @@ export class ArtifactStore {
     ).get(key) as unknown as ArtifactRow | undefined) ?? null
   }
 
+  private generatedId(): string {
+    const id = this.randomId()
+    if (!artifactIdSchema.safeParse(id).success) {
+      throw new ArtifactStoreError('unsafe_storage', 'Artifact storage identifier is invalid')
+    }
+    return id
+  }
+
   private rowById(id: string, scope: ArtifactScope): ArtifactRow | null {
     const scoped = scope.scope === 'project'
       ? this.db.prepare(
@@ -340,7 +349,7 @@ export class ArtifactStore {
     let temporaryFile: FileHandle | null = null
     try {
       const root = await this.ensureRoot()
-      temporaryPath = join(root.temp, `${this.randomId()}.partial`)
+      temporaryPath = join(root.temp, `${this.generatedId()}.partial`)
       temporaryFile = await open(
         temporaryPath,
         constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
@@ -388,8 +397,9 @@ export class ArtifactStore {
           if (!sameIntentMetadata(existing, metadata) || existing.blob_checksum !== checksum) {
             throw new ArtifactStoreError('idempotency_conflict', 'Artifact intent conflicts with stored content')
           }
+          const artifact = toArtifact(existing)
           this.db.exec('COMMIT')
-          return toArtifact(existing)
+          return artifact
         }
         const createdAt = this.now().toISOString()
         this.db.prepare(
@@ -403,7 +413,7 @@ export class ArtifactStore {
         if (!blob || blob.byte_size !== byteSize || blob.storage_key !== target.key) {
           throw new ArtifactStoreError('integrity_mismatch', 'Artifact blob metadata conflicts with content')
         }
-        const id = this.randomId()
+        const id = this.generatedId()
         this.db.prepare(
           `INSERT INTO artifacts (
              id, artifact_version, write_intent_key, kind, media_type, blob_checksum,
@@ -424,8 +434,9 @@ export class ArtifactStore {
         )
         const row = this.rowByIntent(metadata.idempotencyKey)
         if (!row) throw new ArtifactStoreError('storage_failure', 'Artifact metadata was not committed')
+        const artifact = toArtifact(row)
         this.db.exec('COMMIT')
-        return toArtifact(row)
+        return artifact
       } catch (error) {
         this.db.exec('ROLLBACK')
         if (error instanceof ArtifactStoreError) throw error
@@ -441,6 +452,9 @@ export class ArtifactStore {
   }
 
   get(id: string, rawScope: ArtifactScope): Artifact | null {
+    if (!artifactIdSchema.safeParse(id).success) {
+      throw new ArtifactStoreError('invalid_input', 'Artifact identifier is invalid')
+    }
     const scope = artifactScopeSchema.safeParse(rawScope)
     if (!scope.success) throw new ArtifactStoreError('invalid_input', 'Artifact scope is invalid')
     const row = this.rowById(id, scope.data)
@@ -452,7 +466,11 @@ export class ArtifactStore {
     rawScope: ArtifactScope,
     options: ArtifactReadOptions,
   ): Promise<{ artifact: Artifact; content: Uint8Array; headers: ArtifactDownloadHeaders }> {
-    if (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 0) {
+    if (
+      !artifactIdSchema.safeParse(id).success
+      || !Number.isSafeInteger(options.maxBytes)
+      || options.maxBytes < 0
+    ) {
       throw new ArtifactStoreError('invalid_input', 'Artifact read policy is invalid')
     }
     const scope = artifactScopeSchema.safeParse(rawScope)

@@ -300,6 +300,10 @@ describe('P3-N content-addressed ArtifactStore', () => {
     assert.equal(store.get(artifact.id, { scope: 'projectless' }), null)
     assert.equal(store.get(randomUUID(), { scope: 'project', projectId: project.id }), null)
     assert.equal(store.get(artifact.id, { scope: 'project', projectId: project.id })?.id, artifact.id)
+    assert.throws(
+      () => store.get('../../private', { scope: 'projectless' }),
+      (error: unknown) => error instanceof ArtifactStoreError && error.code === 'invalid_input',
+    )
 
     await assert.rejects(
       store.read(artifact.id, { scope: 'projectless' }, { maxBytes: bytes.byteLength }),
@@ -451,6 +455,16 @@ describe('P3-N content-addressed ArtifactStore', () => {
       ),
     )
     assert.deepEqual(await readdir(outside), [])
+
+    const injectedIdStore = new ArtifactStore({
+      db,
+      rootDir: join(root, 'generated-id-boundary'),
+      randomId: () => '../../outside',
+    })
+    await assert.rejects(
+      injectedIdStore.create(metadata(), Buffer.from('unsafe id'), { maxBytes: 9 }),
+      (error: unknown) => error instanceof ArtifactStoreError && error.code === 'unsafe_storage',
+    )
 
     const artifactRoot = join(root, 'safe-artifacts')
     const safeStore = new ArtifactStore({ db, rootDir: artifactRoot, now: () => new Date(AT) })

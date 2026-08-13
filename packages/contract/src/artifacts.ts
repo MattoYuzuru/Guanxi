@@ -2,6 +2,9 @@ import { z } from 'zod'
 
 export const ARTIFACT_VERSION = 1 as const
 
+export const artifactIdSchema = z.string().uuid()
+export const artifactWriteIntentKeySchema = z.string().uuid()
+
 export const artifactKindSchema = z.enum([
   'text',
   'reasoning',
@@ -43,7 +46,7 @@ export type ArtifactSource = z.infer<typeof artifactSourceSchema>
 export const artifactCreateMetadataSchema = z
   .object({
     artifactVersion: z.literal(ARTIFACT_VERSION),
-    idempotencyKey: z.string().uuid(),
+    idempotencyKey: artifactWriteIntentKeySchema,
     kind: artifactKindSchema,
     mediaType: artifactMediaTypeSchema,
     ownership: artifactScopeSchema,
@@ -55,7 +58,7 @@ export type ArtifactCreateMetadata = z.infer<typeof artifactCreateMetadataSchema
 export const artifactSchema = z
   .object({
     artifactVersion: z.literal(ARTIFACT_VERSION),
-    id: z.string().uuid(),
+    id: artifactIdSchema,
     kind: artifactKindSchema,
     mediaType: artifactMediaTypeSchema,
     byteSize: z.number().int().nonnegative().safe(),
