@@ -289,14 +289,26 @@ describe('P3-O attachment migration and public transfer boundary', () => {
       `/api/artifacts?attachmentVersion=1&scope=projectless&limit=101`,
     ]) assert.equal((await app.request(path)).status, 400)
 
-    const forbidden = await app.request(uploadUrl('safe.bin'), {
-      ...uploadInit(Buffer.from('four')),
-      headers: {
-        ...uploadInit(Buffer.from('four')).headers,
-        'x-alamo-path': '/private',
-      },
-    })
-    assert.equal(forbidden.status, 400)
+    for (const [name, value] of [
+      ['x-alamo-path', '/private'],
+      ['x-storage-key', 'sha256/private'],
+      ['storage-key', 'sha256/private'],
+      ['x-path', '/private'],
+      ['x-artifact-path', '/private'],
+      ['checksum', 'trusted-looking'],
+      ['digest', 'sha-256=trusted-looking'],
+      ['content-md5', 'trusted-looking'],
+      ['x-checksum', 'trusted-looking'],
+      ['x-future', 'future'],
+    ] as const) {
+      const input = uploadInit(Buffer.from('four'))
+      const forbidden = await app.request(uploadUrl('safe.bin'), {
+        ...input,
+        headers: { ...input.headers, [name]: value },
+      })
+      assert.equal(forbidden.status, 400, name)
+    }
+    assert.equal(service.diagnostics().active, 0)
     assert.equal((await app.request(
       uploadUrl('safe.bin'),
       uploadInit(Buffer.from('four')),

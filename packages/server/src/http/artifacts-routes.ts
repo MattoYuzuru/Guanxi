@@ -29,6 +29,34 @@ const UPLOAD_QUERY_KEYS = new Set([
   'projectId',
   'displayName',
 ])
+const UPLOAD_HEADER_KEYS = new Set([
+  'accept',
+  'accept-encoding',
+  'accept-language',
+  'cache-control',
+  'connection',
+  'content-length',
+  'content-type',
+  'cookie',
+  'dnt',
+  'host',
+  'idempotency-key',
+  'origin',
+  'pragma',
+  'priority',
+  'referer',
+  'sec-ch-ua',
+  'sec-ch-ua-mobile',
+  'sec-ch-ua-platform',
+  'sec-fetch-dest',
+  'sec-fetch-mode',
+  'sec-fetch-site',
+  'sec-fetch-user',
+  'te',
+  'transfer-encoding',
+  'upgrade-insecure-requests',
+  'user-agent',
+])
 
 function exactQuery(url: string, allowed: ReadonlySet<string>): Record<string, string> | null {
   const query = new URL(url).searchParams
@@ -204,21 +232,15 @@ export function artifactsRoutes(
     )
     const mediaType = artifactMediaTypeSchema.safeParse(context.req.header('content-type'))
     const claimedLength = contentLength(context.req.header('content-length'))
-    const hasUntrustedAlamoHeader = [...context.req.raw.headers.keys()].some(
-      (name) => name.toLowerCase().startsWith('x-alamo-'),
+    const hasUnknownHeader = [...context.req.raw.headers.keys()].some(
+      (name) => !UPLOAD_HEADER_KEYS.has(name.toLowerCase()),
     )
     if (
       !parsed?.success
       || !idempotencyKey.success
       || !mediaType.success
       || claimedLength === 'invalid'
-      || context.req.header('content-encoding') !== undefined
-      || context.req.header('content-disposition') !== undefined
-      || context.req.header('digest') !== undefined
-      || context.req.header('content-md5') !== undefined
-      || context.req.header('x-alamo-checksum') !== undefined
-      || context.req.header('x-checksum') !== undefined
-      || hasUntrustedAlamoHeader
+      || hasUnknownHeader
     ) {
       return error(context, 400, 'validation_failed', 'Invalid attachment upload contract')
     }
