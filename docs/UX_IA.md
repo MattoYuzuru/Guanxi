@@ -21,6 +21,7 @@ Work
 
 Create
   Recipes
+  Attachments
 
 Manage
   Models
@@ -175,6 +176,18 @@ Current P3-C projection показывает bounded Chat group на Project car
 `New Chat`/hard reload через sourced Project route. Она не является final
 overview/navigation shell и пока не включает search, move/reparent, retention,
 Trash или Project deletion.
+
+### Attachments
+
+Current P3-O standalone `/attachments` library выбирает exact projectless либо
+существующий Project scope, показывает source/time/maxBytes storage policy и
+bounded first page с честным `truncated` состоянием. Pick/drop принимает один
+локальный файл; upload имеет progress, cancel, same-intent retry и focused error.
+Committed item показывает media type, size, checksum, time и download/export.
+Hard reload перечитывает server rows; double activation/lost response не создают
+второй item, а download запускается один раз. UI прямо сообщает, что attachment
+не добавлен в model context и не запускал Recipe/Job. Preview, search, delete,
+generic GC, Range и фактическое model consumption остаются отдельными slices.
 
 ### Recipes
 

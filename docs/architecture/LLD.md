@@ -26,7 +26,7 @@
 - `context-checkpoints.ts`: strict version 1 summary/source projection и честное
   различение preserved/legacy-unavailable history;
 - `artifacts.ts`: strict generic version 1 kind/media/scope/source/retention/
-  reference/GC projection без storage path;
+  reference/GC projection без storage path и attachment/policy transport v1;
 - `events.ts`: Chat SSE union, Job lifecycle envelope и private Chat replay
   output;
 - `index.ts`: public exports.
@@ -644,8 +644,11 @@ Current P2-C route — `POST /api/models/:name/probes/completion`; generic targe
 `/api/capabilities/:fingerprint/probes` ниже остаётся proposed. Current P2-D
 routes — `POST /api/models/imports/ollama-reference/preview` и connection-owned
 `POST /api/models/imports/ollama-reference/start`; proposed generic single route
-ниже не является alias или durable Job. Остальные route names остаются proposed
-до соответствующего ADR/API review.
+ниже не является alias или durable Job. Current P3-O routes — `GET
+/api/artifacts/policy`, scoped `GET/POST /api/artifacts`, scoped `GET
+/api/artifacts/:id` и `GET /api/artifacts/:id/content`; generic target line ниже
+не является их alias. Остальные route names остаются proposed до
+соответствующего ADR/API review.
 
 ```text
 POST /api/jobs
@@ -667,7 +670,7 @@ POST /api/capabilities/:fingerprint/probes
 CRUD /api/projects
 CRUD /api/chats
 CRUD /api/recipes
-GET  /api/artifacts/:id
+CRUD /api/artifacts
 
 POST /api/models/imports/ollama-reference
 POST /api/models/imports/hugging-face
@@ -943,8 +946,24 @@ commit оставляет non-readable orphan. `inspectOrphans({limit, scanLimit
 возвращает только bounded relative keys и `gc_not_implemented`; он ничего не
 удаляет и не восстанавливает metadata. Read принимает только validated UUID и
 exact Project/projectless scope, повторно проверяет size/hash и возвращает
-content type/length/Digest/ETag без absolute path. Public routes, filename,
-Range/streaming response и attachment UI остаются P3-O.
+content type/length/Digest/ETag без absolute path.
+
+P3-O migration 27 добавляет one-to-one immutable `artifact_attachments` только
+для source-free `file` Artifact; migration 28 append-only отклоняет уже
+повреждённую v27 и закрывает полный C0 range без переписывания применённой
+миграции. Display name валидируется contract и SQLite, не участвует в storage
+key/path и экспортируется через constant ASCII fallback + RFC 5987 `filename*`.
+
+`ArtifactTransferService` публикует versioned policy с source/observedAt/maxBytes,
+одним default active transfer и bounded FIFO waiters. Unknown/disabled policy
+fail-closed; helper watchdog и AbortSignal проходят через store/read/write и
+возвращают permit после cleanup. Public list ограничен `limit <= 100` и явно
+помечает `truncated`; Range возвращает 416 до helper. POST header/query allowlist
+не принимает client checksum/path/storage facts. Same exact UUID intent
+возвращает один row/blob, mismatch — 409. Standalone `/attachments` использует
+exact Project/projectless scope, но не добавляет bytes в model context и не
+запускает Ollama, Governor, Jobs, tools либо workspace effects. Generic GC,
+preview generation и model consumption остаются не реализованы.
 
 ### Integration Policy
 

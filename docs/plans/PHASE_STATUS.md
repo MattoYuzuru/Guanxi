@@ -2,7 +2,7 @@
 
 **Статус документа:** implemented tracker  
 **Проверено:** 2026-08-14
-**Текущая фаза:** Phase 3 — P3-O attachment upload/download/export ready
+**Текущая фаза:** Phase 3 — P3-P localization settings/glossary ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -2036,10 +2036,65 @@ Follow-up reviewer повторил exploit, проверил lstat→realpath h
 
 Остаточный риск: SQLite/filesystem и Chromium evidence synthetic/local; нет
 production corpus, hostile multi-process soak или live object store. Один
-короткоживущий Node helper на blob read/write требует capacity/admission review
-до public high-volume endpoint. Public upload/download/export routes, filename,
-streaming/Range и attachment UI намеренно остаются P3-O; generic GC не
-реализован.
+короткоживущий Node helper на blob read/write остаётся capacity boundary.
+Bounded public upload/download/export и attachment UI добавлены P3-O; generic GC
+и model consumption по-прежнему не реализованы.
+
+## Phase 3 — P3-O attachment upload/download/export
+
+**Статус:** independently verified.
+
+Commits: `f181329` (strict contract, migrations 27, transfer service, routes и
+standalone Web library), `2f00711` (single-flight upload/download и focus),
+`b94e275` (server/component/browser evidence), `f5639f7` (migration-27 baseline
+integration), `79ada54` (independent review fix для upload header allowlist) и
+`d62d208` (append-only migration 28, disconnect/watchdog/concurrency evidence).
+
+Public loopback transport принимает raw bytes только вместе с stable UUID intent,
+strict media/display metadata и exact Project/projectless scope. Server считает
+size/SHA-256/storage key, атомарно фиксирует generic Artifact и immutable
+`artifact_attachments` row и replay-ит exact intent без duplicate. Legacy
+non-UUID Project references используют тот же canonical Project contract.
+Migrations 27–28 additive: v27 хранит path-free presentation metadata, v28
+fail-closed отклоняет повреждённый C0 corpus и все будущие C0 controls без
+переписывания уже применённой migration.
+
+Sourced policy видимо сообщает enabled/disabled/unknown, observation time,
+maxBytes, один active helper и bounded FIFO queue; это storage policy, не model
+capability. Disconnect/AbortSignal/helper watchdog проходят через admission,
+body iterator и descriptor-relative store operation, после чего child, listeners,
+permit и private temp освобождаются. List bounded и честно возвращает
+`truncated`; download перечитывает/хэширует blob и публикует exact Type/Length/
+Digest/ETag, constant ASCII + RFC 5987 filename, `private, no-store`, `nosniff`,
+sandbox CSP. Range отклоняется до helper.
+
+Standalone `/attachments` показывает exact scope и policy, loading/empty/error/
+retry, pick/drop/progress/cancel/same-intent retry и download. Double activation,
+lost response и hard reload оставляют один DOM/server item; download стартует
+один раз. Copy явно говорит, что upload не добавлен в model context и не запускает
+Ollama, Governor, Jobs, tools или workspace effects.
+
+Evidence по правилу WORKFLOW: **8 new / 666 core regression envelope**,
+**4 new / 227 Web component/parser regression envelope**, **1 new / 38 mocked
+Chromium regression envelope**. Targeted P3-N/P3-O — 19/19; full `npm test`,
+browser, typecheck, build, markdownlint и diff-check прошли на `d62d208`.
+Migration assertions покрывают fresh/v26/v27/reopen/retry, exact late rollback,
+corrupt-v27 fail-closed adoption и все `U+0001..U+001F`.
+
+Independent design review нашёл legacy Project identity, abort propagation,
+unbounded list, DB/name/header/export/admission/watchdog gaps; они закрыты до
+первого candidate. Формальный SRE дал `NO-GO` на `f5639f7` из-за accepted
+trusted-looking headers, C0 DB drift и отсутствующих direct disconnect/watchdog/
+concurrency assertions. Отдельные `79ada54`/`d62d208` закрыли findings; повторный
+review на exact candidate дал **READY**.
+
+Остаточный риск: browser полностью mocked; реальный TCP disconnect, filesystem
+pressure, load/soak и production corpus не проверялись. Один helper process на
+transfer bounded admission, но capacity не measured. Повреждённая v27 намеренно
+блокирует startup; automatic repair нет. Generic preview/search/delete/GC и
+attachment model consumption не реализованы. Phase-wide audit подтвердил, что
+после P3-O всё ещё обязательны localization/Glossary, notifications, Workbench,
+Project policy/vocabulary и Chat search/archive slices; вся Phase 3 не закрыта.
 
 ## Планируемая последовательность Phase 2
 
@@ -2140,7 +2195,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-O ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-P ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

@@ -478,10 +478,13 @@ server не нужен.
   provenance, rename, explicit revise/conflict и confirmed queued Job snapshot
   create/retry/hard-reload flow без execution/routing;
 - `features/context` — context/cache и P3-M confirmation/error/retry surface;
+- `features/attachments` — P3-O exact Project/projectless local attachment
+  upload/list/download, visible storage policy и truthful no-model-consumption
+  boundary;
 - `features/agent` — workspace, approval и tool projections;
 - `features/settings` — current settings.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-M projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-O projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
@@ -489,8 +492,8 @@ server не нужен.
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
   P3-D retention, P3-E scoped Trash/Restore, P3-F/P3-G reasoning Chat Info и
   P3-H explicit Session leave/recovery, P3-J Quick Run metadata, P3-L Recipe
-  revisions/queued snapshots и P3-M context checkpoint (current SQLite schema
-  version 26; P3-N не меняет Web),
+  revisions/queued snapshots, P3-M context checkpoint и P3-O attachment
+  retry/reload/download (current SQLite schema version 28),
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

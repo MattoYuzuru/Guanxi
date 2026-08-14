@@ -418,6 +418,15 @@ policy bound, вычисляет hash/size сам и не принимает pat
 факт. Crash между no-overwrite publish и SQLite commit оставляет нечитабельный
 orphan, наблюдаемый bounded inventory; cleanup owner ещё не реализован.
 
+**Current P3-O attachment transport:** attachment — immutable presentation
+metadata поверх generic `file` Artifact, а не новый blob/path или model input.
+Display name хранится отдельно, строго ограничен contract/SQLite и никогда не
+задаёт storage identity. Stable UUID intent, exact Project/projectless ownership
+и server-derived bytes/hash сохраняют retry детерминированным. Transfer policy
+имеет source/time/byte/admission limits и явно не является model capability.
+Export перепроверяет blob и возвращает safe download headers; Range, preview,
+generic deletion/GC и подключение к Chat/Recipe execution не реализованы.
+
 ### Tool, MCP Connection и Skill
 
 - **Tool** — конкретное callable действие с input/output schema и effect class.

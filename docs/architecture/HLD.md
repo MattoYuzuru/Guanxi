@@ -124,8 +124,19 @@ transaction фиксирует blob/reference metadata. Одни bytes могу�
 Artifact identities. Directory-identity handoff закрывает prefix symlink-swap
 между проверкой и publish/read; final bytes всегда повторно хэшируются.
 Filesystem/SQLite не объявляются одной atomic transaction: post-publish/pre-DB
-orphan не читается по Artifact ID и виден через bounded inventory. Generic GC,
-attachment UI и public upload/download routes пока не реализованы.
+orphan не читается по Artifact ID и виден через bounded inventory. Generic GC
+пока не реализован.
+
+P3-O migrations 27–28 additive добавляют immutable attachment presentation
+metadata и fail-closed C0 filename hardening поверх generic Artifact. Public
+loopback REST принимает raw bounded bytes с server-derived hash/size/storage key,
+stable UUID intent и exact Project/projectless scope. Отдельный transfer owner
+публикует sourced storage policy, держит один active helper и bounded FIFO queue;
+abort/disconnect/watchdog освобождают child, permit, listeners и temp. Download
+повторно валидирует content и возвращает safe RFC 5987 disposition, exact typed
+headers, `private, no-store`, `nosniff` и sandbox CSP; Range явно unsupported.
+Standalone Web library показывает bounded/truncated list, upload/cancel/retry и
+export, но честно не подключает attachment к model context, Recipe или Job.
 
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,
