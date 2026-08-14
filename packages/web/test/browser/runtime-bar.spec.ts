@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   activeRuntimeBrowserSnapshot,
+  browserSettings,
   degradedRuntimeBrowserSnapshot,
   linuxNvidiaRuntimeBrowserSnapshot,
 } from './fixtures/runtime-snapshot.ts'
@@ -75,15 +76,13 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
     if (url.pathname === '/api/threads') return route.fulfill(json({ ownershipVersion: 1, scope: 'projectless', chats: [] }))
     if (url.pathname === '/api/settings') {
       return route.fulfill(
-        json({
+        json(browserSettings({
           ollamaHost: health.ollama.host,
           defaultModel: null,
           defaultNumCtx: 8_192,
           autoApproveTools: false,
           enableBash: false,
-          webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
-          theme: 'system',
-        }),
+        })),
       )
     }
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
@@ -189,11 +188,10 @@ test('Runtime Bar truthfully groups Linux NVIDIA devices and preserves a stale s
     if (url.pathname === '/api/workspaces') return route.fulfill(json({ workspaces: [] }))
     if (url.pathname === '/api/threads') return route.fulfill(json({ ownershipVersion: 1, scope: 'projectless', chats: [] }))
     if (url.pathname === '/api/settings') {
-      return route.fulfill(json({
+      return route.fulfill(json(browserSettings({
         ollamaHost: health.ollama.host, defaultModel: null, defaultNumCtx: 8_192,
         autoApproveTools: false, enableBash: false,
-        webSearch: { provider: 'none', baseUrl: null, hasApiKey: false }, theme: 'system',
-      }))
+      })))
     }
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })

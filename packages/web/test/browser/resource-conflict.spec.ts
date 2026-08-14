@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { activeRuntimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { activeRuntimeBrowserSnapshot, browserSettings } from './fixtures/runtime-snapshot.ts'
 
 type OwnerMode = 'job' | 'operation' | 'unknown'
 
@@ -291,11 +291,10 @@ function health() {
 }
 
 function settings() {
-  return {
+  return browserSettings({
     ollamaHost: 'http://127.0.0.1:11434', defaultModel: null, defaultNumCtx: 8_192,
     autoApproveTools: false, enableBash: false,
-    webSearch: { provider: 'none', baseUrl: null, hasApiKey: false }, theme: 'system',
-  }
+  })
 }
 
 function thread(messageCount: number) {

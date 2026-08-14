@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-layout safe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -87,6 +87,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
     const url = new URL(request.url())
     const method = request.method()
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/projects' && method === 'GET') {
       return route.fulfill(json({ projects: [project] }))

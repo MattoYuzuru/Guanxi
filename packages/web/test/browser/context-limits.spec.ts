@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 const CUSTOM_CONTEXT = 1_048_577
 
@@ -52,15 +52,13 @@ test('custom context survives keyboard entry, exact requests, save, reload, and 
       source: 'not_checked',
     },
   }
-  const settings = () => ({
+  const settings = () => browserSettings({
     ollamaHost: health.ollama.host,
     defaultModel: null,
     defaultNumCtx: savedContext,
     autoApproveTools: false,
     enableBash: false,
     prewarmEnabled: true,
-    webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
-    theme: 'system',
   })
   const json = (body: unknown, status = 200) => ({
     status,

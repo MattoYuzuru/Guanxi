@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Project presentation picker is bounded, accessible and single-mutation', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -55,6 +55,7 @@ test('Project presentation picker is bounded, accessible and single-mutation', a
     const request = route.request()
     const url = new URL(request.url())
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/projects' && request.method() === 'GET') {
       expect(url.searchParams.toString()).toBe('presentationVersion=1')

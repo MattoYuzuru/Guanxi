@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Project Chat grouping, create retry and sourced hard reload stay isolated', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -109,16 +109,14 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
       return route.fulfill(json({ workspaces: [] }))
     }
     if (url.pathname === '/api/settings') {
-      return route.fulfill(json({
+      return route.fulfill(json(browserSettings({
         ollamaHost: health.ollama.host,
         defaultModel: model.name,
         defaultNumCtx: 8192,
         autoApproveTools: false,
         enableBash: false,
         prewarmEnabled: false,
-        webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
-        theme: 'system',
-      }))
+      })))
     }
     if (url.pathname === '/api/projects' && method === 'GET') {
       return route.fulfill(json({

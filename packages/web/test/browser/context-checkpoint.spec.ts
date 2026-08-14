@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test.use({ viewport: { width: 390, height: 844 } })
 
@@ -10,7 +10,7 @@ test('context checkpoint reconciles a lost POST response exactly and survives ha
   page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.emulateMedia({ reducedMotion: 'reduce' })
 
-  await page.addInitScript((runtimeSnapshot) => {
+  await page.addInitScript(({ runtimeSnapshot, settings }) => {
     const observedAt = '2026-08-14T10:00:00.000Z'
     const threadId = 'thread-p3-m'
     const thread = {
@@ -130,6 +130,7 @@ test('context checkpoint reconciles a lost POST response exactly and survives ha
       const checkpointId = sessionStorage.getItem('p3m:checkpoint-id')
 
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
       if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
       if (url.pathname === '/api/threads' && method === 'GET') {
@@ -157,7 +158,7 @@ test('context checkpoint reconciles a lost POST response exactly and survives ha
       }
       return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
     }
-  }, runtimeBrowserSnapshot())
+  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings() })
 
   await page.goto('/chat/thread-p3-m')
   await expect(page.getByText('Original source 0', { exact: true })).toHaveCount(1)

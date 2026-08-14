@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Add from Ollama is explicit, focus-contained, truthful and constrained-layout safe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -47,6 +47,7 @@ test('Add from Ollama is explicit, focus-contained, truthful and constrained-lay
     const request = route.request()
     const url = new URL(request.url())
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/models') {
       return route.fulfill(json({ models: installed ? [model] : [] }))

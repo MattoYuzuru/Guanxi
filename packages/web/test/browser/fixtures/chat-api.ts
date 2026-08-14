@@ -581,6 +581,9 @@ export async function installChatApiFixture(
             defaultNumCtx: 32768,
             autoApproveTools: false,
             enableBash: false,
+            prewarmEnabled: true,
+            locale: 'ru',
+            localeSource: 'user_setting',
             webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
             theme: 'system',
           })

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Marketplace discovers Hugging Face repositories read-only without resource side effects', async ({
   page,
@@ -122,6 +122,7 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
       body: request.postData() ?? null,
     })
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))
     if (url.pathname === '/api/models/catalog') {
@@ -344,6 +345,7 @@ test('Marketplace confirms one exact GGUF target without downloading or installi
     const path = new URL(request.url()).pathname
     requests.push({ url: request.url(), path, method: request.method(), body: request.postData() ?? null })
     if (path === '/api/health') return route.fulfill(json(health))
+    if (path === '/api/settings') return route.fulfill(json(browserSettings()))
     if (path === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (path === '/api/models') return route.fulfill(json({ models: [] }))
     if (path === '/api/models/catalog') {
@@ -741,6 +743,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
         },
       }))
     }
+    if (path === '/api/settings') return route.fulfill(json(browserSettings()))
     if (path === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (path === '/api/models') return route.fulfill(json({ models: [] }))
     if (path === '/api/models/catalog') {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 const AT = '2026-08-07T00:00:00.000Z'
 const DIGEST = 'sha256:fixture'
@@ -126,6 +126,7 @@ test('user capability overrides stay separate, truthful, keyboard and layout saf
     const method = route.request().method()
 
     if (path === '/api/health') return route.fulfill(json(health))
+    if (path === '/api/settings') return route.fulfill(json(browserSettings()))
     if (path === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (path === '/api/models') return route.fulfill(json({ models: [model()] }))
     if (path === '/api/models/catalog') {
@@ -367,6 +368,7 @@ test('marketplace rows never expose capability override management', async ({ pa
       mutations.push(`${route.request().method()} ${path}`)
     }
     if (path === '/api/health') return route.fulfill(json(health))
+    if (path === '/api/settings') return route.fulfill(json(browserSettings()))
     if (path === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (path === '/api/models') return route.fulfill(json({ models: [] }))
     if (path === '/api/models/catalog') {

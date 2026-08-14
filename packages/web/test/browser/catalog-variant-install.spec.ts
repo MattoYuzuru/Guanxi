@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Marketplace selects, confirms and verifies one exact variant without implicit side effects', async ({
   page,
@@ -93,6 +93,7 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
     const request = route.request()
     const url = new URL(request.url())
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/models') {
       return route.fulfill(json({ models: installed ? [localModel] : [] }))

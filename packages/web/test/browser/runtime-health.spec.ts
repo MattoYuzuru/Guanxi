@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow viewport', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.addInitScript((runtimeSnapshot) => {
+  await page.addInitScript(({ runtimeSnapshot, settings }) => {
     const observedAt = '2026-08-02T12:00:00.000Z'
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), {
@@ -91,6 +91,7 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
       const rawUrl = typeof input === 'string' ? input : input.url
       const url = new URL(rawUrl, window.location.origin)
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(degradedRuntime)
       if (url.pathname === '/api/models') {
         return json(
@@ -133,7 +134,7 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
       }
       return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
     }
-  }, runtimeBrowserSnapshot())
+  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings() })
 
   await page.goto('/')
 

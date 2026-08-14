@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 type FixtureSnapshot = {
   events: string[]
@@ -12,7 +12,7 @@ type FixtureSnapshot = {
 
 async function installFixture(page: Page, enabled = true): Promise<void> {
   await page.addInitScript(
-    ({ runtime, initialEnabled }) => {
+    ({ runtime, settings, initialEnabled }) => {
       const observedAt = '2026-08-03T00:00:00.000Z'
       const threadId = 'thread-prewarm-browser'
       const eventsKey = 'alamo:p1k:events'
@@ -183,14 +183,13 @@ async function installFixture(page: Page, enabled = true): Promise<void> {
         if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
         if (url.pathname === '/api/settings' && method === 'GET') {
           return json({
+            ...settings,
             ollamaHost: health.ollama.host,
             defaultModel: 'model-a:latest',
             defaultNumCtx: 32_768,
             autoApproveTools: false,
             enableBash: false,
             prewarmEnabled: sessionStorage.getItem(settingKey) === 'true',
-            webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
-            theme: 'system',
           })
         }
         if (url.pathname.endsWith('/prewarm') && method === 'POST') {
@@ -269,7 +268,7 @@ async function installFixture(page: Page, enabled = true): Promise<void> {
         )
       }
     },
-    { runtime: runtimeBrowserSnapshot(), initialEnabled: enabled },
+    { runtime: runtimeBrowserSnapshot(), settings: browserSettings(), initialEnabled: enabled },
   )
 }
 

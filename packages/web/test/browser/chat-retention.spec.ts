@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test.use({ timezoneId: 'Pacific/Honolulu' })
 
@@ -110,6 +110,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
     const url = new URL(request.url())
     const method = request.method()
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/workspaces') return route.fulfill(json({ workspaces: [] }))
     if (url.pathname === '/api/threads' && method === 'GET') {
@@ -308,6 +309,7 @@ test('explicit Session leave confirms, retries exact scope and records pending M
     const url = new URL(request.url())
     const method = request.method()
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/workspaces') return route.fulfill(json({ workspaces: [] }))
     if (url.pathname === '/api/threads' && method === 'GET') {

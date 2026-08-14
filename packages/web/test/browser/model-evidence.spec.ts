@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('installed evidence stays truthful, localized, keyboard and constrained-layout safe', async ({
   page,
@@ -100,6 +100,7 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [model] }))
     if (url.pathname === '/api/models/catalog') {

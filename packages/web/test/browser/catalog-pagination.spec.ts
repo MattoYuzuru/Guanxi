@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Marketplace pages hundreds of logical rows with bounded DOM and cross-page compare', async ({
   page,
@@ -70,6 +70,7 @@ test('Marketplace pages hundreds of logical rows with bounded DOM and cross-page
     const url = new URL(request.url())
     requests.push({ path: url.pathname, method: request.method(), page: url.searchParams.get('page') })
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings()))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))
     if (url.pathname === '/api/models/catalog') {

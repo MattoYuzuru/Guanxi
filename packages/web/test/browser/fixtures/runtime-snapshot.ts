@@ -1,3 +1,21 @@
+import type { Settings } from '@alamo/contract'
+
+export function browserSettings(overrides: Partial<Settings> = {}): Settings {
+  return {
+    ollamaHost: 'http://127.0.0.1:11434',
+    defaultModel: null,
+    defaultNumCtx: 32_768,
+    autoApproveTools: false,
+    enableBash: false,
+    prewarmEnabled: true,
+    locale: 'ru',
+    localeSource: 'user_setting',
+    webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
+    theme: 'system',
+    ...overrides,
+  }
+}
+
 export function runtimeBrowserSnapshot() {
   const observedAt = '2026-08-02T12:00:00.000Z'
   const unknownMemory = (basis: string) => ({
