@@ -591,6 +591,28 @@ export const api = {
     },
   ),
 
+  downloadAttachment: async (id: string, scope: ArtifactScope, signal?: AbortSignal) => {
+    const url = withQuery(ROUTES.artifactContent(id), {
+      attachmentVersion: ATTACHMENT_VERSION,
+      scope: scope.scope,
+      projectId: scope.scope === 'project' ? scope.projectId : undefined,
+    })
+    const response = await fetch(url, {
+      headers: { Accept: 'application/octet-stream' },
+      signal,
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      const parsed = apiErrorSchema.safeParse(safeJson(text))
+      throw new ApiRequestError(
+        response.status,
+        parsed.success ? parsed.data : null,
+        parsed.success ? parsed.data.message : `HTTP ${response.status}`,
+      )
+    }
+    return response.blob()
+  },
+
   /* Quick Run metadata — these routes never execute model work. */
 
   listQuickRuns: (query: QuickRunScopeQuery, signal?: AbortSignal) =>

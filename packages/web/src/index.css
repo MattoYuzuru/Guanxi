@@ -544,7 +544,7 @@
     forced-color-adjust: auto;
   }
 
-  .attachment-card a:focus-visible,
+  .attachment-card button:focus-visible,
   .attachment-drop input:focus-visible,
   .attachment-drop button:focus-visible {
     outline: 3px solid Highlight;

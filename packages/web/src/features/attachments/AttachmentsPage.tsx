@@ -178,10 +178,16 @@ function AttachmentScopePanel({
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({})
   const abortRef = useRef<AbortController | null>(null)
+  const uploadingRef = useRef(false)
   const uploadButtonRef = useRef<HTMLButtonElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const listErrorRef = useRef<HTMLHeadingElement>(null)
   const uploadErrorRef = useRef<HTMLDivElement>(null)
+  const downloadingRef = useRef<string | null>(null)
+  const downloadErrorRefs = useRef(new Map<string, HTMLDivElement>())
 
   const scopeName = useMemo(() => scope.scope === 'project'
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
@@ -248,9 +254,10 @@ function AttachmentScopePanel({
   }
 
   const startUpload = async () => {
-    if (!intent || uploading || policy?.state !== 'enabled') return
+    if (!intent || uploadingRef.current || policy?.state !== 'enabled') return
     const controller = new AbortController()
     abortRef.current = controller
+    uploadingRef.current = true
     setUploading(true)
     setUploadError(null)
     try {
@@ -274,8 +281,44 @@ function AttachmentScopePanel({
       requestAnimationFrame(() => uploadErrorRef.current?.focus())
     } finally {
       abortRef.current = null
+      uploadingRef.current = false
       setUploading(false)
-      requestAnimationFrame(() => uploadButtonRef.current?.focus())
+      requestAnimationFrame(() => {
+        if (uploadButtonRef.current) uploadButtonRef.current.focus()
+        else fileInputRef.current?.focus()
+      })
+    }
+  }
+
+  const download = async (attachment: Attachment) => {
+    if (downloadingRef.current !== null) return
+    downloadingRef.current = attachment.artifact.id
+    setDownloadingId(attachment.artifact.id)
+    setDownloadErrors((current) => {
+      const next = { ...current }
+      delete next[attachment.artifact.id]
+      return next
+    })
+    try {
+      const blob = await api.downloadAttachment(attachment.artifact.id, scope)
+      const url = URL.createObjectURL(blob)
+      try {
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = attachment.displayName
+        anchor.click()
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    } catch (cause) {
+      setDownloadErrors((current) => ({
+        ...current,
+        [attachment.artifact.id]: errorMessage(cause),
+      }))
+      requestAnimationFrame(() => downloadErrorRefs.current.get(attachment.artifact.id)?.focus())
+    } finally {
+      downloadingRef.current = null
+      setDownloadingId(null)
     }
   }
 
@@ -333,6 +376,7 @@ function AttachmentScopePanel({
           {translate('attachments.file.label')}
           <input
             type="file"
+            ref={fileInputRef}
             disabled={!enabled || uploading}
             onChange={onFile}
             className="mt-2 block w-full min-w-0 text-xs file:mr-2 file:rounded-md file:border file:border-[var(--border-strong)] file:bg-[var(--bg-raised)] file:px-3 file:py-1.5 file:text-xs"
@@ -362,7 +406,11 @@ function AttachmentScopePanel({
                 loading={uploading}
                 onClick={() => void startUpload()}
               >
-                {uploading ? translate('attachments.upload.uploading') : translate('attachments.upload.start')}
+                {uploading
+                  ? translate('attachments.upload.uploading')
+                  : uploadError
+                    ? translate('attachments.upload.retry')
+                    : translate('attachments.upload.start')}
               </Button>
               {uploading ? (
                 <Button onClick={() => abortRef.current?.abort('user-cancelled')}>
@@ -375,11 +423,6 @@ function AttachmentScopePanel({
         {uploadError ? (
           <div ref={uploadErrorRef} tabIndex={-1} role="alert" className="mt-3 outline-none">
             <p className="break-words text-xs text-[var(--danger)]">{uploadError}</p>
-            {intent && !uploading ? (
-              <Button ref={uploadButtonRef} className="mt-2" size="sm" onClick={() => void startUpload()}>
-                {translate('attachments.upload.retry')}
-              </Button>
-            ) : null}
           </div>
         ) : null}
       </div>
@@ -401,13 +444,14 @@ function AttachmentScopePanel({
                       {attachment.artifact.id}
                     </p>
                   </div>
-                  <a
-                    href={api.attachmentDownloadUrl(attachment.artifact.id, scope)}
-                    download={attachment.displayName}
-                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 text-xs font-medium"
+                  <Button
+                    className="shrink-0"
+                    loading={downloadingId === attachment.artifact.id}
+                    disabled={downloadingId !== null}
+                    onClick={() => void download(attachment)}
                   >
                     {translate('attachments.download')}
-                  </a>
+                  </Button>
                 </div>
                 <dl className="mt-3 grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-2xs">
                   <dt className="text-[var(--fg-subtle)]">{translate('attachments.mediaType')}</dt>
@@ -422,6 +466,24 @@ function AttachmentScopePanel({
                 <p className="mt-3 text-2xs text-[var(--fg-muted)]">
                   {translate('attachments.notInContext')}
                 </p>
+                {downloadErrors[attachment.artifact.id] ? (
+                  <div
+                    ref={(node) => {
+                      if (node) downloadErrorRefs.current.set(attachment.artifact.id, node)
+                      else downloadErrorRefs.current.delete(attachment.artifact.id)
+                    }}
+                    tabIndex={-1}
+                    role="alert"
+                    className="mt-2 outline-none"
+                  >
+                    <p className="break-words text-2xs text-[var(--danger)]">
+                      {downloadErrors[attachment.artifact.id]}
+                    </p>
+                    <Button size="sm" className="mt-1" onClick={() => void download(attachment)}>
+                      {translate('attachments.download.retry')}
+                    </Button>
+                  </div>
+                ) : null}
               </article>
             </li>
           ))}
