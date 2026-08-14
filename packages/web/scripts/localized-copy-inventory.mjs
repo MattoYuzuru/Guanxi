@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import ts from 'typescript'
 
@@ -35,6 +35,10 @@ const TECHNICAL_EXCEPTIONS = [
   { file: 'features/models/ModelCard.tsx', value: 'pro', count: 1, reason: 'provider plan identifier' },
   { file: 'features/recipes/RecipesPage.tsx', value: 'sha256:', count: 2, reason: 'digest algorithm identifier' },
   { file: 'features/recipes/RecipesPage.tsx', value: 'B', count: 1, reason: 'byte unit' },
+  { file: 'features/settings/SettingsPage.tsx', value: 'Ollama Web Search', count: 1, reason: 'provider product name' },
+  { file: 'features/settings/SettingsPage.tsx', value: 'SearXNG', count: 1, reason: 'provider product name' },
+  { file: 'features/settings/SettingsPage.tsx', value: 'Brave Search', count: 1, reason: 'provider product name' },
+  { file: 'features/settings/SettingsPage.tsx', value: 'Tavily', count: 1, reason: 'provider product name' },
 ]
 
 function literalValue(node) {
@@ -126,6 +130,14 @@ export function collectLocalizedCopyViolations(sourceText, fileName = 'fixture.t
           visitRenderedElements(node.initializer.expression)
         }
       }
+      if (
+        !USER_FACING_ATTRIBUTES.has(name)
+        && node.initializer
+        && ts.isJsxExpression(node.initializer)
+        && node.initializer.expression
+      ) {
+        visit(node.initializer.expression)
+      }
       return
     } else if (ts.isPropertyAssignment(node)) {
       const name = node.name.getText(source).replace(/^['"]|['"]$/gu, '')
@@ -150,6 +162,33 @@ export function collectLocalizedCopyViolations(sourceText, fileName = 'fixture.t
   return violations
 }
 
+/**
+ * Formatters render strings outside JSX. Inspect every direct return branch so
+ * a newly hardcoded unit or phrase cannot silently bypass the TSX inventory.
+ */
+export function collectDynamicCopyViolations(sourceText, fileName = 'lib/format.ts') {
+  const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const violations = []
+  const report = (node, value) => {
+    const position = source.getLineAndCharacterOfPosition(node.getStart(source))
+    violations.push({
+      file: fileName,
+      line: position.line + 1,
+      column: position.character + 1,
+      kind: 'dynamic-return',
+      value: value.trim(),
+    })
+  }
+  const visit = (node) => {
+    if (ts.isReturnStatement(node) && node.expression) {
+      collectRenderedExpression(node.expression, report)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return violations
+}
+
 function tsxFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name)
@@ -163,6 +202,13 @@ export function scanLocalizedWebCopy(sourceDirectory) {
     const name = relative(sourceDirectory, path)
     return collectLocalizedCopyViolations(readFileSync(path, 'utf8'), name)
   })
+  const formatterPath = resolve(sourceDirectory, 'lib/format.ts')
+  if (existsSync(formatterPath)) {
+    violations.push(...collectDynamicCopyViolations(
+      readFileSync(formatterPath, 'utf8'),
+      relative(sourceDirectory, formatterPath),
+    ))
+  }
   const remaining = [...violations]
   for (const exception of TECHNICAL_EXCEPTIONS) {
     const matches = remaining.filter((item) => item.file === exception.file && item.value === exception.value)

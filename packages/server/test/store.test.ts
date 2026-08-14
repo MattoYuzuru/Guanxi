@@ -106,16 +106,29 @@ describe('SQLite stores', () => {
     db.close()
   })
 
-  it('defaults locale with provenance, round-trips it, and fails closed on stored corruption', () => {
-    const db = openDb(':memory:')
-    const settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
+  it('reopens the exact locale with provenance and fails closed on durable corruption', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'alamo-locale-store-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const databasePath = join(root, 'settings.sqlite')
+    let db = openDb(databasePath)
+    let settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
 
     assert.equal(settings.get().locale, 'en')
     assert.equal(settings.get().localeSource, 'default')
     assert.equal(settings.update({ locale: 'ru' }).locale, 'ru')
     assert.equal(settings.get().localeSource, 'user_setting')
+    db.close()
+
+    db = openDb(databasePath)
+    settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
+    assert.equal(settings.get().locale, 'ru')
+    assert.equal(settings.get().localeSource, 'user_setting')
 
     db.prepare("UPDATE settings SET value = 'future-locale' WHERE key = 'ui_locale'").run()
+    db.close()
+
+    db = openDb(databasePath)
+    settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
     assert.equal(settings.get().locale, 'en')
     assert.equal(settings.get().localeSource, 'stored_invalid')
     db.close()

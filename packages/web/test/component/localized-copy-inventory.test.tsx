@@ -4,18 +4,21 @@ import { describe, expect, it } from 'vitest'
 // lets maintainers run it without adding a browser build dependency.
 // @ts-expect-error plain ESM script intentionally has no declaration package
 import {
+  collectDynamicCopyViolations,
   collectLocalizedCopyViolations,
   scanLocalizedWebCopy,
 } from '../../scripts/localized-copy-inventory.mjs'
 
 describe('localized Web copy inventory', () => {
-  it('rejects injected JSX text, aria-label, title, and placeholder copy', () => {
+  it('rejects direct and nested injected user-facing JSX copy', () => {
     const violations = collectLocalizedCopyViolations(`
       export function Fixture() {
         return <section title="Visible title">
           Visible text
           <button aria-label="Accessible name" />
           <input placeholder="Search here" />
+          <Select options={[{ value: 'technical-id', label: 'Hardcoded visible choice' }]} />
+          <Widget config={{ title: 'Hardcoded visible title' }} />
         </section>
       }
     `)
@@ -24,6 +27,20 @@ describe('localized Web copy inventory', () => {
       'attribute:placeholder',
       'attribute:title',
       'jsx-text',
+      'property:label',
+      'property:title',
+    ])
+  })
+
+  it('rejects hardcoded strings returned by non-TSX display formatters', () => {
+    const violations = collectDynamicCopyViolations(`
+      export function formatDuration() {
+        return true ? 'Hardcoded duration label' : 'сек'
+      }
+    `)
+    expect(violations.map((item: { value: string }) => item.value).sort()).toEqual([
+      'Hardcoded duration label',
+      'сек',
     ])
   })
 

@@ -538,6 +538,13 @@ describe('thread routes', () => {
         assert.equal(rejected.status, 400)
         assert.equal(context.settings.get().locale, 'ru')
       }
+
+      context.db.prepare("UPDATE settings SET value = 'future-locale' WHERE key = 'ui_locale'").run()
+      const corrupted = await app.request('/api/settings')
+      assert.equal(corrupted.status, 200)
+      const corruptedBody = await corrupted.json() as { locale: string; localeSource: string }
+      assert.equal(corruptedBody.locale, 'en')
+      assert.equal(corruptedBody.localeSource, 'stored_invalid')
     } finally {
       context.db.close()
     }

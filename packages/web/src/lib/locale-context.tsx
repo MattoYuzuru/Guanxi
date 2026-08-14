@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import type { Settings, UiLocale } from '@alamo/contract'
 import { api } from './api.ts'
 import { getActiveLocale, setActiveLocale } from './locale.ts'
@@ -20,8 +29,10 @@ const setFallbackLocale: LocaleContextValue['setLocale'] = (locale) => {
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<UiLocale>(getActiveLocale)
   const [source, setSource] = useState<LocaleSource>('loading')
+  const localeIntent = useRef(0)
 
   const setLocale = useCallback((next: UiLocale, nextSource: LocaleSource = 'user_setting') => {
+    localeIntent.current += 1
     setActiveLocale(next)
     setLocaleState(next)
     setSource(nextSource)
@@ -29,13 +40,14 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const controller = new AbortController()
+    const bootstrapIntent = localeIntent.current
     api.getSettings(controller.signal).then((settings) => {
-      if (!controller.signal.aborted) setLocale(settings.locale, settings.localeSource)
+      if (!controller.signal.aborted && localeIntent.current === bootstrapIntent) {
+        setLocale(settings.locale, settings.localeSource)
+      }
     }).catch(() => {
-      if (!controller.signal.aborted) {
-        setActiveLocale('en')
-        setLocaleState('en')
-        setSource('unavailable')
+      if (!controller.signal.aborted && localeIntent.current === bootstrapIntent) {
+        setLocale('en', 'unavailable')
       }
     })
     return () => controller.abort()

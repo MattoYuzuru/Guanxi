@@ -35,6 +35,7 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const saveErrorRef = useRef<HTMLDivElement>(null)
+  const savingRef = useRef(false)
   const [defaultNumCtxText, setDefaultNumCtxText] = useState('')
 
   useEffect(() => {
@@ -57,13 +58,14 @@ export function SettingsPage() {
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    if (!draft) return
+    if (!draft || savingRef.current) return
     const defaultNumCtx = parsePositiveSafeInteger(defaultNumCtxText)
     if (defaultNumCtx === null) {
       setSaveError(translate('context.validation.positiveSafeInteger'))
       return
     }
 
+    savingRef.current = true
     setSaving(true)
     setSaved(false)
     setSaveError(null)
@@ -102,6 +104,7 @@ export function SettingsPage() {
     } catch (error) {
       setSaveError(errorMessage(error))
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }

@@ -1,4 +1,18 @@
 const english = {
+  'format.bytes.byte': 'B',
+  'format.bytes.kibibyte': 'KB',
+  'format.bytes.mebibyte': 'MB',
+  'format.bytes.gibibyte': 'GB',
+  'format.bytes.tebibyte': 'TB',
+  'format.rate.perSecond': '{value}/s',
+  'format.duration.millisecond': 'ms',
+  'format.duration.second': 's',
+  'format.duration.minute': 'min',
+  'format.duration.hour': 'h',
+  'format.compact.thousand': '{value}k',
+  'format.compact.million': '{value}M',
+  'format.tokensPerSecond': '{value} tok/s',
+  'format.relative.justNow': 'just now',
   'projects.navigation': 'Projects',
   'projects.title': 'Projects',
   'projects.description':
@@ -1679,6 +1693,20 @@ export type LocaleKey = keyof typeof english
 type Messages = Record<LocaleKey, string>
 
 const russian: Messages = {
+  'format.bytes.byte': 'Б',
+  'format.bytes.kibibyte': 'КБ',
+  'format.bytes.mebibyte': 'МБ',
+  'format.bytes.gibibyte': 'ГБ',
+  'format.bytes.tebibyte': 'ТБ',
+  'format.rate.perSecond': '{value}/с',
+  'format.duration.millisecond': 'мс',
+  'format.duration.second': 'с',
+  'format.duration.minute': 'мин',
+  'format.duration.hour': 'ч',
+  'format.compact.thousand': '{value}k',
+  'format.compact.million': '{value}M',
+  'format.tokensPerSecond': '{value} ток/с',
+  'format.relative.justNow': 'только что',
   'projects.navigation': 'Проекты',
   'projects.title': 'Проекты',
   'projects.description':

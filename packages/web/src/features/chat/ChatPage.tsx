@@ -43,7 +43,7 @@ import {
   cx,
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
-import { formatRelativeTime, formatTime } from '../../lib/format.ts'
+import { formatInteger, formatRelativeTime, formatTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { PRODUCT_NAME } from '../../lib/brand.ts'
 import {
@@ -286,7 +286,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
           {contextBlocked && selectedModel?.contextLimit.state === 'declared' ? (
             <Callout tone="danger" title={translate('context.limit.exceeded')}>
               {translate('context.limit.declared')}: {' '}
-              {selectedModel.contextLimit.value.toLocaleString()} · {' '}
+              {formatInteger(selectedModel.contextLimit.value)} · {' '}
               {selectedModel.contextLimit.source === 'ollama_api_tags'
                 ? translate('context.limit.source.tags')
                 : translate('context.limit.source.show')}

@@ -28,6 +28,7 @@ import { useLocale } from './lib/locale-context.tsx'
 import { PRODUCT_NAME } from './lib/brand.ts'
 
 export function App() {
+  useLocale()
   const route = useRoute()
   const health = useAsync((signal) => api.health(signal), [])
   const [retrying, setRetrying] = useState(false)

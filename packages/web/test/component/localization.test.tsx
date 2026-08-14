@@ -12,7 +12,16 @@ import {
 } from '../../src/lib/locale.ts'
 import { LocaleProvider, useLocale } from '../../src/lib/locale-context.tsx'
 import { ApiShapeError, api, errorMessage } from '../../src/lib/api.ts'
-import { formatBytes, formatBytesPerSecond } from '../../src/lib/format.ts'
+import {
+  formatBytes,
+  formatBytesPerSecond,
+  formatContextLength,
+  formatDuration,
+  formatInteger,
+  formatRelativeTime,
+  formatTokens,
+  formatTokensPerSecond,
+} from '../../src/lib/format.ts'
 import { sseStream } from '../../src/lib/sse.ts'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
 
@@ -29,7 +38,9 @@ const SETTINGS: Settings = {
   theme: 'system',
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('locale catalogs', () => {
   it('keeps a non-empty English source, complete curated Russian coverage, and exact variables', () => {
@@ -69,10 +80,42 @@ describe('locale catalogs', () => {
     expect(api.getSettings).toHaveBeenCalledTimes(1)
   })
 
+  it('does not let an older bootstrap response overwrite a newer locale intent', async () => {
+    let resolveSettings!: (settings: Settings) => void
+    vi.spyOn(api, 'getSettings').mockReturnValue(new Promise((resolve) => {
+      resolveSettings = resolve
+    }))
+
+    function Probe() {
+      const { locale, source, setLocale } = useLocale()
+      return (
+        <>
+          <p>{locale}:{source}:{translate('settings.title')}</p>
+          <button onClick={() => setLocale('ru', 'pending')}>Preview Russian</button>
+        </>
+      )
+    }
+
+    setActiveLocale('en')
+    render(<LocaleProvider><Probe /></LocaleProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Russian' }))
+    expect(screen.getByText('ru:pending:Настройки')).toBeTruthy()
+    resolveSettings({ ...SETTINGS, locale: 'en' })
+
+    await waitFor(() => expect(api.getSettings).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('ru:pending:Настройки')).toBeTruthy()
+    expect(document.documentElement.lang).toBe('ru')
+  })
+
   it('localizes format units and Web-owned transport fallbacks at their source', async () => {
     setActiveLocale('en')
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytesPerSecond(1024)).toBe('1 KB/s')
+    expect(formatDuration(61_000)).toBe('1 min 1 s')
+    expect(formatTokens(12_500)).toBe('12.5k')
+    expect(formatContextLength(1_572_864)).toBe('1.5M')
+    expect(formatTokensPerSecond(12.25)).toBe('12.3 tok/s')
+    expect(formatInteger(32_768)).toBe('32,768')
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Could not connect to the Alamo server')
     expect(errorMessage(new ApiShapeError('/api/example', [])))
       .toBe('The response from /api/example does not match the application contract')
@@ -84,7 +127,17 @@ describe('locale catalogs', () => {
     setActiveLocale('ru')
     expect(formatBytes(0)).toBe('0 Б')
     expect(formatBytesPerSecond(1024)).toBe('1 КБ/с')
+    expect(formatDuration(61_000)).toBe('1 мин 1 с')
+    expect(formatTokens(12_500)).toBe('12.5k')
+    expect(formatContextLength(1_572_864)).toBe('1.5M')
+    expect(formatTokensPerSecond(12.25)).toBe('12.3 ток/с')
+    expect(formatInteger(32_768)).toMatch(/^32\s768$/u)
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Не удалось соединиться с сервером Alamo')
+
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-14T16:00:00.000Z'))
+    expect(formatRelativeTime('2026-08-14T15:59:59.000Z')).toBe('только что')
+    setActiveLocale('en')
+    expect(formatRelativeTime('2026-08-14T15:59:59.000Z')).toBe('just now')
   })
 })
 

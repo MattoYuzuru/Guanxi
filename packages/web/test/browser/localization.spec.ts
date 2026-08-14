@@ -1,11 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
-test('locale preview, persistence and glossary stay exact across failure and reload', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
-  const observedAt = '2026-08-14T16:00:00.000Z'
-  const health = {
+function browserHealth(observedAt: string) {
+  return {
     ok: true,
     appVersion: 'test',
     application: { state: 'reachable', source: 'application_http', observedAt },
@@ -39,6 +36,13 @@ test('locale preview, persistence and glossary stay exact across failure and rel
       source: 'not_checked',
     },
   }
+}
+
+test('locale preview, persistence and glossary stay exact across failure and reload', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
+  const observedAt = '2026-08-14T16:00:00.000Z'
+  const health = browserHealth(observedAt)
   const json = (body: unknown, status = 200) => ({
     status,
     contentType: 'application/json',
@@ -67,17 +71,13 @@ test('locale preview, persistence and glossary stay exact across failure and rel
       settingsWrites += 1
       const body = request.postDataJSON() as Record<string, unknown>
       settingsBodies.push(body)
-      if (settingsWrites === 1) {
-        return route.fulfill(json({
-          code: 'storage_error',
-          message: 'safe settings failure',
-          details: null,
-        }, 500))
-      }
       persisted = browserSettings({
         locale: body.locale === 'ru' ? 'ru' : 'en',
         localeSource: 'user_setting',
       })
+      if (settingsWrites === 1) {
+        return route.abort('connectionreset')
+      }
       return route.fulfill(json(persisted))
     }
     if (method !== 'GET' || /jobs|threads|tools|workspaces|unload|prewarm|pull|ollama/u.test(url.pathname)) {
@@ -88,6 +88,8 @@ test('locale preview, persistence and glossary stay exact across failure and rel
 
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toHaveCount(1)
+  await expect.poll(() => settingsReads).toBe(4)
+  await expect(page).toHaveTitle('Alamo')
   await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
 
@@ -119,11 +121,16 @@ test('locale preview, persistence and glossary stay exact across failure and rel
 
   const save = page.getByRole('button', { name: 'Сохранить', exact: true })
   await save.focus()
-  await save.press('Enter')
+  await save.evaluate((button) => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
   await expect.poll(() => settingsWrites).toBe(1)
   const saveError = page.getByRole('alert')
   await expect(saveError).toBeFocused()
-  await expect(saveError).toContainText('safe settings failure')
+  await expect(saveError).toContainText('Не удалось соединиться с сервером Alamo')
+  await expect(page.getByText('Настройки сохранены', { exact: true })).toHaveCount(0)
+  expect(persisted.locale).toBe('ru')
   await save.focus()
   await save.press('Enter')
   await expect.poll(() => settingsWrites).toBe(2)
@@ -131,11 +138,13 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   expect(settingsBodies.map((body) => body.locale)).toEqual(['ru', 'ru'])
   expect(settingsBodies.every((body) => !Object.hasOwn(body, 'apiKey'))).toBe(true)
 
-  const readsBeforeReload = settingsReads
+  expect(settingsReads).toBe(4)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
-  expect(settingsReads).toBeGreaterThan(readsBeforeReload)
+  // Reload aborts LocaleProvider's first StrictMode probe before it reaches the
+  // route handler; SettingsPage still performs both development probes.
+  await expect.poll(() => settingsReads).toBe(7)
   expect(settingsWrites).toBe(2)
   await expect(page.getByRole('heading', { name: 'Глоссарий', exact: true })).toHaveCount(1)
   await expect(page.locator('#settings-glossary-results article')).toHaveCount(17)
@@ -164,5 +173,76 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   expect(layout.outlineStyle).toBe('solid')
   expect(Number.parseFloat(layout.outlineWidth)).toBeGreaterThanOrEqual(2)
   expect(settingsWrites).toBe(2)
+  expect(forbiddenEffects).toEqual([])
+})
+
+test('delayed persisted locale rerenders the complete non-Settings route', async ({ page }) => {
+  const observedAt = '2026-08-14T17:00:00.000Z'
+  const json = (body: unknown, status = 200) => ({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  })
+  let settingsReads = 0
+  let releaseSettings!: () => void
+  const settingsGate = new Promise<void>((resolve) => {
+    releaseSettings = resolve
+  })
+  const forbiddenEffects: string[] = []
+
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const method = request.method()
+    if (url.pathname === '/api/health') return route.fulfill(json(browserHealth(observedAt)))
+    if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === '/api/settings' && method === 'GET') {
+      settingsReads += 1
+      await settingsGate
+      return route.fulfill(json(browserSettings({ locale: 'ru', localeSource: 'user_setting' })))
+    }
+    if (url.pathname === '/api/projects' && method === 'GET') {
+      return route.fulfill(json({ projects: [] }))
+    }
+    if (url.pathname === '/api/artifacts/policy' && method === 'GET') {
+      return route.fulfill(json({
+        policyVersion: 1,
+        state: 'enabled',
+        source: 'server_default_storage_policy',
+        observedAt,
+        maxBytes: 33_554_432,
+        maxActiveTransfers: 1,
+        maxQueuedTransfers: 8,
+        rangeRequests: 'unsupported',
+        modelCapability: 'not_applicable',
+        reason: null,
+      }))
+    }
+    if (url.pathname === '/api/artifacts' && method === 'GET') {
+      return route.fulfill(json({
+        attachmentVersion: 1,
+        scope: 'projectless',
+        projectId: null,
+        attachments: [],
+        limit: 50,
+        truncated: false,
+      }))
+    }
+    if (method !== 'GET') forbiddenEffects.push(`${method} ${url.pathname}`)
+    return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
+  })
+
+  await page.goto('/attachments')
+  await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(1)
+  await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(1)
+  await expect.poll(() => settingsReads).toBe(2)
+
+  releaseSettings()
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
+  await expect(page.getByRole('heading', { name: 'Вложения', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Runtime и ресурсы', { exact: true })).toHaveCount(1)
+  await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(0)
+  expect(settingsReads).toBe(2)
   expect(forbiddenEffects).toEqual([])
 })
