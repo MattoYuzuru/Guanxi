@@ -22,6 +22,7 @@ import { Badge, Button, Modal, Select } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { PRODUCT_FILE_PREFIX } from '../../lib/brand.ts'
 
 const CAPABILITIES = modelCapabilitySchema.options
 
@@ -524,5 +525,5 @@ function conflictReason(reason: ModelCapabilityOverrideConflictReason): string {
 /** Derived from the identity only, so two identical exports share one filename. */
 function exportFilenameFor(identity: ExactIdentity): string {
   const safe = (value: string) => value.replace(/[^a-z0-9._-]/giu, '-')
-  return `alamo-capability-overrides-${safe(identity.normalizedModelReference)}-${safe(identity.artifactDigest).slice(0, 24)}.json`
+  return `${PRODUCT_FILE_PREFIX}-capability-overrides-${safe(identity.normalizedModelReference)}-${safe(identity.artifactDigest).slice(0, 24)}.json`
 }

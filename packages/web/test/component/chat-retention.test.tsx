@@ -419,7 +419,7 @@ describe('Chat retention info', () => {
     })
     expect(exportedText).toBe('exported diagnostic only')
     expect(clickedDownload).toEqual({
-      download: `reasoning-${REASONING.artifacts[0]!.id}.md`,
+      download: `rassuzhdenie-${REASONING.artifacts[0]!.id}.md`,
       href: 'blob:reasoning-export',
     })
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:reasoning-export')

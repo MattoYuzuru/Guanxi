@@ -3,6 +3,7 @@ import { Input } from '../../components/ui.tsx'
 import { glossaryEntries, searchGlossary } from '../../lib/glossary.ts'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
+import { PRODUCT_NAME } from '../../lib/brand.ts'
 
 export function Glossary() {
   const { locale } = useLocale()
@@ -18,7 +19,7 @@ export function Glossary() {
         {translate('settings.glossary.title')}
       </h2>
       <p className="mt-1 text-xs text-[var(--fg-muted)]">
-        {translate('settings.glossary.description')}
+        {translate('settings.glossary.description', { product: PRODUCT_NAME })}
       </p>
       <label className="mt-3 block text-xs font-medium" htmlFor="settings-glossary-search">
         {translate('settings.glossary.search.label')}

@@ -111,7 +111,7 @@ export function ChatReasoningArtifacts({
       const url = URL.createObjectURL(new Blob([artifact.content], { type: 'text/markdown;charset=utf-8' }))
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `reasoning-${artifact.id}.md`
+      anchor.download = translate('chat.reasoning.exportFilename', { id: artifact.id })
       anchor.click()
       URL.revokeObjectURL(url)
     } catch (reason) {

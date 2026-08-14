@@ -2,7 +2,7 @@
  * Настройки локального сервера. Секрет провайдера поиска никогда не читается
  * обратно: сервер возвращает только hasApiKey.
  */
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Settings, UiLocale, WebSearchProvider } from '@alamo/contract'
 import {
   Button,
@@ -34,6 +34,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const saveErrorRef = useRef<HTMLDivElement>(null)
   const [defaultNumCtxText, setDefaultNumCtxText] = useState('')
 
   useEffect(() => {
@@ -49,6 +50,10 @@ export function SettingsPage() {
     setDefaultNumCtxText(String(loaded.data.defaultNumCtx))
     setLocale(loaded.data.locale, loaded.data.localeSource)
   }, [loaded.data, setLocale])
+
+  useEffect(() => {
+    if (saveError) saveErrorRef.current?.focus()
+  }, [saveError])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
@@ -145,7 +150,7 @@ export function SettingsPage() {
       </p>
 
       {saveError && (
-        <div className="mb-3">
+        <div ref={saveErrorRef} className="mb-3" role="alert" tabIndex={-1}>
           <Callout tone="danger" title={translate('settings.save.error')}>
             {saveError}
           </Callout>

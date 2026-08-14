@@ -7,6 +7,7 @@
 import type { Health } from '@alamo/contract'
 import { Button, Callout, CopyButton, Spinner, Stat } from '../../components/ui.tsx'
 import { errorMessage } from '../../lib/api.ts'
+import { PRODUCT_NAME } from '../../lib/brand.ts'
 import { formatBytes, formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 
@@ -29,7 +30,7 @@ export function HealthLoading() {
 export function HealthUnreachable({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <Centered
-      title={translate('health.server.title')}
+      title={translate('health.server.title', { product: PRODUCT_NAME })}
       description={translate('health.server.description')}
     >
       <Callout tone="danger" title={translate('health.server.whatHappened')}>
@@ -119,7 +120,7 @@ export function OllamaUnavailable({
       title={notInstalled ? translate('health.ollama.notInstalled') : translate('health.ollama.notRunning')}
       description={
         notInstalled
-          ? translate('health.ollama.notInstalledHint')
+          ? translate('health.ollama.notInstalledHint', { product: PRODUCT_NAME })
           : translate('health.ollama.notRunningHint')
       }
     >

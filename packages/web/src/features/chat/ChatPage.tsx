@@ -101,6 +101,10 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
   const projectContextErrorRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
+    if (createError) createErrorRef.current?.focus()
+  }, [createError])
+
+  useEffect(() => {
     if (projectId && projectContext.data) {
       requestAnimationFrame(() => projectHeadingRef.current?.focus())
     } else if (projectId && projectContext.error) {
@@ -177,7 +181,6 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       )
     } catch (error) {
       setCreateError(errorMessage(error))
-      requestAnimationFrame(() => createErrorRef.current?.focus())
     } finally {
       creatingRef.current = false
       setCreating(false)
