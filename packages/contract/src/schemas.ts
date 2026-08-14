@@ -2725,6 +2725,8 @@ export type ProjectWithPresentation = z.infer<typeof projectWithPresentationSche
 
 export const webSearchProviderSchema = z.enum(['none', 'ollama', 'searxng', 'brave', 'tavily'])
 export type WebSearchProvider = z.infer<typeof webSearchProviderSchema>
+export const uiLocaleSchema = z.enum(['en', 'ru'])
+export type UiLocale = z.infer<typeof uiLocaleSchema>
 
 export const settingsSchema = z.object({
   ollamaHost: z.string(),
@@ -2736,6 +2738,9 @@ export const settingsSchema = z.object({
   enableBash: z.boolean(),
   /** Auto prewarm on a stable New Chat model selection. Missing legacy keys default on. */
   prewarmEnabled: z.boolean().optional().default(true),
+  /** English is the primary/fallback locale; legacy settings default to it. */
+  locale: uiLocaleSchema.optional().default('en'),
+  localeSource: z.enum(['default', 'user_setting', 'stored_invalid']).optional().default('default'),
   webSearch: z.object({
     provider: webSearchProviderSchema,
     baseUrl: z.string().nullable(),
@@ -2743,7 +2748,7 @@ export const settingsSchema = z.object({
     hasApiKey: z.boolean(),
   }),
   theme: z.enum(['light', 'dark', 'system']),
-})
+}).strict()
 export type Settings = z.infer<typeof settingsSchema>
 
 /* ───────────────────────────── Feature flags ────────────────────────────── */

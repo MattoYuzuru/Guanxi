@@ -668,6 +668,59 @@ const english = {
   'settings.context.label': 'Default agent context',
   'settings.context.hint':
     'Any positive whole-token count is accepted; a provider-declared model limit is checked separately.',
+  'app.navigation.models': 'Models',
+  'app.navigation.chat': 'Chat',
+  'app.navigation.settings': 'Settings',
+  'app.notFound.title': 'Page not found',
+  'app.notFound.home': 'Go home',
+  'app.theme.current': 'Theme: {theme}',
+  'app.theme.switch': 'Theme: {theme}. Activate to switch.',
+  'theme.system': 'System',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
+  'settings.title': 'Settings',
+  'settings.description': 'Saved locally in SQLite. API keys are never returned to the browser.',
+  'settings.load.error': 'Settings could not be loaded',
+  'settings.retry': 'Retry',
+  'settings.save.error': 'Settings could not be saved',
+  'settings.save.success': 'Settings saved',
+  'settings.save.successHint': 'The new Ollama address applies to the next request.',
+  'settings.section.ollama': 'Ollama and models',
+  'settings.ollama.address': 'Ollama address',
+  'settings.ollama.addressHint': 'Usually http://127.0.0.1:11434. Enter a full URL for a remote Ollama.',
+  'settings.ollama.defaultModel': 'Default model',
+  'settings.ollama.chooseOnCreate': 'Choose when creating',
+  'settings.section.tools': 'Tools',
+  'settings.tools.autoApprove': 'Approve by default',
+  'settings.tools.autoApproveHint': 'Write operations run without a dialog. Keep this off for an unfamiliar Project.',
+  'settings.tools.bash': 'Allow bash',
+  'settings.tools.bashHint': 'Shell commands are not restricted by a workspace jail and are always dangerous.',
+  'settings.section.webSearch': 'Web search',
+  'settings.webSearch.provider': 'Provider',
+  'settings.webSearch.disabled': 'Disabled',
+  'settings.webSearch.baseUrl': 'Base URL',
+  'settings.webSearch.baseUrlHint': 'Required for a self-hosted SearXNG or a compatible endpoint.',
+  'settings.webSearch.apiKey': 'API key',
+  'settings.webSearch.apiKeyStoredHint': 'A key is already saved. Leave the field empty to keep it unchanged.',
+  'settings.webSearch.apiKeyEmptyHint': 'After saving, the server returns only whether a key exists.',
+  'settings.webSearch.removeKey': 'Remove saved key',
+  'settings.section.interface': 'Interface',
+  'settings.interface.theme': 'Theme',
+  'settings.interface.language': 'Language',
+  'settings.interface.languageHint': 'English is the primary fallback; Russian is curated.',
+  'settings.interface.english': 'English',
+  'settings.interface.russian': 'Русский',
+  'settings.locale.invalidStored': 'An unsupported saved locale was ignored; English fallback is active.',
+  'settings.locale.unavailable': 'The saved locale could not be checked. English fallback is active.',
+  'settings.locale.pending': 'Language preview is not saved yet.',
+  'settings.save': 'Save',
+  'settings.glossary.title': 'Glossary',
+  'settings.glossary.description': 'Plain-language meanings for terms used throughout Alamo.',
+  'settings.glossary.search.label': 'Search glossary',
+  'settings.glossary.search.placeholder': 'Term, meaning or example',
+  'settings.glossary.matches': '{count} matching entries',
+  'settings.glossary.empty': 'No glossary entries match this search.',
+  'settings.glossary.example': 'Example:',
   'launcher.context.aria': 'Context window used for fit calculation',
   'launcher.context.short': 'context',
   'launcher.context.hint':
@@ -2002,6 +2055,59 @@ const russian: Messages = {
   'settings.context.label': 'Контекст агента по умолчанию',
   'settings.context.hint':
     'Допустимо любое положительное целое число токенов; объявленный provider лимит модели проверяется отдельно.',
+  'app.navigation.models': 'Модели',
+  'app.navigation.chat': 'Чат',
+  'app.navigation.settings': 'Настройки',
+  'app.notFound.title': 'Страница не найдена',
+  'app.notFound.home': 'На главную',
+  'app.theme.current': 'Тема: {theme}',
+  'app.theme.switch': 'Тема: {theme}. Нажмите, чтобы переключить.',
+  'theme.system': 'Системная',
+  'theme.light': 'Светлая',
+  'theme.dark': 'Тёмная',
+  'settings.title': 'Настройки',
+  'settings.description': 'Хранятся локально в SQLite. API-ключ наружу не возвращается.',
+  'settings.load.error': 'Не удалось загрузить настройки',
+  'settings.retry': 'Повторить',
+  'settings.save.error': 'Не удалось сохранить',
+  'settings.save.success': 'Настройки сохранены',
+  'settings.save.successHint': 'Новый адрес Ollama применяется к следующему запросу.',
+  'settings.section.ollama': 'Ollama и модели',
+  'settings.ollama.address': 'Адрес Ollama',
+  'settings.ollama.addressHint': 'Обычно http://127.0.0.1:11434. Для удалённой Ollama укажите полный URL.',
+  'settings.ollama.defaultModel': 'Модель по умолчанию',
+  'settings.ollama.chooseOnCreate': 'Выбирать при создании',
+  'settings.section.tools': 'Инструменты',
+  'settings.tools.autoApprove': 'Автоподтверждение по умолчанию',
+  'settings.tools.autoApproveHint': 'Операции записи будут выполняться без модалки. Для незнакомого Проекта безопаснее выключить.',
+  'settings.tools.bash': 'Разрешить bash',
+  'settings.tools.bashHint': 'Команда оболочки не ограничена workspace-jail и всегда считается опасной.',
+  'settings.section.webSearch': 'Web search',
+  'settings.webSearch.provider': 'Провайдер',
+  'settings.webSearch.disabled': 'Выключен',
+  'settings.webSearch.baseUrl': 'Base URL',
+  'settings.webSearch.baseUrlHint': 'Нужен для собственного SearXNG или совместимого endpoint.',
+  'settings.webSearch.apiKey': 'API-ключ',
+  'settings.webSearch.apiKeyStoredHint': 'Ключ уже сохранён. Пустое поле оставит его без изменений.',
+  'settings.webSearch.apiKeyEmptyHint': 'После сохранения сервер вернёт только признак наличия ключа.',
+  'settings.webSearch.removeKey': 'Удалить сохранённый ключ',
+  'settings.section.interface': 'Интерфейс',
+  'settings.interface.theme': 'Тема',
+  'settings.interface.language': 'Язык',
+  'settings.interface.languageHint': 'English — основной fallback; русский перевод курируется вручную.',
+  'settings.interface.english': 'English',
+  'settings.interface.russian': 'Русский',
+  'settings.locale.invalidStored': 'Неподдерживаемая сохранённая локаль проигнорирована; включён English fallback.',
+  'settings.locale.unavailable': 'Не удалось проверить сохранённую локаль. Включён English fallback.',
+  'settings.locale.pending': 'Предпросмотр языка ещё не сохранён.',
+  'settings.save': 'Сохранить',
+  'settings.glossary.title': 'Глоссарий',
+  'settings.glossary.description': 'Простые объяснения терминов, которые используются в Alamo.',
+  'settings.glossary.search.label': 'Поиск по глоссарию',
+  'settings.glossary.search.placeholder': 'Термин, объяснение или пример',
+  'settings.glossary.matches': 'Подходящих записей: {count}',
+  'settings.glossary.empty': 'По этому запросу ничего не найдено.',
+  'settings.glossary.example': 'Пример:',
   'launcher.context.aria': 'Размер окна контекста для расчёта влезаемости',
   'launcher.context.short': 'окно',
   'launcher.context.hint':
@@ -2662,8 +2768,53 @@ const russian: Messages = {
     'Поиск и выбор только читают. Download пишет managed staging; отдельный confirmed import использует local Ollama blob/create и controlled probe. Hugging Face pull, shell и remote Ollama не используются.',
 }
 
-export function translate(key: LocaleKey): string {
-  const language =
-    typeof document === 'undefined' ? 'en' : document.documentElement.lang.toLowerCase()
-  return language === 'ru' || language.startsWith('ru-') ? russian[key] : english[key]
+export type UiLocale = 'en' | 'ru'
+
+function initialLocale(): UiLocale {
+  if (typeof document === 'undefined') return 'en'
+  const language = document.documentElement.lang.toLowerCase()
+  return language === 'ru' || language.startsWith('ru-') ? 'ru' : 'en'
+}
+
+let activeLocale: UiLocale = initialLocale()
+
+export const localeCatalogs: Readonly<Record<UiLocale, Readonly<Messages>>> = {
+  en: english,
+  ru: russian,
+}
+
+export function getActiveLocale(): UiLocale {
+  return activeLocale
+}
+
+export function setActiveLocale(locale: UiLocale): void {
+  activeLocale = locale
+  if (typeof document !== 'undefined') document.documentElement.lang = locale
+}
+
+export function translate(
+  key: LocaleKey,
+  variables?: Readonly<Record<string, string | number>>,
+): string {
+  const source = english[key]
+  if (typeof source !== 'string' || source.length === 0) return `[missing translation: ${key}]`
+  const localized = activeLocale === 'ru' ? russian[key] : source
+  const value = typeof localized === 'string' && localized.length > 0 ? localized : source
+  // Existing callers intentionally post-process several templates with String#replace.
+  // Keep an omitted variables object as a request for the untranslated template while
+  // still validating the safer interpolation path when variables are supplied.
+  if (variables === undefined) return value
+  const placeholders = [...value.matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/gu)]
+    .map((match) => match[1]!)
+  const supplied = Object.keys(variables)
+  if (
+    supplied.some((name) => !placeholders.includes(name))
+    || placeholders.some((name) => !Object.hasOwn(variables, name))
+  ) {
+    if (placeholders.length === 0 && supplied.length === 0) return value
+    return `[translation variables mismatch: ${key}]`
+  }
+  return value.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/gu, (_match, name: string) => (
+    String(variables[name])
+  ))
 }

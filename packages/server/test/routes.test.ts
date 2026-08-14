@@ -508,6 +508,41 @@ describe('thread routes', () => {
     }
   })
 
+  it('round-trips an exact locale and rejects future or extra settings without partial writes', async () => {
+    const context = testContext()
+    const app = createApp(context)
+    try {
+      const initial = await (await app.request('/api/settings')).json() as {
+        locale: string
+        localeSource: string
+      }
+      assert.equal(initial.locale, 'en')
+      assert.equal(initial.localeSource, 'default')
+
+      const updated = await app.request('/api/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ locale: 'ru' }),
+      })
+      assert.equal(updated.status, 200)
+      const updatedBody = await updated.json() as { locale: string; localeSource: string }
+      assert.equal(updatedBody.locale, 'ru')
+      assert.equal(updatedBody.localeSource, 'user_setting')
+
+      for (const body of [{ locale: 'future' }, { locale: 'en', future: true }]) {
+        const rejected = await app.request('/api/settings', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        assert.equal(rejected.status, 400)
+        assert.equal(context.settings.get().locale, 'ru')
+      }
+    } finally {
+      context.db.close()
+    }
+  })
+
   it('saves and reloads an exact default context above the retired ceiling', async () => {
     const customContext = 1_048_577
     const context = testContext()

@@ -106,6 +106,21 @@ describe('SQLite stores', () => {
     db.close()
   })
 
+  it('defaults locale with provenance, round-trips it, and fails closed on stored corruption', () => {
+    const db = openDb(':memory:')
+    const settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
+
+    assert.equal(settings.get().locale, 'en')
+    assert.equal(settings.get().localeSource, 'default')
+    assert.equal(settings.update({ locale: 'ru' }).locale, 'ru')
+    assert.equal(settings.get().localeSource, 'user_setting')
+
+    db.prepare("UPDATE settings SET value = 'future-locale' WHERE key = 'ui_locale'").run()
+    assert.equal(settings.get().locale, 'en')
+    assert.equal(settings.get().localeSource, 'stored_invalid')
+    db.close()
+  })
+
   it('terminalizes an assistant once and never overwrites failure with completed', () => {
     const db = openDb(':memory:')
     const threads = new ThreadStore(db)

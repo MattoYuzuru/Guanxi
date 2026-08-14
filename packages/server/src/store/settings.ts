@@ -5,7 +5,7 @@
  * в ответе API есть только признак `hasApiKey`. Единственный способ узнать ключ —
  * прочитать файл базы, что и так требует доступа к машине.
  */
-import type { Settings, WebSearchProvider } from '@alamo/contract'
+import { uiLocaleSchema, type Settings, type UiLocale, type WebSearchProvider } from '@alamo/contract'
 import { DEFAULT_NUM_CTX } from '@alamo/contract'
 import type { Db } from './db.ts'
 
@@ -16,6 +16,7 @@ const KEYS = {
   autoApproveTools: 'auto_approve_tools',
   enableBash: 'enable_bash',
   prewarmEnabled: 'prewarm_enabled',
+  locale: 'ui_locale',
   webSearchProvider: 'web_search_provider',
   webSearchBaseUrl: 'web_search_base_url',
   webSearchApiKey: 'web_search_api_key',
@@ -55,6 +56,8 @@ export class SettingsStore {
   }
 
   get(): Settings {
+    const rawLocale = this.raw(KEYS.locale)
+    const parsedLocale = uiLocaleSchema.safeParse(rawLocale)
     return {
       ollamaHost: this.raw(KEYS.ollamaHost) ?? this.defaults.ollamaHost,
       defaultModel: this.raw(KEYS.defaultModel),
@@ -62,6 +65,12 @@ export class SettingsStore {
       autoApproveTools: this.raw(KEYS.autoApproveTools) === 'true',
       enableBash: this.raw(KEYS.enableBash) === 'true',
       prewarmEnabled: this.raw(KEYS.prewarmEnabled) !== 'false',
+      locale: parsedLocale.success ? parsedLocale.data : 'en',
+      localeSource: rawLocale === null
+        ? 'default'
+        : parsedLocale.success
+          ? 'user_setting'
+          : 'stored_invalid',
       webSearch: {
         provider: (this.raw(KEYS.webSearchProvider) ?? 'none') as WebSearchProvider,
         baseUrl: this.raw(KEYS.webSearchBaseUrl),
@@ -83,6 +92,7 @@ export class SettingsStore {
     autoApproveTools?: boolean
     enableBash?: boolean
     prewarmEnabled?: boolean
+    locale?: UiLocale
     webSearch?: { provider?: WebSearchProvider; baseUrl?: string | null; apiKey?: string | null }
     theme?: Settings['theme']
   }): Settings {
@@ -94,6 +104,7 @@ export class SettingsStore {
     if (patch.enableBash !== undefined) this.write(KEYS.enableBash, String(patch.enableBash))
     if (patch.prewarmEnabled !== undefined)
       this.write(KEYS.prewarmEnabled, String(patch.prewarmEnabled))
+    if (patch.locale !== undefined) this.write(KEYS.locale, patch.locale)
     if (patch.theme !== undefined) this.write(KEYS.theme, patch.theme)
 
     if (patch.webSearch) {

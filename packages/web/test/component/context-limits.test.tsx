@@ -32,6 +32,7 @@ const SETTINGS: Settings = {
   ollamaHost: 'http://127.0.0.1:11434', defaultModel: 'fixture:latest',
   defaultNumCtx: 32_768, autoApproveTools: false, enableBash: false,
   prewarmEnabled: true,
+  locale: 'ru', localeSource: 'user_setting',
   webSearch: { provider: 'none', baseUrl: null, hasApiKey: false }, theme: 'system',
 }
 

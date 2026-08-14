@@ -3,7 +3,7 @@
  * обратно: сервер возвращает только hasApiKey.
  */
 import { useEffect, useState, type FormEvent } from 'react'
-import type { Settings, WebSearchProvider } from '@alamo/contract'
+import type { Settings, UiLocale, WebSearchProvider } from '@alamo/contract'
 import {
   Button,
   Callout,
@@ -15,9 +15,11 @@ import {
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { translate } from '../../lib/locale.ts'
+import { useLocale } from '../../lib/locale-context.tsx'
 import { parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
+import { Glossary } from './Glossary.tsx'
 
 type Draft = Omit<Settings, 'webSearch'> & {
   webSearch: Settings['webSearch'] & { apiKey: string; clearApiKey: boolean }
@@ -27,6 +29,7 @@ export function SettingsPage() {
   const loaded = useAsync((signal) => api.getSettings(signal), [])
   const models = useAsync((signal) => api.listModels(undefined, signal), [])
   const { setPreference } = useTheme()
+  const { source: localeSource, setLocale } = useLocale()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -44,7 +47,8 @@ export function SettingsPage() {
       },
     })
     setDefaultNumCtxText(String(loaded.data.defaultNumCtx))
-  }, [loaded.data])
+    setLocale(loaded.data.locale, loaded.data.localeSource)
+  }, [loaded.data, setLocale])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
@@ -73,6 +77,7 @@ export function SettingsPage() {
         autoApproveTools: draft.autoApproveTools,
         enableBash: draft.enableBash,
         prewarmEnabled: draft.prewarmEnabled,
+        locale: draft.locale,
         theme: draft.theme,
         webSearch: {
           provider: draft.webSearch.provider,
@@ -82,6 +87,7 @@ export function SettingsPage() {
       })
 
       setPreference(result.theme)
+      setLocale(result.locale, result.localeSource)
       setDraft({
         ...result,
         webSearch: { ...result.webSearch, apiKey: '', clearApiKey: false },
@@ -109,10 +115,10 @@ export function SettingsPage() {
       <div className="mx-auto max-w-3xl px-5 py-5">
         <Callout
           tone="danger"
-          title="Не удалось загрузить настройки"
+          title={translate('settings.load.error')}
           action={
             <Button size="sm" onClick={loaded.reload}>
-              Повторить
+              {translate('settings.retry')}
             </Button>
           }
         >
@@ -124,49 +130,77 @@ export function SettingsPage() {
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((previous) => (previous ? { ...previous, [key]: value } : previous))
+  const updateLocale = (locale: UiLocale) => {
+    update('locale', locale)
+    setSaved(false)
+    setLocale(locale, 'pending')
+  }
   const defaultNumCtxInvalid = parsePositiveSafeInteger(defaultNumCtxText) === null
 
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-5">
-      <h1 className="text-lg font-semibold tracking-tight">Настройки</h1>
+      <h1 className="text-lg font-semibold tracking-tight">{translate('settings.title')}</h1>
       <p className="mt-0.5 mb-4 text-xs text-[var(--fg-muted)]">
-        Хранятся локально в SQLite. API-ключ наружу не возвращается.
+        {translate('settings.description')}
       </p>
 
       {saveError && (
         <div className="mb-3">
-          <Callout tone="danger" title="Не удалось сохранить">
+          <Callout tone="danger" title={translate('settings.save.error')}>
             {saveError}
           </Callout>
         </div>
       )}
       {saved && (
         <div className="mb-3">
-          <Callout tone="info" title="Настройки сохранены">
-            Новый адрес Ollama применяется к следующему запросу.
+          <Callout tone="info" title={translate('settings.save.success')}>
+            {translate('settings.save.successHint')}
           </Callout>
         </div>
       )}
 
+      {localeSource === 'stored_invalid' && (
+        <div className="mb-3">
+          <Callout tone="warning" title={translate('settings.interface.language')}>
+            {translate('settings.locale.invalidStored')}
+          </Callout>
+        </div>
+      )}
+      {localeSource === 'unavailable' && (
+        <div className="mb-3">
+          <Callout tone="warning" title={translate('settings.interface.language')}>
+            {translate('settings.locale.unavailable')}
+          </Callout>
+        </div>
+      )}
+      {localeSource === 'pending' && (
+        <p className="mb-3 text-xs text-[var(--fg-muted)]" role="status">
+          {translate('settings.locale.pending')}
+        </p>
+      )}
+
       <form onSubmit={save} className="space-y-4">
-        <Panel title="Ollama и модели">
+        <Panel title={translate('settings.section.ollama')}>
           <Field
-            label="Адрес Ollama"
-            hint="Обычно http://127.0.0.1:11434. Для удалённой Ollama укажите полный URL."
+            label={translate('settings.ollama.address')}
+            hint={translate('settings.ollama.addressHint')}
+            htmlFor="settings-ollama-address"
           >
             <Input
+              id="settings-ollama-address"
               value={draft.ollamaHost}
               onChange={(event) => update('ollamaHost', event.target.value)}
               required
             />
           </Field>
 
-          <Field label="Модель по умолчанию">
+          <Field label={translate('settings.ollama.defaultModel')} htmlFor="settings-default-model">
             <Select
+              id="settings-default-model"
               value={draft.defaultModel ?? ''}
               onChange={(value) => update('defaultModel', value || null)}
               options={[
-                { value: '', label: 'Выбирать при создании' },
+                { value: '', label: translate('settings.ollama.chooseOnCreate') },
                 ...(models.data?.models ?? []).map((model) => ({
                   value: model.name,
                   label: model.name,
@@ -206,24 +240,25 @@ export function SettingsPage() {
           />
         </Panel>
 
-        <Panel title="Инструменты">
+        <Panel title={translate('settings.section.tools')}>
           <Toggle
             checked={draft.autoApproveTools}
             onChange={(value) => update('autoApproveTools', value)}
-            label="Автоподтверждение по умолчанию"
-            hint="Операции записи будут выполняться без модалки. Для незнакомого проекта безопаснее выключить."
+            label={translate('settings.tools.autoApprove')}
+            hint={translate('settings.tools.autoApproveHint')}
           />
           <Toggle
             checked={draft.enableBash}
             onChange={(value) => update('enableBash', value)}
-            label="Разрешить bash"
-            hint="Команда оболочки не ограничена workspace-jail и всегда считается опасной."
+            label={translate('settings.tools.bash')}
+            hint={translate('settings.tools.bashHint')}
           />
         </Panel>
 
-        <Panel title="Web search">
-          <Field label="Провайдер">
+        <Panel title={translate('settings.section.webSearch')}>
+          <Field label={translate('settings.webSearch.provider')} htmlFor="settings-web-provider">
             <Select
+              id="settings-web-provider"
               value={draft.webSearch.provider}
               onChange={(value) =>
                 setDraft((previous) =>
@@ -239,7 +274,7 @@ export function SettingsPage() {
                 )
               }
               options={[
-                { value: 'none', label: 'Выключен' },
+                { value: 'none', label: translate('settings.webSearch.disabled') },
                 { value: 'ollama', label: 'Ollama Web Search' },
                 { value: 'searxng', label: 'SearXNG' },
                 { value: 'brave', label: 'Brave Search' },
@@ -248,8 +283,13 @@ export function SettingsPage() {
             />
           </Field>
 
-          <Field label="Base URL" hint="Нужен для собственного SearXNG или совместимого endpoint.">
+          <Field
+            label={translate('settings.webSearch.baseUrl')}
+            hint={translate('settings.webSearch.baseUrlHint')}
+            htmlFor="settings-web-base-url"
+          >
             <Input
+              id="settings-web-base-url"
               value={draft.webSearch.baseUrl ?? ''}
               onChange={(event) =>
                 setDraft((previous) =>
@@ -268,14 +308,16 @@ export function SettingsPage() {
           </Field>
 
           <Field
-            label="API-ключ"
+            label={translate('settings.webSearch.apiKey')}
+            htmlFor="settings-web-api-key"
             hint={
               draft.webSearch.hasApiKey
-                ? 'Ключ уже сохранён. Пустое поле оставит его без изменений.'
-                : 'После сохранения сервер вернёт только признак наличия ключа.'
+                ? translate('settings.webSearch.apiKeyStoredHint')
+                : translate('settings.webSearch.apiKeyEmptyHint')
             }
           >
             <Input
+              id="settings-web-api-key"
               type="password"
               autoComplete="new-password"
               value={draft.webSearch.apiKey}
@@ -310,20 +352,36 @@ export function SettingsPage() {
                     : previous,
                 )
               }
-              label="Удалить сохранённый ключ"
+              label={translate('settings.webSearch.removeKey')}
             />
           )}
         </Panel>
 
-        <Panel title="Интерфейс">
-          <Field label="Тема">
+        <Panel title={translate('settings.section.interface')}>
+          <Field label={translate('settings.interface.theme')} htmlFor="settings-theme">
             <Select
+              id="settings-theme"
               value={draft.theme}
               onChange={(value) => update('theme', value as Settings['theme'])}
               options={[
-                { value: 'system', label: 'Системная' },
-                { value: 'light', label: 'Светлая' },
-                { value: 'dark', label: 'Тёмная' },
+                { value: 'system', label: translate('theme.system') },
+                { value: 'light', label: translate('theme.light') },
+                { value: 'dark', label: translate('theme.dark') },
+              ]}
+            />
+          </Field>
+          <Field
+            label={translate('settings.interface.language')}
+            hint={translate('settings.interface.languageHint')}
+            htmlFor="settings-locale"
+          >
+            <Select
+              id="settings-locale"
+              value={draft.locale}
+              onChange={(value) => updateLocale(value as UiLocale)}
+              options={[
+                { value: 'en', label: translate('settings.interface.english') },
+                { value: 'ru', label: translate('settings.interface.russian') },
               ]}
             />
           </Field>
@@ -331,10 +389,13 @@ export function SettingsPage() {
 
         <div className="flex justify-end">
           <Button variant="primary" type="submit" loading={saving}>
-            Сохранить
+            {translate('settings.save')}
           </Button>
         </div>
       </form>
+      <div className="mt-4">
+        <Glossary />
+      </div>
     </div>
   )
 }

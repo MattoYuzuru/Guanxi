@@ -1,4 +1,5 @@
 /** Locale-aware common formatting. Units remain base-1024 compatibility labels. */
+import { getActiveLocale } from './locale.ts'
 
 const NBSP = ' '
 
@@ -153,9 +154,7 @@ function trimZeros(value: string): string {
 }
 
 function currentLocale(): 'en' | 'ru' {
-  if (typeof document === 'undefined') return 'en'
-  const language = document.documentElement.lang.toLowerCase()
-  return language === 'ru' || language.startsWith('ru-') ? 'ru' : 'en'
+  return getActiveLocale()
 }
 
 export { NBSP }

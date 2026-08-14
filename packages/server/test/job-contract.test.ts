@@ -21,6 +21,7 @@ import {
   prewarmModelResponse,
   runtimeGovernorSnapshotSchema,
   settingsSchema,
+  updateSettingsBody,
   sendMessageBody,
 } from '@alamo/contract'
 
@@ -295,7 +296,7 @@ describe('durable Job contract', () => {
       }).priority,
       'prewarm',
     )
-    assert.equal(settingsSchema.parse({
+    const legacySettings = settingsSchema.parse({
       ollamaHost: 'http://fixture.invalid',
       defaultModel: null,
       defaultNumCtx: 8_192,
@@ -303,6 +304,12 @@ describe('durable Job contract', () => {
       enableBash: false,
       webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
       theme: 'system',
-    }).prewarmEnabled, true)
+    })
+    assert.equal(legacySettings.prewarmEnabled, true)
+    assert.equal(legacySettings.locale, 'en')
+    assert.equal(legacySettings.localeSource, 'default')
+    assert.equal(updateSettingsBody.parse({ locale: 'ru' }).locale, 'ru')
+    assert.equal(updateSettingsBody.safeParse({ locale: 'future' }).success, false)
+    assert.equal(updateSettingsBody.safeParse({ locale: 'en', future: true }).success, false)
   })
 })

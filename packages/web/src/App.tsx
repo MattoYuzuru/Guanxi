@@ -24,6 +24,7 @@ import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
 import { translate } from './lib/locale.ts'
+import { useLocale } from './lib/locale-context.tsx'
 
 export function App() {
   const route = useRoute()
@@ -86,14 +87,14 @@ export function App() {
           {route.name === 'projects' && <ProjectsPage />}
           {route.name === 'notFound' && (
             <EmptyState
-              title="Страница не найдена"
+              title={translate('app.notFound.title')}
               description={route.path}
               action={
                 <Link
                   to={paths.launcher()}
                   className="text-xs text-[var(--accent)] underline underline-offset-2"
                 >
-                  На главную
+                  {translate('app.notFound.home')}
                 </Link>
               }
             />
@@ -107,10 +108,11 @@ export function App() {
 function TopBar() {
   const route = useRoute()
   const { preference, setPreference } = useTheme()
+  useLocale()
 
   const tabs = [
-    { to: paths.launcher(), label: 'Модели', active: route.name === 'launcher' || route.name === 'model' },
-    { to: paths.chat(), label: 'Чат', active: route.name === 'chat' },
+    { to: paths.launcher(), label: translate('app.navigation.models'), active: route.name === 'launcher' || route.name === 'model' },
+    { to: paths.chat(), label: translate('app.navigation.chat'), active: route.name === 'chat' },
     {
       to: paths.quickRuns(),
       label: translate('quickRuns.navigation'),
@@ -131,11 +133,15 @@ function TopBar() {
       label: translate('projects.navigation'),
       active: route.name === 'projects' || route.name === 'projectChat',
     },
-    { to: paths.settings(), label: 'Настройки', active: route.name === 'settings' },
+    { to: paths.settings(), label: translate('app.navigation.settings'), active: route.name === 'settings' },
   ]
 
   const nextTheme = preference === 'dark' ? 'light' : preference === 'light' ? 'system' : 'dark'
-  const themeLabel = { dark: 'Тёмная', light: 'Светлая', system: 'Системная' }[preference]
+  const themeLabel = {
+    dark: translate('theme.dark'),
+    light: translate('theme.light'),
+    system: translate('theme.system'),
+  }[preference]
 
   return (
     <header className="sticky top-0 z-30 flex h-11 w-full min-w-0 shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg)]/85 px-2 backdrop-blur-md sm:gap-4 sm:px-4">
@@ -166,8 +172,8 @@ function TopBar() {
         variant="ghost"
         size="sm"
         onClick={() => setPreference(nextTheme)}
-        title={`Тема: ${themeLabel}. Нажмите, чтобы переключить.`}
-        aria-label={`Тема: ${themeLabel}`}
+        title={translate('app.theme.switch', { theme: themeLabel })}
+        aria-label={translate('app.theme.current', { theme: themeLabel })}
         className="shrink-0 px-1.5 sm:px-2"
       >
         {preference === 'dark' ? '◐' : preference === 'light' ? '◑' : '◒'}

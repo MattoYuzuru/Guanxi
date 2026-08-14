@@ -1288,6 +1288,7 @@ export const updateSettingsBody = z.object({
   autoApproveTools: z.boolean().optional(),
   enableBash: z.boolean().optional(),
   prewarmEnabled: z.boolean().optional(),
+  locale: settingsSchema.shape.locale.optional(),
   webSearch: z
     .object({
       provider: settingsSchema.shape.webSearch.shape.provider.optional(),
@@ -1297,7 +1298,7 @@ export const updateSettingsBody = z.object({
     })
     .optional(),
   theme: settingsSchema.shape.theme.optional(),
-})
+}).strict()
 export type UpdateSettingsBody = z.infer<typeof updateSettingsBody>
 
 /* ──────────────────────────── Значения по умолчанию ──────────────────────── */
