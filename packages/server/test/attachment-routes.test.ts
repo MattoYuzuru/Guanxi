@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
+import { getEventListeners } from 'node:events'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,6 +28,7 @@ import { openDb } from '../src/store/db.ts'
 import { ProjectService } from '../src/projects/service.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import {
+  downgradeAttachmentNameHardeningToV27,
   downgradeAttachmentStoreToV26,
 } from './fixtures/artifact-store-migration.ts'
 
@@ -124,16 +126,16 @@ function uploadInit(bytes: Uint8Array, intent = randomUUID(), mediaType = 'appli
 }
 
 describe('P3-O attachment migration and public transfer boundary', () => {
-  it('migrates fresh/v26/reopen/retry with exact generic rows and true late-DDL rollback', async (test) => {
+  it('migrates fresh/v26/v27/reopen/retry with exact rows and true late-DDL rollback', async (test) => {
     const root = await mkdtemp(join(tmpdir(), 'alamo-attachment-migration-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const freshPath = join(root, 'fresh.db')
     const fresh = openDb(freshPath)
-    assert.equal(version(fresh), 27)
+    assert.equal(version(fresh), 28)
     assert.equal(count(fresh, 'artifact_attachments'), 0)
     fresh.close()
     const reopened = openDb(freshPath)
-    assert.equal(version(reopened), 27)
+    assert.equal(version(reopened), 28)
     reopened.close()
 
     const upgradePath = join(root, 'upgrade.db')
@@ -147,7 +149,7 @@ describe('P3-O attachment migration and public transfer boundary', () => {
       rootDir: join(root, 'blobs'),
       now: () => new Date(AT),
     })
-    await generic.create({
+    const genericArtifact = await generic.create({
       artifactVersion: 1,
       idempotencyKey: randomUUID(),
       kind: 'file',
@@ -164,7 +166,7 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     seed.close()
 
     const upgraded = openDb(upgradePath)
-    assert.equal(version(upgraded), 27)
+    assert.equal(version(upgraded), 28)
     assert.equal(JSON.stringify({
       projects: upgraded.prepare('SELECT * FROM projects ORDER BY id').all(),
       blobs: upgraded.prepare('SELECT * FROM artifact_blobs ORDER BY checksum').all(),
@@ -193,8 +195,84 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     failed.exec('DROP INDEX idx_artifact_attachments_created; DROP TABLE migration_27_sentinel')
     failed.close()
     const retried = openDb(upgradePath)
-    assert.equal(version(retried), 27)
+    assert.equal(version(retried), 28)
+    downgradeAttachmentNameHardeningToV27(retried)
+    const exactV27 = JSON.stringify({
+      projects: retried.prepare('SELECT * FROM projects ORDER BY id').all(),
+      blobs: retried.prepare('SELECT * FROM artifact_blobs ORDER BY checksum').all(),
+      artifacts: retried.prepare('SELECT * FROM artifacts ORDER BY id').all(),
+      attachments: retried.prepare('SELECT * FROM artifact_attachments ORDER BY artifact_id').all(),
+    })
+    retried.exec(`
+      CREATE TABLE migration_28_sentinel (value TEXT NOT NULL);
+      INSERT INTO migration_28_sentinel VALUES ('keep');
+      CREATE TRIGGER artifact_attachments_safe_name_insert
+        BEFORE INSERT ON migration_28_sentinel
+        BEGIN SELECT RAISE(ABORT, 'collision'); END;
+    `)
     retried.close()
+
+    assert.throws(() => openDb(upgradePath), /Миграция 28 не применилась/)
+    const failedHardening = new DatabaseSync(upgradePath)
+    assert.equal(version(failedHardening), 27)
+    assert.equal(
+      (failedHardening.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_schema WHERE name = 'migration_28_attachment_name_guard'",
+      ).get() as { count: number }).count,
+      0,
+    )
+    assert.equal(JSON.stringify({
+      projects: failedHardening.prepare('SELECT * FROM projects ORDER BY id').all(),
+      blobs: failedHardening.prepare('SELECT * FROM artifact_blobs ORDER BY checksum').all(),
+      artifacts: failedHardening.prepare('SELECT * FROM artifacts ORDER BY id').all(),
+      attachments: failedHardening.prepare('SELECT * FROM artifact_attachments ORDER BY artifact_id').all(),
+    }), exactV27)
+    failedHardening.exec(
+      'DROP TRIGGER artifact_attachments_safe_name_insert; DROP TABLE migration_28_sentinel;',
+    )
+    failedHardening.close()
+
+    const hardened = openDb(upgradePath)
+    assert.equal(version(hardened), 28)
+    for (let codePoint = 1; codePoint <= 31; codePoint += 1) {
+      assert.throws(
+        () => hardened.prepare(
+          `INSERT INTO artifact_attachments
+             (artifact_id, attachment_version, display_name, created_at)
+           VALUES (?, 1, ?, ?)`,
+        ).run(genericArtifact.id, `bad${String.fromCharCode(codePoint)}`, AT),
+        /control character|CHECK constraint failed/u,
+        `U+${codePoint.toString(16).padStart(4, '0')}`,
+      )
+    }
+    hardened.close()
+
+    const corruptPath = join(root, 'corrupt-v27.db')
+    const corrupt = openDb(corruptPath)
+    const corruptArtifact = await new ArtifactStore({
+      db: corrupt,
+      rootDir: join(root, 'corrupt-blobs'),
+      now: () => new Date(AT),
+    }).create({
+      artifactVersion: 1,
+      idempotencyKey: randomUUID(),
+      kind: 'file',
+      mediaType: 'text/plain',
+      ownership: { scope: 'projectless' },
+      source: { jobId: null, parentArtifactId: null },
+    }, Buffer.from('corrupt fixture'), { maxBytes: 15 })
+    downgradeAttachmentNameHardeningToV27(corrupt)
+    corrupt.prepare(
+      `INSERT INTO artifact_attachments
+         (artifact_id, attachment_version, display_name, created_at)
+       VALUES (?, 1, ?, ?)`,
+    ).run(corruptArtifact.id, `bad${String.fromCharCode(1)}`, AT)
+    corrupt.close()
+    assert.throws(() => openDb(corruptPath), /Миграция 28 не применилась/)
+    const rejected = new DatabaseSync(corruptPath)
+    assert.equal(version(rejected), 27)
+    assert.equal(count(rejected, 'artifact_attachments'), 1)
+    rejected.close()
   })
 
   it('keeps presentation strict, byte-bounded and immutable at contract and DB boundaries', async (test) => {
@@ -270,6 +348,47 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     )
     assert.equal(changedName.status, 409)
     assert.equal(count(db, 'artifacts'), 1)
+  })
+
+  it('converges concurrent same and distinct attachment intents without mutable side rows', async (test) => {
+    const { db, service } = await fixture(test)
+    const sameIntent = randomUUID()
+    const metadata = {
+      attachmentVersion: ATTACHMENT_VERSION,
+      idempotencyKey: sameIntent,
+      displayName: 'concurrent.bin',
+      mediaType: 'application/octet-stream',
+      ownership: { scope: 'projectless' as const },
+    }
+    const [first, replay] = await Promise.all([
+      service.upload(metadata, Buffer.from('same bytes'), new AbortController().signal),
+      service.upload(metadata, Buffer.from('same bytes'), new AbortController().signal),
+    ])
+    assert.equal(first.artifact.id, replay.artifact.id)
+    assert.equal(count(db, 'artifacts'), 1)
+    assert.equal(count(db, 'artifact_attachments'), 1)
+    assert.equal(count(db, 'artifact_blobs'), 1)
+
+    const [distinctA, distinctB] = await Promise.all([
+      service.upload(
+        { ...metadata, idempotencyKey: randomUUID(), displayName: 'distinct-a.bin' },
+        Buffer.from('shared distinct bytes'),
+        new AbortController().signal,
+      ),
+      service.upload(
+        { ...metadata, idempotencyKey: randomUUID(), displayName: 'distinct-b.bin' },
+        Buffer.from('shared distinct bytes'),
+        new AbortController().signal,
+      ),
+    ])
+    assert.notEqual(distinctA.artifact.id, distinctB.artifact.id)
+    assert.equal(count(db, 'artifacts'), 3)
+    assert.equal(count(db, 'artifact_attachments'), 3)
+    assert.equal(count(db, 'artifact_blobs'), 2)
+    assert.throws(
+      () => db.prepare('UPDATE artifact_attachments SET display_name = ?').run('rewritten.bin'),
+      /immutable/u,
+    )
   })
 
   it('validates policy, query/header contracts, streamed size and bounded list truthfully', async (test) => {
@@ -450,5 +569,74 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     }, Buffer.from('ok'), new AbortController().signal)
     assert.equal(recovered.displayName, 'recovered.bin')
     assert.equal(base.service.diagnostics().active, 0)
+    assert.equal(getEventListeners(firstAbort.signal, 'abort').length, 0)
+    assert.equal(getEventListeners(queuedAbort.signal, 'abort').length, 0)
+  })
+
+  it('propagates HTTP disconnect and helper watchdog through cleanup and admission', async (test) => {
+    const routeReady = deferred()
+    const releaseRoute = deferred()
+    const routeBase = await fixture(test, {
+      hooks: {
+        beforePublish: async () => {
+          routeReady.resolve()
+          await releaseRoute.promise
+        },
+      },
+    })
+    const disconnect = new AbortController()
+    const request = routeBase.app.request(uploadUrl('disconnect.bin'), {
+      ...uploadInit(Buffer.from('disconnect')),
+      signal: disconnect.signal,
+    })
+    await routeReady.promise
+    disconnect.abort()
+    releaseRoute.resolve()
+    const disconnected = await request
+    assert.equal(disconnected.status, 400)
+    assert.equal(routeBase.service.diagnostics().active, 0)
+    assert.equal(count(routeBase.db, 'artifacts'), 0)
+    assert.equal(count(routeBase.db, 'artifact_attachments'), 0)
+    assert.deepEqual(await readdir(join(routeBase.artifactRoot, 'tmp')), [])
+    assert.equal(getEventListeners(disconnect.signal, 'abort').length, 0)
+
+    let watchdogCalls = 0
+    const never = new Promise<void>(() => undefined)
+    const watchdogBase = await fixture(test, {
+      helperTimeoutMs: 500,
+      hooks: {
+        beforePublish: () => {
+          watchdogCalls += 1
+          return watchdogCalls === 1 ? never : undefined
+        },
+      },
+    })
+    const watchdogSignal = new AbortController()
+    await assert.rejects(
+      watchdogBase.service.upload({
+        attachmentVersion: 1,
+        idempotencyKey: randomUUID(),
+        displayName: 'watchdog.bin',
+        mediaType: 'application/octet-stream',
+        ownership: { scope: 'projectless' },
+      }, Buffer.from('watchdog'), watchdogSignal.signal),
+      (cause: unknown) => cause instanceof ArtifactStoreError
+        && cause.code === 'storage_failure'
+        && /timed out/u.test(cause.message),
+    )
+    assert.equal(watchdogBase.service.diagnostics().active, 0)
+    assert.equal(count(watchdogBase.db, 'artifacts'), 0)
+    assert.equal(count(watchdogBase.db, 'artifact_attachments'), 0)
+    assert.deepEqual(await readdir(join(watchdogBase.artifactRoot, 'tmp')), [])
+    assert.equal(getEventListeners(watchdogSignal.signal, 'abort').length, 0)
+    const recovered = await watchdogBase.service.upload({
+      attachmentVersion: 1,
+      idempotencyKey: randomUUID(),
+      displayName: 'after-watchdog.bin',
+      mediaType: 'application/octet-stream',
+      ownership: { scope: 'projectless' },
+    }, Buffer.from('recovered'), new AbortController().signal)
+    assert.equal(recovered.displayName, 'after-watchdog.bin')
+    assert.equal(watchdogBase.service.diagnostics().active, 0)
   })
 })

@@ -1,7 +1,17 @@
 import type { DatabaseSync } from 'node:sqlite'
 
+/** Reverse only migration 28 so migration evidence can start from exact v27. */
+export function downgradeAttachmentNameHardeningToV27(db: DatabaseSync): void {
+  db.exec(`
+    DROP TRIGGER artifact_attachments_safe_name_insert;
+    PRAGMA user_version = 27;
+  `)
+}
+
 /** Reverse only migration 27 so migration evidence can start from exact v26. */
 export function downgradeAttachmentStoreToV26(db: DatabaseSync): void {
+  const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  if (version >= 28) downgradeAttachmentNameHardeningToV27(db)
   db.exec(`
     DROP TRIGGER artifact_attachments_immutable_delete;
     DROP TRIGGER artifact_attachments_immutable_update;

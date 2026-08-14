@@ -169,7 +169,7 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 27)
+    assert.equal(version(seed), 28)
     const project = new ProjectStore(seed).create('Exact v20 Project', CREATED_AT)
     seed.prepare(
       `INSERT INTO workspaces (id, name, root_path, created_at, last_used_at)
@@ -208,7 +208,7 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 27)
+    assert.equal(version(retried), 28)
     assert.equal(count(retried, 'quick_runs'), 0)
     assert.equal(new ProjectStore(retried).get(project.id)?.name, 'Exact v20 Project')
     assert.equal(allTablesPayload(retried, new Set([
@@ -217,7 +217,7 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     retried.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 27)
+    assert.equal(version(reopened), 28)
     assert.equal(count(reopened, 'quick_runs'), 0)
     assert.equal(allTablesPayload(reopened, new Set([
       'quick_runs', 'recipes', 'recipe_revisions', 'recipe_job_snapshots', 'context_checkpoints',
@@ -225,7 +225,7 @@ describe('P3-J canonical Quick Run retention foundation', () => {
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 27)
+    assert.equal(version(fresh), 28)
     assert.equal(count(fresh, 'quick_runs'), 0)
     fresh.close()
   })

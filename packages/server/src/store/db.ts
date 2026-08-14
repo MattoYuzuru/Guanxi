@@ -1404,6 +1404,91 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Attachments are immutable');
     END;
   `,
+  // 28 — append-only hardening for v27 databases that accepted some C0 controls.
+  // Refuse to adopt an already-corrupt display name and enforce the same C0
+  // range as the public attachment contract on every future insert.
+  `
+  CREATE TABLE migration_28_attachment_name_guard (
+    valid INTEGER NOT NULL CHECK (valid = 1)
+  );
+  INSERT INTO migration_28_attachment_name_guard (valid)
+    SELECT 0
+    FROM artifact_attachments
+    WHERE (
+      instr(display_name, char(1)) <> 0
+      OR instr(display_name, char(2)) <> 0
+      OR instr(display_name, char(3)) <> 0
+      OR instr(display_name, char(4)) <> 0
+      OR instr(display_name, char(5)) <> 0
+      OR instr(display_name, char(6)) <> 0
+      OR instr(display_name, char(7)) <> 0
+      OR instr(display_name, char(8)) <> 0
+      OR instr(display_name, char(9)) <> 0
+      OR instr(display_name, char(10)) <> 0
+      OR instr(display_name, char(11)) <> 0
+      OR instr(display_name, char(12)) <> 0
+      OR instr(display_name, char(13)) <> 0
+      OR instr(display_name, char(14)) <> 0
+      OR instr(display_name, char(15)) <> 0
+      OR instr(display_name, char(16)) <> 0
+      OR instr(display_name, char(17)) <> 0
+      OR instr(display_name, char(18)) <> 0
+      OR instr(display_name, char(19)) <> 0
+      OR instr(display_name, char(20)) <> 0
+      OR instr(display_name, char(21)) <> 0
+      OR instr(display_name, char(22)) <> 0
+      OR instr(display_name, char(23)) <> 0
+      OR instr(display_name, char(24)) <> 0
+      OR instr(display_name, char(25)) <> 0
+      OR instr(display_name, char(26)) <> 0
+      OR instr(display_name, char(27)) <> 0
+      OR instr(display_name, char(28)) <> 0
+      OR instr(display_name, char(29)) <> 0
+      OR instr(display_name, char(30)) <> 0
+      OR instr(display_name, char(31)) <> 0
+    )
+    LIMIT 1;
+  DROP TABLE migration_28_attachment_name_guard;
+
+  CREATE TRIGGER artifact_attachments_safe_name_insert
+    BEFORE INSERT ON artifact_attachments
+    WHEN (
+      instr(NEW.display_name, char(1)) <> 0
+      OR instr(NEW.display_name, char(2)) <> 0
+      OR instr(NEW.display_name, char(3)) <> 0
+      OR instr(NEW.display_name, char(4)) <> 0
+      OR instr(NEW.display_name, char(5)) <> 0
+      OR instr(NEW.display_name, char(6)) <> 0
+      OR instr(NEW.display_name, char(7)) <> 0
+      OR instr(NEW.display_name, char(8)) <> 0
+      OR instr(NEW.display_name, char(9)) <> 0
+      OR instr(NEW.display_name, char(10)) <> 0
+      OR instr(NEW.display_name, char(11)) <> 0
+      OR instr(NEW.display_name, char(12)) <> 0
+      OR instr(NEW.display_name, char(13)) <> 0
+      OR instr(NEW.display_name, char(14)) <> 0
+      OR instr(NEW.display_name, char(15)) <> 0
+      OR instr(NEW.display_name, char(16)) <> 0
+      OR instr(NEW.display_name, char(17)) <> 0
+      OR instr(NEW.display_name, char(18)) <> 0
+      OR instr(NEW.display_name, char(19)) <> 0
+      OR instr(NEW.display_name, char(20)) <> 0
+      OR instr(NEW.display_name, char(21)) <> 0
+      OR instr(NEW.display_name, char(22)) <> 0
+      OR instr(NEW.display_name, char(23)) <> 0
+      OR instr(NEW.display_name, char(24)) <> 0
+      OR instr(NEW.display_name, char(25)) <> 0
+      OR instr(NEW.display_name, char(26)) <> 0
+      OR instr(NEW.display_name, char(27)) <> 0
+      OR instr(NEW.display_name, char(28)) <> 0
+      OR instr(NEW.display_name, char(29)) <> 0
+      OR instr(NEW.display_name, char(30)) <> 0
+      OR instr(NEW.display_name, char(31)) <> 0
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'Attachment display name contains a control character');
+    END;
+  `,
 ]
 
 export function openDb(path: string): Db {

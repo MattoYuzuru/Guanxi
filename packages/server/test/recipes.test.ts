@@ -138,7 +138,7 @@ describe('P3-K canonical Recipe revision foundation', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'alamo.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 27)
+    assert.equal(version(seed), 28)
     const project = new ProjectStore(seed).create('Exact v21 Project', CREATED_AT)
     seed.prepare(
       `INSERT INTO quick_runs (
@@ -164,7 +164,7 @@ describe('P3-K canonical Recipe revision foundation', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 27)
+    assert.equal(version(retried), 28)
     assert.equal(count(retried, 'recipes'), 0)
     assert.equal(count(retried, 'recipe_revisions'), 0)
     assert.equal(tablesPayload(retried, new Set([
@@ -172,13 +172,13 @@ describe('P3-K canonical Recipe revision foundation', () => {
     ])), exactV21)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 27)
+    assert.equal(version(reopened), 28)
     assert.equal(tablesPayload(reopened, new Set([
       'recipes', 'recipe_revisions', 'recipe_job_snapshots', 'context_checkpoints',
     ])), exactV21)
     reopened.close()
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 27)
+    assert.equal(version(fresh), 28)
     fresh.close()
   })
 
