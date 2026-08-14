@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import type { Message } from '@alamo/contract'
 import { describe, expect, it } from 'vitest'
 import { MessageView } from '../../src/features/chat/ChatPage.tsx'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 function assistant(overrides: Partial<Message> = {}): Message {
   return {
@@ -116,7 +117,7 @@ describe('persisted turn projection', () => {
   })
 
   it('uses the English source copy as fallback', () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     render(
       <MessageView
         message={assistant({

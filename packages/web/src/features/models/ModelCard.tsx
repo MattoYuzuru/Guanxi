@@ -10,20 +10,20 @@ import { Link, paths } from '../../lib/router.tsx'
 import { formatBytes, formatContextLength } from '../../lib/format.ts'
 import { FitIndicator } from './FitIndicator.tsx'
 import { CatalogVariantInstall } from './CatalogVariantInstall.tsx'
-import { translate } from '../../lib/locale.ts'
+import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { InstalledEvidenceSummary } from './InstalledEvidence.tsx'
 
 export type ModelCardData =
   | { kind: 'local'; model: LocalModel }
   | { kind: 'catalog'; model: CatalogModel }
 
-const CAPABILITY_LABEL: Record<ModelCapability, { short: string; hint: string }> = {
-  completion: { short: 'текст', hint: 'Обычная генерация текста' },
-  tools: { short: 'tools', hint: 'Умеет вызывать инструменты — нужно для агентного режима' },
-  vision: { short: 'vision', hint: 'Понимает изображения' },
-  insert: { short: 'fill', hint: 'Дополняет текст в середине (fill-in-the-middle)' },
-  thinking: { short: 'thinking', hint: 'Отдельный блок рассуждений перед ответом' },
-  embedding: { short: 'embed', hint: 'Только эмбеддинги, для чата не подходит' },
+const CAPABILITY_LABEL: Record<ModelCapability, { short: LocaleKey; hint: LocaleKey }> = {
+  completion: { short: 'model.capability.completion', hint: 'model.capability.completionHint' },
+  tools: { short: 'model.capability.tools', hint: 'model.capability.toolsHint' },
+  vision: { short: 'model.capability.vision', hint: 'model.capability.visionHint' },
+  insert: { short: 'model.capability.insert', hint: 'model.capability.insertHint' },
+  thinking: { short: 'model.capability.thinking', hint: 'model.capability.thinkingHint' },
+  embedding: { short: 'model.capability.embedding', hint: 'model.capability.embeddingHint' },
 }
 
 const HIGHLIGHT_CAPABILITIES: ModelCapability[] = ['tools', 'vision', 'thinking']
@@ -80,8 +80,8 @@ export const ModelCard = memo(function ModelCard({
             {model.name}
           </Link>
           {model.isCloud && (
-            <Badge tone="accent" title="Считается в облаке Ollama, локальная память не тратится">
-              облако
+            <Badge tone="accent" title={translate('model.cloud.memory')}>
+              {translate('model.cloud')}
             </Badge>
           )}
         </div>
@@ -89,11 +89,11 @@ export const ModelCard = memo(function ModelCard({
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-[var(--fg-subtle)]">
           {local ? (
             <>
-              <span title="Семейство модели">{local.family}</span>
+              <span title={translate('model.family')}>{local.family}</span>
               <Dot />
-              <span title="Число параметров">{local.parameterSize}</span>
+              <span title={translate('model.parameters')}>{local.parameterSize}</span>
               <Dot />
-              <span title="Квантизация">{local.quantization}</span>
+              <span title={translate('model.quantization')}>{local.quantization}</span>
             </>
           ) : (
             <span className="line-clamp-2 leading-4" title={catalog?.description}>
@@ -116,23 +116,23 @@ export const ModelCard = memo(function ModelCard({
             {translate('context.window.unknown')}
           </Badge>
         ) : model.contextLength !== null ? (
-          <Badge tone="outline" title="Заявленный каталогом размер окна контекста">
-            окно {formatContextLength(model.contextLength)}
+          <Badge tone="outline" title={translate('model.context.declared')}>
+            {translate('model.context.short')} {formatContextLength(model.contextLength)}
           </Badge>
         ) : null}
         {local ? (
-          <Badge tone="outline" title="Занимает на диске">
+          <Badge tone="outline" title={translate('model.disk')}>
             {formatBytes(local.sizeBytes)}
           </Badge>
         ) : (
           catalog?.vramBytes !== null && (
-            <Badge tone="outline" title="Подсказка вендора по требуемой видеопамяти">
+            <Badge tone="outline" title={translate('model.vendorMemory')}>
               vram ~{formatBytes(catalog?.vramBytes)}
             </Badge>
           )
         )}
         {catalog?.requiredPlan === 'pro' && (
-          <Badge tone="accent" title="Требуется платный план Ollama">
+          <Badge tone="accent" title={translate('model.paid')}>
             pro
           </Badge>
         )}
@@ -142,13 +142,13 @@ export const ModelCard = memo(function ModelCard({
       {(primary.length > 0 || secondary.length > 0) && (
         <div className="mb-2.5 flex flex-wrap gap-1">
           {primary.map((capability) => (
-            <Badge key={capability} tone="accent" title={CAPABILITY_LABEL[capability].hint}>
-              {CAPABILITY_LABEL[capability].short}
+            <Badge key={capability} tone="accent" title={translate(CAPABILITY_LABEL[capability].hint)}>
+              {translate(CAPABILITY_LABEL[capability].short)}
             </Badge>
           ))}
           {secondary.map((capability) => (
-            <Badge key={capability} tone="neutral" title={CAPABILITY_LABEL[capability].hint}>
-              {CAPABILITY_LABEL[capability].short}
+            <Badge key={capability} tone="neutral" title={translate(CAPABILITY_LABEL[capability].hint)}>
+              {translate(CAPABILITY_LABEL[capability].short)}
             </Badge>
           ))}
         </div>
@@ -175,14 +175,14 @@ export const ModelCard = memo(function ModelCard({
               onFocus={onFocusCard}
               className="flex h-8 flex-1 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 text-xs font-medium hover:bg-[var(--bg-subtle)]"
             >
-              Профиль
+              {translate('model.profile')}
             </Link>
             <Link
               to={`${paths.chat()}?model=${encodeURIComponent(model.name)}${selectedContextLength === undefined ? '' : `&numCtx=${selectedContextLength}`}`}
               onFocus={onFocusCard}
               className="flex h-8 flex-1 items-center justify-center rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:brightness-110"
             >
-              Начать чат
+              {translate('model.startChat')}
             </Link>
           </div>
           </footer>
@@ -200,7 +200,7 @@ function Dot() {
 export function InstallButton({ onClick }: { onClick: () => void }) {
   return (
     <Button variant="primary" size="md" className="w-full" onClick={onClick}>
-      Установить
+      {translate('model.install')}
     </Button>
   )
 }

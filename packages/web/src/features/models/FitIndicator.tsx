@@ -7,30 +7,31 @@
  *  3. по раскрытию — разбор: из чего сложился requiredBytes и сколько есть.
  */
 import type { FitVerdict } from '@alamo/contract'
-import { Badge, Disclosure, FIT_COLOR_VAR, FIT_LABEL, Meter, Stat, cx } from '../../components/ui.tsx'
+import { Badge, Disclosure, FIT_COLOR_VAR, Meter, Stat, cx, fitLabel } from '../../components/ui.tsx'
 import { formatBytes, formatContextLength, formatUtilization } from '../../lib/format.ts'
+import { translate, type LocaleKey } from '../../lib/locale.ts'
 
 /** Степени доверия. Различие принципиальное: прогноз может ошибаться, факт — нет. */
 const BASIS_META: Record<
   FitVerdict['basis'],
-  { label: string; short: string; hint: string; tone: 'neutral' | 'accent' | 'outline' }
+  { label: LocaleKey; short: string; hint: LocaleKey; tone: 'neutral' | 'accent' | 'outline' }
 > = {
   estimate: {
-    label: 'прогноз',
+    label: 'fit.basis.estimate',
     short: '≈',
-    hint: 'Посчитано по формуле до загрузки модели. Реальность может отличаться на 10-15 %.',
+    hint: 'fit.basis.estimateHint',
     tone: 'outline',
   },
   measured: {
-    label: 'замер',
+    label: 'fit.basis.measured',
     short: '=',
-    hint: 'Факт после прогрева: столько заняла модель по данным ollama ps.',
+    hint: 'fit.basis.measuredHint',
     tone: 'accent',
   },
   vendor_hint: {
-    label: 'со слов вендора',
+    label: 'fit.basis.vendor',
     short: '?',
-    hint: 'Взято из подсказки каталога, на этом железе не проверялось.',
+    hint: 'fit.basis.vendorHint',
     tone: 'neutral',
   },
 }
@@ -43,11 +44,11 @@ export function FitBadge({ fit }: { fit: FitVerdict }) {
     <span
       className="inline-flex items-center gap-1 rounded border px-1.5 py-px text-2xs leading-4 font-medium"
       style={{ color, borderColor: `${color}55`, background: `${color}1f` }}
-      title={basis.hint}
+      title={translate(basis.hint)}
     >
       <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {FIT_LABEL[fit.level]}
-      <span className="opacity-70">· {basis.label}</span>
+      {fitLabel(fit.level)}
+      <span className="opacity-70">· {translate(basis.label)}</span>
     </span>
   )
 }
@@ -88,7 +89,7 @@ export function FitIndicator({
         <span
           className="shrink-0 font-mono text-2xs tabular-nums"
           style={{ color }}
-          title={`Заполнение памяти при окне ${formatContextLength(fit.contextLength)}`}
+          title={translate('fit.memoryUsage', { context: formatContextLength(fit.contextLength) })}
         >
           {formatUtilization(fit.utilization)}
         </span>
@@ -100,73 +101,75 @@ export function FitIndicator({
         marker={marker}
         height={compact ? 4 : 5}
         className="mt-1.5"
-        label={`Влезаемость: ${fit.summary}`}
+        label={translate('fit.aria', { summary: fit.summary })}
       />
 
       <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-[var(--fg-subtle)]">
         <span className="truncate">
-          {formatBytes(fit.requiredBytes)} из {formatBytes(usable)} ·{' '}
-          {formatContextLength(fit.contextLength)} окно
+          {translate('fit.summary', {
+            required: formatBytes(fit.requiredBytes),
+            available: formatBytes(usable),
+            context: formatContextLength(fit.contextLength),
+          })}
         </span>
-        <Badge tone={basis.tone} title={basis.hint} className="shrink-0">
-          {basis.label}
+        <Badge tone={basis.tone} title={translate(basis.hint)} className="shrink-0">
+          {translate(basis.label)}
         </Badge>
       </div>
 
       <Disclosure
         className="mt-2"
         defaultOpen={defaultOpen}
-        summary="Разбор расчёта"
+        summary={translate('fit.breakdown')}
         tone={undefined}
       >
         <div className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2">
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
             <Stat
-              label="Вес модели"
+              label={translate('fit.weight')}
               value={formatBytes(fit.modelBytes)}
-              hint="Сами веса в памяти"
+              hint={translate('fit.weightHint')}
             />
             <Stat
-              label="KV-кэш"
+              label={translate('fit.cache')}
               value={formatBytes(fit.kvCacheBytes)}
-              hint={`Под окно ${formatContextLength(fit.contextLength)} токенов. Растёт линейно с размером окна.`}
+              hint={translate('fit.cacheHint', { context: formatContextLength(fit.contextLength) })}
             />
             <Stat
-              label="Нужно всего"
+              label={translate('fit.required')}
               value={formatBytes(fit.requiredBytes)}
               tone={color}
-              hint="Вес модели + KV-кэш"
+              hint={translate('fit.requiredHint')}
             />
             <Stat
-              label="Доступно"
+              label={translate('fit.available')}
               value={formatBytes(usable)}
-              hint="Сколько памяти реально может занять ускоритель"
+              hint={translate('fit.availableHint')}
             />
           </div>
 
           {deficit > 0 && (
             <p className="mt-2 text-2xs" style={{ color: FIT_COLOR_VAR.red }}>
-              Не хватает {formatBytes(deficit)}. Часть слоёв уйдёт на CPU — генерация
-              замедлится в несколько раз.
+              {translate('fit.deficit', { bytes: formatBytes(deficit) })}
             </p>
           )}
 
           {fit.measured && (
             <div className="mt-2 border-t border-[var(--border)] pt-2">
               <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
-                Замер после прогрева
+                {translate('fit.measurement.title')}
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                <Stat label="Занято по факту" value={formatBytes(fit.measured.sizeBytes)} />
-                <Stat label="На ускорителе" value={`${fit.measured.gpuPercent} %`} />
+                <Stat label={translate('fit.measured')} value={formatBytes(fit.measured.sizeBytes)} />
+                <Stat label={translate('fit.accelerator')} value={`${fit.measured.gpuPercent} %`} />
                 <div className="col-span-2">
-                  <Stat label="Раскладка" value={fit.measured.processorLabel} />
+                  <Stat label={translate('fit.layout')} value={fit.measured.processorLabel} />
                 </div>
               </div>
             </div>
           )}
 
-          <p className="mt-2 text-2xs text-[var(--fg-subtle)]">{basis.hint}</p>
+          <p className="mt-2 text-2xs text-[var(--fg-subtle)]">{translate(basis.hint)}</p>
         </div>
       </Disclosure>
     </div>

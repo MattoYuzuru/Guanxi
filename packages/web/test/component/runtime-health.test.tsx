@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { OllamaHealthNotice } from '../../src/features/health/HealthGate.tsx'
 import { RuntimeStatusView } from '../../src/features/health/RuntimeStatus.tsx'
 import { CatalogSourceNotice } from '../../src/features/launcher/LauncherPage.tsx'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 import {
   RUNTIME_OBSERVED_AT,
   runtimeActiveLease,
@@ -301,7 +302,7 @@ describe('Runtime Bar projection', () => {
   })
 
   it('uses English source copy and exposes safe failure reasons', () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     const partial = renderRuntime(linuxNvidiaRuntimeSnapshot('partial'))
     expect(partial.container.textContent).toContain('NVIDIA telemetry partial')
     expect(partial.container.textContent).toContain('one or more returned GPU rows were unusable')
@@ -377,7 +378,7 @@ describe('Runtime Bar projection', () => {
   })
 
   it('provides keyboard disclosure plus English fallback and curated Russian copy', () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     const english = render(
       <RuntimeStatusView
         data={runtimeSnapshotFixture()}
@@ -395,7 +396,7 @@ describe('Runtime Bar projection', () => {
     expect(screen.getByRole('heading', { name: 'Live admission' })).toBeTruthy()
     english.unmount()
 
-    document.documentElement.lang = 'ru'
+    setActiveLocale('ru')
     renderRuntime()
     expect(screen.getByRole('heading', { name: 'Текущий admission' })).toBeTruthy()
   })

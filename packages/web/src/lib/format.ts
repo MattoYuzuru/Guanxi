@@ -5,7 +5,7 @@ const NBSP = ' '
 
 export function formatBytes(bytes: number | null | undefined, digits?: number): string {
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return '—'
-  if (bytes === 0) return `0${NBSP}Б`
+  if (bytes === 0) return `0${NBSP}${currentLocale() === 'ru' ? 'Б' : 'B'}`
 
   const units = currentLocale() === 'ru'
     ? ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ']
@@ -19,7 +19,7 @@ export function formatBytes(bytes: number | null | undefined, digits?: number): 
 
 export function formatBytesPerSecond(bps: number | null | undefined): string {
   if (bps === null || bps === undefined || !Number.isFinite(bps)) return '—'
-  return `${formatBytes(bps)}/с`
+  return `${formatBytes(bps)}/${currentLocale() === 'ru' ? 'с' : 's'}`
 }
 
 /** Длительности показываем по-разному: миллисекунды важны при попадании в кэш. */

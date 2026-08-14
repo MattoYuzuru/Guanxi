@@ -12,6 +12,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { diffLines, diffWordsWithSpace, type Change } from 'diff'
 import type { ToolCall } from '@alamo/contract'
 import { Button, CopyButton, cx } from '../../components/ui.tsx'
+import { getActiveLocale, translate } from '../../lib/locale.ts'
 
 type DiffKind = 'add' | 'del' | 'ctx'
 
@@ -68,23 +69,25 @@ export function DiffViewer({
         <div className="flex shrink-0 items-center gap-1">
           {unchanged > CONTEXT_LINES * 2 && (
             <Button variant="ghost" size="sm" onClick={() => setExpanded((value) => !value)}>
-              {expanded ? 'Свернуть' : 'Весь файл'}
+              {expanded ? translate('agent.diff.collapse') : translate('agent.diff.fullFile')}
             </Button>
           )}
           <div className="flex overflow-hidden rounded border border-[var(--border-strong)]">
             <ModeButton active={mode === 'split'} onClick={() => setMode('split')}>
-              рядом
+              {translate('agent.diff.split')}
             </ModeButton>
             <ModeButton active={mode === 'unified'} onClick={() => setMode('unified')}>
-              подряд
+              {translate('agent.diff.unified')}
             </ModeButton>
           </div>
-          <CopyButton text={diff.after} label="Копировать «после»" />
+          <CopyButton text={diff.after} label={translate('agent.diff.copyAfter')} />
         </div>
       </div>
 
       {rows.length === 0 ? (
-        <p className="px-2.5 py-3 text-2xs text-[var(--fg-subtle)]">Файл не меняется.</p>
+        <p className="px-2.5 py-3 text-2xs text-[var(--fg-subtle)]">
+          {translate('agent.diff.unchanged')}
+        </p>
       ) : (
         <div className="overflow-auto" style={{ maxHeight }}>
           {mode === 'split' ? <SplitView rows={visible} /> : <UnifiedView rows={visible} />}
@@ -291,13 +294,19 @@ function LineText({ row }: { row: Row }) {
 }
 
 function SkipRow({ count, colSpan }: { count: number; colSpan: number }) {
+  const category = new Intl.PluralRules(getActiveLocale()).select(count)
+  const key = category === 'one'
+    ? 'agent.diff.unchangedLines.one'
+    : category === 'few'
+      ? 'agent.diff.unchangedLines.few'
+      : 'agent.diff.unchangedLines.other'
   return (
     <tr>
       <td
         colSpan={colSpan}
         className="border-y border-[var(--border)] bg-[var(--bg-inset)] px-2 py-0.5 text-center text-[var(--fg-subtle)] select-none"
       >
-        · · · {count} {count === 1 ? 'строка' : count < 5 ? 'строки' : 'строк'} без изменений · · ·
+        · · · {translate(key, { count })} · · ·
       </td>
     </tr>
   )

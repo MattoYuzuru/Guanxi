@@ -10,6 +10,7 @@ import { streamPull } from '../../lib/api.ts'
 import { errorMessage } from '../../lib/api.ts'
 import { Button, Meter, cx } from '../../components/ui.tsx'
 import { formatBytes, formatBytesPerSecond, formatEta, formatPercent } from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
 
 type ProgressData = Extract<PullStreamEvent, { type: 'progress' }>['data']
 
@@ -74,7 +75,7 @@ export function PullControl({
       }
       // Стрим закончился без `done` — считаем это обрывом.
       if (!controller.signal.aborted) {
-        setError('Соединение прервалось до конца загрузки')
+        setError(translate('model.pull.connectionLost'))
         onFinish(false)
       }
     } catch (streamError) {
@@ -99,10 +100,10 @@ export function PullControl({
         </p>
         <div className="flex gap-1.5">
           <Button variant="secondary" size="md" className="flex-1" onClick={start}>
-            Повторить
+            {translate('model.pull.retry')}
           </Button>
           <Button variant="ghost" size="md" onClick={() => setError(null)}>
-            Скрыть
+            {translate('model.pull.hide')}
           </Button>
         </div>
       </div>
@@ -112,7 +113,7 @@ export function PullControl({
   if (done) {
     return (
       <div className="flex h-8 items-center justify-center rounded-md border border-[var(--color-fit-green)]/40 bg-[var(--color-fit-green)]/10 text-xs font-medium text-[var(--color-fit-green)]">
-        Установлена
+        {translate('model.pull.installed')}
       </div>
     )
   }
@@ -120,7 +121,7 @@ export function PullControl({
   if (!active) {
     return (
       <Button variant="primary" size="md" className="w-full" onClick={start}>
-        Установить
+        {translate('model.install')}
       </Button>
     )
   }
@@ -132,7 +133,7 @@ export function PullControl({
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
         <span className="truncate text-2xs text-[var(--fg-muted)]" title={progress?.status}>
-          {progress?.status ?? 'Соединение…'}
+          {progress?.status ?? translate('model.pull.connecting')}
         </span>
         <span className="shrink-0 font-mono text-2xs tabular-nums">
           {indeterminate ? '' : formatPercent(percent, percent < 10 ? 1 : 0)}
@@ -142,7 +143,7 @@ export function PullControl({
       {indeterminate ? (
         <div className="sheen h-1 w-full rounded-full bg-[var(--bg-inset)]" />
       ) : (
-        <Meter value={percent / 100} height={4} label={`Загрузка ${name}`} />
+        <Meter value={percent / 100} height={4} label={translate('model.pull.aria', { name })} />
       )}
 
       <div className="mt-1 flex items-center justify-between gap-2 text-2xs text-[var(--fg-subtle)]">
@@ -166,11 +167,11 @@ export function PullControl({
           )}
         >
           {progress?.etaSeconds !== null && progress?.etaSeconds !== undefined
-            ? `осталось ${formatEta(progress.etaSeconds)}`
-            : 'оцениваем…'}
+            ? translate('model.pull.remaining', { eta: formatEta(progress.etaSeconds) })
+            : translate('model.pull.estimating')}
         </span>
         <Button variant="ghost" size="sm" onClick={cancel}>
-          Отменить
+          {translate('model.pull.cancel')}
         </Button>
       </div>
     </div>

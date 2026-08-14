@@ -3,6 +3,7 @@ import type { CatalogModel } from '@alamo/contract'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CatalogVariantInstall } from '../../src/features/models/CatalogVariantInstall.tsx'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const originalFetch = globalThis.fetch
 const AT = '2026-08-04T00:00:00.000Z'
@@ -120,7 +121,7 @@ function installed(name: string, digest = `sha256:${name}`) {
 
 afterEach(() => {
   vi.stubGlobal('fetch', originalFetch)
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('variant-first Marketplace install', () => {
@@ -371,7 +372,7 @@ describe('variant-first Marketplace install', () => {
   })
 
   it('aborts on StrictMode unmount without late refresh and uses English fallback', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     let signal: AbortSignal | null = null
     const onInstalled = vi.fn()
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, init) => {

@@ -12,6 +12,7 @@ import { memo, useCallback, useMemo, type MouseEvent } from 'react'
 import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
+import { translate } from '../lib/locale.ts'
 
 /* Языки регистрируем поштучно: полный highlight.js — это ~1 МБ. */
 import bash from 'highlight.js/lib/languages/bash'
@@ -98,8 +99,8 @@ marked.use({
       // HTML его пришлось бы вычищать обратно.
       return (
         `<div class="code-block" data-code="${encodeURIComponent(text)}">` +
-        `<div class="code-head"><span class="code-lang">${escapeHtml(language || 'текст')}</span>` +
-        `<button type="button" class="code-copy" aria-label="Копировать код">Копировать</button></div>` +
+        `<div class="code-head"><span class="code-lang">${escapeHtml(language || translate('markdown.plainText'))}</span>` +
+        `<button type="button" class="code-copy" aria-label="${escapeHtml(translate('markdown.copyCode'))}">${escapeHtml(translate('markdown.copy'))}</button></div>` +
         `<pre><code class="hljs language-${escapeHtml(language)}">${body}</code></pre>` +
         `</div>`
       )
@@ -177,15 +178,15 @@ export const Markdown = memo(function Markdown({
     navigator.clipboard
       .writeText(decodeURIComponent(encoded))
       .then(() => {
-        button.textContent = 'Скопировано'
+        button.textContent = translate('common.copied')
         setTimeout(() => {
-          button.textContent = 'Копировать'
+          button.textContent = translate('common.copy')
         }, 1400)
       })
       .catch(() => {
-        button.textContent = 'Не удалось'
+        button.textContent = translate('markdown.copyFailed')
         setTimeout(() => {
-          button.textContent = 'Копировать'
+          button.textContent = translate('common.copy')
         }, 1400)
       })
   }, [])

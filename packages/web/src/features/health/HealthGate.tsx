@@ -19,7 +19,7 @@ export function HealthLoading() {
     <div className="flex min-h-dvh items-center justify-center">
       <div className="flex items-center gap-2 text-xs text-[var(--fg-muted)]">
         <Spinner size={14} />
-        Проверяем Ollama…
+        {translate('health.loading')}
       </div>
     </div>
   )
@@ -29,21 +29,21 @@ export function HealthLoading() {
 export function HealthUnreachable({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <Centered
-      title="Сервер Alamo не отвечает"
-      description="Интерфейс запущен, но локальный сервер приложения недоступен."
+      title={translate('health.server.title')}
+      description={translate('health.server.description')}
     >
-      <Callout tone="danger" title="Что произошло">
+      <Callout tone="danger" title={translate('health.server.whatHappened')}>
         {errorMessage(error)}
       </Callout>
 
       <div className="mt-3">
-        <p className="mb-1.5 text-xs text-[var(--fg-muted)]">Запустите сервер и повторите:</p>
+        <p className="mb-1.5 text-xs text-[var(--fg-muted)]">{translate('health.server.startHint')}</p>
         <CommandBlock command="npx alamo-ui" />
       </div>
 
       <div className="mt-4 flex justify-end">
         <Button variant="primary" onClick={onRetry}>
-          Проверить снова
+          {translate('health.retry')}
         </Button>
       </div>
     </Centered>
@@ -116,24 +116,24 @@ export function OllamaUnavailable({
 
   return (
     <Centered
-      title={notInstalled ? 'Ollama не установлена' : 'Ollama не запущена'}
+      title={notInstalled ? translate('health.ollama.notInstalled') : translate('health.ollama.notRunning')}
       description={
         notInstalled
-          ? 'Alamo — интерфейс поверх Ollama. Без неё запускать модели негде.'
-          : 'Ollama установлена, но сервис сейчас не отвечает.'
+          ? translate('health.ollama.notInstalledHint')
+          : translate('health.ollama.notRunningHint')
       }
     >
       <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-2.5">
-        <Stat label="Адрес" value={ollama.host} />
-        <Stat label="Версия" value={ollama.version ?? 'неизвестна'} />
-        <Stat label="Установлена" value={ollama.installed ? 'да' : 'нет'} />
-        <Stat label="Запущена" value={ollama.running ? 'да' : 'нет'} />
+        <Stat label={translate('health.ollama.address')} value={ollama.host} />
+        <Stat label={translate('health.ollama.version')} value={ollama.version ?? translate('health.ollama.unknown')} />
+        <Stat label={translate('health.ollama.installed')} value={ollama.installed ? translate('common.yes') : translate('common.no')} />
+        <Stat label={translate('health.ollama.running')} value={ollama.running ? translate('common.yes') : translate('common.no')} />
       </div>
 
       {ollama.installHint ? (
         <div>
           <p className="mb-1.5 text-xs text-[var(--fg-muted)]">
-            {notInstalled ? 'Установите Ollama:' : 'Запустите сервис:'}
+            {notInstalled ? translate('health.ollama.install') : translate('health.ollama.start')}
           </p>
           <CommandBlock command={ollama.installHint.command} />
           <a
@@ -142,22 +142,22 @@ export function OllamaUnavailable({
             rel="noopener noreferrer"
             className="mt-2 inline-block text-2xs text-[var(--accent)] underline underline-offset-2"
           >
-            Документация Ollama
+            {translate('health.ollama.docs')}
           </a>
         </div>
       ) : (
-        <Callout tone="neutral" title="Подсказка по установке недоступна">
-          Сервер не смог определить команду для этой системы. Загляните на ollama.com.
+        <Callout tone="neutral" title={translate('health.installHint.unavailable')}>
+          {translate('health.installHint.description')}
         </Callout>
       )}
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className="text-2xs text-[var(--fg-subtle)]">
           {hardware.acceleratorName ?? hardware.accelerator} ·{' '}
-          {formatBytes(hardware.usableMemoryBytes)} доступно
+          {translate('health.hardware.available', { bytes: formatBytes(hardware.usableMemoryBytes) })}
         </span>
         <Button variant="primary" onClick={onRetry} loading={retrying}>
-          Проверить снова
+          {translate('health.retry')}
         </Button>
       </div>
     </Centered>

@@ -8,6 +8,7 @@ import type {
 } from '@alamo/contract'
 import { RecipesPage } from '../../src/features/recipes/RecipesPage.tsx'
 import { ApiRequestError, api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const AT = '2026-08-13T12:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -103,7 +104,7 @@ function deferred<T>() {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
   window.history.replaceState(null, '', '/')
 })
 
@@ -126,7 +127,7 @@ describe('RecipesPage', () => {
   })
 
   it('creates one exact Project revision 1, shows provenance and uses English fallback', async () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callback(0); return 1 })
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [PROJECT] })
     vi.spyOn(api, 'listRecipes').mockImplementation(async (scope) => ({

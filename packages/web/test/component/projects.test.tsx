@@ -7,7 +7,7 @@ import {
 } from '@alamo/contract'
 import { ProjectsPage } from '../../src/features/projects/ProjectsPage.tsx'
 import { api } from '../../src/lib/api.ts'
-import { translate, type LocaleKey } from '../../src/lib/locale.ts'
+import { setActiveLocale, translate, type LocaleKey } from '../../src/lib/locale.ts'
 
 const PROJECT: ProjectWithPresentation = {
   id: 'project-1',
@@ -31,7 +31,7 @@ function deferred<T>() {
 }
 
 afterEach(() => {
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 beforeEach(() => {
@@ -57,9 +57,9 @@ beforeEach(() => {
 
 describe('ProjectsPage', () => {
   it('provides a curated English and Russian accessible name for every manifest icon', () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     const english = PROJECT_ICON_MANIFEST.map((icon) => translate(icon.nameKey as LocaleKey))
-    document.documentElement.lang = 'ru'
+    setActiveLocale('ru')
     const russian = PROJECT_ICON_MANIFEST.map((icon) => translate(icon.nameKey as LocaleKey))
     expect(english).toHaveLength(48)
     expect(russian).toHaveLength(48)
@@ -192,7 +192,7 @@ describe('ProjectsPage', () => {
   })
 
   it('renames Project metadata through the typed client and keeps English fallback curated', async () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     vi.spyOn(api, 'listProjectsWithPresentation').mockResolvedValue({
       presentationVersion: 1,
       projects: [PROJECT],

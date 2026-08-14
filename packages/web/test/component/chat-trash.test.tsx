@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatTrashItem, RestoreChatResponse } from '@alamo/contract'
 import { ChatTrashList } from '../../src/features/chat/ChatTrashList.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const TOMBSTONED_AT = '2026-08-11T12:00:00.000Z'
 const ACTIVITY_AT = '2026-08-03T12:00:00.000Z'
@@ -70,7 +71,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('Chat Trash list', () => {
@@ -233,7 +234,7 @@ describe('Chat Trash list', () => {
   })
 
   it('rejects a mismatched Restore scope and uses curated English fallback', async () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
       ...EMPTY_DELETIONS,
@@ -249,7 +250,7 @@ describe('Chat Trash list', () => {
   })
 
   it('keeps English pending truth through failure/retry and shows one committed deletion', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     const pending = {
       ...SESSION_ITEM,
       recovery: { ...SESSION_ITEM.recovery, state: 'grace_elapsed' as const },

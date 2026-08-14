@@ -114,6 +114,7 @@ import {
   type ArtifactScope,
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
+import { PRODUCT_NAME } from './brand.ts'
 import { translate } from './locale.ts'
 
 /* ──────────────────────────────── Ошибки ──────────────────────────────── */
@@ -140,7 +141,7 @@ export class ApiShapeError extends Error {
     readonly path: string,
     readonly issues: unknown,
   ) {
-    super(`Ответ ${path} не соответствует контракту`)
+    super(translate('error.contractShape', { path }))
     this.name = 'ApiShapeError'
   }
 }
@@ -154,7 +155,7 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) {
     // Самый частый случай локально: сервер не поднят.
     if (error.name === 'TypeError' && /fetch/i.test(error.message)) {
-      return 'Не удалось соединиться с сервером Alamo'
+      return translate('error.serverConnection', { product: PRODUCT_NAME })
     }
     return error.message
   }

@@ -8,6 +8,7 @@ import {
   projectCatalogPage,
 } from '../../src/features/launcher/LauncherPage.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const AT = '2026-08-04T00:00:00.000Z'
 const TOTAL = 1_000
@@ -91,7 +92,7 @@ function response(page: number, totalItems = TOTAL): ListCatalogResponse {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.stubGlobal('fetch', originalFetch)
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('bounded catalog paging', () => {

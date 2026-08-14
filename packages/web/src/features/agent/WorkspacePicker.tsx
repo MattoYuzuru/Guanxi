@@ -20,6 +20,7 @@ import {
   cx,
 } from '../../components/ui.tsx'
 import { formatRelativeTime, shortenPath } from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
 
 export function WorkspacePicker({
   open,
@@ -38,25 +39,25 @@ export function WorkspacePicker({
     <Modal
       open={open}
       onClose={onClose}
-      title="Рабочая директория"
+      title={translate('workspace.title')}
       width={680}
       footer={
         <>
           <Button variant="ghost" onClick={() => onPick(null)}>
-            Без директории
+            {translate('workspace.none')}
           </Button>
           <Button variant="secondary" onClick={onClose}>
-            Закрыть
+            {translate('workspace.close')}
           </Button>
         </>
       }
     >
       <div className="mb-3 flex gap-1">
         <TabButton active={tab === 'saved'} onClick={() => setTab('saved')}>
-          Сохранённые
+          {translate('workspace.saved')}
         </TabButton>
         <TabButton active={tab === 'browse'} onClick={() => setTab('browse')}>
-          Выбрать директорию
+          {translate('workspace.choose')}
         </TabButton>
       </div>
 
@@ -107,21 +108,21 @@ function SavedList({
   if (workspaces.loading) {
     return (
       <div className="flex items-center gap-2 py-6 text-xs text-[var(--fg-muted)]">
-        <Spinner /> Загружаем…
+        <Spinner /> {translate('workspace.loading')}
       </div>
     )
   }
 
   if (workspaces.error) {
-    return <Callout tone="danger" title="Не удалось загрузить">{errorMessage(workspaces.error)}</Callout>
+    return <Callout tone="danger" title={translate('workspace.loadError')}>{errorMessage(workspaces.error)}</Callout>
   }
 
   const list = workspaces.data?.workspaces ?? []
   if (list.length === 0) {
     return (
       <EmptyState
-        title="Сохранённых директорий нет"
-        description="Откройте вкладку «Выбрать директорию» и добавьте первую."
+        title={translate('workspace.empty.title')}
+        description={translate('workspace.empty.description')}
       />
     )
   }
@@ -151,8 +152,8 @@ function SavedList({
                 {workspace.rootPath}
               </span>
             </span>
-            {!workspace.exists && <Badge tone="red">нет на диске</Badge>}
-            {workspace.id === currentId && <Badge tone="accent">выбрана</Badge>}
+            {!workspace.exists && <Badge tone="red">{translate('workspace.missing')}</Badge>}
+            {workspace.id === currentId && <Badge tone="accent">{translate('workspace.selected')}</Badge>}
             <span className="shrink-0 text-2xs text-[var(--fg-subtle)]">
               {formatRelativeTime(workspace.lastUsedAt ?? workspace.createdAt)}
             </span>
@@ -193,7 +194,7 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
           disabled={!listing.data?.parent}
           onClick={() => setPath(listing.data?.parent ?? undefined)}
         >
-          ↑ Наверх
+          {translate('workspace.up')}
         </Button>
         <code
           className="min-w-0 flex-1 truncate rounded border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 font-mono text-2xs"
@@ -208,13 +209,13 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
           disabled={!listing.data}
           onClick={() => listing.data && create(listing.data.path)}
         >
-          Выбрать эту
+          {translate('workspace.chooseCurrent')}
         </Button>
       </div>
 
       {error && (
         <div className="mb-2">
-          <Callout tone="danger" title="Не удалось добавить">
+          <Callout tone="danger" title={translate('workspace.addError')}>
             {error}
           </Callout>
         </div>
@@ -222,17 +223,17 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
 
       {listing.loading ? (
         <div className="flex items-center gap-2 py-6 text-xs text-[var(--fg-muted)]">
-          <Spinner /> Читаем директорию…
+          <Spinner /> {translate('workspace.reading')}
         </div>
       ) : listing.error ? (
-        <Callout tone="danger" title="Директория недоступна">
+        <Callout tone="danger" title={translate('workspace.unavailable')}>
           {errorMessage(listing.error)}
         </Callout>
       ) : (
         <ul className="max-h-72 overflow-auto rounded-md border border-[var(--border)]">
           {(listing.data?.entries ?? []).length === 0 && (
             <li className="px-2 py-3 text-center text-2xs text-[var(--fg-subtle)]">
-              Здесь пусто
+              {translate('workspace.directoryEmpty')}
             </li>
           )}
           {(listing.data?.entries ?? []).map((entry) => (
@@ -248,14 +249,14 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
                     ? 'hover:bg-[var(--bg-subtle)]'
                     : 'cursor-default opacity-50',
                 )}
-                title={entry.isDirectory ? 'Клик — войти, двойной клик — выбрать' : entry.path}
+                title={entry.isDirectory ? translate('workspace.entryHint') : entry.path}
               >
                 <span aria-hidden className="w-3.5 shrink-0 text-center text-2xs">
                   {entry.isDirectory ? '▸' : '·'}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-mono text-2xs">{entry.name}</span>
                 {entry.isGitRepo && (
-                  <Badge tone="accent" title="Git-репозиторий">
+                  <Badge tone="accent" title={translate('workspace.git')}>
                     git
                   </Badge>
                 )}
@@ -266,7 +267,7 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
       )}
 
       <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
-        Клик — войти в директорию, двойной клик — сразу выбрать её.
+        {translate('workspace.browserHint')}
       </p>
     </div>
   )
@@ -285,9 +286,9 @@ export function WorkspaceChip({
       variant="secondary"
       size="sm"
       onClick={onClick}
-      title={workspace ? workspace.rootPath : 'Директория не выбрана'}
+      title={workspace ? workspace.rootPath : translate('workspace.notSelected')}
     >
-      {workspace ? shortenPath(workspace.rootPath) : 'Выбрать директорию'}
+      {workspace ? shortenPath(workspace.rootPath) : translate('workspace.choose')}
     </Button>
   )
 }

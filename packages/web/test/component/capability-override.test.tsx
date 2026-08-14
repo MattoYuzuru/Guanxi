@@ -8,6 +8,7 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CapabilityOverrides } from '../../src/features/models/CapabilityOverrides.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const AT = '2026-08-07T00:00:00.000Z'
 const DIGEST = 'sha256:fixture'
@@ -123,7 +124,7 @@ function renderOverrides(
 const clipboard = { writeText: vi.fn(async () => undefined) }
 
 beforeEach(() => {
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
   clipboard.writeText = vi.fn(async () => undefined)
   Object.defineProperty(navigator, 'clipboard', {
     value: clipboard,
@@ -134,7 +135,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('installed capability overrides', () => {
@@ -391,7 +392,7 @@ describe('installed capability overrides', () => {
   })
 
   it('falls back to curated English copy', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     vi.spyOn(api, 'applyCapabilityOverride').mockResolvedValue(outcome())
     renderOverrides()
     expect(

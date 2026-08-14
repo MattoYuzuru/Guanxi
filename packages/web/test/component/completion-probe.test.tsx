@@ -10,6 +10,7 @@ import { CompletionProbe } from '../../src/features/models/CompletionProbe.tsx'
 import { RuntimeProvider } from '../../src/features/health/RuntimeContext.tsx'
 import { api } from '../../src/lib/api.ts'
 import { runtimeSnapshotFixture } from '../fixtures/runtime.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const AT = '2026-08-03T00:00:00.000Z'
 
@@ -214,7 +215,7 @@ describe('manual completion probe', () => {
   })
 
   it('shows safe failure copy and curated English fallback without verified-green semantics', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     const degraded = evidence({
       status: 'degraded', reason: 'provider_error', confidence: 'degraded', historical: false,
     })
@@ -233,7 +234,7 @@ describe('manual completion probe', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Run probe' }))
     expect(await screen.findByText('Request failed')).toBeTruthy()
     expect(screen.getByText('The completion probe could not be completed safely')).toBeTruthy()
-    document.documentElement.lang = 'ru'
+    setActiveLocale('ru')
   })
 
   it('aborts on unmount without applying a late completion', async () => {

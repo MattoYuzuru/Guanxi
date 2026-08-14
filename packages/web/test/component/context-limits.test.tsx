@@ -131,6 +131,6 @@ describe('no-artificial-context-cap UI', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(getModel).toHaveBeenLastCalledWith('fixture:latest', CUSTOM_CONTEXT, expect.any(AbortSignal)))
     expect(view.container.textContent).toContain('Объявленный provider максимум: 1.9M')
-    expect(screen.getAllByText(/1M окно/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/окно 1M/).length).toBeGreaterThan(0)
   })
 })

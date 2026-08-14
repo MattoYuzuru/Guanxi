@@ -11,6 +11,7 @@ import {
 } from '../../src/features/models/CatalogFilters.tsx'
 import { CatalogVariantInstall } from '../../src/features/models/CatalogVariantInstall.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const AT = '2026-08-04T00:00:00.000Z'
 const originalFetch = globalThis.fetch
@@ -90,7 +91,7 @@ const EMPTY_RESPONSE: ListCatalogResponse = { models: [], live: false }
 afterEach(() => {
   vi.restoreAllMocks()
   vi.stubGlobal('fetch', originalFetch)
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('catalog query transport and filter projection', () => {
@@ -259,7 +260,7 @@ describe('pairwise exact variant compare', () => {
   })
 
   it('uses English fallback for filters and comparison', () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     render(
       <>
         <CatalogFilters value={EMPTY_CATALOG_FILTERS} onChange={() => undefined} onClear={() => undefined} />

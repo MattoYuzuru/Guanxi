@@ -196,7 +196,7 @@ export async function* sseStream<T>(
       continue
     }
 
-    if (!response.body) throw new Error('Ответ без тела: стрим невозможен')
+    if (!response.body) throw new Error(translate('error.streamBodyMissing'))
     onOpen?.()
 
     const reader = response.body.getReader()
@@ -337,3 +337,4 @@ function backoff(attempt: number, signal?: AbortSignal): Promise<void> {
     )
   })
 }
+import { translate } from './locale.ts'

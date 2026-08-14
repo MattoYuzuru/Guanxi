@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HuggingFaceRepository } from '@alamo/contract'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 import {
   HuggingFaceDiscovery,
   RepositoryCard,
@@ -88,7 +89,7 @@ function submitSearch(value = 'llama gguf') {
 
 afterEach(() => {
   vi.stubGlobal('fetch', originalFetch)
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('Marketplace Hugging Face discovery section', () => {
@@ -423,7 +424,7 @@ describe('Marketplace Hugging Face discovery section', () => {
   })
 
   it('uses curated English as the source language fallback', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
       .mockResolvedValue(json(failed('rate_limited'))))
     render(<HuggingFaceDiscovery contextLength={8_192} />)
@@ -1163,7 +1164,7 @@ describe('P2-K exact GGUF file/revision selection', () => {
   })
 
   it('renders the complete selection preview from curated English locale keys', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     vi.stubGlobal('fetch', routedFetch({}))
     render(<HuggingFaceDiscovery contextLength={8_192} />)
     const input = screen.getByRole('searchbox', { name: 'Search Hugging Face repositories' })
@@ -1425,7 +1426,7 @@ describe('P2-L exact GGUF download projection', () => {
   })
 
   it('uses curated English download copy without bilingual hardcode', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     vi.stubGlobal('fetch', routedFetch({ download: () => downloadEvents() }))
     render(<HuggingFaceDiscovery contextLength={8_192} />)
     const input = screen.getByRole('searchbox', { name: 'Search Hugging Face repositories' })

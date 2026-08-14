@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HuggingFaceDownloadProvenance } from '@alamo/contract'
 import { HuggingFaceImportControl } from '../../src/features/models/HuggingFaceImportControl.tsx'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const originalFetch = globalThis.fetch
 const ARTIFACT_ID = '11111111-1111-4111-8111-111111111111'
@@ -9,7 +10,7 @@ const OBSERVED_AT = '2026-08-09T12:00:00.000Z'
 
 afterEach(() => {
   vi.stubGlobal('fetch', originalFetch)
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 function artifact(): HuggingFaceDownloadProvenance {
@@ -265,7 +266,7 @@ describe('explicit Hugging Face staged import control', () => {
   })
 
   it('uses curated English fallback for confirmation and terminal provenance', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(sse(successEvents())))
     render(<HuggingFaceImportControl artifact={artifact()} contextLength={8_192} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Local Ollama model reference' }), {

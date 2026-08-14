@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AddFromOllama } from '../../src/features/models/AddFromOllama.tsx'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -79,7 +80,7 @@ describe('Add from Ollama Marketplace flow', () => {
   })
 
   it('fails closed for invalid input and uses curated English fallback', async () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(json({
       code: 'validation_failed', message: 'The Ollama reference is invalid',
       details: { reason: 'invalid_official_url' },

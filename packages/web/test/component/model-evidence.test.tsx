@@ -3,6 +3,7 @@ import type { Health, InstalledModelDescriptor } from '@alamo/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 import {
   InstalledEvidenceDetails,
   InstalledEvidenceSummary,
@@ -192,14 +193,14 @@ describe('installed model evidence projection', () => {
   })
 
   it('uses English source/fallback copy when the document locale is English', () => {
-    document.documentElement.lang = 'en'
+    setActiveLocale('en')
     const model = descriptor({
       state: 'unknown', reason: 'provider_unavailable', observedAt: OBSERVED_AT, declarations: [],
     })
     render(<InstalledEvidenceDetails descriptor={model} />)
     expect(screen.getByText('One provider source was unavailable.')).toBeTruthy()
     expect(screen.getByText(/not a controlled probe/u)).toBeTruthy()
-    document.documentElement.lang = 'ru'
+    setActiveLocale('ru')
   })
 
   it('keeps installed loading and healthy empty states distinct', async () => {

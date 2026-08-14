@@ -9,6 +9,7 @@ import {
 } from '../../src/features/chat/ResourceConflictDecision.tsx'
 import { RuntimeProvider, useRuntimeProjection } from '../../src/features/health/RuntimeContext.tsx'
 import { runtimeActiveLease, runtimeSnapshotFixture } from '../fixtures/runtime.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -113,7 +114,7 @@ function json(body: unknown, status = 200) {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('resource conflict decision', () => {
@@ -413,7 +414,7 @@ describe('resource conflict decision', () => {
   })
 
   it('updates sampled details without stealing Queue focus and uses English fallback', async () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     const active = runtimeSnapshotFixture()
     const updated = runtimeSnapshotFixture((snapshot) => {
       snapshot.governor.queued[0]!.model.name = 'updated-waiter:latest'

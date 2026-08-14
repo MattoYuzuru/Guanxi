@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ArtifactTransferPolicy, Attachment, Project } from '@alamo/contract'
 import { AttachmentsPage } from '../../src/features/attachments/AttachmentsPage.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const AT = '2026-08-14T14:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -75,7 +76,7 @@ function listResponse(items: Attachment[] = [], projectId: string | null = null)
 
 afterEach(() => {
   vi.restoreAllMocks()
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('AttachmentsPage', () => {
@@ -170,7 +171,7 @@ describe('AttachmentsPage', () => {
   })
 
   it('rejects unsafe/over-policy files locally and keeps English fallback', async () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     vi.spyOn(api, 'artifactTransferPolicy').mockResolvedValue(POLICY)
     vi.spyOn(api, 'listAttachments').mockResolvedValue(listResponse())

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ErrorBoundary } from '../../src/components/ErrorBoundary.tsx'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 function BrokenChat(): never {
   throw new TypeError('render exploded')
@@ -38,7 +39,7 @@ describe('ErrorBoundary', () => {
 
   it('uses English as the fallback locale', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
 
     render(
       <ErrorBoundary scope="root">
@@ -50,7 +51,7 @@ describe('ErrorBoundary', () => {
       screen.getByRole('heading', { name: 'The application could not be displayed' }),
     ).toBeTruthy()
 
-    document.documentElement.lang = 'ru'
+    setActiveLocale('ru')
   })
 
   it('contains a Runtime Bar render failure without replacing or refocusing the shell', () => {

@@ -9,28 +9,29 @@ import { useState } from 'react'
 import type { ToolCall, ToolCallStatus } from '@alamo/contract'
 import { Badge, Chevron, CopyButton, Spinner, cx } from '../../components/ui.tsx'
 import { formatDuration } from '../../lib/format.ts'
+import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { DiffViewer } from './DiffViewer.tsx'
 
 const STATUS_META: Record<
   ToolCallStatus,
-  { label: string; tone: 'neutral' | 'accent' | 'green' | 'yellow' | 'red'; spinning?: boolean }
+  { label: LocaleKey; tone: 'neutral' | 'accent' | 'green' | 'yellow' | 'red'; spinning?: boolean }
 > = {
-  pending_approval: { label: 'ждёт подтверждения', tone: 'yellow' },
-  running: { label: 'выполняется', tone: 'accent', spinning: true },
-  ok: { label: 'готово', tone: 'green' },
-  error: { label: 'ошибка', tone: 'red' },
-  denied: { label: 'отклонён', tone: 'red' },
-  cancelled: { label: 'отменён', tone: 'neutral' },
+  pending_approval: { label: 'agent.tool.status.pending', tone: 'yellow' },
+  running: { label: 'agent.tool.status.running', tone: 'accent', spinning: true },
+  ok: { label: 'agent.tool.status.ok', tone: 'green' },
+  error: { label: 'agent.tool.status.error', tone: 'red' },
+  denied: { label: 'agent.tool.status.denied', tone: 'red' },
+  cancelled: { label: 'agent.tool.status.cancelled', tone: 'neutral' },
 }
 
 const PARSED_FROM_META = {
   native: {
-    label: 'структурный',
-    hint: 'Модель вернула вызов в поле tool_calls — так и задумано.',
+    label: 'agent.tool.parsed.native' as LocaleKey,
+    hint: 'agent.tool.parsed.nativeHint' as LocaleKey,
   },
   content_json: {
-    label: 'из текста',
-    hint: 'Модель не отдала структурный вызов: JSON вытащен из обычного ответа. Для 7B-моделей это норма, но аргументы стоит проверить внимательнее.',
+    label: 'agent.tool.parsed.text' as LocaleKey,
+    hint: 'agent.tool.parsed.textHint' as LocaleKey,
   },
 } as const
 
@@ -65,24 +66,24 @@ export function ToolCallCard({
         {status.spinning && <Spinner size={10} />}
         <span className="font-mono text-2xs font-semibold">{call.name}</span>
 
-        <Badge tone={status.tone}>{status.label}</Badge>
+        <Badge tone={status.tone}>{translate(status.label)}</Badge>
 
         <Badge
           tone={call.parsedFrom === 'content_json' ? 'yellow' : 'outline'}
-          title={parsed.hint}
+          title={translate(parsed.hint)}
         >
-          {parsed.label}
+          {translate(parsed.label)}
         </Badge>
 
         {call.source === 'mcp' && (
-          <Badge tone="outline" title="Инструмент предоставлен MCP-сервером">
+          <Badge tone="outline" title={translate('agent.tool.mcp')}>
             mcp
           </Badge>
         )}
 
         {call.diff && (
-          <Badge tone="accent" title="Меняет файл — есть дифф">
-            дифф
+          <Badge tone="accent" title={translate('agent.tool.diff')}>
+            {translate('agent.tool.diffBadge')}
           </Badge>
         )}
 
@@ -95,11 +96,11 @@ export function ToolCallCard({
         <div className="space-y-2 border-t border-[var(--border)] p-2">
           {call.parsedFrom === 'content_json' && (
             <p className="rounded border border-[var(--color-fit-yellow)]/30 bg-[var(--color-fit-yellow)]/8 px-2 py-1 text-2xs text-[var(--color-fit-yellow)]">
-              {parsed.hint}
+              {translate(parsed.hint)}
             </p>
           )}
 
-          <Section title="Аргументы" copy={argumentsText}>
+          <Section title={translate('agent.tool.arguments')} copy={argumentsText}>
             <pre className="max-h-56 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-inset)] p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
               {argumentsText}
             </pre>
@@ -107,13 +108,15 @@ export function ToolCallCard({
 
           {call.diff && (
             <div>
-              <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">Изменения</div>
+              <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
+                {translate('agent.tool.changes')}
+              </div>
               <DiffViewer diff={call.diff} maxHeight={320} />
             </div>
           )}
 
           {call.result !== null && call.result !== '' && (
-            <Section title="Результат" copy={call.result}>
+            <Section title={translate('agent.tool.result')} copy={call.result}>
               <pre className="max-h-56 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-inset)] p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                 {call.result}
               </pre>
@@ -121,7 +124,7 @@ export function ToolCallCard({
           )}
 
           {call.error && (
-            <Section title="Ошибка" copy={call.error}>
+            <Section title={translate('agent.tool.error')} copy={call.error}>
               <pre className="max-h-40 overflow-auto rounded border border-[var(--danger)]/40 bg-[var(--danger)]/8 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-[var(--danger)]">
                 {call.error}
               </pre>

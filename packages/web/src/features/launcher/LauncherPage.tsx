@@ -32,10 +32,9 @@ import { HuggingFaceDiscovery } from '../models/HuggingFaceDiscovery.tsx'
 import {
   formatBytes,
   formatContextLength,
-  formatCount,
   formatDateTime,
 } from '../../lib/format.ts'
-import { translate } from '../../lib/locale.ts'
+import { getActiveLocale, translate } from '../../lib/locale.ts'
 import {
   CatalogFilters,
   EMPTY_CATALOG_FILTERS,
@@ -206,9 +205,9 @@ export function LauncherPage({ health }: { health: Health }) {
       <section className="mb-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Модели</h1>
+            <h1 className="text-lg font-semibold tracking-tight">{translate('launcher.title')}</h1>
             <p className="mt-0.5 text-xs text-[var(--fg-muted)]">
-              Вердикты посчитаны под это железо и выбранный размер окна.
+              {translate('launcher.fitBasis')}
             </p>
           </div>
 
@@ -217,19 +216,23 @@ export function LauncherPage({ health }: { health: Health }) {
               <Stat
                 label={translate('hardware.acceleratorProfile')}
                 value={hardware.acceleratorName ?? hardware.accelerator}
-                hint={`${hardware.cpuModel}, ${hardware.cpuCores} ядер · ${translate('hardware.deviceCountUnknown')}`}
+                hint={translate('launcher.hardware.cpu', {
+                  model: hardware.cpuModel,
+                  cores: hardware.cpuCores,
+                  deviceNote: translate('hardware.deviceCountUnknown'),
+                })}
               />
               <Stat
-                label="Доступно памяти"
+                label={translate('launcher.memory.available')}
                 value={formatBytes(hardware.usableMemoryBytes)}
                 hint={
                   hardware.unifiedMemory
-                    ? `Общая память CPU и GPU, всего ${formatBytes(hardware.totalMemoryBytes)}`
-                    : `Всего в системе ${formatBytes(hardware.totalMemoryBytes)}`
+                    ? translate('launcher.memory.unified', { total: formatBytes(hardware.totalMemoryBytes) })
+                    : translate('launcher.memory.system', { total: formatBytes(hardware.totalMemoryBytes) })
                 }
               />
               {hardware.freeDiskBytes !== null && (
-                <Stat label="Свободно на диске" value={formatBytes(hardware.freeDiskBytes)} />
+                <Stat label={translate('launcher.disk.free')} value={formatBytes(hardware.freeDiskBytes)} />
               )}
             </div>
 
@@ -293,7 +296,7 @@ export function LauncherPage({ health }: { health: Health }) {
       {/* Установленные */}
       <section className="mb-7">
         <SectionHeader
-          title="Установленные"
+          title={translate('launcher.installed.title')}
           count={local.data?.models.length}
           refreshing={local.refreshing}
           action={
@@ -301,7 +304,7 @@ export function LauncherPage({ health }: { health: Health }) {
               invalidateCatalogBasis()
               setReloadToken((v) => v + 1)
             }}>
-              Обновить
+              {translate('launcher.refresh')}
             </Button>
           }
         />
@@ -311,10 +314,10 @@ export function LauncherPage({ health }: { health: Health }) {
         ) : local.error ? (
           <Callout
             tone="danger"
-            title="Не удалось получить список моделей"
+            title={translate('launcher.installed.error')}
             action={
               <Button size="sm" onClick={local.reload}>
-                Повторить
+                {translate('launcher.retry')}
               </Button>
             }
           >
@@ -322,18 +325,18 @@ export function LauncherPage({ health }: { health: Health }) {
           </Callout>
         ) : localItems.length === 0 ? (
           <EmptyState
-            title="Пока ничего не установлено"
-            description="Выберите модель в каталоге ниже и нажмите «Установить»."
+            title={translate('launcher.installed.empty')}
+            description={translate('launcher.installed.emptyHint')}
           />
         ) : (
-          <ModelCarousel items={localItems} ariaLabel="Установленные модели" />
+          <ModelCarousel items={localItems} ariaLabel={translate('launcher.installed.list')} />
         )}
       </section>
 
       {/* Каталог */}
       <section>
         <SectionHeader
-          title="Каталог"
+          title={translate('launcher.catalog.title')}
           count={catalogProjection.totalItems}
           refreshing={catalog.refreshing}
           action={
@@ -350,8 +353,8 @@ export function LauncherPage({ health }: { health: Health }) {
                   invalidateCatalogBasis(true, false)
                   setQuery(event.target.value)
                 }}
-                placeholder="Поиск по каталогу…"
-                aria-label="Поиск по каталогу моделей"
+                placeholder={translate('launcher.catalog.search')}
+                aria-label={translate('launcher.catalog.searchAria')}
                 className="w-full sm:w-56"
                 type="search"
               />
@@ -393,13 +396,13 @@ export function LauncherPage({ health }: { health: Health }) {
           ) : catalog.error ? (
             <Callout
               tone="danger"
-              title="Каталог недоступен"
+              title={translate('launcher.catalog.error')}
               action={
                 <Button size="sm" onClick={() => {
                   invalidateCatalogBasis()
                   catalog.reload()
                 }}>
-                  Повторить
+                  {translate('launcher.retry')}
                 </Button>
               }
             >
@@ -421,7 +424,7 @@ export function LauncherPage({ health }: { health: Health }) {
                 ? translate('catalog.empty.unavailable.title')
                 : query || hasCatalogFilters(filters)
                   ? translate('catalog.empty.filtered.title')
-                  : 'Каталог пуст'}
+                  : translate('launcher.catalog.empty')}
               description={
                 catalog.data?.source?.state === 'unavailable'
                   ? translate('catalog.empty.unavailable.description')
@@ -445,7 +448,7 @@ export function LauncherPage({ health }: { health: Health }) {
               }
             />
           ) : (
-            <ModelCarousel items={catalogItems} ariaLabel="Каталог моделей" />
+            <ModelCarousel items={catalogItems} ariaLabel={translate('launcher.catalog.list')} />
           )}
         </div>
 
@@ -705,7 +708,7 @@ function SectionHeader({
         <h2 className="text-sm font-semibold">{title}</h2>
         {count !== undefined && (
           <span className="text-2xs text-[var(--fg-subtle)]">
-            {formatCount(count, 'модель', 'модели', 'моделей')}
+            {localizedModelCount(count)}
           </span>
         )}
         {refreshing && <span className="anim-pulse-soft text-2xs text-[var(--fg-subtle)]">…</span>}
@@ -713,6 +716,16 @@ function SectionHeader({
       {action}
     </div>
   )
+}
+
+function localizedModelCount(count: number): string {
+  const category = new Intl.PluralRules(getActiveLocale()).select(count)
+  const key = category === 'one'
+    ? 'model.count.one'
+    : category === 'few'
+      ? 'model.count.few'
+      : 'model.count.other'
+  return translate(key, { count })
 }
 
 function CarouselSkeleton() {

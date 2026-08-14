@@ -15,6 +15,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { FitLevel } from '@alamo/contract'
+import { translate, type LocaleKey } from '../lib/locale.ts'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ')
@@ -150,11 +151,14 @@ export const FIT_COLOR_VAR: Record<FitLevel, string> = {
   unknown: 'var(--color-fit-unknown)',
 }
 
-export const FIT_LABEL: Record<FitLevel, string> = {
-  green: 'Влезает',
-  yellow: 'Впритык',
-  red: 'Не влезает',
-  unknown: 'Неизвестно',
+export function fitLabel(level: FitLevel): string {
+  const keys = {
+    green: 'fit.level.green',
+    yellow: 'fit.level.yellow',
+    red: 'fit.level.red',
+    unknown: 'fit.level.unknown',
+  } satisfies Record<FitLevel, LocaleKey>
+  return translate(keys[level])
 }
 
 /* ────────────────────────────── Шкала ─────────────────────────────────── */
@@ -409,7 +413,7 @@ export function Modal({
   describedBy,
   initialFocusRef,
   returnFocusRef,
-  closeLabel = 'Закрыть',
+  closeLabel = translate('common.close'),
 }: {
   open: boolean
   onClose: () => void
@@ -607,7 +611,7 @@ export function Chevron({ open, size = 10 }: { open: boolean; size?: number }) {
 export function CopyButton({
   text,
   size = 'sm',
-  label = 'Копировать',
+  label = translate('common.copy'),
 }: {
   text: string
   size?: ButtonSize
@@ -631,7 +635,7 @@ export function CopyButton({
       aria-label={label}
       title={label}
     >
-      {copied ? 'Скопировано' : label}
+      {copied ? translate('common.copied') : label}
     </Button>
   )
 }

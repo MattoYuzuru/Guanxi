@@ -49,10 +49,10 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
       <div className="mx-auto max-w-3xl px-5 py-6">
         <Callout
           tone="danger"
-          title="Не удалось загрузить модель"
+          title={translate('model.error')}
           action={
             <Button size="sm" onClick={detail.reload}>
-              Повторить
+              {translate('model.retry')}
             </Button>
           }
         >
@@ -62,7 +62,7 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
           to={paths.launcher()}
           className="mt-3 inline-block text-xs text-[var(--accent)] underline underline-offset-2"
         >
-          ← К списку моделей
+          {translate('model.back')}
         </Link>
       </div>
     )
@@ -162,7 +162,7 @@ function ModelProfile({
         to={paths.launcher()}
         className="mb-3 inline-block text-2xs text-[var(--fg-muted)] hover:text-[var(--fg)]"
       >
-        ← Все модели
+        {translate('model.all')}
       </Link>
 
       {/* Шапка */}
@@ -177,7 +177,7 @@ function ModelProfile({
             <span>{model.quantization}</span>
             <span className="text-[var(--border-strong)]">·</span>
             <span title={formatDateTime(model.modifiedAt)}>
-              изменена {formatRelativeTime(model.modifiedAt)}
+              {translate('model.modified', { time: formatRelativeTime(model.modifiedAt) })}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
@@ -186,30 +186,31 @@ function ModelProfile({
                 {capability}
               </Badge>
             ))}
-            {model.isCloud && <Badge tone="accent">облако</Badge>}
+            {model.isCloud && <Badge tone="accent">{translate('model.cloud')}</Badge>}
           </div>
         </div>
 
         <div className="flex shrink-0 gap-1.5">
           <Button variant="secondary" onClick={warm} loading={warming} disabled={contextBlocked}>
-            {warming ? 'Греем…' : 'Прогреть'}
+            {warming ? translate('model.warming') : translate('model.warm')}
           </Button>
           <Button variant="primary" onClick={() => onStartChat(contextLength)} disabled={contextBlocked}>
-            Начать чат
+            {translate('model.startChat')}
           </Button>
         </div>
       </header>
 
       {warming && (
-        <Callout tone="info" title="Модель загружается в память">
-          На {formatBytes(model.sizeBytes)} и окно {formatContextLength(contextLength)} это
-          обычно занимает от нескольких секунд до минуты. После прогрева вердикт станет
-          замером вместо прогноза.
+        <Callout tone="info" title={translate('model.loading')}>
+          {translate('model.loadingHint', {
+            size: formatBytes(model.sizeBytes),
+            context: formatContextLength(contextLength),
+          })}
         </Callout>
       )}
 
       {warmError && (
-        <Callout tone="danger" title="Прогрев не удался">
+        <Callout tone="danger" title={translate('model.warmError')}>
           {warmError}
         </Callout>
       )}
@@ -230,12 +231,12 @@ function ModelProfile({
             <CapabilityOverrides model={model} onRefresh={onRefresh} />
           </Panel>
 
-          <Panel title="Параметры архитектуры">
+          <Panel title={translate('model.architecture')}>
             <ModelInfoTable info={model.modelInfo} />
           </Panel>
 
           {model.systemPrompt && (
-            <Panel title="Системный промпт">
+            <Panel title={translate('model.systemPrompt')}>
               <pre className="max-h-64 overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                 {model.systemPrompt}
               </pre>
@@ -243,8 +244,8 @@ function ModelProfile({
           )}
 
           {model.template && (
-            <Panel title="Шаблон промпта">
-              <Disclosure summary="Показать шаблон" defaultOpen={false}>
+            <Panel title={translate('model.promptTemplate')}>
+              <Disclosure summary={translate('model.promptTemplate.show')} defaultOpen={false}>
                 <pre className="max-h-80 overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                   {model.template}
                 </pre>
@@ -253,8 +254,8 @@ function ModelProfile({
           )}
 
           {model.license && (
-            <Panel title="Лицензия">
-              <Disclosure summary="Показать текст лицензии">
+            <Panel title={translate('model.license')}>
+              <Disclosure summary={translate('model.license.show')}>
                 <pre className="max-h-80 overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                   {model.license}
                 </pre>
@@ -265,7 +266,7 @@ function ModelProfile({
 
         {/* Правая колонка: влезаемость */}
         <div className="space-y-4">
-          <Panel title="Влезаемость">
+          <Panel title={translate('model.fit')}>
             <StepSlider
               values={contextValues}
               value={contextLength}
@@ -275,7 +276,7 @@ function ModelProfile({
                 setContextError(null)
               }}
               format={formatContextLength}
-              label="Размер окна контекста"
+              label={translate('model.context.size')}
             />
 
             <div className="mt-2">
@@ -346,20 +347,20 @@ function ModelProfile({
           </Panel>
 
           {warmed && (
-            <Panel title="Сейчас в памяти">
+            <Panel title={translate('model.memory.current')}>
               <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                <Stat label="Занято" value={formatBytes(warmed.running.sizeBytes)} />
+                <Stat label={translate('model.memory.used')} value={formatBytes(warmed.running.sizeBytes)} />
                 <Stat
-                  label="На ускорителе"
+                  label={translate('model.memory.accelerator')}
                   value={
                     warmed.running.sizeVramBytes === null
                       ? '—'
                       : formatBytes(warmed.running.sizeVramBytes)
                   }
                 />
-                <Stat label="Раскладка" value={warmed.running.processorLabel ?? '—'} />
+                <Stat label={translate('model.memory.layout')} value={warmed.running.processorLabel ?? '—'} />
                 <Stat
-                  label="Окно"
+                  label={translate('model.memory.window')}
                   value={
                     warmed.running.contextLength === null
                       ? '—'
@@ -369,7 +370,7 @@ function ModelProfile({
                 {warmed.running.expiresAt && (
                   <div className="col-span-2">
                     <Stat
-                      label="Выгрузится"
+                      label={translate('model.memory.expires')}
                       value={formatRelativeTime(warmed.running.expiresAt)}
                       hint={formatDateTime(warmed.running.expiresAt)}
                     />
@@ -385,20 +386,20 @@ function ModelProfile({
                   setWarmed(null)
                 }}
               >
-                Выгрузить из памяти
+                {translate('model.memory.unload')}
               </Button>
             </Panel>
           )}
 
-          <Panel title="Железо">
+          <Panel title={translate('model.hardware')}>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
               <Stat
-                label="Ускоритель"
+                label={translate('model.hardware.accelerator')}
                 value={health.hardware.acceleratorName ?? health.hardware.accelerator}
               />
-              <Stat label="Доступно" value={formatBytes(health.hardware.usableMemoryBytes)} />
-              <Stat label="Всего памяти" value={formatBytes(health.hardware.totalMemoryBytes)} />
-              <Stat label="Ядра CPU" value={String(health.hardware.cpuCores)} />
+              <Stat label={translate('model.hardware.available')} value={formatBytes(health.hardware.usableMemoryBytes)} />
+              <Stat label={translate('model.hardware.total')} value={formatBytes(health.hardware.totalMemoryBytes)} />
+              <Stat label={translate('model.hardware.cpu')} value={String(health.hardware.cpuCores)} />
             </div>
           </Panel>
         </div>
@@ -419,7 +420,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 function ModelInfoTable({ info }: { info: ModelDetail['modelInfo'] }) {
   const entries = Object.entries(info)
   if (entries.length === 0) {
-    return <p className="text-2xs text-[var(--fg-subtle)]">Сервер не отдал параметры.</p>
+    return <p className="text-2xs text-[var(--fg-subtle)]">{translate('model.parameters.empty')}</p>
   }
 
   return (

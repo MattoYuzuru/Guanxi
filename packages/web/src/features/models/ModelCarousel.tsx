@@ -20,6 +20,7 @@ import {
 import useEmblaCarousel from 'embla-carousel-react'
 import type { EmblaCarouselType } from 'embla-carousel'
 import { Button, cx } from '../../components/ui.tsx'
+import { translate } from '../../lib/locale.ts'
 
 /** Насколько сильно «утапливаются» соседи. 0 — плоский список. */
 const TWEEN_SCALE = 0.13
@@ -209,7 +210,7 @@ export function ModelCarousel({
         className="embla-viewport"
         ref={emblaRef}
         role="group"
-        aria-roledescription="карусель"
+        aria-roledescription={translate('model.carousel.description')}
         aria-label={ariaLabel}
         tabIndex={0}
         onKeyDown={onKeyDown}
@@ -234,19 +235,19 @@ export function ModelCarousel({
           size="sm"
           disabled={!canPrev}
           onClick={() => emblaApi?.scrollPrev()}
-          aria-label="Предыдущая модель"
+          aria-label={translate('model.carousel.previous')}
         >
           ←
         </Button>
 
-        <div className="flex items-center gap-1" role="tablist" aria-label="Позиция в карусели">
+        <div className="flex items-center gap-1" role="tablist" aria-label={translate('model.carousel.position')}>
           {items.map((item, index) => (
             <button
               key={item.key}
               type="button"
               role="tab"
               aria-selected={index === selected}
-              aria-label={`Модель ${index + 1} из ${items.length}`}
+              aria-label={translate('model.carousel.item', { index: index + 1, count: items.length })}
               onClick={() => emblaApi?.scrollTo(index)}
               className={cx(
                 'h-1.5 rounded-full transition-all duration-200',
@@ -263,7 +264,7 @@ export function ModelCarousel({
           size="sm"
           disabled={!canNext}
           onClick={() => emblaApi?.scrollNext()}
-          aria-label="Следующая модель"
+          aria-label={translate('model.carousel.next')}
         >
           →
         </Button>

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Project, QuickRun } from '@alamo/contract'
 import { QuickRunsPage } from '../../src/features/quick-runs/QuickRunsPage.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const AT = '2026-08-13T10:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -51,7 +52,7 @@ function deferred<T>() {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
 })
 
 describe('QuickRunsPage', () => {
@@ -86,7 +87,7 @@ describe('QuickRunsPage', () => {
   })
 
   it('creates exact Project metadata once, stays truthful and uses English fallback', async () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     const animationFrame = vi.spyOn(window, 'requestAnimationFrame')
       .mockImplementation((callback) => {
         callback(0)

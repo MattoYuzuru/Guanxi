@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settings } from '@alamo/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { glossaryEntries, searchGlossary } from '../../src/lib/glossary.ts'
 import {
@@ -10,7 +11,9 @@ import {
   type LocaleKey,
 } from '../../src/lib/locale.ts'
 import { LocaleProvider, useLocale } from '../../src/lib/locale-context.tsx'
-import { api } from '../../src/lib/api.ts'
+import { ApiShapeError, api, errorMessage } from '../../src/lib/api.ts'
+import { formatBytes, formatBytesPerSecond } from '../../src/lib/format.ts'
+import { sseStream } from '../../src/lib/sse.ts'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
 
 const SETTINGS: Settings = {
@@ -64,6 +67,24 @@ describe('locale catalogs', () => {
     expect(await screen.findByText('en:user_setting:Settings')).toBeTruthy()
     expect(document.documentElement.lang).toBe('en')
     expect(api.getSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('localizes format units and Web-owned transport fallbacks at their source', async () => {
+    setActiveLocale('en')
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytesPerSecond(1024)).toBe('1 KB/s')
+    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Could not connect to the Alamo server')
+    expect(errorMessage(new ApiShapeError('/api/example', [])))
+      .toBe('The response from /api/example does not match the application contract')
+
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null)))
+    const stream = sseStream({ url: '/api/example', schema: z.object({ seq: z.number() }), maxRetries: 0 })
+    await expect(stream.next()).rejects.toThrow('The response has no body, so streaming cannot continue')
+
+    setActiveLocale('ru')
+    expect(formatBytes(0)).toBe('0 Б')
+    expect(formatBytesPerSecond(1024)).toBe('1 КБ/с')
+    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Не удалось соединиться с сервером Alamo')
   })
 })
 

@@ -13,6 +13,7 @@ import type { PendingApproval } from '../chat/useChat.ts'
 import { Badge, Button, Modal, Toggle, cx } from '../../components/ui.tsx'
 import { useCountdown } from '../../lib/useAsync.ts'
 import { formatDuration } from '../../lib/format.ts'
+import { translate } from '../../lib/locale.ts'
 import { DiffViewer } from './DiffViewer.tsx'
 import { formatArguments } from './ToolCallCard.tsx'
 
@@ -57,14 +58,14 @@ export function ApprovalPrompt({
       width={860}
       title={
         <span className="flex items-center gap-2">
-          Подтвердите действие
+          {translate('agent.approval.title')}
           <Badge tone="yellow">{call.name}</Badge>
           {call.parsedFrom === 'content_json' && (
             <Badge
               tone="yellow"
-              title="Вызов вытащен из текста ответа, а не получен структурно. Проверьте аргументы внимательнее."
+              title={translate('agent.approval.inferred')}
             >
-              из текста
+              {translate('agent.approval.fromText')}
             </Badge>
           )}
         </span>
@@ -75,16 +76,16 @@ export function ApprovalPrompt({
             <Toggle
               checked={remember}
               onChange={setRemember}
-              label="Больше не спрашивать в этом треде"
-              hint={`Все дальнейшие вызовы «${call.name}» будут выполняться сразу.`}
+              label={translate('agent.approval.remember')}
+              hint={translate('agent.approval.rememberHint', { tool: call.name })}
             />
           </div>
           <div className="flex shrink-0 gap-2">
             <Button ref={denyRef} variant="secondary" onClick={() => onDecide('deny', remember)}>
-              Отклонить
+              {translate('agent.approval.deny')}
             </Button>
             <Button variant="primary" onClick={() => onDecide('approve', remember)}>
-              Разрешить
+              {translate('agent.approval.allow')}
             </Button>
           </div>
         </div>
@@ -94,7 +95,7 @@ export function ApprovalPrompt({
       <div className="mb-3">
         <div className="mb-1 flex items-center justify-between gap-2">
           <span className="text-2xs text-[var(--fg-muted)]">
-            Без ответа вызов будет отклонён автоматически
+            {translate('agent.approval.timeout')}
           </span>
           <span
             className={cx(
@@ -122,21 +123,21 @@ export function ApprovalPrompt({
       {call.diff ? (
         <div className="mb-3">
           <p className="mb-1.5 text-2xs text-[var(--fg-muted)]">
-            Модель хочет записать в{' '}
-            <code className="font-mono text-[var(--fg)]">{call.diff.path}</code>. Проверьте
-            изменения перед тем, как разрешить.
+            {translate('agent.approval.writePath', { path: call.diff.path })}
           </p>
           <DiffViewer diff={call.diff} maxHeight={380} />
         </div>
       ) : (
         <p className="mb-3 text-2xs text-[var(--fg-muted)]">
-          Инструмент не меняет файлы напрямую, но требует подтверждения.
+          {translate('agent.approval.nonFile')}
         </p>
       )}
 
       {/* Аргументы */}
       <div>
-        <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">Аргументы вызова</div>
+        <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
+          {translate('agent.approval.arguments')}
+        </div>
         <pre className="max-h-40 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-inset)] p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
           {formatArguments(call.arguments)}
         </pre>

@@ -45,6 +45,7 @@ import {
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatRelativeTime, formatTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { PRODUCT_NAME } from '../../lib/brand.ts'
 import {
   exceedsDeclaredContextLimit,
   parsePositiveSafeInteger,
@@ -214,20 +215,20 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
           className="break-words text-base font-semibold outline-none"
         >
           {project
-            ? translate('projects.chats.newFor').replace('{name}', project.name)
-            : 'Новый диалог'}
+            ? translate('projects.chats.newFor', { name: project.name })
+            : translate('chat.create.title')}
         </h1>
         <p className="mt-0.5 mb-4 text-xs text-[var(--fg-muted)]">
           {projectId
             ? translate('projects.chats.newDescription')
-            : 'Чат отвечает на вопросы. Агент дополнительно читает и меняет файлы выбранного проекта.'}
+            : translate('chat.create.description')}
         </p>
 
         {createError && (
           <div ref={createErrorRef} tabIndex={-1} className="mb-3 outline-none">
             <Callout
               tone="danger"
-              title={projectId ? translate('projects.chats.createError') : 'Не удалось создать тред'}
+              title={projectId ? translate('projects.chats.createError') : translate('chat.create.error')}
             >
               {createError}
             </Callout>
@@ -236,32 +237,32 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
 
         <form onSubmit={create} className="w-full min-w-0 max-w-xl space-y-4">
           {!projectId && <fieldset>
-            <legend className="mb-1.5 text-xs font-medium">Режим</legend>
+            <legend className="mb-1.5 text-xs font-medium">{translate('chat.create.mode')}</legend>
             <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2">
               <ModeButton
                 active={mode === 'chat'}
-                title="Чат"
-                description="Диалог без доступа к файлам"
+                title={translate('chat.create.mode.chat')}
+                description={translate('chat.create.mode.chatHint')}
                 onClick={() => setMode('chat')}
               />
               <ModeButton
                 active={mode === 'agent'}
-                title="Агент"
-                description="Инструменты и рабочая директория"
+                title={translate('chat.create.mode.agent')}
+                description={translate('chat.create.mode.agentHint')}
                 onClick={() => setMode('agent')}
               />
             </div>
           </fieldset>}
 
           <label className="block">
-            <span className="mb-1 block text-xs font-medium">Модель</span>
+            <span className="mb-1 block text-xs font-medium">{translate('chat.create.model')}</span>
             {models.loading ? (
               <Skeleton className="h-8 w-full" />
             ) : (
               <Select
                 value={model}
                 onChange={setModel}
-                ariaLabel="Модель для нового диалога"
+                ariaLabel={translate('chat.create.modelAria')}
                 options={availableModels.map((item) => ({
                   value: item.name,
                   label: `${item.name}${item.capabilities.includes('tools') ? ' · tools' : ''}`,
@@ -297,24 +298,24 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
 
           {mode === 'agent' && (
             <label className="block">
-              <span className="mb-1 block text-xs font-medium">Рабочая директория</span>
+              <span className="mb-1 block text-xs font-medium">{translate('chat.create.workspace')}</span>
               <Select
                 value={workspaceId}
                 onChange={setWorkspaceId}
-                ariaLabel="Рабочая директория агента"
+                ariaLabel={translate('chat.create.workspaceAria')}
                 options={[
-                  { value: '', label: 'Без директории — инструменты недоступны' },
+                  { value: '', label: translate('chat.create.workspaceNone') },
                   ...(workspaces.data?.workspaces ?? []).map((workspace) => ({
                     value: workspace.id,
                     label: workspace.exists
                       ? `${workspace.name} · ${workspace.rootPath}`
-                      : `${workspace.name} · нет на диске`,
+                      : translate('chat.create.workspaceMissing', { name: workspace.name }),
                     disabled: !workspace.exists,
                   })),
                 ]}
               />
               <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
-                Новую директорию можно добавить уже в шапке треда.
+                {translate('chat.create.workspaceHint')}
               </p>
             </label>
           )}
@@ -326,7 +327,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
               loading={creating}
               disabled={!model || contextBlocked || contextInputInvalid}
             >
-              Создать диалог
+              {translate('chat.create.submit')}
             </Button>
           </div>
         </form>
@@ -467,7 +468,7 @@ function ThreadPage({
     return (
       <div className="mx-auto max-w-3xl px-5 py-6" role="alert">
         <h1 ref={loadErrorHeadingRef} tabIndex={-1} className="text-base font-semibold outline-none">
-          {projectId ? translate('projects.chats.safeState') : 'Не удалось открыть тред'}
+          {projectId ? translate('projects.chats.safeState') : translate('chat.open.error')}
         </h1>
         <p className="mt-2 break-words text-xs text-[var(--fg-muted)]">
           {errorMessage(chat.loadError)}
@@ -490,7 +491,7 @@ function ThreadPage({
             <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate text-xs font-semibold">{chat.thread.title}</h1>
               <Badge tone={chat.thread.mode === 'agent' ? 'accent' : 'neutral'}>
-                {chat.thread.mode === 'agent' ? 'агент' : 'чат'}
+                {chat.thread.mode === 'agent' ? translate('chat.mode.agent') : translate('chat.mode.chat')}
               </Badge>
             </div>
             {chat.project && (
@@ -498,7 +499,7 @@ function ThreadPage({
                 to={paths.projects()}
                 className="mt-0.5 block max-w-full truncate text-2xs text-[var(--accent)] underline underline-offset-2"
               >
-                {translate('projects.chats.context').replace('{name}', chat.project.name)}
+                {translate('projects.chats.context', { name: chat.project.name })}
               </Link>
             )}
             <div className="mt-0.5 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
@@ -522,7 +523,7 @@ function ThreadPage({
               to={projectId ? paths.projectChat(projectId) : paths.chat()}
               className="flex h-6 items-center rounded-[5px] border border-[var(--border-strong)] px-2 text-2xs font-medium hover:bg-[var(--bg-subtle)]"
             >
-              Новый
+              {translate('chat.new')}
             </Link>
           </div>
         </header>
@@ -541,7 +542,7 @@ function ThreadPage({
           <div className="mb-2 xl:hidden">
             <details className="rounded-md border border-[var(--border)]">
               <summary className="cursor-pointer px-2 py-1 text-2xs font-medium text-[var(--fg-muted)]">
-                Контекст и скорость
+                {translate('chat.contextAndSpeed')}
               </summary>
               <div className="h-80 max-h-[45vh] overflow-hidden border-t border-[var(--border)]">
                 <ContextPanel
@@ -664,8 +665,8 @@ export function MessageTimeline({
       <div className="mx-auto max-w-3xl space-y-4">
         {messages.length === 0 && !showLive && (
           <EmptyState
-            title="Начните диалог"
-            description="Ответ появится здесь потоково, а затем сохранится в локальной SQLite-базе."
+            title={translate('chat.empty.title')}
+            description={translate('chat.empty.description')}
           />
         )}
 
@@ -700,7 +701,7 @@ export function MessageTimeline({
 
         {streamError && (
           <div role="alert">
-            <Callout tone="danger" title="Генерация прервалась">
+            <Callout tone="danger" title={translate('chat.generation.interrupted')}>
               {streamError}
             </Callout>
           </div>
@@ -751,7 +752,7 @@ export function MessageView({ message }: { message: Message }) {
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2">
         <div className="mb-1 flex items-center gap-1.5">
           <Badge tone={message.isCompaction ? 'yellow' : 'neutral'}>
-            {message.isCompaction ? 'сводка' : 'система'}
+            {message.isCompaction ? translate('chat.message.summary') : translate('chat.message.system')}
           </Badge>
           <span className="text-2xs text-[var(--fg-subtle)]">{formatTime(message.createdAt)}</span>
         </div>
@@ -773,9 +774,9 @@ export function MessageView({ message }: { message: Message }) {
         )}
       >
         <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
-          <span>{user ? 'Вы' : message.role === 'assistant' ? 'Alamo' : 'Инструмент'}</span>
+          <span>{user ? translate('chat.role.you') : message.role === 'assistant' ? PRODUCT_NAME : translate('chat.role.tool')}</span>
           <span>{formatTime(message.createdAt)}</span>
-          {message.usage?.cacheHit && <Badge tone="green">KV-кэш</Badge>}
+          {message.usage?.cacheHit && <Badge tone="green">{translate('chat.cache.badge')}</Badge>}
           {message.role === 'assistant' && (
             <Badge tone={turnStatusTone(message.turnStatus)}>
               {turnStatusLabel(message.turnStatus)}
@@ -786,7 +787,7 @@ export function MessageView({ message }: { message: Message }) {
         {message.thinking && (
           <details className="mb-2 rounded border border-[var(--border)] bg-[var(--bg-subtle)]">
             <summary className="cursor-pointer px-2 py-1 text-2xs text-[var(--fg-muted)]">
-              Рассуждение модели
+              {translate('chat.reasoning.model')}
             </summary>
             <div className="border-t border-[var(--border)] px-2 py-1.5 text-xs whitespace-pre-wrap text-[var(--fg-muted)]">
               {message.thinking}
@@ -992,7 +993,7 @@ export function StreamingMessage({
   return (
     <article className="anim-fade-up">
       <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
-        <span>Alamo</span>
+        <span>{PRODUCT_NAME}</span>
         <span role="status" aria-live="polite" aria-atomic="true">
           <Badge tone={phase === 'awaiting_approval' ? 'yellow' : 'accent'}>
             {retainedAfterFailure
@@ -1005,7 +1006,7 @@ export function StreamingMessage({
       {snapshot.thinking && (
         <details open className="mb-2 rounded border border-[var(--border)] bg-[var(--bg-subtle)]">
           <summary className="cursor-pointer px-2 py-1 text-2xs text-[var(--fg-muted)]">
-            Рассуждение модели
+            {translate('chat.reasoning.model')}
           </summary>
           <div className="border-t border-[var(--border)] px-2 py-1.5 text-xs whitespace-pre-wrap text-[var(--fg-muted)]">
             {snapshot.thinking}
@@ -1021,7 +1022,7 @@ export function StreamingMessage({
         </p>
       ) : (
         <p className="anim-pulse-soft text-xs text-[var(--fg-muted)]">
-          {phase === 'prefill' ? 'Обрабатывает контекст…' : 'Готовит ответ…'}
+          {phase === 'prefill' ? translate('chat.stream.prefill') : translate('chat.stream.preparing')}
         </p>
       )}
 
@@ -1099,12 +1100,12 @@ function Composer({
         disabled={disabled || isStreaming || decisionOpen}
         placeholder={
           disabled
-            ? 'Запустите Ollama, чтобы продолжить'
+            ? translate('chat.composer.ollamaRequired')
             : agentMode
-              ? 'Опишите задачу над проектом…'
-              : 'Сообщение…'
+              ? translate('chat.composer.agentPlaceholder')
+              : translate('chat.composer.placeholder')
         }
-        aria-label="Сообщение"
+        aria-label={translate('chat.composer.message')}
         onChange={(event) => setContent(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey) {
@@ -1122,19 +1123,19 @@ function Composer({
               checked={autoApprove}
               onChange={onAutoApprove}
               disabled={isStreaming}
-              label="Автоподтверждение"
-              hint="Записи и bash выполнятся без паузы в этом ходе."
+              label={translate('chat.composer.autoApprove')}
+              hint={translate('chat.composer.autoApproveHint')}
             />
           )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
           <span className="hidden text-2xs text-[var(--fg-subtle)] sm:inline">
-            Enter — отправить · Shift+Enter — строка
+            {translate('chat.composer.shortcut')}
           </span>
           {isStreaming ? (
             <Button variant="danger" onClick={() => void onStop()}>
-              Остановить · {phaseLabel(phase)}
+              {translate('chat.composer.stop', { phase: phaseLabel(phase) })}
             </Button>
           ) : (
             <Button
@@ -1143,7 +1144,7 @@ function Composer({
               loading={sending}
               disabled={disabled || decisionOpen || !content.trim()}
             >
-              Отправить
+              {translate('chat.composer.send')}
             </Button>
           )}
         </div>
@@ -1181,7 +1182,7 @@ function ThreadSidebar({
           to={projectId ? paths.projectChat(projectId) : paths.chat()}
           className="rounded px-1.5 py-0.5 text-2xs text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
         >
-          + Новый
+          {translate('chat.history.new')}
         </Link>
       </div>
 
@@ -1194,9 +1195,9 @@ function ThreadSidebar({
       ) : threads.error ? (
         <p className="px-1 text-2xs text-[var(--danger)]">{errorMessage(threads.error)}</p>
       ) : (threads.data?.threads.length ?? 0) === 0 ? (
-        <p className="px-1 py-3 text-2xs text-[var(--fg-subtle)]">История пока пуста.</p>
+        <p className="px-1 py-3 text-2xs text-[var(--fg-subtle)]">{translate('chat.history.empty')}</p>
       ) : (
-        <nav aria-label="История диалогов" className="space-y-0.5">
+        <nav aria-label={translate('chat.history.navigation')} className="space-y-0.5">
           {threads.data?.threads.map((thread) => (
             <Link
               key={thread.id}
@@ -1211,7 +1212,7 @@ function ThreadSidebar({
             >
               <span className="block truncate text-xs font-medium">{thread.title}</span>
               <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-[var(--fg-subtle)]">
-                <span className="truncate">{thread.mode === 'agent' ? 'агент' : thread.model}</span>
+                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : thread.model}</span>
                 <span className="shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
               </span>
             </Link>
@@ -1224,14 +1225,14 @@ function ThreadSidebar({
 
 function phaseLabel(phase: TurnPhase): string {
   const labels: Record<TurnPhase, string> = {
-    idle: 'готов',
-    sending: 'отправка',
-    prefill: 'prefill',
-    thinking: 'думает',
-    generating: 'генерация',
-    tools: 'инструменты',
-    awaiting_approval: 'ждёт решения',
-    finalizing: 'сохраняет',
+    idle: translate('chat.phase.idle'),
+    sending: translate('chat.phase.sending'),
+    prefill: translate('chat.phase.prefill'),
+    thinking: translate('chat.phase.thinking'),
+    generating: translate('chat.phase.generating'),
+    tools: translate('chat.phase.tools'),
+    awaiting_approval: translate('chat.phase.awaitingApproval'),
+    finalizing: translate('chat.phase.finalizing'),
   }
   return labels[phase]
 }

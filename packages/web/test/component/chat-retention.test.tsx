@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatRetentionProjection, ListReasoningArtifactsResponse } from '@alamo/contract'
 import { ChatRetentionInfo } from '../../src/features/chat/ChatRetentionInfo.tsx'
 import { api } from '../../src/lib/api.ts'
+import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const ACTIVITY_AT = '2026-08-11T10:00:00.000Z'
 const EXPIRES_AT = '2026-08-18T10:00:00.000Z'
@@ -83,7 +84,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  document.documentElement.lang = 'ru'
+  setActiveLocale('ru')
   vi.spyOn(api, 'getChatRetention').mockResolvedValue(TTL)
   vi.spyOn(api, 'listReasoningArtifacts').mockResolvedValue(REASONING)
 })
@@ -191,7 +192,7 @@ describe('Chat retention info', () => {
   })
 
   it('reloads durable pending leave with English fallback and no duplicate leave affordance', async () => {
-    document.documentElement.lang = 'fr'
+    setActiveLocale('en')
     vi.mocked(api.getChatRetention).mockResolvedValue({
       ...SESSION,
       sessionLeave: {
@@ -360,7 +361,7 @@ describe('Chat retention info', () => {
   })
 
   it('uses English source/fallback copy', async () => {
-    document.documentElement.lang = 'en-US'
+    setActiveLocale('en')
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="English" projectId={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'Chat info' }))
     const dialog = await screen.findByRole('dialog', { name: 'Chat retention' })

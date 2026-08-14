@@ -25,6 +25,7 @@ import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
 import { translate } from './lib/locale.ts'
 import { useLocale } from './lib/locale-context.tsx'
+import { PRODUCT_NAME } from './lib/brand.ts'
 
 export function App() {
   const route = useRoute()
@@ -147,7 +148,7 @@ function TopBar() {
     <header className="sticky top-0 z-30 flex h-11 w-full min-w-0 shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg)]/85 px-2 backdrop-blur-md sm:gap-4 sm:px-4">
       <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-4">
         <Link to={paths.launcher()} className="shrink-0 text-xs font-semibold tracking-tight">
-          Alamo
+          {PRODUCT_NAME}
         </Link>
         <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
           {tabs.map((tab) => (
