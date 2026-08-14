@@ -819,6 +819,7 @@ export function RepositoryCard({
   const requestIdRef = useRef(0)
   const inFlightRef = useRef<string | null>(null)
   const mountedRef = useRef(true)
+  const repositoryEvidenceRef = useRef(repository)
   /**
    * The last confirmed file, kept even while a context-window re-check is itself
    * in flight — reading live `state` instead would miss a second window change that
@@ -837,6 +838,10 @@ export function RepositoryCard({
   // A new search can publish a newer sample for the same case-folded repository key.
   // Never keep a confirmed target or in-flight response across that evidence boundary.
   useEffect(() => {
+    // Effects run after the first paint. Treating that initial effect as an evidence
+    // change can abort a selection activated before passive effects have flushed.
+    if (repositoryEvidenceRef.current === repository) return
+    repositoryEvidenceRef.current = repository
     requestIdRef.current += 1
     controllerRef.current?.abort('hf-selection-repository-changed')
     controllerRef.current = null
