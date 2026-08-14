@@ -17,7 +17,12 @@ type LocaleSource = Settings['localeSource'] | 'loading' | 'pending' | 'unavaila
 type LocaleContextValue = {
   locale: UiLocale
   source: LocaleSource
+  settings: Settings | null
+  settingsLoading: boolean
+  settingsError: unknown
   setLocale: (locale: UiLocale, source?: LocaleSource) => void
+  acceptSettings: (settings: Settings) => void
+  reloadSettings: () => void
 }
 
 const LocaleContext = createContext<LocaleContextValue | null>(null)
@@ -25,11 +30,23 @@ const LocaleContext = createContext<LocaleContextValue | null>(null)
 const setFallbackLocale: LocaleContextValue['setLocale'] = (locale) => {
   setActiveLocale(locale)
 }
+const ignoreSettings: LocaleContextValue['acceptSettings'] = () => undefined
+const ignoreReload: LocaleContextValue['reloadSettings'] = () => undefined
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<UiLocale>(getActiveLocale)
   const [source, setSource] = useState<LocaleSource>('loading')
+  const [settings, setSettingsState] = useState<Settings | null>(null)
+  const [settingsLoading, setSettingsLoading] = useState(true)
+  const [settingsError, setSettingsError] = useState<unknown>(null)
+  const [requestVersion, setRequestVersion] = useState(0)
   const localeIntent = useRef(0)
+  const settingsRequest = useRef<{
+    version: number
+    promise: Promise<Settings>
+    controller: AbortController
+    subscribers: number
+  } | null>(null)
 
   const setLocale = useCallback((next: UiLocale, nextSource: LocaleSource = 'user_setting') => {
     localeIntent.current += 1
@@ -38,22 +55,76 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     setSource(nextSource)
   }, [])
 
+  const acceptSettings = useCallback((next: Settings) => {
+    setSettingsState(next)
+    setSettingsError(null)
+    setSettingsLoading(false)
+    setLocale(next.locale, next.localeSource)
+  }, [setLocale])
+
+  const reloadSettings = useCallback(() => {
+    setRequestVersion((version) => version + 1)
+  }, [])
+
   useEffect(() => {
-    const controller = new AbortController()
+    let active = true
     const bootstrapIntent = localeIntent.current
-    api.getSettings(controller.signal).then((settings) => {
-      if (!controller.signal.aborted && localeIntent.current === bootstrapIntent) {
-        setLocale(settings.locale, settings.localeSource)
+    setSettingsLoading(true)
+    setSettingsError(null)
+    if (settingsRequest.current?.version !== requestVersion) {
+      const controller = new AbortController()
+      settingsRequest.current = {
+        version: requestVersion,
+        promise: api.getSettings(controller.signal),
+        controller,
+        subscribers: 0,
       }
-    }).catch(() => {
-      if (!controller.signal.aborted && localeIntent.current === bootstrapIntent) {
+    }
+    const request = settingsRequest.current
+    request.subscribers += 1
+    request.promise.then((loadedSettings) => {
+      if (!active) return
+      setSettingsState(loadedSettings)
+      setSettingsLoading(false)
+      if (localeIntent.current === bootstrapIntent) {
+        setLocale(loadedSettings.locale, loadedSettings.localeSource)
+      }
+    }).catch((error: unknown) => {
+      if (!active) return
+      setSettingsError(error)
+      setSettingsLoading(false)
+      if (localeIntent.current === bootstrapIntent) {
         setLocale('en', 'unavailable')
       }
     })
-    return () => controller.abort()
-  }, [setLocale])
+    return () => {
+      active = false
+      request.subscribers -= 1
+      queueMicrotask(() => {
+        if (request.subscribers === 0) request.controller.abort()
+      })
+    }
+  }, [requestVersion, setLocale])
 
-  const value = useMemo(() => ({ locale, source, setLocale }), [locale, source, setLocale])
+  const value = useMemo(() => ({
+    locale,
+    source,
+    settings,
+    settingsLoading,
+    settingsError,
+    setLocale,
+    acceptSettings,
+    reloadSettings,
+  }), [
+    acceptSettings,
+    locale,
+    reloadSettings,
+    setLocale,
+    settings,
+    settingsError,
+    settingsLoading,
+    source,
+  ])
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>
 }
 
@@ -62,6 +133,11 @@ export function useLocale(): LocaleContextValue {
   return context ?? {
     locale: getActiveLocale(),
     source: 'unavailable',
+    settings: null,
+    settingsLoading: false,
+    settingsError: null,
     setLocale: setFallbackLocale,
+    acceptSettings: ignoreSettings,
+    reloadSettings: ignoreReload,
   }
 }

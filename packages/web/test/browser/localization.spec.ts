@@ -88,7 +88,7 @@ test('locale preview, persistence and glossary stay exact across failure and rel
 
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toHaveCount(1)
-  await expect.poll(() => settingsReads).toBe(4)
+  await expect.poll(() => settingsReads).toBe(1)
   await expect(page).toHaveTitle('Alamo')
   await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
@@ -138,13 +138,11 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   expect(settingsBodies.map((body) => body.locale)).toEqual(['ru', 'ru'])
   expect(settingsBodies.every((body) => !Object.hasOwn(body, 'apiKey'))).toBe(true)
 
-  expect(settingsReads).toBe(4)
+  expect(settingsReads).toBe(1)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
-  // Reload aborts LocaleProvider's first StrictMode probe before it reaches the
-  // route handler; SettingsPage still performs both development probes.
-  await expect.poll(() => settingsReads).toBe(7)
+  await expect.poll(() => settingsReads).toBe(2)
   expect(settingsWrites).toBe(2)
   await expect(page.getByRole('heading', { name: 'Глоссарий', exact: true })).toHaveCount(1)
   await expect(page.locator('#settings-glossary-results article')).toHaveCount(17)
@@ -235,7 +233,7 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
   await page.goto('/attachments')
   await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(1)
   await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(1)
-  await expect.poll(() => settingsReads).toBe(2)
+  await expect.poll(() => settingsReads).toBe(1)
 
   releaseSettings()
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
@@ -243,6 +241,6 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
   await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(0)
   await expect(page.getByText('Runtime и ресурсы', { exact: true })).toHaveCount(1)
   await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(0)
-  expect(settingsReads).toBe(2)
+  expect(settingsReads).toBe(1)
   expect(forbiddenEffects).toEqual([])
 })

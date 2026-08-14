@@ -26,10 +26,17 @@ type Draft = Omit<Settings, 'webSearch'> & {
 }
 
 export function SettingsPage() {
-  const loaded = useAsync((signal) => api.getSettings(signal), [])
   const models = useAsync((signal) => api.listModels(undefined, signal), [])
   const { setPreference } = useTheme()
-  const { source: localeSource, setLocale } = useLocale()
+  const {
+    source: localeSource,
+    settings,
+    settingsLoading,
+    settingsError,
+    setLocale,
+    acceptSettings,
+    reloadSettings,
+  } = useLocale()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -39,18 +46,17 @@ export function SettingsPage() {
   const [defaultNumCtxText, setDefaultNumCtxText] = useState('')
 
   useEffect(() => {
-    if (!loaded.data) return
+    if (!settings) return
     setDraft({
-      ...loaded.data,
+      ...settings,
       webSearch: {
-        ...loaded.data.webSearch,
+        ...settings.webSearch,
         apiKey: '',
         clearApiKey: false,
       },
     })
-    setDefaultNumCtxText(String(loaded.data.defaultNumCtx))
-    setLocale(loaded.data.locale, loaded.data.localeSource)
-  }, [loaded.data, setLocale])
+    setDefaultNumCtxText(String(settings.defaultNumCtx))
+  }, [settings])
 
   useEffect(() => {
     if (saveError) saveErrorRef.current?.focus()
@@ -94,7 +100,7 @@ export function SettingsPage() {
       })
 
       setPreference(result.theme)
-      setLocale(result.locale, result.localeSource)
+      acceptSettings(result)
       setDraft({
         ...result,
         webSearch: { ...result.webSearch, apiKey: '', clearApiKey: false },
@@ -109,7 +115,7 @@ export function SettingsPage() {
     }
   }
 
-  if (loaded.loading || !draft) {
+  if (settingsLoading || (!draft && settingsError === null)) {
     return (
       <div className="mx-auto max-w-3xl space-y-3 px-5 py-5">
         <Skeleton className="h-7 w-40" />
@@ -118,19 +124,19 @@ export function SettingsPage() {
     )
   }
 
-  if (loaded.error) {
+  if (settingsError || !draft) {
     return (
       <div className="mx-auto max-w-3xl px-5 py-5">
         <Callout
           tone="danger"
           title={translate('settings.load.error')}
           action={
-            <Button size="sm" onClick={loaded.reload}>
+            <Button size="sm" onClick={reloadSettings}>
               {translate('settings.retry')}
             </Button>
           }
         >
-          {errorMessage(loaded.error)}
+          {settingsError ? errorMessage(settingsError) : translate('settings.load.error')}
         </Callout>
       </div>
     )

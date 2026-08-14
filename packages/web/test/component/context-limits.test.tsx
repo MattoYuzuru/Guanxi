@@ -6,6 +6,7 @@ import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'
 import { ModelPage } from '../../src/features/models/ModelPage.tsx'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { api } from '../../src/lib/api.ts'
+import { LocaleProvider } from '../../src/lib/locale-context.tsx'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
 
 const CUSTOM_CONTEXT = 1_048_577
@@ -93,12 +94,17 @@ describe('no-artificial-context-cap UI', () => {
       ...SETTINGS, ...patch, defaultNumCtx: patch.defaultNumCtx ?? SETTINGS.defaultNumCtx,
     }))
     installMatchMedia()
-    render(<ThemeProvider><SettingsPage /></ThemeProvider>)
+    render(
+      <LocaleProvider>
+        <ThemeProvider><SettingsPage /></ThemeProvider>
+      </LocaleProvider>,
+    )
     const input = await screen.findByLabelText('Контекст агента по умолчанию')
     expect((input as HTMLInputElement).hasAttribute('max')).toBe(false)
     fireEvent.change(input, { target: { value: String(CUSTOM_CONTEXT) } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ defaultNumCtx: CUSTOM_CONTEXT })))
+    expect(await screen.findByText('Настройки сохранены')).toBeTruthy()
     expect((input as HTMLInputElement).value).toBe(String(CUSTOM_CONTEXT))
 
     fireEvent.change(input, { target: { value: '1.5' } })

@@ -142,6 +142,25 @@ describe('locale catalogs', () => {
 })
 
 describe('Settings language and glossary', () => {
+  it('shows an initial Settings load failure and retries through the authoritative loader', async () => {
+    const getSettings = vi.spyOn(api, 'getSettings')
+      .mockRejectedValueOnce(new Error('safe settings load failure'))
+      .mockResolvedValueOnce(SETTINGS)
+    vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
+
+    setActiveLocale('en')
+    render(
+      <LocaleProvider>
+        <ThemeProvider><SettingsPage /></ThemeProvider>
+      </LocaleProvider>,
+    )
+
+    expect(await screen.findByText('safe settings load failure')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByLabelText('Язык')).toBeTruthy()
+    expect(getSettings).toHaveBeenCalledTimes(2)
+  })
+
   it('previews and persists one locale change without extra model requests or losing focus', async () => {
     const getSettings = vi.spyOn(api, 'getSettings').mockResolvedValue(SETTINGS)
     const listModels = vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
@@ -172,7 +191,7 @@ describe('Settings language and glossary', () => {
     await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1))
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ locale: 'en' }))
     expect(await screen.findByText('Settings saved')).toBeTruthy()
-    expect(getSettings).toHaveBeenCalledTimes(2)
+    expect(getSettings).toHaveBeenCalledTimes(1)
     expect(listModels).toHaveBeenCalledTimes(1)
   })
 
