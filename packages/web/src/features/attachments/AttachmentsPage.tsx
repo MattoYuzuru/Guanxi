@@ -17,6 +17,7 @@ import { Badge, Button, Callout, EmptyState, Skeleton, cx } from '../../componen
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatBytes, formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 
 const ATTACHMENT_LIST_LIMIT = 50
@@ -169,6 +170,7 @@ function AttachmentScopePanel({
   projects: Project[]
   policy: ArtifactTransferPolicy | null
 }) {
+  const { locale } = useLocale()
   const [attachments, setAttachments] = useState<Attachment[] | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -191,7 +193,7 @@ function AttachmentScopePanel({
 
   const scopeName = useMemo(() => scope.scope === 'project'
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
-    : translate('attachments.scope.projectless'), [projects, scope])
+    : translate('attachments.scope.projectless'), [locale, projects, scope])
 
   useEffect(() => {
     const controller = new AbortController()

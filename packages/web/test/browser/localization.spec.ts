@@ -262,12 +262,15 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
 
   await page.goto('/attachments')
   await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Without a Project', exact: true })).toHaveCount(1)
   await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(1)
   await expect.poll(() => settingsReads).toBe(1)
 
   releaseSettings()
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
   await expect(page.getByRole('heading', { name: 'Вложения', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Без проекта', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Without a Project', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(0)
   await expect(page.getByText('Runtime и ресурсы', { exact: true })).toHaveCount(1)
   await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(0)

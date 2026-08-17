@@ -1,4 +1,6 @@
-import { resolve } from 'node:path'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 // The inventory is an executable repository guard; keeping it in plain ESM also
 // lets maintainers run it without adding a browser build dependency.
@@ -15,12 +17,14 @@ describe('localized Web copy inventory', () => {
       export function Fixture() {
         const copy = 'Visible identifier copy'
         const accessible = 'Identifier accessible name'
+        const choice = 'Identifier visible choice'
         return <section title="Visible title">
           Visible text
           <button aria-label={accessible}>{copy}</button>
           <button aria-label="Accessible name" />
           <input placeholder="Search here" />
           <Select options={[{ value: 'technical-id', label: 'Hardcoded visible choice' }]} />
+          <Select options={[{ value: 'second-id', label: choice }]} />
           <Widget config={{ title: 'Hardcoded visible title' }} />
         </section>
       }
@@ -33,6 +37,7 @@ describe('localized Web copy inventory', () => {
       'jsx-expression',
       'jsx-text',
       'property:label',
+      'property:label',
       'property:title',
     ])
   })
@@ -43,11 +48,29 @@ describe('localized Web copy inventory', () => {
         const copy = 'Hardcoded duration label'
         return true ? copy : 'сек'
       }
+      export const formatArrow = () => 'Hardcoded arrow label'
     `)
     expect(violations.map((item: { value: string }) => item.value).sort()).toEqual([
+      'Hardcoded arrow label',
       'Hardcoded duration label',
       'сек',
     ])
+  })
+
+  it('rejects user-facing copy imported from a TS constant', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'alamo-localized-copy-'))
+    try {
+      await writeFile(join(directory, 'copy.ts'), "export const helperCopy = 'Imported visible copy'\n")
+      await writeFile(join(directory, 'Fixture.tsx'), `
+        import { helperCopy } from './copy.ts'
+        export function Fixture() { return <button>{helperCopy}</button> }
+      `)
+      expect(scanLocalizedWebCopy(directory)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'jsx-expression', value: 'Imported visible copy' }),
+      ]))
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('keeps current user-facing TSX copy behind locale keys', () => {

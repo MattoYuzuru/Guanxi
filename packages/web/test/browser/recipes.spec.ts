@@ -168,7 +168,7 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await expect(page.getByRole('status', { name: 'Загружаем сценарии' })).toBeVisible()
   const loadError = page.getByRole('heading', { name: 'Не удалось загрузить сценарии' })
   await expect(loadError).toBeFocused()
-  await expect(page.getByText('safe Recipe browser failure')).toHaveCount(1)
+  await expect(page.getByText('Не удалось сохранить запрос в локальное хранилище.')).toHaveCount(1)
   await page.getByRole('button', { name: 'Повторить', exact: true }).press('Enter')
   await expect(page.getByText('В этой области нет сценариев')).toHaveCount(1)
   await expect(page.getByText('Основа снимка в очереди; выполнение не подключено')).toHaveCount(1)
@@ -210,7 +210,9 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
     button.click()
   })
   await expect.poll(() => snapshotCalls).toBe(1)
-  const snapshotError = page.getByRole('alert').filter({ hasText: 'safe Recipe snapshot browser failure' })
+  const snapshotError = page.getByRole('alert').filter({
+    hasText: 'Не удалось сохранить запрос в локальное хранилище.',
+  })
   await expect(snapshotError).toBeFocused()
   const errorOutline = await snapshotError.evaluate((element) => ({
     style: getComputedStyle(element).outlineStyle,

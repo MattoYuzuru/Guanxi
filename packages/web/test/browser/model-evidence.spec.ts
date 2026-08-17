@@ -198,7 +198,7 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
   await page.getByRole('dialog', { name: 'Запустить новую проверку?' })
     .getByRole('button', { name: 'Запустить новую проверку' }).press('Enter')
   await expect(page.getByText('Ошибка запроса')).toBeVisible()
-  await expect(page.getByText('The completion probe could not be completed safely')).toBeVisible()
+  await expect(page.getByText('Локальное приложение не смогло завершить запрос.')).toBeVisible()
   expect(probeRequests[2]?.force).toBe(true)
 
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })

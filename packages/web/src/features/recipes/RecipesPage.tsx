@@ -16,6 +16,7 @@ import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/u
 import { ApiRequestError, api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 
 type Scope = { scope: 'projectless' } | { scope: 'project'; projectId: string }
@@ -178,6 +179,7 @@ function RecipeScopePanel({
   projects: Project[]
   initialSnapshotReference: SnapshotReference | null
 }) {
+  const { locale } = useLocale()
   const [recipes, setRecipes] = useState<Recipe[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -195,7 +197,7 @@ function RecipeScopePanel({
   const createRef = useRef<HTMLButtonElement>(null)
   const scopeName = useMemo(() => scope.scope === 'project'
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
-    : translate('recipes.scope.projectless'), [projects, scope])
+    : translate('recipes.scope.projectless'), [locale, projects, scope])
 
   useEffect(() => {
     const controller = new AbortController()

@@ -17,6 +17,7 @@ import {
 import { Button, Input } from '../../components/ui.tsx'
 import { errorMessage } from '../../lib/api.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
+import { useLocale } from '../../lib/locale-context.tsx'
 import { ProjectIcon, projectColorStyle } from './ProjectIcon.tsx'
 
 const PAGE_SIZE = 12
@@ -48,6 +49,7 @@ export function ProjectPresentationPicker({
   onClose,
   onSave,
 }: PickerProps) {
+  const { locale } = useLocale()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<ProjectIconCategory | 'all'>('all')
   const [page, setPage] = useState(0)
@@ -71,7 +73,7 @@ export function ProjectPresentationPicker({
         value.toLocaleLowerCase().includes(normalized),
       )
     })
-  }, [category, query])
+  }, [category, locale, query])
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount - 1)
   const pageIcons = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)

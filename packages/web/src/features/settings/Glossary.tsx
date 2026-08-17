@@ -42,7 +42,9 @@ export function Glossary({ entries = glossaryEntries }: { entries?: readonly Glo
       <div id="settings-glossary-results" className="mt-2 space-y-2">
         {matches.length === 0 ? (
           <p className="rounded-lg border border-[var(--border)] p-3 text-xs text-[var(--fg-muted)]">
-            {translate('settings.glossary.empty')}
+            {translate(entries.length === 0 && query.trim() === ''
+              ? 'settings.glossary.emptyCatalog'
+              : 'settings.glossary.empty')}
           </p>
         ) : matches.map((entry) => {
           const copy = entry[locale]

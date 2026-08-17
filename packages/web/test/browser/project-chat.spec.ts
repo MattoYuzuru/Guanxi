@@ -202,7 +202,7 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
   await expect.poll(() => createCalls).toBe(1)
-  const createError = page.getByText('safe create failure')
+  const createError = page.getByText('Локальное приложение не смогло завершить запрос.')
   await expect(createError).toBeVisible()
   await expect(createError.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()
   await create.press('Enter')
@@ -235,7 +235,7 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
   await expect(page.getByText(/не соответствует контракту/u)).toHaveCount(1)
   mismatch = 'typed'
   await page.getByRole('button', { name: 'Повторить', exact: true }).click()
-  await expect(page.getByText('Chat does not belong to this Project')).toHaveCount(1)
+  await expect(page.getByText('Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.')).toHaveCount(1)
   expect(createCalls).toBe(2)
   expect(workspaceReads).toBe(0)
   expect(unexpectedMutations).toEqual([])

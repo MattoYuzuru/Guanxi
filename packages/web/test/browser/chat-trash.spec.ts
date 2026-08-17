@@ -214,7 +214,7 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
 
   deletionRefreshArmed = true
   await deletionRefresh.press('Enter')
-  const deletionFailure = projectlessTrash.getByText('safe deletion refresh failure')
+  const deletionFailure = projectlessTrash.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(deletionFailure).toBeVisible()
   await expect(deletionFailure.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()
   await expect(projectlessTrash.getByText(sessionElapsed.title)).toHaveCount(1)
@@ -227,7 +227,7 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   const restore = projectTrash.getByRole('button', { name: 'Восстановить чат' })
   await restore.press('Enter')
   await expect.poll(() => restoreCalls).toBe(1)
-  const error = projectTrash.getByText('safe Restore failure')
+  const error = projectTrash.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(error).toBeVisible()
   await expect(error.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()
   await projectTrash.getByRole('button', { name: 'Повторить восстановление' }).press('Enter')

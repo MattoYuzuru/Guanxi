@@ -218,7 +218,7 @@ test('Chat retention survives reload and contains repeated save, error and narro
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
   await expect.poll(() => retentionPatches).toBe(1)
-  const error = dialog.getByText('safe retention failure')
+  const error = dialog.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(error).toBeVisible()
   await expect(error.locator('xpath=ancestor::*[@role="alert"][1]')).toBeFocused()
 
@@ -414,7 +414,7 @@ test('explicit Session leave confirms, retries exact scope and records pending M
   await dialog.getByRole('button', { name: 'Завершить сессию' }).press('Enter')
   await dialog.getByRole('button', { name: 'Подтвердить выход' }).press('Enter')
   await expect.poll(() => leaveCalls).toBe(1)
-  const error = dialog.getByText('safe Session leave failure')
+  const error = dialog.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(error).toBeVisible()
   await expect(error.locator('xpath=ancestor::*[@role="alert"][1]')).toBeFocused()
   await dialog.getByRole('button', { name: 'Повторить retention' }).press('Enter')

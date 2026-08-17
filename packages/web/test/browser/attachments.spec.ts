@@ -159,7 +159,7 @@ test('attachment retry/reload stays exact, scoped, accessible and download-once'
   await page.goto('/attachments')
   const listError = page.getByRole('heading', { name: 'Не удалось загрузить вложения' })
   await expect(listError).toBeFocused()
-  await expect(page.getByText('safe attachment browser failure')).toHaveCount(1)
+  await expect(page.getByText('Не удалось сохранить запрос в локальное хранилище.')).toHaveCount(1)
   await page.getByRole('button', { name: 'Повторить', exact: true }).press('Enter')
   await expect(page.getByText('В этой области нет вложений')).toHaveCount(1)
   await expect(page.getByText(/Стандартная storage policy сервера/u)).toHaveCount(1)

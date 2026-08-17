@@ -14,6 +14,7 @@ import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/u
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 
 type ScopeSelection = { scope: 'projectless' } | { scope: 'project'; projectId: string }
@@ -103,6 +104,7 @@ function QuickRunScopePanel({
   scope: ScopeSelection
   projects: Project[]
 }) {
+  const { locale } = useLocale()
   const [quickRuns, setQuickRuns] = useState<QuickRun[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -122,7 +124,7 @@ function QuickRunScopePanel({
 
   const scopeName = useMemo(() => scope.scope === 'project'
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
-    : translate('quickRuns.scope.projectless'), [projects, scope])
+    : translate('quickRuns.scope.projectless'), [locale, projects, scope])
 
   useEffect(() => {
     const controller = new AbortController()

@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Settings } from '@alamo/contract'
+import type { CatalogModel, Settings } from '@alamo/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { Glossary } from '../../src/features/settings/Glossary.tsx'
 import { Markdown } from '../../src/components/Markdown.tsx'
+import { ModelCard } from '../../src/features/models/ModelCard.tsx'
 import { glossaryEntries, searchGlossary } from '../../src/lib/glossary.ts'
 import {
   localeCatalogs,
@@ -39,6 +40,31 @@ const SETTINGS: Settings = {
   webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
   theme: 'system',
 }
+
+const MEMOIZED_CATALOG_MODEL = {
+  name: 'cloud-fixture',
+  description: 'provider-owned fixture description',
+  variants: [],
+  contextLength: null,
+  capabilities: [],
+  vramBytes: null,
+  isCloud: true,
+  requiredPlan: null,
+  installed: false,
+  fit: {
+    state: 'unknown',
+    source: 'catalog_claim',
+    contextLength: 8_192,
+    verdict: null,
+    reason: 'size_unknown',
+  },
+  installedProjection: 'variant_aggregate_compatibility',
+  fitProjection: 'largest_variant_compatibility',
+  source: 'bundled',
+  freshness: 'fallback',
+  sourceObservedAt: '2026-08-14T16:00:00.000Z',
+  sourceFetchedAt: null,
+} as unknown as CatalogModel
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -164,13 +190,17 @@ describe('locale catalogs', () => {
     render(
       <LocaleProvider>
         <Markdown source={'```\ncopy me\n```'} />
+        <ModelCard data={{ kind: 'catalog', model: MEMOIZED_CATALOG_MODEL }} />
       </LocaleProvider>,
     )
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()
+    expect(screen.getByTitle('Runs in Ollama Cloud and does not consume local memory')).toBeTruthy()
 
     resolveSettings(SETTINGS)
     expect(await screen.findByRole('button', { name: 'Копировать код' })).toBeTruthy()
+    expect(await screen.findByTitle('Считается в облаке Ollama, локальная память не тратится')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Copy code' })).toBeNull()
+    expect(screen.queryByTitle('Runs in Ollama Cloud and does not consume local memory')).toBeNull()
   })
 })
 
@@ -271,10 +301,15 @@ describe('Settings language and glossary', () => {
         <ThemeProvider><SettingsPage /></ThemeProvider>
       </LocaleProvider>,
     )
-    await screen.findByLabelText('Language')
+    const language = await screen.findByLabelText('Language')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Could not connect to the Alamo server')).toBeTruthy()
     expect(screen.queryByText('Settings saved')).toBeNull()
+    fireEvent.change(language, { target: { value: 'ru' } })
+    expect(await screen.findByText('Не удалось соединиться с сервером Alamo')).toBeTruthy()
+    expect(screen.queryByText('Could not connect to the Alamo server')).toBeNull()
+    fireEvent.change(language, { target: { value: 'en' } })
+    expect(await screen.findByText('Could not connect to the Alamo server')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Settings saved')).toBeTruthy()
     expect(updateSettings).toHaveBeenCalledTimes(2)
@@ -288,6 +323,11 @@ describe('Settings language and glossary', () => {
       const search = screen.getByRole('textbox', {
         name: locale === 'en' ? 'Search glossary' : 'Поиск по глоссарию',
       })
+      expect(screen.getByText(
+        locale === 'en'
+          ? 'No glossary entries are available.'
+          : 'В глоссарии пока нет статей.',
+      )).toBeTruthy()
       search.focus()
       fireEvent.change(search, { target: { value: 'missing' } })
       expect(document.activeElement).toBe(search)

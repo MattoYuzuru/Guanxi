@@ -25,6 +25,10 @@ type Draft = Omit<Settings, 'webSearch'> & {
   webSearch: Settings['webSearch'] & { apiKey: string; clearApiKey: boolean }
 }
 
+type SaveFailure =
+  | { kind: 'invalid_context' }
+  | { kind: 'request'; error: unknown }
+
 export function SettingsPage() {
   const models = useAsync((signal) => api.listModels(undefined, signal), [])
   const { setPreference } = useTheme()
@@ -40,7 +44,7 @@ export function SettingsPage() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<SaveFailure | null>(null)
   const saveErrorRef = useRef<HTMLDivElement>(null)
   const savingRef = useRef(false)
   const [defaultNumCtxText, setDefaultNumCtxText] = useState('')
@@ -67,7 +71,7 @@ export function SettingsPage() {
     if (!draft || savingRef.current) return
     const defaultNumCtx = parsePositiveSafeInteger(defaultNumCtxText)
     if (defaultNumCtx === null) {
-      setSaveError(translate('context.validation.positiveSafeInteger'))
+      setSaveError({ kind: 'invalid_context' })
       return
     }
 
@@ -108,7 +112,7 @@ export function SettingsPage() {
       setDefaultNumCtxText(String(result.defaultNumCtx))
       setSaved(true)
     } catch (error) {
-      setSaveError(errorMessage(error))
+      setSaveError({ kind: 'request', error })
     } finally {
       savingRef.current = false
       setSaving(false)
@@ -161,7 +165,9 @@ export function SettingsPage() {
       {saveError && (
         <div ref={saveErrorRef} className="mb-3" role="alert" tabIndex={-1}>
           <Callout tone="danger" title={translate('settings.save.error')}>
-            {saveError}
+            {saveError.kind === 'invalid_context'
+              ? translate('context.validation.positiveSafeInteger')
+              : errorMessage(saveError.error)}
           </Callout>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import ts from 'typescript'
 
 const USER_FACING_ATTRIBUTES = new Set([
@@ -28,6 +28,7 @@ const LETTER = /\p{L}/u
 // These are exact protocol/provider identifiers or units, not natural-language
 // copy. Counts make every exception stale-checked instead of silently broad.
 const TECHNICAL_EXCEPTIONS = [
+  { file: 'App.tsx', value: 'Alamo', count: 1, reason: 'central product brand' },
   { file: 'features/agent/ToolCallCard.tsx', value: 'mcp', count: 1, reason: 'protocol acronym badge' },
   { file: 'features/models/CompletionProbe.tsx', value: ':  · :  · : Ollama  · :  · : v', count: 1, reason: 'provider and evidence-version identifiers' },
   { file: 'features/models/HuggingFaceDiscovery.tsx', value: 'v', count: 1, reason: 'API version prefix' },
@@ -46,6 +47,7 @@ const TECHNICAL_EXCEPTIONS = [
   { file: 'features/chat/useChat.ts', value: 'finalizing', count: 1, reason: 'runtime phase identifier' },
   { file: 'features/chat/useChat.ts', value: 'sending', count: 1, reason: 'runtime phase identifier' },
   { file: 'features/chat/useChat.ts', value: 'prefill', count: 1, reason: 'runtime phase identifier' },
+  { file: 'features/chat/ChatPage.tsx', value: 'Alamo', count: 2, reason: 'central product brand' },
   { file: 'lib/api.ts', value: 'unknown', count: 1, reason: 'API error sentinel' },
 ]
 
@@ -95,7 +97,7 @@ function resolveIdentifierInitializer(identifier) {
   return candidates[0]?.node.initializer ?? null
 }
 
-function collectRenderedExpression(node, report, seen = new Set()) {
+function collectRenderedExpression(node, report, seen = new Set(), externalValues = new Map()) {
   while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) node = node.expression
   if (seen.has(node)) return
   seen.add(node)
@@ -111,26 +113,34 @@ function collectRenderedExpression(node, report, seen = new Set()) {
   }
   if (ts.isIdentifier(node)) {
     const initializer = resolveIdentifierInitializer(node)
-    if (initializer) collectRenderedExpression(initializer, report, seen)
+    if (initializer) {
+      collectRenderedExpression(initializer, report, seen, externalValues)
+    } else {
+      for (const copy of externalValues.get(node.text) ?? []) report(node, copy)
+    }
     return
   }
   if (ts.isConditionalExpression(node)) {
-    collectRenderedExpression(node.whenTrue, report, seen)
-    collectRenderedExpression(node.whenFalse, report, seen)
+    collectRenderedExpression(node.whenTrue, report, seen, externalValues)
+    collectRenderedExpression(node.whenFalse, report, seen, externalValues)
     return
   }
   if (ts.isBinaryExpression(node)) {
     if ([ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken]
       .includes(node.operatorToken.kind)) {
-      collectRenderedExpression(node.right, report, seen)
+      collectRenderedExpression(node.right, report, seen, externalValues)
     } else if (node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-      collectRenderedExpression(node.left, report, seen)
-      collectRenderedExpression(node.right, report, seen)
+      collectRenderedExpression(node.left, report, seen, externalValues)
+      collectRenderedExpression(node.right, report, seen, externalValues)
     }
   }
 }
 
-export function collectLocalizedCopyViolations(sourceText, fileName = 'fixture.tsx') {
+export function collectLocalizedCopyViolations(
+  sourceText,
+  fileName = 'fixture.tsx',
+  externalValues = new Map(),
+) {
   const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const violations = []
   const report = (node, value, kind = 'expression') => {
@@ -174,7 +184,7 @@ export function collectLocalizedCopyViolations(sourceText, fileName = 'fixture.t
         if (ts.isJsxExpression(node.initializer) && node.initializer.expression) {
           collectRenderedExpression(node.initializer.expression, (literal, copy) => {
             report(literal, copy, `attribute:${name}`)
-          })
+          }, new Set(), externalValues)
           visitRenderedElements(node.initializer.expression)
         }
       }
@@ -190,17 +200,23 @@ export function collectLocalizedCopyViolations(sourceText, fileName = 'fixture.t
     } else if (ts.isPropertyAssignment(node)) {
       const name = node.name.getText(source).replace(/^['"]|['"]$/gu, '')
       if (USER_FACING_PROPERTIES.has(name)) {
-        const value = literalValue(node.initializer)
-        if (value !== null && LETTER.test(value) && !/^[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+$/u.test(value)) {
-          report(node.initializer, value, `property:${name}`)
-        }
+        collectRenderedExpression(node.initializer, (literal, copy) => {
+          if (!/^[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+$/u.test(copy)) {
+            report(literal, copy, `property:${name}`)
+          }
+        }, new Set(), externalValues)
       }
     } else if (
       ts.isJsxExpression(node)
       && node.expression
       && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))
     ) {
-      collectRenderedExpression(node.expression, (literal, copy) => report(literal, copy, 'jsx-expression'))
+      collectRenderedExpression(
+        node.expression,
+        (literal, copy) => report(literal, copy, 'jsx-expression'),
+        new Set(),
+        externalValues,
+      )
       visitRenderedElements(node.expression)
       return
     }
@@ -231,6 +247,9 @@ export function collectDynamicCopyViolations(sourceText, fileName = 'lib/format.
     if (ts.isReturnStatement(node) && node.expression) {
       collectRenderedExpression(node.expression, report)
     }
+    if (ts.isArrowFunction(node) && !ts.isBlock(node.body)) {
+      collectRenderedExpression(node.body, report)
+    }
     ts.forEachChild(node, visit)
   }
   visit(source)
@@ -245,11 +264,65 @@ function sourceFiles(directory) {
   })
 }
 
+function exportedCopyIndex(files) {
+  const index = new Map()
+  for (const path of files.filter((candidate) => candidate.endsWith('.ts'))) {
+    const sourceText = readFileSync(path, 'utf8')
+    const source = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const exports = new Map()
+    for (const statement of source.statements) {
+      if (!ts.isVariableStatement(statement)) continue
+      if (!statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue
+        const values = []
+        collectRenderedExpression(declaration.initializer, (_node, value) => values.push(value))
+        if (values.length > 0) exports.set(declaration.name.text, values)
+      }
+    }
+    if (exports.size > 0) index.set(path, exports)
+  }
+  return index
+}
+
+function importedCopyValues(sourceText, filePath, exportIndex) {
+  const source = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const values = new Map()
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
+    const specifier = statement.moduleSpecifier.text
+    if (!specifier.startsWith('.') || !statement.importClause?.namedBindings) continue
+    if (!ts.isNamedImports(statement.importClause.namedBindings)) continue
+    const target = resolve(dirname(filePath), specifier)
+    const candidates = [
+      target,
+      target.replace(/\.js$/u, '.ts'),
+      target.replace(/\.js$/u, '.tsx'),
+      `${target}.ts`,
+      `${target}.tsx`,
+    ]
+    const exported = candidates.map((candidate) => exportIndex.get(candidate)).find(Boolean)
+    if (!exported) continue
+    for (const binding of statement.importClause.namedBindings.elements) {
+      const importedName = binding.propertyName?.text ?? binding.name.text
+      const copies = exported.get(importedName)
+      if (copies) values.set(binding.name.text, copies)
+    }
+  }
+  return values
+}
+
 export function scanLocalizedWebCopy(sourceDirectory) {
   const files = sourceFiles(sourceDirectory)
+  const exportIndex = exportedCopyIndex(files)
   const violations = files.filter((path) => path.endsWith('.tsx')).flatMap((path) => {
     const name = relative(sourceDirectory, path)
-    return collectLocalizedCopyViolations(readFileSync(path, 'utf8'), name)
+    const sourceText = readFileSync(path, 'utf8')
+    return collectLocalizedCopyViolations(
+      sourceText,
+      name,
+      importedCopyValues(sourceText, path, exportIndex),
+    )
   })
   // Locale catalogs and the bilingual glossary are the localization boundary,
   // not consumers bypassing it. Every other non-JSX TS display return is
