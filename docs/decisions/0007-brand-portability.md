@@ -4,6 +4,10 @@
 
 **Дата:** 2026-08-02
 
+**Уточнено:** D-029 принимает `alamo` как target canonical command и требует
+полной замены visible brand при будущем rename; старые identifiers остаются
+только как compatibility migration layer.
+
 ## Context
 
 `Alamo` — рабочее имя. Сейчас оно встречается в UI, packages, CLI executable,

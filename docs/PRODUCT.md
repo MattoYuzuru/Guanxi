@@ -2,7 +2,7 @@
 
 **Статус:** mixed — direction/ADRs accepted, requirements not implemented
 
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 **Горизонт:** от стабилизации alpha до локальной model workbench platform
 
 Принятые ответы владельца проекта:
@@ -178,18 +178,18 @@ experience, но не определяет всю предметную моде�
 
 | ID       | Pri | Требование                                                                                              |
 | -------- | --: | ------------------------------------------------------------------------------------------------------- |
-| WORK-001 |  P1 | Quick Run использует явную retention policy и не требует отдельной кнопки Save.                         |
+| WORK-001 |  P1 | Quick Run использует явную retention policy; Session заканчивает successful Job или команда Finish.     |
 | WORK-002 |  P1 | Chat хранит multi-turn history, typed artifacts и Markdown.                                             |
-| WORK-003 |  P1 | Project группирует Chats, Jobs, Recipes, files, vocabulary и permissions.                               |
+| WORK-003 |  P1 | Project группирует work и задаёт defaults для routing/Recipe, retention, context, export и bindings.    |
 | WORK-004 |  P1 | Recipe хранит operation, routing, defaults, prompt, schema и persistence policy.                        |
 | WORK-005 |  P1 | Artifact имеет type, provenance, storage reference, preview и export actions.                           |
-| WORK-006 |  P1 | Chats можно искать, переименовывать, архивировать и группировать внутри Project.                        |
+| WORK-006 |  P1 | Project Chat ищется по user/final-assistant text и имеет active/archive разделы с unarchive.            |
 | WORK-007 |  P2 | Context compaction создаёт видимый checkpoint/summary и не стирает исходную историю.                    |
 | WORK-008 |  P1 | Chat Info даёт трёхпозиционный retention control: Keep, 7 days, Session.                                |
 | WORK-009 |  P1 | Maintenance Job применяет expiry при startup и периодически, используя Trash/grace перед blob deletion. |
 | WORK-010 |  P1 | Thinking хранится отдельным diagnostic Artifact 7 дней и удаляется независимо от final answer.          |
 | WORK-011 |  P2 | Project имеет редактируемые name, searchable icon и accessible color.                                   |
-| WORK-012 |  P1 | Любой новый Chat, включая Project Chat, получает rolling 7-day retention от последней user activity.    |
+| WORK-012 |  P1 | Новый Chat получает global rolling 7-day default либо explicit Project retention default.               |
 | WORK-013 |  P1 | Session Chat после ухода хранится в Trash 24 часа для восстановления.                                   |
 
 ### Workbench и modalities
@@ -232,7 +232,7 @@ experience, но не определяет всю предметную моде�
 | CLI-001 |  P1 | Существуют scriptable `start/status/stop/open` с exit codes и JSON output.                            |
 | CLI-002 |  P1 | Alamo service, Ollama service и loaded model — разные объекты управления.                             |
 | CLI-003 |  P2 | No-args TUI вызывает те же команды и показывает текущий service state.                                |
-| CLI-004 |  P2 | CLI поддерживает models, jobs, chat, agent и config без зависимости от browser.                       |
+| CLI-004 |  P2 | Phase 4 CLI поддерживает models, jobs, chat и config; agent добавляется в Phase 5.                    |
 | CLI-005 |  P2 | UI Exit завершает только Alamo service; остановка внешнего Ollama требует отдельного подтверждения.   |
 | CLI-006 |  P1 | Background service переживает закрытие terminal и поддерживает opt-in login autostart на macOS/Linux. |
 | CLI-007 |  P1 | Web/CLI/TUI используют одну settings store и controlled restart для restart-sensitive changes.        |
@@ -241,15 +241,15 @@ experience, но не определяет всю предметную моде�
 
 ### Localization, glossary и notifications
 
-| ID       | Pri | Требование                                                                                       |
-| -------- | --: | ------------------------------------------------------------------------------------------------ |
-| I18N-001 |  P1 | English является primary locale; Russian — curated human-authored locale.                        |
-| I18N-002 |  P1 | User-facing strings не hardcoded и имеют locale key/fallback.                                    |
-| I18N-003 |  P1 | Settings содержит searchable glossary с простыми примерами.                                      |
-| NOT-001  |  P1 | Terminal Job создаёт in-app notification и badge со ссылкой на Job.                              |
-| NOT-002  |  P2 | Optional short sound срабатывает по global/per-Chat policy.                                      |
-| NOT-003  |  P2 | Policy поддерживает Off, When background и Always.                                               |
-| NOT-004  |  P2 | Notification не раскрывает prompt/result и уважает browser permission/accessibility preferences. |
+| ID       | Pri | Требование                                                                                           |
+| -------- | --: | ---------------------------------------------------------------------------------------------------- |
+| I18N-001 |  P1 | English является primary locale; Russian — curated human-authored locale.                            |
+| I18N-002 |  P1 | User-facing strings не hardcoded и имеют locale key/fallback.                                        |
+| I18N-003 |  P1 | Settings содержит searchable glossary с простыми примерами.                                          |
+| NOT-001  |  P1 | Каждая новая terminal Job создаёт exact one durable content-free notification; old Jobs не backfill. |
+| NOT-002  |  P2 | Web даёт at-most-once short sound; service/CLI/TUI остаются silent.                                  |
+| NOT-003  |  P2 | Default When background; Chat override — inherit, Off, When background или Always.                   |
+| NOT-004  |  P2 | Notification не раскрывает prompt/result и уважает browser permission/accessibility preferences.     |
 
 **Current P3-P:** I18N-001..003 реализованы для Web. Settings хранит exact
 `en | ru` в server-owned store, English служит source/fallback, curated Russian
@@ -257,6 +257,11 @@ experience, но не определяет всю предметную моде�
 с определениями и примерами. CLI/TUI locale и contextual Glossary help не входят
 в этот current subset. Следующий slice P3-Q начинает только visual NOT-001;
 sound/policy/permission NOT-002..004 остаются target Phase 4.
+
+Accepted target уточнён решениями
+[2026-08-18](decisions/2026-08-18-phase-3-4-decisions.md): Project defaults,
+Quick Run Session, search/archive, service/CLI и notification delivery. Эти
+решения ещё не означают current implementation.
 
 ### Platform support
 
@@ -326,17 +331,25 @@ And maintenance показывает exact expiry до удаления
 
 ```gherkin
 Given пользователь создаёт Chat внутри или вне Project
-When пользователь явно не выбрал Keep или Session
-Then Chat получает rolling retention 7 days
+When пользователь явно не выбрал policy и Project не задаёт свой default
+Then Chat получает global rolling retention 7 days
 And expiry продлевается только пользовательской активностью
+```
+
+```gherkin
+Given Project задаёт retention default Session
+When пользователь создаёт новый Project Chat без explicit override
+Then новый Chat получает Session
+And существующие Chats не изменяются при последующей смене Project default
 ```
 
 ```gherkin
 Given пользователь создаёт Quick Run metadata внутри или вне Project
 When пользователь не выбирал другую retention policy
-Then Quick Run получает тот же default 7 days без отдельной кнопки Save
+Then Quick Run получает Project default либо global 7 days без кнопки Save
 And текущий foundation не запускает model, Job или cleanup
-And Session completion остаётся not implemented до отдельного решения
+And target Session заканчивается successful Job либо explicit Finish
+And failed, cancelled или interrupted Job не заканчивает Session автоматически
 ```
 
 ```gherkin
@@ -356,6 +369,7 @@ When Job становится terminal
 Then Runtime Bar и Chat получают badge
 And разрешённый короткий sound воспроизводится один раз
 And notification не содержит private prompt или answer
+And старая terminal Job до cutover не создаёт backfill notification
 ```
 
 ## Зависимости и границы решения

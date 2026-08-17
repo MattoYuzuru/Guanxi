@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 
 ## Current package design
 
@@ -1103,9 +1103,13 @@ type Notification = {
 };
 ```
 
-Client-local delivery state отдельно отмечает visual/sound channel. Повторный
-SSE/reload не воспроизводит sound второй раз. Notification payload не содержит
-prompt, reasoning или output content.
+Row создаётся для каждой новой terminal Job независимо от policy; old terminal
+Jobs не backfill-ятся. Unique owner — Job ID. `readAt` глобален, а durable
+at-most-once claim хранится отдельно для каждого delivery channel. `off`
+сохраняет row, но не даёт badge/announcement/sound. Повторный SSE/reload не
+воспроизводит sound второй раз. Notification payload не содержит prompt,
+reasoning или output content. См.
+[ADR-0014](../decisions/0014-notification-persistence-and-delivery.md).
 
 ## Persistence status
 
@@ -1253,23 +1257,28 @@ alamo open
 alamo models list|pull|load|unload
 alamo jobs list|show|cancel|events
 alamo chat
-alamo agent
 alamo config get|set
 alamo service autostart enable|disable|status
 ```
 
-No-args TUI вызывает их через shared client library. First-party `alamo agent`
-создаёт Agent Run через тот же Job API и поддерживает slash command discovery.
-Application service state определяется health/control API + process identity, не
-только открытым портом. Stop Alamo не останавливает external Ollama по default.
+No-args `alamo` attach/start-ит default service и открывает TUI через shared
+client library. `alamo-ui` остаётся compatibility alias. First-party
+`alamo agent` зарезервирован и отвечает unsupported до Phase 5. Application
+service state определяется advisory lock + authenticated exact-instance health,
+не PID и не только открытым портом. Stop Alamo не останавливает external Ollama.
 
 Service control и settings:
 
 - Web/CLI/TUI читают одну canonical store;
 - restart-sensitive patch возвращает preview;
-- controlled restart перестаёт принимать Jobs, checkpoint/cancel по policy,
-  закрывает DB, перезапускает process и проходит health verification;
-- macOS/Linux autostart adapters opt-in и имеют uninstall/rollback.
+- stop/restart ставит `stopping`, закрывает admission и ждёт healthy active Job
+  до 30 секунд; unhealthy/timeout/force сохраняет `interrupted`, queued Jobs
+  остаются queued;
+- controlled restart применяет patch, закрывает DB, ждёт health до 15 секунд и
+  при failure делает atomic rollback + одну попытку old config;
+- macOS LaunchAgent и Ubuntu/Fedora `systemd --user` adapters opt-in, без sudo
+  или custom fallback, и имеют uninstall/rollback;
+- service states: stopped/starting/recovering/running/degraded/stopping/failed.
 
 ## Versioning
 

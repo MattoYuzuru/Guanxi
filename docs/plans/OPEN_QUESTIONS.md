@@ -1,19 +1,19 @@
 # Открытые продуктовые решения
 
-**Статус:** question register; Q-01–Q-36 отвечены, открыты Q-27a и Q-37
+**Статус:** question register; Q-01–Q-37 отвечены, открыт только Q-27a
 
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 
-Ответы Q-01–Q-21 зафиксированы в
-[decision log](../decisions/2026-08-02-product-decisions.md). Ни один исходный
-вопрос больше не блокирует документирование архитектуры.
+Ответы Q-01–Q-36 зафиксированы в
+[decision log 2026-08-02](../decisions/2026-08-02-product-decisions.md), а Q-37
+и уточнения Phase 3/4 — в
+[decision log 2026-08-18](../decisions/2026-08-18-phase-3-4-decisions.md).
 
 ## Что осталось открытым
 
-После P3-J orientation открыт Q-37 о событии окончания Session для Quick Run.
-Он блокирует только Quick Run Session enforcement/cleanup, но не Recipe
-revision, exact Recipe-to-Job snapshot foundation, P3-P localization или P3-Q
-terminal Job notifications. Q-28a и Q-34a закрыты 2026-08-07.
+Q-37 закрыт владельцем 2026-08-18: Quick Run Session заканчивается успешной Job
+либо явной командой Finish; cleanup ждёт terminal Job и использует recoverable
+24-hour Trash. Q-28a и Q-34a закрыты 2026-08-07.
 
 Release-readiness audit 2026-08-09 дополнительно сверил `variant-first install
 и calibration`: это две отдельные exact-variant capabilities. Marketplace
@@ -29,13 +29,14 @@ process во время wind-down (иначе P1-E recovery отнесёт run �
 потеряет сам отчёт). Это design decision внутри Phase 5/8, к текущему slice
 отношения не имеет; ждёт architecture review 2026-08-07.
 
-### Q-37. Какое явное событие заканчивает Session для Quick Run?
+### Q-37. Какое событие заканчивает Session для Quick Run?
 
-D-009/Q-23 принимают explicit Leave только для Chat. One-shot Quick Run не имеет
-accepted аналога: успешное execution completion, закрытие result view, export или
-отдельная команда могут вести к разным retention ожиданиям. До решения P3-J
-сохраняет выбор Session, но честно публикует `sessionEnforcement=not_implemented`
-и не запускает cleanup. Нужен owner decision до Quick Run Session lifecycle.
+**Accepted 2026-08-18:** успешный terminal outcome `completed` заканчивает
+Session автоматически; отдельная команда `Finish Quick Run Session` заканчивает
+её явно. Failed/cancelled/interrupted исход не заканчивает Session автоматически.
+Команда во время active Job сохраняет intent, но cleanup ждёт terminal state.
+Закрытие view, reload, disconnect и export не считаются Finish. После окончания
+действует 24-hour Trash/Restore как для Session Chat. См. D-022.
 
 ## Resolution Q-01–Q-21
 
@@ -67,9 +68,10 @@ accepted аналога: успешное execution completion, закрытие
 
 ### Q-22. Какой Chat retention является default?
 
-**Accepted:** любой новый Chat получает `7 days`, включая Chat внутри Project.
-Project не меняет default. Бессрочное хранение включается пользователем через
-`Keep`.
+**Accepted 2026-08-02, уточнено 2026-08-18:** global default нового Chat —
+`7 days`. Project может задать retention default для новых Project Chats и
+Quick Runs; пользователь может его переопределить. Изменение Project default не
+переписывает существующие entities. См. D-025.
 
 ### Q-23. Когда заканчивается `Session` Chat?
 
@@ -175,6 +177,11 @@ soft-режиме обязан покрывать эквиваленты уда�
 **Accepted 2026-08-07 как осознанная отсрочка:** продолжаем с `Alamo`. Имя пока
 не выбрано, поэтому главное требование — сохранять лёгкую заменяемость: ADR-0007
 central brand manifest, никаких новых hardcoded вариантов имени.
+
+**Уточнено 2026-08-18:** target canonical executable — `alamo`, текущий
+`alamo-ui` остаётся compatibility alias. Когда display brand изменится, старое
+имя исчезает из всего visible UI/CLI/docs/assets; скрытые storage/CLI aliases
+сохраняются только на migration window.
 
 ### Q-32. Custom Project icons
 

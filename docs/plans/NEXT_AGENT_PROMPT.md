@@ -1,7 +1,7 @@
 # Handoff: Phase 3 / P3-Q terminal Job notifications
 
 **Статус:** ready for implementation
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 **Назначение:** закрыть bounded visual subset NOT-001: каждый новый canonical
 terminal Job создаёт durable content-free in-app notification, Runtime Bar
 показывает badge/panel и ведёт к безопасной Job/Chat projection. Sound, browser
@@ -14,7 +14,8 @@ permission и policy inheritance остаются следующей фазе.
 3. `docs/DEVELOPMENT.md`, `docs/TESTING.md`, HLD/LLD,
    `docs/architecture/RUNTIME_LIFECYCLE.md` и Job-related ADR.
 4. `docs/plans/PHASE_STATUS.md`, `docs/plans/ROADMAP.md`,
-   `docs/plans/OPEN_QUESTIONS.md`, accepted D-021 notification decisions.
+   `docs/plans/OPEN_QUESTIONS.md`, accepted D-021 и D-023/D-034,
+   `docs/decisions/0014-notification-persistence-and-delivery.md`.
 5. Current Job contract/store/service, Chat terminal/recovery transactions,
    Runtime Bar provider/polling и P3-P locale/error boundaries.
 
@@ -39,8 +40,9 @@ permission и policy inheritance остаются следующей фазе.
 - D-021 принимает in-app notification и optional sound, но P3-Q реализует только
   NOT-001 visual state. NOT-002..004, browser permission и sound dedup входят в
   Phase 4 и не должны быть частично обещаны здесь.
-- Q-37 про terminal event Quick Run Session не блокирует P3-Q: current Quick Run
-  metadata ещё не создаёт Jobs и не подключается к execution.
+- Q-37 закрыт: target Quick Run Session заканчивается successful Job либо
+  explicit Finish. Это не блокирует P3-Q, потому что current Quick Run metadata
+  ещё не создаёт Jobs и не подключается к execution.
 
 ## Bounded outcome P3-Q
 
@@ -57,8 +59,8 @@ permission и policy inheritance остаются следующей фазе.
   различаются, инвентаризируй и докажи completed/failed/cancelled/interrupted,
   recovery и rollback. Failure notification insert не должен оставлять ложный
   terminal state, и наоборот.
-- Migration не выдумывает историю: existing terminal Jobs до feature cutover не
-  backfill-ятся, если нет отдельного accepted policy. Это должно быть явно
+- Migration не выдумывает историю: accepted policy D-023 запрещает backfill для
+  existing terminal Jobs до feature cutover. Это должно быть явно
   документировано и заassertено на v28→v29.
 - Добавь bounded newest-first list с explicit unread state/count и strict
   idempotent mark-read command. Cursor/order/tie-break должны быть deterministic;
@@ -67,8 +69,9 @@ permission и policy inheritance остаются следующей фазе.
   terminal outcome/time и безопасным `Open`. Link ведёт к существующей Job/Chat
   projection только при доказанной association; generic Job без UI route не
   получает invented Chat link.
-- Foreground/open Job тоже создаёт in-app notification: P3-Q не вводит background
-  detection/policy. Panel различает loading/empty/error/retry, stale refresh и
+- Foreground/open Job и future `off` policy тоже создают durable row: P3-Q не
+  вводит background detection/policy, но storage нельзя связать с delivery.
+  Panel различает loading/empty/error/retry, stale refresh и
   mark-read failure; notification не исчезает оптимистично при failed mutation.
 - Locale switch/reload сохраняют одну и ту же durable row, меняя только Web-owned
   localized presentation. Не сохраняй уже локализованный outcome text в SQLite.
@@ -82,7 +85,7 @@ permission и policy inheritance остаются следующей фазе.
 - Off / When background / Always и global/per-Chat policy inheritance;
 - OS notification center, push, email, analytics или remote delivery;
 - notification payload с prompt/result/reasoning/private error;
-- Quick Run/Recipe execution либо решение Q-37;
+- Quick Run/Recipe execution либо implementation принятого Q-37 lifecycle;
 - Phase 4 daemon/service, CLI/TUI notification client или multi-process owner;
 - Chat rename/search/archive, Project policy/vocabulary и Workbench.
 

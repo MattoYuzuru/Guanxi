@@ -2,7 +2,7 @@
 
 **Статус:** accepted order, individual implementation designs pending
 
-**Проверено:** 2026-08-02  
+**Проверено:** 2026-08-18
 **Правило:** следующая фаза начинается после exit gate предыдущей
 
 Roadmap — последовательность снижения рисков, а не обещание дат. Требования
@@ -146,17 +146,17 @@ Apple Silicon. Hardware-зависимые пункты вынесены явн�
 - Project name/icon/color;
 - large searchable icon library и accessible palette;
 - Quick Run и Chat retention control;
-- Keep/7 days/Session semantics с единым 7-day default, rolling user TTL и
-  24-hour Session recovery;
+- Keep/7 days/Session semantics с global 7-day default, optional Project
+  default, rolling user TTL и 24-hour Session recovery;
 - Maintenance Job, Trash/grace и reasoning TTL;
 - Chat Info: rename/delete/retention/reasoning/notifications;
-- Chat search/archive/Project grouping;
+- Project Chat search по user/final-assistant text, active/archive/unarchive;
 - Recipe snapshots и routing;
 - attachment upload и Artifact store;
 - Markdown/thinking controls;
 - document batch foundation;
 - visible context compaction/checkpoint;
-- Project vocabulary и integration bindings;
+- Project defaults, vocabulary и integration bindings;
 - target navigation shell и Warm Instrument Panel tokens;
 - English locale, curated Russian и Glossary;
 - in-app terminal Job notifications;
@@ -174,7 +174,10 @@ Apple Silicon. Hardware-зависимые пункты вынесены явн�
 - stored history, context window и KV cache правдиво объяснены;
 - Project не требует filesystem root;
 - Recipe edit не меняет старый Job;
-- English/Russian/glossary проходят copy review;
+- English/Russian/glossary проходят automated key/state/copy assertions;
+- Quick Run Session заканчивает successful Job либо explicit Finish;
+- Project search/archive и defaults не индексируют private content и не
+  переписывают existing entities;
 - mobile/keyboard/Error Boundary flows доступны.
 
 ## Phase 4 — Background Service, CLI и TUI foundation
@@ -185,7 +188,7 @@ Apple Silicon. Hardware-зависимые пункты вынесены явн�
 ### Scope
 
 - single-instance Application Service;
-- process identity/control API;
+- advisory-lock + exact-instance identity и loopback control API;
 - `start --detach`, `status`, `stop`, `restart`, `open`;
 - shared settings/config client;
 - restart-sensitive settings preview;
@@ -195,13 +198,15 @@ Apple Silicon. Hardware-зависимые пункты вынесены явн�
 - opt-in login autostart на macOS;
 - opt-in user service adapter на Ubuntu/Fedora;
 - stale process/lock recovery;
-- graceful Job checkpoint/cancel/restart;
+- bounded drain/interrupted/queue-preserving stop и controlled restart;
 - optional completion sound и channel deduplication;
 - UI Exit управляет только Alamo Service.
 
 ### Requirements
 
-`CLI-001..007`, `NOT-002..004`, `PLAT-001..002`.
+`CLI-001..007` кроме Phase-5 agent command, `NOT-002..004`, `PLAT-001`.
+Linux user-service adapter входит в Phase 4, но `PLAT-002` verified
+Linux/NVIDIA tier и live Ollama/GPU evidence остаются post-Phase-4 (Q-35).
 
 ### Exit gate
 
@@ -212,6 +217,10 @@ Apple Silicon. Hardware-зависимые пункты вынесены явн�
 - login autostart opt-in обратим и диагностируем;
 - stop Alamo не останавливает Ollama;
 - sound не повторяется после reload и имеет visual equivalent.
+- no-args `alamo` подключает/запускает один profile; `alamo-ui` остаётся
+  compatibility alias;
+- stop никогда не убивает process по одному PID и не останавливает Ollama;
+- Agent CLI честно unsupported до Phase 5.
 
 ## Phase 5 — First-party coding Agent MVP
 

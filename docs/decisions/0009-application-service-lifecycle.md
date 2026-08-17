@@ -3,6 +3,9 @@
 **Статус:** accepted  
 **Дата:** 2026-08-02
 
+**Уточнено:** exact control, identity, stop/restart, clients и native platform
+adapters определены в [ADR-0013](0013-phase-4-service-control-and-clients.md).
+
 ## Context
 
 Текущий CLI держит server в foreground. Пользователь хочет закрыть terminal,
@@ -27,11 +30,11 @@ No-args CLI — TUI-клиент, а не сам service. Scriptable commands и
 ## Platform adapters
 
 - macOS: user-level launch service;
-- Linux: user-level service manager integration с documented fallback;
+- Linux: `systemd --user` на Ubuntu/Fedora без custom fallback supervisor;
 - Windows: out of scope.
 
-Конкретная platform technology выбирается при implementation research. UI
-показывает `unsupported`, если adapter недоступен, а не симулирует autostart.
+UI показывает `unsupported`, если native adapter недоступен, а не симулирует
+autostart.
 
 ## Invariants
 

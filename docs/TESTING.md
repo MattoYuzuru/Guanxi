@@ -1,7 +1,7 @@
 # Стратегия проверки
 
 **Статус:** implemented для current-state, proposed для target matrix  
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 
 ## Текущий baseline
 
@@ -740,9 +740,13 @@ process lock. P0-D health остаётся sampled observation; обязател
 ### Retention и Maintenance
 
 - Keep never selected by expiry query;
-- every new Chat defaults to rolling 7-day retention, including in Project;
+- new Chat uses explicit Project retention default or global rolling 7-day
+  fallback; Project default changes do not rewrite existing Chats;
 - rolling TTL updates only on user activity;
 - leaving idle Session Chat moves it toward Trash;
+- successful Quick Run Job or explicit Finish ends Session; failed/cancelled/
+  interrupted outcome leaves it open for retry;
+- Finish during active Quick Run waits for terminal state before 24-hour Trash;
 - reload/reconnect does not terminate Session;
 - active/non-terminal Job prevents tombstone;
 - Session Chat can be restored during its 24-hour Trash grace;
@@ -755,12 +759,16 @@ process lock. P0-D health остаётся sampled observation; обязател
 
 ### Application Service
 
-- single instance/stale identity;
+- single instance via advisory lock + exact-instance handshake;
+- stale/corrupt/foreign identity never causes PID-only kill;
 - terminal closes without service exit;
-- start/status/stop/restart exit codes and JSON;
+- no-args `alamo` attach/start + TUI, `alamo-ui` compatibility alias;
+- start/status/stop/restart exact exit codes and versioned JSON/NDJSON;
 - shared settings Web/CLI/TUI;
-- controlled restart with active/queued Jobs;
-- macOS/Linux autostart opt-in/disable/uninstall;
+- healthy 30-second drain, unhealthy/timeout/force interruption and queued
+  preservation;
+- failed controlled restart rolls back config and retries old config once;
+- macOS LaunchAgent/Linux `systemd --user` opt-in/disable/uninstall;
 - stopping Alamo does not stop Ollama.
 
 ### First-party Agent
@@ -777,10 +785,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 
 ### Notifications
 
-- one terminal Job → one notification;
-- reload/replay does not duplicate sound;
-- `when_background` respects active Job view;
+- each new terminal Job → exact one row, independent of delivery policy;
+- old terminal Jobs before cutover → zero backfilled rows;
+- global/Chat inherit/off/when-background/always matrix resolves exact policy;
+- sound defaults off even when delivery policy defaults to when-background;
+- competing tabs/reload/replay receive at most one sound claim;
+- `when_background` respects visible exact Job/Chat across browser tabs;
 - permission denied still leaves visual badge;
+- off keeps history row but suppresses unread badge/announcement/sound;
 - no prompt/reasoning/result in payload;
 - per-Chat override and localized accessible announcement.
 

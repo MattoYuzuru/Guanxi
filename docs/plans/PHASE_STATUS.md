@@ -1,7 +1,7 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 **Текущая фаза:** Phase 3 — P3-Q terminal Job notifications ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
@@ -2150,6 +2150,23 @@ Copy guard намеренно не является общим static taint anal
 1,001.82 kB minified / 257.15 kB gzip превышает warning threshold 500 kB.
 Phase 3 не завершена: следующий bounded slice — P3-Q visual terminal Job
 notifications; sound/permission policy остаётся Phase 4.
+
+## Owner decisions 2026-08-18 — остаток Phase 3 и границы Phase 4
+
+**Статус:** accepted target; implementation не начата.
+
+Новая [decision record](../decisions/2026-08-18-phase-3-4-decisions.md) закрыла
+Q-37 и уточнила Project defaults, Chat search/archive, Workbench/localization,
+notification delivery и Application Service/CLI/TUI. Архитектурные defaults
+зафиксированы в [ADR-0013](../decisions/0013-phase-4-service-control-and-clients.md)
+и [ADR-0014](../decisions/0014-notification-persistence-and-delivery.md).
+
+Для текущей очереди важно: P3-Q остаётся следующим slice; existing terminal Jobs
+не backfill-ятся, а каждая новая terminal Job создаёт durable row независимо от
+future delivery policy. Quick Run Session больше не blocked вопросом: target
+заканчивает successful Job либо explicit Finish, но его implementation остаётся
+после current metadata foundation. Единственный открытый вопрос register —
+Phase-5/8 Q-27a про durable `wrap up and report`.
 
 ## Планируемая последовательность Phase 2
 

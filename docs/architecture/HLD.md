@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -556,8 +556,8 @@ single-user scale. Модульные границы нужны для correctne
 
 - Maintenance Job применяет Chat/Artifact expiry при startup и по расписанию;
 - Trash/grace отделяет expiry от окончательного удаления blobs;
-- terminal Job создаёт local notification record;
-- Web/TUI решают visual/sound delivery по policy и permissions.
+- каждая новая terminal Job создаёт exact one content-free notification row;
+- Web решает visual/sound delivery; CLI/TUI и service остаются silent.
 
 ### Clients
 
@@ -565,7 +565,10 @@ Web, non-interactive CLI, TUI и first-party Agent CLI используют од
 application semantics. TUI не управляет процессом через scraping stdout.
 Background Application Service имеет control surface для
 `start/status/stop/restart/open`, переживает закрытие terminal и опционально
-стартует при login. Ollama service остаётся отдельной сущностью.
+стартует при login. Один profile защищён advisory lock и exact-instance
+handshake; control переиспользует authenticated loopback HTTP. Ollama service
+остаётся отдельной сущностью. Exact semantics задаёт
+[ADR-0013](../decisions/0013-phase-4-service-control-and-clients.md).
 
 ## Ключевые flows
 
@@ -697,7 +700,8 @@ UI limits. Multi-host scheduler не проектируется до реаль�
 ## Supported deployment tiers
 
 - Tier 1: macOS Apple Silicon;
-- Tier 2: Linux/NVIDIA, Ubuntu и Fedora family;
+- Target Tier 2: Linux/NVIDIA, Ubuntu и Fedora family; verified только после
+  Phase 4/live hardware gate;
 - Deferred: Windows/WSL;
 - Application Service и autostart используют platform adapters;
 - Ollama daemon остаётся externally managed на каждом tier.
@@ -707,7 +711,8 @@ UI limits. Multi-host scheduler не проектируется до реаль�
 ### Local profile
 
 - loopback-only;
-- origin/CSRF checks для state-changing API;
+- bearer secret для local clients и same-origin session + origin/CSRF checks
+  для browser state-changing API;
 - allowed filesystem roots;
 - tool effect classification;
 - Manual и Auto-within-policy approvals;

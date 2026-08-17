@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted direction, current P3 subsets implemented
 
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 **Направление:** Warm Instrument Panel
 
 ## Цель интерфейса
@@ -108,6 +108,9 @@ carousel с dot на каждую карточку.
 - inputs и Artifacts в timeline;
 - status каждого turn восстанавливается после reload;
 - sidebar/drawer доступен на mobile.
+- Project search ищет user prompts и final model answers. Active/Archived —
+  явный filter; Archive скрывает Chat из active list, но оставляет Unarchive,
+  history и running Jobs. Title/reasoning/tool/private content не индексируются.
 - Chat Info объединяет rename/delete, retention, notification policy, generated
   answers и reasoning Artifacts. Current P3-I показывает эти списки раздельно,
   exact effective expiry, size/checksum и scoped copy/export text; после Save
@@ -127,8 +130,9 @@ Retention control — простой segmented switch:
 ```
 
 Exact expiry видим рядом. Policy меняется isolated действием `Save retention`;
-pending cleanup можно отменить до окончания Trash/recovery. Default любого нового
-Chat — `7 days`, даже внутри Project. TTL продлевает только user activity. Для
+pending cleanup можно отменить до окончания Trash/recovery. Global default нового
+Chat — `7 days`; Project может предвыбрать policy только для новых entities.
+TTL продлевает только user activity. Для
 сохранённой policy Session Chat Info показывает отдельную confirmation-команду
 Leave session; reload/reconnect/закрытие вкладки её не подменяют. Pending basis и
 active-Job blocker видимы после reload. После Maintenance tombstone UI показывает
@@ -159,6 +163,7 @@ Token/cache bar относится к active context и измеренному p
 - filesystem bindings;
 - MCP/Skills/Tools и effective permissions;
 - defaults: routing, retention, context и export.
+- preferred Recipe/model, versioned vocabulary и integration bindings;
 
 Project не обязан быть папкой на диске. Привязка filesystem имеет отдельный
 allowed root и security state.
@@ -242,6 +247,8 @@ sections пока не проецируются.
 - service/CLI lifecycle и opt-in login autostart;
 - storage/retention/export;
 - global completion notification/sound policy;
+- single-profile service state, redacted restart preview и reversible native
+  autostart adapter;
 - Language: implemented P3-P English/Russian control и searchable Glossary;
 - security profile;
 - theme, font density, reduced motion и accessibility.
@@ -296,7 +303,10 @@ Advanced:
 - последующий summary как отдельный pipeline stage.
 
 Quick Run использует выбранный retention mode. Отдельная кнопка Save не меняет
-тип сессии; связь Artifact с Project — отдельное действие.
+тип сессии; связь Artifact с Project — отдельное действие. Session заканчивается
+при successful Job либо explicit `Finish Quick Run Session`. Failed/cancelled/
+interrupted result оставляет Session для retry; Finish во время active Job
+показывает pending terminal wait и только затем 24-hour recoverable Trash.
 
 System-wide hotkey откладывается до platform integration и поддерживает два
 режима: toggle recording и hold-to-talk.
@@ -317,10 +327,16 @@ Video Workbench не входит в активный roadmap до нового 
 ### Completion notification
 
 1. Terminal Job создаёт in-app notification и badge.
-2. Если policy `When background`, client проверяет, открыт ли этот Job.
-3. После ранее полученного user permission воспроизводится один короткий sound.
+2. `When background` сверяет visible exact Job/Chat между tabs одного browser
+   profile; CLI/TUI не считаются browser foreground.
+3. После explicit Enable/Preview permission Web claim-ит и воспроизводит sound
+   не более одного раза; service/CLI/TUI остаются silent.
 4. Notification ведёт к Job/Chat, не раскрывая prompt/result.
-5. Global policy наследуется Chat/Agent Run и может быть изменена в Chat Info.
+5. Global delivery default `When background` наследуется Chat и может быть
+   изменён в Chat Info через inherit/off/when-background/always; сам sound по
+   умолчанию выключен до explicit Enable/Preview.
+6. `Off` сохраняет content-free row, но не показывает unread badge и не играет
+   sound. Existing terminal Jobs до cutover не backfill-ятся.
 
 ## Capability-driven Workbench
 

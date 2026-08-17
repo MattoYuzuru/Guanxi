@@ -1,7 +1,7 @@
 # Инструкции для агентов
 
 **Статус:** implemented  
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 **Область:** весь репозиторий
 
 Alamo UI — ранний local-first интерфейс и runtime-control layer поверх Ollama. Не
@@ -21,7 +21,9 @@ Alamo UI — ранний local-first интерфейс и runtime-control laye
    канонический протокол одного slice: orientation, план, vertical implementation,
    независимая verification, docs/commits. Без него slice считается неполным.
 7. Принятые ответы владельца находятся в
-   `decisions/2026-08-02-product-decisions.md`; они выше старого proposal.
+   `decisions/2026-08-02-product-decisions.md` и более новой записи
+   `decisions/2026-08-18-phase-3-4-decisions.md`; новые уточнения выше старого
+   proposal/decision.
 8. После каждого bounded slice обновите `plans/PHASE_STATUS.md` и перепишите
    `plans/NEXT_AGENT_PROMPT.md` для следующего незавершённого slice. Если работа
    заблокирована, оставьте prompt на текущий slice с blocker и recovery steps.

@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted target, current P1/P2/P3 subsets implemented
 
-**Проверено:** 2026-08-17
+**Проверено:** 2026-08-18
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -29,12 +29,22 @@ policy update доступны через exact scoped REST boundary. Execution/
 durable Job association, Result/Artifact persistence, cleanup и Session
 completion/enforcement ещё не реализованы и так же проецируются клиенту.
 
+Accepted target D-022: Quick Run Session заканчивает успешный outcome
+`completed` либо явная команда Finish. Остальные terminal outcomes сами Session
+не завершают. Finish intent во время active Job ждёт terminal state; затем
+Quick Run попадает в recoverable Trash на 24 часа.
+
 ### Chat
 
 Сохраняемая multi-turn Conversation с ordered entries. Chat может использовать
 разные Jobs и typed Artifacts, но имеет один active context policy в момент хода.
 Thinking хранится отдельно от visible answer и имеет отдельную privacy policy.
 Chat содержит editable `retentionPolicy` и `notificationPolicy`.
+
+Target archive — nullable `archivedAt`: он скрывает Chat из active Project list,
+но сохраняет history/Jobs/Artifacts и допускает Unarchive. Project-scoped search
+индексирует только user prompts и final assistant answers; title,
+reasoning/tool/private content и attachment bytes исключены.
 
 ### Project
 
@@ -57,6 +67,12 @@ versioned Project-scoped boundary. Project можно создать без bind
 сохранены byte-compatible. P3-K добавил immutable nullable Project ownership
 для Recipe; Project defaults, Artifact ownership и final client cutover ещё не
 реализованы.
+
+Accepted target Project defaults охватывает preferred model/routing, Recipe,
+retention, context/export, versioned vocabulary и integration bindings. Default
+применяется только к новым entities; effective Job policy сохраняется immutable
+snapshot. Global → Project → Recipe → Job наследование может сужать permissions,
+а расширение требует explicit user grant.
 
 P3-D–P3-I добавили к current `Thread` versioned Chat-only retention boundary.
 Новый projectless и Project Chat получает одинаковый rolling `7 days`; existing
@@ -468,14 +484,16 @@ type RetentionPolicy =
   | { mode: "session" };
 ```
 
-Default любого нового Chat — `{ mode: "ttl", expiresAfterDays: 7,
-refreshOn: "user_activity" }`, независимо от принадлежности Project. `Keep`
-требует явного выбора пользователя.
+Global default нового Chat — `{ mode: "ttl", expiresAfterDays: 7,
+refreshOn: "user_activity" }`. Accepted target разрешает Project предвыбрать
+`Keep`, `7 days` или `Session` для новых Project Chats/Quick Runs; explicit user
+choice имеет приоритет, а существующие entities не переписываются.
 
-P3-J использует тот же versioned policy object и default для Quick Run metadata.
-Quick Run TTL пока не имеет accepted activity/expiry/cleanup semantics, а событие
-окончания Quick Run Session остаётся открытым продуктовым решением; сохранённая
-policy не выдаётся за active enforcement.
+P3-J current implementation использует тот же versioned policy object и global
+default для Quick Run metadata. Quick Run TTL/Session cleanup пока не реализован.
+Accepted target заканчивает Session успешной Job или explicit Finish; неуспешный
+terminal outcome оставляет Session открытой. Cleanup ждёт terminal state и
+использует 24-hour recoverable Trash.
 
 Session Chat переходит в Trash только после подтверждённой команды Leave session
 и terminal state всех canonical Jobs. Reload/reconnect, transport abort,
@@ -507,26 +525,30 @@ Maintenance не удаляет active Chat/Job и не обновляет user-
 type NotificationPolicy = "off" | "when_background" | "always";
 ```
 
-Global default наследуется Chat/Agent Run и может быть переопределён. Terminal
-Job создаёт notification record; client решает, можно ли воспроизвести sound по
-focus/permission/accessibility state. Доставка идемпотентна по Job и channel.
+Global delivery default — `when_background`, а sound enable default — `false`;
+Chat override поддерживает inherit/off/when_background/always. Каждая новая terminal Job создаёт exact one durable
+content-free row независимо от delivery policy; historical rows не backfill-ятся.
+Effective policy фиксируется в terminal transaction. Global `readAt` отделён от
+per-channel at-most-once claim. Sound принадлежит только Web browser и доступен
+после explicit permission action; service/CLI/TUI silent. См.
+[ADR-0014](decisions/0014-notification-persistence-and-delivery.md).
 
 ## Persistence matrix
 
-| Сущность              | Default                      | Retention/owner            |
-| --------------------- | ---------------------------- | -------------------------- |
-| Project               | persistent                   | пользователь               |
-| Recipe                | persistent                   | пользователь               |
-| Chat                  | rolling user TTL 7 days      | Keep/TTL/Session           |
-| Quick Run             | explicit retention           | Keep/TTL/Session           |
-| Reasoning Artifact    | TTL 7 days                   | shorter parent policy wins |
-| Job metadata/events   | persistent audit window      | policy проекта/настроек    |
-| Agent Run/checkpoints | persistent until terminal GC | explicit/run policy        |
-| Artifact              | parent/Recipe policy         | content-addressed store    |
-| Notification          | local read/unread window     | settings policy            |
-| Capability evidence   | latest safe projections      | fingerprint + freshness    |
-| Resource lease        | transient + journal          | governor                   |
-| Secrets               | protected store              | connection/settings owner  |
+| Сущность              | Default                      | Retention/owner               |
+| --------------------- | ---------------------------- | ----------------------------- |
+| Project               | persistent                   | пользователь                  |
+| Recipe                | persistent                   | пользователь                  |
+| Chat                  | rolling user TTL 7 days      | Keep/TTL/Session              |
+| Quick Run             | explicit retention           | Keep/TTL/Session              |
+| Reasoning Artifact    | TTL 7 days                   | shorter parent policy wins    |
+| Job metadata/events   | persistent audit window      | policy проекта/настроек       |
+| Agent Run/checkpoints | persistent until terminal GC | explicit/run policy           |
+| Artifact              | parent/Recipe policy         | content-addressed store       |
+| Notification          | one row per new terminal Job | policy + read/delivery claims |
+| Capability evidence   | latest safe projections      | fingerprint + freshness       |
+| Resource lease        | transient + journal          | governor                      |
+| Secrets               | protected store              | connection/settings owner     |
 
 ## Связи
 
