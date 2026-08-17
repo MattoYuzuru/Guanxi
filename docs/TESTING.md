@@ -17,6 +17,8 @@
   `packages/web`: прямой `npx playwright` из корня не получает workspace
   `baseURL` и падает с `Cannot navigate to invalid URL`;
 - `npm run typecheck`: успешно во всех workspaces;
+- `npm run build`: успешно; Vite сообщает non-blocking warning для main chunk
+  1,001.82 kB minified / 257.15 kB gzip при threshold 500 kB;
 - `npm run benchmark:catalog`: зафиксированный implementation run на synthetic
   1,000 models/4,000 variants дал server legacy 3,768,624 bytes/10.537 ms против
   page 12 — 45,513 bytes/4.759 ms и 48 variants; jsdom legacy 1,000 slides +

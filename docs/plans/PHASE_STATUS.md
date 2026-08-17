@@ -2146,8 +2146,10 @@ Final read-only verdict на `789eaeb` — **READY**, открытых findings 
 русского, screen-reader/touch/visual-baseline или production browser corpus.
 Copy guard намеренно не является общим static taint analyzer и полагается на
 явно протестированный current syntax envelope. Locale desktop CLI/TUI не
-реализована. Phase 3 не завершена: следующий bounded slice — P3-Q visual
-terminal Job notifications; sound/permission policy остаётся Phase 4.
+реализована. Build зелёный с non-blocking Vite warning: current main chunk
+1,001.82 kB minified / 257.15 kB gzip превышает warning threshold 500 kB.
+Phase 3 не завершена: следующий bounded slice — P3-Q visual terminal Job
+notifications; sound/permission policy остаётся Phase 4.
 
 ## Планируемая последовательность Phase 2
 
