@@ -1,14 +1,14 @@
 # Стратегия проверки
 
 **Статус:** implemented для current-state, proposed для target matrix  
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 
 ## Текущий baseline
 
-На 2026-08-14 после P3-O implementation и independent verification:
+На 2026-08-17 после P3-P implementation и independent verification:
 
-- полный core с CLI reuse: 666/666; Web component/parser: 227/227;
-- `npm run test:web:browser`: 38/38 deterministic Chromium tests с mocked
+- полный core с CLI reuse: 669/669; Web component/parser: 244/244;
+- `npm run test:web:browser`: 40/40 deterministic Chromium tests с mocked
   REST/SSE, включая exact-selection P2-K, exact-download P2-L и staged import
   P2-M cases. Требует заранее установленный
   browser binary
@@ -177,6 +177,16 @@
   copy и one-item lost-response recovery; mocked Chromium подтверждает hard
   reload, один download, 390 px/200%, forced colors/reduced motion и zero
   forbidden execution effects;
+- deterministic P3-P tests покрывают strict `en | ru` Settings state без новой
+  migration, missing/invalid provenance, atomic multi-field patch, save/reopen,
+  lost response и stale-bootstrap ordering. Locale catalogs имеют exact key/
+  placeholder coverage, Web errors переводятся при render, а memoized consumers
+  прямо проверены после delayed bootstrap. Exact 17-entry Glossary manifest,
+  bounded localized search/empty/no-results и AST hardcoded-copy inventory имеют
+  mutation-catching assertions. Mocked Chromium добавляет две localization
+  cases: exact Settings request/effect counts, save failure/retry/hard reload,
+  root `lang`, focus, 390 px/200%, forced colors/reduced motion и non-Settings
+  delayed locale с zero-delta Runtime/Project/Attachment reads;
 - deterministic P0-B tests покрывают fresh/v2→v3/recovery migration, legacy
   compatibility, CAS terminalization, actual-adapter provider body failure,
   protocol/storage failure, explicit Stop, connection abort и reload states;
@@ -647,14 +657,14 @@ process lock. P0-D health остаётся sampled observation; обязател
 | Context usage                      | tests                                    |
 | Static web serving                 | test                                     |
 | CLI existing-server logic          | tests                                    |
-| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-M      |
-| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P3-M mocked   |
+| React render/navigation            | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-P      |
+| Browser streaming/reload           | P0-A/B/E + P1-I/J/K/M/P2-C–P3-P mocked   |
 | Catalog provider/cache/pages       | P0-D/P2-E–P2-H local/bundled fixtures    |
 | Global concurrency/model lifecycle | P1-G + P1-K priority lane                |
 | Job replay/reattach                | HTTP SSE; browser durable replay         |
 | Chat startup recovery              | reopened SQLite, fail-closed pages       |
 | Runtime health/timeouts            | P0-D fake transport/routes/Web           |
-| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-M      |
+| Accessibility/responsive           | P0-A/B/D/E + P1-I/J/K/M + P2-C–P3-P      |
 
 ## Обязательная target matrix
 

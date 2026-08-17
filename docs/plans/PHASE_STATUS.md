@@ -1,8 +1,8 @@
 # Phase status
 
 **Статус документа:** implemented tracker  
-**Проверено:** 2026-08-14
-**Текущая фаза:** Phase 3 — P3-P localization settings/glossary ready
+**Проверено:** 2026-08-17
+**Текущая фаза:** Phase 3 — P3-Q terminal Job notifications ready
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
@@ -2096,6 +2096,59 @@ attachment model consumption не реализованы. Phase-wide audit по�
 после P3-O всё ещё обязательны localization/Glossary, notifications, Workbench,
 Project policy/vocabulary и Chat search/archive slices; вся Phase 3 не закрыта.
 
+## Phase 3 — P3-P localization, Language и Glossary
+
+**Статус:** independently verified.
+
+Candidate commits: `77b5c7c..62cf151`; findings independent verification
+исправлены отдельными `99b01ef`, `f90c74b`, `2d1ea86` и `789eaeb`.
+
+Settings contract/store/REST теперь владеют exact `en | ru` locale без новой
+migration: missing legacy key даёт sourced English default, malformed stored
+value fail-closed не выдаётся за user choice, а multi-field patch атомарен.
+Один application `LocaleProvider` загружает setting single-flight, не позволяет
+старому bootstrap response перезаписать новый intent и меняет root `lang` только
+при реальном изменении. English — полный source/fallback, curated Russian имеет
+тот же exact key/placeholder manifest. Web-owned transport/contract/API errors
+локализуются при render, поэтому сохранённая ошибка и memoized screen корректно
+перерисовываются после delayed bootstrap или Language switch; raw server message
+не становится user-facing copy.
+
+Весь current Web copy, aria labels, titles, placeholders, format units и
+download fallbacks переведены на locale keys. Settings показывает pending/save/
+error/retry state и блокирует draft на время save, исключая stale response race.
+Searchable Glossary содержит exact 17 stable bilingual entries с term,
+plain-language definition и example; empty catalog и no-results различаются.
+AST inventory guard сканирует current TS/TSX copy, следует за local/imported
+constants и падает на injected JSX/property/return copy при узком explicit
+technical allowlist.
+
+Evidence по правилу WORKFLOW относительно P3-O baseline: **3 new / 669 core
+regression envelope**, **17 new / 244 Web component/parser regression
+envelope**, **2 new / 40 mocked Chromium regression envelope**. Full
+`npm run typecheck`, `npm test`, `npm run test:web:browser`, `npm run build`,
+markdownlint и diff-check прошли на финальном candidate. Browser assertions
+проверяют exact persisted EN/RU, hard reload, root `lang`, Settings request/
+effect counts, focus, 390 px, 200%, forced colors, reduced motion и delayed
+locale на non-Settings route.
+
+Independent reviewer сначала нашёл raw API message ownership, Settings
+atomicity/save ordering, copy-inventory bypasses и недостающие exact assertions.
+После первого fix follow-up обнаружил locale-stale memo/error paths и более
+глубокие identifier обходы. Финальный pass потребовал dynamic `ApiShapeError`,
+прямые delayed-locale assertions для всех repaired memo sites, exact glossary
+manifest и полный unexpected-request sentinel; `2d1ea86` закрыл эти findings.
+Последний follow-up потребовал zero-delta counters и для уже разрешённых route
+GET; `789eaeb` закрепил этот effect boundary.
+Final read-only verdict на `789eaeb` — **READY**, открытых findings нет.
+
+Остаточный риск: Chromium полностью mocked; нет human copy review с носителем
+русского, screen-reader/touch/visual-baseline или production browser corpus.
+Copy guard намеренно не является общим static taint analyzer и полагается на
+явно протестированный current syntax envelope. Locale desktop CLI/TUI не
+реализована. Phase 3 не завершена: следующий bounded slice — P3-Q visual
+terminal Job notifications; sound/permission policy остаётся Phase 4.
+
 ## Планируемая последовательность Phase 2
 
 Пересобрано 2026-08-07 после owner decisions Q-25/Q-33–Q-36. HF-цепочка намеренно
@@ -2195,7 +2248,7 @@ Phase 4.
 | --------------------------------------- | ---------------------- |
 | Phase 1 — Durable Jobs/Governor         | independently verified |
 | Phase 2 — Models/Capability/import      | independently verified |
-| Phase 3 — Text/Projects/retention/i18n  | P3-P ready             |
+| Phase 3 — Text/Projects/retention/i18n  | P3-Q ready             |
 | Phase 4 — Service/CLI/TUI               | not started            |
 | Phase 5 — First-party coding Agent      | not started            |
 | Phase 6 — Audio                         | not started            |

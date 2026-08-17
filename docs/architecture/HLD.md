@@ -2,7 +2,7 @@
 
 **Статус:** mixed — as-is implemented/locally validated, target accepted
 
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 **Решение:** сохранить local-first modular monolith
 
 ## Обозначения
@@ -137,6 +137,14 @@ abort/disconnect/watchdog освобождают child, permit, listeners и tem
 headers, `private, no-store`, `nosniff` и sandbox CSP; Range явно unsupported.
 Standalone Web library показывает bounded/truncated list, upload/cancel/retry и
 export, но честно не подключает attachment к model context, Recipe или Job.
+
+P3-P расширяет existing `settings` key/value boundary без новой migration:
+server хранит strict `en | ru`, default/provenance и атомарно применяет patch.
+Browser-owned `LocaleProvider` загружает setting single-flight и владеет root
+`lang`; complete English source/fallback, curated Russian и 17-entry Glossary
+остаются Web presentation data. Raw provider/server message не владеет
+локализацией: typed API code и locale-neutral shape error переводятся при render.
+Эта граница не вызывает Ollama, Governor, Job, filesystem или external network.
 
 P3-F migration 16 additive хранит immutable version 1 diagnostic Reasoning
 Artifact в SQLite: exact UTF-8 text, byte size, SHA-256, source Chat/Message/Job,

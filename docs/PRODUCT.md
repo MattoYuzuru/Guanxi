@@ -2,7 +2,7 @@
 
 **Статус:** mixed — direction/ADRs accepted, requirements not implemented
 
-**Проверено:** 2026-08-13
+**Проверено:** 2026-08-17
 **Горизонт:** от стабилизации alpha до локальной model workbench platform
 
 Принятые ответы владельца проекта:
@@ -250,6 +250,13 @@ experience, но не определяет всю предметную моде�
 | NOT-002  |  P2 | Optional short sound срабатывает по global/per-Chat policy.                                      |
 | NOT-003  |  P2 | Policy поддерживает Off, When background и Always.                                               |
 | NOT-004  |  P2 | Notification не раскрывает prompt/result и уважает browser permission/accessibility preferences. |
+
+**Current P3-P:** I18N-001..003 реализованы для Web. Settings хранит exact
+`en | ru` в server-owned store, English служит source/fallback, curated Russian
+покрывает тот же key manifest, а searchable Glossary содержит 17 stable entries
+с определениями и примерами. CLI/TUI locale и contextual Glossary help не входят
+в этот current subset. Следующий slice P3-Q начинает только visual NOT-001;
+sound/policy/permission NOT-002..004 остаются target Phase 4.
 
 ### Platform support
 

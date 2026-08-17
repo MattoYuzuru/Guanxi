@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted target, current P1/P2/P3 subsets implemented
 
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 **Назначение:** ограничить число понятий и разделить данные, UI и исполнение
 
 ## Главная граница
@@ -426,6 +426,14 @@ Display name хранится отдельно, строго ограничен 
 имеет source/time/byte/admission limits и явно не является model capability.
 Export перепроверяет blob и возвращает safe download headers; Range, preview,
 generic deletion/GC и подключение к Chat/Recipe execution не реализованы.
+
+**Current P3-P locale boundary:** UI locale — server-owned Settings value, а не
+browser locale, DOM guess или Project property. Version 1 поддерживает exact
+`en | ru`; missing legacy value даёт sourced English default, malformed stored
+value fail-closed. English и Russian catalogs, Glossary definitions и already-
+localized presentation errors остаются Web data, не Job/Artifact payload.
+Переключение locale не меняет canonical Project, Chat, Job, Recipe, Artifact или
+provider content и не создаёт runtime work.
 
 ### Tool, MCP Connection и Skill
 

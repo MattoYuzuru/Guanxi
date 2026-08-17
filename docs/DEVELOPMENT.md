@@ -1,7 +1,7 @@
 # Разработка
 
 **Статус:** implemented  
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 **Область:** фактическая структура и команды текущего репозитория
 
 ## Репозиторий
@@ -47,7 +47,7 @@ npm run link:cli
 | `dev:web`           | Vite:5173 с API proxy                                |
 | `typecheck`         | TypeScript workspaces                                |
 | `test`              | server + CLI + узкие web component regression tests  |
-| `test:web:browser`  | deterministic Chromium P0-A–P3-M mocked gate         |
+| `test:web:browser`  | deterministic Chromium P0-A–P3-P mocked gate         |
 | `build`             | contract, web, server и CLI production artifacts     |
 | `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
 | `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
@@ -437,7 +437,10 @@ server не нужен.
 - `lib/router.tsx` — History API router;
 - `lib/api.ts` — typed REST, Chat POST/SSE и Job query/replay/cancel calls;
 - `lib/sse.ts` — Chat `seq`/Job `sequence` parser;
-- `lib/locale.ts` — English fallback и curated Russian для новых boundary strings;
+- `lib/locale.ts` — complete English source/fallback и curated Russian catalog;
+- `lib/locale-context.tsx` — single-flight Settings bootstrap, current locale и
+  root `lang` owner;
+- `lib/glossary.ts` — exact stable bilingual Glossary manifest/search;
 - `features/health/RuntimeContext.tsx` — persistent shared Runtime projection;
   `RuntimeStatus.tsx` — read-only lease/FIFO/models/host/fit projection;
   `useRuntimePolling.ts` — bounded adaptive polling/visibility owner и
@@ -482,9 +485,10 @@ server не нужен.
   upload/list/download, visible storage policy и truthful no-model-consumption
   boundary;
 - `features/agent` — workspace, approval и tool projections;
-- `features/settings` — current settings.
+- `features/settings` — current runtime/tool/theme fields, P3-P Language
+  pending/save/error states и searchable Glossary.
 - `test/component` — Vitest/jsdom P0-A/P0-B/P0-D/P0-E/P1-I/P1-J/P1-K и
-  P2-C–P2-H/P3-A–P3-O projection, accessibility, conflict/prewarm races/idempotency,
+  P2-C–P2-H/P3-A–P3-P projection, accessibility, conflict/prewarm races/idempotency,
   catalog pages/compare и fake timers;
 - `test/browser` — Playwright Chromium full create/stream/reload, failure/reload
   и boundary smoke, включая P1-I active/queued/degraded/recovery/navigation и
@@ -492,8 +496,9 @@ server не нужен.
   Chat-dispatch flows, P2-G NVIDIA, P2-H catalog paging, P3-C Project Chat и
   P3-D retention, P3-E scoped Trash/Restore, P3-F/P3-G reasoning Chat Info и
   P3-H explicit Session leave/recovery, P3-J Quick Run metadata, P3-L Recipe
-  revisions/queued snapshots, P3-M context checkpoint и P3-O attachment
-  retry/reload/download (current SQLite schema version 28),
+  revisions/queued snapshots, P3-M context checkpoint, P3-O attachment
+  retry/reload/download и P3-P locale/Glossary/delayed-bootstrap flows (current
+  SQLite schema version 28),
   narrow viewport, 200% scaling, forced colors и reduced motion.
 - server tests — deterministic P1-F governor, cross-thread turn/compaction/warm,
   cancellation/release и repeated-compaction regression; P0-D fake provider

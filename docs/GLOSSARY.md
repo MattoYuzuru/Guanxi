@@ -1,11 +1,12 @@
 # Пользовательский glossary
 
-**Статус:** proposed UI copy, accepted domain meanings  
-**Проверено:** 2026-08-02  
+**Статус:** implemented UI copy, accepted domain meanings
+**Проверено:** 2026-08-17
 **Языки:** English primary, curated Russian
 
-Этот glossary должен быть доступен из Settings и context-help рядом с редкими
-терминами. Объяснения предназначены пользователю, а не только разработчику.
+Этот glossary доступен из Settings как bounded locale-aware search. Context-help
+рядом с редкими терминами остаётся target-state. Объяснения предназначены
+пользователю, а не только разработчику.
 
 ## Основные понятия
 

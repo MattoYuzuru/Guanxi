@@ -2,9 +2,11 @@
 
 > Рабочее название. Проект находится на ранней alpha-стадии.
 
-Alamo UI — local-first web-интерфейс к Ollama. Сейчас приложение умеет находить
-локальные модели, оценивать их fit, создавать chat/agent threads, стримить ответы,
-показывать thinking/tool events и выполнять ограниченный набор локальных tools.
+Alamo UI — local-first web-интерфейс к Ollama. Текущая alpha умеет находить
+и импортировать модели, показывать sourced capability/fit evidence,
+запускать durable Chat Jobs с replay/cancel/recovery, управлять Project и
+retention metadata, а также хранить и скачивать local attachments. Web UI
+имеет English source/fallback, curated Russian и searchable Glossary.
 
 Целевое направление шире: ресурсно-безопасный workbench для локальных моделей,
 где пользователь видит, какая модель загружена, что выполняется, сколько ресурсов
@@ -51,10 +53,13 @@ npm run dev:web
 ```bash
 npm run typecheck
 npm test
+npm run test:web:browser
 npm run build
 ```
 
-Важно: `npm test` пока запускает server- и CLI-тесты, но не browser tests.
+Важно: `npm test` включает core и Web component/parser tests, но не
+Chromium gate. Для `npm run test:web:browser` нужен заранее установленный
+Chromium (`npx playwright install chromium`).
 Фактическая матрица и пробелы описаны в
 [`docs/TESTING.md`](docs/TESTING.md).
 
@@ -72,14 +77,15 @@ alamo-ui
 
 ## Известные ограничения
 
-- первый streaming render способен завершить React белым экраном из-за неверного
-  cleanup в effect; причина зафиксирована в roadmap;
-- отмена browser stream при навигации отменяет текущий turn;
-- очередь и глобальное управление несколькими загруженными моделями отсутствуют;
+- background service, `status`/`stop`, TUI и autostart ещё не реализованы;
+- Resource Governor пока даёт один process-local permit; multi-process и measured
+  parallel admission не подтверждены;
 - каталог использует offline fallback, потому что прежний
   `ollama.com/api/search` больше не является рабочим API;
-- model capabilities, MCP, media workbenches и attachments реализованы частично
-  либо только представлены типами;
+- Quick Run/Recipe execution, media Workbench, attachment model consumption и
+  generic Artifact GC остаются target-state;
+- MCP/Skills выключены по default, а agent/tool boundary ещё не имеет
+  target security profile;
 - remote bind нельзя считать безопасным для agent/tools API.
 
 ## Документация

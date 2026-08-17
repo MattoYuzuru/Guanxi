@@ -1,7 +1,7 @@
 # Навигация по документации
 
 **Статус:** implemented  
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 **Назначение:** канонический индекс без дублирования содержания
 
 ## Быстрый маршрут
@@ -31,7 +31,7 @@
 | [AGENTS](../AGENTS.md)                                         | implemented       | краткие правила работы агента               |
 | [PRODUCT](PRODUCT.md)                                          | mixed             | vision, границы, требования и outcomes      |
 | [DOMAIN_MODEL](DOMAIN_MODEL.md)                                | accepted target   | понятия, ownership и инварианты             |
-| [GLOSSARY](GLOSSARY.md)                                        | proposed copy     | user-facing English/Russian vocabulary      |
+| [GLOSSARY](GLOSSARY.md)                                        | implemented       | user-facing English/Russian vocabulary      |
 | [UX_IA](UX_IA.md)                                              | accepted target   | навигация, workbenches, визуальная система  |
 | [DEVELOPMENT](DEVELOPMENT.md)                                  | implemented       | структура, команды и change protocol        |
 | [TESTING](TESTING.md)                                          | implemented       | фактическое покрытие и целевая матрица      |

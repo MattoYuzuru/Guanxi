@@ -2,7 +2,7 @@
 
 **Статус:** mixed — current implemented, target accepted/not implemented
 
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 
 ## Current package design
 
@@ -465,7 +465,11 @@ abort, а `cancelled` — после его подтверждения. Subscrib
 - `lib/router.tsx`: custom History API routing;
 - `lib/api.ts`: REST, compatibility POST/SSE и canonical Job GET/GET SSE/cancel;
 - `lib/sse.ts`: frame parser с Chat `seq` и Job `sequence` cursor;
-- `lib/locale.ts`: locale keys для boundary с English fallback/Russian;
+- `lib/locale.ts`: complete English source/fallback, curated Russian и dynamic
+  translation для Web-owned errors;
+- `lib/locale-context.tsx`: single-flight Settings bootstrap, intent ordering и
+  root `lang` owner;
+- `lib/glossary.ts`: exact 17-entry bilingual manifest и bounded localized search;
 - `features/health/RuntimeContext.tsx`: один persistent shell owner shared
   Runtime projection;
 - `features/health/RuntimeStatus.tsx`: typed read-only lease/FIFO/runtime-model/
@@ -505,8 +509,9 @@ abort, а `cancelled` — после его подтверждения. Subscrib
   Copy/Download JSON;
 - `features/context`: usage, cache, speed и compact;
 - `features/agent`: workspace/approval/tool cards;
-- `features/settings`: runtime/tool/theme fields и exact positive safe-integer
-  default agent context без UI maximum.
+- `features/settings`: runtime/tool/theme fields, exact positive safe-integer
+  default agent context без UI maximum, P3-P Language save/error state и
+  searchable Glossary.
 - `test/component` и `test/browser`: P0-A cleanup/boundary/first-stream, P0-B
   terminal/error/reload, P0-D health, P1-I Runtime Bar/polling и P1-J
   conflict/TOCTOU/idempotency/accessibility, P1-K debounce/cleanup/priority и

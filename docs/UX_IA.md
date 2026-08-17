@@ -2,7 +2,7 @@
 
 **Статус:** mixed — accepted direction, current P3 subsets implemented
 
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 **Направление:** Warm Instrument Panel
 
 ## Цель интерфейса
@@ -242,7 +242,7 @@ sections пока не проецируются.
 - service/CLI lifecycle и opt-in login autostart;
 - storage/retention/export;
 - global completion notification/sound policy;
-- Language: English/Russian и searchable Glossary;
+- Language: implemented P3-P English/Russian control и searchable Glossary;
 - security profile;
 - theme, font density, reduced motion и accessibility.
 
@@ -410,6 +410,12 @@ Root Error Boundary всегда сохраняет navigation/reload/diagnostic
   сигналом.
 
 ## Localization
+
+Current P3-P реализует Web-wide locale provider, сохранённый Language control и
+Settings Glossary. Visible copy, aria labels, titles, placeholders, форматные
+единицы и Web-owned errors используют keys; delayed Settings bootstrap меняет
+locale без reload, потери focus или повторных screen/runtime запросов. Contextual
+Glossary help и locale desktop clients остаются target.
 
 - English locale — source copy и fallback;
 - Russian — curated translation с product review;

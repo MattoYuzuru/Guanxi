@@ -1,7 +1,7 @@
 # Инструкции для агентов
 
 **Статус:** implemented  
-**Проверено:** 2026-08-14
+**Проверено:** 2026-08-17
 **Область:** весь репозиторий
 
 Alamo UI — ранний local-first интерфейс и runtime-control layer поверх Ollama. Не
@@ -50,11 +50,14 @@ Alamo UI — ранний local-first интерфейс и runtime-control laye
   пользовательской базой.
 - Проект использует ESM и явные `.js`-суффиксы в TypeScript imports там, где этого
   требует существующий стиль.
-- Текущий POST+SSE turn привязан к соединению и не является durable/replayable.
-  Не описывайте его как фоновую работу.
-- До реализации Resource Governor разные threads способны одновременно загрузить
-  разные модели. Любое изменение model lifecycle должно учитывать весь host, а
-  не только открытую страницу.
+- Chat POST+SSE читает durable Job/events и subscriber disconnect не отменяет
+  execution, но process restart только reconciles state и не продолжает inference.
+  Model pull, HF download/import и другие явно connection-owned POST+SSE не
+  являются durable/replayable — не описывайте их как фоновые Jobs.
+- Current Resource Governor сериализует известную application work одним
+  process-local permit, но не владеет external clients и другими Alamo processes.
+  Любое изменение model lifecycle должно учитывать весь host, а не только
+  открытую страницу.
 - Не выводите capability, hardware fit или runtime status как факт без источника,
   времени наблюдения и уровня уверенности.
 - Не вводите произвольные UI-ceilings для context, thinking, output, media size
@@ -81,16 +84,16 @@ npm run build
 
 `npm test` проверяет server, CLI и web component regression tests.
 Deterministic Chromium tests запускаются отдельно через
-`npm run test:web:browser`: текущий suite перечисляет 38 mocked тестов, покрывающих
-P0-A–P3-O (crash containment, first stream, terminal reload, runtime bar,
+`npm run test:web:browser`: текущий suite перечисляет 40 mocked тестов, покрывающих
+P0-A–P3-P (crash containment, first stream, terminal reload, runtime bar,
 resource conflict, prewarm, context limits, model evidence, catalog, user
 capability overrides, Hugging Face discovery, exact GGUF selection/download и
 локальный staged import, logical Project без filesystem root и Project
 presentation picker, Project Chat grouping, retention/Trash, reasoning Chat
 Info, Session deletion, Quick Run, Recipe revisions и non-destructive context
 checkpoint и scoped attachment retry/reload/download). Последний локально
-подтверждённый baseline — 38/38 через P3-O на
-2026-08-14. Это по-прежнему
+подтверждённый baseline — 40/40 через P3-P на
+2026-08-17. Это по-прежнему
 mocked gate без live Ollama/GPU/network — не называйте его полным regression
 suite и не выдавайте за production validation.
 
