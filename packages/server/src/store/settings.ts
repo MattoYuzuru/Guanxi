@@ -96,27 +96,35 @@ export class SettingsStore {
     webSearch?: { provider?: WebSearchProvider; baseUrl?: string | null; apiKey?: string | null }
     theme?: Settings['theme']
   }): Settings {
-    if (patch.ollamaHost !== undefined) this.write(KEYS.ollamaHost, patch.ollamaHost)
-    if (patch.defaultModel !== undefined) this.write(KEYS.defaultModel, patch.defaultModel)
-    if (patch.defaultNumCtx !== undefined) this.write(KEYS.defaultNumCtx, String(patch.defaultNumCtx))
-    if (patch.autoApproveTools !== undefined)
-      this.write(KEYS.autoApproveTools, String(patch.autoApproveTools))
-    if (patch.enableBash !== undefined) this.write(KEYS.enableBash, String(patch.enableBash))
-    if (patch.prewarmEnabled !== undefined)
-      this.write(KEYS.prewarmEnabled, String(patch.prewarmEnabled))
-    if (patch.locale !== undefined) this.write(KEYS.locale, patch.locale)
-    if (patch.theme !== undefined) this.write(KEYS.theme, patch.theme)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      if (patch.ollamaHost !== undefined) this.write(KEYS.ollamaHost, patch.ollamaHost)
+      if (patch.defaultModel !== undefined) this.write(KEYS.defaultModel, patch.defaultModel)
+      if (patch.defaultNumCtx !== undefined) this.write(KEYS.defaultNumCtx, String(patch.defaultNumCtx))
+      if (patch.autoApproveTools !== undefined)
+        this.write(KEYS.autoApproveTools, String(patch.autoApproveTools))
+      if (patch.enableBash !== undefined) this.write(KEYS.enableBash, String(patch.enableBash))
+      if (patch.prewarmEnabled !== undefined)
+        this.write(KEYS.prewarmEnabled, String(patch.prewarmEnabled))
+      if (patch.locale !== undefined) this.write(KEYS.locale, patch.locale)
+      if (patch.theme !== undefined) this.write(KEYS.theme, patch.theme)
 
-    if (patch.webSearch) {
-      if (patch.webSearch.provider !== undefined)
-        this.write(KEYS.webSearchProvider, patch.webSearch.provider)
-      if (patch.webSearch.baseUrl !== undefined)
-        this.write(KEYS.webSearchBaseUrl, patch.webSearch.baseUrl)
-      // Пустая строка означает «удалить ключ», а не «сохранить пустой».
-      if (patch.webSearch.apiKey !== undefined)
-        this.write(KEYS.webSearchApiKey, patch.webSearch.apiKey || null)
+      if (patch.webSearch) {
+        if (patch.webSearch.provider !== undefined)
+          this.write(KEYS.webSearchProvider, patch.webSearch.provider)
+        if (patch.webSearch.baseUrl !== undefined)
+          this.write(KEYS.webSearchBaseUrl, patch.webSearch.baseUrl)
+        // Пустая строка означает «удалить ключ», а не «сохранить пустой».
+        if (patch.webSearch.apiKey !== undefined)
+          this.write(KEYS.webSearchApiKey, patch.webSearch.apiKey || null)
+      }
+
+      const updated = this.get()
+      this.db.exec('COMMIT')
+      return updated
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* preserve the original write failure */ }
+      throw error
     }
-
-    return this.get()
   }
 }

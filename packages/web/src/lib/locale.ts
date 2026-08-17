@@ -816,6 +816,19 @@ const english = {
   'error.contractShape': 'The response from {path} does not match the application contract',
   'error.serverConnection': 'Could not connect to the {product} server',
   'error.streamBodyMissing': 'The response has no body, so streaming cannot continue',
+  'error.api.unavailable': 'The requested local service is unavailable.',
+  'error.api.notFound': 'The requested item no longer exists.',
+  'error.api.conflict': 'The request conflicts with the current saved state. Refresh and try again.',
+  'error.api.storage': 'The request could not be saved to local storage.',
+  'error.api.validation': 'The request contains an invalid or unsupported value.',
+  'error.api.tooLarge': 'The requested item exceeds the current storage policy.',
+  'error.api.admissionFull': 'The local transfer queue is full. Try again after an active transfer finishes.',
+  'error.api.notSupported': 'This operation is not supported by the current local service.',
+  'error.api.notAllowed': 'This operation is outside the currently allowed local scope.',
+  'error.api.timeout': 'The local runtime did not respond before the deadline.',
+  'error.api.protocol': 'The local runtime returned an invalid response.',
+  'error.api.upstream': 'The local runtime could not complete the request.',
+  'error.api.internal': 'The local application could not complete the request.',
   'health.server.title': 'The {product} server is not responding',
   'health.server.description': 'The interface is running, but the local application server is unavailable.',
   'health.server.whatHappened': 'What happened',
@@ -2510,6 +2523,19 @@ const russian: Messages = {
   'error.contractShape': 'Ответ {path} не соответствует контракту приложения',
   'error.serverConnection': 'Не удалось соединиться с сервером {product}',
   'error.streamBodyMissing': 'В ответе нет тела, поэтому стрим нельзя продолжить',
+  'error.api.unavailable': 'Запрошенный локальный сервис недоступен.',
+  'error.api.notFound': 'Запрошенного объекта больше нет.',
+  'error.api.conflict': 'Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.',
+  'error.api.storage': 'Не удалось сохранить запрос в локальное хранилище.',
+  'error.api.validation': 'Запрос содержит недопустимое или неподдерживаемое значение.',
+  'error.api.tooLarge': 'Объект превышает текущий лимит storage policy.',
+  'error.api.admissionFull': 'Очередь локальных передач заполнена. Повторите после завершения активной передачи.',
+  'error.api.notSupported': 'Текущий локальный сервис не поддерживает эту операцию.',
+  'error.api.notAllowed': 'Операция выходит за границы разрешённого локального scope.',
+  'error.api.timeout': 'Локальный runtime не ответил до истечения срока.',
+  'error.api.protocol': 'Локальный runtime вернул недопустимый ответ.',
+  'error.api.upstream': 'Локальный runtime не смог завершить запрос.',
+  'error.api.internal': 'Локальное приложение не смогло завершить запрос.',
   'health.server.title': 'Сервер {product} не отвечает',
   'health.server.description': 'Интерфейс запущен, но локальный сервер приложения недоступен.',
   'health.server.whatHappened': 'Что произошло',
@@ -3403,7 +3429,9 @@ export function getActiveLocale(): UiLocale {
 
 export function setActiveLocale(locale: UiLocale): void {
   activeLocale = locale
-  if (typeof document !== 'undefined') document.documentElement.lang = locale
+  if (typeof document !== 'undefined' && document.documentElement.lang !== locale) {
+    document.documentElement.lang = locale
+  }
 }
 
 export function translate(

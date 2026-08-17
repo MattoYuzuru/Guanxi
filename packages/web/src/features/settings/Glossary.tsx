@@ -1,16 +1,20 @@
 import { useMemo, useState } from 'react'
 import { Input } from '../../components/ui.tsx'
-import { glossaryEntries, searchGlossary } from '../../lib/glossary.ts'
+import {
+  glossaryEntries,
+  searchGlossary,
+  type GlossaryEntry,
+} from '../../lib/glossary.ts'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { PRODUCT_NAME } from '../../lib/brand.ts'
 
-export function Glossary() {
+export function Glossary({ entries = glossaryEntries }: { entries?: readonly GlossaryEntry[] }) {
   const { locale } = useLocale()
   const [query, setQuery] = useState('')
   const matches = useMemo(
-    () => searchGlossary(glossaryEntries, query, locale),
-    [locale, query],
+    () => searchGlossary(entries, query, locale),
+    [entries, locale, query],
   )
 
   return (

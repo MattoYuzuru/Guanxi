@@ -11,6 +11,7 @@ import { formatBytes, formatContextLength } from '../../lib/format.ts'
 import { FitIndicator } from './FitIndicator.tsx'
 import { CatalogVariantInstall } from './CatalogVariantInstall.tsx'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
+import { useLocale } from '../../lib/locale-context.tsx'
 import { InstalledEvidenceSummary } from './InstalledEvidence.tsx'
 
 export type ModelCardData =
@@ -45,6 +46,7 @@ export const ModelCard = memo(function ModelCard({
   onToggleCompare?: (variant: CatalogModel['variants'][number]) => void
   onPullActiveChange?: (active: boolean) => void
 }) {
+  useLocale()
   const model = data.model
   const local = data.kind === 'local' ? data.model : null
   const catalog = data.kind === 'catalog' ? data.model : null

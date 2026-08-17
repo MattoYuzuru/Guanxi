@@ -115,7 +115,7 @@ import {
 } from '@alamo/contract'
 import { consumeSse, sseStream } from './sse.ts'
 import { PRODUCT_NAME } from './brand.ts'
-import { translate } from './locale.ts'
+import { translate, type LocaleKey } from './locale.ts'
 
 /* ──────────────────────────────── Ошибки ──────────────────────────────── */
 
@@ -149,7 +149,8 @@ export class ApiShapeError extends Error {
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
     if (error.code === 'context_limit_exceeded') return translate('context.limit.exceeded')
-    return error.payload?.message ?? error.message
+    if (error.payload) return translate(API_ERROR_KEYS[error.payload.code])
+    return translate('error.api.internal')
   }
   if (error instanceof ApiShapeError) return error.message
   if (error instanceof Error) {
@@ -161,6 +162,39 @@ export function errorMessage(error: unknown): string {
   }
   return String(error)
 }
+
+const API_ERROR_KEYS = {
+  ollama_unavailable: 'error.api.unavailable',
+  model_not_found: 'error.api.notFound',
+  job_not_found: 'error.api.notFound',
+  job_conflict: 'error.api.conflict',
+  storage_error: 'error.api.storage',
+  thread_not_found: 'error.api.notFound',
+  workspace_not_found: 'error.api.notFound',
+  project_not_found: 'error.api.notFound',
+  quick_run_not_found: 'error.api.notFound',
+  recipe_not_found: 'error.api.notFound',
+  recipe_revision_conflict: 'error.api.conflict',
+  recipe_job_not_found: 'error.api.notFound',
+  recipe_job_conflict: 'error.api.conflict',
+  artifact_not_found: 'error.api.notFound',
+  artifact_conflict: 'error.api.conflict',
+  artifact_too_large: 'error.api.tooLarge',
+  artifact_policy_unavailable: 'error.api.unavailable',
+  artifact_admission_full: 'error.api.admissionFull',
+  range_not_supported: 'error.api.notSupported',
+  project_chat_mismatch: 'error.api.conflict',
+  path_outside_workspace: 'error.api.notAllowed',
+  tool_disabled: 'error.api.notAllowed',
+  validation_failed: 'error.api.validation',
+  context_limit_exceeded: 'error.api.validation',
+  ollama_connect_timeout: 'error.api.timeout',
+  ollama_load_timeout: 'error.api.timeout',
+  ollama_stream_idle_timeout: 'error.api.timeout',
+  runtime_protocol: 'error.api.protocol',
+  upstream_error: 'error.api.upstream',
+  internal_error: 'error.api.internal',
+} satisfies Record<ApiError['code'], LocaleKey>
 
 /* ─────────────────────────────── Транспорт ────────────────────────────── */
 

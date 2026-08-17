@@ -529,6 +529,26 @@ describe('thread routes', () => {
       assert.equal(updatedBody.locale, 'ru')
       assert.equal(updatedBody.localeSource, 'user_setting')
 
+      const restoredEnglish = await app.request('/api/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ locale: 'en' }),
+      })
+      assert.equal(restoredEnglish.status, 200)
+      const restoredEnglishBody = await restoredEnglish.json() as {
+        locale: string
+        localeSource: string
+      }
+      assert.equal(restoredEnglishBody.locale, 'en')
+      assert.equal(restoredEnglishBody.localeSource, 'user_setting')
+
+      const restoreRussian = await app.request('/api/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ locale: 'ru' }),
+      })
+      assert.equal(restoreRussian.status, 200)
+
       for (const body of [{ locale: 'future' }, { locale: 'en', future: true }]) {
         const rejected = await app.request('/api/settings', {
           method: 'PUT',

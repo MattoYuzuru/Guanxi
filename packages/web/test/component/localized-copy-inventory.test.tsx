@@ -13,8 +13,11 @@ describe('localized Web copy inventory', () => {
   it('rejects direct and nested injected user-facing JSX copy', () => {
     const violations = collectLocalizedCopyViolations(`
       export function Fixture() {
+        const copy = 'Visible identifier copy'
+        const accessible = 'Identifier accessible name'
         return <section title="Visible title">
           Visible text
+          <button aria-label={accessible}>{copy}</button>
           <button aria-label="Accessible name" />
           <input placeholder="Search here" />
           <Select options={[{ value: 'technical-id', label: 'Hardcoded visible choice' }]} />
@@ -24,8 +27,10 @@ describe('localized Web copy inventory', () => {
     `)
     expect(violations.map((item: { kind: string }) => item.kind).sort()).toEqual([
       'attribute:aria-label',
+      'attribute:aria-label',
       'attribute:placeholder',
       'attribute:title',
+      'jsx-expression',
       'jsx-text',
       'property:label',
       'property:title',
@@ -35,7 +40,8 @@ describe('localized Web copy inventory', () => {
   it('rejects hardcoded strings returned by non-TSX display formatters', () => {
     const violations = collectDynamicCopyViolations(`
       export function formatDuration() {
-        return true ? 'Hardcoded duration label' : 'сек'
+        const copy = 'Hardcoded duration label'
+        return true ? copy : 'сек'
       }
     `)
     expect(violations.map((item: { value: string }) => item.value).sort()).toEqual([

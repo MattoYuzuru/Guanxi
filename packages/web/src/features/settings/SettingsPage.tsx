@@ -194,6 +194,7 @@ export function SettingsPage() {
       )}
 
       <form onSubmit={save} className="space-y-4">
+        <fieldset disabled={saving} className="space-y-4 border-0 p-0">
         <Panel title={translate('settings.section.ollama')}>
           <Field
             label={translate('settings.ollama.address')}
@@ -406,6 +407,7 @@ export function SettingsPage() {
             {translate('settings.save')}
           </Button>
         </div>
+        </fieldset>
       </form>
       <div className="mt-4">
         <Glossary />

@@ -117,6 +117,9 @@ describe('SQLite stores', () => {
     assert.equal(settings.get().localeSource, 'default')
     assert.equal(settings.update({ locale: 'ru' }).locale, 'ru')
     assert.equal(settings.get().localeSource, 'user_setting')
+    assert.equal(settings.update({ locale: 'en' }).locale, 'en')
+    assert.equal(settings.get().localeSource, 'user_setting')
+    assert.equal(settings.update({ locale: 'ru' }).locale, 'ru')
     db.close()
 
     db = openDb(databasePath)
@@ -131,6 +134,28 @@ describe('SQLite stores', () => {
     settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
     assert.equal(settings.get().locale, 'en')
     assert.equal(settings.get().localeSource, 'stored_invalid')
+    db.close()
+  })
+
+  it('rolls back every settings field when one write in the patch fails', () => {
+    const db = openDb(':memory:')
+    const settings = new SettingsStore(db, { ollamaHost: 'http://127.0.0.1:11434' })
+    db.exec(`
+      CREATE TRIGGER reject_theme_fixture
+      BEFORE INSERT ON settings
+      WHEN NEW.key = 'theme'
+      BEGIN
+        SELECT RAISE(ABORT, 'fixture settings failure');
+      END;
+    `)
+
+    assert.throws(
+      () => settings.update({ locale: 'ru', theme: 'dark' }),
+      /fixture settings failure/u,
+    )
+    assert.equal(settings.get().locale, 'en')
+    assert.equal(settings.get().localeSource, 'default')
+    assert.equal(settings.get().theme, 'system')
     db.close()
   })
 

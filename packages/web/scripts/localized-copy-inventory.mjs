@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import ts from 'typescript'
 
@@ -39,6 +39,14 @@ const TECHNICAL_EXCEPTIONS = [
   { file: 'features/settings/SettingsPage.tsx', value: 'SearXNG', count: 1, reason: 'provider product name' },
   { file: 'features/settings/SettingsPage.tsx', value: 'Brave Search', count: 1, reason: 'provider product name' },
   { file: 'features/settings/SettingsPage.tsx', value: 'Tavily', count: 1, reason: 'provider product name' },
+  { file: 'features/chat/useChat.ts', value: 'thinking', count: 1, reason: 'runtime phase identifier' },
+  { file: 'features/chat/useChat.ts', value: 'generating', count: 1, reason: 'runtime phase identifier' },
+  { file: 'features/chat/useChat.ts', value: 'tools', count: 1, reason: 'runtime phase identifier' },
+  { file: 'features/chat/useChat.ts', value: 'awaiting_approval', count: 1, reason: 'runtime phase identifier' },
+  { file: 'features/chat/useChat.ts', value: 'finalizing', count: 1, reason: 'runtime phase identifier' },
+  { file: 'features/chat/useChat.ts', value: 'sending', count: 1, reason: 'runtime phase identifier' },
+  { file: 'features/chat/useChat.ts', value: 'prefill', count: 1, reason: 'runtime phase identifier' },
+  { file: 'lib/api.ts', value: 'unknown', count: 1, reason: 'API error sentinel' },
 ]
 
 function literalValue(node) {
@@ -54,8 +62,43 @@ function isTranslateKey(node) {
     && parent.expression.text === 'translate'
 }
 
-function collectRenderedExpression(node, report) {
+function lexicalScope(node) {
+  let current = node.parent
+  while (current && !ts.isBlock(current) && !ts.isSourceFile(current)) current = current.parent
+  return current ?? null
+}
+
+function resolveIdentifierInitializer(identifier) {
+  const source = identifier.getSourceFile()
+  const scopes = []
+  for (let current = identifier.parent; current; current = current.parent) {
+    if (ts.isBlock(current) || ts.isSourceFile(current)) scopes.push(current)
+  }
+  const candidates = []
+  const visit = (node) => {
+    if (
+      ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.name.text === identifier.text
+      && node.initializer
+      && node.getStart(source) < identifier.getStart(source)
+    ) {
+      const scopeIndex = scopes.indexOf(lexicalScope(node))
+      if (scopeIndex >= 0) candidates.push({ node, scopeIndex })
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  candidates.sort((left, right) => (
+    left.scopeIndex - right.scopeIndex || right.node.getStart(source) - left.node.getStart(source)
+  ))
+  return candidates[0]?.node.initializer ?? null
+}
+
+function collectRenderedExpression(node, report, seen = new Set()) {
   while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) node = node.expression
+  if (seen.has(node)) return
+  seen.add(node)
   const value = literalValue(node)
   if (value !== null) {
     if (LETTER.test(value) && !isTranslateKey(node)) report(node, value)
@@ -66,18 +109,23 @@ function collectRenderedExpression(node, report) {
     if (LETTER.test(copy)) report(node, copy)
     return
   }
+  if (ts.isIdentifier(node)) {
+    const initializer = resolveIdentifierInitializer(node)
+    if (initializer) collectRenderedExpression(initializer, report, seen)
+    return
+  }
   if (ts.isConditionalExpression(node)) {
-    collectRenderedExpression(node.whenTrue, report)
-    collectRenderedExpression(node.whenFalse, report)
+    collectRenderedExpression(node.whenTrue, report, seen)
+    collectRenderedExpression(node.whenFalse, report, seen)
     return
   }
   if (ts.isBinaryExpression(node)) {
     if ([ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken]
       .includes(node.operatorToken.kind)) {
-      collectRenderedExpression(node.right, report)
+      collectRenderedExpression(node.right, report, seen)
     } else if (node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-      collectRenderedExpression(node.left, report)
-      collectRenderedExpression(node.right, report)
+      collectRenderedExpression(node.left, report, seen)
+      collectRenderedExpression(node.right, report, seen)
     }
   }
 }
@@ -189,25 +237,28 @@ export function collectDynamicCopyViolations(sourceText, fileName = 'lib/format.
   return violations
 }
 
-function tsxFiles(directory) {
+function sourceFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) return tsxFiles(path)
-    return entry.isFile() && entry.name.endsWith('.tsx') ? [path] : []
+    if (entry.isDirectory()) return sourceFiles(path)
+    return entry.isFile() && /\.tsx?$/u.test(entry.name) ? [path] : []
   })
 }
 
 export function scanLocalizedWebCopy(sourceDirectory) {
-  const violations = tsxFiles(sourceDirectory).flatMap((path) => {
+  const files = sourceFiles(sourceDirectory)
+  const violations = files.filter((path) => path.endsWith('.tsx')).flatMap((path) => {
     const name = relative(sourceDirectory, path)
     return collectLocalizedCopyViolations(readFileSync(path, 'utf8'), name)
   })
-  const formatterPath = resolve(sourceDirectory, 'lib/format.ts')
-  if (existsSync(formatterPath)) {
-    violations.push(...collectDynamicCopyViolations(
-      readFileSync(formatterPath, 'utf8'),
-      relative(sourceDirectory, formatterPath),
-    ))
+  // Locale catalogs and the bilingual glossary are the localization boundary,
+  // not consumers bypassing it. Every other non-JSX TS display return is
+  // scanned; TSX user-facing expressions are handled by the render-aware pass.
+  const localizedSources = new Set(['lib/locale.ts', 'lib/glossary.ts'])
+  for (const path of files.filter((candidate) => candidate.endsWith('.ts'))) {
+    const name = relative(sourceDirectory, path)
+    if (localizedSources.has(name)) continue
+    violations.push(...collectDynamicCopyViolations(readFileSync(path, 'utf8'), name))
   }
   const remaining = [...violations]
   for (const exception of TECHNICAL_EXCEPTIONS) {

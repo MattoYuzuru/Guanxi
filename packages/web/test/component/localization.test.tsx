@@ -3,6 +3,8 @@ import type { Settings } from '@alamo/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
+import { Glossary } from '../../src/features/settings/Glossary.tsx'
+import { Markdown } from '../../src/components/Markdown.tsx'
 import { glossaryEntries, searchGlossary } from '../../src/lib/glossary.ts'
 import {
   localeCatalogs,
@@ -11,7 +13,7 @@ import {
   type LocaleKey,
 } from '../../src/lib/locale.ts'
 import { LocaleProvider, useLocale } from '../../src/lib/locale-context.tsx'
-import { ApiShapeError, api, errorMessage } from '../../src/lib/api.ts'
+import { ApiRequestError, ApiShapeError, api, errorMessage } from '../../src/lib/api.ts'
 import {
   formatBytes,
   formatBytesPerSecond,
@@ -119,6 +121,12 @@ describe('locale catalogs', () => {
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Could not connect to the Alamo server')
     expect(errorMessage(new ApiShapeError('/api/example', [])))
       .toBe('The response from /api/example does not match the application contract')
+    expect(errorMessage(new ApiRequestError(400, {
+      code: 'validation_failed',
+      message: 'Некорректное тело',
+      details: null,
+    }, 'Некорректное тело')))
+      .toBe('The request contains an invalid or unsupported value.')
 
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null)))
     const stream = sseStream({ url: '/api/example', schema: z.object({ seq: z.number() }), maxRetries: 0 })
@@ -133,11 +141,36 @@ describe('locale catalogs', () => {
     expect(formatTokensPerSecond(12.25)).toBe('12.3 ток/с')
     expect(formatInteger(32_768)).toMatch(/^32\s768$/u)
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Не удалось соединиться с сервером Alamo')
+    expect(errorMessage(new ApiRequestError(400, {
+      code: 'validation_failed',
+      message: 'Invalid body',
+      details: null,
+    }, 'Invalid body')))
+      .toBe('Запрос содержит недопустимое или неподдерживаемое значение.')
 
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-14T16:00:00.000Z'))
     expect(formatRelativeTime('2026-08-14T15:59:59.000Z')).toBe('только что')
     setActiveLocale('en')
     expect(formatRelativeTime('2026-08-14T15:59:59.000Z')).toBe('just now')
+  })
+
+  it('rerenders memoized locale consumers after delayed settings bootstrap', async () => {
+    let resolveSettings!: (settings: Settings) => void
+    vi.spyOn(api, 'getSettings').mockReturnValue(new Promise((resolve) => {
+      resolveSettings = resolve
+    }))
+
+    setActiveLocale('en')
+    render(
+      <LocaleProvider>
+        <Markdown source={'```\ncopy me\n```'} />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()
+
+    resolveSettings(SETTINGS)
+    expect(await screen.findByRole('button', { name: 'Копировать код' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Copy code' })).toBeNull()
   })
 })
 
@@ -179,6 +212,11 @@ describe('Settings language and glossary', () => {
     )
 
     const language = await screen.findByLabelText('Язык')
+    let langMutations = 0
+    const observer = new MutationObserver((records) => {
+      langMutations += records.filter((record) => record.attributeName === 'lang').length
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
     language.focus()
     fireEvent.change(language, { target: { value: 'en' } })
     expect(document.activeElement).toBe(language)
@@ -193,6 +231,73 @@ describe('Settings language and glossary', () => {
     expect(await screen.findByText('Settings saved')).toBeTruthy()
     expect(getSettings).toHaveBeenCalledTimes(1)
     expect(listModels).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(langMutations).toBe(1))
+    observer.disconnect()
+  })
+
+  it('locks the settings draft while a save response is pending', async () => {
+    let resolveUpdate!: (settings: Settings) => void
+    vi.spyOn(api, 'getSettings').mockResolvedValue(SETTINGS)
+    vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
+    vi.spyOn(api, 'updateSettings').mockReturnValue(new Promise((resolve) => {
+      resolveUpdate = resolve
+    }))
+
+    setActiveLocale('ru')
+    render(
+      <LocaleProvider>
+        <ThemeProvider><SettingsPage /></ThemeProvider>
+      </LocaleProvider>,
+    )
+    const language = await screen.findByLabelText('Язык')
+    fireEvent.change(language, { target: { value: 'en' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(language.matches(':disabled')).toBe(true)
+    resolveUpdate({ ...SETTINGS, locale: 'en' })
+    expect(await screen.findByText('Settings saved')).toBeTruthy()
+    expect(document.documentElement.lang).toBe('en')
+  })
+
+  it('shows an English save error and retries the same selected locale once', async () => {
+    vi.spyOn(api, 'getSettings').mockResolvedValue({ ...SETTINGS, locale: 'en' })
+    vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
+    const updateSettings = vi.spyOn(api, 'updateSettings')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ...SETTINGS, locale: 'en' })
+
+    setActiveLocale('en')
+    render(
+      <LocaleProvider>
+        <ThemeProvider><SettingsPage /></ThemeProvider>
+      </LocaleProvider>,
+    )
+    await screen.findByLabelText('Language')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Could not connect to the Alamo server')).toBeTruthy()
+    expect(screen.queryByText('Settings saved')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Settings saved')).toBeTruthy()
+    expect(updateSettings).toHaveBeenCalledTimes(2)
+    expect(updateSettings.mock.calls.map(([body]) => body.locale)).toEqual(['en', 'en'])
+  })
+
+  it('keeps localized glossary empty and no-result states keyboard reachable', () => {
+    for (const locale of ['en', 'ru'] as const) {
+      setActiveLocale(locale)
+      const { unmount } = render(<Glossary entries={[]} />)
+      const search = screen.getByRole('textbox', {
+        name: locale === 'en' ? 'Search glossary' : 'Поиск по глоссарию',
+      })
+      search.focus()
+      fireEvent.change(search, { target: { value: 'missing' } })
+      expect(document.activeElement).toBe(search)
+      expect(screen.getByText(
+        locale === 'en'
+          ? 'No glossary entries match this search.'
+          : 'По этому запросу ничего не найдено.',
+      )).toBeTruthy()
+      unmount()
+    }
   })
 
   it('searches bounded localized term, definition and example copy', () => {

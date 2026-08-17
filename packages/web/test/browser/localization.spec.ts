@@ -51,6 +51,7 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   let persisted = browserSettings({ locale: 'en', localeSource: 'user_setting' })
   let settingsReads = 0
   let settingsWrites = 0
+  const runtimeReads = { health: 0, runtime: 0, models: 0 }
   const settingsBodies: Array<Record<string, unknown>> = []
   const forbiddenEffects: string[] = []
 
@@ -58,9 +59,16 @@ test('locale preview, persistence and glossary stay exact across failure and rel
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
-    if (url.pathname === '/api/health') return route.fulfill(json(health))
-    if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === '/api/health') {
+      runtimeReads.health += 1
+      return route.fulfill(json(health))
+    }
+    if (url.pathname === '/api/runtime') {
+      runtimeReads.runtime += 1
+      return route.fulfill(json(runtimeBrowserSnapshot()))
+    }
     if (url.pathname === '/api/models' && method === 'GET') {
+      runtimeReads.models += 1
       return route.fulfill(json({ models: [] }))
     }
     if (url.pathname === '/api/settings' && method === 'GET') {
@@ -89,17 +97,29 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toHaveCount(1)
   await expect.poll(() => settingsReads).toBe(1)
+  await expect.poll(() => runtimeReads).toEqual({ health: 2, runtime: 2, models: 2 })
   await expect(page).toHaveTitle('Alamo')
   await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
 
   const glossarySearch = page.getByRole('textbox', { name: 'Search glossary' })
+  await glossarySearch.fill('definitely absent')
+  await expect(page.getByText('No glossary entries match this search.')).toHaveCount(1)
+  await expect(glossarySearch).toBeFocused()
   await glossarySearch.fill('SPEED UP CONTINUATION')
   await expect(page.getByRole('heading', { name: 'KV cache', exact: true })).toHaveCount(1)
   await expect(page.locator('#settings-glossary-results article')).toHaveCount(1)
 
   const language = page.getByRole('combobox', { name: 'Language' })
   const languageControl = page.locator('#settings-locale')
+  await page.evaluate(() => {
+    let mutations = 0
+    const observer = new MutationObserver((records) => {
+      mutations += records.filter((record) => record.attributeName === 'lang').length
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
+    Object.assign(window, { __localeLangMutations: () => mutations })
+  })
   await language.focus()
   const readsBeforePreview = settingsReads
   await language.selectOption('ru')
@@ -116,6 +136,7 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   await expect(page.getByRole('heading', { name: 'Сценарий', exact: true })).toHaveCount(1)
   await expect(page.locator('#settings-glossary-results article')).toHaveCount(1)
   await localizedSearch.fill('definitely absent')
+  await expect(localizedSearch).toBeFocused()
   await expect(page.getByText('По этому запросу ничего не найдено.')).toHaveCount(1)
   await expect(page.locator('#settings-glossary-results article')).toHaveCount(0)
 
@@ -136,9 +157,18 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   await expect.poll(() => settingsWrites).toBe(2)
   await expect(page.getByText('Настройки сохранены', { exact: true })).toHaveCount(1)
   expect(settingsBodies.map((body) => body.locale)).toEqual(['ru', 'ru'])
-  expect(settingsBodies.every((body) => !Object.hasOwn(body, 'apiKey'))).toBe(true)
+  expect(settingsBodies.every((body) => {
+    const webSearch = body.webSearch
+    return typeof webSearch === 'object'
+      && webSearch !== null
+      && !Object.hasOwn(webSearch, 'apiKey')
+  })).toBe(true)
+  expect(await page.evaluate(() => (
+    (window as unknown as { __localeLangMutations: () => number }).__localeLangMutations()
+  ))).toBe(1)
 
   expect(settingsReads).toBe(1)
+  expect(runtimeReads).toEqual({ health: 2, runtime: 2, models: 2 })
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')

@@ -13,6 +13,7 @@ import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 import { translate } from '../lib/locale.ts'
+import { useLocale } from '../lib/locale-context.tsx'
 
 /* Языки регистрируем поштучно: полный highlight.js — это ~1 МБ. */
 import bash from 'highlight.js/lib/languages/bash'
@@ -163,7 +164,8 @@ export const Markdown = memo(function Markdown({
   source: string
   className?: string
 }) {
-  const html = useMemo(() => renderMarkdown(source), [source])
+  const { locale } = useLocale()
+  const html = useMemo(() => renderMarkdown(source), [locale, source])
 
   // Делегирование вместо кнопки на каждый блок: обработчик один на сообщение.
   const onClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
