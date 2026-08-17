@@ -1,7 +1,7 @@
 # Product decisions: завершение Phase 3 и границы Phase 4
 
-**Статус:** accepted  
-**Дата:** 2026-08-18  
+**Статус:** accepted
+**Дата:** 2026-08-18
 **Область:** Quick Run, Project, search/archive, Workbench, localization,
 notifications, Application Service, CLI/TUI и autostart
 
@@ -30,6 +30,8 @@ Session для Quick Run заканчивается двумя способам�
 
 После окончания Quick Run использует ту же recoverable модель, что Session Chat:
 Trash на 24 часа, Restore или перевод в `Keep`/`7 days` до deadline.
+Это implementation default, выбранный для одной retention model; owner явно
+зафиксировал оба события окончания.
 
 ## D-023. Notification rows без исторического backfill
 
@@ -62,6 +64,9 @@ list, но не удаляет history, Jobs, Artifacts и ownership; досту
 Chats, а явный filter переключает его на Archived. Это самый лёгкий полезный UI:
 одна понятная секция без отдельной иерархии папок или нового lifecycle.
 
+Project-only scope — ответ owner; indexed fields и `archivedAt` lifecycle —
+делегированные implementation defaults.
+
 ## D-025. Project defaults применяются к каждой поддержанной группе
 
 Project может задавать defaults для:
@@ -80,6 +85,8 @@ entities при изменении Project defaults не переписываю�
 Effective defaults разрешаются при создании Job и попадают в immutable snapshot.
 Bindings идут `global → Project → Recipe → Job`; наследник может сузить доступ,
 а расширить — только явным user grant. MCP/Skills остаются выключены по default.
+Exact snapshot и restrictive precedence — implementation defaults, сохраняющие
+существующие security invariants.
 
 ## D-026. Phase 3 закрывает весь заявленный text foundation
 
@@ -87,7 +94,8 @@ Bindings идут `global → Project → Recipe → Job`; наследник м
 Project defaults/vocabulary/bindings, target navigation, notification visual
 foundation и bounded Workbench/document batch foundation.
 
-Минимальная безопасная граница Workbench:
+Делегированный implementation default — минимальная безопасная граница
+Workbench:
 
 - operation descriptor registry и текущий text-completion adapter;
 - специализированный Chat/text renderer;
@@ -126,6 +134,8 @@ search/replace storage identity запрещён ADR-0007.
 
 ## D-030. CLI/TUI surface Phase 4
 
+Следующий surface — делегированный implementation default.
+
 No-args `alamo` подключается к service либо запускает default service, ждёт
 readiness и открывает keyboard TUI. `alamo open` открывает browser, а
 `alamo start --detach` остаётся явным automation command.
@@ -144,7 +154,8 @@ unavailable/start failure, `4` not found, `5` conflict/busy, `6` denied,
 
 ## D-031. Лёгкий local control plane и identity
 
-Implementation default: клиенты переиспользуют loopback HTTP Application
+Весь раздел — делегированный implementation default: клиенты переиспользуют
+loopback HTTP Application
 Service, а не вводят второй supervisor/socket protocol. Control API loopback-only
 и использует per-install random bearer secret из owner-only file. Browser
 mutation остаётся same-origin с HttpOnly SameSite session, Origin/CSRF checks и
@@ -155,10 +166,14 @@ UUID, start time, port и token reference. PID сам по себе никогд
 основанием для kill. Stale record удаляется только после получения lock и
 неуспешного authenticated handshake с exact instance ID.
 
-Implementation default: start/readiness timeout — 15 секунд. Состояния service:
+Start/readiness timeout — 15 секунд. Состояния service:
 `stopped`, `starting`, `recovering`, `running`, `degraded`, `stopping`, `failed`.
 
 ## D-032. Stop и controlled restart
+
+Owner constraint: stop немедленно меняет status, ждёт response здоровой Job и
+форсирует остановку нездоровой. Остальные детали раздела — implementation
+defaults.
 
 `stop` немедленно переводит service в `stopping` и прекращает admission новых
 Jobs. Queued Jobs остаются durable queued для следующего старта.
@@ -183,6 +198,8 @@ Jobs и restart plan.
 
 ## D-033. Platform adapters и evidence Phase 4
 
+Platform/evidence details — делегированные implementation defaults.
+
 - macOS: per-user LaunchAgent;
 - Ubuntu/Fedora: `systemd --user` service;
 - без `sudo` и без самодельного fallback supervisor;
@@ -194,6 +211,9 @@ Live Ollama/GPU и Linux/NVIDIA verified tier остаются post-Phase-4 со
 Реализация Linux adapter не превращает `PLAT-002` в validated claim.
 
 ## D-034. Notification policy, background и sound
+
+Это implementation-default refinement D-021 и Q-29; старый foreground sound
+запрет сохраняется.
 
 Global delivery policy default — `when_background`; Chat override:
 `inherit | off | when_background | always`. Отдельный global
@@ -207,7 +227,9 @@ profile не показывает exact Job/Chat. Tabs координируют�
 
 Sound принадлежит Web: без browser sound нет, service/CLI/TUI молчат. Permission
 запрашивается только после явного Enable/Preview. `completed`, `failed` и
-`interrupted` могут воспроизвести sound; `cancelled` остаётся visual-only.
+`interrupted` могут воспроизвести sound только в background; `cancelled`
+остаётся visual-only. Exact Job/Chat в visible tab блокирует sound даже при
+policy `always`; в этом случае `always` означает visual/unread/announcement.
 Глобальный durable channel claim даёт at-most-once: crash после claim может
 пропустить sound, но reload или другая tab не дублирует его. Visual equivalent
 есть всегда и не содержит private content.

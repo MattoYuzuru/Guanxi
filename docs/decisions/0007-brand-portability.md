@@ -62,8 +62,8 @@ compatibility migration:
 ## Alternatives
 
 - search/replace: ломает paths/keys/packages.
-- навсегда оставить internal Alamo: допустимо, но продолжает leakage рабочего
-  имени и требует осознанного acceptance.
+- навсегда оставить visible/internal Alamo после rebrand: заменено D-029;
+  старое имя допустимо только во временном compatibility/migration layer.
 
 ## Validation
 

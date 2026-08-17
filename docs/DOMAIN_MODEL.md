@@ -530,7 +530,8 @@ Chat override поддерживает inherit/off/when_background/always. Ка�
 content-free row независимо от delivery policy; historical rows не backfill-ятся.
 Effective policy фиксируется в terminal transaction. Global `readAt` отделён от
 per-channel at-most-once claim. Sound принадлежит только Web browser и доступен
-после explicit permission action; service/CLI/TUI silent. См.
+после explicit permission action, но visible exact Job/Chat блокирует его даже
+при `always`; service/CLI/TUI silent. См.
 [ADR-0014](decisions/0014-notification-persistence-and-delivery.md).
 
 ## Persistence matrix

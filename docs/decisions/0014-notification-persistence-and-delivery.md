@@ -1,7 +1,7 @@
 # ADR-0014: Notification persistence, policy и at-most-once delivery
 
-**Статус:** accepted  
-**Дата:** 2026-08-18  
+**Статус:** accepted
+**Дата:** 2026-08-18
 **Уточняет:** D-021 Completion notifications
 
 ## Context
@@ -40,7 +40,9 @@ CLI/TUI не участвуют в browser presence.
 
 Sound воспроизводит только Web после явного Enable/Preview permission action.
 Service, CLI и TUI всегда silent. `completed`, `failed`, `interrupted` sound-
-eligible; `cancelled` visual-only. Permission denial не убирает visual state.
+eligible; `cancelled` visual-only. Независимо от policy `always`, exact Job/Chat
+в visible tab блокирует sound согласно Q-29; `always` в foreground даёт только
+visual/unread/announcement. Permission denial не убирает visual state.
 
 Для каждого `(notificationId, channel)` service атомарно выдаёт один durable
 claim. Это at-most-once: crash после claim может пропустить sound, но reload,
@@ -55,6 +57,7 @@ reconnect и competing tab не повторят его. Read state и claim н�
 - read/unread глобален, delivery claim channel-specific;
 - notification и diagnostics не содержат private work content;
 - visual equivalent доступен при любом sound/permission outcome;
+- visible exact Job/Chat всегда даёт zero sound, включая policy `always`;
 - reload/replay/concurrent tabs не дублируют channel delivery.
 
 ## Failure и recovery

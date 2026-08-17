@@ -1066,8 +1066,10 @@ server timestamps. Его current projection отдельно фиксирует
 `execution`, `cleanup` и `sessionEnforcement` как `not_implemented`; Chat-only
 expiry/session lifecycle ниже на Quick Run не распространяется.
 
-Новый Chat всегда создаётся с TTL семь дней от последней user activity, включая
-Chat внутри Project. `Keep` задаётся только явным изменением policy.
+Current P3 implementation всегда создаёт новый Chat с TTL семь дней от последней
+user activity, включая Chat внутри Project. Accepted target D-025 сначала
+разрешает explicit Project retention default для новой entity и только затем
+использует global 7-day fallback; existing Chats не переписываются.
 
 Нужны indexes по `expires_at`, `deleted_at` и live references. Maintenance Job
 работает bounded batches:
@@ -1107,7 +1109,8 @@ Row создаётся для каждой новой terminal Job незави�
 Jobs не backfill-ятся. Unique owner — Job ID. `readAt` глобален, а durable
 at-most-once claim хранится отдельно для каждого delivery channel. `off`
 сохраняет row, но не даёт badge/announcement/sound. Повторный SSE/reload не
-воспроизводит sound второй раз. Notification payload не содержит prompt,
+воспроизводит sound второй раз; visible exact Job/Chat не играет sound даже при
+`always`. Notification payload не содержит prompt,
 reasoning или output content. См.
 [ADR-0014](../decisions/0014-notification-persistence-and-delivery.md).
 

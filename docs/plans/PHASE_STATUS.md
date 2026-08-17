@@ -6,7 +6,9 @@
 
 Этот файл — короткий mutable tracker. Канонический scope/exit gates находятся в
 [`ROADMAP.md`](ROADMAP.md); решения — в
-[`2026-08-02-product-decisions.md`](../decisions/2026-08-02-product-decisions.md).
+[`2026-08-02-product-decisions.md`](../decisions/2026-08-02-product-decisions.md)
+и более новой
+[`2026-08-18-phase-3-4-decisions.md`](../decisions/2026-08-18-phase-3-4-decisions.md).
 
 Статусы: `not started`, `in progress`, `blocked`, `implemented`,
 `independently verified`.

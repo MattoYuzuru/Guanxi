@@ -757,6 +757,38 @@ process lock. P0-D health остаётся sampled observation; обязател
 - interrupted cleanup resumes idempotently;
 - exact expiry localized in UI.
 
+### Project search, archive и defaults
+
+- search принимает только selected Project scope и не возвращает projectless
+  либо cross-Project Chat;
+- exact user prompt и final assistant answer находятся; title, reasoning,
+  thinking, tool output, private Job input, raw error, attachment bytes, paths и
+  secrets дают zero matches;
+- active search исключает archived Chat; explicit Archived filter находит его,
+  а Unarchive возвращает тот же Chat без новой identity;
+- Archive не удаляет history/Jobs/Artifacts, не reparent-ит Chat и не
+  останавливает active Job;
+- preferred Recipe/model/routing, retention, context, export, vocabulary и
+  bindings каждый имеют direct precedence/default assertion;
+- изменение Project default не меняет existing entity или старый Job snapshot;
+- effective Job snapshot фиксирует exact resolved values и vocabulary version;
+- global → Project → Recipe → Job inheritance только сужает bindings, если нет
+  отдельного explicit user grant.
+
+### Workbench и document batch
+
+- operation descriptor выбирает специализированный text/Chat renderer;
+- поддержанный safe JSON Schema subset даёт exact generic fields/validation;
+- unsupported keyword/schema/media даёт explicit unsupported, а не guessed UI;
+- batch принимает только существующие scoped attachments и фиксирует exact
+  selection manifest;
+- per-item/parent status показывает queued/running/completed/failed и exact
+  partial failure, не превращая весь batch в false success;
+- successful item создаёт typed Artifact с provenance; failed item не оставляет
+  invented result;
+- document batch foundation не вызывает OCR/PDF/media adapter без отдельной
+  accepted capability.
+
 ### Application Service
 
 - single instance via advisory lock + exact-instance handshake;
@@ -764,6 +796,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 - terminal closes without service exit;
 - no-args `alamo` attach/start + TUI, `alamo-ui` compatibility alias;
 - start/status/stop/restart exact exit codes and versioned JSON/NDJSON;
+- Phase 4 `agent` command возвращает exact unsupported без создания Job;
 - shared settings Web/CLI/TUI;
 - healthy 30-second drain, unhealthy/timeout/force interruption and queued
   preservation;
@@ -791,6 +824,8 @@ process lock. P0-D health остаётся sampled observation; обязател
 - sound defaults off even when delivery policy defaults to when-background;
 - competing tabs/reload/replay receive at most one sound claim;
 - `when_background` respects visible exact Job/Chat across browser tabs;
+- visible exact Job/Chat gives zero sound for `always + soundEnabled`, while its
+  visual/unread/announcement state remains;
 - permission denied still leaves visual badge;
 - off keeps history row but suppresses unread badge/announcement/sound;
 - no prompt/reasoning/result in payload;

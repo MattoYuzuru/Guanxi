@@ -330,7 +330,8 @@ Video Workbench не входит в активный roadmap до нового 
 2. `When background` сверяет visible exact Job/Chat между tabs одного browser
    profile; CLI/TUI не считаются browser foreground.
 3. После explicit Enable/Preview permission Web claim-ит и воспроизводит sound
-   не более одного раза; service/CLI/TUI остаются silent.
+   не более одного раза только в background; open exact Job/Chat и
+   service/CLI/TUI остаются silent даже при `Always`.
 4. Notification ведёт к Job/Chat, не раскрывая prompt/result.
 5. Global delivery default `When background` наследуется Chat и может быть
    изменён в Chat Info через inherit/off/when-background/always; сам sound по

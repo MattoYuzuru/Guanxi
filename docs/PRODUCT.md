@@ -6,7 +6,8 @@
 **Горизонт:** от стабилизации alpha до локальной model workbench platform
 
 Принятые ответы владельца проекта:
-[decision iteration 2026-08-02](decisions/2026-08-02-product-decisions.md).
+[decision iteration 2026-08-02](decisions/2026-08-02-product-decisions.md) и
+[Phase 3/4 decisions 2026-08-18](decisions/2026-08-18-phase-3-4-decisions.md).
 
 ## Vision
 
@@ -229,7 +230,7 @@ experience, но не определяет всю предметную моде�
 
 | ID      | Pri | Требование                                                                                            |
 | ------- | --: | ----------------------------------------------------------------------------------------------------- |
-| CLI-001 |  P1 | Существуют scriptable `start/status/stop/open` с exit codes и JSON output.                            |
+| CLI-001 |  P1 | Существуют scriptable `start/status/stop/restart/open` с exit codes и JSON output.                    |
 | CLI-002 |  P1 | Alamo service, Ollama service и loaded model — разные объекты управления.                             |
 | CLI-003 |  P2 | No-args TUI вызывает те же команды и показывает текущий service state.                                |
 | CLI-004 |  P2 | Phase 4 CLI поддерживает models, jobs, chat и config; agent добавляется в Phase 5.                    |
@@ -243,11 +244,11 @@ experience, но не определяет всю предметную моде�
 
 | ID       | Pri | Требование                                                                                           |
 | -------- | --: | ---------------------------------------------------------------------------------------------------- |
-| I18N-001 |  P1 | English является primary locale; Russian — curated human-authored locale.                            |
+| I18N-001 |  P1 | English primary; curated Russian поддерживается inline без отдельного review gate.                   |
 | I18N-002 |  P1 | User-facing strings не hardcoded и имеют locale key/fallback.                                        |
 | I18N-003 |  P1 | Settings содержит searchable glossary с простыми примерами.                                          |
 | NOT-001  |  P1 | Каждая новая terminal Job создаёт exact one durable content-free notification; old Jobs не backfill. |
-| NOT-002  |  P2 | Web даёт at-most-once short sound; service/CLI/TUI остаются silent.                                  |
+| NOT-002  |  P2 | Web даёт at-most-once background-only sound; open Job и service/CLI/TUI silent.                      |
 | NOT-003  |  P2 | Default When background; Chat override — inherit, Off, When background или Always.                   |
 | NOT-004  |  P2 | Notification не раскрывает prompt/result и уважает browser permission/accessibility preferences.     |
 

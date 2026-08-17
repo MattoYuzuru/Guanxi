@@ -1,7 +1,7 @@
 # ADR-0013: Phase 4 service control, clients и platform adapters
 
-**Статус:** accepted  
-**Дата:** 2026-08-18  
+**Статус:** accepted
+**Дата:** 2026-08-18
 **Уточняет:** [ADR-0009](0009-application-service-lifecycle.md)
 
 ## Context

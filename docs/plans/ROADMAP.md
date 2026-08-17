@@ -204,7 +204,7 @@ Apple Silicon. Hardware-зависимые пункты вынесены явн�
 
 ### Requirements
 
-`CLI-001..007` кроме Phase-5 agent command, `NOT-002..004`, `PLAT-001`.
+`CLI-001..007`, `NOT-002..004`, `PLAT-001`.
 Linux user-service adapter входит в Phase 4, но `PLAT-002` verified
 Linux/NVIDIA tier и live Ollama/GPU evidence остаются post-Phase-4 (Q-35).
 
@@ -247,7 +247,7 @@ Linux/NVIDIA tier и live Ollama/GPU evidence остаются post-Phase-4 (Q-3
 
 ### Requirements
 
-`AGT-001..010`, `CLI-004`.
+`AGT-001..010`.
 
 ### Exit gate
 

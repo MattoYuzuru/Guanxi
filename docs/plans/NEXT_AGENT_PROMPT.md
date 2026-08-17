@@ -48,8 +48,11 @@ permission и policy inheritance остаются следующей фазе.
 
 - Добавь strict versioned public Notification projection и additive SQLite
   storage. Минимальный row: stable notification ID, exact Job ID, terminal Job
-  state/outcome, created/read timestamps и safe navigation target. Prompt,
-  result, reasoning, private error/body, filesystem path и secret не хранятся.
+  state/outcome, terminal-time effective policy, created/read timestamps и safe
+  navigation target. P3-Q сохраняет accepted global default
+  `when_background`; settings/Chat inheritance остаются Phase 4 и не меняют
+  старые rows задним числом. Prompt, result, reasoning, private error/body,
+  filesystem path и secret не хранятся.
 - Один canonical переход Job в `completed | failed | cancelled | interrupted`
   создаёт ровно одну notification. Повторная terminalization, cancel retry,
   subscriber reconnect, reload и startup recovery не создают duplicate;
@@ -92,6 +95,8 @@ permission и policy inheritance остаются следующей фазе.
 ## Обязательные assertions
 
 - strict contract отклоняет unknown/future/extra/malformed rows и unsafe target;
+- каждый P3-Q row сохраняет exact `when_background` effective policy; смена
+  будущих global/Chat settings не переписывает terminal-time snapshot;
 - migration 29: fresh/v28/reopen/retry/true late rollback, exact unchanged legacy
   payload и ноль retroactive notifications для old terminal Jobs;
 - каждый canonical terminal outcome даёт exact one row; non-terminal states —
