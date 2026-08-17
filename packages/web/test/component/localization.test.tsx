@@ -6,6 +6,9 @@ import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { Glossary } from '../../src/features/settings/Glossary.tsx'
 import { Markdown } from '../../src/components/Markdown.tsx'
 import { ModelCard } from '../../src/features/models/ModelCard.tsx'
+import { ProjectPresentationPicker } from '../../src/features/projects/ProjectPresentationPicker.tsx'
+import { QuickRunsPage } from '../../src/features/quick-runs/QuickRunsPage.tsx'
+import { RecipesPage } from '../../src/features/recipes/RecipesPage.tsx'
 import { glossaryEntries, searchGlossary } from '../../src/lib/glossary.ts'
 import {
   localeCatalogs,
@@ -145,7 +148,8 @@ describe('locale catalogs', () => {
     expect(formatTokensPerSecond(12.25)).toBe('12.3 tok/s')
     expect(formatInteger(32_768)).toBe('32,768')
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Could not connect to the Alamo server')
-    expect(errorMessage(new ApiShapeError('/api/example', [])))
+    const shapeError = new ApiShapeError('/api/example', [])
+    expect(errorMessage(shapeError))
       .toBe('The response from /api/example does not match the application contract')
     expect(errorMessage(new ApiRequestError(400, {
       code: 'validation_failed',
@@ -167,6 +171,8 @@ describe('locale catalogs', () => {
     expect(formatTokensPerSecond(12.25)).toBe('12.3 ток/с')
     expect(formatInteger(32_768)).toMatch(/^32\s768$/u)
     expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Не удалось соединиться с сервером Alamo')
+    expect(errorMessage(shapeError))
+      .toBe('Ответ /api/example не соответствует контракту приложения')
     expect(errorMessage(new ApiRequestError(400, {
       code: 'validation_failed',
       message: 'Invalid body',
@@ -201,6 +207,70 @@ describe('locale catalogs', () => {
     expect(await screen.findByTitle('Считается в облаке Ollama, локальная память не тратится')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Copy code' })).toBeNull()
     expect(screen.queryByTitle('Runs in Ollama Cloud and does not consume local memory')).toBeNull()
+  })
+
+  it('rerenders memoized Quick Run and Recipe scope names after delayed settings bootstrap', async () => {
+    let resolveSettings!: (settings: Settings) => void
+    vi.spyOn(api, 'getSettings').mockReturnValue(new Promise((resolve) => {
+      resolveSettings = resolve
+    }))
+    vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
+    vi.spyOn(api, 'listQuickRuns').mockResolvedValue({
+      quickRunVersion: 1,
+      scope: 'projectless',
+      projectId: null,
+      quickRuns: [],
+    })
+    vi.spyOn(api, 'listRecipes').mockResolvedValue({
+      recipeVersion: 1,
+      scope: 'projectless',
+      projectId: null,
+      recipes: [],
+    })
+
+    setActiveLocale('en')
+    render(
+      <LocaleProvider>
+        <QuickRunsPage />
+        <RecipesPage />
+      </LocaleProvider>,
+    )
+    await waitFor(() => expect(
+      screen.getAllByRole('heading', { name: 'Without a Project', exact: true }),
+    ).toHaveLength(2))
+
+    resolveSettings(SETTINGS)
+    await waitFor(() => expect(
+      screen.getAllByRole('heading', { name: 'Без проекта', exact: true }),
+    ).toHaveLength(2))
+    expect(screen.queryByRole('heading', { name: 'Without a Project', exact: true })).toBeNull()
+  })
+
+  it('refilters memoized Project icons after delayed settings bootstrap', async () => {
+    let resolveSettings!: (settings: Settings) => void
+    vi.spyOn(api, 'getSettings').mockReturnValue(new Promise((resolve) => {
+      resolveSettings = resolve
+    }))
+
+    setActiveLocale('en')
+    render(
+      <LocaleProvider>
+        <ProjectPresentationPicker
+          projectName="Fixture"
+          initialIconKey="folder"
+          initialColorToken="slate"
+          onClose={() => undefined}
+          onSave={async () => undefined}
+        />
+      </LocaleProvider>,
+    )
+    const search = screen.getByRole('textbox', { name: 'Search icons' })
+    fireEvent.change(search, { target: { value: 'папка' } })
+    expect(screen.getByText('No icons match this search and category.')).toBeTruthy()
+
+    resolveSettings(SETTINGS)
+    expect(await screen.findByRole('gridcell', { name: 'Папка' })).toBeTruthy()
+    expect(screen.queryByText('Для этого поиска и категории иконок не найдено.')).toBeNull()
   })
 })
 
@@ -342,6 +412,25 @@ describe('Settings language and glossary', () => {
 
   it('searches bounded localized term, definition and example copy', () => {
     const keys = glossaryEntries.map((entry) => entry.key)
+    expect(keys).toEqual([
+      'chat',
+      'quick-run',
+      'project',
+      'recipe',
+      'agent-run',
+      'artifact',
+      'job',
+      'installed-model',
+      'loaded-model',
+      'model-weights',
+      'context-window',
+      'chat-history',
+      'kv-cache',
+      'reasoning',
+      'retention',
+      'skill',
+      'mcp-connection',
+    ])
     expect(new Set(keys).size).toBe(keys.length)
     for (const entry of glossaryEntries) {
       for (const locale of ['en', 'ru'] as const) {

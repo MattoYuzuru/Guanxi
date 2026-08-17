@@ -549,7 +549,12 @@ describe('thread routes', () => {
       })
       assert.equal(restoreRussian.status, 200)
 
-      for (const body of [{ locale: 'future' }, { locale: 'en', future: true }]) {
+      for (const body of [
+        { locale: 'future' },
+        { locale: null },
+        { locale: 7 },
+        { locale: 'en', future: true },
+      ]) {
         const rejected = await app.request('/api/settings', {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },

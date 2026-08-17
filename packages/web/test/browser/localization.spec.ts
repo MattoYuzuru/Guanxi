@@ -88,9 +88,7 @@ test('locale preview, persistence and glossary stay exact across failure and rel
       }
       return route.fulfill(json(persisted))
     }
-    if (method !== 'GET' || /jobs|threads|tools|workspaces|unload|prewarm|pull|ollama/u.test(url.pathname)) {
-      forbiddenEffects.push(`${method} ${url.pathname}`)
-    }
+    forbiddenEffects.push(`${method} ${url.pathname}`)
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })
 
@@ -256,7 +254,7 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
         truncated: false,
       }))
     }
-    if (method !== 'GET') forbiddenEffects.push(`${method} ${url.pathname}`)
+    forbiddenEffects.push(`${method} ${url.pathname}`)
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })
 

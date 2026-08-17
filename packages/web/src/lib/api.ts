@@ -141,7 +141,7 @@ export class ApiShapeError extends Error {
     readonly path: string,
     readonly issues: unknown,
   ) {
-    super(translate('error.contractShape', { path }))
+    super('API response shape mismatch')
     this.name = 'ApiShapeError'
   }
 }
@@ -152,7 +152,7 @@ export function errorMessage(error: unknown): string {
     if (error.payload) return translate(API_ERROR_KEYS[error.payload.code])
     return translate('error.api.internal')
   }
-  if (error instanceof ApiShapeError) return error.message
+  if (error instanceof ApiShapeError) return translate('error.contractShape', { path: error.path })
   if (error instanceof Error) {
     // Самый частый случай локально: сервер не поднят.
     if (error.name === 'TypeError' && /fetch/i.test(error.message)) {
