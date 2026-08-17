@@ -59,11 +59,11 @@ test('locale preview, persistence and glossary stay exact across failure and rel
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
-    if (url.pathname === '/api/health') {
+    if (url.pathname === '/api/health' && method === 'GET') {
       runtimeReads.health += 1
       return route.fulfill(json(health))
     }
-    if (url.pathname === '/api/runtime') {
+    if (url.pathname === '/api/runtime' && method === 'GET') {
       runtimeReads.runtime += 1
       return route.fulfill(json(runtimeBrowserSnapshot()))
     }
@@ -214,23 +214,32 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
   const settingsGate = new Promise<void>((resolve) => {
     releaseSettings = resolve
   })
+  const routeReads = { health: 0, runtime: 0, projects: 0, policy: 0, artifacts: 0 }
   const forbiddenEffects: string[] = []
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
-    if (url.pathname === '/api/health') return route.fulfill(json(browserHealth(observedAt)))
-    if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === '/api/health' && method === 'GET') {
+      routeReads.health += 1
+      return route.fulfill(json(browserHealth(observedAt)))
+    }
+    if (url.pathname === '/api/runtime' && method === 'GET') {
+      routeReads.runtime += 1
+      return route.fulfill(json(runtimeBrowserSnapshot()))
+    }
     if (url.pathname === '/api/settings' && method === 'GET') {
       settingsReads += 1
       await settingsGate
       return route.fulfill(json(browserSettings({ locale: 'ru', localeSource: 'user_setting' })))
     }
     if (url.pathname === '/api/projects' && method === 'GET') {
+      routeReads.projects += 1
       return route.fulfill(json({ projects: [] }))
     }
     if (url.pathname === '/api/artifacts/policy' && method === 'GET') {
+      routeReads.policy += 1
       return route.fulfill(json({
         policyVersion: 1,
         state: 'enabled',
@@ -245,6 +254,7 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
       }))
     }
     if (url.pathname === '/api/artifacts' && method === 'GET') {
+      routeReads.artifacts += 1
       return route.fulfill(json({
         attachmentVersion: 1,
         scope: 'projectless',
@@ -263,6 +273,8 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
   await expect(page.getByRole('heading', { name: 'Without a Project', exact: true })).toHaveCount(1)
   await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(1)
   await expect.poll(() => settingsReads).toBe(1)
+  await expect.poll(() => Object.values(routeReads).every((count) => count > 0)).toBe(true)
+  const readsBeforeLocale = { ...routeReads }
 
   releaseSettings()
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
@@ -273,5 +285,6 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
   await expect(page.getByText('Runtime и ресурсы', { exact: true })).toHaveCount(1)
   await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(0)
   expect(settingsReads).toBe(1)
+  expect(routeReads).toEqual(readsBeforeLocale)
   expect(forbiddenEffects).toEqual([])
 })
