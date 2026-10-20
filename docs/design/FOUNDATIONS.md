@@ -121,6 +121,9 @@ data-only plugin).
 - **Grid:** 4 px. Spacing scale 2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64. The base
   `--spacing` unit stays 4 px in both densities so the grid holds; density changes only the
   semantic size tokens in §7, never the layout.
+- **Container widths** (`max-w-*`, `w-*`): 3xs 16rem, 2xs 18rem, xs 20rem, sm 24rem, md 28rem,
+  lg 32rem, xl 36rem, 2xl 42rem, 3xl 48rem, 4xl 56rem, 5xl 64rem, 6xl 72rem, 7xl 80rem. This is
+  Tailwind's scale, kept as Guanxi tokens so existing layouts do not change.
 - **Radius** grows with the layer: inline (chips, tags, kbd) 6 · controls 10 · panels and cards
   16 · glass layers, sheets and dialogs 20 · app tile 21.9%.
 - **Borders:** 1 px. Decorative dividers use step 7; control boundaries step 9.
