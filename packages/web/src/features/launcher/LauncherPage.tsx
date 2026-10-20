@@ -190,10 +190,11 @@ export function LauncherPage({ health }: { health: Health }) {
 
   const onInstalled = useCallback(() => {
     // Re-read both lists on the same page. When the catalog shows settled rows for the
-    // current basis, re-read it in place: the card that owns the install dialog must
-    // stay mounted so its verified result stays visible until the user dismisses it.
-    // A catalog that is still loading another basis keeps its skeleton. Compare rows
-    // hold pre-install installation facts, so they are cleared.
+    // current basis, re-read it in place, so the card that owns the install dialog stays
+    // mounted and its verified result stays visible until the user dismisses it. Known
+    // gap: a refresh error or a filter that drops the card still unmounts it (see
+    // PHASE_STATUS residuals). A catalog that is still loading another basis keeps its
+    // skeleton. Compare rows hold pre-install installation facts, so they are cleared.
     if (catalogSettledRef.current) setInPlaceCatalogBasis(catalogViewBasisRef.current)
     setInstalledRevision((value) => value + 1)
     clearCompareRows(true)
