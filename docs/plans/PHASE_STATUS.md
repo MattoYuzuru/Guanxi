@@ -152,12 +152,19 @@ Residual risks:
 | Per-worktree ports and data | locally validated | `GUANXI_WEB_PORT`, `GUANXI_API_PORT` and `GUANXI_DATA_DIR`, with one strict parser per side (`packages/web/dev-ports.ts`, `packages/server/src/config/listen-env.ts`). Independent review (`sde-agent:implementation-reviewer`) found 1 High, 1 Medium and 3 Low issues; all are fixed in a separate commit. New: 24 parsing and default tests (12 server, 12 web); browser gate 40/40 with `GUANXI_WEB_PORT=5199` while a decoy HTTP server held `127.0.0.1:5173`; the gate pointed at the busy port exits 1 with "already used"; `GUANXI_WEB_PORT=abc` exits 1 naming the variable. Envelope: typecheck, `npm test` (681 node + 261 vitest), `npm run build`. The High finding was nested Claude worktrees without their own `node_modules` resolving main's packages; both lane worktrees got `npm ci`, and the lane rules now require it. |
 | Lane rules and prompts | accepted (owner, 2026-10-20) | [lanes/](lanes/README.md): owned paths, ports, `agent-dev --resource heavy` lock, hand-off files instead of status files, merge order K1 → DS1-a → DS1-b → DS1-c |
 
+## K1 — Kernel
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Own plugin kernel `@guanxi/kernel` (ADR-0037; Cordis rejected by D-183) | implemented, independently verified, merged into `main` | Full evidence and residuals: [evidence/K1](evidence/K1.md). Exit gate on the own kernel: 100 reload cycles with an identical census; total heap +2.17% after 50 warm-up cycles (≤ 5%); every unloaded governor, fiber and context collected; boot 37–40 ms, 81 MB idle RSS; real-HMR slot test. **119 new / 982 regression envelope.** Reviews: implementation, adversarial architecture, accessibility, then three GPT cross-family rounds (14 + 5 findings, all closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `npm test` (core + kernel, web 264), browser gate 41/41, build, lint:md, licenses (251/0). |
+
 ## Next stages
 
 | Stage | Status | Notes |
 | --- | --- | --- |
-| K1 Kernel spike | in progress (lane K1, Claude) | Cordis facade met every budget, but the owner rejected Cordis (D-183) because upstream races stay unfixed; the lane is building the own kernel behind a `PluginContext` facade with the same exit gate |
-| DS1 Design foundations | ready (lanes DS1-a GPT, DS1-b Claude; DS1-c DeepSeek after K1 and DS1-a merge) | [lanes/](lanes/README.md) |
+| K1 Kernel | implemented, merged | see the K1 section above |
+| DS1 Design foundations | in progress (DS1-a and DS1-b in review fixes; DS1-c after DS1-a merges) | [lanes/](lanes/README.md) |
+| DS2 Approval signing helper | not started | after DS1 (D-184) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
-| K2, K3 | not started | can start in parallel after K1; U1 after K1 and DS1 |
+| K2, K3 | ready (wave 2 lanes) | [lanes/K2](lanes/K2.md), [lanes/K3](lanes/K3.md); U1 after DS1 |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

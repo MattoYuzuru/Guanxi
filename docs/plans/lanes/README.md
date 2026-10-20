@@ -7,17 +7,20 @@ roadmap stages at the same time on the owner's Mac (Apple M5 Pro, 15 cores, 24 G
 holds the rules every lane follows. Each lane has its own prompt file in this folder. The
 integrator, the coordinating Claude session, merges lanes into `main`.
 
-## Wave 1 (open now)
+## Lanes
 
-| Lane | Stage part | Runs in | Branch | `GUANXI_WEB_PORT` / `GUANXI_API_PORT` | Starts |
+| Lane | Stage part | Runs in | Branch | `GUANXI_WEB_PORT` / `GUANXI_API_PORT` | Status |
 | --- | --- | --- | --- | --- | --- |
-| [K1](K1.md) | K1 kernel spike | Claude Opus session | `lane/k1-kernel` (or the session's own branch) | 5181 / 4381 | now |
-| [DS1-a](DS1-a.md) | tokens, fonts, logo assets, gate runner, G1–G7 | GPT (Codex), xhigh | `lane/ds1-a-tokens` | 5182 / 4382 | now |
-| [DS1-b](DS1-b.md) | `@guanxi/ui` primitives, stories, catalog, approvals, G10–G16 | Claude Opus session | `lane/ds1-b-catalog` (or the session's own branch) | 5183 / 4383 | now |
-| [DS1-c](DS1-c.md) | ESLint and stylelint, G8–G9, suppression ratchet, codemod | DeepSeek Flash | `lane/ds1-c-ratchet` | 5184 / 4384 | after K1 and DS1-a are merged |
-| [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190 / 4390 | when a lane hands off |
+| [K1](K1.md) | K1 kernel | Claude Opus session | session branch | 5181 / 4381 | merged ([evidence](../evidence/K1.md)) |
+| [DS1-a](DS1-a.md) | tokens, fonts, logo assets, gate runner, G1–G7 | GPT (Codex), xhigh | `lane/ds1-a-tokens` | 5182 / 4382 | review fixes; merge only with `--no-ff` |
+| [DS1-b](DS1-b.md) | `@guanxi/ui` primitives, stories, catalog, approvals, G10–G16 | Claude Opus session | session branch | 5183 / 4383 | review fixes |
+| [DS1-c](DS1-c.md) | ESLint and stylelint, G8–G9, suppression ratchet, codemod | DeepSeek Flash | `lane/ds1-c-ratchet` | 5184 / 4384 | after DS1-a merges |
+| [K2](K2.md) | K2 session log, inspector, egress scrubber core | Claude Opus session | session branch | 5186 / 4386 | wave 2, ready |
+| [K3](K3.md) | K3 connections, vault, pi-ai, probes | GPT (Codex), xhigh | `lane/k3-model-access` | 5187 / 4387 | wave 2, ready |
+| [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
 
-Merge order: K1 → DS1-a → DS1-b → DS1-c. Wave 2 (K2, K3, U1) opens after K1 merges; see the
+Port 5185/4385 belongs to the localization-flake investigation. Merge order within DS1:
+DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open after DS1; see the
 [roadmap graph](../roadmap.mmd).
 
 ## Rules for every lane
@@ -92,6 +95,6 @@ Merge order: K1 → DS1-a → DS1-b → DS1-c. Wave 2 (K2, K3, U1) opens after K
       if any `package.json` changed.
 - [ ] On `main`, run typecheck, `npm test`, browser gate, build, `lint:md` and `check:licenses`
       through the shared lock.
-- [ ] Fold the hand-off into `PHASE_STATUS.md` and `NEXT_AGENT_PROMPT.md`, then delete the
-      hand-off file.
+- [ ] Move the hand-off to `docs/plans/evidence/<lane>.md`, summarise it in `PHASE_STATUS.md`
+      and update `NEXT_AGENT_PROMPT.md`.
 - [ ] Push `main` and tell lanes that started from an older `main` to merge it.
