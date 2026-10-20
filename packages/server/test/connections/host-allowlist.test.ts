@@ -42,3 +42,16 @@ test('E4: a real listener denies rebinding for Connections, unlock, a legacy rou
   assert.equal(await send('/api/settings', `127.0.0.1:${port}`), 200)
   assert.equal(mutations, 0)
 })
+
+test('N8: forwarded host headers neither authorize a forbidden Host nor deny an allowed Host', async () => {
+  const app = createApp(context, { host: '127.0.0.1', port: 4387, devOrigins: [] })
+  for (const [host, forwarded, expected] of [
+    ['evil.example:4387', '127.0.0.1:4387', 403],
+    ['127.0.0.1:4387', 'evil.example:4387', 200],
+  ] as const) {
+    const response = await app.request('http://localhost/api/settings', { headers: {
+      Host: host, 'X-Forwarded-Host': forwarded, Forwarded: `host=${forwarded}`,
+    } })
+    assert.equal(response.status, expected)
+  }
+})

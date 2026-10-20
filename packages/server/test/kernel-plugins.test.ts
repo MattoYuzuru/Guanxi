@@ -156,6 +156,15 @@ describe('server boot through the kernel', () => {
         assert.ok(server.kernel.node.service('connections.registry'))
         assert.equal(server.kernel.node.service('connections.vault'), undefined)
         assert.ok(server.kernel.node.service('egress.scrubber'))
+        // Exercise index.ts's mounted resolver after its service disappears.
+        const modelsUrl = `${server.url}/api/connections/11111111-1111-4111-8111-111111111111/models`
+        const initial = await fetch(modelsUrl)
+        assert.equal(initial.status, 404)
+        assert.deepEqual(await initial.json(), { code: 'connection_not_found' })
+        await server.kernel.node.dispose()
+        const unavailable = await fetch(modelsUrl)
+        assert.equal(unavailable.status, 503)
+        assert.deepEqual(await unavailable.json(), { code: 'egress_unavailable' })
       } finally {
         await server.close()
       }

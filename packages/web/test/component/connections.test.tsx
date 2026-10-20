@@ -134,3 +134,19 @@ it('preserves the server recovery code and unlocks from a failed initial load', 
   expect(requests).toEqual(['/api/connections', '/api/connections/vault/unlock', '/api/connections'])
   expect(screen.queryByRole('alert')).toBeNull()
 })
+
+it.each([
+  ['en', '1,234.5 CNY', '0.125 USD'],
+  ['ru', '1\u00a0234,5 CNY', '0,125 USD'],
+] as const)('uses a literal amount-space-currency format in %s for balances and costs', (locale, balance, cost) => {
+  setActiveLocale(locale)
+  const observedAt = '2026-10-20T11:22:33.000Z'
+  render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection,
+    balance: { amount: 1234.5, currency: 'CNY', source: 'currency-fixture', observedAt, confidence: 'high' },
+  }], costs: [{ id: 'currency-cost', accountId: connection.accountId, connectionId: connection.id,
+    runId: 'run', requestId: 'request', inputTokens: 1, outputTokens: 1, costUsd: 0.125,
+    source: 'currency-cost-fixture', observedAt, confidence: 'medium' }],
+  }} retry={() => {}} mutate={mutate} />)
+  expect(screen.getByTestId('connection-balance').textContent).toBe(balance)
+  expect(screen.getByText(/currency-cost-fixture/).textContent).toContain(`${cost} ·`)
+})
