@@ -20,3 +20,5 @@ export const Disabled = { args: { ...Default.args, busy: true } }
 export const Estimated = { args: { ...args, snapshot: { ...empty, connections: [{ ...connection,
   balance: { amount: 1.5, currency: 'USD', source: 'example estimate', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'medium' },
 }] } } }
+
+export const Enabled = { args: { ...Default.args, snapshot: { ...Default.args.snapshot, connections: [{ ...connection, unattended: true }] } } }

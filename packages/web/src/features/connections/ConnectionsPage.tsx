@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type FormEvent } from 'react'
 import type { Connection, ConnectionBalance, ConnectionSnapshot } from '@guanxi/contract'
 // DS1-b is not merged. Reuse existing primitives until its integration.
 import { Button, Field, Input, Select } from '../../components/ui.tsx'
-import { translate } from '../../lib/locale.ts'
+import { getActiveLocale, translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { connectionApi } from './api.ts'
 import './connections.css'
@@ -13,12 +13,12 @@ const providers = {
 } as const
 function provenance(value: { source: string; observedAt?: string | null; confidence: 'high' | 'medium' | 'low' | 'unknown' }) {
   if (!value.observedAt || !Number.isFinite(Date.parse(value.observedAt))) return translate('connections.unknown')
-  return translate('connections.observed', { source: value.source, time: new Date(value.observedAt).toLocaleString(),
+  return translate('connections.observed', { source: value.source, time: new Date(value.observedAt).toLocaleString(getActiveLocale()),
     confidence: translate(`connections.confidence.${value.confidence}`) })
 }
 export function balanceLabel(balance: ConnectionBalance | null): string {
   if (!balance?.observedAt || !Number.isFinite(Date.parse(balance.observedAt)) || balance.amount === null || !balance.currency || balance.confidence === 'unknown') return translate('connections.unknown')
-  return `${balance.amount.toLocaleString()} ${balance.currency}`
+  return `${balance.amount.toLocaleString(getActiveLocale())} ${balance.currency}`
 }
 
 export function ConnectionsView({ snapshot, loading = false, error = false, offline = false, busy = false, saved = false,
@@ -95,7 +95,7 @@ function ConnectionRow({ connection, snapshot, busy, mutate }: {
     <div className="my-3 flex flex-wrap items-center gap-3">
       <Button type="button" role="switch" aria-checked={connection.unattended} aria-label={`${translate('connections.unattended')} · ${connection.name}`}
         disabled={busy || (!connection.unattended && !snapshot.vault.unattendedAvailable)}
-        onClick={() => void mutate(() => connectionApi.unattended(connection.id, !connection.unattended))}>{translate('connections.unattended')}</Button>
+        onClick={() => void mutate(() => connectionApi.unattended(connection.id, !connection.unattended))}>{translate(connection.unattended ? 'connections.unattended.on' : 'connections.unattended.off')}</Button>
       <p className="connections-muted text-12">{translate('connections.unattended.hint')}</p>
     </div>
     {connection.auth === 'api_key' && <>
@@ -111,7 +111,7 @@ function ConnectionRow({ connection, snapshot, busy, mutate }: {
     <p className="mt-2 text-12 connections-heading">{translate('connections.cost')}</p>
     {costs.length === 0 ? <p className="connections-muted text-12">{translate('connections.cost.none')}</p>
       : costs.map(cost => <p key={cost.id} className="break-words text-12">
-        {cost.costUsd === null ? translate('connections.unknown') : `${cost.costUsd.toLocaleString()} USD`} · {provenance(cost)}
+        {cost.costUsd === null ? translate('connections.unknown') : `${cost.costUsd.toLocaleString(getActiveLocale())} USD`} · {provenance(cost)}
       </p>)}
   </article>
 }

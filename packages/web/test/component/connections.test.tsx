@@ -16,6 +16,7 @@ it.each([undefined, null])('a balance without observedAt=%s renders Unknown and 
   expect(screen.getByTestId('connection-balance').textContent).toBe('Unknown')
   expect(screen.queryByText(/123.45/)).toBeNull()
   expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+  expect(screen.getByRole('switch').textContent).toBe('Unattended use: off')
   expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(true)
 })
 it('renders observed balances with source, observation time and confidence, including a real zero', () => {
@@ -69,4 +70,16 @@ it('create sends no unattended opt-in; saving a key clears the password input', 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save key' })))
   expect(password.value).toBe('')
   expect(screen.queryByText(fakeKey)).toBeNull()
+})
+
+it('formats observation numbers and dates in the chosen locale and visibly labels unattended state', () => {
+  setActiveLocale('ru')
+  const observedAt = '2026-10-20T00:00:00.000Z'
+  render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, unattended: true,
+    balance: { amount: 1234.5, currency: 'USD', source: 'locale-fixture', observedAt, confidence: 'high' },
+  }] }} retry={() => {}} mutate={mutate} />)
+  expect(screen.getByTestId('connection-balance').textContent).toBe(`${(1234.5).toLocaleString('ru')} USD`)
+  expect(screen.getByText(/locale-fixture/).textContent).toContain(new Date(observedAt).toLocaleString('ru'))
+  expect(screen.getByRole('switch').textContent).toBe('Фоновое использование: вкл.')
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
 })
