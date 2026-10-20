@@ -1,4 +1,5 @@
-/* G16 seeded violation: a looping rotation that ignores reduced motion. */
+/* G16 seeded violation: a looping rotation that ignores reduced motion. Literal durations on
+   purpose: the motion tokens are 0 ms under reduced motion, which would hide the violation. */
 .gx-seeded-spinner {
   display: inline-block;
   width: var(--icon-size-16);
@@ -6,7 +7,7 @@
   border: var(--size-focus-ring) solid currentColor;
   border-right-color: transparent;
   border-radius: var(--border-radius-full);
-  animation: gx-seeded-spin var(--motion-loop-duration) linear infinite;
+  animation: gx-seeded-spin 1000ms linear infinite;
 }
 
 @keyframes gx-seeded-spin {
