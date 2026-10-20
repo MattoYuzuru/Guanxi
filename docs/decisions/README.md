@@ -43,6 +43,7 @@ lists the evidence it rests on.
 | [0034](0034-design-system-tokens-catalog-and-gates.md) | Design system: tokens, catalog, approvals and gates | accepted direction, proposed design |
 | [0035](0035-agent-browser-and-site-sessions.md) | Agent browser and site sessions | accepted direction, proposed design |
 | [0036](0036-workspace-layout-and-experience-modes.md) | Workspace layout, blocks and experience modes | accepted direction, proposed design |
+| [0037](0037-own-plugin-kernel.md) | Guanxi's own plugin kernel (supersedes the Cordis part of ADR-0015) | accepted (D-183); implemented in lane K1 |
 
 ## Legacy ADRs (Alamo era, Russian)
 
