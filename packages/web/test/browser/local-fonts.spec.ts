@@ -71,3 +71,84 @@ test('font network observation catches an injected non-local font request', asyn
   await page.evaluate(() => document.fonts.load('13px GateSeed', 'Seed').catch(() => []))
   expect(violations).toEqual(['https://font-gate.invalid/seed.woff2'])
 })
+
+test('generated theme, density and motion modifiers remain independent of OS media', async ({ page }) => {
+  await installChatApiFixture(page, 'completed')
+  await page.goto(origin)
+  for (const colorScheme of ['light', 'dark'] as const) for (const contrast of ['no-preference', 'more'] as const) {
+    await page.emulateMedia({ colorScheme, contrast, reducedMotion: 'reduce' })
+    for (const theme of ['light', 'dark', 'light-hc', 'dark-hc', 'system']) for (const density of ['compact', 'comfortable']) for (const motion of ['full', 'reduced']) {
+      const actual = await page.evaluate(({ theme, density, motion }) => {
+        const root = document.documentElement
+        root.dataset.theme = theme
+        root.dataset.density = density
+        root.dataset.motion = motion
+        const css = getComputedStyle(root)
+        return Object.fromEntries(['--font-text-size', '--control-height', '--row-height', '--panel-padding', '--pane-gap', '--spacing', '--motion-duration-medium'].map(name => {
+          const value = css.getPropertyValue(name).trim()
+          // Production CSS minification can normalize 200ms to .2s.
+          return [name, name === '--motion-duration-medium' ? `${Number.parseFloat(value) * (value.endsWith('ms') ? 1 : 1000)}ms` : value]
+        }))
+      }, { theme, density, motion })
+      expect(actual, `${colorScheme}/${contrast}/${theme}/${density}/${motion}`).toEqual({
+        '--font-text-size': density === 'compact' ? '13px' : '14px',
+        '--control-height': density === 'compact' ? '28px' : '32px',
+        '--row-height': density === 'compact' ? '26px' : '32px',
+        '--panel-padding': density === 'compact' ? '8px' : '12px',
+        '--pane-gap': density === 'compact' ? '8px' : '12px',
+        '--spacing': '4px',
+        '--motion-duration-medium': motion === 'full' ? '200ms' : '0ms',
+      })
+    }
+  }
+})
+
+test('automatic Solid overrides strong and locally selected glass recipes', async ({ page }) => {
+  await installChatApiFixture(page, 'completed')
+  await page.goto(origin)
+  const inspect = async (trigger: string, level: string) => page.evaluate(({ trigger, level }) => {
+    const root = document.documentElement
+    for (const name of ['data-reduce-transparency', 'data-battery-saver', 'data-gpu-compositing', 'data-theme']) root.removeAttribute(name)
+    root.dataset.theme = 'light'
+    root.dataset.material = level
+    if (trigger === 'hc') root.dataset.theme = 'light-hc'
+    else if (trigger === 'gpu') root.dataset.gpuCompositing = 'off'
+    else if (trigger !== 'media') root.setAttribute(trigger, '')
+    const child = document.createElement('div')
+    child.dataset.elevation = '3'
+    child.dataset.material = level
+    root.append(child)
+    const styles = [root, child].map(element => {
+      const css = getComputedStyle(element)
+      return { backdrop: css.getPropertyValue('--material-backdrop').trim(), grain: css.getPropertyValue('--material-grain').trim() }
+    })
+    child.remove()
+    return styles
+  }, { trigger, level })
+  for (const level of ['glass', 'tinted', 'solid']) for (const trigger of ['hc', 'gpu', 'data-reduce-transparency', 'data-battery-saver']) expect(await inspect(trigger, level)).toEqual([{ backdrop: 'none', grain: '0' }, { backdrop: 'none', grain: '0' }])
+  await page.emulateMedia({ contrast: 'more' })
+  expect(await inspect('media', 'glass')).toEqual([{ backdrop: 'none', grain: '0' }, { backdrop: 'none', grain: '0' }])
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] })
+  expect(await inspect('media', 'tinted')).toEqual([{ backdrop: 'none', grain: '0' }, { backdrop: 'none', grain: '0' }])
+  await cdp.detach()
+})
+
+test('legacy Light and Dark semantic warning and focus follow the class, independently of OS', async ({ page }) => {
+  await installChatApiFixture(page, 'completed')
+  await page.goto(origin)
+  const seen: Record<string, string[]> = {}
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme, contrast: 'no-preference' })
+    for (const dark of [false, true]) seen[`${colorScheme}/${dark}`] = await page.evaluate(dark => {
+      const root = document.documentElement
+      root.removeAttribute('data-theme')
+      root.classList.toggle('dark', dark)
+      const css = getComputedStyle(root)
+      return ['--warning', '--focus'].map(name => css.getPropertyValue(name).trim())
+    }, dark)
+  }
+  expect(seen['light/false']).toEqual(seen['dark/false'])
+  expect(seen['light/true']).toEqual(seen['dark/true'])
+  expect(seen['light/false']).not.toEqual(seen['light/true'])
+})

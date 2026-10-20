@@ -32,7 +32,8 @@ for its `--warning` and `--focus` compatibility mappings; DS1-c owns its utility
 
 Root attributes: `data-theme=light|dark|light-hc|dark-hc|system`,
 `data-density=compact|comfortable`, `data-motion=full|reduced`, and
-`data-material=glass|tinted|solid`. OS colour scheme, increased contrast, reduced motion,
+`data-material=glass|tinted|solid`. An absent theme attribute uses Light or the legacy `.dark`
+class; explicit `system` follows OS colour scheme. Increased contrast, reduced motion,
 reduced transparency and forced colours have generated overrides. The shell can set
 `data-reduce-transparency`, `data-battery-saver` or `data-gpu-compositing=off` for Solid.
 `data-elevation=3` selects strong material. This package exports recipes; components apply
