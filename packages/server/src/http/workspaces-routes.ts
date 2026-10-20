@@ -14,7 +14,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { Hono } from 'hono'
-import { createWorkspaceBody } from '@alamo/contract'
+import { createWorkspaceBody } from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import { notFound } from './errors.ts'
 

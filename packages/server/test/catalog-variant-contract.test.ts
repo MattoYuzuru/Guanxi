@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { catalogModelSchema } from '@alamo/contract'
+import { catalogModelSchema } from '@guanxi/contract'
 
 const fit = {
   level: 'unknown' as const,

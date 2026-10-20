@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Job, RuntimeSnapshot } from '@alamo/contract'
+import type { Job, RuntimeSnapshot } from '@guanxi/contract'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {

@@ -5,7 +5,7 @@ import {
   huggingFaceSelectionBody,
   huggingFaceSelectionFitPreviewSchema,
   huggingFaceSelectionResultSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 const SHA = 'a'.repeat(40)
 const CALCULATED_AT = '2026-08-08T12:00:01.000Z'

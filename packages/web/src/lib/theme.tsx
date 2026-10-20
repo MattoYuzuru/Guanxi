@@ -4,11 +4,11 @@
  * читает инлайн-скрипт в index.html до первой отрисовки.
  */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { Settings } from '@alamo/contract'
+import type { Settings } from '@guanxi/contract'
 
 export type ThemePreference = Settings['theme']
 
-const STORAGE_KEY = 'alamo.theme'
+const STORAGE_KEY = 'guanxi.theme'
 
 function readStored(): ThemePreference {
   try {

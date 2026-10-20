@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_PORT, start } from '@alamo/server'
-import { probeExistingAlamo } from './existing.ts'
+import { DEFAULT_PORT, start } from '@guanxi/server'
+import { probeExistingGuanxi } from './existing.ts'
 
 const VERSION = '0.1.0'
 const here = dirname(fileURLToPath(import.meta.url))
@@ -16,10 +16,10 @@ type CliOptions = {
 }
 
 function usage(): string {
-  return `Alamo UI ${VERSION}
+  return `Guanxi ${VERSION}
 
 Использование:
-  alamo-ui [--port 4310] [--host 127.0.0.1] [--data-dir PATH] [--no-open]
+  guanxi [--port 4310] [--host 127.0.0.1] [--data-dir PATH] [--no-open]
 
 Опции:
   --port       HTTP-порт (по умолчанию 4310)
@@ -113,17 +113,17 @@ try {
 }
 
 const requested = requestedUrl(options)
-const existing = requested.port === 0 ? null : await probeExistingAlamo(requested.url)
+const existing = requested.port === 0 ? null : await probeExistingGuanxi(requested.url)
 
 if (existing?.kind === 'ui') {
-  console.log(`Alamo UI ${VERSION} уже запущен: ${existing.url}`)
+  console.log(`Guanxi ${VERSION} уже запущен: ${existing.url}`)
   if (options.open) openBrowser(existing.url)
 } else if (existing?.kind === 'api-only') {
   console.error(
-    `На ${existing.url} уже работает Alamo${existing.version ? ` ${existing.version}` : ''}, ` +
+    `На ${existing.url} уже работает Guanxi${existing.version ? ` ${existing.version}` : ''}, ` +
       'но frontend у этого процесса не был собран.',
   )
-  console.error('Останови старый процесс и повтори: alamo-ui')
+  console.error('Останови старый процесс и повтори: guanxi')
   process.exitCode = 1
 } else {
   try {
@@ -138,16 +138,16 @@ if (existing?.kind === 'ui') {
       webDir,
     })
 
-    console.log(`Alamo UI ${VERSION} запущен: ${server.url}`)
+    console.log(`Guanxi ${VERSION} запущен: ${server.url}`)
     if (options.open) openBrowser(server.url)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException | null)?.code
     if (code === 'EADDRINUSE') {
       console.error(`Порт ${requested.port} уже занят другим процессом.`)
-      console.error('Запусти Alamo на свободном порту: alamo-ui --port 0')
+      console.error('Запусти Guanxi на свободном порту: guanxi --port 0')
     } else {
       console.error(
-        `Не удалось запустить Alamo UI: ${
+        `Не удалось запустить Guanxi: ${
           error instanceof Error ? error.message : String(error)
         }`,
       )

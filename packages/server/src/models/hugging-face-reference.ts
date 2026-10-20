@@ -10,7 +10,7 @@
  * owner and name the user supplied. `comparisonKey` is a case-folded local dedup key
  * only; it is never sent to the Hub and never displayed as the repository path.
  */
-import type { HuggingFaceReferencePreview } from '@alamo/contract'
+import type { HuggingFaceReferencePreview } from '@guanxi/contract'
 
 /**
  * Hub owner and repository names use alphanumerics plus `-`, `_` and `.`, and must

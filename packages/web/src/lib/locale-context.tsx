@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Settings, UiLocale } from '@alamo/contract'
+import type { Settings, UiLocale } from '@guanxi/contract'
 import { api } from './api.ts'
 import { getActiveLocale, setActiveLocale } from './locale.ts'
 

@@ -6,10 +6,10 @@ import {
   type FeatureFlagKey,
   type FeatureFlagProjection,
   type GetFeatureFlagsResponse,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 export const ESTIMATED_PARALLEL_ADMISSION_ENV =
-  'ALAMO_FEATURE_ESTIMATED_PARALLEL_ADMISSION_POLICY'
+  'GUANXI_FEATURE_ESTIMATED_PARALLEL_ADMISSION_POLICY'
 
 export interface FeatureFlagDeclaration {
   readonly key: FeatureFlagKey

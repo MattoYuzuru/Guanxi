@@ -20,9 +20,9 @@ function downgradeToV7(db: DatabaseSync): void {
 
 describe('SQLite completion probe migration 8', () => {
   it('creates the additive probe table on fresh and reopened databases', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-probe-migration-fresh-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-probe-migration-fresh-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const first = openDb(path)
     assert.equal(version(first), 28)
     assert.equal(
@@ -45,9 +45,9 @@ describe('SQLite completion probe migration 8', () => {
   })
 
   it('upgrades v7 without backfilling provider declarations', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-probe-migration-upgrade-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-probe-migration-upgrade-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const fixture = openDb(path)
     fixture.prepare(
       `INSERT INTO installed_model_evidence_cache (
@@ -88,9 +88,9 @@ describe('SQLite completion probe migration 8', () => {
   })
 
   it('rolls back a failed v8 transaction and recovers from unchanged v7', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-probe-migration-recovery-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-probe-migration-recovery-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const broken = openDb(path)
     downgradeToV7(broken)
     broken.exec('CREATE TABLE completion_probe_evidence (blocker TEXT)')

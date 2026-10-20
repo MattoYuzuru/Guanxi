@@ -13,7 +13,7 @@ import {
   listAttachmentsResponse,
   type ApiError,
   type ArtifactScope,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import {
   ArtifactTransferError,

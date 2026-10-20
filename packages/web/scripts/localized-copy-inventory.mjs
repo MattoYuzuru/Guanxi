@@ -28,7 +28,7 @@ const LETTER = /\p{L}/u
 // These are exact protocol/provider identifiers or units, not natural-language
 // copy. Counts make every exception stale-checked instead of silently broad.
 const TECHNICAL_EXCEPTIONS = [
-  { file: 'App.tsx', value: 'Alamo', count: 1, reason: 'central product brand' },
+  { file: 'App.tsx', value: 'Guanxi', count: 1, reason: 'central product brand' },
   { file: 'features/agent/ToolCallCard.tsx', value: 'mcp', count: 1, reason: 'protocol acronym badge' },
   { file: 'features/models/CompletionProbe.tsx', value: ':  · :  · : Ollama  · :  · : v', count: 1, reason: 'provider and evidence-version identifiers' },
   { file: 'features/models/HuggingFaceDiscovery.tsx', value: 'v', count: 1, reason: 'API version prefix' },
@@ -47,7 +47,7 @@ const TECHNICAL_EXCEPTIONS = [
   { file: 'features/chat/useChat.ts', value: 'finalizing', count: 1, reason: 'runtime phase identifier' },
   { file: 'features/chat/useChat.ts', value: 'sending', count: 1, reason: 'runtime phase identifier' },
   { file: 'features/chat/useChat.ts', value: 'prefill', count: 1, reason: 'runtime phase identifier' },
-  { file: 'features/chat/ChatPage.tsx', value: 'Alamo', count: 2, reason: 'central product brand' },
+  { file: 'features/chat/ChatPage.tsx', value: 'Guanxi', count: 2, reason: 'central product brand' },
   { file: 'lib/api.ts', value: 'unknown', count: 1, reason: 'API error sentinel' },
 ]
 

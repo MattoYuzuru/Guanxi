@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CompletionProbeEvidence, ModelDetail } from '@alamo/contract'
+import type { CompletionProbeEvidence, ModelDetail } from '@guanxi/contract'
 import { Badge, Button, Modal } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'

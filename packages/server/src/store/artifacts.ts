@@ -27,7 +27,7 @@ import {
   type Artifact,
   type ArtifactCreateMetadata,
   type ArtifactScope,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 const STORAGE_KEY = /^sha256\/([0-9a-f]{2})\/([0-9a-f]{64})$/u

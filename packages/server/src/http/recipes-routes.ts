@@ -21,7 +21,7 @@ import {
   type RecipeScope,
   type RecipeJobSnapshotScope,
   ROUTES,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import { JobStoreError } from '../store/jobs.ts'
 import { RecipeStore } from '../store/recipes.ts'

@@ -10,7 +10,7 @@ import {
   chatTrashItemSchema,
   leaveSessionChatBody,
   leaveSessionChatResponse,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import { createAppContext } from '../src/context.ts'
 import {
@@ -214,9 +214,9 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
   })
 
   it('applies append-only v18/v19 and rolls true late failures back byte-exact for retry', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-session-v18-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-session-v18-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     const chat = createChat(new ThreadStore(seed), 'Migration history')
     const jobId = createChatJob(seed, chat.id, 'migration', 'completed')
@@ -306,9 +306,9 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
 
   it('records exactly one server-time leave basis with exact scope and no implicit lifecycle guesses', async (test) => {
     let clock = new Date(NOW)
-    const root = await mkdtemp(join(tmpdir(), 'alamo-session-basis-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-session-basis-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     let db = openDb(path)
     const threads = new ThreadStore(db)
     const projects = new ProjectStore(db)
@@ -444,9 +444,9 @@ describe('P3-H explicit Session leave and 24-hour recovery', () => {
   })
 
   it('uses the existing owner for stable bounded Session order, coalescing, startup, periodic and shutdown', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-session-owner-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-session-owner-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     const seedStore = new ChatRetentionStore(seed, { clock: () => new Date(NOW) })
     const startup = createChat(new ThreadStore(seed), 'Startup pending')

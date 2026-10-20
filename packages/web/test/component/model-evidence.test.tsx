@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import type { Health, InstalledModelDescriptor } from '@alamo/contract'
+import type { Health, InstalledModelDescriptor } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'
 import { api } from '../../src/lib/api.ts'

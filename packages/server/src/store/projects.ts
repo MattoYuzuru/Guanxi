@@ -8,7 +8,7 @@ import {
   type ProjectFilesystemBinding,
   type ProjectIconKey,
   type ProjectWithPresentation,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 interface ProjectRow {

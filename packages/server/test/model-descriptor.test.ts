@@ -7,7 +7,7 @@ import {
   localModelSchema,
   type HardwareInfo,
   type LocalModel,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   ModelService,
   MODEL_SHOW_MAX_CONCURRENCY,
@@ -121,9 +121,9 @@ function fixture(installed: InstalledFixture[]): ProviderFixture {
 }
 
 async function service(test: TestContext, input: ProviderFixture) {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-model-descriptor-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-model-descriptor-'))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const db = openDb(join(root, 'alamo.db'))
+  const db = openDb(join(root, 'guanxi.db'))
   test.after(() => db.close())
   return new ModelService(client(input), new CalibrationStore(db), HARDWARE)
 }

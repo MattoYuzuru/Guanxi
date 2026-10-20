@@ -103,7 +103,7 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
       pulls.push(request.postDataJSON() as Record<string, unknown>)
       installed = true
       const frame = (event: unknown, sequence: number) =>
-        `id: ${sequence}\nevent: alamo\ndata: ${JSON.stringify(event)}\n\n`
+        `id: ${sequence}\nevent: guanxi\ndata: ${JSON.stringify(event)}\n\n`
       return route.fulfill({
         status: 200,
         contentType: 'text/event-stream; charset=utf-8',

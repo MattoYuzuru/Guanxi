@@ -5,7 +5,7 @@ import type {
   RuntimeResourceOperation,
   RuntimeResourceOwner,
   RuntimeSnapshot,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Modal, Spinner } from '../../components/ui.tsx'
 import { ApiRequestError, api } from '../../lib/api.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'

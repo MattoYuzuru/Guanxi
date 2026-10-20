@@ -19,7 +19,7 @@ import {
   projectSchema,
   projectWithPresentationSchema,
   updateProjectPresentationBody,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
@@ -35,9 +35,9 @@ function count(db: DatabaseSync, table: string): number {
 }
 
 async function temporaryDbPath(test: { after: (fn: () => unknown) => void }, label: string) {
-  const root = await mkdtemp(join(tmpdir(), `alamo-project-${label}-`))
+  const root = await mkdtemp(join(tmpdir(), `guanxi-project-${label}-`))
   test.after(() => rm(root, { recursive: true, force: true }))
-  return join(root, 'alamo.db')
+  return join(root, 'guanxi.db')
 }
 
 function downgradeToV9(db: DatabaseSync): void {

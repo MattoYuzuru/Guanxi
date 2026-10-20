@@ -72,7 +72,7 @@ test('Add from Ollama is explicit, focus-contained, truthful and constrained-lay
       pullBodies.push(request.postDataJSON())
       installed = true
       const frame = (event: unknown, seq: number) =>
-        `id: ${seq}\nevent: alamo\ndata: ${JSON.stringify(event)}\n\n`
+        `id: ${seq}\nevent: guanxi\ndata: ${JSON.stringify(event)}\n\n`
       return route.fulfill({
         status: 200,
         contentType: 'text/event-stream; charset=utf-8',

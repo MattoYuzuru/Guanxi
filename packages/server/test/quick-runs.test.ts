@@ -15,7 +15,7 @@ import {
   quickRunScopeQuery,
   updateQuickRunRetentionBody,
   type QuickRun,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { quickRunsRoutes } from '../src/http/quick-runs-routes.ts'
 import { ProjectService } from '../src/projects/service.ts'
 import { openDb } from '../src/store/db.ts'
@@ -165,9 +165,9 @@ describe('P3-J canonical Quick Run retention foundation', () => {
   })
 
   it('applies migration 21 on fresh/v20/reopen/retry and truly rolls back exact v20 bytes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-quick-run-v21-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-quick-run-v21-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     assert.equal(version(seed), 28)
     const project = new ProjectStore(seed).create('Exact v20 Project', CREATED_AT)

@@ -4,7 +4,7 @@ import type {
   ModelCapabilityOverrideOutcome,
   ModelCapabilityOverrideResponse,
   ModelDetail,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CapabilityOverrides } from '../../src/features/models/CapabilityOverrides.tsx'
 import { api } from '../../src/lib/api.ts'
@@ -315,7 +315,7 @@ describe('installed capability overrides', () => {
     expect(clipboard.writeText.mock.calls[1]![0]).toBe(first)
 
     const parsed = JSON.parse(first) as Record<string, unknown>
-    expect(parsed['schema']).toBe('alamo.model-capability-overrides')
+    expect(parsed['schema']).toBe('guanxi.model-capability-overrides')
     expect(parsed['version']).toBe(1)
     expect(parsed['artifactDigest']).toBe(DIGEST)
     expect(parsed['runtimeVersion']).toBe(RUNTIME)
@@ -352,7 +352,7 @@ describe('installed capability overrides', () => {
     expect(clicked).toHaveLength(2)
     expect(clicked[0]!.download).toBe(clicked[1]!.download)
     expect(clicked[0]!.download).toBe(
-      'alamo-capability-overrides-fixture-latest-sha256-fixture.json',
+      'guanxi-capability-overrides-fixture-latest-sha256-fixture.json',
     )
     expect(created[0]!.type).toBe('application/json')
     expect(await screen.findByText('Скачивание начато')).toBeTruthy()

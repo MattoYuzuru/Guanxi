@@ -7,7 +7,7 @@ import {
   type GeneratedAnswerProjection,
   type ReasoningArtifact,
   type ReasoningArtifactWithContent,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createHash } from 'node:crypto'
 import type { Db } from './db.ts'
 

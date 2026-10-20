@@ -20,7 +20,7 @@ import {
   type HuggingFaceImportFailureReason,
   type HuggingFaceImportStreamEvent,
   type HuggingFaceImportTargetObservation,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { CompletionProbeService } from '../runtime/completion-probe.ts'
 import {
   OllamaError,

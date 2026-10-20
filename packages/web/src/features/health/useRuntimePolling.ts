@@ -1,4 +1,4 @@
-import type { RuntimeSnapshot } from '@alamo/contract'
+import type { RuntimeSnapshot } from '@guanxi/contract'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const RUNTIME_ACTIVE_POLL_INTERVAL_MS = 2_000

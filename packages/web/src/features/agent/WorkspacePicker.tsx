@@ -7,7 +7,7 @@
  * там «локальной» ФС у браузера просто не будет.
  */
 import { useState } from 'react'
-import type { Workspace } from '@alamo/contract'
+import type { Workspace } from '@guanxi/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync } from '../../lib/useAsync.ts'
 import {

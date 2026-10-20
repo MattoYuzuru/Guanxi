@@ -21,9 +21,9 @@ const IDENTITY = {
 }
 
 async function store(test: { after: (fn: () => unknown) => void }, label: string) {
-  const root = await mkdtemp(join(tmpdir(), `alamo-override-store-${label}-`))
+  const root = await mkdtemp(join(tmpdir(), `guanxi-override-store-${label}-`))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const db = openDb(join(root, 'alamo.db'))
+  const db = openDb(join(root, 'guanxi.db'))
   test.after(() => db.close())
   return { db, store: new ModelCapabilityOverrideStore(db) }
 }

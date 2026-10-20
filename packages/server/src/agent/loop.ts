@@ -17,8 +17,8 @@ import type {
   TurnTerminalOutcome,
   Usage,
   Workspace,
-} from '@alamo/contract'
-import { MAX_AGENT_STEPS, APPROVAL_TIMEOUT_MS } from '@alamo/contract'
+} from '@guanxi/contract'
+import { MAX_AGENT_STEPS, APPROVAL_TIMEOUT_MS } from '@guanxi/contract'
 import { buildContextState, buildUsage, type PrefillTracker } from '../context/usage.ts'
 import {
   OllamaError,
@@ -64,9 +64,9 @@ export interface RunTurnParams {
 }
 
 export const TURN_ABORT_REASON = {
-  explicitStop: 'alamo:explicit-stop',
-  connectionAbort: 'alamo:connection-abort',
-  applicationShutdown: 'alamo:application-shutdown',
+  explicitStop: 'guanxi:explicit-stop',
+  connectionAbort: 'guanxi:connection-abort',
+  applicationShutdown: 'guanxi:application-shutdown',
 } as const
 
 class RuntimeProtocolError extends Error {

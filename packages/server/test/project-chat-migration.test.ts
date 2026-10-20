@@ -12,7 +12,7 @@ import {
   listProjectlessChatsResponse,
   threadSchema,
   threadWithOwnershipSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ThreadStore } from '../src/store/threads.ts'
@@ -65,9 +65,9 @@ function downgradeToV12(db: DatabaseSync): void {
 }
 
 async function temporaryDbPath(test: { after: (fn: () => unknown) => void }, label: string) {
-  const root = await mkdtemp(join(tmpdir(), `alamo-project-chat-${label}-`))
+  const root = await mkdtemp(join(tmpdir(), `guanxi-project-chat-${label}-`))
   test.after(() => rm(root, { recursive: true, force: true }))
-  return join(root, 'alamo.db')
+  return join(root, 'guanxi.db')
 }
 
 describe('SQLite Project Chat ownership migrations 12–13', () => {

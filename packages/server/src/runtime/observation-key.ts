@@ -4,7 +4,7 @@ import type {
   ModelObservationKey,
   ModelObservationKeyUnavailableReason,
   RunningModel,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 export interface InstalledArtifactIdentity {
   name: string

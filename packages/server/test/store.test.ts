@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import type { ToolCall } from '@alamo/contract'
+import type { ToolCall } from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import { SettingsStore } from '../src/store/settings.ts'
 import { ThreadStore } from '../src/store/threads.ts'
@@ -11,7 +11,7 @@ import { WorkspaceStore } from '../src/store/workspaces.ts'
 
 describe('SQLite stores', () => {
   it('сохраняет тред, сообщения, компакцию и журнал инструмента', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-store-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-store-'))
     test.after(() => rm(root, { recursive: true, force: true }))
 
     const db = openDb(':memory:')
@@ -107,7 +107,7 @@ describe('SQLite stores', () => {
   })
 
   it('reopens the exact locale with provenance and fails closed on durable corruption', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-locale-store-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-locale-store-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const databasePath = join(root, 'settings.sqlite')
     let db = openDb(databasePath)

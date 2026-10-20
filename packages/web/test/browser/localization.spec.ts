@@ -96,7 +96,7 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toHaveCount(1)
   await expect.poll(() => settingsReads).toBe(1)
   await expect.poll(() => runtimeReads).toEqual({ health: 2, runtime: 2, models: 2 })
-  await expect(page).toHaveTitle('Alamo')
+  await expect(page).toHaveTitle('Guanxi')
   await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
 
@@ -147,7 +147,7 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   await expect.poll(() => settingsWrites).toBe(1)
   const saveError = page.getByRole('alert')
   await expect(saveError).toBeFocused()
-  await expect(saveError).toContainText('Не удалось соединиться с сервером Alamo')
+  await expect(saveError).toContainText('Не удалось соединиться с сервером Guanxi')
   await expect(page.getByText('Настройки сохранены', { exact: true })).toHaveCount(0)
   expect(persisted.locale).toBe('ru')
   await save.focus()

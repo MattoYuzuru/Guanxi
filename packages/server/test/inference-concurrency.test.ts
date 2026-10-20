@@ -4,7 +4,7 @@ import {
   legacyInstalledModelDescriptor,
   type HardwareInfo,
   type LocalModel,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { TURN_ABORT_REASON } from '../src/agent/loop.ts'
 import { createApp } from '../src/app.ts'

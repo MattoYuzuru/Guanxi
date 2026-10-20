@@ -15,7 +15,7 @@ import {
   jobStreamEventSchema,
   type ApiError,
   type JobEvent,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import { JobServiceError } from '../jobs/service.ts'
 import { JobStoreError } from '../store/jobs.ts'

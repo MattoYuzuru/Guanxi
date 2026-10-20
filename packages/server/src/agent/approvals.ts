@@ -4,7 +4,7 @@
  * Стрим при этом не рвётся: агентный цикл останавливается на await, а HTTP-соединение
  * держится открытым. Решение приходит отдельным запросом на /api/approvals/:id.
  */
-import { APPROVAL_TIMEOUT_MS } from '@alamo/contract'
+import { APPROVAL_TIMEOUT_MS } from '@guanxi/contract'
 
 export type ApprovalDecision = 'approve' | 'deny' | 'timeout' | 'cancelled'
 

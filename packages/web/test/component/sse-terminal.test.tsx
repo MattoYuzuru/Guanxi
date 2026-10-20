@@ -1,4 +1,4 @@
-import { chatStreamEventSchema, type ChatStreamEvent } from '@alamo/contract'
+import { chatStreamEventSchema, type ChatStreamEvent } from '@guanxi/contract'
 import { describe, expect, it, vi } from 'vitest'
 import { sseStream } from '../../src/lib/sse.ts'
 
@@ -15,7 +15,7 @@ describe('terminal SSE parsing', () => {
         steps: 1,
       },
     })
-    const encoded = new TextEncoder().encode(`id: 7\nevent: alamo\ndata: ${payload}\n\n`)
+    const encoded = new TextEncoder().encode(`id: 7\nevent: guanxi\ndata: ${payload}\n\n`)
     const split = Math.floor(encoded.length / 2)
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(

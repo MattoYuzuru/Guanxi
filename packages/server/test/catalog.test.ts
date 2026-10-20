@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { HardwareInfo } from '@alamo/contract'
+import type { HardwareInfo } from '@guanxi/contract'
 import {
   catalogSeedFromRecommendation,
   getCatalog,

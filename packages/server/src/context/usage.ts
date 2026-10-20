@@ -13,7 +13,7 @@
  *   холодный prefill   7847 токенов за 41.8 с
  *   попадание в кэш    7870 токенов за  0.3 с
  */
-import type { ContextState, Usage } from '@alamo/contract'
+import type { ContextState, Usage } from '@guanxi/contract'
 import type { OllamaChatChunk } from '../ollama/types.ts'
 
 /** Кэш должен сократить холодное время хотя бы вдвое. */

@@ -1,4 +1,4 @@
-import type { UiLocale } from '@alamo/contract'
+import type { UiLocale } from '@guanxi/contract'
 
 type GlossaryCopy = {
   term: string

@@ -4,7 +4,7 @@ import {
   huggingFaceDownloadBody,
   huggingFaceDownloadProvenanceSchema,
   huggingFaceDownloadStreamEventSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 const BODY = {
   identity: {

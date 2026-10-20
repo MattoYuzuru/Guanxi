@@ -1,10 +1,10 @@
 {
-  "name": "alamo-ui",
+  "name": "guanxi",
   "version": "0.1.0",
   "description": "Локальный веб-интерфейс и агент для Ollama",
   "type": "module",
   "bin": {
-    "alamo-ui": "./dist/bin.js"
+    "guanxi": "./dist/bin.js"
   },
   "files": [
     "dist",
@@ -20,7 +20,7 @@
     "start": "node src/bin.ts"
   },
   "devDependencies": {
-    "@alamo/server": "*"
+    "@guanxi/server": "*"
   },
   "license": "MIT"
 }

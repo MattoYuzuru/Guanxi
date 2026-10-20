@@ -5,7 +5,7 @@ import {
   completionProbeResponse,
   type CompletionProbeBody,
   type CompletionProbeEvidence,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../src/context.ts'
 import { modelsRoutes } from '../src/http/models-routes.ts'
 

@@ -31,7 +31,7 @@ import {
   type ChatStreamEvent,
   type JobStreamEvent,
   type ThreadOptions,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { COMPACTION_PROMPT } from '../agent/prompts.ts'
 import { buildContextState, estimateTokens } from '../context/usage.ts'
 import type { AppContext } from '../context.ts'

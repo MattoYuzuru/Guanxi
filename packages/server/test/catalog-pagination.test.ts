@@ -6,7 +6,7 @@ import {
   listCatalogQuery,
   listCatalogResponse,
   type HardwareInfo,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { getCatalog, type CatalogSeed } from '../src/models/catalog.ts'

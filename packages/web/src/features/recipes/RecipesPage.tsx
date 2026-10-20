@@ -11,7 +11,7 @@ import {
   type Job,
   type RecipeOperation,
   type RecipeScopeQuery,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/ui.tsx'
 import { ApiRequestError, api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'

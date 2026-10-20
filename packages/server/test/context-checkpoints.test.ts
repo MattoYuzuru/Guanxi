@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { Worker } from 'node:worker_threads'
-import { contextCheckpointSchema } from '@alamo/contract'
+import { contextCheckpointSchema } from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import { ContextCheckpointStoreError, ThreadStore } from '../src/store/threads.ts'
 import { downgradeContextCheckpointsToV23 } from './fixtures/context-checkpoint-migration.ts'
@@ -118,9 +118,9 @@ describe('P3-M non-destructive context checkpoints', () => {
   })
 
   it('applies migrations 24-25 on fresh/v23/reopen/retry and rolls back exact v23 bytes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-context-v25-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-context-v25-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seeded = openDb(path)
     assert.equal(version(seeded), 28)
     const threads = new ThreadStore(seeded)
@@ -333,9 +333,9 @@ describe('P3-M non-destructive context checkpoints', () => {
   })
 
   it('serializes two connections so exactly one first checkpoint wins', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-context-race-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-context-race-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const threads = new ThreadStore(db)
     const thread = createThread(threads)

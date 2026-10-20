@@ -75,7 +75,7 @@ export async function installChatApiFixture(
       const threadId = scenarioIds[fixtureScenario]
       const jobId = '11111111-1111-4111-8111-111111111111'
       const idempotencyKey = '22222222-2222-4222-8222-222222222222'
-      const storagePrefix = `alamo:p0e:${fixtureScenario}`
+      const storagePrefix = `guanxi:p0e:${fixtureScenario}`
       const stateKey = `${storagePrefix}:state`
       const readsKey = `${storagePrefix}:detailReads`
       const createBodyKey = `${storagePrefix}:createBody`
@@ -553,9 +553,9 @@ export async function installChatApiFixture(
       }
       ;(
         window as typeof window & {
-          __alamoP0EFixture?: FixtureControl
+          __guanxiP0EFixture?: FixtureControl
         }
-      ).__alamoP0EFixture = fixtureControl
+      ).__guanxiP0EFixture = fixtureControl
 
       Object.defineProperty(Element.prototype, 'scrollIntoView', {
         configurable: true,
@@ -701,11 +701,11 @@ export async function advanceChatFixture(
     (nextAction) => {
       const fixture = (
         window as typeof window & {
-          __alamoP0EFixture?: {
+          __guanxiP0EFixture?: {
             snapshot: () => ChatFixtureSnapshot
           }
         }
-      ).__alamoP0EFixture
+      ).__guanxiP0EFixture
       if (!fixture) return false
       const snapshot = fixture.snapshot()
       return nextAction === 'releaseHeaders' ? snapshot.responsePending : snapshot.streamReady
@@ -715,9 +715,9 @@ export async function advanceChatFixture(
   await page.evaluate((nextAction) => {
     const fixture = (
       window as typeof window & {
-        __alamoP0EFixture?: Record<ChatFixtureAction, () => void>
+        __guanxiP0EFixture?: Record<ChatFixtureAction, () => void>
       }
-    ).__alamoP0EFixture
+    ).__guanxiP0EFixture
     if (!fixture) throw new Error('P0-E fixture is unavailable')
     fixture[nextAction]()
   }, action)
@@ -729,19 +729,19 @@ export async function readChatFixture(page: Page): Promise<ChatFixtureSnapshot> 
       Boolean(
         (
           window as typeof window & {
-            __alamoP0EFixture?: unknown
+            __guanxiP0EFixture?: unknown
           }
-        ).__alamoP0EFixture,
+        ).__guanxiP0EFixture,
       ),
   )
   return page.evaluate(() => {
     const fixture = (
       window as typeof window & {
-        __alamoP0EFixture?: {
+        __guanxiP0EFixture?: {
           snapshot: () => ChatFixtureSnapshot
         }
       }
-    ).__alamoP0EFixture
+    ).__guanxiP0EFixture
     if (!fixture) throw new Error('P0-E fixture is unavailable')
     return fixture.snapshot()
   })

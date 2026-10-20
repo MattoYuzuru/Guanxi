@@ -9,7 +9,7 @@ import {
   listProjectsWithPresentationResponse,
   workspaceSchema,
   type HardwareInfo,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import { FeatureFlagRegistry } from '../src/config/feature-flags.ts'
@@ -596,7 +596,7 @@ describe('thread routes', () => {
 
 describe('project routes', () => {
   it('creates and reads a logical Project without path, binding or external side effects', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-project-route-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-project-route-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const beforeEntries = await readdir(root)
     const context = testContext()
@@ -675,7 +675,7 @@ describe('project routes', () => {
   })
 
   it('keeps legacy Workspace JSON byte-compatible and maps it exactly once', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-workspace-bridge-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-workspace-bridge-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const context = testContext()
     test.after(() => context.db.close())
@@ -740,7 +740,7 @@ describe('project routes', () => {
   })
 
   it('preserves literal legacy Workspace GET bytes across the compatibility bridge', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-workspace-bytes-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-workspace-bytes-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const context = testContext()
     test.after(() => context.db.close())
@@ -788,7 +788,7 @@ describe('project routes', () => {
   })
 
   it('renames only Project metadata without changing a Workspace path', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-project-rename-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-project-rename-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const context = testContext()
     test.after(() => context.db.close())
@@ -813,7 +813,7 @@ describe('project routes', () => {
   })
 
   it('opts into presentation v1 without changing strict legacy Project or Workspace bytes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-project-versioned-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-project-versioned-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const context = testContext()
     test.after(() => context.db.close())
@@ -851,7 +851,7 @@ describe('project routes', () => {
   })
 
   it('rejects invalid presentation before mutation and changes only metadata once', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-project-presentation-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-project-presentation-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     let ollamaBoundaryCalls = 0
     let modelBoundaryCalls = 0
@@ -1392,7 +1392,7 @@ describe('project routes', () => {
       },
     })
     test.after(() => context.db.close())
-    const allowedRoot = await mkdtemp(join(tmpdir(), 'alamo-retention-side-effects-'))
+    const allowedRoot = await mkdtemp(join(tmpdir(), 'guanxi-retention-side-effects-'))
     test.after(() => rm(allowedRoot, { recursive: true, force: true }))
     context.workspaces.create(allowedRoot, 'Retention fixture root')
     const projectA = context.projects.create('A')

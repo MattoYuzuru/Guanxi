@@ -21,7 +21,7 @@
  *
  * То есть вердикт сам себя уточняет по мере использования.
  */
-import type { FitLevel, FitVerdict, HardwareInfo } from '@alamo/contract'
+import type { FitLevel, FitVerdict, HardwareInfo } from '@guanxi/contract'
 
 /**
  * Байт на элемент KV-кэша.

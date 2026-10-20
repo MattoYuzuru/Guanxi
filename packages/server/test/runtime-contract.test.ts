@@ -7,7 +7,7 @@ import {
   turnErrorSchema,
   turnStopReasonSchema,
   runtimeHostTelemetrySchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 const HARDWARE = {
   platform: 'darwin',

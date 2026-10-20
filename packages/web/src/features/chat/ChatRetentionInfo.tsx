@@ -5,7 +5,7 @@ import {
   type ChatRetentionPolicy,
   type ChatRetentionProjection,
   type LeaveSessionChatResponse,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Callout, Modal, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'

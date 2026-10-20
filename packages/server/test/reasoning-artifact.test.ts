@@ -13,7 +13,7 @@ import {
   reasoningArtifactWithContentSchema,
   type JobTerminalState,
   type TurnTerminalOutcome,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import { createAppContext } from '../src/context.ts'
 import { openDb } from '../src/store/db.ts'
@@ -173,9 +173,9 @@ describe('P3-F reasoning Artifact persistence', () => {
   })
 
   it('creates v16 once on fresh, v15 upgrade, reopen and retry while preserving legacy bytes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-reasoning-migration-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-reasoning-migration-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const fresh = openDb(path)
     assert.equal((fresh.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 28)
     const { chat } = createChat(fresh)
@@ -450,9 +450,9 @@ describe('P3-F reasoning Artifact persistence', () => {
   })
 
   it('serves strict read-only list/read routes and legacy projection without runtime effects', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-reasoning-routes-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-reasoning-routes-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const context = await createAppContext({ dbPath: join(root, 'alamo.db'), appVersion: 'test' })
+    const context = await createAppContext({ dbPath: join(root, 'guanxi.db'), appVersion: 'test' })
     test.after(async () => {
       await context.maintenance?.close()
       await context.chatExecution.shutdown()

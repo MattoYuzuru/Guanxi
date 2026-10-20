@@ -4,7 +4,7 @@ import {
   type ProjectColorToken,
   type ProjectIconKey,
   type ProjectWithPresentation,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Callout, EmptyState, Input, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { translate } from '../../lib/locale.ts'

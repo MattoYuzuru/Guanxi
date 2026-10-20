@@ -4,7 +4,7 @@
  * Явное требование: если Ollama не установлена или не запущена — понятный экран
  * с командой из `installHint`, а не пустота и не белый экран.
  */
-import type { Health } from '@alamo/contract'
+import type { Health } from '@guanxi/contract'
 import { Button, Callout, CopyButton, Spinner, Stat } from '../../components/ui.tsx'
 import { errorMessage } from '../../lib/api.ts'
 import { PRODUCT_NAME } from '../../lib/brand.ts'
@@ -26,7 +26,7 @@ export function HealthLoading() {
   )
 }
 
-/** Сервер Alamo не ответил вообще — до Ollama дело не дошло. */
+/** Сервер Guanxi не ответил вообще — до Ollama дело не дошло. */
 export function HealthUnreachable({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <Centered
@@ -39,7 +39,7 @@ export function HealthUnreachable({ error, onRetry }: { error: unknown; onRetry:
 
       <div className="mt-3">
         <p className="mb-1.5 text-xs text-[var(--fg-muted)]">{translate('health.server.startHint')}</p>
-        <CommandBlock command="npx alamo-ui" />
+        <CommandBlock command="npx guanxi" />
       </div>
 
       <div className="mt-4 flex justify-end">

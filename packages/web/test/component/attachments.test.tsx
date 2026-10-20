@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ArtifactTransferPolicy, Attachment, Project } from '@alamo/contract'
+import type { ArtifactTransferPolicy, Attachment, Project } from '@guanxi/contract'
 import { AttachmentsPage } from '../../src/features/attachments/AttachmentsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'

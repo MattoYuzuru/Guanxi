@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import type { CatalogSourceHealth, Health, RuntimeCurrentFitReason } from '@alamo/contract'
+import type { CatalogSourceHealth, Health, RuntimeCurrentFitReason } from '@guanxi/contract'
 import { describe, expect, it, vi } from 'vitest'
 import { OllamaHealthNotice } from '../../src/features/health/HealthGate.tsx'
 import { RuntimeStatusView } from '../../src/features/health/RuntimeStatus.tsx'

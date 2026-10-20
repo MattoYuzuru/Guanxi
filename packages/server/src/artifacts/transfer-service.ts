@@ -4,7 +4,7 @@ import {
   type ArtifactScope,
   type ArtifactTransferPolicy,
   type Attachment,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   ArtifactStore,
   ArtifactStoreError,

@@ -12,7 +12,7 @@ import {
   type ArtifactTransferPolicy,
   type Attachment,
   type Project,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Badge, Button, Callout, EmptyState, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatBytes, formatDateTime } from '../../lib/format.ts'

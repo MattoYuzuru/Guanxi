@@ -13,7 +13,7 @@ import {
   type ModelObservationKey,
   type RuntimeResourceOwner,
   type RuntimeSnapshot,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { FeatureFlagRegistry } from '../config/feature-flags.ts'
 import { extractArchParams, estimateKvCacheBytes } from '../hardware/fit.ts'
 import type { OllamaClient } from '../ollama/client.ts'

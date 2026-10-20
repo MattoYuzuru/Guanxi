@@ -20,7 +20,7 @@ import type {
   HardwareInfo,
   ListCatalogQuery,
   ModelCapability,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { z } from 'zod'
 import { computeFit } from '../hardware/fit.ts'
 import {

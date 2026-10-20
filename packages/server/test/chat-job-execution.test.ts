@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { HardwareInfo } from '@alamo/contract'
+import type { HardwareInfo } from '@guanxi/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import { FeatureFlagRegistry } from '../src/config/feature-flags.ts'

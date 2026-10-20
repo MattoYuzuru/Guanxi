@@ -4,7 +4,7 @@ import {
   PROJECT_ICON_MANIFEST,
   PROJECT_PRESENTATION_VERSION,
   type ProjectWithPresentation,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { ProjectsPage } from '../../src/features/projects/ProjectsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale, translate, type LocaleKey } from '../../src/lib/locale.ts'

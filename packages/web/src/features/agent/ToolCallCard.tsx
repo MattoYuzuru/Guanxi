@@ -6,7 +6,7 @@
  * понимать, что именно произошло, когда агент «промахнулся» аргументами.
  */
 import { useState } from 'react'
-import type { ToolCall, ToolCallStatus } from '@alamo/contract'
+import type { ToolCall, ToolCallStatus } from '@guanxi/contract'
 import { Badge, Chevron, CopyButton, Spinner, cx } from '../../components/ui.tsx'
 import { formatDuration } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatRetentionProjection, ListReasoningArtifactsResponse } from '@alamo/contract'
+import type { ChatRetentionProjection, ListReasoningArtifactsResponse } from '@guanxi/contract'
 import { ChatRetentionInfo } from '../../src/features/chat/ChatRetentionInfo.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'

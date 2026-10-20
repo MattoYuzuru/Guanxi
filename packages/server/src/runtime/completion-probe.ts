@@ -4,7 +4,7 @@ import {
   type CompletionProbeBody,
   type CompletionProbeEvidence,
   type LocalModel,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { ModelContextLimitExceededError, type ModelService } from '../models/service.ts'
 import {
   OllamaError,

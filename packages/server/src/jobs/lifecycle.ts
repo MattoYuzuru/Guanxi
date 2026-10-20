@@ -1,4 +1,4 @@
-import type { JobState, JobTerminalState } from '@alamo/contract'
+import type { JobState, JobTerminalState } from '@guanxi/contract'
 
 const NON_TERMINAL_TRANSITIONS = {
   queued: ['reserving', 'cancelling'],

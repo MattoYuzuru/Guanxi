@@ -7,7 +7,7 @@ import type {
   RuntimeResourceOperation,
   RuntimeAdmissionPriority,
   RuntimeSnapshot,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Spinner } from '../../components/ui.tsx'
 import {
   formatBytes,

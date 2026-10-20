@@ -352,10 +352,10 @@ export type HuggingFaceImportStreamEvent = z.infer<
 /* ──────────────────────────────── Помощники ──────────────────────────────── */
 
 /** Имя SSE-события в поле `event:`. Клиент может слушать и точечно, и через onmessage. */
-export const SSE_EVENT_NAME = 'alamo' as const
+export const SSE_EVENT_NAME = 'guanxi' as const
 
 /** Typed failure frame used only after an HTTP Job event stream has started. */
-export const SSE_ERROR_EVENT_NAME = 'alamo-error' as const
+export const SSE_ERROR_EVENT_NAME = 'guanxi-error' as const
 
 /** Заголовок для возобновления стрима после обрыва. */
 export const SSE_LAST_EVENT_ID_HEADER = 'Last-Event-ID' as const

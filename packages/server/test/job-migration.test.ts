@@ -50,9 +50,9 @@ function downgradeToV4(db: DatabaseSync): void {
 
 describe('SQLite durable Chat Job migration 5', () => {
   it('creates migration 5 exactly once on a fresh database and reopens idempotently', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-migration-fresh-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-migration-fresh-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     const first = openDb(path)
     assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 28 })
@@ -90,9 +90,9 @@ describe('SQLite durable Chat Job migration 5', () => {
   })
 
   it('upgrades a v4 fixture without changing legacy threads, messages, Jobs or events', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-migration-upgrade-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-migration-upgrade-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     // Removing only additive v5 objects/columns produces an exact v4 fixture
     // without copying historical migrations into this test.
@@ -175,9 +175,9 @@ describe('SQLite durable Chat Job migration 5', () => {
   })
 
   it('rolls back a failed v5 migration and recovers from unchanged version 4', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-migration-recovery-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-migration-recovery-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     const broken = openDb(path)
     downgradeToV4(broken)

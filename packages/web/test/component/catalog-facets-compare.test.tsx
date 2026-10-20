@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { CatalogModel, Health, ListCatalogResponse } from '@alamo/contract'
+import type { CatalogModel, Health, ListCatalogResponse } from '@guanxi/contract'
 import { useMemo, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'

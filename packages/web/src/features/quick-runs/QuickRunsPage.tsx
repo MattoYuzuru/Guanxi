@@ -9,7 +9,7 @@ import {
   type QuickRunOperation,
   type QuickRunScopeQuery,
   type RetentionPolicy,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'

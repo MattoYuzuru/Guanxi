@@ -16,7 +16,7 @@ import {
   type ChatTrashItem,
   type LeaveSessionChatResponse,
   type RestoredChatLifecycle,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1_000

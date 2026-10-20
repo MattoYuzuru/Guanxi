@@ -3,7 +3,7 @@
  * обратно: сервер возвращает только hasApiKey.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { Settings, UiLocale, WebSearchProvider } from '@alamo/contract'
+import type { Settings, UiLocale, WebSearchProvider } from '@guanxi/contract'
 import {
   Button,
   Callout,

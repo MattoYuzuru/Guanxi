@@ -16,8 +16,8 @@ import type {
   ModelCapabilityOverrideConflictReason,
   ModelCapabilityOverrideOutcome,
   ModelDetail,
-} from '@alamo/contract'
-import { modelCapabilitySchema } from '@alamo/contract'
+} from '@guanxi/contract'
+import { modelCapabilitySchema } from '@guanxi/contract'
 import { Badge, Button, Modal, Select } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
@@ -27,7 +27,7 @@ import { PRODUCT_FILE_PREFIX } from '../../lib/brand.ts'
 const CAPABILITIES = modelCapabilitySchema.options
 
 /** Deliberately stable: the export must not change between two identical reads. */
-const EXPORT_SCHEMA = 'alamo.model-capability-overrides'
+const EXPORT_SCHEMA = 'guanxi.model-capability-overrides'
 
 type Intent =
   | { kind: 'add'; capability: ModelCapability }

@@ -5,7 +5,7 @@
  * не на каждый кадр, а по rAF — иначе карусель начинает дёргаться.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { PullStreamEvent } from '@alamo/contract'
+import type { PullStreamEvent } from '@guanxi/contract'
 import { streamPull } from '../../lib/api.ts'
 import { errorMessage } from '../../lib/api.ts'
 import { Button, Meter, cx } from '../../components/ui.tsx'

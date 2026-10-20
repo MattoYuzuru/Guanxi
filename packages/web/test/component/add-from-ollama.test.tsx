@@ -15,7 +15,7 @@ function json(body: unknown, status = 200): Response {
 
 function sse(...events: unknown[]): Response {
   const body = events.map((event, index) =>
-    `id: ${index}\nevent: alamo\ndata: ${JSON.stringify(event)}\n\n`,
+    `id: ${index}\nevent: guanxi\ndata: ${JSON.stringify(event)}\n\n`,
   ).join('')
   return new Response(body, {
     headers: { 'content-type': 'text/event-stream; charset=utf-8' },
@@ -163,7 +163,7 @@ describe('Add from Ollama Marketplace flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Подтвердить нормализованную цель/u }))
     const encoder = new TextEncoder()
     streamController.enqueue(encoder.encode(
-      `id: 0\nevent: alamo\ndata: ${JSON.stringify({
+      `id: 0\nevent: guanxi\ndata: ${JSON.stringify({
         type: 'progress', seq: 0, data: {
           status: 'downloading', digest: 'sha256:layer', totalBytes: 100,
           completedBytes: 25, percent: 25, bytesPerSecond: 10, etaSeconds: 8,
@@ -174,7 +174,7 @@ describe('Add from Ollama Marketplace flow', () => {
     expect(screen.getByLabelText('Прогресс Ollama pull')).toBeTruthy()
     expect(screen.getByText('25% · 25 Б')).toBeTruthy()
     streamController.enqueue(encoder.encode(
-      `id: 1\nevent: alamo\ndata: ${JSON.stringify({
+      `id: 1\nevent: guanxi\ndata: ${JSON.stringify({
         type: 'done', seq: 1, data: { name: 'qwen3:8b' },
       })}\n\n`,
     ))

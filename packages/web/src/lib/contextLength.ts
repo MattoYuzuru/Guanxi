@@ -1,4 +1,4 @@
-import type { ModelContextLimit } from '@alamo/contract'
+import type { ModelContextLimit } from '@guanxi/contract'
 
 export function parsePositiveSafeInteger(value: string | null): number | null {
   if (value === null || value.trim() === '') return null

@@ -10,7 +10,7 @@ import {
   type CompletionProbeEvidence,
   type HuggingFaceDownloadProvenance,
   type HuggingFaceImportStreamEvent,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { HuggingFaceImportService } from '../src/models/hugging-face-import.ts'
 
 const roots: string[] = []
@@ -62,7 +62,7 @@ function sourceProvenance(bytes: Uint8Array): HuggingFaceDownloadProvenance {
 }
 
 async function staging(bytes = gguf()) {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-hf-import-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-hf-import-'))
   roots.push(root)
   const path = join(root, `${ARTIFACT_ID}.gguf`)
   await writeFile(path, bytes)

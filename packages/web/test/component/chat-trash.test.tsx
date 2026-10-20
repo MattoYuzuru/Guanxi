@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatTrashItem, RestoreChatResponse } from '@alamo/contract'
+import type { ChatTrashItem, RestoreChatResponse } from '@guanxi/contract'
 import { ChatTrashList } from '../../src/features/chat/ChatTrashList.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'

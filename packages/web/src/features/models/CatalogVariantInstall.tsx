@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CatalogModel, CatalogVariant, PullStreamEvent } from '@alamo/contract'
+import type { CatalogModel, CatalogVariant, PullStreamEvent } from '@guanxi/contract'
 import { Button, Meter, Modal, cx } from '../../components/ui.tsx'
 import { api, streamOllamaReferencePull } from '../../lib/api.ts'
 import {

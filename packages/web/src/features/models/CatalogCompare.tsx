@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CatalogModel, CatalogVariant } from '@alamo/contract'
+import type { CatalogModel, CatalogVariant } from '@guanxi/contract'
 import { Button, Modal } from '../../components/ui.tsx'
 import { formatBytes, formatContextLength, formatDateTime } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'

@@ -21,7 +21,7 @@ import {
   artifactSchema,
   type ArtifactCreateMetadata,
   type ArtifactScope,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   ArtifactStore,
   ArtifactStoreError,
@@ -67,9 +67,9 @@ async function fixture(
   label: string,
   hooks: ArtifactStoreHooks = {},
 ) {
-  const root = await mkdtemp(join(tmpdir(), `alamo-artifact-${label}-`))
+  const root = await mkdtemp(join(tmpdir(), `guanxi-artifact-${label}-`))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const db = openDb(join(root, 'alamo.db'))
+  const db = openDb(join(root, 'guanxi.db'))
   test.after(() => db.close())
   const artifactRoot = join(root, 'managed-artifacts')
   return {
@@ -132,7 +132,7 @@ describe('P3-N generic Artifact contract and migration 26', () => {
   })
 
   it('migrates fresh/v25 databases, reopens, rolls back a late collision, and retries exactly', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-artifact-migration-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-artifact-migration-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const freshPath = join(root, 'fresh.db')
     const fresh = openDb(freshPath)
@@ -438,9 +438,9 @@ describe('P3-N content-addressed ArtifactStore', () => {
   })
 
   it('rejects symlink redirects and corrupt/pre-existing checksum targets without overwrite or path disclosure', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-artifact-symlink-root-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-artifact-symlink-root-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const outside = join(root, 'outside')
     await mkdir(outside)

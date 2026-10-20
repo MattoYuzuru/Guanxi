@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { modelObservationKeySchema, type HardwareInfo, type RunningModel } from '@alamo/contract'
+import { modelObservationKeySchema, type HardwareInfo, type RunningModel } from '@guanxi/contract'
 import {
   buildCompleteObservationKey,
   normalizeOllamaModelReference,
@@ -157,9 +157,9 @@ describe('versioned model observation key', () => {
 
 describe('exact observation calibration store', () => {
   it('preserves legacy rows without measured credit and isolates digest/context/runtime/hardware', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-observation-store-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-observation-store-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const store = new CalibrationStore(db)
     db.prepare(

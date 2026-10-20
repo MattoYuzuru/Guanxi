@@ -228,7 +228,7 @@ export class OllamaClient {
           return
         }
         timedOut = true
-        controller.abort(`alamo:ollama-${phase}-timeout`)
+        controller.abort(`guanxi:ollama-${phase}-timeout`)
         // Abort handlers run synchronously. Check the caller-owned signal after
         // them so an explicit Stop observed in the same turn stays authoritative.
         if (externalSignal?.aborted) {
@@ -448,7 +448,7 @@ export class OllamaClient {
       ) throw error
       throw new OllamaError('Ollama response stream failed', response.status, error)
     } finally {
-      if (!controller.signal.aborted) controller.abort('alamo:ollama-stream-cleanup')
+      if (!controller.signal.aborted) controller.abort('guanxi:ollama-stream-cleanup')
       // Provider cleanup must not hold the P0-C permit indefinitely if a
       // transport implements a stuck cancel promise.
       void reader.cancel().catch(() => {})

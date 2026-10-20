@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@alamo/contract': contractSrc,
+      '@guanxi/contract': contractSrc,
     },
   },
   test: {

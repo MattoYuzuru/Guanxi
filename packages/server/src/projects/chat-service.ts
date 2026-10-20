@@ -5,7 +5,7 @@ import {
   type Project,
   type ThreadOptions,
   type ThreadWithOwnership,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { ModelService } from '../models/service.ts'
 import type { ThreadStore } from '../store/threads.ts'
 import type { ProjectService } from './service.ts'

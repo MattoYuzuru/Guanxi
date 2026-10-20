@@ -9,7 +9,7 @@ const outfile = resolve(outDir, 'bin.js')
 const webDist = resolve(workspaceRoot, 'packages/web/dist')
 
 await stat(resolve(webDist, 'index.html')).catch(() => {
-  throw new Error('Сначала соберите фронтенд: npm run build --workspace @alamo/web')
+  throw new Error('Сначала соберите фронтенд: npm run build --workspace @guanxi/web')
 })
 
 await rm(outDir, { recursive: true, force: true })

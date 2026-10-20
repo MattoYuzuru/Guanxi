@@ -8,7 +8,7 @@ import {
   projectReferenceSchema,
   updateProjectBody,
   updateProjectPresentationBody,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Hono } from 'hono'
 import type { AppContext } from '../context.ts'
 import { buildContextState, estimateTokens } from '../context/usage.ts'

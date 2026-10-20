@@ -13,7 +13,7 @@ import {
   attachmentSchema,
   artifactTransferPolicySchema,
   listAttachmentsResponse,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   ArtifactTransferError,
   ArtifactTransferService,
@@ -59,9 +59,9 @@ async function fixture(
     helperTimeoutMs?: number
   } = {},
 ) {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-attachment-route-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-attachment-route-'))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const db = openDb(join(root, 'alamo.db'))
+  const db = openDb(join(root, 'guanxi.db'))
   test.after(() => db.close())
   db.prepare(
     `INSERT INTO projects (id, name, created_at, updated_at)
@@ -127,7 +127,7 @@ function uploadInit(bytes: Uint8Array, intent = randomUUID(), mediaType = 'appli
 
 describe('P3-O attachment migration and public transfer boundary', () => {
   it('migrates fresh/v26/v27/reopen/retry with exact rows and true late-DDL rollback', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-attachment-migration-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-attachment-migration-'))
     test.after(() => rm(root, { recursive: true, force: true }))
     const freshPath = join(root, 'fresh.db')
     const fresh = openDb(freshPath)
@@ -409,7 +409,7 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     ]) assert.equal((await app.request(path)).status, 400)
 
     for (const [name, value] of [
-      ['x-alamo-path', '/private'],
+      ['x-guanxi-path', '/private'],
       ['x-storage-key', 'sha256/private'],
       ['storage-key', 'sha256/private'],
       ['x-path', '/private'],

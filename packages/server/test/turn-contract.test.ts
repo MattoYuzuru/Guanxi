@@ -4,7 +4,7 @@ import { z } from 'zod'
 import {
   chatStreamEventSchema,
   messageSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 const legacyMessage = {
   id: 'legacy-assistant',

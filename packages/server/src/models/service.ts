@@ -18,7 +18,7 @@ import {
   type ModelDetail,
   type ModelEvidenceBasis,
   type RunningModel,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { computeFit } from '../hardware/fit.ts'
 import type { OllamaClient } from '../ollama/client.ts'
 import type { OllamaShowResponse, OllamaTagsEntry } from '../ollama/types.ts'

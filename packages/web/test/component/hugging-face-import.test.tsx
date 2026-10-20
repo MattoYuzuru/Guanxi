@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { HuggingFaceDownloadProvenance } from '@alamo/contract'
+import type { HuggingFaceDownloadProvenance } from '@guanxi/contract'
 import { HuggingFaceImportControl } from '../../src/features/models/HuggingFaceImportControl.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 
@@ -93,7 +93,7 @@ function successEvents() {
 }
 
 function sse(events: unknown[]): Response {
-  const body = events.map((item) => `event: alamo\ndata: ${JSON.stringify(item)}\n\n`).join('')
+  const body = events.map((item) => `event: guanxi\ndata: ${JSON.stringify(item)}\n\n`).join('')
   return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
 }
 

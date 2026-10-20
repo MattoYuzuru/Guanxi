@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { Worker } from 'node:worker_threads'
-import type { Job, JobState } from '@alamo/contract'
+import type { Job, JobState } from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import {
   JobStore,
@@ -538,9 +538,9 @@ describe('durable Job store', () => {
   })
 
   it('deduplicates concurrent create calls across SQLite connections', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-create-race-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-create-race-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     openDb(path).close()
     const input: CreateJobInput = {
       kind: 'inference',
@@ -571,9 +571,9 @@ describe('durable Job store', () => {
   })
 
   it('serializes concurrent event append and preserves one next sequence owner', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-event-race-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-event-race-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const created = new JobStore(db).create({
       kind: 'agent',
@@ -620,9 +620,9 @@ describe('durable Job store', () => {
   })
 
   it('allows exactly one concurrent terminal compare-and-set outcome', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-terminal-race-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-terminal-race-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const created = new JobStore(db).create({
       kind: 'inference',
@@ -685,9 +685,9 @@ describe('durable Job store', () => {
   })
 
   it('allows exactly one concurrent non-terminal compare-and-set transition', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-transition-race-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-transition-race-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const created = new JobStore(db).create({
       kind: 'inference',

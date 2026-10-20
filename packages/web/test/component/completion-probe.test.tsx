@@ -4,7 +4,7 @@ import type {
   CompletionProbeResponse,
   ModelDetail,
   RuntimeSnapshot,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CompletionProbe } from '../../src/features/models/CompletionProbe.tsx'
 import { RuntimeProvider } from '../../src/features/health/RuntimeContext.tsx'

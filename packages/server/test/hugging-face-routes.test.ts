@@ -11,7 +11,7 @@ import {
   type HuggingFaceSearchResult,
   huggingFaceDownloadStreamEventSchema,
   huggingFaceImportStreamEventSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../src/context.ts'
 import { modelsRoutes } from '../src/http/models-routes.ts'
 import { HuggingFaceTransport } from '../src/models/hugging-face-transport.ts'

@@ -14,7 +14,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react'
 import { createPortal } from 'react-dom'
-import type { FitLevel } from '@alamo/contract'
+import type { FitLevel } from '@guanxi/contract'
 import { translate, type LocaleKey } from '../lib/locale.ts'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {

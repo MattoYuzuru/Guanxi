@@ -9,7 +9,7 @@ import {
   type HardwareInfo,
   type RunningModel,
   type RuntimeHostTelemetry,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import {
   ESTIMATED_PARALLEL_ADMISSION_ENV,
@@ -961,7 +961,7 @@ describe('estimated parallel-admission policy', () => {
       'utf8',
     )
     assert.equal((source.match(/\.projection\(ESTIMATED_PARALLEL_ADMISSION_FLAG\)/gu) ?? []).length, 1)
-    assert.equal((source.match(/ALAMO_FEATURE_|process\.env/gu) ?? []).length, 0)
+    assert.equal((source.match(/GUANXI_FEATURE_|process\.env/gu) ?? []).length, 0)
     assert.equal((source.match(/\.acquire\(|\.release\(|\.enqueue\(|\.cancel\(/gu) ?? []).length, 0)
     assert.equal((source.match(/\.record\(|INSERT|UPDATE|DELETE|localStorage|analytics/gu) ?? []).length, 0)
     const serverSource = sourceTree(new URL('../src/', import.meta.url))

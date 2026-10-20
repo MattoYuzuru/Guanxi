@@ -11,7 +11,7 @@ import type {
   JobState,
   ToolCall,
   Usage,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { ApprovalGate } from '../src/agent/approvals.ts'
 import { createApp } from '../src/app.ts'
 import { FeatureFlagRegistry } from '../src/config/feature-flags.ts'
@@ -327,9 +327,9 @@ function recoveryOptions(overrides: ChatRecoveryOptions = {}): ChatRecoveryOptio
 
 describe('durable Chat startup recovery', () => {
   it('reconciles every unsafe state, confirms cancelling, and leaves terminal rows unchanged', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-recovery-matrix-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-recovery-matrix-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const first = openDb(path)
     const fixtures = new Map<JobState, ChatJobAssociation>()
     for (const state of EXECUTING_STATES) {
@@ -438,9 +438,9 @@ describe('durable Chat startup recovery', () => {
   })
 
   it('starts an untouched queued Chat once and skips generic public Jobs', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-recovery-queued-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-recovery-queued-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const first = openDb(path)
     const queued = seedChat(first, 'queued-safe', 'queued')
     const generic = new JobService(new JobStore(first)).create({
@@ -473,9 +473,9 @@ describe('durable Chat startup recovery', () => {
   })
 
   it('reduces only the latest pending assistant across bounded output pages and serves it by GET/SSE', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-recovery-output-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-recovery-output-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const first = openDb(path)
     const association = seedChat(first, 'partial-reducer', 'waiting_tool')
     const threads = new ThreadStore(first)
@@ -586,9 +586,9 @@ describe('durable Chat startup recovery', () => {
   })
 
   it('converges after injected terminal and mid-scan failures without leaking private details', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-recovery-failure-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-recovery-failure-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const first = openDb(path)
     const candidates = [
       seedChat(first, 'failure-a', 'generating', { partial: true }),
@@ -658,9 +658,9 @@ describe('durable Chat startup recovery', () => {
   })
 
   it('fails closed on incomplete association and malformed private output while preserving retry rows', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-recovery-malformed-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-recovery-malformed-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const incomplete = seedChat(db, 'incomplete', 'generating', { partial: true })
     const malformed = seedChat(db, 'malformed', 'generating', { partial: true })
@@ -722,9 +722,9 @@ describe('durable Chat startup recovery', () => {
   })
 
   it('rejects application startup before listen and closes the failed recovery database', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-recovery-startup-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-recovery-startup-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const first = openDb(path)
     const association = seedChat(first, 'startup-incomplete', 'generating', { partial: true })
     first.prepare('DELETE FROM chat_job_inputs WHERE job_id = ?').run(association.job.id)
@@ -732,7 +732,7 @@ describe('durable Chat startup recovery', () => {
 
     await assert.rejects(start({ dataDir: root, port: 0 }), (error) => {
       assert.ok(error instanceof ChatRecoveryError)
-      assert.doesNotMatch(String(error), /startup-incomplete|private prompt|\/tmp|SELECT|alamo\.db/i)
+      assert.doesNotMatch(String(error), /startup-incomplete|private prompt|\/tmp|SELECT|guanxi\.db/i)
       return true
     })
 
@@ -744,9 +744,9 @@ describe('durable Chat startup recovery', () => {
   })
 
   it('keeps recovered queued Jobs in one process-local lane, including two Jobs in one thread', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-recovery-lane-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-recovery-lane-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const first = openDb(path)
     const threads = new ThreadStore(first)
     const sharedThread = createThread(threads, 'shared')

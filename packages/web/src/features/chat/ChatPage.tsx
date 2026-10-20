@@ -23,13 +23,13 @@ import type {
   TurnStatus,
   TurnStopReason,
   Workspace,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   DEFAULT_AGENT_TEMPERATURE,
   DEFAULT_CHAT_NUM_CTX,
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Markdown } from '../../components/Markdown.tsx'
 import {
   Badge,
@@ -417,7 +417,7 @@ function ThreadPage({
     [chat.thread?.workspaceId, projectId],
   )
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [autoApprove, setAutoApprove] = useLocalStorage('alamo.autoApproveTurn', false)
+  const [autoApprove, setAutoApprove] = useLocalStorage('guanxi.autoApproveTurn', false)
   const dispatchChat = useCallback(
     (
       intent: ChatSendIntent,

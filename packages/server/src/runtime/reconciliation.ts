@@ -11,7 +11,7 @@ import type {
   RuntimeSourceHealth,
   ModelObservationKey,
   HardwareInfo,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { HostTelemetry } from '../hardware/telemetry.ts'
 import {
   alignHostTelemetryObservedAt,

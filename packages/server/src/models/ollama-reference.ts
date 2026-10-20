@@ -1,4 +1,4 @@
-import type { OllamaReferencePreview } from '@alamo/contract'
+import type { OllamaReferencePreview } from '@guanxi/contract'
 
 const COMPONENT = '[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?'
 const MODEL_NAME = new RegExp(

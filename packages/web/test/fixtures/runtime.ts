@@ -3,7 +3,7 @@ import {
   type RuntimeGovernorSnapshot,
   type RuntimeModelObservation,
   type RuntimeSnapshot,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 export const RUNTIME_OBSERVED_AT = '2026-08-02T12:00:00.000Z'
 

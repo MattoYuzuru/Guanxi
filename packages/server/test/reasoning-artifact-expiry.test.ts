@@ -165,9 +165,9 @@ function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): stri
 
 describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
   it('adds v17 once, preserves exact v16/legacy bytes and rolls a failed migration back for retry', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-reasoning-expiry-migration-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-reasoning-expiry-migration-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     assert.equal((seed.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 28)
     const chat = createChat(seed)
@@ -557,9 +557,9 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
   })
 
   it('runs reasoning recovery before startup cleanup, performs periodic cleanup and stops it on shutdown', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-reasoning-expiry-owner-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-reasoning-expiry-owner-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     const startupChat = createChat(seed, 'Startup reasoning')
     setPolicy(seed, startupChat.id, 'keep')

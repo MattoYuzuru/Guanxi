@@ -4,7 +4,7 @@ import type {
   PrewarmModelResponse,
   RuntimeSnapshot,
   Settings,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { ModelService } from '../models/service.ts'
 import type { OllamaClient } from '../ollama/client.ts'
 import type { SettingsStore } from '../store/settings.ts'

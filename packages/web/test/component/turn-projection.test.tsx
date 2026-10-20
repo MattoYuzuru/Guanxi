@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
-import type { Message } from '@alamo/contract'
+import type { Message } from '@guanxi/contract'
 import { describe, expect, it } from 'vitest'
 import { MessageView } from '../../src/features/chat/ChatPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'

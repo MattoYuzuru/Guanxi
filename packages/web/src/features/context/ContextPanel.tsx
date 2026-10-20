@@ -12,7 +12,7 @@
  *    показываем ДО нажатия, а не после.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { ContextState, Usage } from '@alamo/contract'
+import type { ContextState, Usage } from '@guanxi/contract'
 import { Badge, Button, Meter, Stat, cx } from '../../components/ui.tsx'
 import { errorMessage } from '../../lib/api.ts'
 import { formatDuration, formatPercent, formatTokens, formatTokensPerSecond } from '../../lib/format.ts'

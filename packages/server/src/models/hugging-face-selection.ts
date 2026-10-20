@@ -16,7 +16,7 @@ import type {
   HuggingFaceReferencePreview,
   HuggingFaceRepositoryResult,
   HuggingFaceSelectionResult,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { computeFit } from '../hardware/fit.ts'
 
 /** The only shape this module needs from the transport: one bounded repository re-read. */

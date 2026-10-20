@@ -12,7 +12,7 @@ import {
   getRecipeJobSnapshotResponse,
   recipeJobSnapshotQuery,
   type RecipeConfiguration,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { recipesRoutes } from '../src/http/recipes-routes.ts'
 import { JobService } from '../src/jobs/service.ts'
 import { ProjectService } from '../src/projects/service.ts'
@@ -149,9 +149,9 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
   })
 
   it('applies migration 23 on fresh/v22/reopen/retry and truly rolls back exact v22 bytes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-recipe-job-v23-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-recipe-job-v23-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seeded = openDb(path)
     assert.equal(version(seeded), 28)
     const project = new ProjectStore(seeded).create('Exact v22 Project', AT)
@@ -435,9 +435,9 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
   })
 
   it('serializes a true two-connection duplicate into one Job/event/snapshot', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-recipe-job-race-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-recipe-job-race-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const recipe = new RecipeStore(db, { clock: () => AT, createId: () => RECIPE_ID }).create({
       name: 'Race Recipe',

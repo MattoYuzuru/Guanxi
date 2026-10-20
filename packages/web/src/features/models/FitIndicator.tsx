@@ -6,7 +6,7 @@
  *  2. степень доверия к числам — `basis`: прогноз, факт или подсказка вендора;
  *  3. по раскрытию — разбор: из чего сложился requiredBytes и сколько есть.
  */
-import type { FitVerdict } from '@alamo/contract'
+import type { FitVerdict } from '@guanxi/contract'
 import { Badge, Disclosure, FIT_COLOR_VAR, Meter, Stat, cx, fitLabel } from '../../components/ui.tsx'
 import { formatBytes, formatContextLength, formatUtilization } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'

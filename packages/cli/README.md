@@ -1,12 +1,12 @@
-# Alamo UI
+# Guanxi
 
 Local-first web-интерфейс для Ollama.
 
 ```bash
-npx alamo-ui
+npx guanxi
 ```
 
-Ollama должна быть установлена и запущена. Текущий CLI поднимает Alamo server в
+Ollama должна быть установлена и запущена. Текущий CLI поднимает Guanxi server в
 foreground и открывает браузер. Daemon, `status`, `stop`, TUI и agent client
 запланированы, но пока не реализованы.
 

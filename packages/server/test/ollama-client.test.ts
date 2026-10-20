@@ -270,7 +270,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
           init?.signal?.addEventListener(
             'abort',
             () => {
-              external.abort('alamo:explicit-stop')
+              external.abort('guanxi:explicit-stop')
               reject(new DOMException('Aborted', 'AbortError'))
             },
             { once: true },
@@ -282,7 +282,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
       client.chatStream(REQUEST, external.signal).next(),
       (error) => error instanceof DOMException && error.name === 'AbortError',
     )
-    assert.equal(external.signal.reason, 'alamo:explicit-stop')
+    assert.equal(external.signal.reason, 'guanxi:explicit-stop')
   })
 
   it('does not let a stuck provider cancel promise hold generator cleanup', async () => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { HuggingFaceRepository } from '@alamo/contract'
+import type { HuggingFaceRepository } from '@guanxi/contract'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import {
   HuggingFaceDiscovery,

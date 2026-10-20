@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { listCatalogQuery } from '@alamo/contract'
+import { listCatalogQuery } from '@guanxi/contract'
 
 describe('catalog facet query contract', () => {
   it('keeps legacy query defaults additive and parses deterministic CSV multi-selects', () => {

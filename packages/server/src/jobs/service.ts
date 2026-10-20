@@ -3,7 +3,7 @@ import {
   type Job,
   type JobCancelReason,
   type JobStreamEvent,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   isCanonicalNonTerminalTransition,
   isCanonicalRecoveryTerminalTransition,

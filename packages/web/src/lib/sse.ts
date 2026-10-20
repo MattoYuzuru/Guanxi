@@ -13,7 +13,7 @@
  *  - отмену через AbortController (кнопка «Стоп»).
  */
 import type { ZodType, ZodTypeDef } from 'zod'
-import { SSE_LAST_EVENT_ID_HEADER } from '@alamo/contract'
+import { SSE_LAST_EVENT_ID_HEADER } from '@guanxi/contract'
 
 /* ──────────────────────────── Разбор кадров ───────────────────────────── */
 

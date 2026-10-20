@@ -8,7 +8,7 @@ import {
   updateQuickRunRetentionBody,
   updateQuickRunRetentionResponse,
   type QuickRunScope,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import { QuickRunStore } from '../store/quick-runs.ts'
 import { fail, notFound } from './errors.ts'

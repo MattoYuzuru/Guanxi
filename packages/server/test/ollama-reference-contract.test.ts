@@ -5,7 +5,7 @@ import {
   ollamaReferencePreviewResponse,
   ollamaReferenceStartBody,
   pullStreamEventSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 describe('Ollama reference contract', () => {
   it('round-trips strict preview/start and preserves legacy pull events', () => {

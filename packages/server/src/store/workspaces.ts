@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
-import type { Workspace } from '@alamo/contract'
+import type { Workspace } from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 interface WorkspaceRow {

@@ -8,7 +8,7 @@ import {
   type Message,
   type ToolCall,
   type Usage,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { JobService } from './service.ts'
 import type {
   ChatJobAssociation,

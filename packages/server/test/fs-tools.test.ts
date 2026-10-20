@@ -6,7 +6,7 @@ import { it } from 'node:test'
 import { readFileTool } from '../src/tools/fs-tools.ts'
 
 it('read_file не загружает и не возвращает файл целиком сверх безопасного лимита', async (test) => {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-read-file-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-read-file-'))
   test.after(() => rm(root, { recursive: true, force: true }))
 
   const target = join(root, 'large.txt')

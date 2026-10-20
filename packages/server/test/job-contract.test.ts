@@ -23,7 +23,7 @@ import {
   settingsSchema,
   updateSettingsBody,
   sendMessageBody,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 describe('durable Job contract', () => {
   it('keeps the accepted lifecycle and terminal state names exact', () => {

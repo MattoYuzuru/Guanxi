@@ -8,7 +8,7 @@ import {
   huggingFaceDownloadStreamEventSchema,
   type HuggingFaceDownloadStreamEvent,
   type HuggingFaceSelectionResult,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   exactHuggingFaceDownloadUrl,
   HUGGING_FACE_DOWNLOAD_ALLOWED_HOSTS,
@@ -20,7 +20,7 @@ const SHA = 'a'.repeat(40)
 const OBSERVED_AT = '2026-08-09T12:00:00.000Z'
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), 'alamo-hf-download-'))
+  const value = await mkdtemp(join(tmpdir(), 'guanxi-hf-download-'))
   roots.push(value)
   return value
 }

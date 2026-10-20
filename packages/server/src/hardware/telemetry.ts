@@ -6,7 +6,7 @@ import type {
   RuntimeMemoryFact,
   RuntimeNvidiaDevice,
   RuntimeNvidiaTelemetry,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 export const APPLE_VM_STAT_PATH = '/usr/bin/vm_stat'
 export const NVIDIA_SMI_PATH = '/usr/bin/nvidia-smi'

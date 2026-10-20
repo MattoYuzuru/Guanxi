@@ -25,7 +25,7 @@ import {
   type HuggingFaceImportStreamEvent,
   type ModelCapabilityOverrideMutationBody,
   type ModelCapabilityOverrideOutcome,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import { getCatalog } from '../models/catalog.ts'
 import { pullModelEvents } from '../models/ollama-pull.ts'

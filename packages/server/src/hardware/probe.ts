@@ -7,7 +7,7 @@ import { statfs } from 'node:fs/promises'
 import os from 'node:os'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
-import type { Accelerator, HardwareInfo } from '@alamo/contract'
+import type { Accelerator, HardwareInfo } from '@guanxi/contract'
 
 const execFileAsync = promisify(execFile)
 

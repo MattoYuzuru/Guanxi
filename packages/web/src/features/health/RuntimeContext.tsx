@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import type { RuntimeSnapshot } from '@alamo/contract'
+import type { RuntimeSnapshot } from '@guanxi/contract'
 import { api } from '../../lib/api.ts'
 import {
   useRuntimePolling,

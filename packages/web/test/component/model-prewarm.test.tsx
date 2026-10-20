@@ -1,6 +1,6 @@
 import { StrictMode, useState } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import type { LocalModel, PrewarmModelResponse, RuntimeSnapshot } from '@alamo/contract'
+import type { LocalModel, PrewarmModelResponse, RuntimeSnapshot } from '@guanxi/contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../src/lib/api.ts'
 import { RuntimeProvider, useRuntimeProjection } from '../../src/features/health/RuntimeContext.tsx'

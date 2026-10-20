@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import type { Job, JobEvent, JobState, JobTerminalState } from '@alamo/contract'
+import type { Job, JobEvent, JobState, JobTerminalState } from '@guanxi/contract'
 import {
   isCanonicalRecoveryTerminalTransition,
   isCanonicalTerminalTransition,
@@ -433,9 +433,9 @@ describe('JobService persisted-first subscription', () => {
   })
 
   it('replays the persisted tail from a new service instance after restart', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-job-service-restart-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-job-service-restart-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const firstDb = openDb(path)
     const firstService = new JobService(new JobStore(firstDb))
     const created = createJob(firstService, 'restart-replay')

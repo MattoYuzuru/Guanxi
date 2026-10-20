@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
   OllamaReferencePreview,
   PullStreamEvent,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Input, Meter, Modal } from '../../components/ui.tsx'
 import {
   ApiRequestError,

@@ -21,7 +21,7 @@ import {
   type TurnStopReason,
   type TurnTerminalOutcome,
   type Usage,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 interface ThreadRow {

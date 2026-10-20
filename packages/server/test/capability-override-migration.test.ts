@@ -44,9 +44,9 @@ function downgradeToV8(db: DatabaseSync): void {
 }
 
 async function temporaryDbPath(test: { after: (fn: () => unknown) => void }, label: string) {
-  const root = await mkdtemp(join(tmpdir(), `alamo-override-${label}-`))
+  const root = await mkdtemp(join(tmpdir(), `guanxi-override-${label}-`))
   test.after(() => rm(root, { recursive: true, force: true }))
-  return join(root, 'alamo.db')
+  return join(root, 'guanxi.db')
 }
 
 describe('SQLite capability override migration 9', () => {

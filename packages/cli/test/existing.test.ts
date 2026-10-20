@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { afterEach, it } from 'node:test'
-import { probeExistingAlamo } from '../src/existing.ts'
+import { probeExistingGuanxi } from '../src/existing.ts'
 
 const servers: ReturnType<typeof createServer>[] = []
 
@@ -33,24 +33,24 @@ async function serve(body: string, contentType = 'text/html'): Promise<string> {
   return `http://127.0.0.1:${address.port}`
 }
 
-it('узнаёт полноценный интерфейс Alamo', async () => {
-  const url = await serve('<!doctype html><title>Alamo UI</title><div id="root"></div>')
-  assert.deepEqual(await probeExistingAlamo(url), { kind: 'ui', url })
+it('узнаёт полноценный интерфейс Guanxi', async () => {
+  const url = await serve('<!doctype html><title>Guanxi</title><div id="root"></div>')
+  assert.deepEqual(await probeExistingGuanxi(url), { kind: 'ui', url })
 })
 
 it('отличает старый API-only процесс без сборки фронтенда', async () => {
   const url = await serve(
-    'Alamo UI 0.1.0\n\nСборка фронта не найдена (/tmp/web).\nAPI доступен на /api/health',
+    'Guanxi 0.1.0\n\nСборка фронта не найдена (/tmp/web).\nAPI доступен на /api/health',
     'text/plain',
   )
-  assert.deepEqual(await probeExistingAlamo(url), {
+  assert.deepEqual(await probeExistingGuanxi(url), {
     kind: 'api-only',
     url,
     version: '0.1.0',
   })
 })
 
-it('не принимает произвольный сайт за Alamo', async () => {
+it('не принимает произвольный сайт за Guanxi', async () => {
   const url = await serve('<!doctype html><title>Другое приложение</title>')
-  assert.equal(await probeExistingAlamo(url), null)
+  assert.equal(await probeExistingGuanxi(url), null)
 })

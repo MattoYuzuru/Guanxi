@@ -62,9 +62,9 @@ function insertVersion2Message(
 
 describe('SQLite turn-state migration', () => {
   it('keeps the v3 turn-state bridge on a fresh current database', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-migration-fresh-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-migration-fresh-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     const db = openDb(path)
     test.after(() => db.close())
@@ -81,9 +81,9 @@ describe('SQLite turn-state migration', () => {
   })
 
   it('upgrades v2 with evidence-based backfill and keeps old writes readable', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-migration-upgrade-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-migration-upgrade-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     const previous = new DatabaseSync(path)
     previous.exec(VERSION_2_MESSAGES)
@@ -162,9 +162,9 @@ describe('SQLite turn-state migration', () => {
   })
 
   it('rolls back a failed v3 migration and can recover from the unchanged v2 version', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-migration-recovery-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-migration-recovery-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     const broken = new DatabaseSync(path)
     broken.exec('PRAGMA user_version = 2')

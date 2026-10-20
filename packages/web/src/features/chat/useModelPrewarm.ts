@@ -1,4 +1,4 @@
-import type { LocalModel, PrewarmModelResponse } from '@alamo/contract'
+import type { LocalModel, PrewarmModelResponse } from '@guanxi/contract'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api.ts'
 import { useRuntimeProjection } from '../health/RuntimeContext.tsx'

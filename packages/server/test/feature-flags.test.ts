@@ -7,7 +7,7 @@ import {
   ROUTES,
   featureFlagKeySchema,
   getFeatureFlagsResponse,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import {
   ESTIMATED_PARALLEL_ADMISSION_ENV,
@@ -320,7 +320,7 @@ describe('P2-N feature flag contract and registry', () => {
     )
     const moduleSpecifiers = [...featureSource.matchAll(/from\s+['"]([^'"]+)['"]/gu)]
       .map((match) => match[1])
-    assert.deepEqual(moduleSpecifiers, ['@alamo/contract'])
+    assert.deepEqual(moduleSpecifiers, ['@guanxi/contract'])
 
     for (const relativePath of [
       '../src/runtime/resource-governor.ts',

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, type TestContext } from 'node:test'
-import type { HardwareInfo, LocalModel } from '@alamo/contract'
+import type { HardwareInfo, LocalModel } from '@guanxi/contract'
 import { ModelService, MODEL_SHOW_MAX_CONCURRENCY } from '../src/models/service.ts'
 import { OllamaClient } from '../src/ollama/client.ts'
 import { CalibrationStore } from '../src/store/calibration.ts'
@@ -116,9 +116,9 @@ function state(): State {
 }
 
 async function storage(test: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-installed-cache-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-installed-cache-'))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const path = join(root, 'alamo.db')
+  const path = join(root, 'guanxi.db')
   const db = openDb(path)
   return { db, path }
 }

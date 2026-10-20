@@ -11,7 +11,7 @@ import {
   type RecipeJsonValue,
   type RecipeRevision,
   type RecipeScope,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 interface RecipeRow {

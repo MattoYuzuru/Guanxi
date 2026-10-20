@@ -112,7 +112,7 @@ import {
   type ReviseRecipeBody,
   type UpdateQuickRunRetentionBody,
   type ArtifactScope,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { consumeSse, sseStream } from './sse.ts'
 import { PRODUCT_NAME } from './brand.ts'
 import { translate, type LocaleKey } from './locale.ts'

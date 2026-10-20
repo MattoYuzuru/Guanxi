@@ -8,7 +8,7 @@ import {
   CHAT_RETENTION_VERSION,
   chatRetentionProjectionSchema,
   updateChatRetentionBody,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { ChatRetentionStore } from '../src/store/chat-retention.ts'
 import { openDb } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
@@ -64,9 +64,9 @@ function downgradeToV13(db: DatabaseSync): void {
 }
 
 async function temporaryDbPath(test: { after: (fn: () => unknown) => void }, label: string) {
-  const root = await mkdtemp(join(tmpdir(), `alamo-retention-${label}-`))
+  const root = await mkdtemp(join(tmpdir(), `guanxi-retention-${label}-`))
   test.after(() => rm(root, { recursive: true, force: true }))
-  return join(root, 'alamo.db')
+  return join(root, 'guanxi.db')
 }
 
 function createChat(threads: ThreadStore, title: string, projectId: string | null = null) {

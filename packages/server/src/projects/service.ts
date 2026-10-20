@@ -3,7 +3,7 @@ import {
   updateProjectPresentationBody,
   type Project,
   type ProjectWithPresentation,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { ProjectStore } from '../store/projects.ts'
 
 export class InvalidProjectNameError extends Error {}

@@ -8,7 +8,7 @@ import {
   type HardwareInfo,
   type RunningModel,
   type RuntimeHostTelemetry,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import {

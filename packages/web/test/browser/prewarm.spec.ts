@@ -15,13 +15,13 @@ async function installFixture(page: Page, enabled = true): Promise<void> {
     ({ runtime, settings, initialEnabled }) => {
       const observedAt = '2026-08-03T00:00:00.000Z'
       const threadId = 'thread-prewarm-browser'
-      const eventsKey = 'alamo:p1k:events'
-      const settingKey = 'alamo:p1k:enabled'
-      const callsKey = 'alamo:p1k:calls'
-      const abortsKey = 'alamo:p1k:aborts'
-      const releasesKey = 'alamo:p1k:releases'
-      const chatsKey = 'alamo:p1k:chats'
-      const bodiesKey = 'alamo:p1k:bodies'
+      const eventsKey = 'guanxi:p1k:events'
+      const settingKey = 'guanxi:p1k:enabled'
+      const callsKey = 'guanxi:p1k:calls'
+      const abortsKey = 'guanxi:p1k:aborts'
+      const releasesKey = 'guanxi:p1k:releases'
+      const chatsKey = 'guanxi:p1k:chats'
+      const bodiesKey = 'guanxi:p1k:bodies'
       if (sessionStorage.getItem(settingKey) === null) {
         sessionStorage.setItem(settingKey, String(initialEnabled))
       }

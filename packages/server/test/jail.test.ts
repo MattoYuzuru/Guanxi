@@ -17,7 +17,7 @@ let outside: string
 
 before(() => {
   // realpath обязателен: на macOS /var и /tmp — симлинки на /private/...
-  base = realpathSync(mkdtempSync(join(tmpdir(), 'alamo-jail-')))
+  base = realpathSync(mkdtempSync(join(tmpdir(), 'guanxi-jail-')))
   root = join(base, 'workspace')
   outside = join(base, 'outside')
 

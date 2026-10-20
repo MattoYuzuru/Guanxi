@@ -1,4 +1,4 @@
-import type { ChatRetentionPolicy } from '@alamo/contract'
+import type { ChatRetentionPolicy } from '@guanxi/contract'
 import type { ChatRetentionStore, SessionLeaveScope } from '../store/chat-retention.ts'
 
 /** Application boundary for retention commands and projections. */

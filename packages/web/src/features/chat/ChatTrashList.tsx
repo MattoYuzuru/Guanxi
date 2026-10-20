@@ -3,7 +3,7 @@ import {
   CHAT_DELETION_VERSION,
   CHAT_LIFECYCLE_VERSION,
   type ChatTrashItem,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Callout } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'

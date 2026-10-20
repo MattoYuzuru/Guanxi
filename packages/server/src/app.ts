@@ -8,7 +8,7 @@
  */
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { approvalBody, updateSettingsBody } from '@alamo/contract'
+import { approvalBody, updateSettingsBody } from '@guanxi/contract'
 import type { AppContext } from './context.ts'
 import { getOllamaStatus } from './ollama/status.ts'
 import { fail } from './http/errors.ts'

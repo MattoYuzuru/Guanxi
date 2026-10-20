@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { CatalogModel, Health, ListCatalogResponse } from '@alamo/contract'
-import { CATALOG_DEFAULT_PAGE_SIZE } from '@alamo/contract'
+import type { CatalogModel, Health, ListCatalogResponse } from '@guanxi/contract'
+import { CATALOG_DEFAULT_PAGE_SIZE } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CatalogPager,

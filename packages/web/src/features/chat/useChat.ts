@@ -19,7 +19,7 @@ import type {
   ToolCall,
   TurnTerminalOutcome,
   Usage,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { api, errorMessage, streamChat, streamJob } from '../../lib/api.ts'
 import { translate } from '../../lib/locale.ts'
 import { StreamBuffer } from './streamBuffer.ts'
@@ -155,7 +155,7 @@ export function useChat(threadId: string | null, projectId: string | null = null
         onReconnect: () => setState((previous) => ({ ...previous, reconnecting: true })),
         onGap: () => setState((previous) => ({ ...previous, reconnecting: true })),
         onInvalidFrame: (raw) => {
-          console.warn('[alamo] Job SSE frame failed contract validation:', raw)
+          console.warn('[guanxi] Job SSE frame failed contract validation:', raw)
         },
         onEvent: (event) => {
           if (!event.output) return
@@ -309,7 +309,7 @@ export function useChat(threadId: string | null, projectId: string | null = null
         onReconnect: () => setState((previous) => ({ ...previous, reconnecting: true })),
         onInvalidFrame: (raw) => {
           // Кадр не по контракту — стрим продолжается, но это стоит увидеть.
-          console.warn('[alamo] кадр SSE не прошёл схему контракта:', raw)
+          console.warn('[guanxi] кадр SSE не прошёл схему контракта:', raw)
         },
         onEvent: (event) => {
           if (event.type === 'done') terminalObserved = true

@@ -21,9 +21,9 @@ const OBSERVED_AT = '2026-08-03T00:00:00.000Z'
 const VALIDATED_AT = '2026-08-03T00:01:00.000Z'
 
 async function fixture(test: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-evidence-store-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-evidence-store-'))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const path = join(root, 'alamo.db')
+  const path = join(root, 'guanxi.db')
   const db = openDb(path)
   test.after(() => db.close())
   return { db, path, store: new InstalledEvidenceCacheStore(db) }
@@ -72,9 +72,9 @@ describe('installed evidence cache store', () => {
   })
 
   it('invalidates same-reference digest replacement atomically and survives reopen', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-evidence-store-reopen-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-evidence-store-reopen-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const store = new InstalledEvidenceCacheStore(db)
     store.write({

@@ -24,7 +24,7 @@ import type {
   HuggingFaceSelectionResult,
   HuggingFaceTransportFailureReason,
   HuggingFaceUnknownVerdictReason,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Badge, Button, Callout, Disclosure, EmptyState, Input, Meter, Skeleton } from '../../components/ui.tsx'
 import { ApiRequestError, api, streamHuggingFaceDownload } from '../../lib/api.ts'
 import { formatBytes, formatContextLength, formatDateTime, formatUtilization } from '../../lib/format.ts'

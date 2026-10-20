@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { CatalogModel, CatalogVariant } from '@alamo/contract'
+import type { CatalogModel, CatalogVariant } from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
 import { filterCatalogModels, getCatalog } from '../src/models/catalog.ts'

@@ -7,7 +7,7 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
 import { promisify } from 'node:util'
-import type { OllamaStatus } from '@alamo/contract'
+import type { OllamaStatus } from '@guanxi/contract'
 import { OllamaProtocolError, type OllamaClient } from './client.ts'
 
 const execFileAsync = promisify(execFile)

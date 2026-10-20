@@ -54,7 +54,7 @@ import {
   PROJECT_COLOR_PALETTE,
   type ProjectColorToken,
   type ProjectIconKey,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 const projectIcons: Record<ProjectIconKey, LucideIcon> = {
   folder: Folder,

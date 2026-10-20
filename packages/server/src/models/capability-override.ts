@@ -15,7 +15,7 @@ import type {
   ModelCapabilityOverrideConflictReason,
   ModelCapabilityOverrideMutationBody,
   ModelCapabilityOverrideOutcome,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { ModelService } from './service.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import {

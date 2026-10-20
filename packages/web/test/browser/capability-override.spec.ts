@@ -260,7 +260,7 @@ test('user capability overrides stay separate, truthful, keyboard and layout saf
   })
   expect(exported).toHaveLength(2)
   expect(exported[0]).toBe(exported[1])
-  expect(exported[0]).toContain('"schema": "alamo.model-capability-overrides"')
+  expect(exported[0]).toContain('"schema": "guanxi.model-capability-overrides"')
   expect(exported[0]).not.toMatch(/127\.0\.0\.1|http|token|secret|prompt|reasoning|template/iu)
   expect(mutations).toHaveLength(1)
 

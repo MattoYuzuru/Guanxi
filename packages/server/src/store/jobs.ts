@@ -32,7 +32,7 @@ import {
   type RecipeModelReference,
   type RecipeOperation,
   type SafeJobMetadata,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { isCanonicalNonTerminalTransition } from '../jobs/lifecycle.ts'
 import type { Db } from './db.ts'
 import { canonicalRecipeConfiguration, RecipeStore } from './recipes.ts'

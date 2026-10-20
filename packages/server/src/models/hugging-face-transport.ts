@@ -33,7 +33,7 @@ import {
   type HuggingFaceSupportVerdict,
   type HuggingFaceTransportFailureReason,
   type HuggingFaceUnknownVerdictReason,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { parseHuggingFaceRepositoryId } from './hugging-face-reference.ts'
 
 /** The documented public Hub origin. It is a constant, never caller-supplied. */
@@ -165,7 +165,7 @@ export class HuggingFaceTransport {
       try {
         connectTimer = setTimeout(() => {
           timedOut = 'connect_timeout'
-          controller.abort('alamo:hugging-face-connect-timeout')
+          controller.abort('guanxi:hugging-face-connect-timeout')
         }, this.connectTimeoutMs)
         response = await this.fetchImpl(url.toString(), {
           method: 'GET',
@@ -191,7 +191,7 @@ export class HuggingFaceTransport {
       try {
         responseTimer = setTimeout(() => {
           timedOut = 'response_timeout'
-          controller.abort('alamo:hugging-face-response-timeout')
+          controller.abort('guanxi:hugging-face-response-timeout')
         }, this.responseTimeoutMs)
         const { value } = await readCappedJson(response, this.maxResponseBytes)
         return { value, headers: response.headers }
@@ -204,7 +204,7 @@ export class HuggingFaceTransport {
       }
     } finally {
       // Release the socket for the abandoned-response paths too.
-      if (!controller.signal.aborted) controller.abort('alamo:hugging-face-request-done')
+      if (!controller.signal.aborted) controller.abort('guanxi:hugging-face-request-done')
     }
   }
 

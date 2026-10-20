@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Project, QuickRun } from '@alamo/contract'
+import type { Project, QuickRun } from '@guanxi/contract'
 import { QuickRunsPage } from '../../src/features/quick-runs/QuickRunsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'

@@ -7,7 +7,7 @@ import type {
   HuggingFaceImportProvenance,
   HuggingFaceImportStreamEvent,
   HuggingFaceImportTargetObservation,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Badge, Button, Input, Modal } from '../../components/ui.tsx'
 import { streamHuggingFaceImport } from '../../lib/api.ts'
 import { SseHttpError } from '../../lib/sse.ts'

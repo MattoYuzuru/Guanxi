@@ -1,7 +1,7 @@
 /**
  * SQLite поверх встроенного в Node `node:sqlite`.
  *
- * Никаких нативных зависимостей и сборки — именно это позволяет `npx alamo-ui`
+ * Никаких нативных зависимостей и сборки — именно это позволяет `npx guanxi`
  * запускаться на чистой машине без компилятора.
  */
 import { DatabaseSync } from 'node:sqlite'
@@ -1531,5 +1531,5 @@ function migrate(db: Db): void {
 
 /** Путь к базе по умолчанию: рядом с остальными данными приложения. */
 export function defaultDbPath(dataDir: string): string {
-  return `${dataDir}/alamo.db`
+  return `${dataDir}/guanxi.db`
 }

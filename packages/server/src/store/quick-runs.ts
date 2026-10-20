@@ -10,7 +10,7 @@ import {
   type QuickRunOperation,
   type QuickRunScope,
   type RetentionPolicy,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 interface QuickRunRow {

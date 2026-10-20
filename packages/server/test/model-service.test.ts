@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import type { HardwareInfo } from '@alamo/contract'
+import type { HardwareInfo } from '@guanxi/contract'
 import {
   ModelContextLimitExceededError,
   ModelService,
@@ -109,9 +109,9 @@ function observationCount(db: ReturnType<typeof openDb>): number {
 
 describe('digest-aware model facts and bounded show cache', () => {
   it('records only exact tags↔ps identity and never gives legacy or cross-digest measured credit', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-service-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-service-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const calibration = new CalibrationStore(db)
     db.prepare(
@@ -158,9 +158,9 @@ describe('digest-aware model facts and bounded show cache', () => {
   })
 
   it('invalidates /api/show on same-name digest replacement and retains no old digest history', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-show-digest-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-show-digest-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const state: ProviderState = {
       installed: [{ name: 'fixture:latest', digest: 'sha256:a' }],
@@ -182,9 +182,9 @@ describe('digest-aware model facts and bounded show cache', () => {
   })
 
   it('bounds retained /api/show entries and refuses local hardware identity for remote runtime', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-show-bound-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-show-bound-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const installed = Array.from({ length: MODEL_SHOW_CACHE_MAX_ENTRIES + 1 }, (_, index) => ({
       name: `fixture-${index}:latest`,
@@ -212,9 +212,9 @@ describe('digest-aware model facts and bounded show cache', () => {
   })
 
   it('redacts failed /api/show payloads and falls back without caching them', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-show-redaction-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-show-redaction-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     let showCalls = 0
     const ollama = new OllamaClient({
@@ -256,9 +256,9 @@ describe('digest-aware model facts and bounded show cache', () => {
   })
 
   it('propagates caller cancellation through the digest-aware /api/show wait', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-show-abort-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-show-abort-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     let showStarted!: () => void
     const started = new Promise<void>((resolve) => {
@@ -310,9 +310,9 @@ describe('digest-aware model facts and bounded show cache', () => {
 
 describe('context capability evidence and profile projection', () => {
   it('adds the exact custom context and declared maximum without treating suggestions as a whitelist', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-context-profile-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-context-profile-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const state: ProviderState = {
       installed: [{ name: 'fixture:latest', digest: 'sha256:a', contextLength: 2_000_000 }],
@@ -331,9 +331,9 @@ describe('context capability evidence and profile projection', () => {
   })
 
   it('keeps absent/conflicting declarations unknown and rejects a sourced over-maximum request', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-context-limit-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-context-limit-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const state: ProviderState = {
       installed: [{ name: 'fixture:latest', digest: 'sha256:a', contextLength: null }],
@@ -352,9 +352,9 @@ describe('context capability evidence and profile projection', () => {
   })
 
   it('uses a declared low maximum for an omitted profile context without rejecting the page', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-context-default-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-context-default-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     const state: ProviderState = {
       installed: [{ name: 'fixture:latest', digest: 'sha256:a', contextLength: 4_096 }],
@@ -368,9 +368,9 @@ describe('context capability evidence and profile projection', () => {
   })
 
   it('bounds simultaneous /api/show calls while preserving all installed rows', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-model-show-concurrency-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-model-show-concurrency-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const db = openDb(join(root, 'alamo.db'))
+    const db = openDb(join(root, 'guanxi.db'))
     test.after(() => db.close())
     let active = 0
     let peak = 0

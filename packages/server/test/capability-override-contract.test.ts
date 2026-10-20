@@ -8,7 +8,7 @@ import {
   modelCapabilityOverrideResponse,
   modelCapabilityOverrideSchema,
   type ModelCapabilityOverride,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 const AT = '2026-08-07T00:00:00.000Z'
 

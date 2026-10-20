@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { estimatedParallelAdmissionBody } from '@alamo/contract'
+import { estimatedParallelAdmissionBody } from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import { fail } from './errors.ts'
 

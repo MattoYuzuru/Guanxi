@@ -22,7 +22,7 @@ import {
   type HuggingFaceDownloadRefusalReason,
   type HuggingFaceDownloadStreamEvent,
   type HuggingFaceSelectionResult,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 
 const HUB_ORIGIN = 'https://huggingface.co'
 
@@ -304,7 +304,7 @@ export class HuggingFaceDownloadService {
           if (bodyTimer) clearTimeout(bodyTimer)
           bodyTimer = setTimeout(() => {
             bodyTimedOut = true
-            bodyController.abort('alamo:hugging-face-download-body-timeout')
+            bodyController.abort('guanxi:hugging-face-download-body-timeout')
           }, this.bodyTimeoutMs)
         }
         const composed = AbortSignal.any([signal, bodyController.signal])
@@ -494,7 +494,7 @@ export class HuggingFaceDownloadService {
       let timedOut = false
       const timer = setTimeout(() => {
         timedOut = true
-        controller.abort('alamo:hugging-face-download-connect-timeout')
+        controller.abort('guanxi:hugging-face-download-connect-timeout')
       }, this.connectTimeoutMs)
       let response: Response
       try {

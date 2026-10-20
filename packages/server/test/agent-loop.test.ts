@@ -31,7 +31,7 @@ function chunk(content: string, promptTokens: number): OllamaChatChunk {
 }
 
 it('показывает diff до подтверждения и соблюдает порядок assistant → tool', async (test) => {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-agent-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-agent-'))
   test.after(() => rm(root, { recursive: true, force: true }))
   const target = join(root, 'README.md')
   await writeFile(target, 'before\n', 'utf8')

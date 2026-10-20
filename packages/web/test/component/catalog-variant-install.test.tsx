@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { CatalogModel } from '@alamo/contract'
+import type { CatalogModel } from '@guanxi/contract'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CatalogVariantInstall } from '../../src/features/models/CatalogVariantInstall.tsx'
@@ -17,7 +17,7 @@ function json(body: unknown, status = 200): Response {
 
 function sse(...events: unknown[]): Response {
   return new Response(events.map((event, index) =>
-    `id: ${index}\nevent: alamo\ndata: ${JSON.stringify(event)}\n\n`,
+    `id: ${index}\nevent: guanxi\ndata: ${JSON.stringify(event)}\n\n`,
   ).join(''), {
     headers: { 'content-type': 'text/event-stream; charset=utf-8' },
   })
@@ -247,7 +247,7 @@ describe('variant-first Marketplace install', () => {
     expect(screen.getAllByText('fixture:a')).toHaveLength(2)
     const encoder = new TextEncoder()
     streamController.enqueue(encoder.encode(
-      `id: 0\nevent: alamo\ndata: ${JSON.stringify({ type: 'done', seq: 0, data: { name: 'fixture:a' } })}\n\n`,
+      `id: 0\nevent: guanxi\ndata: ${JSON.stringify({ type: 'done', seq: 0, data: { name: 'fixture:a' } })}\n\n`,
     ))
     streamController.close()
     expect(await screen.findByText(/Точная цель и digest присутствуют/u)).toBeTruthy()
@@ -275,7 +275,7 @@ describe('variant-first Marketplace install', () => {
 
     const encoder = new TextEncoder()
     streamController.enqueue(encoder.encode(
-      `id: 0\nevent: alamo\ndata: ${JSON.stringify({ type: 'progress', seq: 0, data: {
+      `id: 0\nevent: guanxi\ndata: ${JSON.stringify({ type: 'progress', seq: 0, data: {
         status: 'pulling manifest', digest: null, totalBytes: null,
         completedBytes: null, percent: null, bytesPerSecond: null, etaSeconds: null,
       } })}\n\n`,
@@ -283,7 +283,7 @@ describe('variant-first Marketplace install', () => {
     expect(await screen.findByText('Ollama получает manifest точной цели.')).toBeTruthy()
 
     streamController.enqueue(encoder.encode(
-      `id: 1\nevent: alamo\ndata: ${JSON.stringify({ type: 'progress', seq: 1, data: {
+      `id: 1\nevent: guanxi\ndata: ${JSON.stringify({ type: 'progress', seq: 1, data: {
         status: 'downloading', digest: 'sha256:layer', totalBytes: 100,
         completedBytes: 60, percent: 60, bytesPerSecond: 10, etaSeconds: 4,
       } })}\n\n`,
@@ -292,7 +292,7 @@ describe('variant-first Marketplace install', () => {
     expect(screen.getByText(/60%/u)).toBeTruthy()
 
     streamController.enqueue(encoder.encode(
-      `id: 2\nevent: alamo\ndata: ${JSON.stringify({
+      `id: 2\nevent: guanxi\ndata: ${JSON.stringify({
         type: 'done', seq: 2, data: { name: 'fixture:a' },
       })}\n\n`,
     ))

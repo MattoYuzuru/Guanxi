@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import { cleanup, render } from '@testing-library/react'
-import { CATALOG_DEFAULT_PAGE_SIZE } from '@alamo/contract'
+import { CATALOG_DEFAULT_PAGE_SIZE } from '@guanxi/contract'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   CatalogPager,

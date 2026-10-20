@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import {
   huggingFaceRepositoryResultSchema,
   huggingFaceSearchResultSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { normalizeHuggingFaceReference } from '../src/models/hugging-face-reference.ts'
 import {
   HUGGING_FACE_MAX_FILE_ENTRIES,

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import type { RuntimeSnapshot } from '@alamo/contract'
+import type { RuntimeSnapshot } from '@guanxi/contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   RUNTIME_ACTIVE_POLL_INTERVAL_MS,

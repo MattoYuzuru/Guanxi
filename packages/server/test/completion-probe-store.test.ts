@@ -18,9 +18,9 @@ const IDENTITY = {
 }
 
 async function fixture(test: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), 'alamo-probe-store-'))
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-probe-store-'))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const path = join(root, 'alamo.db')
+  const path = join(root, 'guanxi.db')
   const db = openDb(path)
   test.after(() => db.close())
   return { db, store: new CompletionProbeStore(db) }

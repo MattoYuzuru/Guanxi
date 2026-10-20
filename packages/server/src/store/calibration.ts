@@ -1,4 +1,4 @@
-import type { ModelObservationKey } from '@alamo/contract'
+import type { ModelObservationKey } from '@guanxi/contract'
 import type { CalibrationSample } from '../hardware/fit.ts'
 import type { Db } from './db.ts'
 

@@ -5,7 +5,7 @@ import {
   type HardwareInfo,
   type HuggingFaceRepository,
   type HuggingFaceRepositoryResult,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { normalizeHuggingFaceReference } from '../src/models/hugging-face-reference.ts'
 import { selectHuggingFaceGgufFile as selectHuggingFaceGgufFileImpl } from '../src/models/hugging-face-selection.ts'
 import type {

@@ -5,7 +5,7 @@ import {
   modelCapabilityOverrideResponse,
   type ModelCapabilityOverrideMutationBody,
   type ModelCapabilityOverrideOutcome,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import type { AppContext } from '../src/context.ts'
 import { modelsRoutes } from '../src/http/models-routes.ts'
 
@@ -187,10 +187,10 @@ describe('capability override HTTP routes', () => {
   it('redacts an unexpected failure from the response', async () => {
     const app = appWith({
       apply: async () => {
-        throw new Error('SQLITE_IOERR /Users/private/.alamo/alamo.db token=secret raw body')
+        throw new Error('SQLITE_IOERR /Users/private/.guanxi/guanxi.db token=secret raw body')
       },
       clear: async () => {
-        throw new Error('SQLITE_IOERR /Users/private/.alamo/alamo.db token=secret raw body')
+        throw new Error('SQLITE_IOERR /Users/private/.guanxi/guanxi.db token=secret raw body')
       },
     })
     for (const method of ['POST', 'DELETE'] as const) {
@@ -198,7 +198,7 @@ describe('capability override HTTP routes', () => {
       assert.equal(response.status, 500)
       const text = await response.text()
       assert.match(text, /capability override could not be changed safely/u)
-      assert.doesNotMatch(text, /Users|private|alamo\.db|token|secret|raw body|SQLITE/u)
+      assert.doesNotMatch(text, /Users|private|guanxi\.db|token|secret|raw body|SQLITE/u)
     }
   })
 

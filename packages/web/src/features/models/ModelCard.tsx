@@ -4,7 +4,7 @@
  * «общий» самодельный тип.
  */
 import { memo } from 'react'
-import type { CatalogModel, LocalModel, ModelCapability } from '@alamo/contract'
+import type { CatalogModel, LocalModel, ModelCapability } from '@guanxi/contract'
 import { Badge, Button, cx } from '../../components/ui.tsx'
 import { Link, paths } from '../../lib/router.tsx'
 import { formatBytes, formatContextLength } from '../../lib/format.ts'

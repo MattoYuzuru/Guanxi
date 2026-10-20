@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import type { HardwareInfo } from '@alamo/contract'
+import type { HardwareInfo } from '@guanxi/contract'
 import { ModelCapabilityOverrideService } from '../src/models/capability-override.ts'
 import { ModelService } from '../src/models/service.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
@@ -47,9 +47,9 @@ function tagsEntry(patch: Partial<OllamaTagsEntry> = {}): OllamaTagsEntry {
 }
 
 async function database(test: { after: (fn: () => unknown) => void }, label: string): Promise<Db> {
-  const root = await mkdtemp(join(tmpdir(), `alamo-override-service-${label}-`))
+  const root = await mkdtemp(join(tmpdir(), `guanxi-override-service-${label}-`))
   test.after(() => rm(root, { recursive: true, force: true }))
-  const db = openDb(join(root, 'alamo.db'))
+  const db = openDb(join(root, 'guanxi.db'))
   test.after(() => db.close())
   return db
 }
@@ -391,9 +391,9 @@ describe('capability override server ownership', () => {
     const db = await database(test, 'persistence')
     const { service } = serviceWith(db, {
       store: {
-        list: () => { throw new Error('SQLITE_IOERR /Users/private/.alamo/alamo.db') },
-        write: () => { throw new Error('SQLITE_IOERR /Users/private/.alamo/alamo.db') },
-        clear: () => { throw new Error('SQLITE_IOERR /Users/private/.alamo/alamo.db') },
+        list: () => { throw new Error('SQLITE_IOERR /Users/private/.guanxi/guanxi.db') },
+        write: () => { throw new Error('SQLITE_IOERR /Users/private/.guanxi/guanxi.db') },
+        clear: () => { throw new Error('SQLITE_IOERR /Users/private/.guanxi/guanxi.db') },
       } as unknown as ModelCapabilityOverrideStore,
     })
     for (const mutate of ['apply', 'clear'] as const) {
@@ -409,7 +409,7 @@ describe('capability override server ownership', () => {
       )
       assert.equal(outcome.overrides.length, 0)
       // The safe outcome carries no path and no raw driver text.
-      assert.doesNotMatch(JSON.stringify(outcome), /Users|private|alamo\.db|SQLITE/u)
+      assert.doesNotMatch(JSON.stringify(outcome), /Users|private|guanxi\.db|SQLITE/u)
     }
   })
 

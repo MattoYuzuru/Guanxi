@@ -14,7 +14,7 @@ import {
   modelCapabilitySchema,
   type ModelCapability,
   type ModelCapabilityOverride,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import type { Db } from './db.ts'
 

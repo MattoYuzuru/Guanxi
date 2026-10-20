@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { CatalogModel, Settings } from '@alamo/contract'
+import type { CatalogModel, Settings } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
@@ -147,7 +147,7 @@ describe('locale catalogs', () => {
     expect(formatContextLength(1_572_864)).toBe('1.5M')
     expect(formatTokensPerSecond(12.25)).toBe('12.3 tok/s')
     expect(formatInteger(32_768)).toBe('32,768')
-    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Could not connect to the Alamo server')
+    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Could not connect to the Guanxi server')
     const shapeError = new ApiShapeError('/api/example', [])
     expect(errorMessage(shapeError))
       .toBe('The response from /api/example does not match the application contract')
@@ -170,7 +170,7 @@ describe('locale catalogs', () => {
     expect(formatContextLength(1_572_864)).toBe('1.5M')
     expect(formatTokensPerSecond(12.25)).toBe('12.3 ток/с')
     expect(formatInteger(32_768)).toMatch(/^32\s768$/u)
-    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Не удалось соединиться с сервером Alamo')
+    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Не удалось соединиться с сервером Guanxi')
     expect(errorMessage(shapeError))
       .toBe('Ответ /api/example не соответствует контракту приложения')
     expect(errorMessage(new ApiRequestError(400, {
@@ -373,13 +373,13 @@ describe('Settings language and glossary', () => {
     )
     const language = await screen.findByLabelText('Language')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText('Could not connect to the Alamo server')).toBeTruthy()
+    expect(await screen.findByText('Could not connect to the Guanxi server')).toBeTruthy()
     expect(screen.queryByText('Settings saved')).toBeNull()
     fireEvent.change(language, { target: { value: 'ru' } })
-    expect(await screen.findByText('Не удалось соединиться с сервером Alamo')).toBeTruthy()
-    expect(screen.queryByText('Could not connect to the Alamo server')).toBeNull()
+    expect(await screen.findByText('Не удалось соединиться с сервером Guanxi')).toBeTruthy()
+    expect(screen.queryByText('Could not connect to the Guanxi server')).toBeNull()
     fireEvent.change(language, { target: { value: 'en' } })
-    expect(await screen.findByText('Could not connect to the Alamo server')).toBeTruthy()
+    expect(await screen.findByText('Could not connect to the Guanxi server')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Settings saved')).toBeTruthy()
     expect(updateSettings).toHaveBeenCalledTimes(2)

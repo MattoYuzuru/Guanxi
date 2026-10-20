@@ -1,17 +1,17 @@
-export type ExistingAlamo =
+export type ExistingGuanxi =
   | { kind: 'ui'; url: string }
   | { kind: 'api-only'; url: string; version: string | null }
 
 /**
- * Отличает уже запущенный Alamo от произвольного процесса на том же порту.
+ * Отличает уже запущенный Guanxi от произвольного процесса на том же порту.
  *
  * Проверяем корневую страницу, а не /api/health: health может ждать таймаут
  * выключенной Ollama, тогда как HTML доступен сразу.
  */
-export async function probeExistingAlamo(
+export async function probeExistingGuanxi(
   url: string,
   timeoutMs = 1_200,
-): Promise<ExistingAlamo | null> {
+): Promise<ExistingGuanxi | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -23,12 +23,12 @@ export async function probeExistingAlamo(
     if (!response.ok) return null
 
     const body = await response.text()
-    if (body.includes('<title>Alamo UI</title>') && /<div\s+id=["']root["']/.test(body)) {
+    if (body.includes('<title>Guanxi</title>') && /<div\s+id=["']root["']/.test(body)) {
       return { kind: 'ui', url }
     }
 
     if (body.includes('Сборка фронта не найдена')) {
-      const version = body.match(/Alamo UI ([^\s<]+)/)?.[1] ?? null
+      const version = body.match(/Guanxi ([^\s<]+)/)?.[1] ?? null
       return { kind: 'api-only', url, version }
     }
 

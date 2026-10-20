@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import type { ContextCheckpoint, ContextState, Message } from '@alamo/contract'
+import type { ContextCheckpoint, ContextState, Message } from '@guanxi/contract'
 import { MessageTimeline } from '../../src/features/chat/ChatPage.tsx'
 import { StreamBuffer } from '../../src/features/chat/streamBuffer.ts'
 import { ContextPanel } from '../../src/features/context/ContextPanel.tsx'

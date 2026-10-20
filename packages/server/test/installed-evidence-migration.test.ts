@@ -36,9 +36,9 @@ function downgradeToV6(db: DatabaseSync): void {
 
 describe('SQLite installed evidence cache migration 7', () => {
   it('creates the additive cache on a fresh DB and reopens idempotently', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-evidence-migration-fresh-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-evidence-migration-fresh-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     const first = openDb(path)
     assert.equal(version(first), 28)
@@ -63,9 +63,9 @@ describe('SQLite installed evidence cache migration 7', () => {
   })
 
   it('upgrades v6 without rewriting legacy tables or backfilling claims', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-evidence-migration-upgrade-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-evidence-migration-upgrade-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const fixture = openDb(path)
     fixture.prepare(
       `INSERT INTO model_calibration (
@@ -93,9 +93,9 @@ describe('SQLite installed evidence cache migration 7', () => {
   })
 
   it('rolls back a failed v7 migration and recovers from unchanged v6', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-evidence-migration-rollback-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-evidence-migration-rollback-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const broken = openDb(path)
     downgradeToV6(broken)
     broken.exec('CREATE TABLE installed_model_evidence_cache (blocker TEXT)')

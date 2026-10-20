@@ -1,4 +1,4 @@
-import type { Settings } from '@alamo/contract'
+import type { Settings } from '@guanxi/contract'
 
 export function browserSettings(overrides: Partial<Settings> = {}): Settings {
   return {

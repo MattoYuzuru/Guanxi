@@ -58,7 +58,7 @@ describe('localized Web copy inventory', () => {
   })
 
   it('rejects user-facing copy imported from a TS constant', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'alamo-localized-copy-'))
+    const directory = await mkdtemp(join(tmpdir(), 'guanxi-localized-copy-'))
     try {
       await writeFile(join(directory, 'copy.ts'), "export const helperCopy = 'Imported visible copy'\n")
       await writeFile(join(directory, 'Fixture.tsx'), `

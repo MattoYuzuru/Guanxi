@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import type {
   CompletionProbeBody,
   LocalModel,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   OllamaError,
   OllamaTimeoutError,

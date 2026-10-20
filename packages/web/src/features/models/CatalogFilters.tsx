@@ -7,7 +7,7 @@ import type {
   CatalogProviderScopeFilter,
   CatalogSourceFilter,
   ListCatalogQuery,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Input } from '../../components/ui.tsx'
 import { formatBytes, formatContextLength } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'

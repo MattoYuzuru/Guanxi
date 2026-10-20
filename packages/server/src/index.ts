@@ -101,7 +101,7 @@ export interface StartOptions {
 export async function start(options: StartOptions = {}) {
   const port = options.port ?? (Number(process.env['PORT']) || DEFAULT_PORT)
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
-  const dataDir = options.dataDir ?? join(process.env['HOME'] ?? '.', '.alamo')
+  const dataDir = options.dataDir ?? join(process.env['HOME'] ?? '.', '.guanxi')
 
   const context = await createAppContext({
     dbPath: defaultDbPath(dataDir),
@@ -203,7 +203,7 @@ export function mountWeb(server: ReturnType<typeof createApp>, webDir: string): 
     }
 
     return context.text(
-      `Alamo UI ${APP_VERSION}\n\nСборка фронта не найдена (${webDir}).\n` +
+      `Guanxi ${APP_VERSION}\n\nСборка фронта не найдена (${webDir}).\n` +
         `Для разработки запусти: npm run dev:web\nAPI доступен на /api/health\n`,
     )
   })

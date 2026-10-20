@@ -13,7 +13,7 @@ import {
   type ProjectColorToken,
   type ProjectIconCategory,
   type ProjectIconKey,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Input } from '../../components/ui.tsx'
 import { errorMessage } from '../../lib/api.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'

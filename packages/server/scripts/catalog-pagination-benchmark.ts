@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { performance } from 'node:perf_hooks'
-import { CATALOG_DEFAULT_PAGE_SIZE, type HardwareInfo } from '@alamo/contract'
+import { CATALOG_DEFAULT_PAGE_SIZE, type HardwareInfo } from '@guanxi/contract'
 import { getCatalog, type CatalogSeed } from '../src/models/catalog.ts'
 
 const MODEL_COUNT = 1_000

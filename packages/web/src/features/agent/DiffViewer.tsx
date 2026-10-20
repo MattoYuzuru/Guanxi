@@ -10,7 +10,7 @@
  */
 import { Fragment, useMemo, useState } from 'react'
 import { diffLines, diffWordsWithSpace, type Change } from 'diff'
-import type { ToolCall } from '@alamo/contract'
+import type { ToolCall } from '@guanxi/contract'
 import { Button, CopyButton, cx } from '../../components/ui.tsx'
 import { getActiveLocale, translate } from '../../lib/locale.ts'
 

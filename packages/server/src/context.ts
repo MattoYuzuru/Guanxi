@@ -5,7 +5,7 @@
  * хоста в настройках — адрес не константа, и это важно: именно благодаря этому
  * тот же сервер сможет работать с Ollama на другой машине.
  */
-import type { HardwareInfo } from '@alamo/contract'
+import type { HardwareInfo } from '@guanxi/contract'
 import { dirname, join } from 'node:path'
 import { ApprovalGate } from './agent/approvals.ts'
 import { PrefillTracker } from './context/usage.ts'

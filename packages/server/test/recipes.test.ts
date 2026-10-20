@@ -15,7 +15,7 @@ import {
   recipeScopeQuery,
   reviseRecipeBody,
   type RecipeConfiguration,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { recipesRoutes } from '../src/http/recipes-routes.ts'
 import { JobService } from '../src/jobs/service.ts'
 import { ProjectService } from '../src/projects/service.ts'
@@ -134,9 +134,9 @@ describe('P3-K canonical Recipe revision foundation', () => {
   })
 
   it('applies migration 22 on fresh/v21/reopen/retry and truly rolls back exact v21 bytes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-recipe-v22-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-recipe-v22-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     assert.equal(version(seed), 28)
     const project = new ProjectStore(seed).create('Exact v21 Project', CREATED_AT)
@@ -183,9 +183,9 @@ describe('P3-K canonical Recipe revision foundation', () => {
   })
 
   it('atomically creates revision 1, keeps history exact, separates rename and fails stale CAS closed', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-recipe-cas-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-recipe-cas-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const db = openDb(path)
     const project = new ProjectStore(db).create('Logical Project', CREATED_AT)
     let clock = CREATED_AT

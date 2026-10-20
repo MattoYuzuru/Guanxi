@@ -4,7 +4,7 @@ import {
   REASONING_ARTIFACT_VERSION,
   type ListReasoningArtifactsQuery,
   type ListReasoningArtifactsResponse,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Button, Callout, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatBytes, formatDateTime } from '../../lib/format.ts'

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Health, LocalModel, ModelDetail, Settings } from '@alamo/contract'
-import { legacyInstalledModelDescriptor } from '@alamo/contract'
+import type { Health, LocalModel, ModelDetail, Settings } from '@guanxi/contract'
+import { legacyInstalledModelDescriptor } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'
 import { ModelPage } from '../../src/features/models/ModelPage.tsx'

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Health } from '@alamo/contract'
+import type { Health } from '@guanxi/contract'
 import { ChatPage } from '../../src/features/chat/ChatPage.tsx'
 import { RuntimeProvider } from '../../src/features/health/RuntimeContext.tsx'
 import { api } from '../../src/lib/api.ts'

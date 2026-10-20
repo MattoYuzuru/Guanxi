@@ -1,4 +1,4 @@
-import type { PullStreamEvent } from '@alamo/contract'
+import type { PullStreamEvent } from '@guanxi/contract'
 import {
   OllamaProtocolError,
   OllamaUnavailableError,

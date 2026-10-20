@@ -5,8 +5,8 @@
  * explicit on-demand request, so suggestions never become a hidden whitelist.
  */
 import { useMemo, useState } from 'react'
-import type { FitVerdict, Health, ModelDetail, RunningModel } from '@alamo/contract'
-import { DEFAULT_CHAT_NUM_CTX } from '@alamo/contract'
+import type { FitVerdict, Health, ModelDetail, RunningModel } from '@guanxi/contract'
+import { DEFAULT_CHAT_NUM_CTX } from '@guanxi/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync } from '../../lib/useAsync.ts'
 import {

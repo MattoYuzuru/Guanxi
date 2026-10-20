@@ -1,7 +1,7 @@
 import type {
   InstalledModelDescriptor,
   ModelCapabilityEvidence,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { Badge } from '../../components/ui.tsx'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'

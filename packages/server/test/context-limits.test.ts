@@ -7,7 +7,7 @@ import {
   threadOptionsSchema,
   updateSettingsBody,
   warmModelBody,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import { SettingsStore } from '../src/store/settings.ts'
 import { ThreadStore } from '../src/store/threads.ts'

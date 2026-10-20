@@ -37,9 +37,9 @@ function version(db: DatabaseSync): number {
 
 describe('SQLite exact observation-key migration 6', () => {
   it('creates the exact-key table on fresh DB and reopens idempotently', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-observation-migration-fresh-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-observation-migration-fresh-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
 
     const first = openDb(path)
     assert.equal(version(first), 28)
@@ -70,9 +70,9 @@ describe('SQLite exact observation-key migration 6', () => {
   })
 
   it('upgrades v5 without rewriting or crediting legacy name/context rows', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-observation-migration-upgrade-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-observation-migration-upgrade-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const fixture = openDb(path)
     fixture
       .prepare(
@@ -115,9 +115,9 @@ describe('SQLite exact observation-key migration 6', () => {
   })
 
   it('rolls back a failed v6 migration and recovers from unchanged v5', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-observation-migration-recovery-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-observation-migration-recovery-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const broken = openDb(path)
     downgradeToV5(broken)
     broken.exec('CREATE TABLE model_calibration_observations (blocker TEXT)')

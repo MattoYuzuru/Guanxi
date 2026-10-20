@@ -5,8 +5,8 @@
  * в ответе API есть только признак `hasApiKey`. Единственный способ узнать ключ —
  * прочитать файл базы, что и так требует доступа к машине.
  */
-import { uiLocaleSchema, type Settings, type UiLocale, type WebSearchProvider } from '@alamo/contract'
-import { DEFAULT_NUM_CTX } from '@alamo/contract'
+import { uiLocaleSchema, type Settings, type UiLocale, type WebSearchProvider } from '@guanxi/contract'
+import { DEFAULT_NUM_CTX } from '@guanxi/contract'
 import type { Db } from './db.ts'
 
 const KEYS = {

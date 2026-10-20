@@ -5,7 +5,7 @@ import type {
   Project,
   Recipe,
   RecipeConfiguration,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { RecipesPage } from '../../src/features/recipes/RecipesPage.tsx'
 import { ApiRequestError, api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'

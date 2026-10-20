@@ -10,7 +10,7 @@ import type {
   JobState,
   Message,
   TurnError,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { runTurn, TURN_ABORT_REASON } from '../agent/loop.ts'
 import type { ApprovalGate } from '../agent/approvals.ts'
 import type { PrefillTracker } from '../context/usage.ts'

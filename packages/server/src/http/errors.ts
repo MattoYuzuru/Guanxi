@@ -5,7 +5,7 @@
  * по коду, а не по тексту сообщения.
  */
 import type { Context } from 'hono'
-import type { ApiError } from '@alamo/contract'
+import type { ApiError } from '@guanxi/contract'
 import {
   OllamaError,
   OllamaProtocolError,

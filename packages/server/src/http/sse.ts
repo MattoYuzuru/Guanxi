@@ -7,7 +7,7 @@
  * Стрим отдаётся в ответ на POST — браузерный EventSource умеет только GET,
  * поэтому клиент читает тело ответа через fetch и разбирает кадры сам.
  */
-import { SSE_EVENT_NAME } from '@alamo/contract'
+import { SSE_EVENT_NAME } from '@guanxi/contract'
 
 export interface SseEnvelope {
   type: string

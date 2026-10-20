@@ -13,8 +13,8 @@ import type {
   CatalogVariant,
   Health,
   ListCatalogResponse,
-} from '@alamo/contract'
-import { CATALOG_DEFAULT_PAGE_SIZE, DEFAULT_NUM_CTX } from '@alamo/contract'
+} from '@guanxi/contract'
+import { CATALOG_DEFAULT_PAGE_SIZE, DEFAULT_NUM_CTX } from '@guanxi/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync, useDebounced } from '../../lib/useAsync.ts'
 import {

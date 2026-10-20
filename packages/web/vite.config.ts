@@ -12,11 +12,11 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       // Контракт исполняется из исходников (внутри — импорты с .ts),
       // поэтому резолвим его напрямую и не даём Vite его пре-бандлить.
-      '@alamo/contract': contractSrc,
+      '@guanxi/contract': contractSrc,
     },
   },
   optimizeDeps: {
-    exclude: ['@alamo/contract'],
+    exclude: ['@guanxi/contract'],
   },
   server: {
     port: 5173,

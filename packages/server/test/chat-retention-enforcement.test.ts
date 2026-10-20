@@ -12,7 +12,7 @@ import {
   restoreChatBody,
   restoredChatDeletionLifecycleSchema,
   restoredChatLifecycleSchema,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import { createAppContext } from '../src/context.ts'
 import {
@@ -195,9 +195,9 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
   })
 
   it('applies v15 once on fresh, v14 upgrade, reopen and failed retry without data loss', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-retention-v15-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-retention-v15-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const fixture = openDb(path)
     const threads = new ThreadStore(fixture)
     const project = new ProjectStore(fixture).create('Owner', '2026-08-01T00:00:00.000Z')
@@ -538,9 +538,9 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
   })
 
   it('runs startup Maintenance once after construction and exposes strict scoped read/restore routes', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-retention-startup-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-retention-startup-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     const project = new ProjectStore(seed).create('Startup owner', NOW)
     const projectless = createChat(new ThreadStore(seed), 'Startup projectless')

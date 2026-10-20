@@ -5,7 +5,7 @@ import { describe, it } from 'node:test'
 import {
   runtimeHostTelemetrySchema,
   type HardwareInfo,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   APPLE_VM_STAT_PATH,
   AppleSiliconHostTelemetry,

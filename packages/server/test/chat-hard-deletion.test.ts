@@ -9,7 +9,7 @@ import {
   chatDeletionAuditSchema,
   listChatTrashQuery,
   listChatTrashResponse,
-} from '@alamo/contract'
+} from '@guanxi/contract'
 import {
   RetentionMaintenanceOwner,
   type RetentionMaintenanceScheduler,
@@ -200,9 +200,9 @@ function ownedPayload(db: DatabaseSync, chatIds: readonly string[]): string {
 
 describe('P3-I Session Chat metadata hard deletion', () => {
   it('adds append-only v20 on fresh/v19/reopen and rolls a true late failure back byte-exact for retry', async (test) => {
-    const root = await mkdtemp(join(tmpdir(), 'alamo-chat-delete-v20-'))
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-chat-delete-v20-'))
     test.after(() => rm(root, { recursive: true, force: true }))
-    const path = join(root, 'alamo.db')
+    const path = join(root, 'guanxi.db')
     const seed = openDb(path)
     assert.equal(version(seed), 28)
     const chat = createChat(seed, 'Legacy final answer')
