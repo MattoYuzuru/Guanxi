@@ -143,6 +143,10 @@ test('resolver rejects unknown modes and escaping source paths', async () => {
 })
 test('font files and OFL notices retain upstream checksums; logo copies are unchanged', async () => {
   const sha = bytes => createHash('sha256').update(bytes).digest('hex')
-  for (const source of await ctx.json('packages/ui/fonts/sources.json')) for (const file of source.files) assert.equal(sha(await readFile(resolve(ctx.root, 'packages/ui/fonts', file.path))), file.sha256, file.path)
+  const sources = await ctx.json('packages/ui/fonts/sources.json')
+  assert.deepEqual(sources.map(source => source.family).sort(), ['mono', 'sans'])
+  const declared = sources.flatMap(source => source.files.filter(file => file.path.endsWith('.woff2')).map(file => `packages/ui/fonts/${file.path}`)).sort()
+  assert.deepEqual(ctx.files.filter(file => file.startsWith('packages/ui/fonts/') && file.endsWith('.woff2')).sort(), declared)
+  for (const source of sources) for (const file of source.files) assert.equal(sha(await readFile(resolve(ctx.root, 'packages/ui/fonts', file.path))), file.sha256, file.path)
   for (const file of ctx.files.filter(f => f.startsWith('packages/ui/brand/') && /\.(?:svg|png)$/.test(f))) assert.equal(sha(await readFile(resolve(ctx.root, file))), sha(await readFile(resolve(ctx.root, file.replace('packages/ui/brand/', 'assets/brand/guanxi-gx-v1/')))))
 })
