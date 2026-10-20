@@ -8,6 +8,7 @@
  */
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { hostAllowlist, type HostAllowlistOptions } from './http/host-allowlist.ts'
 import { approvalBody, updateSettingsBody } from '@guanxi/contract'
 import type { AppContext } from './context.ts'
 import { getOllamaStatus } from './ollama/status.ts'
@@ -24,7 +25,7 @@ import { recipesRoutes } from './http/recipes-routes.ts'
 import { artifactsRoutes } from './http/artifacts-routes.ts'
 import type { OllamaStatusOptions } from './ollama/status.ts'
 
-export interface CreateAppOptions {
+export interface CreateAppOptions extends HostAllowlistOptions {
   /** Разрешить обращения с dev-сервера Vite. */
   devOrigins?: string[]
   /** Deterministic health probe boundary for tests. */
@@ -33,6 +34,7 @@ export interface CreateAppOptions {
 
 export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono {
   const server = new Hono()
+  server.use('*', hostAllowlist(options))
 
   if (options.devOrigins?.length) {
     server.use('/api/*', cors({

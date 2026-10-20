@@ -147,7 +147,9 @@ export async function start(options: StartOptions = {}) {
     context.db.close()
     throw error
   }
+  let actualPort = port
   const server = createApp(context, {
+    host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
   })
 
@@ -161,7 +163,6 @@ export async function start(options: StartOptions = {}) {
   mountWeb(server, options.webDir ?? resolve(here, '../../web/dist'))
 
   let instance!: ReturnType<typeof serve>
-  let actualPort: number
   try {
     actualPort = await new Promise<number>((resolvePort, reject) => {
       const onError = (error: Error) => reject(error)
