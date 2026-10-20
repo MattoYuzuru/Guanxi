@@ -1,0 +1,16 @@
+/* G16 seeded violation: a looping rotation that ignores reduced motion. */
+.gx-seeded-spinner {
+  display: inline-block;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  border: var(--size-focus-ring) solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--border-radius-full);
+  animation: gx-seeded-spin var(--motion-loop-duration) linear infinite;
+}
+
+@keyframes gx-seeded-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}

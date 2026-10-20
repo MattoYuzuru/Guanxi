@@ -1,0 +1,7 @@
+/* G15 seeded violation: a fixed box that hides overflow (only the English text fits). */
+.gx-seeded-fixed-width {
+  display: inline-block;
+  width: 7.5em;
+  overflow: hidden;
+  white-space: nowrap;
+}

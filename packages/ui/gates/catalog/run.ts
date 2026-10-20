@@ -3,7 +3,7 @@
  * Interim runner for the catalog gates until DS1-a's runner is on main.
  *
  *   node packages/ui/gates/catalog/run.ts [--mode fast|browser|all] [--only G10,G12]
- *        [--release] [--selftest] [--json] [--update-snapshots]
+ *        [--release] [--selftest] [--json] [--update-snapshots] [--stories key,key]
  *
  * `--selftest` runs every gate on a clean scratch copy (it must pass) and on each seeded
  * violation (it must fail), which is G17's contract for these gates. Exit status is 1 when a
@@ -33,6 +33,8 @@ const gates = catalogGates.filter(
   (gate) => (mode === 'all' || gate.mode === mode) && (!only || only.includes(gate.id)),
 )
 
+const storiesArg = arg('--stories')?.split(',')
+
 function baseContext(root: string, ui: string): GateContext {
   return {
     repoRoot: root,
@@ -40,6 +42,7 @@ function baseContext(root: string, ui: string): GateContext {
     usageScope: defaultUsageScope(root),
     release: process.argv.includes('--release'),
     updateSnapshots: process.argv.includes('--update-snapshots'),
+    ...(storiesArg ? { stories: storiesArg } : {}),
   }
 }
 
@@ -92,7 +95,7 @@ async function main() {
     if (json) console.log(JSON.stringify({ selftest: cases, ok }, null, 2))
     else {
       for (const item of cases) {
-        const label = item.seeded ? `seeded ${item.seeded}` : 'clean scratch'
+        const label = item.seeded ? `seeded ${item.seeded}` : 'clean'
         console.log(`${item.ok ? 'ok  ' : 'FAIL'} ${item.gate} ${label}: expected ${item.expected}, got ${item.actual}`)
         if (!item.ok) for (const finding of item.findings.slice(0, 10)) console.log(`       ${finding.severity} ${finding.component ?? finding.file ?? ''} ${finding.message}`)
       }

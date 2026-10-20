@@ -66,3 +66,35 @@ describe('catalog gates self-test', () => {
     assert.match(messages(find('G15', 'literal-jsx-text')), /literal user-facing text "Save"/)
   })
 })
+
+describe('new-component scaffold', () => {
+  it('creates a draft folder with a story per state that G10 rejects until the docs are written', async () => {
+    const { execFileSync } = await import('node:child_process')
+    const { readFileSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { createScratch } = await import('../lib/scratch.ts')
+    const { readFolder } = await import('../../../catalog/tooling/inventory.ts')
+    const { buildManifest, serialiseManifest } = await import('../../../catalog/tooling/manifest.ts')
+    const { defaultUsageScope } = await import('../../../catalog/tooling/usage.ts')
+    const { g10 } = await import('../g10-catalog-complete.ts')
+    const scratch = createScratch(join(import.meta.dirname, '..', '..', '..', '..', '..'))
+    try {
+      const script = join(import.meta.dirname, '..', '..', '..', '..', '..', '.agents', 'skills', 'guanxi-ui', 'scripts', 'new-component.mjs')
+      execFileSync(process.execPath, [script, 'context-ring', '--level', 'pattern', '--states', 'default,unknown', '--repo', scratch.repoRoot])
+      const folder = readFolder(scratch.uiRoot, 'context-ring')
+      assert.deepEqual(folder.stories.map((story) => story.name), ['default', 'unknown'])
+      assert.equal(JSON.parse(readFileSync(join(folder.dir, 'context-ring.review.json'), 'utf8')).status, 'draft')
+      writeFileSync(join(scratch.uiRoot, 'catalog', 'manifest.json'), serialiseManifest(buildManifest(scratch.uiRoot, defaultUsageScope(scratch.repoRoot))))
+      const context = { repoRoot: scratch.repoRoot, uiRoot: scratch.uiRoot, usageScope: defaultUsageScope(scratch.repoRoot), release: false }
+      const before = await g10.run(context)
+      assert.equal(before.status, 'fail')
+      assert.ok(before.findings.every((finding) => /still has a TODO/.test(finding.message)), JSON.stringify(before.findings))
+      const docs = join(folder.dir, 'context-ring.docs.md')
+      writeFileSync(docs, readFileSync(docs, 'utf8').replaceAll('TODO: write this section.', 'Written.'))
+      const after = await g10.run(context)
+      assert.equal(after.status, 'pass', JSON.stringify(after.findings))
+    } finally {
+      scratch.dispose()
+    }
+  })
+})
