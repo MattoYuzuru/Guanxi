@@ -1,6 +1,6 @@
 # DS1-a hand-off
 
-**Status:** Review 2 fixes implemented; validation blocked by N7's legacy width uses. Not ready to merge.
+**Status:** Review 2 fixes implemented; N7 resolved. Validation blocked by K1 sidebar literals merged from main. Not ready to merge.
 **Date:** 2026-10-20. **Branch:** `lane/ds1-a-tokens`.
 **Worktree:** `/Users/yuzuru/Projects/Guanxi-lanes/ds1-a`.
 
@@ -254,9 +254,9 @@ Review source: `/Users/yuzuru/Projects/Guanxi-lanes/ds1-a-review/REVIEW-2.md`, b
 | N1 | `8abdca6` | Merge protocol in the gate README and below; documentation is the accepted test substitute. Optional merge bound omitted. |
 | N2 | `3c5ea78` | `ratchet.test.mjs` `N2`: a new one→two correction cannot exempt one→three, and the source hash is also checked, on working-tree and committed edges. Removing the hash binding makes this test fail. |
 | N3 | `ccc8319` | `ratchet.test.mjs` `N3`: a real depth-one file-URL clone fails closed; after `git fetch --unshallow`, the previously hidden growth is detected. Test failed before the guard. |
-| N4 | `80a39f0`, `2212ad9` | Two `scanner-review.test.mjs` `N4` tests: independent JSX/SVG seeds in UI/new web/HTML/SVG paths, exact literal diagnostics, semantic paints accepted, unchanged legacy counts before N7. Literal seed test failed before the fix. G6's G17 seed includes JSX/SVG. The count assertion now also detects the N7 blocker below. |
+| N4 | `80a39f0`, `2212ad9` | Two `scanner-review.test.mjs` `N4` tests: independent JSX/SVG seeds in UI/new web/HTML/SVG paths, exact literal diagnostics, semantic paints accepted, unchanged legacy counts before N7. Literal seed test failed before the fix. G6's G17 seed includes JSX/SVG. The count assertion now detects the separate K1 integration blocker below. |
 | N6 | `af1e7fa` | `foundations.test.mjs` `M2/M6/N6` and `N6`: all 16 contexts, documented neutral steps, background/text/border status identities, ring and on-accent text. Wrong-role mutations failed only after the assertions were added. Existing mappings match FOUNDATIONS; no token was changed. HC step-11 overrides retain L6. |
-| N7 | `70d4593` | `foundations.test.mjs` `M4`: `text-shadow-lg`, `max-w-md`, `w-md` cannot compile. Test failed before the resets and passes after regeneration. Integration remains blocked: the container reset exposes 30 existing legacy width uses that the frozen ledger cannot accept. |
+| N7 | `70d4593`, `69135f3` | Resolved using the approved FOUNDATIONS container scale from main `4588ce6` (merged by `6125949`). All 13 `layout.container.*` tokens map to `--container-*`; both `w-*` and `max-w-*` resolve to their documented rem values. Text shadows remain reset, and JSX/CSS `max-w-[37rem]` and `text-shadow-lg` fail G5. All 30 legacy widths now pass without any ratchet correction. |
 | N9 | `f0f335a` | `foundations.test.mjs` `N9`: compares every runtime declaration with all names from installed Tailwind `theme.css` and legacy `@theme`; injected Tailwind and legacy collisions fail. |
 
 ### Independent verification
@@ -267,46 +267,67 @@ The added seed failed before the fix; `2212ad9` handles these keys and passes th
 The reviewer independently verified that commit, reporting no further in-scope blocker beyond
 the known N7 legacy-width issue. No reviewer wrote files or ran heavy checks.
 
-**New / regression envelope relative to `a8651a7`:** six new node tests / 40 existing node
-tests run in full (46 total). Existing FOUNDATIONS and M4 assertions were strengthened.
-Final gate-test outcome is **43 passed / 3 failed / 0 skipped**; it is not green evidence.
-No browser tests were added in Review 2. The current sequence did not reach browser/core
-regressions because the locked root test command stopped at G5.
+A separate fresh-context, read-only reviewer inspected `6125949..69135f3` and the root
+`package.json` merge resolution, reporting **no findings**. It verified all container values,
+context/mutation assertions, compiled utilities, G5 rejection, the unchanged ledger and both
+DS1/K1 test scripts. No reviewer edited files or ran heavy checks.
 
-### Required check results and blocker
+**New / regression envelope:** this continuation adds **3 new node tests / 46 existing node
+tests run in full**. All three new tests pass. The cumulative Review 2 delta relative to
+`a8651a7` is **9 new / 40 regression envelope**, 49 total: **45 passed / 4 failed / 0 skipped**.
+The existing FOUNDATIONS assertions now check every container name, value and unit across all
+16 contexts; mutations reject missing/extra widths, all 13 wrong values and a wrong unit.
+The four failures are two G5 acceptance tests, the H3 lexical-freeze assertion and the N4
+full-ledger assertion, all caused by the six new K1 sidebar literals described below.
+No browser tests were added in this continuation. Core/kernel/web-component regressions were
+not reached because the locked root test command stopped at G5.
+
+### Required check results and remaining integration blocker
 
 Current Mac, Node 26.9.0; all shells exported `GUANXI_WEB_PORT=5182`, `GUANXI_API_PORT=4382`,
-`GUANXI_DATA_DIR="$PWD/.lane-data"`. Direct logs are in `.lane-data/review2-evidence/`.
+`GUANXI_DATA_DIR="$PWD/.lane-data"`. Direct logs are in
+`.lane-data/review2-container-evidence/`. Code revision: `69135f3`; only this hand-off changed
+after these checks.
+
+`main` at `4588ce6` was merged with merge commit `6125949`, without rebase. The only conflict
+was the root test script: the resolution preserves DS1's gate checks and adds K1's kernel
+suite. `npm install --ignore-scripts` refreshed the newly merged kernel workspace link;
+`@guanxi/kernel` resolves to this worktree's `packages/kernel/src/index.ts`. The generated
+lockfile was restored to the merged version per lane policy; the integrator regenerates it.
 
 | Command | Result / evidence |
 | --- | --- |
-| `npm run ui:check` | **Failed G5:** 21 keys / 30 legacy width occurrences. G1–G4, G6–G7 and G17 passed; G4 has zero unresolved variables. Log `ui-check.log`. |
-| `npm run test:gates --workspace @guanxi/ui` | **43 passed / 3 failed / 0 skipped.** Two G5 acceptance tests and the N4 full-ledger count assertion fail due to the same width uses. Log `gate-tests.log`. |
-| `npm run typecheck` | Passed all five workspaces. Log `typecheck.log`. |
-| `npm run lint:md` | Passed 95 files with zero errors, including the final hand-off. Log `markdown.log`. |
+| `npm run tokens:build` | Passed; regenerated outputs include all 13 widths. G2 freshness/determinism passes. |
+| `npm run ui:check` | **Failed G5:** six K1 sidebar keys / six occurrences. G1–G4, G6–G7 and G17 pass; 249 tokens per context; zero unresolved variables. Log `ui-check.log`. |
+| `npm run test:gates --workspace @guanxi/ui` | **45 passed / 4 failed / 0 skipped.** All three new container tests pass; failures are the K1 integration issue. Log `gate-tests.log`. |
+| `npm run typecheck` | Passed all six workspaces after refreshing the workspace install. Log `typecheck.log`. |
+| `npm run lint:md` | Passed 100 files, zero errors; rerun after the final hand-off edit. Log `markdown.log`. |
 | `npm run check:licenses` | Passed: 358 packages, zero not allowed. Log `licenses.log`. |
-| `agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 55 -- npm test` | **Failed, exit 1**, at the G5 precheck, before gate/core/web-component tests. Receipt `~/.local/state/agent-dev/check-jyn0dhx_/result.json`. |
+| `agent-dev run --cwd "$PWD" --node 26 --resource heavy -- npm test` | **Failed, exit 1**, at the G5 precheck due only to K1 sidebar literals. Receipt `~/.local/state/agent-dev/check-ysvetnvu/result.json`. |
 | Locked `npm run test:web:browser` and `npm run build` | **Not run:** stopped after the first heavy-check failure, as instructed. |
 
-The heavy command used the shared lock, without bypass. Its receipt records
+The heavy command used the shared lock without bypass. Its receipt records
 `source_changed: false`, exit 1 and no capture errors. The existing
 `.claude/skills/guanxi-ui` symlink still prevents reusable source verification; this is an
-execution result, not source-bound certification. The later hand-off-only edits are not
-claimed to reuse a source-bound result.
+execution result, not source-bound certification. Later hand-off-only edits do not reuse a
+source-bound result.
 
-**Blocker:** clearing `--container-*` exposes 30 unchanged legacy `max-w-*` uses that were
-previously accepted by the compiler: `max-w-md` ×5, `max-w-lg` ×1, `max-w-xl` ×2,
-`max-w-2xl` ×5, `max-w-3xl` ×8, `max-w-5xl` ×6, `max-w-6xl` ×3. G5 now counts 1,573 versus
-the committed 1,543; G6/G7 remain 152/17. All 21 exact keys are in `ui-check.log`.
-No allowance or correction policy was edited. The no-correction-#3 instruction and DS1-c's
-legacy-migration ownership prevent resolving those widths within this task's current scope.
-An owner clarification requesting authorization for these exact 30 uses remains unanswered.
+**N7 blocker removed:** all 30 original legacy width occurrences resolve to the approved
+tokens. G5 now finds 1,549 occurrences against the unchanged 1,543-entry occurrence budget:
+the difference is entirely K1's six new sidebar literals. G6/G7 remain 152/17. No allowance,
+correction policy, scanner exemption or legacy source was changed.
 
-**Recovery:** the owner/integrator must decide how to migrate or authorize these specific
-legacy widths; do not bypass G5, silently grandfather them or invent token values. Once that
-decision is implemented, rerun all five direct checks, then locked `npm test`, browser gate and
-build sequentially, stopping at the first failure. Keep the merge protocol below. This session
-made no push, merge, rebase, central status-file edit, dependency change or legacy source edit.
+**Remaining blocker:** main's K1 contribution adds six unbudgeted literals in
+`packages/web/src/kernel/SidebarSlot.tsx`: `border-[var(--border)]`,
+`hover:bg-[var(--bg-subtle)]`, `hover:text-[var(--fg)]`, `rounded-md`,
+`text-[var(--fg-muted)]` and `text-xs`, one occurrence each. This is separate from N7 and
+requires an integration change to the K1 sidebar, outside this container-token correction.
+Do not add a ratchet correction or weaken the scanner.
+
+**Recovery:** migrate the K1 sidebar to supported token-backed styles, then rerun all five
+direct checks followed by locked `npm test`, browser gate and build, one per call, stopping
+at the first failure. Keep the merge protocol below. No push, merge into main, rebase,
+central status-file edit or dependency declaration change was made.
 
 ### Deferred follow-ups (no fix in Review 2)
 
@@ -332,8 +353,9 @@ the documented protocol is the accepted N1 fix and stands in for its test.
 
 G6 now checks literal JSX style objects and SVG `fill`/`stroke` at every scanned path except
 the exact existing legacy `packages/web/src/components/ui.tsx`. New web paths are checked.
-No correction #3, allowance growth or legacy source edit was made; the scanner's legacy counts
-still exactly equal the ledger. DS1-c must handle that file with G9 ("no inline colour styles
+No correction #3, allowance growth or legacy source edit was made. The original pre-K1 legacy
+files still match their ledger; K1's six additions are the integration blocker above. DS1-c
+must handle that file with G9 ("no inline colour styles
 in feature code") and its own shrink-only suppressions, including:
 
 - `:95`: Spinner's computed `borderWidth` geometry; related width/height come from `size`.
