@@ -148,7 +148,8 @@ are lost like a crash before they were written; they are never written unscrubbe
   serialises scrubbed parts must scrub the result again: two parts can form a value across the
   join. The session log scrubs each serialised payload and each joined search text again and
   refuses a payload that would still change.
-- **Errors never contain a registered value**, a fragment of it or its length.
+- **Errors never contain a registered value**, a fragment of it or its length. Value errors
+  leave out the ref as well, because in a collision the ref may contain the value.
 - **Lifetime.** Registrations belong to one scrubber instance. When the provider plugin
   unloads, the instance closes and every later call throws `closed` (fail closed). The kernel
   unloads every plugin that `requires` the service first and starts it again with the new

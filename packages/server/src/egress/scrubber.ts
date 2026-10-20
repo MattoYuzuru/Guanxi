@@ -109,7 +109,8 @@ export class SecretScrubber implements EgressScrubber {
     ) {
       throw new EgressScrubberError(
         'invalid_value',
-        `The value for ${ref} must be a string of ${MIN_SECRET_LENGTH} to ${MAX_SECRET_LENGTH} characters without marker delimiters`,
+        // The ref is left out on purpose: in a collision or bounds error it may contain the value.
+        `A secret value must be a string of ${MIN_SECRET_LENGTH} to ${MAX_SECRET_LENGTH} characters without marker delimiters`,
       )
     }
 
@@ -118,13 +119,13 @@ export class SecretScrubber implements EgressScrubber {
     const interiors = [...next.keys()].map(markerInterior)
     const newForms = formsOf(value)
     if (newForms.some((form) => interiors.some((interior) => interior.includes(form)))) {
-      throw new EgressScrubberError('marker_collision', `The value for ${ref} occurs inside a redaction marker`)
+      throw new EgressScrubberError('marker_collision', 'The value occurs inside a redaction marker')
     }
     const newInterior = markerInterior(ref)
     for (const [otherRef, other] of this.values) {
       if (otherRef === ref) continue
       if (formsOf(other).some((form) => newInterior.includes(form))) {
-        throw new EgressScrubberError('marker_collision', `The marker for ${ref} contains a registered value`)
+        throw new EgressScrubberError('marker_collision', 'The new marker would contain a registered value')
       }
     }
 
