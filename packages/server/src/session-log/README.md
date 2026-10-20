@@ -37,6 +37,7 @@ Event schemas are in `packages/contract/src/events/`.
 | Reasoning retention | reasoning events carry `expires_at` (7 days, or the parent Chat's sooner TTL); a bounded purge nulls the content and its index entry; the event stays | `session-log.test.ts` (reasoning class) |
 | Events disappear only with their Thread | delete triggers on `sessions` and `session_events` | `session-log.test.ts` |
 | Reasoning never in plain logs | the module never writes to the console; the test captures stdout, stderr and console during a full turn | `session-log-chat.test.ts` |
+| Nothing written or read before every secret source registered (K3 review H3) | the mirror holds writes in a bounded buffer while `egress.scrubber` is not ready and flushes them in order once it is; a full buffer refuses the write (`egress_buffer_full`, the Job transaction rolls back); handles, reads, routes, exports and the query tool fail closed with `egress_not_ready` | `session-log-readiness.test.ts` |
 
 ## Writing
 

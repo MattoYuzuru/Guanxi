@@ -12,6 +12,10 @@
  * state in memory, a crash loses nothing that recovery will not terminalize,
  * and the scrubber sees whole messages, so a secret split across deltas is
  * still redacted.
+ *
+ * While the egress scrubber is not ready, the log holds these writes back in a
+ * bounded buffer (see `SessionLog.appendAsSystemWithin`); the mirror confirms
+ * them after the Job transaction commits and discards them after a rollback.
  */
 import type { ChatJobInputSnapshot, ChatJobOutput, JobStreamEvent, SessionEventType, SessionKind } from '@guanxi/contract'
 import type { Db } from '../store/db.ts'
@@ -122,6 +126,7 @@ export class ChatSessionMirror implements JobEventMirror {
   }
 
   afterCommit(): void {
+    this.log.confirmPending()
     if (this.pending.size === 0) return
     const sessionIds = [...this.pending]
     this.pending.clear()
@@ -129,6 +134,7 @@ export class ChatSessionMirror implements JobEventMirror {
   }
 
   afterRollback(): void {
+    this.log.discardProvisional()
     this.pending.clear()
   }
 
@@ -217,9 +223,14 @@ export class ChatSessionMirror implements JobEventMirror {
 
   /** Appends one reasoning and one message event for the deltas since the last mirrored Job event. */
   private flushDeltas(source: ChatSource, event: JobStreamEvent): void {
-    const last = this.db
+    const stored = this.db
       .prepare('SELECT MAX(job_sequence) AS seq FROM session_events WHERE session_id = ? AND job_id = ?')
       .get(source.thread_id, event.jobId) as unknown as { seq: number | null }
+    // Writes held back until the scrubber is ready count as mirrored already.
+    const heldBack = this.log
+      .pendingFor(source.thread_id, event.jobId)
+      .reduce((max, input) => Math.max(max, input.jobSequence ?? 0), 0)
+    const last = { seq: Math.max(stored.seq ?? 0, heldBack) }
     const rows = this.db
       .prepare(
         `SELECT output FROM job_events
@@ -270,6 +281,14 @@ export class ChatSessionMirror implements JobEventMirror {
   }
 
   private currentStep(sessionId: string, jobId: string): { messageId: string; step: number } | null {
+    const heldBack = this.log
+      .pendingFor(sessionId, jobId)
+      .filter((input) => input.type === 'assistant.started')
+      .at(-1)
+    if (heldBack?.type === 'assistant.started') {
+      const data = heldBack.data as { messageId: string; step: number }
+      return { messageId: data.messageId, step: data.step }
+    }
     const row = this.db
       .prepare(
         `SELECT payload FROM session_events

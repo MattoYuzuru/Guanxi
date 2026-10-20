@@ -36,9 +36,22 @@ function invalid(context: Context, message: string): Response {
   return context.json(apiError('validation_failed', message), 400)
 }
 
-function failure(context: Context, error: unknown): Response {
+function failure(context: Context, error: unknown, log?: SessionLog): Response {
   if (error instanceof SessionLogError && error.code === 'session_not_found') {
     return context.json(apiError('session_not_found', 'Session not found'), 404)
+  }
+  if (error instanceof SessionLogError && error.code === 'egress_not_ready') {
+    // Fail closed: nothing leaves the log until every declared secret source has registered.
+    let pendingSources: readonly string[] = []
+    try {
+      pendingSources = log?.pendingSources() ?? []
+    } catch {
+      pendingSources = []
+    }
+    return context.json(
+      { code: 'egress_not_ready', message: 'Secret redaction is not ready yet', details: { pendingSources: [...pendingSources] } },
+      503,
+    )
   }
   return context.json(apiError('storage_error', 'Session log read failed'), 500)
 }
@@ -68,6 +81,8 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     if (!current) throw new SessionLogError('closed', 'The session log is not available')
     return current
   }
+  // Every route funnels its failures here, with the log for the not-ready details.
+  const fail = (context: Context, error: unknown) => failure(context, error, resolve())
 
   routes.get('/', (context) => {
     const raw = query(context, ['limit'])
@@ -76,7 +91,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     try {
       return context.json(listSessionsResponse.parse({ sessions: log().list(parsed.data.limit) }))
     } catch (error) {
-      return failure(context, error)
+      return fail(context, error)
     }
   })
 
@@ -93,7 +108,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       })
       return context.json(sessionSearchResponse.parse({ query: current.redact(parsed.data.q), hits }))
     } catch (error) {
-      return failure(context, error)
+      return fail(context, error)
     }
   })
 
@@ -103,7 +118,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     try {
       const current = log()
       const session = current.session(sessionId)
-      if (!session) return failure(context, new SessionLogError('session_not_found', sessionId))
+      if (!session) return fail(context, new SessionLogError('session_not_found', sessionId))
       const { counts, purged, redactions } = current.counts(sessionId)
       return context.json(
         sessionSummarySchema.parse({
@@ -116,7 +131,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
         }),
       )
     } catch (error) {
-      return failure(context, error)
+      return fail(context, error)
     }
   })
 
@@ -141,7 +156,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
         }),
       )
     } catch (error) {
-      return failure(context, error)
+      return fail(context, error)
     }
   })
 
@@ -152,7 +167,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       const events = log().readAll(sessionId, 'person')
       return context.json(sessionSpansResponse.parse({ sessionId, spans: projectSpans(events) }))
     } catch (error) {
-      return failure(context, error)
+      return fail(context, error)
     }
   })
 
@@ -174,7 +189,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       context.header('content-disposition', `attachment; filename="session-${sessionId}.json"`)
       return context.json(body)
     } catch (error) {
-      return failure(context, error)
+      return fail(context, error)
     }
   })
 
@@ -196,7 +211,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       current = log()
       if (!current.session(sessionId)) throw new SessionLogError('session_not_found', sessionId)
     } catch (error) {
-      return failure(context, error)
+      return fail(context, error)
     }
     const after = reconnect ?? parsed.data.after
     const subscriber = new AbortController()

@@ -21,6 +21,16 @@ export interface EgressScrubber {
   register(ref: SecretRef, value: string): void
   unregister(ref: SecretRef): boolean
   scrub<T>(value: T): T
+  // Readiness (added for K3 review H3; additive)
+  expect(sourceId: string): void
+  ready(sourceId: string): void
+  isReady(): boolean
+  pendingSources(): readonly string[]
+  whenReady(): Promise<void>
+}
+
+export interface EgressScrubberConfig {
+  expectedSources?: readonly string[]
 }
 ```
 
@@ -53,6 +63,48 @@ export const vaultPlugin = definePlugin({
 
 The provider is `egressScrubberPlugin` in [`plugin.ts`](plugin.ts) (manifest id
 `guanxi.egress-scrubber`, trust T0). It has no `requires`, so it loads first.
+
+## Readiness
+
+A new scrubber starts empty, and after a restart other plugins may write before every secret
+source has registered. A source therefore declares itself, registers what it knows, and then
+says it is ready:
+
+```ts
+// In the profile row of the scrubber, so the gate is closed from boot:
+{ id: 'egress-scrubber', plugin: 'guanxi.egress-scrubber', config: { expectedSources: ['vault'] } }
+
+// In the source's apply:
+for (const [ref, value] of unlockedValues) scrubber.register(ref, value)
+scrubber.ready('vault')
+```
+
+- `expect(sourceId)` declares a source; the scrubber is not ready while any declared source is
+  not. Declaring a source that is already ready keeps it ready. A source declared at runtime
+  closes the gate again until it calls `ready`.
+- `ready(sourceId)` marks a source ready (declaring it if needed) and resolves every pending
+  `whenReady()`.
+- `isReady()` is true when every declared source is ready, and also when none is declared.
+- `pendingSources()` lists the ids still pending, for diagnostics. Ids are not secret.
+- `whenReady()` resolves at once when ready, or the next time every declared source is; it
+  rejects with `closed` if the instance closes first.
+- Source ids match `SECRET_SOURCE_PATTERN` (`[a-z][a-z0-9.-]{0,63}`); others throw
+  `invalid_source`.
+- Declare every source in `expectedSources`. An `expect` in the source's own `apply` comes too
+  late for writes made by plugins that loaded before it.
+
+**Consumers must not persist or send output while `isReady()` is false.** `scrub` itself still
+works then, with whatever is registered; the gate is the consumer's duty. The session log
+implements it as follows ([session-log README](../session-log/README.md)):
+
+| Path while not ready | Behaviour |
+| --- | --- |
+| Legacy Chat trace (job store mirror) | held in a bounded in-memory buffer (1,000 writes, 8 MiB of data by default), written in order, scrubbed, as soon as the scrubber is ready; a full buffer refuses the write with `egress_buffer_full`, so the Job transaction rolls back and nothing is dropped silently |
+| `SessionHandle` open and append | fail closed with `egress_not_ready` |
+| Reads, inspector routes, export, query tool | fail closed: `egress_not_ready`, HTTP 503 with `details.pendingSources` |
+
+Held-back writes live only in memory. If the process exits before the scrubber is ready, they
+are lost like a crash before they were written; they are never written unscrubbed.
 
 ## Semantics
 
@@ -101,8 +153,8 @@ The provider is `egressScrubberPlugin` in [`plugin.ts`](plugin.ts) (manifest id
 
 | Boundary | Owner | Status |
 | --- | --- | --- |
-| Session-log event write | K2 session log | implemented |
-| Session-log export and query tool | K2 inspector | implemented |
+| Session-log event write | K2 session log | implemented, gated on readiness |
+| Session-log export and query tool | K2 inspector | implemented, gated on readiness |
 | Model-request construction (including tool results) | K3 | K3 |
 | Artifact write before hashing | K3 | K3 |
 | Log write | K3 and later stages | not yet |
@@ -118,6 +170,11 @@ const stub: EgressScrubber = {
   register() {},
   unregister() { return false },
   scrub() { throw new Error('egress.scrubber is not available before K2 merges') },
+  expect() {},
+  ready() {},
+  isReady() { return false },
+  pendingSources() { return ['egress.stub'] },
+  whenReady() { return new Promise(() => {}) },
 }
 ```
 

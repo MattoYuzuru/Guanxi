@@ -185,6 +185,7 @@ const API_ERROR_KEYS = {
   range_not_supported: 'error.api.notSupported',
   project_chat_mismatch: 'error.api.conflict',
   session_not_found: 'error.api.notFound',
+  egress_not_ready: 'error.api.egressNotReady',
   path_outside_workspace: 'error.api.notAllowed',
   tool_disabled: 'error.api.notAllowed',
   validation_failed: 'error.api.validation',

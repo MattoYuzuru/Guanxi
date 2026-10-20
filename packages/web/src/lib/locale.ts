@@ -819,6 +819,8 @@ const english = {
   'error.streamBodyMissing': 'The response has no body, so streaming cannot continue',
   'error.api.unavailable': 'The requested local service is unavailable.',
   'error.api.notFound': 'The requested item no longer exists.',
+  'error.api.egressNotReady':
+    'Secret redaction is not ready: a secret source has not registered its values yet. The trace opens once it has.',
   'error.api.conflict': 'The request conflicts with the current saved state. Refresh and try again.',
   'error.api.storage': 'The request could not be saved to local storage.',
   'error.api.validation': 'The request contains an invalid or unsupported value.',
@@ -2615,6 +2617,8 @@ const russian: Messages = {
   'error.streamBodyMissing': 'В ответе нет тела, поэтому стрим нельзя продолжить',
   'error.api.unavailable': 'Запрошенный локальный сервис недоступен.',
   'error.api.notFound': 'Запрошенного объекта больше нет.',
+  'error.api.egressNotReady':
+    'Скрытие секретов ещё не готово: один из источников секретов не передал свои значения. Трасса откроется, когда он это сделает.',
   'error.api.conflict': 'Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.',
   'error.api.storage': 'Не удалось сохранить запрос в локальное хранилище.',
   'error.api.validation': 'Запрос содержит недопустимое или неподдерживаемое значение.',

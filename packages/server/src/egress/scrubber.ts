@@ -13,6 +13,7 @@ import {
   MAX_SECRET_LENGTH,
   MIN_SECRET_LENGTH,
   REDACTION_MARKER_CLOSE,
+  SECRET_SOURCE_PATTERN,
   REDACTION_MARKER_OPEN,
   SECRET_REF_PATTERN,
   redactionMarker,
@@ -53,6 +54,46 @@ export class SecretScrubber implements EgressScrubber {
   private readonly values = new Map<SecretRef, string>()
   private forms: Form[] = []
   private closed = false
+  /** Declared sources and whether each is ready. */
+  private readonly sources = new Map<string, boolean>()
+  private waiters: { resolve: () => void; reject: (error: unknown) => void }[] = []
+
+  constructor(options: { expectedSources?: readonly string[] } = {}) {
+    for (const sourceId of options.expectedSources ?? []) this.expect(sourceId)
+  }
+
+  expect(sourceId: string): void {
+    this.assertOpen()
+    this.assertSource(sourceId)
+    if (!this.sources.has(sourceId)) this.sources.set(sourceId, false)
+  }
+
+  ready(sourceId: string): void {
+    this.assertOpen()
+    this.assertSource(sourceId)
+    this.sources.set(sourceId, true)
+    if (!this.isReady()) return
+    const waiters = this.waiters
+    this.waiters = []
+    for (const waiter of waiters) waiter.resolve()
+  }
+
+  isReady(): boolean {
+    this.assertOpen()
+    for (const ready of this.sources.values()) if (!ready) return false
+    return true
+  }
+
+  pendingSources(): readonly string[] {
+    this.assertOpen()
+    return [...this.sources].filter(([, ready]) => !ready).map(([sourceId]) => sourceId).sort()
+  }
+
+  whenReady(): Promise<void> {
+    if (this.closed) return Promise.reject(new EgressScrubberError('closed', 'The egress scrubber was closed'))
+    if (this.isReady()) return Promise.resolve()
+    return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }))
+  }
 
   register(ref: SecretRef, value: string): void {
     this.assertOpen()
@@ -113,6 +154,9 @@ export class SecretScrubber implements EgressScrubber {
     this.closed = true
     this.values.clear()
     this.forms = []
+    const waiters = this.waiters
+    this.waiters = []
+    for (const waiter of waiters) waiter.reject(new EgressScrubberError('closed', 'The egress scrubber was closed'))
   }
 
   /** The frozen, method-only facade the plugin provides as the service. */
@@ -121,11 +165,22 @@ export class SecretScrubber implements EgressScrubber {
       register: (ref: SecretRef, value: string) => this.register(ref, value),
       unregister: (ref: SecretRef) => this.unregister(ref),
       scrub: <T>(value: T): T => this.scrub(value),
+      expect: (sourceId: string) => this.expect(sourceId),
+      ready: (sourceId: string) => this.ready(sourceId),
+      isReady: () => this.isReady(),
+      pendingSources: () => this.pendingSources(),
+      whenReady: () => this.whenReady(),
     })
   }
 
   private assertOpen(): void {
     if (this.closed) throw new EgressScrubberError('closed', 'The egress scrubber was closed')
+  }
+
+  private assertSource(sourceId: string): void {
+    if (typeof sourceId !== 'string' || !SECRET_SOURCE_PATTERN.test(sourceId)) {
+      throw new EgressScrubberError('invalid_source', 'A secret source id must match [a-z][a-z0-9.-]{0,63}')
+    }
   }
 
   private rebuild(): void {

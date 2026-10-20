@@ -15,7 +15,7 @@ import {
   type SessionQueryToolResult,
 } from '@guanxi/contract'
 import { ToolError, type ToolDefinition } from '../tools/types.ts'
-import type { SessionLog } from './log.ts'
+import { SessionLogError, type SessionLog } from './log.ts'
 
 export type AgentAudience = Extract<SessionAudience, 'local_agent' | 'remote_agent'>
 
@@ -92,8 +92,15 @@ export function createSessionQueryTool(options: {
     mutating: false,
     needsWorkspace: false,
     async execute(args) {
-      const result = querySessionLog(options.log, options.sessionId, options.audience, args)
-      return { content: JSON.stringify(result) }
+      try {
+        const result = querySessionLog(options.log, options.sessionId, options.audience, args)
+        return { content: JSON.stringify(result) }
+      } catch (error) {
+        if (error instanceof SessionLogError && error.code === 'egress_not_ready') {
+          throw new ToolError('The session log cannot be read until secret redaction is ready')
+        }
+        throw error
+      }
     },
   }
 }
