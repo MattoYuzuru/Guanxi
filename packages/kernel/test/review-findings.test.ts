@@ -3,6 +3,9 @@
  * D-183). Each fails on the code before its fix.
  */
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { describe, it } from 'node:test'
 import {
   KernelLifecycleError,
@@ -19,6 +22,8 @@ import {
 } from '../src/index.ts'
 import { bootNode } from '../src/node.ts'
 import { testPlugin } from './helpers.ts'
+
+const run = promisify(execFile)
 
 describe('own-kernel review: contexts and services', () => {
   it('refuses service() and emit() from a stale context', { timeout: 10_000 }, async () => {
@@ -78,32 +83,15 @@ describe('own-kernel review: contexts and services', () => {
 })
 
 describe('own-kernel review: optional-service cycles', () => {
-  it('settles when a plugin uses a service that its own dependent provides', { timeout: 10_000 }, async () => {
-    const kernel = createKernel({ onLog: () => {} })
-    let applies = 0
-    await kernel.plugin(testPlugin({ id: 'x.a', provides: ['a'], uses: ['b'] }, (ctx) => {
-      applies += 1
-      provide(ctx, 'a', 1)
-      optionalService(ctx, 'b')
-    }))
-    await kernel.plugin(testPlugin({ id: 'x.b', provides: ['b'], requires: ['a'] }, (ctx) => {
-      applies += 1
-      provide(ctx, 'b', 2)
-    }))
-    assert.ok(applies < 10, `${applies} applies`)
-    await kernel.dispose()
-  })
-
-  it('settles when a parent uses a service its own child provides', { timeout: 10_000 }, async () => {
-    const kernel = createKernel({ onLog: () => {} })
-    let applies = 0
-    const child = testPlugin({ id: 'x.child', provides: ['c'] }, (ctx) => provide(ctx, 'c', 1))
-    await kernel.plugin(testPlugin({ id: 'x.parent', uses: ['c'] }, (ctx) => {
-      applies += 1
-      ctx.plugin(child)
-    }))
-    assert.ok(applies < 10, `${applies} applies`)
-    await kernel.dispose()
+  // A regression in the settle bound loops in microtasks and starves this
+  // process's timers, so the scenarios run in a child with a hard timeout
+  // enforced by the parent (cross-family re-review R4).
+  it('settles both cycle shapes within a bounded number of applies (child process)', { timeout: 20_000 }, async () => {
+    const script = fileURLToPath(new URL('./fixtures/optional-cycles.ts', import.meta.url))
+    const { stdout } = await run(process.execPath, [script], { timeout: 8_000, killSignal: 'SIGKILL' })
+    const counts = JSON.parse(stdout) as { dependentCycle: number; childCycle: number }
+    assert.ok(counts.dependentCycle < 10, `${counts.dependentCycle} applies (plugin uses its dependent's service)`)
+    assert.ok(counts.childCycle < 10, `${counts.childCycle} applies (parent uses its child's service)`)
   })
 })
 
