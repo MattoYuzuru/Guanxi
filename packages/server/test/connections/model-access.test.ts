@@ -757,3 +757,33 @@ test('review: migration 2 upgrades a version-1 vault without rewriting keys, cip
   await next.unlockVault(account)
   assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub(secret), '[REDACTED]')
 })
+
+test('review: registry grants and rotates only the current unattended credential, then revokes it atomically', async t => {
+  const sent: string[] = []
+  const f = await setup(t, { unattended: true, transport: async (_url, init) => {
+    sent.push(new Headers(init?.headers).get('authorization')!)
+    return responseSse()
+  } })
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.unlockVault(account)
+  const first = fakeKey(); const rotated = fakeKey()
+  s.saveSecret(account, row.id, first); s.setUnattended(account, row.id, true); s.lockVault(account)
+  const call = (requestId: string) => s.complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'run', requestId, background: true,
+  })
+  await call('first-node-grant')
+  assert.equal(s.snapshot(account).vault.unlocked, false)
+  await s.unlockVault(account); const saved = s.saveSecret(account, row.id, rotated); s.lockVault(account)
+  const copies = s.store.db.prepare('SELECT ref FROM vault_node_secrets WHERE connection_id=?').all(row.id)
+  assert.deepEqual(copies.map(row => row.ref), [saved.secretRef])
+  await call('rotated-node-grant')
+  s.store.db.exec("CREATE TRIGGER fail_consent BEFORE UPDATE ON connections BEGIN SELECT RAISE(ABORT, 'fixture transaction failure'); END")
+  assert.throws(() => s.setUnattended(account, row.id, false), /fixture transaction failure/)
+  assert.equal(s.store.get(account, row.id).unattended, true)
+  assert.deepEqual(s.store.db.prepare('SELECT ref FROM vault_node_secrets WHERE connection_id=?').all(row.id).map(row => row.ref), [saved.secretRef])
+  s.store.db.exec('DROP TRIGGER fail_consent')
+  s.setUnattended(account, row.id, false)
+  assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets').get()!.n, 0)
+  await assert.rejects(call('revoked-node-grant'), error => error instanceof ConnectionError && error.code === 'policy_denied')
+  assert.deepEqual(sent, [`Bearer ${first}`, `Bearer ${rotated}`])
+})
