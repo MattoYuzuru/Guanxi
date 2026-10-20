@@ -3,6 +3,17 @@ import { resolvedFlat } from './resolve.mjs'
 
 const finite = n => typeof n === 'number' && Number.isFinite(n)
 export function validateTokens(tokens) {
+  function names(group) {
+    for (const [name, value] of Object.entries(group)) {
+      if (name.startsWith('$') && name !== '$root') continue
+      if (/[.{}]/.test(name)) throw Error(`Invalid DTCG token/group name: ${name}`)
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(`Invalid token/group: ${name}`)
+      if ('$value' in value) {
+        if (Object.keys(value).some(key => !key.startsWith('$'))) throw Error(`Token cannot also contain a group: ${name}`)
+      } else names(value)
+    }
+  }
+  names(tokens)
   const flat = resolvedFlat(tokens)
   const errors = []
   for (const t of flat) {

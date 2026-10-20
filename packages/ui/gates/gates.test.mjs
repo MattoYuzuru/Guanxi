@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { createContext } from './context.mjs'
 import { checks, execute, contrast } from './checks.mjs'
 import { registry } from './registry.mjs'
-import { selfTest } from './run.mjs'
+import { selfTest, runGates } from './run.mjs'
 import { generate } from '../tokens/build.mjs'
 import { resolveTokens } from '../tokens/resolve.mjs'
 
@@ -17,12 +17,20 @@ const mutateJSON = async (path, change) => {
   return ctx.withFiles({ [path]: JSON.stringify(data) })
 }
 test('G17 exercises every registered seed and rejects a gate that accepts its seed', async () => {
-  const gates = await registry(ctx)
+  const gates = (await registry(ctx)).filter(g => g.mode === 'fast')
   const report = await selfTest(ctx, gates)
   assert.equal(report.ok, true, JSON.stringify(report))
   assert.equal(report.results.length, gates.length)
   const faulty = await selfTest(ctx, [{ ...gates[0], check: () => ({ ok: true, errors: [] }) }])
   assert.equal(faulty.ok, false)
+})
+test('fast checks and their G17 never launch registered browser checks', async () => {
+  let browserCalls = 0
+  const report = await runGates(ctx, [{ id: 'G13', name: 'Browser', mode: 'browser', seed: 'packages/ui/gates/seeds/G1.json', check() { browserCalls++; return { ok: true, errors: [] } } }])
+  assert.equal(report.ok, true)
+  assert.equal(report.scope, 'fast')
+  assert.equal(browserCalls, 0)
+  assert.deepEqual(report.registered, [{ id: 'G13', mode: 'browser' }])
 })
 test('G1 rejects wrong types, mismatched alias types, missing and inconsistent fallbacks', async () => {
   const path = 'packages/ui/tokens/primitive/color.tokens.json'
@@ -34,6 +42,10 @@ test('G1 rejects wrong types, mismatched alias types, missing and inconsistent f
   ]) assert.equal((await execute(checks.G1, await mutateJSON(path, change))).ok, false)
   const mismatch = await mutateJSON('packages/ui/tokens/base.tokens.json', d => { d.font.size['12'].$value = '{font.weight.regular}' })
   assert.equal((await execute(checks.G1, mismatch)).ok, false)
+  for (const name of ['bad.name', 'bad{name', 'bad}name']) {
+    const invalid = await mutateJSON('packages/ui/tokens/base.tokens.json', d => { d.font[name] = { $type: 'number', $value: 1 } })
+    assert.equal((await execute(checks.G1, invalid)).ok, false, name)
+  }
 })
 test('G2 is byte deterministic and rejects a manual edit to every generated file', async () => {
   const first = await generate(ctx.tokenOptions), second = await generate(ctx.tokenOptions)
@@ -54,6 +66,19 @@ test('G3 checks all 18 declared pairs in all themes and every glass backdrop', a
   const missing = await mutateJSON('packages/ui/tokens/contrast-pairs.json', d => { d.pairs = d.pairs.filter(p => p.name !== 'warning') })
   assert.equal((await contrast(missing)).ok, false)
 })
+test('G3 rejects transparent foregrounds, backgrounds and glass colours', async () => {
+  const path = 'packages/ui/tokens/semantic/color.light.tokens.json'
+  for (const change of [
+    (d, ink) => { d.color.text.primary.$value = { ...ink, alpha: 0 } },
+    (d, ink) => { d.color.background.primary.$value = { ...ink, alpha: 0 } },
+    (d, ink) => { d.material.text.$value = { ...ink, alpha: 0 } },
+  ]) {
+    const ink = (await ctx.json('packages/ui/tokens/primitive/color.tokens.json')).primitive.color.neutral.light['12'].$value
+    const invalid = await mutateJSON(path, d => change(d, ink))
+    assert.equal((await execute(checks.G1, invalid)).ok, true)
+    assert.equal((await contrast(invalid)).ok, false)
+  }
+})
 test('G4 catches both original undefined variables before the compatibility mapping', async () => {
   assert.equal((await checks.G4(ctx)).unresolved, 0)
   const css = await ctx.read('packages/web/src/index.css')
@@ -70,8 +95,20 @@ test('G5 compiles semantic utilities and rejects palette, arbitrary and unknown 
     assert.equal((await checks.G5(invalid)).ok, false, value)
   }
 })
+test('G5 follows constants, cva variants, conditional helpers and CSS apply', async () => {
+  for (const source of [
+    'const buttonVariants = cva("bg-red-500"); export const A = () => <div className={buttonVariants()} />',
+    'const choice = cva("p-2", { variants: { intent: { primary: "bg-red-500" } }, defaultVariants: { intent: "primary" } });',
+    'const choice = cva("p-2", { compoundVariants: [{ intent: "primary", className: "bg-red-500" }] });',
+    'const unsafe = "bg-red-500"; export const A = () => <div className={unsafe}/>',
+    'export const A = () => <div className={clsx({ "bg-red-500": true })}/>',
+  ]) assert.equal((await checks.G5(await ctx.withFiles({ 'packages/ui/src/fixture.tsx': source }))).ok, false, source)
+  const valid = 'const choice = cva("p-2", { variants: { intent: { primary: "bg-canvas" } }, defaultVariants: { intent: "primary" } }); export const A = () => <div className={choice({ intent: "primary" })}/>'
+  assert.equal((await checks.G5(await ctx.withFiles({ 'packages/ui/src/fixture.tsx': valid }))).ok, true)
+  assert.equal((await checks.G5(await ctx.withFiles({ 'packages/ui/src/fixture.css': '.fixture { @apply bg-red-500; }' }))).ok, false)
+})
 test('G6 rejects literal colours, spacing, font sizes and z-index through CSS functions', async () => {
-  for (const value of ['color: rgb(255 0 0)', 'padding: calc(var(--spacing-4) + 3px)', 'font-size: 13px', 'z-index: 5']) {
+  for (const value of ['color: rgb(255 0 0)', 'padding: calc(var(--spacing-4) + 3px)', 'font-size: 13px', 'font: 19px Arial', 'z-index: 5']) {
     const invalid = await ctx.withFiles({ 'packages/ui/src/fixture.css': `.fixture { ${value} }` })
     assert.equal((await checks.G6(invalid)).ok, false, value)
   }
@@ -81,6 +118,9 @@ test('G7 rejects raw CSS and TS motion values and accepts semantic variables', a
     { 'packages/ui/src/fixture.css': '.fixture { transition: color 275ms ease-out; }' },
     { 'packages/ui/src/fixture.tsx': 'export const A = () => <div style={{ transitionDuration: "275ms" }} />' },
     { 'packages/ui/src/fixture.ts': 'export const motion = { duration: 275, easing: "ease-in" }' },
+    { 'packages/ui/src/fixture.tsx': 'export const A = () => <div style={{ transitionTimingFunction: "linear" }} />' },
+    { 'packages/ui/src/fixture.tsx': 'export const A = () => <div style={{ animationTimingFunction: "step-start" }} />' },
+    { 'packages/ui/src/fixture.ts': 'export const motion = { ease: [0.2, 0, 0, 1] }' },
   ]) assert.equal((await checks.G7(await ctx.withFiles(files))).ok, false)
   const valid = await ctx.withFiles({ 'packages/ui/src/fixture.css': '.fixture { transition-duration: var(--motion-duration-fast); transition-timing-function: var(--motion-easing-standard); }' })
   assert.equal((await checks.G7(valid)).ok, true)
@@ -90,11 +130,9 @@ test('legacy freeze rejects new occurrences, invalid paths and unused allowances
   const path = 'packages/web/src/seed.tsx', value = 'bg-red-500'
   const forged = { ...allowance, [`G5|${path}|${value}`]: 1 }
   const invalid = await ctx.withFiles({ [path]: `export const Seed = () => <div className="${value}"/>`, 'packages/ui/gates/legacy-allowlist.json': JSON.stringify(forged) })
-  // Once the freeze is committed, history rejects even a matching new allowance.
-  if ((await checks.G5(invalid)).ok) {
-    const invalidPath = { ...forged, 'G5|packages/ui/src/seed.tsx|bg-red-500': 1 }
-    assert.equal((await checks.G5(await ctx.withFiles({ 'packages/ui/gates/legacy-allowlist.json': JSON.stringify(invalidPath) }))).ok, false)
-  }
+  assert.equal((await checks.G5(invalid)).ok, false)
+  const invalidPath = { ...forged, 'G5|packages/ui/src/seed.tsx|bg-red-500': 1 }
+  assert.equal((await checks.G5(await ctx.withFiles({ 'packages/ui/gates/legacy-allowlist.json': JSON.stringify(invalidPath) }))).ok, false)
   const stale = { ...allowance, [Object.keys(allowance)[0]]: 99999 }
   assert.equal((await checks.G5(await ctx.withFiles({ 'packages/ui/gates/legacy-allowlist.json': JSON.stringify(stale) }))).ok, false)
 })

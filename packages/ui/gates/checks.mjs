@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import Color from 'colorjs.io'
 import { resolveTokens, permutations, resolvedFlat } from '../tokens/resolve.mjs'
 import { validateTokens } from '../tokens/validate.mjs'
@@ -8,6 +9,17 @@ import { scanLiterals, counts } from './scan.mjs'
 import { variableFiles } from './context.mjs'
 
 const result = (errors, details = {}) => ({ ok: errors.length === 0, errors, ...details })
+const color = value => new Color('oklch', value.components, value.alpha ?? 1).to('srgb')
+function over(foreground, background) {
+  return new Color('srgb', foreground.coords.map((channel, i) => channel * foreground.alpha + background.coords[i] * (1 - foreground.alpha)))
+}
+const backdrops = ['#FFFFFF', '#000000', '#FF0000', '#00FF00', '#0000FF', '#00FFFF', '#FF00FF', '#FFFF00']
+function worstRatio(foreground, background) {
+  return Math.min(...backdrops.map(hex => {
+    const opaque = over(background, new Color(hex).to('srgb'))
+    return over(foreground, opaque).contrast(opaque, 'WCAG21')
+  }))
+}
 export async function tokensValid(ctx) {
   const modes = await permutations(ctx.tokenOptions)
   let count = 0
@@ -36,7 +48,7 @@ export async function contrast(ctx) {
       const fg = map.get(pair.foreground), bg = map.get(pair.background)
       if (!fg?.hex || !bg?.hex) { errors.push(`${theme}/${pair.name}: missing pair token`); continue }
       // The fallback is required to encode exactly the same sRGB colour as OKLCH (G1).
-      const ratio = new Color(fg.hex).contrast(new Color(bg.hex), 'WCAG21')
+      const ratio = worstRatio(color(fg), color(bg))
       const minimum = theme.endsWith('-hc') ? 7 : pair.minimum
       const measured = Number(ratio.toFixed(2))
       measurements.push({ theme, pair: pair.name, ratio: measured, minimum })
@@ -46,17 +58,18 @@ export async function contrast(ctx) {
     }
     // Compositing in sRGB matches the emitted color-mix recipe. White/black bound
     // luminance; the six saturated RGB extremes additionally exercise coloured backdrops.
-    const backdrops = ['#FFFFFF', '#000000', '#FF0000', '#00FF00', '#0000FF', '#00FFFF', '#FF00FF', '#FFFF00']
     const hc = theme.endsWith('-hc')
     for (const level of ['glass', 'tinted', 'solid']) for (const strong of [false, true]) {
       const effective = hc ? 'solid' : level
-      const fill = new Color(map.get(`material.${effective}.fill`).hex).to('srgb').coords
+      const fillColor = color(map.get(`material.${effective}.fill`))
+      const fill = fillColor.coords
       const opacity = map.get(`material.${strong ? 'strong.' : ''}${effective}.fill-opacity`)
       for (const backdrop of backdrops) {
         const behind = new Color(backdrop).to('srgb').coords
-        const composite = new Color('srgb', fill.map((v, i) => v * opacity + behind[i] * (1 - opacity)))
+        const alpha = opacity * fillColor.alpha
+        const composite = new Color('srgb', fill.map((v, i) => v * alpha + behind[i] * (1 - alpha)))
         for (const [role, minimum] of [['text', hc ? 7 : 4.5], ['control', hc ? 7 : 3]]) {
-          const ratio = new Color(map.get(`material.${role}`).hex).contrast(composite, 'WCAG21')
+          const ratio = over(color(map.get(`material.${role}`)), composite).contrast(composite, 'WCAG21')
           const name = `${strong ? 'strong-' : ''}${level}/${role}/${backdrop}`
           measurements.push({ theme, pair: name, ratio: Number(ratio.toFixed(2)), minimum })
           if (ratio < minimum) errors.push(`${theme}/${name}: ${ratio.toFixed(4)} < ${minimum}`)
@@ -94,16 +107,24 @@ async function ratchet(ctx) {
   if (literalCache.has(ctx)) return literalCache.get(ctx)
   const findings = await scanLiterals(ctx)
   const allowances = await ctx.json(allowPath)
+  const policy = await ctx.json('packages/ui/gates/legacy-ratchet-policy.json')
   const errors = []
   const git = args => execFileSync('git', args, { cwd: ctx.root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   let previous
+  const hash = value => createHash('sha256').update(JSON.stringify(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))).digest('hex')
+  const monotonic = (before, after, where) => {
+    // The owner authorized exactly this initial scan correction in the DS1-a chat.
+    // Hashes bind both snapshots; subsequent allowances may only shrink.
+    if (hash(before) === policy.initialCorrection.fromSHA256 && hash(after) === policy.initialCorrection.toSHA256) return
+    for (const [key, count] of Object.entries(after)) if (count > (before[key] ?? 0)) errors.push(`Legacy allowance grew${where}: ${key}`)
+  }
   // Follow the full committed history: a removed suppression cannot be reintroduced later.
   for (const revision of git(['log', '--format=%H', '--reverse', '--', allowPath]).split('\n').filter(Boolean)) {
     const version = JSON.parse(git(['show', `${revision}:${allowPath}`]))
-    if (previous) for (const [key, count] of Object.entries(version)) if (count > (previous[key] ?? 0)) errors.push(`Legacy allowance grew in ${revision}: ${key}`)
+    if (previous) monotonic(previous, version, ` in ${revision}`)
     previous = version
   }
-  if (previous) for (const [key, count] of Object.entries(allowances)) if (count > (previous[key] ?? 0)) errors.push(`Legacy allowance grew: ${key}`)
+  if (previous) monotonic(previous, allowances, '')
   const actual = counts(findings)
   for (const [key, count] of Object.entries(allowances)) {
     if (!/^G[567]\|packages\/web\/src\//.test(key) || !Number.isInteger(count) || count < 1) errors.push(`Invalid legacy allowance: ${key}`)

@@ -17,18 +17,21 @@ export async function selfTest(ctx, gates) {
   }
   return { ok: results.every(r => r.ok), results }
 }
-export async function run(ctx) {
+export async function run(ctx, { mode = 'fast' } = {}) {
   ctx ??= await createContext()
   const gates = await registry(ctx)
+  return runGates(ctx, gates, mode)
+}
+export async function runGates(ctx, gates, mode = 'fast') {
+  const selected = gates.filter(g => g.mode === mode)
   const results = []
-  for (const gate of gates.filter(g => g.mode === 'fast')) results.push({ id: gate.id, name: gate.name, ...await execute(gate.check, ctx) })
-  // Browser extensions use the same seed contract; their check may launch its own fixture browser.
-  results.push({ id: 'G17', name: 'Gates self-test', ...await selfTest(ctx, gates) })
-  return { ok: results.every(r => r.ok), results }
+  for (const gate of selected) results.push({ id: gate.id, name: gate.name, ...await execute(gate.check, ctx) })
+  results.push({ id: 'G17', name: 'Gates self-test', ...await selfTest(ctx, selected) })
+  return { ok: results.every(r => r.ok), scope: mode, registered: gates.map(g => ({ id: g.id, mode: g.mode })), results }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    const report = await run()
+    const report = await run(undefined, { mode: process.argv.includes('--browser') ? 'browser' : 'fast' })
     process.stdout.write(JSON.stringify(report, null, 2) + '\n')
     process.exitCode = report.ok ? 0 : 1
   } catch (error) {

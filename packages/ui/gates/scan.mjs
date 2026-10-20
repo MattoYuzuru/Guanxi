@@ -12,27 +12,65 @@ export async function designSystem(ctx) {
   return __unstable__loadDesignSystem(tailwindTheme + '\n' + await ctx.read('packages/ui/generated/theme.css') + '\n@tailwind utilities;')
 }
 
-function strings(node, output = []) {
-  if (ts.isStringLiteralLike(node)) output.push(node)
-  else if (ts.isTemplateExpression(node)) {
-    output.push(node.head)
-    for (const span of node.templateSpans) { strings(span.expression, output); output.push(span.literal) }
-  } else ts.forEachChild(node, child => { strings(child, output) })
-  return output
-}
 export function classStrings(file, text) {
   const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const values = new Set()
+  const bindings = new Map()
+  const nameOf = node => node?.getText(ast).replace(/^['"]|['"]$/g, '')
+  const collectBindings = node => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) bindings.set(node.name.text, node.initializer)
+    ts.forEachChild(node, collectBindings)
+  }
+  collectBindings(ast)
+  function collect(node, seen = new Set()) {
+    if (!node || seen.has(node)) return
+    const next = new Set([...seen, node])
+    if (ts.isStringLiteralLike(node)) values.add(node)
+    else if (ts.isIdentifier(node)) collect(bindings.get(node.text), next)
+    else if (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) collect(node.expression, next)
+    else if (ts.isConditionalExpression(node)) { collect(node.whenTrue, next); collect(node.whenFalse, next) }
+    else if (ts.isBinaryExpression(node)) {
+      if (node.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) collect(node.left, next)
+      collect(node.right, next)
+    } else if (ts.isTemplateExpression(node)) {
+      values.add(node.head)
+      for (const span of node.templateSpans) { collect(span.expression, next); values.add(span.literal) }
+    } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(item => collect(item, next))
+    else if (ts.isPropertyAccessExpression(node)) {
+      const object = ts.isIdentifier(node.expression) && bindings.get(node.expression.text)
+      if (object && ts.isObjectLiteralExpression(object)) collect(object.properties.find(p => nameOf(p.name) === node.name.text)?.initializer, next)
+    } else if (ts.isObjectLiteralExpression(node)) {
+      // clsx/cn object keys are classes; their values are conditions.
+      for (const property of node.properties) if (ts.isPropertyAssignment(property) && (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name))) values.add(property.name)
+    } else if (ts.isCallExpression(node)) {
+      const helper = nameOf(node.expression)?.split('.').at(-1)
+      if (helper === 'cva') {
+        collect(node.arguments[0], next)
+        const config = node.arguments[1]
+        if (config && ts.isObjectLiteralExpression(config)) for (const property of config.properties) {
+          if (!ts.isPropertyAssignment(property)) continue
+          if (nameOf(property.name) === 'variants' && ts.isObjectLiteralExpression(property.initializer)) {
+            for (const variant of property.initializer.properties) if (ts.isPropertyAssignment(variant) && ts.isObjectLiteralExpression(variant.initializer)) for (const option of variant.initializer.properties) if (ts.isPropertyAssignment(option)) collect(option.initializer, next)
+          }
+          if (nameOf(property.name) === 'compoundVariants' && ts.isArrayLiteralExpression(property.initializer)) for (const variant of property.initializer.elements) {
+            if (ts.isObjectLiteralExpression(variant)) for (const field of variant.properties) if (ts.isPropertyAssignment(field) && /^(class|className)$/.test(nameOf(field.name))) collect(field.initializer, next)
+          }
+        }
+      } else if (['cn', 'clsx', 'classnames', 'twMerge', 'cx'].includes(helper)) node.arguments.forEach(arg => collect(arg, next))
+      else if (ts.isIdentifier(node.expression)) collect(bindings.get(node.expression.text), next)
+    }
+  }
   const visit = node => {
-    if (ts.isJsxAttribute(node) && /^(className|class)$/.test(node.name.getText(ast)) && node.initializer) strings(node.initializer).forEach(s => values.add(s))
-    if ((ts.isPropertyAssignment(node) || ts.isVariableDeclaration(node)) && /(?:className|classes|Class|Classes)$/.test(node.name?.getText(ast) ?? '') && node.initializer) strings(node.initializer).forEach(s => values.add(s))
+    if (ts.isJsxAttribute(node) && /^(className|class)$/.test(node.name.getText(ast))) collect(node.initializer)
+    if ((ts.isPropertyAssignment(node) || ts.isVariableDeclaration(node)) && /(?:className|classes|Class|Classes)$/.test(node.name?.getText(ast) ?? '')) collect(node.initializer)
+    if (ts.isCallExpression(node) && /^(cva|cn|clsx|classnames|twMerge|cx)$/.test(nameOf(node.expression)?.split('.').at(-1))) collect(node)
     ts.forEachChild(node, visit)
   }
   visit(ast)
   return [...values].flatMap(node => node.text.split(/\s+/).filter(Boolean).map(value => ({ value, offset: node.getStart(ast) })))
 }
 
-const propertyPattern = /^(?:color|background(?:-.*)?|border(?:-.*)?|outline(?:-.*)?|fill|stroke|(?:box|text)-shadow|(?:margin|padding)(?:-.*)?|(?:row-|column-)?gap|font-size|z-index|(?:min-|max-)?(?:width|height)|inset(?:-.*)?|top|right|bottom|left|border-radius|line-height|letter-spacing|transition(?:-.*)?|animation(?:-.*)?)$/
+const propertyPattern = /^(?:color|background(?:-.*)?|border(?:-.*)?|outline(?:-.*)?|fill|stroke|(?:box|text)-shadow|(?:margin|padding)(?:-.*)?|(?:row-|column-)?gap|font(?:-size)?|z-index|(?:min-|max-)?(?:width|height)|inset(?:-.*)?|top|right|bottom|left|border-radius|line-height|letter-spacing|transition(?:-.*)?|animation(?:-.*)?)$/
 const motionProperty = /^(?:transition|animation)(?:-.*)?$/
 const keywords = new Set(['none', 'auto', 'inherit', 'initial', 'unset', 'revert', 'revert-layer', 'transparent', 'currentcolor', 'solid', 'dashed', 'dotted', 'double', 'hidden', 'visible', 'normal', 'infinite', 'both', 'forwards', 'backwards', 'running', 'paused', 'alternate', 'reverse', 'alternate-reverse', 'canvas', 'canvastext', 'buttontext', 'highlight', 'highlighttext', 'linktext', 'graytext'])
 
@@ -65,7 +103,7 @@ export function motionFindings(file, text) {
     if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
       for (const match of node.text.matchAll(/(?:\b(?:duration|delay|ease)-(?:\[[^\]]+\]|\d+|linear|in|out|in-out)|\b\d+(?:\.\d+)?m?s\b|cubic-bezier\([^)]*\))/g)) findings.push({ gate: 'G7', file, value: match[0], offset: node.getStart(ast) })
     }
-    if (ts.isPropertyAssignment(node) && /^(?:duration|delay|transitionDuration|transitionDelay|animationDuration|animationDelay|easing|ease)$/.test(node.name.getText(ast).replaceAll(/['"]/g, '')) && (ts.isNumericLiteral(node.initializer) || ts.isStringLiteralLike(node.initializer) && !/^(?:var\(--|motion\.)/.test(node.initializer.text))) findings.push({ gate: 'G7', file, value: node.getText(ast), offset: node.getStart(ast) })
+    if (ts.isPropertyAssignment(node) && /^(?:duration|delay|(?:transition|animation)(?:Duration|Delay|TimingFunction)|easing|ease)$/.test(node.name.getText(ast).replaceAll(/['"]/g, '')) && (ts.isNumericLiteral(node.initializer) || ts.isArrayLiteralExpression(node.initializer) || ts.isStringLiteralLike(node.initializer) && !/^(?:var\(--|motion\.)/.test(node.initializer.text))) findings.push({ gate: 'G7', file, value: node.getText(ast), offset: node.getStart(ast) })
     ts.forEachChild(node, visit)
   }
   visit(ast)
@@ -79,7 +117,12 @@ export async function scanLiterals(ctx) {
   // Custom classes must be declared in source CSS; names in JSX alone are not proof.
   const custom = new Set(sources.filter(([f]) => f.endsWith('.css')).flatMap(([, text]) => [...text.matchAll(/\.([a-zA-Z_][\w-]*)/g)].map(m => m[1])))
   for (const [file, text] of sources) {
-    if (file.endsWith('.css')) result.push(...cssFindings(file, text))
+    if (file.endsWith('.css')) {
+      result.push(...cssFindings(file, text))
+      postcss.parse(text).walkAtRules('apply', rule => {
+        for (const value of rule.params.split(/\s+/).filter(v => v !== '!important')) if (value.includes('[') || system.candidatesToCss([value])[0] === null) result.push({ gate: 'G5', file, value, offset: rule.source.start.offset })
+      })
+    }
     else {
       for (const { value, offset } of classStrings(file, text)) {
         if (value.includes('[') || (!custom.has(value) && system.candidatesToCss([value])[0] === null)) result.push({ gate: 'G5', file, value, offset })
