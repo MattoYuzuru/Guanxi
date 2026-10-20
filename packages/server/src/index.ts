@@ -181,8 +181,9 @@ export async function start(options: StartOptions = {}) {
       } finally {
         context.jobService.closeSubscriptions()
         await listenerClosed
-        // Unload plugins (bounded by the kernel's unload deadline) before the
-        // database they may use is closed.
+        // Unload plugins before the database they may use is closed. Each
+        // plugin cleanup is bounded by the kernel's step timeout; the HTTP
+        // listener close above is not bounded (it waits for open responses).
         try {
           await kernel.node.dispose()
         } catch (error) {

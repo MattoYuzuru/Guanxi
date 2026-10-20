@@ -67,7 +67,10 @@ export function replaceWebPlugin(plugin: GuanxiPlugin<any>): Promise<void> {
     const release = webKernel.slots.hold()
     try {
       const previous = await loaded.get(plugin.manifest.id)
-      await previous?.dispose()
+      // A timed-out cleanup still finishes the unload; load the new code anyway.
+      await previous?.dispose().catch((error: unknown) => {
+        console.error(`[guanxi:kernel] ${plugin.manifest.id} did not unload cleanly`, error)
+      })
       await load(plugin)
     } finally {
       release()
