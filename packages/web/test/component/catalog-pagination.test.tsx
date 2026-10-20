@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CatalogModel, Health, ListCatalogResponse } from '@guanxi/contract'
-import { CATALOG_DEFAULT_PAGE_SIZE } from '@guanxi/contract'
+import { CATALOG_DEFAULT_PAGE_SIZE, listModelsResponse } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CatalogPager,
@@ -85,6 +85,36 @@ function response(page: number, totalItems = TOTAL): ListCatalogResponse {
       mode: 'paged', page, pageSize: CATALOG_DEFAULT_PAGE_SIZE, totalItems, totalPages,
       previousPage: page > 1 && page <= totalPages ? page - 1 : null,
       nextPage: page < totalPages ? page + 1 : null,
+    },
+  }
+}
+
+function installedModel(name: string, digest: string) {
+  const fit = {
+    level: 'green', summary: 'fixture', contextLength: 8_192, modelBytes: 1,
+    kvCacheBytes: 0, requiredBytes: 1, usableBytes: 12_000_000_000,
+    utilization: 1 / 12_000_000_000, basis: 'vendor_hint', measured: null,
+  }
+  return {
+    name, digest, sizeBytes: 1, modifiedAt: AT, family: 'synthetic', parameterSize: '4B',
+    quantization: 'Q4', contextLength: 8_192, capabilities: [], isCloud: false, fit,
+    descriptor: {
+      reference: {
+        state: 'canonical', provider: 'ollama', original: name, normalized: name,
+      },
+      artifact: { state: 'exact_digest', digest },
+      installation: {
+        state: 'installed', source: 'ollama_api_tags', observedAt: AT,
+        confidence: 'observed',
+      },
+      capabilities: {
+        state: 'unknown', reason: 'field_not_reported', observedAt: AT,
+        declarations: [],
+      },
+      freshness: {
+        state: 'unknown', source: 'provider', observedAt: AT,
+        reason: 'identity_unavailable', offline: false,
+      },
     },
   }
 }
@@ -217,6 +247,80 @@ describe('bounded catalog paging', () => {
 
     view.unmount()
     await waitFor(() => expect(pullSignal?.aborted).toBe(true))
+  })
+
+  it('keeps the page and the install result mounted through the post-install refresh', async () => {
+    const target = 'synthetic-0012:q4'
+    const digest = 'sha256:exact-0012'
+    let installed = false
+    // Parse like the real client so contract defaults are applied.
+    vi.spyOn(api, 'listModels').mockImplementation(async () => listModelsResponse.parse({
+      models: installed ? [installedModel(target, digest)] : [],
+    }))
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve })
+    const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => {
+      const page = response(params.page ?? 1, 25)
+      if (!installed) return page
+      await refreshGate
+      for (const row of page.models) {
+        for (const variant of row.variants) {
+          if (variant.normalizedName === target) {
+            variant.installation = {
+              state: 'installed', digest, source: 'ollama_api_tags', observedAt: AT,
+            }
+          }
+        }
+      }
+      return page
+    })
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+      if (!String(input).endsWith('/start')) throw new Error(String(input))
+      installed = true
+      return new Response([
+        { type: 'progress', seq: 0, data: {
+          status: 'downloading', digest: 'sha256:layer', totalBytes: 100,
+          completedBytes: 50, percent: 50, bytesPerSecond: 10, etaSeconds: 5,
+        } },
+        { type: 'done', seq: 1, data: { name: target } },
+      ].map((event, index) =>
+        `id: ${index}\nevent: guanxi\ndata: ${JSON.stringify(event)}\n\n`,
+      ).join(''), { headers: { 'content-type': 'text/event-stream; charset=utf-8' } })
+    }))
+    render(<LauncherPage health={HEALTH} />)
+    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
+    await screen.findByText('Страница 2 из 3 · на странице 12 · всего найдено 25')
+    const variant = screen.getAllByRole('button', { name: 'Выбрать вариант q4' })[0]!
+    fireEvent.click(variant)
+    expect(screen.getByText(target)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить точную установку' }))
+    const callsBeforeInstall = catalog.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: /Подтвердить точную цель/u }))
+    const dialog = await screen.findByRole('dialog', { name: 'Установка выбранного варианта каталога' })
+    await within(dialog).findByText(digest)
+
+    // While the post-install refresh is pending, the card that owns the dialog stays
+    // mounted instead of being replaced by a skeleton, and the page is not reset.
+    await waitFor(() => expect(catalog.mock.calls.length).toBeGreaterThan(callsBeforeInstall))
+    expect(variant.isConnected).toBe(true)
+    expect(dialog.isConnected).toBe(true)
+    releaseRefresh()
+
+    // The refreshed card reports the digest and the result dialog is still there.
+    await waitFor(() => expect(screen.getAllByText(digest)).toHaveLength(2))
+    expect(variant.isConnected).toBe(true)
+    expect(within(dialog).getByText(digest)).toBeTruthy()
+    expect(screen.getByText('Страница 2 из 3 · на странице 12 · всего найдено 25')).toBeTruthy()
+    expect(catalog.mock.calls.slice(callsBeforeInstall).map(([params]) => params.page))
+      .toEqual([2])
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Готово' }))
+    await waitFor(() => expect(
+      screen.queryByRole('dialog', { name: 'Установка выбранного варианта каталога' }),
+    ).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(variant))
+    expect(variant.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('keeps legacy full responses compatible while bounding their client DOM page', () => {

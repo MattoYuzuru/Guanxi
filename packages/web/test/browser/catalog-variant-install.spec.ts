@@ -11,6 +11,8 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
   let installed = false
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
+  let releasePull!: () => void
+  const pullReleased = new Promise<void>((resolve) => { releasePull = resolve })
 
   const fit = (modelBytes: number, level: 'green' | 'red') => ({
     level, summary: level, contextLength: 8_192, modelBytes, kvCacheBytes: 0,
@@ -101,6 +103,9 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
     if (url.pathname === '/api/models/catalog') return route.fulfill(json(catalog()))
     if (url.pathname.endsWith('/ollama-reference/start')) {
       pulls.push(request.postDataJSON() as Record<string, unknown>)
+      // Hold the pull until both clicks of the double click have landed, as a real
+      // pull would; an instant mock lets the second click race the result dialog.
+      await pullReleased
       installed = true
       const frame = (event: unknown, sequence: number) =>
         `id: ${sequence}\nevent: guanxi\ndata: ${JSON.stringify(event)}\n\n`
@@ -158,7 +163,19 @@ test('Marketplace selects, confirms and verifies one exact variant without impli
 
   await review.press('Enter')
   await dialog.getByRole('button', { name: /Подтвердить точную цель/u }).dblclick()
+  await expect.poll(() => pulls.length).toBe(1)
+  releasePull()
   await expect(dialog.getByText('sha256:exact-small')).toBeVisible()
+  // The post-install refresh must not unmount the card that owns the result: once the
+  // refreshed catalog card reports the installed digest, the dialog still shows it.
+  await expect(
+    page.locator('article[aria-label="fixture"]').getByText('sha256:exact-small'),
+  ).toBeVisible()
+  await expect(dialog.getByText('sha256:exact-small')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Готово' }).press('Enter')
+  await expect(dialog).toBeHidden()
+  await expect(small).toBeFocused()
+  await expect(small).toHaveAttribute('aria-pressed', 'true')
   await expect(installedSection.locator('article[aria-label="fixture:small"]')).toHaveCount(1)
   await expect(marketplaceSection.locator('article[aria-label="fixture"]')).toHaveCount(1)
   expect(pulls).toEqual([{

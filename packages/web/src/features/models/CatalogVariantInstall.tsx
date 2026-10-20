@@ -47,6 +47,7 @@ export function CatalogVariantInstall({
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null)
   const [state, setState] = useState<FlowState>({ kind: 'idle' })
   const installRef = useRef<HTMLButtonElement>(null)
+  const selectedVariantRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const controllerRef = useRef<AbortController | null>(null)
@@ -69,6 +70,15 @@ export function CatalogVariantInstall({
   useEffect(() => {
     if (state.kind === 'confirming') confirmRef.current?.focus()
     if (state.kind === 'pulling') cancelRef.current?.focus()
+    // Once the refreshed catalog reports the variant installed, the footer swaps the
+    // install button for links, so the closing dialog has no focus target left.
+    // Keep focus on the chosen variant instead of dropping it to the document.
+    if (
+      state.kind === 'idle'
+      && (document.activeElement === null || document.activeElement === document.body)
+    ) {
+      selectedVariantRef.current?.focus()
+    }
   }, [state.kind])
 
   useEffect(() => {
@@ -197,6 +207,7 @@ export function CatalogVariantInstall({
             return (
               <div key={`${variant.tag}:${index}`} className="flex min-w-0 gap-1">
                 <button
+                  ref={selectedNow ? selectedVariantRef : undefined}
                   type="button"
                   disabled={!selectable || active}
                   aria-pressed={selectedNow}

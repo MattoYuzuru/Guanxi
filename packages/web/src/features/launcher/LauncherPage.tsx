@@ -65,6 +65,11 @@ export function LauncherPage({ health }: { health: Health }) {
   const [compareNotice, setCompareNotice] = useState<string | null>(null)
   const [catalogPullActive, setCatalogPullActive] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
+  // Bumped after an install. Unlike reloadToken it is not part of the query basis:
+  // an install changes installation facts, not the accepted query or page.
+  const [installedRevision, setInstalledRevision] = useState(0)
+  // The catalog view basis whose post-install refresh keeps the current cards mounted.
+  const [inPlaceCatalogBasis, setInPlaceCatalogBasis] = useState<string | null>(null)
   const catalogBasisRef = useRef<string | null>(null)
   const acceptedQueryBasis = JSON.stringify([
     debouncedQuery,
@@ -74,6 +79,8 @@ export function LauncherPage({ health }: { health: Health }) {
   ])
   const pageBasisRef = useRef(acceptedQueryBasis)
   const catalogRequestPage = pageBasisRef.current === acceptedQueryBasis ? catalogPage : 1
+  const catalogViewBasis = JSON.stringify([acceptedQueryBasis, catalogRequestPage])
+  const catalogViewBasisRef = useRef(catalogViewBasis)
 
   const compareTargets = useMemo(
     () => compareRows.map((row) => row.variant.normalizedName),
@@ -97,9 +104,13 @@ export function LauncherPage({ health }: { health: Health }) {
     setCatalogPage(1)
   }, [acceptedQueryBasis])
 
+  useEffect(() => {
+    catalogViewBasisRef.current = catalogViewBasis
+  }, [catalogViewBasis])
+
   const local = useAsync(
     (signal) => api.listModels(contextLength, signal),
-    [contextLength, reloadToken],
+    [contextLength, reloadToken, installedRevision],
   )
   const catalog = useAsync(
     (signal) => api.listCatalog({
@@ -109,8 +120,16 @@ export function LauncherPage({ health }: { health: Health }) {
       page: catalogRequestPage,
       pageSize: CATALOG_DEFAULT_PAGE_SIZE,
     }, signal),
-    [debouncedQuery, debouncedFilters, contextLength, catalogRequestPage, reloadToken],
+    [debouncedQuery, debouncedFilters, contextLength, catalogRequestPage, reloadToken, installedRevision],
   )
+  // Only the refresh that onInstalled started stays in place; a basis change,
+  // an explicit refresh or a retry still replaces the cards with a skeleton.
+  const replacingCatalog = catalog.loading
+    || (catalog.refreshing && inPlaceCatalogBasis !== catalogViewBasis)
+
+  useEffect(() => {
+    if (!catalog.refreshing) setInPlaceCatalogBasis(null)
+  }, [catalog.refreshing])
 
   const catalogProjection = useMemo(
     () => projectCatalogPage(catalog.data, catalogRequestPage),
@@ -157,9 +176,13 @@ export function LauncherPage({ health }: { health: Health }) {
   }, [availableComparisonRows])
 
   const onInstalled = useCallback(() => {
-    // Модель переехала из каталога в установленные — перечитываем оба списка.
-    invalidateCatalogBasis()
-    setReloadToken((value) => value + 1)
+    // Re-read both lists, but in place and on the same page: the catalog card that
+    // owns the install dialog must stay mounted so its verified result stays
+    // visible until the user dismisses it. Compare rows still hold pre-install
+    // installation facts, so they are invalidated.
+    invalidateCatalogBasis(true, false)
+    setInPlaceCatalogBasis(catalogViewBasisRef.current)
+    setInstalledRevision((value) => value + 1)
   }, [invalidateCatalogBasis])
 
   const localItems: CarouselItem[] = useMemo(
@@ -391,7 +414,7 @@ export function LauncherPage({ health }: { health: Health }) {
         {catalog.data && <CatalogSourceNotice source={catalog.data.source ?? null} />}
 
         <div className={catalog.data ? 'mt-3' : ''}>
-          {catalog.loading || catalog.refreshing ? (
+          {replacingCatalog ? (
             <CarouselSkeleton />
           ) : catalog.error ? (
             <Callout
