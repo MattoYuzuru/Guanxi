@@ -4,12 +4,15 @@
  */
 import {
   KernelCore,
+  KernelLifecycleError,
+  PluginContractError,
   type Fiber,
   type GuanxiPlugin,
   type KernelCounters,
   type KernelOptions,
   type PluginHandle,
 } from './core.ts'
+import { parseManifest } from './manifest.ts'
 import { isGuanxiPlugin } from './plugin.ts'
 import { SLOTS_SERVICE, SlotRegistry } from './slots.ts'
 
@@ -25,7 +28,7 @@ export interface Kernel {
   /** Call every listener of a kernel event synchronously. */
   emit(event: string, ...args: unknown[]): void
   counters(): KernelCounters
-  /** Unload every plugin, children and dependents first. */
+  /** Unload every plugin, children and dependents first. The kernel is closed afterwards. */
   dispose(): Promise<void>
 }
 
@@ -35,38 +38,47 @@ export function handleFor(core: KernelCore, fiber: Fiber): PluginHandle {
     get state() {
       return fiber.state
     },
-    dispose() {
-      core.requestDispose(fiber)
-      return core.transition(`unloading ${fiber.manifest.id}`, async () => {
-        await core.stop(fiber, 'disposed')
-        await core.settle()
-      })
-    },
+    dispose: () => core.disposeFiber(fiber),
   }
 }
 
 export class KernelImpl implements Kernel {
   readonly core: KernelCore
   readonly slots = new SlotRegistry()
+  private closed = false
 
   constructor(options: KernelOptions = {}) {
     this.core = new KernelCore(options)
     this.core.provideKernelService(SLOTS_SERVICE, this.slots)
   }
 
+  /** Refuse anything not built by definePlugin, and re-check its manifest. */
+  protected assertLoadable(plugin: unknown, action: string): asserts plugin is GuanxiPlugin<any> {
+    if (this.closed) throw new KernelLifecycleError('the kernel was disposed')
+    if (!isGuanxiPlugin(plugin)) throw new TypeError(`${action} accepts only plugins built by definePlugin()`)
+    const manifest = parseManifest(plugin.manifest, 'manifest')
+    if (manifest.trust === 'T2') throw new PluginContractError(manifest.id, 'T2 plugins run out of process')
+  }
+
   plugin<C>(plugin: GuanxiPlugin<C>, config?: C): Promise<PluginHandle> {
-    if (!isGuanxiPlugin(plugin)) {
-      return Promise.reject(new TypeError('kernel.plugin() accepts only plugins built by definePlugin()'))
+    try {
+      this.assertLoadable(plugin, 'kernel.plugin()')
+    } catch (error) {
+      return Promise.reject(error)
     }
     return this.core.transition(`loading ${plugin.manifest.id}`, async () => {
       const fiber = this.core.createFiber(plugin, config, null)
-      await this.core.start(fiber)
-      if (fiber.state === 'failed') {
+      try {
+        await this.core.start(fiber)
+        if (fiber.state === 'failed') throw fiber.error
+        await this.core.settle()
+        return handleFor(this.core, fiber)
+      } catch (error) {
+        // Rejecting leaves nothing behind.
+        this.core.requestDispose(fiber)
         await this.core.stop(fiber, 'disposed')
-        throw fiber.error
+        throw error
       }
-      await this.core.settle()
-      return handleFor(this.core, fiber)
     })
   }
 
@@ -92,16 +104,16 @@ export class KernelImpl implements Kernel {
       slotEntries: slotCounts.entries,
       slotSubscribers: slotCounts.subscribers,
       slotHolds: slotCounts.holds,
-      slotOrphans: this.slots.orphansDropped,
+      slotOrphans: slotCounts.orphans,
     }
   }
 
   dispose(): Promise<void> {
+    this.closed = true
     // Abort running activations now, so an async apply can stop early.
     for (const fiber of this.core.fibers) if (fiber.parent === null) this.core.requestDispose(fiber)
     return this.core.transition('kernel dispose', async () => {
       const roots = [...this.core.fibers].filter((fiber) => fiber.parent === null)
-      for (const fiber of roots) this.core.requestDispose(fiber)
       // Consumers first: a provider waits for its dependents anyway, so the
       // reverse creation order keeps the cascade short.
       for (const fiber of roots.reverse()) await this.core.stop(fiber, 'disposed')

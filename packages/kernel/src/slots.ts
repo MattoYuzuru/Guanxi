@@ -8,7 +8,7 @@
  * teardown: contributors unload before the slot's owner and come back when the
  * owner reloads.
  */
-import { PluginContractError, SLOT_SERVICE_PREFIX, type PluginContext } from './core.ts'
+import { PluginContractError, SLOT_SERVICE_PREFIX, kernelOfContext, type PluginContext } from './core.ts'
 
 export type SlotKind = 'list'
 
@@ -27,6 +27,8 @@ export interface SlotCounts {
   readonly subscribers: number
   /** Open `hold()`s; non-zero after a swap means a hold was never released. */
   readonly holds: number
+  /** Entries dropped because their slot vanished first; non-zero means a teardown-order bug. */
+  readonly orphans: number
 }
 
 interface Declaration {
@@ -50,11 +52,11 @@ export class SlotRegistry {
   private sequence = 0
   private holds = 0
   private held = new Map<string, readonly ListSlotEntry[]>()
-  /** Entries dropped because their slot vanished first; non-zero means a teardown-order bug. */
-  orphansDropped = 0
+  private orphansDropped = 0
 
   /** Declare a slot owned by the calling plugin; reverted when it unloads. */
   declare(ctx: PluginContext, name: string, kind: SlotKind = 'list'): void {
+    if (!kernelOfContext(ctx)) throw new Error('declare() needs a context created by the kernel')
     const manifest = ctx.manifest
     if (!manifest.contributes.slotDeclarations.includes(name)) {
       throw new PluginContractError(manifest.id, `slot "${name}" is not in contributes.slotDeclarations`)
@@ -84,6 +86,7 @@ export class SlotRegistry {
 
   /** Contribute one entry to a declared slot; removed when the contributor unloads. */
   contribute<T>(ctx: PluginContext, slot: string, entry: { id: string; order?: number; value: T }): void {
+    if (!kernelOfContext(ctx)) throw new Error('contribute() needs a context created by the kernel')
     const manifest = ctx.manifest
     if (!manifest.contributes.slots.includes(slot)) {
       throw new PluginContractError(manifest.id, `slot "${slot}" is not in contributes.slots`)
@@ -173,7 +176,7 @@ export class SlotRegistry {
   counts(): SlotCounts {
     let entries = 0
     for (const bucket of this.entries.values()) entries += bucket.size
-    return { slots: this.declarations.size, entries, subscribers: this.subscribers.size, holds: this.holds }
+    return { slots: this.declarations.size, entries, subscribers: this.subscribers.size, holds: this.holds, orphans: this.orphansDropped }
   }
 
   private notify(slot: string): void {
@@ -185,8 +188,11 @@ export class SlotRegistry {
 
 export const SLOTS_SERVICE = 'slots'
 
+/** Plugins reach the registry only through these helpers, never as a service. */
 function registry(ctx: PluginContext): SlotRegistry {
-  return ctx.service<SlotRegistry>(SLOTS_SERVICE)
+  const value = kernelOfContext(ctx)?.serviceValue<SlotRegistry>(SLOTS_SERVICE)
+  if (!value) throw new Error('slot helpers need a context created by the kernel')
+  return value
 }
 
 export function declareSlot(ctx: PluginContext, name: string, kind: SlotKind = 'list'): void {

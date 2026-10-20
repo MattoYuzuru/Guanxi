@@ -21,7 +21,8 @@ export interface PluginDefinition<C> {
   apply(ctx: PluginContext, config: C): void | Cleanup | Promise<void | Cleanup>
 }
 
-const plugins = new WeakSet<object>()
+/** Brand shared across copies of the kernel package (ADR-0022 §8 versioned plugin API). */
+const PLUGIN_BRAND = Symbol.for('guanxi.kernel.plugin')
 
 /** Define a T0/T1 in-process plugin. T2 plugins never load in-process (ADR-0022). */
 export function definePlugin<C = undefined>(definition: PluginDefinition<C>): GuanxiPlugin<C> {
@@ -33,6 +34,7 @@ export function definePlugin<C = undefined>(definition: PluginDefinition<C>): Gu
     )
   }
   const plugin: GuanxiPlugin<C> = Object.freeze({
+    [PLUGIN_BRAND]: KERNEL_API_VERSION,
     name: manifest.id,
     manifest,
     apply(ctx: PluginContext, config: C) {
@@ -45,13 +47,15 @@ export function definePlugin<C = undefined>(definition: PluginDefinition<C>): Gu
       return definition.apply(ctx, config)
     },
   })
-  plugins.add(plugin)
   return plugin
 }
 
-/** True only for plugins built by `definePlugin` (manifest checked, T2 refused). */
+/**
+ * True for plugins built by `definePlugin` of any kernel copy. The kernel
+ * re-checks the manifest at load, so the brand is not a trust decision.
+ */
 export function isGuanxiPlugin(value: unknown): value is GuanxiPlugin<any> {
-  return typeof value === 'object' && value !== null && plugins.has(value)
+  return typeof value === 'object' && value !== null && typeof (value as Record<symbol, unknown>)[PLUGIN_BRAND] === 'string'
 }
 
 /* ─────────────────────────────── Helpers ─────────────────────────────────── */

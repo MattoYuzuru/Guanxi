@@ -11,7 +11,6 @@ import { readFile } from 'node:fs/promises'
 import type { Fiber, GuanxiPlugin, PluginState } from './core.ts'
 import { KernelImpl, type Kernel } from './kernel.ts'
 import type { KernelOptions } from './core.ts'
-import { isGuanxiPlugin } from './plugin.ts'
 import { ProfileError, resolveProfile, type ProfileLayer, type ResolvedEntry } from './profile.ts'
 
 export interface BootOptions extends KernelOptions {
@@ -67,7 +66,7 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
   constructor(options: BootOptions) {
     super(options)
     for (const plugin of options.plugins) {
-      if (!isGuanxiPlugin(plugin)) throw new TypeError('bootNode() accepts only plugins built by definePlugin()')
+      this.assertLoadable(plugin, 'bootNode()')
       if (this.known.has(plugin.manifest.id)) {
         throw new ProfileError('plugins', `plugin "${plugin.manifest.id}" is registered twice`)
       }
@@ -86,8 +85,11 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
   }
 
   private resolve(profile: readonly ProfileLayer[]): ResolvedEntry[] {
+    // Safe mode boots the base layer only: user layers may name unknown
+    // plugins or carry the config that broke the node.
+    const layers = this.safeMode ? profile.slice(0, 1) : profile
     return closeGraph(
-      resolveProfile(profile).map((entry) => {
+      resolveProfile(layers).map((entry) => {
         const plugin = this.known.get(entry.plugin)
         if (!plugin) {
           throw new ProfileError(entry.layers.at(-1) ?? 'profile', `row "${entry.id}" names unknown plugin "${entry.plugin}"`)
@@ -102,31 +104,67 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
     )
   }
 
-  private assertPinned(next: readonly ResolvedEntry[]): void {
-    const before = new Map(this.applied.map((entry) => [entry.id, entry]))
-    const after = new Map(next.map((entry) => [entry.id, entry]))
-    for (const id of this.pinned) {
-      const left = before.get(id)
-      const right = after.get(id)
-      if (!left) continue
-      if (
-        !right ||
-        left.plugin !== right.plugin ||
-        left.disabled !== right.disabled ||
-        JSON.stringify(left.config) !== JSON.stringify(right.config)
-      ) {
+  /**
+   * Rows that would restart: the unloaded rows, every loaded row that needs
+   * or uses a service of an affected row (transitively), and loaded rows that
+   * use a service a newly loaded row provides.
+   */
+  private impacted(unloaded: ReadonlySet<string>, loaded: readonly ResolvedEntry[]): Set<string> {
+    const manifestOf = (id: string) => {
+      const entry = this.applied.find((row) => row.id === id)
+      return entry ? this.known.get(entry.plugin)!.manifest : undefined
+    }
+    const provides = (id: string) => {
+      const manifest = manifestOf(id)
+      return manifest ? [...manifest.provides, ...manifest.contributes.slotDeclarations.map((slot) => `slot:${slot}`)] : []
+    }
+    const consumes = (id: string) => {
+      const manifest = manifestOf(id)
+      return manifest
+        ? [...manifest.requires, ...manifest.uses, ...manifest.contributes.slots.map((slot) => `slot:${slot}`)]
+        : []
+    }
+    const affected = new Set(unloaded)
+    const fresh = new Set(loaded.flatMap((entry) => this.known.get(entry.plugin)!.manifest.provides))
+    // A loaded row restarts when an optional (`uses`) service of it appears.
+    for (const [id] of this.rows) if (manifestOf(id)?.uses.some((name) => fresh.has(name))) affected.add(id)
+    for (let grew = true; grew;) {
+      grew = false
+      const gone = new Set([...affected].flatMap(provides))
+      for (const [id] of this.rows) {
+        if (affected.has(id) || !consumes(id).some((name) => gone.has(name))) continue
+        affected.add(id)
+        grew = true
+      }
+    }
+    return affected
+  }
+
+  private assertPinned(unloaded: ReadonlySet<string>, loaded: readonly ResolvedEntry[]): void {
+    for (const id of this.impacted(unloaded, loaded)) {
+      if (this.pinned.has(id)) {
         throw new ProfileError('profile', `row "${id}" is pinned: its services are held outside the kernel`)
       }
     }
   }
 
-  /** The kernel does not swallow load failures; a failed row fails the change. */
+  /**
+   * A failed row fails the change, and so does a row still waiting for a
+   * service that an enabled row provides. The profile stays applied; failed
+   * rows load again on the next `apply`.
+   */
   private assertServing(): void {
     const failed: string[] = []
-    for (const entry of this.applied) {
-      if (entry.disabled) continue
-      const state = this.rows.get(entry.id)?.state
+    const enabled = this.applied.filter((entry) => !entry.disabled)
+    const provided = new Set(enabled.flatMap((entry) => {
+      const manifest = this.known.get(entry.plugin)!.manifest
+      return [...manifest.provides, ...manifest.contributes.slotDeclarations.map((slot) => `slot:${slot}`)]
+    }))
+    for (const entry of enabled) {
+      const fiber = this.rows.get(entry.id)
+      const state = fiber?.state
       if (state === 'failed' || state === undefined || state === 'disposed') failed.push(`${entry.id}: ${state ?? 'not loaded'}`)
+      else if (state === 'pending' && fiber!.needs.every((name) => provided.has(name))) failed.push(`${entry.id}: waiting`)
     }
     if (failed.length) throw new NodeLoadError(failed)
   }
@@ -147,17 +185,23 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
   apply(profile: readonly ProfileLayer[]): Promise<void> {
     return this.core.transition('applying the profile', async () => {
       const next = this.resolve(profile)
-      if (this.applied.length) this.assertPinned(next)
       const before = new Map(this.applied.map((entry) => [entry.id, entry]))
       const after = new Map(next.map((entry) => [entry.id, entry]))
-      const changed = (left: ResolvedEntry, right: ResolvedEntry) =>
-        left.plugin !== right.plugin || JSON.stringify(left.config) !== JSON.stringify(right.config)
+      const changed = (id: string, left: ResolvedEntry, right: ResolvedEntry) =>
+        left.plugin !== right.plugin ||
+        JSON.stringify(left.config) !== JSON.stringify(right.config) ||
+        this.rows.get(id)?.state === 'failed'
+      const unload = new Set(
+        [...before].filter(([id, left]) => {
+          const right = after.get(id)
+          return this.rows.has(id) && (!right || right.disabled || changed(id, left, right))
+        }).map(([id]) => id),
+      )
+      const load = next.filter((entry) => !entry.disabled && (!this.rows.has(entry.id) || unload.has(entry.id)))
+      this.assertPinned(unload, load)
 
-      // Unload first (removed, disabled, changed rows), then load, in profile order.
-      for (const [id, left] of before) {
-        const right = after.get(id)
-        if (!right || right.disabled || changed(left, right)) await this.unloadRow(id)
-      }
+      // Unload first (removed, disabled, changed, failed rows), then load, in profile order.
+      for (const id of unload) await this.unloadRow(id)
       const started: Fiber[] = []
       for (const entry of next) {
         if (entry.disabled || this.rows.has(entry.id)) continue
@@ -172,20 +216,16 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
 
   replacePlugin(plugin: GuanxiPlugin<any>): Promise<void> {
     return this.core.transition(`replacing ${plugin?.manifest?.id}`, async () => {
-      if (!isGuanxiPlugin(plugin)) throw new TypeError('replacePlugin() accepts only plugins built by definePlugin()')
+      this.assertLoadable(plugin, 'replacePlugin()')
       const id = plugin.manifest.id
       const current = this.known.get(id)
       if (!current) throw new ProfileError('replacePlugin', `plugin "${id}" is not known to this node`)
-      for (const entry of this.applied) {
-        if (entry.plugin === id && this.pinned.has(entry.id)) {
-          throw new ProfileError('replacePlugin', `row "${entry.id}" is pinned: its services are held outside the kernel`)
-        }
-      }
       if (JSON.stringify(current.manifest) !== JSON.stringify(plugin.manifest)) {
         throw new ProfileError('replacePlugin', `plugin "${id}" changed its manifest; apply a profile instead`)
       }
-      this.known.set(id, plugin)
       const rows = this.applied.filter((entry) => entry.plugin === id && this.rows.has(entry.id))
+      this.assertPinned(new Set(rows.map((entry) => entry.id)), [])
+      this.known.set(id, plugin)
       for (const entry of rows) await this.unloadRow(entry.id)
       for (const entry of rows) await this.core.start(this.loadRow(entry))
       await this.core.settle()
@@ -244,8 +284,38 @@ function closeGraph(
       }
       return entry
     })
-    if (!changed) return rows
+    if (!changed) {
+      assertAcyclic(rows, manifest)
+      return rows
+    }
   }
+}
+
+/** Required services and slots between enabled rows must not form a cycle. */
+function assertAcyclic(rows: readonly ResolvedEntry[], manifest: (entry: ResolvedEntry) => import('./manifest.ts').GuanxiManifest): void {
+  const enabled = rows.filter((entry) => !entry.disabled)
+  const providers = new Map<string, string>()
+  for (const entry of enabled) {
+    const m = manifest(entry)
+    for (const name of m.provides) providers.set(name, entry.id)
+    for (const slot of m.contributes.slotDeclarations) providers.set(`slot:${slot}`, entry.id)
+  }
+  const edges = new Map(enabled.map((entry) => {
+    const m = manifest(entry)
+    const needs = [...m.requires, ...m.contributes.slots.map((slot) => `slot:${slot}`)]
+    return [entry.id, needs.map((name) => providers.get(name)).filter((id): id is string => id !== undefined)]
+  }))
+  const state = new Map<string, 'visiting' | 'done'>()
+  const visit = (id: string, path: string[]): void => {
+    if (state.get(id) === 'done') return
+    if (state.get(id) === 'visiting') {
+      throw new ProfileError('profile', `rows require each other in a cycle: ${[...path.slice(path.indexOf(id)), id].join(' → ')}`)
+    }
+    state.set(id, 'visiting')
+    for (const next of edges.get(id) ?? []) visit(next, [...path, id])
+    state.set(id, 'done')
+  }
+  for (const entry of enabled) visit(entry.id, [])
 }
 
 /** Read a JSON profile layer from disk (`{ name?, insert?, patch? }`). */

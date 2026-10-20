@@ -104,6 +104,11 @@ export function parseManifest(input: unknown, path = 'guanxi'): GuanxiManifest {
   const provides = nameList(input['provides'], `${path}.provides`)
   const requires = nameList(input['requires'], `${path}.requires`)
   const uses = nameList(input['uses'], `${path}.uses`)
+  for (const name of uses) {
+    if (provides.includes(name)) {
+      throw new ManifestError(`${path}.uses`, `"${name}" is also provided by this plugin`)
+    }
+  }
   for (const name of requires) {
     if (provides.includes(name)) {
       throw new ManifestError(`${path}.requires`, `"${name}" is also provided by this plugin`)

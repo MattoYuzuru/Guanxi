@@ -223,23 +223,46 @@ describe('config updates and rebinds through profiles (#194, #218)', () => {
   })
 })
 
-describe('bounded transitions', () => {
-  it('reports the plugin and step that keep an unload from finishing, then recovers', async () => {
-    const kernel = createKernel({ transitionTimeoutMs: 50, onLog: () => {} })
-    const release = deferred()
+describe('bounded steps', () => {
+  it('abandons a stuck cleanup, finishes the unload, reports it, and keeps the kernel usable', async () => {
+    const kernel = createKernel({ stepTimeoutMs: 50, onLog: () => {} })
+    const before = kernel.counters()
     const handle = await kernel.plugin(testPlugin({ id: 'test.hung-cleanup' }, (ctx) => {
-      effect(ctx, () => () => release.promise, 'slow-close')
+      on(ctx, 'x', () => {})
+      effect(ctx, () => () => new Promise(() => {}), 'slow-close')
     }))
     const started = Date.now()
     await assert.rejects(handle.dispose(), (error: unknown) => {
       return error instanceof KernelTimeoutError && /test\.hung-cleanup \(cleanup slow-close\)/.test(error.message)
     })
     assert.ok(Date.now() - started < 1_000)
-    await assert.rejects(kernel.plugin(testPlugin({}, () => {})), KernelTimeoutError, 'refused while wedged')
+    assert.equal(handle.state, 'disposed')
+    assert.deepEqual(kernel.counters(), before, 'the rest of the teardown ran')
+    const next = await kernel.plugin(testPlugin({}, () => {}))
+    assert.equal(next.state, 'active', 'the kernel is not wedged')
+    await kernel.dispose()
+  })
+
+  it('fails a stuck apply, leaves nothing behind, and refuses what the abandoned apply does later', async () => {
+    const kernel = createKernel({ stepTimeoutMs: 50, onLog: () => {} })
+    const before = kernel.counters()
+    const timers = processResources().timers
+    const release = deferred()
+    let late = ''
+    await assert.rejects(kernel.plugin(testPlugin({ id: 'test.slow-apply' }, async (ctx) => {
+      interval(ctx, () => {}, 60_000)
+      await release.promise
+      try {
+        interval(ctx, () => {}, 60_000)
+      } catch (error) {
+        late = error instanceof KernelLifecycleError ? 'refused' : String(error)
+      }
+    })), KernelTimeoutError)
+    assert.deepEqual(kernel.counters(), before)
+    assert.equal(processResources().timers, timers)
     release.resolve()
     await settle()
-    const next = await kernel.plugin(testPlugin({}, () => {}))
-    assert.equal(next.state, 'active', 'the kernel recovers once the stuck step settles')
-    assert.equal(handle.state, 'disposed')
+    assert.equal(late, 'refused')
+    assert.deepEqual(kernel.counters(), before)
   })
 })
