@@ -14,6 +14,7 @@ import { connectionsPlugin, CONNECTIONS_SERVICE, CONNECTIONS_EGRESS_READINESS, t
 import { temporaryEgressPlugin, EGRESS_SERVICE, type EgressScrubber } from '../../src/connections/egress.ts'
 import { fixtureEgressPlugin } from './egress-fixture.ts'
 import { connectionRoutes } from '../../src/connections/routes.ts'
+import { ConnectionError } from '../../src/connections/errors.ts'
 import { Connections } from '../../src/connections/service.ts'
 import { piModels, assertApiKey } from '../../src/connections/pi.ts'
 import { BALANCE_PROBES, parseBalance, probeEndpoints, type BalanceProbe } from '../../src/probes/balances.ts'
@@ -351,7 +352,7 @@ test('mislabeled Anthropic OAuth tokens are refused for every provider before pi
     await imported.unlock(account)
     s.store.setSecret(account, row.id, imported.put(account, forbidden))
     const model = piModels(provider).find(item => item.api === 'anthropic-messages') ?? piModels(provider)[0]!
-    await assert.rejects(s.complete(account, row.id, { messages: [] }, { model: model.id, runId: 'run', requestId: `oauth-${provider}` }), /Model request failed/)
+    await assert.rejects(s.complete(account, row.id, { messages: [] }, { model: model.id, runId: 'run', requestId: `oauth-${provider}` }), error => error instanceof ConnectionError && error.code === 'validation_failed')
   }
   assert.equal(calls, 0)
 })
@@ -516,7 +517,7 @@ test('H3: apply registers every historical secret after restart without granting
   assert.equal(f.service().snapshot(account).vault.unlocked, false)
   await assert.rejects(f.service().complete(account, row.id, { messages: [] }, {
     model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'still-locked',
-  }), /unlock/)
+  }), /locked/)
   f.config.keychain = async () => { throw new Error('Fixture keychain locked') }
   await f.restart()
   const failed = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
@@ -574,4 +575,32 @@ test('E5: mounted routes resolve the current service after reload without losing
   assert.equal((await response.json() as { connections: unknown[] }).connections.length, 1)
   assert.equal((await create()).status, 201)
   assert.equal(f.service().snapshot(account).connections.length, 2)
+})
+
+
+test('M6: HTTP recovery codes distinguish missing, locked, policy, egress, provider and internal failures without error contents', async t => {
+  const secret = fakeKey()
+  const f = await setup(t, { transport: async () => { throw new Error(secret) } })
+  const s = f.service(); const row = s.create(account, apiInput)
+  const routes = connectionRoutes(f.service, account)
+  const send = (path: string, body: unknown = {}, method = 'POST') => routes.request(`http://localhost${path}`, {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const check = async (response: Response, status: number, code: string) => {
+    assert.equal(response.status, status)
+    assert.deepEqual(await response.json(), { code })
+  }
+  await check(await send('/missing/secret', { value: secret }, 'PUT'), 404, 'connection_not_found')
+  await check(await send(`/${row.id}/secret`, { value: secret }, 'PUT'), 423, 'vault_locked')
+  await check(await send(`/${row.id}`, { unattended: true }, 'PATCH'), 403, 'policy_denied')
+  await check(await send('/', { invalid: secret }), 400, 'validation_failed')
+  await s.unlockVault(account); s.saveSecret(account, row.id, secret)
+  await check(await send(`/${row.id}/probe`), 502, 'provider_failed')
+  for (const [error, status, code] of [
+    [new ConnectionError('egress_unavailable', secret), 503, 'egress_unavailable'],
+    [new Error(secret), 500, 'internal_error'],
+  ] as const) {
+    const unavailable = connectionRoutes(() => { throw error }, account)
+    await check(await unavailable.request('http://localhost/'), status, code)
+  }
 })

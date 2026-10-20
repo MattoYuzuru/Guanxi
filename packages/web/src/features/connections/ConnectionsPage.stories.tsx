@@ -22,3 +22,11 @@ export const Estimated = { args: { ...args, snapshot: { ...empty, connections: [
 }] } } }
 
 export const Enabled = { args: { ...Default.args, snapshot: { ...Default.args.snapshot, connections: [{ ...connection, unattended: true }] } } }
+
+export const LockedError = { args: { ...Error.args, errorCode: 'vault_locked' } }
+export const MissingError = { args: { ...Error.args, errorCode: 'connection_not_found' } }
+export const PolicyError = { args: { ...Error.args, errorCode: 'policy_denied' } }
+export const EgressError = { args: { ...Error.args, errorCode: 'egress_unavailable' } }
+export const InternalError = { args: { ...Error.args, errorCode: 'internal_error' } }
+export const ValidationError = { args: { ...Error.args, errorCode: 'validation_failed' } }
+export const ProviderError = { args: { ...Error.args, errorCode: 'provider_failed' } }

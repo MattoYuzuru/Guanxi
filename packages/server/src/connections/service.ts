@@ -1,3 +1,4 @@
+import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { AssistantMessage, Context, SimpleStreamOptions } from '@earendil-works/pi-ai'
@@ -62,12 +63,12 @@ export class Connections {
   }
   create(accountId: string, input: CreateConnection) {
     this.assertOpen()
-    if (input.unattended && !this.#vault.unattendedAvailable) throw new Error('Node unattended access is not enabled')
+    if (input.unattended && !this.#vault.unattendedAvailable) throw new ConnectionError('policy_denied', 'Node unattended access is not enabled')
     return this.store.create(accountId, input)
   }
   setUnattended(accountId: string, id: string, unattended: boolean) {
     this.assertOpen()
-    if (unattended && !this.#vault.unattendedAvailable) throw new Error('Node unattended access is not enabled')
+    if (unattended && !this.#vault.unattendedAvailable) throw new ConnectionError('policy_denied', 'Node unattended access is not enabled')
     this.store.get(accountId, id)
     this.store.db.exec('BEGIN IMMEDIATE')
     try {
@@ -80,7 +81,7 @@ export class Connections {
   saveSecret(accountId: string, id: string, value: string) {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
-    if (connection.auth !== 'api_key') throw new Error('CLI logins are managed by the official CLI')
+    if (connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'CLI logins are managed by the official CLI')
     assertApiKey(connection.provider, value)
     this.store.db.exec('BEGIN IMMEDIATE')
     try {
@@ -110,9 +111,9 @@ export class Connections {
   complete(accountId: string, id: string, context: Context, call: ModelCall): Promise<AssistantMessage> {
     return this.track(async () => {
       const connection = this.store.get(accountId, id)
-      if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new Error('This connection is not a model API')
+      if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
       const model = piModels(connection.provider).find(item => item.id === call.model)
-      if (!model) throw new Error('Model not found in the provider catalog')
+      if (!model) throw new ConnectionError('connection_not_found', 'Model not found in the provider catalog')
       const signal = call.signal ? AbortSignal.any([this.lifetime, call.signal]) : this.lifetime
       try {
         return await this.#vault.inject(accountId, id, call.background ?? false, async key => {
@@ -138,14 +139,17 @@ export class Connections {
             confidence: 'medium', observedAt: new Date().toISOString() })
           return this.scrubber.scrub(result)
         })
-      } catch { throw new Error(signal.aborted ? 'Model request cancelled' : 'Model request failed; check the connection and unlock the vault') }
+      } catch (error) {
+        if (error instanceof ConnectionError) throw error
+        throw new ConnectionError('provider_failed', signal.aborted ? 'Model request cancelled' : 'Model request failed')
+      }
     })
   }
   localChat(accountId: string, id: string, request: OllamaChatRequest, call: Omit<ModelCall, 'model'>): Promise<OllamaChatChunk> {
     return this.track(async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'local_runtime') throw new Error('Not a local runtime connection')
-      if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) throw new Error('Unattended access disabled')
+      if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
       this.#vault.assertScrubbingReady(accountId)
       const host = new URL(this.localHost())
       if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')

@@ -1,10 +1,10 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
-import type { Connection, ConnectionBalance, ConnectionSnapshot } from '@guanxi/contract'
+import type { Connection, ConnectionBalance, ConnectionSnapshot, ConnectionErrorCode } from '@guanxi/contract'
 // DS1-b is not merged. Reuse existing primitives until its integration.
 import { Button, Field, Input, Select } from '../../components/ui.tsx'
 import { getActiveLocale, translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
-import { connectionApi } from './api.ts'
+import { connectionApi, ConnectionRequestError } from './api.ts'
 import './connections.css'
 
 const providers = {
@@ -21,9 +21,9 @@ export function balanceLabel(balance: ConnectionBalance | null): string {
   return `${balance.amount.toLocaleString(getActiveLocale())} ${balance.currency}`
 }
 
-export function ConnectionsView({ snapshot, loading = false, error = false, offline = false, busy = false, saved = false,
+export function ConnectionsView({ snapshot, loading = false, error = false, errorCode, offline = false, busy = false, saved = false,
   retry, mutate }: {
-  snapshot: ConnectionSnapshot | null; loading?: boolean; error?: boolean; offline?: boolean; busy?: boolean; saved?: boolean
+  snapshot: ConnectionSnapshot | null; loading?: boolean; error?: boolean; errorCode?: ConnectionErrorCode; offline?: boolean; busy?: boolean; saved?: boolean
   retry: () => void; mutate: (action: () => Promise<unknown>) => Promise<void>
 }) {
   const base = useId()
@@ -39,13 +39,15 @@ export function ConnectionsView({ snapshot, loading = false, error = false, offl
     <p className="connections-muted mt-1 text-12">{translate('connections.description')}</p>
     {loading && <p role="status" className="py-4">{translate('connections.loading')}</p>}
     {error && <div role="alert" className="py-4">
-      <p>{translate(offline ? 'connections.offline' : 'connections.error')}</p>
-      <Button type="button" onClick={retry} disabled={busy}>{translate('connections.retry')}</Button>
+      <p>{translate(offline ? 'connections.offline' : errorCode ? `connections.error.${errorCode}` : 'connections.error')}</p>
+      {errorCode === 'vault_locked'
+        ? <Button type="button" onClick={() => void mutate(connectionApi.unlock)} disabled={busy}>{translate('connections.vault.unlock')}</Button>
+        : <Button type="button" onClick={retry} disabled={busy}>{translate('connections.retry')}</Button>}
     </div>}
     {snapshot && <>
       <div className="my-4 flex flex-wrap items-center gap-3">
         <span>{translate(snapshot.vault.unlocked ? 'connections.vault.unlocked' : 'connections.vault.locked')}</span>
-        <Button type="button" disabled={busy} onClick={() => void mutate(snapshot.vault.unlocked ? connectionApi.lock : connectionApi.unlock)}>
+        <Button type="button" hidden={errorCode === 'vault_locked'} disabled={busy} onClick={() => void mutate(snapshot.vault.unlocked ? connectionApi.lock : connectionApi.unlock)}>
           {translate(snapshot.vault.unlocked ? 'connections.vault.lock' : 'connections.vault.unlock')}
         </Button>
       </div>
@@ -120,26 +122,27 @@ export function ConnectionsPage() {
   const [snapshot, setSnapshot] = useState<ConnectionSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [errorCode, setErrorCode] = useState<ConnectionErrorCode>()
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [revision, setRevision] = useState(0)
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    setError(false)
+    setError(false); setErrorCode(undefined)
     void connectionApi.list(controller.signal).then(data => {
       if (!controller.signal.aborted) setSnapshot(data)
-    }).catch(() => { if (!controller.signal.aborted) setError(true) })
+    }).catch(error => { if (!controller.signal.aborted) { setError(true); setErrorCode(error instanceof ConnectionRequestError ? error.code : undefined) } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [revision])
   const mutate = async (action: () => Promise<unknown>) => {
-    setBusy(true); setError(false); setSaved(false)
+    setBusy(true); setError(false); setErrorCode(undefined); setSaved(false)
     try { await action(); setSnapshot(await connectionApi.list()); setSaved(true) }
-    catch { setError(true) }
+    catch (error) { setError(true); setErrorCode(error instanceof ConnectionRequestError ? error.code : undefined) }
     finally { setBusy(false) }
   }
-  return <ConnectionsView snapshot={snapshot} loading={loading} error={error} offline={!navigator.onLine} busy={busy} saved={saved}
+  return <ConnectionsView snapshot={snapshot} loading={loading} error={error} errorCode={errorCode} offline={!navigator.onLine} busy={busy} saved={saved}
     retry={() => setRevision(value => value + 1)} mutate={mutate} />
 }
 

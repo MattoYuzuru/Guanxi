@@ -1,3 +1,5 @@
+import { ZodError } from 'zod'
+import { ConnectionError, connectionErrorStatus } from './errors.ts'
 import { Hono } from 'hono'
 import { createConnectionSchema, updateConnectionSchema, connectionSecretInputSchema } from '@guanxi/contract'
 import type { Connections } from './service.ts'
@@ -5,12 +7,20 @@ import type { Connections } from './service.ts'
 /** Local owner scope only; account authentication replaces this binding in the account stage. */
 export function connectionRoutes(resolveConnections: () => Connections, accountId: string, devOrigins: readonly string[] = []): Hono {
   const routes = new Hono()
-  routes.onError((_error, c) => c.json({ code: 'connection_failed' }, 400))
+  routes.onError((error, c) => {
+    const code = error instanceof ConnectionError ? error.code
+      : error instanceof ZodError || error instanceof SyntaxError ? 'validation_failed' : 'internal_error'
+    return c.json({ code }, connectionErrorStatus[code])
+  })
   // Same-origin mutations only: a website cannot use the local owner's unlocked vault.
   routes.use('*', async (c, next) => {
     if (c.req.method !== 'GET') {
       const origin = c.req.header('origin')
-      if (origin && new URL(origin).origin !== new URL(c.req.url).origin && !devOrigins.includes(origin)) return c.json({ code: 'origin_denied' }, 403)
+      if (origin) {
+        let sameOrigin = false
+        try { sameOrigin = new URL(origin).origin === new URL(c.req.url).origin } catch { /* Invalid origins are denied. */ }
+        if (!sameOrigin && !devOrigins.includes(origin)) return c.json({ code: 'origin_denied' }, 403)
+      }
       if (c.req.method !== 'DELETE' && !c.req.header('content-type')?.startsWith('application/json')) return c.json({ code: 'json_required' }, 415)
     }
     c.header('Cache-Control', 'no-store')

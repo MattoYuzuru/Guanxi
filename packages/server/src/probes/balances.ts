@@ -1,3 +1,4 @@
+import { ConnectionError } from '../connections/errors.ts'
 import { z } from 'zod'
 import type { Connection, ConnectionBalance } from '@guanxi/contract'
 import type { Vault } from '../vault/vault.ts'
@@ -60,6 +61,9 @@ export class BalanceProbes {
       })
       this.store.observe(connection.accountId, connection.id, {}, balance)
       return balance
-    } catch { throw new Error('Balance probe failed; check the connection and unlock the vault') }
+    } catch (error) {
+      if (error instanceof ConnectionError) throw error
+      throw new ConnectionError('provider_failed', 'Balance probe failed')
+    }
   }
 }

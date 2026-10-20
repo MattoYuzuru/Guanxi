@@ -1,10 +1,17 @@
-import { connectionSnapshotSchema, type CreateConnection } from '@guanxi/contract'
+import { connectionSnapshotSchema, connectionErrorSchema, type ConnectionErrorCode, type CreateConnection } from '@guanxi/contract'
+export class ConnectionRequestError extends Error {
+  readonly code: ConnectionErrorCode
+  constructor(code: ConnectionErrorCode) { super(code); this.code = code }
+}
 async function request(path: string, method: string, body?: unknown, signal?: AbortSignal) {
   const response = await fetch(`/api/connections${path}`, {
     method, headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal,
   })
-  if (!response.ok) throw new Error('Connection request failed')
+  if (!response.ok) {
+    const error = connectionErrorSchema.safeParse(await response.json().catch(() => null))
+    throw new ConnectionRequestError(error.success ? error.data.code : 'internal_error')
+  }
   return response.json() as Promise<unknown>
 }
 export const connectionApi = {

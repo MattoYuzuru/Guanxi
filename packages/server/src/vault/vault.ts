@@ -1,3 +1,4 @@
+import { ConnectionError } from '../connections/errors.ts'
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { ConnectionStore } from '../connections/store.ts'
@@ -49,7 +50,7 @@ export class Vault {
     const table = node ? 'vault_node_keys' : 'vault_keys'
     const aad = `${node ? 'node-key' : 'key'}:${accountId}`
     const row = this.db.prepare(`SELECT wrapped FROM ${table} WHERE account_id=?`).get(accountId)
-    if (!row && !create) throw new Error('Unattended credential unavailable')
+    if (!row && !create) throw new ConnectionError('policy_denied', 'Unattended credential unavailable')
     const pending = this.keychain()
     const keychain = await new Promise<VaultKeychain>((resolve, reject) => {
       const abort = () => reject(new Error('Vault closed'))
@@ -90,7 +91,7 @@ export class Vault {
       this.sessions.set(accountId, key)
       this.nodeSessions.get(accountId)?.fill(0)
       if (nodeKey) this.nodeSessions.set(accountId, nodeKey)
-    } catch { key.fill(0); nodeKey?.fill(0); throw new Error('Vault could not be unlocked') }
+    } catch { key.fill(0); nodeKey?.fill(0); throw new ConnectionError('vault_locked', 'Vault could not be unlocked') }
   }
   lock(accountId: string) {
     this.assertOpen()
@@ -103,7 +104,7 @@ export class Vault {
   put(accountId: string, value: string): string {
     this.assertOpen()
     const key = this.sessions.get(accountId)
-    if (!key) throw new Error('Vault is locked')
+    if (!key) throw new ConnectionError('vault_locked', 'Vault is locked')
     if (!value) throw new Error('Empty secret')
     const ref: SecretRef = `secret://${accountId}/${randomUUID()}`
     this.scrubber.register(ref, value)
@@ -130,7 +131,7 @@ export class Vault {
   /** K2 must gate its own writes on the same source readiness during integration. */
   assertScrubbingReady(_accountId: string) {
     this.assertOpen()
-    if (!this.scrubbingReady) throw new Error('Unlock the vault before model access; egress registration incomplete')
+    if (!this.scrubbingReady) throw new ConnectionError('egress_unavailable', 'Unlock the vault before model access; egress registration incomplete')
   }
   /** Only an unlocked session can grant a node-encrypted copy of this connection's key. */
   prepareUnattended(accountId: string, connectionId: string, enabled: boolean, ref?: string) {
@@ -139,14 +140,14 @@ export class Vault {
       this.db.prepare('DELETE FROM vault_node_secrets WHERE account_id=? AND connection_id=?').run(accountId, connectionId)
       return
     }
-    if (!this.unattendedAvailable) throw new Error('Unattended access disabled')
+    if (!this.unattendedAvailable) throw new ConnectionError('policy_denied', 'Unattended access disabled')
     const session = this.sessions.get(accountId)
     const node = this.nodeSessions.get(accountId)
-    if (!session || !node) throw new Error('Vault is locked')
+    if (!session || !node) throw new ConnectionError('vault_locked', 'Vault is locked')
     const secretRef = ref ?? this.store.get(accountId, connectionId).secretRef
     if (!secretRef) return
     const row = this.db.prepare('SELECT ciphertext FROM vault_secrets WHERE ref=? AND account_id=?').get(secretRef, accountId)
-    if (!row) throw new Error('Connection credential unavailable')
+    if (!row) throw new ConnectionError('policy_denied', 'Connection credential unavailable')
     const plaintext = open(session, String(row.ciphertext), secretRef)
     try {
       this.db.prepare('INSERT OR REPLACE INTO vault_node_secrets VALUES(?,?,?,?)').run(
@@ -158,19 +159,19 @@ export class Vault {
     // Authorization is always read from persistence, never from a caller-supplied row.
     const connection = this.store.get(accountId, connectionId)
     const ref = connection.secretRef
-    if (!ref?.startsWith(`secret://${accountId}/`)) throw new Error('Connection credential unavailable')
-    if (background && (!connection.unattended || !this.unattendedAvailable)) throw new Error('Unattended access disabled')
+    if (!ref?.startsWith(`secret://${accountId}/`)) throw new ConnectionError('policy_denied', 'Connection credential unavailable')
+    if (background && (!connection.unattended || !this.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
     const key = background ? await this.dataKey(accountId, true, false) : this.sessions.get(accountId)
-    if (!key) throw new Error('Vault is locked')
+    if (!key) throw new ConnectionError('vault_locked', 'Vault is locked')
     try {
       this.assertOpen()
       // Recheck after the asynchronous keychain read (consent may have been revoked).
       const current = this.store.get(accountId, connectionId)
-      if (current.secretRef !== ref || (background && !current.unattended)) throw new Error('Connection credential unavailable')
+      if (current.secretRef !== ref || (background && !current.unattended)) throw new ConnectionError('policy_denied', 'Connection credential unavailable')
       const row = background
         ? this.db.prepare('SELECT ciphertext FROM vault_node_secrets WHERE connection_id=? AND account_id=? AND ref=?').get(connectionId, accountId, ref)
         : this.db.prepare('SELECT ciphertext FROM vault_secrets WHERE ref=? AND account_id=?').get(ref, accountId)
-      if (!row) throw new Error('Connection credential unavailable')
+      if (!row) throw new ConnectionError('policy_denied', 'Connection credential unavailable')
       const plaintext = open(key, String(row.ciphertext), background ? `node:${accountId}:${connectionId}:${ref}` : ref)
       try {
         this.scrubber.register(ref as SecretRef, plaintext.toString())

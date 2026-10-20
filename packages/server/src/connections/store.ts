@@ -1,3 +1,4 @@
+import { ConnectionError } from './errors.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { chmodSync, mkdirSync } from 'node:fs'
@@ -49,7 +50,7 @@ export class ConnectionStore {
   }
   get(accountId: string, id: string): Connection {
     const row = this.db.prepare('SELECT data FROM connections WHERE account_id=? AND id=?').get(accountId, id)
-    if (!row) throw new Error('Connection not found')
+    if (!row) throw new ConnectionError('connection_not_found', 'Connection not found')
     return connectionSchema.parse(JSON.parse(String(row.data)))
   }
   create(accountId: string, input: CreateConnection): Connection {

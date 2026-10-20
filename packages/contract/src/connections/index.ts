@@ -68,3 +68,11 @@ export type ConnectionBalance = z.infer<typeof connectionBalanceSchema>
 export type ConnectionCost = z.infer<typeof connectionCostSchema>
 export type ConnectionSnapshot = z.infer<typeof connectionSnapshotSchema>
 
+
+/** Stable recovery categories; raw provider/keychain errors never cross the wire. */
+export const connectionErrorCodeSchema = z.enum([
+  'connection_not_found', 'vault_locked', 'policy_denied', 'egress_unavailable',
+  'internal_error', 'validation_failed', 'provider_failed',
+])
+export const connectionErrorSchema = z.object({ code: connectionErrorCodeSchema }).strict()
+export type ConnectionErrorCode = z.infer<typeof connectionErrorCodeSchema>

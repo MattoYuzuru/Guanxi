@@ -1,3 +1,4 @@
+import { ConnectionError } from './errors.ts'
 /** Temporary copy of K2's stable interface. Delete after K2 merges. */
 import { definePlugin } from '@guanxi/kernel'
 export const EGRESS_SERVICE = 'egress.scrubber'
@@ -14,7 +15,7 @@ export const temporaryEgressPlugin = definePlugin({
   apply(ctx) {
     const stub: EgressScrubber = {
       register() {}, unregister() { return false },
-      scrub() { throw new Error('egress.scrubber is not available before K2 merges') },
+      scrub() { throw new ConnectionError('egress_unavailable', 'egress.scrubber is not available before K2 merges') },
     }
     ctx.provide(EGRESS_SERVICE, stub)
   },

@@ -105,3 +105,31 @@ it.each(['en', 'ru'] as const)('facts and metered costs render value, source, ti
   expect(screen.queryByText(/987654321/)).toBeNull()
   expect(screen.getByText(/unobserved.limit:/).textContent).toContain(locale === 'en' ? 'Unknown' : 'Неизвестно')
 })
+
+it.each([
+  ['connection_not_found', 'no longer exists'], ['vault_locked', 'vault is locked'],
+  ['policy_denied', 'disabled by'], ['egress_unavailable', 'protection is not ready'],
+  ['internal_error', 'could not process'], ['validation_failed', 'details are invalid'], ['provider_failed', 'provider request failed'],
+] as const)('shows an actionable message for %s', (code, message) => {
+  setActiveLocale('en')
+  render(<ConnectionsView snapshot={null} error errorCode={code} retry={() => {}} mutate={mutate} />)
+  expect(screen.getByRole('alert').textContent).toContain(message)
+  expect(screen.getByRole('button', { name: code === 'vault_locked' ? 'Unlock vault' : 'Retry' })).toBeTruthy()
+})
+
+it('preserves the server recovery code and unlocks from a failed initial load', async () => {
+  setActiveLocale('en')
+  const requests: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    requests.push(path)
+    if (requests.length === 1) return Response.json({ code: 'vault_locked' }, { status: 423 })
+    if (path.endsWith('/unlock')) return Response.json({ ok: true })
+    return Response.json({ ...snapshot, vault: { ...snapshot.vault, unlocked: true } })
+  }))
+  render(<ConnectionsPage />)
+  await screen.findByRole('alert')
+  fireEvent.click(screen.getByRole('button', { name: 'Unlock vault' }))
+  await screen.findByText('Vault unlocked')
+  expect(requests).toEqual(['/api/connections', '/api/connections/vault/unlock', '/api/connections'])
+  expect(screen.queryByRole('alert')).toBeNull()
+})

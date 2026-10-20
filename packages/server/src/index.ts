@@ -19,6 +19,7 @@ import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
 import { temporaryEgressPlugin, EGRESS_SERVICE } from './connections/egress.ts'
 import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
+import { ConnectionError } from './connections/errors.ts'
 import { connectionRoutes } from './connections/routes.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
@@ -155,7 +156,7 @@ export async function start(options: StartOptions = {}) {
 
   server.route('/api/connections', connectionRoutes(() => {
     const service = kernel.node.service<Connections>(CONNECTIONS_SERVICE)
-    if (!service) throw new Error('Connections unavailable')
+    if (!service) throw new ConnectionError('egress_unavailable', 'Connections unavailable')
     return service
   }, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
 
