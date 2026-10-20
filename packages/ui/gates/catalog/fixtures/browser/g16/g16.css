@@ -4,9 +4,9 @@
   display: inline-block;
   width: var(--icon-size-16);
   height: var(--icon-size-16);
-  border: var(--size-focus-ring) solid currentColor;
+  border: 2px solid currentColor;
   border-right-color: transparent;
-  border-radius: var(--border-radius-full);
+  border-radius: 9999px;
   animation: gx-seeded-spin 1000ms linear infinite;
 }
 
@@ -21,7 +21,7 @@
   display: inline-block;
   width: var(--icon-size-16);
   height: var(--icon-size-16);
-  border: var(--size-focus-ring) solid currentColor;
+  border: 2px solid currentColor;
   animation: gx-seeded-spin 2000ms linear 1;
 }
 
