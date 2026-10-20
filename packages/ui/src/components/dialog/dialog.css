@@ -4,7 +4,7 @@
 .gx-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-dialog);
+  z-index: var(--layer-scrim);
   background-color: var(--scrim-color);
   @apply transition-opacity;
   transition-duration: var(--motion-fade-slow);
@@ -23,7 +23,7 @@
 .gx-dialog {
   /* Centred by auto margins inside a 16 px gutter, so no translate is needed to place it. */
   @apply fixed inset-x-4 inset-y-0 m-auto h-fit max-w-md;
-  z-index: var(--z-dialog);
+  z-index: var(--layer-dialog);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-8);

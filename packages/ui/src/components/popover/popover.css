@@ -1,7 +1,7 @@
 .gx-popover-positioner {
   /* Base UI sets this inline on the positioner; the default keeps it defined. */
   --available-width: none;
-  z-index: var(--z-popover);
+  z-index: var(--layer-popover);
 }
 
 .gx-popover {

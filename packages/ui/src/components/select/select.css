@@ -63,7 +63,7 @@
   /* Base UI sets this inline on the positioner; the default keeps it defined. */
   --anchor-width: auto;
   --available-height: none;
-  z-index: var(--z-popover);
+  z-index: var(--layer-popover);
 }
 
 .gx-select-content {

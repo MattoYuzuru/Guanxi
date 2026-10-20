@@ -13,12 +13,11 @@
   @apply sr-only;
 }
 
-/* Focus ring: visible in every theme and in forced colours. */
+/* Focus ring (FOUNDATIONS §3): visible in every theme and in forced colours. */
 .gx-focusable:focus-visible,
 [data-gx-force~='focus-visible'] .gx-focusable {
-  @apply outline-2 outline-offset-2;
-  outline-style: solid;
-  outline-color: var(--color-ring-primary);
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* Glass material: only for floating layers (FOUNDATIONS §4). */

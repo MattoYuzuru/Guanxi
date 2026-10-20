@@ -60,7 +60,7 @@ window.__GUANXI_HARNESS__ = {
 // G13 seeded violation: one semantic token changes, so every baseline must differ.
 if (search.get('seed') === 'g13') {
   const style = document.createElement('style')
-  style.textContent = "[data-theme] { --color-background-accent: var(--color-background-danger-strong); --color-background-secondary: var(--color-background-hover); }"
+  style.textContent = "[data-theme] { --color-background-accent: var(--color-background-danger); --color-background-secondary: var(--color-background-hover); }"
   document.head.append(style)
 }
 
