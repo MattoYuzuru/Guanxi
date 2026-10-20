@@ -197,8 +197,18 @@ function defaultProcessAlive(pid: number): boolean {
   }
 }
 
+/** unicode61 folds Latin diacritics only; fold the Russian ё as well, at index and query time. */
+function foldForSearch(text: string): string {
+  return text.replaceAll('ё', 'е').replaceAll('Ё', 'Е')
+}
+
 /** Text the FTS5 index holds for an event; content-free events have none. */
 export function searchTextOf(type: SessionEventType, data: unknown): string | null {
+  const text = rawSearchTextOf(type, data)
+  return text === null ? null : foldForSearch(text)
+}
+
+function rawSearchTextOf(type: SessionEventType, data: unknown): string | null {
   const value = data as Record<string, unknown>
   switch (type) {
     case 'prompt':
@@ -218,7 +228,7 @@ export function searchTextOf(type: SessionEventType, data: unknown): string | nu
 
 /** An FTS5 query that matches every whitespace-separated term literally. */
 export function literalFtsQuery(text: string): string | null {
-  const terms = text.split(/\s+/u).filter((term) => term.length > 0).slice(0, 16)
+  const terms = foldForSearch(text).split(/\s+/u).filter((term) => term.length > 0).slice(0, 16)
   if (terms.length === 0) return null
   return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(' ')
 }
@@ -389,6 +399,11 @@ export class SessionLog {
 
   /* ───────────────────────────── reading ───────────────────────────── */
 
+  /** Scrubs a value that leaves the log by another path (for example an echoed query). */
+  redact<T>(value: T): T {
+    return this.scrubber.scrub(value)
+  }
+
   session(sessionId: string): SessionListItem | null {
     const row = this.db
       .prepare(
@@ -398,7 +413,7 @@ export class SessionLog {
          WHERE s.id = ?`,
       )
       .get(sessionId) as unknown as (SessionRow & { title: string | null; last_event_at: string | null }) | undefined
-    return row ? toListItem(row) : null
+    return row ? this.toListItem(row) : null
   }
 
   list(limit = 50): SessionListItem[] {
@@ -414,7 +429,20 @@ export class SessionLog {
       title: string | null
       last_event_at: string | null
     })[]
-    return rows.map(toListItem)
+    return rows.map((row) => this.toListItem(row))
+  }
+
+  /** Thread titles are derived from the first prompt, so they are scrubbed too. */
+  private toListItem(row: SessionRow & { title: string | null; last_event_at: string | null }): SessionListItem {
+    return {
+      sessionId: row.id,
+      kind: row.kind as SessionKind,
+      threadId: row.thread_id,
+      title: row.title === null ? null : this.scrubber.scrub(row.title),
+      createdAt: row.created_at,
+      lastSeq: row.last_seq,
+      lastEventAt: row.last_event_at,
+    }
   }
 
   /** A page after `afterSeq`, filtered for the audience and scrubbed again. */
@@ -858,18 +886,6 @@ export class SessionLog {
     }
     this.fault?.('committed', { sessionId, type })
     return result
-  }
-}
-
-function toListItem(row: SessionRow & { title: string | null; last_event_at: string | null }): SessionListItem {
-  return {
-    sessionId: row.id,
-    kind: row.kind as SessionKind,
-    threadId: row.thread_id,
-    title: row.title,
-    createdAt: row.created_at,
-    lastSeq: row.last_seq,
-    lastEventAt: row.last_event_at,
   }
 }
 

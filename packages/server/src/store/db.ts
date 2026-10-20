@@ -15,7 +15,7 @@ export type Db = DatabaseSync
  * Миграции применяются по порядку и однократно. Номер последней применённой
  * лежит в `user_version` — это встроенный счётчик SQLite, отдельная таблица не нужна.
  */
-const MIGRATIONS: readonly string[] = [
+export const MIGRATIONS: readonly string[] = [
   // 1 — базовые сущности
   `
   CREATE TABLE workspaces (

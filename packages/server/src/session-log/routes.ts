@@ -85,12 +85,13 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     const parsed = raw ? sessionSearchQuery.safeParse(raw) : null
     if (!parsed?.success) return invalid(context, 'Invalid session search query')
     try {
-      const hits = log().search(parsed.data.q, {
+      const current = log()
+      const hits = current.search(parsed.data.q, {
         sessionId: parsed.data.sessionId,
         audience: 'person',
         limit: parsed.data.limit,
       })
-      return context.json(sessionSearchResponse.parse({ query: parsed.data.q, hits }))
+      return context.json(sessionSearchResponse.parse({ query: current.redact(parsed.data.q), hits }))
     } catch (error) {
       return failure(context, error)
     }
