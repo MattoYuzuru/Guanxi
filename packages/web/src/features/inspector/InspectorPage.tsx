@@ -97,7 +97,7 @@ function dateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-const LINK = 'inline-flex min-h-6 items-center text-2xs text-[var(--accent)] underline underline-offset-2'
+const LINK = 'inline-flex min-h-6 items-center text-12 text-accent underline underline-offset-2'
 
 export function InspectorPage({ sessionId }: { sessionId: string | null }) {
   useLocale()
@@ -111,8 +111,8 @@ function SessionList() {
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-3 py-4 sm:px-6" aria-labelledby="inspector-list-title">
       <header className="flex flex-col gap-1">
-        <h1 id="inspector-list-title" className="text-sm font-semibold">{translate('inspector.list.title')}</h1>
-        <p className="text-xs text-[var(--fg-muted)]">{translate('inspector.list.description')}</p>
+        <h1 id="inspector-list-title" className="text-14 font-heading">{translate('inspector.list.title')}</h1>
+        <p className="text-13 text-secondary">{translate('inspector.list.description')}</p>
       </header>
       {sessions.loading && (
         <div className="flex flex-col gap-2" role="status" aria-busy="true">
@@ -131,17 +131,17 @@ function SessionList() {
         />
       )}
       {sessions.data && sessions.data.sessions.length > 0 && (
-        <ul className="flex flex-col divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] bg-[var(--bg-raised)]" aria-label={translate('inspector.list.label')}>
+        <ul className="flex flex-col divide-y divide-divider rounded-panel border border-divider bg-surface" aria-label={translate('inspector.list.label')}>
           {sessions.data.sessions.map((session) => (
             <li key={session.sessionId}>
               <Link
                 to={paths.inspector(session.sessionId)}
-                className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 hover:bg-[var(--bg-subtle)]"
+                className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 hover:bg-inset"
               >
-                <span className="min-w-0 truncate text-xs font-medium">
+                <span className="min-w-0 truncate text-13 font-label">
                   <RedactedText text={session.title ?? translate('inspector.untitled')} />
                 </span>
-                <span className="flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
+                <span className="flex items-center gap-2 text-12 text-muted">
                   <Badge>{translate(session.kind === 'chat' ? 'inspector.kind.chat' : 'inspector.kind.agent')}</Badge>
                   <span className="font-mono tabular-nums">{translate('inspector.list.events', { count: session.lastSeq })}</span>
                   {session.lastEventAt && <time dateTime={session.lastEventAt}>{dateTime(session.lastEventAt)}</time>}
@@ -172,8 +172,8 @@ function LoadError({ error, route, onRetry, title }: { error: unknown; route: st
           </div>
         }
       >
-        <p className="text-xs">{message}</p>
-        <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+        <p className="text-13">{message}</p>
+        <p className="mt-1 text-12 text-muted">
           {translate('inspector.error.when', { time: time(at), route })}
         </p>
       </Callout>
@@ -295,9 +295,9 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
     return (
       <section className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-3 py-4 sm:px-6" aria-labelledby="inspector-error-title">
         {notFound ? (
-          <div className="flex flex-col items-center gap-2 py-14 text-center">
-            <h1 id="inspector-error-title" className="text-sm font-medium">{translate('inspector.notFound.title')}</h1>
-            <p className="max-w-md text-xs text-[var(--fg-subtle)]">{translate('inspector.notFound.description')}</p>
+          <div className="flex flex-col items-center gap-2 py-12 text-center">
+            <h1 id="inspector-error-title" className="text-14 font-label">{translate('inspector.notFound.title')}</h1>
+            <p className="max-w-md text-13 text-muted">{translate('inspector.notFound.description')}</p>
             <div className="flex gap-3">
               <Link to={paths.chat(sessionId)} className={LINK}>{translate('inspector.openChat')}</Link>
               <Link to={paths.inspector()} className={LINK}>{translate('inspector.backToList')}</Link>
@@ -338,8 +338,8 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
     <section className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-3 py-4 sm:px-6" aria-labelledby="inspector-title">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <Link to={paths.inspector()} className={cx(LINK, 'text-[var(--fg-muted)]')}>{translate('inspector.backToList')}</Link>
-          <h1 id="inspector-title" ref={headingRef} tabIndex={-1} className="truncate text-sm font-semibold">
+          <Link to={paths.inspector()} className={cx(LINK, 'text-secondary')}>{translate('inspector.backToList')}</Link>
+          <h1 id="inspector-title" ref={headingRef} tabIndex={-1} className="truncate text-14 font-heading">
             <RedactedText text={summary?.title ?? translate('inspector.untitled')} />
           </h1>
           <LiveStatus live={live} loadedAt={loadedAt} onReconnect={reload} />
@@ -351,7 +351,7 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
           <a
             href={inspectorApi.exportUrl(sessionId)}
             download={`session-${sessionId}.json`}
-            className="inline-flex h-6 items-center rounded-[5px] border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2 text-2xs font-medium hover:bg-[var(--bg-subtle)]"
+            className="inline-flex h-6 items-center rounded-control border border-control bg-surface px-2 text-12 font-label hover:bg-inset"
           >
             {translate('inspector.export')}
           </a>
@@ -361,7 +361,7 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
       <Overview timeline={timeline} summary={summary} />
       <SearchPanel sessionId={sessionId} onReveal={reveal} />
 
-      <div role="tablist" aria-label={translate('inspector.views')} className="flex gap-1 border-b border-[var(--border)]">
+      <div role="tablist" aria-label={translate('inspector.views')} className="flex gap-1 border-b border-divider">
         {tabs.map((value) => (
           <button
             key={value}
@@ -374,10 +374,10 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
             onClick={() => selectTab(value, false)}
             onKeyDown={(event) => onTabKey(event, value)}
             className={cx(
-              '-mb-px min-h-6 border-b-2 px-2 py-1 text-xs font-medium',
+              'min-h-6 border-b-2 px-2 py-1 text-13 font-label',
               tab === value
-                ? 'border-[var(--accent)] text-[var(--fg)] forced-colors:border-[Highlight]'
-                : 'border-transparent text-[var(--fg-muted)] hover:text-[var(--fg)]',
+                ? 'border-accent text-foreground'
+                : 'border-transparent text-secondary hover:text-foreground forced-colors:border-b-0',
             )}
           >
             {translate(value === 'timeline' ? 'inspector.tab.timeline' : 'inspector.tab.spans')}
@@ -431,8 +431,8 @@ function LiveStatus({ live, loadedAt, onReconnect }: { live: Live; loadedAt: str
           : translate('inspector.live.failed', { time: time(loadedAt ?? live.at) })
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <p role="status" aria-live="polite" className="flex items-center gap-1.5 text-2xs text-[var(--fg-subtle)]">
-        <span aria-hidden className={cx('inline-block size-2 rounded-full', live.state === 'live' ? 'bg-[var(--color-fit-green)]' : 'bg-[var(--color-fit-unknown)]')} />
+      <p role="status" aria-live="polite" className="flex items-center gap-1.5 text-12 text-muted">
+        <span aria-hidden className={cx('inline-block size-2 rounded-full', live.state === 'live' ? 'bg-success' : 'bg-muted')} />
         {label}
       </p>
       {live.state === 'stopped' && (
@@ -446,9 +446,9 @@ function LiveStatus({ live, loadedAt, onReconnect }: { live: Live; loadedAt: str
 function Fact({ label, value, note, mono = true, testId }: { label: string; value: ReactNode; note?: string; mono?: boolean; testId?: string }) {
   return (
     <div className="min-w-0">
-      <div className="truncate text-2xs text-[var(--fg-subtle)]">{label}</div>
-      <div className={cx('text-xs font-medium', mono && 'font-mono tabular-nums')} data-testid={testId}>{value}</div>
-      {note && <div className="text-2xs text-[var(--fg-subtle)]">{note}</div>}
+      <div className="truncate text-12 text-muted">{label}</div>
+      <div className={cx('text-13 font-label', mono && 'font-mono tabular-nums')} data-testid={testId}>{value}</div>
+      {note && <div className="text-12 text-muted">{note}</div>}
     </div>
   )
 }
@@ -478,7 +478,7 @@ function Overview({ timeline, summary }: { timeline: TimelineState; summary: Ses
   const purged = timeline.events.filter((event) => event.type === 'reasoning' && event.purgedAt !== null).length
 
   return (
-    <div className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 rounded-panel border border-divider bg-surface p-3 sm:grid-cols-4">
       <Fact label={translate('inspector.stat.events')} value={timeline.events.length} testId="inspector-event-count" />
       <Fact label={translate('inspector.stat.prompts')} value={counts.prompt ?? 0} />
       <Fact label={translate('inspector.stat.toolCalls')} value={counts['tool.call'] ?? 0} />
@@ -555,7 +555,7 @@ function SearchPanel({ sessionId, onReveal }: { sessionId: string; onReveal: (se
   return (
     <div className="flex flex-col gap-2">
       <form role="search" onSubmit={submit} className="flex flex-wrap items-end gap-2">
-        <label className="flex min-w-0 flex-1 flex-col gap-1 text-2xs text-[var(--fg-muted)]">
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-12 text-secondary">
           {translate('inspector.search.label')}
           <Input
             value={query}
@@ -564,7 +564,7 @@ function SearchPanel({ sessionId, onReveal }: { sessionId: string; onReveal: (se
             maxLength={200}
             aria-describedby="inspector-search-hint"
           />
-          <span id="inspector-search-hint" className="text-2xs text-[var(--fg-subtle)]">{translate('inspector.search.hint')}</span>
+          <span id="inspector-search-hint" className="text-12 text-muted">{translate('inspector.search.hint')}</span>
         </label>
         <Button type="submit" size="sm" aria-busy={busy}>
           {translate('inspector.search.submit')}
@@ -575,7 +575,7 @@ function SearchPanel({ sessionId, onReveal }: { sessionId: string; onReveal: (se
       {hits !== null && (
         <section aria-label={translate('inspector.search.results')}>
           {hits.length === 0 ? (
-            <p className="text-2xs text-[var(--fg-subtle)]">{translate('inspector.search.none')}</p>
+            <p className="text-12 text-muted">{translate('inspector.search.none')}</p>
           ) : (
             <>
               <ul className="flex flex-col gap-1">
@@ -584,13 +584,13 @@ function SearchPanel({ sessionId, onReveal }: { sessionId: string; onReveal: (se
                     <button
                       type="button"
                       onClick={() => onReveal(hit.seq)}
-                      className="flex min-h-6 w-full flex-wrap items-baseline gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-[var(--bg-subtle)]"
+                      className="flex min-h-6 w-full flex-wrap items-baseline gap-2 rounded-control px-2 py-1 text-left text-13 hover:bg-inset"
                     >
-                      <span className="font-mono text-2xs tabular-nums text-[var(--fg-subtle)]">#{hit.seq}</span>
+                      <span className="font-mono text-12 tabular-nums text-muted">#{hit.seq}</span>
                       <Badge tone={hit.class === 'reasoning' ? 'yellow' : 'neutral'}>{translate(TYPE_KEYS[hit.type])}</Badge>
                       <span className="min-w-0 break-words">
                         {hit.class === 'reasoning'
-                          ? <span className="text-[var(--fg-muted)]">{translate('inspector.search.reasoningMatch')}</span>
+                          ? <span className="text-secondary">{translate('inspector.search.reasoningMatch')}</span>
                           : <Snippet text={hit.snippet} />}
                       </span>
                     </button>
@@ -598,7 +598,7 @@ function SearchPanel({ sessionId, onReveal }: { sessionId: string; onReveal: (se
                 ))}
               </ul>
               {hits.length >= SEARCH_LIMIT && (
-                <p className="mt-1 text-2xs text-[var(--fg-subtle)]">{translate('inspector.search.limit', { count: SEARCH_LIMIT })}</p>
+                <p className="mt-1 text-12 text-muted">{translate('inspector.search.limit', { count: SEARCH_LIMIT })}</p>
               )}
             </>
           )}
@@ -626,7 +626,7 @@ function Snippet({ text }: { text: string }) {
       if (close < 0) break
       parts.push(<span key={key++}>{value.slice(cursor, open)}</span>)
       parts.push(
-        <mark key={key++} className="rounded-sm bg-[var(--accent-subtle)] text-[var(--fg)] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]">
+        <mark key={key++} className="rounded-inline bg-inset text-foreground underline decoration-2">
           {value.slice(open + 1, close)}
         </mark>,
       )
@@ -669,13 +669,13 @@ function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted:
       data-event-type={event.type}
       aria-current={highlighted ? 'true' : undefined}
       className={cx(
-        'flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 hover:bg-[var(--bg-subtle)]',
-        depth === 2 && 'ml-4 border-l-2 border-[var(--border)] pl-2 sm:ml-8',
-        depth === 1 && 'ml-2 border-l-2 border-[var(--border)] pl-2 sm:ml-4',
-        highlighted && 'bg-[var(--accent-subtle)] outline outline-1 outline-[var(--accent)]',
+        'flex min-w-0 flex-col gap-0.5 rounded-control px-2 py-1.5 hover:bg-inset',
+        depth === 2 && 'ml-4 border-l-2 border-divider pl-2 sm:ml-8',
+        depth === 1 && 'ml-2 border-l-2 border-divider pl-2 sm:ml-4',
+        highlighted && 'bg-inset outline outline-1 outline-accent',
       )}
     >
-      <div className="flex flex-wrap items-center gap-2 text-2xs text-[var(--fg-subtle)]">
+      <div className="flex flex-wrap items-center gap-2 text-12 text-muted">
         <span className="font-mono tabular-nums">#{event.seq}</span>
         <time dateTime={event.createdAt} className="font-mono tabular-nums">{time(event.createdAt)}</time>
         <Badge tone={event.class === 'reasoning' ? 'yellow' : event.type === 'error' ? 'red' : 'neutral'}>
@@ -694,7 +694,7 @@ function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted:
         <ReasoningBody event={event} />
       ) : (
         detail !== null && detail.length > 0 && (
-          <p className={cx('max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-xs [overflow-wrap:anywhere]', MACHINE_DETAIL.has(event.type) && 'font-mono')}>
+          <p className={cx('max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-13 wrap-anywhere', MACHINE_DETAIL.has(event.type) && 'font-mono')}>
             <RedactedText text={detail} />
           </p>
         )
@@ -707,7 +707,7 @@ function ReasoningBody({ event }: { event: Extract<SessionEvent, { type: 'reason
   const [open, setOpen] = useState(false)
   if (event.data === null) {
     return (
-      <p className="text-2xs text-[var(--fg-subtle)]">
+      <p className="text-12 text-muted">
         {translate('inspector.reasoning.purged', { time: dateTime(event.purgedAt ?? event.expiresAt) })}
       </p>
     )
@@ -718,12 +718,12 @@ function ReasoningBody({ event }: { event: Extract<SessionEvent, { type: 'reason
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex min-h-6 items-center self-start text-left text-2xs font-medium text-[var(--fg-muted)] underline underline-offset-2 hover:text-[var(--fg)]"
+        className="inline-flex min-h-6 items-center self-start text-left text-12 font-label text-secondary underline underline-offset-2 hover:text-foreground"
       >
         {translate(open ? 'inspector.reasoning.hide' : 'inspector.reasoning.show', { time: dateTime(event.expiresAt) })}
       </button>
       {open && (
-        <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-[var(--border-strong)] pl-2 text-xs text-[var(--fg-muted)] [overflow-wrap:anywhere]">
+        <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-control pl-2 text-13 text-secondary wrap-anywhere">
           <RedactedText text={event.data.text} />
         </p>
       )}
@@ -734,7 +734,7 @@ function ReasoningBody({ event }: { event: Extract<SessionEvent, { type: 'reason
 function RedactedRef({ reference }: { reference: string }) {
   return (
     <span
-      className="mx-0.5 rounded-sm border border-[var(--border-strong)] px-1 font-mono text-2xs text-[var(--fg-muted)] [overflow-wrap:anywhere]"
+      className="mx-0.5 rounded-inline border border-control px-1 font-mono text-12 text-secondary wrap-anywhere"
       title={translate('inspector.redactedHint')}
     >
       {translate('inspector.redacted', { ref: reference })}
@@ -780,14 +780,14 @@ function Spans({ sessionId, lastSeq }: { sessionId: string; lastSeq: number }) {
     const items = children.get(parent)
     if (!items) return null
     return (
-      <ul className={cx('flex flex-col gap-1', level > 0 && 'border-l border-[var(--border)] pl-3')} aria-label={level === 0 ? translate('inspector.spans.label') : undefined}>
+      <ul className={cx('flex flex-col gap-1', level > 0 && 'border-l border-divider pl-3')} aria-label={level === 0 ? translate('inspector.spans.label') : undefined}>
         {items.map((span) => (
           <li key={span.id} className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-13">
               <Badge>{translate(SPAN_KIND_KEYS[span.kind])}</Badge>
-              <span className="min-w-0 break-all font-mono text-2xs">{span.label}</span>
-              {span.status && <span className="font-mono text-2xs">{span.status}</span>}
-              <span className="font-mono text-2xs tabular-nums text-[var(--fg-subtle)]">
+              <span className="min-w-0 break-all font-mono text-12">{span.label}</span>
+              {span.status && <span className="font-mono text-12">{span.status}</span>}
+              <span className="font-mono text-12 tabular-nums text-muted">
                 {translate('inspector.spans.detail', {
                   first: span.firstSeq,
                   last: span.lastSeq,
@@ -796,7 +796,7 @@ function Spans({ sessionId, lastSeq }: { sessionId: string; lastSeq: number }) {
                 })}
               </span>
               {(span.promptTokens > 0 || span.completionTokens > 0) && (
-                <span className="font-mono text-2xs tabular-nums text-[var(--fg-subtle)]">
+                <span className="font-mono text-12 tabular-nums text-muted">
                   {span.promptTokens.toLocaleString()} → {span.completionTokens.toLocaleString()}
                 </span>
               )}
