@@ -83,3 +83,25 @@ it('formats observation numbers and dates in the chosen locale and visibly label
   expect(screen.getByRole('switch').textContent).toBe('Фоновое использование: вкл.')
   expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
 })
+
+it.each(['en', 'ru'] as const)('facts and metered costs render value, source, time and confidence in %s', locale => {
+  setActiveLocale(locale)
+  const observedAt = '2026-10-20T11:22:33.000Z'
+  const time = new Date(observedAt).toLocaleString(locale)
+  render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, facts: {
+    'pi-ai.context': { value: 8192, source: 'catalog-fixture', observedAt, confidence: 'medium' },
+    'unobserved.limit': { value: 987654321, source: 'missing-time', observedAt: null, confidence: 'high' },
+  } }], costs: [{ id: 'cost-fixture', accountId: connection.accountId, connectionId: connection.id,
+    runId: 'run-fixture', requestId: 'request-fixture', inputTokens: 10, outputTokens: 2, costUsd: 0.125,
+    source: 'usage-fixture', observedAt, confidence: 'medium' }],
+  }} retry={() => {}} mutate={mutate} />)
+  const fact = screen.getByText('pi-ai.context: 8192').parentElement!
+  expect(fact.textContent).toContain('catalog-fixture')
+  expect(fact.textContent).toContain(time)
+  expect(fact.textContent).toContain(locale === 'en' ? 'estimated' : 'оценка')
+  expect(screen.getByText(/usage-fixture/).textContent).toContain((0.125).toLocaleString(locale))
+  expect(screen.getByText(/usage-fixture/).textContent).toContain(time)
+  expect(screen.getByText(/usage-fixture/).textContent).toContain(locale === 'en' ? 'estimated' : 'оценка')
+  expect(screen.queryByText(/987654321/)).toBeNull()
+  expect(screen.getByText(/unobserved.limit:/).textContent).toContain(locale === 'en' ? 'Unknown' : 'Неизвестно')
+})
