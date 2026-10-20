@@ -618,6 +618,64 @@
             }
           }
         }
+      },
+      "material": {
+        "light": {
+          "edge": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                1,
+                0,
+                0
+              ],
+              "hex": "#FFFFFF",
+              "alpha": 0.65
+            }
+          },
+          "seam": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.2453520953,
+                0.0155926219,
+                189.2526600522
+              ],
+              "hex": "#182322",
+              "alpha": 0.1
+            }
+          }
+        },
+        "dark": {
+          "edge": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                1,
+                0,
+                0
+              ],
+              "hex": "#FFFFFF",
+              "alpha": 0.08
+            }
+          },
+          "seam": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0,
+                0,
+                0
+              ],
+              "hex": "#000000",
+              "alpha": 0.32
+            }
+          }
+        }
       }
     }
   }

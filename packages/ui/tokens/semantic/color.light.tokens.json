@@ -173,10 +173,6 @@
         "$type": "number",
         "$value": 0.05
       },
-      "border": {
-        "$type": "color",
-        "$value": "{primitive.color.neutral.light.8}"
-      },
       "edge-opacity": {
         "$type": "number",
         "$value": 0.65
@@ -184,6 +180,14 @@
       "seam-opacity": {
         "$type": "number",
         "$value": 0.1
+      },
+      "edge": {
+        "$type": "color",
+        "$value": "{primitive.color.material.light.edge}"
+      },
+      "seam": {
+        "$type": "color",
+        "$value": "{primitive.color.material.light.seam}"
       }
     },
     "solid": {
@@ -216,10 +220,6 @@
       "grain-opacity": {
         "$type": "number",
         "$value": 0.035
-      },
-      "border": {
-        "$type": "color",
-        "$value": "{primitive.color.neutral.light.8}"
       }
     },
     "strong": {

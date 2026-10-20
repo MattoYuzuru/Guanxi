@@ -1,28 +1,42 @@
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, extname, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { installChatApiFixture } from './fixtures/chat-api.ts'
 
 const webRoot = fileURLToPath(new URL('../..', import.meta.url))
 let directory: string
+let baselineDirectory: string
 let origin: string
 let server: Server
 
 test.beforeAll(async () => {
   directory = await mkdtemp(resolve(tmpdir(), 'guanxi-ds1a-built-fonts-'))
   execFileSync(process.execPath, [resolve(webRoot, '../../node_modules/vite/bin/vite.js'), 'build', '--outDir', directory, '--emptyOutDir'], { cwd: webRoot, stdio: 'pipe' })
+  baselineDirectory = await mkdtemp(resolve(tmpdir(), 'guanxi-ds1a-legacy-baseline-'))
+  const baselineScript = resolve(directory, 'baseline-build.mjs')
+  // Build the identical legacy app with only the runtime-token import removed. No source
+  // files are edited, and the reference uses the same locked Vite/Tailwind dependencies.
+  await writeFile(baselineScript, `import { build } from ${JSON.stringify(pathToFileURL(resolve(webRoot, '../../node_modules/vite/dist/node/index.js')).href)};
+import { readFile } from 'node:fs/promises';
+await build({root:${JSON.stringify(webRoot)},configFile:${JSON.stringify(resolve(webRoot, 'vite.config.ts'))},logLevel:'error',plugins:[{name:'legacy-baseline',enforce:'pre',async load(id){if(id.split('?')[0]===${JSON.stringify(resolve(webRoot, 'src/index.css'))})return (await readFile(id,'utf8')).replace(${JSON.stringify("@import '../../ui/generated/tokens.css';")},'')}}],build:{outDir:${JSON.stringify(baselineDirectory)},emptyOutDir:true}});
+`)
+  execFileSync(process.execPath, [baselineScript], { cwd: webRoot, stdio: 'pipe' })
   const types: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.html': 'text/html', '.svg': 'image/svg+xml' }
   server = createServer(async (request, response) => {
-    const path = resolve(directory, '.' + decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname))
-    if (path !== directory && !path.startsWith(directory + sep)) { response.writeHead(403).end(); return }
+    const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname)
+    const baseline = pathname.startsWith('/__legacy__/')
+    const base = baseline ? baselineDirectory : directory
+    const path = resolve(base, '.' + (baseline ? pathname.slice('/__legacy__'.length) : pathname))
+    if (path !== base && !path.startsWith(base + sep)) { response.writeHead(403).end(); return }
     try {
-      const target = path === directory || !extname(path) ? resolve(directory, 'index.html') : path
-      const contents = await readFile(target)
+      const target = path === base || !extname(path) ? resolve(base, 'index.html') : path
+      let contents = await readFile(target)
+      if (baseline && extname(target) === '.html') contents = Buffer.from(contents.toString().replaceAll('"/assets/', '"/__legacy__/assets/'))
       response.writeHead(200, { 'Content-Type': types[extname(target)] ?? 'application/octet-stream' }).end(contents)
     } catch { response.writeHead(404).end() }
   })
@@ -35,9 +49,10 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (server) await new Promise<void>((done, reject) => server.close(error => error ? reject(error) : done()))
   if (directory) await rm(directory, { recursive: true, force: true })
+  if (baselineDirectory) await rm(baselineDirectory, { recursive: true, force: true })
 })
 
-test('built web app requests only self-hosted fonts, including non-Latin slices', async ({ page }) => {
+test('M1: every one of the 32 font faces loads from the built app origin', async ({ page }) => {
   const fonts: string[] = []
   const failedFonts: string[] = []
   page.on('request', request => { if (request.resourceType() === 'font') fonts.push(request.url()) })
@@ -45,17 +60,16 @@ test('built web app requests only self-hosted fonts, including non-Latin slices'
   await installChatApiFixture(page, 'completed')
   await page.goto(origin)
   const loaded = await page.evaluate(async () => {
-    const text = 'Guanxi Привет Ελληνικά'
-    const sans = await document.fonts.load('400 13px "IBM Plex Sans"', text)
-    const mono = await document.fonts.load('400 13px "IBM Plex Mono"', 'Guanxi Привет 123')
+    const faces = [...document.fonts]
+    await Promise.all(faces.map(face => face.load()))
     await document.fonts.ready
-    return { sans: sans.length, mono: mono.length, warning: getComputedStyle(document.documentElement).getPropertyValue('--warning').trim(), focus: getComputedStyle(document.documentElement).getPropertyValue('--focus').trim() }
+    return { count: faces.length, loaded: faces.filter(face => face.status === 'loaded').length, warning: getComputedStyle(document.documentElement).getPropertyValue('--warning').trim(), focus: getComputedStyle(document.documentElement).getPropertyValue('--focus').trim() }
   })
-  expect(loaded.sans).toBeGreaterThanOrEqual(3)
-  expect(loaded.mono).toBeGreaterThanOrEqual(2)
+  expect(loaded.count).toBe(32)
+  expect(loaded.loaded).toBe(32)
   expect(loaded.warning).not.toBe('')
   expect(loaded.focus).not.toBe('')
-  expect(fonts.length).toBeGreaterThanOrEqual(5)
+  expect(new Set(fonts).size).toBe(32)
   expect(fonts.filter(url => new URL(url).origin !== origin)).toHaveLength(0)
   expect(failedFonts).toHaveLength(0)
 })
@@ -85,7 +99,7 @@ test('generated theme, density and motion modifiers remain independent of OS med
         root.dataset.density = density
         root.dataset.motion = motion
         const css = getComputedStyle(root)
-        return Object.fromEntries(['--font-text-size', '--control-height', '--row-height', '--panel-padding', '--pane-gap', '--spacing', '--motion-duration-medium'].map(name => {
+        return Object.fromEntries(['--font-text-size', '--control-height', '--row-height', '--panel-padding', '--pane-gap', '--grid-unit', '--motion-duration-medium'].map(name => {
           const value = css.getPropertyValue(name).trim()
           // Production CSS minification can normalize 200ms to .2s.
           return [name, name === '--motion-duration-medium' ? `${Number.parseFloat(value) * (value.endsWith('ms') ? 1 : 1000)}ms` : value]
@@ -97,11 +111,35 @@ test('generated theme, density and motion modifiers remain independent of OS med
         '--row-height': density === 'compact' ? '26px' : '32px',
         '--panel-padding': density === 'compact' ? '8px' : '12px',
         '--pane-gap': density === 'compact' ? '8px' : '12px',
-        '--spacing': '4px',
+        '--grid-unit': '4px',
         '--motion-duration-medium': motion === 'full' ? '200ms' : '0ms',
       })
     }
   }
+})
+
+test('H2: importing runtime tokens preserves legacy computed fonts and spacing', async ({ page, context }) => {
+  const baseline = await context.newPage()
+  await installChatApiFixture(page, 'completed')
+  await installChatApiFixture(baseline, 'completed')
+  await page.goto(origin)
+  await baseline.goto(origin + '/__legacy__/')
+  const inspect = (target: typeof page) => target.evaluate(() => {
+    const sample = document.createElement('div')
+    sample.className = 'font-mono p-2 gap-3'
+    document.body.append(sample)
+    const css = getComputedStyle(sample)
+    const result = { body: getComputedStyle(document.body).fontFamily, mono: css.fontFamily, padding: css.padding, gap: css.gap, spacing: getComputedStyle(document.documentElement).getPropertyValue('--spacing').trim() }
+    sample.remove()
+    return result
+  })
+  const expected = await inspect(baseline)
+  expect(expected.body).toContain('Inter')
+  expect(expected.mono).toContain('SF Mono')
+  expect(expected.padding).toBe('8px')
+  expect(expected.gap).toBe('12px')
+  expect(await inspect(page)).toEqual(expected)
+  await baseline.close()
 })
 
 test('automatic Solid overrides strong and locally selected glass recipes', async ({ page }) => {

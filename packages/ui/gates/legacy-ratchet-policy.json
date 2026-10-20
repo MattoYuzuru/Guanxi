@@ -40,6 +40,672 @@
           "to": 8
         }
       ]
+    },
+    {
+      "id": 2,
+      "authorized": "Owner, DS1-a Review 1 follow-up, 2026-10-20",
+      "reason": "Complete bound-map/element-access/*ClassName scanning, scoped exclusions, CSS-value coverage, off-scale spacing and cleared Tailwind defaults. Legacy source is unchanged.",
+      "sourceRevision": "2ef69a1fa4f8ef66435836995ea149aa23dc72f7",
+      "sourcePath": "packages/web/src/**",
+      "fromSHA256": "3d40852098f06aecd9947f85630f882296ce651a2667f85bfec1d49cc3f719f8",
+      "toSHA256": "e1c37488d05d75c88b703cf41ed5091dcce328486f99adf6b8af62a95a2cee65",
+      "increases": [
+        {
+          "key": "G5|packages/web/src/App.tsx|backdrop-blur-md",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/App.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/App.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/App.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ErrorBoundary.tsx|font-medium",
+          "from": 0,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/components/ErrorBoundary.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ErrorBoundary.tsx|tracking-wide",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--accent)]",
+          "from": 1,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--accent-subtle)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--accent-subtle)]/50",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--bg-inset)]",
+          "from": 4,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--bg-raised)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--bg-subtle)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--color-fit-green)]/12",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--color-fit-red)]/12",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--color-fit-yellow)]/12",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--color-fit-yellow)]/8",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--danger)]/8",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--accent)]/30",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--border)]",
+          "from": 2,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--border-strong)]",
+          "from": 2,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--color-fit-green)]/30",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--color-fit-red)]/30",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--color-fit-yellow)]/30",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--color-fit-yellow)]/40",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--danger)]/40",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|font-medium",
+          "from": 0,
+          "to": 8
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|hover:bg-[var(--bg-subtle)]",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|hover:bg-[var(--danger)]/10",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|hover:text-[var(--fg)]",
+          "from": 1,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|py-14",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|py-2.5",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|py-px",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|rounded-[5px]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|rounded-md",
+          "from": 2,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|shadow-sm",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-2xs",
+          "from": 7,
+          "to": 8
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--accent)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--accent-fg)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--color-fit-green)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--color-fit-red)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--color-fit-yellow)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--danger)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--fg)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--fg-muted)]",
+          "from": 3,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-[var(--fg-subtle)]",
+          "from": 5,
+          "to": 6
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-xs",
+          "from": 8,
+          "to": 9
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/ApprovalPrompt.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/ApprovalPrompt.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/ApprovalPrompt.tsx|leading-relaxed",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/DiffViewer.tsx|bg-[var(--color-fit-green)]/10",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/DiffViewer.tsx|bg-[var(--color-fit-red)]/10",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/DiffViewer.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/DiffViewer.tsx|px-2.5",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/DiffViewer.tsx|px-px",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/DiffViewer.tsx|py-px",
+          "from": 0,
+          "to": 4
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/ToolCallCard.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/ToolCallCard.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/ToolCallCard.tsx|leading-relaxed",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/agent/WorkspacePicker.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/attachments/AttachmentsPage.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/attachments/AttachmentsPage.tsx|font-semibold",
+          "from": 0,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/features/attachments/AttachmentsPage.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ChatPage.tsx|font-medium",
+          "from": 0,
+          "to": 6
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ChatPage.tsx|font-semibold",
+          "from": 0,
+          "to": 6
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ChatPage.tsx|p-2.5",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ChatReasoningArtifacts.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ChatReasoningArtifacts.tsx|font-semibold",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ChatRetentionInfo.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ChatTrashList.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ResourceConflictDecision.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/chat/ResourceConflictDecision.tsx|font-semibold",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/context/ContextPanel.tsx|font-semibold",
+          "from": 0,
+          "to": 7
+        },
+        {
+          "key": "G5|packages/web/src/features/context/ContextPanel.tsx|px-2.5",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/health/HealthGate.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/health/HealthGate.tsx|p-2.5",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/health/HealthGate.tsx|pl-2.5",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/health/RuntimeStatus.tsx|font-medium",
+          "from": 0,
+          "to": 13
+        },
+        {
+          "key": "G5|packages/web/src/features/health/RuntimeStatus.tsx|font-semibold",
+          "from": 0,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/features/launcher/LauncherPage.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/launcher/LauncherPage.tsx|gap-3.5",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/launcher/LauncherPage.tsx|mb-7",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/launcher/LauncherPage.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/AddFromOllama.tsx|font-medium",
+          "from": 0,
+          "to": 4
+        },
+        {
+          "key": "G5|packages/web/src/features/models/CapabilityOverrides.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/models/CatalogCompare.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/CatalogCompare.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/CatalogFilters.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/CatalogFilters.tsx|font-semibold",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/models/CatalogFilters.tsx|tracking-wide",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/models/CatalogVariantInstall.tsx|font-medium",
+          "from": 0,
+          "to": 7
+        },
+        {
+          "key": "G5|packages/web/src/features/models/FitIndicator.tsx|font-medium",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/models/FitIndicator.tsx|py-px",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/HuggingFaceDiscovery.tsx|font-medium",
+          "from": 0,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/features/models/HuggingFaceDiscovery.tsx|font-semibold",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/models/HuggingFaceImportControl.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/models/HuggingFaceImportControl.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/InstalledEvidence.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelCard.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelCard.tsx|font-semibold",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelCard.tsx|mb-2.5",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelPage.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelPage.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelPage.tsx|leading-relaxed",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelPage.tsx|mb-2.5",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelPage.tsx|p-2.5",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/models/ModelPage.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/models/PullControl.tsx|font-medium",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/projects/ProjectPresentationPicker.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/projects/ProjectPresentationPicker.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/projects/ProjectPresentationPicker.tsx|shadow-xl",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/projects/ProjectsPage.tsx|font-medium",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/projects/ProjectsPage.tsx|font-semibold",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/projects/ProjectsPage.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/quick-runs/QuickRunsPage.tsx|font-medium",
+          "from": 0,
+          "to": 3
+        },
+        {
+          "key": "G5|packages/web/src/features/quick-runs/QuickRunsPage.tsx|font-semibold",
+          "from": 0,
+          "to": 4
+        },
+        {
+          "key": "G5|packages/web/src/features/quick-runs/QuickRunsPage.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/recipes/RecipesPage.tsx|font-medium",
+          "from": 0,
+          "to": 9
+        },
+        {
+          "key": "G5|packages/web/src/features/recipes/RecipesPage.tsx|font-semibold",
+          "from": 0,
+          "to": 5
+        },
+        {
+          "key": "G5|packages/web/src/features/recipes/RecipesPage.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/features/settings/Glossary.tsx|font-medium",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/settings/Glossary.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/settings/SettingsPage.tsx|font-semibold",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/features/settings/SettingsPage.tsx|tracking-tight",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G6|packages/web/src/index.css|font-weight:600",
+          "from": 0,
+          "to": 2
+        },
+        {
+          "key": "G6|packages/web/src/index.css|font-weight:700",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G6|packages/web/src/index.css|transform:rotate(360deg)",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G6|packages/web/src/index.css|transform:translateX(-100%)",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G6|packages/web/src/index.css|transform:translateX(300%)",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G6|packages/web/src/index.css|transform:translateY(4px)",
+          "from": 0,
+          "to": 1
+        }
+      ]
     }
   ]
 }

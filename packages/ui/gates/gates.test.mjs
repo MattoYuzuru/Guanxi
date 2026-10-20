@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { createContext } from './context.mjs'
@@ -149,4 +150,39 @@ test('font files and OFL notices retain upstream checksums; logo copies are unch
   assert.deepEqual(ctx.files.filter(file => file.startsWith('packages/ui/fonts/') && file.endsWith('.woff2')).sort(), declared)
   for (const source of sources) for (const file of source.files) assert.equal(sha(await readFile(resolve(ctx.root, 'packages/ui/fonts', file.path))), file.sha256, file.path)
   for (const file of ctx.files.filter(f => f.startsWith('packages/ui/brand/') && /\.(?:svg|png)$/.test(f))) assert.equal(sha(await readFile(resolve(ctx.root, file))), sha(await readFile(resolve(ctx.root, file.replace('packages/ui/brand/', 'assets/brand/guanxi-gx-v1/')))))
+})
+test('M1: every stylesheet font URL is relative and belongs to the upstream manifest', async () => {
+  const sources = await ctx.json('packages/ui/fonts/sources.json')
+  const allowed = new Set(sources.flatMap(source => source.files.filter(file => file.path.endsWith('.woff2')).map(file => file.path)))
+  function verify(css) {
+    const urls = [...css.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)].map(match => match[1].trim())
+    assert.equal(urls.length, 32)
+    for (const url of urls) {
+      assert.doesNotMatch(url, /^(?:[a-z][a-z\d+.-]*:|\/|\\)/i)
+      assert.ok(allowed.has(decodeURIComponent(url).replace(/^\.\//, '')), url)
+    }
+  }
+  const css = await ctx.read('packages/ui/fonts/fonts.css')
+  verify(css)
+  assert.throws(() => verify(css.replace('./sans/', 'https://font-gate.invalid/')))
+  assert.throws(() => verify(css.replace('./sans/', './unlisted/')))
+})
+test('M7: npm test runs both fast gates and gate tests before the regression suite', async () => {
+  const script = (await ctx.json('package.json')).scripts.test
+  const commands = script.split(/\s*&&\s*/)
+  assert.ok(commands.includes('npm run ui:check'))
+  assert.ok(commands.includes('npm run test:gates --workspace @guanxi/ui'))
+  assert.ok(commands.indexOf('npm run ui:check') < commands.indexOf('npm run test:core'))
+  assert.ok(commands.indexOf('npm run test:gates --workspace @guanxi/ui') < commands.indexOf('npm run test:core'))
+})
+test('extensions discover both MJS and erasable TypeScript registration modules', async t => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'guanxi-gate-extension-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const extensions = resolve(directory, 'packages/ui/gates/extensions')
+  await mkdir(extensions, { recursive: true })
+  await writeFile(resolve(extensions, 'catalog.gate.ts'), `const id: string = 'G10'; export default { id, name:'Catalog', mode:'fast', seed:'fixture.json', check: async () => ({ok:true, errors:[]}) }`)
+  await writeFile(resolve(extensions, 'browser.gate.mjs'), `export default {id:'G13',name:'Browser',mode:'browser',seed:'fixture.json',check:async()=>({ok:true,errors:[]})}`)
+  const gates = await registry({ root: directory })
+  assert.ok(gates.some(g => g.id === 'G10' && g.mode === 'fast'))
+  assert.ok(gates.some(g => g.id === 'G13' && g.mode === 'browser'))
 })

@@ -95,6 +95,8 @@
   --font-code-line-height: 1.6;
   --font-code-size: 12px;
   --font-code-weight: 400;
+  --font-family-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-family-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-heading-1-line-height: 1.5;
   --font-heading-1-size: 36px;
   --font-heading-1-weight: 600;
@@ -114,9 +116,7 @@
   --font-line-height-code-min: 1.6;
   --font-line-height-prose: 1.6;
   --font-line-height-ui: 1.5;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --font-prose-line-height: 1.6;
-  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-size-12: 12px;
   --font-size-13: 13px;
   --font-size-14: 14px;
@@ -138,8 +138,8 @@
   --material-control: #182322;
   --material-control: oklch(0.2453520953 0.0155926219 189.2526600522);
   --material-glass-blur: 20px;
-  --material-glass-border: #94A1A3;
-  --material-glass-border: oklch(0.6992887423 0.0150858942 207.8576255022);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.65);
   --material-glass-edge-opacity: 0.65;
   --material-glass-fill: #F3FCFE;
   --material-glass-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
@@ -147,6 +147,8 @@
   --material-glass-grain-opacity: 0.05;
   --material-glass-grain-tile: 128px;
   --material-glass-saturation: 1.15;
+  --material-glass-seam: #182322;
+  --material-glass-seam: oklch(0.2453520953 0.0155926219 189.2526600522 / 0.1);
   --material-glass-seam-opacity: 0.1;
   --material-solid-blur: 0px;
   --material-solid-border: #94A1A3;
@@ -169,8 +171,6 @@
   --material-text: #182322;
   --material-text: oklch(0.2453520953 0.0155926219 189.2526600522);
   --material-tinted-blur: 12px;
-  --material-tinted-border: #94A1A3;
-  --material-tinted-border: oklch(0.6992887423 0.0150858942 207.8576255022);
   --material-tinted-fill: #F3FCFE;
   --material-tinted-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-tinted-fill-opacity: 0.9;
@@ -231,6 +231,14 @@
   --primitive-color-data-light-7: oklch(0.5196353321 0.0902694011 84.4158557342);
   --primitive-color-data-light-8: #68889F;
   --primitive-color-data-light-8: oklch(0.6109137533 0.0503598752 239.8805340542);
+  --primitive-color-material-dark-edge: #FFFFFF;
+  --primitive-color-material-dark-edge: oklch(1 0 0 / 0.08);
+  --primitive-color-material-dark-seam: #000000;
+  --primitive-color-material-dark-seam: oklch(0 0 0 / 0.32);
+  --primitive-color-material-light-edge: #FFFFFF;
+  --primitive-color-material-light-edge: oklch(1 0 0 / 0.65);
+  --primitive-color-material-light-seam: #182322;
+  --primitive-color-material-light-seam: oklch(0.2453520953 0.0155926219 189.2526600522 / 0.1);
   --primitive-color-neutral-dark-1: #0F1A19;
   --primitive-color-neutral-dark-1: oklch(0.2068605717 0.0159567156 188.9136751553);
   --primitive-color-neutral-dark-10: #A3ADAC;
@@ -319,7 +327,6 @@
   --scrim-color: oklch(0.2453520953 0.0155926219 189.2526600522);
   --scrim-opacity: 0.32;
   --shadow-popover: 0px 1px 2px 0px oklch(0.2453520953 0.0155926219 189.2526600522 / 0.08), 0px 8px 24px 0px oklch(0.2453520953 0.0155926219 189.2526600522 / 0.1);
-  --spacing: 4px;
   --spacing-12: 12px;
   --spacing-16: 16px;
   --spacing-2: 2px;
@@ -415,13 +422,15 @@
   --elevation-1-background: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-control: #182322;
   --material-control: oklch(0.2453520953 0.0155926219 189.2526600522);
-  --material-glass-border: #94A1A3;
-  --material-glass-border: oklch(0.6992887423 0.0150858942 207.8576255022);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.65);
   --material-glass-edge-opacity: 0.65;
   --material-glass-fill: #F3FCFE;
   --material-glass-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-glass-fill-opacity: 0.72;
   --material-glass-grain-opacity: 0.05;
+  --material-glass-seam: #182322;
+  --material-glass-seam: oklch(0.2453520953 0.0155926219 189.2526600522 / 0.1);
   --material-glass-seam-opacity: 0.1;
   --material-solid-border: #94A1A3;
   --material-solid-border: oklch(0.6992887423 0.0150858942 207.8576255022);
@@ -430,8 +439,6 @@
   --material-strong-glass-fill-opacity: 0.9;
   --material-text: #182322;
   --material-text: oklch(0.2453520953 0.0155926219 189.2526600522);
-  --material-tinted-border: #94A1A3;
-  --material-tinted-border: oklch(0.6992887423 0.0150858942 207.8576255022);
   --material-tinted-fill: #F3FCFE;
   --material-tinted-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-tinted-grain-opacity: 0.035;
@@ -517,13 +524,15 @@
   --elevation-1-background: oklch(0.2068605717 0.0159567156 188.9136751553);
   --material-control: #EEF5F6;
   --material-control: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-glass-border: #54615F;
-  --material-glass-border: oklch(0.480852146 0.0163357162 185.4418557964);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.08);
   --material-glass-edge-opacity: 0.08;
   --material-glass-fill: #1F2A29;
   --material-glass-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-glass-fill-opacity: 0.7;
   --material-glass-grain-opacity: 0.06;
+  --material-glass-seam: #000000;
+  --material-glass-seam: oklch(0 0 0 / 0.32);
   --material-glass-seam-opacity: 0.32;
   --material-solid-border: #54615F;
   --material-solid-border: oklch(0.480852146 0.0163357162 185.4418557964);
@@ -532,8 +541,6 @@
   --material-strong-glass-fill-opacity: 0.88;
   --material-text: #EEF5F6;
   --material-text: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-tinted-border: #54615F;
-  --material-tinted-border: oklch(0.480852146 0.0163357162 185.4418557964);
   --material-tinted-fill: #1F2A29;
   --material-tinted-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-tinted-grain-opacity: 0.045;
@@ -619,13 +626,15 @@
   --elevation-1-background: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-control: #182322;
   --material-control: oklch(0.2453520953 0.0155926219 189.2526600522);
-  --material-glass-border: #445051;
-  --material-glass-border: oklch(0.4211366177 0.0153409174 202.735229315);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.65);
   --material-glass-edge-opacity: 0.65;
   --material-glass-fill: #F3FCFE;
   --material-glass-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-glass-fill-opacity: 0.72;
   --material-glass-grain-opacity: 0.05;
+  --material-glass-seam: #182322;
+  --material-glass-seam: oklch(0.2453520953 0.0155926219 189.2526600522 / 0.1);
   --material-glass-seam-opacity: 0.1;
   --material-solid-border: #445051;
   --material-solid-border: oklch(0.4211366177 0.0153409174 202.735229315);
@@ -634,8 +643,6 @@
   --material-strong-glass-fill-opacity: 0.9;
   --material-text: #182322;
   --material-text: oklch(0.2453520953 0.0155926219 189.2526600522);
-  --material-tinted-border: #445051;
-  --material-tinted-border: oklch(0.4211366177 0.0153409174 202.735229315);
   --material-tinted-fill: #F3FCFE;
   --material-tinted-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-tinted-grain-opacity: 0.035;
@@ -721,13 +728,15 @@
   --elevation-1-background: oklch(0.2068605717 0.0159567156 188.9136751553);
   --material-control: #EEF5F6;
   --material-control: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-glass-border: #C3CDCC;
-  --material-glass-border: oklch(0.8403139786 0.0110185765 189.776936291);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.08);
   --material-glass-edge-opacity: 0.08;
   --material-glass-fill: #1F2A29;
   --material-glass-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-glass-fill-opacity: 0.7;
   --material-glass-grain-opacity: 0.06;
+  --material-glass-seam: #000000;
+  --material-glass-seam: oklch(0 0 0 / 0.32);
   --material-glass-seam-opacity: 0.32;
   --material-solid-border: #C3CDCC;
   --material-solid-border: oklch(0.8403139786 0.0110185765 189.776936291);
@@ -736,8 +745,6 @@
   --material-strong-glass-fill-opacity: 0.88;
   --material-text: #EEF5F6;
   --material-text: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-tinted-border: #C3CDCC;
-  --material-tinted-border: oklch(0.8403139786 0.0110185765 189.776936291);
   --material-tinted-fill: #1F2A29;
   --material-tinted-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-tinted-grain-opacity: 0.045;
@@ -882,13 +889,15 @@
   --elevation-1-background: oklch(0.2068605717 0.0159567156 188.9136751553);
   --material-control: #EEF5F6;
   --material-control: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-glass-border: #54615F;
-  --material-glass-border: oklch(0.480852146 0.0163357162 185.4418557964);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.08);
   --material-glass-edge-opacity: 0.08;
   --material-glass-fill: #1F2A29;
   --material-glass-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-glass-fill-opacity: 0.7;
   --material-glass-grain-opacity: 0.06;
+  --material-glass-seam: #000000;
+  --material-glass-seam: oklch(0 0 0 / 0.32);
   --material-glass-seam-opacity: 0.32;
   --material-solid-border: #54615F;
   --material-solid-border: oklch(0.480852146 0.0163357162 185.4418557964);
@@ -897,8 +906,6 @@
   --material-strong-glass-fill-opacity: 0.88;
   --material-text: #EEF5F6;
   --material-text: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-tinted-border: #54615F;
-  --material-tinted-border: oklch(0.480852146 0.0163357162 185.4418557964);
   --material-tinted-fill: #1F2A29;
   --material-tinted-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-tinted-grain-opacity: 0.045;
@@ -986,13 +993,15 @@
   --elevation-1-background: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-control: #182322;
   --material-control: oklch(0.2453520953 0.0155926219 189.2526600522);
-  --material-glass-border: #445051;
-  --material-glass-border: oklch(0.4211366177 0.0153409174 202.735229315);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.65);
   --material-glass-edge-opacity: 0.65;
   --material-glass-fill: #F3FCFE;
   --material-glass-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-glass-fill-opacity: 0.72;
   --material-glass-grain-opacity: 0.05;
+  --material-glass-seam: #182322;
+  --material-glass-seam: oklch(0.2453520953 0.0155926219 189.2526600522 / 0.1);
   --material-glass-seam-opacity: 0.1;
   --material-solid-border: #445051;
   --material-solid-border: oklch(0.4211366177 0.0153409174 202.735229315);
@@ -1001,8 +1010,6 @@
   --material-strong-glass-fill-opacity: 0.9;
   --material-text: #182322;
   --material-text: oklch(0.2453520953 0.0155926219 189.2526600522);
-  --material-tinted-border: #445051;
-  --material-tinted-border: oklch(0.4211366177 0.0153409174 202.735229315);
   --material-tinted-fill: #F3FCFE;
   --material-tinted-fill: oklch(0.9849186096 0.0098864259 212.5215567799);
   --material-tinted-grain-opacity: 0.035;
@@ -1088,13 +1095,15 @@
   --elevation-1-background: oklch(0.2068605717 0.0159567156 188.9136751553);
   --material-control: #EEF5F6;
   --material-control: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-glass-border: #C3CDCC;
-  --material-glass-border: oklch(0.8403139786 0.0110185765 189.776936291);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.08);
   --material-glass-edge-opacity: 0.08;
   --material-glass-fill: #1F2A29;
   --material-glass-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-glass-fill-opacity: 0.7;
   --material-glass-grain-opacity: 0.06;
+  --material-glass-seam: #000000;
+  --material-glass-seam: oklch(0 0 0 / 0.32);
   --material-glass-seam-opacity: 0.32;
   --material-solid-border: #C3CDCC;
   --material-solid-border: oklch(0.8403139786 0.0110185765 189.776936291);
@@ -1103,8 +1112,6 @@
   --material-strong-glass-fill-opacity: 0.88;
   --material-text: #EEF5F6;
   --material-text: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-tinted-border: #C3CDCC;
-  --material-tinted-border: oklch(0.8403139786 0.0110185765 189.776936291);
   --material-tinted-fill: #1F2A29;
   --material-tinted-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-tinted-grain-opacity: 0.045;
@@ -1191,13 +1198,15 @@
   --elevation-1-background: oklch(0.2068605717 0.0159567156 188.9136751553);
   --material-control: #EEF5F6;
   --material-control: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-glass-border: #C3CDCC;
-  --material-glass-border: oklch(0.8403139786 0.0110185765 189.776936291);
+  --material-glass-edge: #FFFFFF;
+  --material-glass-edge: oklch(1 0 0 / 0.08);
   --material-glass-edge-opacity: 0.08;
   --material-glass-fill: #1F2A29;
   --material-glass-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-glass-fill-opacity: 0.7;
   --material-glass-grain-opacity: 0.06;
+  --material-glass-seam: #000000;
+  --material-glass-seam: oklch(0 0 0 / 0.32);
   --material-glass-seam-opacity: 0.32;
   --material-solid-border: #C3CDCC;
   --material-solid-border: oklch(0.8403139786 0.0110185765 189.776936291);
@@ -1206,8 +1215,6 @@
   --material-strong-glass-fill-opacity: 0.88;
   --material-text: #EEF5F6;
   --material-text: oklch(0.9651643167 0.0075687337 207.1421147432);
-  --material-tinted-border: #C3CDCC;
-  --material-tinted-border: oklch(0.8403139786 0.0110185765 189.776936291);
   --material-tinted-fill: #1F2A29;
   --material-tinted-fill: oklch(0.2743358318 0.0153163433 189.4391696279);
   --material-tinted-grain-opacity: 0.045;
@@ -1242,49 +1249,65 @@
   --material-background: color-mix(in srgb, var(--material-glass-fill) calc(var(--material-glass-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-glass-blur)) saturate(var(--material-glass-saturation));
   --material-grain: var(--material-glass-grain-opacity);
-  --material-border: var(--material-glass-border);
+  --material-border: transparent;
+  --material-edge: var(--material-glass-edge);
+  --material-seam: var(--material-glass-seam);
 }
 [data-material="glass"] [data-elevation="3"], [data-material="glass"][data-elevation="3"] {
   --material-background: color-mix(in srgb, var(--material-glass-fill) calc(var(--material-strong-glass-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-strong-glass-blur)) saturate(var(--material-strong-glass-saturation));
   --material-grain: var(--material-glass-grain-opacity);
-  --material-border: var(--material-glass-border);
+  --material-border: transparent;
+  --material-edge: var(--material-glass-edge);
+  --material-seam: var(--material-glass-seam);
 }
 [data-material="tinted"] {
   --material-background: color-mix(in srgb, var(--material-tinted-fill) calc(var(--material-tinted-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-tinted-blur)) saturate(var(--material-tinted-saturation));
   --material-grain: var(--material-tinted-grain-opacity);
-  --material-border: var(--material-tinted-border);
+  --material-border: transparent;
+  --material-edge: var(--material-glass-edge);
+  --material-seam: var(--material-glass-seam);
 }
 [data-material="tinted"] [data-elevation="3"], [data-material="tinted"][data-elevation="3"] {
   --material-background: color-mix(in srgb, var(--material-tinted-fill) calc(var(--material-strong-tinted-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-strong-tinted-blur)) saturate(var(--material-strong-tinted-saturation));
   --material-grain: var(--material-tinted-grain-opacity);
-  --material-border: var(--material-tinted-border);
+  --material-border: transparent;
+  --material-edge: var(--material-glass-edge);
+  --material-seam: var(--material-glass-seam);
 }
 [data-material="solid"] {
   --material-background: color-mix(in srgb, var(--material-solid-fill) calc(var(--material-solid-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-solid-blur)) saturate(var(--material-solid-saturation));
   --material-grain: var(--material-solid-grain-opacity);
   --material-border: var(--material-solid-border);
+  --material-edge: transparent;
+  --material-seam: transparent;
 }
 [data-material="solid"] [data-elevation="3"], [data-material="solid"][data-elevation="3"] {
   --material-background: color-mix(in srgb, var(--material-solid-fill) calc(var(--material-strong-solid-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-strong-solid-blur)) saturate(var(--material-strong-solid-saturation));
   --material-grain: var(--material-solid-grain-opacity);
   --material-border: var(--material-solid-border);
+  --material-edge: transparent;
+  --material-seam: transparent;
 }
 :root:not([data-material]) [data-elevation="3"] {
   --material-background: color-mix(in srgb, var(--material-glass-fill) calc(var(--material-strong-glass-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-strong-glass-blur)) saturate(var(--material-strong-glass-saturation));
   --material-grain: var(--material-glass-grain-opacity);
-  --material-border: var(--material-glass-border);
+  --material-border: transparent;
+  --material-edge: var(--material-glass-edge);
+  --material-seam: var(--material-glass-seam);
 }
 :is([data-reduce-transparency], [data-battery-saver], [data-gpu-compositing="off"], [data-theme$="-hc"]), :is([data-reduce-transparency], [data-battery-saver], [data-gpu-compositing="off"], [data-theme$="-hc"]) :is([data-material], [data-elevation]) {
   --material-background: var(--material-solid-fill) !important;
   --material-backdrop: none !important;
   --material-grain: 0 !important;
   --material-border: var(--material-solid-border) !important;
+  --material-edge: transparent !important;
+  --material-seam: transparent !important;
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
 :root, [data-material], [data-elevation] {
@@ -1292,6 +1315,8 @@
   --material-backdrop: none !important;
   --material-grain: 0 !important;
   --material-border: var(--material-solid-border) !important;
+  --material-edge: transparent !important;
+  --material-seam: transparent !important;
 }
 }
 @media (forced-colors: active) {
@@ -1300,6 +1325,8 @@
   --material-backdrop: none !important;
   --material-grain: 0 !important;
   --material-border: ButtonText !important;
+  --material-edge: transparent !important;
+  --material-seam: transparent !important;
 }
 :root {
   --color-background-accent: Highlight !important;

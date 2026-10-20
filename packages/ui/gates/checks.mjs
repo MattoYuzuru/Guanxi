@@ -83,12 +83,13 @@ export async function variablesResolve(ctx) {
   const errors = []
   const generated = new Set()
   for (const mode of await permutations(ctx.tokenOptions)) for (const t of resolvedFlat((await resolveTokens(mode, ctx.tokenOptions)).tokens)) generated.add(cssName(t))
-  for (const match of (await ctx.read('packages/ui/generated/tokens.css')).matchAll(/(--[\w-]+)\s*:/g)) generated.add(match[1])
+  for (const file of ['tokens.css', 'theme.css']) for (const match of (await ctx.read(`packages/ui/generated/${file}`)).matchAll(/(--[\w-]+)\s*:/g)) generated.add(match[1])
   const local = await ctx.json('packages/ui/gates/local-variables.json')
   for (const file of variableFiles(ctx)) {
     const text = await ctx.read(file)
-    for (const match of text.matchAll(/\bvar\(\s*(--[\w-]+)/g)) {
-      if (!generated.has(match[1]) && !(local[match[1]]?.some(path => path === file || path.endsWith('/**') && file.startsWith(path.slice(0, -2))))) errors.push(`${file}:${text.slice(0, match.index).split('\n').length}: unresolved ${match[1]}`)
+    for (const match of text.matchAll(/\bvar\(\s*(--[\w-]+)|\((?:[\w-]+:)?(--[\w-]+)\)/g)) {
+      const name = match[1] ?? match[2]
+      if (!generated.has(name) && !(local[name]?.some(path => path === file || path.endsWith('/**') && file.startsWith(path.slice(0, -2))))) errors.push(`${file}:${text.slice(0, match.index).split('\n').length}: unresolved ${name}`)
     }
   }
   // An allow-listed name still needs an actual definition, including inline geometry properties.

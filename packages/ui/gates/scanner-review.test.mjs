@@ -1,0 +1,78 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { createContext } from './context.mjs'
+import { classStrings, scanLiterals, cssFindings } from './scan.mjs'
+import { checks } from './checks.mjs'
+import ts from 'typescript'
+
+const ctx = await createContext()
+test('H3: bound class maps follow element/property access, spreads and lexical scopes once', () => {
+  const code = `const tones = { bad: 'bg-red-500', ok: 'bg-canvas' } as const;
+    const extra = { danger: 'text-[#f00]' };
+    const buttonClasses = { ...extra, neutral: 'p-[13px]' };
+    function A({ tone }) { const tones = { bad: 'w-[17px]' }; return <div className={tones[tone]}/> }
+    function B({ tone }) { return <><div className={tones[tone]}/><div wrapperClassName={tones.bad}/><div className={buttonClasses[tone]}/></> }`
+  const words = classStrings('fixture.tsx', code).map(t => t.value)
+  for (const word of ['bg-red-500', 'bg-canvas', 'text-[#f00]', 'p-[13px]', 'w-[17px]']) assert.equal(words.filter(w => w === word).length, 1, word)
+  for (const key of ['bad', 'ok', 'danger', 'neutral']) assert.ok(!words.includes(key), key)
+})
+test('H3: function-returned classes and *ClassName props are scanned', () => {
+  const code = `function style() { return 'bg-red-500' }
+    const arrow = () => 'text-[#f00]'; export const A = () => <X outerClassName={style()} innerClassName={arrow()} footerClassName="p-[13px]"/>`
+  assert.deepEqual(classStrings('fixture.jsx', code).map(t => t.value).sort(), ['bg-red-500', 'p-[13px]', 'text-[#f00]'])
+})
+test('H3: every lexical legacy arbitrary-class occurrence is covered by the freeze', async () => {
+  const allowances = await ctx.json('packages/ui/gates/legacy-allowlist.json')
+  const lexical = {}
+  for (const file of ctx.files.filter(file => /^packages\/web\/src\/.*\.tsx?$/.test(file) && !/\.(test|spec)\./.test(file))) {
+    const ast = ts.createSourceFile(file, await ctx.read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const visit = node => {
+      if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) for (const word of node.text.split(/\s+/)) if (/^[!\w:/.-]*-\[[^\]]+\][\w/.-]*$/.test(word)) {
+        const key = `G5|${file}|${word}`
+        lexical[key] = (lexical[key] ?? 0) + 1
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(ast)
+  }
+  for (const [key, count] of Object.entries(lexical)) assert.ok((allowances[key] ?? 0) >= count, `${key}: ${count} lexical > ${allowances[key] ?? 0} frozen`)
+})
+test('M3: Tailwind v4 variable shorthand is resolved and always checked as arbitrary', async () => {
+  for (const value of ['bg-(--made-up)', 'text-(color:--missing)']) {
+    const seeded = await ctx.withFiles({ 'packages/ui/src/fixture.jsx': `export const A = () => <div className="${value}"/>` })
+    assert.equal((await checks.G4(seeded)).ok, false)
+    assert.ok((await scanLiterals(seeded)).some(f => f.file.endsWith('fixture.jsx') && f.gate === 'G5'))
+  }
+  const valid = await ctx.withFiles({ 'packages/ui/src/fixture.js': `const color = 'text-(color:--color-text-primary)'` })
+  assert.equal((await checks.G4(valid)).ok, true)
+})
+test('M4: CSS apply parameters are subject to the raw-motion gate', async () => {
+  const findings = await scanLiterals(await ctx.withFiles({ 'packages/ui/src/fixture.css': '.x { @apply duration-300 delay-150; }' }))
+  for (const value of ['duration-300', 'delay-150']) assert.ok(findings.some(f => f.file.endsWith('fixture.css') && f.gate === 'G7' && f.value === value))
+})
+test('M5/L3: feature directories and HTML/JSX/SCSS extensions cannot evade scanning', async () => {
+  for (const segment of ['tokens', 'test', 'brand', 'fonts', 'generated', 'gates']) {
+    const file = `packages/web/src/features/${segment}/Widget.jsx`
+    const seeded = await ctx.withFiles({ [file]: 'export const A = () => <div className="bg-red-500" style={{ color: "var(--missing)" }}/>' })
+    assert.ok((await scanLiterals(seeded)).some(f => f.file === file && f.gate === 'G5'), file)
+    assert.equal((await checks.G4(seeded)).ok, false, file)
+  }
+  for (const [file, text, gates] of [
+    ['packages/ui/src/fixture.html', '<div class="bg-red-500" style="color:red;transition:all 2s ease"></div>', ['G5', 'G6', 'G7']],
+    ['packages/ui/src/fixture.scss', '.x { color:var(--missing); filter:blur(13px); }', ['G6']],
+  ]) {
+    const findings = await scanLiterals(await ctx.withFiles({ [file]: text }))
+    for (const gate of gates) assert.ok(findings.some(f => f.file === file && f.gate === gate), `${file}/${gate}`)
+  }
+})
+test('L3: colour, geometry and function properties reject raw values, including var fallbacks', () => {
+  for (const value of ['accent-color:red', 'caret-color:#f00', 'text-decoration-color:red', 'scrollbar-color:red blue', 'filter:drop-shadow(0 0 2px red)', 'backdrop-filter:blur(20px)', 'transform:translateY(8px)', 'color:var(--token, #ff0000)', 'color:var(--token, var(--other, rgb(255 0 0)))']) assert.ok(cssFindings('fixture.scss', `.x { ${value} }`).some(f => f.gate === 'G6'), value)
+  assert.deepEqual(cssFindings('fixture.css', '.x { color:var(--token, var(--other)); transform:translateY(var(--motion-distance-sm)); }'), [])
+})
+test('L7: off-scale spacing fails in JSX and CSS apply; accepted scale and zero compile', async () => {
+  for (const value of ['p-2.5', 'hover:p-3.5', 'gap-7', 'mx-px']) {
+    for (const [file, text] of [['packages/ui/src/fixture.jsx', `<div className="${value}"/>`], ['packages/ui/src/fixture.css', `.x { @apply ${value}; }`]]) assert.ok((await scanLiterals(await ctx.withFiles({ [file]: text }))).some(f => f.file === file && f.gate === 'G5'), value)
+  }
+  const file = 'packages/ui/src/fixture.jsx'
+  assert.ok(!(await scanLiterals(await ctx.withFiles({ [file]: '<div className="p-0 p-0.5 p-1.5 p-2 p-3 p-4 p-5 p-6 p-8 p-10 p-12 p-16"/>' }))).some(f => f.file === file))
+})

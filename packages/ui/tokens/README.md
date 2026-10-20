@@ -29,6 +29,11 @@ semantic utilities. The theme removes the default palette and supplies `bg-canva
 spacing utilities, and `duration-fast` / `delay-fast` / `ease-standard` families. Raw
 primitive colours have no theme utilities. The legacy app imports only the runtime variables
 for its `--warning` and `--focus` compatibility mappings; DS1-c owns its utility migration.
+Runtime font variables are `--font-family-sans` and `--font-family-mono`; runtime CSS does not
+declare bare `--spacing` or Tailwind's font-family names. Only the theme layer maps those
+names. A production-build comparison with the token import removed asserts unchanged legacy
+body/mono fonts and spacing. The theme also resets shadow, blur, tracking, leading, font-weight
+and default-transition namespaces, then maps supported semantic replacements and defaults.
 The compiled-theme browser assertion checks actual font, 8 px spacing and 21.9% radius:
 font utilities avoid self aliases, spacing uses the 4 px grid variable, and the app-tile ratio
 is converted to a CSS percentage.
@@ -41,6 +46,9 @@ reduced transparency and forced colours have generated overrides. The shell can 
 `data-reduce-transparency`, `data-battery-saver` or `data-gpu-compositing=off` for Solid.
 `data-elevation=3` selects strong material. This package exports recipes; components apply
 `--material-background`, `--material-backdrop`, `--material-grain` and `--material-border`.
+Glass/Tinted have no decorative border; their separate `--material-edge` and
+`--material-seam` colours follow the white/ink/black recipe. Only Solid has the step-8 border
+(raised for HC); controls use their independently checked control token.
 
 HC foregrounds use the existing step-11 neutral (rather than introducing unapproved hues).
 Text, control borders, accent/status roles and categorical slots then exceed 7:1. HC series

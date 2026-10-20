@@ -24,7 +24,7 @@ export function renderCSS(contexts, declarations, diff) {
 
   function material(level, selector, strong = false) {
     const prefix = `--material-${strong ? 'strong-' : ''}${level}`
-    return `${selector} {\n  --material-background: color-mix(in srgb, var(--material-${level}-fill) calc(var(${prefix}-fill-opacity) * 100%), transparent);\n  --material-backdrop: blur(var(${prefix}-blur)) saturate(var(${prefix}-saturation));\n  --material-grain: var(--material-${level}-grain-opacity);\n  --material-border: var(--material-${level}-border);\n}\n`
+    return `${selector} {\n  --material-background: color-mix(in srgb, var(--material-${level}-fill) calc(var(${prefix}-fill-opacity) * 100%), transparent);\n  --material-backdrop: blur(var(${prefix}-blur)) saturate(var(${prefix}-saturation));\n  --material-grain: var(--material-${level}-grain-opacity);\n  --material-border: ${level === 'solid' ? 'var(--material-solid-border)' : 'transparent'};\n  --material-edge: ${level === 'solid' ? 'transparent' : 'var(--material-glass-edge)'};\n  --material-seam: ${level === 'solid' ? 'transparent' : 'var(--material-glass-seam)'};\n}\n`
   }
   css += material('glass', ':root, [data-material="glass"]')
   for (const level of ['glass', 'tinted', 'solid']) {
@@ -36,7 +36,7 @@ export function renderCSS(contexts, declarations, diff) {
   // Accessibility and resource constraints override every local material recipe, including
   // strong descendants. Important is confined to these mandatory fallback properties.
   function solid(selector, forced = false) {
-    return `${selector} {\n  --material-background: ${forced ? 'Canvas' : 'var(--material-solid-fill)'} !important;\n  --material-backdrop: none !important;\n  --material-grain: 0 !important;\n  --material-border: ${forced ? 'ButtonText' : 'var(--material-solid-border)'} !important;\n}\n`
+    return `${selector} {\n  --material-background: ${forced ? 'Canvas' : 'var(--material-solid-fill)'} !important;\n  --material-backdrop: none !important;\n  --material-grain: 0 !important;\n  --material-border: ${forced ? 'ButtonText' : 'var(--material-solid-border)'} !important;\n  --material-edge: transparent !important;\n  --material-seam: transparent !important;\n}\n`
   }
   const triggers = ':is([data-reduce-transparency], [data-battery-saver], [data-gpu-compositing="off"], [data-theme$="-hc"])'
   css += solid(`${triggers}, ${triggers} :is([data-material], [data-elevation])`)

@@ -13,21 +13,40 @@ export async function designSystem(ctx) {
 }
 
 export function classStrings(file, text) {
+  if (file.endsWith('.html')) return [...text.matchAll(/\b(?:class|\w*ClassName)\s*=\s*(["'])(.*?)\1/gs)].flatMap(match => match[2].split(/\s+/).filter(Boolean).map(value => ({ value, offset: match.index })))
   const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const values = new Set()
   const bindings = new Map()
   const nameOf = node => node?.getText(ast).replace(/^['"]|['"]$/g, '')
+  const scope = node => {
+    while (node && !ts.isSourceFile(node) && !ts.isBlock(node) && !ts.isFunctionLike(node)) node = node.parent
+    return node
+  }
   const collectBindings = node => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) bindings.set(node.name.text, node.initializer)
+    if ((ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) || (ts.isFunctionDeclaration(node) && node.name)) {
+      const parent = scope(node.parent)
+      if (!bindings.has(parent)) bindings.set(parent, new Map())
+      bindings.get(parent).set(node.name.text, ts.isFunctionDeclaration(node) ? node : node.initializer)
+    }
     ts.forEachChild(node, collectBindings)
   }
   collectBindings(ast)
-  function collect(node, seen = new Set()) {
+  function binding(node) {
+    for (let parent = node.parent; parent; parent = parent.parent) if (bindings.get(parent)?.has(node.text)) return bindings.get(parent).get(node.text)
+  }
+  function unwrap(node, seen = new Set()) {
+    if (!node || seen.has(node)) return
+    const next = new Set([...seen, node])
+    if (ts.isIdentifier(node)) return unwrap(binding(node), next)
+    if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)) return unwrap(node.expression, next)
+    return node
+  }
+  function collect(node, seen = new Set(), objectMode = 'values') {
     if (!node || seen.has(node)) return
     const next = new Set([...seen, node])
     if (ts.isStringLiteralLike(node)) values.add(node)
-    else if (ts.isIdentifier(node)) collect(bindings.get(node.text), next)
-    else if (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) collect(node.expression, next)
+    else if (ts.isIdentifier(node)) collect(binding(node), next, objectMode)
+    else if (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) collect(node.expression, next, objectMode)
     else if (ts.isConditionalExpression(node)) { collect(node.whenTrue, next); collect(node.whenFalse, next) }
     else if (ts.isBinaryExpression(node)) {
       if (node.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) collect(node.left, next)
@@ -36,12 +55,31 @@ export function classStrings(file, text) {
       values.add(node.head)
       for (const span of node.templateSpans) { collect(span.expression, next); values.add(span.literal) }
     } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(item => collect(item, next))
-    else if (ts.isPropertyAccessExpression(node)) {
-      const object = ts.isIdentifier(node.expression) && bindings.get(node.expression.text)
-      if (object && ts.isObjectLiteralExpression(object)) collect(object.properties.find(p => nameOf(p.name) === node.name.text)?.initializer, next)
+    else if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const object = unwrap(node.expression)
+      const key = ts.isPropertyAccessExpression(node) ? node.name.text : ts.isStringLiteralLike(node.argumentExpression) || ts.isNumericLiteral(node.argumentExpression) ? node.argumentExpression.text : undefined
+      if (object && ts.isObjectLiteralExpression(object)) {
+        for (const property of object.properties) {
+          if (ts.isSpreadAssignment(property)) collect(property.expression, next)
+          else if (ts.isPropertyAssignment(property) && (key === undefined || nameOf(property.name) === key)) collect(property.initializer, next)
+        }
+      } else if (object && ts.isArrayLiteralExpression(object)) collect(object, next)
     } else if (ts.isObjectLiteralExpression(node)) {
-      // clsx/cn object keys are classes; their values are conditions.
-      for (const property of node.properties) if (ts.isPropertyAssignment(property) && (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name))) values.add(property.name)
+      // Bound class maps hold class values; clsx/cn condition objects hold class keys.
+      for (const property of node.properties) {
+        if (ts.isSpreadAssignment(property)) collect(property.expression, next, objectMode)
+        else if (ts.isPropertyAssignment(property)) {
+          if (objectMode === 'conditions') {
+            if (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name)) values.add(property.name)
+          } else collect(property.initializer, next)
+        }
+      }
+    } else if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) {
+      const returns = body => {
+        if (ts.isReturnStatement(body)) collect(body.expression, next)
+        else ts.forEachChild(body, child => { if (!ts.isFunctionLike(child)) returns(child) })
+      }
+      if (node.body) { if (ts.isBlock(node.body)) returns(node.body); else collect(node.body, next) }
     } else if (ts.isCallExpression(node)) {
       const helper = nameOf(node.expression)?.split('.').at(-1)
       if (helper === 'cva') {
@@ -56,13 +94,13 @@ export function classStrings(file, text) {
             if (ts.isObjectLiteralExpression(variant)) for (const field of variant.properties) if (ts.isPropertyAssignment(field) && /^(class|className)$/.test(nameOf(field.name))) collect(field.initializer, next)
           }
         }
-      } else if (['cn', 'clsx', 'classnames', 'twMerge', 'cx'].includes(helper)) node.arguments.forEach(arg => collect(arg, next))
-      else if (ts.isIdentifier(node.expression)) collect(bindings.get(node.expression.text), next)
+      } else if (['cn', 'clsx', 'classnames', 'twMerge', 'cx'].includes(helper)) node.arguments.forEach(arg => collect(arg, next, 'conditions'))
+      else if (ts.isIdentifier(node.expression)) collect(binding(node.expression), next)
     }
   }
   const visit = node => {
-    if (ts.isJsxAttribute(node) && /^(className|class)$/.test(node.name.getText(ast))) collect(node.initializer)
-    if ((ts.isPropertyAssignment(node) || ts.isVariableDeclaration(node)) && /(?:className|classes|Class|Classes)$/.test(node.name?.getText(ast) ?? '')) collect(node.initializer)
+    if (ts.isJsxAttribute(node) && /^(?:class|className|.*ClassName)$/.test(node.name.getText(ast))) collect(node.initializer)
+    if ((ts.isPropertyAssignment(node) || ts.isVariableDeclaration(node)) && /(?:className|classes|Class|Classes|ClassName)$/.test(node.name?.getText(ast) ?? '')) collect(node.initializer)
     if (ts.isCallExpression(node) && /^(cva|cn|clsx|classnames|twMerge|cx)$/.test(nameOf(node.expression)?.split('.').at(-1))) collect(node)
     ts.forEachChild(node, visit)
   }
@@ -70,17 +108,27 @@ export function classStrings(file, text) {
   return [...values].flatMap(node => node.text.split(/\s+/).filter(Boolean).map(value => ({ value, offset: node.getStart(ast) })))
 }
 
-const propertyPattern = /^(?:color|background(?:-.*)?|border(?:-.*)?|outline(?:-.*)?|fill|stroke|(?:box|text)-shadow|(?:margin|padding)(?:-.*)?|(?:row-|column-)?gap|font(?:-size)?|z-index|(?:min-|max-)?(?:width|height)|inset(?:-.*)?|top|right|bottom|left|border-radius|line-height|letter-spacing|transition(?:-.*)?|animation(?:-.*)?)$/
+const propertyPattern = /^(?:color|(?:accent|caret|text-decoration|scrollbar)-color|background(?:-.*)?|border(?:-.*)?|outline(?:-.*)?|fill|stroke(?:-width)?|(?:box|text)-shadow|(?:margin|padding)(?:-.*)?|(?:row-|column-)?gap|font(?:-size|-family|-weight)?|z-index|(?:min-|max-)?(?:width|height)|inset(?:-.*)?|top|right|bottom|left|border-radius|line-height|letter-spacing|filter|backdrop-filter|transform|translate|scale|rotate|transition(?:-.*)?|animation(?:-.*)?)$/
 const motionProperty = /^(?:transition|animation)(?:-.*)?$/
 const keywords = new Set(['none', 'auto', 'inherit', 'initial', 'unset', 'revert', 'revert-layer', 'transparent', 'currentcolor', 'solid', 'dashed', 'dotted', 'double', 'hidden', 'visible', 'normal', 'infinite', 'both', 'forwards', 'backwards', 'running', 'paused', 'alternate', 'reverse', 'alternate-reverse', 'canvas', 'canvastext', 'buttontext', 'highlight', 'highlighttext', 'linktext', 'graytext'])
 
 function rawWords(value) {
   const raw = []
-  valueParser(value.replace(/!important\s*$/, '')).walk(node => {
-    if (node.type === 'function' && node.value === 'var') return false
-    if (node.type === 'word' && !keywords.has(node.value.toLowerCase()) && node.value !== '0') raw.push(node.value)
-    if (node.type === 'function' && /^(?:oklch|oklab|rgba?|hsla?|color|cubic-bezier|steps)$/.test(node.value)) raw.push(node.value)
-  })
+  function visit(nodes) {
+    for (const node of nodes) {
+      if (node.type === 'function' && node.value === 'var') {
+        const comma = node.nodes.findIndex(n => n.type === 'div' && n.value === ',')
+        if (comma >= 0) visit(node.nodes.slice(comma + 1))
+      } else {
+        if (node.type === 'word' && !keywords.has(node.value.toLowerCase()) && node.value !== '0') raw.push(node.value)
+        if (node.type === 'function') {
+          if (/^(?:oklch|oklab|rgba?|hsla?|color|cubic-bezier|steps|linear)$/.test(node.value)) raw.push(node.value)
+          visit(node.nodes)
+        }
+      }
+    }
+  }
+  visit(valueParser(value.replace(/!important\s*$/, '')).nodes)
   return raw
 }
 export function cssFindings(file, text) {
@@ -90,8 +138,8 @@ export function cssFindings(file, text) {
     // Tokens, @font-face metadata and geometry variables have distinct authoring contracts.
     if (decl.parent?.name === 'font-face') return
     const words = rawWords(decl.value)
-    if ((propertyPattern.test(decl.prop) || decl.prop.startsWith('--')) && words.length) findings.push({ gate: 'G6', file, value: `${decl.prop}:${decl.value}`, offset: decl.source.start.offset })
-    if (motionProperty.test(decl.prop) && (/(?:[\d.]+m?s\b|cubic-bezier\(|\b(?:ease(?:-in|-out|-in-out)?|linear|step-start|step-end)\b)/.test(decl.value.replace(/var\([^)]*\)/g, '')))) findings.push({ gate: 'G7', file, value: `${decl.prop}:${decl.value}`, offset: decl.source.start.offset })
+    if ((propertyPattern.test(decl.prop.toLowerCase()) || decl.prop.startsWith('--')) && words.length) findings.push({ gate: 'G6', file, value: `${decl.prop}:${decl.value}`, offset: decl.source.start.offset })
+    if (motionProperty.test(decl.prop.toLowerCase()) && (/(?:[\d.]+m?s\b|\b(?:cubic-bezier|steps|ease(?:-in|-out|-in-out)?|linear|step-start|step-end)\b)/.test(words.join(' ')))) findings.push({ gate: 'G7', file, value: `${decl.prop}:${decl.value}`, offset: decl.source.start.offset })
   })
   return findings
 }
@@ -115,19 +163,32 @@ export async function scanLiterals(ctx) {
   const system = await designSystem(ctx)
   const sources = await Promise.all(sourceFiles(ctx).map(async file => [file, await ctx.read(file)]))
   // Custom classes must be declared in source CSS; names in JSX alone are not proof.
-  const custom = new Set(sources.filter(([f]) => f.endsWith('.css')).flatMap(([, text]) => [...text.matchAll(/\.([a-zA-Z_][\w-]*)/g)].map(m => m[1])))
+  const cssFile = file => /\.(css|scss)$/.test(file)
+  const custom = new Set()
+  for (const [, text] of sources.filter(([f]) => cssFile(f))) postcss.parse(text).walkRules(rule => {
+    for (const match of rule.selector.matchAll(/\.([a-zA-Z_][\w-]*)/g)) custom.add(match[1])
+  })
+  const spacing = new Set(Object.keys((await ctx.json('packages/ui/tokens/base.tokens.json')).spacing).map(n => Number(n) / 4))
+  spacing.add(0)
+  function invalidClass(value) {
+    const utility = value.split(':').at(-1).replace(/^!|!$/g, '')
+    const step = /^-?(?:p[xysetblr]?|m[xysetblr]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left)-(\d+(?:\.\d+)?|px)$/.exec(utility)
+    return value.includes('[') || value.includes('-(') || (step && (step[1] === 'px' || !spacing.has(Number(step[1])))) || (!custom.has(value) && system.candidatesToCss([value])[0] === null)
+  }
   for (const [file, text] of sources) {
-    if (file.endsWith('.css')) {
+    if (cssFile(file)) {
       result.push(...cssFindings(file, text))
       postcss.parse(text).walkAtRules('apply', rule => {
-        for (const value of rule.params.split(/\s+/).filter(v => v !== '!important')) if (value.includes('[') || system.candidatesToCss([value])[0] === null) result.push({ gate: 'G5', file, value, offset: rule.source.start.offset })
+        for (const value of rule.params.split(/\s+/).filter(v => v !== '!important')) if (invalidClass(value)) result.push({ gate: 'G5', file, value, offset: rule.source.start.offset })
+        result.push(...motionFindings(file, JSON.stringify(rule.params)))
       })
     }
     else {
       for (const { value, offset } of classStrings(file, text)) {
-        if (value.includes('[') || (!custom.has(value) && system.candidatesToCss([value])[0] === null)) result.push({ gate: 'G5', file, value, offset })
+        if (invalidClass(value)) result.push({ gate: 'G5', file, value, offset })
       }
       result.push(...motionFindings(file, text))
+      if (file.endsWith('.html')) for (const match of text.matchAll(/\bstyle\s*=\s*(["'])(.*?)\1/gs)) result.push(...cssFindings(file, `.inline { ${match[2]} }`))
     }
   }
   return result

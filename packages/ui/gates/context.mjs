@@ -21,9 +21,11 @@ export async function createContext(root = repositoryRoot, overrides = {}) {
     withFiles: extra => createContext(root, { ...overrides, ...extra }) }
 }
 
-export const sourceFiles = ctx => ctx.files.filter(f => /\.(?:[cm]?[jt]sx?|css)$/.test(f)
-  && !/\/(?:tokens|generated|gates|fonts|brand|test|tests|__tests__)\//.test(f)
+export const sourceFiles = ctx => ctx.files.filter(f => /\.(?:[cm]?[jt]sx?|css|scss|html)$/.test(f)
+  && !/^packages\/ui\/(?:tokens|generated|gates|fonts|brand)\//.test(f)
+  && !/^packages\/(?:web|ui)\/(?:test|tests|__tests__)\//.test(f)
   && !/\.(?:test|spec)\./.test(f))
-export const variableFiles = ctx => ctx.files.filter(f => /\.(?:tsx?|css)$/.test(f)
-  && !/\/(?:tokens|gates|fonts|brand|test|tests|__tests__)\//.test(f)
+export const variableFiles = ctx => ctx.files.filter(f => /\.(?:[cm]?[jt]sx?|css|scss|html)$/.test(f)
+  && !/^packages\/ui\/(?:tokens|gates|fonts|brand)\//.test(f)
+  && !/^packages\/(?:web|ui)\/(?:test|tests|__tests__)\//.test(f)
   && !/\.(?:test|spec)\./.test(f))

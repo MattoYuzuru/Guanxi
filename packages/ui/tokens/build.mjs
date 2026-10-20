@@ -27,18 +27,21 @@ const aliases = {
   warning: 'color-text-warning', danger: 'color-text-danger', success: 'color-text-success', info: 'color-text-info',
 }
 function themeCSS(flat) {
-  const lines = ['  --color-*: initial;', '  --ease-*: initial;', '  --animate-*: initial;', '  --spacing-*: initial;', '  --text-*: initial;', '  --radius-*: initial;', '  --font-*: initial;']
+  const namespaces = ['color', 'ease', 'animate', 'spacing', 'text', 'radius', 'font', 'font-weight', 'shadow', 'inset-shadow', 'drop-shadow', 'blur', 'tracking', 'leading', 'default-transition']
+  const lines = namespaces.map(name => `  --${name}-*: initial;`)
   for (const [name, variable] of Object.entries(aliases)) lines.push(`  --color-${name}: var(--${variable});`)
   for (const t of flat.filter(t => t.name.startsWith('font.size.'))) lines.push(`  --text-${t.path[2]}: var(${cssName(t)});`)
   lines.push('  --text-body: var(--font-text-size);')
   for (const t of flat.filter(t => t.path[0] === 'border-radius')) lines.push(`  --radius-${t.path[1]}: ${t.$type === 'number' ? `calc(var(${cssName(t)}) * 100%)` : `var(${cssName(t)})`};`)
   for (const t of flat.filter(t => t.name.startsWith('motion.easing.'))) lines.push(`  --ease-${t.path[2]}: var(${cssName(t)});`)
+  lines.push('  --shadow-popover: var(--elevation-2-shadow);', '  --blur-glass: var(--material-glass-blur);', '  --blur-tinted: var(--material-tinted-blur);', '  --leading-ui: var(--font-line-height-ui);', '  --leading-prose: var(--font-line-height-prose);')
+  lines.push('  --font-sans: var(--font-family-sans);', '  --font-mono: var(--font-family-mono);')
+  lines.push('  --default-font-family: var(--font-family-sans);', '  --default-mono-font-family: var(--font-family-mono);', '  --default-transition-duration: var(--motion-duration-moderate);', '  --default-transition-timing-function: var(--motion-easing-standard);')
   let output = header + `@theme inline {\n${lines.join('\n')}\n}\n`
   // Keep Tailwind's namespace separate from runtime token names. Self aliases inside
   // @theme are emitted as cyclic :root definitions by the actual Tailwind compiler.
   output += '@theme { --spacing: var(--grid-unit); }\n'
-  output += '@utility font-sans { font-family: var(--font-sans); }\n'
-  output += '@utility font-mono { font-family: var(--font-mono); }\n'
+  for (const [name, role] of [['normal', 'regular'], ['label', 'label'], ['heading', 'heading']]) output += `@utility font-${name} { font-weight: var(--font-weight-${role}); }\n`
   for (const t of flat.filter(t => t.name.startsWith('motion.duration.'))) {
     output += `@utility duration-${t.path[2]} { transition-duration: var(${cssName(t)}); }\n`
     output += `@utility delay-${t.path[2]} { transition-delay: var(${cssName(t)}); }\n`

@@ -83,10 +83,6 @@
         "value": 64,
         "unit": "px"
       }
-    },
-    "$root": {
-      "$type": "dimension",
-      "$value": "{grid.unit}"
     }
   },
   "border-radius": {
@@ -133,22 +129,6 @@
     }
   },
   "font": {
-    "sans": {
-      "$type": "fontFamily",
-      "$value": [
-        "IBM Plex Sans",
-        "system-ui",
-        "sans-serif"
-      ]
-    },
-    "mono": {
-      "$type": "fontFamily",
-      "$value": [
-        "IBM Plex Mono",
-        "ui-monospace",
-        "monospace"
-      ]
-    },
     "weight": {
       "regular": {
         "$type": "fontWeight",
@@ -333,6 +313,24 @@
       "line-height": {
         "$type": "number",
         "$value": "{font.line-height.prose}"
+      }
+    },
+    "family": {
+      "sans": {
+        "$type": "fontFamily",
+        "$value": [
+          "IBM Plex Sans",
+          "system-ui",
+          "sans-serif"
+        ]
+      },
+      "mono": {
+        "$type": "fontFamily",
+        "$value": [
+          "IBM Plex Mono",
+          "ui-monospace",
+          "monospace"
+        ]
       }
     }
   },

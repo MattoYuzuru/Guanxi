@@ -25,7 +25,7 @@ export function validateTokens(tokens) {
           && v.components[0] >= 0 && v.components[0] <= 1 && v.components[1] >= 0
           && /^#[0-9a-f]{6}$/i.test(v.hex) && (v.alpha === undefined || (finite(v.alpha) && v.alpha >= 0 && v.alpha <= 1))
         if (valid) {
-          const hex = new Color('oklch', v.components).to('srgb').toString({ format: 'hex' }).toLowerCase()
+          const hex = new Color('oklch', v.components).to('srgb').toString({ format: 'hex', collapse: false }).toLowerCase()
           valid = hex === v.hex.toLowerCase()
         }
         break

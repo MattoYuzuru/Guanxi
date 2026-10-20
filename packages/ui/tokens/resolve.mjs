@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { resolve, relative, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-export const tokenRoot = dirname(new URL(import.meta.url).pathname)
+export const tokenRoot = dirname(fileURLToPath(import.meta.url))
 export const readJSON = async path => JSON.parse(await readFile(path, 'utf8'))
 
 function merge(a, b) {
