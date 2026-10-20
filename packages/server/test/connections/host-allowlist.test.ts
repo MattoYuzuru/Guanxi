@@ -1,12 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { request } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { serve } from '@hono/node-server'
+import { connectionRoutes } from '../../src/connections/routes.ts'
+import type { Connections } from '../../src/connections/service.ts'
 import { createApp } from '../../src/app.ts'
 import type { AppContext } from '../../src/context.ts'
-import { start } from '../../src/index.ts'
 
 const context = { settings: { get: () => ({}) } } as AppContext
 
@@ -21,18 +20,25 @@ test('whole-server Host allowlist covers loopback, configured authority and Vite
 })
 
 test('E4: a real listener denies rebinding for Connections, unlock, a legacy route and the SPA', async t => {
-  const dir = await mkdtemp(join(tmpdir(), 'guanxi-host-'))
-  const server = await start({ port: 0, host: '127.0.0.1', dataDir: dir, webDir: dir, devOrigins: ['http://127.0.0.1:5187'] })
-  t.after(async () => { await server.close(); await rm(dir, { recursive: true, force: true }) })
+  let port = 0; let mutations = 0
+  const app = createApp(context, { host: '127.0.0.1', port: () => port, devOrigins: ['http://127.0.0.1:5187'] })
+  // Even if the guard regresses, a rebinding experiment must never open the OS keychain.
+  const fixture = { create() { mutations++; return {} }, unlockVault: async () => { mutations++ } } as unknown as Connections
+  app.route('/api/connections', connectionRoutes(() => fixture, 'local'))
+  app.get('/settings', c => c.text('Fixture SPA'))
+  const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' }, address => { port = address.port })
+  await new Promise<void>(resolve => server.once('listening', resolve))
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
   const send = (path: string, host: string, method = 'GET') => new Promise<number>((resolve, reject) => {
-    const req = request({ hostname: '127.0.0.1', port: server.port, path, method,
+    const req = request({ hostname: '127.0.0.1', port, path, method,
       headers: { Host: host, Origin: `http://${host}`, 'Content-Type': 'application/json' } }, res => {
       res.resume(); res.on('end', () => resolve(res.statusCode!))
     })
     req.on('error', reject); req.end(method === 'GET' ? undefined : '{}')
   })
   for (const [path, method] of [['/api/connections', 'POST'], ['/api/connections/vault/unlock', 'POST'], ['/api/settings', 'GET'], ['/settings', 'GET']]) {
-    assert.equal(await send(path!, `evil.example:${server.port}`, method), 403, path)
+    assert.equal(await send(path!, `evil.example:${port}`, method), 403, path)
   }
-  assert.equal(await send('/api/settings', `127.0.0.1:${server.port}`), 200)
+  assert.equal(await send('/api/settings', `127.0.0.1:${port}`), 200)
+  assert.equal(mutations, 0)
 })
