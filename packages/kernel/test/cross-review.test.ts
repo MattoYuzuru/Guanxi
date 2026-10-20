@@ -323,3 +323,11 @@ describe('Re-review R2: a late cleanup is bounded and reported', () => {
     assert.ok(logs.some((line) => /late apply\(\) cleanup failed: .*late cleanup broke/s.test(line)), logs.join('\n'))
   })
 })
+
+describe('Re-review R3: async slot subscriber rejections stay isolated', () => {
+  it('reports them on publish and on hold release (child process)', { timeout: 20_000 }, async () => {
+    const script = fileURLToPath(new URL('./fixtures/async-slot-subscriber.ts', import.meta.url))
+    const { stdout } = await run(process.execPath, [script], { timeout: 15_000 })
+    assert.deepEqual(JSON.parse(stdout), { heard: true, logged: 2 })
+  })
+})

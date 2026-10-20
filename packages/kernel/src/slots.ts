@@ -191,11 +191,17 @@ export class SlotRegistry {
     this.publish()
   }
 
-  /** Tell every subscriber; one that throws is reported and the rest still hear. */
+  /**
+   * Tell every subscriber, synchronously. One that throws, or returns a
+   * promise that rejects, is reported and the rest still hear.
+   */
   private publish(): void {
     for (const listener of [...this.subscribers]) {
       try {
-        listener()
+        const result = (listener as () => unknown)()
+        if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+          Promise.resolve(result).catch((error: unknown) => this.onSubscriberError(error))
+        }
       } catch (error) {
         this.onSubscriberError(error)
       }
