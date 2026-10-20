@@ -1,0 +1,4 @@
+/* Existing semantic variables until DS1 supplies @guanxi/ui and its token aliases. */
+.connections { color: var(--fg); background: var(--bg-raised); border-color: var(--border); }
+.connections-muted { color: var(--fg-muted); }
+.connections-record { border-color: var(--border); }

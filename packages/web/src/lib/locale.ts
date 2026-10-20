@@ -1,4 +1,7 @@
+import { connectionEnglish, connectionRussian } from '../features/connections/messages.ts'
+
 const english = {
+  ...connectionEnglish,
   'format.bytes.byte': 'B',
   'format.bytes.kibibyte': 'KB',
   'format.bytes.mebibyte': 'MB',
@@ -1709,6 +1712,7 @@ export type LocaleKey = keyof typeof english
 type Messages = Record<LocaleKey, string>
 
 const russian: Messages = {
+  ...connectionRussian,
   'format.bytes.byte': 'Б',
   'format.bytes.kibibyte': 'КБ',
   'format.bytes.mebibyte': 'МБ',

@@ -15,6 +15,10 @@ import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/listen-env.ts'
 import { defaultDbPath } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
+import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
+import { temporaryEgressPlugin, EGRESS_SERVICE } from './connections/egress.ts'
+import type { Connections } from './connections/service.ts'
+import { connectionRoutes } from './connections/routes.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
@@ -126,9 +130,25 @@ export async function start(options: StartOptions = {}) {
     throw error
   }
 
+  try {
+    if (!kernel.node.service(EGRESS_SERVICE)) await kernel.node.plugin(temporaryEgressPlugin)
+    await kernel.node.plugin(connectionsPlugin, {
+      databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
+      localHost: () => context.settings.get().ollamaHost,
+    })
+  } catch (error) {
+    await context.maintenance?.close().catch(() => undefined)
+    await context.chatExecution.shutdown().catch(() => undefined)
+    context.jobService.closeSubscriptions()
+    await kernel.node.dispose().catch(() => undefined)
+    context.db.close()
+    throw error
+  }
   const server = createApp(context, {
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
   })
+
+  server.route('/api/connections', connectionRoutes(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!, 'local'))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>

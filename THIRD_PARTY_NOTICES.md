@@ -7,7 +7,7 @@ covered by their own package metadata and are not repeated here.
 
 | Local path | Origin (repository @ commit) | License | What was taken / how it was changed |
 | ---------- | ---------------------------- | ------- | ----------------------------------- |
-| _none yet_ |                              |         |                                     |
+| `packages/server/src/connections/metadata/models-dev.json`, `LICENSE.models.dev` | [anomalyco/models.dev @ f51a64b](https://github.com/anomalyco/models.dev/tree/f51a64b180710b91a1243868488a55dd359e8b86) | MIT | Two model metadata records converted from TOML to JSON (Modified by Guanxi contributors), with source and observation time; original MIT license retained. |
 
 Rules:
 

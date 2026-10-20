@@ -10,3 +10,5 @@ export * from './recipe-job-snapshots.ts'
 export * from './reasoning-artifacts.ts'
 export * from './context-checkpoints.ts'
 export * from './artifacts.ts'
+
+export * from './connections/index.ts'

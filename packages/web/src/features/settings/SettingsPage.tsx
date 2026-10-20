@@ -20,6 +20,7 @@ import { parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 import { Glossary } from './Glossary.tsx'
+import { ConnectionsSettings } from '../connections/ConnectionsPage.tsx'
 
 type Draft = Omit<Settings, 'webSearch'> & {
   webSearch: Settings['webSearch'] & { apiKey: string; clearApiKey: boolean }
@@ -415,6 +416,9 @@ export function SettingsPage() {
         </div>
         </fieldset>
       </form>
+      <div className="mt-4">
+        <ConnectionsSettings />
+      </div>
       <div className="mt-4">
         <Glossary />
       </div>
