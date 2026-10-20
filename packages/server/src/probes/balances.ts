@@ -15,19 +15,24 @@ export const probeEndpoints: Record<BalanceProbe, string> = {
 }
 export function parseBalance(provider: BalanceProbe, payload: unknown, observedAt: string): ConnectionBalance {
   z.string().datetime().parse(observedAt)
-  let amount: number | null
-  let currency: 'USD' | 'CNY' | null
-  if (provider === 'openrouter') {
-    amount = openrouter.parse(payload).data.limit_remaining
-    currency = amount === null ? null : 'USD'
-  } else {
-    const data = deepseek.parse(payload)
-    const row = data.balance_infos.find(item => item.currency === 'USD') ?? data.balance_infos[0]
-    amount = row?.total_balance ?? null
-    currency = row?.currency ?? null
+  switch (provider) {
+    case 'openrouter': {
+      const amount = openrouter.parse(payload).data.limit_remaining
+      return { scope: 'key_allowance', amount, currency: amount === null ? null : 'USD',
+        source: probeEndpoints[provider], observedAt, confidence: amount === null ? 'unknown' : 'high' }
+    }
+    case 'deepseek': {
+      const data = deepseek.parse(payload)
+      const row = data.balance_infos.find(item => item.currency === 'USD') ?? data.balance_infos[0]
+      const amount = row?.total_balance ?? null
+      return { scope: 'account_balance', amount, currency: row?.currency ?? null,
+        source: probeEndpoints[provider], observedAt, confidence: amount === null ? 'unknown' : 'high' }
+    }
+    default: {
+      const unsupported: never = provider
+      throw new Error(`Unsupported balance probe: ${unsupported}`)
+    }
   }
-  return { scope: provider === 'openrouter' ? 'key_allowance' : 'account_balance', amount, currency, source: probeEndpoints[provider], observedAt,
-    confidence: amount === null ? 'unknown' : 'high' }
 }
 export class BalanceProbes {
   private readonly store: ConnectionStore

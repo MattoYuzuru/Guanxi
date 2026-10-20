@@ -16,7 +16,7 @@ import { fixtureEgressPlugin } from './egress-fixture.ts'
 import { connectionRoutes } from '../../src/connections/routes.ts'
 import { Connections } from '../../src/connections/service.ts'
 import { piModels, assertApiKey } from '../../src/connections/pi.ts'
-import { BALANCE_PROBES, parseBalance, probeEndpoints } from '../../src/probes/balances.ts'
+import { BALANCE_PROBES, parseBalance, probeEndpoints, type BalanceProbe } from '../../src/probes/balances.ts'
 import { modelsDevFacts } from '../../src/connections/metadata.ts'
 import openrouterFixture from '../../src/probes/fixtures/openrouter.json' with { type: 'json' }
 import deepseekFixture from '../../src/probes/fixtures/deepseek.json' with { type: 'json' }
@@ -206,9 +206,17 @@ test('Anthropic OAuth cannot be enabled through schema, key aliasing, config fla
   assert.equal(/from ['"][^'"]*\/(?:oauth|providers\/anthropic)['"]/.test(source), false)
 })
 
+const probeFixtures: Record<BalanceProbe, { fixture: { response: unknown; recordedAt: string }; amount: number; currency: 'USD' | 'CNY' }> = {
+  openrouter: { fixture: openrouterFixture, amount: 74.5, currency: 'USD' },
+  deepseek: { fixture: deepseekFixture, amount: 110, currency: 'CNY' },
+}
+test('the probe fixture registry covers exactly every published probe', () => {
+  assert.deepEqual(Object.keys(probeFixtures).sort(), [...BALANCE_PROBES].sort())
+  assert.throws(() => parseBalance('new-probe' as BalanceProbe, deepseekFixture.response, deepseekFixture.recordedAt), /Unsupported balance probe/)
+})
 for (const provider of BALANCE_PROBES) {
   test(`${provider}: recorded-fixture contract through HTTP boundary, JIT auth and persisted provenance`, async t => {
-    const fixture = provider === 'openrouter' ? openrouterFixture : deepseekFixture
+    const { fixture, amount, currency } = probeFixtures[provider]
     const secret = fakeKey(); let calls = 0
     const f = await setup(t, { transport: async (url, init) => {
       calls++; assert.equal(String(url), probeEndpoints[provider])
@@ -220,8 +228,8 @@ for (const provider of BALANCE_PROBES) {
     await s.unlockVault(account); s.saveSecret(account, row.id, secret)
     const balance = await s.probe(account, row.id)
     assert.equal(calls, 1)
-    assert.equal(balance.amount, provider === 'openrouter' ? 74.5 : 110)
-    assert.equal(balance.currency, provider === 'openrouter' ? 'USD' : 'CNY')
+    assert.equal(balance.amount, amount)
+    assert.equal(balance.currency, currency)
     assert.equal(balance.source, probeEndpoints[provider]); assert.ok(Date.parse(balance.observedAt!))
     assert.deepEqual(s.snapshot(account).connections[0]!.balance, balance)
     assert.throws(() => parseBalance(provider, { data: { limit_remaining: 'not-a-number' } }, fixture.recordedAt))
