@@ -29,13 +29,16 @@ const aliases = {
 function themeCSS(flat) {
   const lines = ['  --color-*: initial;', '  --ease-*: initial;', '  --animate-*: initial;', '  --spacing-*: initial;', '  --text-*: initial;', '  --radius-*: initial;', '  --font-*: initial;']
   for (const [name, variable] of Object.entries(aliases)) lines.push(`  --color-${name}: var(--${variable});`)
-  for (const t of flat.filter(t => t.path[0] === 'spacing' && t.path.length > 1)) lines.push(`  --spacing-${Number(t.path[1]) / 4}: var(${cssName(t)});`)
-  lines.push('  --spacing: var(--spacing);')
   for (const t of flat.filter(t => t.name.startsWith('font.size.'))) lines.push(`  --text-${t.path[2]}: var(${cssName(t)});`)
-  lines.push('  --text-body: var(--font-text-size);', '  --font-sans: var(--font-sans);', '  --font-mono: var(--font-mono);')
-  for (const t of flat.filter(t => t.path[0] === 'border-radius')) lines.push(`  --radius-${t.path[1]}: var(${cssName(t)});`)
+  lines.push('  --text-body: var(--font-text-size);')
+  for (const t of flat.filter(t => t.path[0] === 'border-radius')) lines.push(`  --radius-${t.path[1]}: ${t.$type === 'number' ? `calc(var(${cssName(t)}) * 100%)` : `var(${cssName(t)})`};`)
   for (const t of flat.filter(t => t.name.startsWith('motion.easing.'))) lines.push(`  --ease-${t.path[2]}: var(${cssName(t)});`)
   let output = header + `@theme inline {\n${lines.join('\n')}\n}\n`
+  // Keep Tailwind's namespace separate from runtime token names. Self aliases inside
+  // @theme are emitted as cyclic :root definitions by the actual Tailwind compiler.
+  output += '@theme { --spacing: var(--grid-unit); }\n'
+  output += '@utility font-sans { font-family: var(--font-sans); }\n'
+  output += '@utility font-mono { font-family: var(--font-mono); }\n'
   for (const t of flat.filter(t => t.name.startsWith('motion.duration.'))) {
     output += `@utility duration-${t.path[2]} { transition-duration: var(${cssName(t)}); }\n`
     output += `@utility delay-${t.path[2]} { transition-delay: var(${cssName(t)}); }\n`

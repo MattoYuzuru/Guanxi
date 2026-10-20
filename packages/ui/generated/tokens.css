@@ -129,6 +129,7 @@
   --font-weight-heading: 600;
   --font-weight-label: 500;
   --font-weight-regular: 400;
+  --grid-unit: 4px;
   --icon-grid: 24px;
   --icon-size-16: 16px;
   --icon-size-18: 18px;

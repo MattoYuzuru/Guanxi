@@ -86,10 +86,7 @@
     },
     "$root": {
       "$type": "dimension",
-      "$value": {
-        "value": 4,
-        "unit": "px"
-      }
+      "$value": "{grid.unit}"
     }
   },
   "border-radius": {
@@ -629,6 +626,15 @@
       "scrim-opacity": {
         "$type": "number",
         "$value": "{scrim.opacity}"
+      }
+    }
+  },
+  "grid": {
+    "unit": {
+      "$type": "dimension",
+      "$value": {
+        "value": 4,
+        "unit": "px"
       }
     }
   }

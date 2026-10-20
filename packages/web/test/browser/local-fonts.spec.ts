@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { installChatApiFixture } from './fixtures/chat-api.ts'
 
 const webRoot = fileURLToPath(new URL('../..', import.meta.url))
@@ -120,18 +121,61 @@ test('automatic Solid overrides strong and locally selected glass recipes', asyn
     root.append(child)
     const styles = [root, child].map(element => {
       const css = getComputedStyle(element)
-      return { backdrop: css.getPropertyValue('--material-backdrop').trim(), grain: css.getPropertyValue('--material-grain').trim() }
+      const probe = document.createElement('div')
+      const reference = document.createElement('div')
+      probe.style.backgroundColor = 'var(--material-background)'
+      probe.style.borderColor = 'var(--material-border)'
+      reference.style.backgroundColor = 'var(--material-solid-fill)'
+      reference.style.borderColor = 'var(--material-solid-border)'
+      element.append(probe, reference)
+      const actual = getComputedStyle(probe), solid = getComputedStyle(reference)
+      const values = { backdrop: css.getPropertyValue('--material-backdrop').trim(), grain: css.getPropertyValue('--material-grain').trim(), background: actual.backgroundColor, solidBackground: solid.backgroundColor, border: actual.borderTopColor, solidBorder: solid.borderTopColor }
+      probe.remove()
+      reference.remove()
+      return values
     })
     child.remove()
     return styles
   }, { trigger, level })
-  for (const level of ['glass', 'tinted', 'solid']) for (const trigger of ['hc', 'gpu', 'data-reduce-transparency', 'data-battery-saver']) expect(await inspect(trigger, level)).toEqual([{ backdrop: 'none', grain: '0' }, { backdrop: 'none', grain: '0' }])
+  const assertSolid = (styles: Awaited<ReturnType<typeof inspect>>) => {
+    expect(styles).toHaveLength(2)
+    for (const css of styles) {
+      expect(css.backdrop).toBe('none')
+      expect(css.grain).toBe('0')
+      expect(css.background).toBe(css.solidBackground)
+      expect(css.border).toBe(css.solidBorder)
+      expect(css.background).not.toMatch(/\/\s*0(?:\.|\))/)
+    }
+  }
+  for (const level of ['glass', 'tinted', 'solid']) for (const trigger of ['hc', 'gpu', 'data-reduce-transparency', 'data-battery-saver']) assertSolid(await inspect(trigger, level))
   await page.emulateMedia({ contrast: 'more' })
-  expect(await inspect('media', 'glass')).toEqual([{ backdrop: 'none', grain: '0' }, { backdrop: 'none', grain: '0' }])
+  assertSolid(await inspect('media', 'glass'))
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] })
-  expect(await inspect('media', 'tinted')).toEqual([{ backdrop: 'none', grain: '0' }, { backdrop: 'none', grain: '0' }])
+  assertSolid(await inspect('media', 'tinted'))
   await cdp.detach()
+})
+
+test('compiled Tailwind theme resolves font, spacing and percentage radius tokens', async ({ page }) => {
+  const requireUI = createRequire(new URL('../../../ui/package.json', import.meta.url))
+  const { compile } = requireUI('tailwindcss') as typeof import('tailwindcss')
+  const source = await readFile(fileURLToPath(new URL('../../../ui/generated/theme.css', import.meta.url)), 'utf8')
+  const compiled = (await compile(source + '\n@tailwind utilities;')).build(['font-sans', 'font-mono', 'gap-2', 'rounded-app-tile-ratio'])
+  await installChatApiFixture(page, 'completed')
+  await page.goto(origin)
+  await page.addStyleTag({ content: compiled })
+  const actual = await page.evaluate(() => {
+    const item = document.createElement('div')
+    item.className = 'font-sans gap-2 rounded-app-tile-ratio'
+    document.body.append(item)
+    const css = getComputedStyle(item)
+    const result = { font: css.fontFamily, gap: css.gap, radius: css.borderRadius }
+    item.remove()
+    return result
+  })
+  expect(actual.font).toContain('IBM Plex Sans')
+  expect(actual.gap).toBe('8px')
+  expect(actual.radius).toBe('21.9%')
 })
 
 test('legacy Light and Dark semantic warning and focus follow the class, independently of OS', async ({ page }) => {

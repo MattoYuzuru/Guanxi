@@ -29,6 +29,9 @@ semantic utilities. The theme removes the default palette and supplies `bg-canva
 spacing utilities, and `duration-fast` / `delay-fast` / `ease-standard` families. Raw
 primitive colours have no theme utilities. The legacy app imports only the runtime variables
 for its `--warning` and `--focus` compatibility mappings; DS1-c owns its utility migration.
+The compiled-theme browser assertion checks actual font, 8 px spacing and 21.9% radius:
+font utilities avoid self aliases, spacing uses the 4 px grid variable, and the app-tile ratio
+is converted to a CSS percentage.
 
 Root attributes: `data-theme=light|dark|light-hc|dark-hc|system`,
 `data-density=compact|comfortable`, `data-motion=full|reduced`, and
