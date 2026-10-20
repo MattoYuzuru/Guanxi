@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, cp, rm, realpath } from 'node:fs/promises'
+import { mkdtemp, cp, rm, realpath, readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -8,6 +9,7 @@ import { createContext } from './context.mjs'
 import { resolveTokens, resolvedFlat } from '../tokens/resolve.mjs'
 import { generate } from '../tokens/build.mjs'
 import { designSystem } from './scan.mjs'
+import postcss from 'postcss'
 
 const ctx = await createContext()
 const document = await ctx.read('docs/design/FOUNDATIONS.md')
@@ -33,6 +35,17 @@ const materials = tables(section('## 4.')).filter(table => table[0][0] === 'Leve
 const materialDetails = tables(section('## 4.'))[0]
 const expectedSpaces = numeric(document.match(/Spacing scale ([\d, ]+)/)[1])
 const expectedRadii = numeric(document.match(/\*\*Radius\*\*[^\n]*(?:\n  [^\n]+)*/)[0])
+
+function verifyRuntimeNames(runtime, tailwind, legacy) {
+  const declared = css => {
+    const names = new Set()
+    css.walkDecls(decl => { if (decl.prop.startsWith('--')) names.add(decl.prop) })
+    return names
+  }
+  const reserved = declared(postcss.parse(tailwind))
+  postcss.parse(legacy).walkAtRules('theme', rule => { for (const name of declared(rule)) reserved.add(name) })
+  assert.deepEqual([...declared(postcss.parse(runtime))].filter(name => reserved.has(name)).sort(), [], 'runtime names collide with Tailwind or the legacy @theme')
+}
 
 async function verifyFoundations(context) {
   for (const theme of ['light', 'dark', 'light-hc', 'dark-hc']) for (const mode of ['compact', 'comfortable']) for (const motion of ['full', 'reduced']) {
@@ -147,6 +160,15 @@ test('H2: runtime tokens never declare Tailwind font/spacing names', async () =>
   assert.match(output['tokens.css'], /--font-family-sans:/)
   assert.match(output['tokens.css'], /--font-family-mono:/)
   assert.match(output['theme.css'], /--font-sans: var\(--font-family-sans\)/)
+})
+test('N9: runtime declarations cannot shadow any Tailwind or legacy theme name', async () => {
+  const runtime = (await generate(ctx.tokenOptions))['tokens.css']
+  const tailwind = await readFile(createRequire(import.meta.url).resolve('tailwindcss/theme.css'), 'utf8')
+  const legacy = await ctx.read('packages/web/src/index.css')
+  verifyRuntimeNames(runtime, tailwind, legacy)
+  for (const name of ['--breakpoint-md', '--color-red-500', '--text-2xs', '--color-fit-green']) {
+    assert.throws(() => verifyRuntimeNames(`${runtime}\n:root { ${name}: initial; }`, tailwind, legacy), { name: 'AssertionError' }, name)
+  }
 })
 test('M4: cleared Tailwind defaults disappear; semantic replacements compile', async () => {
   const system = await designSystem(ctx)
