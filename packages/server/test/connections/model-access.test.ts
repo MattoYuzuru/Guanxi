@@ -42,14 +42,18 @@ async function setup(t: { after(fn: () => unknown): void }, options: { transport
   const kernel = createKernel()
   await kernel.plugin(resourceGovernorPlugin)
   await kernel.plugin(ollamaAdapterPlugin, { fetch: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }) })
-  await kernel.plugin(fixtureEgressPlugin)
+  let egress = await kernel.plugin(fixtureEgressPlugin)
   const config = { databasePath: join(dir, 'connections.sqlite'), localHost: () => 'http://127.0.0.1:11434',
     policy: { ownerDevice: options.ownerDevice ?? true, nodeKeyOptIn: options.unattended ?? false }, keychain: async () => keychain,
     transport: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }), pi: options.pi }
   let handle = await kernel.plugin(connectionsPlugin, config)
   const service = () => kernel.service<Connections>(CONNECTIONS_SERVICE)!
   t.after(async () => { await kernel.dispose(); for (const key of keys.values()) key.fill(0); await rm(dir, { recursive: true, force: true }) })
-  return { dir, kernel, service, config, async restart() { await handle.dispose(); handle = await kernel.plugin(connectionsPlugin, config) } }
+  return { dir, kernel, service, config, async restart(freshEgress = false) {
+    await handle.dispose()
+    if (freshEgress) { await egress.dispose(); egress = await kernel.plugin(fixtureEgressPlugin) }
+    handle = await kernel.plugin(connectionsPlugin, config)
+  } }
 }
 function responseSse(content = 'ok') {
   const frames = [
@@ -276,20 +280,23 @@ test('cost ledger is append-only, idempotent per connection receipt and isolated
 
 test('local runtime uses K1 adapter and governor; fixture response is scrubbed and cost remains unknown', async t => {
   let calls = 0
+  const secret = fakeKey()
   const f = await setup(t, { transport: async (url, init) => {
     calls++; assert.equal(new URL(String(url)).hostname, '127.0.0.1')
     if (new URL(String(url)).pathname === '/api/version') return Response.json({ version: 'fixture' })
     assert.equal(JSON.parse(String(init?.body)).messages[0].content, '[REDACTED]')
     return Response.json({ model: 'fixture', created_at: new Date().toISOString(), done: true,
-      message: { role: 'assistant', content: 'ok' }, prompt_eval_count: 5, eval_count: 1 })
+      message: { role: 'assistant', content: `runtime echoed ${secret}` }, prompt_eval_count: 5, eval_count: 1 })
   } })
   f.config.localHost = () => '127.0.0.1:11434'
   await f.restart()
   const s = f.service(); const row = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
-  const secret = fakeKey(); await s.unlockVault(account); s.saveSecret(account, s.create(account, apiInput).id, secret)
+  await s.unlockVault(account); s.saveSecret(account, s.create(account, apiInput).id, secret)
   const request = { model: 'fixture', messages: [{ role: 'user' as const, content: secret }], options: { num_ctx: 1024 } }
   const result = await s.localChat(account, row.id, request, { runId: 'run', requestId: 'local-request' })
   assert.equal(result.done, true); assert.equal(calls, 2)
+  assert.equal(result.message?.content, 'runtime echoed [REDACTED]')
+  assert.equal(JSON.stringify(result).includes(secret), false)
   assert.equal(s.store.costs(account)[0]!.costUsd, null)
   await assert.rejects(s.localChat(account, row.id, { ...request, options: {} }, { runId: 'run', requestId: 'invalid' }), /context/)
 })
@@ -786,4 +793,30 @@ test('review: registry grants and rotates only the current unattended credential
   assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets').get()!.n, 0)
   await assert.rejects(call('revoked-node-grant'), error => error instanceof ConnectionError && error.code === 'policy_denied')
   assert.deepEqual(sent, [`Bearer ${first}`, `Bearer ${rotated}`])
+})
+
+// Adapted from the Claude Review 2 scratch probe; fresh egress models a process restart.
+test('N1: failed session registration blocks background complete before provider dispatch', async t => {
+  let calls = 0
+  const f = await setup(t, { unattended: true, transport: async () => { calls++; return responseSse() } })
+  const s = f.service()
+  const interactive = s.create(account, apiInput)
+  const background = s.create(account, { ...apiInput, name: 'Background' })
+  await s.unlockVault(account)
+  const secret = fakeKey()
+  s.saveSecret(account, interactive.id, secret)
+  s.saveSecret(account, background.id, fakeKey())
+  s.setUnattended(account, background.id, true)
+  const keychain = await f.config.keychain()
+  f.config.keychain = async () => ({ key(id, create, purpose) {
+    if (purpose === 'session') throw new Error('Fixture session key unavailable')
+    return keychain.key(id, create, purpose)
+  } })
+  await f.restart(true)
+  await assert.rejects(f.service().complete(account, background.id, {
+    messages: [{ role: 'user', content: `tool printed ${secret}`, timestamp: Date.now() }],
+  }, { model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'not-ready-background', background: true }),
+  error => error instanceof ConnectionError && error.code === 'egress_unavailable')
+  assert.equal(calls, 0)
+  assert.equal(f.service().store.costs(account).length, 0)
 })
