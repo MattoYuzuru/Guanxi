@@ -1,14 +1,20 @@
 /**
- * G16 Reduced motion: under the OS setting and `data-motion=reduced`, no story keeps a looping
- * animation or moves an element (transform, translate, scale or rotate that changes).
+ * G16 Reduced motion: no story keeps a looping animation or moves an element (transform,
+ * translate, scale or rotate that changes) when reduced motion comes from the OS alone (the
+ * catalog's `system` setting) or from the in-app setting alone (`data-motion=reduced`).
  */
 import { expect, test } from '@playwright/test'
 import { gateStories, openStory } from './stories.ts'
 
-for (const story of gateStories()) {
-  test(`G16 ${story.key}`, async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    await openStory(page, story.key, { motion: 'reduced' })
+const SOURCES = [
+  { name: 'os', media: 'reduce' as const, motion: 'system' },
+  { name: 'setting', media: 'no-preference' as const, motion: 'reduced' },
+]
+
+for (const story of gateStories()) for (const source of SOURCES) {
+  test(`G16 ${story.key} ${source.name}`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: source.media })
+    await openStory(page, story.key, { motion: source.motion })
     const moving = await page.evaluate(() => {
       const spatial = ['transform', 'translate', 'scale', 'rotate']
       const found: string[] = []

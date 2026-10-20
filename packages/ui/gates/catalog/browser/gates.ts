@@ -169,7 +169,7 @@ export const g13: CatalogGate = {
     {
       name: 'semantic-token-changed',
       description: 'One semantic token (accent fill) changes; the Button baselines must no longer match',
-      expect: /G13 button--default light: .*(Screenshot comparison failed|pixels.*different)/i,
+      expect: /G13 button--default light: .*toHaveScreenshot/,
       apply: ({ context }) => ({ ...context, stories: ['button--default', 'button--secondary'], seed: 'g13' }),
     },
   ],

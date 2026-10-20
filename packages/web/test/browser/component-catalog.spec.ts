@@ -85,7 +85,7 @@ async function mockApi(page: Page, review: Partial<ReviewMock> = {}): Promise<Re
             record: {
               ...record,
               status: 'approved',
-              approval: { at: observedAt, ...current, comment: body['comment'], keyId: 'ed25519:test', signature: 'c2ln' },
+              approval: { at: observedAt, ...current, comment: body['comment'], keyId: 'ed25519:test', signature: 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ==' },
             },
             current,
             signature: 'valid',
@@ -294,4 +294,57 @@ test('approving sends the hashes the node showed; a read-only node offers no rev
   await expect(page.getByText('Release builds never write approvals.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Request changes' })).toHaveCount(0)
+})
+
+test('motion, transparency and language apply to every story; motion follows the OS by default', async ({ page }) => {
+  await enableDeveloperMode(page)
+  await mockApi(page)
+  await page.goto('/settings/developer/components')
+  await expect(page.locator('[data-story]')).toHaveCount(expectedKeys.length)
+  // Default: no data-motion, so the OS setting decides (FOUNDATIONS §5).
+  expect(await page.locator('[data-story] [data-gx-regime][data-motion]').count()).toBe(0)
+
+  await page.goto('/settings/developer/components?motion=reduced&transparency=reduced&locale=ru&glass=glass')
+  await expect(page.locator('[data-story]')).toHaveCount(expectedKeys.length)
+  const stages = await page.locator('[data-story] [data-gx-regime]').evaluateAll((elements) =>
+    elements.map((stage) => ({
+      motion: stage.getAttribute('data-motion'),
+      reduceTransparency: stage.hasAttribute('data-reduce-transparency'),
+      lang: stage.getAttribute('lang'),
+      fill: getComputedStyle(stage).getPropertyValue('--glass-fill').trim(),
+      fast: getComputedStyle(stage).getPropertyValue('--motion-duration-slow').trim(),
+      distance: getComputedStyle(stage).getPropertyValue('--motion-distance-md').trim(),
+    })),
+  )
+  for (const stage of stages) {
+    expect(stage).toEqual({ motion: 'reduced', reduceTransparency: true, lang: 'ru', fill: 'color-mix(in srgb, #f3fcfe 100%, transparent)', fast: '100ms', distance: '0px' })
+  }
+  await expect(page.locator('[data-story="button--default"]')).toContainText('Сохранить изменения')
+  await expect(page.locator('[data-story="status-pill--running"]')).toContainText('Выполняется')
+})
+
+test('the catalog can be driven from the keyboard', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await enableDeveloperMode(page)
+  await mockApi(page)
+  await page.goto('/settings/developer/components')
+  await expect(page.locator('[data-story]')).toHaveCount(expectedKeys.length)
+
+  await page.getByRole('link', { name: 'Skip to the preview' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('#gx-catalog-preview')).toBeFocused()
+
+  await page.getByLabel('Search components').fill('dialog')
+  await expect(page.locator('[data-catalog-results]')).toHaveText('1 components shown')
+  const dialog = page.getByRole('button', { name: /^Dialog/ })
+  await dialog.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { level: 2, name: 'Dialog' })).toBeVisible()
+  await expect(dialog).toHaveAttribute('aria-current', 'page')
+
+  const states = page.getByRole('tab', { name: 'States' })
+  await states.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('tab', { name: 'Usage' })).toBeFocused()
+  await expect(page.getByRole('tab', { name: 'Usage' })).toHaveAttribute('aria-selected', 'true')
 })
