@@ -5,7 +5,7 @@
  * `ui/notifications/host-context-changed`. This document never changes when the theme does.
  */
 export const T2_PLUGIN_DOCUMENT = `<!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <style>
@@ -36,8 +36,8 @@ export const T2_PLUGIN_DOCUMENT = `<!doctype html>
 <body>
 <div class="card" data-plugin-card>
   <div class="row">
-    <span class="swatch info"></span><span class="swatch success"></span>
-    <span class="swatch warning"></span><span class="swatch danger"></span>
+    <span class="swatch info" aria-hidden="true"></span><span class="swatch success" aria-hidden="true"></span>
+    <span class="swatch warning" aria-hidden="true"></span><span class="swatch danger" aria-hidden="true"></span>
     <code class="theme" data-plugin-theme></code>
   </div>
 </div>

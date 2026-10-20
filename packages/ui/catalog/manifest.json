@@ -1441,6 +1441,7 @@
         "--border-width-regular",
         "--color-background-disabled",
         "--color-background-hover",
+        "--color-background-primary",
         "--color-background-secondary",
         "--color-border-danger",
         "--color-border-disabled",
@@ -1463,7 +1464,7 @@
         "--space-2",
         "--z-popover"
       ],
-      "sourceHash": "sha256:2b55dafd24cbde21aeecbbf6bd0fe39550edb85b1bbf8a3d091c228b9abf6fa1",
+      "sourceHash": "sha256:ab76371b9ddfe4ad4abd31b0e235cb5dc334653dc18e49afdc3364f6778bde69",
       "snapshotHashes": {
         "disabled-dark-hc": "sha256:395aab3ba2dbb72a1829528b78a1f2b2fe2d0cb34fe2fa19115e3c94863c2516",
         "disabled-dark": "sha256:d61f22925edb422c80a333797128374db3f4a60d9c07b11ffb22a64760322463",
@@ -1569,7 +1570,7 @@
         "--space-1-5",
         "--space-2"
       ],
-      "sourceHash": "sha256:a1d0b0d94215857cca3c6925b9d81acc955ce271123589a2b5b6336fb3d0a788",
+      "sourceHash": "sha256:61ef80b588b8c2d121cf92256fe89ed5f66516dca6caf33a9e1e767a125b5ab9",
       "snapshotHashes": {
         "error-dark": "sha256:1858b87e03d16a50e6bef7c6ef6f6e22b69efb88fccfff5400bfa108998782f3",
         "error-light": "sha256:1db9c65a035436575d258d37d5a1ac984f3b77f10096e2d553076f7b260c185a",
@@ -1785,7 +1786,7 @@
         "--space-1-5",
         "--space-2"
       ],
-      "sourceHash": "sha256:96b2e537074c83f4b1ac417c53a84e2caa46b7a01a1fc125bd74f4aa6ab72854",
+      "sourceHash": "sha256:5b9ad41585879314e51f205adc41d5594028e22492b8d0fab85f14af7541eea9",
       "snapshotHashes": {
         "default-dark-hc": "sha256:02bf57434c446b5706266c1b82f27d15cafabaabfb9e80ef7bc643f282e27560",
         "default-dark": "sha256:99415e8c88b48ce6f6bb3224680efaa856c7d3c506106429b2f4a8378a336c00",
@@ -1795,10 +1796,10 @@
         "disabled-tab-dark": "sha256:39369859a409104df6287520bc7125ae6a44022e9945ac51c1be67568c147f52",
         "disabled-tab-light-hc": "sha256:7b3928a0b0521c15b82ea9f7ab58963b3ded1bd207a79cd467a219e9f318269a",
         "disabled-tab-light": "sha256:f6c2a677a7ff2b3721d3aa0a46366df25468ee6f9557ad54482baab0e300a056",
-        "focus-visible-dark-hc": "sha256:0f7d966f5b6310ae543b5446be3c5d4a34f77a145eeee6d727e69637410871d3",
-        "focus-visible-dark": "sha256:44d7d9c08d7ef9e53a010561a0b7167e93bd5a147c404b6a0e658523461f0d1a",
-        "focus-visible-light-hc": "sha256:c80beea6e9e6d96777fd7744141adefc40eb7ae7a42302ccb40d9797aa3427fa",
-        "focus-visible-light": "sha256:6b5f8f5c5addb79b736f2223d020818af97f300b7c96f60d5a7715071e874356",
+        "focus-visible-dark-hc": "sha256:0d60c27a347d667f6ac3231d3d0e237a1949d70dcd929f4e0609523a5c886242",
+        "focus-visible-dark": "sha256:393d547601fd2623a507e02a13d6cc2b0beb4a5ede5ad8143ddaef25664dbb91",
+        "focus-visible-light-hc": "sha256:9c2c2e798e9006cd14470d6922a466b0d9af82f22c59de994f7ba18f81d33bde",
+        "focus-visible-light": "sha256:714b2571c4b605c107e862c5e22c3008663c8f90aa4c9223418b471cae527a1a",
         "hover-dark-hc": "sha256:29007c9369029a9ab121c5fe6358d13e00b82ae9c51fcfc77d3dd3a916e6164d",
         "hover-dark": "sha256:cd45bd0fdbd633d17e7e58507e87ae6fb9368b3d415b1fa243abd47b68636292",
         "hover-light-hc": "sha256:11ab9d00139887c226f4730d408a41c76bc273c7580892cb44ff58f0531f2b44",

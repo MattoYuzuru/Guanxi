@@ -178,7 +178,7 @@ export function ReviewPanel({
           </label>
           <Textarea
             id={commentId}
-            aria-describedby={hintId}
+            aria-describedby={outcome === 'commentRequired' ? `${hintId} ${commentId}-outcome` : hintId}
             value={comment}
             invalid={outcome === 'commentRequired'}
             onChange={(event) => setComment(event.target.value)}
@@ -211,7 +211,10 @@ export function ReviewPanel({
         </form>
       ) : null}
 
-      <p role="status" className="gx-catalog-review-outcome" data-review-outcome={outcome ?? ''}>
+      {capability === 'loading' ? <p className="gx-catalog-muted">{t('catalog.review.loading')}</p> : null}
+
+      {/* Always rendered, so screen readers announce the text when it appears. */}
+      <p id={`${commentId}-outcome`} role="status" className="gx-catalog-review-outcome" data-review-outcome={outcome ?? ''}>
         {outcome ? t(OUTCOME_KEYS[outcome]) : ''}
       </p>
     </section>

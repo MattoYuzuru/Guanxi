@@ -32,7 +32,8 @@ default, hover, focus-visible and disabled-tab.
 
 ## Accessibility
 
-- `tablist`, `tab` and `tabpanel` roles with arrow-key navigation and automatic activation.
+- `tablist`, `tab` and `tabpanel` roles; arrow keys move between tabs and select them
+  (automatic activation, `activateOnFocus` on by default).
 - The list has a name (`aria-label`) when no visible heading names it.
 - The active tab changes text colour and the underline, not colour alone.
 

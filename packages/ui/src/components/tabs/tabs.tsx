@@ -19,9 +19,15 @@ export function Tabs({ className, ...props }: TabsProps) {
   return <TabsPrimitive.Root data-slot="tabs" className={cx('gx-tabs', className)} {...props} />
 }
 
-export function TabsList({ className, children, ...props }: TabsListProps) {
+export function TabsList({ className, children, activateOnFocus = true, ...props }: TabsListProps) {
+  // Automatic activation: arrow keys select the tab they move to (panels here render at once).
   return (
-    <TabsPrimitive.List data-slot="tabs-list" className={cx('gx-tabs-list', className)} {...props}>
+    <TabsPrimitive.List
+      data-slot="tabs-list"
+      activateOnFocus={activateOnFocus}
+      className={cx('gx-tabs-list', className)}
+      {...props}
+    >
       {children}
       <TabsPrimitive.Indicator className="gx-tabs-indicator" />
     </TabsPrimitive.List>

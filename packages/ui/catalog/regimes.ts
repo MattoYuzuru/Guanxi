@@ -27,7 +27,8 @@ export const DEFAULT_REGIME: Regime = {
   theme: 'light',
   density: 'compact',
   glass: 'glass',
-  motion: 'full',
+  // Follow the OS setting unless the owner picks one (FOUNDATIONS §5).
+  motion: 'system',
   transparency: 'normal',
   locale: 'en',
 }

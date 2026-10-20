@@ -39,6 +39,12 @@
   color: var(--color-text-primary);
 }
 
+/* The list scrolls horizontally, which clips anything outside it: draw the ring inside. */
+.gx-tabs-tab.gx-focusable:focus-visible,
+[data-gx-force~='focus-visible'] .gx-tabs-tab.gx-focusable {
+  outline-offset: calc(var(--size-focus-ring) * -1);
+}
+
 .gx-tabs-tab[data-active] {
   color: var(--color-text-primary);
 }

@@ -28,6 +28,17 @@
 
 .gx-status-pill[data-status='running'] .gx-status-dot {
   color: var(--color-text-accent);
+}
+
+/* The pulse runs only when motion is allowed: the OS allows it and the app does not reduce it,
+   or the app forces full motion. The word "Running" carries the state either way. */
+@media (prefers-reduced-motion: no-preference) {
+  .gx-status-pill[data-status='running'] .gx-status-dot {
+    animation: gx-status-pulse var(--motion-loop-duration) var(--motion-easing-standard) infinite alternate;
+  }
+}
+
+[data-motion='full'] .gx-status-pill[data-status='running'] .gx-status-dot {
   animation: gx-status-pulse var(--motion-loop-duration) var(--motion-easing-standard) infinite alternate;
 }
 
@@ -64,19 +75,17 @@
   }
 }
 
-/* The pulse is decoration; the word "Running" carries the state. */
-[data-motion='reduced'] .gx-status-pill .gx-status-dot {
+[data-motion='reduced'] .gx-status-pill[data-status='running'] .gx-status-dot {
   animation: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gx-status-dot:not([data-motion='full'] *) {
-    animation: none;
-  }
 }
 
 @media (forced-colors: active) {
   .gx-status-dot {
+    forced-color-adjust: none;
     color: CanvasText;
+  }
+
+  .gx-status-pill:not([data-status='waiting'], [data-status='hibernating'], [data-status='unknown']) .gx-status-dot {
+    background-color: CanvasText;
   }
 }

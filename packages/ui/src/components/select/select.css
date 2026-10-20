@@ -21,7 +21,8 @@
 
 .gx-select-trigger:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-select-trigger:not([data-disabled]) {
-  background-color: var(--color-background-hover);
+  /* The canvas keeps the muted placeholder at 4.5:1; the hover fill would not. */
+  background-color: var(--color-background-primary);
 }
 
 .gx-select-trigger[data-invalid] {

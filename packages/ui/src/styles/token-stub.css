@@ -293,8 +293,9 @@
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
-  [data-theme],
-  [data-theme][data-glass] {
+  /* High-contrast themes keep their stronger border (set above). */
+  [data-theme]:not([data-theme$='-hc']),
+  [data-theme][data-glass]:not([data-theme$='-hc']) {
     --gx-stub-glass-fill-opacity: 100%;
     --gx-stub-glass-blur: 0px;
     --gx-stub-glass-grain-opacity: 0;

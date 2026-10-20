@@ -3,7 +3,7 @@
  * of every component through the same story files Storybook reads, under any theme, density,
  * glass level, motion, transparency and locale, and hosts the owner's review actions (D-138).
  */
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Input,
   Select,
@@ -19,7 +19,7 @@ import {
 import { useUiText, type UiLocale } from '../src/i18n/context.tsx'
 import type { UiMessageKey } from '../src/i18n/messages.ts'
 import type { CatalogEntry, CatalogStory } from './entries.ts'
-import { FocusGuard } from './focus-guard.tsx'
+import { useStorySettle } from './focus-guard.tsx'
 import { DocMarkdown } from './markdown.tsx'
 import { RegimeFrame } from './RegimeFrame.tsx'
 import {
@@ -159,8 +159,10 @@ function Toolbar({ regime, onChange }: { regime: Regime; onChange: (regime: Regi
 export function StoryCell({ item, regime }: { item: CatalogStory; regime: Regime }) {
   const t = useUiText()
   const frame = item.story.parameters?.guanxi?.frame ?? item.meta.parameters?.guanxi?.frame ?? 'inline'
+  const cell = useRef<HTMLElement>(null)
+  useStorySettle(cell, frame !== 'inline')
   return (
-    <figure className="gx-catalog-cell" data-frame={frame} data-story={item.key}>
+    <figure ref={cell} className="gx-catalog-cell" data-frame={frame} data-story={item.key}>
       <RegimeFrame regime={regime} className="gx-catalog-stage">
         <StoryBoundary
           fallback={
@@ -289,7 +291,7 @@ function ComponentPage({
           <p className="gx-catalog-muted">{t('catalog.states.count', { count: entry.docs.states.length })}</p>
           <StateGrid entry={entry} regime={regime} />
         </TabsPanel>
-        <TabsPanel value="docs" className="gx-catalog-docs">
+        <TabsPanel value="docs" className="gx-catalog-docs" lang="en">
           {REQUIRED_DOC_SECTIONS.map((section) => (
             <section key={section}>
               <h3>{section}</h3>
@@ -299,7 +301,7 @@ function ComponentPage({
         </TabsPanel>
         <TabsPanel value="code">
           <p className="gx-catalog-muted">{t('catalog.code.description')}</p>
-          <pre className="gx-catalog-code" tabIndex={0}>
+          <pre className="gx-catalog-code" tabIndex={0} aria-label={t('catalog.tab.code')} lang="en">
             <code>{storySource ?? ''}</code>
           </pre>
         </TabsPanel>
@@ -386,7 +388,9 @@ function Navigation({
         {link({ kind: 'overview' }, t('catalog.nav.overview'), view.kind === 'overview', 'overview')}
         {link({ kind: 't2' }, t('catalog.t2.title'), view.kind === 't2', 't2')}
       </ul>
-      {visible.length === 0 ? <p className="gx-catalog-muted">{t('catalog.empty')}</p> : null}
+      <p role="status" className="gx-catalog-muted" data-catalog-results="">
+        {visible.length === 0 ? t('catalog.empty') : t('catalog.results', { count: visible.length })}
+      </p>
       {(['primitive', 'pattern'] as const).map((level) =>
         group(level).length === 0 ? null : (
           <div key={level}>
@@ -475,9 +479,11 @@ function CatalogChrome({
   storySources: Record<string, string>
 }) {
   const t = useUiText()
-  const watch = useMemo(() => ({}), [view, regime])
   return (
     <div className="gx-catalog-layout">
+      <a className="gx-catalog-skip gx-focusable" href="#gx-catalog-preview">
+        {t('catalog.skip')}
+      </a>
       <header className="gx-catalog-header">
         <h1>{t('catalog.title')}</h1>
         <p className="gx-catalog-muted">{t('catalog.description')}</p>
@@ -485,8 +491,8 @@ function CatalogChrome({
       <Toolbar regime={regime} onChange={setRegime} />
       <div className="gx-catalog-body">
         <Navigation entries={entries} view={view} onSelect={setView} />
-        <main className="gx-catalog-main" data-catalog-view={view.kind} data-focus-stage="catalog">
-          <FocusGuard stage="catalog" watch={watch} />
+        {/* The host app owns the <main> landmark; this is its content. */}
+        <div id="gx-catalog-preview" className="gx-catalog-main" data-catalog-view={view.kind} tabIndex={-1}>
           {view.kind === 'overview' ? <Overview entries={entries} regime={regime} /> : null}
           {view.kind === 't2' ? <T2Page regime={regime} /> : null}
           {view.kind === 'component' && entry ? (
@@ -499,7 +505,7 @@ function CatalogChrome({
               storySource={storySources[entry.id]}
             />
           ) : null}
-        </main>
+        </div>
       </div>
     </div>
   )
