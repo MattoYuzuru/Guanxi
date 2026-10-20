@@ -81,9 +81,10 @@ export class Vault {
     this.assertOpen()
     const generation = (this.generations.get(accountId) ?? 0) + 1
     this.generations.set(accountId, generation)
-    const key = await this.dataKey(accountId)
+    let key: Buffer | undefined
     let nodeKey: Buffer | undefined
     try {
+      key = await this.dataKey(accountId)
       if (this.unattendedAvailable) nodeKey = await this.dataKey(accountId, true)
       this.assertOpen()
       if (this.generations.get(accountId) !== generation) throw new Error('Vault unlock cancelled')
@@ -92,7 +93,11 @@ export class Vault {
       this.sessions.set(accountId, key)
       this.nodeSessions.get(accountId)?.fill(0)
       if (nodeKey) this.nodeSessions.set(accountId, nodeKey)
-    } catch { key.fill(0); nodeKey?.fill(0); throw new ConnectionError('vault_locked', 'Vault could not be unlocked') }
+    } catch {
+      key?.fill(0); nodeKey?.fill(0)
+      if (this.closed) throw new Error('Vault closed')
+      throw new ConnectionError('vault_locked', 'Vault could not be unlocked')
+    }
   }
   lock(accountId: string) {
     this.assertOpen()

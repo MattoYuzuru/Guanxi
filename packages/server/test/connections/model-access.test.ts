@@ -672,3 +672,16 @@ test('Google SDK mode environment overrides cannot switch an API-key connection 
   }
   assert.equal(calls, 0); assert.equal(s.store.costs(account).length, 0)
 })
+
+
+test('review: unavailable session keychain yields vault_locked on the actual unlock route', async t => {
+  const f = await setup(t)
+  f.config.keychain = async () => { throw new Error(fakeKey()) }
+  await f.restart()
+  const response = await connectionRoutes(f.service, account).request('http://localhost/vault/unlock', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  })
+  assert.equal(response.status, 423)
+  assert.deepEqual(await response.json(), { code: 'vault_locked' })
+  assert.equal(f.service().snapshot(account).vault.unlocked, false)
+})
