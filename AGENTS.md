@@ -36,7 +36,10 @@ strings go through locale keys (English source, curated Russian).
    [2026-10-19 addendum](docs/decisions/2026-10-19-owner-decisions-addendum.md) over
    [2026-10-19](docs/decisions/2026-10-19-owner-decisions.md) over the legacy records of
    2026-08-18 and 2026-08-02).
-8. After every bounded slice, update `PHASE_STATUS.md` and rewrite `NEXT_AGENT_PROMPT.md` for
+8. Working in a parallel lane? Follow [`docs/plans/lanes/`](docs/plans/lanes/README.md): your
+   own worktree and branch, your lane's ports, heavy checks through the shared lock, and a
+   hand-off file instead of the status files below.
+9. After every bounded slice, update `PHASE_STATUS.md` and rewrite `NEXT_AGENT_PROMPT.md` for
    the next unfinished slice. If blocked, leave the prompt on the current slice with the
    blocker and recovery steps.
 
@@ -132,6 +135,11 @@ The browser gate needs Chromium installed first: `npx playwright install chromiu
 `packages/web` (no postinstall hook). Run the gate only from the repository root or
 `packages/web`; a bare `npx playwright` from the root lacks the workspace `baseURL` and fails
 with an invalid URL.
+
+Parallel worktrees set `GUANXI_WEB_PORT` (Vite and the browser gate, default 5173) and
+`GUANXI_API_PORT` (the Vite `/api` proxy, default 4310). The server takes `PORT`, and its
+default dev origins follow `GUANXI_WEB_PORT`. A busy port fails loudly (`strictPort`); it
+never silently tests another worktree's server.
 
 ## Change boundaries
 

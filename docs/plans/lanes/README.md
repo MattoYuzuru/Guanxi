@@ -1,0 +1,85 @@
+# Parallel lanes
+
+**Status:** accepted (owner, 2026-10-20) · **Updated:** 2026-10-20
+
+Several agents, possibly from different model families and harnesses, work on independent
+roadmap stages at the same time on the owner's Mac (Apple M5 Pro, 15 cores, 24 GB). This file
+holds the rules every lane follows. Each lane has its own prompt file in this folder. The
+integrator, the coordinating Claude session, merges lanes into `main`.
+
+## Wave 1 (open now)
+
+| Lane | Stage part | Runs in | Branch | `GUANXI_WEB_PORT` / `GUANXI_API_PORT` | Starts |
+| --- | --- | --- | --- | --- | --- |
+| [K1](K1.md) | K1 kernel spike | Claude Opus session | `lane/k1-kernel` (or the session's own branch) | 5181 / 4381 | now |
+| [DS1-a](DS1-a.md) | tokens, fonts, logo assets, gate runner, G1–G7 | GPT (Codex), xhigh | `lane/ds1-a-tokens` | 5182 / 4382 | now |
+| [DS1-b](DS1-b.md) | `@guanxi/ui` primitives, stories, catalog, approvals, G10–G16 | Claude Opus session | `lane/ds1-b-catalog` (or the session's own branch) | 5183 / 4383 | now |
+| [DS1-c](DS1-c.md) | ESLint and stylelint, G8–G9, suppression ratchet, codemod | DeepSeek Flash | `lane/ds1-c-ratchet` | 5184 / 4384 | after K1 and DS1-a are merged |
+| [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190 / 4390 | when a lane hands off |
+
+Merge order: K1 → DS1-a → DS1-b → DS1-c. Wave 2 (K2, K3, U1) opens after K1 merges; see the
+[roadmap graph](../roadmap.mmd).
+
+## Rules for every lane
+
+1. **Read first:** [AGENTS.md](../../../AGENTS.md), [WORKFLOW](../WORKFLOW.md), this file and
+   your lane file. They override anything you assume from other harnesses.
+2. **Worktree and branch:** work only in your own git worktree on your lane branch. Never
+   commit to `main`, never push, never merge. The integrator merges.
+3. **Ownership:** edit only the paths your lane file owns. If you must touch another lane's
+   path, keep the change minimal and list it under "Shared edits" in your hand-off.
+4. **Ports:** export your lane's `GUANXI_WEB_PORT` and `GUANXI_API_PORT` in every shell. The
+   browser gate and the Vite dev server read them. A busy port fails loudly; never kill a
+   process you did not start.
+5. **Heavy checks go through the shared lock.** These are `npm test`, `npm run test:web:browser`,
+   `npm run build`, Storybook builds and visual snapshots:
+
+   ```bash
+   agent-dev run --cwd "$PWD" --node 26 --resource heavy -- npm run test:web:browser
+   ```
+
+   Run one check per call and stop at the first failure. If your sandbox cannot run
+   `agent-dev` or write `~/.local/state/agent-dev`, run the check directly with your lane's
+   ports and write "ran without the shared lock" in the hand-off.
+6. **Live server:** never use the owner's `~/.guanxi`. Use
+   `node packages/cli/src/bin.ts --port "$GUANXI_API_PORT" --data-dir "$PWD/.lane-data" --no-open`.
+   `.lane-data/` is ignored by git.
+7. **Status files:** do not edit `docs/plans/PHASE_STATUS.md` or
+   `docs/plans/NEXT_AGENT_PROMPT.md`. Every lane edits them, so they would conflict at merge.
+   Write your status into `docs/plans/lanes/<lane>.handoff.md` instead:
+   - exit-gate items with evidence split into "new / regression envelope";
+   - commands with the result line or `agent-dev` receipt path;
+   - verification findings and their fix commits;
+   - residual risk and shared edits;
+   - the next slice.
+
+   The integrator folds the hand-off into the status files at merge.
+8. **Dependencies:** add a dependency to your own package's `package.json` where possible. Do not
+   hand-resolve `package-lock.json`; the integrator regenerates it after each merge and re-runs
+   the gates. Every copied third-party file needs a `THIRD_PARTY_NOTICES.md` entry in the same
+   commit, and `npm run check:licenses` must stay green.
+9. **Before hand-off:**
+   - merge the current `main` into your branch (no rebase of pushed history);
+   - re-run your gates;
+   - run the independent verification your lane file names, as a separate action, with fixes
+     in separate commits.
+10. **Never:**
+    - put secret values anywhere;
+    - write reasoning to logs;
+    - set a component's review status to `approved` (only the owner's signed approval can);
+    - weaken an existing test to make it pass;
+    - mark `proposed` work as implemented.
+11. **Blocked:** write the blocker and the recovery steps into your hand-off file, commit it on
+    your branch, and stop.
+
+## Integrator checklist (per merge)
+
+- [ ] Read the hand-off and the diff; check that ownership was respected.
+- [ ] Cross-family review done ([REVIEW](REVIEW.md)), findings fixed on the lane branch.
+- [ ] `git merge --no-ff` the lane into `main`, regenerate `package-lock.json` with `npm install`
+      if any `package.json` changed.
+- [ ] On `main`, run typecheck, `npm test`, browser gate, build, `lint:md` and `check:licenses`
+      through the shared lock.
+- [ ] Fold the hand-off into `PHASE_STATUS.md` and `NEXT_AGENT_PROMPT.md`, then delete the
+      hand-off file.
+- [ ] Push `main` and tell lanes that started from an older `main` to merge it.

@@ -146,4 +146,6 @@ Stages without a dependency between them (see the [roadmap graph](roadmap.mmd)) 
 separate sessions at the same time when they touch different packages. Each session works in
 its own worktree, avoids running heavy checks (browser gate, benchmarks) at the same time as
 another session on the same machine (use a shared lock if your environment provides one), and
-merges only after its own exit gate.
+merges only after its own exit gate. The concrete rules for the current wave (lanes, owned
+paths, ports, the `agent-dev` lock, hand-off files and merge order) are in
+[lanes/README](lanes/README.md).
