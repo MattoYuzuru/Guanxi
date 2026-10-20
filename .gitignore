@@ -18,3 +18,6 @@ data/
 
 # Local exports and scratch output
 output/
+
+# Agent worktrees created by Claude Code sessions
+.claude/worktrees/
