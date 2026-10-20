@@ -1,3 +1,4 @@
+import { normalizeHost } from '../ollama/normalize-host.ts'
 import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
@@ -152,7 +153,7 @@ export class Connections {
       if (connection.kind !== 'local_runtime') throw new Error('Not a local runtime connection')
       if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
       this.#vault.assertScrubbingReady(accountId)
-      const host = new URL(this.localHost())
+      const host = new URL(normalizeHost(this.localHost()))
       if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')
       const context = request.options?.num_ctx
       if (!context || !Number.isSafeInteger(context) || context <= 0) throw new Error('Explicit runtime context is required')

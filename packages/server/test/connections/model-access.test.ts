@@ -276,6 +276,8 @@ test('local runtime uses K1 adapter and governor; fixture response is scrubbed a
     return Response.json({ model: 'fixture', created_at: new Date().toISOString(), done: true,
       message: { role: 'assistant', content: 'ok' }, prompt_eval_count: 5, eval_count: 1 })
   } })
+  f.config.localHost = () => '127.0.0.1:11434'
+  await f.restart()
   const s = f.service(); const row = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
   const secret = fakeKey(); await s.unlockVault(account); s.saveSecret(account, s.create(account, apiInput).id, secret)
   const request = { model: 'fixture', messages: [{ role: 'user' as const, content: secret }], options: { num_ctx: 1024 } }
