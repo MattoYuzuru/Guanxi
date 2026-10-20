@@ -136,8 +136,15 @@ export class KernelImpl implements Kernel {
  * The object handed to the host: methods only, backed by the private
  * implementation, so host code cannot reach the core maps or lifecycle state.
  */
+const implementations = new WeakMap<object, KernelImpl>()
+
+/** The implementation behind a facade (kernel-internal; diagnostics only). */
+export function implementationOf(kernel: Kernel): KernelImpl | undefined {
+  return implementations.get(kernel)
+}
+
 export function kernelFacade(impl: KernelImpl): Kernel {
-  return Object.freeze({
+  return register(impl, {
     slots: impl.slots,
     plugin: <C>(plugin: GuanxiPlugin<C>, config?: C) => impl.plugin(plugin, config),
     service: <T>(name: string) => impl.service<T>(name),
@@ -145,6 +152,12 @@ export function kernelFacade(impl: KernelImpl): Kernel {
     counters: () => impl.counters(),
     dispose: () => impl.dispose(),
   })
+}
+
+export function register<T extends object>(impl: KernelImpl, facade: T): T {
+  const frozen = Object.freeze(facade)
+  implementations.set(frozen, impl)
+  return frozen
 }
 
 export function createKernel(options: KernelOptions = {}): Kernel {

@@ -58,3 +58,34 @@ describe('leak census', () => {
     assert.equal(kernel.counters().slotOrphans, 1)
   })
 })
+
+describe('retained lifecycle objects', () => {
+  const collect = async () => {
+    const { setFlagsFromString } = await import('node:v8')
+    const { runInNewContext } = await import('node:vm')
+    setFlagsFromString('--expose-gc')
+    const gc = runInNewContext('gc') as () => void
+    for (let round = 0; round < 6; round += 1) {
+      gc()
+      await new Promise((resolve) => setTimeout(resolve, 2))
+    }
+  }
+
+  it('lets disposed fibers and contexts be collected, and detects one that is retained', { timeout: 10_000 }, async () => {
+    const { retainedObjects } = await import('../src/node.ts')
+    const kernel = createKernel()
+    const plugin = testPlugin({}, (ctx) => on(ctx, 'x', () => {}))
+    for (let cycle = 0; cycle < 10; cycle += 1) await (await kernel.plugin(plugin)).dispose()
+    await collect()
+    assert.deepEqual(retainedObjects(kernel), { fibers: 0, contexts: 0 })
+
+    const kept: unknown[] = []
+    const retaining = testPlugin({}, (ctx) => {
+      kept.push(ctx)
+    })
+    for (let cycle = 0; cycle < 10; cycle += 1) await (await kernel.plugin(retaining)).dispose()
+    await collect()
+    assert.deepEqual(retainedObjects(kernel), { fibers: 10, contexts: 10 }, 'a retained context keeps its fiber alive')
+    kept.length = 0
+  })
+})

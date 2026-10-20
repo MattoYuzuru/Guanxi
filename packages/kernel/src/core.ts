@@ -248,6 +248,16 @@ function defaultLog(record: KernelLogRecord): void {
 
 const contextKernels = new WeakMap<object, KernelCore>()
 
+/** Heap-live lifecycle objects per kernel, for leak diagnostics (counts drop after GC). */
+export interface RetainedObjects {
+  fibers: number
+  contexts: number
+}
+
+const finalizers = new FinalizationRegistry<{ counts: RetainedObjects; kind: keyof RetainedObjects }>(({ counts, kind }) => {
+  counts[kind] -= 1
+})
+
 /** The kernel behind a context the kernel created; `undefined` for anything else. */
 export function kernelOfContext(ctx: PluginContext): KernelCore | undefined {
   return contextKernels.get(ctx)
@@ -262,6 +272,8 @@ export class KernelCore {
   private abandoned: string[] = []
   readonly timeoutMs: number
   readonly log: (record: KernelLogRecord) => void
+  /** Fibers and contexts not yet garbage-collected, disposed ones included. */
+  readonly retained: RetainedObjects = { fibers: 0, contexts: 0 }
 
   constructor(options: KernelOptions = {}) {
     this.timeoutMs = options.stepTimeoutMs ?? 10_000
@@ -328,6 +340,8 @@ export class KernelCore {
 
   createFiber(plugin: GuanxiPlugin<any>, config: unknown, parent: Fiber | null): Fiber {
     const fiber = new Fiber(plugin, config, parent)
+    this.retained.fibers += 1
+    finalizers.register(fiber, { counts: this.retained, kind: 'fibers' })
     this.fibers.add(fiber)
     parent?.children.add(fiber)
     return fiber
@@ -364,6 +378,8 @@ export class KernelCore {
     }
     ;(activation as { context: PluginContext }).context = this.contextFor(fiber, activation)
     contextKernels.set(activation.context, this)
+    this.retained.contexts += 1
+    finalizers.register(activation.context, { counts: this.retained, kind: 'contexts' })
     for (const name of fiber.manifest.requires) activation.bound.add(name)
     for (const name of fiber.manifest.uses) if (this.services.has(name)) activation.bound.add(name)
     fiber.activation = activation

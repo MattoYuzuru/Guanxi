@@ -9,7 +9,8 @@
  */
 import { readFile } from 'node:fs/promises'
 import type { Fiber, GuanxiPlugin, PluginState } from './core.ts'
-import { KernelImpl, kernelFacade, type Kernel } from './kernel.ts'
+import { KernelImpl, implementationOf, kernelFacade, register, type Kernel } from './kernel.ts'
+import type { RetainedObjects } from './core.ts'
 import type { KernelOptions } from './core.ts'
 import { ProfileError, resolveProfile, type ProfileLayer, type ResolvedEntry } from './profile.ts'
 
@@ -242,7 +243,7 @@ export async function bootNode(options: BootOptions): Promise<NodeKernel> {
     await impl.dispose().catch(() => undefined)
     throw error
   }
-  return Object.freeze({
+  return register(impl, {
     ...kernelFacade(impl),
     entries: () => impl.entries(),
     stateOf: (rowId: string) => impl.stateOf(rowId),
@@ -322,6 +323,17 @@ function assertAcyclic(rows: readonly ResolvedEntry[], manifest: (entry: Resolve
     state.set(id, 'done')
   }
   for (const entry of enabled) visit(entry.id, [])
+}
+
+/**
+ * Lifecycle objects of a kernel that the garbage collector has not reclaimed
+ * yet, disposed ones included. After forced GC with event-loop turns, they
+ * should equal the live counts; more means something retains them.
+ */
+export function retainedObjects(kernel: Kernel): RetainedObjects {
+  const impl = implementationOf(kernel)
+  if (!impl) throw new TypeError('retainedObjects() needs a kernel created by createKernel() or bootNode()')
+  return { ...impl.core.retained }
 }
 
 /** Read a JSON profile layer from disk (`{ name?, insert?, patch? }`). */
