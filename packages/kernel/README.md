@@ -53,7 +53,9 @@ Rules the kernel enforces:
   - its `signal` aborts at that moment, so async work can stop.
 - Provide exactly `manifest.provides`, and only while loading. Read services only through
   `requires` (`service`) or `uses` (`optionalService`). A plugin restarts when one of its `uses`
-  appears or leaves.
+  appears or leaves. Slots are reached through `declareSlot`/`contribute` only.
+- Do not wait inside `apply` for another plugin or a lifecycle call; put long initialisation in
+  an effect.
 - `kernel/*` event names are reserved.
 - Child plugins (`ctx.plugin`) start after their parent's `apply` returns and unload with it.
 
@@ -66,9 +68,12 @@ States: `pending → loading → active → unloading → pending | disposed`, a
 - When a provider unloads, its children and its dependents unload first, then its cleanups run
   in reverse order, then its services disappear.
 - A throwing cleanup or listener is logged and the teardown continues.
-- Each transition is bounded by `transitionTimeoutMs` (default 10 s):
-  - past the bound the caller gets `KernelTimeoutError` naming the plugin and step;
-  - the kernel refuses new transitions until the stuck step settles, and then recovers.
+- Each plugin step, one `apply` or one cleanup, is bounded by `stepTimeoutMs` (default 10 s):
+  - a stuck apply fails its plugin, and a stuck cleanup is skipped;
+  - the transition still finishes consistently, and the kernel stays usable;
+  - the caller gets `KernelTimeoutError` naming every abandoned step.
+- Each plugin starts or restarts at most twice per settle, so optional-service cycles cannot
+  loop. A plugin may not `use` a service it provides.
 
 `test/lifecycle.test.ts` pins these rules against the race classes found in upstream Cordis
 (ADR-0037).
@@ -111,10 +116,15 @@ A node's plugin tree is a list of ordered layers. Each layer has `insert` rows a
   never evaluates code; `__jsExpr` values are refused.
 - **Reconciliation:** only rows whose plugin or config changed reload.
 - **Patches:** a patch naming an unknown row fails.
-- **Requirements:** a required service or contributed slot that no row provides fails.
-- **Safe mode:** disables every non-T0 row, and then every row that depends on a disabled one.
-- **Pinned rows** refuse to change. These are rows whose services were handed to code outside
-  the kernel, such as the legacy server context.
+- **Requirements:** a required service or contributed slot that no row provides fails, and so do
+  rows that require each other in a cycle.
+- **Failures:** a failed row, or one still waiting for an enabled provider, fails the change
+  (`NodeLoadError`). The profile stays applied and failed rows load again on the next `apply`.
+- **Safe mode:** boots the base layer only, disables every non-T0 row, and then every row that
+  depends on a disabled one.
+- **Pinned rows** refuse any change that would restart them, including through their
+  dependencies. These are rows whose services were handed to code outside the kernel, such as
+  the legacy server context.
 
 ## Slots
 
