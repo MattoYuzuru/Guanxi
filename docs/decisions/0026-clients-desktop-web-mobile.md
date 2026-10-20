@@ -27,8 +27,8 @@ since iOS 16.4.
 4. **Mobile, step 1 — PWA** served by the user's node, with Web Push (VAPID per installation)
    and voice upload via `getUserMedia`.
 5. **Mobile, step 2 — native** after a spike on locked-screen audio capture and streaming:
-   Capacitor (maximum SPA reuse) or Expo (better background audio). Lane 2 leans to Expo for
-   the voice mode. Native push needs a relay or ntfy because self-hosters cannot hold the
+   Expo, for its background audio (D-168); Capacitor is not planned. Whether to hold an Apple
+   Developer account is decided after the PWA (D-156). Native push needs a relay or ntfy because self-hosters cannot hold the
    project's APNs key; payloads stay content-free.
 6. **New-session screen** (REQ-D2): logo, project picker, prompt box, access mode, model picker,
    microphone, attachment; sidebar entries New, Projects, Models, Settings (list slot).

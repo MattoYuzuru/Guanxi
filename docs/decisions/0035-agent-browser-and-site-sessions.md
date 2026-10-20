@@ -69,8 +69,8 @@ December 2025 agentic-security design is the strongest published model.
 ## Consequences
 
 Agents get a deterministic, observable browser with session evidence and human takeover; users
-keep control of which sites agents act on. Costs: a Chrome extension to maintain (publication is
-an open question), screencast quality to tune, and sites whose terms forbid automation.
+keep control of which sites agents act on. Costs: a Chrome extension to maintain (unpacked first, Chrome
+Web Store before MS2, D-178), screencast quality to tune, and sites whose terms forbid automation.
 
 ## Validation
 

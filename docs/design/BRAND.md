@@ -39,8 +39,9 @@ vector edition v1, reproducible with `build.mjs`).
 ### Wordmark
 
 The current wordmark is a system-font preview, not a deliverable. The production wordmark is
-outlined from IBM Plex Sans and hand-adjusted to echo the logo diagonal (who draws it is open
-question Q-239). Until then, product UI shows the symbol alone, or the symbol with the product
+outlined from IBM Plex Sans and hand-adjusted to echo the logo diagonal; Guanxi draws it and the
+owner approves it in the catalog (D-177), with a type designer reconsidered before a public
+release. Until then, product UI shows the symbol alone, or the symbol with the product
 name as ordinary UI text.
 
 ## Brand colours

@@ -1,6 +1,6 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-19
+**Status:** implemented tracker · **Updated:** 2026-10-20
 **Current stage:** S0 Re-foundation — committed 2026-10-20 (`a6fd314`..`be89bb9`); review
 fixes applied but not re-reviewed; next: K1 Kernel spike
 
@@ -27,6 +27,7 @@ is still what runs today; it is ported into the new stages rather than discarded
 | Dependency license gate | implemented locally | `npm run check:licenses`: 251 packages, 0 disallowed; fails on an AGPL fixture and on a package without a license (manual check); CI wiring waits for a CI pipeline |
 | Commit | implemented | `a6fd314` rename, `aa257c1` license and gates, `6e6b63c` legacy archive, `3194f41` research, `be89bb9` canonical docs (review fixes included because the docs had never been committed) |
 | Notification center design | implemented (docs) | ADR-0033, D-123–D-125, stage NC1, REQ-J3–J5 |
+| Open questions | implemented (docs) | the owner accepted every recommended default in chat on 2026-10-20: Q-201–Q-230 and Q-233–Q-244 are D-141–D-182 in the [2026-10-20 addendum](../decisions/2026-10-20-owner-decisions-addendum.md); ADRs 0018, 0019, 0025, 0026, 0028, 0029, 0031, 0032, 0035, BRAND, REQUIREMENTS A5 and each ROADMAP stage cite the decisions; [OPEN_QUESTIONS](OPEN_QUESTIONS.md) has none open. D-157 also fixes the transcription of inflected English terms, a sub-question the recommended default did not cover. |
 | Design system documentation | implemented (docs) | `docs/design/` (brand book, principles, foundations, layout and screens, components and catalog), ADR-0034–0036, D-127–D-140, `.agents/skills/guanxi-ui`, four design research lanes; palette contrast re-computed for the chosen combination (all ≥ 4.5:1 text, ≥ 3:1 UI). Owner preview page "Guanxi Glacier": <https://claude.ai/code/artifact/59348be6-49a3-4044-9a5e-a49b08daa2c1> (private) |
 | Logo assets | implemented | `assets/brand/guanxi-gx-v1/` (D-126); `build.mjs` reproduces `logo.svg` byte-identically (SHA-256 `f6d5226e…ba7a`) |
 

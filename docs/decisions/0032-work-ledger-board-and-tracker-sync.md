@@ -52,13 +52,13 @@ Evidence (lane 7, [research](../research/2026-10-19-landscape/07-work-methodolog
    queue), never from arbitrary numbers; explicit definition of done = acceptance command.
    No sprints, story points or ceremonies.
 6. **Board** in the UI is a projection (columns by derived status, dependency view, evidence
-   links); an optional Markdown export (`.guanxi/work/*.md`) whether to commit it is an open
-   question (Q-236).
+   links); an optional Markdown export (`.guanxi/work/*.md`) is produced on demand and not committed to
+   the project repository (D-174).
 7. **External tracker sync** (plugins, first GitHub Issues and Jira, D-115): the tracker owns
    business intent (title, description, priority, assignee); Guanxi owns execution state
    (items, evidence, derived status). Link external issues to ledger items; write outward
-   rarely and coarsely (start, blocked, done with evidence link); read by polling (the node is
-   loopback-only by default; webhooks need a relay plugin). Respect rate limits (GitHub: 80
+   rarely and coarsely (start, blocked, done with evidence link); read by polling every 10 minutes (D-175; the node
+   is loopback-only by default; webhooks need a relay plugin). Respect rate limits (GitHub: 80
    content creations per minute, 500 per hour; Jira: about 20 writes per issue per 2 s).
    Agents do not get the tracker MCP tools by default (GitHub MCP descriptions cost about
    12.8k tokens).

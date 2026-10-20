@@ -37,8 +37,10 @@ dictionary checked handles Cyrillic transliterations of English terms ("хоно
    the user's review queue. Every applied entry has one-click revert.
 6. **Measurement**: B-WER, U-WER and term F1 on 100–150 of the owner's own recordings (about
    20 minutes), re-run when the glossary or backend changes.
-7. **Privacy**: audio retention is a per-account setting; sending the glossary to a cloud STT
-   vendor requires per-connection consent.
+7. **Privacy**: audio retention is a per-account setting, 7 days by default; sending the
+   glossary to a cloud STT vendor requires per-connection consent and is off by default
+   (D-157). Inflected English terms in Russian speech are written as the Latin-script term with
+   the Russian ending after a hyphen (`PR-а`); V1 may revise this from the eval set.
 
 ## Validation
 

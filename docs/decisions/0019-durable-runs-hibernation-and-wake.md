@@ -83,8 +83,9 @@ SQLite is dev-only, Restate is BSL, Inngest SSPL, DBOS TypeScript Postgres-only)
   signal, across any crash point.
 - While the run's home is up, a deadline always wakes the lead, even if the child's host is
   gone. If the home was asleep, the wake fires when it returns.
-- Model pulls and other connection-owned streams stay non-durable unless a stage explicitly
-  converts them into node-owned runs (open question Q-207).
+- Model installation on a node becomes a node-owned run with resumable download in stages F2
+  and W1 (D-147). Until then, and for every other connection-owned stream, the legacy rule
+  holds: those streams are not durable.
 
 ## Consequences
 

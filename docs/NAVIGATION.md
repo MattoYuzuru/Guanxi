@@ -1,6 +1,6 @@
 # Documentation map
 
-**Status:** implemented · **Updated:** 2026-10-19
+**Status:** implemented · **Updated:** 2026-10-20
 **Purpose:** canonical index; content lives in the linked documents.
 
 ## Quick routes
@@ -8,13 +8,13 @@
 | Task | Read |
 | --- | --- |
 | Understand the product | [VISION](vision/VISION.md) → [REQUIREMENTS](vision/REQUIREMENTS.md) |
-| See what the owner decided | [Owner decisions 2026-10-19](decisions/2026-10-19-owner-decisions.md) → [addendum](decisions/2026-10-19-owner-decisions-addendum.md) → [2026-10-20](decisions/2026-10-20-owner-decisions.md) → [ADR index](decisions/README.md) |
+| See what the owner decided | [Owner decisions 2026-10-19](decisions/2026-10-19-owner-decisions.md) → [addendum](decisions/2026-10-19-owner-decisions-addendum.md) → [2026-10-20](decisions/2026-10-20-owner-decisions.md) → [2026-10-20 addendum](decisions/2026-10-20-owner-decisions-addendum.md) → [ADR index](decisions/README.md) |
 | Understand the target design | [TARGET_ARCHITECTURE](architecture/TARGET_ARCHITECTURE.md) → relevant ADR |
 | Build or review UI | [design system](design/README.md) → [`guanxi-ui` skill](../.agents/skills/guanxi-ui/SKILL.md) |
 | Know why a library was chosen | [research synthesis](research/README.md) → raw lane report |
 | Continue implementation | [PHASE_STATUS](plans/PHASE_STATUS.md) → [WORKFLOW](plans/WORKFLOW.md) → [ROADMAP](plans/ROADMAP.md) |
 | Hand off to the next agent | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) |
-| Check unresolved owner choices | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) |
+| Check owner choices still open (none on 2026-10-20) | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) |
 | Change the code that exists today | [legacy docs](legacy/README.md) (Russian): DEVELOPMENT, TESTING, HLD, LLD, RUNTIME_LIFECYCLE |
 | Reuse third-party code | [ADR-0016](decisions/0016-licensing-and-third-party-reuse.md) → [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md) |
 
@@ -34,7 +34,7 @@
 | [PHASE_STATUS](plans/PHASE_STATUS.md) | implemented | mutable tracker with evidence |
 | [WORKFLOW](plans/WORKFLOW.md) | accepted | protocol for one slice |
 | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) | ready | bounded prompt for the next slice |
-| [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) | proposed | questions with recommended defaults |
+| [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) | accepted | open questions with recommended defaults (none open) and answered ones with their decisions |
 | [legacy/](legacy/README.md) | implemented (legacy) | Alamo-era docs describing the code in `packages/` today |
 
 ## Diagrams

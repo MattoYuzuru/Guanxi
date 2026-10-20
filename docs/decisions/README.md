@@ -1,6 +1,6 @@
 # Decisions
 
-**Updated:** 2026-10-19
+**Updated:** 2026-10-20
 
 Statuses: `proposed` (not yet approved), `accepted` (approved, maybe not implemented),
 `implemented`, `superseded`. A newer owner decision record overrides older ones. Every ADR
@@ -10,6 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
+| [2026-10-20 addendum](2026-10-20-owner-decisions-addendum.md) (D-141–D-182: answers to every open question Q-201–Q-244) | accepted |
 | [2026-10-20](2026-10-20-owner-decisions.md) (D-123–D-140: quota alerts, notifications, logo, design system, layout, modes, agent browser) | accepted |
 | [2026-10-19 addendum](2026-10-19-owner-decisions-addendum.md) (D-114–D-122: work methodology, trackers, clarifications after the S0 review) | accepted |
 | [2026-10-19 re-foundation](2026-10-19-owner-decisions.md) (D-101–D-113) | accepted |

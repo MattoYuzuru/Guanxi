@@ -81,7 +81,7 @@ Lane 6 findings:
     limits, daily token limits per provider; balances read through ADR-0017. Lane 6 estimate
     at 2026-10-19 DeepSeek prices: smoke ≈ $6, full A/B (600 trials) ≈ $70 on Flash or
     $120–265 on V4-Pro. With a biweekly full A/B on Flash, about 20 smokes and free nightly
-    local runs, the monthly spend is about $170–200; the default budget (Q-210) is $200.
+    local runs, the monthly spend is about $170–200; the budget (D-150) is $200.
 12. **Placement**: amd64 task images on the Windows PC (WSL2 Docker) or the Linux VPS; local
     model inference and the local judge on the Mac Studio; own TypeScript repositories may
     run natively on arm64.

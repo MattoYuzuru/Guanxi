@@ -19,8 +19,8 @@ never be exposed).
 ## Decision
 
 1. **Node agent** is part of every Guanxi node: enrollment and heartbeat, hardware inventory
-   with provenance, runtime discovery and probes, model installation as node-owned runs (default of open question
-   Q-207, not yet confirmed), the
+   with provenance, runtime discovery and probes, model installation as node-owned runs with resumable download
+   (D-147), the
    local governor, execution of attempts (agent loops, shell/tests, batch jobs) in a sandbox,
    workspace manager (git mirrors, worktrees), resource-lease enforcer and reaper, local event
    spool, artifact cache.
@@ -52,7 +52,7 @@ never be exposed).
    `owner_unreachable_shutdown_after`) on every cloud node, because neither SkyPilot nor dstack
    caps total spend.
 8. **Power**: a node may hold a power assertion while it holds or grants active leases or has
-   pending timers (owner setting, Q-208); Wake-on-LAN is optional.
+   pending timers (D-148); Wake-on-LAN is opt-in per node.
 9. **Media models and the composer (REQ-G2, REQ-G3)**: each runtime adapter publishes a
    capability manifest per model (input and output modalities, parameter schema with types,
    ranges and recommended presets, limits with source). The composer renders only the inputs

@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** proposed structure (the owner asked for a dependency graph; stage contents follow
-their ADRs) · **Updated:** 2026-10-19 (revised after the S0 review the same day)
+their ADRs) · **Updated:** 2026-10-20 (owner answers D-141–D-182 linked per stage)
 **Supersedes:** the legacy Phase 0–9 roadmap in
 [`docs/legacy/alamo/plans/ROADMAP.md`](../legacy/alamo/plans/ROADMAP.md) (Phases 0–3 are
 implemented in the legacy code and are ported, not repeated).
@@ -36,8 +36,9 @@ interactive view exists as a private page for the owner; it is a convenience, no
 
 Each stage lists: **Goal**, **Depends on**, **Scope**, **Reuse**, **Exit gate** (every bullet
 needs an assertion that fails when the property is violated, per [WORKFLOW](WORKFLOW.md)),
-**Before starting** (design obligations the S0 review attached to the stage), **Open
-questions** (from [OPEN_QUESTIONS](OPEN_QUESTIONS.md); a stage may proceed on the recommended
+**Before starting** (design obligations the S0 review attached to the stage), **Owner
+answers** (the decisions that closed the stage's former questions in
+[OPEN_QUESTIONS](OPEN_QUESTIONS.md); a question raised later may proceed on its recommended
 default and must record that it did), and an estimate in full agent sessions.
 
 UI built in a stage before U1 is interim (legacy components) and is migrated by U1's gate.
@@ -95,7 +96,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Exit gate:** crash at every append point never yields a torn or duplicated event; reload
   replay reproduces UI state (count assertions); a planted secret never appears in events or
   exports; an agent on a remote provider receives 0 reasoning events from the query tool.
-- **Open questions:** Q-201.
+- **Owner answers:** D-141 (Q-201).
 - **Estimate:** 2–3 sessions.
 
 ### K3 — Model access
@@ -112,7 +113,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Exit gate:** a secret printed by a tool never reaches the next model request (end-to-end
   trace test); balances without `observedAt` render `unknown`; recorded-fixture contract tests
   per probe.
-- **Open questions:** Q-201, Q-205.
+- **Owner answers:** D-141 (Q-201), D-145 (Q-205).
 - **Estimate:** 3–4 sessions.
 
 ### K4 — Native agent, tools, access modes, projects
@@ -148,7 +149,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Reuse:** ACP v1 SDK, Codex app-server protocol, Copilot SDK (MIT).
 - **Exit gate:** recorded-session tests per adapter version; role precedence golden tests; the
   Claude Code `--bare`/subscription state is detected and reported.
-- **Open questions:** Q-202, Q-203, Q-204.
+- **Owner answers:** D-142 (Q-202), D-143 (Q-203), D-144 (Q-204).
 - **Estimate:** 3–4 sessions.
 
 ## Durable runs and relay
@@ -169,7 +170,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   a stale completion wakes nobody; an escalation then a completion produce two wakes and one
   resolution; the lead's worktree survives an 8-hour hibernation; canceling a hibernating lead
   cancels children exactly once.
-- **Open questions:** Q-205.
+- **Owner answers:** D-145 (Q-205).
 - **Estimate:** 3–4 sessions.
 
 ### R2 — Relay executor v1
@@ -190,7 +191,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   handoff is caught by probes; a failed narrative falls back to `degraded` without losing
   progress; a stale attempt's seal is rejected; a cycle that only adds notes does not count as
   progress.
-- **Open questions:** Q-218.
+- **Owner answers:** D-158 (Q-218).
 - **Estimate:** 4–6 sessions.
 
 ### R3 — Judge cascade, ETA, delegation policy
@@ -204,7 +205,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Exit gate:** on a replay corpus with injected loops, protected-path edits and premature
   "done": recall ≥ 0.9 and precision ≥ 0.8; J3 wakes ≤ 1 per hour on average over a night run;
   ETA P80 coverage between 0.7 and 0.9 over at least 20 runs.
-- **Open questions:** Q-219, Q-220, Q-221.
+- **Owner answers:** D-159 (Q-219), D-160 (Q-220), D-161 (Q-221).
 - **Estimate:** 3–5 sessions.
 
 ## Fleet
@@ -225,7 +226,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   `cloud_ephemeral` or non-owner node receives 0 vault records, 0 session replicas and 0
   reasoning events; unauthenticated nodes are refused; peers on an older major contract are
   read-only.
-- **Open questions:** Q-206, Q-230.
+- **Owner answers:** D-146 (Q-206), D-170 (Q-230).
 - **Estimate:** 4–6 sessions.
 
 ### F2 — Remote attempts with fenced leases
@@ -244,7 +245,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   attempting a git push, a database write and a cloud launch lands **0 effects**; the home
   sleeping mid-run ends in completion or exactly one wake; a home restored from backup bumps
   its epoch and loses no peer events; the target governor is never bypassed.
-- **Open questions:** Q-207, Q-208.
+- **Owner answers:** D-147 (Q-207), D-148 (Q-208).
 - **Estimate:** 4–6 sessions.
 
 ### F3 — Resource leases, remote tests, fleet dashboard
@@ -257,7 +258,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   affinity memory; fleet dashboard.
 - **Exit gate:** 1,000 randomized allocations never give two worktrees overlapping ports,
   compose names or databases; the reaper removes only its own labels.
-- **Open questions:** Q-223.
+- **Owner answers:** D-163 (Q-223).
 - **Estimate:** 3–5 sessions.
 
 ### F4 — Cloud rental with budget ledger
@@ -269,7 +270,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   with per-attempt secret grants only.
 - **Exit gate:** a launch without a reservation fails; the dead-man switch stops an instance
   when its owner node disappears; the cloud node holds 0 vault records.
-- **Open questions:** Q-209.
+- **Owner answers:** D-149 (Q-209).
 - **Estimate:** 2–3 sessions.
 
 ## Bench
@@ -286,7 +287,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   ADR-0025; review M-11).
 - **Exit gate:** stats module matches Inspect AI reducers on a fixture; a planted 10-point
   regression is detected; infra errors are reported separately; spend stays within the cap.
-- **Open questions:** Q-210, Q-211, Q-223, Q-227.
+- **Owner answers:** D-150 (Q-210), D-151 (Q-211), D-163 (Q-223), D-167 (Q-227).
 - **Estimate:** 2–3 sessions.
 
 ### B2 — Private bench and gate
@@ -301,7 +302,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Exit gate:** each task passes oracle 3/3 and no-op fail; 100% of canary hacks are caught;
   holdout access is audited; each experiment series ends with a recorded decision that cites
   its CI; judge agreement with owner labels (κ) is reported.
-- **Open questions:** Q-210, Q-212, Q-213, Q-225, Q-226.
+- **Owner answers:** D-150 (Q-210), D-152 (Q-212), D-153 (Q-213), D-165 (Q-225), D-166 (Q-226).
 - **Estimate:** 4–6 sessions.
 
 ### B3 — Relay benchmark
@@ -376,7 +377,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   accounts, TLS and allowed roots.
 - **Exit gate:** authorization matrix test over all roles × actions; remote bind refuses to
   start without TLS, accounts and allowed roots.
-- **Open questions:** Q-214, Q-215.
+- **Owner answers:** D-154 (Q-214), D-155 (Q-215).
 - **Estimate:** 3–5 sessions.
 
 ### U4 — PWA remote client
@@ -386,7 +387,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   (VAPID) for notification-center events with their actions, offline read cache and outbox.
 - **Exit gate:** SSE resume by offset never duplicates events (count assertion); push arrives
   on run completion on iOS and Android test devices.
-- **Open questions:** Q-228, Q-230.
+- **Owner answers:** D-168 (Q-228), D-170 (Q-230).
 - **Estimate:** 3–4 sessions.
 
 ### U5 — Native mobile
@@ -397,7 +398,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Exit gate:** a 5-minute dictation with the screen locked arrives complete on both
   platforms; a content-free push wakes the app on run completion; the app's dependency tree
   passes the license gate with 0 GPL/AGPL packages.
-- **Open questions:** Q-216, Q-228.
+- **Owner answers:** D-156 (Q-216), D-168 (Q-228).
 - **Estimate:** 4–8 sessions.
 
 ### U6 — Linux and Windows packaging
@@ -462,7 +463,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   Markdown export; WIP limits from capacity.
 - **Exit gate:** an agent's "done" without passing acceptance leaves the item open; the strip
   never exceeds its budget; `project` mode is not the default until the WL series shows a gain.
-- **Open questions:** Q-233, Q-234, Q-235, Q-236, Q-238.
+- **Owner answers:** D-171 (Q-233), D-172 (Q-234), D-173 (Q-235), D-174 (Q-236), D-176 (Q-238).
 - **Estimate:** 2–4 sessions.
 
 ### WG2 — Tracker sync: GitHub Issues and Jira
@@ -472,7 +473,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   read by polling, honour rate limits; no tracker tools in agent context by default.
 - **Exit gate:** recorded-fixture tests: business fields never overwritten, one status comment
   per transition, rate-limit backoff honoured.
-- **Open questions:** Q-232, Q-233, Q-237.
+- **Owner answers:** D-121 (Q-232), D-171 (Q-233), D-175 (Q-237).
 - **Estimate:** 2–3 sessions.
 
 ## Models workbench
@@ -482,11 +483,11 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Depends on:** K3, F1, U1.
 - **Scope:** port legacy catalog and capability evidence; Hugging Face, Ollama (unofficial
   label), models.dev; fit ladder FIT0–FIT4; model installs as node-owned runs with resumable
-  downloads (Q-207 default); Models section UI
+  downloads (D-147); Models section UI
   ([ADR-0031](../decisions/0031-compute-fabric-node-agent-and-runtimes.md)).
 - **Exit gate:** only FIT3/FIT4 may display "fits"; every fact shows source, time and
   confidence; an interrupted download resumes.
-- **Open questions:** Q-207.
+- **Owner answers:** D-147 (Q-207).
 - **Estimate:** 3–5 sessions.
 
 ### W2 — Media runtimes and adaptive composer
@@ -497,7 +498,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   parameter exposed with presets (ADR-0031 §9); model composition tools.
 - **Exit gate:** an image-only model hides text input; no parameter is capped below the
   adapter's declared limit (audit test like legacy P1-M).
-- **Open questions:** Q-224.
+- **Owner answers:** D-164 (Q-224).
 - **Estimate:** 4–6 sessions.
 
 ### W3 — Media UX and batch jobs
@@ -518,7 +519,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   ([ADR-0028](../decisions/0028-voice-and-glossary.md)).
 - **Exit gate:** golden transliteration tests; on the eval set, term F1 rises by ≥ 10 points
   while U-WER rises by ≤ 1 point.
-- **Open questions:** Q-217.
+- **Owner answers:** D-157 (Q-217).
 - **Estimate:** 3–4 sessions.
 
 ### V2 — Glossary learning
@@ -540,7 +541,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   per 100 sessions ([ADR-0024](../decisions/0024-self-evolution-loop.md)).
 - **Exit gate:** seeded friction corpus recall ≥ 0.8 and precision ≥ 0.7; no secret and no
   remote-bound reasoning in any auditor input.
-- **Open questions:** Q-201.
+- **Owner answers:** D-141 (Q-201).
 - **Estimate:** 3–4 sessions.
 
 ### E2 — RC0/RC1 changes through the gate
@@ -550,7 +551,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   pre-apply gates; provenance; revert.
 - **Exit gate:** a planted test-editing ChangeSet is rejected; an RC0 entry failing its eval is
   not applied; accepted RC1 changes stay within the instruction token budget.
-- **Open questions:** Q-221.
+- **Owner answers:** D-161 (Q-221).
 - **Estimate:** 3–4 sessions.
 
 ### E3 — RC2 canary
@@ -586,13 +587,13 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   `fill_secret`; origin sets, Read-only enforcement, download quarantine, egress proxy;
   browser leases ([ADR-0035](../decisions/0035-agent-browser-and-site-sessions.md)). Exit:
   injection pages cause no out-of-scope action; a planted cookie never appears in events, logs
-  or model requests; a Read-only run cannot submit a form (explicit assertion); open question
-  Q-203; 4–6 sessions.
+  or model requests; a Read-only run cannot submit a form (explicit assertion); owner answer
+  D-143 (Q-203); 4–6 sessions.
 - **C2 VM tier** (depends on C1, F3): Lume, Docker + Xvfb + noVNC, Windows Sandbox; VM-slot
-  leases. Exit: two agents never share a VM slot; open question Q-223; 3–4 sessions.
+  leases. Exit: two agents never share a VM slot; owner answer D-163 (Q-223); 3–4 sessions.
 - **C3 Accessibility tier** (depends on C2): Cua Driver background actions with an overlay
   cursor; input-seat lease for tier 4. Exit: the system cursor never moves in tier 3; injected
-  page instructions cause no out-of-scope action; open question Q-222; 3–5 sessions.
+  page instructions cause no out-of-scope action; owner answer D-162 (Q-222); 3–5 sessions.
   ([ADR-0029](../decisions/0029-computer-use-tiers.md))
 - **C4 Browser Bridge and site grants** (depends on C1): the Guanxi Bridge extension
   (per-site optional host permissions, native messaging), the Connections → Browser grant page,
@@ -600,13 +601,13 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   import from files, the import assistant (plans typed steps; code executes after the user
   approves). Exit: grants are per site only; revoking closes a live context within one lease
   TTL; an agent cannot install the extension or grant itself a site; no cookie value in any
-  log; open questions Q-240, Q-241, Q-242, Q-243; 3–4 sessions.
+  log; owner answers D-178–D-182 (Q-240–Q-244); 3–4 sessions.
 
 ## Indexing
 
 - **X1 Repo map + FTS** (depends on K4): tree-sitter map, FTS5 trigram, content-hash keys,
-  LSP. Exit: index fresh after branch switch across worktrees; open question Q-229; 2–3
-  sessions.
+  LSP. Exit: index fresh after branch switch across worktrees; owner answer D-169 (Q-229);
+  2–3 sessions.
 - **X2 Embeddings after A/B** (depends on X1, B2): enable IX3 only if the localisation A/B
   wins; 2–3 sessions. ([ADR-0030](../decisions/0030-project-knowledge-indexing.md))
 
@@ -614,7 +615,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 | Milestone | Requires | Exit gate |
 | --- | --- | --- |
-| **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; the run lasts ≥ 6 hours; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Open question Q-202. |
+| **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; the run lasts ≥ 6 hours; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Lead billing per D-142 (Q-202). |
 | **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
 | **MS3 Fleet and media** | F4, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
 | **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |

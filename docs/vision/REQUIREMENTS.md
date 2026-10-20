@@ -1,7 +1,7 @@
 # Requirements catalog
 
 **Status:** accepted as the owner's intent; individual designs are `proposed` until their ADR
-is accepted; rows marked `proposed` are not yet the owner's intent · **Updated:** 2026-10-19
+is accepted; rows marked `proposed` are not yet the owner's intent · **Updated:** 2026-10-20
 
 This catalog formalises the owner's 2026-10-19 brief (dictated in Russian). Every row is one
 testable requirement. Columns:
@@ -22,7 +22,7 @@ testable requirement. Columns:
 | A2 | Use API keys (Anthropic, OpenAI, DeepSeek, OpenRouter, gifted keys); show balance, spend and limits to the user **and** to agents, each with source and observation time. | Must | K3 | ADR-0017 |
 | A3 | Connect non-LLM services (web search, STT, TTS, image and video APIs) through the same registry. | Should | K3 | ADR-0017 |
 | A4 | Use local inference on any owned machine for every modality. | Must | K3 (local), F2 (remote) | [ADR-0031](../decisions/0031-compute-fabric-node-agent-and-runtimes.md) |
-| A5 | One connection registry that agents can read safely: references to secrets, health, balance, limits, capabilities; secret values never reach a model context, a log, a trace or a remote node outside the owner's devices. The clause "never shown to auditors" is `proposed` (Q-201). | Must | K3 | ADR-0017 |
+| A5 | One connection registry that agents can read safely: references to secrets, health, balance, limits, capabilities; secret values never reach a model context, a log, a trace or a remote node outside the owner's devices. Auditors never see secret values either (D-141). | Must | K3 | ADR-0017 |
 | A6 | Connections and secrets belong to an account; each user has their own. | Must | U3 | [ADR-0027](../decisions/0027-accounts-sharing-and-access-modes.md) |
 
 ## B. Machines and resources (fleet)

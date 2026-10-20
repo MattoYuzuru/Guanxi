@@ -96,7 +96,7 @@ it never writes a run transition for a run it does not own.
   lead's run to an `always_on` node; if none exists, it fails with `no_always_on_home` and the
   UI explains why.
 - A node holds a power assertion while it holds or **grants** active leases or has pending
-  timers (owner setting, Q-208).
+  timers (D-148); Wake-on-LAN is opt-in per node.
 
 ### 6. Commands
 
@@ -119,7 +119,7 @@ connect; a peer on an older major version is read-only until upgraded.
 
 ### 9. Transport
 
-A private network (Tailscale or self-hosted Headscale, Q-206) plus Guanxi's node credentials
+A private network (hosted Tailscale first, self-hosted Headscale documented, D-146) plus Guanxi's node credentials
 (signed requests or mTLS).
 
 ## Invariants
