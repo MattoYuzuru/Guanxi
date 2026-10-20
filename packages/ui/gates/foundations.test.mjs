@@ -18,6 +18,12 @@ function tables(text) {
 const numeric = text => [...text.matchAll(/\d+(?:\.\d+)?/g)].map(m => Number(m[0]))
 const hex = text => text.match(/#[a-f\d]{6}/i)?.[0]
 const ramps = tables(section('### 1.1'))[0].slice(1)
+const neutralRoleSteps = Object.fromEntries([
+  ['background.primary', /(\d+) canvas/], ['background.secondary', /(\d+) raised surface/],
+  ['background.tertiary', /(\d+)–\d+ fills/], ['border.primary', /(\d+) = decorative divider/],
+  ['border.control', /(\d+) control border/], ['text.tertiary', /(\d+) muted text/],
+  ['text.secondary', /(\d+) secondary text/], ['text.primary', /(\d+) primary text/],
+].map(([role, pattern]) => [role, Number(section('### 1.1').match(pattern)[1])]))
 const statuses = tables(section('### 1.2'))[0].slice(1)
 const data = tables(section('### 1.5'))[0].slice(1)
 const density = tables(section('## 7.'))[0].slice(1)
@@ -32,13 +38,22 @@ async function verifyFoundations(context) {
   for (const theme of ['light', 'dark', 'light-hc', 'dark-hc']) for (const mode of ['compact', 'comfortable']) for (const motion of ['full', 'reduced']) {
     const entries = resolvedFlat((await resolveTokens({ theme, density: mode, motion }, context.tokenOptions)).tokens)
     const map = Object.fromEntries(entries.map(t => [t.name, t.$value]))
-    const dark = theme.startsWith('dark'), column = dark ? 2 : 1, base = dark ? 'dark' : 'light'
+    const dark = theme.startsWith('dark'), hc = theme.endsWith('-hc'), column = dark ? 2 : 1, base = dark ? 'dark' : 'light'
     const eq = (name, expected) => assert.deepEqual(map[name], expected, `${theme}/${mode}/${motion}/${name}`)
     for (const row of ramps) assert.equal(map[`primitive.color.neutral.${base}.${row[0]}`].hex, hex(row[column]))
     for (const row of statuses.filter(row => row[0] !== 'text on accent fill')) {
       const role = row[0].split(' ')[0]
       assert.equal(map[`primitive.color.status.${base}.${role}`].hex, hex(row[column]))
+      // HC's neutral status foregrounds are the authorized L6 residual, not new hues.
+      const expected = map[hc ? `primitive.color.neutral.${base}.${neutralRoleSteps['text.secondary']}` : `primitive.color.status.${base}.${role}`]
+      for (const group of ['background', 'text', 'border']) eq(`color.${group}.${role}`, expected)
     }
+    for (const [role, step] of Object.entries(neutralRoleSteps)) {
+      const hcStep = hc && (role.startsWith('border.') || role === 'text.tertiary') ? neutralRoleSteps['text.secondary'] : step
+      eq(`color.${role}`, map[`primitive.color.neutral.${base}.${hcStep}`])
+    }
+    eq('color.ring.primary', map[hc ? `primitive.color.neutral.${base}.${neutralRoleSteps['text.secondary']}` : `primitive.color.status.${base}.accent`])
+    assert.equal(map['color.text.on-accent'].hex, hex(statuses.find(row => row[0] === 'text on accent fill')[column]))
     for (const row of data) {
       assert.equal(map[`primitive.color.data.${base}.${row[0]}`].hex, hex(row[dark ? 3 : 2]))
       if (!theme.endsWith('-hc')) eq(`data.${row[0]}`, map[`primitive.color.data.${base}.${row[0]}`])
@@ -93,7 +108,7 @@ async function verifyFoundations(context) {
   }
 }
 
-test('M2/M6: token values match FOUNDATIONS tables across all 16 contexts', () => verifyFoundations(ctx))
+test('M2/M6/N6: token values and semantic roles match FOUNDATIONS across all 16 contexts', () => verifyFoundations(ctx))
 test('M2: changing an unmeasured ramp, duration, easing or glass fill breaks the values assertion', async () => {
   for (const [path, mutate] of [
     ['primitive/color.tokens.json', d => { d.primitive.color.neutral.light['3'].$value.hex = '#FF0000' }],
@@ -106,6 +121,24 @@ test('M2: changing an unmeasured ramp, duration, easing or glass fill breaks the
   ]) {
     const file = `packages/ui/tokens/${path}`, data = await ctx.json(file); mutate(data)
     await assert.rejects(verifyFoundations(await ctx.withFiles({ [file]: JSON.stringify(data) })))
+  }
+})
+test('N6: FOUNDATIONS semantic role assertions reject wrong neutral steps and status identities', async () => {
+  for (const theme of ['light', 'dark']) for (const [group, role, wrong] of [
+    ['background', 'primary', `neutral.${theme}.1`],
+    ['background', 'secondary', `neutral.${theme}.2`],
+    ['background', 'tertiary', `neutral.${theme}.4`],
+    ['border', 'primary', `neutral.${theme}.6`],
+    ['border', 'control', `neutral.${theme}.8`],
+    ['text', 'tertiary', `neutral.${theme}.11`],
+    ['text', 'secondary', `neutral.${theme}.12`],
+    ['text', 'primary', `neutral.${theme}.11`],
+    ...['background', 'text', 'border'].flatMap(group => ['accent', 'success', 'warning', 'danger', 'info'].map(role => [group, role, `status.${theme}.${role === 'info' ? 'danger' : 'info'}`])),
+    ['ring', 'primary', `status.${theme}.info`],
+  ]) {
+    const file = `packages/ui/tokens/semantic/color.${theme}.tokens.json`, data = await ctx.json(file)
+    data.color[group][role].$value = `{primitive.color.${wrong}}`
+    await assert.rejects(verifyFoundations(await ctx.withFiles({ [file]: JSON.stringify(data) })), { name: 'AssertionError' }, `${theme}/${group}.${role}`)
   }
 })
 test('H2: runtime tokens never declare Tailwind font/spacing names', async () => {

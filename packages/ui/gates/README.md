@@ -5,7 +5,10 @@ G1–G7 and G17 run without a browser. `npm run test:gates --workspace @guanxi/u
 additional negative cases, file provenance and byte determinism.
 Both commands are also mandatory parts of the root `npm test` command. The gate tests parse
 FOUNDATIONS tables to verify all ramps, status/data colours, spacing, radii, densities, motion
-and material values across the 16 resolver contexts.
+and material values across the 16 resolver contexts. Neutral semantic roles use §1.1's steps
+1, 2, 3, 7, 9, 10, 11 and 12; background/text/border status identities, the accent focus ring
+and text on accent match §1.2. HC text/borders/rings retain their explicit step-11 overrides,
+including the authorized L6 neutral-status residual.
 
 G1 checks all resolved contexts, DTCG names, types, alias cycles/types, equivalent hex fallbacks and
 CSS-name collisions. G2 compares all five generated files in memory. G3 checks all 18
