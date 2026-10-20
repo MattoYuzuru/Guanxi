@@ -125,6 +125,14 @@ interface LoadProbe {
 }
 
 let probe: LoadProbe
+/** One weak reference per plugin instance; every one but the live one must be collected. */
+const instances: Array<WeakRef<object>> = []
+;(globalThis as { __k1Instances?: Array<WeakRef<object>> }).__k1Instances = instances
+
+function collectedExceptLast(): { total: number; alive: number } {
+  const alive = instances.slice(0, -1).filter((ref) => ref.deref() !== undefined).length
+  return { total: instances.length, alive }
+}
 function nextProbe(): LoadProbe {
   let resolve!: () => void
   const ready = new Promise<void>((done) => {
@@ -149,6 +157,7 @@ const loadPlugin = definePlugin({
   async apply(ctx) {
     const governor = service<ResourceGovernor>(ctx, 'governor')
     const ollama = service<OllamaAdapter>(ctx, 'ollama')
+    instances.push(new WeakRef(governor))
     on(ctx, 'fixture/tick', () => governor.snapshot())
     interval(ctx, () => governor.snapshot(), 60_000)
     contribute(ctx, SLOT, { id: 'load', value: { label: 'load' } })
@@ -237,8 +246,10 @@ describe('K1 reload cycles under load', () => {
 
         nextProbe()
         await node.apply(profile(false))
-        const outcomes = await Promise.all(current.inFlight)
-        reclaimed += outcomes.filter((outcome) => outcome instanceof Error).length
+        // Count and drop the rejections: an unformatted error's captured stack
+        // keeps its call receivers (the old governor) alive.
+        reclaimed += (await Promise.all(current.inFlight)).filter((outcome) => outcome instanceof Error).length
+        current.inFlight.length = 0
         assert.equal(node.slots.list(SLOT).length, 0, `cycle ${cycle}: entry removed on unload`)
 
         const unloadedNow = census(node)
@@ -250,6 +261,12 @@ describe('K1 reload cycles under load', () => {
         await node.apply(profile(true))
         await probe.ready
       }
+
+      instances.splice(0, instances.length - (CYCLES + 1))
+      await forcedHeap()
+      const governors = collectedExceptLast()
+      assert.equal(governors.total, CYCLES + 1)
+      assert.equal(governors.alive, 0, `${governors.alive} unloaded governor instances are still reachable`)
 
       const heap = growth(firstHeap!, lastHeap!)
       console.log(`variant A: ${JSON.stringify({ cycles: CYCLES, firstHeap, lastHeap, heap, reclaimedInFlight: reclaimed, unloaded, loaded })}`)
@@ -267,6 +284,7 @@ describe('K1 reload cycles under load', () => {
   })
 
   it(`variant B: ${CYCLES} code replacements leak nothing but one module record each`, async () => {
+    instances.length = 0
     const versions: string[] = []
     const importVersion = async (version: number) => {
       const module = await import(`./fixtures/reloadable-plugin.ts?v=${version}`)
@@ -294,6 +312,11 @@ describe('K1 reload cycles under load', () => {
         assert.deepEqual(census(node), baseline, `cycle ${cycle}: census drifted`)
       }
       const lastHeap = await forcedHeap()
+      const contexts = collectedExceptLast()
+      assert.equal(contexts.total, CYCLES + 1)
+      assert.equal(contexts.alive, 0, `${contexts.alive} replaced plugin contexts are still reachable`)
+      // Node exposes no module-record counter: each distinct import URL is one
+      // record that stays for the life of the process.
       const moduleRecords = new Set(versions).size
       const heap = growth(firstHeap, lastHeap)
       const bytesPerRecord = Math.round((lastHeap.total - firstHeap.total) / CYCLES)

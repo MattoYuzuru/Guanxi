@@ -17,6 +17,7 @@ export const plugin = definePlugin({
     trust: 'T0',
   },
   apply(ctx) {
+    ;(globalThis as { __k1Instances?: Array<WeakRef<object>> }).__k1Instances?.push(new WeakRef(ctx))
     const governor = service<ResourceGovernor>(ctx, 'governor')
     on(ctx, 'fixture/tick', () => governor.snapshot())
     interval(ctx, () => governor.snapshot(), 60_000)
