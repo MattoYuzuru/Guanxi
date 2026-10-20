@@ -724,7 +724,6 @@
   "G7|packages/web/src/components/ui.tsx|duration-300": 1,
   "G7|packages/web/src/components/ui.tsx|ease-out": 1,
   "G7|packages/web/src/features/agent/ApprovalPrompt.tsx|duration-200": 1,
-  "G7|packages/web/src/features/agent/ApprovalPrompt.tsx|ease-linear": 1,
   "G7|packages/web/src/features/models/ModelCard.tsx|duration-150": 1,
   "G7|packages/web/src/features/models/ModelCarousel.tsx|duration-200": 1,
   "G7|packages/web/src/features/models/ModelCarousel.tsx|duration: 32": 1,

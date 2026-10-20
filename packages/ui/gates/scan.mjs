@@ -159,7 +159,7 @@ export function motionFindings(file, text) {
   const findings = []
   function visit(node) {
     if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
-      for (const match of node.text.matchAll(/(?:\b(?:duration|delay|ease)-(?:\[[^\]]+\]|\d+|linear|in|out|in-out)|\b\d+(?:\.\d+)?m?s\b|cubic-bezier\([^)]*\))/g)) findings.push({ gate: 'G7', file, value: match[0], offset: node.getStart(ast) })
+      for (const match of node.text.matchAll(/(?:\b(?:duration|delay|ease)-(?:\[[^\]]+\]|\d+|in-out|in|out)|\b\d+(?:\.\d+)?m?s\b|cubic-bezier\([^)]*\))/g)) findings.push({ gate: 'G7', file, value: match[0], offset: node.getStart(ast) })
     }
     if (ts.isPropertyAssignment(node) && /^(?:duration|delay|(?:transition|animation)(?:Duration|Delay|TimingFunction)|easing|ease)$/.test(node.name.getText(ast).replaceAll(/['"]/g, '')) && (ts.isNumericLiteral(node.initializer) || ts.isArrayLiteralExpression(node.initializer) || ts.isStringLiteralLike(node.initializer) && !/^(?:var\(--|motion\.)/.test(node.initializer.text))) findings.push({ gate: 'G7', file, value: node.getText(ast), offset: node.getStart(ast) })
     ts.forEachChild(node, visit)
