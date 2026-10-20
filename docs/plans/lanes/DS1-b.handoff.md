@@ -1,7 +1,8 @@
 # Lane DS1-b hand-off — components, catalog and approvals
 
-**Status:** ready for the cross-family review · **Updated:** 2026-10-20 ·
-**Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `11166df`) · **Ports:** 5183 / 4383
+**Status:** ready for the cross-family re-review · **Updated:** 2026-10-21 ·
+**Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `dfadc2e`, main `4b68731`; DS1-a
+integrated) · **Ports:** 5183 / 4383
 
 Everything in [DS1-b](DS1-b.md) is built. The three independent reviews ran, and their findings
 are fixed in separate commits, except one inherent residual risk (key custody, below) that needs a
@@ -14,14 +15,14 @@ network, and no owner keychain (tests use throwaway keys generated in a temp dir
 | --- | --- |
 | `@guanxi/ui`: 14 primitives from shadcn/ui on Base UI (Button, IconButton, Input, Textarea, Select, Checkbox, Switch, Tabs, Tooltip, Popover, Menu, Dialog, Toast, Badge) and 4 patterns (StatusPill, ProvenanceLabel, EmptyState, ErrorState), each with a story per declared state (83 stories), docs with the required sections and a `draft` review record | `packages/ui/src/components/*` |
 | Message keys: English source, curated Russian, +40% pseudo-locale | `packages/ui/src/i18n/` |
-| Temporary token stub (FOUNDATIONS values, including 718240c's glass and density tables) | `packages/ui/src/styles/token-stub.css` |
+| Components on DS1-a's generated tokens and local Plex, G1–G7 clean; the interaction fills, focus ring and layer tokens FOUNDATIONS added on 2026-10-20, generated through DS1-a's pipeline and asserted in `foundations.test.mjs` | `packages/ui/src/`, `packages/ui/tokens/`, `packages/ui/generated/` |
 | Generated, deterministic manifest (exports, props, states, CSS variables, hashes, status, usage) | `packages/ui/catalog/manifest.json`, `npm run ui:manifest` |
 | Storybook 10.6.1 on the same story files (toolbar regimes, a11y addon, telemetry off) | `packages/ui/.storybook/`, `npm run ui:storybook` |
 | In-app catalog at Settings → Developer → Components: Developer mode switch, code-split route, every state, docs, story source, tokens, review panel, T2 iframe sample; switches 4 themes, 2 densities, 3 glass levels, motion (system/full/reduced), transparency and locale; URL keeps component and regime | `packages/ui/catalog/`, `packages/web/src/features/catalog/` |
 | Approvals (D-138): `GET /api/ui-catalog/review-capability`, `GET/POST /api/ui-catalog/components/:id/review`; Ed25519 signature inside `review.json`, key in the macOS keychain (access list trusts no app), public keys in `approval-keys.json`; source checkout only, release builds read-only (esbuild define); bound to source and snapshot hashes; signed change requests | contract `ui-catalog.ts`, server `src/ui-catalog/*` + `src/http/ui-catalog-routes.ts`, `packages/ui/catalog/approval/*` |
 | Owner key script (`init`, `show`) | `packages/ui/catalog/scripts/approval-key.ts` |
 | Gates G10–G16 with seeded violations; interim runner with self-test; DS1-a extension registration | `packages/ui/gates/catalog/`, `packages/ui/gates/extensions/catalog.gate.ts` |
-| G13 baselines from `mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e…` (304 PNGs) | `packages/ui/catalog/snapshots/` |
+| G13 baselines from `mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e…` (304 PNGs on the generated tokens and Plex, one Chromium raster path) | `packages/ui/catalog/snapshots/` |
 | Skill scripts `find-component.mjs`, `new-component.mjs`; `packages/ui/AGENTS.md` | `.agents/skills/guanxi-ui/scripts/`, `packages/ui/AGENTS.md` |
 
 ## Exit gate
@@ -31,8 +32,8 @@ lane; the regression envelope is listed under [Commands](#commands).
 
 | Exit-gate item | Assertion (new) | Proof it can fail |
 | --- | --- | --- |
-| Catalog shows every primitive with all declared states in light, dark, both HC themes, both densities and three glass levels | `component-catalog.spec.ts` › "every component shows every declared state in all 24 …": exact set of `<id>--<state>` keys per regime (sorted, so duplicates fail), resolved `--color-background-primary`, `--color-text-secondary`, `--density-control-height`, `--glass-fill`, normal and strong glass backdrop, no failed story | negative control: dark tokens scoped to `html` only → this test failed (receipt `check-g12ztkzh`) |
-| Switching the theme recolours a T2 iframe plugin without code changes | same spec › "switching the theme recolours a sandboxed T2 plugin …": iframe body, card and secondary-text colours per theme over `ui/notifications/host-context-changed`, `srcdoc` unchanged, `sandbox="allow-scripts"` | negative control: host stops sending context changes → this test failed (`check-g12ztkzh`) |
+| Catalog shows every primitive with all declared states in light, dark, both HC themes, both densities and three glass levels | `component-catalog.spec.ts` › "every component shows every declared state in all 24 …": exact set of `<id>--<state>` keys per regime (sorted, so duplicates fail), resolved `--color-background-primary` and `--color-text-secondary` (DS1-a's generated values), `--control-height`, the normal and strong `--material-background` fill opacity and backdrop per theme family, no failed story | negative control: dark tokens scoped to `html` only → this test failed (receipt `check-g12ztkzh`) |
+| Switching the theme recolours a T2 iframe plugin without code changes | same spec › "switching the theme recolours a sandboxed T2 plugin …": iframe body, card and secondary-text colours per theme equal what the host paints with the same tokens, over `ui/notifications/host-context-changed`, `srcdoc` unchanged, `sandbox="allow-scripts"` | negative control: host stops sending context changes → this test failed (`check-g12ztkzh`) |
 | An agent-written `approved` record fails G12 | seeds `agent-written-approved` (fake key id and signature) and `agent-written-approved-unsigned`, plus `gates/catalog/seeds/G12.json` for DS1-a's G17 | the self-test requires the failure text (`untrusted_key`, `unsigned_approval`) |
 | A record signed with the test key and then edited fails G12 | seed `signed-then-edited`; server test "fails G12 once any signed field of the record is edited" (comment, source hash, snapshot hashes, time, id) after a real approval through the route | each edit asserted to fail; the unedited record asserted to pass |
 | A `draft` component used on a product screen fails G11 | seed `draft-on-product-screen` (+ `deprecated-laundering`), `gates/catalog/seeds/G11.json` | failure text required |
@@ -51,7 +52,29 @@ race test); a record changed during the keychain prompt is not overwritten.
 
 ## Commands
 
-Final run after the cross-family fixes, on HEAD `f39d523`, through
+Final run after the DS1-a integration, on the clean tree `573d56a`, through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
+with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
+
+| Check | Result | Receipt |
+| --- | --- | --- |
+| `npm run typecheck` | exit 0 (all workspaces) | direct |
+| `npm test` (now `ui:check`, `test:gates`, core, kernel, web, ui) | `ui:check` ok; gate tests 51/51; core 714 (713 pass, 1 skipped opt-in keychain); kernel 106/106; web 266/266; ui node 43/43; ui vitest 17/17 | `check-3wjm3h2d` |
+| `node packages/ui/gates/run.mjs --browser` (DS1-a runner: G1–G7, G10–G16 registered; G13, G14, G16 and their G17 seeds) | ok | `check-zp4qfz9o` |
+| `npm run test:web:browser` | 59/59 | `check-iwnyepib` |
+| `npm run build` | exit 0 | `check-pd4py0gn` |
+| `npm run build-storybook --workspace @guanxi/ui` | exit 0 | `check-f5ur9db9` |
+| `run.ts --mode fast --selftest` | 23 cases ok | `check-hevaycfj` |
+| `run.ts --mode browser --selftest` | 11 cases ok | `check-b111r_zm` |
+| `run.ts --mode browser --only G13`, 10 consecutive compares | 10/10 pass | `check-l_fu42y3`, `check-8thtfhao`, `check-2175vl5m`, `check-qf0z0w8j`, `check-kbp_49cz`, `check-nji73ip8`, `check-th98fjxx`, `check-1g_2cnlx`, `check-2tdawwla`, `check-pq0pyks0` |
+| G13 isolated compares of `error-state--with-details,error-state--default` | 6/6 pass after `573d56a` (0/6 before: one-step corner AA differences) | run in this session, not receipted |
+| `npm run lint:md`, `npm run check:licenses` | 0 errors; 343 packages, 0 not allowed | direct |
+
+An earlier full browser-gate run (`check-loxfeo52`) took 2.4 h and timed out in ten tests,
+including legacy chat, Hugging Face and project specs; the runs before and after took about
+one minute. It is recorded as a degraded machine, not as evidence either way.
+
+Previous run, after the cross-family fixes, on HEAD `f39d523`, through
 `agent-dev run --cwd "$PWD" --node 26 --resource heavy`, one check per call, with
 `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`. The receipts
 say `dirty`: the only uncommitted file was this hand-off.
@@ -184,11 +207,11 @@ Scope decisions in this round:
   cannot be recovered; git history of the base is the only record of it.
 - G16 drives stories by keyboard only (Tab, and Space on switches, checkboxes, radios, tabs and
   toggle buttons); motion behind pointer-only interactions or Enter is not exercised.
-- G13 baselines are linux/arm64 renders with fallback fonts (Plex comes from DS1-a); they will be
-  regenerated after DS1-a merges. 46 high-contrast baselines equal their normal-theme pair.
-- The stub's HC themes do not raise status and accent text to 7:1, and the Solid border (step 8)
-  is below 3:1; DS1-a's contrast gate owns the final values (proposal: FOUNDATIONS should say
-  which pairs HC raises).
+- G13 baselines are linux/arm64 renders from the pinned image with local Plex, software raster
+  and grayscale text antialiasing (`573d56a`); they do not match a macOS or GPU render, by
+  design.
+- The source hash now also covers `generated/tokens.css`, `generated/theme.css` and `fonts/`; a
+  token rebuild makes every approval stale, as intended.
 - `review` and `stale` warn but do not block slices (by design); nothing uses `@guanxi/ui` on a
   product screen yet.
 - The real keychain prompt path (`-T ""`) was checked only by its access list on a throwaway
@@ -196,11 +219,22 @@ Scope decisions in this round:
 
 ## Shared edits (outside owned paths)
 
+- **DS1-a token sources (option (a), integrator-confirmed):** `tokens/primitive/color.tokens.json`
+  (`accent-state.{light,dark,light-hc,dark-hc}.{hover,pressed}`, `transparent`),
+  `tokens/semantic/color.*.tokens.json` (`color.background.{hover,pressed,ghost,accent-hover,accent-pressed}`),
+  `tokens/base.tokens.json` (`focus.ring.{width,offset}`, `layer.{base,sticky,docked,floating,popover,scrim,dialog,toast,tooltip}`),
+  `tokens/contrast-pairs.json` (`on-accent-hover`, `on-accent-pressed`), `tokens/README.md`;
+  regenerated `generated/*` with `npm run tokens:build`.
+- **DS1-a code and tests:** `tokens/css.mjs` (`:where()` on the default strong-glass rule),
+  `gates/foundations.test.mjs` (new FOUNDATIONS assertions and mutation test),
+  `gates/gates.test.mjs` (G3 counts 20 pairs), `gates/local-variables.json` (Base UI positioner
+  variables, scoped to the files that read them). Ledger and policy files are unchanged.
 - `packages/ui/package.json`, `packages/ui/tsconfig.json`, `packages/ui/vitest.config.ts` —
-  DS1-a owns `package.json`; expect an add/add conflict. DS1-b's part: dependencies
+  merged with DS1-a's `package.json` (exports, scripts and dev dependencies of both lanes;
+  `typescript` 5.9.3). DS1-b's part: dependencies
   `@base-ui/react` 1.8.0 and `lucide-react`; dev dependencies Storybook 10.6.1, addon-a11y,
-  `@axe-core/playwright` 4.13.0, Playwright, Vitest, jsdom, Testing Library, React types;
-  exports `./catalog`, `./approval`, `./styles/token-stub.css`; scripts `test`, `manifest`,
+  `@axe-core/playwright` 4.13.0, `@tailwindcss/vite` 4.3.3, Playwright, Vitest, jsdom, Testing
+  Library, React types; exports `./catalog`, `./approval`; scripts `test`, `manifest`,
   `catalog:check`, `catalog:check:browser`, `snapshots`, `harness:build`, `storybook`,
   `build-storybook`.
 - Root `package.json`: `test` adds `test:ui`; scripts `test:ui`, `ui:catalog:check`,
@@ -211,33 +245,53 @@ Scope decisions in this round:
 - Contract: `api.ts` (two routes), `schemas.ts` (four error codes), `index.ts`.
 - Server: `app.ts` (mount, `uiCatalog` option), `index.ts` (service, `RELEASE_BUILD` re-export),
   `release.ts`, `scripts/build.mjs`; CLI `scripts/build.mjs` (define); `package.json` dependency.
-- Web: `App.tsx`, `router.tsx`, `SettingsPage.tsx` (Developer section), `lib/api.ts` (three
+- Web: `index.css` (bridge: `surface`, `accent`, `radius-panel`, `font-heading`, next to K1's),
+  `App.tsx`, `router.tsx`, `SettingsPage.tsx` (Developer section), `lib/api.ts` (three
   calls, error keys), `lib/locale.ts` (Developer keys), `vite.config.ts` and `vitest.config.ts`
   (aliases, Base UI pre-bundling), `package.json` dependency.
 - Docs: `docs/design/COMPONENTS_AND_CATALOG.md` §8, `.agents/skills/guanxi-ui/SKILL.md` (script
   pointers).
 
-## Integration after DS1-a merges
+## DS1-a integration (done on this branch)
 
-1. Delete `packages/ui/src/styles/token-stub.css`; import DS1-a's generated CSS where the stub is
-   imported (`catalog/harness/main.tsx`, `.storybook/preview.tsx`,
-   `packages/web/src/features/catalog/CatalogRoute.tsx`, web aliases). Names the components read
-   that DS1-a must generate (G4 will list any gap): MCP Apps colour, font, radius, border and shadow
-   names; `--color-background-{hover,pressed,accent,accent-hover,accent-pressed,danger-strong}`,
-   `--color-text-{accent,on-accent}`, `--color-border-accent`, `--color-scrim`;
-   `--space-{0-5,1,1-5,2,3,4,5,6,8,10,12,16}`; `--density-{control-height,row-height,panel-padding,gap}`;
-   `--size-{target-min,icon-sm,icon-md,icon-lg,focus-ring,focus-offset,indicator,popover-max,dialog-max,toast-max,catalog-cell-min}`;
-   `--z-{popover,dialog,toast,tooltip}`; `--motion-{duration,easing,distance}-*`,
-   `--motion-loop-duration`; `--glass-{fill,strong-fill,backdrop,strong-backdrop,edge,seam,border,grain-image,grain-opacity}`.
-   DS1-a renames `--font-sans`/`--font-mono` to `--font-family-*` (update the components and the
-   T2 MCP Apps mapping, which must keep the MCP names). Theme, density, glass and motion must apply
-   through attributes on any element, not only `:root` (the regime test fails otherwise).
-2. Allow-list Base UI runtime variables for G4: `--active-tab-left`, `--active-tab-width`,
-   `--anchor-width`, `--available-width`, `--available-height`, `--transform-origin`.
-3. Run G5–G7 over `packages/ui/src` (no literal values today, but nothing in this lane enforces it).
-4. Regenerate G13 baselines in the pinned image (`npm run ui:snapshots`) and the manifest.
-5. `git show lane/ds1-a-tokens:packages/ui/gates/README.md` — the registration follows it; run
-   `node packages/ui/gates/run.mjs` and `--browser` and confirm G10–G16 and G17 list them.
+DS1-a merged into main at `4b03b17`; this branch merged it in `72521b0` and main again at
+`dfadc2e` (FOUNDATIONS addendum `aec54fd`, loop token `4b68731`).
+
+| Step | Commit |
+| --- | --- |
+| Merge: add/add on `packages/ui/package.json` and `THIRD_PARTY_NOTICES.md` combined; root `test` runs `ui:check`, `test:gates`, core, kernel, web, ui; lock regenerated by `npm install` | `72521b0` |
+| Stub deleted; every component, the catalog, the harness, Storybook and the T2 sample read DS1-a's generated names; `data-material`/`data-elevation` instead of `data-glass`; G5/G6 values no token expresses come from Tailwind utilities through `@apply` (`src/styles/tailwind-reference.css`); hash covers `generated/` and `fonts/` | `cfbdb80` |
+| Regime frames set canvas, text colour and typography (the stub did this on `[data-theme]`) | `d99f182` |
+| Interaction fills, focus ring and layer tokens generated from FOUNDATIONS §1.3/§3 (option (a), integrator-confirmed) | `22610be` |
+| Components read `--layer-*`, `--focus-ring-*`, hover/pressed/accent-state fills | `bb87234` |
+| `foundations.test.mjs` asserts every new token against FOUNDATIONS, with a mutation test | `e0504cd` |
+| Nested `[data-material]` decides its strong glass (generator `:where()` fix) | `1059aaa` |
+| Outside focus ring everywhere (tabs wrap instead of scrolling); no Tailwind ring or z utilities | `c0de13e` |
+| G13 baselines regenerated in the pinned image; one Chromium raster path for the gates; manifest regenerated | `9c1b6b4`, `b068938`, `0016378`, `573d56a` |
+| G16 seeds independent of tokens that reduced motion zeroes | `2f609cb`, `cbdb68e` |
+
+Registration: `packages/ui/gates/extensions/catalog.gate.ts` (erasable TypeScript, which DS1-a's
+README allows next to `.gate.mjs`); `npm run ui:check` lists G10–G12, G15 and G17;
+`node packages/ui/gates/run.mjs --browser` lists G13, G14, G16 and runs their seeds.
+
+Open, for DS1-a/DS1-c or the integrator:
+
+- **Spinner and running pulse do not animate.** FOUNDATIONS §5 now gives `duration.loop`, but
+  G6 treats a keyframe name (`animation-name: gx-spin`) and `rotate(1turn)` as literals, and the
+  generated theme resets `--animate-*`. Either the theme generates an `animate-spin` utility on
+  `duration.loop` and `easing.linear`, or G6 accepts names of `@keyframes` declared in scanned
+  CSS. Until then both stay static, which is the FOUNDATIONS reduced-motion form, with text
+  carrying the state.
+- **Nested different materials.** `[data-material="glass"] [data-elevation="3"]` and the tinted
+  and solid variants have equal specificity, so with a material on the root *and* a different
+  one nested, the later rule in the file wins. The catalog sets materials only on frames, so it
+  is unaffected; a per-pane material in U1 would need the strong recipe to inherit from the
+  nearest `[data-material]` (custom properties set on the material element).
+- HC accent states are not in the FOUNDATIONS table; they apply its rule to the HC accent
+  (step 11): light-hc `#3F4B4B`/`#394546`, dark-hc `#CAD3D2`/`#D1D9D8`. G3 holds them at 7:1.
+- Size mappings changed with the stub: dialog max width 448 px (`layout.container.md`, was 480),
+  toast 384 px (`sm`, was 360), catalog cell 256 px (`3xs`, was 240); disabled control borders
+  use the divider (`border.primary`); the glass grain layer is gone (no grain image token).
 
 ## Next slice
 
