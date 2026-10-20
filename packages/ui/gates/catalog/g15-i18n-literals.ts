@@ -55,17 +55,48 @@ export function literalTextFindings(repoRoot: string, uiRoot: string): GateFindi
       const { line } = source.getLineAndCharacterOfPosition(node.getStart())
       findings.push({ severity: 'error', file: `${rel}:${line + 1}`, message: `literal user-facing text ${what}` })
     }
-    const literalText = (node: ts.Node | undefined): string | null => {
+    // String constants in the file, so `const label = 'Save'` then `{label}` is caught too.
+    const constants = new Map<string, string>()
+    const collect = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        const text = staticText(node.initializer)
+        if (text !== null) constants.set(node.name.text, text)
+      }
+      ts.forEachChild(node, collect)
+    }
+    /** Text an expression always or possibly renders; calls (t(), msg(), machine()) are not literals. */
+    const staticText = (node: ts.Node | undefined): string | null => {
       if (!node) return null
       if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text
       if (ts.isTemplateExpression(node)) return node.head.text + node.templateSpans.map((span) => span.literal.text).join('')
-      if (ts.isJsxExpression(node)) return literalText(node.expression)
+      if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return staticText(node.expression)
+      if (ts.isIdentifier(node)) return constants.get(node.text) ?? null
+      if (ts.isConditionalExpression(node)) {
+        const parts = [staticText(node.whenTrue), staticText(node.whenFalse)].filter((part) => part !== null)
+        return parts.length > 0 ? parts.join(' / ') : null
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        [ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.PlusToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(node.operatorToken.kind)
+      ) {
+        const parts = [node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? null : staticText(node.left), staticText(node.right)].filter((part) => part !== null)
+        return parts.length > 0 ? parts.join(' ') : null
+      }
       return null
+    }
+    collect(source)
+    const literalText = (node: ts.Node | undefined): string | null => {
+      if (!node) return null
+      if (ts.isJsxExpression(node)) return staticText(node.expression)
+      return staticText(node)
     }
     const visit = (node: ts.Node) => {
       if (ts.isJsxText(node)) {
         const text = node.getText().trim()
         if (text !== '' && LETTER.test(text)) report(node, `"${text.slice(0, 40)}"`)
+      } else if (ts.isJsxExpression(node) && node.parent && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))) {
+        const text = staticText(node.expression)
+        if (text !== null && LETTER.test(text)) report(node, `"${text.slice(0, 40)}"`)
       } else if (ts.isJsxAttribute(node)) {
         const name = node.name.getText()
         const text = literalText(node.initializer)
@@ -93,6 +124,15 @@ export const g15: CatalogGate = {
     return result(this, literalTextFindings(context.repoRoot, context.uiRoot))
   },
   seeded: [
+    {
+      name: 'indirect-literal',
+      description: 'Copy reaches JSX through a local constant and a conditional branch',
+      expect: /literal user-facing text .*"Untranslated save"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'indirect-literal'), repoRoot)
+        return context
+      },
+    },
     {
       name: 'literal-jsx-text',
       description: 'A component renders <span>Save</span> instead of a message key',
