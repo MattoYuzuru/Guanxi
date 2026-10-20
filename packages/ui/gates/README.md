@@ -28,7 +28,8 @@ same name remains scanned. Stories and catalog source are included.
 
 `legacy-allowlist.json` freezes occurrence counts by gate, file and exact value. It accepts
 only legacy `packages/web/src/` paths, rejects unused counts and compares its entire Git
-history against each commit's actual parents, including every merge parent. Deleting the ledger
+history against each commit's actual parents, including every merge parent. Shallow repositories
+fail closed; run `git fetch --unshallow` before checking them. Deleting the ledger
 is rejected even if a later commit recreates it; an empty freeze stays as `{}`. A moved or split
 file can transfer an exact rule/value allowance only from disappeared source keys, without
 increasing its total count. The owner authorized exactly two bootstrap corrections, recorded

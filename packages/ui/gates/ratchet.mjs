@@ -49,6 +49,7 @@ function edgeErrors(before, after, oldPolicy, policy, where) {
 
 export function auditRatchet(root, allowances, policy) {
   const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  if (git(['rev-parse', '--is-shallow-repository']) === 'true') return ['Cannot audit legacy ratchet in a shallow repository; fetch full history with git fetch --unshallow.']
   const cache = new Map()
   const version = (revision, path) => {
     const key = `${revision}:${path}`

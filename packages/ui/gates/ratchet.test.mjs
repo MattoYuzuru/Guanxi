@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { auditRatchet, ledgerErrors, ledgerPath, policyPath, snapshotHash } from './ratchet.mjs'
 
@@ -113,6 +114,19 @@ test('N2: introduced corrections bind both snapshots on working-tree and committ
     await repo.save(policyPath, policy); await repo.save(ledgerPath, three); repo.commit('Mismatched correction edge')
     assert.ok(auditRatchet(repo.root, three, policy).some(e => e.includes('allowance grew')), 'committed hash mismatch')
   }
+})
+
+test('N3: a depth-one clone fails closed until full ratchet history is fetched', async t => {
+  const key = 'G5|packages/web/src/fixture.tsx|bg-red-500'
+  const policy = { corrections: [] }, initial = { [key]: 1 }, grown = { [key]: 2 }
+  const repo = await repository(t, initial, policy)
+  await repo.save(ledgerPath, grown); repo.commit('Illegal growth hidden beyond shallow boundary')
+  const clone = join(repo.root, 'shallow')
+  repo.git('clone', '-q', '--depth=1', pathToFileURL(repo.root).href, clone)
+  assert.equal(execFileSync('git', ['rev-parse', '--is-shallow-repository'], { cwd: clone, encoding: 'utf8' }).trim(), 'true')
+  assert.ok(auditRatchet(clone, grown, policy).some(e => /shallow.*git fetch --unshallow/i.test(e)))
+  execFileSync('git', ['fetch', '-q', '--unshallow'], { cwd: clone })
+  assert.ok(auditRatchet(clone, grown, policy).some(e => e.includes('allowance grew')))
 })
 
 test('H3/L2 self-review: the same correction cannot originate independently on two branches', async t => {
