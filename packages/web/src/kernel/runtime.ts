@@ -1,0 +1,97 @@
+/**
+ * The browser's kernel (K1 spike): one kernel per page, a shell plugin that
+ * owns the sidebar slot, and the built-in web plugins.
+ *
+ * Hot updates: this module accepts updates of each built-in plugin module and
+ * swaps the plugin (unload the old version, load the new one), so its slot
+ * entries change in place without a page reload.
+ */
+import {
+  createKernel,
+  declareSlot,
+  definePlugin,
+  type GuanxiPlugin,
+  type PluginHandle,
+} from '@guanxi/kernel'
+import { plugin as projectsShortcut } from './plugins/projects-shortcut.ts'
+import { SIDEBAR_SLOT } from './slots.ts'
+
+const shell = definePlugin({
+  manifest: {
+    id: 'guanxi.web-shell',
+    engines: { guanxi: '^0.1.0' },
+    contributes: { slotDeclarations: [SIDEBAR_SLOT] },
+    trust: 'T0',
+  },
+  apply(ctx) {
+    declareSlot(ctx, SIDEBAR_SLOT)
+  },
+})
+
+export const webKernel = createKernel()
+
+const loaded = new Map<string, Promise<PluginHandle | null>>()
+let queue: Promise<unknown> = Promise.resolve()
+
+/** Serialise kernel changes so a hot update never races the initial load. */
+function serial<T>(task: () => Promise<T>): Promise<T> {
+  const next = queue.then(task, task)
+  queue = next.catch(() => undefined)
+  return next
+}
+
+function load(plugin: GuanxiPlugin<any>): Promise<PluginHandle | null> {
+  const handle = webKernel.plugin(plugin).catch((error: unknown) => {
+    console.error(`[guanxi:kernel] ${plugin.manifest.id} failed to load`, error)
+    return null
+  })
+  loaded.set(plugin.manifest.id, handle)
+  return handle
+}
+
+/** Unload a plugin by id; its slot entries disappear. */
+export function unloadWebPlugin(id: string): Promise<void> {
+  return serial(async () => {
+    const handle = await loaded.get(id)
+    loaded.delete(id)
+    await handle?.dispose()
+  })
+}
+
+/** Load a plugin, replacing a loaded plugin with the same id. */
+export function replaceWebPlugin(plugin: GuanxiPlugin<any>): Promise<void> {
+  return serial(async () => {
+    const previous = await loaded.get(plugin.manifest.id)
+    await previous?.dispose()
+    await load(plugin)
+  })
+}
+
+const builtIns: Record<string, GuanxiPlugin<any>> = { [projectsShortcut.manifest.id]: projectsShortcut }
+
+export const webKernelReady: Promise<void> = serial(async () => {
+  await load(shell)
+  for (const plugin of Object.values(builtIns)) await load(plugin)
+})
+
+if (import.meta.hot) {
+  import.meta.hot.accept('./plugins/projects-shortcut.ts', (next) => {
+    if (next?.['plugin']) void replaceWebPlugin(next['plugin'] as GuanxiPlugin<any>)
+  })
+}
+
+if (import.meta.env.DEV) {
+  // Development-only handle for the inspector-to-be and the browser gate.
+  Object.assign(globalThis, {
+    __GUANXI_KERNEL__: {
+      ready: webKernelReady,
+      counters: () => webKernel.counters(),
+      unload: unloadWebPlugin,
+      reload: (id: string) => {
+        const plugin = builtIns[id]
+        if (!plugin) return Promise.reject(new Error(`unknown built-in plugin ${id}`))
+        return replaceWebPlugin(plugin)
+      },
+    },
+  })
+}

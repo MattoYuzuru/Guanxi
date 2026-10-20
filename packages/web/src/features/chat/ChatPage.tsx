@@ -60,6 +60,7 @@ import type { StreamBuffer } from './streamBuffer.ts'
 import { useChat, type ChatSendOptions, type TurnPhase } from './useChat.ts'
 import { useModelPrewarm, type ModelPrewarmState } from './useModelPrewarm.ts'
 import { ChatRetentionInfo } from './ChatRetentionInfo.tsx'
+import { SidebarSlot } from '../../kernel/SidebarSlot.tsx'
 import {
   ResourceConflictDialog,
   useResourceConflictDecision,
@@ -1177,6 +1178,7 @@ function ThreadSidebar({
 
   return (
     <aside className="hidden min-h-0 overflow-y-auto p-2 md:block">
+      <SidebarSlot />
       <div className="mb-2 flex items-center justify-between gap-2 px-1">
         <span className="text-2xs font-semibold text-[var(--fg-muted)]">
           {projectId ? translate('projects.chats.group') : translate('projects.chats.projectless')}
