@@ -81,3 +81,39 @@ describe('R1: event identifiers never carry a secret', () => {
     assert.equal((await listed.text()).includes(late), false)
   })
 })
+
+describe('R4: a readiness change during the catch-up hand-off cannot strand the backlog', () => {
+  it('re-arms when a new source closes the gate between ready and the queued callback', async () => {
+    const { ChatSessionMirror } = await import('../src/session-log/chat-mirror.ts')
+    const { JobStore } = await import('../src/store/jobs.ts')
+    const { ThreadStore } = await import('../src/store/threads.ts')
+    const db = openDb(':memory:')
+    const scrubber = new SecretScrubber({ expectedSources: ['vault'] })
+    const log = new SessionLog({ db, scrubber })
+    const mirror = new ChatSessionMirror({ log, db })
+    const jobs = new JobStore(db, { sessionMirror: mirror })
+    const threadId = new ThreadStore(db).create({
+      title: 'Race', mode: 'chat', model: 'fixture', workspaceId: null,
+      options: { numCtx: 4_096, temperature: 0, think: 'off' },
+    }).id
+    jobs.createChat({
+      threadId,
+      idempotencyScope: `chat:${threadId}:send:v1`,
+      idempotencyKey: crypto.randomUUID(),
+      requestFingerprint: 'fixture',
+      input: { content: 'race prompt', attachments: [], autoApprove: null },
+      derivedTitle: 'Race',
+    })
+    assert.equal(mirror.backlog().length, 1)
+
+    scrubber.ready('vault')
+    scrubber.expect('env.shell') // synchronously, before the queued readiness callback runs
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(mirror.backlog().length, 1, 'still gated')
+    scrubber.ready('env.shell')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(scrubber.isReady(), true)
+    assert.deepEqual(mirror.backlog(), [], 'the backlog drained after the second ready transition')
+    assert.deepEqual(log.readAll(threadId, 'person').map((event) => event.type), ['session.created', 'writer.acquired', 'prompt', 'job.lifecycle'])
+  })
+})

@@ -94,6 +94,7 @@ export class ChatSessionMirror implements JobEventMirror {
   private readonly reasoningRetentionMs: number
   private readonly pending = new Set<string>()
   private backlogScheduled = false
+  private failure: string | null = null
 
   constructor(options: { log: SessionLog; db: Db; reasoningRetentionMs?: number }) {
     this.log = options.log
@@ -140,6 +141,15 @@ export class ChatSessionMirror implements JobEventMirror {
     this.pending.clear()
   }
 
+  /**
+   * The last catch-up failure (an error code, never content), or null. A
+   * failed Job stays in the backlog and is retried at its next Job event, the
+   * next readiness change or the next start, not in a loop.
+   */
+  get lastCatchUpFailure(): string | null {
+    return this.failure
+  }
+
   /** Jobs whose trace is still deferred, in order (ids only). */
   backlog(): string[] {
     return (this.db
@@ -163,16 +173,18 @@ export class ChatSessionMirror implements JobEventMirror {
         if (source) this.catchUpWithin(source, jobId)
         else this.db.prepare('DELETE FROM session_mirror_backlog WHERE job_id = ?').run(jobId)
         this.db.exec('COMMIT')
-      } catch {
+      } catch (error) {
         try {
           this.db.exec('ROLLBACK')
         } catch {
           // The transaction may already be over.
         }
         this.afterRollback()
+        this.failure = (error as { code?: unknown }).code === undefined ? 'catch_up_failed' : String((error as { code: unknown }).code)
         break
       }
       this.afterCommit()
+      this.failure = null
       done++
     }
     return done
@@ -185,6 +197,9 @@ export class ChatSessionMirror implements JobEventMirror {
       () => {
         this.backlogScheduled = false
         this.catchUpBacklog()
+        // A source declared between the ready transition and this callback
+        // closes the gate again (GPT review R4): wait for the next transition.
+        if (!this.log.isClosed && !this.log.egressReady && this.backlog().length > 0) this.scheduleBacklog()
       },
       () => {
         this.backlogScheduled = false
