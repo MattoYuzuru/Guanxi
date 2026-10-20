@@ -913,3 +913,36 @@ test('N6: neither the registry nor its probe service exposes a runtime vault pro
   assert.equal('vault' in probes, false)
   assert.equal(Object.values(probes).some(value => value instanceof Vault), false)
 })
+
+test('N7: a secret-less local runtime can opt in while locked on an authorized node', async t => {
+  const f = await setup(t, { unattended: true })
+  const s = f.service()
+  const row = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
+  assert.equal(s.snapshot(account).vault.unlocked, false)
+  assert.equal(s.setUnattended(account, row.id, true).unattended, true)
+  assert.equal(s.snapshot(account).vault.unlocked, false)
+  assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM vault_node_keys').get()!.n, 0)
+})
+
+test('N7: interactive rotation succeeds after node opt-in is disabled and removes the stale node copy', async t => {
+  let calls = 0
+  const f = await setup(t, { unattended: true, transport: async () => { calls++; return responseSse() } })
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey()); s.setUnattended(account, row.id, true)
+  f.config.policy = { ownerDevice: true, nodeKeyOptIn: false }
+  await f.restart()
+  const next = f.service()
+  await next.unlockVault(account)
+  const rotated = fakeKey(); const saved = next.saveSecret(account, row.id, rotated)
+  assert.equal(saved.unattended, true, 'stored preference does not override node policy')
+  assert.equal(next.store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets').get()!.n, 0)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub(rotated), '[REDACTED]')
+  await next.complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'interactive-rotation',
+  })
+  next.lockVault(account)
+  await assert.rejects(next.complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'policy-off-background', background: true,
+  }), error => error instanceof ConnectionError && error.code === 'policy_denied')
+  assert.equal(calls, 1)
+})

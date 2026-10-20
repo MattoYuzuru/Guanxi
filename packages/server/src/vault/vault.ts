@@ -164,11 +164,11 @@ export class Vault {
       return
     }
     if (!this.unattendedAvailable) throw new ConnectionError('policy_denied', 'Unattended access disabled')
+    const secretRef = ref ?? this.store.get(accountId, connectionId).secretRef
+    if (!secretRef) return
     const session = this.sessions.get(accountId)
     const node = this.nodeSessions.get(accountId)
     if (!session || !node) throw new ConnectionError('vault_locked', 'Vault is locked')
-    const secretRef = ref ?? this.store.get(accountId, connectionId).secretRef
-    if (!secretRef) return
     const row = this.db.prepare('SELECT ciphertext FROM vault_secrets WHERE ref=? AND account_id=?').get(secretRef, accountId)
     if (!row) throw new ConnectionError('policy_denied', 'Connection credential unavailable')
     const plaintext = open(session, String(row.ciphertext), secretRef)

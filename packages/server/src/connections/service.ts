@@ -87,7 +87,7 @@ export class Connections {
     this.store.db.exec('BEGIN IMMEDIATE')
     try {
       const ref = this.#vault.put(accountId, value)
-      this.#vault.prepareUnattended(accountId, id, connection.unattended, ref)
+      this.#vault.prepareUnattended(accountId, id, connection.unattended && this.#vault.unattendedAvailable, ref)
       const result = this.store.setSecret(accountId, id, ref)
       this.store.db.exec('COMMIT')
       return result
