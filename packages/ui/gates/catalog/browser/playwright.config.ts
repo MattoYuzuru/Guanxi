@@ -34,6 +34,12 @@ export default defineConfig({
     locale: 'en-US',
     timezoneId: 'UTC',
     colorScheme: 'light',
+    // One raster path for every layer: with OKLCH tokens, antialiased edges differed by one
+    // colour step depending on which path Chromium picked for a layer, which in turn depended
+    // on the stories rendered before (G13 failed on error-state corners in isolated runs).
+    launchOptions: {
+      args: ['--disable-gpu', '--disable-gpu-rasterization', '--disable-partial-raster', '--disable-lcd-text', '--force-color-profile=srgb'],
+    },
   },
   webServer: {
     command: `node ${JSON.stringify(server)} ${JSON.stringify(harness)} ${port}`,
