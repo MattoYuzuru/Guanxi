@@ -48,9 +48,9 @@ async function setup(t: { after(fn: () => unknown): void }, options: { transport
   t.after(async () => { await kernel.dispose(); for (const key of keys.values()) key.fill(0); await rm(dir, { recursive: true, force: true }) })
   return { dir, kernel, service, config, async restart() { await handle.dispose(); handle = await kernel.plugin(connectionsPlugin, config) } }
 }
-function responseSse() {
+function responseSse(content = 'ok') {
   const frames = [
-    { id: 'completion-test', choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: null }] },
+    { id: 'completion-test', choices: [{ index: 0, delta: { role: 'assistant', content }, finish_reason: null }] },
     { id: 'completion-test', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } },
   ]
   return new Response(frames.map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
@@ -61,7 +61,8 @@ test('K3 trace: a tool prints a generated vault secret; next real pi-ai request 
   const requests: { body: string; auth: string | null }[] = []
   const f = await setup(t, { transport: async (_url, init) => {
     requests.push({ body: String(init?.body), auth: new Headers(init?.headers).get('authorization') })
-    return responseSse()
+    assert.equal(init?.redirect, 'error', 'complete must reject credential-forwarding redirects')
+    return responseSse(secret)
   } })
   const s = f.service()
   const row = s.create(account, apiInput)
@@ -84,6 +85,7 @@ test('K3 trace: a tool prints a generated vault secret; next real pi-ai request 
   assert.equal(requests[0]!.body.includes(secret), false)
   assert.match(requests[0]!.body, /REDACTED/)
   assert.equal(JSON.stringify(result).includes(secret), false)
+  assert.match(JSON.stringify(result.content), /REDACTED/)
   assert.equal(JSON.stringify(s.snapshot(account)).includes(secret), false)
   assert.equal(s.snapshot(account).costs.length, 1)
   const destination = join(f.dir, 'handoff.json')
@@ -520,4 +522,42 @@ test('H3: apply registers every historical secret after restart without granting
   const failed = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
   assert.equal(failed.ready, false)
   assert.throws(() => failed.assertReady(), /registration incomplete/)
+})
+
+
+test('M2: localChat and writeArtifact fail before dispatch/write when registration is incomplete', async t => {
+  let calls = 0
+  const f = await setup(t, { transport: async () => { calls++; throw new Error('Unexpected dispatch') } })
+  const s = f.service(); await s.unlockVault(account)
+  const model = s.create(account, apiInput); s.saveSecret(account, model.id, fakeKey())
+  const local = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
+  f.config.keychain = async () => { throw new Error('Fixture keychain locked') }
+  await f.restart()
+  const request = { model: 'fixture', messages: [], options: { num_ctx: 1024 } }
+  await assert.rejects(f.service().localChat(account, local.id, request, { runId: 'run', requestId: 'not-ready' }), /registration incomplete/)
+  const destination = join(f.dir, 'blocked.json')
+  await assert.rejects(f.service().writeArtifact(account, destination, {}), /registration incomplete/)
+  await assert.rejects(readFile(destination), /ENOENT/)
+  assert.equal(calls, 0)
+})
+
+test('M2: production plugin defaults deny unattended localChat before runtime dispatch', async t => {
+  let calls = 0
+  const f = await setup(t, { transport: async () => { calls++; throw new Error('Unexpected dispatch') } })
+  Reflect.deleteProperty(f.config, 'policy')
+  await f.restart()
+  const s = f.service()
+  assert.equal(s.snapshot(account).vault.unattendedAvailable, false)
+  const row = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
+  assert.throws(() => s.setUnattended(account, row.id, true), /not enabled/)
+  await assert.rejects(s.localChat(account, row.id, { model: 'fixture', messages: [], options: { num_ctx: 1024 } }, {
+    runId: 'run', requestId: 'no-consent', background: true,
+  }), /Unattended access disabled/)
+  // Isolate the per-connection guard from the default policy guard.
+  const optedIn = await setup(t, { unattended: true, transport: async () => { calls++; throw new Error('Unexpected dispatch') } })
+  const local = optedIn.service().create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
+  await assert.rejects(optedIn.service().localChat(account, local.id, { model: 'fixture', messages: [], options: { num_ctx: 1024 } }, {
+    runId: 'run', requestId: 'no-row-consent', background: true,
+  }), /Unattended access disabled/)
+  assert.equal(calls, 0)
 })
