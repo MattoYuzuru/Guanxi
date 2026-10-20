@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const contractSrc = fileURLToPath(new URL('../contract/src/index.ts', import.meta.url))
+const uiRoot = fileURLToPath(new URL('../ui', import.meta.url))
 
 // Parallel worktrees each need their own ports; defaults match a single checkout.
 function portFromEnv(name: string, fallback: number): number {
@@ -27,10 +28,14 @@ export default defineConfig({
       // Контракт исполняется из исходников (внутри — импорты с .ts),
       // поэтому резолвим его напрямую и не даём Vite его пре-бандлить.
       '@guanxi/contract': contractSrc,
+      // @guanxi/ui is source too; only the lazily loaded catalog route imports it today.
+      '@guanxi/ui/catalog': `${uiRoot}/catalog/index.ts`,
+      '@guanxi/ui/styles/token-stub.css': `${uiRoot}/src/styles/token-stub.css`,
+      '@guanxi/ui': `${uiRoot}/src/index.ts`,
     },
   },
   optimizeDeps: {
-    exclude: ['@guanxi/contract'],
+    exclude: ['@guanxi/contract', '@guanxi/ui'],
   },
   server: {
     port: webPort,

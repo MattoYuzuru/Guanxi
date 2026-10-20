@@ -60,6 +60,7 @@ export type Route =
   | { name: 'projectChat'; projectId: string; threadId: string | null }
   | { name: 'projects' }
   | { name: 'settings' }
+  | { name: 'developerComponents' }
   | { name: 'notFound'; path: string }
 
 export function parseRoute(pathWithSearch: string): Route {
@@ -94,6 +95,9 @@ export function parseRoute(pathWithSearch: string): Route {
     }
   }
   if (first === 'settings' && rest.length === 0) return { name: 'settings' }
+  if (first === 'settings' && rest.length === 2 && rest[0] === 'developer' && rest[1] === 'components') {
+    return { name: 'developerComponents' }
+  }
 
   return { name: 'notFound', path }
 }
@@ -112,6 +116,7 @@ export const paths = {
     return threadId ? `${base}/${encodeURIComponent(threadId)}` : base
   },
   settings: () => '/settings',
+  developerComponents: () => '/settings/developer/components',
 }
 
 /* ──────────────────────────────── Хуки ────────────────────────────────── */
