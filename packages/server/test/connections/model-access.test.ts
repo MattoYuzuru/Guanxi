@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes, createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -633,4 +633,14 @@ test('pi-ai facts carry the actual catalog observation time', async t => {
     assert.ok(Date.parse(fact.observedAt!) >= before && Date.parse(fact.observedAt!) <= after)
     assert.equal(fact.source, '@earendil-works/pi-ai@1.3.0'); assert.equal(fact.confidence, 'medium')
   }
+})
+
+
+test('vault database and pre-existing WAL/SHM sidecars are private after reopen', async t => {
+  const f = await setup(t)
+  const files = ['', '-wal', '-shm'].map(suffix => f.config.databasePath + suffix)
+  for (const file of files) await chmod(file, 0o644)
+  const reopened = new ConnectionStore(f.config.databasePath, f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!)
+  try { for (const file of files) assert.equal((await stat(file)).mode & 0o777, 0o600) }
+  finally { reopened.close() }
 })

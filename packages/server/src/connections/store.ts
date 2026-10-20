@@ -43,6 +43,7 @@ export class ConnectionStore {
       }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
+    for (const file of [path, `${path}-wal`, `${path}-shm`]) chmodSync(file, 0o600)
   }
   list(accountId: string): Connection[] {
     return this.db.prepare('SELECT data FROM connections WHERE account_id=? ORDER BY rowid').all(accountId)
