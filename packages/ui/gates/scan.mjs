@@ -35,11 +35,28 @@ export function classStrings(file, text) {
     for (let parent = node.parent; parent; parent = parent.parent) if (bindings.get(parent)?.has(node.text)) return bindings.get(parent).get(node.text)
   }
   function unwrap(node, seen = new Set()) {
-    if (!node || seen.has(node)) return
+    if (!node || seen.has(node)) return []
     const next = new Set([...seen, node])
     if (ts.isIdentifier(node)) return unwrap(binding(node), next)
     if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)) return unwrap(node.expression, next)
-    return node
+    if (ts.isConditionalExpression(node)) return [...unwrap(node.whenTrue, next), ...unwrap(node.whenFalse, next)]
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const key = ts.isPropertyAccessExpression(node) ? node.name.text : ts.isStringLiteralLike(node.argumentExpression) || ts.isNumericLiteral(node.argumentExpression) ? node.argumentExpression.text : undefined
+      return unwrap(node.expression, next).flatMap(object => members(object, key, next)).flatMap(value => unwrap(value, next))
+    }
+    return [node]
+  }
+  function members(object, key, seen) {
+    if (ts.isArrayLiteralExpression(object)) return key === undefined ? [...object.elements] : object.elements[Number(key)] ? [object.elements[Number(key)]] : []
+    if (!ts.isObjectLiteralExpression(object) || seen.has(object)) return []
+    const next = new Set([...seen, object])
+    return object.properties.flatMap(property => {
+      if (ts.isSpreadAssignment(property)) return unwrap(property.expression, next).flatMap(value => members(value, key, next))
+      if (key !== undefined && nameOf(property.name) !== key) return []
+      if (ts.isPropertyAssignment(property)) return [property.initializer]
+      if (ts.isShorthandPropertyAssignment(property)) return [property.name]
+      return []
+    })
   }
   function collect(node, seen = new Set(), objectMode = 'values') {
     if (!node || seen.has(node)) return
@@ -47,23 +64,16 @@ export function classStrings(file, text) {
     if (ts.isStringLiteralLike(node)) values.add(node)
     else if (ts.isIdentifier(node)) collect(binding(node), next, objectMode)
     else if (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) collect(node.expression, next, objectMode)
-    else if (ts.isConditionalExpression(node)) { collect(node.whenTrue, next); collect(node.whenFalse, next) }
+    else if (ts.isConditionalExpression(node)) { collect(node.whenTrue, next, objectMode); collect(node.whenFalse, next, objectMode) }
     else if (ts.isBinaryExpression(node)) {
-      if (node.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) collect(node.left, next)
-      collect(node.right, next)
+      if (node.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) collect(node.left, next, objectMode)
+      collect(node.right, next, objectMode)
     } else if (ts.isTemplateExpression(node)) {
       values.add(node.head)
       for (const span of node.templateSpans) { collect(span.expression, next); values.add(span.literal) }
-    } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(item => collect(item, next))
+    } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(item => collect(item, next, objectMode))
     else if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-      const object = unwrap(node.expression)
-      const key = ts.isPropertyAccessExpression(node) ? node.name.text : ts.isStringLiteralLike(node.argumentExpression) || ts.isNumericLiteral(node.argumentExpression) ? node.argumentExpression.text : undefined
-      if (object && ts.isObjectLiteralExpression(object)) {
-        for (const property of object.properties) {
-          if (ts.isSpreadAssignment(property)) collect(property.expression, next)
-          else if (ts.isPropertyAssignment(property) && (key === undefined || nameOf(property.name) === key)) collect(property.initializer, next)
-        }
-      } else if (object && ts.isArrayLiteralExpression(object)) collect(object, next)
+      for (const value of unwrap(node)) collect(value, next, objectMode)
     } else if (ts.isObjectLiteralExpression(node)) {
       // Bound class maps hold class values; clsx/cn condition objects hold class keys.
       for (const property of node.properties) {

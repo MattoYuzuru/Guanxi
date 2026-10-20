@@ -16,8 +16,8 @@ in web/UI source and generated files. Local legacy and
 geometry variables are explicitly scoped in `local-variables.json` and require definitions.
 
 G5 uses the pinned Tailwind compiler plus CSS-declared custom classes, follows lexically scoped
-class constants and bound maps (property/element access), `*ClassName` props,
-`cva` variants, class helpers and CSS `@apply`. Arbitrary classes, including v4 shorthand,
+class constants and nested bound maps (property/element access), `*ClassName` props,
+`cva` variants, conditional/array class helpers and CSS `@apply`. Arbitrary classes, including v4 shorthand,
 always require a legacy allowance. G6 parses CSS declarations and functions; G7 checks CSS
 motion plus TypeScript strings, motion object properties and `@apply` parameters. HTML, JSX,
 JS and SCSS source are covered, as are raw fallbacks inside `var()`. Off-scale numeric spacing

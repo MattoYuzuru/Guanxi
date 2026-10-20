@@ -21,6 +21,16 @@ test('H3: function-returned classes and *ClassName props are scanned', () => {
     const arrow = () => 'text-[#f00]'; export const A = () => <X outerClassName={style()} innerClassName={arrow()} footerClassName="p-[13px]"/>`
   assert.deepEqual(classStrings('fixture.jsx', code).map(t => t.value).sort(), ['bg-red-500', 'p-[13px]', 'text-[#f00]'])
 })
+test('H3 self-review: nested maps and conditional/array helper objects retain class meaning', () => {
+  for (const code of [
+    `const palette = { danger: { base: 'bg-red-500' } }; const A = <div className={palette[tone].base}/>`,
+    `const base = { danger: { base: 'bg-red-500' } }; const palette = { ...base }; const A = <div className={palette.danger['base']}/>`,
+    `const palette = [{ base: 'bg-red-500' }]; const A = <div className={palette[index].base}/>`,
+    `const A = clsx([{ 'bg-red-500': true }])`,
+    `const A = cn(ok ? { 'bg-red-500': true } : {})`,
+    `const A = cx(ok && { 'bg-red-500': true })`,
+  ]) assert.deepEqual(classStrings('fixture.tsx', code).map(t => t.value), ['bg-red-500'], code)
+})
 test('H3: every lexical legacy arbitrary-class occurrence is covered by the freeze', async () => {
   const allowances = await ctx.json('packages/ui/gates/legacy-allowlist.json')
   const lexical = {}
