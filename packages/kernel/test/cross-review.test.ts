@@ -288,3 +288,38 @@ describe('Re-review R1: rollback re-settles the surviving plugins', () => {
     assert.deepEqual(heard, ['ping'])
   })
 })
+
+describe('Re-review R2: a late cleanup is bounded and reported', () => {
+  const abandonedApply = (cleanup: () => unknown, release: Promise<void>) =>
+    testPlugin({}, async () => {
+      await release
+      return cleanup
+    })
+
+  it('abandons a late cleanup that never finishes and logs it', { timeout: 5_000 }, async () => {
+    const logs: string[] = []
+    const kernel = createKernel({ stepTimeoutMs: 20, onLog: (record) => logs.push(record.message) })
+    const release = deferred()
+    let started = 0
+    await assert.rejects(kernel.plugin(abandonedApply(() => {
+      started += 1
+      return new Promise(() => {})
+    }, release.promise)), KernelTimeoutError)
+    release.resolve()
+    await tick(80)
+    assert.equal(started, 1)
+    assert.ok(logs.some((line) => /late apply\(\) cleanup abandoned after 20 ms/.test(line)), logs.join('\n'))
+  })
+
+  it('logs a late cleanup that rejects', { timeout: 5_000 }, async () => {
+    const logs: string[] = []
+    const kernel = createKernel({ stepTimeoutMs: 20, onLog: (record) => logs.push(record.message) })
+    const release = deferred()
+    await assert.rejects(kernel.plugin(abandonedApply(async () => {
+      throw new Error('late cleanup broke')
+    }, release.promise)), KernelTimeoutError)
+    release.resolve()
+    await tick(30)
+    assert.ok(logs.some((line) => /late apply\(\) cleanup failed: .*late cleanup broke/s.test(line)), logs.join('\n'))
+  })
+})

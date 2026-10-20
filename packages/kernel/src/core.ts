@@ -392,7 +392,7 @@ export class KernelCore {
         () => fiber.plugin.apply(activation.context, fiber.config),
         // An abandoned apply that finishes later may still hand back a cleanup.
         (late) => {
-          if (typeof late === 'function') void this.runCleanup(fiber, { label: 'late apply() cleanup', run: late as Cleanup })
+          if (typeof late === 'function') this.runLateCleanup(fiber, late as Cleanup)
         },
       )
       if (typeof result === 'function') activation.cleanups.push({ label: 'apply() cleanup', run: result as Cleanup })
@@ -489,6 +489,28 @@ export class KernelCore {
     fiber.disposing = true
     this.fibers.delete(fiber)
     fiber.parent?.children.delete(fiber)
+  }
+
+  /**
+   * Run a cleanup that an abandoned apply handed back after its transition
+   * ended: detached from every transition, but bounded and reported like any
+   * other step.
+   */
+  private runLateCleanup(fiber: Fiber, cleanup: Cleanup): void {
+    const label = 'late apply() cleanup'
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const bound = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () => reject(new KernelTimeoutError(label, this.timeoutMs, [`${fiber.manifest.id} (${label})`])),
+        this.timeoutMs,
+      )
+    })
+    Promise.race([Promise.resolve().then(cleanup), bound])
+      .catch((error: unknown) => {
+        const message = error instanceof KernelTimeoutError ? `${label} abandoned after ${this.timeoutMs} ms` : `${label} failed: ${describe(error)}`
+        this.log({ level: 'error', source: fiber.manifest.id, message })
+      })
+      .finally(() => clearTimeout(timer))
   }
 
   private async runCleanup(fiber: Fiber, record: CleanupRecord): Promise<void> {
