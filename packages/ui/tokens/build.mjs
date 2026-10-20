@@ -27,7 +27,7 @@ const aliases = {
   warning: 'color-text-warning', danger: 'color-text-danger', success: 'color-text-success', info: 'color-text-info',
 }
 function themeCSS(flat) {
-  const namespaces = ['color', 'ease', 'animate', 'spacing', 'text', 'radius', 'font', 'font-weight', 'shadow', 'inset-shadow', 'drop-shadow', 'blur', 'tracking', 'leading', 'default-transition']
+  const namespaces = ['color', 'ease', 'animate', 'spacing', 'text', 'text-shadow', 'container', 'radius', 'font', 'font-weight', 'shadow', 'inset-shadow', 'drop-shadow', 'blur', 'tracking', 'leading', 'default-transition']
   const lines = namespaces.map(name => `  --${name}-*: initial;`)
   for (const [name, variable] of Object.entries(aliases)) lines.push(`  --color-${name}: var(--${variable});`)
   for (const t of flat.filter(t => t.name.startsWith('font.size.'))) lines.push(`  --text-${t.path[2]}: var(${cssName(t)});`)

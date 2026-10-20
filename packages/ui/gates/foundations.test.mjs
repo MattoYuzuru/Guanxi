@@ -172,7 +172,7 @@ test('N9: runtime declarations cannot shadow any Tailwind or legacy theme name',
 })
 test('M4: cleared Tailwind defaults disappear; semantic replacements compile', async () => {
   const system = await designSystem(ctx)
-  for (const cls of ['shadow-lg', 'inset-shadow-sm', 'drop-shadow-lg', 'backdrop-blur-md', 'blur-sm', 'tracking-wide', 'leading-tight', 'font-bold']) assert.equal(system.candidatesToCss([cls])[0], null, cls)
+  for (const cls of ['shadow-lg', 'inset-shadow-sm', 'drop-shadow-lg', 'backdrop-blur-md', 'blur-sm', 'tracking-wide', 'leading-tight', 'font-bold', 'text-shadow-lg', 'max-w-md', 'w-md']) assert.equal(system.candidatesToCss([cls])[0], null, cls)
   for (const cls of ['transition', 'transition-colors', 'shadow-popover', 'blur-glass', 'font-sans', 'font-mono', 'font-label', 'leading-ui']) assert.ok(system.candidatesToCss([cls])[0], cls)
   const theme = (await generate(ctx.tokenOptions))['theme.css']
   assert.match(theme, /--default-transition-duration: var\(--motion-duration-moderate\)/)
