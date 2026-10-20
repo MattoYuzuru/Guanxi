@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process'
 import { createKernel } from '@guanxi/kernel'
 import { Hono } from 'hono'
 import { createConnectionSchema, connectionSnapshotSchema } from '@guanxi/contract'
+import type { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
 import { connectionsPlugin, CONNECTIONS_SERVICE, CONNECTIONS_EGRESS_READINESS, type ConnectionsEgressReadiness } from '../../src/connections/plugin.ts'
@@ -684,4 +685,25 @@ test('review: unavailable session keychain yields vault_locked on the actual unl
   assert.equal(response.status, 423)
   assert.deepEqual(await response.json(), { code: 'vault_locked' })
   assert.equal(f.service().snapshot(account).vault.unlocked, false)
+})
+
+
+test('review: queued localChat rechecks revoked unattended consent before dispatch and releases its lease', async t => {
+  let calls = 0
+  const f = await setup(t, { unattended: true, transport: async () => { calls++; throw new Error('Unexpected dispatch') } })
+  const s = f.service(); const local = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
+  await s.unlockVault(account); s.setUnattended(account, local.id, true)
+  const governor = f.kernel.service<ResourceGovernor>('governor')!
+  const admission = (requestId: string) => governor.enqueue({ owner: { kind: 'operation', operationId: requestId },
+    operation: 'chat', model: { provider: 'ollama', name: 'fixture' }, requestedContext: 1024, priority: 'normal', enqueuedAt: new Date().toISOString() })
+  const blocker = await governor.acquire(admission('blocker'))
+  const queued = s.localChat(account, local.id, { model: 'fixture', messages: [], options: { num_ctx: 1024 } }, {
+    background: true, runId: 'run', requestId: 'queued-revocation',
+  })
+  const rejection = assert.rejects(queued, error => error instanceof ConnectionError && error.code === 'policy_denied')
+  s.setUnattended(account, local.id, false)
+  blocker.release(); await rejection
+  assert.equal(calls, 0)
+  const next = await governor.acquire(admission('after-revocation'), { signal: AbortSignal.timeout(1000) })
+  next.release()
 })

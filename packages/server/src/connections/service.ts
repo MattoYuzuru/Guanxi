@@ -163,13 +163,18 @@ export class Connections {
         priority: 'normal', enqueuedAt: new Date().toISOString() })
       const lease = await this.governor.acquire(ticket, { signal })
       try {
+        const current = this.store.get(accountId, id)
+        if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
         const result = await this.ollama.client(host.href).chat(this.scrubber.scrub(request), signal)
         signal.throwIfAborted()
         this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
           inputTokens: result.prompt_eval_count ?? null, outputTokens: result.eval_count ?? null,
           costUsd: null, source: 'ollama:/api/chat', confidence: 'medium', observedAt: new Date().toISOString() })
         return this.scrubber.scrub(result)
-      } catch { throw new Error(signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed') }
+      } catch (error) {
+        if (error instanceof ConnectionError) throw error
+        throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed')
+      }
       finally { lease.release() }
     })
   }
