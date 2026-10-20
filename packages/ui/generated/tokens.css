@@ -1418,7 +1418,7 @@
   --material-edge: transparent;
   --material-seam: transparent;
 }
-:root:not([data-material]) [data-elevation="3"] {
+:where(:root:not([data-material])) [data-elevation="3"] {
   --material-background: color-mix(in srgb, var(--material-glass-fill) calc(var(--material-strong-glass-fill-opacity) * 100%), transparent);
   --material-backdrop: blur(var(--material-strong-glass-blur)) saturate(var(--material-strong-glass-saturation));
   --material-grain: var(--material-glass-grain-opacity);
