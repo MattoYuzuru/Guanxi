@@ -85,9 +85,11 @@ export class KernelImpl implements Kernel {
         if (abandoned.length) throw new KernelTimeoutError(`loading ${plugin.manifest.id}`, this.core.timeoutMs, abandoned)
         return handleFor(this.core, fiber)
       } catch (error) {
-        // Rejecting leaves nothing behind.
+        // Rejecting leaves nothing behind, and the plugins that survive (for
+        // example optional consumers the rollback stopped) settle again.
         this.core.requestDispose(fiber)
         await this.core.stop(fiber, 'disposed')
+        await this.core.settle()
         throw error
       }
     })

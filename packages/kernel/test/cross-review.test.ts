@@ -265,3 +265,26 @@ describe('L2: host objects expose methods only', () => {
     await node.dispose()
   })
 })
+
+describe('Re-review R1: rollback re-settles the surviving plugins', () => {
+  it('brings an optional consumer and its downstream dependent back after a provider load is rolled back', { timeout: 5_000 }, async () => {
+    const kernel = createKernel({ stepTimeoutMs: 20, onLog: () => {} })
+    const heard: string[] = []
+    const optional = await kernel.plugin(testPlugin({ id: 'x.optional', uses: ['dep'], provides: ['feature'] }, (ctx) => {
+      provide(ctx, 'feature', ctx.optionalService('dep') ?? 'without dep')
+      on(ctx, 'ping', () => heard.push('ping'))
+    }))
+    const downstream = await kernel.plugin(testPlugin({ id: 'x.downstream', requires: ['feature'] }, () => {}))
+    await kernel.plugin(testPlugin({ id: 'x.stuck', requires: ['dep'] }, () => new Promise(() => {})))
+    await assert.rejects(
+      kernel.plugin(testPlugin({ id: 'x.dep-provider', provides: ['dep'] }, (ctx) => provide(ctx, 'dep', 1))),
+      KernelTimeoutError,
+    )
+    assert.equal(kernel.service('dep'), undefined)
+    assert.equal(optional.state, 'active', 'the optional consumer runs again without dep')
+    assert.equal(kernel.service('feature'), 'without dep')
+    assert.equal(downstream.state, 'active', 'its dependent is back too')
+    kernel.emit('ping')
+    assert.deepEqual(heard, ['ping'])
+  })
+})
