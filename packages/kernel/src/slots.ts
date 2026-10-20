@@ -47,6 +47,8 @@ export class SlotRegistry {
   private readonly snapshots = new Map<string, readonly ListSlotEntry[]>()
   private readonly subscribers = new Set<() => void>()
   private sequence = 0
+  private holds = 0
+  private held = new Map<string, readonly ListSlotEntry[]>()
   /** Entries dropped because their slot vanished first; non-zero means a teardown-order bug. */
   orphansDropped = 0
 
@@ -122,8 +124,31 @@ export class SlotRegistry {
     return this.declarations.has(slot)
   }
 
+  /**
+   * Freeze what subscribers see until the returned release runs, then notify
+   * once. A plugin swap (unload, then load) under a hold never shows the empty
+   * frame in between, so a renderer keeps its DOM nodes and their focus.
+   */
+  hold(): () => void {
+    if (this.holds === 0) {
+      for (const slot of this.declarations.keys()) this.held.set(slot, this.list(slot))
+    }
+    this.holds += 1
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.holds -= 1
+      if (this.holds > 0) return
+      this.held.clear()
+      for (const listener of [...this.subscribers]) listener()
+    }
+  }
+
   /** Entries of a declared slot, ordered; the same array until the slot changes. */
   list<T = unknown>(slot: string): readonly ListSlotEntry<T>[] {
+    const frozen = this.held.get(slot)
+    if (frozen) return frozen as readonly ListSlotEntry<T>[]
     if (!this.declarations.has(slot)) return EMPTY as readonly ListSlotEntry<T>[]
     let snapshot = this.snapshots.get(slot)
     if (!snapshot) {
@@ -152,6 +177,7 @@ export class SlotRegistry {
 
   private notify(slot: string): void {
     this.snapshots.delete(slot)
+    if (this.holds > 0) return
     for (const listener of [...this.subscribers]) listener()
   }
 }

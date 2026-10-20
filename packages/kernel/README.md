@@ -96,7 +96,8 @@ Rules for plugin code that follow from the review of rc.11:
 ## Hot reload
 
 - Browser: Vite HMR. The web runtime accepts each built-in plugin module's update and swaps the
-  plugin; see `packages/web/src/kernel/runtime.ts`.
+  plugin under `SlotRegistry#hold()`, so no empty frame renders and a focused entry keeps focus;
+  see `packages/web/src/kernel/runtime.ts`.
 - Node: `NodeKernel.replacePlugin(plugin)` unloads every row of that plugin and loads the new
   code. `@cordisjs/plugin-hmr` is not used: it needs Node internals (`--expose-internals` or a
   native addon) to evict the ESM cache. A fresh `import()` per change creates one ES module

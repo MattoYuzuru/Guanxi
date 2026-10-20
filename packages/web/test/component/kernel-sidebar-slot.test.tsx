@@ -4,7 +4,7 @@
  * The replace path is the one the Vite HMR accept handler calls.
  */
 import { act, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { contribute, definePlugin } from '@guanxi/kernel'
 import { SidebarSlot } from '../../src/kernel/SidebarSlot.tsx'
 import {
@@ -31,46 +31,61 @@ function hotVersion(revision: string, href: string) {
   })
 }
 
-function shortcuts() {
-  return screen.queryByRole('navigation', { name: 'Ярлыки' })
+function quickLinks() {
+  return screen.queryByRole('navigation', { name: 'Быстрые ссылки' })
 }
 
-describe('plugin sidebar slot', () => {
-  it('appears, hot-updates in place, and disappears on unload', async () => {
-    await webKernelReady
-    render(<SidebarSlot />)
+afterEach(async () => {
+  setActiveLocale('ru')
+  await replaceWebPlugin(projectsShortcut)
+})
 
-    const nav = shortcuts()
+describe('plugin sidebar slot', () => {
+  it('appears, hot-updates in place keeping focus, and disappears on unload', async () => {
+    await webKernelReady
+    render(
+      <>
+        <SidebarSlot />
+        <a href="/chat">next control</a>
+      </>,
+    )
+
+    const nav = quickLinks()
     expect(nav).not.toBeNull()
     const links = within(nav!).getAllByRole('link')
     expect(links).toHaveLength(1)
     expect(links[0].textContent).toBe('Все проекты')
     expect(links[0].getAttribute('href')).toBe('/projects')
     const firstRevision = nav!.querySelector('li')!.getAttribute('data-plugin-revision')
+    links[0].focus()
 
     await act(() => replaceWebPlugin(hotVersion('hot-2', '/projects?hot=2')))
-    const updated = within(shortcuts()!).getAllByRole('link')
+    const updated = within(quickLinks()!).getAllByRole('link')
     expect(updated).toHaveLength(1)
+    expect(updated[0]).toBe(links[0])
+    expect(document.activeElement).toBe(links[0])
     expect(updated[0].textContent).toBe('Проекты')
     expect(updated[0].getAttribute('href')).toBe('/projects?hot=2')
-    expect(shortcuts()!.querySelector('li')!.getAttribute('data-plugin-revision')).toBe('hot-2')
+    expect(quickLinks()!.querySelector('li')!.getAttribute('data-plugin-revision')).toBe('hot-2')
     expect(firstRevision).not.toBe('hot-2')
     expect(webKernel.counters().slotEntries).toBe(1)
 
     await act(() => unloadWebPlugin(ID))
-    expect(shortcuts()).toBeNull()
-    expect(screen.queryAllByRole('link')).toHaveLength(0)
+    expect(quickLinks()).toBeNull()
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'next control' }))
     expect(webKernel.counters().slotEntries).toBe(0)
 
     await act(() => replaceWebPlugin(projectsShortcut))
-    expect(within(shortcuts()!).getAllByRole('link')).toHaveLength(1)
+    expect(within(quickLinks()!).getAllByRole('link')).toHaveLength(1)
   })
 
-  it('names the list and its entry through locale keys', async () => {
+  it('names the list and its entry through English locale keys', async () => {
     await webKernelReady
     setActiveLocale('en')
     render(<SidebarSlot />)
-    const nav = screen.getByRole('navigation', { name: 'Shortcuts' })
+    const nav = screen.getByRole('navigation', { name: 'Quick links' })
     expect(within(nav).getByRole('link', { name: 'All Projects' })).toBeTruthy()
+    expect(within(nav).getByRole('list')).toBeTruthy()
   })
 })

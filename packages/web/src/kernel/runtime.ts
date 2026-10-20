@@ -61,9 +61,16 @@ export function unloadWebPlugin(id: string): Promise<void> {
 /** Load a plugin, replacing a loaded plugin with the same id. */
 export function replaceWebPlugin(plugin: GuanxiPlugin<any>): Promise<void> {
   return serial(async () => {
-    const previous = await loaded.get(plugin.manifest.id)
-    await previous?.dispose()
-    await load(plugin)
+    // Hold the slots so the swap never renders an empty frame: the entry keeps
+    // its DOM node, and keyboard focus stays on it.
+    const release = webKernel.slots.hold()
+    try {
+      const previous = await loaded.get(plugin.manifest.id)
+      await previous?.dispose()
+      await load(plugin)
+    } finally {
+      release()
+    }
   })
 }
 

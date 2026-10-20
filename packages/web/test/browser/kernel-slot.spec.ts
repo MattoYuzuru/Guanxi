@@ -25,7 +25,7 @@ test('a plugin sidebar entry appears, hot-updates in place and disappears on unl
   await page.goto('/chat')
   await page.evaluate(() => (globalThis as unknown as { __GUANXI_KERNEL__: KernelHandle }).__GUANXI_KERNEL__.ready)
 
-  const shortcuts = page.getByRole('navigation', { name: 'Ярлыки' })
+  const shortcuts = page.getByRole('navigation', { name: 'Быстрые ссылки' })
   const entries = shortcuts.getByRole('listitem')
   await expect(entries).toHaveCount(1)
   const link = shortcuts.getByRole('link', { name: 'Все проекты' })
@@ -39,6 +39,9 @@ test('a plugin sidebar entry appears, hot-updates in place and disappears on unl
   await page.evaluate(() => {
     ;(globalThis as unknown as { __k1NoReload: boolean }).__k1NoReload = true
   })
+  await link.evaluate((element) => {
+    element.dataset['k1Node'] = 'original'
+  })
   const now = new Date()
   await utimes(pluginModule, now, now)
   await expect(entries.first()).not.toHaveAttribute('data-plugin-revision', firstRevision!, { timeout: 15_000 })
@@ -46,9 +49,14 @@ test('a plugin sidebar entry appears, hot-updates in place and disappears on unl
   expect(
     await page.evaluate(() => (globalThis as unknown as { __k1NoReload?: boolean }).__k1NoReload),
   ).toBe(true)
+  // Updated in place: the same DOM node, still focused.
+  await expect(link).toHaveAttribute('data-k1-node', 'original')
+  await expect(link).toBeFocused()
 
   await page.evaluate((id) => (globalThis as unknown as { __GUANXI_KERNEL__: KernelHandle }).__GUANXI_KERNEL__.unload(id), PLUGIN_ID)
   await expect(shortcuts).toHaveCount(0)
+  // The focused link is gone; focus moved to the next control, not the page body.
+  await expect(page.getByRole('link', { name: '+ Новый' })).toBeFocused()
   expect(
     await page.evaluate(() => (globalThis as unknown as { __GUANXI_KERNEL__: KernelHandle }).__GUANXI_KERNEL__.counters().slotEntries),
   ).toBe(0)

@@ -102,4 +102,23 @@ describe('list slots', () => {
     const silent = testPlugin({ contributes: { slotDeclarations: ['silent.slot'] } }, () => {})
     await assert.rejects(kernel.plugin(silent), /did not declare slot silent\.slot/)
   })
+
+  it('holds what subscribers see during a swap and notifies once on release', async () => {
+    const kernel = createKernel()
+    await kernel.plugin(shell())
+    const first = await kernel.plugin(item('projects', 'v1'))
+    const before = kernel.slots.list(SLOT)
+    let notifications = 0
+    kernel.slots.subscribe(() => notifications++)
+
+    const release = kernel.slots.hold()
+    await first.dispose()
+    await kernel.plugin(item('projects', 'v2'))
+    assert.equal(kernel.slots.list(SLOT), before, 'held snapshot during the swap')
+    assert.equal(notifications, 0, 'no empty frame is published')
+    release()
+    release()
+    assert.equal(notifications, 1)
+    assert.deepEqual(labels(kernel), ['v2'])
+  })
 })
