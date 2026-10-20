@@ -84,6 +84,8 @@
 @utility delay-fast { transition-delay: var(--motion-duration-fast); }
 @utility duration-instant { transition-duration: var(--motion-duration-instant); }
 @utility delay-instant { transition-delay: var(--motion-duration-instant); }
+@utility duration-loop { transition-duration: var(--motion-duration-loop); }
+@utility delay-loop { transition-delay: var(--motion-duration-loop); }
 @utility duration-medium { transition-duration: var(--motion-duration-medium); }
 @utility delay-medium { transition-delay: var(--motion-duration-medium); }
 @utility duration-moderate { transition-duration: var(--motion-duration-moderate); }

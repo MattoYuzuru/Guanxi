@@ -42,6 +42,13 @@
           "value": 400,
           "unit": "ms"
         }
+      },
+      "loop": {
+        "$type": "duration",
+        "$value": {
+          "value": 1000,
+          "unit": "ms"
+        }
       }
     },
     "easing": {
