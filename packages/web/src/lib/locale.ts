@@ -1784,6 +1784,11 @@ const english = {
   'inspector.type.intervention': 'Stopped by you',
   'inspector.type.error': 'Error',
   'inspector.type.turnDone': 'Turn finished',
+  'inspector.detail.writer': 'Writer epoch {epoch}: {reason}',
+  'inspector.writerReason.initial': 'first writer of this session',
+  'inspector.writerReason.released': 'the previous writer released the session',
+  'inspector.writerReason.expired': 'the previous writer stopped renewing',
+  'inspector.writerReason.processGone': 'the previous writer process is gone',
 } as const
 
 export type LocaleKey = keyof typeof english
@@ -3574,6 +3579,11 @@ const russian: Messages = {
   'inspector.type.intervention': 'Остановлено вами',
   'inspector.type.error': 'Ошибка',
   'inspector.type.turnDone': 'Ход завершён',
+  'inspector.detail.writer': 'Эпоха записи {epoch}: {reason}',
+  'inspector.writerReason.initial': 'первый писатель этой сессии',
+  'inspector.writerReason.released': 'предыдущий писатель освободил сессию',
+  'inspector.writerReason.expired': 'предыдущий писатель перестал продлевать запись',
+  'inspector.writerReason.processGone': 'процесс предыдущего писателя завершился',
 }
 
 export type UiLocale = 'en' | 'ru'

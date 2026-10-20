@@ -8,6 +8,14 @@ import {
   type SessionEvent,
   type SessionEventType,
 } from '@guanxi/contract'
+import { translate, type LocaleKey } from '../../lib/locale.ts'
+
+const WRITER_REASON_KEYS = {
+  initial: 'inspector.writerReason.initial',
+  released: 'inspector.writerReason.released',
+  expired: 'inspector.writerReason.expired',
+  writer_process_gone: 'inspector.writerReason.processGone',
+} as const satisfies Record<string, LocaleKey>
 
 export interface TimelineState {
   /** Events in `seq` order, each `seq` once. */
@@ -86,7 +94,10 @@ export function eventDetail(event: SessionEvent): string | null {
     case 'intervention':
       return event.data.reason
     case 'writer.acquired':
-      return `epoch ${event.data.epoch} · ${event.data.reason}`
+      return translate('inspector.detail.writer', {
+        epoch: event.data.epoch,
+        reason: translate(WRITER_REASON_KEYS[event.data.reason]),
+      })
     case 'session.created':
       return event.data.kind
   }
