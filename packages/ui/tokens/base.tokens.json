@@ -730,5 +730,61 @@
         }
       }
     }
+  },
+  "focus": {
+    "ring": {
+      "width": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      },
+      "offset": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      }
+    }
+  },
+  "layer": {
+    "base": {
+      "$type": "number",
+      "$value": 0
+    },
+    "sticky": {
+      "$type": "number",
+      "$value": 10
+    },
+    "docked": {
+      "$type": "number",
+      "$value": 20
+    },
+    "floating": {
+      "$type": "number",
+      "$value": 30
+    },
+    "popover": {
+      "$type": "number",
+      "$value": 40
+    },
+    "scrim": {
+      "$type": "number",
+      "$value": 49
+    },
+    "dialog": {
+      "$type": "number",
+      "$value": 50
+    },
+    "toast": {
+      "$type": "number",
+      "$value": 60
+    },
+    "tooltip": {
+      "$type": "number",
+      "$value": 70
+    }
   }
 }
