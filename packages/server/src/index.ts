@@ -13,6 +13,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { defaultDbPath } from './store/db.ts'
+import { bootServerKernel } from './runtime/kernel.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
@@ -35,6 +36,11 @@ export {
   ResourceGovernorError,
   operationOwner,
 } from './runtime/resource-governor.ts'
+export { RESOURCE_GOVERNOR_SERVICE, resourceGovernorPlugin } from './runtime/governor-plugin.ts'
+export { OLLAMA_ADAPTER_SERVICE, ollamaAdapterPlugin } from './ollama/plugin.ts'
+export type { OllamaAdapter, OllamaAdapterConfig } from './ollama/plugin.ts'
+export { LEGACY_SERVER_PROFILE, bootServerKernel } from './runtime/kernel.ts'
+export type { ServerKernel } from './runtime/kernel.ts'
 export type {
   AdmissionExplanation,
   AdmissionPriority,
@@ -108,10 +114,21 @@ export async function start(options: StartOptions = {}) {
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   const dataDir = options.dataDir ?? join(process.env['HOME'] ?? '.', '.guanxi')
 
-  const context = await createAppContext({
-    dbPath: defaultDbPath(dataDir),
-    appVersion: APP_VERSION,
-  })
+  // The governor and the Ollama adapter run as kernel plugins (K1); the legacy
+  // context consumes their services.
+  const kernel = await bootServerKernel()
+  let context: Awaited<ReturnType<typeof createAppContext>>
+  try {
+    context = await createAppContext({
+      dbPath: defaultDbPath(dataDir),
+      appVersion: APP_VERSION,
+      governor: kernel.governor,
+      ollama: kernel.ollama,
+    })
+  } catch (error) {
+    await kernel.node.dispose().catch(() => undefined)
+    throw error
+  }
 
   const server = createApp(context, {
     devOrigins: options.devOrigins ?? devOriginsFor(process.env['GUANXI_WEB_PORT'] || '5173'),
@@ -140,6 +157,7 @@ export async function start(options: StartOptions = {}) {
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
     context.db.close()
+    await kernel.node.dispose().catch(() => undefined)
     throw error
   }
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
@@ -171,6 +189,11 @@ export async function start(options: StartOptions = {}) {
         process.removeListener('SIGINT', shutdown)
         process.removeListener('SIGTERM', shutdown)
       }
+      try {
+        await kernel.node.dispose()
+      } catch (error) {
+        shutdownError ??= error
+      }
       if (shutdownError) throw shutdownError
     })()
     return closing
@@ -185,7 +208,7 @@ export async function start(options: StartOptions = {}) {
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
 
-  return { url, port: actualPort, host, context, close }
+  return { url, port: actualPort, host, context, kernel, close }
 }
 
 /**

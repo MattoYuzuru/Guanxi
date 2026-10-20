@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { ollamaClientThroughKernel } from './fixtures/kernel.ts'
 import {
-  OllamaClient,
+  type OllamaClient,
   OllamaProtocolError,
   OllamaTimeoutError,
 } from '../src/ollama/client.ts'
@@ -39,8 +40,8 @@ function stalledBody(signal: AbortSignal | null | undefined, firstLine?: string)
   })
 }
 
-function clientWith(fetchImpl: typeof fetch): OllamaClient {
-  return new OllamaClient({
+function clientWith(fetchImpl: typeof fetch): Promise<OllamaClient> {
+  return ollamaClientThroughKernel({
     host: 'http://fixture.invalid',
     connectTimeoutMs: 15,
     loadTimeoutMs: 15,
@@ -62,7 +63,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
   it('uses documented blob and create HTTP bodies without a path, Modelfile or arbitrary options', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const digest = `sha256:${'a'.repeat(64)}`
-    const client = clientWith(async (input, init) => {
+    const client = await clientWith(async (input, init) => {
       calls.push({ url: String(input), init })
       if (init?.method === 'HEAD') return new Response(null, { status: 404 })
       if (String(input).includes('/api/blobs/')) return new Response(null, { status: 201 })
@@ -103,7 +104,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
       new Response(`${JSON.stringify({ status: 'x'.repeat(100) })}\n`),
       new Response(`${JSON.stringify({ status: 'ok', arbitrary: true })}\n`),
     ]) {
-      const client = clientWith(async () => response)
+      const client = await clientWith(async () => response)
       const stream = client.createModelFromBlob(
         'model:latest', 'model.gguf', digest, undefined,
         { connectTimeoutMs: 20, loadTimeoutMs: 20, streamIdleTimeoutMs: 20, maxLineBytes: 32, maxFrames: 2 },
@@ -117,7 +118,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
 
   it('classifies a transport that never returns headers as connect timeout', async () => {
     let providerSignal: AbortSignal | null | undefined
-    const client = clientWith((_input, init) => {
+    const client = await clientWith((_input, init) => {
       providerSignal = init?.signal
       return new Promise<Response>(() => {})
     })
@@ -131,7 +132,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
 
   it('classifies a stream with headers but no first progress as load timeout', async () => {
     let cancelObserved = false
-    const client = clientWith(async () => {
+    const client = await clientWith(async () => {
       const body = new ReadableStream<Uint8Array>({
         cancel() {
           cancelObserved = true
@@ -150,7 +151,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
   })
 
   it('does not treat incomplete transport bytes as provider progress', async () => {
-    const client = clientWith(async (_input, init) => {
+    const client = await clientWith(async (_input, init) => {
       let timer: ReturnType<typeof setInterval> | undefined
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -180,7 +181,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
   })
 
   it('classifies a stream that stalls after partial output as stream-idle timeout', async () => {
-    const client = clientWith(async (_input, init) =>
+    const client = await clientWith(async (_input, init) =>
       stalledBody(init?.signal, partialLine()),
     )
     const stream = client.chatStream(REQUEST)
@@ -193,7 +194,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
   })
 
   it('uses optional per-call stream deadlines without changing client defaults', async () => {
-    const client = new OllamaClient({
+    const client = await ollamaClientThroughKernel({
       host: 'http://fixture.invalid',
       connectTimeoutMs: 100,
       loadTimeoutMs: 100,
@@ -216,7 +217,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
   })
 
   it('allows a continuously progressing stream to outlive one idle interval', async () => {
-    const client = clientWith(async (_input, init) => {
+    const client = await clientWith(async (_input, init) => {
       let emitted = 0
       let timer: ReturnType<typeof setInterval> | undefined
       const body = new ReadableStream<Uint8Array>({
@@ -264,7 +265,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
 
   it('keeps an external abort authoritative when observed with a deadline', async () => {
     const external = new AbortController()
-    const client = clientWith(
+    const client = await clientWith(
       (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener(
@@ -286,7 +287,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
   })
 
   it('does not let a stuck provider cancel promise hold generator cleanup', async () => {
-    const client = clientWith(async () => {
+    const client = await clientWith(async () => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(new TextEncoder().encode(`${partialLine()}\n`))
@@ -308,7 +309,7 @@ describe('Ollama client timeout and protocol boundaries', () => {
   })
 
   it('rejects malformed version and ps responses as protocol failures', async () => {
-    const client = clientWith(async () =>
+    const client = await clientWith(async () =>
       new Response(JSON.stringify({ unexpected: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' },

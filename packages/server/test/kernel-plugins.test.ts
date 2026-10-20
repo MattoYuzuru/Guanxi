@@ -1,0 +1,137 @@
+/**
+ * K1 wiring: the legacy Resource Governor and Ollama adapter run as kernel
+ * plugins, the server boots them through a kernel profile, and unloading a
+ * plugin reclaims what it owns.
+ */
+import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, it } from 'node:test'
+import { createKernel, isActive, service } from '@guanxi/kernel'
+import { processResources } from '@guanxi/kernel/node'
+import { start } from '../src/index.ts'
+import { OllamaUnavailableError } from '../src/ollama/client.ts'
+import { OLLAMA_ADAPTER_SERVICE, ollamaAdapterPlugin, type OllamaAdapter } from '../src/ollama/plugin.ts'
+import { RESOURCE_GOVERNOR_SERVICE, resourceGovernorPlugin } from '../src/runtime/governor-plugin.ts'
+import { LEGACY_SERVER_PROFILE, bootServerKernel } from '../src/runtime/kernel.ts'
+import { ResourceGovernor, ResourceGovernorError, type AdmissionRequest } from '../src/runtime/resource-governor.ts'
+import { governorThroughKernel, kernelOf, ollamaClientThroughKernel } from './fixtures/kernel.ts'
+
+function request(owner: string): AdmissionRequest {
+  return {
+    owner: { kind: 'operation', operationId: owner },
+    operation: 'model_warm',
+    model: { provider: 'ollama', name: 'fixture' },
+    requestedContext: 4_096,
+    priority: 'normal',
+    enqueuedAt: '2026-10-20T10:00:00.000Z',
+  }
+}
+
+const stalled: typeof fetch = (_input, init) =>
+  new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+  })
+
+describe('legacy tests run through the facade', () => {
+  it('hands out the services the plugins provide', async () => {
+    const governor = await governorThroughKernel()
+    assert.ok(governor instanceof ResourceGovernor)
+    const governorKernel = kernelOf(governor)
+    assert.ok(governorKernel, 'the governor came from a kernel')
+    assert.equal(governorKernel.root.get(RESOURCE_GOVERNOR_SERVICE), governor)
+
+    const client = await ollamaClientThroughKernel({ host: 'http://fixture.invalid/' })
+    const clientKernel = kernelOf(client)
+    assert.ok(clientKernel, 'the client came from a kernel')
+    assert.equal(service<OllamaAdapter>(clientKernel.root, OLLAMA_ADAPTER_SERVICE).client('http://fixture.invalid'), client)
+  })
+})
+
+describe('Resource Governor plugin', () => {
+  it('closes the governor on unload and finishes only after the active lease is released', async () => {
+    const kernel = createKernel()
+    const handle = await kernel.plugin(resourceGovernorPlugin)
+    const governor = service<ResourceGovernor>(kernel.root, RESOURCE_GOVERNOR_SERVICE)
+    const owner = new AbortController()
+    const lease = await governor.acquire(governor.enqueue(request('active')), {
+      abortOwner: () => owner.abort('shutdown'),
+    })
+    const waiting = governor.acquire(governor.enqueue(request('waiting')))
+    let unloaded = false
+    const unloading = handle.dispose().then(() => {
+      unloaded = true
+    })
+    await assert.rejects(waiting, (error: unknown) => error instanceof ResourceGovernorError && error.code === 'admission_closed')
+    assert.equal(owner.signal.aborted, true, 'the active owner was asked to stop')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(unloaded, false, 'unload waits for the active lease')
+    lease.release()
+    await unloading
+    assert.equal(governor.snapshot().accepting, false)
+    assert.equal(kernel.root.get(RESOURCE_GOVERNOR_SERVICE), undefined)
+  })
+})
+
+describe('Ollama adapter plugin', () => {
+  it('keeps one client per host and replaces it when the host changes', async () => {
+    const kernel = createKernel()
+    await kernel.plugin(ollamaAdapterPlugin, { fetch: stalled })
+    const adapter = service<OllamaAdapter>(kernel.root, OLLAMA_ADAPTER_SERVICE)
+    const first = adapter.client('http://a.invalid/')
+    assert.equal(adapter.client('http://a.invalid'), first)
+    assert.notEqual(adapter.client('http://b.invalid'), first)
+  })
+
+  it('aborts in-flight requests on unload and fails stale clients fast', async () => {
+    const kernel = createKernel()
+    const before = processResources().timers
+    const handle = await kernel.plugin(ollamaAdapterPlugin, { fetch: stalled, connectTimeoutMs: 60_000 })
+    const client = service<OllamaAdapter>(kernel.root, OLLAMA_ADAPTER_SERVICE).client('http://fixture.invalid')
+    const inFlight = client.ps()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    assert.equal(processResources().timers, before + 1, 'the connect deadline is armed')
+    await handle.dispose()
+    await assert.rejects(inFlight, OllamaUnavailableError)
+    assert.equal(processResources().timers, before, 'no deadline outlives the plugin')
+    const startedAt = Date.now()
+    await assert.rejects(client.version(), OllamaUnavailableError)
+    assert.ok(Date.now() - startedAt < 1_000, 'a stale client fails without waiting for a deadline')
+  })
+})
+
+describe('server boot through the kernel', () => {
+  it('boots the legacy profile and gives the application context its services', async () => {
+    const kernel = await bootServerKernel()
+    try {
+      assert.deepEqual(kernel.node.entries().map((entry) => entry.id), ['resource-governor', 'ollama'])
+      assert.ok(isActive(kernel.node.fiberOf('resource-governor')!))
+      assert.ok(isActive(kernel.node.fiberOf('ollama')!))
+      assert.equal(kernel.node.root.get(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
+    } finally {
+      await kernel.node.dispose()
+    }
+    assert.equal(kernel.governor.snapshot().accepting, false, 'disposing the node closed the governor')
+    assert.equal(LEGACY_SERVER_PROFILE.insert?.length, 2)
+  })
+
+  it('start() wires context.governor and context.ollama() to the kernel services', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'guanxi-k1-start-'))
+    try {
+      const server = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
+      try {
+        assert.equal(server.context.governor, server.kernel.governor)
+        const host = server.context.settings.get().ollamaHost
+        assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
+        assert.equal(server.kernel.node.counters().fibers, 4, 'loader, isolate, governor, ollama')
+      } finally {
+        await server.close()
+      }
+      assert.equal(server.kernel.node.counters().fibers, 0, 'close() unloaded the kernel')
+      assert.equal(server.context.governor.snapshot().accepting, false)
+    } finally {
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+})
