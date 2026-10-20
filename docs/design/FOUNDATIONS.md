@@ -56,6 +56,19 @@ tertiary, inverse, ghost, info, danger, success, warning, disabled}`, `--color-t
 `bg-canvas`, `text-muted`, `border-control`) mapped to those variables; the default Tailwind
 palette is removed so `bg-red-500` does not exist.
 
+**Interaction fills** (added 2026-10-20 for DS1-b; derived from the steps above):
+
+| Role | Light | Dark | Rule |
+| --- | --- | --- | --- |
+| `background-hover` | step 4 | step 4 | hover on neutral fills and ghost controls |
+| `background-pressed` | step 5 | step 5 | pressed or active neutral fills |
+| `background-ghost` | transparent | transparent | ghost controls at rest |
+| `background-accent-hover` | `#18695B` | `#88D0C0` | accent mixed 12% toward ink (light) or white (dark) |
+| `background-accent-pressed` | `#186053` | `#98D7C8` | accent mixed 24% the same way |
+
+Text on accent stays ≥ 4.5:1 on every accent state (measured: light 6.28 / 7.11, dark 9.08 /
+9.90); the contrast gate checks these pairs. State colours change with `duration.fast`.
+
 ### 1.4 Themes
 
 `light`, `dark`, `light-hc`, `dark-hc`. High-contrast variants raise text and control borders to
@@ -126,6 +139,13 @@ data-only plugin).
   Tailwind's scale, kept as Guanxi tokens so existing layouts do not change.
 - **Radius** grows with the layer: inline (chips, tags, kbd) 6 · controls 10 · panels and cards
   16 · glass layers, sheets and dialogs 20 · app tile 21.9%.
+- **Focus ring:** 2 px solid `ring-primary` (the accent) with a 2 px offset, outside the
+  element; in forced colours the system `Highlight` colour. Never removed without a visible
+  replacement.
+- **Layers (z-index):** base 0 · sticky headers 10 · docked panes and dock lanes 20 · floating
+  and popout windows 30 · popovers, menus and the command palette 40 · scrim 49 · dialogs and
+  sheets 50 · toasts 60 · tooltips 70. Components use these tokens only; nothing invents a
+  z-index.
 - **Borders:** 1 px. Decorative dividers use step 7; control boundaries step 9.
 - **Elevation:** 0 canvas (step 2) · 1 raised (step 1 with a 1 px rule, no shadow) · 2 popover
   (glass with `0 1px 2px` and `0 8px 24px` shadows in ink at 8–10%) · 3 dialog (strong glass with
@@ -184,6 +204,7 @@ data-only plugin).
 | `easing.emphasized` | `cubic-bezier(0.05, 0.7, 0.1, 1)` | new-session and first-run moments only |
 | `easing.linear` | linear | progress, spinners |
 | `distance.sm/md/lg` | 4 / 8 / 16 px | translate offsets |
+| `duration.loop` | 1000 ms | one turn of a spinner or other looping indicator (linear) |
 
 Rules: streaming text appends instantly and auto-scroll is instant; numbers update without
 count-up; timeline insertions never animate layout; never animate blur in or out. Under reduced
