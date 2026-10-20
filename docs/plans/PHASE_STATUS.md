@@ -158,12 +158,20 @@ Residual risks:
 | --- | --- | --- |
 | Own plugin kernel `@guanxi/kernel` (ADR-0037; Cordis rejected by D-183) | implemented, independently verified, merged into `main` | Full evidence and residuals: [evidence/K1](evidence/K1.md). Exit gate on the own kernel: 100 reload cycles with an identical census; total heap +2.17% after 50 warm-up cycles (≤ 5%); every unloaded governor, fiber and context collected; boot 37–40 ms, 81 MB idle RSS; real-HMR slot test. **119 new / 982 regression envelope.** Reviews: implementation, adversarial architecture, accessibility, then three GPT cross-family rounds (14 + 5 findings, all closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `npm test` (core + kernel, web 264), browser gate 41/41, build, lint:md, licenses (251/0). |
 
+## DS1 — Design foundations
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| DS1-a: DTCG tokens, deterministic Style Dictionary build, self-hosted IBM Plex, legacy freeze ratchet, gates G1–G7 and the G17 self-test | implemented, independently verified, merged into `main` (`--no-ff`, as the ratchet requires) | Full evidence: [evidence/DS1-a](evidence/DS1-a.md). Token values are asserted against the FOUNDATIONS tables; the legacy UI's fonts and spacing are unchanged; all 32 Plex faces load from the same origin; the ratchet freezes 735 legacy keys with two owner-authorised corrections. Reviews: the lane's own reviewer, then three Claude cross-family rounds (19 + 9 findings closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (now including the UI gates; web 264), browser gate 48/48, build, lint:md, licenses (358/0). Follow-ups moved to DS1-c. |
+| DS1-b: `@guanxi/ui` components, catalog, approvals, G10–G16 | in review fixes | [lanes/DS1-b](lanes/DS1-b.md) |
+| DS1-c: lint ratchet and codemod | waiting for DS1-b | [lanes/DS1-c](lanes/DS1-c.md) |
+
 ## Next stages
 
 | Stage | Status | Notes |
 | --- | --- | --- |
 | K1 Kernel | implemented, merged | see the K1 section above |
-| DS1 Design foundations | in progress (DS1-a and DS1-b in review fixes; DS1-c after DS1-a merges) | [lanes/](lanes/README.md) |
+| DS1 Design foundations | in progress (DS1-a merged; DS1-b in review fixes; DS1-c after DS1-b) | see the DS1 section above |
 | DS2 Approval signing helper | not started | after DS1 (D-184) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2, K3 | ready (wave 2 lanes) | [lanes/K2](lanes/K2.md), [lanes/K3](lanes/K3.md); U1 after DS1 |
