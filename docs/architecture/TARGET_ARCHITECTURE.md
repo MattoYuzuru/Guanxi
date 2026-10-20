@@ -18,7 +18,7 @@ flowchart TB
   end
   subgraph Node["Guanxi node (same build on every machine)"]
     API[Client API<br/>REST + SSE, Zod contract]
-    K[Kernel<br/>Cordis 4 facade]
+    K[Kernel<br/>own plugin kernel]
     subgraph Core["Core plugins (T0)"]
       SL[Session log]
       RE[Run engine<br/>attempts, leases, promises,<br/>timers, outbox]
@@ -81,9 +81,11 @@ Diagram source: [`diagrams/target-system.mmd`](diagrams/target-system.mmd).
 
 ## 3. Kernel and plugins
 
-- `@guanxi/kernel` is a thin facade over **Cordis 4** (context, services, `inject`, revertible
-  effects, loader, HMR), pinned to an exact version and vendored with a change log if upstream
-  needs patches ([ADR-0015](../decisions/0015-refoundation-on-own-cordis-kernel.md)).
+- `@guanxi/kernel` is Guanxi's **own plugin kernel** with Cordis's model (plugin tree, services
+  with `requires`/`uses`, revertible effects, events, profiles) and one lifecycle transition at a
+  time, so the upstream Cordis race classes cannot occur
+  ([ADR-0037](../decisions/0037-own-plugin-kernel.md), superseding the Cordis part of
+  [ADR-0015](../decisions/0015-refoundation-on-own-cordis-kernel.md); D-183).
 - A running node is a **plugin tree assembled from profiles** (`desktop`, `headless`,
   `cloud-ephemeral`, `bench`) plus user patches, the model DeepSeek Harness uses.
 - **Trust tiers** ([ADR-0022](../decisions/0022-plugin-trust-tiers-ui-slots-and-design-tokens.md)):
@@ -301,7 +303,7 @@ uses kernel services.
 apps/desktop        Electron shell (thin)
 apps/web            React SPA (also the PWA)
 apps/cli            guanxi CLI and TUI, agent exec --json
-packages/kernel     Cordis facade, manifest, profiles, trust tiers
+packages/kernel     own plugin kernel (ADR-0037), manifest, profiles, trust tiers
 packages/contract   Zod REST/SSE + event schemas (wire contract)
 packages/session-log
 packages/runs       durable runs engine

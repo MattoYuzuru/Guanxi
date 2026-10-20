@@ -63,11 +63,12 @@ the whole surface.
 | --- | --- | --- |
 | Registration while unloading (#96, #176) and late async registration (#91) | A context accepts registrations only while its own activation is LOADING or ACTIVE and its `signal` is not aborted; an unload request aborts the signal at once | `lifecycle.test.ts`: unloading, async apply, failed apply |
 | Never-activated fiber keeps effects (#185 item 1, #127) | A pending fiber has no context, so nothing can register on it; disposal reaches `disposed` from every state | `lifecycle.test.ts`: never activated |
-| Stale context after restart | Every activation gets a new context; the old one refuses everything | `lifecycle.test.ts`: stale context |
+| Stale context after restart | Every activation gets a new context; the old one refuses registrations, service reads and `emit` | `lifecycle.test.ts`, `review-findings.test.ts`: stale context |
+| Optional-service restart loops | A plugin may not `use` what it provides; each plugin starts or restarts at most twice per settle, and a skipped restart is logged | `review-findings.test.ts`: optional-service cycles |
 | Concurrent update races (#194) | One lifecycle transition at a time per kernel; config changes restart a plugin in queue order | `lifecycle.test.ts`: concurrent config changes |
 | Loader rebind (#218) | A profile row that changes plugin or config is unloaded, then loaded fresh | `lifecycle.test.ts`: rebind |
 | Throwing observer aborts disposal (#185 item 3) | Listener and cleanup errors are logged per item; teardown always continues | `lifecycle.test.ts`: ordering and isolation |
-| Unbounded waits | Each transition is bounded (`transitionTimeoutMs`, default 10 s). Past the bound, the caller gets `KernelTimeoutError` naming the plugin and step, and the kernel refuses new transitions until the stuck step settles | `lifecycle.test.ts`: bounded transitions |
+| Unbounded waits | Each plugin step (one `apply`, one cleanup) is bounded (`stepTimeoutMs`, default 10 s). A stuck apply fails its plugin; a stuck cleanup is skipped. The transition still finishes consistently, the kernel stays usable, and the caller gets `KernelTimeoutError` naming the abandoned steps | `lifecycle.test.ts`: bounded steps |
 | Executable config (`__jsExpr`), module paths in profiles | Profiles are plain JSON and name registered plugins by id only | `profile.test.ts` |
 
 ### Contract enforced at load
@@ -77,10 +78,16 @@ the whole surface.
 - A plugin must provide exactly `manifest.provides` and must declare exactly
   `contributes.slotDeclarations`. Services can be provided only while loading.
 - `service()` reads only `requires`, and `optionalService()` reads only `uses`.
-- `bootNode` adds three rules:
-  - it refuses a required service or contributed slot that no row provides;
-  - safe mode disables every non-T0 row, and then every row that depends on a disabled one;
-  - pinned rows (services handed to code outside the kernel) refuse to change.
+- Plugins reach the slot registry only through `declareSlot`/`contribute`, never as a service.
+- `bootNode` adds these rules:
+  - it refuses a required service or contributed slot that no row provides, and rows that
+    require each other in a cycle;
+  - a failed row, or a row still waiting for a service an enabled row provides, fails the change;
+    failed rows load again on the next `apply`;
+  - safe mode boots the base layer only, disables every non-T0 row, and then every row that
+    depends on a disabled one;
+  - pinned rows (services handed to code outside the kernel) refuse any change that would restart
+    them, including through their dependencies.
 
 ### Not provided
 
@@ -90,8 +97,11 @@ These are out of scope by design:
 - source HMR inside Node, where code replacement imports a new module and calls `replacePlugin`;
 - async `internal/update`-style hooks.
 
-`apply` must not wait for another plugin's activation, because transitions are serialised. Use
-`requires`. A child's `ready()` inside its parent's `apply` is refused with an explanation.
+`apply` must not wait for another plugin's activation or for a lifecycle call, because
+transitions are serialised. Use `requires`. A child's `ready()` inside its parent's `apply` is
+refused with an explanation; a cleanup disposing its own child does not queue a new transition.
+A slow step delays the queue until its bound; long initialisation belongs in an effect, not in
+`apply`. Per-subtree queues are to be revisited before P1 loads many plugins.
 
 ## Consequences
 
