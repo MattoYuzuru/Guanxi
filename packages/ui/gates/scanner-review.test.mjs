@@ -63,9 +63,9 @@ test('M4: CSS apply parameters are subject to the raw-motion gate', async () => 
   const findings = await scanLiterals(await ctx.withFiles({ 'packages/ui/src/fixture.css': '.x { @apply duration-300 delay-150; }' }))
   for (const value of ['duration-300', 'delay-150']) assert.ok(findings.some(f => f.file.endsWith('fixture.css') && f.gate === 'G7' && f.value === value))
 })
-test('M4 self-review: every semantic easing is allowed in JSX and CSS apply', async () => {
-  const easings = Object.keys((await ctx.json('packages/ui/tokens/primitive/motion.tokens.json')).primitive.easing)
-  const classes = easings.map(name => `ease-${name}`).join(' ') + ' duration-fast delay-moderate'
+test('M4 self-review: every semantic easing, duration and delay is allowed in JSX and CSS apply', async () => {
+  const { easing, duration } = (await ctx.json('packages/ui/tokens/primitive/motion.tokens.json')).primitive
+  const classes = [...Object.keys(easing).map(name => `ease-${name}`), ...Object.keys(duration).flatMap(name => [`duration-${name}`, `delay-${name}`])].join(' ')
   for (const [file, text] of [
     ['packages/ui/src/fixture.jsx', `<div className="${classes}"/>`],
     ['packages/ui/src/fixture.css', `.x { @apply ${classes}; }`],
