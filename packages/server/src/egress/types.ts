@@ -58,11 +58,12 @@ export const REDACTION_MARKER_CLOSE = '\u27E7'
 export const REDACTION_MARKER_PREFIX = `${REDACTION_MARKER_OPEN}REDACTED `
 
 /**
- * The text that replaces an occurrence of the values registered under `refs`
- * (one ref, or several when occurrences overlap): `⟦REDACTED secret://a⟧`.
+ * The text that replaces one occurrence of the value registered under `ref`:
+ * `⟦REDACTED secret://a⟧`. Overlapping occurrences of several refs become one
+ * marker per ref, side by side.
  */
-export function redactionMarker(...refs: readonly SecretRef[]): string {
-  return `${REDACTION_MARKER_PREFIX}${refs.join(', ')}${REDACTION_MARKER_CLOSE}`
+export function redactionMarker(ref: SecretRef): string {
+  return `${REDACTION_MARKER_PREFIX}${ref}${REDACTION_MARKER_CLOSE}`
 }
 
 export type EgressScrubberErrorCode =

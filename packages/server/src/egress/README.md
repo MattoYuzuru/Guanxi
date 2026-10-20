@@ -25,7 +25,7 @@ export interface EgressScrubber {
 ```
 
 `types.ts` also exports `SECRET_REF_PATTERN`, `MIN_SECRET_LENGTH` (8), `MAX_SECRET_LENGTH`
-(65,536), `redactionMarker(...refs)`, `REDACTION_MARKER_PREFIX`, `REDACTION_MARKER_OPEN`,
+(65,536), `redactionMarker(ref)`, `REDACTION_MARKER_PREFIX`, `REDACTION_MARKER_OPEN`,
 `REDACTION_MARKER_CLOSE` and `EgressScrubberError` with its `code`.
 
 ## Using it from a plugin
@@ -63,8 +63,9 @@ The provider is `egressScrubberPlugin` in [`plugin.ts`](plugin.ts) (manifest id
 
   Base64 and other encodings are not derived; see residuals.
 - **Marker.** Each occurrence becomes `⟦REDACTED secret://…⟧` (U+27E6 and U+27E7), naming
-  the ref. Overlapping occurrences merge into one marker listing every ref involved, separated
-  by `, `. Values may not contain `⟦` or `⟧`, so no occurrence can overlap a marker's edge, and
+  the ref. Overlapping occurrences of several refs become one marker per ref, side by side;
+  when two refs share a value, the marker names the one registered first. Values may not
+  contain `⟦` or `⟧`, so no occurrence can overlap a marker's edge, and
   a replacement can never re-form a registered value with the text around it, not even across
   two chunks scrubbed separately and then joined. As defence in depth, `scrub` checks its
   output and throws `self_check_failed` rather than return a value that still contains one.
