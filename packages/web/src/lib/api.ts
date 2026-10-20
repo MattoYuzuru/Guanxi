@@ -184,6 +184,7 @@ const API_ERROR_KEYS = {
   artifact_admission_full: 'error.api.admissionFull',
   range_not_supported: 'error.api.notSupported',
   project_chat_mismatch: 'error.api.conflict',
+  session_not_found: 'error.api.notFound',
   path_outside_workspace: 'error.api.notAllowed',
   tool_disabled: 'error.api.notAllowed',
   validation_failed: 'error.api.validation',

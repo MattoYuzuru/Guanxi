@@ -535,6 +535,12 @@ function ThreadPage({
               <WorkspaceChip workspace={workspace} onClick={() => setPickerOpen(true)} />
             )}
             <Link
+              to={paths.inspector(chat.thread.id)}
+              className="flex h-6 items-center rounded-[5px] border border-[var(--border)] px-2 text-2xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+            >
+              {translate('inspector.openTrace')}
+            </Link>
+            <Link
               to={projectId ? paths.projectChat(projectId) : paths.chat()}
               className="flex h-6 items-center rounded-[5px] border border-[var(--border-strong)] px-2 text-2xs font-medium hover:bg-[var(--bg-subtle)]"
             >
