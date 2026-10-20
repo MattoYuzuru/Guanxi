@@ -1,8 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { runFramesBeforePendingCommits } from './fixtures/frame-order.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('attachment retry/reload stays exact, scoped, accessible and download-once', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
+  // Async failures must move focus only after React commits the feedback.
+  await runFramesBeforePendingCommits(page)
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-14T14:00:00.000Z'
   const project = {

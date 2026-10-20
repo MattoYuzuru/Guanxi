@@ -179,6 +179,7 @@ function AttachmentScopePanel({
   const [intent, setIntent] = useState<UploadIntent | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [restoreUploadFocus, setRestoreUploadFocus] = useState(false)
   const [dropActive, setDropActive] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({})
@@ -230,6 +231,17 @@ function AttachmentScopePanel({
     if (loadError) requestAnimationFrame(() => listErrorRef.current?.focus())
   }, [loadError])
 
+  // Restore focus only after React committed the finished upload: an animation frame
+  // scheduled from the async handler may run first, while the button is still disabled
+  // and the error is not rendered. The error takes focus only if the button cannot.
+  useEffect(() => {
+    if (uploading || !restoreUploadFocus) return
+    setRestoreUploadFocus(false)
+    uploadErrorRef.current?.focus()
+    if (uploadButtonRef.current) uploadButtonRef.current.focus()
+    else fileInputRef.current?.focus()
+  }, [uploading, restoreUploadFocus])
+
   const choose = (file: File | undefined) => {
     if (!file) return
     setUploadError(null)
@@ -280,15 +292,11 @@ function AttachmentScopePanel({
     } catch (cause) {
       if (controller.signal.aborted) setUploadError(translate('attachments.upload.cancelled'))
       else setUploadError(errorMessage(cause))
-      requestAnimationFrame(() => uploadErrorRef.current?.focus())
     } finally {
       abortRef.current = null
       uploadingRef.current = false
       setUploading(false)
-      requestAnimationFrame(() => {
-        if (uploadButtonRef.current) uploadButtonRef.current.focus()
-        else fileInputRef.current?.focus()
-      })
+      setRestoreUploadFocus(true)
     }
   }
 
