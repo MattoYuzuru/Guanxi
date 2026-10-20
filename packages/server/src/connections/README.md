@@ -22,7 +22,9 @@ executes the registered subscription CLIs. Search and STT are service connection
   ciphertext between identities. At plugin apply, all historical secrets are decrypted only
   for scrubber registration; this may prompt the OS keychain but never opens an injection
   session. Explicit unlock and unattended dispatch also access the keychain. Empty vaults
-  require no boot-time keychain read. Tests use injected throwaway key stores.
+  require no boot-time keychain read. Registration has a one-second deadline; a stalled or
+  unavailable keychain leaves egress pending while the server boots. A later unlock can
+  complete registration. Tests use injected throwaway key stores.
 - Interactive access requires an unlocked vault. The `unattended` flag is false by default;
   background access also requires both `ownerDevice` and `nodeKeyOptIn` in the immutable
   plugin policy (`StartOptions.connectionsPolicy` for the legacy boot). A node-key unlock

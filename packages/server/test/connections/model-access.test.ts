@@ -877,3 +877,29 @@ test('N4: readiness is pushed only after every account is registered, including 
   assert.equal(readyCalls, 1); assert.equal(scrubber.isReady(), true)
   await scrubber.whenReady()
 })
+
+test('N5: stalled startup keychain is bounded, stays pending and cannot publish late readiness', async t => {
+  const f = await setup(t)
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.unlockVault(account)
+  const secret = fakeKey(); s.saveSecret(account, row.id, secret)
+  const keychain = await f.config.keychain()
+  let release!: (value: VaultKeychain) => void
+  let stalled = true; let keyReads = 0
+  const tracked: VaultKeychain = { key(...args) { keyReads++; return keychain.key(...args) } }
+  f.config.keychain = () => stalled ? new Promise(resolve => { release = resolve }) : Promise.resolve(tracked)
+  const started = Date.now()
+  await f.restart(true)
+  assert.ok(Date.now() - started < 3000, 'registration has its own bound below the kernel step bound')
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  assert.equal(scrubber.isReady(), false)
+  assert.equal(f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!.ready, false)
+  release(tracked)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(keyReads, 0, 'timed-out registration never resumes key access')
+  assert.equal(scrubber.isReady(), false)
+  stalled = false
+  await f.service().unlockVault(account)
+  assert.equal(scrubber.isReady(), true)
+  assert.equal(scrubber.scrub(secret), '[REDACTED]')
+})

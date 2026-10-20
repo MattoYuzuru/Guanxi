@@ -46,27 +46,30 @@ export class Vault {
   private assertOpen() { if (this.closed) throw new Error('Vault closed') }
   get unattendedAvailable() { return this.policy.ownerDevice && this.policy.nodeKeyOptIn }
   unlocked(accountId: string) { return this.sessions.has(accountId) }
-  private async dataKey(accountId: string, node = false, create = true): Promise<Buffer> {
-    try { return await this.readDataKey(accountId, node, create) }
+  private async dataKey(accountId: string, node = false, create = true, signal?: AbortSignal): Promise<Buffer> {
+    try { return await this.readDataKey(accountId, node, create, signal) }
     catch (error) {
       if (this.closed) throw new Error('Vault closed')
       if (error instanceof ConnectionError) throw error
       throw new ConnectionError('vault_locked', 'Vault wrapping key unavailable')
     }
   }
-  private async readDataKey(accountId: string, node: boolean, create: boolean): Promise<Buffer> {
+  private async readDataKey(accountId: string, node: boolean, create: boolean, signal?: AbortSignal): Promise<Buffer> {
     this.assertOpen()
     const table = node ? 'vault_node_keys' : 'vault_keys'
     const aad = `${node ? 'node-key' : 'key'}:${accountId}`
     const row = this.db.prepare(`SELECT wrapped FROM ${table} WHERE account_id=?`).get(accountId)
     if (!row && !create) throw new ConnectionError('policy_denied', 'Unattended credential unavailable')
+    const cancellation = signal ? AbortSignal.any([this.lifetime.signal, signal]) : this.lifetime.signal
+    cancellation.throwIfAborted()
     const pending = this.keychain()
     const keychain = await new Promise<VaultKeychain>((resolve, reject) => {
-      const abort = () => reject(new Error('Vault closed'))
-      this.lifetime.signal.addEventListener('abort', abort, { once: true })
-      void pending.then(resolve, reject).finally(() => this.lifetime.signal.removeEventListener('abort', abort))
+      const abort = () => reject(new Error('Vault keychain read cancelled'))
+      cancellation.addEventListener('abort', abort, { once: true })
+      void pending.then(resolve, reject).finally(() => cancellation.removeEventListener('abort', abort))
     })
     this.assertOpen()
+    cancellation.throwIfAborted()
     const wrapping = keychain.key(accountId, !row, node ? 'node' : 'session')
     try {
       if (row) return open(wrapping, String(row.wrapped), aad)
@@ -132,9 +135,10 @@ export class Vault {
   /** Registration-only keychain access: never opens an injection session or uses the node key. */
   async registerForScrubbing() {
     this.assertOpen()
+    const signal = AbortSignal.timeout(1000)
     for (const row of this.db.prepare('SELECT DISTINCT account_id FROM vault_secrets').all()) {
       const accountId = String(row.account_id)
-      const key = await this.dataKey(accountId, false, false)
+      const key = await this.dataKey(accountId, false, false, signal)
       try { this.assertOpen(); this.registerAll(accountId, key) } finally { key.fill(0) }
     }
     this.publishScrubbingReady()
