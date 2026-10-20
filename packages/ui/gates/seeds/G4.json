@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/src/seed.css": ".seed { color: var(--seed-undefined); }"
+  },
+  "expectedError": "unresolved --seed-undefined"
+}

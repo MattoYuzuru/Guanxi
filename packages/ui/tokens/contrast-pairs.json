@@ -1,0 +1,154 @@
+{
+  "themes": [
+    "light",
+    "dark",
+    "light-hc",
+    "dark-hc"
+  ],
+  "pairs": [
+    {
+      "name": "text",
+      "foreground": "color.text.primary",
+      "background": "color.background.primary",
+      "minimum": 4.5,
+      "measured": {
+        "light": 14.43,
+        "dark": 14.61
+      }
+    },
+    {
+      "name": "secondary",
+      "foreground": "color.text.secondary",
+      "background": "color.background.primary",
+      "minimum": 7
+    },
+    {
+      "name": "muted",
+      "foreground": "color.text.tertiary",
+      "background": "color.background.primary",
+      "minimum": 4.5,
+      "measured": {
+        "light": 4.72,
+        "dark": 7.01
+      }
+    },
+    {
+      "name": "control-border",
+      "foreground": "color.border.control",
+      "background": "color.background.primary",
+      "minimum": 3,
+      "measured": {
+        "light": 3.51,
+        "dark": 4.09
+      }
+    },
+    {
+      "name": "accent",
+      "foreground": "color.text.accent",
+      "background": "color.background.primary",
+      "minimum": 4.5,
+      "measured": {
+        "light": 5.12,
+        "dark": 8.39
+      }
+    },
+    {
+      "name": "on-accent",
+      "foreground": "color.text.on-accent",
+      "background": "color.background.accent",
+      "minimum": 4.5,
+      "measured": {
+        "light": 5.49,
+        "dark": 8.39
+      }
+    },
+    {
+      "name": "success",
+      "foreground": "color.text.success",
+      "background": "color.background.primary",
+      "minimum": 4.5,
+      "measured": {
+        "light": 5.11,
+        "dark": 8.43
+      }
+    },
+    {
+      "name": "warning",
+      "foreground": "color.text.warning",
+      "background": "color.background.primary",
+      "minimum": 4.5,
+      "measured": {
+        "light": 5.05,
+        "dark": 9.12
+      }
+    },
+    {
+      "name": "danger",
+      "foreground": "color.text.danger",
+      "background": "color.background.primary",
+      "minimum": 4.5,
+      "measured": {
+        "light": 5.14,
+        "dark": 7.09
+      }
+    },
+    {
+      "name": "info",
+      "foreground": "color.text.info",
+      "background": "color.background.primary",
+      "minimum": 4.5,
+      "measured": {
+        "light": 5.31,
+        "dark": 8.16
+      }
+    },
+    {
+      "name": "data-1",
+      "foreground": "data.1",
+      "background": "color.background.primary",
+      "minimum": 3
+    },
+    {
+      "name": "data-2",
+      "foreground": "data.2",
+      "background": "color.background.primary",
+      "minimum": 3
+    },
+    {
+      "name": "data-3",
+      "foreground": "data.3",
+      "background": "color.background.primary",
+      "minimum": 3
+    },
+    {
+      "name": "data-4",
+      "foreground": "data.4",
+      "background": "color.background.primary",
+      "minimum": 3
+    },
+    {
+      "name": "data-5",
+      "foreground": "data.5",
+      "background": "color.background.primary",
+      "minimum": 3
+    },
+    {
+      "name": "data-6",
+      "foreground": "data.6",
+      "background": "color.background.primary",
+      "minimum": 3
+    },
+    {
+      "name": "data-7",
+      "foreground": "data.7",
+      "background": "color.background.primary",
+      "minimum": 3
+    },
+    {
+      "name": "data-8",
+      "foreground": "data.8",
+      "background": "color.background.primary",
+      "minimum": 3
+    }
+  ]
+}

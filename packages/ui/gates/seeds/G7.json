@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/src/seed.tsx": "export const Seed = () => <div className=\"duration-[275ms]\" style={{ transitionDuration: \"275ms\" }} />"
+  },
+  "expectedError": "new violation"
+}

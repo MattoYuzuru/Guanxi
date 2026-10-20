@@ -1,0 +1,28 @@
+{
+  "name": "@guanxi/ui",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./tokens.css": "./generated/tokens.css",
+    "./theme.css": "./generated/theme.css",
+    "./tokens": "./generated/tokens.ts",
+    "./fonts.css": "./fonts/fonts.css",
+    "./brand/*": "./brand/*"
+  },
+  "scripts": {
+    "tokens:build": "node tokens/build.mjs",
+    "ui:check": "node gates/run.mjs",
+    "test:gates": "node --test gates/*.test.mjs",
+    "typecheck": "tsc --noEmit --skipLibCheck --target es2023 --module nodenext generated/tokens.ts generated/mcp-apps-variables.ts"
+  },
+  "devDependencies": {
+    "style-dictionary": "5.7.0",
+    "colorjs.io": "0.7.1",
+    "tailwindcss": "4.3.3",
+    "postcss": "8.5.8",
+    "postcss-value-parser": "4.2.0",
+    "typescript": "5.9.3"
+  }
+}

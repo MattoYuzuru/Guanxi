@@ -1,0 +1,190 @@
+[
+  {
+    "family": "sans",
+    "tag": "@ibm/plex-sans-variable@0.2.0",
+    "commit": "ceee82fa88781b8310b198fd302480efaeac609e",
+    "release": "https://github.com/IBM/plex/releases/tag/%40ibm%2Fplex-sans-variable%400.2.0",
+    "archiveSha256": "f83825d527be6cd39c8971c932b9bf22688a3ad3e5ac6305b6143d02f52b87b6",
+    "files": [
+      {
+        "path": "sans/IBM Plex Sans Var-Roman-Cyrillic.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Roman-Cyrillic.woff2",
+        "sha256": "9f9516a6454bb52d2c5a8da5c59c0ff87360a823e08774ccdbcc758268d6a199"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Roman-Greek.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Roman-Greek.woff2",
+        "sha256": "00744cd9c1ed63fe2a37fbc45707ce0b9bfa949315c6dd8cf1436301e0c3817d"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Roman-Latin1.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Roman-Latin1.woff2",
+        "sha256": "a18d94ea83c93f0a465d0976d8bc8ecbb031225dbaf76fd201d4e724a972034f"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Roman-Latin2.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Roman-Latin2.woff2",
+        "sha256": "53de8a1640c42f45de9483f816dfc71dad3e87c24fbd115f4c312b8eddf39545"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Roman-Latin3.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Roman-Latin3.woff2",
+        "sha256": "f08bc033a4959fb5fbc75a678fe56d2cd72ab5664bb3e6e1a41ac8f0d881c551"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Roman-Pi.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Roman-Pi.woff2",
+        "sha256": "0273a6b0411acbccb52b7d55af2bae2c58b35d68d6795a28c2f4db7ab21accbc"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Italic-Cyrillic.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Italic-Cyrillic.woff2",
+        "sha256": "6bae2dea312b79dab343f9a410888f2abe22cefcd91cd43885eae571138d9f44"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Italic-Greek.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Italic-Greek.woff2",
+        "sha256": "aa5079f1c64b6ddae836f6c2d389e3dba930f677624c8d587f197d50143c4b16"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Italic-Latin1.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Italic-Latin1.woff2",
+        "sha256": "4dbb53a002b701005c7eb5d0fc049a3abd7c31821714ab5fdc33c189ceadeb75"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Italic-Latin2.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Italic-Latin2.woff2",
+        "sha256": "30b26bd4166d05d34b17f346519cdcd4882b8e32438a4bc0a6a32fc8b2e2bdd4"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Italic-Latin3.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Italic-Latin3.woff2",
+        "sha256": "0bf95dc860cfed2aca501094172ea759037dea9a767e356e49db559f8c84950d"
+      },
+      {
+        "path": "sans/IBM Plex Sans Var-Italic-Pi.woff2",
+        "upstreamPath": "fonts/split/woff2/IBM Plex Sans Var-Italic-Pi.woff2",
+        "sha256": "cef5872cc8818dc5e08422e9badc57380ac3d86073bd7f5f221782ea4873a148"
+      },
+      {
+        "path": "sans/OFL.txt",
+        "upstreamPath": "fonts/split/woff2/license.txt",
+        "sha256": "91c25c350d3cac39da2736d74f7ba37ef648f5237a4e330a240615bc8d8c4360"
+      }
+    ]
+  },
+  {
+    "family": "mono",
+    "tag": "@ibm/plex-mono@2.5.0",
+    "commit": "2f9ba1b25957d958db71a849e85d72e3ecfb845a",
+    "release": "https://github.com/IBM/plex/releases/tag/%40ibm%2Fplex-mono%402.5.0",
+    "archiveSha256": "6d23f01257663d8cc49a0d64c22ced630b79e0e2a0ac08a0da86e9a38bbc481c",
+    "files": [
+      {
+        "path": "mono/IBMPlexMono-Regular-Cyrillic.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Regular-Cyrillic.woff2",
+        "sha256": "44e877f4d7718832f438809250ec677f75b0bba9dcb3b0076aaf00f08d9385d4"
+      },
+      {
+        "path": "mono/IBMPlexMono-Regular-Latin1.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Regular-Latin1.woff2",
+        "sha256": "e8993d946649b9d01abb1ed06d574b19d8ea3e66b5c3948602db335c44c18e56"
+      },
+      {
+        "path": "mono/IBMPlexMono-Regular-Latin2.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Regular-Latin2.woff2",
+        "sha256": "8c5e48e4c6ee60346744db62fd8bbf530c21e531e1a1498c3a410ed8f7d3986e"
+      },
+      {
+        "path": "mono/IBMPlexMono-Regular-Latin3.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Regular-Latin3.woff2",
+        "sha256": "1ff2d301f841079fa2ad3908cfb34a60edd80966e8c9dd3b82d8a8ec8e4df947"
+      },
+      {
+        "path": "mono/IBMPlexMono-Regular-Pi.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Regular-Pi.woff2",
+        "sha256": "b8002770aa636f544ba43e124da6a227301769754f295eae26e16475b469c767"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBold-Cyrillic.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBold-Cyrillic.woff2",
+        "sha256": "52159d6f3dd7f498f4d3574502d5ef821c0b4cec08c809822dfb2f424efd48e8"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBold-Latin1.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBold-Latin1.woff2",
+        "sha256": "b7acd05041ab65f3b7039e218ddd893065e11a07e85ea85019473152a51b6b7d"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBold-Latin2.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBold-Latin2.woff2",
+        "sha256": "68730f933dc5bbd8b011abaf59fdc151bd1eeb8461979aafa84c14c33f5869d2"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBold-Latin3.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBold-Latin3.woff2",
+        "sha256": "96389e2f2e73a872859cd9b62e4fd1a86883af5a45a7ee44a81690f66ff7a1f5"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBold-Pi.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBold-Pi.woff2",
+        "sha256": "1637166246d386507b1351d59ddda93b732f781d06c0a6574e486104a00897b1"
+      },
+      {
+        "path": "mono/IBMPlexMono-Italic-Cyrillic.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Italic-Cyrillic.woff2",
+        "sha256": "222bb0c56e2768973f5f3c7cc6bc33d74f936d56ce8280b20b8c2caa4c2f3886"
+      },
+      {
+        "path": "mono/IBMPlexMono-Italic-Latin1.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Italic-Latin1.woff2",
+        "sha256": "242f6417615190011bad9e6125180e356f9f9710186238784659927fbaf7ce76"
+      },
+      {
+        "path": "mono/IBMPlexMono-Italic-Latin2.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Italic-Latin2.woff2",
+        "sha256": "61eac03c9335f419cfae192eff9bef4404921c858a35ff00ab6ec514ec40841d"
+      },
+      {
+        "path": "mono/IBMPlexMono-Italic-Latin3.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Italic-Latin3.woff2",
+        "sha256": "2e9f7757ab2371708f5e31ec179266550030caf6819bb20e6723128a33ce7cf3"
+      },
+      {
+        "path": "mono/IBMPlexMono-Italic-Pi.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-Italic-Pi.woff2",
+        "sha256": "aefe760c6064b3d76a8d808bc5b1171a2888549033b57a5ddb17ca25057b2ddf"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBoldItalic-Cyrillic.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBoldItalic-Cyrillic.woff2",
+        "sha256": "32689073cc03cd0a2095070d8b27cd79243064a7a969a0009a237132ec277e41"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBoldItalic-Latin1.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBoldItalic-Latin1.woff2",
+        "sha256": "29abbc619e1e51017ba7874d8f1f29c42496d6d0518b9b2c892fc893b894e052"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBoldItalic-Latin2.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBoldItalic-Latin2.woff2",
+        "sha256": "f80d2de517d4c20964b98aa34f590413b00296193057a967edcd7570d8ea79b1"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBoldItalic-Latin3.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBoldItalic-Latin3.woff2",
+        "sha256": "408bf5e2cf78e9c7ea83217788c92bdad6671a12593190a36d3c73efd560f56a"
+      },
+      {
+        "path": "mono/IBMPlexMono-SemiBoldItalic-Pi.woff2",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/IBMPlexMono-SemiBoldItalic-Pi.woff2",
+        "sha256": "bc7ec22238b06d4e65fa2d38fa8dcc9eb2a06a62450e2d89e62c2be926bc28c4"
+      },
+      {
+        "path": "mono/OFL.txt",
+        "upstreamPath": "ibm-plex-mono/fonts/split/woff2/license.txt",
+        "sha256": "91c25c350d3cac39da2736d74f7ba37ef648f5237a4e330a240615bc8d8c4360"
+      }
+    ]
+  }
+]
