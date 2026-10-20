@@ -176,8 +176,10 @@ function jsxStyleFindings(file, text) {
     if (ts.isConditionalExpression(node)) { styles(node.whenTrue); styles(node.whenFalse) }
     else if (ts.isObjectLiteralExpression(node)) for (const property of node.properties) {
       if (ts.isSpreadAssignment(property)) styles(property.expression)
-      else if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name))) {
-        const name = property.name.text
+      else if (ts.isPropertyAssignment(property)) {
+        const key = ts.isComputedPropertyName(property.name) ? unwrap(property.name.expression) : property.name
+        if (!ts.isStringLiteralLike(key) && (ts.isComputedPropertyName(property.name) || !ts.isIdentifier(key))) continue
+        const name = key.text
         values(name.startsWith('--') ? name : name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`), property.initializer)
       }
     }

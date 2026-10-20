@@ -103,6 +103,7 @@ test('N4: G6 rejects seeded JSX style literals and SVG paints in UI and new web 
     for (const [source, expected] of [
       [`<div style={{ color: '#ff0000', zIndex: 999, padding: 13 }}/>`, ['color:#ff0000', 'z-index:999', 'padding:13']],
       [`<div style={{ backgroundColor: 'rgb(255 0 0)', marginTop: -13 }}/>`, ['background-color:rgb(255 0 0)', 'margin-top:-13']],
+      [`<div style={{ ['color']: '#ff0000', ['padding']: 13 }}/>`, ['color:#ff0000', 'padding:13']],
       [`<div style={ok ? { borderColor: '#ff0000' } : { color: 'var(--color-text-primary, red)' }}/>`, ['border-color:#ff0000', 'color:var(--color-text-primary, red)']],
       [`<svg><path fill="#ff0000" stroke={'red'}/></svg>`, ['fill:#ff0000', 'stroke:red']],
     ]) {
