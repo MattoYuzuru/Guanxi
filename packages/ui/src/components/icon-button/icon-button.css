@@ -1,11 +1,11 @@
 .gx-icon-button {
-  width: var(--density-control-height);
+  width: var(--control-height);
   padding-inline: 0;
 }
 
 .gx-icon-button[data-size='sm'] {
-  width: var(--size-target-min);
-  min-height: var(--size-target-min);
+  width: var(--target-minimum);
+  min-height: var(--target-minimum);
 }
 
 .gx-icon-button-glyph {
@@ -13,8 +13,8 @@
 }
 
 .gx-icon-button-glyph svg {
-  width: var(--size-icon-md);
-  height: var(--size-icon-md);
+  width: var(--icon-size-18);
+  height: var(--icon-size-18);
 }
 
 .gx-icon-button[aria-pressed='true'] {

@@ -3,13 +3,13 @@
 }
 
 .gx-tooltip {
-  max-width: var(--size-popover-max);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--border-radius-xs);
+  max-width: var(--layout-container-xs);
+  padding: var(--spacing-4) var(--spacing-8);
+  border-radius: var(--border-radius-inline);
   background-color: var(--color-background-inverse);
   color: var(--color-text-inverse);
-  font-size: var(--font-text-sm-size);
-  line-height: var(--font-text-sm-line-height);
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-ui);
   transition-duration: var(--motion-duration-moderate);
 }
 

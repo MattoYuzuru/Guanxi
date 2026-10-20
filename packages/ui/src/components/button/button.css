@@ -1,37 +1,39 @@
+@reference '../../styles/tailwind-reference.css';
+
 .gx-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1-5);
-  min-width: var(--size-target-min);
-  min-height: var(--density-control-height);
-  padding-inline: var(--space-3);
-  border: var(--border-width-regular) solid var(--color-border-primary);
-  border-radius: var(--border-radius-sm);
+  gap: var(--spacing-6);
+  min-width: var(--target-minimum);
+  min-height: var(--control-height);
+  padding-inline: var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-control);
+  border-radius: var(--border-radius-control);
   background-color: var(--color-background-secondary);
   color: var(--color-text-primary);
   font-family: inherit;
-  font-size: var(--font-text-md-size);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--font-text-md-line-height);
+  font-size: var(--font-text-size);
+  font-weight: var(--font-weight-label);
+  line-height: var(--font-line-height-ui);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  transition-property: background-color, border-color, color;
+  @apply transition-colors;
   transition-duration: var(--motion-duration-fast);
   transition-timing-function: var(--motion-easing-standard);
 }
 
 .gx-button[data-size='sm'] {
-  min-height: var(--size-target-min);
-  padding-inline: var(--space-2);
-  font-size: var(--font-text-sm-size);
+  min-height: var(--target-minimum);
+  padding-inline: var(--spacing-8);
+  font-size: var(--font-size-12);
 }
 
 .gx-button svg {
   flex: none;
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
 }
 
 .gx-button:hover:not([data-disabled]),
@@ -61,8 +63,8 @@
 }
 
 .gx-button[data-variant='ghost'] {
-  border-color: var(--color-border-ghost);
-  background-color: var(--color-background-ghost);
+  border-color: transparent;
+  background-color: transparent;
 }
 
 .gx-button[data-variant='danger'] {
@@ -76,7 +78,7 @@
 }
 
 .gx-button[data-disabled]:not([data-loading]) {
-  border-color: var(--color-border-disabled);
+  border-color: var(--color-border-primary);
   background-color: var(--color-background-disabled);
   color: var(--color-text-disabled);
   cursor: not-allowed;

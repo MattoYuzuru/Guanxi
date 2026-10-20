@@ -1,11 +1,13 @@
+@reference '../../styles/tailwind-reference.css';
+
 .gx-choice {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: var(--size-target-min);
+  gap: var(--spacing-8);
+  min-height: var(--target-minimum);
   color: var(--color-text-primary);
-  font-size: var(--font-text-md-size);
-  line-height: var(--font-text-md-line-height);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
   cursor: pointer;
 }
 
@@ -20,15 +22,15 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
   padding: 0;
-  border: var(--border-width-regular) solid var(--color-border-primary);
-  border-radius: var(--border-radius-xs);
+  border: var(--border-width-regular) solid var(--color-border-control);
+  border-radius: var(--border-radius-inline);
   background-color: var(--color-background-secondary);
   color: var(--color-text-on-accent);
   cursor: inherit;
-  transition-property: background-color, border-color;
+  @apply transition-colors;
   transition-duration: var(--motion-duration-fast);
   transition-timing-function: var(--motion-easing-standard);
 }
@@ -37,7 +39,7 @@
 .gx-checkbox::after {
   content: '';
   position: absolute;
-  inset: calc((var(--size-target-min) - var(--size-icon-sm)) / -2);
+  @apply -inset-1;
 }
 
 .gx-checkbox:hover:not([data-disabled]),
@@ -52,7 +54,7 @@
 }
 
 .gx-checkbox[data-disabled] {
-  border-color: var(--color-border-disabled);
+  border-color: var(--color-border-primary);
   background-color: var(--color-background-disabled);
   color: var(--color-text-disabled);
 }
@@ -62,9 +64,9 @@
 }
 
 .gx-checkbox-indicator svg {
-  width: var(--space-3);
-  height: var(--space-3);
-  stroke-width: 3;
+  width: var(--spacing-12);
+  height: var(--spacing-12);
+  stroke-width: var(--icon-stroke);
 }
 
 @media (forced-colors: active) {

@@ -5,7 +5,7 @@
  */
 import type { Decorator, Preview } from '@storybook/react-vite'
 import { createElement, type ComponentType } from 'react'
-import '../src/styles/token-stub.css'
+import '../generated/tokens.css'
 import '../src/styles/base.css'
 import { RegimeFrame } from '../catalog/RegimeFrame.tsx'
 import {

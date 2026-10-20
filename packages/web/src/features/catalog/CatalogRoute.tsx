@@ -3,7 +3,6 @@
  * the node's review API.
  */
 import { useCallback, useMemo } from 'react'
-import '@guanxi/ui/styles/token-stub.css'
 import {
   CatalogApp,
   DEFAULT_REGIME,

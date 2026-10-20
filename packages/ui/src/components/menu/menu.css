@@ -1,36 +1,38 @@
 .gx-menu-positioner {
+  /* Base UI sets this inline on the positioner; the default keeps it defined. */
+  --available-height: none;
   z-index: var(--z-popover);
 }
 
 .gx-menu {
   display: flex;
   flex-direction: column;
-  min-width: var(--size-catalog-cell-min);
+  min-width: var(--layout-container-3xs);
   max-height: var(--available-height);
-  padding: var(--space-1);
+  padding: var(--spacing-4);
   overflow-y: auto;
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--border-radius-control);
   outline: none;
 }
 
 .gx-menu-item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: var(--density-row-height);
-  padding-inline: var(--space-2);
-  border-radius: var(--border-radius-xs);
+  gap: var(--spacing-8);
+  min-height: var(--row-height);
+  padding-inline: var(--spacing-8);
+  border-radius: var(--border-radius-inline);
   color: var(--color-text-primary);
-  font-size: var(--font-text-md-size);
-  line-height: var(--font-text-md-line-height);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
   cursor: default;
   outline: none;
   user-select: none;
 }
 
 .gx-menu-item svg {
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
 }
 
 .gx-menu-item[data-highlighted] {
@@ -50,16 +52,16 @@
 }
 
 .gx-menu-group-label {
-  padding: var(--space-1) var(--space-2);
+  padding: var(--spacing-4) var(--spacing-8);
   color: var(--color-text-tertiary);
-  font-size: var(--font-text-sm-size);
-  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
 }
 
 .gx-menu-separator {
   height: var(--border-width-regular);
-  margin: var(--space-1) 0;
-  background-color: var(--color-border-secondary);
+  margin: var(--spacing-4) 0;
+  background-color: var(--color-border-primary);
 }
 
 @media (forced-colors: active) {

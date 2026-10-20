@@ -3,15 +3,23 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* SidebarSlot uses these aliases from ui/generated/theme.css. Keep this bridge
-   until DS1-c imports that theme for the rest of the legacy app. */
+/* SidebarSlot and the Developer settings section use these aliases from
+   ui/generated/theme.css. Keep this bridge until DS1-c imports that theme for the rest of the
+   legacy app. */
 @theme inline {
+  --color-surface: var(--color-background-secondary);
+  --color-accent: var(--color-background-accent);
+  --radius-panel: var(--border-radius-panel);
   --color-divider: var(--color-border-primary);
   --color-secondary: var(--color-text-secondary);
   --color-foreground: var(--color-text-primary);
   --color-inset: var(--color-background-tertiary);
   --radius-control: var(--border-radius-control);
   --text-12: var(--font-size-12);
+}
+
+@utility font-heading {
+  font-weight: var(--font-weight-heading);
 }
 
 /*

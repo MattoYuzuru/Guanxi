@@ -33,7 +33,7 @@ export function Checkbox({ label, className, indeterminate, ...props }: Checkbox
   return (
     <label className="gx-choice" data-disabled={props.disabled || undefined}>
       {box}
-      <span className="gx-choice-label">{label}</span>
+      <span>{label}</span>
     </label>
   )
 }

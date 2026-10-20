@@ -7,59 +7,39 @@
  * visual baseline. Product code never sets it.
  */
 
+@reference './tailwind-reference.css';
+
 .gx-sr-only {
-  position: absolute;
-  width: var(--border-width-regular);
-  height: var(--border-width-regular);
-  padding: 0;
-  margin: calc(var(--border-width-regular) * -1);
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  @apply sr-only;
 }
 
 /* Focus ring: visible in every theme and in forced colours. */
 .gx-focusable:focus-visible,
 [data-gx-force~='focus-visible'] .gx-focusable {
-  outline: var(--size-focus-ring) solid var(--color-ring-primary);
-  outline-offset: var(--size-focus-offset);
+  @apply outline-2 outline-offset-2;
+  outline-style: solid;
+  outline-color: var(--color-ring-primary);
 }
 
 /* Glass material: only for floating layers (FOUNDATIONS §4). */
 .gx-glass {
   position: relative;
-  isolation: isolate;
-  background-color: var(--glass-fill);
-  backdrop-filter: var(--glass-backdrop);
-  border: var(--border-width-regular) solid var(--glass-border);
-  border-bottom-color: var(--glass-seam);
-  box-shadow: var(--glass-edge), var(--shadow-md);
-  color: var(--color-text-primary);
+  background-color: var(--material-background);
+  backdrop-filter: var(--material-backdrop);
+  border: var(--border-width-regular) solid var(--material-border);
+  border-top-color: var(--material-edge);
+  border-bottom-color: var(--material-seam);
+  box-shadow: var(--elevation-2-shadow);
+  color: var(--material-text);
 }
 
-/* Strong glass: elevation 3 (dialogs, sheets) over the ink scrim; denser, so text keeps contrast. */
-.gx-glass.gx-glass-strong {
-  background-color: var(--glass-strong-fill);
-  backdrop-filter: var(--glass-strong-backdrop);
-}
-
-.gx-glass::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background-image: var(--glass-grain-image);
-  opacity: var(--glass-grain-opacity);
-  mix-blend-mode: soft-light;
-  pointer-events: none;
-}
+/* Strong glass is elevation 3 (dialogs, sheets): the element carries data-elevation="3", and
+   the generated material layer resolves the denser fill and stronger blur for it. */
 
 /* Enter and exit for Base UI popups ([data-starting-style] / [data-ending-style]). */
 .gx-pop {
-  transition-property: opacity, transform;
-  transition-duration: var(--motion-duration-medium);
+  @apply transition;
+  transition-duration: var(--motion-fade-medium);
   transition-timing-function: var(--motion-easing-enter);
 }
 
@@ -70,37 +50,17 @@
 }
 
 .gx-pop[data-ending-style] {
-  transition-duration: var(--motion-duration-fast);
+  transition-duration: var(--motion-fade-fast);
   transition-timing-function: var(--motion-easing-exit);
 }
 
-/* Static spinner glyph: rotates only under full motion; under reduced motion it stays still
-   and the visible text carries the state (FOUNDATIONS §5). */
+/* Spinner glyph. It stays still in every motion setting: DS1-a's token layer has no loop
+   animation yet (DS1-b hand-off), and FOUNDATIONS §5 already makes looping indicators a static
+   glyph with text under reduced motion, so the visible text always carries the state. */
 .gx-spinner {
-  display: inline-block;
-  flex: none;
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
-  border: var(--size-focus-ring) solid currentColor;
+  @apply inline-block size-4 flex-none rounded-full border-2;
+  border-color: currentColor;
   border-right-color: transparent;
-  border-radius: var(--border-radius-full);
-  animation: gx-spin var(--motion-loop-duration) var(--motion-easing-linear) infinite;
-}
-
-[data-motion='reduced'] .gx-spinner {
-  animation: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gx-spinner:not([data-motion='full'] *) {
-    animation: none;
-  }
-}
-
-@keyframes gx-spin {
-  to {
-    transform: rotate(1turn);
-  }
 }
 
 @media (forced-colors: active) {

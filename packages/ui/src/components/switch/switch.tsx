@@ -25,7 +25,7 @@ export function Switch({ label, className, ...props }: SwitchProps) {
   return (
     <label className="gx-choice" data-disabled={props.disabled || undefined}>
       {control}
-      <span className="gx-choice-label">{label}</span>
+      <span>{label}</span>
     </label>
   )
 }

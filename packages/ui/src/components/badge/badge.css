@@ -1,15 +1,15 @@
 .gx-badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: 0 var(--space-1-5);
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-xs);
+  gap: var(--spacing-4);
+  padding: 0 var(--spacing-6);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-inline);
   background-color: var(--color-background-tertiary);
   color: var(--color-text-secondary);
-  font-size: var(--font-text-sm-size);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--font-text-sm-line-height);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+  line-height: var(--font-line-height-ui);
   white-space: nowrap;
 }
 

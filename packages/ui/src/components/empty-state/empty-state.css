@@ -1,9 +1,11 @@
+@reference '../../styles/tailwind-reference.css';
+
 .gx-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-6) var(--space-4);
+  gap: var(--spacing-12);
+  padding: var(--spacing-24) var(--spacing-16);
   text-align: center;
 }
 
@@ -13,15 +15,15 @@
 }
 
 .gx-empty-state-icon svg {
-  width: var(--size-icon-lg);
-  height: var(--size-icon-lg);
+  width: var(--icon-size-20);
+  height: var(--icon-size-20);
 }
 
 .gx-empty-state-title {
-  max-width: 48ch;
+  @apply max-w-md;
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-text-md-size);
-  line-height: var(--font-text-lg-line-height);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-prose);
   text-wrap: balance;
 }

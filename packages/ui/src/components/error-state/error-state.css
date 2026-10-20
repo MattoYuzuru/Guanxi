@@ -1,10 +1,12 @@
+@reference '../../styles/tailwind-reference.css';
+
 .gx-error-state {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: var(--spacing-8);
+  padding: var(--spacing-12);
   border: var(--border-width-regular) solid var(--color-border-danger);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--border-radius-panel);
   background-color: var(--color-background-secondary);
   color: var(--color-text-primary);
 }
@@ -12,71 +14,71 @@
 .gx-error-state-head {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
 }
 
 .gx-error-state-icon {
   flex: none;
-  width: var(--size-icon-md);
-  height: var(--size-icon-md);
+  width: var(--icon-size-18);
+  height: var(--icon-size-18);
   color: var(--color-text-danger);
 }
 
 .gx-error-state-title {
   margin: 0;
-  font-size: var(--font-text-md-size);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--font-text-md-line-height);
+  font-size: var(--font-text-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-line-height-ui);
 }
 
 .gx-error-state-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: var(--spacing-4);
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-text-sm-size);
+  font-size: var(--font-size-12);
   font-variant-numeric: tabular-nums;
 }
 
 .gx-error-state-source {
-  font-family: var(--font-mono);
+  font-family: var(--font-family-mono);
 }
 
 .gx-error-state-details {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--spacing-6);
 }
 
 .gx-error-state-summary {
-  width: fit-content;
-  min-height: var(--size-target-min);
-  border-radius: var(--border-radius-xs);
+  @apply w-fit;
+  min-height: var(--target-minimum);
+  border-radius: var(--border-radius-inline);
   color: var(--color-text-secondary);
-  font-size: var(--font-text-sm-size);
-  line-height: var(--size-target-min);
+  font-size: var(--font-size-12);
+  line-height: var(--target-minimum);
   cursor: pointer;
 }
 
 .gx-error-state-pre {
   margin: 0;
-  padding: var(--space-2);
+  padding: var(--spacing-8);
   overflow-x: auto;
-  border-radius: var(--border-radius-xs);
+  border-radius: var(--border-radius-inline);
   background-color: var(--color-background-tertiary);
-  font-family: var(--font-mono);
-  font-size: var(--font-text-sm-size);
-  line-height: var(--font-text-lg-line-height);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-prose);
   white-space: pre-wrap;
 }
 
 .gx-error-state-copy {
   color: var(--color-text-secondary);
-  font-size: var(--font-text-sm-size);
+  font-size: var(--font-size-12);
 }
 
 .gx-error-state-action {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
 }

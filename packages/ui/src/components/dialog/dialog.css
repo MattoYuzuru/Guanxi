@@ -1,12 +1,18 @@
+@reference '../../styles/tailwind-reference.css';
+
 /* Elevation 3: strong glass over an ink scrim at 32%; the scrim is never blurred. */
 .gx-dialog-backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--z-dialog);
-  background-color: var(--color-scrim);
-  transition-property: opacity;
-  transition-duration: var(--motion-duration-slow);
+  background-color: var(--scrim-color);
+  @apply transition-opacity;
+  transition-duration: var(--motion-fade-slow);
   transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-dialog-backdrop {
+  opacity: var(--scrim-opacity);
 }
 
 .gx-dialog-backdrop[data-starting-style],
@@ -15,61 +21,58 @@
 }
 
 .gx-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
+  /* Centred by auto margins inside a 16 px gutter, so no translate is needed to place it. */
+  @apply fixed inset-x-4 inset-y-0 m-auto h-fit max-w-md;
   z-index: var(--z-dialog);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
   box-sizing: border-box;
-  width: min(var(--size-dialog-max), calc(100% - var(--space-8)));
-  padding: var(--space-5);
-  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-20);
+  border-radius: var(--border-radius-glass);
   outline: none;
-  transform: translate(-50%, -50%);
-  transition-property: opacity, transform;
-  transition-duration: var(--motion-duration-slow);
+  @apply transition;
+  transition-duration: var(--motion-fade-slow);
   transition-timing-function: var(--motion-easing-enter);
 }
 
 .gx-dialog[data-starting-style],
 .gx-dialog[data-ending-style] {
   opacity: 0;
-  transform: translate(-50%, calc(-50% + var(--motion-distance-md)));
+  transform: translateY(var(--motion-distance-md));
 }
 
 .gx-dialog[data-ending-style] {
-  transition-duration: var(--motion-duration-medium);
+  transition-duration: var(--motion-fade-medium);
   transition-timing-function: var(--motion-easing-exit);
 }
 
 .gx-dialog-close {
   position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
+  top: var(--spacing-12);
+  right: var(--spacing-12);
 }
 
 .gx-dialog-title {
   margin: 0;
-  padding-right: var(--space-8);
-  font-size: var(--font-heading-md-size);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--font-heading-md-line-height);
+  padding-right: var(--spacing-32);
+  font-size: var(--font-heading-4-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-heading-4-line-height);
   text-wrap: balance;
 }
 
 .gx-dialog-description {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-text-md-size);
-  line-height: var(--font-text-lg-line-height);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-prose);
 }
 
 .gx-dialog-footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
+  gap: var(--spacing-8);
+  margin-top: var(--spacing-12);
 }

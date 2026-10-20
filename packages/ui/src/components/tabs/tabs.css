@@ -1,34 +1,40 @@
+@reference '../../styles/tailwind-reference.css';
+
 .gx-tabs {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
   min-width: 0;
 }
 
 .gx-tabs-list {
   position: relative;
   display: flex;
-  gap: var(--space-1);
-  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
+  gap: var(--spacing-4);
+  border-bottom: var(--border-width-regular) solid var(--color-border-primary);
   overflow-x: auto;
 }
 
 .gx-tabs-tab {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
-  min-height: var(--density-control-height);
-  padding-inline: var(--space-2);
+  gap: var(--spacing-6);
+  min-height: var(--control-height);
+  padding-inline: var(--spacing-8);
+  /* The active tab is marked by its own underline, so nothing moves between tabs. */
   border: 0;
-  border-radius: var(--border-radius-xs) var(--border-radius-xs) 0 0;
-  background-color: var(--color-background-ghost);
+  @apply border-b-2;
+  border-bottom-style: solid;
+  border-bottom-color: transparent;
+  border-radius: var(--border-radius-inline) var(--border-radius-inline) 0 0;
+  background-color: transparent;
   color: var(--color-text-secondary);
   font-family: inherit;
-  font-size: var(--font-text-md-size);
-  font-weight: var(--font-weight-medium);
+  font-size: var(--font-text-size);
+  font-weight: var(--font-weight-label);
   white-space: nowrap;
   cursor: pointer;
-  transition-property: color, background-color;
+  @apply transition-colors;
   transition-duration: var(--motion-duration-fast);
   transition-timing-function: var(--motion-easing-standard);
 }
@@ -42,10 +48,11 @@
 /* The list scrolls horizontally, which clips anything outside it: draw the ring inside. */
 .gx-tabs-tab.gx-focusable:focus-visible,
 [data-gx-force~='focus-visible'] .gx-tabs-tab.gx-focusable {
-  outline-offset: calc(var(--size-focus-ring) * -1);
+  @apply -outline-offset-2;
 }
 
 .gx-tabs-tab[data-active] {
+  border-bottom-color: var(--color-border-accent);
   color: var(--color-text-primary);
 }
 
@@ -54,36 +61,14 @@
   cursor: not-allowed;
 }
 
-.gx-tabs-indicator {
-  position: absolute;
-  bottom: calc(var(--border-width-regular) * -1);
-  left: var(--active-tab-left);
-  width: var(--active-tab-width);
-  height: var(--size-focus-ring);
-  background-color: var(--color-border-accent);
-  transition-property: left, width;
-  transition-duration: var(--motion-duration-moderate);
-  transition-timing-function: var(--motion-easing-standard);
-}
-
-[data-motion='reduced'] .gx-tabs-indicator {
-  transition-property: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gx-tabs-indicator:not([data-motion='full'] *) {
-    transition-property: none;
-  }
-}
-
 .gx-tabs-panel {
   color: var(--color-text-primary);
-  font-size: var(--font-text-md-size);
-  line-height: var(--font-text-md-line-height);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
 }
 
 @media (forced-colors: active) {
-  .gx-tabs-indicator {
-    background-color: Highlight;
+  .gx-tabs-tab[data-active] {
+    border-bottom-color: Highlight;
   }
 }

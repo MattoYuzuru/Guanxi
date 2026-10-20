@@ -5,7 +5,7 @@
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import '../../src/styles/token-stub.css'
+import '../../generated/tokens.css'
 import { CatalogApp } from '../CatalogApp.tsx'
 import { buildEntries, type CatalogEntry } from '../entries.ts'
 import manifest from '../manifest.json'

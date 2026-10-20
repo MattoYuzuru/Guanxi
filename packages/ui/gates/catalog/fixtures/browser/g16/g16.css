@@ -1,8 +1,8 @@
 /* G16 seeded violation: a looping rotation that ignores reduced motion. */
 .gx-seeded-spinner {
   display: inline-block;
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
   border: var(--size-focus-ring) solid currentColor;
   border-right-color: transparent;
   border-radius: var(--border-radius-full);
@@ -18,8 +18,8 @@
 /* G16 seeded violation: one finite rotation on entry, no reduced-motion rule. */
 .gx-seeded-entry {
   display: inline-block;
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
   border: var(--size-focus-ring) solid currentColor;
   animation: gx-seeded-spin 2000ms linear 1;
 }
@@ -27,20 +27,20 @@
 /* G16 seeded violation: the thumb slides on toggle whatever the motion setting. */
 .gx-seeded-toggle {
   position: relative;
-  width: var(--space-10);
-  height: var(--space-5);
+  width: var(--spacing-40);
+  height: var(--spacing-20);
 }
 
 .gx-seeded-thumb {
   position: absolute;
   top: 0;
   left: 0;
-  width: var(--space-5);
-  height: var(--space-5);
+  width: var(--spacing-20);
+  height: var(--spacing-20);
   background-color: currentColor;
   transition: transform 2000ms linear;
 }
 
 .gx-seeded-toggle[aria-checked='true'] .gx-seeded-thumb {
-  transform: translateX(var(--space-5));
+  transform: translateX(var(--spacing-20));
 }

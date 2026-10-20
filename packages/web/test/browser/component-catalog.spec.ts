@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { mcpAppsVariables } from '../../../ui/generated/mcp-apps-variables.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 interface ManifestComponent {
@@ -138,28 +139,41 @@ test('the catalog is hidden and never requested until Developer mode is on', asy
   await expect(page.getByText('Developer mode is off')).toBeVisible()
 })
 
+// Each theme's canvas and secondary text as DS1-a generates them (FOUNDATIONS §1.1, §1.4).
+const themeValues = (theme: keyof typeof mcpAppsVariables) => ({
+  canvas: mcpAppsVariables[theme]['--color-background-primary'],
+  secondaryText: mcpAppsVariables[theme]['--color-text-secondary'],
+})
 const THEMES = {
-  light: { canvas: '#ebf4f5', secondaryText: '#445051' },
-  dark: { canvas: '#182322', secondaryText: '#c3cdcc' },
-  'light-hc': { canvas: '#ebf4f5', secondaryText: '#182322' },
-  'dark-hc': { canvas: '#182322', secondaryText: '#eef5f6' },
+  light: themeValues('light'),
+  dark: themeValues('dark'),
+  'light-hc': themeValues('light-hc'),
+  'dark-hc': themeValues('dark-hc'),
 } as const
 const DENSITIES = { compact: '28px', comfortable: '32px' } as const
-// FOUNDATIONS §4 tables: fill (step 1 light / step 3 dark), backdrop, and the denser strong glass
-// of dialogs. High-contrast themes always use Solid.
+// FOUNDATIONS §4 tables as DS1-a generates them: backdrop, and the fill opacity of normal and
+// strong (elevation 3, dialogs) glass per theme family. High-contrast themes always use Solid.
 const GLASS = {
   glass: {
     blur: 'blur(20px) saturate(1.15)',
-    fill: { light: '#f3fcfe 72%', dark: '#1f2a29 70%' },
     strongBlur: 'blur(24px) saturate(1.15)',
+    opacity: { light: '0.72', dark: '0.7' },
+    strongOpacity: { light: '0.9', dark: '0.88' },
   },
   tinted: {
     blur: 'blur(12px) saturate(1.15)',
-    fill: { light: '#f3fcfe 90%', dark: '#1f2a29 90%' },
     strongBlur: 'blur(12px) saturate(1.15)',
+    opacity: { light: '0.9', dark: '0.9' },
+    strongOpacity: { light: '0.96', dark: '0.96' },
   },
-  solid: { blur: 'none', fill: { light: '#f3fcfe 100%', dark: '#1f2a29 100%' }, strongBlur: 'none' },
+  solid: {
+    blur: 'none',
+    strongBlur: 'none',
+    opacity: { light: '1', dark: '1' },
+    strongOpacity: { light: '1', dark: '1' },
+  },
 } as const
+const fillOf = (opacity: string) => new RegExp(`calc\\(\\s*${opacity.replace('.', '\\.')}\\s*\\*\\s*100%\\s*\\)`)
 
 test('every component shows every declared state in all 24 theme, density and glass regimes', async ({ page }) => {
   test.setTimeout(240_000)
@@ -175,17 +189,18 @@ test('every component shows every declared state in all 24 theme, density and gl
           [...document.querySelectorAll<HTMLElement>('[data-story]')].map((cell) => {
             const stage = cell.querySelector<HTMLElement>('[data-gx-regime]')!
             const style = getComputedStyle(stage)
-            const glassLayer = cell.querySelector<HTMLElement>('.gx-glass:not(.gx-glass-strong)')
-            const strongLayer = cell.querySelector<HTMLElement>('.gx-glass-strong')
+            const glassLayer = cell.querySelector<HTMLElement>('.gx-glass:not([data-elevation="3"])')
+            const strongLayer = cell.querySelector<HTMLElement>('.gx-glass[data-elevation="3"]')
             return {
               key: cell.dataset['story'],
               theme: stage.dataset['theme'],
               density: stage.dataset['density'],
-              glass: stage.dataset['glass'],
+              glass: stage.dataset['material'],
               canvas: style.getPropertyValue('--color-background-primary').trim(),
               secondaryText: style.getPropertyValue('--color-text-secondary').trim(),
-              controlHeight: style.getPropertyValue('--density-control-height').trim(),
-              glassFill: style.getPropertyValue('--glass-fill').trim(),
+              controlHeight: style.getPropertyValue('--control-height').trim(),
+              glassFill: glassLayer ? getComputedStyle(glassLayer).getPropertyValue('--material-background').trim() : null,
+              strongFill: strongLayer ? getComputedStyle(strongLayer).getPropertyValue('--material-background').trim() : null,
               glassBackdrop: glassLayer ? getComputedStyle(glassLayer).backdropFilter : null,
               strongBackdrop: strongLayer ? getComputedStyle(strongLayer).backdropFilter : null,
               failed: cell.querySelector('[data-story-error]') !== null,
@@ -213,11 +228,15 @@ test('every component shows every declared state in all 24 theme, density and gl
             rendered: true,
           })
           const family = theme.startsWith('dark') ? 'dark' : 'light'
-          expect(cell.glassFill, `${label} ${cell.key}`).toContain((hc ? GLASS.solid : GLASS[glass]).fill[family])
-          if (cell.glassBackdrop !== null) {
+          // High contrast forces the opaque solid fill (no color-mix at all) and no backdrop.
+          if (cell.glassFill !== null) {
+            if (hc) expect(cell.glassFill, `${label} ${cell.key}`).not.toContain('color-mix')
+            else expect(cell.glassFill, `${label} ${cell.key}`).toMatch(fillOf(GLASS[glass].opacity[family]))
             expect(cell.glassBackdrop, `${label} ${cell.key}`).toBe(hc ? GLASS.solid.blur : GLASS[glass].blur)
           }
-          if (cell.strongBackdrop !== null) {
+          if (cell.strongFill !== null) {
+            if (hc) expect(cell.strongFill, `${label} ${cell.key}`).not.toContain('color-mix')
+            else expect(cell.strongFill, `${label} ${cell.key}`).toMatch(fillOf(GLASS[glass].strongOpacity[family]))
             expect(cell.strongBackdrop, `${label} ${cell.key}`).toBe(hc ? GLASS.solid.strongBlur : GLASS[glass].strongBlur)
           }
         }
@@ -244,7 +263,7 @@ test('the toolbar switches theme, density and material for every story without a
   await choose('glass', 'Solid')
   await expect(page).toHaveURL(/theme=dark-hc/)
   const regimes = await page.locator('[data-story] [data-gx-regime]').evaluateAll((stages) =>
-    [...new Set(stages.map((stage) => `${stage.getAttribute('data-theme')}/${stage.getAttribute('data-density')}/${stage.getAttribute('data-glass')}`))],
+    [...new Set(stages.map((stage) => `${stage.getAttribute('data-theme')}/${stage.getAttribute('data-density')}/${stage.getAttribute('data-material')}`))],
   )
   expect(regimes).toEqual(['dark-hc/comfortable/solid'])
 })
@@ -266,15 +285,44 @@ test('switching the theme recolours a sandboxed T2 plugin through MCP Apps varia
       secondary: getComputedStyle(document.querySelector('[data-plugin-theme]')!).color,
       theme: document.querySelector('[data-plugin-theme]')!.textContent,
     }))
-  await expect.poll(colours).toEqual({ background: 'rgb(235, 244, 245)', card: 'rgb(243, 252, 254)', secondary: 'rgb(68, 80, 81)', theme: 'light' })
+  // What the host itself paints with the same semantic tokens in that theme.
+  const host = (theme: string, pluginTheme: string) =>
+    page.evaluate(
+      ([value, label]) => {
+        const probe = document.createElement('div')
+        probe.setAttribute('data-theme', value)
+        document.body.append(probe)
+        const paint = (name: string, property: 'backgroundColor' | 'color') => {
+          const element = document.createElement('span')
+          element.style[property] = `var(${name})`
+          probe.append(element)
+          return getComputedStyle(element)[property]
+        }
+        const result = {
+          background: paint('--color-background-primary', 'backgroundColor'),
+          card: paint('--color-background-secondary', 'backgroundColor'),
+          secondary: paint('--color-text-secondary', 'color'),
+          theme: label,
+        }
+        probe.remove()
+        return result
+      },
+      [theme, pluginTheme],
+    )
+  const light = await host('light', 'light')
+  expect(light.background).not.toBe(light.card)
+  await expect.poll(colours).toEqual(light)
 
   await page.locator('[data-catalog-control="theme"]').click()
   await page.getByRole('option', { name: 'Dark', exact: true }).click()
-  await expect.poll(colours).toEqual({ background: 'rgb(24, 35, 34)', card: 'rgb(15, 26, 25)', secondary: 'rgb(195, 205, 204)', theme: 'dark' })
+  const dark = await host('dark', 'dark')
+  expect(dark.background).not.toBe(light.background)
+  await expect.poll(colours).toEqual(dark)
 
   await page.locator('[data-catalog-control="theme"]').click()
   await page.getByRole('option', { name: 'Light, high contrast', exact: true }).click()
-  await expect.poll(colours).toEqual({ background: 'rgb(235, 244, 245)', card: 'rgb(243, 252, 254)', secondary: 'rgb(24, 35, 34)', theme: 'light' })
+  const lightHc = await host('light-hc', 'light')
+  await expect.poll(colours).toEqual(lightHc)
 
   // The plugin document never changed; only host variables did.
   expect(await iframe.getAttribute('srcdoc')).toBe(document)
@@ -325,13 +373,18 @@ test('motion, transparency and language apply to every story; motion follows the
       motion: stage.getAttribute('data-motion'),
       reduceTransparency: stage.hasAttribute('data-reduce-transparency'),
       lang: stage.getAttribute('lang'),
-      fill: getComputedStyle(stage).getPropertyValue('--glass-fill').trim(),
+      fill: getComputedStyle(stage).getPropertyValue('--material-background').trim(),
       fast: getComputedStyle(stage).getPropertyValue('--motion-duration-slow').trim(),
+      fade: getComputedStyle(stage).getPropertyValue('--motion-fade-slow').trim(),
       distance: getComputedStyle(stage).getPropertyValue('--motion-distance-md').trim(),
     })),
   )
   for (const stage of stages) {
-    expect(stage).toEqual({ motion: 'reduced', reduceTransparency: true, lang: 'ru', fill: 'color-mix(in srgb, #f3fcfe 100%, transparent)', fast: '100ms', distance: '0px' })
+    // Reduced transparency forces the opaque solid fill; reduced motion removes distance and
+    // spatial duration (DS1-a: 0 ms) while fades keep a short duration.
+    expect(stage).toMatchObject({ motion: 'reduced', reduceTransparency: true, lang: 'ru', fast: '0ms', distance: '0px' })
+    expect(stage.fill).not.toContain('color-mix')
+    expect(stage.fade).toBe('100ms')
   }
   await expect(page.locator('[data-story="button--default"]')).toContainText('Сохранить изменения')
   await expect(page.locator('[data-story="status-pill--running"]')).toContainText('Выполняется')

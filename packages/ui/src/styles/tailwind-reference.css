@@ -1,0 +1,8 @@
+/*
+ * Reference for `@apply` in @guanxi/ui CSS: Tailwind with DS1-a's generated theme, emitted
+ * nothing by itself. Component CSS reads tokens through var() and takes static geometry and
+ * transition utilities (`w-full`, `transition-colors`, …) from here, so no literal value is
+ * written by hand (G5, G6). Every consumer compiles these files with Tailwind v4.
+ */
+@import 'tailwindcss';
+@import '../../generated/theme.css';

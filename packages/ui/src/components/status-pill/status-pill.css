@@ -1,16 +1,18 @@
+@reference '../../styles/tailwind-reference.css';
+
 .gx-status-pill {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
-  min-height: var(--size-target-min);
-  padding-inline: var(--space-2);
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-full);
+  gap: var(--spacing-6);
+  min-height: var(--target-minimum);
+  padding-inline: var(--spacing-8);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  @apply rounded-full;
   background-color: var(--color-background-secondary);
   color: var(--color-text-primary);
-  font-size: var(--font-text-sm-size);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--font-text-sm-line-height);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+  line-height: var(--font-line-height-ui);
   white-space: nowrap;
 }
 
@@ -19,10 +21,10 @@
 .gx-status-dot {
   box-sizing: border-box;
   flex: none;
-  width: var(--size-indicator);
-  height: var(--size-indicator);
+  width: var(--spacing-8);
+  height: var(--spacing-8);
   border: var(--border-width-regular) solid currentColor;
-  border-radius: var(--border-radius-full);
+  @apply rounded-full;
   background-color: currentColor;
 }
 
@@ -30,21 +32,12 @@
   color: var(--color-text-accent);
 }
 
-/* The pulse runs only when motion is allowed: the OS allows it and the app does not reduce it,
-   or the app forces full motion. The word "Running" carries the state either way. */
-@media (prefers-reduced-motion: no-preference) {
-  .gx-status-pill[data-status='running'] .gx-status-dot {
-    animation: gx-status-pulse var(--motion-loop-duration) var(--motion-easing-standard) infinite alternate;
-  }
-}
-
-[data-motion='full'] .gx-status-pill[data-status='running'] .gx-status-dot {
-  animation: gx-status-pulse var(--motion-loop-duration) var(--motion-easing-standard) infinite alternate;
-}
+/* No pulse: DS1-a's token layer has no loop animation yet (DS1-b hand-off). The word
+   "Running" and the filled dot carry the state. */
 
 .gx-status-pill[data-status='waiting'] .gx-status-dot {
   color: var(--color-text-warning);
-  border-width: var(--size-focus-ring);
+  @apply border-2;
   background-color: transparent;
 }
 
@@ -67,16 +60,6 @@
   color: var(--color-text-tertiary);
   border-style: dashed;
   background-color: transparent;
-}
-
-@keyframes gx-status-pulse {
-  to {
-    opacity: 0.4;
-  }
-}
-
-[data-motion='reduced'] .gx-status-pill[data-status='running'] .gx-status-dot {
-  animation: none;
 }
 
 @media (forced-colors: active) {

@@ -20,6 +20,8 @@ import { join, relative } from 'node:path'
 const COPIED = [
   'packages/ui/src',
   'packages/ui/catalog',
+  'packages/ui/generated',
+  'packages/ui/fonts',
   'packages/ui/tsconfig.json',
   'packages/ui/package.json',
   'packages/web/src',

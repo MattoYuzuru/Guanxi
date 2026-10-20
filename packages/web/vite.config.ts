@@ -19,7 +19,6 @@ export default defineConfig({
       '@guanxi/contract': contractSrc,
       // @guanxi/ui is source too; only the lazily loaded catalog route imports it today.
       '@guanxi/ui/catalog': `${uiRoot}/catalog/index.ts`,
-      '@guanxi/ui/styles/token-stub.css': `${uiRoot}/src/styles/token-stub.css`,
       '@guanxi/ui': `${uiRoot}/src/index.ts`,
     },
   },

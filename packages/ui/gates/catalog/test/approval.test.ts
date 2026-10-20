@@ -277,7 +277,11 @@ describe('component source hash covers what the component runs (GPT H3)', async 
     write('lib/deep.ts', 'export const deep = 1\n')
     write('lib/via.ts', "export { deep } from './deep'\n")
     write('styles/base.css', '.gx-focusable:focus-visible { outline: var(--x) solid; }\n')
-    write('styles/token-stub.css', '[data-theme] { --x: red; }\n')
+    write('styles/tailwind-reference.css', "@import 'tailwindcss';\n")
+    write('../generated/tokens.css', ':root { --x: red; }\n')
+    write('../generated/theme.css', '@theme inline { --color-x: var(--x); }\n')
+    write('../fonts/fonts.css', "@font-face { font-family: 'X'; src: url('./x.woff2'); }\n")
+    write('../fonts/sans/x.woff2', 'font bytes')
     return { src, dir: join(src, 'components', 'a'), dispose: () => rmSync(join(src, '..'), { recursive: true, force: true }) }
   }
 
@@ -289,7 +293,11 @@ describe('component source hash covers what the component runs (GPT H3)', async 
     ['export-from', "export * from '../../lib/reexported'", 'lib/reexported.tsx'],
     ['transitive extensionless re-export', "import { deep } from '../../lib/via'", 'lib/deep.ts'],
     ['shared focus styles', '', 'styles/base.css'],
-    ['token inputs', '', 'styles/token-stub.css'],
+    ['the Tailwind reference', '', 'styles/tailwind-reference.css'],
+    ['generated tokens (outside src)', '', '../generated/tokens.css'],
+    ['the generated Tailwind theme', '', '../generated/theme.css'],
+    ['font declarations', '', '../fonts/fonts.css'],
+    ['a font file', '', '../fonts/sans/x.woff2'],
   ]
 
   for (const [name, imports, changed] of forms) {

@@ -46,7 +46,7 @@ export function DeveloperCatalogPage() {
         title={translate('developer.catalog.off.title')}
         description={translate('developer.catalog.off.description')}
         action={
-          <Link to={paths.settings()} className="text-xs text-[var(--accent)] underline underline-offset-2">
+          <Link to={paths.settings()} className="text-12 text-accent underline underline-offset-2">
             {translate('developer.catalog.off.action')}
           </Link>
         }

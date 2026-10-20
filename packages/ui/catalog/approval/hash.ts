@@ -17,8 +17,13 @@ const TEXT = /\.(tsx?|mts|mjs|css|md|json)$/
 const CLOSURE_EXCLUDED = new Set(['i18n/messages.ts'])
 const IMPORT = /(?:^|[\s;])(?:import|export)\s+(?:[^'"`;]*?\s+from\s+)?['"](\.{1,2}\/[^'"]+)['"]/g
 const DYNAMIC_IMPORT = /\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g
-/** Package-wide inputs every component renders with: shared base styles and the token layer. */
+/** Package-wide inputs every component renders with: shared base styles under src/styles. */
 const SHARED_DIR = 'styles'
+/**
+ * The generated token layer and the self-hosted fonts (DS1-a), outside src: a token or font
+ * change alters every component, so it makes every approval stale.
+ */
+const PACKAGE_INPUTS = ['generated/tokens.css', 'generated/theme.css', 'fonts']
 const RESOLVE_SUFFIXES = ['', '.ts', '.tsx', '.mts', '.js', '.mjs', '.css', '/index.ts', '/index.tsx']
 
 export class SourceHashError extends Error {
@@ -87,7 +92,8 @@ function localImports(file: string, root: string): string[] {
 
 /**
  * sha256 over `"<json path>\n<sha256 of the content>\n"` for the component's own files, the shared
- * styles and token layer (`src/styles/`), and every file they import inside packages/ui/src
+ * styles (`src/styles/`), the generated token layer and fonts (`generated/tokens.css`,
+ * `generated/theme.css`, `fonts/`), and every file they import inside packages/ui/src
  * (static, re-export and dynamic imports, resolved like the bundler; transitively), sorted by
  * path. An import that cannot be resolved, or that leaves packages/ui/src, throws. Paths are relative to
  * packages/ui/src and JSON-encoded, text is LF-normalised so checkouts on Windows hash the same,
@@ -98,7 +104,15 @@ export function componentSourceHash(componentDir: string): string {
   const files = new Set(listFiles(componentDir).filter((file) => !isHashExcluded(componentDir, file)))
   const shared = join(srcRoot, SHARED_DIR)
   if (existsSync(shared) && lstatSync(shared).isDirectory()) for (const file of listFiles(shared)) files.add(file)
-  const queue = [...files]
+  const packageRoot = resolve(srcRoot, '..')
+  for (const input of PACKAGE_INPUTS) {
+    const path = join(packageRoot, input)
+    if (!existsSync(path)) continue
+    const stat = lstatSync(path)
+    if (stat.isDirectory() && !stat.isSymbolicLink()) for (const file of listFiles(path)) files.add(file)
+    else if (stat.isFile()) files.add(path)
+  }
+  const queue = [...files].filter((file) => file.startsWith(srcRoot + sep))
   while (queue.length > 0) {
     for (const target of localImports(queue.pop() as string, srcRoot)) {
       const rel = relative(srcRoot, target).split(sep).join('/')

@@ -1,6 +1,8 @@
+@reference '../src/styles/tailwind-reference.css';
+
 /* In-app catalog chrome. Semantic tokens only; it renders inside its own regime frame. */
 .gx-catalog {
-  min-height: 100%;
+  @apply min-h-full;
   background-color: var(--color-background-primary);
   color: var(--color-text-primary);
 }
@@ -9,49 +11,49 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
+  gap: var(--spacing-16);
+  padding: var(--spacing-20);
 }
 
 .gx-catalog-header h1 {
   margin: 0;
-  font-size: var(--font-heading-lg-size);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--font-heading-lg-line-height);
+  font-size: var(--font-heading-3-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-heading-3-line-height);
 }
 
 .gx-catalog-muted {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-text-md-size);
+  font-size: var(--font-text-size);
 }
 
 .gx-catalog-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-md);
+  gap: var(--spacing-12);
+  padding: var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-panel);
   background-color: var(--color-background-secondary);
 }
 
 .gx-catalog-control {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--spacing-4);
 }
 
 .gx-catalog-control-label {
   color: var(--color-text-secondary);
-  font-size: var(--font-text-sm-size);
-  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
 }
 
 .gx-catalog-body {
   display: grid;
-  grid-template-columns: minmax(var(--size-catalog-cell-min), max-content) minmax(0, 1fr);
-  gap: var(--space-5);
+  grid-template-columns: minmax(var(--layout-container-3xs), max-content) minmax(0, 1fr);
+  gap: var(--spacing-20);
   align-items: start;
 }
 
@@ -64,20 +66,20 @@
 .gx-catalog-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
 }
 
 .gx-catalog-nav-heading {
-  margin: var(--space-3) 0 var(--space-1);
+  margin: var(--spacing-12) 0 var(--spacing-4);
   color: var(--color-text-secondary);
-  font-size: var(--font-text-sm-size);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-heading);
 }
 
 .gx-catalog-nav-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-0-5);
+  gap: var(--spacing-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -87,16 +89,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: var(--density-row-height);
-  padding-inline: var(--space-2);
+  gap: var(--spacing-8);
+  @apply w-full;
+  min-height: var(--row-height);
+  padding-inline: var(--spacing-8);
   border: 0;
-  border-radius: var(--border-radius-xs);
-  background-color: var(--color-background-ghost);
+  border-radius: var(--border-radius-inline);
+  background-color: transparent;
   color: var(--color-text-primary);
   font-family: inherit;
-  font-size: var(--font-text-md-size);
+  font-size: var(--font-text-size);
   text-align: start;
   cursor: pointer;
 }
@@ -107,29 +109,34 @@
 
 .gx-catalog-nav-link[aria-current='page'] {
   background-color: var(--color-background-tertiary);
-  font-weight: var(--font-weight-semibold);
-  box-shadow: inset var(--size-focus-ring) 0 0 var(--color-border-accent);
+  font-weight: var(--font-weight-heading);
+  /* Current page: an accent bar on the leading edge. */
+  @apply border-l-2;
+  border-left-style: solid;
+  border-left-color: var(--color-border-accent);
 }
 
 @media (forced-colors: active) {
   .gx-catalog-nav-link[aria-current='page'] {
-    outline: var(--size-focus-ring) solid Highlight;
-    outline-offset: calc(var(--size-focus-ring) * -1);
+    @apply outline-2 -outline-offset-2;
+    outline-style: solid;
+    outline-color: Highlight;
   }
 }
 
 .gx-catalog-skip {
   position: absolute;
-  left: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--border-radius-xs);
+  left: var(--spacing-8);
+  padding: var(--spacing-4) var(--spacing-8);
+  border-radius: var(--border-radius-inline);
   background-color: var(--color-background-inverse);
   color: var(--color-text-inverse);
-  transform: translateY(-200%);
+  @apply -translate-y-full;
+  top: 0;
 }
 
 .gx-catalog-skip:focus-visible {
-  transform: none;
+  @apply translate-y-0;
 }
 
 .gx-catalog-main:focus {
@@ -143,7 +150,7 @@
 .gx-catalog-overview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--spacing-24);
 }
 
 .gx-catalog-section-head,
@@ -151,28 +158,28 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-8);
 }
 
 .gx-catalog-section-head h2,
 .gx-catalog-page-head h2 {
   margin: 0;
-  font-size: var(--font-heading-md-size);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-heading-4-size);
+  font-weight: var(--font-weight-heading);
 }
 
 .gx-catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--size-catalog-cell-min), 1fr));
-  gap: var(--space-3);
-  padding-top: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(var(--layout-container-3xs), 1fr));
+  gap: var(--spacing-12);
+  padding-top: var(--spacing-8);
 }
 
 .gx-catalog-cell {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--spacing-4);
   margin: 0;
   min-width: 0;
 }
@@ -183,11 +190,11 @@
   position: relative;
   display: flex;
   align-items: flex-start;
-  min-height: var(--space-16);
-  padding: var(--space-4);
+  min-height: var(--spacing-64);
+  padding: var(--spacing-16);
   overflow: hidden;
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-md);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-panel);
   transform: translateZ(0);
 }
 
@@ -197,34 +204,34 @@
 }
 
 .gx-catalog-cell[data-frame='floating'] .gx-catalog-stage {
-  min-height: calc(var(--space-16) * 4);
+  @apply min-h-64;
 }
 
 .gx-catalog-cell[data-frame='overlay'] .gx-catalog-stage {
-  min-height: calc(var(--space-16) * 5);
+  @apply min-h-80;
 }
 
 .gx-story-root {
   min-width: 0;
-  max-width: 100%;
+  @apply max-w-full;
 }
 
 .gx-catalog-caption {
   color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--font-text-sm-size);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-12);
 }
 
 .gx-catalog-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
-  margin: 0 0 var(--space-3);
+  gap: var(--spacing-16);
+  margin: 0 0 var(--spacing-12);
 }
 
 .gx-catalog-meta-item dt {
   color: var(--color-text-secondary);
-  font-size: var(--font-text-sm-size);
+  font-size: var(--font-size-12);
 }
 
 .gx-catalog-meta-item dd {
@@ -233,81 +240,81 @@
 }
 
 .gx-catalog-docs h3 {
-  margin: var(--space-4) 0 var(--space-1);
-  font-size: var(--font-heading-sm-size);
+  margin: var(--spacing-16) 0 var(--spacing-4);
+  font-size: var(--font-heading-5-size);
 }
 
 .gx-catalog-docs p,
 .gx-catalog-docs ul {
-  max-width: 72ch;
-  margin: var(--space-1) 0;
-  line-height: var(--font-text-lg-line-height);
+  @apply max-w-2xl;
+  margin: var(--spacing-4) 0;
+  line-height: var(--font-line-height-prose);
 }
 
 .gx-catalog-code {
-  max-height: calc(var(--space-16) * 8);
-  margin: var(--space-2) 0 0;
-  padding: var(--space-3);
+  @apply max-h-128;
+  margin: var(--spacing-8) 0 0;
+  padding: var(--spacing-12);
   overflow: auto;
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--border-radius-control);
   background-color: var(--color-background-tertiary);
-  font-family: var(--font-mono);
-  font-size: var(--font-text-sm-size);
-  line-height: var(--font-text-lg-line-height);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-prose);
 }
 
 .gx-catalog-token-frame {
-  padding: var(--space-3);
-  border-radius: var(--border-radius-md);
+  padding: var(--spacing-12);
+  border-radius: var(--border-radius-panel);
 }
 
 .gx-catalog-tokens {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--size-catalog-cell-min), 1fr));
-  gap: var(--space-1);
-  margin: var(--space-2) 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(var(--layout-container-3xs), 1fr));
+  gap: var(--spacing-4);
+  margin: var(--spacing-8) 0 0;
   padding: 0;
   list-style: none;
-  font-size: var(--font-text-sm-size);
+  font-size: var(--font-size-12);
 }
 
 .gx-catalog-tokens li {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
 }
 
 .gx-catalog-swatch {
-  width: var(--size-icon-sm);
-  height: var(--size-icon-sm);
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-xs);
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-inline);
 }
 
 .gx-catalog-review {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  max-width: 72ch;
+  gap: var(--spacing-8);
+  @apply max-w-2xl;
 }
 
 .gx-catalog-review h3,
 .gx-catalog-review h4 {
-  margin: var(--space-2) 0 0;
-  font-size: var(--font-heading-sm-size);
+  margin: var(--spacing-8) 0 0;
+  font-size: var(--font-heading-5-size);
 }
 
 .gx-catalog-review-status {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
   margin: 0;
 }
 
 .gx-catalog-readonly {
-  padding: var(--space-3);
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-control);
   background-color: var(--color-background-tertiary);
 }
 
@@ -318,13 +325,13 @@
 .gx-catalog-review-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: var(--spacing-6);
 }
 
 .gx-catalog-review-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
 }
 
 .gx-catalog-review-outcome {
@@ -333,20 +340,20 @@
 
 .gx-catalog-requests {
   margin: 0;
-  padding-left: var(--space-5);
+  padding-left: var(--spacing-20);
 }
 
 .gx-catalog-t2 {
-  padding: var(--space-3);
-  border-radius: var(--border-radius-md);
+  padding: var(--spacing-12);
+  border-radius: var(--border-radius-panel);
 }
 
 .gx-catalog-t2-frame {
   display: block;
-  width: 100%;
-  height: calc(var(--space-16) * 2);
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-sm);
+  @apply w-full;
+  @apply h-32;
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-control);
 }
 
 .gx-catalog-portal {

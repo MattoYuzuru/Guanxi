@@ -71,7 +71,7 @@ function ToastList() {
                 aria-label={t('ui.toast.close')}
                 data-variant="ghost"
                 data-size="sm"
-                className="gx-button gx-icon-button gx-focusable gx-toast-close"
+                className="gx-button gx-icon-button gx-focusable"
               />
             }
           >

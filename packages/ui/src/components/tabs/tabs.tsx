@@ -1,7 +1,7 @@
 /*
  * Adapted from shadcn/ui (base) apps/v4/registry/bases/base/ui/tabs.tsx
  * @ ba1503c64472b82256d9de95e2e62c5901a38e8b, MIT, Copyright (c) 2023 shadcn.
- * Modified by Guanxi contributors: one underline variant, Base UI indicator, semantic-token CSS.
+ * Modified by Guanxi contributors: one underline variant drawn on the active tab (no moving indicator), semantic-token CSS.
  */
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs'
 import type { ComponentProps } from 'react'
@@ -29,7 +29,6 @@ export function TabsList({ className, children, activateOnFocus = true, ...props
       {...props}
     >
       {children}
-      <TabsPrimitive.Indicator className="gx-tabs-indicator" />
     </TabsPrimitive.List>
   )
 }

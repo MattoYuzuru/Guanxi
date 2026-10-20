@@ -194,7 +194,7 @@ function Overview({ entries, regime }: { entries: CatalogEntry[]; regime: Regime
   return (
     <div className="gx-catalog-overview">
       {entries.map((entry) => (
-        <section key={entry.id} className="gx-catalog-section" aria-labelledby={`catalog-${entry.id}`}>
+        <section key={entry.id} aria-labelledby={`catalog-${entry.id}`}>
           <header className="gx-catalog-section-head">
             <h2 id={`catalog-${entry.id}`}>{entry.title}</h2>
             <StatusBadge status={entryStatus(entry)} />
@@ -261,7 +261,7 @@ function ComponentPage({
   // The node's status wins over the bundled one once the review panel has read it.
   const [status, setStatus] = useState(entryStatus(entry))
   return (
-    <article className="gx-catalog-page" aria-labelledby="catalog-component-title">
+    <article aria-labelledby="catalog-component-title">
       <header className="gx-catalog-page-head">
         <h2 id="catalog-component-title">{entry.title}</h2>
         <StatusBadge status={status} />
@@ -322,7 +322,7 @@ function T2Page({ regime }: { regime: Regime }) {
   const t = useUiText()
   const hostTheme = regime.theme.startsWith('dark') ? 'dark' : 'light'
   return (
-    <section className="gx-catalog-page" aria-labelledby="catalog-t2-title">
+    <section aria-labelledby="catalog-t2-title">
       <h2 id="catalog-t2-title">{t('catalog.t2.title')}</h2>
       <p className="gx-catalog-muted">{t('catalog.t2.description')}</p>
       <RegimeFrame regime={regime} className="gx-catalog-t2">

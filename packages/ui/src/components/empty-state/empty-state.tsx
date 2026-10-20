@@ -25,7 +25,7 @@ export function EmptyState({ title, action, icon, className, ...props }: EmptySt
         </span>
       ) : null}
       <p className="gx-empty-state-title">{title}</p>
-      {action ? <div className="gx-empty-state-action">{action}</div> : null}
+      {action ? <div>{action}</div> : null}
     </div>
   )
 }

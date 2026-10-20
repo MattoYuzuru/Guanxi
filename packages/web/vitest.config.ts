@@ -10,7 +10,6 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       '@guanxi/contract': contractSrc,
       '@guanxi/ui/catalog': `${uiRoot}/catalog/index.ts`,
-      '@guanxi/ui/styles/token-stub.css': `${uiRoot}/src/styles/token-stub.css`,
       '@guanxi/ui': `${uiRoot}/src/index.ts`,
     },
   },

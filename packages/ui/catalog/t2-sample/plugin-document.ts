@@ -13,24 +13,23 @@ export const T2_PLUGIN_DOCUMENT = `<!doctype html>
   body {
     background: var(--color-background-primary, Canvas);
     color: var(--color-text-primary, CanvasText);
-    font-family: var(--font-sans, system-ui);
-    font-size: var(--font-text-md-size, 13px);
+    font-family: var(--font-family-sans, system-ui);
+    font-size: var(--font-text-size, 13px);
   }
   .card {
     margin: 12px;
     padding: 12px;
-    border: var(--border-width-regular, 1px) solid var(--color-border-secondary, GrayText);
-    border-radius: var(--border-radius-md, 12px);
+    border: var(--border-width-regular, 1px) solid var(--color-border-primary, GrayText);
+    border-radius: var(--border-radius-panel, 12px);
     background: var(--color-background-secondary, Canvas);
-    box-shadow: var(--shadow-sm, none);
   }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .swatch { width: 24px; height: 24px; border-radius: var(--border-radius-xs, 4px); }
+  .swatch { width: 24px; height: 24px; border-radius: var(--border-radius-inline, 4px); }
   .info { background: var(--color-background-info); border: 1px solid var(--color-border-info); }
   .success { background: var(--color-background-success); border: 1px solid var(--color-border-success); }
   .warning { background: var(--color-background-warning); border: 1px solid var(--color-border-warning); }
   .danger { background: var(--color-background-danger); border: 1px solid var(--color-border-danger); }
-  .theme { font-family: var(--font-mono, monospace); color: var(--color-text-secondary, GrayText); }
+  .theme { font-family: var(--font-family-mono, monospace); color: var(--color-text-secondary, GrayText); }
 </style>
 </head>
 <body>

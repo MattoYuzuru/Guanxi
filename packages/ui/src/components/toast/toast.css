@@ -1,23 +1,25 @@
+@reference '../../styles/tailwind-reference.css';
+
 .gx-toast-viewport {
   position: fixed;
-  right: var(--space-4);
-  bottom: var(--space-4);
+  right: var(--spacing-16);
+  bottom: var(--spacing-16);
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column-reverse;
-  gap: var(--space-2);
-  width: min(var(--size-toast-max), calc(100% - var(--space-8)));
+  gap: var(--spacing-8);
+  @apply w-full max-w-sm;
   outline: none;
 }
 
 .gx-toast {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-radius: var(--border-radius-md);
-  transition-property: opacity, transform;
-  transition-duration: var(--motion-duration-medium);
+  gap: var(--spacing-8);
+  padding: var(--spacing-12);
+  border-radius: var(--border-radius-panel);
+  @apply transition;
+  transition-duration: var(--motion-fade-medium);
   transition-timing-function: var(--motion-easing-enter);
 }
 
@@ -28,18 +30,18 @@
 }
 
 .gx-toast[data-ending-style] {
-  transition-duration: var(--motion-duration-fast);
+  transition-duration: var(--motion-fade-fast);
   transition-timing-function: var(--motion-easing-exit);
 }
 
 .gx-toast-icon {
   display: inline-flex;
-  padding-top: var(--space-0-5);
+  padding-top: var(--spacing-2);
 }
 
 .gx-toast-icon svg {
-  width: var(--size-icon-md);
-  height: var(--size-icon-md);
+  width: var(--icon-size-18);
+  height: var(--icon-size-18);
 }
 
 .gx-toast[data-tone='info'] .gx-toast-icon {
@@ -63,24 +65,24 @@
   flex: 1;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-0-5);
+  gap: var(--spacing-2);
   min-width: 0;
 }
 
 .gx-toast-title {
   margin: 0;
-  font-size: var(--font-text-md-size);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--font-text-md-line-height);
+  font-size: var(--font-text-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-line-height-ui);
 }
 
 .gx-toast-description {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-text-md-size);
-  line-height: var(--font-text-md-line-height);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
 }
 
 .gx-toast-action {
-  margin-top: var(--space-1-5);
+  margin-top: var(--spacing-6);
 }

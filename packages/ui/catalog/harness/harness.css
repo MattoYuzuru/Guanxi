@@ -1,27 +1,28 @@
+@reference '../../src/styles/tailwind-reference.css';
+
 html,
 body,
 #root {
   margin: 0;
-  min-height: 100%;
+  @apply min-h-full;
 }
 
 .gx-harness-stage {
-  min-height: 100vh;
+  @apply min-h-screen;
 }
 
 .gx-harness-cell {
   position: relative;
   display: inline-flex;
-  min-width: var(--size-catalog-cell-min);
-  padding: var(--space-4);
+  min-width: var(--layout-container-3xs);
+  padding: var(--spacing-16);
   transform: translateZ(0);
 }
 
 .gx-harness-cell[data-frame='floating'] {
-  min-height: calc(var(--space-16) * 4);
+  @apply min-h-64;
 }
 
 .gx-harness-cell[data-frame='overlay'] {
-  width: calc(var(--space-16) * 8);
-  min-height: calc(var(--space-16) * 5);
+  @apply w-128 min-h-80;
 }

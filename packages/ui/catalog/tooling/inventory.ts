@@ -249,7 +249,7 @@ export function readInventory(uiRoot: string): UiInventory {
   return { uiRoot, folders, publicFolders, strayExports, aliases, utilityExports }
 }
 
-/** Every `var(--name)` a component's CSS reads (its tokens). */
+/** Every CSS variable a component's CSS reads (its tokens). */
 export function cssVariables(dir: string): string[] {
   const names = new Set<string>()
   for (const path of listFiles(dir)) {

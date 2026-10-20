@@ -33,12 +33,12 @@ export const DEFAULT_REGIME: Regime = {
   locale: 'en',
 }
 
-/** Attributes the token layer reads (see src/styles/token-stub.css). */
+/** Attributes the generated token layer reads (packages/ui/generated/tokens.css). */
 export function regimeAttributes(regime: Regime): Record<string, string | undefined> {
   return {
     'data-theme': regime.theme,
     'data-density': regime.density,
-    'data-glass': regime.glass,
+    'data-material': regime.glass,
     'data-motion': regime.motion === 'system' ? undefined : regime.motion,
     'data-reduce-transparency': regime.transparency === 'reduced' ? '' : undefined,
     lang: regime.locale === 'pseudo' ? 'en-XA' : regime.locale,

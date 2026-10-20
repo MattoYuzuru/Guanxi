@@ -86,7 +86,7 @@ export function SelectItem({ className, children, ...props }: SelectItemProps) {
       className={cx('gx-select-item', className)}
       {...props}
     >
-      <SelectPrimitive.ItemText className="gx-select-item-text">{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator className="gx-select-item-indicator">
         <Check aria-hidden="true" />
       </SelectPrimitive.ItemIndicator>

@@ -9,8 +9,8 @@ export function DeveloperSettings() {
   useLocale()
   const [developerMode, setDeveloperMode] = useDeveloperMode()
   return (
-    <section className="surface rounded-xl p-3" aria-labelledby="settings-developer-title">
-      <h2 id="settings-developer-title" className="mb-1.5 text-xs font-semibold">
+    <section className="rounded-panel border border-divider bg-surface p-3" aria-labelledby="settings-developer-title">
+      <h2 id="settings-developer-title" className="mb-1.5 font-heading text-12">
         {translate('settings.section.developer')}
       </h2>
       <Toggle
@@ -22,7 +22,7 @@ export function DeveloperSettings() {
       {developerMode ? (
         <Link
           to={paths.developerComponents()}
-          className="mt-1 inline-block text-xs text-[var(--accent)] underline underline-offset-2"
+          className="mt-1 inline-block text-12 text-accent underline underline-offset-2"
         >
           {translate('settings.developer.components')}
         </Link>
