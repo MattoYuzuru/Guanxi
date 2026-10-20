@@ -3,7 +3,9 @@
 **Status:** implemented consumer layer; locally validated with fixture services · **Updated:** 2026-10-20
 
 `guanxi.connections` is a T0 kernel plugin requiring `egress.scrubber`, `ollama` and
-`governor`. It provides `connections.registry` (`Connections`); its vault is private. `start()` loads it after the legacy context. This slice does not reroute the
+`governor`. It provides `connections.registry` (`Connections`) and
+`connections.egress-readiness` (`ready`, `assertReady()`); its vault is private.
+`start()` loads it after the legacy context. This slice does not reroute the
 legacy Chat or plaintext legacy search settings; K4 consumes the new model boundary and K5
 executes the registered subscription CLIs. Search and STT are service connection roles.
 
@@ -17,16 +19,18 @@ executes the registered subscription CLIs. Search and STT are service connection
   and OS wrapping keys intact. Back up both; losing the wrapping key loses the vault.
 - Each account has an AES-256-GCM data key wrapped with an OS-keychain key through
   `@napi-rs/keyring` 2.1.2. Account/ref additional authenticated data prevents moving
-  ciphertext between identities. Keychain lookup is lazy, on explicit unlock or authorized
-  unattended access. Tests use an injected, throwaway key store in a temporary fixture.
+  ciphertext between identities. At plugin apply, all historical secrets are decrypted only
+  for scrubber registration; this may prompt the OS keychain but never opens an injection
+  session. Explicit unlock and unattended dispatch also access the keychain. Empty vaults
+  require no boot-time keychain read. Tests use injected throwaway key stores.
 - Interactive access requires an unlocked vault. The `unattended` flag is false by default;
   background access also requires both `ownerDevice` and `nodeKeyOptIn` in the immutable
   plugin policy (`StartOptions.connectionsPolicy` for the legacy boot). A node-key unlock
   does not open an interactive session. No HTTP request can enable the node opt-in.
 - The known secret registry remains populated when an interactive vault is locked, so old
   tool output is still redacted. Rotation retains old records for that purpose. Plugin
-  unload unregisters them; the next activation refuses model/artifact egress until they are
-  registered again. Buffers are cleared where possible; JavaScript string erasure is not a
+  unload unregisters them; the next activation registers them during apply, exposing false readiness and refusing
+  model/artifact egress if registration fails. Buffers are cleared where possible; JavaScript string erasure is not a
   guarantee.
 - `complete()` selects an immutable pi-ai catalog model, scrubs the complete context,
   injects the vault key at dispatch, scrubs the full response and records usage. It exposes
@@ -35,7 +39,9 @@ executes the registered subscription CLIs. Search and STT are service connection
   Anthropic's own connection additionally requires its API-key token family.
 - Google uses pi-ai's native SDK transport because that adapter rejects custom fetch. Its
   catalog endpoint, explicit key and abort signal remain fixed; it does not inherit the
-  other adapters' `redirect: error` fetch wrapper. No provider requests run in tests.
+  other adapters' `redirect: error` fetch wrapper. Non-false `GOOGLE_GENAI_USE_*` environment
+  overrides are refused before SDK dispatch, without changing process-wide environment state.
+  No live provider requests run in tests.
 - `localChat()` reuses K1's Ollama service, acquires the existing process-local governor and
   permits only a loopback runtime. The caller supplies context from runtime/policy; K3
   invents no context cap. Local monetary cost stays unknown.
@@ -66,11 +72,18 @@ bounded metadata seed, not a mirror of models.dev.
 ## HTTP and Settings
 
 The local-owner mount is `/api/connections`; account login and remote exposure remain later
-stages. Mutations require JSON and same-origin or explicitly configured development origins.
+stages. Every server route, including the legacy API and SPA, passes an exact Host/port
+allowlist before CORS. It accepts loopback authorities, the configured listening authority
+and configured Vite authorities, and ignores forwarded headers. Mutations require JSON and same-origin or explicitly configured development origins.
 Responses use `Cache-Control: no-store`. Routes list/create connections, change unattended,
 unlock/lock, save a key without readback, list model facts and request a balance probe.
 The settings UI loads only when Connections is opened; failure does not disable other settings.
 A balance without an observation timestamp renders unknown, even when its numeric value exists.
+Failures have distinct contract codes for missing connections (404), locked vaults (423),
+policy denial (403), unavailable egress protection (503), invalid input (400), provider errors
+(502) and internal errors (500). Raw error text never crosses this boundary. The UI offers
+Unlock for a locked-vault error, including when the initial list load failed. Routes resolve
+the live service for each request after plugin reload.
 
 ## Integration and platform limits
 
@@ -80,6 +93,11 @@ minimal test scrubber; their trace proves the K3 boundaries, not the combined K2
 Until integration, production Connections requests that require scrubbing return an error.
 After merging K2: delete the copied interface/stub, import K2's types/provider, load that provider
 in the server kernel, switch the consumer tests to it and rerun the trace and full gates.
+K2 must declare K3 as an expected secret source before opening writes: an absent, registering,
+failed or unloaded `connections.egress-readiness` is unready. Gate event/log/artifact/export
+writes on all sources being ready (fail closed or buffer), including during provider reload.
+Only then run a restart → tool-print → real K2-event test asserting zero secret matches.
+K3's source readiness proves registration completeness, not availability of the temporary stub.
 K2 owns event writes/exports; K3 never claims those boundaries from its fixture tests.
 
 The current native keyring is usable on macOS/Windows; real OS prompts/access have not been
@@ -93,7 +111,8 @@ inspect native crate licenses. No owner keychain or installed model was touched.
 Migration 2 appends separate node-key-wrapped data keys and per-connection unattended
 ciphertexts. Only an unlocked session can create these copies. Revocation removes the node
 copy, rotation replaces it, and background injection re-reads consent and uses only the node
-key; it never unwraps the session key. Existing version-1 secrets remain readable; old
+key; it never unwraps the session key. Node and session wrapping keys use distinct OS
+keychain service namespaces. The database, WAL and SHM files have mode 0600. Existing version-1 secrets remain readable; old
 unattended rows need an explicit unlocked re-enable to create a node copy. Rollback must keep
 migration 2 and use the fixed consumer (older binaries lack this security boundary).
 The vault is private to Connections and is not a kernel service.
@@ -101,3 +120,10 @@ The vault is private to Connections and is not a kernel service.
 Explicit unlock is **not user-presence-gated**: a local same-user HTTP client can request it.
 OS keychain access is not a boundary against processes with the same user's privileges.
 A later DS2-style signing helper with Touch ID must gate interactive unlock.
+
+The closed provider enum and single T0 connection plugin are bounded K3 implementation
+limitations relative to ADR-0017 §2's extensible provider plugins. An additive provider
+registration contract and separately loadable adapters remain future integration work;
+this slice does not claim that target boundary is implemented. CLI packaging explicitly
+declares the native keychain dependency; the browser brand export remains compatible via
+the shared node-safe brand module in `@guanxi/contract`.

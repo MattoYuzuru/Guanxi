@@ -4,7 +4,7 @@ import { PRODUCT_FILE_PREFIX } from '@guanxi/contract'
 /** Test doubles implement this boundary without ever opening the owner's keychain. */
 export interface VaultKeychain { key(accountId: string, create: boolean, purpose: 'session' | 'node'): Buffer }
 
-/** Constructed lazily: boot, list and ordinary tests never prompt the OS keychain. */
+/** Existing secrets require registration-only keychain access at apply; empty vaults stay lazy. */
 export async function osKeychain(databasePath: string): Promise<VaultKeychain> {
   if (process.platform === 'linux') {
     // keyring's prebuilt Linux artifact statically links libdbus (AFL/GPL),
