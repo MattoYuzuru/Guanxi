@@ -14,7 +14,7 @@ function counted(id: string, trust: 'T0' | 'T1' = 'T0') {
 }
 
 describe('node boot and profile reconciliation', () => {
-  it('loads profile rows and reconciles only the rows that changed', async () => {
+  it('loads profile rows and reconciles only the rows that changed', { timeout: 10_000 }, async () => {
     const a = counted('fixture.a')
     const b = counted('fixture.b')
     const base: ProfileLayer = {
@@ -44,7 +44,7 @@ describe('node boot and profile reconciliation', () => {
     assert.equal(node.counters().fibers, 0)
   })
 
-  it('refuses unknown plugins and contributions to slots nobody declares', async () => {
+  it('refuses unknown plugins and contributions to slots nobody declares', { timeout: 10_000 }, async () => {
     await assert.rejects(
       bootNode({ plugins: [], profile: [{ name: 'p', insert: [{ id: 'x', plugin: 'fixture.missing' }] }] }),
       (error: unknown) => error instanceof ProfileError && /unknown plugin "fixture.missing"/.test(error.message),
@@ -67,7 +67,7 @@ describe('node boot and profile reconciliation', () => {
     await node.dispose()
   })
 
-  it('disables every non-T0 row in safe mode', async () => {
+  it('disables every non-T0 row in safe mode', { timeout: 10_000 }, async () => {
     const core = counted('fixture.core', 'T0')
     const trusted = counted('fixture.trusted', 'T1')
     const profile: ProfileLayer[] = [{
@@ -81,7 +81,7 @@ describe('node boot and profile reconciliation', () => {
     await node.dispose()
   })
 
-  it('replaces the code of a loaded plugin', async () => {
+  it('replaces the code of a loaded plugin', { timeout: 10_000 }, async () => {
     const v1 = counted('fixture.hot')
     const node = await bootNode({ plugins: [v1.plugin], profile: [{ name: 'p', insert: [{ id: 'hot', plugin: 'fixture.hot' }] }] })
     const before = node.counters()
@@ -106,7 +106,7 @@ function providerPlugin(id: string, order: string[], release?: Promise<void>) {
 }
 
 describe('node reconciliation', () => {
-  it('replaces a provider only after the old one fully unloaded, with its dependent intact', async () => {
+  it('replaces a provider only after the old one fully unloaded, with its dependent intact', { timeout: 10_000 }, async () => {
     const order: string[] = []
     const release = deferred()
     const consumer = testPlugin({ id: 'fixture.consumer', requires: ['permit'] }, (ctx) => {
@@ -132,7 +132,7 @@ describe('node reconciliation', () => {
     await node.dispose()
   })
 
-  it('serialises concurrent applies so a disabled row stays disabled', async () => {
+  it('serialises concurrent applies so a disabled row stays disabled', { timeout: 10_000 }, async () => {
     const plugin = testPlugin({ id: 'fixture.row' }, async () => {
       await tick(5)
     })
@@ -144,7 +144,7 @@ describe('node reconciliation', () => {
     await node.dispose()
   })
 
-  it('surfaces a row whose plugin failed to load', async () => {
+  it('surfaces a row whose plugin failed to load', { timeout: 10_000 }, async () => {
     const broken = testPlugin({ id: 'fixture.broken' }, () => {
       throw new Error('broken apply')
     })
@@ -154,7 +154,7 @@ describe('node reconciliation', () => {
     )
   })
 
-  it('refuses a requirement that no row provides', async () => {
+  it('refuses a requirement that no row provides', { timeout: 10_000 }, async () => {
     const orphan = testPlugin({ id: 'fixture.orphan', requires: ['nothing'] }, () => {})
     await assert.rejects(
       bootNode({ plugins: [orphan], profile: [{ name: 'p', insert: [{ id: 'o', plugin: 'fixture.orphan' }] }] }),
@@ -162,7 +162,7 @@ describe('node reconciliation', () => {
     )
   })
 
-  it('refuses to change pinned rows and to hot-swap a changed manifest', async () => {
+  it('refuses to change pinned rows and to hot-swap a changed manifest', { timeout: 10_000 }, async () => {
     const order: string[] = []
     const base: ProfileLayer = { name: 'p', insert: [{ id: 'provider', plugin: 'fixture.pinned' }] }
     const node = await bootNode({ plugins: [providerPlugin('fixture.pinned', order)], profile: [base], pinned: ['provider'] })
@@ -177,7 +177,7 @@ describe('node reconciliation', () => {
     await plain.dispose()
   })
 
-  it('cascades safe mode to rows that need a disabled service or slot, and still boots', async () => {
+  it('cascades safe mode to rows that need a disabled service or slot, and still boots', { timeout: 10_000 }, async () => {
     const t1 = testPlugin({ id: 'fixture.t1', trust: 'T1', provides: ['extra'], contributes: { slotDeclarations: ['extra.slot'] } }, (ctx) => {
       provide(ctx, 'extra', 1)
       declareSlot(ctx, 'extra.slot')
@@ -210,7 +210,7 @@ describe('node reconciliation', () => {
 })
 
 describe('context tree', () => {
-  it('starts a child after its parent is active and unloads it with the parent', async () => {
+  it('starts a child after its parent is active and unloads it with the parent', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const before = kernel.counters()
     const order: string[] = []
@@ -235,7 +235,7 @@ describe('context tree', () => {
     assert.deepEqual(kernel.counters(), before)
   })
 
-  it('loads a child from an active parent as its own transition', async () => {
+  it('loads a child from an active parent as its own transition', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     let load: (() => Promise<void>) | undefined
     await kernel.plugin(testPlugin({ id: 'fixture.lazy-parent' }, (ctx) => {

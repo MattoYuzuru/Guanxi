@@ -17,7 +17,7 @@
  *    bound to its services has unloaded; dependents come back when a provider
  *    of the service returns.
  */
-import type { GuanxiManifest } from './manifest.ts'
+import { KERNEL_API_VERSION, parseManifest, satisfiesEngine, type GuanxiManifest } from './manifest.ts'
 
 export type PluginState = 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | 'disposed'
 
@@ -133,6 +133,32 @@ export interface KernelCounters {
 
 const KERNEL_PROVIDER = 'kernel'
 export const SLOT_SERVICE_PREFIX = 'slot:'
+/** Brand shared across copies of the kernel package (ADR-0022 §8 versioned plugin API). */
+export const PLUGIN_BRAND = Symbol.for('guanxi.kernel.plugin')
+/** Services only the kernel uses; plugins never read them. */
+export const RESERVED_SERVICES: ReadonlySet<string> = new Set(['slots'])
+
+/**
+ * True for plugins built by `definePlugin` of any kernel copy. Not a trust
+ * decision: every load path also runs `validatePlugin`.
+ */
+export function isGuanxiPlugin(value: unknown): value is GuanxiPlugin<any> {
+  return typeof value === 'object' && value !== null && typeof (value as Record<symbol, unknown>)[PLUGIN_BRAND] === 'string'
+}
+
+/** The one check every load path runs: root, child and replacement loads. */
+export function validatePlugin(plugin: unknown, action: string): asserts plugin is GuanxiPlugin<any> {
+  if (!isGuanxiPlugin(plugin)) throw new TypeError(`${action} accepts only plugins built by definePlugin()`)
+  const manifest = parseManifest(plugin.manifest, 'manifest')
+  if (manifest.trust === 'T2') throw new PluginContractError(manifest.id, 'T2 plugins run out of process')
+  if (!satisfiesEngine(manifest.engines.guanxi)) {
+    throw new PluginContractError(
+      manifest.id,
+      `engines.guanxi "${manifest.engines.guanxi}" does not accept kernel ${KERNEL_API_VERSION}`,
+    )
+  }
+  if (typeof plugin.apply !== 'function') throw new PluginContractError(manifest.id, 'apply is not a function')
+}
 
 interface CleanupRecord {
   readonly label: string
@@ -230,7 +256,7 @@ export function kernelOfContext(ctx: PluginContext): KernelCore | undefined {
 export class KernelCore {
   readonly services = new Map<string, ServiceRecord>()
   readonly fibers = new Set<Fiber>()
-  private readonly events = new Map<string, Set<{ fiber: Fiber; listener: (...args: any[]) => unknown }>>()
+  private readonly events = new Map<string, Set<{ fiber: Fiber; activation: Activation; listener: (...args: any[]) => unknown }>>()
   private queue: Promise<unknown> = Promise.resolve()
   /** Steps abandoned during the running transition. */
   private abandoned: string[] = []
@@ -263,12 +289,27 @@ export class KernelCore {
     return next
   }
 
-  /** Await one plugin step within the step bound; past it, abandon the step and throw. */
-  private async bounded<T>(fiber: Fiber, label: string, work: () => T | Promise<T>): Promise<T> {
+  /** Steps abandoned so far in the running transition. */
+  abandonedSteps(): readonly string[] {
+    return [...this.abandoned]
+  }
+
+  /**
+   * Await one plugin step within the step bound; past it, abandon the step and
+   * throw. `onLate` receives the value if an abandoned step completes later.
+   */
+  private async bounded<T>(
+    fiber: Fiber,
+    label: string,
+    work: () => T | Promise<T>,
+    onLate?: (value: T) => void,
+  ): Promise<T> {
     fiber.step = label
     let timer: ReturnType<typeof setTimeout> | undefined
+    const running = Promise.resolve().then(work)
     const bound = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
+        if (onLate) running.then(onLate, () => undefined)
         const step = `${fiber.manifest.id} (${label})`
         this.abandoned.push(step)
         this.log({ level: 'error', source: fiber.manifest.id, message: `${label} abandoned after ${this.timeoutMs} ms` })
@@ -276,7 +317,7 @@ export class KernelCore {
       }, this.timeoutMs)
     })
     try {
-      return await Promise.race([Promise.resolve().then(work), bound])
+      return await Promise.race([running, bound])
     } finally {
       clearTimeout(timer)
       fiber.step = ''
@@ -329,7 +370,15 @@ export class KernelCore {
     fiber.state = 'loading'
     fiber.error = undefined
     try {
-      const result = await this.bounded(fiber, 'apply', () => fiber.plugin.apply(activation.context, fiber.config))
+      const result = await this.bounded(
+        fiber,
+        'apply',
+        () => fiber.plugin.apply(activation.context, fiber.config),
+        // An abandoned apply that finishes later may still hand back a cleanup.
+        (late) => {
+          if (typeof late === 'function') void this.runCleanup(fiber, { label: 'late apply() cleanup', run: late as Cleanup })
+        },
+      )
       if (typeof result === 'function') activation.cleanups.push({ label: 'apply() cleanup', run: result as Cleanup })
       if (fiber.state !== 'loading' || fiber.activation !== activation) return
       if (controller.signal.aborted) {
@@ -517,10 +566,15 @@ export class KernelCore {
         const cleanup = setup()
         const record: CleanupRecord = { label, run: typeof cleanup === 'function' ? cleanup : () => undefined }
         activation.cleanups.push(record)
-        return async () => {
-          const index = activation.cleanups.indexOf(record)
-          if (index !== -1) activation.cleanups.splice(index, 1)
-          await kernel.runCleanup(fiber, record)
+        return () => {
+          // The record stays in the activation until its cleanup settles, so a
+          // teardown that starts meanwhile waits for it (within the step bound).
+          const done = kernel.runCleanup(fiber, record)
+          void done.then(() => {
+            const index = activation.cleanups.indexOf(record)
+            if (index !== -1) activation.cleanups.splice(index, 1)
+          })
+          return done
         }
       },
       on(event, listener) {
@@ -528,7 +582,7 @@ export class KernelCore {
           throw new PluginContractError(manifest.id, `"${event}" is reserved for the kernel`)
         }
         kernel.current(fiber, activation, `listen to "${event}"`)
-        const entry = { fiber, listener }
+        const entry = { fiber, activation, listener }
         return context.effect(() => {
           const listeners = kernel.events.get(event) ?? new Set()
           listeners.add(entry)
@@ -542,6 +596,9 @@ export class KernelCore {
       },
       emit(event, ...args) {
         kernel.live(fiber, activation, `emit "${event}"`)
+        if (activation.controller.signal.aborted) {
+          throw new KernelLifecycleError(`${manifest.id}: cannot emit "${event}": this plugin activation is unloading`)
+        }
         kernel.emit(event, args)
       },
       provide(name, value) {
@@ -562,6 +619,7 @@ export class KernelCore {
       },
       service<T>(name: string): T {
         kernel.live(fiber, activation, `read service "${name}"`)
+        kernel.assertNotReserved(manifest.id, name)
         if (!manifest.requires.includes(name)) throw new PluginContractError(manifest.id, `"${name}" is not in manifest.requires`)
         const record = kernel.services.get(name)
         if (!record) throw new KernelLifecycleError(`${manifest.id}: service "${name}" is not available`)
@@ -569,11 +627,13 @@ export class KernelCore {
       },
       optionalService<T>(name: string): T | undefined {
         kernel.live(fiber, activation, `read service "${name}"`)
+        kernel.assertNotReserved(manifest.id, name)
         if (!manifest.uses.includes(name)) throw new PluginContractError(manifest.id, `"${name}" is not in manifest.uses`)
         return activation.bound.has(name) ? (kernel.services.get(name)?.value as T | undefined) : undefined
       },
       plugin(child, config) {
-        kernel.current(fiber, activation, `load child plugin "${child.manifest.id}"`)
+        kernel.current(fiber, activation, `load child plugin "${String((child as GuanxiPlugin | undefined)?.manifest?.id)}"`)
+        validatePlugin(child, 'ctx.plugin()')
         return kernel.childPlugin(fiber, activation, child, config)
       },
     }
@@ -614,14 +674,27 @@ export class KernelCore {
   }
 
   emit(event: string, args: readonly unknown[]): void {
-    for (const { fiber, listener } of [...(this.events.get(event) ?? [])]) {
-      // A plugin that has started to unload hears nothing more.
+    for (const { fiber, activation, listener } of [...(this.events.get(event) ?? [])]) {
+      // An activation that is over, or asked to unload, hears nothing more.
+      if (fiber.activation !== activation || activation.controller.signal.aborted) continue
       if (fiber.state !== 'active' && fiber.state !== 'loading') continue
-      try {
-        listener(...args)
-      } catch (error) {
+      const fail = (error: unknown) =>
         this.log({ level: 'error', source: fiber.manifest.id, message: `listener of "${event}" failed: ${describe(error)}` })
+      try {
+        const result = listener(...args) as unknown
+        // Dispatch stays synchronous; an async listener's rejection is logged, never unhandled.
+        if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+          Promise.resolve(result).catch(fail)
+        }
+      } catch (error) {
+        fail(error)
       }
+    }
+  }
+
+  assertNotReserved(pluginId: string, name: string): void {
+    if (RESERVED_SERVICES.has(name) || this.services.get(name)?.provider === KERNEL_PROVIDER) {
+      throw new PluginContractError(pluginId, `"${name}" is reserved for the kernel`)
     }
   }
 

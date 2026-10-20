@@ -16,7 +16,7 @@ import { processResources } from '../src/node.ts'
 import { settle, testPlugin, tick } from './helpers.ts'
 
 describe('plugin contract', () => {
-  it('fails a plugin that does not provide a declared service and reverts its effects', async () => {
+  it('fails a plugin that does not provide a declared service and reverts its effects', { timeout: 10_000 }, async () => {
     const logs: KernelLogRecord[] = []
     const kernel = createKernel({ onLog: (record) => logs.push(record) })
     const before = kernel.counters()
@@ -30,7 +30,7 @@ describe('plugin contract', () => {
     assert.ok(logs.some((record) => record.level === 'error' && /did not provide promised/.test(record.message)))
   })
 
-  it('refuses a service outside manifest.provides, late provides, and duplicate providers', async () => {
+  it('refuses a service outside manifest.provides, late provides, and duplicate providers', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     await assert.rejects(kernel.plugin(testPlugin({ provides: ['declared'] }, (ctx) => {
       provide(ctx, 'declared', 1)
@@ -54,7 +54,7 @@ describe('plugin contract', () => {
     await assert.rejects(kernel.plugin(testPlugin({ provides: ['early'] }, (ctx) => provide(ctx, 'early', 3))), /already provided/)
   })
 
-  it('lets a plugin read only the services its manifest names', async () => {
+  it('lets a plugin read only the services its manifest names', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     await kernel.plugin(testPlugin({ provides: ['clock'] }, (ctx) => provide(ctx, 'clock', 1)))
     await assert.rejects(kernel.plugin(testPlugin({}, (ctx) => service(ctx, 'clock'))), /not in manifest.requires/)
@@ -62,7 +62,7 @@ describe('plugin contract', () => {
     await kernel.plugin(testPlugin({ requires: ['clock'] }, (ctx) => assert.equal(service(ctx, 'clock'), 1)))
   })
 
-  it('refuses to start a plugin whose engines range excludes the kernel', async () => {
+  it('refuses to start a plugin whose engines range excludes the kernel', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     let applied = false
     const plugin = testPlugin({ engines: { guanxi: '^0.2.0' } }, () => {
@@ -72,7 +72,7 @@ describe('plugin contract', () => {
     assert.equal(applied, false)
   })
 
-  it('waits for required services and unloads dependents before their provider', async () => {
+  it('waits for required services and unloads dependents before their provider', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const order: string[] = []
     const provider = testPlugin({ provides: ['clock'] }, (ctx) => {
@@ -100,7 +100,7 @@ describe('plugin contract', () => {
     assert.equal(kernel.counters().fibers, 0)
   })
 
-  it('restarts a plugin when an optional service appears or leaves', async () => {
+  it('restarts a plugin when an optional service appears or leaves', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const seen: Array<number | undefined> = []
     await kernel.plugin(testPlugin({ uses: ['extra'] }, (ctx) => {
@@ -111,7 +111,7 @@ describe('plugin contract', () => {
     assert.deepEqual(seen, [undefined, 7, undefined])
   })
 
-  it('awaits an async apply, runs a returned cleanup, and rejects an async failure', async () => {
+  it('awaits an async apply, runs a returned cleanup, and rejects an async failure', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     await kernel.plugin(testPlugin({ provides: ['late'] }, async (ctx) => {
       await tick(5)
@@ -130,7 +130,7 @@ describe('plugin contract', () => {
     })), /late failure/)
   })
 
-  it('clears plugin-owned timers on unload', async () => {
+  it('clears plugin-owned timers on unload', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const before = processResources().timers
     let fired = 0
@@ -147,7 +147,7 @@ describe('plugin contract', () => {
     assert.equal(fired, 0)
   })
 
-  it('reports a plugin that throws during apply and leaves nothing behind', async () => {
+  it('reports a plugin that throws during apply and leaves nothing behind', { timeout: 10_000 }, async () => {
     const logs: KernelLogRecord[] = []
     const kernel = createKernel({ onLog: (record) => logs.push(record) })
     const before = kernel.counters()
@@ -159,13 +159,13 @@ describe('plugin contract', () => {
     assert.deepEqual(kernel.counters(), before)
   })
 
-  it('refuses objects that did not come from definePlugin', async () => {
+  it('refuses objects that did not come from definePlugin', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const forged = { name: 'x.forged', manifest: { trust: 'T2' }, apply() {} }
     await assert.rejects(kernel.plugin(forged as never), /only plugins built by definePlugin/)
   })
 
-  it('reserves kernel/* events', async () => {
+  it('reserves kernel/* events', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     await assert.rejects(kernel.plugin(testPlugin({}, (ctx) => on(ctx, 'kernel/anything', () => {}))), /reserved/)
   })

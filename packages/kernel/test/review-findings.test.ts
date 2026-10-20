@@ -21,7 +21,7 @@ import { bootNode } from '../src/node.ts'
 import { testPlugin } from './helpers.ts'
 
 describe('own-kernel review: contexts and services', () => {
-  it('refuses service() and emit() from a stale context', async () => {
+  it('refuses service() and emit() from a stale context', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const contexts: PluginContext[] = []
     await kernel.plugin(testPlugin({ provides: ['base'] }, (ctx) => provide(ctx, 'base', 1)))
@@ -36,14 +36,14 @@ describe('own-kernel review: contexts and services', () => {
     assert.equal(contexts[1]!.service('base'), 1)
   })
 
-  it('keeps the slot registry out of plugin reach', async () => {
+  it('keeps the slot registry out of plugin reach', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
-    await assert.rejects(kernel.plugin(testPlugin({}, (ctx) => ctx.service('slots'))), /not in manifest.requires/)
+    await assert.rejects(kernel.plugin(testPlugin({}, (ctx) => ctx.service('slots'))), /reserved for the kernel/)
     const forged = { manifest: parseManifest({ id: 'x.forged', engines: { guanxi: '^0.1.0' }, trust: 'T0', contributes: { slotDeclarations: ['s.x'] } }) }
     assert.throws(() => kernel.slots.declare(forged as never, 's.x'), /context created by the kernel/)
   })
 
-  it('re-checks the manifest of a branded plugin object at load', async () => {
+  it('re-checks the manifest of a branded plugin object at load', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const real = definePlugin({ manifest: { id: 'x.real', engines: { guanxi: '^0.1.0' }, trust: 'T0' }, apply() {} })
     const forged = { ...real, manifest: { ...real.manifest, trust: 'T2' } }
@@ -51,14 +51,14 @@ describe('own-kernel review: contexts and services', () => {
     await assert.rejects(kernel.plugin(forged as never), /T2 plugins run out of process/)
   })
 
-  it('refuses a manifest that uses a service it provides', () => {
+  it('refuses a manifest that uses a service it provides', { timeout: 10_000 }, () => {
     assert.throws(
       () => parseManifest({ id: 'x.self', engines: { guanxi: '^0.1.0' }, trust: 'T0', provides: ['a'], uses: ['a'] }),
       ManifestError,
     )
   })
 
-  it('stops delivering events to a plugin as soon as it starts to unload', async () => {
+  it('stops delivering events to a plugin as soon as it starts to unload', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const heard: string[] = []
     const handle = await kernel.plugin(testPlugin({}, (ctx) => {
@@ -70,7 +70,7 @@ describe('own-kernel review: contexts and services', () => {
     assert.deepEqual(heard, ['ping'])
   })
 
-  it('refuses to load into a disposed kernel', async () => {
+  it('refuses to load into a disposed kernel', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     await kernel.dispose()
     await assert.rejects(kernel.plugin(testPlugin({}, () => {})), /disposed/)
@@ -78,7 +78,7 @@ describe('own-kernel review: contexts and services', () => {
 })
 
 describe('own-kernel review: optional-service cycles', () => {
-  it('settles when a plugin uses a service that its own dependent provides', async () => {
+  it('settles when a plugin uses a service that its own dependent provides', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     let applies = 0
     await kernel.plugin(testPlugin({ id: 'x.a', provides: ['a'], uses: ['b'] }, (ctx) => {
@@ -94,7 +94,7 @@ describe('own-kernel review: optional-service cycles', () => {
     await kernel.dispose()
   })
 
-  it('settles when a parent uses a service its own child provides', async () => {
+  it('settles when a parent uses a service its own child provides', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     let applies = 0
     const child = testPlugin({ id: 'x.child', provides: ['c'] }, (ctx) => provide(ctx, 'c', 1))
@@ -108,7 +108,7 @@ describe('own-kernel review: optional-service cycles', () => {
 })
 
 describe('own-kernel review: children', () => {
-  it('lets a parent cleanup dispose its child without a deadlock', async () => {
+  it('lets a parent cleanup dispose its child without a deadlock', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ stepTimeoutMs: 200 })
     const child = testPlugin({ id: 'x.owned' }, () => {})
     const handle = await kernel.plugin(testPlugin({ id: 'x.owner' }, (ctx) => {
@@ -120,7 +120,7 @@ describe('own-kernel review: children', () => {
     assert.ok(Date.now() - started < 150, 'no step timeout')
   })
 
-  it('rejects ready() for a child that failed', async () => {
+  it('rejects ready() for a child that failed', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     let failing: ReturnType<PluginContext['plugin']> | undefined
     await kernel.plugin(testPlugin({ id: 'x.failing-parent' }, (ctx) => {
@@ -137,7 +137,7 @@ describe('own-kernel review: node profiles', () => {
   const plain = (id: string, manifest: Record<string, unknown> = {}, apply: (ctx: PluginContext) => void = () => {}) =>
     testPlugin({ id, ...manifest }, apply)
 
-  it('refuses a change that would restart a pinned row through its dependencies', async () => {
+  it('refuses a change that would restart a pinned row through its dependencies', { timeout: 10_000 }, async () => {
     const node = await bootNode({
       plugins: [
         plain('x.store', { provides: ['store'] }, (ctx) => provide(ctx, 'store', 1)),
@@ -154,7 +154,7 @@ describe('own-kernel review: node profiles', () => {
     await node.dispose()
   })
 
-  it('retries a failed row on the next apply', async () => {
+  it('retries a failed row on the next apply', { timeout: 10_000 }, async () => {
     let broken = true
     const flaky = plain('x.flaky', {}, () => {
       if (broken) throw new Error('not yet')
@@ -170,7 +170,7 @@ describe('own-kernel review: node profiles', () => {
     await second.dispose()
   })
 
-  it('refuses rows that require each other in a cycle', async () => {
+  it('refuses rows that require each other in a cycle', { timeout: 10_000 }, async () => {
     await assert.rejects(
       bootNode({
         plugins: [
@@ -183,7 +183,7 @@ describe('own-kernel review: node profiles', () => {
     )
   })
 
-  it('boots safe mode from the base layer even when a user layer is broken', async () => {
+  it('boots safe mode from the base layer even when a user layer is broken', { timeout: 10_000 }, async () => {
     const strict = plain('x.strict', {}, (ctx) => {
       if ((ctx as unknown as { config?: unknown }).config) throw new Error('bad config')
     })

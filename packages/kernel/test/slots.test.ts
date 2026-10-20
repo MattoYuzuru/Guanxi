@@ -26,7 +26,7 @@ function labels(kernel: Kernel): string[] {
 }
 
 describe('list slots', () => {
-  it('shows a contribution, replaces it in place, and removes it on unload', async () => {
+  it('shows a contribution, replaces it in place, and removes it on unload', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const before = kernel.counters()
     let notifications = 0
@@ -51,7 +51,7 @@ describe('list slots', () => {
     assert.deepEqual(kernel.counters(), before)
   })
 
-  it('orders entries by order, then by contribution time', async () => {
+  it('orders entries by order, then by contribution time', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     await kernel.plugin(shell())
     await kernel.plugin(item('b', 'B', 2))
@@ -60,7 +60,7 @@ describe('list slots', () => {
     assert.deepEqual(labels(kernel), ['A', 'B', 'C'])
   })
 
-  it('keeps contributors waiting until the slot exists, and unloads them before its owner', async () => {
+  it('keeps contributors waiting until the slot exists, and unloads them before its owner', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const contributor = await kernel.plugin(item('projects', 'Projects'))
     assert.equal(contributor.state, 'pending')
@@ -77,7 +77,7 @@ describe('list slots', () => {
     assert.deepEqual(labels(kernel), ['Projects'], 'contribution returns with its slot')
   })
 
-  it('fails at load when a plugin contributes outside its manifest or twice', async () => {
+  it('fails at load when a plugin contributes outside its manifest or twice', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     await kernel.plugin(shell())
     const undeclared = testPlugin({ contributes: { slots: [SLOT] } }, (ctx) => {
@@ -92,7 +92,7 @@ describe('list slots', () => {
     assert.equal(kernel.counters().slotEntries, 0, 'the failed plugin left no entry')
   })
 
-  it('lets only one plugin own a slot, and only a declared one', async () => {
+  it('lets only one plugin own a slot, and only a declared one', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     await kernel.plugin(shell())
     await assert.rejects(kernel.plugin(shell()), /already declared/)
@@ -102,7 +102,7 @@ describe('list slots', () => {
     await assert.rejects(kernel.plugin(silent), /did not declare slot silent\.slot/)
   })
 
-  it('holds what subscribers see during a swap and notifies once on release', async () => {
+  it('holds what subscribers see during a swap and notifies once on release', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     await kernel.plugin(shell())
     const first = await kernel.plugin(item('projects', 'v1'))

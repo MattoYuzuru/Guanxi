@@ -9,7 +9,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import type { Fiber, GuanxiPlugin, PluginState } from './core.ts'
-import { KernelImpl, type Kernel } from './kernel.ts'
+import { KernelImpl, kernelFacade, type Kernel } from './kernel.ts'
 import type { KernelOptions } from './core.ts'
 import { ProfileError, resolveProfile, type ProfileLayer, type ResolvedEntry } from './profile.ts'
 
@@ -53,9 +53,6 @@ export class NodeLoadError extends Error {
   }
 }
 
-/** Services the kernel itself provides; rows may require them without a provider row. */
-const KERNEL_SERVICES = new Set(['slots'])
-
 class NodeKernelImpl extends KernelImpl implements NodeKernel {
   private readonly known = new Map<string, GuanxiPlugin<any>>()
   private readonly pinned: ReadonlySet<string>
@@ -76,8 +73,9 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
     this.safeMode = Boolean(options.safeMode)
   }
 
+  /** A detached copy: changing it never touches the reconciliation baseline. */
   entries(): readonly ResolvedEntry[] {
-    return this.applied
+    return structuredClone(this.applied)
   }
 
   stateOf(rowId: string): PluginState | undefined {
@@ -184,6 +182,7 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
 
   apply(profile: readonly ProfileLayer[]): Promise<void> {
     return this.core.transition('applying the profile', async () => {
+      this.assertOpen()
       const next = this.resolve(profile)
       const before = new Map(this.applied.map((entry) => [entry.id, entry]))
       const after = new Map(next.map((entry) => [entry.id, entry]))
@@ -217,6 +216,7 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
   replacePlugin(plugin: GuanxiPlugin<any>): Promise<void> {
     return this.core.transition(`replacing ${plugin?.manifest?.id}`, async () => {
       this.assertLoadable(plugin, 'replacePlugin()')
+      this.assertOpen()
       const id = plugin.manifest.id
       const current = this.known.get(id)
       if (!current) throw new ProfileError('replacePlugin', `plugin "${id}" is not known to this node`)
@@ -235,14 +235,20 @@ class NodeKernelImpl extends KernelImpl implements NodeKernel {
 }
 
 export async function bootNode(options: BootOptions): Promise<NodeKernel> {
-  const node = new NodeKernelImpl(options)
+  const impl = new NodeKernelImpl(options)
   try {
-    await node.apply(options.profile)
+    await impl.apply(options.profile)
   } catch (error) {
-    await node.dispose().catch(() => undefined)
+    await impl.dispose().catch(() => undefined)
     throw error
   }
-  return node
+  return Object.freeze({
+    ...kernelFacade(impl),
+    entries: () => impl.entries(),
+    stateOf: (rowId: string) => impl.stateOf(rowId),
+    apply: (profile: readonly ProfileLayer[]) => impl.apply(profile),
+    replacePlugin: (plugin: GuanxiPlugin<any>) => impl.replacePlugin(plugin),
+  })
 }
 
 /**
@@ -269,7 +275,7 @@ function closeGraph(
     rows = rows.map((entry) => {
       if (entry.disabled) return entry
       const m = manifest(entry)
-      const missingService = m.requires.find((name) => !KERNEL_SERVICES.has(name) && !providedEnabled.has(name))
+      const missingService = m.requires.find((name) => !providedEnabled.has(name))
       const missingSlot = m.contributes.slots.find((slot) => !declaredEnabled.has(slot))
       if (missingService === undefined && missingSlot === undefined) return entry
       if (safeMode) {

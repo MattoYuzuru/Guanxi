@@ -53,6 +53,12 @@ export class SlotRegistry {
   private holds = 0
   private held = new Map<string, readonly ListSlotEntry[]>()
   private orphansDropped = 0
+  private readonly onSubscriberError: (error: unknown) => void
+
+  /** `onSubscriberError` receives a throwing subscriber's error; it never reaches the plugin. */
+  constructor(options: { onSubscriberError?: (error: unknown) => void } = {}) {
+    this.onSubscriberError = options.onSubscriberError ?? ((error) => console.error('[guanxi:kernel] slot subscriber failed', error))
+  }
 
   /** Declare a slot owned by the calling plugin; reverted when it unloads. */
   declare(ctx: PluginContext, name: string, kind: SlotKind = 'list'): void {
@@ -145,7 +151,7 @@ export class SlotRegistry {
       this.holds -= 1
       if (this.holds > 0) return
       this.held.clear()
-      for (const listener of [...this.subscribers]) listener()
+      this.publish()
     }
   }
 
@@ -182,7 +188,18 @@ export class SlotRegistry {
   private notify(slot: string): void {
     this.snapshots.delete(slot)
     if (this.holds > 0) return
-    for (const listener of [...this.subscribers]) listener()
+    this.publish()
+  }
+
+  /** Tell every subscriber; one that throws is reported and the rest still hear. */
+  private publish(): void {
+    for (const listener of [...this.subscribers]) {
+      try {
+        listener()
+      } catch (error) {
+        this.onSubscriberError(error)
+      }
+    }
   }
 }
 

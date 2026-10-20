@@ -20,7 +20,7 @@ import { bootNode, processResources } from '../src/node.ts'
 import { deferred, settle, testPlugin, tick } from './helpers.ts'
 
 describe('registrations outside a live activation (#96, #176, #91, #127)', () => {
-  it('refuses effects, listeners and child plugins registered while a plugin unloads', async () => {
+  it('refuses effects, listeners and child plugins registered while a plugin unloads', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     const before = kernel.counters()
     const attempts: string[] = []
@@ -52,7 +52,7 @@ describe('registrations outside a live activation (#96, #176, #91, #127)', () =>
     assert.deepEqual(kernel.counters(), before)
   })
 
-  it('disposes a plugin that never activated without leaving anything behind', async () => {
+  it('disposes a plugin that never activated without leaving anything behind', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const before = kernel.counters()
     const handle = await kernel.plugin(testPlugin({ requires: ['never-provided'] }, () => {}))
@@ -62,7 +62,7 @@ describe('registrations outside a live activation (#96, #176, #91, #127)', () =>
     assert.deepEqual(kernel.counters(), before)
   })
 
-  it('refuses timers and listeners from a continuation of a failed apply', async () => {
+  it('refuses timers and listeners from a continuation of a failed apply', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ onLog: () => {} })
     const timers = processResources().timers
     const before = kernel.counters()
@@ -86,7 +86,7 @@ describe('registrations outside a live activation (#96, #176, #91, #127)', () =>
     assert.deepEqual(kernel.counters(), before)
   })
 
-  it('aborts a running async apply on dispose, refuses its later registrations, and reverts the earlier ones', async () => {
+  it('aborts a running async apply on dispose, refuses its later registrations, and reverts the earlier ones', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const before = kernel.counters()
     let cleaned = 0
@@ -123,7 +123,7 @@ describe('registrations outside a live activation (#96, #176, #91, #127)', () =>
     assert.deepEqual(kernel.counters(), before)
   })
 
-  it('refuses a stale context after the plugin restarted', async () => {
+  it('refuses a stale context after the plugin restarted', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const contexts: PluginContext[] = []
     await kernel.plugin(testPlugin({ uses: ['extra'] }, (ctx) => {
@@ -137,7 +137,7 @@ describe('registrations outside a live activation (#96, #176, #91, #127)', () =>
 })
 
 describe('ordering and isolation (#185)', () => {
-  it('unloads dependents before their provider and keeps going when a cleanup or listener throws', async () => {
+  it('unloads dependents before their provider and keeps going when a cleanup or listener throws', { timeout: 10_000 }, async () => {
     const logs: string[] = []
     const kernel = createKernel({ onLog: (record) => logs.push(record.message) })
     const order: string[] = []
@@ -162,7 +162,7 @@ describe('ordering and isolation (#185)', () => {
     assert.ok(logs.some((line) => /cleanup "two" failed: .*cleanup boom/s.test(line)))
   })
 
-  it('converges to exactly one instance after 100 unawaited unload/load pairs', async () => {
+  it('converges to exactly one instance after 100 unawaited unload/load pairs', { timeout: 10_000 }, async () => {
     const kernel = createKernel()
     const before = kernel.counters()
     let live = 0
@@ -192,7 +192,7 @@ describe('ordering and isolation (#185)', () => {
 })
 
 describe('config updates and rebinds through profiles (#194, #218)', () => {
-  it('applies concurrent config changes in order and ends on the last one', async () => {
+  it('applies concurrent config changes in order and ends on the last one', { timeout: 10_000 }, async () => {
     const seen: number[] = []
     const plugin = testPlugin<{ value: number }>({ id: 'fixture.configured' }, async (ctx, config) => {
       await tick(config.value === 1 ? 10 : 0)
@@ -207,7 +207,7 @@ describe('config updates and rebinds through profiles (#194, #218)', () => {
     await node.dispose()
   })
 
-  it('rebinds a row to another plugin', async () => {
+  it('rebinds a row to another plugin', { timeout: 10_000 }, async () => {
     const calls: string[] = []
     const first = testPlugin({ id: 'fixture.first' }, (ctx) => {
       calls.push('first up')
@@ -224,7 +224,7 @@ describe('config updates and rebinds through profiles (#194, #218)', () => {
 })
 
 describe('bounded steps', () => {
-  it('abandons a stuck cleanup, finishes the unload, reports it, and keeps the kernel usable', async () => {
+  it('abandons a stuck cleanup, finishes the unload, reports it, and keeps the kernel usable', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ stepTimeoutMs: 50, onLog: () => {} })
     const before = kernel.counters()
     const handle = await kernel.plugin(testPlugin({ id: 'test.hung-cleanup' }, (ctx) => {
@@ -243,7 +243,7 @@ describe('bounded steps', () => {
     await kernel.dispose()
   })
 
-  it('fails a stuck apply, leaves nothing behind, and refuses what the abandoned apply does later', async () => {
+  it('fails a stuck apply, leaves nothing behind, and refuses what the abandoned apply does later', { timeout: 10_000 }, async () => {
     const kernel = createKernel({ stepTimeoutMs: 50, onLog: () => {} })
     const before = kernel.counters()
     const timers = processResources().timers

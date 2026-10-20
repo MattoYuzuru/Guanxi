@@ -49,6 +49,9 @@ export class ManifestError extends Error {
   }
 }
 
+/** Kernel-owned service names; plugins neither provide nor read them. */
+const RESERVED_SERVICE_NAMES = new Set(['slots'])
+
 const ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/
 const NAME_PATTERN = /^[a-z][a-zA-Z0-9-]*(\.[a-z0-9][a-zA-Z0-9-]*)*$/
 const OTHER_CONTRIBUTIONS = new Set<string>([
@@ -104,6 +107,11 @@ export function parseManifest(input: unknown, path = 'guanxi'): GuanxiManifest {
   const provides = nameList(input['provides'], `${path}.provides`)
   const requires = nameList(input['requires'], `${path}.requires`)
   const uses = nameList(input['uses'], `${path}.uses`)
+  for (const [field, names] of [['provides', provides], ['requires', requires], ['uses', uses]] as const) {
+    for (const name of names) {
+      if (RESERVED_SERVICE_NAMES.has(name)) throw new ManifestError(`${path}.${field}`, `"${name}" is reserved for the kernel`)
+    }
+  }
   for (const name of uses) {
     if (provides.includes(name)) {
       throw new ManifestError(`${path}.uses`, `"${name}" is also provided by this plugin`)

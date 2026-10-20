@@ -5,15 +5,14 @@
 import {
   KernelCore,
   KernelLifecycleError,
-  PluginContractError,
+  KernelTimeoutError,
+  validatePlugin,
   type Fiber,
   type GuanxiPlugin,
   type KernelCounters,
   type KernelOptions,
   type PluginHandle,
 } from './core.ts'
-import { parseManifest } from './manifest.ts'
-import { isGuanxiPlugin } from './plugin.ts'
 import { SLOTS_SERVICE, SlotRegistry } from './slots.ts'
 
 export interface Kernel {
@@ -44,20 +43,27 @@ export function handleFor(core: KernelCore, fiber: Fiber): PluginHandle {
 
 export class KernelImpl implements Kernel {
   readonly core: KernelCore
-  readonly slots = new SlotRegistry()
+  readonly slots: SlotRegistry
   private closed = false
+
+  /** Every queued host operation re-checks this when it runs, not only when it is requested. */
+  protected assertOpen(): void {
+    if (this.closed) throw new KernelLifecycleError('the kernel was disposed')
+  }
 
   constructor(options: KernelOptions = {}) {
     this.core = new KernelCore(options)
+    this.slots = new SlotRegistry({
+      onSubscriberError: (error) =>
+        this.core.log({ level: 'error', source: 'slots', message: `slot subscriber failed: ${error instanceof Error ? error.message : String(error)}` }),
+    })
     this.core.provideKernelService(SLOTS_SERVICE, this.slots)
   }
 
   /** Refuse anything not built by definePlugin, and re-check its manifest. */
   protected assertLoadable(plugin: unknown, action: string): asserts plugin is GuanxiPlugin<any> {
-    if (this.closed) throw new KernelLifecycleError('the kernel was disposed')
-    if (!isGuanxiPlugin(plugin)) throw new TypeError(`${action} accepts only plugins built by definePlugin()`)
-    const manifest = parseManifest(plugin.manifest, 'manifest')
-    if (manifest.trust === 'T2') throw new PluginContractError(manifest.id, 'T2 plugins run out of process')
+    this.assertOpen()
+    validatePlugin(plugin, action)
   }
 
   plugin<C>(plugin: GuanxiPlugin<C>, config?: C): Promise<PluginHandle> {
@@ -67,11 +73,16 @@ export class KernelImpl implements Kernel {
       return Promise.reject(error)
     }
     return this.core.transition(`loading ${plugin.manifest.id}`, async () => {
+      this.assertOpen()
       const fiber = this.core.createFiber(plugin, config, null)
       try {
         await this.core.start(fiber)
         if (fiber.state === 'failed') throw fiber.error
         await this.core.settle()
+        // A step abandoned anywhere in this load (also in a dependent it woke)
+        // rejects the load, so roll this plugin back while the queue is ours.
+        const abandoned = this.core.abandonedSteps()
+        if (abandoned.length) throw new KernelTimeoutError(`loading ${plugin.manifest.id}`, this.core.timeoutMs, abandoned)
         return handleFor(this.core, fiber)
       } catch (error) {
         // Rejecting leaves nothing behind.
@@ -121,6 +132,21 @@ export class KernelImpl implements Kernel {
   }
 }
 
+/**
+ * The object handed to the host: methods only, backed by the private
+ * implementation, so host code cannot reach the core maps or lifecycle state.
+ */
+export function kernelFacade(impl: KernelImpl): Kernel {
+  return Object.freeze({
+    slots: impl.slots,
+    plugin: <C>(plugin: GuanxiPlugin<C>, config?: C) => impl.plugin(plugin, config),
+    service: <T>(name: string) => impl.service<T>(name),
+    emit: (event: string, ...args: unknown[]) => impl.emit(event, ...args),
+    counters: () => impl.counters(),
+    dispose: () => impl.dispose(),
+  })
+}
+
 export function createKernel(options: KernelOptions = {}): Kernel {
-  return new KernelImpl(options)
+  return kernelFacade(new KernelImpl(options))
 }
