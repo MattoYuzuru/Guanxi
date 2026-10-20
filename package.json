@@ -1,6 +1,7 @@
 {
   "name": "guanxi-monorepo",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -18,12 +19,15 @@
     "test:web": "npm test --workspace @guanxi/web",
     "test:web:browser": "npm run test:browser --workspace @guanxi/web",
     "benchmark:catalog": "node packages/server/scripts/catalog-pagination-benchmark.ts && npm run benchmark:catalog --workspace @guanxi/web",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#docs/research/2026-10-19-landscape\"",
+    "check:licenses": "node scripts/check-licenses.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "esbuild": "^0.25.12",
     "guanxi": "*",
+    "markdownlint-cli2": "0.18.1",
     "typescript": "^5.7.2"
   }
 }
