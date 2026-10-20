@@ -32,7 +32,7 @@ Phase 4 должна быть лёгкой: один локальный profile,
 
 ### Client contract
 
-- Target command — `alamo`; `alamo-ui` остаётся compatibility alias.
+- Target command — `guanxi`; `guanxi` остаётся compatibility alias.
 - No-args command attaches/starts service и открывает TUI. `open` открывает Web,
   `start --detach` остаётся явным automation command.
 - Phase 4 команды: service, models, jobs, chat и config. Agent command
@@ -96,7 +96,7 @@ user service manager. Linux linger не включается молча.
 
 ## Compatibility и migration
 
-- Existing `alamo-ui` command остаётся alias после появления `alamo`.
+- Existing `guanxi` command остаётся alias после появления `guanxi`.
 - Existing data directory обнаруживается через ADR-0007 compatibility migration;
   Phase 4 не делает destructive rename и не вводит parallel profiles.
 - Текущий `--data-dir` остаётся dev/test/foreground boundary, но service install
@@ -133,4 +133,4 @@ Loopback HTTP уменьшает число protocols, но требует ст�
   определяет per-user LaunchAgent lifecycle и `~/Library/LaunchAgents` boundary.
 - systemd: [pam_systemd](https://www.freedesktop.org/software/systemd/man/latest/pam_systemd.html)
   описывает отдельный per-user service manager; [loginctl](https://www.freedesktop.org/software/systemd/man/latest/loginctl.html)
-  определяет explicit linger, который Alamo не включает молча.
+  определяет explicit linger, который Guanxi не включает молча.

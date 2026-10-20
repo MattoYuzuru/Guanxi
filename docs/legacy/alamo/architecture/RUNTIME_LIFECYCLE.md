@@ -33,7 +33,7 @@ P1-F заменил `ExclusiveInferenceBridge` одним application
 compaction и explicit model warm/load, поэтому участвующие entry points одного
 application process не входят в Ollama inference одновременно. Chat request
 владеет canonical `jobId`, compatibility operations — process-local UUID. Это
-ещё не host-wide координация внешних clients или второго Alamo process.
+ещё не host-wide координация внешних clients или второго Guanxi process.
 
 На route/thread change `useChat` закрывает только subscription. Job продолжает
 выполнение, а возвращение в Chat находит `jobId` в pending Message, читает
@@ -760,7 +760,7 @@ Unload разрешён, когда:
 3. `/api/ps` подтверждает identity;
 4. выбранная policy допускает управление instance.
 
-External instance, загруженная не Alamo, сначала помечается `external/unknown
+External instance, загруженная не Guanxi, сначала помечается `external/unknown
 owner`; auto-unload её требует explicit policy.
 
 ### Prewarm
@@ -1183,7 +1183,7 @@ answer.
 - current Chat owner abort-ит adapter и сохраняет `interrupted`, а уже persisted
   cancellation подтверждает как `cancelled`;
 - закрывает subscribers;
-- releases Alamo-owned leases согласно policy;
+- releases Guanxi-owned leases согласно policy;
 - закрывает SQLite;
 - не останавливает external Ollama daemon по умолчанию.
 

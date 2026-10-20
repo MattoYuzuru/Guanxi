@@ -26,7 +26,7 @@ voice, images, MCP и agent UI; менее закрытая зона — пра�
 | Vision принимает images у совместимых models                                   | [Vision](https://docs.ollama.com/capabilities/vision)                          | не универсальный image generation    |
 | Tools поддерживают function calling                                            | [Tool calling](https://docs.ollama.com/capabilities/tool-calling)              | качество нужно probe/eval            |
 | Default context зависит от VRAM tier                                           | [Context length](https://docs.ollama.com/context-length)                       | user/runtime config может изменить   |
-| Default residency, preload, keep_alive и concurrency settings описаны          | [FAQ](https://docs.ollama.com/faq)                                             | Alamo всё равно нужен owner/policy   |
+| Default residency, preload, keep_alive и concurrency settings описаны          | [FAQ](https://docs.ollama.com/faq)                                             | Guanxi всё равно нужен owner/policy   |
 | Частичная OpenAI compatibility существует                                      | [OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)       | не весь stateful API поддержан       |
 
 Официальная документация указывает default keep-alive около пяти минут, preload
@@ -43,7 +43,7 @@ parallel requests. Поэтому prewarm/unload/parallel policy нельзя п
 | Node `os.totalmem()` возвращает total system memory bytes | [Node.js OS API](https://nodejs.org/api/os.html#ostotalmem) | static capacity, не current availability |
 | `execFile` запускает executable без shell по default и поддерживает timeout/maxBuffer | [Node.js child process API](https://nodejs.org/download/release/v22.17.0/docs/api/child_process.html#child_processexecfilefile-args-options-callback) | timeout завершает child, output всё равно нельзя публиковать |
 | `vm_stat` сообщает page size и `Pages free` | [Apple OSS vm_stat(1)](https://github.com/apple-oss-distributions/system_cmds/blob/main/vm_stat/vm_stat.1) | free pages не равны safe available capacity/pressure |
-| `os_proc_available_memory()` оценивает память для текущего process | [Apple os_proc_available_memory](https://developer.apple.com/documentation/os/os_proc_available_memory) | advisory для Alamo process, не host/Ollama admission fact |
+| `os_proc_available_memory()` оценивает память для текущего process | [Apple os_proc_available_memory](https://developer.apple.com/documentation/os/os_proc_available_memory) | advisory для Guanxi process, не host/Ollama admission fact |
 | `memory_pressure` manual описывает pressure generation/simulation | [Apple OSS memory_pressure(1)](https://github.com/apple-oss-distributions/system_cmds/blob/main/memory_pressure/memory_pressure.1) | не подтверждает стабильный read-only level/threshold contract |
 
 Следствие P1-H: production adapter использует только bounded absolute

@@ -271,7 +271,7 @@ transient page/request state без DB history, provider snapshot или durable
 ### Runtime Instance
 
 Наблюдаемая загруженная модель: digest, context, VRAM/RAM, expiry и source.
-Ollama остаётся фактическим владельцем instance; Alamo согласует своё состояние
+Ollama остаётся фактическим владельцем instance; Guanxi согласует своё состояние
 через `/api/ps`. Current `/api/ps` не публикует отдельный backend/device label,
 поэтому P1-L связывает row с sourced Ollama version и локальным Apple hardware
 profile, но не изобретает более точную backend identity.

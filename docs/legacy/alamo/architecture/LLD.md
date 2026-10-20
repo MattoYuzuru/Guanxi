@@ -1253,22 +1253,22 @@ Thinking renderer получает отдельную policy и Markdown sanitiz
 Stable non-interactive primitives предшествуют TUI:
 
 ```text
-alamo status [--json]
-alamo start [--detach] [--port ...]
-alamo stop
-alamo open
-alamo models list|pull|load|unload
-alamo jobs list|show|cancel|events
-alamo chat
-alamo config get|set
-alamo service autostart enable|disable|status
+guanxi status [--json]
+guanxi start [--detach] [--port ...]
+guanxi stop
+guanxi open
+guanxi models list|pull|load|unload
+guanxi jobs list|show|cancel|events
+guanxi chat
+guanxi config get|set
+guanxi service autostart enable|disable|status
 ```
 
-No-args `alamo` attach/start-ит default service и открывает TUI через shared
-client library. `alamo-ui` остаётся compatibility alias. First-party
-`alamo agent` зарезервирован и отвечает unsupported до Phase 5. Application
+No-args `guanxi` attach/start-ит default service и открывает TUI через shared
+client library. `guanxi` остаётся compatibility alias. First-party
+`guanxi agent` зарезервирован и отвечает unsupported до Phase 5. Application
 service state определяется advisory lock + authenticated exact-instance health,
-не PID и не только открытым портом. Stop Alamo не останавливает external Ollama.
+не PID и не только открытым портом. Stop Guanxi не останавливает external Ollama.
 
 Service control и settings:
 

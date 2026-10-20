@@ -14,7 +14,7 @@
 
 ## D-001. Собственное позиционирование
 
-Alamo не копирует Open WebUI или LM Studio и не ставит feature parity целью.
+Guanxi не копирует Open WebUI или LM Studio и не ставит feature parity целью.
 Принято исходное направление: собственный resource-aware local model workbench
 и control plane.
 
@@ -47,11 +47,11 @@ LLM-задачи, только если:
 
 ## D-004. Граница сервисов
 
-Alamo Application Service и Ollama daemon — разные процессы и объекты управления.
+Guanxi Application Service и Ollama daemon — разные процессы и объекты управления.
 
-- Alamo может запускаться, останавливаться и стартовать при login.
+- Guanxi может запускаться, останавливаться и стартовать при login.
 - Loaded Ollama models управляются через Resource Governor.
-- Внешний Ollama daemon не завершается вместе с Alamo без отдельной команды и
+- Внешний Ollama daemon не завершается вместе с Guanxi без отдельной команды и
   подтверждения.
 - Web, CLI и TUI используют одну settings store и один Job API.
 
@@ -208,7 +208,7 @@ Primary agent use case — coding:
 - использовать Project Skills и MCP;
 - вести plan, checkpoints, evidence и review.
 
-Alamo строит независимый first-party Agent API и CLI. Он не маскируется под
+Guanxi строит независимый first-party Agent API и CLI. Он не маскируется под
 Claude Code/Codex и не требует их executable. Optional interoperability может
 появиться позже, но не является foundation.
 
@@ -255,7 +255,7 @@ MCP и Skills:
 
 ## D-018. Application Service, TUI и autostart
 
-- Terminal можно закрыть, Alamo Service продолжает работать.
+- Terminal можно закрыть, Guanxi Service продолжает работать.
 - No-args CLI открывает интерактивный TUI.
 - Scriptable commands остаются доступны для agents/automation.
 - Login autostart поддерживается на macOS и Linux как opt-in setting.

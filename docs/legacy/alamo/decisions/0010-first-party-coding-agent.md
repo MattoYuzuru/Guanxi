@@ -13,7 +13,7 @@ docs research, commands, tests, review и длительные checkpointed runs
 
 ## Decision
 
-Создать собственный Agent Engine и CLI поверх Alamo Job API:
+Создать собственный Agent Engine и CLI поверх Guanxi Job API:
 
 - independent protocol/identity;
 - coding-first tool contract;

@@ -11,7 +11,7 @@
 
 ## Vision
 
-Alamo UI должен стать local-first рабочей средой для моделей, которая позволяет
+Guanxi должен стать local-first рабочей средой для моделей, которая позволяет
 использовать максимум возможностей конкретной модели и одновременно не скрывает
 ограничения устройства. Пользователь должен понимать:
 
@@ -220,7 +220,7 @@ experience, но не определяет всю предметную моде�
 | AGT-004 |  P2 | Deliberate weak-model strategy выбирается явно, а не выводится из parameter count.                  |
 | AGT-005 |  P2 | Долгий Agent Run переживает уход со страницы и безопасно восстанавливается.                         |
 | AGT-006 |  P2 | Tools работают в allowed roots; remote profile не наследует local shell permissions.                |
-| AGT-007 |  P1 | Alamo предоставляет независимый first-party coding Agent API/CLI без branded external dependency.   |
+| AGT-007 |  P1 | Guanxi предоставляет независимый first-party coding Agent API/CLI без branded external dependency.   |
 | AGT-008 |  P1 | Coding agent читает/изменяет code/config/docs, запускает commands/tests и сохраняет evidence.       |
 | AGT-009 |  P1 | Agent Run выбирает Manual approvals или Auto within explicit policy.                                |
 | AGT-010 |  P2 | MCP/Skills выключены по default, включаются на Project и могут временно меняться на конкретном Run. |
@@ -231,10 +231,10 @@ experience, но не определяет всю предметную моде�
 | ID      | Pri | Требование                                                                                            |
 | ------- | --: | ----------------------------------------------------------------------------------------------------- |
 | CLI-001 |  P1 | Существуют scriptable `start/status/stop/restart/open` с exit codes и JSON output.                    |
-| CLI-002 |  P1 | Alamo service, Ollama service и loaded model — разные объекты управления.                             |
+| CLI-002 |  P1 | Guanxi service, Ollama service и loaded model — разные объекты управления.                             |
 | CLI-003 |  P2 | No-args TUI вызывает те же команды и показывает текущий service state.                                |
 | CLI-004 |  P2 | Phase 4 CLI поддерживает models, jobs, chat и config; agent добавляется в Phase 5.                    |
-| CLI-005 |  P2 | UI Exit завершает только Alamo service; остановка внешнего Ollama требует отдельного подтверждения.   |
+| CLI-005 |  P2 | UI Exit завершает только Guanxi service; остановка внешнего Ollama требует отдельного подтверждения.   |
 | CLI-006 |  P1 | Background service переживает закрытие terminal и поддерживает opt-in login autostart на macOS/Linux. |
 | CLI-007 |  P1 | Web/CLI/TUI используют одну settings store и controlled restart для restart-sensitive changes.        |
 | BRD-001 |  P0 | Новые UI/package/storage identifiers не размножают рабочее название.                                  |

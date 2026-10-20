@@ -50,7 +50,7 @@ npm run link:cli
 | `test:web:browser`  | deterministic Chromium P0-A–P3-P mocked gate         |
 | `build`             | contract, web, server и CLI production artifacts     |
 | `benchmark:catalog` | synthetic 1k server/jsdom diagnostic, не SLA         |
-| `link:cli`          | глобальная локальная ссылка `alamo-ui`               |
+| `link:cli`          | глобальная локальная ссылка `guanxi`               |
 
 `dev:mock` удалён 2026-08-07 (Q-36): целевой `mock/server.mjs` отсутствовал, а
 browser gate мокает REST/SSE через Playwright routes, поэтому отдельный fixture
@@ -641,7 +641,7 @@ server не нужен.
 
 ## Local data и безопасность
 
-- пользовательская DB: `~/.alamo/alamo.db`;
+- пользовательская DB: `~/.guanxi/guanxi.db`;
 - Ollama хранит свои models отдельно;
 - agent workspace указывает на реальные user files;
 - settings/secrets сейчас сохраняются в SQLite plaintext — известный риск;
@@ -662,7 +662,7 @@ root-certificate через `NODE_EXTRA_CA_CERTS`; не отключайте TLS
 
 ## Branding
 
-Имя `Alamo` сейчас встречается в packages, CLI, UI, DB path, localStorage и CSS.
+Имя `Guanxi` сейчас встречается в packages, CLI, UI, DB path, localStorage и CSS.
 Новые места не добавляйте. До rename нужен inventory и compatibility plan:
 
 - display name;

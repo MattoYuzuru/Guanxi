@@ -794,7 +794,7 @@ process lock. P0-D health остаётся sampled observation; обязател
 - single instance via advisory lock + exact-instance handshake;
 - stale/corrupt/foreign identity never causes PID-only kill;
 - terminal closes without service exit;
-- no-args `alamo` attach/start + TUI, `alamo-ui` compatibility alias;
+- no-args `guanxi` attach/start + TUI, `guanxi` compatibility alias;
 - start/status/stop/restart exact exit codes and versioned JSON/NDJSON;
 - Phase 4 `agent` command возвращает exact unsupported без создания Job;
 - shared settings Web/CLI/TUI;
@@ -802,7 +802,7 @@ process lock. P0-D health остаётся sampled observation; обязател
   preservation;
 - failed controlled restart rolls back config and retries old config once;
 - macOS LaunchAgent/Linux `systemd --user` opt-in/disable/uninstall;
-- stopping Alamo does not stop Ollama.
+- stopping Guanxi does not stop Ollama.
 
 ### First-party Agent
 

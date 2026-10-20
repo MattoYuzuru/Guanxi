@@ -123,10 +123,10 @@ directory. Параллельных profiles и нескольких service wri
 
 ## D-029. Canonical command и будущий rename
 
-Accepted target canonical executable — `alamo`. Текущий `alamo-ui` остаётся
+Accepted target canonical executable — `guanxi`. Текущий `guanxi` остаётся
 compatibility alias после cutover и не считается новым visible brand.
 
-Когда новое имя будет выбрано, оно заменяет `Alamo` во всех видимых UI strings,
+Когда новое имя будет выбрано, оно заменяет `Guanxi` во всех видимых UI strings,
 commands, docs, packages и assets через central brand/config boundary. Старые
 CLI aliases, storage IDs и data paths могут временно оставаться только как
 скрытый migration layer, чтобы не ломать installs. Простой destructive
@@ -136,9 +136,9 @@ search/replace storage identity запрещён ADR-0007.
 
 Следующий surface — делегированный implementation default.
 
-No-args `alamo` подключается к service либо запускает default service, ждёт
-readiness и открывает keyboard TUI. `alamo open` открывает browser, а
-`alamo start --detach` остаётся явным automation command.
+No-args `guanxi` подключается к service либо запускает default service, ждёт
+readiness и открывает keyboard TUI. `guanxi open` открывает browser, а
+`guanxi start --detach` остаётся явным automation command.
 
 Phase 4 включает `service`, `models`, `jobs`, `chat` и `config`. `agent`
 зарезервирован и честно unsupported до Phase 5. TUI показывает service state,
@@ -180,7 +180,7 @@ Jobs. Queued Jobs остаются durable queued для следующего с
 
 Если active Job показывает здоровый runtime/progress, service ждёт bounded
 graceful completion до 30 секунд. Если runtime unhealthy/stalled или deadline
-истёк, Alamo сохраняет `interrupted`, отменяет только принадлежащую ему работу и
+истёк, Guanxi сохраняет `interrupted`, отменяет только принадлежащую ему работу и
 завершает service. `--force` пропускает ожидание, но не пропускает durable
 terminalization. Ollama daemon не останавливается.
 

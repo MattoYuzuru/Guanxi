@@ -11,7 +11,7 @@
 - **Target** — принятая архитектура; её компоненты ещё нельзя считать
   реализованными.
 - **Ollama host** — процесс/runtime Ollama; может быть локальным или удалённым.
-- **Application host** — процесс Alamo server/daemon.
+- **Application host** — процесс Guanxi server/daemon.
 
 ## As-is
 
@@ -20,7 +20,7 @@
 ```text
 Browser ─ REST + POST/GET SSE ─> Node/Hono server ─ HTTP/NDJSON ─> Ollama
                                   │
-                                  ├─ SQLite ~/.alamo/alamo.db
+                                  ├─ SQLite ~/.guanxi/guanxi.db
                                   ├─ workspace filesystem
                                   └─ local shell
 
@@ -373,7 +373,7 @@ background Job.
 ### Основные current risks
 
 1. Process-local Governor показывает sampled `/api/ps` drift, но не координирует
-   внешний Ollama client или второй Alamo process и не считает неизвестного
+   внешний Ollama client или второй Guanxi process и не считает неизвестного
    владельца внешним установленным фактом.
 2. P1-K поддерживает только `normal > prewarm` на одном permit; нет measured
    parallelism, fairness для будущих priorities или координации provider вне

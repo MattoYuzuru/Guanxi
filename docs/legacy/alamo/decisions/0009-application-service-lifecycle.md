@@ -14,7 +14,7 @@ adapters определены в [ADR-0013](0013-phase-4-service-control-and-cli
 
 ## Decision
 
-Ввести Alamo Application Service как отдельный background process:
+Ввести Guanxi Application Service как отдельный background process:
 
 - single-instance process identity и control endpoint;
 - `start --detach`, `status`, `stop`, `restart`, `open`;
@@ -22,7 +22,7 @@ adapters определены в [ADR-0013](0013-phase-4-service-control-and-cli
 - graceful Job shutdown/recovery;
 - одна SQLite/settings store для Web, CLI и TUI;
 - restart plan для settings, требующих перезапуска;
-- Ollama daemon lifecycle не принадлежит Alamo.
+- Ollama daemon lifecycle не принадлежит Guanxi.
 
 No-args CLI — TUI-клиент, а не сам service. Scriptable commands и JSON output
 остаются первичным automation contract.
@@ -41,7 +41,7 @@ autostart.
 - один data directory имеет не более одного writer service;
 - stale process identity восстанавливается безопасно;
 - закрытие terminal не останавливает service;
-- `Exit Alamo` не останавливает Ollama;
+- `Exit Guanxi` не останавливает Ollama;
 - restart не теряет durable queue/events;
 - Web/CLI/TUI не имеют разных копий settings;
 - autostart только opt-in и обратим.
@@ -74,4 +74,4 @@ autostart.
 - повторный start подключается к existing service;
 - power/login startup opt-in работает на macOS и Linux;
 - stop/restart имеют deterministic exit/status и recovery;
-- Ollama продолжает работать после остановки Alamo.
+- Ollama продолжает работать после остановки Guanxi.
