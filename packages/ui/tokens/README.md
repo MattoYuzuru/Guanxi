@@ -34,6 +34,9 @@ declare bare `--spacing` or Tailwind's font-family names. Only the theme layer m
 names. A production-build comparison with the token import removed asserts unchanged legacy
 body/mono fonts and spacing. The theme also resets shadow, blur, tracking, leading, font-weight
 and default-transition namespaces, then maps supported semantic replacements and defaults.
+Container widths from FOUNDATIONS §3 live at `layout.container.*`; the theme resets
+`--container-*` and maps the documented scale to these tokens for `w-*` and `max-w-*`.
+The `--text-shadow-*` namespace stays reset. Off-scale arbitrary widths still fail G5.
 The compiled-theme browser assertion checks actual font, 8 px spacing and 21.9% radius:
 font utilities avoid self aliases, spacing uses the 4 px grid variable, and the app-tile ratio
 is converted to a CSS percentage.

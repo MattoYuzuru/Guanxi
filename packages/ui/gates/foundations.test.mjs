@@ -34,6 +34,8 @@ const easings = tables(section('## 5.'))[0].filter(row => row[0].startsWith('eas
 const materials = tables(section('## 4.')).filter(table => table[0][0] === 'Level')
 const materialDetails = tables(section('## 4.'))[0]
 const expectedSpaces = numeric(document.match(/Spacing scale ([\d, ]+)/)[1])
+const containers = [...section('## 3.').matchAll(/\b([a-z\d]+) (\d+)rem/g)].map(([, name, value]) => [name, Number(value)])
+assert.equal(containers.length, 13, 'FOUNDATIONS container scale must be parsed in full')
 const expectedRadii = numeric(document.match(/\*\*Radius\*\*[^\n]*(?:\n  [^\n]+)*/)[0])
 
 function verifyRuntimeNames(runtime, tailwind, legacy) {
@@ -73,6 +75,8 @@ async function verifyFoundations(context) {
     }
     assert.deepEqual(entries.filter(t => t.path[0] === 'spacing').map(t => Number(t.path[1])).sort((a, b) => a - b), expectedSpaces)
     for (const n of expectedSpaces) eq(`spacing.${n}`, { value: n, unit: 'px' })
+    assert.deepEqual(entries.filter(t => t.name.startsWith('layout.container.')).map(t => t.path[2]).sort(), containers.map(([name]) => name).sort())
+    for (const [name, value] of containers) eq(`layout.container.${name}`, { value, unit: 'rem' })
     for (const [i, role] of ['inline', 'control', 'panel', 'glass'].entries()) eq(`border-radius.${role}`, { value: expectedRadii[i], unit: 'px' })
     eq('border-radius.app-tile-ratio', Number((expectedRadii[4] / 100).toFixed(6)))
     const metrics = ['font.text.size', 'control.height', 'row.height', 'panel.padding', 'pane.gap', 'grid.unit']
@@ -172,13 +176,39 @@ test('N9: runtime declarations cannot shadow any Tailwind or legacy theme name',
 })
 test('M4: cleared Tailwind defaults disappear; semantic replacements compile', async () => {
   const system = await designSystem(ctx)
-  for (const cls of ['shadow-lg', 'inset-shadow-sm', 'drop-shadow-lg', 'backdrop-blur-md', 'blur-sm', 'tracking-wide', 'leading-tight', 'font-bold', 'text-shadow-lg', 'max-w-md', 'w-md']) assert.equal(system.candidatesToCss([cls])[0], null, cls)
+  for (const cls of ['shadow-lg', 'inset-shadow-sm', 'drop-shadow-lg', 'backdrop-blur-md', 'blur-sm', 'tracking-wide', 'leading-tight', 'font-bold', 'text-shadow-2xs', 'text-shadow-sm', 'text-shadow-md', 'text-shadow-lg']) assert.equal(system.candidatesToCss([cls])[0], null, cls)
   for (const cls of ['transition', 'transition-colors', 'shadow-popover', 'blur-glass', 'font-sans', 'font-mono', 'font-label', 'leading-ui']) assert.ok(system.candidatesToCss([cls])[0], cls)
   const theme = (await generate(ctx.tokenOptions))['theme.css']
   assert.match(theme, /--default-transition-duration: var\(--motion-duration-moderate\)/)
   assert.match(theme, /--default-transition-timing-function: var\(--motion-easing-standard\)/)
   assert.match(theme, /--default-font-family: var\(--font-family-sans\)/)
   assert.match(theme, /--default-mono-font-family: var\(--font-family-mono\)/)
+})
+test('M2/N2: FOUNDATIONS rejects missing, extra and incorrect container widths', async () => {
+  const file = 'packages/ui/tokens/base.tokens.json'
+  for (const mutate of [
+    data => { delete data.layout.container.md },
+    data => { data.layout.container.custom = { $type: 'dimension', $value: { value: 37, unit: 'rem' } } },
+    ...containers.map(([name]) => data => { data.layout.container[name].$value.value += 1 }),
+    data => { data.layout.container.md.$value.unit = 'px' },
+  ]) {
+    const data = await ctx.json(file); mutate(data)
+    await assert.rejects(verifyFoundations(await ctx.withFiles({ [file]: JSON.stringify(data) })), { name: 'AssertionError' })
+  }
+})
+test('N7: container utilities resolve through Guanxi tokens to every documented width', async () => {
+  const system = await designSystem(ctx)
+  const runtime = postcss.parse(await ctx.read('packages/ui/generated/tokens.css'))
+  const declarations = new Map()
+  runtime.walkDecls(decl => declarations.set(decl.prop, decl.value))
+  for (const [name, value] of containers) for (const [utility, property] of [['max-w', 'max-width'], ['w', 'width']]) {
+    const cls = `${utility}-${name}`, css = system.candidatesToCss([cls])[0]
+    assert.ok(css, cls)
+    const values = []
+    postcss.parse(css).walkDecls(property, decl => values.push(decl.value))
+    assert.deepEqual(values, [`var(--layout-container-${name})`], cls)
+    assert.equal(declarations.get(`--layout-container-${name}`), `${value}rem`, cls)
+  }
 })
 test('L1: the default resolver root works from a directory containing spaces', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'guanxi tokens with spaces '))

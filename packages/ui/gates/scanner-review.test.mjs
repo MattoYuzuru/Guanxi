@@ -131,3 +131,13 @@ test('N4: semantic JSX styles and SVG paints pass; the legacy inline debt stays 
   assert.ok(!findings.some(f => f.file === legacy && f.gate === 'G6'))
   assert.deepEqual(counts(findings), await ctx.json('packages/ui/gates/legacy-allowlist.json'), 'N4 must not grow or rebaseline the legacy ledger')
 })
+
+test('N7: text shadows and off-scale widths fail G5 while container token utilities pass', async () => {
+  for (const [file, text] of [
+    ['packages/ui/src/fixture.jsx', '<div className="text-shadow-lg max-w-[37rem] w-md max-w-md"/>'],
+    ['packages/ui/src/fixture.css', '.x { @apply text-shadow-lg max-w-[37rem] w-md max-w-md; }'],
+  ]) {
+    const findings = (await scanLiterals(await ctx.withFiles({ [file]: text }))).filter(f => f.file === file && f.gate === 'G5')
+    assert.deepEqual(findings.map(f => f.value).sort(), ['max-w-[37rem]', 'text-shadow-lg'], file)
+  }
+})

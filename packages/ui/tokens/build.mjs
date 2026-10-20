@@ -32,6 +32,7 @@ function themeCSS(flat) {
   for (const [name, variable] of Object.entries(aliases)) lines.push(`  --color-${name}: var(--${variable});`)
   for (const t of flat.filter(t => t.name.startsWith('font.size.'))) lines.push(`  --text-${t.path[2]}: var(${cssName(t)});`)
   lines.push('  --text-body: var(--font-text-size);')
+  for (const t of flat.filter(t => t.name.startsWith('layout.container.'))) lines.push(`  --container-${t.path[2]}: var(${cssName(t)});`)
   for (const t of flat.filter(t => t.path[0] === 'border-radius')) lines.push(`  --radius-${t.path[1]}: ${t.$type === 'number' ? `calc(var(${cssName(t)}) * 100%)` : `var(${cssName(t)})`};`)
   for (const t of flat.filter(t => t.name.startsWith('motion.easing.'))) lines.push(`  --ease-${t.path[2]}: var(${cssName(t)});`)
   lines.push('  --shadow-popover: var(--elevation-2-shadow);', '  --blur-glass: var(--material-glass-blur);', '  --blur-tinted: var(--material-tinted-blur);', '  --leading-ui: var(--font-line-height-ui);', '  --leading-prose: var(--font-line-height-prose);')
