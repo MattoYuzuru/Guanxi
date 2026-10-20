@@ -69,6 +69,18 @@ say `dirty`: the only uncommitted file was this hand-off.
 | `npm run lint:md` | 0 errors | direct |
 | `npm run check:licenses` | 343 packages, 0 not allowed | direct |
 
+After merging main at `4588ce6` (K1 kernel; merge `71074b6`), re-run on the clean tree
+`88bf407`, same lock and ports: typecheck exit 0; `npm test` core 714 (713 pass, 1 skipped),
+kernel 106/106, ui node 39/39, web 266/266, ui vitest 17/17 (`check-iji4b1e8`); browser gate
+52/52 (`check-8s_92y1f`); build `check-vb0b_4mi`; Storybook `check-kzp7f72w`; fast self-test 23
+cases (`check-muqwutdp`); browser self-test 11 cases (`check-ucma7ye4`); G13 10/10 consecutive
+compares (`check-j_3n2s6t`, `check-oxwm2smg`, `check-sy0bir3x`, `check-da47g0go`,
+`check-wyagp1yc`, `check-cosrk3x1`, `check-u8tig2n1`, `check-21b6sitd`, `check-lu8nstzy`,
+`check-okztneuu`); `lint:md` 0 errors; `check:licenses` 0 not allowed. Merge conflicts were
+unions only (root `test` script, server and web `@guanxi/kernel` + `@guanxi/ui` dependencies,
+server `index.ts` imports); `package-lock.json` was taken from main and regenerated with
+`npm install`.
+
 Before the cross-family fixes (`6930cb7`): `npm test` `check-0mzu4vn9`; browser gate 47/47
 twice (`check-qur_zopt`, `check-dmh1ypai`), one legacy failure `check-dk4vaat8`; build
 `check-pqeq5sgk`; Storybook `check-2kmw9h7e` (83 stories); self-tests `check-u8yscubq` (16),
