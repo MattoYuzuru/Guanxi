@@ -604,3 +604,21 @@ test('M6: HTTP recovery codes distinguish missing, locked, policy, egress, provi
     await check(await unavailable.request('http://localhost/'), status, code)
   }
 })
+
+
+test('E6: short keys cannot enter the vault or corrupt scrubbed rows; probes validate imported keys before HTTP', async t => {
+  let calls = 0
+  const f = await setup(t, { transport: async () => { calls++; return Response.json(deepseekFixture.response) } })
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.unlockVault(account)
+  for (const short of ['x', 'x'.repeat(7)]) assert.throws(() => s.saveSecret(account, row.id, short), /API key/)
+  assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM vault_secrets').get()!.n, 0)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub('hello'), 'hello')
+  assert.equal(s.store.get(account, row.id).secretRef, null)
+  const imported = new Vault(s.store, f.config.keychain, f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!, f.config.policy)
+  t.after(() => imported.close()); await imported.unlock(account)
+  const oauth = ['sk', 'ant', 'oat01', randomBytes(20).toString('hex')].join('-')
+  s.store.setSecret(account, row.id, imported.put(account, oauth))
+  await assert.rejects(s.probe(account, row.id), error => error instanceof ConnectionError && error.code === 'validation_failed')
+  assert.equal(calls, 0)
+})

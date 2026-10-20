@@ -48,7 +48,7 @@ export const connectionSchema = z.object({
   createdAt: z.string().datetime(),
 }).strict()
 export const updateConnectionSchema = z.object({ unattended: z.boolean() }).strict()
-export const connectionSecretInputSchema = z.object({ value: z.string().min(1).max(16384) }).strict()
+export const connectionSecretInputSchema = z.object({ value: z.string().min(8).max(16384) }).strict()
 export const connectionCostSchema = z.object({
   id: z.string().uuid(), connectionId: z.string().uuid(), accountId: z.string(),
   runId: z.string().min(1), requestId: z.string().min(1),

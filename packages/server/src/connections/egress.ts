@@ -2,6 +2,8 @@ import { ConnectionError } from './errors.ts'
 /** Temporary copy of K2's stable interface. Delete after K2 merges. */
 import { definePlugin } from '@guanxi/kernel'
 export const EGRESS_SERVICE = 'egress.scrubber'
+/** K2's published bound; import it from egress/types.ts after integration. */
+export const MIN_SECRET_LENGTH = 8
 export type SecretRef = `secret://${string}`
 export interface EgressScrubber {
   register(ref: SecretRef, value: string): void

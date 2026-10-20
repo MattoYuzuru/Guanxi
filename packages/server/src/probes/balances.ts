@@ -1,3 +1,4 @@
+import { assertApiKey } from '../connections/pi.ts'
 import { ConnectionError } from '../connections/errors.ts'
 import { z } from 'zod'
 import type { Connection, ConnectionBalance } from '@guanxi/contract'
@@ -51,6 +52,7 @@ export class BalanceProbes {
     const combined = signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000)
     try {
       const balance = await this.vault.inject(connection.accountId, connection.id, false, async key => {
+        assertApiKey(provider, key)
         const response = await this.transport(probeEndpoints[provider], {
           headers: { Authorization: `Bearer ${key}` }, signal: combined, redirect: 'error',
         })

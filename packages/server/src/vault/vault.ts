@@ -1,3 +1,4 @@
+import { MIN_SECRET_LENGTH } from '../connections/egress.ts'
 import { ConnectionError } from '../connections/errors.ts'
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
@@ -105,7 +106,7 @@ export class Vault {
     this.assertOpen()
     const key = this.sessions.get(accountId)
     if (!key) throw new ConnectionError('vault_locked', 'Vault is locked')
-    if (!value) throw new Error('Empty secret')
+    if (value.length < MIN_SECRET_LENGTH) throw new ConnectionError('validation_failed', 'Secret is too short')
     const ref: SecretRef = `secret://${accountId}/${randomUUID()}`
     this.scrubber.register(ref, value)
     this.registered.add(ref)

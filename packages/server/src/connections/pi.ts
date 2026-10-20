@@ -1,3 +1,4 @@
+import { MIN_SECRET_LENGTH } from './egress.ts'
 import { ConnectionError } from './errors.ts'
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from '@earendil-works/pi-ai'
 import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
@@ -17,7 +18,7 @@ export function piModels(provider: string): readonly Model<Api>[] { return catal
 export function assertApiKey(provider: string, key: string) {
   // pi-ai automatically switches to OAuth bearer auth for this token family.
   // Reject it even if a caller mislabels it as an API key.
-  if (!key || key.includes('sk-ant-oat') || (provider === 'anthropic' && !key.startsWith('sk-ant-api'))) {
+  if (key.length < MIN_SECRET_LENGTH || key.includes('sk-ant-oat') || (provider === 'anthropic' && !key.startsWith('sk-ant-api'))) {
     throw new ConnectionError('validation_failed', 'An API key is required; subscription access uses the official CLI')
   }
 }
