@@ -1,8 +1,9 @@
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { harnessPort } from './port.ts'
 
-const port = Number(process.env['GUANXI_WEB_PORT'] || 5173)
+const port = harnessPort(process.env)
 
 /** Static build of the catalog harness for the browser gates; never shipped. */
 export default defineConfig({

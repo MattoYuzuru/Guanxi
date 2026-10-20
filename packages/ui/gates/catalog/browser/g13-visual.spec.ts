@@ -15,6 +15,8 @@ for (const story of gateStories()) {
   for (const theme of themes) {
     test(`G13 ${story.key} ${theme}`, async ({ page }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' })
+      // A fixed clock: no story may depend on the time the gate happens to run.
+      await page.clock.setFixedTime(new Date('2026-10-20T14:08:00.000Z'))
       await openStory(page, story.key, { theme, motion: 'reduced' })
       // snapshots/<component>/<state>-<theme>.png; the approval binds these files' hashes.
       await expect(page).toHaveScreenshot([story.component, `${story.state}-${theme}.png`], { fullPage: false })

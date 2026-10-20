@@ -33,6 +33,24 @@ export async function openStory(page: Page, key: string, params: Record<string, 
   await page.locator(`[data-harness-story="${key}"], [data-story-error]`).first().waitFor()
   await page.evaluate(() => document.fonts.ready)
   if (await page.locator('[data-story-error]').count()) throw new Error(`story ${key} failed to render`)
+  // Enter transitions and measured layouts (toasts) must settle, so screenshots are exact.
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-starting-style], [data-ending-style]') === null &&
+      document
+        .getAnimations()
+        .every((animation) => animation.playState !== 'running' || animation.effect?.getComputedTiming().iterations === Infinity),
+  )
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  // Let enter transitions and measured layouts (toasts) settle so screenshots are exact.
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-starting-style], [data-ending-style]') === null &&
+      document
+        .getAnimations()
+        .every((animation) => animation.playState !== 'running' || animation.effect?.getComputedTiming().iterations === Infinity),
+  )
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 
 interface HarnessWindow {
