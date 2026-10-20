@@ -1,6 +1,6 @@
 # Instructions for agents
 
-**Status:** implemented · **Updated:** 2026-10-19 · **Scope:** the whole repository
+**Status:** implemented · **Updated:** 2026-10-20 · **Scope:** the whole repository
 
 Guanxi is an early-alpha, local-first agent harness. The code in `packages/` today is the
 Alamo-era Ollama workbench; the target architecture is being re-founded on an own plugin
@@ -123,10 +123,10 @@ npm run check:licenses
 
 `npm test` runs server, CLI and web component regression tests. Deterministic Chromium tests
 run separately with `npm run test:web:browser`: 40 mocked tests covering legacy slices
-P0-A–P3-P. Last local baseline after the 2026-10-19 rename: 40/40 in 5 of 7 full runs; the
-other two runs had one failure each (one in `catalog-variant-install.spec.ts`, which passes
-in isolation; one unidentified), recorded as a residual in `PHASE_STATUS`. It is a mocked gate without live Ollama, GPU or network; never call it a full
-regression suite or production validation.
+P0-A–P3-P. Last local baseline (2026-10-20): 25 consecutive green full runs after the S0
+flake fixes recorded in `PHASE_STATUS`. Treat any failure as a regression to investigate, not
+as a known flake. It is a mocked gate without live Ollama, GPU or network; never call it a
+full regression suite or production validation.
 
 The browser gate needs Chromium installed first: `npx playwright install chromium` from
 `packages/web` (no postinstall hook). Run the gate only from the repository root or

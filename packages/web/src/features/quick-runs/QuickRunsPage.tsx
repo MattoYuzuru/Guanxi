@@ -115,6 +115,7 @@ function QuickRunScopePanel({
   const [createError, setCreateError] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
+  const [focusActionErrorId, setFocusActionErrorId] = useState<string | null>(null)
   const retryPolicies = useRef(new Map<string, RetentionPolicy>())
   const creatingRef = useRef(false)
   const updatingRef = useRef<string | null>(null)
@@ -166,6 +167,14 @@ function QuickRunScopePanel({
       setRestoreCreateFocus(false)
     }
   }, [creating, restoreCreateFocus])
+
+  // Focus the failure only after React committed it: an animation frame scheduled
+  // from the async handler may run before that commit and find no alert to focus.
+  useEffect(() => {
+    if (focusActionErrorId === null) return
+    actionErrorRefs.current.get(focusActionErrorId)?.focus()
+    setFocusActionErrorId(null)
+  }, [focusActionErrorId])
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
@@ -228,7 +237,7 @@ function QuickRunScopePanel({
     } catch (error) {
       retryPolicies.current.set(quickRun.id, policy)
       setActionErrors((current) => ({ ...current, [quickRun.id]: errorMessage(error) }))
-      requestAnimationFrame(() => actionErrorRefs.current.get(quickRun.id)?.focus())
+      setFocusActionErrorId(quickRun.id)
     } finally {
       updatingRef.current = null
       setUpdatingId(null)

@@ -170,6 +170,27 @@ describe('AttachmentsPage', () => {
     await waitFor(() => expect(retry).toBe(document.activeElement))
   })
 
+  it('focuses a download failure even when a frame runs before React commits it', async () => {
+    vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
+    vi.spyOn(api, 'artifactTransferPolicy').mockResolvedValue(POLICY)
+    vi.spyOn(api, 'listAttachments').mockResolvedValue(listResponse([attachment()]))
+    const failure = deferred<Blob>()
+    vi.spyOn(api, 'downloadAttachment').mockReturnValueOnce(failure.promise)
+    // A browser may render a frame before React's scheduler commits an update made in an
+    // async handler; running frames in a microtask makes that ordering deterministic.
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      queueMicrotask(() => callback(performance.now()))
+      return 1
+    })
+
+    render(<AttachmentsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Скачать' }))
+    await act(async () => failure.reject(new Error('lost download response')))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('lost download response')
+    await waitFor(() => expect(alert).toBe(document.activeElement))
+  })
+
   it('rejects unsafe/over-policy files locally and keeps English fallback', async () => {
     setActiveLocale('en')
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })

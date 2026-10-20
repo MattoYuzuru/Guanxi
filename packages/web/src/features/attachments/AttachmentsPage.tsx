@@ -179,9 +179,11 @@ function AttachmentScopePanel({
   const [intent, setIntent] = useState<UploadIntent | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [restoreUploadFocus, setRestoreUploadFocus] = useState(false)
   const [dropActive, setDropActive] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({})
+  const [focusDownloadErrorId, setFocusDownloadErrorId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const uploadingRef = useRef(false)
   const uploadButtonRef = useRef<HTMLButtonElement>(null)
@@ -229,6 +231,25 @@ function AttachmentScopePanel({
   useEffect(() => {
     if (loadError) requestAnimationFrame(() => listErrorRef.current?.focus())
   }, [loadError])
+
+  // Restore focus only after React committed the finished upload: an animation frame
+  // scheduled from the async handler may run first, while the button is still disabled
+  // and the error is not rendered. Order: an enabled upload/retry button wins; the error
+  // keeps focus when that button is disabled; the file input takes focus once the
+  // intent is gone (successful upload).
+  useEffect(() => {
+    if (uploading || !restoreUploadFocus) return
+    setRestoreUploadFocus(false)
+    uploadErrorRef.current?.focus()
+    if (uploadButtonRef.current) uploadButtonRef.current.focus()
+    else fileInputRef.current?.focus()
+  }, [uploading, restoreUploadFocus])
+
+  useEffect(() => {
+    if (focusDownloadErrorId === null) return
+    downloadErrorRefs.current.get(focusDownloadErrorId)?.focus()
+    setFocusDownloadErrorId(null)
+  }, [focusDownloadErrorId])
 
   const choose = (file: File | undefined) => {
     if (!file) return
@@ -280,15 +301,11 @@ function AttachmentScopePanel({
     } catch (cause) {
       if (controller.signal.aborted) setUploadError(translate('attachments.upload.cancelled'))
       else setUploadError(errorMessage(cause))
-      requestAnimationFrame(() => uploadErrorRef.current?.focus())
     } finally {
       abortRef.current = null
       uploadingRef.current = false
       setUploading(false)
-      requestAnimationFrame(() => {
-        if (uploadButtonRef.current) uploadButtonRef.current.focus()
-        else fileInputRef.current?.focus()
-      })
+      setRestoreUploadFocus(true)
     }
   }
 
@@ -317,7 +334,7 @@ function AttachmentScopePanel({
         ...current,
         [attachment.artifact.id]: errorMessage(cause),
       }))
-      requestAnimationFrame(() => downloadErrorRefs.current.get(attachment.artifact.id)?.focus())
+      setFocusDownloadErrorId(attachment.artifact.id)
     } finally {
       downloadingRef.current = null
       setDownloadingId(null)

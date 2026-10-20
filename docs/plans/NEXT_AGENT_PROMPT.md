@@ -1,6 +1,8 @@
 # Next agent prompt — K1 Kernel spike
 
-**Status:** ready · **Updated:** 2026-10-20 (S0 committed as `a6fd314`..`be89bb9`)
+**Status:** ready · **Updated:** 2026-10-20 (S0 committed as `a6fd314`..`be89bb9`; the
+browser-gate flake residual is closed, so `npm run test:web:browser` is expected 40/40 on
+every run)
 
 Copy the block below into a new agent session started in the repository root.
 
