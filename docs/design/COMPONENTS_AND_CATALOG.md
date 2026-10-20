@@ -149,6 +149,13 @@ lane hand-off for evidence.
   owner key read from the macOS keychain per approval (D-138); Git commit signing is not used.
   Public keys are in `packages/ui/catalog/approval-keys.json`; the owner creates the key with
   `node packages/ui/catalog/scripts/approval-key.ts init`.
+- **What the signature does and does not prove.** It proves that whoever produced it held the
+  owner key, which only leaves the keychain after a macOS prompt that trusts no application. It
+  does not stop a coding agent that edits the node's own code (or starts it with extra
+  `NODE_OPTIONS`) from capturing the key the next time the owner allows the prompt, and any local
+  process can ask the node to sign (the prompt does not show which component). Never choose
+  "Always Allow". The fix — a signing helper outside the checkout with a per-use user-presence
+  check — is a follow-up; see the DS1-b hand-off.
 - G10–G16 run through `packages/ui/gates/catalog/run.ts` until DS1-a's runner lands:
   `npm run ui:catalog:check` (G10, G11, G12, G15 literals) and `npm run ui:check:browser` (G13 in
   the pinned Playwright image, G14, G15 clipping, G16). G15 has a static and a browser part.
