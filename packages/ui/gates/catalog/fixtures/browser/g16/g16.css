@@ -14,3 +14,33 @@
     transform: rotate(1turn);
   }
 }
+
+/* G16 seeded violation: one finite rotation on entry, no reduced-motion rule. */
+.gx-seeded-entry {
+  display: inline-block;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  border: var(--size-focus-ring) solid currentColor;
+  animation: gx-seeded-spin 2000ms linear 1;
+}
+
+/* G16 seeded violation: the thumb slides on toggle whatever the motion setting. */
+.gx-seeded-toggle {
+  position: relative;
+  width: var(--space-10);
+  height: var(--space-5);
+}
+
+.gx-seeded-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--space-5);
+  height: var(--space-5);
+  background-color: currentColor;
+  transition: transform 2000ms linear;
+}
+
+.gx-seeded-toggle[aria-checked='true'] .gx-seeded-thumb {
+  transform: translateX(var(--space-5));
+}

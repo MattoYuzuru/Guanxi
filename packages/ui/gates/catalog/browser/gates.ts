@@ -218,6 +218,18 @@ export const g16: CatalogGate = {
   },
   seeded: [
     {
+      name: 'finite-entry-motion',
+      description: 'One finite entry rotation with no reduced-motion rule',
+      expect: /G16 g16--finite-entry os: .*moves (transform|rotate)/,
+      apply: ({ context }) => ({ ...context, stories: ['g16--finite-entry'], fixtures: true }),
+    },
+    {
+      name: 'interaction-motion',
+      description: 'A thumb that slides when toggled, whatever the motion setting',
+      expect: /G16 g16--sliding-toggle setting: .*moves transform/,
+      apply: ({ context }) => ({ ...context, stories: ['g16--sliding-toggle'], fixtures: true }),
+    },
+    {
       name: 'spinner-ignores-reduced-motion',
       description: 'A looping spinner with no reduced-motion rule',
       expect: /loops: span\.gx-seeded-spinner/,

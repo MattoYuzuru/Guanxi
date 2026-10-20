@@ -26,23 +26,23 @@ export function storyUrl(key: string, params: Record<string, string> = {}): stri
   return `/index.html?${search.toString()}`
 }
 
-/** Opens a story and waits until it rendered (or failed) and fonts settled. */
-export async function openStory(page: Page, key: string, params: Record<string, string> = {}): Promise<void> {
+/**
+ * Opens a story and waits until it rendered (or failed) and fonts settled. By default it then
+ * waits for enter transitions and finite animations to finish, so screenshots are exact; G16
+ * passes `settle: false`, because it must see motion before it completes.
+ */
+export async function openStory(
+  page: Page,
+  key: string,
+  params: Record<string, string> = {},
+  options: { settle?: boolean } = {},
+): Promise<void> {
   await page.goto(storyUrl(key, params))
   await page.waitForFunction(() => (window as unknown as HarnessWindow).__GUANXI_HARNESS__?.ready === true)
   await page.locator(`[data-harness-story="${key}"], [data-story-error]`).first().waitFor()
   await page.evaluate(() => document.fonts.ready)
   if (await page.locator('[data-story-error]').count()) throw new Error(`story ${key} failed to render`)
-  // Enter transitions and measured layouts (toasts) must settle, so screenshots are exact.
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[data-starting-style], [data-ending-style]') === null &&
-      document
-        .getAnimations()
-        .every((animation) => animation.playState !== 'running' || animation.effect?.getComputedTiming().iterations === Infinity),
-  )
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-  // Let enter transitions and measured layouts (toasts) settle so screenshots are exact.
+  if (options.settle === false) return
   await page.waitForFunction(
     () =>
       document.querySelector('[data-starting-style], [data-ending-style]') === null &&
