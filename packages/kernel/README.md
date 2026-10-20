@@ -73,25 +73,50 @@ A node's plugin tree is a list of ordered layers, each with `insert` rows and `p
 so a profile can only load plugins the node registered; it never imports a module path. Two
 deliberate differences from DSH: a patch naming an unknown row fails, and any `__jsExpr` value is
 refused, because the Cordis loader evaluates it as JavaScript. Safe mode disables every non-T0
-row. `bootNode` also refuses a profile in which a plugin contributes to a slot no enabled plugin
-declares.
+row and then every row that misses a required service or slot because of that, so a safe boot
+never fails on what it disabled. Outside safe mode, `bootNode` refuses a required service or a
+slot that no row provides or declares; a row whose provider is only disabled waits for it.
+Profile changes are serialised, a failed row surfaces as `NodeLoadError`, and `pinned` rows
+(whose services were handed to code outside the kernel, such as the legacy server context) refuse
+to change.
 
-## Lifecycle guard (vendored patch budget: 1 of 10)
+## Lifecycle guard and other upstream workarounds
 
-Upstream rc.11 accepts registrations on a fiber that is unloading or has never activated; such
-effects, listeners and child plugins are never disposed. `installLifecycleGuard` (applied by
-`createKernel`) refuses them by wrapping `Fiber#effect` and `RegistryService#plugin`. Upstream
-fixes are open, not merged: cordiverse/cordis#96, #185 and #91. `test/upstream-canary.test.ts`
-pins the upstream behaviour without the guard; when an upgrade makes it fail, retire the guard.
+Upstream rc.11 accepts registrations on a fiber that is unloading, has never activated, or has
+failed; such effects, listeners and child plugins are never disposed. `installLifecycleGuard`
+(applied by `createKernel`) admits registrations only on LOADING and ACTIVE plugin fibers by
+wrapping `Fiber#effect` and `RegistryService#plugin` at runtime. Upstream fixes are open, not
+merged: cordiverse/cordis#96, #185 and #91. `test/upstream-canary.test.ts` pins the upstream
+behaviour without the guard; when an upgrade makes it fail, retire the guard.
 
-Rules for plugin code that follow from the review of rc.11:
+ADR-0015 asks for vendored source with a change log; this patch is applied at runtime to the
+pinned npm package instead. Every divergence from upstream behaviour, counted against the
+10-patch budget:
 
-- register everything through the context (`effect`, `on`, `timeout`, `interval`, `provide`,
-  `contribute`) so unload reverts it;
-- do not register asynchronous `internal/update` handlers (upstream issue #194: concurrent
-  updates race); configuration changes restart the plugin;
-- do not observe `internal/plugin` from features (upstream #185 item 3: a throwing observer
-  aborts a disposal).
+| # | Workaround | Where | Upstream reference |
+| --- | --- | --- | --- |
+| 1 | Lifecycle guard (registrations only on LOADING/ACTIVE fibers) | `src/cordis.ts` | #96, #185 item 2, #91 |
+| 2 | Remove a row and wait for its unload before re-creating it with another plugin | `src/node.ts` | #218 |
+| 3 | Drop the logger's in-memory buffer; forward errors and warnings | `src/kernel.ts` | none (design) |
+| 4 | Refuse `internal/*` listeners from plugins | `src/plugin.ts` | #194, #185 item 3 |
+| 5 | Bound every unload and report pending effects | `src/kernel.ts` | none: Cordis waits without limit |
+
+`createKernel({ disposeTimeoutMs })` (default 10 s) bounds unloads: Cordis waits without limit
+for dependents and async cleanups, so a hung disposer would otherwise block a profile change or
+shutdown. Past the bound, `KernelTimeoutError` names each plugin still unloading and its effect
+labels.
+
+Rule that follows from the review of rc.11: register everything through the context (`effect`,
+`on`, `timeout`, `interval`, `provide`, `contribute`) so unload reverts it.
+
+### Loader risks (accepted for K1)
+
+`@cordisjs/plugin-loader` rc.8 runs two things at construction that Guanxi does not need:
+it parses `process.env.CORDIS_SHARED` as JSON (a malformed value aborts boot), and it probes for
+the optional native module `node-addon-require-builtin` through `node_modules` resolution (a
+package planted there would run at boot). Guanxi uses only builtins plus create, remove and
+update, about 150 lines of an own reconciler would remove both risks and the `__jsExpr` evaluator.
+That replacement is recommended before T1 plugins are installed from a registry (stage P1).
 
 ## Hot reload
 
