@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createPrivateKey, generateKeyPairSync, type KeyObject } from 'node:crypto'
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -431,6 +431,64 @@ describe('refusals', () => {
     assert.equal(lanRead.status, 403)
     assert.equal(signer.signs, 0)
     assert.equal(readRecord(fx.uiRoot, 'button').status, 'draft')
+  })
+})
+
+describe('filesystem boundary (GPT M2)', () => {
+  it('refuses a component directory that is a symlink out of the checkout', async () => {
+    const fx = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'guanxi-outside-'))
+    cleanups.push(() => rmSync(outside, { recursive: true, force: true }))
+    writeFileSync(join(outside, 'escape.tsx'), 'export const Escape = 1\n')
+    symlinkSync(outside, join(fx.uiRoot, 'src', 'components', 'escape'), 'dir')
+    const server = app(new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: keyObjectSigner(fx.privateKey) }))
+    const response = await post(server, 'escape', {
+      decision: 'approve',
+      comment: '',
+      expectedSourceHash: `sha256:${'0'.repeat(64)}`,
+      expectedSnapshotHashes: {},
+    })
+    assert.equal(response.status, 404)
+    assert.equal(((await response.json()) as { code: string }).code, 'component_not_found')
+    assert.equal(existsSync(join(outside, 'escape.review.json')), false)
+    assert.equal((await server.request(ROUTES.uiCatalogComponentReview('escape'))).status, 404)
+  })
+
+  it('refuses a review record that is a symlink', async () => {
+    const fx = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'guanxi-outside-'))
+    cleanups.push(() => rmSync(outside, { recursive: true, force: true }))
+    const record = uiPaths(fx.uiRoot).reviewFile('badge')
+    writeFileSync(join(outside, 'target.json'), readFileSync(record, 'utf8'))
+    rmSync(record)
+    symlinkSync(join(outside, 'target.json'), record)
+    const server = app(new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: keyObjectSigner(fx.privateKey) }))
+    const response = await post(server, 'badge', { decision: 'request_changes', comment: 'x', ...current(fx.uiRoot, 'badge') })
+    assert.equal(response.status, 404)
+    assert.equal(JSON.parse(readFileSync(join(outside, 'target.json'), 'utf8')).requests.length, 0)
+  })
+
+  it('refuses when the component directory is swapped for a symlink during the keychain prompt', async () => {
+    const fx = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'guanxi-outside-'))
+    cleanups.push(() => rmSync(outside, { recursive: true, force: true }))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const inner = keyObjectSigner(fx.privateKey)
+    const slow: ApprovalSigner = { status: () => inner.status(), sign: async (bytes) => (await gate, inner.sign(bytes)) }
+    const service = new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: slow })
+    const pending = post(app(service), 'badge', { decision: 'approve', comment: '', ...current(fx.uiRoot, 'badge') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const dir = uiPaths(fx.uiRoot).componentDir('badge')
+    cpSync(dir, outside, { recursive: true })
+    rmSync(dir, { recursive: true })
+    symlinkSync(outside, dir, 'dir')
+    release()
+    const response = await pending
+    assert.ok([404, 409].includes(response.status), String(response.status))
+    assert.equal(JSON.parse(readFileSync(join(outside, 'badge.review.json'), 'utf8')).status, 'draft')
   })
 })
 

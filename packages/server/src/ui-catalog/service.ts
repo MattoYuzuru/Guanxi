@@ -5,7 +5,7 @@
  * written, so the node never writes a record that gate G12 would reject.
  */
 import { randomBytes } from 'node:crypto'
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type {
   UiCatalogReadOnlyReason,
@@ -62,6 +62,14 @@ export interface UiCatalogReviewOptions {
 
 function newRecord(id: string): ReviewRecord {
   return { $schema: '../../../catalog/review.schema.json', id, status: 'draft', approval: null, requests: [] }
+}
+
+function isLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
+  }
 }
 
 export class UiCatalogReviewService {
@@ -181,6 +189,7 @@ export class UiCatalogReviewService {
 
     // The keychain prompt can take a while: if anyone rewrote the record meanwhile, do not
     // overwrite their change; the owner reloads and decides again.
+    this.requireComponent(uiRoot, id)
     const now = existsSync(paths.reviewFile(id)) ? readFileSync(paths.reviewFile(id), 'utf8') : null
     if (now !== original) {
       throw new UiCatalogError('review_conflict', 'record_changed', 'The review record changed while it was being signed')
@@ -250,10 +259,24 @@ export class UiCatalogReviewService {
     return this.options.uiRoot
   }
 
+  /**
+   * The component folder, its implementation and its record must be real entries inside the
+   * canonical components root: a symlink could point the writer anywhere on disk. Checked when
+   * the request arrives and again right before the write (the keychain prompt takes time).
+   */
   private requireComponent(uiRoot: string, id: string): void {
-    if (!COMPONENT_ID_PATTERN.test(id) || !existsSync(join(uiPaths(uiRoot).componentDir(id), `${id}.tsx`))) {
-      throw new UiCatalogError('component_not_found', 'unknown_component', `No component "${id}"`)
-    }
+    const missing = () => new UiCatalogError('component_not_found', 'unknown_component', `No component "${id}"`)
+    if (!COMPONENT_ID_PATTERN.test(id)) throw missing()
+    const paths = uiPaths(uiRoot)
+    const dir = paths.componentDir(id)
+    const entry = (path: string) => (existsSync(path) || isLink(path) ? lstatSync(path) : null)
+    const folder = entry(dir)
+    if (!folder || folder.isSymbolicLink() || !folder.isDirectory()) throw missing()
+    if (realpathSync(dir) !== join(realpathSync(paths.components), id)) throw missing()
+    const implementation = entry(join(dir, `${id}.tsx`))
+    if (!implementation || implementation.isSymbolicLink() || !implementation.isFile()) throw missing()
+    const record = entry(paths.reviewFile(id))
+    if (record && (record.isSymbolicLink() || !record.isFile())) throw missing()
   }
 
   private readRecord(uiRoot: string, id: string): { record: ReviewRecord; exists: boolean } {
