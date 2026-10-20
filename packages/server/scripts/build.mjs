@@ -18,6 +18,8 @@ await build({
   format: 'esm',
   sourcemap: true,
   banner: { js: '#!/usr/bin/env node' },
+  // Release builds never write component approvals (D-138); see packages/server/src/index.ts.
+  define: { __GUANXI_RELEASE_BUILD__: 'true' },
 })
 
 await chmod(outfile, 0o755)

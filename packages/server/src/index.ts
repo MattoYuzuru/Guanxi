@@ -13,6 +13,9 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { defaultDbPath } from './store/db.ts'
+import { UiCatalogReviewService } from './ui-catalog/service.ts'
+import { keychainSigner } from './ui-catalog/signer.ts'
+import { findSourceCheckoutUiRoot } from './ui-catalog/source-checkout.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
@@ -85,6 +88,11 @@ export type {
 } from './store/jobs.ts'
 
 const APP_VERSION = '0.1.0'
+
+/** Set to true by the bundled release builds (server and CLI esbuild `define`). */
+declare const __GUANXI_RELEASE_BUILD__: boolean | undefined
+export const RELEASE_BUILD =
+  typeof __GUANXI_RELEASE_BUILD__ !== 'undefined' && __GUANXI_RELEASE_BUILD__ === true
 export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -113,8 +121,16 @@ export async function start(options: StartOptions = {}) {
     appVersion: APP_VERSION,
   })
 
+  // D-138: approvals are written only from a source checkout and never by a release build.
+  const uiCatalog = new UiCatalogReviewService({
+    uiRoot: RELEASE_BUILD ? null : findSourceCheckoutUiRoot(here),
+    release: RELEASE_BUILD,
+    signer: keychainSigner(),
+  })
+
   const server = createApp(context, {
     devOrigins: options.devOrigins ?? devOriginsFor(process.env['GUANXI_WEB_PORT'] || '5173'),
+    uiCatalog,
   })
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.

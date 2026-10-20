@@ -22,6 +22,9 @@ import { projectsRoutes } from './http/projects-routes.ts'
 import { quickRunsRoutes } from './http/quick-runs-routes.ts'
 import { recipesRoutes } from './http/recipes-routes.ts'
 import { artifactsRoutes } from './http/artifacts-routes.ts'
+import { uiCatalogRoutes } from './http/ui-catalog-routes.ts'
+import { UiCatalogReviewService } from './ui-catalog/service.ts'
+import { unavailableSigner } from './ui-catalog/signer.ts'
 import type { OllamaStatusOptions } from './ollama/status.ts'
 
 export interface CreateAppOptions {
@@ -29,6 +32,11 @@ export interface CreateAppOptions {
   devOrigins?: string[]
   /** Deterministic health probe boundary for tests. */
   ollamaStatus?: OllamaStatusOptions
+  /**
+   * Component catalog review writer (D-138). Omitted means read-only: no source checkout and
+   * no signer, so the catalog shows bundled records only.
+   */
+  uiCatalog?: UiCatalogReviewService
 }
 
 export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono {
@@ -94,6 +102,18 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   server.route('/api/quick-runs', quickRunsRoutes(app))
   server.route('/api/recipes', recipesRoutes(app))
   server.route('/api/artifacts', artifactsRoutes(app))
+  server.route(
+    '/api/ui-catalog',
+    uiCatalogRoutes(
+      options.uiCatalog ??
+        new UiCatalogReviewService({
+          uiRoot: null,
+          release: false,
+          signer: unavailableSigner('platform_unsupported'),
+        }),
+      options.devOrigins ?? [],
+    ),
+  )
 
   server.post('/api/approvals/:id', async (context) => {
     const parsed = approvalBody.safeParse(await context.req.json().catch(() => null))
