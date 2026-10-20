@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
+import { webPortFromEnv } from './dev-ports.ts'
 
-// Must match the port vite.config.ts reads, so parallel worktrees never test each other's server.
-const webPort = process.env['GUANXI_WEB_PORT'] || '5173'
-const baseURL = `http://127.0.0.1:${webPort}`
+// Same parser as vite.config.ts, so parallel worktrees never test each other's server.
+const baseURL = `http://127.0.0.1:${webPortFromEnv(process.env)}`
 
 export default defineConfig({
   testDir: './test/browser',
