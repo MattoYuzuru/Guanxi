@@ -26,11 +26,20 @@ Merge order: K1 → DS1-a → DS1-b → DS1-c. Wave 2 (K2, K3, U1) opens after K
    your lane file. They override anything you assume from other harnesses.
 2. **Worktree and branch:** work only in your own git worktree on your lane branch. Never
    commit to `main`, never push, never merge. The integrator merges.
+   - Run `npm ci` in a new worktree before any check, then confirm with
+     `node -e "console.log(require.resolve('@guanxi/contract'))"`. It must print a path inside
+     your worktree.
+   - A worktree nested in the main checkout (`.claude/worktrees/…`) without its own
+     `node_modules` silently resolves `@guanxi/*` to main's packages.
+   - After adding a workspace package, run `npm install` in your worktree.
 3. **Ownership:** edit only the paths your lane file owns. If you must touch another lane's
    path, keep the change minimal and list it under "Shared edits" in your hand-off.
-4. **Ports:** export your lane's `GUANXI_WEB_PORT` and `GUANXI_API_PORT` in every shell. The
-   browser gate and the Vite dev server read them. A busy port fails loudly; never kill a
-   process you did not start.
+4. **Ports and data:**
+   - Export your lane's `GUANXI_WEB_PORT` and `GUANXI_API_PORT` in every shell, and
+     `GUANXI_DATA_DIR="$PWD/.lane-data"`.
+   - The browser gate, the Vite dev server and proxy, and `npm run dev:server` read them.
+   - A busy port fails loudly, and an invalid value fails with a message naming the variable.
+     Never kill a process you did not start.
 5. **Heavy checks go through the shared lock.** These are `npm test`, `npm run test:web:browser`,
    `npm run build`, Storybook builds and visual snapshots:
 
@@ -41,9 +50,12 @@ Merge order: K1 → DS1-a → DS1-b → DS1-c. Wave 2 (K2, K3, U1) opens after K
    Run one check per call and stop at the first failure. If your sandbox cannot run
    `agent-dev` or write `~/.local/state/agent-dev`, run the check directly with your lane's
    ports and write "ran without the shared lock" in the hand-off.
-6. **Live server:** never use the owner's `~/.guanxi`. Use
-   `node packages/cli/src/bin.ts --port "$GUANXI_API_PORT" --data-dir "$PWD/.lane-data" --no-open`.
-   `.lane-data/` is ignored by git.
+6. **Live server:** never use the owner's `~/.guanxi`; two servers on one data directory
+   reconcile each other's chat jobs.
+   - With the exports from rule 4, `npm run dev:server` is safe.
+   - The CLI equivalent is
+     `node packages/cli/src/bin.ts --port "$GUANXI_API_PORT" --data-dir "$PWD/.lane-data" --no-open`.
+   - `.lane-data/` is ignored by git.
 7. **Status files:** do not edit `docs/plans/PHASE_STATUS.md` or
    `docs/plans/NEXT_AGENT_PROMPT.md`. Every lane edits them, so they would conflict at merge.
    Write your status into `docs/plans/lanes/<lane>.handoff.md` instead:
