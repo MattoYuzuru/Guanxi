@@ -32,7 +32,8 @@ const fakeKey = () => `test_${randomBytes(32).toString('hex')}`
 async function setup(t: { after(fn: () => unknown): void }, options: { transport?: typeof fetch; pi?: PiTransport; unattended?: boolean; ownerDevice?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k3-'))
   const keys = new Map<string, Buffer>()
-  const keychain: VaultKeychain = { key(id, create) {
+  const keychain: VaultKeychain = { key(accountId, create, purpose) {
+    const id = JSON.stringify([purpose, accountId])
     if (!keys.has(id) && create) keys.set(id, randomBytes(32))
     if (!keys.has(id)) throw new Error('No wrapping key')
     return Buffer.from(keys.get(id)!)
@@ -167,16 +168,21 @@ test('E1/E2: forged consent cannot inject; a node-only keychain decrypts only ex
   vault.lock(account)
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets').get()!.n, 1)
   const underlying = await config.keychain(); const reads: string[] = []
-  const nodeOnly: VaultKeychain = { key(id, create) {
-    reads.push(id)
-    assert.equal(id, `node:${account}`, 'background may never request the session wrapping key')
-    return underlying.key(id, create)
+  const collision = underlying.key(`node:${account}`, true, 'session')
+  const nodeWrapping = underlying.key(account, false, 'node')
+  assert.notDeepEqual(nodeWrapping, collision, 'node and session purposes have disjoint keychain namespaces')
+  collision.fill(0); nodeWrapping.fill(0)
+  const nodeOnly: VaultKeychain = { key(id, create, purpose) {
+    reads.push(purpose)
+    assert.equal(id, account)
+    assert.equal(purpose, 'node', 'background may never request the session wrapping key')
+    return underlying.key(id, create, purpose)
   } }
   const background = new Vault(store, async () => nodeOnly, scrubber, config.policy)
   t.after(() => background.close())
   scrubber.unregister(saved.secretRef as `secret://${string}`)
   await background.inject(account, bg.id, true, async value => assert.equal(value, backgroundSecret))
-  assert.deepEqual(reads, [`node:${account}`])
+  assert.deepEqual(reads, ['node'])
   assert.equal(scrubber.scrub(interactiveSecret), interactiveSecret, 'background never decrypts/registers interactive-only secrets')
   assert.equal(background.unlocked(account), false)
   // Even a tampered stored flag cannot manufacture a node-encrypted credential.

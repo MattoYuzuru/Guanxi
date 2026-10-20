@@ -59,7 +59,7 @@ export class Vault {
       void pending.then(resolve, reject).finally(() => this.lifetime.signal.removeEventListener('abort', abort))
     })
     this.assertOpen()
-    const wrapping = keychain.key(node ? `node:${accountId}` : accountId, !row)
+    const wrapping = keychain.key(accountId, !row, node ? 'node' : 'session')
     try {
       if (row) return open(wrapping, String(row.wrapped), aad)
       const key = randomBytes(32)
