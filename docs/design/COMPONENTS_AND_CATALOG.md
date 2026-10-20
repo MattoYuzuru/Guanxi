@@ -130,3 +130,25 @@ Load the [`guanxi-ui` skill](../../.agents/skills/guanxi-ui/SKILL.md). In short:
 - [ ] Plugin UI uses only `@guanxi/ui` and semantic tokens; iframe plugins take their colours
       from the MCP Apps variables.
 - [ ] Every number shown has a source and an age; unknown values render as unknown.
+
+## 8. Implementation status (lane DS1-b, 2026-10-20)
+
+Built on the DS1-b lane branch; see [`packages/ui/AGENTS.md`](../../packages/ui/AGENTS.md) and the
+lane hand-off for evidence.
+
+- `@guanxi/ui` has 14 primitives (shadcn/ui on Base UI, adapted) and 4 patterns (StatusPill,
+  ProvenanceLabel, EmptyState, ErrorState), all `draft`. They style through semantic custom
+  properties; a temporary token stub supplies FOUNDATIONS values until DS1-a's generated tokens
+  land.
+- The in-app catalog is at Settings → Developer → Components (`/settings/developer/components`),
+  code-split and shown only with Developer mode on. Links keep the component and regime in the
+  query (`?component=button&theme=dark-hc&density=comfortable&glass=solid`).
+- Approvals (§4) go through the node, not a Vite middleware: `GET/POST
+  /api/ui-catalog/components/<id>/review` writes `<id>.review.json` only from a source checkout and
+  never in a release build. The approval is an Ed25519 signature inside the record, made with the
+  owner key read from the macOS keychain per approval (D-138); Git commit signing is not used.
+  Public keys are in `packages/ui/catalog/approval-keys.json`; the owner creates the key with
+  `node packages/ui/catalog/scripts/approval-key.ts init`.
+- G10–G16 run through `packages/ui/gates/catalog/run.ts` until DS1-a's runner lands:
+  `npm run ui:catalog:check` (G10, G11, G12, G15 literals) and `npm run ui:check:browser` (G13 in
+  the pinned Playwright image, G14, G15 clipping, G16). G15 has a static and a browser part.
