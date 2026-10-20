@@ -54,10 +54,28 @@ race test); a record changed during the keychain prompt is not overwritten.
 Final run on the committed tree, through `agent-dev run --cwd "$PWD" --node 26 --resource heavy`
 with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
 
-FINAL_RESULTS
+| Check | Result | Receipt |
+| --- | --- | --- |
+| `npm run typecheck` | exit 0 (all workspaces) | direct (not heavy) |
+| `npm test` | core 701 tests: 700 pass, 1 skipped (the opt-in keychain test); web 261/261; ui node 28/28; ui vitest 17/17 | `check-0mzu4vn9` |
+| `npm run test:web:browser` | 47/47 in two consecutive runs; one earlier full run failed 1 legacy test (see below) | `check-qur_zopt`, `check-dmh1ypai`; failure `check-dk4vaat8` |
+| `npm run build` | exit 0 | `check-pqeq5sgk` |
+| `npm run build-storybook --workspace @guanxi/ui` | exit 0, 83 stories indexed | `check-2kmw9h7e` |
+| `run.ts --mode fast --selftest` | 16 cases ok | `check-u8yscubq` |
+| `run.ts --mode browser --selftest` (G13 in Docker, G14, G15 clipping, G16; clean runs + seeds) | 8 cases ok | `check-z1h52loq` |
+| `npm run lint:md` | 0 errors | direct |
+| `npm run check:licenses` | 343 packages, 0 not allowed | direct |
 
-New tests (by file): server `ui-catalog-review.test.ts` NEW_SERVER; ui node
-`gates/catalog/test/{approval,gates,extension}.test.ts` NEW_UI_NODE; ui vitest
+**Open item:** in one of three full browser-gate runs, the legacy
+`localization.spec.ts` › "locale preview, persistence and glossary stay exact across failure
+and reload" saw 1 instead of 2 `/api/runtime` and `/api/models` reads (its expectation counts
+the StrictMode double fetch). It passed 3/3 alone (`check-zxbw3r20`, `check-5s3ti3zl`,
+`check-qr7cnsql`) and in the next two full runs. DS1-b changes no runtime or model fetching;
+the pattern matches the StrictMode-aborted-request flakes fixed in S0. Not investigated further
+in this lane; it should be, rather than retried.
+
+New tests (by file): server `ui-catalog-review.test.ts` 20 (19 run, 1 opt-in); ui node
+`gates/catalog/test/{approval,gates,extension}.test.ts` 28; ui vitest
 `test/{components,catalog}.test.tsx` 17; web browser `component-catalog.spec.ts` 7; gate
 self-tests 16 fast + 8 browser cases; G13 304 screenshots; G14 304 + 2 chrome scans; G15
 clipping 166; G16 166. Regression envelope: the existing core, web component and 40 legacy
@@ -66,7 +84,6 @@ browser tests, unchanged.
 G13 determinism: exact pixels (`threshold: 0`); 10 consecutive compare runs passed
 (`check-75q5cqfy`, `check-g0g2dp76`, `check-00j37utd`, `check-3ar3lazl`, `check-x3hqm81y`,
 `check-iky8isxd`, `check-zr_pcwb8`, `check-3vz6xm2a`, `check-zoej41ax`, `check-gln7ojzo`).
-Storybook build: 83 stories indexed (`check-hndhioju`, before the review fixes).
 
 ## Independent verification
 
