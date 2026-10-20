@@ -70,16 +70,18 @@ export function CatalogVariantInstall({
   useEffect(() => {
     if (state.kind === 'confirming') confirmRef.current?.focus()
     if (state.kind === 'pulling') cancelRef.current?.focus()
-    // Once the refreshed catalog reports the variant installed, the footer swaps the
-    // install button for links, so the closing dialog has no focus target left.
-    // Keep focus on the chosen variant instead of dropping it to the document.
-    if (
-      state.kind === 'idle'
-      && (document.activeElement === null || document.activeElement === document.body)
-    ) {
-      selectedVariantRef.current?.focus()
-    }
   }, [state.kind])
+
+  // Once the refreshed catalog reports the variant installed, the footer swaps the
+  // install button for links. That happens either before the dialog closes (the dialog
+  // has no focus target left) or after it (the focused button disappears). In both
+  // cases keep focus on the chosen variant instead of dropping it to the document.
+  const selectedInstalled = selected?.installation.state === 'installed'
+  useEffect(() => {
+    if (state.kind !== 'idle') return
+    if (document.activeElement !== null && document.activeElement !== document.body) return
+    selectedVariantRef.current?.focus()
+  }, [state.kind, selectedInstalled])
 
   useEffect(() => {
     onPullActiveChange?.(active)

@@ -87,9 +87,7 @@ export function LauncherPage({ health }: { health: Health }) {
     [compareRows],
   )
 
-  const invalidateCatalogBasis = useCallback((notice = true, resetPage = true) => {
-    catalogBasisRef.current = null
-    if (resetPage) setCatalogPage(1)
+  const clearCompareRows = useCallback((notice: boolean) => {
     setCompareRows((current) => {
       if (notice && current.length > 0) {
         setCompareNotice(translate('catalog.compare.invalidated'))
@@ -97,6 +95,12 @@ export function LauncherPage({ health }: { health: Health }) {
       return current.length === 0 ? current : []
     })
   }, [])
+
+  const invalidateCatalogBasis = useCallback((notice = true, resetPage = true) => {
+    catalogBasisRef.current = null
+    if (resetPage) setCatalogPage(1)
+    clearCompareRows(notice)
+  }, [clearCompareRows])
 
   useEffect(() => {
     if (pageBasisRef.current === acceptedQueryBasis) return
@@ -126,6 +130,12 @@ export function LauncherPage({ health }: { health: Health }) {
   // an explicit refresh or a retry still replaces the cards with a skeleton.
   const replacingCatalog = catalog.loading
     || (catalog.refreshing && inPlaceCatalogBasis !== catalogViewBasis)
+  const catalogSettled = catalog.data !== null && !replacingCatalog && !catalog.error
+  const catalogSettledRef = useRef(catalogSettled)
+
+  useEffect(() => {
+    catalogSettledRef.current = catalogSettled
+  }, [catalogSettled])
 
   useEffect(() => {
     if (!catalog.refreshing) setInPlaceCatalogBasis(null)
@@ -143,19 +153,22 @@ export function LauncherPage({ health }: { health: Health }) {
   useEffect(() => {
     if (!catalog.data || catalog.data.pagination?.mode !== 'paged') return
     const source = catalog.data.source
+    // Rows carry installation facts, so the install revision is part of their evidence
+    // basis: a row added while a post-install refresh was pending is dropped when the
+    // refreshed rows land. Data always belongs to the current revision because a
+    // revision change aborts the older request.
     const basis = JSON.stringify([
       source?.state ?? null,
       source?.source ?? null,
       source?.fetchedAt ?? null,
       catalog.data.pagination.totalItems,
+      installedRevision,
     ])
     if (catalogBasisRef.current !== null && catalogBasisRef.current !== basis) {
-      setCompareRows((current) => {
-        if (current.length > 0) setCompareNotice(translate('catalog.compare.invalidated'))
-        return current.length === 0 ? current : []
-      })
+      clearCompareRows(true)
     }
     catalogBasisRef.current = basis
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog.data])
 
   const toggleCompare = useCallback((model: CatalogModel, variant: CatalogVariant) => {
@@ -176,14 +189,15 @@ export function LauncherPage({ health }: { health: Health }) {
   }, [availableComparisonRows])
 
   const onInstalled = useCallback(() => {
-    // Re-read both lists, but in place and on the same page: the catalog card that
-    // owns the install dialog must stay mounted so its verified result stays
-    // visible until the user dismisses it. Compare rows still hold pre-install
-    // installation facts, so they are invalidated.
-    invalidateCatalogBasis(true, false)
-    setInPlaceCatalogBasis(catalogViewBasisRef.current)
+    // Re-read both lists on the same page. When the catalog shows settled rows for the
+    // current basis, re-read it in place: the card that owns the install dialog must
+    // stay mounted so its verified result stays visible until the user dismisses it.
+    // A catalog that is still loading another basis keeps its skeleton. Compare rows
+    // hold pre-install installation facts, so they are cleared.
+    if (catalogSettledRef.current) setInPlaceCatalogBasis(catalogViewBasisRef.current)
     setInstalledRevision((value) => value + 1)
-  }, [invalidateCatalogBasis])
+    clearCompareRows(true)
+  }, [clearCompareRows])
 
   const localItems: CarouselItem[] = useMemo(
     () =>

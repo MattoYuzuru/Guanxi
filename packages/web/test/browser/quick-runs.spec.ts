@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { runFramesBeforePendingCommits } from './fixtures/frame-order.ts'
+import { installFrameOrderSwitch, setFramesBeforePendingCommits } from './fixtures/frame-order.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-layout safe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  // Async failures must move focus only after React commits the feedback.
-  await runFramesBeforePendingCommits(page)
+  await installFrameOrderSwitch(page)
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-13T10:00:00.000Z'
   const project = {
@@ -180,6 +179,8 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   await expect(create).toBeFocused()
 
   const session = page.getByRole('button', { name: 'Сессия' })
+  // The failure must take focus only after React commits it, even when a frame runs first.
+  await setFramesBeforePendingCommits(page, true)
   await session.evaluate((button) => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -187,6 +188,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   await expect.poll(() => patchCalls).toBe(1)
   const retentionError = page.getByText('Не удалось сохранить запрос в локальное хранилище.').locator('..')
   await expect(retentionError).toBeFocused()
+  await setFramesBeforePendingCommits(page, false)
   await page.getByRole('button', { name: 'Повторить изменение retention' }).press('Enter')
   await expect.poll(() => patchCalls).toBe(2)
   expect(patchBodies).toEqual([

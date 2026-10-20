@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { runFramesBeforePendingCommits } from './fixtures/frame-order.ts'
+import { installFrameOrderSwitch, setFramesBeforePendingCommits } from './fixtures/frame-order.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
 test('attachment retry/reload stays exact, scoped, accessible and download-once', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  // Async failures must move focus only after React commits the feedback.
-  await runFramesBeforePendingCommits(page)
+  await installFrameOrderSwitch(page)
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-14T14:00:00.000Z'
   const project = {
@@ -177,6 +176,9 @@ test('attachment retry/reload stays exact, scoped, accessible and download-once'
     buffer: Buffer.from('browser exact'),
   })
   const upload = page.getByRole('button', { name: 'Загрузить вложение' })
+  // Upload completion must move focus only after React commits it, even when a frame
+  // runs first: to the retry button after the failure, to the file input after success.
+  await setFramesBeforePendingCommits(page, true)
   await upload.evaluate((button) => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -191,6 +193,8 @@ test('attachment retry/reload stays exact, scoped, accessible and download-once'
   expect(uploadBodies.map((body) => body.toString())).toEqual(['browser exact', 'browser exact'])
   await expect(page.getByRole('list', { name: 'Вложения в выбранной области' }).getByText(item.displayName)).toHaveCount(1)
   await expect(page.getByText(/Не добавлено в контекст модели/u)).toHaveCount(1)
+  await expect(input).toBeFocused()
+  await setFramesBeforePendingCommits(page, false)
 
   await page.reload()
   await page.getByRole('combobox', { name: 'Область' }).selectOption(project.id)
