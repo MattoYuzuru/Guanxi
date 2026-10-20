@@ -12,3 +12,4 @@ export * from './context-checkpoints.ts'
 export * from './artifacts.ts'
 
 export * from './connections/index.ts'
+export * from './brand.ts'

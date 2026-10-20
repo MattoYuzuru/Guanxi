@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { PRODUCT_FILE_PREFIX } from '../../../web/src/lib/brand.ts'
+import { PRODUCT_FILE_PREFIX } from '@guanxi/contract'
 
 /** Test doubles implement this boundary without ever opening the owner's keychain. */
 export interface VaultKeychain { key(accountId: string, create: boolean): Buffer }
