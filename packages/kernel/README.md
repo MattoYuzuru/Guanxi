@@ -14,7 +14,7 @@ Cordis.
   - plugins and the context: `definePlugin`, `PluginContext`, `GuanxiPlugin`;
   - helpers: `effect`, `on`, `emit`, `provide`, `service`, `optionalService`, `timeout`,
     `interval`, `declareSlot`, `contribute`;
-  - the host side: `createKernel` → `Kernel`, `SlotRegistry`;
+  - the host side: `createKernel` → `Kernel` (a frozen, method-only facade), `SlotRegistry`;
   - data: `parseManifest`, `readPackageManifest`, `satisfiesEngine`, `resolveProfile`.
 
   The export list in `src/index.ts` is the whole public surface.
@@ -53,7 +53,9 @@ Rules the kernel enforces:
   - its `signal` aborts at that moment, so async work can stop.
 - Provide exactly `manifest.provides`, and only while loading. Read services only through
   `requires` (`service`) or `uses` (`optionalService`). A plugin restarts when one of its `uses`
-  appears or leaves. Slots are reached through `declareSlot`/`contribute` only.
+  appears or leaves. Slots are reached through `declareSlot`/`contribute` only; `slots` is a
+  reserved kernel service name.
+- Async listeners may reject: the kernel logs the rejection; it never becomes unhandled.
 - Do not wait inside `apply` for another plugin or a lifecycle call; put long initialisation in
   an effect.
 - `kernel/*` event names are reserved.
@@ -156,6 +158,10 @@ A node's plugin tree is a list of ordered layers. Each layer has `insert` rows a
 
 `processResources()` reports active timers and libuv handles.
 
-`packages/server/test/kernel-reload-leaks.test.ts` compares them over 100 reload cycles and
-checks with `WeakRef`s that unloaded instances are collected. `test/leak-detection.test.ts`
-proves the counters move.
+`retainedObjects(kernel)` (Node entry) reports fibers and contexts the garbage collector has
+not reclaimed yet, disposed ones included.
+
+`packages/server/test/kernel-reload-leaks.test.ts` compares the census over 100 reload cycles,
+bounds total heap growth after 50 warm-up cycles, and checks with `WeakRef`s and
+`retainedObjects` that unloaded instances are collected. `test/leak-detection.test.ts` proves the
+counters move.

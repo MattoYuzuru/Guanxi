@@ -120,8 +120,11 @@ Every K1 exit-gate assertion stays and passes:
 
 - legacy governor and Ollama tests run through the facade;
 - 100 reload cycles under load leave 0 leaked listeners, timers, handles and slot entries;
-- object-heap growth ≤ 5%, with every unloaded instance collected;
-- module records are counted for code reloads;
+- total V8 heap growth after forced GC ≤ 5% over 100 cycles, measured after 50 warm-up cycles
+  so JIT compilation is not counted (object heap reported alongside), with every unloaded
+  governor, fiber and context collected (`WeakRef` and `retainedObjects`);
+- code reloads keep one fixture module record each within a coarse per-reload budget, and every
+  replaced fiber and context is collected;
 - the web slot appears, hot-updates through Vite HMR and disappears on unload;
 - the empty node stays within 2 s and 200 MB.
 
