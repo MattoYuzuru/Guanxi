@@ -1,0 +1,40 @@
+{
+  "font": {
+    "text": {
+      "size": {
+        "$type": "dimension",
+        "$value": "{font.size.14}"
+      }
+    }
+  },
+  "control": {
+    "height": {
+      "$type": "dimension",
+      "$value": {
+        "value": 32,
+        "unit": "px"
+      }
+    }
+  },
+  "row": {
+    "height": {
+      "$type": "dimension",
+      "$value": {
+        "value": 32,
+        "unit": "px"
+      }
+    }
+  },
+  "panel": {
+    "padding": {
+      "$type": "dimension",
+      "$value": "{spacing.12}"
+    }
+  },
+  "pane": {
+    "gap": {
+      "$type": "dimension",
+      "$value": "{spacing.12}"
+    }
+  }
+}

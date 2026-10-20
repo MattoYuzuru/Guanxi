@@ -1,0 +1,87 @@
+{
+  "motion": {
+    "duration": {
+      "instant": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      },
+      "fast": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      },
+      "moderate": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      },
+      "medium": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      },
+      "slow": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      },
+      "slower": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      },
+      "loop": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      }
+    },
+    "fade": {
+      "instant": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
+      },
+      "fast": {
+        "$type": "duration",
+        "$value": "{primitive.duration.fast}"
+      },
+      "moderate": {
+        "$type": "duration",
+        "$value": "{primitive.duration.fast}"
+      },
+      "medium": {
+        "$type": "duration",
+        "$value": "{primitive.duration.fast}"
+      },
+      "slow": {
+        "$type": "duration",
+        "$value": "{primitive.duration.fast}"
+      },
+      "slower": {
+        "$type": "duration",
+        "$value": "{primitive.duration.fast}"
+      },
+      "loop": {
+        "$type": "duration",
+        "$value": "{primitive.duration.fast}"
+      }
+    },
+    "distance": {
+      "sm": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      },
+      "md": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      },
+      "lg": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0,
+          "unit": "px"
+        }
+      }
+    }
+  }
+}

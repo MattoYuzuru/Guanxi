@@ -1,0 +1,80 @@
+{
+  "--accent": [
+    "packages/web/**"
+  ],
+  "--accent-fg": [
+    "packages/web/**"
+  ],
+  "--accent-subtle": [
+    "packages/web/**"
+  ],
+  "--bg": [
+    "packages/web/**"
+  ],
+  "--bg-inset": [
+    "packages/web/**"
+  ],
+  "--bg-raised": [
+    "packages/web/**"
+  ],
+  "--bg-subtle": [
+    "packages/web/**"
+  ],
+  "--border": [
+    "packages/web/**"
+  ],
+  "--border-strong": [
+    "packages/web/**"
+  ],
+  "--danger": [
+    "packages/web/**"
+  ],
+  "--fg": [
+    "packages/web/**"
+  ],
+  "--fg-muted": [
+    "packages/web/**"
+  ],
+  "--fg-subtle": [
+    "packages/web/**"
+  ],
+  "--shadow-card": [
+    "packages/web/**"
+  ],
+  "--text-2xs": [
+    "packages/web/**"
+  ],
+  "--text-2xs--line-height": [
+    "packages/web/**"
+  ],
+  "--project-color-light-bg": [
+    "packages/web/**"
+  ],
+  "--project-color-light-fg": [
+    "packages/web/**"
+  ],
+  "--project-color-dark-bg": [
+    "packages/web/**"
+  ],
+  "--project-color-dark-fg": [
+    "packages/web/**"
+  ],
+  "--warning": [
+    "packages/web/**"
+  ],
+  "--focus": [
+    "packages/web/**"
+  ],
+  "--color-fit-green": [
+    "packages/web/**"
+  ],
+  "--color-fit-yellow": [
+    "packages/web/**"
+  ],
+  "--color-fit-red": [
+    "packages/web/**"
+  ],
+  "--color-fit-unknown": [
+    "packages/web/**"
+  ]
+}

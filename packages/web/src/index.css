@@ -1,6 +1,18 @@
 @import 'tailwindcss';
+@import '../../ui/generated/tokens.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* SidebarSlot uses these aliases from ui/generated/theme.css. Keep this bridge
+   until DS1-c imports that theme for the rest of the legacy app. */
+@theme inline {
+  --color-divider: var(--color-border-primary);
+  --color-secondary: var(--color-text-secondary);
+  --color-foreground: var(--color-text-primary);
+  --color-inset: var(--color-background-tertiary);
+  --radius-control: var(--border-radius-control);
+  --text-12: var(--font-size-12);
+}
 
 /*
   Плотная информационная вёрстка: базовый шрифт 13px, узкие отступы.
@@ -40,6 +52,8 @@
     --accent-fg: oklch(0.99 0 0);
     --accent-subtle: oklch(0.94 0.03 264);
     --danger: oklch(0.55 0.21 25);
+    --warning: var(--color-text-warning);
+    --focus: var(--color-ring-primary);
     --shadow-card: 0 1px 2px oklch(0 0 0 / 0.06), 0 4px 12px oklch(0 0 0 / 0.04);
   }
 

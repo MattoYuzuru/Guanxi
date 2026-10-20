@@ -44,7 +44,7 @@ You may run read-only commands. Heavy checks (`npm test`, the browser gate, the 
 through the shared lock:
 
 ```bash
-agent-dev run --cwd "$PWD" --node 26 --resource heavy -- npm test
+agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- npm test
 ```
 
 End with a verdict: merge, merge after fixes, or do not merge.

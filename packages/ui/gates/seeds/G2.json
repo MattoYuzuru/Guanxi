@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/generated/tokens.css": "/* hand edited */"
+  },
+  "expectedError": "generated output differs"
+}
