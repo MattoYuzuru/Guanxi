@@ -136,10 +136,16 @@ The browser gate needs Chromium installed first: `npx playwright install chromiu
 `packages/web`; a bare `npx playwright` from the root lacks the workspace `baseURL` and fails
 with an invalid URL.
 
-Parallel worktrees set `GUANXI_WEB_PORT` (Vite and the browser gate, default 5173) and
-`GUANXI_API_PORT` (the Vite `/api` proxy, default 4310). The server takes `PORT`, and its
-default dev origins follow `GUANXI_WEB_PORT`. A busy port fails loudly (`strictPort`); it
-never silently tests another worktree's server.
+Parallel worktrees set three variables:
+
+- `GUANXI_WEB_PORT`: Vite, the browser gate and the server's dev origins; default 5173.
+- `GUANXI_API_PORT`: the server and the Vite `/api` proxy; default 4310. It wins over the
+  legacy `PORT`.
+- `GUANXI_DATA_DIR`: the server's data directory; default `~/.guanxi`.
+
+Ports are parsed strictly (digits, 1–65535) and a busy port fails loudly (`strictPort`), so a
+worktree never silently tests another worktree's server. Each worktree needs its own `npm ci`;
+see [lanes](docs/plans/lanes/README.md).
 
 ## Change boundaries
 

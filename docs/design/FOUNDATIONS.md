@@ -118,8 +118,9 @@ data-only plugin).
 
 ## 3. Spacing, radius, borders, elevation
 
-- **Grid:** 4 px. Spacing scale 2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64. Density changes the
-  base `--spacing` and type sizes, never the layout.
+- **Grid:** 4 px. Spacing scale 2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64. The base
+  `--spacing` unit stays 4 px in both densities so the grid holds; density changes only the
+  semantic size tokens in §7, never the layout.
 - **Radius** grows with the layer: inline (chips, tags, kbd) 6 · controls 10 · panels and cards
   16 · glass layers, sheets and dialogs 20 · app tile 21.9%.
 - **Borders:** 1 px. Decorative dividers use step 7; control boundaries step 9.
@@ -135,13 +136,29 @@ data-only plugin).
 | Backdrop | `blur(20px) saturate(1.15)` | same |
 | Ice edge | inset top highlight, white at 65% | white at 8% |
 | Ink seam | 1 px bottom rule, ink at 10% | black at 32% |
-| Grain | static 128 px fractal-noise tile, 4–6% opacity, soft-light blend | 5–7% |
+| Grain | static 128 px fractal-noise tile, 5% opacity, soft-light blend (tunable 4–6%) | 6% (tunable 5–7%) |
 
 - **Where:** sidebar, title strip, dock lanes above the composer, composer, command palette,
   menus, popovers, toasts. Never on reading surfaces. At most three glass surfaces visible; no
   glass on glass.
-- **Levels** in Settings → Appearance: **Glass** (default), **Tinted** (fill about 90%, smaller
-  blur, less grain), **Solid** (no blur, no grain, step-1 fill and a step-8 border).
+- **Levels** in Settings → Appearance: **Glass** (default), **Tinted**, **Solid**. Values per
+  level (the Tinted values are the ones in the owner-reviewed preview):
+
+| Level | Fill (light / dark) | Backdrop | Grain (light / dark) |
+| --- | --- | --- | --- |
+| Glass | step 1 at 72% / step 3 at 70% | `blur(20px) saturate(1.15)` | 5% / 6% |
+| Tinted | step 1 at 90% / step 3 at 90% | `blur(12px) saturate(1.15)` | 3.5% / 4.5% |
+| Solid | step 1 / step 3 at 100%, plus a step-8 border | none | none |
+
+- **Strong glass** (elevation 3: dialogs and sheets, over the 32% ink scrim) is denser, so text
+  on it keeps contrast whatever is behind the scrim:
+
+| Level | Fill (light / dark) | Backdrop | Grain |
+| --- | --- | --- | --- |
+| Glass | step 1 at 90% / step 3 at 88% | `blur(24px) saturate(1.15)` | as the level |
+| Tinted | step 1 at 96% / step 3 at 96% | `blur(12px) saturate(1.15)` | as the level |
+| Solid | same as Solid glass | none | none |
+
 - **Automatic Solid** when the OS asks to reduce transparency (the desktop shell reads it natively
   and sets `data-reduce-transparency`, because Safari lacks the CSS media query), under increased
   contrast or forced colours, on battery saver, or when GPU compositing is off.
@@ -190,6 +207,8 @@ reorder.
 | Control height | 28 px | 32 px |
 | Row height (lists, trees, tables) | 26 px | 32 px |
 | Panel padding | 8 px | 12 px |
+| Gap between items in a pane | 8 px | 12 px |
+| Base `--spacing` unit | 4 px | 4 px |
 
 Defaults (D-131): the chat and new-session screens are comfortable; dense panes (processes,
 terminal, trace, board, files) are compact. The user can switch everything to one preset. Hit

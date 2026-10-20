@@ -149,14 +149,14 @@ Residual risks:
 | Item | Status | Evidence |
 | --- | --- | --- |
 | Browser-gate flake fixes merged into `main` | implemented | merge `6518e57` of `claude/nostalgic-jackson-673c89` (25 consecutive 40/40 runs recorded above) |
-| Per-worktree ports | locally validated | `GUANXI_WEB_PORT` / `GUANXI_API_PORT` in `packages/web/vite.config.ts`, `playwright.config.ts` and the server's default dev origins. New: browser gate 40/40 with `GUANXI_WEB_PORT=5199` while a decoy HTTP server held `127.0.0.1:5173` (a wrong `baseURL` would have hit the decoy). Envelope: typecheck; `npm test` 669 node + 249 vitest passed. |
+| Per-worktree ports and data | locally validated | `GUANXI_WEB_PORT`, `GUANXI_API_PORT` and `GUANXI_DATA_DIR`, with one strict parser per side (`packages/web/dev-ports.ts`, `packages/server/src/config/listen-env.ts`). Independent review (`sde-agent:implementation-reviewer`) found 1 High, 1 Medium and 3 Low issues; all are fixed in a separate commit. New: 24 parsing and default tests (12 server, 12 web); browser gate 40/40 with `GUANXI_WEB_PORT=5199` while a decoy HTTP server held `127.0.0.1:5173`; the gate pointed at the busy port exits 1 with "already used"; `GUANXI_WEB_PORT=abc` exits 1 naming the variable. Envelope: typecheck, `npm test` (681 node + 261 vitest), `npm run build`. The High finding was nested Claude worktrees without their own `node_modules` resolving main's packages; both lane worktrees got `npm ci`, and the lane rules now require it. |
 | Lane rules and prompts | accepted (owner, 2026-10-20) | [lanes/](lanes/README.md): owned paths, ports, `agent-dev --resource heavy` lock, hand-off files instead of status files, merge order K1 → DS1-a → DS1-b → DS1-c |
 
 ## Next stages
 
 | Stage | Status | Notes |
 | --- | --- | --- |
-| K1 Kernel spike | ready (lane K1, Claude) | prompt in [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md) plus [lanes/K1](lanes/K1.md) |
+| K1 Kernel spike | in progress (lane K1, Claude) | Cordis facade met every budget, but the owner rejected Cordis (D-183) because upstream races stay unfixed; the lane is building the own kernel behind a `PluginContext` facade with the same exit gate |
 | DS1 Design foundations | ready (lanes DS1-a GPT, DS1-b Claude; DS1-c DeepSeek after K1 and DS1-a merge) | [lanes/](lanes/README.md) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2, K3 | not started | can start in parallel after K1; U1 after K1 and DS1 |

@@ -1,6 +1,6 @@
 # Owner decisions — 2026-10-20 addendum (open questions)
 
-**Status:** accepted · **Date:** 2026-10-20 · **Decisions:** D-141–D-182
+**Status:** accepted · **Date:** 2026-10-20 · **Decisions:** D-141–D-183
 **Extends:** [2026-10-20](2026-10-20-owner-decisions.md).
 
 The owner was asked every open question from [OPEN_QUESTIONS](../plans/OPEN_QUESTIONS.md)
@@ -87,3 +87,16 @@ Mapping: D-141–D-170 answer Q-201–Q-230 in order; D-171–D-182 answer Q-233
 | D-180 | Q-242 | BrowserOS neo is **not offered** now. |
 | D-181 | Q-243 | Guanxi offers a one-click `requires_confirmation` **preset for runs that use imported site sessions** (purchases, sending, deleting, credential changes, OAuth consent, uploads), **off by default** (D-122 stays the default). |
 | D-182 | Q-244 | Imported site sessions **never reach rented cloud machines by default**; a run may allow it only when its policy names the site, and then only as per-attempt expiring grants. |
+
+## Kernel (after the K1 spike, later the same day)
+
+The K1 lane built the Cordis facade and met every budget: 100 reload cycles without leaks,
+object heap +2.02%, boot about 50 ms, 88 MB RSS. Five facade workarounds contained the known
+upstream lifecycle races. Those races are still open upstream as unmerged pull requests
+(cordiverse/cordis #96, #185, #91, #194, #218), which literally meets ADR-0015 rejection
+criterion 3. The lane and the architecture review recommended accepting Cordis with an amended
+criterion.
+
+| ID | Topic | Decision |
+| --- | --- | --- |
+| D-183 | Kernel | **Reject Cordis; build the own kernel** that ADR-0015 names as the fallback: about 1–2k lines with Cordis semantics (context tree, services, inject, effects with disposers, events, plugin lifecycle, profiles and patch layers, manifest), designed so the upstream race classes cannot occur, behind a Guanxi-owned `PluginContext` facade. Every K1 exit-gate test stays and must pass against the own kernel. The owner chose this over "accept with an amended criterion" and "accept until P1". A superseding ADR-0037 records the design. |

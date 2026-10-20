@@ -2,23 +2,12 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { apiPortFromEnv, webPortFromEnv } from './dev-ports.ts'
 
 const contractSrc = fileURLToPath(new URL('../contract/src/index.ts', import.meta.url))
 const uiRoot = fileURLToPath(new URL('../ui', import.meta.url))
-
-// Parallel worktrees each need their own ports; defaults match a single checkout.
-function portFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name]
-  if (raw === undefined || raw === '') return fallback
-  const port = Number(raw)
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`${name} must be a TCP port, got ${JSON.stringify(raw)}`)
-  }
-  return port
-}
-
-const webPort = portFromEnv('GUANXI_WEB_PORT', 5173)
-const apiPort = portFromEnv('GUANXI_API_PORT', 4310)
+const webPort = webPortFromEnv(process.env)
+const apiPort = apiPortFromEnv(process.env)
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

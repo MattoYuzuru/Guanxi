@@ -12,6 +12,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
+import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/listen-env.ts'
 import { defaultDbPath } from './store/db.ts'
 import { UiCatalogReviewService } from './ui-catalog/service.ts'
 import { keychainSigner } from './ui-catalog/signer.ts'
@@ -96,11 +97,6 @@ export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-/** Origins of the Vite dev server; GUANXI_WEB_PORT moves it in parallel worktrees. */
-export function devOriginsFor(webPort: string): string[] {
-  return [`http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`]
-}
-
 export interface StartOptions {
   port?: number
   host?: string
@@ -111,9 +107,9 @@ export interface StartOptions {
 }
 
 export async function start(options: StartOptions = {}) {
-  const port = options.port ?? (Number(process.env['PORT']) || DEFAULT_PORT)
+  const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
-  const dataDir = options.dataDir ?? join(process.env['HOME'] ?? '.', '.guanxi')
+  const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
 
   const context = await createAppContext({
     dbPath: defaultDbPath(dataDir),
@@ -128,7 +124,7 @@ export async function start(options: StartOptions = {}) {
   })
 
   const server = createApp(context, {
-    devOrigins: options.devOrigins ?? devOriginsFor(process.env['GUANXI_WEB_PORT'] || '5173'),
+    devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
     uiCatalog,
   })
 

@@ -72,6 +72,9 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 ### K1 — Kernel spike
 
 - **Goal:** prove Cordis 4 can carry Guanxi ([ADR-0015](../decisions/0015-refoundation-on-own-cordis-kernel.md)).
+- **Outcome so far:** the spike met every budget, but upstream lifecycle races stay unfixed;
+  the owner rejected Cordis (D-183). K1 continues with the own-kernel fallback behind the same
+  exit gate.
 - **Depends on:** S0.
 - **Scope:** `packages/kernel` facade (context, services, inject, effects, loader, HMR,
   profiles); port the legacy Resource Governor and Ollama adapter into plugins; one web UI
