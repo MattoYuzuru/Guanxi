@@ -1,11 +1,11 @@
 # DS1-a hand-off
 
-**Status:** Review 1 fixes implemented and locally validated; ready for integrator review.
+**Status:** Review 2 fixes implemented; validation blocked by N7's legacy width uses. Not ready to merge.
 **Date:** 2026-10-20. **Branch:** `lane/ds1-a-tokens`.
 **Worktree:** `/Users/yuzuru/Projects/Guanxi-lanes/ds1-a`.
 
-The original delivery and validation below are historical. The **Review 1 fixes** section
-supersedes their counts, remaining work and integration status.
+The original delivery and validation below are historical. The **Review 2 fixes** section
+supersedes earlier counts, remaining work and integration status.
 
 ## Delivered
 
@@ -245,7 +245,78 @@ remains; the authorized residuals below are integration inputs.
 ## Review 2 fixes
 
 Review source: `/Users/yuzuru/Projects/Guanxi-lanes/ds1-a-review/REVIEW-2.md`, baseline
-`a8651a7`; verdict: merge after small fixes. Findings are being fixed in separate commits.
+`a8651a7`; verdict: merge after small fixes. Each finding has a separate fix commit.
+
+### Findings, commits and assertions
+
+| Finding | Fix commit | Test / evidence |
+| --- | --- | --- |
+| N1 | `8abdca6` | Merge protocol in the gate README and below; documentation is the accepted test substitute. Optional merge bound omitted. |
+| N2 | `3c5ea78` | `ratchet.test.mjs` `N2`: a new one→two correction cannot exempt one→three, and the source hash is also checked, on working-tree and committed edges. Removing the hash binding makes this test fail. |
+| N3 | `ccc8319` | `ratchet.test.mjs` `N3`: a real depth-one file-URL clone fails closed; after `git fetch --unshallow`, the previously hidden growth is detected. Test failed before the guard. |
+| N4 | `80a39f0`, `2212ad9` | Two `scanner-review.test.mjs` `N4` tests: independent JSX/SVG seeds in UI/new web/HTML/SVG paths, exact literal diagnostics, semantic paints accepted, unchanged legacy counts before N7. Literal seed test failed before the fix. G6's G17 seed includes JSX/SVG. The count assertion now also detects the N7 blocker below. |
+| N6 | `af1e7fa` | `foundations.test.mjs` `M2/M6/N6` and `N6`: all 16 contexts, documented neutral steps, background/text/border status identities, ring and on-accent text. Wrong-role mutations failed only after the assertions were added. Existing mappings match FOUNDATIONS; no token was changed. HC step-11 overrides retain L6. |
+| N7 | `70d4593` | `foundations.test.mjs` `M4`: `text-shadow-lg`, `max-w-md`, `w-md` cannot compile. Test failed before the resets and passes after regeneration. Integration remains blocked: the container reset exposes 30 existing legacy width uses that the frozen ledger cannot accept. |
+| N9 | `f0f335a` | `foundations.test.mjs` `N9`: compares every runtime declaration with all names from installed Tailwind `theme.css` and legacy `@theme`; injected Tailwind and legacy collisions fail. |
+
+### Independent verification
+
+A fresh-context, read-only reviewer inspected `a8651a7..f0f335a` plus the pending N7 diff.
+It found one N4 gap: static computed JSX keys (`['color']`, `['padding']`) bypassed the scan.
+The added seed failed before the fix; `2212ad9` handles these keys and passes the expanded test.
+The reviewer independently verified that commit, reporting no further in-scope blocker beyond
+the known N7 legacy-width issue. No reviewer wrote files or ran heavy checks.
+
+**New / regression envelope relative to `a8651a7`:** six new node tests / 40 existing node
+tests run in full (46 total). Existing FOUNDATIONS and M4 assertions were strengthened.
+Final gate-test outcome is **43 passed / 3 failed / 0 skipped**; it is not green evidence.
+No browser tests were added in Review 2. The current sequence did not reach browser/core
+regressions because the locked root test command stopped at G5.
+
+### Required check results and blocker
+
+Current Mac, Node 26.9.0; all shells exported `GUANXI_WEB_PORT=5182`, `GUANXI_API_PORT=4382`,
+`GUANXI_DATA_DIR="$PWD/.lane-data"`. Direct logs are in `.lane-data/review2-evidence/`.
+
+| Command | Result / evidence |
+| --- | --- |
+| `npm run ui:check` | **Failed G5:** 21 keys / 30 legacy width occurrences. G1–G4, G6–G7 and G17 passed; G4 has zero unresolved variables. Log `ui-check.log`. |
+| `npm run test:gates --workspace @guanxi/ui` | **43 passed / 3 failed / 0 skipped.** Two G5 acceptance tests and the N4 full-ledger count assertion fail due to the same width uses. Log `gate-tests.log`. |
+| `npm run typecheck` | Passed all five workspaces. Log `typecheck.log`. |
+| `npm run lint:md` | Passed 95 files with zero errors, including the final hand-off. Log `markdown.log`. |
+| `npm run check:licenses` | Passed: 358 packages, zero not allowed. Log `licenses.log`. |
+| `agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 55 -- npm test` | **Failed, exit 1**, at the G5 precheck, before gate/core/web-component tests. Receipt `~/.local/state/agent-dev/check-jyn0dhx_/result.json`. |
+| Locked `npm run test:web:browser` and `npm run build` | **Not run:** stopped after the first heavy-check failure, as instructed. |
+
+The heavy command used the shared lock, without bypass. Its receipt records
+`source_changed: false`, exit 1 and no capture errors. The existing
+`.claude/skills/guanxi-ui` symlink still prevents reusable source verification; this is an
+execution result, not source-bound certification. The later hand-off-only edits are not
+claimed to reuse a source-bound result.
+
+**Blocker:** clearing `--container-*` exposes 30 unchanged legacy `max-w-*` uses that were
+previously accepted by the compiler: `max-w-md` ×5, `max-w-lg` ×1, `max-w-xl` ×2,
+`max-w-2xl` ×5, `max-w-3xl` ×8, `max-w-5xl` ×6, `max-w-6xl` ×3. G5 now counts 1,573 versus
+the committed 1,543; G6/G7 remain 152/17. All 21 exact keys are in `ui-check.log`.
+No allowance or correction policy was edited. The no-correction-#3 instruction and DS1-c's
+legacy-migration ownership prevent resolving those widths within this task's current scope.
+An owner clarification requesting authorization for these exact 30 uses remains unanswered.
+
+**Recovery:** the owner/integrator must decide how to migrate or authorize these specific
+legacy widths; do not bypass G5, silently grandfather them or invent token values. Once that
+decision is implemented, rerun all five direct checks, then locked `npm test`, browser gate and
+build sequentially, stopping at the first failure. Keep the merge protocol below. This session
+made no push, merge, rebase, central status-file edit, dependency change or legacy source edit.
+
+### Deferred follow-ups (no fix in Review 2)
+
+- **N5:** G5 data flow remains per file. Imported class maps, names without a
+  `*Class(es)`/`*ClassName` suffix and `[base].join(' ')` can be missed. Consider a lexical
+  fallback for non-legacy files in a separate slice.
+- **N8:** G6 still misses raw colours in `-webkit-text-fill-color`, `stop-color`,
+  `column-rule`, `text-decoration` and `mask-image` gradients. It also falsely flags tokenized
+  `transition: opacity var(--motion-duration-fast) …` and `transition-property: opacity`.
+  Improve property/value precision separately; these cases were not silently fixed here.
 
 ### Required merge protocol (N1)
 
