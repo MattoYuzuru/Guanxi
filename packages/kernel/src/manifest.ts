@@ -11,13 +11,22 @@ export const KERNEL_API_VERSION = '0.1.0'
 
 export type TrustTier = 'T0' | 'T1' | 'T2'
 
-export interface ManifestContributions {
+/** ADR-0022 contribution kinds that K1 validates as name lists but does not enforce yet. */
+export type DeclaredContributionKind =
+  | 'settingsPages'
+  | 'locales'
+  | 'themes'
+  | 'commands'
+  | 'tools'
+  | 'messageRenderers'
+  | 'composerActions'
+
+export interface ManifestContributions
+  extends Partial<Readonly<Record<DeclaredContributionKind, readonly string[]>>> {
   /** Slots this plugin declares and therefore owns. */
   readonly slotDeclarations: readonly string[]
   /** Slots this plugin contributes entries to. */
   readonly slots: readonly string[]
-  /** Other ADR-0022 contribution kinds, validated as string lists only. */
-  readonly other: Readonly<Record<string, readonly string[]>>
 }
 
 export interface GuanxiManifest {
@@ -42,7 +51,7 @@ export class ManifestError extends Error {
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/
 const NAME_PATTERN = /^[a-z][a-zA-Z0-9-]*(\.[a-z0-9][a-zA-Z0-9-]*)*$/
-const OTHER_CONTRIBUTIONS = new Set([
+const OTHER_CONTRIBUTIONS = new Set<string>([
   'settingsPages',
   'locales',
   'themes',
@@ -106,13 +115,13 @@ export function parseManifest(input: unknown, path = 'guanxi'): GuanxiManifest {
 
   const contributes = input['contributes'] ?? {}
   if (!isRecord(contributes)) throw new ManifestError(`${path}.contributes`, 'must be an object')
-  const other: Record<string, readonly string[]> = {}
+  const declared: Partial<Record<DeclaredContributionKind, readonly string[]>> = {}
   for (const [key, value] of Object.entries(contributes)) {
     if (key === 'slots' || key === 'slotDeclarations') continue
     if (!OTHER_CONTRIBUTIONS.has(key)) {
       throw new ManifestError(`${path}.contributes.${key}`, 'is not a contribution kind')
     }
-    other[key] = nameList(value, `${path}.contributes.${key}`)
+    declared[key as DeclaredContributionKind] = nameList(value, `${path}.contributes.${key}`)
   }
 
   return Object.freeze({
@@ -122,9 +131,9 @@ export function parseManifest(input: unknown, path = 'guanxi'): GuanxiManifest {
     requires,
     uses,
     contributes: Object.freeze({
+      ...declared,
       slotDeclarations: nameList(contributes['slotDeclarations'], `${path}.contributes.slotDeclarations`),
       slots: nameList(contributes['slots'], `${path}.contributes.slots`),
-      other: Object.freeze(other),
     }),
     trust,
   })

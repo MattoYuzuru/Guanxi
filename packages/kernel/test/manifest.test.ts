@@ -24,7 +24,7 @@ describe('manifest reader', () => {
     assert.deepEqual(manifest.requires, ['governor'])
     assert.deepEqual(manifest.uses, ['ollama'])
     assert.deepEqual(manifest.contributes.slots, ['sidebar.items'])
-    assert.deepEqual(manifest.contributes.other, { locales: ['en', 'ru'] })
+    assert.deepEqual(manifest.contributes.locales, ['en', 'ru'])
     assert.equal(manifest.trust, 'T1')
     assert.ok(Object.isFrozen(manifest) && Object.isFrozen(manifest.provides))
   })
@@ -32,6 +32,11 @@ describe('manifest reader', () => {
   it('refuses a package without a manifest', async () => {
     const pkg = await fixture('no-manifest')
     assert.throws(() => readPackageManifest(pkg), ManifestError)
+  })
+
+  it('accepts a parsed manifest again unchanged (round trip)', async () => {
+    const manifest = readPackageManifest(await fixture('valid-plugin'))
+    assert.deepEqual(parseManifest(manifest), manifest)
   })
 
   it('defaults lists to empty and keeps the kernel version in sync with package.json', async () => {

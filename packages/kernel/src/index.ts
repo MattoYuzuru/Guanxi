@@ -17,7 +17,7 @@ export {
   readPackageManifest,
   satisfiesEngine,
 } from './manifest.ts'
-export type { GuanxiManifest, ManifestContributions, TrustTier } from './manifest.ts'
+export type { DeclaredContributionKind, GuanxiManifest, ManifestContributions, TrustTier } from './manifest.ts'
 
 export {
   PluginContractError,
