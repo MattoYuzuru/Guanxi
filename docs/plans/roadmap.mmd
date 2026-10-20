@@ -25,7 +25,8 @@ flowchart LR
     B3[B3 Relay benchmark]
   end
   subgraph UX["UX and clients"]
-    U1[U1 Design system<br/>+ shell UI]
+    DS1[DS1 Design foundations<br/>tokens, catalog, gates]
+    U1[U1 Shell, layout<br/>and modes]
     U2[U2 macOS desktop]
     U3[U3 Accounts<br/>+ remote profile]
     U4[U4 PWA remote]
@@ -58,9 +59,10 @@ flowchart LR
     E5[E5 RC4 pull requests]
   end
   subgraph CU["Computer use"]
-    C1[C1 Browser tier]
+    C1[C1 Agent browser]
     C2[C2 VM tier]
     C3[C3 Accessibility tier]
+    C4[C4 Bridge + site grants]
   end
   subgraph Index["Indexing"]
     X1[X1 Repo map + FTS]
@@ -75,7 +77,9 @@ flowchart LR
   G10((Guanxi 1.0)):::final
 
   S0 --> K1
-  K1 --> K2 & K3 & U1
+  K1 --> K2 & K3
+  S0 --> DS1
+  K1 & DS1 --> U1
   K1 & U1 & K4 --> P1
   K2 & K3 --> K4
   K4 --> K5
@@ -106,13 +110,14 @@ flowchart LR
   E1 & B2 --> E2 --> E3
   E3 & P2 & U2 --> E4
   E2 --> E5
-  K4 & P1 --> C1
+  K3 & K4 & U1 --> C1
+  C1 --> C4
   C1 & F3 --> C2 --> C3
   K4 --> X1
   X1 & B2 --> X2
 
   K5 & R3 & F2 & B3 --> MS1
-  U2 & U3 & P1 & V1 & X1 & C1 & K5 & WG1 & WG2 & NC1 --> MS2
+  U2 & U3 & P1 & V1 & X1 & C1 & C4 & K5 & WG1 & WG2 & NC1 --> MS2
   F4 & W3 & C2 & U4 --> MS3
   E4 & E5 & V2 & X2 --> MS4
   U5 & U6 & C3 & P2 --> MS5

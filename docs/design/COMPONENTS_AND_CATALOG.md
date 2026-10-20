@@ -1,0 +1,132 @@
+# Components and catalog
+
+**Status:** accepted direction (D-137, D-138); built in stage DS1 · **Updated:** 2026-10-20
+
+Decision record: [ADR-0034](../decisions/0034-design-system-tokens-catalog-and-gates.md).
+Evidence: [02 design-system tooling](../research/2026-10-20-design/02-design-system-tooling.md).
+
+## 1. Package and levels
+
+All shared UI lives in `@guanxi/ui` (`packages/ui`). Features and plugins import from it only;
+they never import its internals, `@base-ui/react`, `lucide-react` or `motion` directly.
+
+| Level | What | Examples |
+| --- | --- | --- |
+| primitive | accessible building blocks, copied in once from shadcn/ui on Base UI and owned by Guanxi | Button, IconButton, Input, Textarea, Select, Combobox, Checkbox, Switch, Radio, Slider, Tabs, Tooltip, Popover, Menu, Dialog, Sheet, Toast, Badge, Chip, Kbd, Progress, Skeleton, Separator, ScrollArea, Table, Tree |
+| pattern | compositions with Guanxi meaning | Composer, ControlRow, ContextRing, StatusPill, ProvenanceLabel ("source · age"), EmptyState, ErrorState, OfflineState, ToolRow, DiffView, CodeBlock, TerminalView, TraceRow, BlockCard, PaneFrame, NotificationRow, ActionToast, CommandPalette, ModelPicker, AccessModePicker, ProjectPicker, VoiceButton, AttachmentChip, Sparkline, Meter, ProcessTree, LeaseBadge, NodeCard, BoardCard |
+| feature | screen parts owned by one feature | session header, new-session screen, settings pages |
+| block | layout contributions with card and pane (LAYOUT_AND_SCREENS §5) | Context, Changes, Plan, Processes, … |
+
+## 2. Folder convention (one source for both catalogs)
+
+```text
+packages/ui/src/components/<name>/
+  <name>.tsx               implementation
+  <name>.stories.tsx       portable CSF 3: one story per declared state
+  <name>.test.stories.tsx  optional interaction tests (Storybook only)
+  <name>.docs.md           frontmatter + required sections
+  <name>.review.json       lifecycle status and approval record
+  index.ts
+```
+
+`<name>.docs.md` frontmatter: `id`, `level`, `states`, `tokens`, `since`. Required sections:
+Purpose, When to use, When not to use, Anatomy and variants, States, Accessibility, Content and
+i18n, Motion, Do / Don't.
+
+## 3. Catalog
+
+- **In the product** (D-137): Settings → Developer → Components, visible only with Developer
+  mode on, lazy-loaded. It renders the same stories with a small interpreter, inside the real
+  runtime (fonts, theme plugins, Electron, locale, density), and shows live examples, every
+  declared state, usage notes, code, the tokens used, the usage count and the approval status.
+  It can switch light, dark, high-contrast, reduced transparency, reduced motion and both
+  densities for every component.
+- **Storybook** (MIT) reads the same files as the developer, test and agent harness: interaction
+  tests, accessibility checks, and its MCP addon for agents (preview feature).
+- A generated `manifest.json` (props, exports, status, usage) is what agents and the in-app
+  route read; Storybook's own manifest is not relied on while its schema is unstable.
+
+## 4. Lifecycle and approvals (D-138)
+
+```text
+draft ──(stories + docs complete)──► review ──(owner approves)──► approved
+  ▲                                     │                            │
+  │                                     └─(owner requests changes)   ├─(source or snapshot changes)──► stale ──► approved / review
+  └── new component (agent)                                          └─(owner deprecates, names replacement)──► deprecated
+```
+
+- `stale` is derived from hashes, never stored, so nobody can forget to set it.
+- **Approving:** the owner clicks Approve or Request changes in the in-app catalog. The app writes
+  the component's `review.json` (status, date, source hash, snapshot hashes, comment) and signs
+  the record with an owner approval key kept in the OS keychain; the public key is committed in
+  the repository. Agents can create and update `draft` and `review` records but cannot produce a
+  valid approval signature. Approvals are written only when the app runs from a source checkout;
+  release builds show the catalog read-only.
+- **Requests for changes** become work items for agents through the work ledger (ADR-0032).
+- **What blocks what:**
+
+| Situation | Every slice | Release or stage exit |
+| --- | --- | --- |
+| A product screen or plugin uses a `draft` component | blocked | blocked |
+| Uses a `review` or `stale` component | warning, listed in the hand-off | blocked |
+| New use of a `deprecated` component | blocked | blocked |
+| Draft used only in the catalog | allowed | allowed |
+
+## 5. Gates
+
+Every gate ships with a seeded violation that must make it fail; a self-test gate runs them all.
+`npm run ui:check` runs the fast gates; `npm run ui:check:browser` runs the browser ones; both
+emit JSON for agents.
+
+| # | Gate | Fails when |
+| --- | --- | --- |
+| G1 | Tokens valid | an alias is broken, a type is wrong, or a colour lacks its hex fallback |
+| G2 | Generated output fresh | regenerating tokens changes committed output |
+| G3 | Contrast | any listed foreground/background pair is below its ratio in any theme (text 4.5:1, large and UI 3:1, high-contrast themes 7:1) |
+| G4 | Variables resolve | any `var(--x)` is not a generated token or an allow-listed local variable (catches today's undefined `--warning` and `--focus`) |
+| G5 | No literal classes | a class is unknown to the compiled theme or uses an arbitrary value outside an allow-list |
+| G6 | No literal CSS values | colours, spacing, font sizes, z-index or motion in CSS use raw values |
+| G7 | No literal motion | raw durations, easings or delays anywhere |
+| G8 | Import boundaries | features or plugins import UI internals or underlying libraries directly |
+| G9 | Reuse primitives | features render raw `button`, `input`, `select`, `textarea`, `dialog` or style colours inline |
+| G10 | Catalog complete | an exported component lacks a story per declared state, a complete docs file or a review record, or a catalog entry is orphaned |
+| G11 | Status policy | the table in §4 is violated |
+| G12 | Approval integrity | an `approved` record lacks a valid owner signature over its hashes |
+| G13 | Visual regression | a story differs from its baseline in light, dark (and high-contrast for primitives); baselines are produced only in a pinned Playwright Docker image |
+| G14 | Accessibility | any serious or critical axe violation in a story or in the new-session and settings flows |
+| G15 | i18n | literal user-facing text, or a story that clips in Russian or a +40% pseudo-locale |
+| G16 | Reduced motion | a story still moves or loops under reduced motion |
+| G17 | Gates self-test | any seeded violation passes its gate |
+
+Existing violations in the legacy web package are frozen with ESLint bulk suppressions; the
+suppression file may only shrink, and U1 cannot exit while colour rules have suppressions. A
+codemod rewrites the 683 `bg-[var(--x)]` uses to semantic utilities.
+
+## 6. Building UI as an agent
+
+Load the [`guanxi-ui` skill](../../.agents/skills/guanxi-ui/SKILL.md). In short:
+
+1. Search the catalog before writing any JSX.
+2. Use an approved component; else add a variant to an existing one; else compose a pattern from
+   primitives; only then create a new component (status `draft`).
+3. Tokens only; if no token fits, propose one, do not invent it.
+4. Cover every declared state with a story.
+5. Locale keys only; motion tokens only; reduced motion honoured.
+6. Run `ui:check` (and `ui:check:browser` for visual changes); never edit generated files; never
+   set `approved`.
+7. Hand off with the components touched, their status changes and catalog links for the owner.
+
+## 7. Review checklist
+
+- [ ] `ui:check` and `ui:check:browser` are green; the suppression file did not grow.
+- [ ] No new component where an existing one or a variant would do (cite the catalog search).
+- [ ] New or changed components have stories for all states, complete docs and a review record.
+- [ ] Light, dark, both high-contrast themes, both densities and all three glass levels look
+      right; snapshot diffs were inspected, not just accepted.
+- [ ] Keyboard-only walk-through, including moving a block without dragging; names and live
+      regions checked; focus visible in forced colours.
+- [ ] Motion uses tokens only; reduced motion checked; streaming text does not animate.
+- [ ] No literal strings; Russian present and fitting; pseudo-locale does not clip.
+- [ ] Plugin UI uses only `@guanxi/ui` and semantic tokens; iframe plugins take their colours
+      from the MCP Apps variables.
+- [ ] Every number shown has a source and an age; unknown values render as unknown.

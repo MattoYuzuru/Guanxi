@@ -18,7 +18,9 @@ strings go through locale keys (English source, curated Russian).
    [`REQUIREMENTS`](docs/vision/REQUIREMENTS.md) and the
    [owner decisions](docs/decisions/2026-10-19-owner-decisions.md).
 3. For target design: [`TARGET_ARCHITECTURE`](docs/architecture/TARGET_ARCHITECTURE.md) and
-   the ADR named for your area in the [ADR index](docs/decisions/README.md).
+   the ADR named for your area in the [ADR index](docs/decisions/README.md). For any UI work,
+   load the [`guanxi-ui` skill](.agents/skills/guanxi-ui/SKILL.md) and follow
+   [`docs/design/`](docs/design/README.md).
 4. For changes to the code that exists today: the legacy docs in
    [`docs/legacy/alamo/`](docs/legacy/README.md) (Russian) — `DEVELOPMENT.md`, `TESTING.md`,
    `architecture/HLD.md`, `architecture/LLD.md`, `architecture/RUNTIME_LIFECYCLE.md`.

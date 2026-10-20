@@ -47,3 +47,9 @@ owner decision record. Legacy questions `Q-1`–`Q-37` are in
 | Q-236 | Commit the Markdown projection of the board (`.guanxi/work/*.md`) to the project repository? | WG1 | No; export on demand. |
 | Q-237 | Read external trackers by polling (every 5–15 minutes) or add a relay plugin for webhooks? | WG2 | Poll every 10 minutes. |
 | Q-238 | Default WIP limits: how many parallel executors per project and how long a review queue? | WG1 | Derived from free worktree leases and governor permits; review queue of 3 per person. |
+| Q-239 | Who draws the production wordmark: outline it ourselves from IBM Plex Sans with adjustments to the logo diagonal (the owner approves in the catalog), or commission a type designer? | DS1, U1 | Outline it ourselves; revisit before a public release. |
+| Q-240 | Publish the Guanxi Bridge extension on the Chrome Web Store (privacy disclosure, limited-use review), or distribute it unpacked for developers only? | C4 | Unpacked first; store publication before MS2. |
+| Q-241 | May agents use delegated control of the live Chrome on the main MacBook (Q-222 keeps computer-use tiers 3–4 off it)? | C4 | Yes, per site, with a visible indicator and one-click stop. |
+| Q-242 | Offer BrowserOS neo (AGPL) as an optional external browser connection? | C4 | Not now. |
+| Q-243 | Offer a suggested (still off by default) `requires_confirmation` preset for runs that use imported site sessions (purchases, sending, deleting, credential changes, OAuth consent, uploads)? | C4 | Offer it as a one-click preset, off by default. |
+| Q-244 | May imported site sessions ever reach rented cloud machines, as per-attempt expiring grants? | C4, F4 | Never by default; per run only if the run policy names the site. |

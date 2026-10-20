@@ -10,7 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
-| [2026-10-20](2026-10-20-owner-decisions.md) (D-123–D-126: quota alerts, automatic reactions, notification channels, logo) | accepted |
+| [2026-10-20](2026-10-20-owner-decisions.md) (D-123–D-140: quota alerts, notifications, logo, design system, layout, modes, agent browser) | accepted |
 | [2026-10-19 addendum](2026-10-19-owner-decisions-addendum.md) (D-114–D-122: work methodology, trackers, clarifications after the S0 review) | accepted |
 | [2026-10-19 re-foundation](2026-10-19-owner-decisions.md) (D-101–D-113) | accepted |
 | [2026-08-18 phase 3/4](../legacy/alamo/decisions/2026-08-18-phase-3-4-decisions.md) (Russian) | accepted for the legacy code; overridden where D-101+ conflict |
@@ -39,6 +39,9 @@ lists the evidence it rests on.
 | [0031](0031-compute-fabric-node-agent-and-runtimes.md) | Compute fabric: node agent, runtimes, catalog, cloud budget | proposed |
 | [0032](0032-work-ledger-board-and-tracker-sync.md) | Work ledger, board projection, external tracker sync | accepted direction, proposed design |
 | [0033](0033-notification-center-and-quota-alerts.md) | Notification center, quota and balance alerts, actionable notifications | accepted direction, proposed design |
+| [0034](0034-design-system-tokens-catalog-and-gates.md) | Design system: tokens, catalog, approvals and gates | accepted direction, proposed design |
+| [0035](0035-agent-browser-and-site-sessions.md) | Agent browser and site sessions | accepted direction, proposed design |
+| [0036](0036-workspace-layout-and-experience-modes.md) | Workspace layout, blocks and experience modes | accepted direction, proposed design |
 
 ## Legacy ADRs (Alamo era, Russian)
 

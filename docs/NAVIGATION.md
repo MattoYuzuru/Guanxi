@@ -10,6 +10,7 @@
 | Understand the product | [VISION](vision/VISION.md) → [REQUIREMENTS](vision/REQUIREMENTS.md) |
 | See what the owner decided | [Owner decisions 2026-10-19](decisions/2026-10-19-owner-decisions.md) → [addendum](decisions/2026-10-19-owner-decisions-addendum.md) → [2026-10-20](decisions/2026-10-20-owner-decisions.md) → [ADR index](decisions/README.md) |
 | Understand the target design | [TARGET_ARCHITECTURE](architecture/TARGET_ARCHITECTURE.md) → relevant ADR |
+| Build or review UI | [design system](design/README.md) → [`guanxi-ui` skill](../.agents/skills/guanxi-ui/SKILL.md) |
 | Know why a library was chosen | [research synthesis](research/README.md) → raw lane report |
 | Continue implementation | [PHASE_STATUS](plans/PHASE_STATUS.md) → [WORKFLOW](plans/WORKFLOW.md) → [ROADMAP](plans/ROADMAP.md) |
 | Hand off to the next agent | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) |
@@ -26,7 +27,8 @@
 | [VISION](vision/VISION.md) | accepted | why Guanxi exists, principles, positioning |
 | [REQUIREMENTS](vision/REQUIREMENTS.md) | accepted intent | testable requirements A–M with stages and designs |
 | [TARGET_ARCHITECTURE](architecture/TARGET_ARCHITECTURE.md) | proposed | target system, domain model, ownership, packages |
-| [decisions/](decisions/README.md) | mixed | owner decision records and ADR-0015–0033 |
+| [decisions/](decisions/README.md) | mixed | owner decision records and ADR-0015–0036 |
+| [design/](design/README.md) | accepted direction | brand book, principles, foundations (tokens), layout and screens, components and catalog |
 | [research/](research/README.md) | locally validated | landscape synthesis, reuse register, raw lane reports |
 | [ROADMAP](plans/ROADMAP.md) | proposed structure | stage graph, dependencies, exit gates, milestones |
 | [PHASE_STATUS](plans/PHASE_STATUS.md) | implemented | mutable tracker with evidence |

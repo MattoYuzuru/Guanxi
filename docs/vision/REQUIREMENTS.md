@@ -63,6 +63,7 @@ testable requirement. Columns:
 | D4 | Attach and read any file type the selected models or tools can handle. | Must | K4 | ADR-0021 |
 | D5 | Share a session with other accounts as viewer (read-only, live) or editor (may prompt and stop). | Should | U3 | ADR-0027 |
 | D6 | Tracing at least as detailed as DeepSeek Harness: prompts, visible reasoning, tool calls, sub-agents, compaction and handoff events, costs. | Must | K2 | [ADR-0023](../decisions/0023-session-event-log-and-tracing.md) |
+| D7 | Side chats read the session without writing to it; ephemeral by default with "Save to session log" and "Send to main" (D-135). | Should | U1 | [LAYOUT_AND_SCREENS](../design/LAYOUT_AND_SCREENS.md) |
 
 ## E. Accounts
 
@@ -80,6 +81,10 @@ testable requirement. Columns:
 | F3 | A minimal sidebar: New, Projects, Models, Settings. Plugins add entries; they do not rearrange the layout. | Must | U1 | ADR-0026 |
 | F4 | Desktop on macOS first, then Fedora and other Linux, then Windows; later iOS and Android. | Must (macOS), Should (Linux, Windows), Could (mobile native) | U2, U6, U5 | ADR-0026 |
 | F5 | Untrusted plugins (agent-written or unreviewed third-party) run sandboxed with declared capabilities, and their UI inherits the theme. | Should | P2 | ADR-0022 |
+| F6 | The user owns the workspace layout: any block in any zone (sides, top, bottom, centre grid, floating, popout), add, hide, resize, extend status lines, save named layouts (account default, per-project overrides); the navigation sidebar moves or collapses but keeps New, Projects, Models and Settings; moving a block works without dragging (D-131). | Must | U1 | [ADR-0036](../decisions/0036-workspace-layout-and-experience-modes.md) |
+| F7 | Two experience modes, Developer (IDE-like) and Visual (results, artifacts, preview, browser; code only as a summary), each with its own layout (D-132). | Should | U1 | ADR-0036 |
+| F8 | One design system: tokens, `@guanxi/ui`, a live catalog in the product behind Developer mode plus Storybook, owner approvals recorded and signed by the app, gates that fail on seeded violations; unapproved components block releases (D-137, D-138). | Must | DS1 | [ADR-0034](../decisions/0034-design-system-tokens-catalog-and-gates.md) |
+| F9 | The brand (logo, 關係 lockup, colours, IBM Plex, voice and tone) is applied consistently in product, docs and exports (D-126–D-130). | Should | DS1, U1 | [BRAND](../design/BRAND.md) |
 
 ## G. Models workbench (multimodal)
 
@@ -103,6 +108,8 @@ testable requirement. Columns:
 | H4 | Skills and project instructions (Agent Skills standard, AGENTS.md) with progressive disclosure. | Must | P1 | ADR-0022 §10 |
 | H5 | Index project knowledge per worktree when it measurably helps (benchmarked). | Could | X1, X2 | [ADR-0030](../decisions/0030-project-knowledge-indexing.md) |
 | H6 | Parallel agents in separate worktrees never collide on ports, containers, databases or heavy CPU slots. | Must | F3 | ADR-0018 |
+| H7 | A built-in agents' browser with product preview: the user watches, takes over and hands back; Read-only runs cannot submit, upload or download (D-139). | Should | C1 | [ADR-0035](../decisions/0035-agent-browser-and-site-sessions.md) |
+| H8 | Agents use the user's site accounts only per granted site: login inside Guanxi, the Guanxi Bridge extension, or delegated live Chrome; bookmarks and history from files; passwords by reference; no bulk cookie import (D-140). | Should | C4 | ADR-0035 |
 
 ## I. Voice
 
@@ -121,6 +128,7 @@ testable requirement. Columns:
 | J3 | Every usage window (5-hour, weekly, daily, monthly) and balance warns at 20%, 10% and 5% remaining, once per window, plus a forecast warning when the burn rate exhausts it before the reset or before dependent runs finish (D-123). | Must | NC1 | [ADR-0033](../decisions/0033-notification-center-and-quota-alerts.md) |
 | J4 | One notification center per account with actions: open, add a prompt, accept the recommended action or choose another, wake dependent leads, switch a role to a fallback connection, pause runs, snooze. Automatic reactions only when the run policy names them (D-124). | Must | NC1 | ADR-0033 |
 | J5 | Notifications reach the user in the app, as operating-system notifications and as phone push, with content-free push payloads (D-125). | Must (app, OS), Should (phone) | NC1, U4 | ADR-0033 |
+| J6 | A process view per agent and sub-agent (shells, containers, browser contexts, dev servers with ports, leases) with Open and Finished lists and Stop/Kill; exact per-machine power and battery, per-agent energy as an estimate with confidence (D-134). | Must (processes), Should (energy) | K4 (shells), F3 (containers, leases), U1 (block) | [LAYOUT_AND_SCREENS](../design/LAYOUT_AND_SCREENS.md) |
 
 ## K. Self-evolving harness
 

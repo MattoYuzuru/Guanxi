@@ -62,12 +62,13 @@ architecture-agent:adversarial-architect on the kernel boundary, and
 frontend-agent:accessibility-reviewer on the new web slot. Fix findings in separate commits.
 
 Finish by updating docs/plans/PHASE_STATUS.md (evidence as "N new / M envelope") and rewriting
-docs/plans/NEXT_AGENT_PROMPT.md for the next unfinished slice (K2, K3 or U1 — whichever the
+docs/plans/NEXT_AGENT_PROMPT.md for the next unfinished slice (K2, K3 or DS1 — whichever the
 owner picks; default K2).
 ```
 
 ## Notes for the owner
 
-- K2, K3 and U1 can start in parallel sessions once K1 passes.
+- DS1 (design foundations) does not depend on K1 and can run in a parallel session now.
+- K2 and K3 can start in parallel sessions once K1 passes; U1 needs both K1 and DS1.
 - If the spike fails, the fallback is an own kernel of about 1–2k lines with Cordis semantics
   (ADR-0015 §Validation 5).

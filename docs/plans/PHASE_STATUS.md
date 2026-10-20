@@ -27,6 +27,7 @@ is still what runs today; it is ported into the new stages rather than discarded
 | Dependency license gate | implemented locally | `npm run check:licenses`: 251 packages, 0 disallowed; fails on an AGPL fixture and on a package without a license (manual check); CI wiring waits for a CI pipeline |
 | Commit | implemented | `a6fd314` rename, `aa257c1` license and gates, `6e6b63c` legacy archive, `3194f41` research, `be89bb9` canonical docs (review fixes included because the docs had never been committed) |
 | Notification center design | implemented (docs) | ADR-0033, D-123–D-125, stage NC1, REQ-J3–J5 |
+| Design system documentation | implemented (docs) | `docs/design/` (brand book, principles, foundations, layout and screens, components and catalog), ADR-0034–0036, D-127–D-140, `.agents/skills/guanxi-ui`, four design research lanes; palette contrast re-computed for the chosen combination (all ≥ 4.5:1 text, ≥ 3:1 UI). Owner preview page "Guanxi Glacier": <https://claude.ai/code/artifact/59348be6-49a3-4044-9a5e-a49b08daa2c1> (private) |
 | Logo assets | implemented | `assets/brand/guanxi-gx-v1/` (D-126); `build.mjs` reproduces `logo.svg` byte-identically (SHA-256 `f6d5226e…ba7a`) |
 
 ### S0 regression envelope (legacy code after the rename, 2026-10-19)
@@ -49,6 +50,7 @@ is still what runs today; it is ported into the new stages rather than discarded
 | Stage | Status | Notes |
 | --- | --- | --- |
 | K1 Kernel spike | not started | first slice; prompt in [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md) |
+| DS1 Design foundations | not started | can start now, in parallel with K1 |
 | NC1 Notification center | not started | after K3, R1 and U1 |
-| K2, K3, U1 | not started | can start in parallel after K1 |
+| K2, K3 | not started | can start in parallel after K1; U1 after K1 and DS1 |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

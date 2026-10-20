@@ -317,8 +317,10 @@ packages/catalog
 packages/voice
 packages/evolution
 packages/bench
-packages/ui-tokens  DTCG tokens → CSS vars, Tailwind, MCP Apps vars
-packages/ui         primitives, slots, shell
+packages/ui         design tokens (DTCG) and generated outputs, primitives, patterns,
+                    block cards and panes, catalog stories (ADR-0034)
+packages/browser-host  agent browser on playwright-core (ADR-0035)
+apps/bridge         Guanxi Bridge browser extension (ADR-0035)
 ```
 
 Legacy `packages/server`, `packages/web`, `packages/cli` remain until their parts are ported.

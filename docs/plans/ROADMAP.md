@@ -14,8 +14,9 @@ all five milestones are done. Requirement IDs are written `REQ-A1`; bare IDs suc
 
 ```mermaid
 flowchart LR
-  S0([S0 Re-foundation]) --> K1[K1 Kernel spike]
-  K1 --> K2[K2 Session log] & K3[K3 Model access] & U1[U1 Design system]
+  S0([S0 Re-foundation]) --> K1[K1 Kernel spike] & DS1[DS1 Design foundations]
+  K1 --> K2[K2 Session log] & K3[K3 Model access]
+  K1 & DS1 --> U1[U1 Shell and layout]
   K2 & K3 --> K4[K4 Native agent]
   K1 & U1 & K4 --> P1[P1 Plugin platform]
   K4 --> K5[K5 External agents]
@@ -46,8 +47,9 @@ UI built in a stage before U1 is interim (legacy components) and is migrated by 
 `S0 → K1 → K2 → {R1, K4 (needs K3)} → R2 → R3 → B3 → MS1`, with `F1 → F2`, `K5` and `B1`
 joining before MS1.
 
-Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After K4: **(d)** B1;
-**(e)** K5; **(f)** P1 (also needs U1); **(g)** X1. After P1: C1. After K4 and U1: E1.
+DS1 starts right after S0, in parallel with K1. Parallel lanes after K1: **(a)** K2 → R1 → F1;
+**(b)** K3; **(c)** U1 once DS1 is done. After K4: **(d)** B1; **(e)** K5; **(f)** P1 (also needs
+U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 ---
 
@@ -316,18 +318,46 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 
 ## UX and clients
 
-### U1 — Design system and shell UI
+### DS1 — Design foundations
 
-- **Goal:** one visual language for core and plugins (REQ-F2, REQ-F3, REQ-D2).
-- **Depends on:** K1.
-- **Scope:** DTCG tokens → Style Dictionary → CSS variables, Tailwind theme, MCP Apps
-  variables; shadcn/ui on Base UI; Lucide icons; assistant-ui; Streamdown; new-session screen;
-  sidebar list slot; the `guanxi-gx-v1` logo from `assets/brand/` (D-126); English source
-  strings with curated Russian; English glossary; migration of interim UI from earlier stages.
-- **Exit gate:** lint forbids literal colours across the whole web package (interim UI
-  included); visual snapshots for light/dark; keyboard and screen-reader checks on the
-  new-session flow pass with 0 critical findings; reduced-motion respected.
-- **Estimate:** 3–5 sessions.
+- **Goal:** one design system that many agents can follow deterministically (REQ-F8, REQ-F9;
+  [ADR-0034](../decisions/0034-design-system-tokens-catalog-and-gates.md),
+  [docs/design](../design/README.md)).
+- **Depends on:** S0 (can run in parallel with K1).
+- **Scope:** DTCG token sources and resolver from FOUNDATIONS (Glacier light, brand-ink dark,
+  verdigris, IBM Plex, glass levels, motion, density, high-contrast themes); Style Dictionary
+  build and generated outputs; self-hosted Plex fonts with `unicode-range` slices and `OFL.txt`;
+  `@guanxi/ui` with primitives copied in from shadcn/ui on Base UI and the first patterns;
+  portable stories, docs and review records; Storybook and the in-app catalog behind Developer
+  mode; app-signed owner approvals; gates G1–G17 with seeded violations; ESLint bulk
+  suppressions as a ratchet; codemod for `bg-[var(--x)]`; fix the undefined `--warning` and
+  `--focus`; logo assets wired; `guanxi-ui` skill scripts (`find-component`, `ui-check`,
+  `new-component`) and `packages/ui/AGENTS.md`.
+- **Exit gate:** G17 green (every seeded violation fails its gate); G4 reports zero unresolved
+  variables; the catalog shows every existing primitive with all declared states in light,
+  dark, both high-contrast themes, both densities and three glass levels; switching theme
+  recolours a sample T2 iframe plugin without code changes; an agent-written `approved` record
+  fails G12; the app makes zero font requests to any CDN (network assertion).
+- **Estimate:** 4–6 sessions.
+
+### U1 — Shell, workspace layout and experience modes
+
+- **Goal:** the Guanxi shell and a layout the user owns (REQ-F3, REQ-F6, REQ-F7, REQ-D2,
+  REQ-D7; [ADR-0036](../decisions/0036-workspace-layout-and-experience-modes.md),
+  [LAYOUT_AND_SCREENS](../design/LAYOUT_AND_SCREENS.md)).
+- **Depends on:** DS1, K1.
+- **Scope:** navigation sidebar (movable, collapsible, four fixed entries), status strip,
+  command palette, new-session screen, session workspace with dock lanes and composer;
+  Dockview behind the `WorkspaceLayout` adapter; the `workspace.block` slot and built-in blocks
+  (Context, Changes, Plan, Processes, Environment, Files, Terminal, Artifacts, Browser
+  placeholder, Sub-agents); Developer and Visual modes; layout documents; side chats; English
+  glossary; migration of interim UI onto `@guanxi/ui`.
+- **Exit gate:** ADR-0036 spike criteria 1–5 hold; colour lint rules have zero suppressions
+  across the web package; a block moves by keyboard without dragging and the move is announced;
+  layouts resolve in the documented order and survive a mode switch; an unsaved side chat
+  leaves no event in the session log (count assertion); keyboard and screen-reader checks on
+  the new-session flow pass with 0 critical findings.
+- **Estimate:** 4–6 sessions.
 
 ### U2 — macOS desktop
 
@@ -550,14 +580,27 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 
 ## Computer use
 
-- **C1 Browser tier** (depends on K4, P1): Playwright/Chrome DevTools MCP headless and
-  isolated; browser-profile leases. Exit: no visible window; open question Q-203; 2–3 sessions.
+- **C1 Agent browser** (depends on K3, K4, U1): `browser-host` in the node service on
+  `playwright-core`; per-run ephemeral contexts and a personal profile with real at-rest
+  encryption; the Browser block with screencast, takeover and pop-out; login inside Guanxi with
+  `fill_secret`; origin sets, Read-only enforcement, download quarantine, egress proxy;
+  browser leases ([ADR-0035](../decisions/0035-agent-browser-and-site-sessions.md)). Exit:
+  injection pages cause no out-of-scope action; a planted cookie never appears in events, logs
+  or model requests; a Read-only run cannot submit a form (explicit assertion); open question
+  Q-203; 4–6 sessions.
 - **C2 VM tier** (depends on C1, F3): Lume, Docker + Xvfb + noVNC, Windows Sandbox; VM-slot
   leases. Exit: two agents never share a VM slot; open question Q-223; 3–4 sessions.
 - **C3 Accessibility tier** (depends on C2): Cua Driver background actions with an overlay
   cursor; input-seat lease for tier 4. Exit: the system cursor never moves in tier 3; injected
   page instructions cause no out-of-scope action; open question Q-222; 3–5 sessions.
   ([ADR-0029](../decisions/0029-computer-use-tiers.md))
+- **C4 Browser Bridge and site grants** (depends on C1): the Guanxi Bridge extension
+  (per-site optional host permissions, native messaging), the Connections → Browser grant page,
+  sync once / on run start / live, one-click revoke, delegated live Chrome, bookmark and history
+  import from files, the import assistant (plans typed steps; code executes after the user
+  approves). Exit: grants are per site only; revoking closes a live context within one lease
+  TTL; an agent cannot install the extension or grant itself a site; no cookie value in any
+  log; open questions Q-240, Q-241, Q-242, Q-243; 3–4 sessions.
 
 ## Indexing
 
@@ -572,7 +615,7 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 | Milestone | Requires | Exit gate |
 | --- | --- | --- |
 | **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; the run lasts ≥ 6 hours; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Open question Q-202. |
-| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, K5, WG1, WG2, NC1 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
+| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
 | **MS3 Fleet and media** | F4, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
 | **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |
 | **MS5 Everywhere** | U5, U6, C3, P2 | Native phone apps, Linux and Windows desktops, the full computer-use ladder and untrusted plugins all pass their stage gates. |
@@ -580,7 +623,7 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 
 ## Effort
 
-Sum of stage estimates: 114–176 full agent sessions including independent reviews; the
+Sum of stage estimates: 124–190 full agent sessions including independent reviews; the
 ancestors of MS1 sum to 37–54. This is a complexity range, not a schedule.
 
 ## Cross-stage rules
