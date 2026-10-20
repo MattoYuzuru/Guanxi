@@ -38,12 +38,12 @@ export function parseBalance(provider: BalanceProbe, payload: unknown, observedA
 }
 export class BalanceProbes {
   private readonly store: ConnectionStore
-  private readonly vault: Vault
+  readonly #vault: Vault
   private readonly transport: typeof fetch
   constructor(store: ConnectionStore, vault: Vault,
     transport: typeof fetch = globalThis.fetch) {
     this.store = store
-    this.vault = vault
+    this.#vault = vault
     this.transport = transport
 }
   async probe(connection: Connection, signal?: AbortSignal): Promise<ConnectionBalance> {
@@ -51,7 +51,7 @@ export class BalanceProbes {
     const provider = connection.provider as BalanceProbe
     const combined = signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000)
     try {
-      const balance = await this.vault.inject(connection.accountId, connection.id, false, async key => {
+      const balance = await this.#vault.inject(connection.accountId, connection.id, false, async key => {
         assertApiKey(provider, key)
         const response = await this.transport(probeEndpoints[provider], {
           headers: { Authorization: `Bearer ${key}` }, signal: combined, redirect: 'error',

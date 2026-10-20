@@ -903,3 +903,13 @@ test('N5: stalled startup keychain is bounded, stays pending and cannot publish 
   assert.equal(scrubber.isReady(), true)
   assert.equal(scrubber.scrub(secret), '[REDACTED]')
 })
+
+test('N6: neither the registry nor its probe service exposes a runtime vault property', async t => {
+  const f = await setup(t)
+  const service = f.service()
+  assert.equal('vault' in service, false)
+  const probes = (service as unknown as { probes: object }).probes
+  assert.ok(probes)
+  assert.equal('vault' in probes, false)
+  assert.equal(Object.values(probes).some(value => value instanceof Vault), false)
+})
