@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { fetchReads, installFetchLifecycle } from './fixtures/fetch-lifecycle.ts'
 
 function browserHealth(observedAt: string) {
   return {
@@ -38,7 +39,9 @@ function browserHealth(observedAt: string) {
   }
 }
 
-test('locale preview, persistence and glossary stay exact across failure and reload', async ({ page }) => {
+for (const deferNetworkStart of [false, true]) {
+test(`locale preview, persistence and glossary stay exact across failure and reload (${deferNetworkStart ? 'abort before interception' : 'native timing'})`, async ({ page }) => {
+  await installFetchLifecycle(page, deferNetworkStart)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-14T16:00:00.000Z'
@@ -51,7 +54,6 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   let persisted = browserSettings({ locale: 'en', localeSource: 'user_setting' })
   let settingsReads = 0
   let settingsWrites = 0
-  const runtimeReads = { health: 0, runtime: 0, models: 0 }
   const settingsBodies: Array<Record<string, unknown>> = []
   const forbiddenEffects: string[] = []
 
@@ -60,15 +62,12 @@ test('locale preview, persistence and glossary stay exact across failure and rel
     const url = new URL(request.url())
     const method = request.method()
     if (url.pathname === '/api/health' && method === 'GET') {
-      runtimeReads.health += 1
       return route.fulfill(json(health))
     }
     if (url.pathname === '/api/runtime' && method === 'GET') {
-      runtimeReads.runtime += 1
       return route.fulfill(json(runtimeBrowserSnapshot()))
     }
     if (url.pathname === '/api/models' && method === 'GET') {
-      runtimeReads.models += 1
       return route.fulfill(json({ models: [] }))
     }
     if (url.pathname === '/api/settings' && method === 'GET') {
@@ -95,7 +94,18 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toHaveCount(1)
   await expect.poll(() => settingsReads).toBe(1)
-  await expect.poll(() => runtimeReads).toEqual({ health: 2, runtime: 2, models: 2 })
+  // Count completed live work by fetch identity, not route interception: an aborted
+  // StrictMode setup may never reach the route. Missing/extra live reads still fail.
+  await expect.poll(async () => (await fetchReads(page))
+    .filter((read) => !read.aborted && read.state === 'fulfilled')
+    .map((read) => read.path).sort(),
+  ).toEqual(['/api/health', '/api/models', '/api/runtime'])
+  const readsBeforeLocale = await fetchReads(page)
+  for (const path of ['/api/health', '/api/models', '/api/runtime']) {
+    const reads = readsBeforeLocale.filter((read) => read.path === path)
+    expect(reads).toHaveLength(2)
+    expect(reads.filter((read) => read.aborted && read.state === 'rejected')).toHaveLength(1)
+  }
   await expect(page).toHaveTitle('Guanxi')
   await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
@@ -166,7 +176,9 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   ))).toBe(1)
 
   expect(settingsReads).toBe(1)
-  expect(runtimeReads).toEqual({ health: 2, runtime: 2, models: 2 })
+  // Compare all identities, including cancelled attempts, so locale changes cannot
+  // hide a refetch or remount behind a constant number of successful responses.
+  expect(await fetchReads(page)).toEqual(readsBeforeLocale)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
@@ -201,6 +213,7 @@ test('locale preview, persistence and glossary stay exact across failure and rel
   expect(settingsWrites).toBe(2)
   expect(forbiddenEffects).toEqual([])
 })
+}
 
 test('delayed persisted locale rerenders the complete non-Settings route', async ({ page }) => {
   const observedAt = '2026-08-14T17:00:00.000Z'
