@@ -101,10 +101,11 @@ export class Connections {
   models(accountId: string, id: string) {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
+    const observedAt = new Date().toISOString()
     return piModels(connection.provider).map(model => ({ id: model.id, facts: {
-      'pi-ai.context': { value: model.contextWindow, source: '@earendil-works/pi-ai@1.3.0', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'medium' as const },
-      'pi-ai.output': { value: model.maxTokens, source: '@earendil-works/pi-ai@1.3.0', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'medium' as const },
-      'pi-ai.reasoning': { value: model.reasoning, source: '@earendil-works/pi-ai@1.3.0', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'medium' as const },
+      'pi-ai.context': { value: model.contextWindow, source: '@earendil-works/pi-ai@1.3.0', observedAt, confidence: 'medium' as const },
+      'pi-ai.output': { value: model.maxTokens, source: '@earendil-works/pi-ai@1.3.0', observedAt, confidence: 'medium' as const },
+      'pi-ai.reasoning': { value: model.reasoning, source: '@earendil-works/pi-ai@1.3.0', observedAt, confidence: 'medium' as const },
       ...modelsDevFacts(connection.provider, model.id),
     } }))
   }

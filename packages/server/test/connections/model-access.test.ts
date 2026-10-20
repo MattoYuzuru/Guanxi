@@ -622,3 +622,15 @@ test('E6: short keys cannot enter the vault or corrupt scrubbed rows; probes val
   await assert.rejects(s.probe(account, row.id), error => error instanceof ConnectionError && error.code === 'validation_failed')
   assert.equal(calls, 0)
 })
+
+
+test('pi-ai facts carry the actual catalog observation time', async t => {
+  const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput)
+  const before = Date.now(); const models = s.models(account, row.id); const after = Date.now()
+  assert.ok(models.length > 0)
+  for (const model of models) for (const [key, fact] of Object.entries(model.facts)) {
+    if (!key.startsWith('pi-ai.')) continue
+    assert.ok(Date.parse(fact.observedAt!) >= before && Date.parse(fact.observedAt!) <= after)
+    assert.equal(fact.source, '@earendil-works/pi-ai@1.3.0'); assert.equal(fact.confidence, 'medium')
+  }
+})
