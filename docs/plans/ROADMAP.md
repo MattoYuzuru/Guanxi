@@ -344,6 +344,25 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   fails G12; the app makes zero font requests to any CDN (network assertion).
 - **Estimate:** 4–6 sessions.
 
+### DS2 — Approval signing helper
+
+- **Goal:** the owner's approval key can only sign with the owner present, so agent-edited
+  node code can neither capture the key nor sign by itself (D-184; DS1-b residual C1/H1).
+- **Depends on:** DS1.
+- **When:** before the owner approves any component; the shell stage can start in parallel.
+- **Scope:** a small code-signed helper installed outside the checkout that alone can read the
+  key (keychain item limited to the helper) and asks for Touch ID or the login password on
+  every signature, naming the component and its hash in the prompt (LocalAuthentication); the
+  node sends a signing request and receives a signature, never the key; migration of any key
+  created in DS1 to the helper; first confirm on this Mac that no Apple Developer membership is
+  needed, and stop for an owner decision if it is.
+- **Exit gate:** a modified node process cannot obtain the key bytes (assertion over the
+  request/response protocol and the keychain item's access list); a signature without the
+  owner's confirmation fails; the prompt text contains the component id and hash; "Always
+  Allow" cannot remove the per-signature confirmation; G12 accepts only helper-made
+  signatures; tests run against a throwaway keychain.
+- **Estimate:** 1–2 sessions.
+
 ### U1 — Shell, workspace layout and experience modes
 
 - **Goal:** the Guanxi shell and a layout the user owns (REQ-F3, REQ-F6, REQ-F7, REQ-D2,
@@ -619,7 +638,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 | Milestone | Requires | Exit gate |
 | --- | --- | --- |
 | **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; the run lasts ≥ 6 hours; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Lead billing per D-142 (Q-202). |
-| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
+| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1, DS2 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
 | **MS3 Fleet and media** | F4, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
 | **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |
 | **MS5 Everywhere** | U5, U6, C3, P2 | Native phone apps, Linux and Windows desktops, the full computer-use ladder and untrusted plugins all pass their stage gates. |

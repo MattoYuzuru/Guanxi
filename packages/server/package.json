@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@guanxi/contract": "*",
+    "@guanxi/kernel": "*",
     "@guanxi/ui": "*",
     "@hono/node-server": "^2.0.12",
     "hono": "^4.6.14",

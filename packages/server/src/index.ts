@@ -14,6 +14,7 @@ import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/listen-env.ts'
 import { defaultDbPath } from './store/db.ts'
+import { bootServerKernel } from './runtime/kernel.ts'
 import { UiCatalogReviewService } from './ui-catalog/service.ts'
 import { keychainSigner } from './ui-catalog/signer.ts'
 import { findSourceCheckoutUiRoot } from './ui-catalog/source-checkout.ts'
@@ -42,6 +43,11 @@ export {
   ResourceGovernorError,
   operationOwner,
 } from './runtime/resource-governor.ts'
+export { RESOURCE_GOVERNOR_SERVICE, resourceGovernorPlugin } from './runtime/governor-plugin.ts'
+export { OLLAMA_ADAPTER_SERVICE, ollamaAdapterPlugin } from './ollama/plugin.ts'
+export type { OllamaAdapter, OllamaAdapterConfig } from './ollama/plugin.ts'
+export { LEGACY_SERVER_PROFILE, bootServerKernel } from './runtime/kernel.ts'
+export type { ServerKernel } from './runtime/kernel.ts'
 export type {
   AdmissionExplanation,
   AdmissionPriority,
@@ -111,10 +117,21 @@ export async function start(options: StartOptions = {}) {
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
 
-  const context = await createAppContext({
-    dbPath: defaultDbPath(dataDir),
-    appVersion: APP_VERSION,
-  })
+  // The governor and the Ollama adapter run as kernel plugins (K1); the legacy
+  // context consumes their services.
+  const kernel = await bootServerKernel()
+  let context: Awaited<ReturnType<typeof createAppContext>>
+  try {
+    context = await createAppContext({
+      dbPath: defaultDbPath(dataDir),
+      appVersion: APP_VERSION,
+      governor: kernel.governor,
+      ollama: kernel.ollama,
+    })
+  } catch (error) {
+    await kernel.node.dispose().catch(() => undefined)
+    throw error
+  }
 
   // D-138: approvals are written only from a source checkout and never by a release build.
   const uiCatalog = new UiCatalogReviewService({
@@ -151,6 +168,7 @@ export async function start(options: StartOptions = {}) {
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
     context.db.close()
+    await kernel.node.dispose().catch(() => undefined)
     throw error
   }
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
@@ -178,6 +196,14 @@ export async function start(options: StartOptions = {}) {
       } finally {
         context.jobService.closeSubscriptions()
         await listenerClosed
+        // Unload plugins before the database they may use is closed. Each
+        // plugin cleanup is bounded by the kernel's step timeout; the HTTP
+        // listener close above is not bounded (it waits for open responses).
+        try {
+          await kernel.node.dispose()
+        } catch (error) {
+          shutdownError ??= error
+        }
         context.db.close()
         process.removeListener('SIGINT', shutdown)
         process.removeListener('SIGTERM', shutdown)
@@ -196,7 +222,7 @@ export async function start(options: StartOptions = {}) {
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
 
-  return { url, port: actualPort, host, context, close }
+  return { url, port: actualPort, host, context, kernel, close }
 }
 
 /**

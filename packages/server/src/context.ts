@@ -16,6 +16,7 @@ import {
   type FeatureFlagEnvironment,
 } from './config/feature-flags.ts'
 import { OllamaClient } from './ollama/client.ts'
+import type { OllamaAdapter } from './ollama/plugin.ts'
 import { ModelService } from './models/service.ts'
 import { ModelCapabilityOverrideService } from './models/capability-override.ts'
 import { ProjectService } from './projects/service.ts'
@@ -120,6 +121,10 @@ export interface CreateContextOptions {
   featureFlagEnvironment?: FeatureFlagEnvironment
   retentionMaintenance?: RetentionMaintenanceOptions
   artifactTransferPolicy?: ArtifactTransferPolicyOptions
+  /** Kernel-provided Resource Governor (K1); a private one is created when absent. */
+  governor?: ResourceGovernor
+  /** Kernel-provided Ollama adapter (K1); clients are constructed directly when absent. */
+  ollama?: OllamaAdapter
 }
 
 export async function createAppContext(options: CreateContextOptions): Promise<AppContext> {
@@ -146,11 +151,16 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
 
     const ollama = (): OllamaClient => {
       const host = normalizeHost(settings.get().ollamaHost)
-      if (!client || client.host !== host.replace(/\/+$/, '')) {
-        client = new OllamaClient({ host })
+      const current = options.ollama
+        ? options.ollama.client(host)
+        : client && client.host === host.replace(/\/+$/, '')
+          ? client
+          : new OllamaClient({ host })
+      if (current !== client) {
+        client = current
         modelService = null
       }
-      return client
+      return current
     }
 
     const models = (): ModelService => {
@@ -181,7 +191,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     projects.reconcileLegacyWorkspaces()
 
     const activeTurns = new Map<string, AbortController>()
-    const governor = new ResourceGovernor()
+    const governor = options.governor ?? new ResourceGovernor()
     const runtime = new RuntimeReconciliationService({ governor, hostTelemetry, models })
     const estimatedParallelAdmission = new EstimatedParallelAdmissionService({
       featureFlags,

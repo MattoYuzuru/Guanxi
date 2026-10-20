@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
+import { governorThroughKernel } from './fixtures/kernel.ts'
 import {
-  ResourceGovernor,
+  type ResourceGovernor,
   ResourceGovernorError,
   SINGLE_PERMIT_POLICY_BASIS,
   type AdmissionRequest,
@@ -25,10 +26,10 @@ function request(
   }
 }
 
-function deterministicGovernor(): ResourceGovernor {
+function deterministicGovernor(): Promise<ResourceGovernor> {
   let id = 0
   let tick = 0
-  return new ResourceGovernor({
+  return governorThroughKernel({
     createId: () => `resource-${++id}`,
     now: () => new Date(Date.UTC(2026, 7, 3, 10, 0, 0) + tick++),
   })
@@ -36,7 +37,7 @@ function deterministicGovernor(): ResourceGovernor {
 
 describe('ResourceGovernor typed admission and observation', () => {
   it('freezes the exact request and explains one active lease plus FIFO waiters', async () => {
-    const governor = deterministicGovernor()
+    const governor = await deterministicGovernor()
     const mutable = {
       owner: { kind: 'operation' as const, operationId: 'first' },
       operation: 'compaction' as const,
@@ -101,7 +102,7 @@ describe('ResourceGovernor typed admission and observation', () => {
   })
 
   it('cancels only one waiting ticket while active cancellation stays owner-controlled', async () => {
-    const governor = deterministicGovernor()
+    const governor = await deterministicGovernor()
     const activeSignal = new AbortController()
     const activeTicket = governor.enqueue(request('active'))
     const activeLease = await governor.acquire(activeTicket, { signal: activeSignal.signal })
@@ -130,7 +131,7 @@ describe('ResourceGovernor typed admission and observation', () => {
   })
 
   it('keeps normal FIFO ahead of queued prewarm and preempts only the exact active prewarm owner', async () => {
-    const governor = deterministicGovernor()
+    const governor = await deterministicGovernor()
     const prewarmController = new AbortController()
     const activePrewarmTicket = governor.enqueue(
       request('prewarm-active', { operation: 'model_prewarm', priority: 'prewarm' }),
@@ -182,7 +183,7 @@ describe('ResourceGovernor typed admission and observation', () => {
   })
 
   it('never admits prewarm while normal work exists and never aborts an active normal owner', async () => {
-    const governor = deterministicGovernor()
+    const governor = await deterministicGovernor()
     let normalAbortCalls = 0
     const normalTicket = governor.enqueue(request('normal-active'))
     const normalLease = await governor.acquire(normalTicket, {
@@ -214,7 +215,7 @@ describe('ResourceGovernor typed admission and observation', () => {
   it('gives normal work the only lease for both simultaneous callback orders in 10 repeats', async () => {
     for (let repeat = 0; repeat < 10; repeat += 1) {
       for (const normalFirst of [true, false]) {
-        const governor = deterministicGovernor()
+        const governor = await deterministicGovernor()
         let simultaneousActive = 0
         let maxActive = 0
         const entered: string[] = []
@@ -268,7 +269,7 @@ describe('ResourceGovernor typed admission and observation', () => {
   })
 
   it('rejects exact and conservative unload conflicts without leaking private values', async () => {
-    const governor = deterministicGovernor()
+    const governor = await deterministicGovernor()
     const privateModel = 'model private-prompt /tmp/private secret-token'
     const ticket = governor.enqueue(
       request('active-owner', { model: { provider: 'ollama', name: privateModel } }),
@@ -306,7 +307,7 @@ describe('ResourceGovernor typed admission and observation', () => {
   })
 
   it('bounds diagnostics to live state after a large acquire/release sequence', async () => {
-    const governor = deterministicGovernor()
+    const governor = await deterministicGovernor()
     for (let index = 0; index < 1_000; index += 1) {
       const ticket = governor.enqueue(request(`bounded-${index}`))
       const lease = await governor.acquire(ticket)
@@ -324,7 +325,7 @@ describe('ResourceGovernor typed admission and observation', () => {
 
   it('closes idempotently, aborts owners, rejects waiters, and never transfers twice in 10 repeats', async () => {
     for (let repeat = 0; repeat < 10; repeat += 1) {
-      const governor = deterministicGovernor()
+      const governor = await deterministicGovernor()
       const requestOptions =
         repeat % 2 === 0
           ? {}
@@ -376,7 +377,12 @@ describe('ResourceGovernor composition inventory', () => {
     const models = readFileSync(`${sourceRoot}/http/models-routes.ts`, 'utf8')
     const combined = [context, chat, threads, models].join('\n')
 
-    assert.match(context, /const governor = new ResourceGovernor\(\)/)
+    // K1: the server passes the kernel plugin's governor; the fallback keeps
+    // direct construction for contexts built without a kernel.
+    assert.match(context, /const governor = options\.governor \?\? new ResourceGovernor\(\)/)
+    const index = readFileSync(`${sourceRoot}/index.ts`, 'utf8')
+    assert.match(index, /const kernel = await bootServerKernel\(\)/)
+    assert.match(index, /governor: kernel\.governor,/)
     assert.match(context, /chatExecution: new ChatJobExecutionOwner\(base\)/)
     assert.match(chat, /operation: 'chat'/)
     assert.match(chat, /owner: \{ kind: 'job', jobId: association\.job\.id \}/)
