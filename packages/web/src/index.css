@@ -3,6 +3,17 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* SidebarSlot uses these aliases from ui/generated/theme.css. Keep this bridge
+   until DS1-c imports that theme for the rest of the legacy app. */
+@theme inline {
+  --color-divider: var(--color-border-primary);
+  --color-secondary: var(--color-text-secondary);
+  --color-foreground: var(--color-text-primary);
+  --color-inset: var(--color-background-tertiary);
+  --radius-control: var(--border-radius-control);
+  --text-12: var(--font-size-12);
+}
+
 /*
   Плотная информационная вёрстка: базовый шрифт 13px, узкие отступы.
   Палитра задана через семантические токены, чтобы тема переключалась одним классом.

@@ -27,8 +27,11 @@ Import `tokens.css` for runtime variables; import `theme.css` after Tailwind's t
 semantic utilities. The theme removes the default palette and supplies `bg-canvas`,
 `bg-surface`, `text-foreground`, `text-muted`, `border-control`, semantic radii, size and
 spacing utilities, and `duration-fast` / `delay-fast` / `ease-standard` families. Raw
-primitive colours have no theme utilities. The legacy app imports only the runtime variables
-for its `--warning` and `--focus` compatibility mappings; DS1-c owns its utility migration.
+primitive colours have no theme utilities. The legacy app imports the runtime variables
+for its `--warning` and `--focus` compatibility mappings. Its CSS also bridges the six
+generated theme aliases used by K1's `SidebarSlot` (divider, secondary, foreground, inset,
+control radius and 12 px type); DS1-c replaces this bridge with the theme import during the
+legacy utility migration.
 Runtime font variables are `--font-family-sans` and `--font-family-mono`; runtime CSS does not
 declare bare `--spacing` or Tailwind's font-family names. Only the theme layer maps those
 names. A production-build comparison with the token import removed asserts unchanged legacy
