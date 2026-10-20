@@ -102,6 +102,7 @@ export function docsProblems(docs: ComponentDocs, expectedId: string): string[] 
   for (const section of REQUIRED_DOC_SECTIONS) {
     if (!(section in docs.sections)) problems.push(`missing section "## ${section}"`)
     else if ((docs.sections[section] ?? '').length === 0) problems.push(`section "## ${section}" is empty`)
+    else if (/\bTODO\b/.test(docs.sections[section] ?? '')) problems.push(`section "## ${section}" still has a TODO`)
   }
   return problems
 }

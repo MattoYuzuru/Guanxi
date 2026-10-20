@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guanxi.local/schemas/ui-review-record.json",
+  "title": "Guanxi component review record (D-138)",
+  "description": "One per component folder. Agents write draft and review records and change requests; only the node's approval route writes `approval`, signed with the owner key. `stale` is derived from hashes and never stored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "status", "approval", "requests"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "status": { "enum": ["draft", "review", "approved", "deprecated"] },
+    "approval": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["at", "sourceHash", "snapshotHashes", "comment", "keyId", "signature"],
+          "properties": {
+            "at": { "type": "string", "format": "date-time" },
+            "sourceHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+            "snapshotHashes": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+            },
+            "comment": { "type": "string" },
+            "keyId": { "type": "string", "minLength": 1 },
+            "signature": { "type": "string", "minLength": 1, "description": "Base64 Ed25519 signature over the canonical approval payload" }
+          }
+        }
+      ]
+    },
+    "deprecated": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["at", "replacement", "note"],
+          "properties": {
+            "at": { "type": "string", "format": "date-time" },
+            "replacement": { "type": ["string", "null"] },
+            "note": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "requests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "at", "text", "state"],
+        "properties": {
+          "id": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "text": { "type": "string" },
+          "state": { "enum": ["open", "resolved"] }
+        }
+      }
+    }
+  }
+}
