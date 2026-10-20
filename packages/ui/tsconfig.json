@@ -22,5 +22,6 @@
 
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "catalog", "gates", ".storybook", "vitest.config.ts"]
+  "include": ["src", "catalog", "gates", ".storybook", "vitest.config.ts"],
+  "exclude": ["gates/catalog/fixtures/g*"]
 }

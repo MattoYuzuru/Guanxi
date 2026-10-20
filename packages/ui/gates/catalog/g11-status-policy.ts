@@ -26,7 +26,11 @@ export const g11: CatalogGate = {
     const statuses = componentStatuses(inventory)
     const usage = scanUsage(context.usageScope)
     const owner = new Map<string, string>()
-    for (const folder of inventory.folders) for (const name of folder.valueExports) owner.set(name, folder.id)
+    for (const folder of inventory.folders) {
+      if (inventory.publicFolders.includes(folder.id)) for (const name of folder.valueExports) owner.set(name, folder.id)
+    }
+    for (const [name, id] of Object.entries(inventory.aliases)) owner.set(name, id)
+    const utilities = new Set(inventory.utilityExports)
 
     for (const file of usage.get('*') ?? []) {
       findings.push({ severity: 'error', file, message: 'namespace or star import of @guanxi/ui hides which components are used' })
@@ -35,7 +39,15 @@ export const g11: CatalogGate = {
     for (const [name, files] of usage) {
       if (name === '*') continue
       const id = owner.get(name)
-      if (!id) continue
+      if (!id) {
+        // An import G11 cannot attribute is a gap in the policy, never a pass.
+        if (!utilities.has(name)) {
+          for (const file of files) {
+            findings.push({ severity: 'error', file, message: `imports "${name}", which is not a catalogued @guanxi/ui export` })
+          }
+        }
+        continue
+      }
       const set = filesById.get(id) ?? new Set<string>()
       for (const file of files) set.add(file)
       filesById.set(id, set)
@@ -64,6 +76,24 @@ export const g11: CatalogGate = {
       expect: /product code uses draft component "button"/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'draft-on-product-screen'), repoRoot)
+        return context
+      },
+    },
+    {
+      name: 'aliased-draft',
+      description: 'A root alias (ConfirmButton for the draft Button) used on a product screen',
+      expect: /product code uses draft component "button"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'aliased-draft'), repoRoot)
+        return context
+      },
+    },
+    {
+      name: 'unknown-export',
+      description: 'Product code imports a name G11 cannot attribute to a catalogued component',
+      expect: /imports "Fancy", which is not a catalogued @guanxi\/ui export/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'unknown-export'), repoRoot)
         return context
       },
     },

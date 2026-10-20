@@ -23,7 +23,10 @@ export const g10: CatalogGate = {
     const error = (component: string, message: string) => findings.push({ severity: 'error', component, message })
 
     for (const target of inventory.strayExports) {
-      findings.push({ severity: 'error', message: `src/index.ts re-exports "${target}", which is not a component folder` })
+      findings.push({
+        severity: 'error',
+        message: `src/index.ts exports ${target}, which is neither a component folder nor a utility module (src/i18n, src/lib)`,
+      })
     }
     for (const id of inventory.publicFolders) {
       if (!inventory.folders.some((folder) => folder.id === id)) error(id, 'exported from src/index.ts but the folder is missing')
@@ -103,6 +106,15 @@ export const g10: CatalogGate = {
       expect: /missing new-thing\.stories\.tsx/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'export-without-catalog-entry'), repoRoot)
+        return context
+      },
+    },
+    {
+      name: 'stray-named-export',
+      description: 'src/index.ts exports a component by name from outside the folder convention',
+      expect: /src\/index\.ts exports "Fancy" from \.\/fancy\.tsx, which is neither/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'stray-named-export'), repoRoot)
         return context
       },
     },

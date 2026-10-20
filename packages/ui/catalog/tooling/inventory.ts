@@ -41,9 +41,16 @@ export interface UiInventory {
   folders: ComponentFolder[]
   /** Component folder ids re-exported by src/index.ts, in order. */
   publicFolders: string[]
-  /** `export * from '…'` targets of src/index.ts that are not component folders. */
+  /** Root exports that are neither a component folder nor a utility module (G10 fails them). */
   strayExports: string[]
+  /** Named root exports of component folders, alias included: exported name → component id. */
+  aliases: Record<string, string>
+  /** Value names the root re-exports from utility modules (src/i18n, src/lib). */
+  utilityExports: string[]
 }
+
+/** Root re-exports allowed besides component folders: providers, hooks and helpers, no UI. */
+const UTILITY_MODULE = /^\.\/(i18n|lib)\/[^/]+\.tsx?$/
 
 function sourceFile(path: string): ts.SourceFile {
   return ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -202,17 +209,44 @@ export function readInventory(uiRoot: string): UiInventory {
     : []
   const publicFolders: string[] = []
   const strayExports: string[] = []
+  const aliases: Record<string, string> = {}
+  const utilityExports: string[] = []
+  const folders = ids.map((id) => readFolder(uiRoot, id))
   const indexPath = join(uiRoot, 'src', 'index.ts')
   if (existsSync(indexPath)) {
     for (const statement of sourceFile(indexPath).statements) {
-      if (!ts.isExportDeclaration(statement) || statement.exportClause || !statement.moduleSpecifier) continue
-      const target = (statement.moduleSpecifier as ts.StringLiteral).text
-      const match = /^\.\/components\/([^/]+)\/index\.ts$/.exec(target)
-      if (match?.[1]) publicFolders.push(match[1])
-      else strayExports.push(target)
+      const exported = ts.canHaveModifiers(statement) && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+      if (!ts.isExportDeclaration(statement)) {
+        // A value declared in the entry itself bypasses the folder convention.
+        if (exported && !ts.isTypeAliasDeclaration(statement) && !ts.isInterfaceDeclaration(statement)) {
+          strayExports.push(`a declaration in src/index.ts (${statement.getText().slice(0, 40)}…)`)
+        }
+        continue
+      }
+      if (statement.isTypeOnly) continue
+      const target = statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : null
+      const folder = target ? /^\.\/components\/([^/]+)\/index\.ts$/.exec(target)?.[1] ?? null : null
+      if (!statement.exportClause) {
+        if (folder) publicFolders.push(folder)
+        else strayExports.push(`everything from ${target ?? 'a local module'}`)
+        continue
+      }
+      if (!ts.isNamedExports(statement.exportClause)) {
+        strayExports.push(`a namespace from ${target ?? 'a local module'}`)
+        continue
+      }
+      for (const element of statement.exportClause.elements) {
+        if (element.isTypeOnly) continue
+        const name = element.name.text
+        const original = (element.propertyName ?? element.name).text
+        const owner = folder ? folders.find((item) => item.id === folder) : undefined
+        if (owner && owner.valueExports.includes(original)) aliases[name] = owner.id
+        else if (target && UTILITY_MODULE.test(target)) utilityExports.push(name)
+        else strayExports.push(`"${name}" from ${target ?? 'a local binding'}`)
+      }
     }
   }
-  return { uiRoot, folders: ids.map((id) => readFolder(uiRoot, id)), publicFolders, strayExports }
+  return { uiRoot, folders, publicFolders, strayExports, aliases, utilityExports }
 }
 
 /** Every `var(--name)` a component's CSS reads (its tokens). */
