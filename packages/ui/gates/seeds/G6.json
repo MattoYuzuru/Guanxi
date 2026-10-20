@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/src/seed.css": ".seed { color: #fff; padding: 13px; z-index: 17; }"
+  },
+  "expectedError": "new violation"
+}

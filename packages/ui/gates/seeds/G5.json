@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/src/seed.tsx": "export const Seed = () => <div className=\"bg-red-500 text-[#fff] w-[300px] totally-unknown\" />"
+  },
+  "expectedError": "new violation"
+}
