@@ -1,0 +1,326 @@
+/*
+ * TEMPORARY token stub for lane DS1-b. Delete this file when main contains DS1-a's generated
+ * token output (packages/ui/generated/**) and point the imports at that output instead.
+ *
+ * Why it exists: @guanxi/ui components style themselves only through semantic custom
+ * properties. Until DS1-a's Style Dictionary build lands, this stub defines those names with
+ * the values from docs/design/FOUNDATIONS.md so the catalog, Storybook and the browser gates
+ * can render. It introduces no new values: every colour is a FOUNDATIONS ramp step or status
+ * colour; tints and glass fills mix those steps by the FOUNDATIONS percentages.
+ *
+ * Contract with DS1-a (also listed in docs/plans/lanes/DS1-b.handoff.md): the generated
+ * output must define every custom property declared below that does not start with --gx-stub-,
+ * and must apply theme, density, glass and motion through attributes on ANY element
+ * ([data-theme], [data-density], [data-glass], [data-motion], [data-reduce-transparency]),
+ * not only on :root, because the catalog renders several regimes side by side.
+ */
+
+/* ── Shared, theme-independent ─────────────────────────────────────────────────────────── */
+[data-theme] {
+  /* Typography (MCP Apps names). Plex is self-hosted by DS1-a; system faces until then. */
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-heading-sm-size: 15px;
+  --font-heading-md-size: 18px;
+  --font-heading-lg-size: 22px;
+  --font-heading-xl-size: 28px;
+  --font-heading-2xl-size: 36px;
+  --font-heading-sm-line-height: 1.4;
+  --font-heading-md-line-height: 1.35;
+  --font-heading-lg-line-height: 1.3;
+  --font-heading-xl-line-height: 1.25;
+  --font-heading-2xl-line-height: 1.2;
+  --font-text-sm-line-height: 1.5;
+  --font-text-md-line-height: 1.5;
+  --font-text-lg-line-height: 1.6;
+  --font-text-lg-size: 15px;
+
+  /* Spacing: 4 px grid, scale 2–64 px. */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Radius grows with the layer (MCP Apps names). */
+  --border-radius-xs: 6px;
+  --border-radius-sm: 10px;
+  --border-radius-md: 16px;
+  --border-radius-lg: 20px;
+  --border-radius-full: 9999px;
+  --border-width-regular: 1px;
+
+  /* Sizes that are not density-dependent. */
+  --size-target-min: 24px;
+  --size-icon-sm: 16px;
+  --size-icon-md: 18px;
+  --size-icon-lg: 20px;
+  --size-focus-ring: 2px;
+  --size-focus-offset: 2px;
+  --size-indicator: 8px;
+  --size-popover-max: 320px;
+  --size-dialog-max: 480px;
+  --size-toast-max: 360px;
+  --size-catalog-cell-min: 240px;
+
+  /* Layering. */
+  --z-popover: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+  --z-tooltip: 70;
+
+  /* Motion (FOUNDATIONS §5), full motion. */
+  --motion-duration-instant: 0ms;
+  --motion-duration-fast: 100ms;
+  --motion-duration-moderate: 150ms;
+  --motion-duration-medium: 200ms;
+  --motion-duration-slow: 300ms;
+  --motion-duration-slower: 400ms;
+  --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-easing-enter: cubic-bezier(0, 0, 0, 1);
+  --motion-easing-exit: cubic-bezier(0.3, 0, 1, 1);
+  --motion-easing-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --motion-easing-linear: linear;
+  --motion-distance-sm: 4px;
+  --motion-distance-md: 8px;
+  --motion-distance-lg: 16px;
+  --motion-loop-duration: 1000ms;
+
+  /* Density: compact is the default (D-131). */
+  --density-control-height: 28px;
+  --density-row-height: 26px;
+  --density-panel-padding: 8px;
+  --font-text-sm-size: 12px;
+  --font-text-md-size: 13px;
+
+  /* Glass level: Glass (default). */
+  --gx-stub-glass-fill-opacity: 72%;
+  --gx-stub-glass-blur: 20px;
+  --gx-stub-glass-grain-opacity: 0.05;
+
+  /* Derived from the values above on the same element, so nested regimes stay consistent. */
+  --glass-fill: color-mix(in srgb, var(--gx-stub-glass-base) var(--gx-stub-glass-fill-opacity), transparent);
+  --glass-backdrop: blur(var(--gx-stub-glass-blur)) saturate(1.15);
+  --glass-edge: inset 0 1px 0 var(--gx-stub-glass-edge);
+  --glass-seam: var(--gx-stub-glass-seam);
+  --glass-border: transparent;
+  --glass-grain-opacity: var(--gx-stub-glass-grain-opacity);
+  --glass-grain-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E");
+
+  --shadow-hairline: 0 0 0 1px var(--gx-stub-ink-10);
+  --shadow-sm: 0 1px 2px var(--gx-stub-ink-8);
+  --shadow-md: 0 1px 2px var(--gx-stub-ink-8), 0 8px 24px var(--gx-stub-ink-10);
+  --shadow-lg: 0 1px 2px var(--gx-stub-ink-8), 0 8px 24px var(--gx-stub-ink-10);
+
+  font-family: var(--font-sans);
+  font-size: var(--font-text-md-size);
+  line-height: var(--font-text-md-line-height);
+  color: var(--color-text-primary);
+}
+
+/* ── Themes ────────────────────────────────────────────────────────────────────────────── */
+[data-theme='light'],
+[data-theme='light-hc'] {
+  color-scheme: light;
+  --gx-stub-n1: #f3fcfe;
+  --gx-stub-n2: #ebf4f5;
+  --gx-stub-n3: #e2ebed;
+  --gx-stub-n4: #dae3e5;
+  --gx-stub-n5: #cedcde;
+  --gx-stub-n6: #c5d2d4;
+  --gx-stub-n7: #b3c1c3;
+  --gx-stub-n8: #94a1a3;
+  --gx-stub-n9: #768385;
+  --gx-stub-n10: #626e70;
+  --gx-stub-n11: #445051;
+  --gx-stub-n12: #182322;
+  --gx-stub-accent: #187363;
+  --gx-stub-on-accent: #f3fcfe;
+  --gx-stub-success: #2b7440;
+  --gx-stub-warning: #925b0c;
+  --gx-stub-danger: #ba362e;
+  --gx-stub-info: #236997;
+  --gx-stub-ink-8: color-mix(in srgb, #182322 8%, transparent);
+  --gx-stub-ink-10: color-mix(in srgb, #182322 10%, transparent);
+  --gx-stub-glass-base: var(--gx-stub-n1);
+  --gx-stub-glass-edge: color-mix(in srgb, #ffffff 65%, transparent);
+  --gx-stub-glass-seam: color-mix(in srgb, #182322 10%, transparent);
+  --color-scrim: color-mix(in srgb, #182322 32%, transparent);
+}
+
+[data-theme='dark'],
+[data-theme='dark-hc'] {
+  color-scheme: dark;
+  --gx-stub-n1: #0f1a19;
+  --gx-stub-n2: #182322;
+  --gx-stub-n3: #1f2a29;
+  --gx-stub-n4: #25302f;
+  --gx-stub-n5: #2c3837;
+  --gx-stub-n6: #34403f;
+  --gx-stub-n7: #414d4c;
+  --gx-stub-n8: #54615f;
+  --gx-stub-n9: #798281;
+  --gx-stub-n10: #a3adac;
+  --gx-stub-n11: #c3cdcc;
+  --gx-stub-n12: #eef5f6;
+  --gx-stub-accent: #78cab7;
+  --gx-stub-on-accent: #182322;
+  --gx-stub-success: #7ccd8e;
+  --gx-stub-warning: #f0ba59;
+  --gx-stub-danger: #fd8c7e;
+  --gx-stub-info: #83bfec;
+  --gx-stub-ink-8: color-mix(in srgb, #000000 24%, transparent);
+  --gx-stub-ink-10: color-mix(in srgb, #000000 32%, transparent);
+  --gx-stub-glass-base: var(--gx-stub-n3);
+  --gx-stub-glass-fill-opacity: 70%;
+  --gx-stub-glass-edge: color-mix(in srgb, #ffffff 8%, transparent);
+  --gx-stub-glass-seam: color-mix(in srgb, #000000 32%, transparent);
+  --gx-stub-glass-grain-opacity: 0.06;
+  --color-scrim: color-mix(in srgb, #000000 48%, transparent);
+}
+
+/* Semantic mapping shared by all four themes; HC themes override a few steps below. */
+[data-theme] {
+  --color-background-primary: var(--gx-stub-n2);
+  --color-background-secondary: var(--gx-stub-n1);
+  --color-background-tertiary: var(--gx-stub-n3);
+  --color-background-hover: var(--gx-stub-n4);
+  --color-background-pressed: var(--gx-stub-n5);
+  --color-background-inverse: var(--gx-stub-n12);
+  --color-background-ghost: transparent;
+  --color-background-disabled: var(--gx-stub-n3);
+  --color-background-accent: var(--gx-stub-accent);
+  --color-background-accent-hover: color-mix(in srgb, var(--gx-stub-accent) 88%, var(--gx-stub-n12));
+  --color-background-accent-pressed: color-mix(in srgb, var(--gx-stub-accent) 76%, var(--gx-stub-n12));
+  --color-background-danger-strong: var(--gx-stub-danger);
+  --color-background-info: color-mix(in srgb, var(--gx-stub-info) 12%, var(--gx-stub-n1));
+  --color-background-success: color-mix(in srgb, var(--gx-stub-success) 12%, var(--gx-stub-n1));
+  --color-background-warning: color-mix(in srgb, var(--gx-stub-warning) 12%, var(--gx-stub-n1));
+  --color-background-danger: color-mix(in srgb, var(--gx-stub-danger) 12%, var(--gx-stub-n1));
+
+  --color-text-primary: var(--gx-stub-n12);
+  --color-text-secondary: var(--gx-stub-n11);
+  --color-text-tertiary: var(--gx-stub-n10);
+  --color-text-ghost: var(--gx-stub-n10);
+  --color-text-inverse: var(--gx-stub-n1);
+  --color-text-disabled: var(--gx-stub-n9);
+  --color-text-accent: var(--gx-stub-accent);
+  --color-text-on-accent: var(--gx-stub-on-accent);
+  --color-text-info: var(--gx-stub-info);
+  --color-text-success: var(--gx-stub-success);
+  --color-text-warning: var(--gx-stub-warning);
+  --color-text-danger: var(--gx-stub-danger);
+
+  --color-border-primary: var(--gx-stub-n9);
+  --color-border-secondary: var(--gx-stub-n7);
+  --color-border-tertiary: var(--gx-stub-n6);
+  --color-border-inverse: var(--gx-stub-n12);
+  --color-border-ghost: transparent;
+  --color-border-disabled: var(--gx-stub-n6);
+  --color-border-accent: var(--gx-stub-accent);
+  --color-border-info: var(--gx-stub-info);
+  --color-border-success: var(--gx-stub-success);
+  --color-border-warning: var(--gx-stub-warning);
+  --color-border-danger: var(--gx-stub-danger);
+
+  --color-ring-primary: var(--gx-stub-accent);
+  --color-ring-secondary: var(--gx-stub-n9);
+  --color-ring-inverse: var(--gx-stub-n1);
+  --color-ring-info: var(--gx-stub-info);
+  --color-ring-success: var(--gx-stub-success);
+  --color-ring-warning: var(--gx-stub-warning);
+  --color-ring-danger: var(--gx-stub-danger);
+
+  background-color: var(--color-background-primary);
+}
+
+/* High contrast: text ≥ 7:1, control borders ≥ 4.5:1 (FOUNDATIONS §1.4). */
+[data-theme='light-hc'],
+[data-theme='dark-hc'] {
+  --color-text-secondary: var(--gx-stub-n12);
+  --color-text-tertiary: var(--gx-stub-n11);
+  --color-text-ghost: var(--gx-stub-n11);
+  --color-text-disabled: var(--gx-stub-n10);
+  --color-border-primary: var(--gx-stub-n11);
+  --color-border-secondary: var(--gx-stub-n10);
+  --color-border-tertiary: var(--gx-stub-n9);
+}
+
+/* ── Density ───────────────────────────────────────────────────────────────────────────── */
+[data-theme][data-density='comfortable'] {
+  --density-control-height: 32px;
+  --density-row-height: 32px;
+  --density-panel-padding: 12px;
+  --font-text-sm-size: 13px;
+  --font-text-md-size: 14px;
+}
+
+/* ── Glass levels (Settings → Appearance) ──────────────────────────────────────────────── */
+[data-theme][data-glass='tinted'] {
+  --gx-stub-glass-fill-opacity: 90%;
+  --gx-stub-glass-blur: 8px;
+  --gx-stub-glass-grain-opacity: 0.02;
+}
+
+[data-theme][data-glass='solid'],
+[data-theme][data-reduce-transparency] {
+  --gx-stub-glass-fill-opacity: 100%;
+  --gx-stub-glass-blur: 0px;
+  --gx-stub-glass-grain-opacity: 0;
+  --glass-border: var(--gx-stub-n8);
+}
+
+/* High-contrast themes always use the solid material, whatever the glass level. */
+[data-theme='light-hc'],
+[data-theme='dark-hc'],
+[data-theme='light-hc'][data-glass],
+[data-theme='dark-hc'][data-glass] {
+  --gx-stub-glass-fill-opacity: 100%;
+  --gx-stub-glass-blur: 0px;
+  --gx-stub-glass-grain-opacity: 0;
+  --glass-border: var(--gx-stub-n11);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  [data-theme],
+  [data-theme][data-glass] {
+    --gx-stub-glass-fill-opacity: 100%;
+    --gx-stub-glass-blur: 0px;
+    --gx-stub-glass-grain-opacity: 0;
+    --glass-border: var(--gx-stub-n8);
+  }
+}
+
+/* ── Motion: reduced removes distance and caps fades at fast ───────────────────────────── */
+[data-theme][data-motion='reduced'] {
+  --motion-duration-moderate: var(--motion-duration-fast);
+  --motion-duration-medium: var(--motion-duration-fast);
+  --motion-duration-slow: var(--motion-duration-fast);
+  --motion-duration-slower: var(--motion-duration-fast);
+  --motion-distance-sm: 0px;
+  --motion-distance-md: 0px;
+  --motion-distance-lg: 0px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme]:not([data-motion='full']) {
+    --motion-duration-moderate: var(--motion-duration-fast);
+    --motion-duration-medium: var(--motion-duration-fast);
+    --motion-duration-slow: var(--motion-duration-fast);
+    --motion-duration-slower: var(--motion-duration-fast);
+    --motion-distance-sm: 0px;
+    --motion-distance-md: 0px;
+    --motion-distance-lg: 0px;
+  }
+}

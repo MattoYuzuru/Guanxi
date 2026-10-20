@@ -1,0 +1,80 @@
+.gx-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--size-target-min);
+  color: var(--color-text-primary);
+  font-size: var(--font-text-md-size);
+  line-height: var(--font-text-md-line-height);
+  cursor: pointer;
+}
+
+.gx-choice[data-disabled] {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.gx-checkbox {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  padding: 0;
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-xs);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-on-accent);
+  cursor: inherit;
+  transition-property: background-color, border-color;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+/* Keeps a 24 px target when the checkbox has no visible label. */
+.gx-checkbox::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--size-target-min) - var(--size-icon-sm)) / -2);
+}
+
+.gx-checkbox:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-checkbox:not([data-disabled]) {
+  background-color: var(--color-background-hover);
+}
+
+.gx-checkbox[data-checked],
+.gx-checkbox[data-indeterminate] {
+  border-color: var(--color-border-accent);
+  background-color: var(--color-background-accent);
+}
+
+.gx-checkbox[data-disabled] {
+  border-color: var(--color-border-disabled);
+  background-color: var(--color-background-disabled);
+  color: var(--color-text-disabled);
+}
+
+.gx-checkbox-indicator {
+  display: inline-flex;
+}
+
+.gx-checkbox-indicator svg {
+  width: var(--space-3);
+  height: var(--space-3);
+  stroke-width: 3;
+}
+
+@media (forced-colors: active) {
+  .gx-checkbox {
+    border-color: ButtonText;
+  }
+
+  .gx-checkbox[data-checked],
+  .gx-checkbox[data-indeterminate] {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+}

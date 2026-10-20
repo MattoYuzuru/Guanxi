@@ -1,0 +1,70 @@
+.gx-menu-positioner {
+  z-index: var(--z-popover);
+}
+
+.gx-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: var(--size-catalog-cell-min);
+  max-height: var(--available-height);
+  padding: var(--space-1);
+  overflow-y: auto;
+  border-radius: var(--border-radius-sm);
+  outline: none;
+}
+
+.gx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--density-row-height);
+  padding-inline: var(--space-2);
+  border-radius: var(--border-radius-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-text-md-size);
+  line-height: var(--font-text-md-line-height);
+  cursor: default;
+  outline: none;
+  user-select: none;
+}
+
+.gx-menu-item svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.gx-menu-item[data-highlighted] {
+  background-color: var(--color-background-hover);
+}
+
+.gx-menu-item[data-variant='danger'] {
+  color: var(--color-text-danger);
+}
+
+.gx-menu-item[data-variant='danger'][data-highlighted] {
+  background-color: var(--color-background-danger);
+}
+
+.gx-menu-item[data-disabled] {
+  color: var(--color-text-disabled);
+}
+
+.gx-menu-group-label {
+  padding: var(--space-1) var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-text-sm-size);
+  font-weight: var(--font-weight-medium);
+}
+
+.gx-menu-separator {
+  height: var(--border-width-regular);
+  margin: var(--space-1) 0;
+  background-color: var(--color-border-secondary);
+}
+
+@media (forced-colors: active) {
+  .gx-menu-item[data-highlighted] {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+}

@@ -1,0 +1,24 @@
+.gx-icon-button {
+  width: var(--density-control-height);
+  padding-inline: 0;
+}
+
+.gx-icon-button[data-size='sm'] {
+  width: var(--size-target-min);
+  min-height: var(--size-target-min);
+}
+
+.gx-icon-button-glyph {
+  display: inline-flex;
+}
+
+.gx-icon-button-glyph svg {
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
+}
+
+.gx-icon-button[aria-pressed='true'] {
+  border-color: var(--color-border-accent);
+  background-color: var(--color-background-tertiary);
+  color: var(--color-text-accent);
+}

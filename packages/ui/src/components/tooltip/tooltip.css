@@ -1,0 +1,20 @@
+.gx-tooltip-positioner {
+  z-index: var(--z-tooltip);
+}
+
+.gx-tooltip {
+  max-width: var(--size-popover-max);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--border-radius-xs);
+  background-color: var(--color-background-inverse);
+  color: var(--color-text-inverse);
+  font-size: var(--font-text-sm-size);
+  line-height: var(--font-text-sm-line-height);
+  transition-duration: var(--motion-duration-moderate);
+}
+
+@media (forced-colors: active) {
+  .gx-tooltip {
+    border: var(--border-width-regular) solid CanvasText;
+  }
+}

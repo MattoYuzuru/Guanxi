@@ -1,0 +1,82 @@
+.gx-switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: calc(var(--size-icon-sm) * 2);
+  height: var(--size-icon-md);
+  padding: var(--space-0-5);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-full);
+  background-color: var(--color-background-tertiary);
+  cursor: inherit;
+  transition-property: background-color, border-color;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-switch::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--size-target-min) - var(--size-icon-md)) / -2);
+}
+
+.gx-switch-thumb {
+  display: block;
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--border-radius-full);
+  background-color: var(--color-text-secondary);
+  transition-property: transform, background-color;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-switch:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-switch:not([data-disabled]) {
+  background-color: var(--color-background-hover);
+}
+
+.gx-switch[data-checked] {
+  border-color: var(--color-border-accent);
+  background-color: var(--color-background-accent);
+}
+
+.gx-switch[data-checked] .gx-switch-thumb {
+  background-color: var(--color-text-on-accent);
+  transform: translateX(calc(var(--size-icon-sm) * 2 - var(--space-3) - var(--space-0-5) * 2 - var(--border-width-regular) * 2));
+}
+
+.gx-switch[data-disabled] {
+  border-color: var(--color-border-disabled);
+  background-color: var(--color-background-disabled);
+}
+
+.gx-switch[data-disabled] .gx-switch-thumb {
+  background-color: var(--color-text-disabled);
+}
+
+/* The thumb travel is spatial motion: under reduced motion it jumps. */
+[data-motion='reduced'] .gx-switch-thumb {
+  transition-property: background-color;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-switch-thumb:not([data-motion='full'] *) {
+    transition-property: background-color;
+  }
+}
+
+@media (forced-colors: active) {
+  .gx-switch {
+    border-color: ButtonText;
+  }
+
+  .gx-switch-thumb {
+    background-color: ButtonText;
+  }
+
+  .gx-switch[data-checked] .gx-switch-thumb {
+    background-color: Highlight;
+  }
+}

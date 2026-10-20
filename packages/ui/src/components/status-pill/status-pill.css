@@ -1,0 +1,82 @@
+.gx-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-height: var(--size-target-min);
+  padding-inline: var(--space-2);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-full);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  font-size: var(--font-text-sm-size);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--font-text-sm-line-height);
+  white-space: nowrap;
+}
+
+/* Shapes: filled (running, finished, error), ring (waiting), dashed ring (hibernating,
+   unknown). The colour follows the status but the shape and the text carry the meaning. */
+.gx-status-dot {
+  box-sizing: border-box;
+  flex: none;
+  width: var(--size-indicator);
+  height: var(--size-indicator);
+  border: var(--border-width-regular) solid currentColor;
+  border-radius: var(--border-radius-full);
+  background-color: currentColor;
+}
+
+.gx-status-pill[data-status='running'] .gx-status-dot {
+  color: var(--color-text-accent);
+  animation: gx-status-pulse var(--motion-loop-duration) var(--motion-easing-standard) infinite alternate;
+}
+
+.gx-status-pill[data-status='waiting'] .gx-status-dot {
+  color: var(--color-text-warning);
+  border-width: var(--size-focus-ring);
+  background-color: transparent;
+}
+
+.gx-status-pill[data-status='hibernating'] .gx-status-dot {
+  color: var(--color-text-info);
+  border-style: dashed;
+  background-color: transparent;
+}
+
+.gx-status-pill[data-status='finished'] .gx-status-dot {
+  color: var(--color-text-success);
+}
+
+.gx-status-pill[data-status='error'] .gx-status-dot {
+  color: var(--color-text-danger);
+  border-radius: var(--border-width-regular);
+}
+
+.gx-status-pill[data-status='unknown'] .gx-status-dot {
+  color: var(--color-text-tertiary);
+  border-style: dashed;
+  background-color: transparent;
+}
+
+@keyframes gx-status-pulse {
+  to {
+    opacity: 0.4;
+  }
+}
+
+/* The pulse is decoration; the word "Running" carries the state. */
+[data-motion='reduced'] .gx-status-pill .gx-status-dot {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-status-dot:not([data-motion='full'] *) {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .gx-status-dot {
+    color: CanvasText;
+  }
+}

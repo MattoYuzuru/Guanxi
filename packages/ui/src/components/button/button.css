@@ -1,0 +1,98 @@
+.gx-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
+  min-width: var(--size-target-min);
+  min-height: var(--density-control-height);
+  padding-inline: var(--space-3);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-text-md-size);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--font-text-md-line-height);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition-property: background-color, border-color, color;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-button[data-size='sm'] {
+  min-height: var(--size-target-min);
+  padding-inline: var(--space-2);
+  font-size: var(--font-text-sm-size);
+}
+
+.gx-button svg {
+  flex: none;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.gx-button:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-button:not([data-disabled]) {
+  background-color: var(--color-background-hover);
+}
+
+.gx-button:active:not([data-disabled]),
+[data-gx-force~='active'] .gx-button:not([data-disabled]) {
+  background-color: var(--color-background-pressed);
+}
+
+.gx-button[data-variant='primary'] {
+  border-color: var(--color-border-accent);
+  background-color: var(--color-background-accent);
+  color: var(--color-text-on-accent);
+}
+
+.gx-button[data-variant='primary']:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-button[data-variant='primary']:not([data-disabled]) {
+  background-color: var(--color-background-accent-hover);
+}
+
+.gx-button[data-variant='primary']:active:not([data-disabled]),
+[data-gx-force~='active'] .gx-button[data-variant='primary']:not([data-disabled]) {
+  background-color: var(--color-background-accent-pressed);
+}
+
+.gx-button[data-variant='ghost'] {
+  border-color: var(--color-border-ghost);
+  background-color: var(--color-background-ghost);
+}
+
+.gx-button[data-variant='danger'] {
+  border-color: var(--color-border-danger);
+  color: var(--color-text-danger);
+}
+
+.gx-button[data-variant='danger']:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-button[data-variant='danger']:not([data-disabled]) {
+  background-color: var(--color-background-danger);
+}
+
+.gx-button[data-disabled]:not([data-loading]) {
+  border-color: var(--color-border-disabled);
+  background-color: var(--color-background-disabled);
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.gx-button[data-loading] {
+  cursor: progress;
+}
+
+@media (forced-colors: active) {
+  .gx-button {
+    border-color: ButtonText;
+  }
+
+  .gx-button[data-disabled] {
+    border-color: GrayText;
+    color: GrayText;
+  }
+}

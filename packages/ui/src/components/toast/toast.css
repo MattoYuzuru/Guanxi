@@ -1,0 +1,86 @@
+.gx-toast-viewport {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  width: min(var(--size-toast-max), calc(100% - var(--space-8)));
+  outline: none;
+}
+
+.gx-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--border-radius-md);
+  transition-property: opacity, transform;
+  transition-duration: var(--motion-duration-medium);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+.gx-toast[data-starting-style],
+.gx-toast[data-ending-style] {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+}
+
+.gx-toast[data-ending-style] {
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-exit);
+}
+
+.gx-toast-icon {
+  display: inline-flex;
+  padding-top: var(--space-0-5);
+}
+
+.gx-toast-icon svg {
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
+}
+
+.gx-toast[data-tone='info'] .gx-toast-icon {
+  color: var(--color-text-info);
+}
+
+.gx-toast[data-tone='success'] .gx-toast-icon {
+  color: var(--color-text-success);
+}
+
+.gx-toast[data-tone='warning'] .gx-toast-icon {
+  color: var(--color-text-warning);
+}
+
+.gx-toast[data-tone='error'] .gx-toast-icon {
+  color: var(--color-text-danger);
+}
+
+.gx-toast-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
+.gx-toast-title {
+  margin: 0;
+  font-size: var(--font-text-md-size);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--font-text-md-line-height);
+}
+
+.gx-toast-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-text-md-size);
+  line-height: var(--font-text-md-line-height);
+}
+
+.gx-toast-action {
+  margin-top: var(--space-1-5);
+}

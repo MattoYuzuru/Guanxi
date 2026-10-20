@@ -1,0 +1,104 @@
+/*
+ * Shared building blocks for @guanxi/ui components. Semantic tokens only (FOUNDATIONS);
+ * no literal colours, spacing, sizes or durations.
+ *
+ * Catalog-only hook: [data-gx-force~='hover' | 'focus-visible' | 'active'] on an ancestor
+ * renders a pointer or focus state statically, so every declared state has a story and a
+ * visual baseline. Product code never sets it.
+ */
+
+.gx-sr-only {
+  position: absolute;
+  width: var(--border-width-regular);
+  height: var(--border-width-regular);
+  padding: 0;
+  margin: calc(var(--border-width-regular) * -1);
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Focus ring: visible in every theme and in forced colours. */
+.gx-focusable:focus-visible,
+[data-gx-force~='focus-visible'] .gx-focusable {
+  outline: var(--size-focus-ring) solid var(--color-ring-primary);
+  outline-offset: var(--size-focus-offset);
+}
+
+/* Glass material: only for floating layers (FOUNDATIONS §4). */
+.gx-glass {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--glass-fill);
+  backdrop-filter: var(--glass-backdrop);
+  border: var(--border-width-regular) solid var(--glass-border);
+  border-bottom-color: var(--glass-seam);
+  box-shadow: var(--glass-edge), var(--shadow-md);
+  color: var(--color-text-primary);
+}
+
+.gx-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-image: var(--glass-grain-image);
+  opacity: var(--glass-grain-opacity);
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+}
+
+/* Enter and exit for Base UI popups ([data-starting-style] / [data-ending-style]). */
+.gx-pop {
+  transition-property: opacity, transform;
+  transition-duration: var(--motion-duration-medium);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+.gx-pop[data-starting-style],
+.gx-pop[data-ending-style] {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+}
+
+.gx-pop[data-ending-style] {
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-exit);
+}
+
+/* Static spinner glyph: rotates only under full motion; under reduced motion it stays still
+   and the visible text carries the state (FOUNDATIONS §5). */
+.gx-spinner {
+  display: inline-block;
+  flex: none;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  border: var(--size-focus-ring) solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--border-radius-full);
+  animation: gx-spin var(--motion-loop-duration) var(--motion-easing-linear) infinite;
+}
+
+[data-motion='reduced'] .gx-spinner {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-spinner:not([data-motion='full'] *) {
+    animation: none;
+  }
+}
+
+@keyframes gx-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (forced-colors: active) {
+  .gx-glass {
+    border-color: CanvasText;
+  }
+}

@@ -1,0 +1,75 @@
+/* Elevation 3: strong glass over an ink scrim at 32%; the scrim is never blurred. */
+.gx-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  background-color: var(--color-scrim);
+  transition-property: opacity;
+  transition-duration: var(--motion-duration-slow);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-dialog-backdrop[data-starting-style],
+.gx-dialog-backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.gx-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: var(--z-dialog);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: min(var(--size-dialog-max), calc(100% - var(--space-8)));
+  padding: var(--space-5);
+  border-radius: var(--border-radius-lg);
+  outline: none;
+  transform: translate(-50%, -50%);
+  transition-property: opacity, transform;
+  transition-duration: var(--motion-duration-slow);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+.gx-dialog[data-starting-style],
+.gx-dialog[data-ending-style] {
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + var(--motion-distance-md)));
+}
+
+.gx-dialog[data-ending-style] {
+  transition-duration: var(--motion-duration-medium);
+  transition-timing-function: var(--motion-easing-exit);
+}
+
+.gx-dialog-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.gx-dialog-title {
+  margin: 0;
+  padding-right: var(--space-8);
+  font-size: var(--font-heading-md-size);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--font-heading-md-line-height);
+  text-wrap: balance;
+}
+
+.gx-dialog-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-text-md-size);
+  line-height: var(--font-text-lg-line-height);
+}
+
+.gx-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
