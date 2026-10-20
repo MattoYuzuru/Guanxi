@@ -56,12 +56,14 @@ test('reload replays the live inspector state exactly, on desktop and phone', as
       streamCalls += 1
       streamAfter.push(url.searchParams.get('after') ?? '')
       if (streamCalls === 1) {
-        // The live tail delivers one event; from now on it is persisted as well.
+        // The live tail re-sends the last stored event (a reconnect overlap), then delivers a
+        // new one; from now on the new one is persisted as well.
         persisted.push(liveEvent)
+        const overlap = persisted[persisted.length - 2]!
         return route.fulfill({
           status: 200,
           contentType: 'text/event-stream',
-          body: `id: ${liveEvent.seq}\nevent: guanxi\ndata: ${JSON.stringify(liveEvent)}\n\n`,
+          body: [overlap, liveEvent].map((event) => `id: ${event.seq}\nevent: guanxi\ndata: ${JSON.stringify(event)}\n\n`).join(''),
         })
       }
       return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' })
@@ -94,9 +96,14 @@ test('reload replays the live inspector state exactly, on desktop and phone', as
 
     await expect(page.getByText(REASONING_TEXT)).toHaveCount(0)
     await expect(page.locator('body')).not.toContainText('⟦')
-    await expect(page.getByText('hidden secret://vault/demo').first()).toBeVisible()
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-    expect(overflow).toBeLessThanOrEqual(0)
+    await expect(page.getByText('secret secret://vault/demo').first()).toBeVisible()
+    // The app root clips overflow, so measure the scrolling main area and every row instead.
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector('main')!
+      const rows = [...document.querySelectorAll('[data-event-type]')]
+      return [main.scrollWidth - main.clientWidth, ...rows.map((row) => row.scrollWidth - row.clientWidth)]
+    })
+    expect(Math.max(...overflow)).toBeLessThanOrEqual(0)
 
     const show = page.getByRole('button', { name: /Show reasoning/ })
     await show.focus()

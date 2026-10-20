@@ -92,7 +92,8 @@ export function eventDetail(event: SessionEvent): string | null {
     case 'error':
       return `${event.data.code}: ${event.data.message}`
     case 'intervention':
-      return event.data.reason
+      // The type label already says the person stopped it; the reason code is internal.
+      return null
     case 'writer.acquired':
       return translate('inspector.detail.writer', {
         epoch: event.data.epoch,
