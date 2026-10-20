@@ -7,6 +7,8 @@
  * export. Changes are additive only. See `README.md` for the semantics.
  */
 
+import { REDACTION_MARKER_CLOSE, REDACTION_MARKER_OPEN, REDACTION_MARKER_PREFIX } from '@guanxi/contract'
+
 /** Kernel service name. A consumer lists it in `manifest.requires`. */
 export const EGRESS_SCRUBBER_SERVICE = 'egress.scrubber'
 
@@ -47,15 +49,13 @@ export const MIN_SECRET_LENGTH = 8
 export const MAX_SECRET_LENGTH = 65_536
 
 /**
- * Markers are delimited by U+27E6 and U+27E7. A registered value may not contain
+ * Markers are delimited by U+27E6 and U+27E7 (defined in the wire contract,
+ * because scrubbed payloads carry them). A registered value may not contain
  * either, so no occurrence of a value can overlap a marker's edge, and a
  * replacement can never re-form a registered value with the text around it.
+ * `REDACTION_MARKER_PREFIX` is shared by every marker.
  */
-export const REDACTION_MARKER_OPEN = '\u27E6'
-export const REDACTION_MARKER_CLOSE = '\u27E7'
-
-/** Prefix shared by every marker; the inspector renders markers by it. */
-export const REDACTION_MARKER_PREFIX = `${REDACTION_MARKER_OPEN}REDACTED `
+export { REDACTION_MARKER_CLOSE, REDACTION_MARKER_OPEN, REDACTION_MARKER_PREFIX }
 
 /**
  * The text that replaces one occurrence of the value registered under `ref`:

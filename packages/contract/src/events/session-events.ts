@@ -19,6 +19,15 @@ import {
 
 export const SESSION_EVENT_VERSION = 1
 
+/**
+ * Redaction markers in scrubbed payloads (D-141): `⟦REDACTED secret://ref⟧`.
+ * The egress scrubber writes them; clients render them. Registered secret
+ * values may not contain the delimiters, so a marker is unambiguous.
+ */
+export const REDACTION_MARKER_OPEN = '\u27E6'
+export const REDACTION_MARKER_CLOSE = '\u27E7'
+export const REDACTION_MARKER_PREFIX = `${REDACTION_MARKER_OPEN}REDACTED `
+
 export const sessionKindSchema = z.enum(['chat', 'agent'])
 export type SessionKind = z.infer<typeof sessionKindSchema>
 
