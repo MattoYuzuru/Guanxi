@@ -1,0 +1,254 @@
+{
+  "color": {
+    "background": {
+      "primary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.2}"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.1}"
+      },
+      "tertiary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.3}"
+      },
+      "inverse": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.dark.2}"
+      },
+      "disabled": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.5}"
+      },
+      "accent": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "success": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "warning": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "danger": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "info": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      }
+    },
+    "text": {
+      "primary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.12}"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "tertiary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "inverse": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.dark.12}"
+      },
+      "disabled": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "accent": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "success": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "warning": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "danger": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "info": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "on-accent": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.1}"
+      }
+    },
+    "border": {
+      "primary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "control": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "accent": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "success": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "warning": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "danger": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      },
+      "info": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      }
+    },
+    "ring": {
+      "primary": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      }
+    }
+  },
+  "data": {
+    "1": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    },
+    "2": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    },
+    "3": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    },
+    "4": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    },
+    "5": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    },
+    "6": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    },
+    "7": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    },
+    "8": {
+      "$type": "color",
+      "$value": "{primitive.color.neutral.light.11}"
+    }
+  },
+  "material": {
+    "glass": {
+      "fill": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.1}"
+      },
+      "fill-opacity": {
+        "$type": "number",
+        "$value": 0.72
+      },
+      "grain-opacity": {
+        "$type": "number",
+        "$value": 0.05
+      },
+      "edge-opacity": {
+        "$type": "number",
+        "$value": 0.65
+      },
+      "seam-opacity": {
+        "$type": "number",
+        "$value": 0.1
+      },
+      "edge": {
+        "$type": "color",
+        "$value": "{primitive.color.material.light.edge}"
+      },
+      "seam": {
+        "$type": "color",
+        "$value": "{primitive.color.material.light.seam}"
+      }
+    },
+    "solid": {
+      "fill": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.1}"
+      },
+      "fill-opacity": {
+        "$type": "number",
+        "$value": 1
+      },
+      "grain-opacity": {
+        "$type": "number",
+        "$value": 0
+      },
+      "border": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.11}"
+      }
+    },
+    "tinted": {
+      "fill": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.1}"
+      },
+      "fill-opacity": {
+        "$type": "number",
+        "$value": 0.9
+      },
+      "grain-opacity": {
+        "$type": "number",
+        "$value": 0.035
+      }
+    },
+    "strong": {
+      "glass": {
+        "fill-opacity": {
+          "$type": "number",
+          "$value": 0.9
+        }
+      },
+      "tinted": {
+        "fill-opacity": {
+          "$type": "number",
+          "$value": 0.96
+        }
+      },
+      "solid": {
+        "fill-opacity": {
+          "$type": "number",
+          "$value": 1
+        }
+      }
+    },
+    "control": {
+      "$type": "color",
+      "$value": "{color.text.primary}"
+    },
+    "text": {
+      "$type": "color",
+      "$value": "{color.text.primary}"
+    }
+  }
+}

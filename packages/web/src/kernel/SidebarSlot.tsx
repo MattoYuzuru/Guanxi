@@ -42,13 +42,13 @@ export function SidebarSlot({ slots = webKernel.slots }: { slots?: SlotRegistry 
   return (
     <div ref={wrapper}>
       {entries.length > 0 && (
-        <nav aria-label={translate('kernel.sidebar.navigation')} className="mb-2 border-b border-[var(--border)] pb-2">
+        <nav aria-label={translate('kernel.sidebar.navigation')} className="mb-2 border-b border-divider pb-2">
           <ul role="list" className="space-y-0.5">
             {entries.map((entry) => (
               <li key={entry.key} data-plugin-entry={entry.key} data-plugin-revision={entry.value.revision}>
                 <Link
                   to={entry.value.href}
-                  className="block rounded-md px-2 py-1.5 text-xs text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+                  className="block rounded-control px-2 py-1.5 text-12 text-secondary hover:bg-inset hover:text-foreground"
                 >
                   {translate(entry.value.labelKey)}
                 </Link>

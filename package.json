@@ -14,7 +14,7 @@
     "dev:web": "npm run dev --workspace @guanxi/web",
     "build": "npm run build --workspace @guanxi/web && npm run build --workspace @guanxi/server && npm run build --workspace guanxi",
     "link:cli": "npm run build && npm link --workspace guanxi",
-    "test": "npm run test:core && npm run test:kernel && npm run test:web",
+    "test": "npm run ui:check && npm run test:gates --workspace @guanxi/ui && npm run test:core && npm run test:kernel && npm run test:web",
     "test:core": "node --test 'packages/server/test/**/*.test.ts' 'packages/cli/test/**/*.test.ts'",
     "test:kernel": "node --test 'packages/kernel/test/**/*.test.ts'",
     "kernel:empty-node": "node packages/kernel/bin/empty-node.ts",
@@ -23,7 +23,9 @@
     "benchmark:catalog": "node packages/server/scripts/catalog-pagination-benchmark.ts && npm run benchmark:catalog --workspace @guanxi/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#.claude/worktrees\" \"#docs/research/2026-10-19-landscape\" \"#docs/research/2026-10-20-design\"",
-    "check:licenses": "node scripts/check-licenses.mjs"
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "tokens:build": "npm run tokens:build --workspace @guanxi/ui",
+    "ui:check": "npm run ui:check --workspace @guanxi/ui"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
