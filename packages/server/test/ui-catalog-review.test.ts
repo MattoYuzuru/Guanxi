@@ -125,7 +125,7 @@ function readRecord(uiRoot: string, id: string) {
 }
 
 async function runG12(repoRoot: string, uiRoot: string) {
-  return g12.run({ repoRoot, uiRoot, usageScope: defaultUsageScope(repoRoot), release: false, baseTrustedKeys: null })
+  return g12.run({ repoRoot, uiRoot, usageScope: defaultUsageScope(repoRoot), release: false, base: null })
 }
 
 describe('catalog review capability', () => {
@@ -266,22 +266,79 @@ describe('approving a component', () => {
     assert.equal(readFileSync(path, 'utf8'), before)
   })
 
-  it('records a change request, drops the approval and requires a comment', async () => {
+  it('records a signed change request on an approved record, and G12 rejects restoring the old approval', async () => {
+    const approvedText = readFileSync(uiPaths(fx.uiRoot).reviewFile('button'), 'utf8')
+    assert.equal(JSON.parse(approvedText).status, 'approved')
     const empty = await post(app(service), 'button', { decision: 'request_changes', comment: '   ', ...current(fx.uiRoot, 'button') })
     assert.equal(empty.status, 400)
+    const signsBefore = signer.signs
     const response = await post(app(service), 'button', {
       decision: 'request_changes',
       comment: 'Comfortable density padding feels loose.',
       ...current(fx.uiRoot, 'button'),
     })
     assert.equal(response.status, 200)
+    assert.equal(signer.signs, signsBefore + 1, 'the change request on an approved record is signed')
     const record = readRecord(fx.uiRoot, 'button')
     assert.equal(record.status, 'review')
     assert.equal(record.approval, null)
+    assert.equal(record.revocation?.keyId, fx.trusted.keyId)
     assert.equal(record.requests.length, 1)
     assert.equal(record.requests[0]?.state, 'open')
     assert.equal(record.requests[0]?.text, 'Comfortable density padding feels loose.')
     assert.equal((await runG12(fx.repoRoot, fx.uiRoot)).status, 'pass')
+
+    // The owner's decision is on main; a branch restores the earlier approval verbatim.
+    const path = uiPaths(fx.uiRoot).reviewFile('button')
+    const onMain = readFileSync(path, 'utf8')
+    writeFileSync(path, approvedText)
+    try {
+      const restored = await g12.run({
+        repoRoot: fx.repoRoot,
+        uiRoot: fx.uiRoot,
+        usageScope: defaultUsageScope(fx.repoRoot),
+        release: false,
+        base: { label: 'main', trustedKeys: { keys: [fx.trusted] }, records: { button: JSON.parse(onMain) } },
+      })
+      assert.equal(restored.status, 'fail')
+      assert.match(restored.findings.map((finding) => finding.message).join('\n'), /does not follow the signed revocation/)
+    } finally {
+      writeFileSync(path, onMain)
+    }
+  })
+
+  it('serialises an approval and a change request racing on one component', async () => {
+    const race = fixture()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const inner = keyObjectSigner(race.privateKey)
+    let first = true
+    const slowSigner: ApprovalSigner = {
+      status: () => inner.status(),
+      sign: async (bytes) => {
+        if (first) {
+          first = false
+          await gate
+        }
+        return inner.sign(bytes)
+      },
+    }
+    const raceService = new UiCatalogReviewService({ uiRoot: race.uiRoot, release: false, signer: slowSigner, now: () => NOW })
+    const approving = post(app(raceService), 'badge', { decision: 'approve', comment: '', ...current(race.uiRoot, 'badge') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const requesting = post(app(raceService), 'badge', { decision: 'request_changes', comment: 'Wider padding.', ...current(race.uiRoot, 'badge') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    release()
+    assert.deepEqual([(await approving).status, (await requesting).status], [200, 200])
+    const record = readRecord(race.uiRoot, 'badge')
+    // Without the per-component lock the request reads the draft, and the approval then
+    // overwrites it: the request would be lost and the record would read approved.
+    assert.equal(record.status, 'review')
+    assert.equal(record.approval, null)
+    assert.ok(record.revocation)
+    assert.deepEqual(record.requests.map((request) => request.text), ['Wider padding.'])
   })
 
   it('serialises concurrent decisions on one component and keeps the record valid', async () => {

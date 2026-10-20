@@ -23,6 +23,8 @@ export interface KeySetRotation {
 
 export interface TrustedKeyFile {
   $comment?: string
+  /** Increases with every change of `keys`; rotations sign it, so an old rotation cannot be replayed. */
+  version?: number
   keys: TrustedKey[]
   rotation?: KeySetRotation | null
 }
@@ -42,9 +44,9 @@ export function exportPublicKey(publicKey: KeyObject): { keyId: string; publicKe
   return { keyId: keyIdForPublicKey(der), publicKey: der.toString('base64') }
 }
 
-/** Bytes a rotation signature covers: the canonical key list, nothing else. */
-export function keySetSigningBytes(keys: readonly TrustedKey[]): Buffer {
-  return Buffer.from(canonicalJson({ schema: KEY_ROTATION_SCHEMA, keys }), 'utf8')
+/** Bytes a rotation signature covers: the new version and the canonical key list. */
+export function keySetSigningBytes(keys: readonly TrustedKey[], version: number): Buffer {
+  return Buffer.from(canonicalJson({ schema: KEY_ROTATION_SCHEMA, version, keys }), 'utf8')
 }
 
 export type TrustedKeysResult = { ok: true; file: TrustedKeyFile } | { ok: false; errors: string[] }
@@ -56,9 +58,12 @@ export function parseTrustedKeys(value: unknown): TrustedKeysResult {
   }
   const file = value as Record<string, unknown>
   for (const key of Object.keys(file)) {
-    if (!['$comment', 'keys', 'rotation'].includes(key)) errors.push(`unknown field "${key}"`)
+    if (!['$comment', 'version', 'keys', 'rotation'].includes(key)) errors.push(`unknown field "${key}"`)
   }
   if (!Array.isArray(file['keys'])) return { ok: false, errors: [...errors, 'keys is not an array'] }
+  if (file['version'] !== undefined && (!Number.isInteger(file['version']) || (file['version'] as number) < 0)) {
+    errors.push('version must be a non-negative integer')
+  }
   const seen = new Set<string>()
   for (const [index, entry] of (file['keys'] as unknown[]).entries()) {
     const key = entry as Partial<TrustedKey>

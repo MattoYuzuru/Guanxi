@@ -103,24 +103,36 @@ describe('trusted key set', () => {
   })
 
   it('allows an unchanged set, flags a bootstrap and requires a rotation signed by a base key', () => {
-    assert.deepEqual(verifyKeySetChange({ keys: [base.trusted] }, { keys: [base.trusted] }), { state: 'unchanged' })
-    assert.deepEqual(verifyKeySetChange({ keys: [base.trusted] }, { keys: [] }), { state: 'bootstrap' })
+    const baseFile = { version: 1, keys: [base.trusted] }
+    assert.deepEqual(verifyKeySetChange({ version: 1, keys: [base.trusted] }, baseFile), { state: 'unchanged' })
+    assert.deepEqual(verifyKeySetChange({ version: 1, keys: [base.trusted] }, { keys: [] }), { state: 'bootstrap' })
     const keys = [base.trusted, added.trusted]
-    assert.deepEqual(verifyKeySetChange({ keys }, { keys: [base.trusted] }), { state: 'invalid', reason: 'unsigned_change' })
-    const byAdded = signKeySet(keys, added.trusted.keyId, added.privateKey)
-    assert.deepEqual(verifyKeySetChange({ keys, rotation: byAdded }, { keys: [base.trusted] }), {
+    assert.deepEqual(verifyKeySetChange({ version: 2, keys }, baseFile), { state: 'invalid', reason: 'unsigned_change' })
+    const byAdded = signKeySet(keys, 2, added.trusted.keyId, added.privateKey)
+    assert.deepEqual(verifyKeySetChange({ version: 2, keys, rotation: byAdded }, baseFile), {
       state: 'invalid',
       reason: 'untrusted_rotation_key',
     })
     const forged = { signedBy: base.trusted.keyId, signature: byAdded.signature }
-    assert.deepEqual(verifyKeySetChange({ keys, rotation: forged }, { keys: [base.trusted] }), {
+    assert.deepEqual(verifyKeySetChange({ version: 2, keys, rotation: forged }, baseFile), {
       state: 'invalid',
       reason: 'bad_rotation_signature',
     })
-    const rotation = signKeySet(keys, base.trusted.keyId, base.privateKey)
-    assert.deepEqual(verifyKeySetChange({ keys, rotation }, { keys: [base.trusted] }), {
+    const rotation = signKeySet(keys, 2, base.trusted.keyId, base.privateKey)
+    assert.deepEqual(verifyKeySetChange({ version: 2, keys, rotation }, baseFile), {
       state: 'rotated',
       signedBy: base.trusted.keyId,
+    })
+  })
+
+  it('rejects a replayed rotation once the base moved past its version', () => {
+    const keys = [base.trusted, added.trusted]
+    // main: v1 [base] → v2 [base, added] (rotation by base) → v3 [base] (added revoked).
+    const oldRotation = signKeySet(keys, 2, base.trusted.keyId, base.privateKey)
+    const mainNow = { version: 3, keys: [base.trusted] }
+    assert.deepEqual(verifyKeySetChange({ version: 2, keys, rotation: oldRotation }, mainNow), {
+      state: 'invalid',
+      reason: 'stale_rotation_version',
     })
   })
 })

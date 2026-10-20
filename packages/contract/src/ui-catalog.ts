@@ -8,6 +8,7 @@ import { z } from 'zod'
 const hash = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 const isoTime = z.string().datetime({ offset: true })
 const componentId = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/)
+const signature = z.string().regex(/^[A-Za-z0-9+/]{86}==$/)
 
 /** Policy bound on a review comment: it is signed and committed, so it stays reviewable. */
 export const UI_REVIEW_COMMENT_MAX = 4000
@@ -40,8 +41,13 @@ export const uiReviewApprovalSchema = z
     snapshotHashes: z.record(hash),
     comment: z.string(),
     keyId: z.string().min(1),
-    signature: z.string().min(1),
+    signature,
   })
+  .strict()
+
+/** The owner's signed "request changes" on an approved record (replay protection). */
+export const uiReviewRevocationSchema = z
+  .object({ at: isoTime, keyId: z.string().min(1), signature })
   .strict()
 
 export const uiReviewRequestSchema = z
@@ -59,6 +65,7 @@ export const uiReviewRecordSchema = z
     id: componentId,
     status: z.enum(['draft', 'review', 'approved', 'deprecated']),
     approval: uiReviewApprovalSchema.nullable(),
+    revocation: uiReviewRevocationSchema.nullable().optional(),
     deprecated: z
       .object({ at: isoTime, replacement: z.string().nullable(), note: z.string() })
       .strict()

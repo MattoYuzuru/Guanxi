@@ -36,7 +36,10 @@ describe('catalog gates self-test', () => {
   it('fails every seeded violation', () => {
     const seeded = cases.filter((item) => item.seeded !== null)
     assert.equal(seeded.length, fast.reduce((sum, gate) => sum + gate.seeded.length, 0))
-    for (const item of seeded) assert.equal(item.actual, 'fail', `${item.gate} ${item.seeded} passed`)
+    for (const item of seeded) {
+      assert.equal(item.actual, 'fail', `${item.gate} ${item.seeded} passed`)
+      assert.ok(item.ok, `${item.gate} ${item.seeded} failed for another reason: ${messages(item)}`)
+    }
   })
 
   it('G10 names the export without a catalog entry and the state without a story', () => {
@@ -53,6 +56,16 @@ describe('catalog gates self-test', () => {
     assert.equal(error?.component, 'button')
     assert.equal(error?.file, 'packages/web/src/features/seeded/SeededScreen.tsx')
     assert.match(error?.message ?? '', /uses draft component "button"/)
+  })
+
+  it('G11 does not let an unsigned deprecation put a draft on a product screen', () => {
+    assert.match(messages(find('G11', 'deprecated-laundering')), /product code uses deprecated component "badge"/)
+  })
+
+  it('G12 fails closed without a base, on a branch-bootstrapped key and on a restored approval', () => {
+    assert.match(messages(find('G12', 'base-branch-unknown')), /cannot verify the trusted key set: no base branch/)
+    assert.match(messages(find('G12', 'agent-key-bootstrapped-on-branch')), /first trusted key was added outside the base branch/)
+    assert.match(messages(find('G12', 'old-approval-restored')), /does not follow the signed revocation/)
   })
 
   it('G12 fails agent-written approvals, edited signatures and unsigned key additions for their own reasons', () => {

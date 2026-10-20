@@ -26,7 +26,23 @@
             },
             "comment": { "type": "string" },
             "keyId": { "type": "string", "minLength": 1 },
-            "signature": { "type": "string", "minLength": 1, "description": "Base64 Ed25519 signature over the canonical approval payload" }
+            "signature": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$", "description": "Base64 Ed25519 signature over the canonical approval payload" }
+          }
+        }
+      ]
+    },
+    "revocation": {
+      "description": "The owner's signed request for changes on an approved record; no approval may be older than it.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["at", "keyId", "signature"],
+          "properties": {
+            "at": { "type": "string", "format": "date-time" },
+            "keyId": { "type": "string", "minLength": 1 },
+            "signature": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$" }
           }
         }
       ]

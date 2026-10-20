@@ -169,6 +169,7 @@ export const g13: CatalogGate = {
     {
       name: 'semantic-token-changed',
       description: 'One semantic token (accent fill) changes; the Button baselines must no longer match',
+      expect: /G13 button--default light: .*(Screenshot comparison failed|pixels.*different)/i,
       apply: ({ context }) => ({ ...context, stories: ['button--default', 'button--secondary'], seed: 'g13' }),
     },
   ],
@@ -185,6 +186,7 @@ export const g14: CatalogGate = {
     {
       name: 'icon-button-without-name',
       description: 'An icon-only button with no accessible name',
+      expect: /button-name/,
       apply: ({ context }) => ({ ...context, stories: ['g14--unnamed-icon-button'], fixtures: true }),
     },
   ],
@@ -201,6 +203,7 @@ export const g15Clipping: CatalogGate = {
     {
       name: 'fixed-width-label',
       description: 'A label in a fixed-width box that hides overflow',
+      expect: /clipped text in g15--fixed-width-label \(ru\).*gx-seeded-fixed-width/,
       apply: ({ context }) => ({ ...context, stories: ['g15--fixed-width-label'], fixtures: true }),
     },
   ],
@@ -217,6 +220,7 @@ export const g16: CatalogGate = {
     {
       name: 'spinner-ignores-reduced-motion',
       description: 'A looping spinner with no reduced-motion rule',
+      expect: /loops: span\.gx-seeded-spinner/,
       apply: ({ context }) => ({ ...context, stories: ['g16--looping-spinner'], fixtures: true }),
     },
   ],

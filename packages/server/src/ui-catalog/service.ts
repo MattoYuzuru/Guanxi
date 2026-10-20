@@ -22,10 +22,13 @@ import {
   effectiveStatus,
   loadTrustedKeys,
   parseReviewRecord,
+  revocationPayload,
   sameSnapshotHashes,
+  serialiseRecord,
   uiPaths,
   verifyRecordApproval,
   type ReviewRecord,
+  type TrustedKey,
 } from '@guanxi/ui/approval'
 import { SignerError, type ApprovalSigner } from './signer.ts'
 
@@ -56,22 +59,8 @@ export interface UiCatalogReviewOptions {
   now?: () => Date
 }
 
-const RECORD_SCHEMA = '../../../catalog/review.schema.json'
-
 function newRecord(id: string): ReviewRecord {
-  return { $schema: RECORD_SCHEMA, id, status: 'draft', approval: null, requests: [] }
-}
-
-function serialise(record: ReviewRecord): string {
-  const ordered: Record<string, unknown> = {
-    $schema: record.$schema ?? RECORD_SCHEMA,
-    id: record.id,
-    status: record.status,
-    approval: record.approval,
-  }
-  if (record.deprecated !== undefined) ordered['deprecated'] = record.deprecated
-  ordered['requests'] = record.requests
-  return `${JSON.stringify(ordered, null, 2)}\n`
+  return { $schema: '../../../catalog/review.schema.json', id, status: 'draft', approval: null, requests: [] }
 }
 
 export class UiCatalogReviewService {
@@ -145,28 +134,11 @@ export class UiCatalogReviewService {
     const at = this.now().toISOString()
     let next: ReviewRecord
 
+    const trusted = this.trustedKeys()
     if (body.decision === 'approve') {
-      const status = await this.options.signer.status()
-      if (status.state === 'unavailable') {
-        throw new UiCatalogError('approval_signer_unavailable', status.reason, 'No owner approval key on this node')
-      }
-      const trusted = this.trustedKeys()
-      if (!trusted.some((key) => key.keyId === status.keyId)) {
-        throw new UiCatalogError('approval_signer_unavailable', 'signing_key_untrusted', 'The keychain key is not trusted by the repository')
-      }
-      const unsigned = { at, sourceHash, snapshotHashes, comment: body.comment.trim(), keyId: status.keyId }
-      let signed: { signature: string; keyId: string }
-      try {
-        signed = await this.options.signer.sign(approvalSigningBytes(approvalPayload(id, unsigned)))
-      } catch (error) {
-        if (error instanceof SignerError) {
-          throw new UiCatalogError('approval_signer_unavailable', error.reason, error.message)
-        }
-        throw error
-      }
-      if (signed.keyId !== status.keyId) {
-        throw new UiCatalogError('approval_signer_unavailable', 'signing_key_mismatch', 'The keychain key does not match its recorded id')
-      }
+      const keyId = await this.trustedSignerKey(trusted)
+      const unsigned = { at, sourceHash, snapshotHashes, comment: body.comment.trim(), keyId }
+      const signed = await this.sign(approvalSigningBytes(approvalPayload(id, unsigned)), keyId)
       next = {
         ...record,
         status: 'approved',
@@ -175,15 +147,23 @@ export class UiCatalogReviewService {
           request.state === 'open' ? { ...request, state: 'resolved' as const } : request,
         ),
       }
-      const verdict = verifyRecordApproval(next, trusted)
-      if (verdict.state !== 'valid') {
+      if (verifyRecordApproval(next, trusted).state !== 'valid') {
         throw new UiCatalogError('approval_signer_unavailable', 'signature_rejected', 'The new approval did not verify')
       }
     } else {
+      // Requesting changes on an owner-approved record is itself signed, so an agent cannot
+      // undo it later by restoring the old approval (G12 compares with the base branch).
+      let revocation = record.revocation ?? null
+      if (verifyRecordApproval(record, trusted).state === 'valid') {
+        const keyId = await this.trustedSignerKey(trusted)
+        const unsigned = { at, keyId }
+        revocation = { ...unsigned, signature: (await this.sign(approvalSigningBytes(revocationPayload(id, unsigned)), keyId)).signature }
+      }
       next = {
         ...record,
         status: record.status === 'draft' ? 'draft' : 'review',
         approval: null,
+        ...(revocation ? { revocation } : {}),
         requests: [
           ...record.requests,
           { id: `r-${Date.parse(at).toString(36)}-${randomBytes(3).toString('hex')}`, at, text: body.comment.trim(), state: 'open' },
@@ -193,6 +173,32 @@ export class UiCatalogReviewService {
 
     this.writeRecord(paths.reviewFile(id), next)
     return this.project(uiRoot, id, next)
+  }
+
+  /** The keychain key id, refused before any prompt when the repository does not trust it. */
+  private async trustedSignerKey(trusted: TrustedKey[]): Promise<string> {
+    const status = await this.options.signer.status()
+    if (status.state === 'unavailable') {
+      throw new UiCatalogError('approval_signer_unavailable', status.reason, 'No owner approval key on this node')
+    }
+    if (!trusted.some((key) => key.keyId === status.keyId)) {
+      throw new UiCatalogError('approval_signer_unavailable', 'signing_key_untrusted', 'The keychain key is not trusted by the repository')
+    }
+    return status.keyId
+  }
+
+  private async sign(bytes: Buffer, keyId: string): Promise<{ signature: string }> {
+    let signed: { signature: string; keyId: string }
+    try {
+      signed = await this.options.signer.sign(bytes)
+    } catch (error) {
+      if (error instanceof SignerError) throw new UiCatalogError('approval_signer_unavailable', error.reason, error.message)
+      throw error
+    }
+    if (signed.keyId !== keyId) {
+      throw new UiCatalogError('approval_signer_unavailable', 'signing_key_mismatch', 'The keychain key does not match its recorded id')
+    }
+    return signed
   }
 
   private project(uiRoot: string, id: string, record: ReviewRecord): UiComponentReview {
@@ -248,7 +254,7 @@ export class UiCatalogReviewService {
     // A dot-prefixed .tmp name is junk to the source hash even if a crash leaves it behind.
     const temp = join(dirname(file), `.${basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`)
     try {
-      writeFileSync(temp, serialise(record), { flag: 'wx' })
+      writeFileSync(temp, serialiseRecord(record), { flag: 'wx' })
       renameSync(temp, file)
     } catch (error) {
       if (existsSync(temp)) unlinkSync(temp)

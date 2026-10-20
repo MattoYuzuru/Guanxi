@@ -8,6 +8,9 @@ export type StoredReviewStatus = (typeof REVIEW_STATUSES)[number]
 export type EffectiveReviewStatus = StoredReviewStatus | 'stale' | 'invalid'
 
 export const APPROVAL_SCHEMA = 'guanxi.ui-approval/1'
+export const REVOCATION_SCHEMA = 'guanxi.ui-revocation/1'
+/** Base64 of a 64-byte Ed25519 signature: nothing else may ride along in the field. */
+export const SIGNATURE_PATTERN = /^[A-Za-z0-9+/]{86}==$/
 export const COMPONENT_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 export const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
 
@@ -16,6 +19,16 @@ export interface ReviewApproval {
   sourceHash: string
   snapshotHashes: Record<string, string>
   comment: string
+  keyId: string
+  signature: string
+}
+
+/**
+ * The owner's signed "request changes" on an approved record. G12 rejects any approval older
+ * than the newest signed decision the base branch holds, so an old approval cannot be restored.
+ */
+export interface ReviewRevocation {
+  at: string
   keyId: string
   signature: string
 }
@@ -38,6 +51,7 @@ export interface ReviewRecord {
   id: string
   status: StoredReviewStatus
   approval: ReviewApproval | null
+  revocation?: ReviewRevocation | null
   deprecated?: ReviewDeprecation | null
   requests: ReviewRequest[]
 }
@@ -52,6 +66,18 @@ export interface ApprovalPayload {
   snapshotHashes: Record<string, string>
   comment: string
   keyId: string
+}
+
+export interface RevocationPayload {
+  schema: typeof REVOCATION_SCHEMA
+  id: string
+  decision: 'request_changes'
+  at: string
+  keyId: string
+}
+
+export function revocationPayload(id: string, revocation: Omit<ReviewRevocation, 'signature'>): RevocationPayload {
+  return { schema: REVOCATION_SCHEMA, id, decision: 'request_changes', at: revocation.at, keyId: revocation.keyId }
 }
 
 export function approvalPayload(id: string, approval: Omit<ReviewApproval, 'signature'>): ApprovalPayload {
@@ -75,8 +101,15 @@ function isIsoTime(value: unknown): value is string {
   return typeof value === 'string' && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value)
 }
 
-const RECORD_KEYS = new Set(['$schema', 'id', 'status', 'approval', 'deprecated', 'requests'])
+const RECORD_KEYS = new Set(['$schema', 'id', 'status', 'approval', 'revocation', 'deprecated', 'requests'])
 const APPROVAL_KEYS = new Set(['at', 'sourceHash', 'snapshotHashes', 'comment', 'keyId', 'signature'])
+const REVOCATION_KEYS = new Set(['at', 'keyId', 'signature'])
+const REQUEST_KEYS = new Set(['id', 'at', 'text', 'state'])
+const DEPRECATION_KEYS = new Set(['at', 'replacement', 'note'])
+
+function unknownKeys(value: Record<string, unknown>, allowed: Set<string>, where: string): string[] {
+  return Object.keys(value).filter((key) => !allowed.has(key)).map((key) => `unknown ${where} field "${key}"`)
+}
 
 export type ParseResult = { ok: true; record: ReviewRecord } | { ok: false; errors: string[] }
 
@@ -87,7 +120,7 @@ export function parseReviewRecord(value: unknown, expectedId?: string): ParseRes
   for (const key of Object.keys(value)) {
     if (!RECORD_KEYS.has(key)) errors.push(`unknown field "${key}"`)
   }
-  const { id, status, approval, requests, deprecated } = value
+  const { id, status, approval, revocation, requests, deprecated } = value
   if (typeof id !== 'string' || !COMPONENT_ID_PATTERN.test(id)) errors.push('id is not a component id')
   else if (expectedId !== undefined && id !== expectedId) errors.push(`id "${id}" does not match folder "${expectedId}"`)
   if (!REVIEW_STATUSES.includes(status as StoredReviewStatus)) errors.push('status is not one of draft, review, approved, deprecated')
@@ -110,13 +143,26 @@ export function parseReviewRecord(value: unknown, expectedId?: string): ParseRes
       }
       if (typeof approval['comment'] !== 'string') errors.push('approval.comment is not a string')
       if (typeof approval['keyId'] !== 'string' || approval['keyId'] === '') errors.push('approval.keyId is missing')
-      if (typeof approval['signature'] !== 'string' || approval['signature'] === '') errors.push('approval.signature is missing')
+      if (typeof approval['signature'] !== 'string' || !SIGNATURE_PATTERN.test(approval['signature'])) {
+        errors.push('approval.signature is not a base64 Ed25519 signature')
+      }
+    }
+  }
+  if (revocation !== undefined && revocation !== null) {
+    if (!isRecordObject(revocation)) errors.push('revocation must be null or an object')
+    else {
+      errors.push(...unknownKeys(revocation, REVOCATION_KEYS, 'revocation'))
+      if (!isIsoTime(revocation['at'])) errors.push('revocation.at is not an ISO time')
+      if (typeof revocation['keyId'] !== 'string' || revocation['keyId'] === '') errors.push('revocation.keyId is missing')
+      if (typeof revocation['signature'] !== 'string' || !SIGNATURE_PATTERN.test(revocation['signature'])) {
+        errors.push('revocation.signature is not a base64 Ed25519 signature')
+      }
     }
   }
   if (deprecated !== undefined && deprecated !== null) {
     if (!isRecordObject(deprecated) || !isIsoTime(deprecated['at']) || typeof deprecated['note'] !== 'string') {
       errors.push('deprecated must be null or { at, replacement, note }')
-    }
+    } else errors.push(...unknownKeys(deprecated, DEPRECATION_KEYS, 'deprecated'))
   }
   if (!Array.isArray(requests)) errors.push('requests is not an array')
   else {
@@ -129,9 +175,25 @@ export function parseReviewRecord(value: unknown, expectedId?: string): ParseRes
         (request['state'] !== 'open' && request['state'] !== 'resolved')
       ) {
         errors.push(`requests[${index}] must be { id, at, text, state: open | resolved }`)
-      }
+      } else errors.push(...unknownKeys(request, REQUEST_KEYS, `requests[${index}]`))
     })
   }
   if (errors.length > 0) return { ok: false, errors }
   return { ok: true, record: value as unknown as ReviewRecord }
+}
+
+const RECORD_SCHEMA_PATH = '../../../catalog/review.schema.json'
+
+/** The one serialisation the node writes; G12 requires signed records to match it exactly. */
+export function serialiseRecord(record: ReviewRecord): string {
+  const ordered: Record<string, unknown> = {
+    $schema: record.$schema ?? RECORD_SCHEMA_PATH,
+    id: record.id,
+    status: record.status,
+    approval: record.approval,
+  }
+  if (record.revocation !== undefined) ordered['revocation'] = record.revocation
+  if (record.deprecated !== undefined) ordered['deprecated'] = record.deprecated
+  ordered['requests'] = record.requests
+  return `${JSON.stringify(ordered, null, 2)}\n`
 }

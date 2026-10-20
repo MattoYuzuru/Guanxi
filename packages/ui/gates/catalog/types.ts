@@ -9,6 +9,13 @@ import type { UsageScope } from '../../catalog/tooling/usage.ts'
 
 export type GateMode = 'fast' | 'browser'
 
+export interface BaseSnapshot {
+  label: string
+  trustedKeys: TrustedKeyFile
+  /** Raw review records on the base branch, by component id. */
+  records: Record<string, unknown>
+}
+
 export interface GateFinding {
   severity: 'error' | 'warning'
   message: string
@@ -23,10 +30,11 @@ export interface GateContext {
   /** Release or stage-exit policy: `review` and `stale` uses become errors (G11). */
   release: boolean
   /**
-   * Trusted keys on the base branch, for G12's key-set check. `undefined` means "read them
-   * from git"; `null` skips the comparison (fixtures that test something else).
+   * The base branch's trusted keys and review records, for G12's key-set and replay checks.
+   * `undefined` means "read them from git" (failing closed when git cannot tell); `null`
+   * skips the comparison (fixtures that test something else).
    */
-  baseTrustedKeys?: TrustedKeyFile | null
+  base?: BaseSnapshot | null
   /** Browser gates: restrict to these story keys (seeded fixtures use it). */
   stories?: string[]
   /** Browser gates: load the fixture stories into the harness. */
@@ -49,6 +57,8 @@ export interface GateResult {
 export interface SeededViolation {
   name: string
   description: string
+  /** The failure must name this, so a seed cannot pass by failing for an unrelated reason. */
+  expect: RegExp
   /** Mutates the scratch repository and may adjust the context the gate runs with. */
   apply(scratch: { repoRoot: string; uiRoot: string; context: GateContext }): Promise<GateContext> | GateContext
 }

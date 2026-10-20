@@ -93,6 +93,7 @@ export const g10: CatalogGate = {
     {
       name: 'export-without-catalog-entry',
       description: 'A new exported component "NewThing" with no stories, docs or review record',
+      expect: /missing new-thing\.stories\.tsx/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'export-without-catalog-entry'), repoRoot)
         return context
@@ -101,6 +102,7 @@ export const g10: CatalogGate = {
     {
       name: 'state-without-story',
       description: 'Button docs declare a "pressed" state that has no story',
+      expect: /declared state "pressed" has no story/,
       apply({ uiRoot, context }) {
         const docs = join(uiRoot, 'src', 'components', 'button', 'button.docs.md')
         const source = readFileSync(docs, 'utf8').replace('states: [default,', 'states: [pressed, default,')

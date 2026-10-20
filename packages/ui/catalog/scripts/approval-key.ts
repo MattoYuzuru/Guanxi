@@ -80,7 +80,7 @@ function printEntry(entry: TrustedKey): void {
     throw new Error('Public key does not match its key id.')
   }
   console.log(`Created the owner approval key ${entry.keyId} in the keychain.`)
-  console.log('Add this entry to "keys" in packages/ui/catalog/approval-keys.json and commit it on main yourself:')
+  console.log('Add this entry to "keys" in packages/ui/catalog/approval-keys.json, set "version" to 1, and commit it on main yourself:')
   console.log(JSON.stringify(entry, null, 2))
   console.log('Compare the key id with the one the catalog shows before you trust it.')
 }

@@ -65,19 +65,21 @@ export async function runSelftest(list: CatalogGate[]): Promise<SelftestCase[]> 
       // a scratch copy so a seeded mutation never reaches the working tree.
       const scratch = gate.mode === 'fast' ? createScratch(repoRoot) : null
       try {
-        let context = scratch ? { ...baseContext(scratch.repoRoot, scratch.uiRoot), baseTrustedKeys: null } : baseContext(repoRoot, uiRoot)
+        let context: GateContext = scratch ? { ...baseContext(scratch.repoRoot, scratch.uiRoot), base: null } : baseContext(repoRoot, uiRoot)
         if (seeded) {
           context = await seeded.apply({ repoRoot: scratch?.repoRoot ?? repoRoot, uiRoot: scratch?.uiRoot ?? uiRoot, context })
         }
         const outcome = await gate.run(context)
         const expected = seeded ? 'fail' : 'pass'
+        // A seed must fail for the reason it plants, not for any reason at all.
+        const named = !seeded || outcome.findings.some((finding) => finding.severity === 'error' && seeded.expect.test(finding.message))
         cases.push({
           gate: gate.id,
           mode: gate.mode,
           seeded: seeded?.name ?? null,
           expected,
           actual: outcome.status,
-          ok: outcome.status === expected,
+          ok: outcome.status === expected && named,
           findings: outcome.findings,
         })
       } finally {

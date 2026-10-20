@@ -24,10 +24,12 @@ export function defaultUsageScope(repoRoot: string): UsageScope {
       if (existsSync(src)) roots.push(src)
     }
   }
+  const catalog = join(repoRoot, 'packages', 'web', 'src', 'features', 'catalog')
+  // Only the lazily loaded catalog route; Developer settings render on the product Settings screen.
   return {
     repoRoot,
     productRoots: roots,
-    catalogOnly: [join(repoRoot, 'packages', 'web', 'src', 'features', 'catalog')],
+    catalogOnly: [join(catalog, 'CatalogRoute.tsx'), join(catalog, 'review-api.ts')],
   }
 }
 
@@ -52,6 +54,22 @@ export function scanUsage(scope: UsageScope): Map<string, string[]> {
     if (scope.catalogOnly.some((dir) => path === dir || path.startsWith(dir + sep))) continue
     const file = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
     const rel = relative(scope.repoRoot, path).split(sep).join('/')
+    // import('@guanxi/ui') hides which components a file uses: count it as a star import.
+    const visitDynamic = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        node.arguments[0] &&
+        ts.isStringLiteral(node.arguments[0]) &&
+        node.arguments[0].text === '@guanxi/ui'
+      ) {
+        const list = usage.get('*') ?? []
+        if (!list.includes(rel)) list.push(rel)
+        usage.set('*', list)
+      }
+      ts.forEachChild(node, visitDynamic)
+    }
+    visitDynamic(file)
     for (const statement of file.statements) {
       const isImport = ts.isImportDeclaration(statement)
       const isReexport = ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined

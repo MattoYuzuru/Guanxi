@@ -1,10 +1,12 @@
 /**
  * G11 Status policy (COMPONENTS_AND_CATALOG §4): a product screen or plugin that uses a
  * `draft` (or invalid) component fails every slice; `review` and `stale` warn on slices and
- * fail release or stage exit; a new use of a `deprecated` component fails. Drafts used only by
- * the catalog are allowed.
+ * fail release or stage exit. Drafts used only by the catalog route are allowed.
+ *
+ * `deprecated` counts as `draft` for now: deprecation is an owner decision, and until the node
+ * can write a signed deprecation an agent could otherwise mark a never-approved component
+ * deprecated and put it on a product screen.
  */
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readInventory } from '../../catalog/tooling/inventory.ts'
 import { scanUsage } from '../../catalog/tooling/usage.ts'
@@ -13,13 +15,6 @@ import { overlay } from './lib/scratch.ts'
 import { result, type CatalogGate, type GateFinding } from './types.ts'
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'g11')
-
-/** Committed count of deprecated uses that may remain; new uses push the count above it. */
-function deprecatedBaseline(uiRoot: string): Record<string, number> {
-  const path = join(uiRoot, 'catalog', 'deprecated-usage-baseline.json')
-  if (!existsSync(path)) return {}
-  return (JSON.parse(readFileSync(path, 'utf8')) as { components?: Record<string, number> }).components ?? {}
-}
 
 export const g11: CatalogGate = {
   id: 'G11',
@@ -30,7 +25,6 @@ export const g11: CatalogGate = {
     const inventory = readInventory(context.uiRoot)
     const statuses = componentStatuses(inventory)
     const usage = scanUsage(context.usageScope)
-    const baseline = deprecatedBaseline(context.uiRoot)
     const owner = new Map<string, string>()
     for (const folder of inventory.folders) for (const name of folder.valueExports) owner.set(name, folder.id)
 
@@ -49,7 +43,7 @@ export const g11: CatalogGate = {
     for (const [id, files] of filesById) {
       const status = statuses.get(id) ?? 'invalid'
       for (const file of files) {
-        if (status === 'draft' || status === 'invalid') {
+        if (status === 'draft' || status === 'invalid' || status === 'deprecated') {
           findings.push({ severity: 'error', component: id, file, message: `product code uses ${status} component "${id}"` })
         } else if (status === 'review' || status === 'stale') {
           findings.push({
@@ -60,16 +54,6 @@ export const g11: CatalogGate = {
           })
         }
       }
-      if (status === 'deprecated') {
-        const allowed = baseline[id] ?? 0
-        if (files.size > allowed) {
-          findings.push({
-            severity: 'error',
-            component: id,
-            message: `deprecated component "${id}" has ${files.size} uses, above the baseline of ${allowed}`,
-          })
-        }
-      }
     }
     return result(this, findings)
   },
@@ -77,8 +61,18 @@ export const g11: CatalogGate = {
     {
       name: 'draft-on-product-screen',
       description: 'A product screen in packages/web/src/features imports the draft Button',
+      expect: /product code uses draft component "button"/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'draft-on-product-screen'), repoRoot)
+        return context
+      },
+    },
+    {
+      name: 'deprecated-laundering',
+      description: 'An agent marks the draft Badge deprecated (unsigned) and uses it on a product screen',
+      expect: /product code uses deprecated component "badge"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'deprecated-laundering'), repoRoot)
         return context
       },
     },

@@ -96,6 +96,7 @@ export const g15: CatalogGate = {
     {
       name: 'literal-jsx-text',
       description: 'A component renders <span>Save</span> instead of a message key',
+      expect: /literal user-facing text "Save"/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'literal-jsx-text'), repoRoot)
         return context
