@@ -1,6 +1,6 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-19
+**Status:** implemented tracker · **Updated:** 2026-10-20
 **Current stage:** S0 Re-foundation — committed 2026-10-20 (`a6fd314`..`be89bb9`); review
 fixes applied but not re-reviewed; next: K1 Kernel spike
 
@@ -40,9 +40,106 @@ is still what runs today; it is ported into the new stages rather than discarded
   failure in the first run, right after a fresh Chromium download. The SSE event name is a
   single contract constant, so the rename is not a plausible cause, but the pre-rename flake
   rate was not measured. **Residual, accepted for S0:** investigate the flaky catalog test
-  before the next web slice.
+  before the next web slice. **Closed 2026-10-20**; see the next section.
 - Environment note: Playwright 1.62.1 needed `chromium_headless_shell-1234`; installed with
   `npx playwright install chromium` from `packages/web`.
+
+### S0 residual closed: browser gate flakes (2026-10-20)
+
+**Status:** independently verified. Commits: fixes `3f0eaf1` and `f77780b`, review fixes
+`15c30a5`, test fix `ebd061f`.
+
+Baseline at `517e080`: 12 of 15 consecutive full `npm run test:web:browser` runs were green.
+The failures came from three root causes. Two were real product bugs; the third was a mock
+that depended on React StrictMode timing.
+
+- **Catalog install dialog unmounted** (`catalog-variant-install.spec.ts`, 1 of 15). Since
+  `cc40d14` the Marketplace showed a skeleton for every catalog refresh, including the one
+  `onInstalled` starts after a successful variant pull. The skeleton unmounted the card that
+  owns the install dialog. A DOM probe measured the success dialog with the verified digest
+  at 6–10 ms before it vanished, after which focus dropped to the document. The spec passed
+  only when its first poll landed in that window.
+
+  Fix: when the catalog shows settled rows for the current basis, the post-install refresh
+  re-reads both lists in place and on the same page. Basis changes, explicit Refresh and
+  Retry still show the skeleton. The install revision is part of the compare evidence basis.
+  After the dialog closes, focus returns to the chosen variant once the install button has
+  been replaced by links.
+- **Focus scheduled before the commit** (`quick-runs.spec.ts`, 2 of 15; latent in
+  `attachments.spec.ts`). Focus after an async failure was scheduled with
+  `requestAnimationFrame` from the async handler. When a frame ran before React committed the
+  alert, there was nothing to focus yet and focus was lost. An adversarial run of the full
+  gate, with top-level frames forced before commits, failed exactly these two specs and
+  nothing else.
+
+  Fix: focus moves in an effect after the commit. This covers the Quick Run retention
+  failure, attachment upload completion and attachment download failure. The new fixture
+  `test/browser/fixtures/frame-order.ts` is a switch that forces that frame ordering only
+  around the step under test.
+- **Quick Run load-failure mock depended on StrictMode timing** (`quick-runs.spec.ts:157`).
+  Seen once, in run 8 of 11 at `15c30a5`; most likely also the unidentified S0 first-run
+  failure. The development entrypoint runs React StrictMode, so the first load request is
+  aborted and replaced. The mock failed exactly the first two requests and assumed the
+  aborted one always reaches the route. The trace showed it aborted before interception, so
+  Retry received the second failure.
+
+  Fix: every initial request fails until Retry is pressed. Request counts are now asserted
+  relative to the observed initial count: Retry issues exactly one request.
+
+Evidence (**5 new / 40 + 669 + 244 envelope**):
+
+- New: 5 component tests.
+  - Four are in `catalog-pagination.test.tsx`:
+    - the page 2 install keeps its page and dialog;
+    - compare rows are cleared on install and again when the refresh lands, and focus is kept
+      when Done comes first;
+    - an install during another basis load keeps the skeleton;
+    - the skeleton shows for page, query, Refresh and Retry.
+  - The fifth is the download failure focus test in `attachments.test.tsx`.
+- Three browser specs were strengthened:
+  - catalog: the dialog must survive the committed refresh; the mocked pull is held until
+    both double-click clicks land; Done and focus are now asserted;
+  - quick-runs and attachments: focus is asserted under forced frame order, plus focus after
+    a successful upload.
+
+  The quick-runs request-count assertion was rewritten from an absolute 3 to "initial
+  (1 or 2) + exactly 1 for Retry". It still fails on an extra or missing Retry request.
+- Negative controls:
+  - With the four source files reverted to `517e080` and the new specs kept, 9 of 9 browser
+    runs failed.
+  - With the scoped switch, quick-runs and attachments on the old components failed 6 of 6.
+  - Each new component test fails against the code it guards (5 mutation checks).
+- Regression envelope:
+  - full gate: 25/25 consecutive green at `f77780b`; 10 of 11 at `15c30a5` (stopped after
+    the StrictMode mock failure); then **25/25 consecutive green at `ebd061f`**. Each green
+    run is 40/40 in about 28 s, on a clean tree, under the shared heavy-check lock.
+  - `npm test`: core 669/669 and web 249/249 (244 envelope + 5 new).
+  - `npm run typecheck` and `npm run build` pass.
+  - `ebd061f` is the last behavioural commit; later commits change only a source comment and
+    docs.
+- Independent review by `frontend-agent:accessibility-reviewer`:
+  - on `517e080..f77780b`: 2 major, 5 minor and 2 nit findings. Findings 2–8 were fixed in
+    `15c30a5`, and a re-review confirmed all seven closed with no new regressions.
+  - Its remaining notes are listed below.
+
+Residual risks:
+
+- The install dialog is still owned by its catalog card. If a filter hides the installed
+  variant or model, or if the in-place refresh fails (the error callout replaces the cards),
+  the verified result is still lost and focus can drop to the document. This predates the
+  slice. A proper fix lifts the result out of the carousel.
+- A real pull can finish within a double-click (for example, when the model is already
+  present). The second click can then hit the success dialog's dismissable backdrop. The spec
+  now holds the mocked pull, so this path is untested.
+- Quick Run retention Retry sits inside the alert, which unmounts on success, so focus drops
+  to the document. This predates the slice.
+- Review nits, all rare:
+  - `catalogSettledRef` is updated in a passive effect, which leaves a window of one task
+    after a basis change;
+  - the variant focus fallback can also fire when another flow installs a variant this card
+    has selected while focus is on the document;
+  - legacy unpaged catalog responses skip the compare evidence basis (this predates the
+    slice).
 
 ## Next stages
 
