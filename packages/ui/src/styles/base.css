@@ -38,6 +38,12 @@
   color: var(--color-text-primary);
 }
 
+/* Strong glass: elevation 3 (dialogs, sheets) over the ink scrim; denser, so text keeps contrast. */
+.gx-glass.gx-glass-strong {
+  background-color: var(--glass-strong-fill);
+  backdrop-filter: var(--glass-strong-backdrop);
+}
+
 .gx-glass::before {
   content: '';
   position: absolute;

@@ -97,21 +97,27 @@
   --motion-distance-lg: 16px;
   --motion-loop-duration: 1000ms;
 
-  /* Density: compact is the default (D-131). */
+  /* Density: compact is the default (D-131). The base 4 px grid never changes. */
   --density-control-height: 28px;
   --density-row-height: 26px;
   --density-panel-padding: 8px;
+  --density-gap: 8px;
   --font-text-sm-size: 12px;
   --font-text-md-size: 13px;
 
-  /* Glass level: Glass (default). */
+  /* Glass level: Glass (default). FOUNDATIONS §4 table, light values; dark overrides below. */
   --gx-stub-glass-fill-opacity: 72%;
-  --gx-stub-glass-blur: 20px;
+  --gx-stub-glass-strong-fill-opacity: 90%;
+  --gx-stub-glass-backdrop: blur(20px) saturate(1.15);
+  --gx-stub-glass-strong-backdrop: blur(24px) saturate(1.15);
   --gx-stub-glass-grain-opacity: 0.05;
 
-  /* Derived from the values above on the same element, so nested regimes stay consistent. */
+  /* Derived from the values above on the same element, so nested regimes stay consistent.
+     "Strong" glass is elevation 3 (dialogs and sheets, over the ink scrim). */
   --glass-fill: color-mix(in srgb, var(--gx-stub-glass-base) var(--gx-stub-glass-fill-opacity), transparent);
-  --glass-backdrop: blur(var(--gx-stub-glass-blur)) saturate(1.15);
+  --glass-strong-fill: color-mix(in srgb, var(--gx-stub-glass-base) var(--gx-stub-glass-strong-fill-opacity), transparent);
+  --glass-backdrop: var(--gx-stub-glass-backdrop);
+  --glass-strong-backdrop: var(--gx-stub-glass-strong-backdrop);
   --glass-edge: inset 0 1px 0 var(--gx-stub-glass-edge);
   --glass-seam: var(--gx-stub-glass-seam);
   --glass-border: transparent;
@@ -184,6 +190,7 @@
   --gx-stub-ink-10: color-mix(in srgb, #000000 32%, transparent);
   --gx-stub-glass-base: var(--gx-stub-n3);
   --gx-stub-glass-fill-opacity: 70%;
+  --gx-stub-glass-strong-fill-opacity: 88%;
   --gx-stub-glass-edge: color-mix(in srgb, #ffffff 8%, transparent);
   --gx-stub-glass-seam: color-mix(in srgb, #000000 32%, transparent);
   --gx-stub-glass-grain-opacity: 0.06;
@@ -262,6 +269,7 @@
   --density-control-height: 32px;
   --density-row-height: 32px;
   --density-panel-padding: 12px;
+  --density-gap: 12px;
   --font-text-sm-size: 13px;
   --font-text-md-size: 14px;
 }
@@ -269,14 +277,22 @@
 /* ── Glass levels (Settings → Appearance) ──────────────────────────────────────────────── */
 [data-theme][data-glass='tinted'] {
   --gx-stub-glass-fill-opacity: 90%;
-  --gx-stub-glass-blur: 8px;
-  --gx-stub-glass-grain-opacity: 0.02;
+  --gx-stub-glass-strong-fill-opacity: 96%;
+  --gx-stub-glass-backdrop: blur(12px) saturate(1.15);
+  --gx-stub-glass-strong-backdrop: blur(12px) saturate(1.15);
+  --gx-stub-glass-grain-opacity: 0.035;
+}
+
+[data-theme='dark'][data-glass='tinted'] {
+  --gx-stub-glass-grain-opacity: 0.045;
 }
 
 [data-theme][data-glass='solid'],
 [data-theme][data-reduce-transparency] {
   --gx-stub-glass-fill-opacity: 100%;
-  --gx-stub-glass-blur: 0px;
+  --gx-stub-glass-strong-fill-opacity: 100%;
+  --gx-stub-glass-backdrop: none;
+  --gx-stub-glass-strong-backdrop: none;
   --gx-stub-glass-grain-opacity: 0;
   --glass-border: var(--gx-stub-n8);
 }
@@ -287,7 +303,9 @@
 [data-theme='light-hc'][data-glass],
 [data-theme='dark-hc'][data-glass] {
   --gx-stub-glass-fill-opacity: 100%;
-  --gx-stub-glass-blur: 0px;
+  --gx-stub-glass-strong-fill-opacity: 100%;
+  --gx-stub-glass-backdrop: none;
+  --gx-stub-glass-strong-backdrop: none;
   --gx-stub-glass-grain-opacity: 0;
   --glass-border: var(--gx-stub-n11);
 }
@@ -297,7 +315,9 @@
   [data-theme]:not([data-theme$='-hc']),
   [data-theme][data-glass]:not([data-theme$='-hc']) {
     --gx-stub-glass-fill-opacity: 100%;
-    --gx-stub-glass-blur: 0px;
+    --gx-stub-glass-strong-fill-opacity: 100%;
+    --gx-stub-glass-backdrop: none;
+    --gx-stub-glass-strong-backdrop: none;
     --gx-stub-glass-grain-opacity: 0;
     --glass-border: var(--gx-stub-n8);
   }

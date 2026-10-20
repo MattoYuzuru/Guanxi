@@ -145,12 +145,20 @@ const THEMES = {
   'dark-hc': { canvas: '#182322', secondaryText: '#eef5f6' },
 } as const
 const DENSITIES = { compact: '28px', comfortable: '32px' } as const
-// FOUNDATIONS §4: Glass fill is step 1 at 72% (light) or step 3 at 70% (dark); Tinted about
-// 90% with a smaller blur; Solid has no blur. High-contrast themes always use Solid.
+// FOUNDATIONS §4 tables: fill (step 1 light / step 3 dark), backdrop, and the denser strong glass
+// of dialogs. High-contrast themes always use Solid.
 const GLASS = {
-  glass: { blur: 'blur(20px) saturate(1.15)', fill: { light: '#f3fcfe 72%', dark: '#1f2a29 70%' } },
-  tinted: { blur: 'blur(8px) saturate(1.15)', fill: { light: '#f3fcfe 90%', dark: '#1f2a29 90%' } },
-  solid: { blur: 'blur(0px) saturate(1.15)', fill: { light: '#f3fcfe 100%', dark: '#1f2a29 100%' } },
+  glass: {
+    blur: 'blur(20px) saturate(1.15)',
+    fill: { light: '#f3fcfe 72%', dark: '#1f2a29 70%' },
+    strongBlur: 'blur(24px) saturate(1.15)',
+  },
+  tinted: {
+    blur: 'blur(12px) saturate(1.15)',
+    fill: { light: '#f3fcfe 90%', dark: '#1f2a29 90%' },
+    strongBlur: 'blur(12px) saturate(1.15)',
+  },
+  solid: { blur: 'none', fill: { light: '#f3fcfe 100%', dark: '#1f2a29 100%' }, strongBlur: 'none' },
 } as const
 
 test('every component shows every declared state in all 24 theme, density and glass regimes', async ({ page }) => {
@@ -167,7 +175,8 @@ test('every component shows every declared state in all 24 theme, density and gl
           [...document.querySelectorAll<HTMLElement>('[data-story]')].map((cell) => {
             const stage = cell.querySelector<HTMLElement>('[data-gx-regime]')!
             const style = getComputedStyle(stage)
-            const glassLayer = cell.querySelector<HTMLElement>('.gx-glass')
+            const glassLayer = cell.querySelector<HTMLElement>('.gx-glass:not(.gx-glass-strong)')
+            const strongLayer = cell.querySelector<HTMLElement>('.gx-glass-strong')
             return {
               key: cell.dataset['story'],
               theme: stage.dataset['theme'],
@@ -178,6 +187,7 @@ test('every component shows every declared state in all 24 theme, density and gl
               controlHeight: style.getPropertyValue('--density-control-height').trim(),
               glassFill: style.getPropertyValue('--glass-fill').trim(),
               glassBackdrop: glassLayer ? getComputedStyle(glassLayer).backdropFilter : null,
+              strongBackdrop: strongLayer ? getComputedStyle(strongLayer).backdropFilter : null,
               failed: cell.querySelector('[data-story-error]') !== null,
               // Toasts and other portalled layers render into the frame's portal container.
               rendered:
@@ -207,9 +217,13 @@ test('every component shows every declared state in all 24 theme, density and gl
           if (cell.glassBackdrop !== null) {
             expect(cell.glassBackdrop, `${label} ${cell.key}`).toBe(hc ? GLASS.solid.blur : GLASS[glass].blur)
           }
+          if (cell.strongBackdrop !== null) {
+            expect(cell.strongBackdrop, `${label} ${cell.key}`).toBe(hc ? GLASS.solid.strongBlur : GLASS[glass].strongBlur)
+          }
         }
-        // Glass layers exist in this regime (popover, menu, select, dialog, toast stories).
+        // Glass layers exist in this regime (popover, menu, select, toast stories; dialogs strong).
         expect(cells.filter((cell) => cell.glassBackdrop !== null).length, label).toBeGreaterThanOrEqual(5)
+        expect(cells.filter((cell) => cell.strongBackdrop !== null).length, label).toBeGreaterThanOrEqual(2)
       }
     }
   }

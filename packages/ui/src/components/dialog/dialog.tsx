@@ -54,7 +54,7 @@ export function DialogContent({
       <DialogPrimitive.Backdrop className="gx-dialog-backdrop" />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
-        className={cx('gx-dialog gx-glass', className)}
+        className={cx('gx-dialog gx-glass gx-glass-strong', className)}
         {...props}
       >
         {children}

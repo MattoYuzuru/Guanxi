@@ -25,7 +25,8 @@ Interrupts the flow for a decision or a short task that must finish before the u
 
 ## Anatomy and variants
 
-Root, Trigger, Content (strong glass over an ink scrim at 32%, never a blurred scrim), Title,
+Root, Trigger, Content (strong glass: denser fill and a 24 px blur, over an ink scrim at 32%,
+never a blurred scrim), Title,
 Description, Footer and Close, from Base UI. Content has a corner close IconButton.
 
 ## States
