@@ -4,7 +4,7 @@
 reports:** Russian (D-120: raw evidence keeps its original language; this English synthesis is
 canonical; raw reports are excluded from `npm run lint:md` and kept as written)
 
-Seven research lanes examined what to reuse for Guanxi. Each raw report marks every
+Seven research lanes (2026-10-19) and four design lanes (2026-10-20, raw reports in English) examined what to reuse for Guanxi. Each raw report marks every
 claim as **[V]** (checked in a primary source: repository, LICENSE file, official docs,
 paper) or **[I]** (inference), and ends with numbered sources with access dates. This page is
 the English synthesis; the raw reports are the evidence.
@@ -18,6 +18,10 @@ the English synthesis; the raw reports are the evidence.
 | 5 | [05-self-evolve-voice-cu.md](2026-10-19-landscape/05-self-evolve-voice-cu.md) | Self-evolution, STT glossary, computer use, indexing, evals |
 | 6 | [06-benchmarks.md](2026-10-19-landscape/06-benchmarks.md) | Benchmark construction, grading, A/B statistics, harness minimalism |
 | 7 | [07-work-methodology.md](2026-10-19-landscape/07-work-methodology.md) | Agent work methodology, plan/todo tools, native work board vs external trackers |
+| D1 | [01-harness-ui-patterns.md](2026-10-20-design/01-harness-ui-patterns.md) | UI of Claude Code, Codex, DeepSeek Harness, Cursor, Zed, Goose, Warp and others; screen inventory; interaction principles; glass accessibility |
+| D2 | [02-design-system-tooling.md](2026-10-20-design/02-design-system-tooling.md) | Tokens (DTCG, Style Dictionary), catalog (Storybook and in-app), gates, approvals, motion |
+| D3 | [03-typography-and-identity.md](2026-10-20-design/03-typography-and-identity.md) | Fonts and scripts, AI-generic looks to avoid, three identity directions with computed palettes |
+| D4 | [04-agent-browser-and-layout.md](2026-10-20-design/04-agent-browser-and-layout.md) | Agentic browsers, session import limits and design, docking layout engines, layout schema |
 
 Paths inside the raw reports refer to the repository layout before the 2026-10-19 move of
 Alamo docs into `docs/legacy/alamo/`.
