@@ -1,0 +1,5 @@
+{
+  "$comment": "Owner approval public keys (D-138). Only the owner adds a key: run `node packages/ui/catalog/scripts/approval-key.ts init` on the owner's Mac and commit the printed entry on main. A change on any other branch must carry a rotation signed by a key already trusted on main, or gate G12 fails.",
+  "keys": [],
+  "rotation": null
+}
