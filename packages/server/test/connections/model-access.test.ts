@@ -830,3 +830,50 @@ test('N2: production wrapping-key namespaces separate session, node and database
   assert.notEqual(keychainService('/other-throwaway/connections.sqlite', 'session'), session)
   assert.equal(node, `${session}.node`)
 })
+
+test('N4: unload and failed reload retain current and retired values in the long-lived scrubber', async t => {
+  const f = await setup(t)
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.unlockVault(account)
+  const retired = fakeKey(); const current = fakeKey()
+  s.saveSecret(account, row.id, retired); s.saveSecret(account, row.id, current)
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  f.config.keychain = async () => {
+    assert.equal(scrubber.scrub(`${current} ${retired}`), '[REDACTED] [REDACTED]', 'retained during reload')
+    throw new Error('Fixture keychain unavailable')
+  }
+  await f.restart()
+  assert.equal(scrubber.scrub(`${current} ${retired}`), '[REDACTED] [REDACTED]')
+})
+
+test('N4: readiness is pushed only after every account is registered, including recovery by unlock', async t => {
+  const f = await setup(t)
+  const s = f.service()
+  const second = 'second-owner'
+  const firstSecret = fakeKey(); const secondSecret = fakeKey()
+  await s.unlockVault(account); s.saveSecret(account, s.create(account, apiInput).id, firstSecret)
+  await s.unlockVault(second); s.saveSecret(second, s.create(second, apiInput).id, secondSecret)
+  const keychain = await f.config.keychain()
+  let blocked = true
+  f.config.keychain = async () => {
+    if (blocked) throw new Error('Fixture keychain unavailable')
+    return keychain
+  }
+  await f.restart(true)
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  assert.equal(scrubber.isReady(), false)
+  assert.deepEqual(scrubber.pendingSources(), ['vault'])
+  const ready = scrubber.ready.bind(scrubber)
+  let readyCalls = 0
+  scrubber.ready = source => {
+    readyCalls++
+    assert.equal(scrubber.scrub(`${firstSecret} ${secondSecret}`), '[REDACTED] [REDACTED]')
+    ready(source)
+  }
+  blocked = false
+  await f.service().unlockVault(account)
+  assert.equal(readyCalls, 0); assert.equal(scrubber.isReady(), false)
+  await f.service().unlockVault(second)
+  assert.equal(readyCalls, 1); assert.equal(scrubber.isReady(), true)
+  await scrubber.whenReady()
+})

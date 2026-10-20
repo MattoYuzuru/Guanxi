@@ -9,6 +9,11 @@ export interface EgressScrubber {
   register(ref: SecretRef, value: string): void
   unregister(ref: SecretRef): boolean
   scrub<T>(value: T): T
+  expect(sourceId: string): void
+  ready(sourceId: string): void
+  isReady(): boolean
+  pendingSources(): readonly string[]
+  whenReady(): Promise<void>
 }
 
 /** K2's documented pre-merge stub: no unprotected data can leave the node. */
@@ -17,6 +22,8 @@ export const temporaryEgressPlugin = definePlugin({
   apply(ctx) {
     const stub: EgressScrubber = {
       register() {}, unregister() { return false },
+      expect() {}, ready() {}, isReady() { return false }, pendingSources() { return ['vault'] },
+      async whenReady() { throw new ConnectionError('egress_unavailable', 'egress.scrubber is not available before K2 merges') },
       scrub() { throw new ConnectionError('egress_unavailable', 'egress.scrubber is not available before K2 merges') },
     }
     ctx.provide(EGRESS_SERVICE, stub)

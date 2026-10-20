@@ -97,6 +97,7 @@ export class Vault {
       this.assertOpen()
       if (this.generations.get(accountId) !== generation) throw new Error('Vault unlock cancelled')
       this.registerAll(accountId, key)
+      this.publishScrubbingReady()
       this.sessions.get(accountId)?.fill(0)
       this.sessions.set(accountId, key)
       this.nodeSessions.get(accountId)?.fill(0)
@@ -136,13 +137,17 @@ export class Vault {
       const key = await this.dataKey(accountId, false, false)
       try { this.assertOpen(); this.registerAll(accountId, key) } finally { key.fill(0) }
     }
+    this.publishScrubbingReady()
+  }
+  private publishScrubbingReady() {
+    if (this.scrubbingReady) this.scrubber.ready('vault')
   }
   get scrubbingReady(): boolean {
     if (this.closed) return false
     return this.db.prepare('SELECT ref FROM vault_secrets').all()
       .every(row => this.registered.has(String(row.ref) as SecretRef))
   }
-  /** K2 must gate its own writes on the same source readiness during integration. */
+  /** K3 dispatch guard; K2 receives readiness through the scrubber push API. */
   assertScrubbingReady(_accountId: string) {
     this.assertOpen()
     if (!this.scrubbingReady) throw new ConnectionError('egress_unavailable', 'Unlock the vault before model access; egress registration incomplete')
@@ -199,7 +204,7 @@ export class Vault {
     for (const account of this.sessions.keys()) this.lock(account)
     this.closed = true
     this.lifetime.abort()
-    for (const ref of this.registered) this.scrubber.unregister(ref)
+    // The long-lived scrubber must still redact historical output between activations.
     this.registered.clear()
   }
 }

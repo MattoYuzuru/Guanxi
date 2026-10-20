@@ -29,8 +29,8 @@ executes the registered subscription CLIs. Search and STT are service connection
   does not open an interactive session. No HTTP request can enable the node opt-in.
 - The known secret registry remains populated when an interactive vault is locked, so old
   tool output is still redacted. Rotation retains old records for that purpose. Plugin
-  unload unregisters them; the next activation registers them during apply, exposing false readiness and refusing
-  model/artifact egress if registration fails. Buffers are cleared where possible; JavaScript string erasure is not a
+  unload retains them in the long-lived scrubber; registration replaces by reference on reload.
+  A fresh activation refuses model/artifact egress if registration is incomplete. Buffers are cleared where possible; JavaScript string erasure is not a
   guarantee.
 - `complete()` selects an immutable pi-ai catalog model, scrubs the complete context,
   injects the vault key at dispatch, scrubs the full response and records usage. It exposes
@@ -93,10 +93,21 @@ minimal test scrubber; their trace proves the K3 boundaries, not the combined K2
 Until integration, production Connections requests that require scrubbing return an error.
 After merging K2: delete the copied interface/stub, import K2's types/provider, load that provider
 in the server kernel, switch the consumer tests to it and rerun the trace and full gates.
-K2 must declare K3 as an expected secret source before opening writes: an absent, registering,
-failed or unloaded `connections.egress-readiness` is unready. Gate event/log/artifact/export
-writes on all sources being ready (fail closed or buffer), including during provider reload.
-Only then run a restart → tool-print → real K2-event test asserting zero secret matches.
+H3 integration uses K2's push API:
+
+1. Configure K2's egress-scrubber row in `LEGACY_SERVER_PROFILE` with
+   `expectedSources: ['vault']` before any consumer loads. Do not call `expect('vault')`
+   only inside Connections apply: that would allow earlier writes through.
+2. Keep K3's `ready('vault')` push after full historical registration (or a later unlock
+   that completes it). `connections.egress-readiness` is a K3 diagnostic, not K2's barrier.
+3. Use K2's existing readiness gates: the job mirror buffers bounded writes and flushes in
+   order after readiness; reads, handles, inspector, export and query fail closed while
+   pending. Buffer overflow rejects the write and rolls back the job transaction.
+4. Replace the fixture provider and run restart → tool-print → real K2-event assertions
+   with zero secret matches, including delayed/failed registration and reload. Values stay
+   registered across vault unload because K2 readiness is monotonic; a new scrubber must
+   start with the expected source pending and register all rows again.
+
 K3's source readiness proves registration completeness, not availability of the temporary stub.
 K2 owns event writes/exports; K3 never claims those boundaries from its fixture tests.
 

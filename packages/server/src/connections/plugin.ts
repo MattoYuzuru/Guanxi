@@ -31,7 +31,7 @@ export const connectionsPlugin = definePlugin<ConnectionsConfig>({
       ctx.service<OllamaAdapter>('ollama'), ctx.service<ResourceGovernor>('governor'), config.localHost, config.pi, config.transport)
     ctx.effect(() => async () => { vault.close(); await connections.close(); store.close() }, 'connections.close')
     // A locked keychain leaves the source visibly unready, with all K3 egress closed.
-    // K2's startup/write barrier must consume this source after integration.
+    // The scrubber receives ready('vault') only after every historical row is registered.
     await vault.registerForScrubbing().catch(() => undefined)
     ctx.provide(CONNECTIONS_EGRESS_READINESS, {
       get ready() { return vault.scrubbingReady },

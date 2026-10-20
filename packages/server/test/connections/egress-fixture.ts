@@ -3,6 +3,9 @@ import { EGRESS_SERVICE, type EgressScrubber } from '../../src/connections/egres
 
 // Consumer integration fixture only; production fails closed until K2 merges.
 function createLocalScrubber(): EgressScrubber {
+  const pending = new Set(['vault'])
+  const ready = new Set<string>()
+  const waiters = new Set<() => void>()
   const secrets = new Map<string, string>()
   const scrub = <T>(value: T): T => {
     const entries = [...secrets.values()].sort((a, b) => b.length - a.length)
@@ -22,6 +25,13 @@ function createLocalScrubber(): EgressScrubber {
   return {
     register(ref, value) { if (!value) throw new Error('Empty secret'); secrets.set(ref, value) },
     unregister(ref) { return secrets.delete(ref) }, scrub,
+    expect(source) { if (!ready.has(source)) pending.add(source) },
+    ready(source) {
+      ready.add(source); pending.delete(source)
+      if (!pending.size) { for (const resolve of waiters) resolve(); waiters.clear() }
+    },
+    isReady() { return pending.size === 0 }, pendingSources() { return [...pending].sort() },
+    whenReady() { return pending.size ? new Promise<void>(resolve => waiters.add(resolve)) : Promise.resolve() },
   }
 }
 
