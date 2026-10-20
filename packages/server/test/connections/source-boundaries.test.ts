@@ -25,3 +25,11 @@ test('node branding never imports browser source and existing browser exports st
     assert.doesNotMatch(await readFile(path, 'utf8'), /(?:from\s*|import\s*\()\s*['"][^'"]*web\/src/, path)
   }
 })
+
+
+test('published CLI declares the native keychain backend kept external by its bundle', async () => {
+  const cli = JSON.parse(await readFile(new URL('../../../cli/package.json', import.meta.url), 'utf8'))
+  const server = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
+  assert.equal(cli.dependencies?.['@napi-rs/keyring'], server.dependencies['@napi-rs/keyring'])
+  assert.match(cli.dependencies['@napi-rs/keyring'], /^\d+\.\d+\.\d+$/)
+})
