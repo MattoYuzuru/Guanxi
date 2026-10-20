@@ -89,6 +89,11 @@ export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
 
+/** Origins of the Vite dev server; GUANXI_WEB_PORT moves it in parallel worktrees. */
+export function devOriginsFor(webPort: string): string[] {
+  return [`http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`]
+}
+
 export interface StartOptions {
   port?: number
   host?: string
@@ -109,7 +114,7 @@ export async function start(options: StartOptions = {}) {
   })
 
   const server = createApp(context, {
-    devOrigins: options.devOrigins ?? ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    devOrigins: options.devOrigins ?? devOriginsFor(process.env['GUANXI_WEB_PORT'] || '5173'),
   })
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.

@@ -5,6 +5,20 @@ import tailwindcss from '@tailwindcss/vite'
 
 const contractSrc = fileURLToPath(new URL('../contract/src/index.ts', import.meta.url))
 
+// Parallel worktrees each need their own ports; defaults match a single checkout.
+function portFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return fallback
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`${name} must be a TCP port, got ${JSON.stringify(raw)}`)
+  }
+  return port
+}
+
+const webPort = portFromEnv('GUANXI_WEB_PORT', 5173)
+const apiPort = portFromEnv('GUANXI_API_PORT', 4310)
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -19,11 +33,11 @@ export default defineConfig({
     exclude: ['@guanxi/contract'],
   },
   server: {
-    port: 5173,
+    port: webPort,
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:4310',
+        target: `http://127.0.0.1:${apiPort}`,
         changeOrigin: true,
         // SSE поверх POST: буферизация прокси убила бы стрим.
         configure: (proxy) => {
