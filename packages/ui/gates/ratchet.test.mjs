@@ -102,6 +102,19 @@ test('H3/L2 self-review: a correction cannot be replayed after its occurrences r
   assert.ok(auditRatchet(repo.root, three, second).some(e => e.includes('allowance grew')))
 })
 
+test('N2: introduced corrections bind both snapshots on working-tree and committed edges', async t => {
+  const key = 'G5|packages/web/src/fixture.tsx|bg-red-500'
+  const one = { [key]: 1 }, two = { [key]: 2 }, three = { [key]: 3 }
+  for (const [before, declaredBefore, declaredAfter] of [[one, one, two], [two, one, three]]) {
+    const repo = await repository(t, before)
+    const policy = { corrections: [{ id: 1, fromSHA256: snapshotHash(declaredBefore), toSHA256: snapshotHash(declaredAfter) }] }
+    // A legitimate-looking new entry cannot exempt an edge with a different source or target.
+    assert.ok(auditRatchet(repo.root, three, policy).some(e => e.includes('allowance grew')), 'working-tree hash mismatch')
+    await repo.save(policyPath, policy); await repo.save(ledgerPath, three); repo.commit('Mismatched correction edge')
+    assert.ok(auditRatchet(repo.root, three, policy).some(e => e.includes('allowance grew')), 'committed hash mismatch')
+  }
+})
+
 test('H3/L2 self-review: the same correction cannot originate independently on two branches', async t => {
   const key = 'G5|packages/web/src/fixture.tsx|bg-red-500'
   const before = { [key]: 1 }, after = { [key]: 2 }
