@@ -31,6 +31,7 @@ flowchart LR
     U4[U4 PWA remote]
     U5[U5 Native mobile]
     U6[U6 Linux + Windows<br/>packaging]
+    NC1[NC1 Notification center<br/>quota alerts]
   end
   subgraph Plugins["Plugins"]
     P1[P1 Plugin platform<br/>MCP, skills]
@@ -92,6 +93,7 @@ flowchart LR
   U3 & F1 --> U4
   U4 & V1 --> U5
   U2 --> U6
+  K3 & R1 & U1 --> NC1
   P1 --> P2
   R2 & U1 --> WG1
   WG1 & P1 --> WG2
@@ -110,7 +112,7 @@ flowchart LR
   X1 & B2 --> X2
 
   K5 & R3 & F2 & B3 --> MS1
-  U2 & U3 & P1 & V1 & X1 & C1 & K5 & WG1 & WG2 --> MS2
+  U2 & U3 & P1 & V1 & X1 & C1 & K5 & WG1 & WG2 & NC1 --> MS2
   F4 & W3 & C2 & U4 --> MS3
   E4 & E5 & V2 & X2 --> MS4
   U5 & U6 & C3 & P2 --> MS5

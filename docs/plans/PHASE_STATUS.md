@@ -1,8 +1,8 @@
 # Stage status
 
 **Status:** implemented tracker · **Updated:** 2026-10-19
-**Current stage:** S0 Re-foundation — in review (review findings fixed, not yet committed);
-next: K1 Kernel spike
+**Current stage:** S0 Re-foundation — committed 2026-10-20 (`a6fd314`..`be89bb9`); review
+fixes applied but not re-reviewed; next: K1 Kernel spike
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
@@ -25,7 +25,9 @@ is still what runs today; it is ported into the new stages rather than discarded
 | Independent docs review | implemented | separate session with `product-agent:requirements-critic` and `architecture-agent:adversarial-architect`: 4 Critical, 12 High, 19 Medium, 13 Low; all fixed in the docs (owner approved "fix all"); design-level items attached to stages as "Before starting" obligations; clarifications recorded as D-116–D-120 |
 | Markdown lint | implemented | `npm run lint:md` (markdownlint-cli2 0.18.1, repo config, raw research excluded per D-120): 0 errors |
 | Dependency license gate | implemented locally | `npm run check:licenses`: 251 packages, 0 disallowed; fails on an AGPL fixture and on a package without a license (manual check); CI wiring waits for a CI pipeline |
-| Commit | not started | waits for the owner |
+| Commit | implemented | `a6fd314` rename, `aa257c1` license and gates, `6e6b63c` legacy archive, `3194f41` research, `be89bb9` canonical docs (review fixes included because the docs had never been committed) |
+| Notification center design | implemented (docs) | ADR-0033, D-123–D-125, stage NC1, REQ-J3–J5 |
+| Logo assets | implemented | `assets/brand/guanxi-gx-v1/` (D-126); `build.mjs` reproduces `logo.svg` byte-identically (SHA-256 `f6d5226e…ba7a`) |
 
 ### S0 regression envelope (legacy code after the rename, 2026-10-19)
 
@@ -47,5 +49,6 @@ is still what runs today; it is ported into the new stages rather than discarded
 | Stage | Status | Notes |
 | --- | --- | --- |
 | K1 Kernel spike | not started | first slice; prompt in [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md) |
+| NC1 Notification center | not started | after K3, R1 and U1 |
 | K2, K3, U1 | not started | can start in parallel after K1 |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

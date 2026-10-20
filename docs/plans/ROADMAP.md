@@ -141,7 +141,8 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 - **Depends on:** K4.
 - **Scope:** ACP client adapters (Claude Code with the user's binary, Copilot, Gemini CLI,
   OpenCode, Goose); Codex app-server adapter; "Sign in with ChatGPT" provider; per-adapter
-  capability declaration; role resolution (session → project); isolated vendor config dirs.
+  capability declaration; role resolution (session → project); isolated vendor config dirs;
+  quota facts from the agents (Claude Code `rate_limits`, Codex `account/rateLimits`).
 - **Reuse:** ACP v1 SDK, Codex app-server protocol, Copilot SDK (MIT).
 - **Exit gate:** recorded-session tests per adapter version; role precedence golden tests; the
   Claude Code `--bare`/subscription state is detected and reported.
@@ -321,8 +322,8 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 - **Depends on:** K1.
 - **Scope:** DTCG tokens → Style Dictionary → CSS variables, Tailwind theme, MCP Apps
   variables; shadcn/ui on Base UI; Lucide icons; assistant-ui; Streamdown; new-session screen;
-  sidebar list slot; English source strings with curated Russian; English glossary; migration
-  of interim UI from earlier stages.
+  sidebar list slot; the `guanxi-gx-v1` logo from `assets/brand/` (D-126); English source
+  strings with curated Russian; English glossary; migration of interim UI from earlier stages.
 - **Exit gate:** lint forbids literal colours across the whole web package (interim UI
   included); visual snapshots for light/dark; keyboard and screen-reader checks on the
   new-session flow pass with 0 critical findings; reduced-motion respected.
@@ -352,7 +353,7 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 
 - **Depends on:** U3, F1.
 - **Scope:** live session and sub-agent view, prompt, stop, queue, voice upload, Web Push
-  (VAPID), offline read cache and outbox.
+  (VAPID) for notification-center events with their actions, offline read cache and outbox.
 - **Exit gate:** SSE resume by offset never duplicates events (count assertion); push arrives
   on run completion on iOS and Android test devices.
 - **Open questions:** Q-228, Q-230.
@@ -375,6 +376,24 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 - **Scope:** AppImage, rpm (Fedora), Flatpak, NSIS; CI matrix; headless node package.
 - **Exit gate:** install, start, run a chat and uninstall on Fedora and Windows 11 in CI or a
   recorded manual check.
+- **Estimate:** 2–4 sessions.
+
+### NC1 — Notification center and quota alerts
+
+- **Goal:** warn before balances and usage windows run out and act from the notification
+  (REQ-J3, REQ-J4, REQ-J5; [ADR-0033](../decisions/0033-notification-center-and-quota-alerts.md)).
+- **Depends on:** K3, R1, U1.
+- **Scope:** quota facts per window and balance with provenance and local metering;
+  threshold and forecast rules (20/10/5%, once per window); durable per-account inbox for all
+  attention events; typed idempotent actions (open, add prompt, accept or choose action, wake
+  leads, switch connection, pause/resume runs, snooze, raise budget); deterministic
+  recommendations; automatic reactions only from run policy; in-app center and OS
+  notifications; quiet hours.
+- **Exit gate:** a window crossing 20/10/5% with jitter yields exactly three notifications and
+  re-arms after reset; a forecast alert fires only when the burn rate exhausts the window
+  before a dependent run's P80 ETA; `wake_leads` signals each hibernating lead exactly once
+  across a crash; without a policy fallback nothing happens automatically; OS payloads carry
+  no session content.
 - **Estimate:** 2–4 sessions.
 
 ## Plugins
@@ -553,7 +572,7 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 | Milestone | Requires | Exit gate |
 | --- | --- | --- |
 | **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; the run lasts ≥ 6 hours; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Open question Q-202. |
-| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, K5, WG1, WG2 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
+| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, K5, WG1, WG2, NC1 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
 | **MS3 Fleet and media** | F4, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
 | **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |
 | **MS5 Everywhere** | U5, U6, C3, P2 | Native phone apps, Linux and Windows desktops, the full computer-use ladder and untrusted plugins all pass their stage gates. |
@@ -561,7 +580,7 @@ Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After
 
 ## Effort
 
-Sum of stage estimates: 112–172 full agent sessions including independent reviews; the
+Sum of stage estimates: 114–176 full agent sessions including independent reviews; the
 ancestors of MS1 sum to 37–54. This is a complexity range, not a schedule.
 
 ## Cross-stage rules

@@ -118,6 +118,9 @@ testable requirement. Columns:
 | --- | --- | --- | --- | --- |
 | J1 | Full trace, telemetry and observability; the inspector UI and the agent query tool read the same log (reasoning only for local agents). | Must | K2 | ADR-0023 |
 | J2 | Balances and costs are visible and attributed per connection (K3), per run (R1) and per account (U3). | Must | K3, R1, U3 | ADR-0017 |
+| J3 | Every usage window (5-hour, weekly, daily, monthly) and balance warns at 20%, 10% and 5% remaining, once per window, plus a forecast warning when the burn rate exhausts it before the reset or before dependent runs finish (D-123). | Must | NC1 | [ADR-0033](../decisions/0033-notification-center-and-quota-alerts.md) |
+| J4 | One notification center per account with actions: open, add a prompt, accept the recommended action or choose another, wake dependent leads, switch a role to a fallback connection, pause runs, snooze. Automatic reactions only when the run policy names them (D-124). | Must | NC1 | ADR-0033 |
+| J5 | Notifications reach the user in the app, as operating-system notifications and as phone push, with content-free push payloads (D-125). | Must (app, OS), Should (phone) | NC1, U4 | ADR-0033 |
 
 ## K. Self-evolving harness
 

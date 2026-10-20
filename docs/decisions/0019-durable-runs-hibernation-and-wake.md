@@ -43,8 +43,9 @@ SQLite is dev-only, Restate is BSL, Inngest SSPL, DBOS TypeScript Postgres-only)
 6. **Signals and promises**:
    - a promise resolves exactly once: the child's terminal transition or the deadline timer,
      whichever commits first ("first emit wins");
-   - escalations (`input_required` from the child, a judge flag) are **signals**: they wake
-     the lead without resolving the promise; the promise stays pending;
+   - escalations (`input_required` from the child, a judge flag) and `quota` events of a
+     connection the lead depends on (ADR-0033) are **signals**: they wake the lead without
+     resolving the promise; the promise stays pending;
    - after a deadline the child is canceled with a `wrap up and report` request or detached,
      per the delegation brief (default: cancel after wrap-up);
    - a *wake* is the decision to resume the lead (one per resolution or signal); a *delivery*

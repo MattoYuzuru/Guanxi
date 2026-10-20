@@ -1,10 +1,6 @@
 # Next agent prompt — K1 Kernel spike
 
-**Status:** ready once S0 is committed · **Updated:** 2026-10-19 (after the S0 review)
-
-**Precondition:** S0 is the current stage until its docs, review fixes and gates are
-committed (see [PHASE_STATUS](PHASE_STATUS.md)). If `git log` does not contain the S0
-commits, finish S0 first: commit it, then run this prompt.
+**Status:** ready · **Updated:** 2026-10-20 (S0 committed as `a6fd314`..`be89bb9`)
 
 Copy the block below into a new agent session started in the repository root.
 

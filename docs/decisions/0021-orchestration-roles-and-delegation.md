@@ -36,7 +36,9 @@ worse than none.
 5. **Delegation brief** (lead → executor), required fields: objective and definition of done;
    immutable plan revision with items, acceptance commands and estimates; constraints and run
    policy (roots, commands, network, protected paths); resources (node, model, `W`,
-   keep-alive); judge config; wake policy; time budget; report format.
+   keep-alive); judge config; wake policy; time budget; report format; fallback connections
+   per role and quota reactions (`on_quota_low`), which are the only automatic reactions to
+   quota events Guanxi may take (D-124, ADR-0033).
 6. **Multi-agent rules**: one writer per worktree; parallelise only independent items on
    separate worktrees with resource leases; central merge and verification gate.
 7. **Composition**: a session may include several models; a tool call can target a media
