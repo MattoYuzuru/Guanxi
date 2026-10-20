@@ -3,8 +3,7 @@
 **Status:** implemented consumer layer; locally validated with fixture services · **Updated:** 2026-10-20
 
 `guanxi.connections` is a T0 kernel plugin requiring `egress.scrubber`, `ollama` and
-`governor`. It provides `connections.registry` (`Connections`) and `connections.vault`
-(`Vault`). `start()` loads it after the legacy context. This slice does not reroute the
+`governor`. It provides `connections.registry` (`Connections`); its vault is private. `start()` loads it after the legacy context. This slice does not reroute the
 legacy Chat or plaintext legacy search settings; K4 consumes the new model boundary and K5
 executes the registered subscription CLIs. Search and STT are service connection roles.
 
@@ -88,3 +87,17 @@ exercised in this lane. Its Linux binary statically links libdbus under AFL/GPL 
 ADR-0016, so Linux vault activation is refused. An approved backend and separate packaging
 license review are required before Linux distribution; the npm SPDX gate alone does not
 inspect native crate licenses. No owner keychain or installed model was touched.
+
+## Review 1 key boundary
+
+Migration 2 appends separate node-key-wrapped data keys and per-connection unattended
+ciphertexts. Only an unlocked session can create these copies. Revocation removes the node
+copy, rotation replaces it, and background injection re-reads consent and uses only the node
+key; it never unwraps the session key. Existing version-1 secrets remain readable; old
+unattended rows need an explicit unlocked re-enable to create a node copy. Rollback must keep
+migration 2 and use the fixed consumer (older binaries lack this security boundary).
+The vault is private to Connections and is not a kernel service.
+
+Explicit unlock is **not user-presence-gated**: a local same-user HTTP client can request it.
+OS keychain access is not a boundary against processes with the same user's privileges.
+A later DS2-style signing helper with Touch ID must gate interactive unlock.

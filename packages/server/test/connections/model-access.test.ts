@@ -21,6 +21,8 @@ import { modelsDevFacts } from '../../src/connections/metadata.ts'
 import openrouterFixture from '../../src/probes/fixtures/openrouter.json' with { type: 'json' }
 import deepseekFixture from '../../src/probes/fixtures/deepseek.json' with { type: 'json' }
 import type { PiTransport } from '../../src/connections/pi.ts'
+import { Vault } from '../../src/vault/vault.ts'
+import { ConnectionStore } from '../../src/connections/store.ts'
 import type { VaultKeychain } from '../../src/vault/keychain.ts'
 
 const account = 'test-owner'
@@ -63,7 +65,7 @@ test('K3 trace: a tool prints a generated vault secret; next real pi-ai request 
   } })
   const s = f.service()
   const row = s.create(account, apiInput)
-  await s.vault.unlock(account)
+  await s.unlockVault(account)
   const saved = s.saveSecret(account, row.id, secret)
   assert.match(saved.secretRef!, /^secret:\/\/test-owner\//)
   const toolOutput = await new Promise<string>((resolve, reject) => {
@@ -109,55 +111,79 @@ test('all connection kinds persist; unattended is explicitly false by default af
   assert.throws(() => f.service().setUnattended(account, snapshot.connections[0]!.id, true), /not enabled/)
 })
 
+async function setupVault(t: { after(fn: () => unknown): void }) {
+  const f = await setup(t, { unattended: true })
+  const store = f.service().store
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  const vault = new Vault(store, f.config.keychain, scrubber, f.config.policy)
+  t.after(() => vault.close())
+  return { ...f, store, vault, scrubber }
+}
+
 test('vault ciphertext, wrapping, account isolation, rotation and restart registration', async t => {
-  const f = await setup(t)
-  const s = f.service(); const secret = fakeKey(); const rotated = fakeKey()
-  const row = s.create(account, apiInput)
-  assert.throws(() => s.saveSecret(account, row.id, secret), /locked/)
-  await s.vault.unlock(account)
-  const first = s.saveSecret(account, row.id, secret)
-  const second = s.saveSecret(account, row.id, rotated)
-  assert.notEqual(first.secretRef, second.secretRef)
-  const stored = JSON.stringify(s.store.db.prepare('SELECT * FROM vault_secrets').all())
-  assert.equal(stored.includes(secret), false)
-  assert.equal(stored.includes(rotated), false)
+  const f = await setupVault(t); const { vault, store, scrubber } = f
+  const secret = fakeKey(); const rotated = fakeKey(); const row = store.create(account, apiInput)
+  assert.throws(() => vault.put(account, secret), /locked/)
+  await vault.unlock(account)
+  const first = vault.put(account, secret)
+  const second = vault.put(account, rotated); store.setSecret(account, row.id, second)
+  assert.notEqual(first, second)
+  const stored = JSON.stringify(store.db.prepare('SELECT * FROM vault_secrets').all())
+  assert.equal(stored.includes(secret), false); assert.equal(stored.includes(rotated), false)
   assert.equal(stored.includes('ciphertext'), true)
-  assert.ok(s.store.db.prepare('SELECT wrapped FROM vault_keys').get())
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub(`${secret} ${rotated}`), '[REDACTED] [REDACTED]')
-  s.vault.lock(account)
-  await assert.rejects(s.vault.inject(second, false, async () => null), /locked/)
-  assert.throws(() => s.store.get('other-owner', row.id), /not found/)
-  await assert.rejects(s.vault.inject({ ...second, accountId: 'other-owner' }, true, async () => null), /unavailable/)
-  await f.restart()
-  assert.throws(() => f.service().vault.assertScrubbingReady(account), /Unlock/)
-  await f.service().vault.unlock(account)
-  await f.service().vault.inject(second, false, async value => assert.equal(value, rotated))
-  // Retired credentials remain registered for old tool outputs and traces.
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub(secret), '[REDACTED]')
+  assert.ok(store.db.prepare('SELECT wrapped FROM vault_keys').get())
+  assert.equal(scrubber.scrub(`${secret} ${rotated}`), '[REDACTED] [REDACTED]')
+  vault.lock(account)
+  await assert.rejects(vault.inject(account, row.id, false, async () => null), /locked/)
+  await assert.rejects(vault.inject('other-owner', row.id, true, async () => null), /not found/)
+  await vault.unlock(account)
+  await vault.inject(account, row.id, false, async value => assert.equal(value, rotated))
+  assert.equal(scrubber.scrub(secret), '[REDACTED]')
 })
 
 test('vault rejects authenticated ciphertext moved to another ref or account', async t => {
-  const f = await setup(t); const s = f.service()
-  const row = s.create(account, apiInput); await s.vault.unlock(account)
-  s.saveSecret(account, row.id, fakeKey())
-  s.vault.lock(account)
-  s.store.db.prepare('UPDATE vault_secrets SET ref=?').run('secret://test-owner/11111111-1111-4111-8111-111111111111')
-  await assert.rejects(s.vault.unlock(account), /could not be unlocked/)
-  assert.equal(s.vault.unlocked(account), false)
+  const { vault, store } = await setupVault(t)
+  await vault.unlock(account); vault.put(account, fakeKey()); vault.lock(account)
+  store.db.prepare('UPDATE vault_secrets SET ref=?').run('secret://test-owner/11111111-1111-4111-8111-111111111111')
+  await assert.rejects(vault.unlock(account), /could not be unlocked/)
+  assert.equal(vault.unlocked(account), false)
 })
 
-test('unattended needs both per-connection consent and owner-device node-key opt-in', async t => {
-  const f = await setup(t, { unattended: true }); const s = f.service()
-  const row = s.create(account, apiInput); await s.vault.unlock(account)
-  const saved = s.saveSecret(account, row.id, fakeKey())
-  await assert.rejects(s.vault.inject(saved, true, async () => null), /disabled/)
-  const enabled = s.setUnattended(account, row.id, true)
-  s.vault.lock(account)
-  await s.vault.inject(enabled, true, async key => assert.ok(key.length > 32))
-  assert.equal(s.vault.unlocked(account), false)
+test('E1/E2: forged consent cannot inject; a node-only keychain decrypts only explicitly sealed unattended credentials', async t => {
+  const { vault, store, config, scrubber, kernel } = await setupVault(t)
+  assert.equal(kernel.service('connections.vault'), undefined)
+  const row = store.create(account, apiInput); const bg = store.create(account, apiInput)
+  await vault.unlock(account)
+  const interactiveSecret = fakeKey(); const backgroundSecret = fakeKey()
+  const saved = store.setSecret(account, row.id, vault.put(account, interactiveSecret))
+  store.setSecret(account, bg.id, vault.put(account, backgroundSecret))
+  const forged = { ...saved, unattended: true }
+  assert.equal(forged.unattended, true)
+  await assert.rejects(vault.inject(forged.accountId, forged.id, true, async () => assert.fail('forged consent')), /disabled/)
+  vault.prepareUnattended(account, bg.id, true); store.setUnattended(account, bg.id, true)
+  vault.lock(account)
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets').get()!.n, 1)
+  const underlying = await config.keychain(); const reads: string[] = []
+  const nodeOnly: VaultKeychain = { key(id, create) {
+    reads.push(id)
+    assert.equal(id, `node:${account}`, 'background may never request the session wrapping key')
+    return underlying.key(id, create)
+  } }
+  const background = new Vault(store, async () => nodeOnly, scrubber, config.policy)
+  t.after(() => background.close())
+  scrubber.unregister(saved.secretRef as `secret://${string}`)
+  await background.inject(account, bg.id, true, async value => assert.equal(value, backgroundSecret))
+  assert.deepEqual(reads, [`node:${account}`])
+  assert.equal(scrubber.scrub(interactiveSecret), interactiveSecret, 'background never decrypts/registers interactive-only secrets')
+  assert.equal(background.unlocked(account), false)
+  // Even a tampered stored flag cannot manufacture a node-encrypted credential.
+  store.setUnattended(account, row.id, true)
+  await assert.rejects(background.inject(account, row.id, true, async () => assert.fail('no node ciphertext')), /unavailable/)
+  vault.prepareUnattended(account, bg.id, false); store.setUnattended(account, bg.id, false)
+  await assert.rejects(background.inject(account, bg.id, true, async () => assert.fail('revoked')), /disabled/)
   const cloud = await setup(t, { unattended: true, ownerDevice: false })
-  assert.equal(cloud.service().vault.unattendedAvailable, false)
-  assert.throws(() => cloud.service().setUnattended(account, enabled.id, true), /not enabled/)
+  assert.equal(cloud.service().snapshot(account).vault.unattendedAvailable, false)
+  assert.throws(() => cloud.service().setUnattended(account, bg.id, true), /not enabled/)
 })
 
 test('Anthropic OAuth cannot be enabled through schema, key aliasing, config flags or environment', async t => {
@@ -167,7 +193,7 @@ test('Anthropic OAuth cannot be enabled through schema, key aliasing, config fla
   assert.equal(createConnectionSchema.safeParse({ ...apiInput, enableAnthropicOAuth: true }).success, false)
   assert.equal(createConnectionSchema.safeParse({ ...apiInput, provider: 'google', auth: 'oauth' }).success, false)
   const f = await setup(t); const s = f.service()
-  const row = s.create(account, { ...apiInput, provider: 'anthropic' }); await s.vault.unlock(account)
+  const row = s.create(account, { ...apiInput, provider: 'anthropic' }); await s.unlockVault(account)
   const forbidden = ['sk', 'ant', 'oat01', randomBytes(20).toString('hex')].join('-')
   assert.throws(() => s.saveSecret(account, row.id, forbidden), /API key is required/)
   assert.equal(s.store.get(account, row.id).secretRef, null)
@@ -191,7 +217,7 @@ for (const provider of BALANCE_PROBES) {
       return Response.json(fixture.response)
     } })
     const s = f.service(); const row = s.create(account, { ...apiInput, provider })
-    await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+    await s.unlockVault(account); s.saveSecret(account, row.id, secret)
     const balance = await s.probe(account, row.id)
     assert.equal(calls, 1)
     assert.equal(balance.amount, provider === 'openrouter' ? 74.5 : 110)
@@ -209,7 +235,7 @@ test('unlimited and unavailable balance observations stay unknown; malformed pro
   const secret = fakeKey()
   const f = await setup(t, { transport: async () => { throw new Error(secret) } })
   const s = f.service(); const row = s.create(account, apiInput)
-  await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+  await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const prior = parseBalance('deepseek', deepseekFixture.response, deepseekFixture.recordedAt)
   s.store.observe(account, row.id, {}, prior)
   await assert.rejects(s.probe(account, row.id), error => !String(error).includes(secret))
@@ -240,7 +266,7 @@ test('local runtime uses K1 adapter and governor; fixture response is scrubbed a
       message: { role: 'assistant', content: 'ok' }, prompt_eval_count: 5, eval_count: 1 })
   } })
   const s = f.service(); const row = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
-  const secret = fakeKey(); await s.vault.unlock(account); s.vault.put(account, secret)
+  const secret = fakeKey(); await s.unlockVault(account); s.saveSecret(account, s.create(account, apiInput).id, secret)
   const request = { model: 'fixture', messages: [{ role: 'user' as const, content: secret }], options: { num_ctx: 1024 } }
   const result = await s.localChat(account, row.id, request, { runId: 'run', requestId: 'local-request' })
   assert.equal(result.done, true); assert.equal(calls, 2)
@@ -257,7 +283,7 @@ test('provider error messages never leak credentials; unload aborts in-flight re
     return responseSse()
   } })
   const s = f.service(); const row = s.create(account, apiInput)
-  await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+  await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const result = s.complete(account, row.id, { messages: [] }, { model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'cancel' })
   const rejected = assert.rejects(result, error => !String(error).includes(secret) && /cancelled/.test(String(error)))
   await pending
@@ -304,13 +330,16 @@ test('the pre-K2 production stub refuses all egress instead of claiming protecti
 test('mislabeled Anthropic OAuth tokens are refused for every provider before pi-ai can choose bearer auth', async t => {
   let calls = 0
   const f = await setup(t, { transport: async () => { calls++; return responseSse() } })
-  const s = f.service(); await s.vault.unlock(account)
+  const s = f.service(); await s.unlockVault(account)
   const forbidden = ['sk', 'ant', 'oat01', randomBytes(20).toString('hex')].join('-')
   for (const provider of ['openrouter', 'deepseek', 'google', 'anthropic'] as const) {
     const row = s.create(account, { ...apiInput, provider })
     assert.throws(() => s.saveSecret(account, row.id, forbidden), /API key/)
     // Defence in depth if a record was imported or mislabeled outside the UI.
-    s.store.setSecret(account, row.id, s.vault.put(account, forbidden))
+    const imported = new Vault(s.store, f.config.keychain, f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!, f.config.policy)
+    t.after(() => imported.close())
+    await imported.unlock(account)
+    s.store.setSecret(account, row.id, imported.put(account, forbidden))
     const model = piModels(provider).find(item => item.api === 'anthropic-messages') ?? piModels(provider)[0]!
     await assert.rejects(s.complete(account, row.id, { messages: [] }, { model: model.id, runId: 'run', requestId: `oauth-${provider}` }), /Model request failed/)
   }
@@ -343,7 +372,7 @@ test('Anthropic API dispatch uses only the vault key even when OAuth environment
     return new Response(events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
   } })
   const s = f.service(); const row = s.create(account, { ...apiInput, provider: 'anthropic' })
-  await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+  await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const result = await s.complete(account, row.id, { messages: [{ role: 'user', content: 'Hello', timestamp: Date.now() }] }, { model: piModels('anthropic')[0]!.id, runId: 'run', requestId: 'api-key-only' })
   assert.equal(calls, 1); assert.equal(result.stopReason, 'stop')
 })
@@ -364,7 +393,7 @@ test('Google dispatch serializes a scrubbed body and uses its explicit vault key
   try {
     const f = await setup(t)
     const s = f.service(); const row = s.create(account, { ...apiInput, provider: 'google' })
-    await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+    await s.unlockVault(account); s.saveSecret(account, row.id, secret)
     const result = await s.complete(account, row.id, { messages: [{ role: 'user', content: secret, timestamp: Date.now() }] }, { model: piModels('google')[0]!.id, runId: 'run', requestId: 'google-fixture' })
     assert.equal(result.stopReason, 'stop'); assert.equal(calls, 1)
   } finally { globalThis.fetch = originalFetch }
@@ -385,10 +414,9 @@ test('late vault unlock cannot override an explicit lock or outlive plugin unloa
   s.lockVault(account)
   release()
   await assert.rejects(unlocking, /could not be unlocked/)
-  assert.equal(s.vault.unlocked(account), false)
-  const oldVault = s.vault
+  assert.equal(s.snapshot(account).vault.unlocked, false)
   await f.restart()
-  await assert.rejects(oldVault.unlock(account), /closed/)
+  assert.throws(() => s.lockVault(account), /unloaded/)
 })
 
 test('in-flight balance probes are cancelled before the plugin database closes', async t => {
@@ -400,7 +428,7 @@ test('in-flight balance probes are cancelled before the plugin database closes',
     return Response.json(deepseekFixture.response)
   } })
   const s = f.service(); const row = s.create(account, apiInput)
-  await s.vault.unlock(account); s.saveSecret(account, row.id, fakeKey())
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
   const probe = s.probe(account, row.id)
   const rejection = assert.rejects(probe, /Balance probe failed/)
   await started; await f.restart(); await rejection
@@ -435,8 +463,9 @@ test('unload cancels a pending keychain unlock and late completion cannot revive
   await rejected
   release()
   await Promise.resolve()
-  assert.equal(old.vault.unlocked(account), false)
-  assert.equal(f.service().vault.unlocked(account), false)
+  await assert.rejects(old.unlockVault(account), /unloaded/)
+  assert.equal(Object.hasOwn(old, 'vault'), false)
+  assert.equal(f.service().snapshot(account).vault.unlocked, false)
 })
 
 test('Google SDK transport observes cancellation and records no completed usage after abort', async t => {
@@ -453,7 +482,7 @@ test('Google SDK transport observes cancellation and records no completed usage 
   try {
     const f = await setup(t)
     const s = f.service(); const row = s.create(account, { ...apiInput, provider: 'google' })
-    await s.vault.unlock(account); s.saveSecret(account, row.id, fakeKey())
+    await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
     const controller = new AbortController()
     const result = s.complete(account, row.id, { messages: [{ role: 'user', content: 'Hello', timestamp: Date.now() }] }, { model: piModels('google')[0]!.id, runId: 'run', requestId: 'google-cancel', signal: controller.signal })
     const rejection = assert.rejects(result, /cancelled/)

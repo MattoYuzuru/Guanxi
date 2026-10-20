@@ -44,7 +44,7 @@ export class BalanceProbes {
     const provider = connection.provider as BalanceProbe
     const combined = signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000)
     try {
-      const balance = await this.vault.inject(connection, false, async key => {
+      const balance = await this.vault.inject(connection.accountId, connection.id, false, async key => {
         const response = await this.transport(probeEndpoints[provider], {
           headers: { Authorization: `Bearer ${key}` }, signal: combined, redirect: 'error',
         })

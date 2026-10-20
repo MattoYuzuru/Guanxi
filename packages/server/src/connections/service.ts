@@ -22,7 +22,7 @@ export class Connections {
   private closed = false
   private active = new Set<Promise<unknown>>()
   readonly store: ConnectionStore
-  readonly vault: Vault
+  #vault: Vault
   private readonly probes: BalanceProbes
   private readonly scrubber: EgressScrubber
   private readonly lifetime: AbortSignal
@@ -37,7 +37,7 @@ export class Connections {
     localHost: () => string, pi: PiTransport = piTransport,
     transport: typeof fetch = globalThis.fetch) {
     this.store = store
-    this.vault = vault
+    this.#vault = vault
     this.probes = probes
     this.scrubber = scrubber
     this.lifetime = lifetime
@@ -58,28 +58,41 @@ export class Connections {
   snapshot(accountId: string): ConnectionSnapshot {
     this.assertOpen()
     return this.scrubber.scrub({ connections: this.store.list(accountId), costs: this.store.costs(accountId),
-      vault: { unlocked: this.vault.unlocked(accountId), unattendedAvailable: this.vault.unattendedAvailable } })
+      vault: { unlocked: this.#vault.unlocked(accountId), unattendedAvailable: this.#vault.unattendedAvailable } })
   }
   create(accountId: string, input: CreateConnection) {
     this.assertOpen()
-    if (input.unattended && !this.vault.unattendedAvailable) throw new Error('Node unattended access is not enabled')
+    if (input.unattended && !this.#vault.unattendedAvailable) throw new Error('Node unattended access is not enabled')
     return this.store.create(accountId, input)
   }
   setUnattended(accountId: string, id: string, unattended: boolean) {
     this.assertOpen()
-    if (unattended && !this.vault.unattendedAvailable) throw new Error('Node unattended access is not enabled')
-    return this.store.setUnattended(accountId, id, unattended)
+    if (unattended && !this.#vault.unattendedAvailable) throw new Error('Node unattended access is not enabled')
+    this.store.get(accountId, id)
+    this.store.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.#vault.prepareUnattended(accountId, id, unattended)
+      const result = this.store.setUnattended(accountId, id, unattended)
+      this.store.db.exec('COMMIT')
+      return result
+    } catch (error) { this.store.db.exec('ROLLBACK'); throw error }
   }
   saveSecret(accountId: string, id: string, value: string) {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
     if (connection.auth !== 'api_key') throw new Error('CLI logins are managed by the official CLI')
     assertApiKey(connection.provider, value)
-    const ref = this.vault.put(accountId, value)
-    return this.store.setSecret(accountId, id, ref)
+    this.store.db.exec('BEGIN IMMEDIATE')
+    try {
+      const ref = this.#vault.put(accountId, value)
+      this.#vault.prepareUnattended(accountId, id, connection.unattended, ref)
+      const result = this.store.setSecret(accountId, id, ref)
+      this.store.db.exec('COMMIT')
+      return result
+    } catch (error) { this.store.db.exec('ROLLBACK'); throw error }
   }
-  unlockVault(accountId: string) { return this.track(() => this.vault.unlock(accountId)) }
-  lockVault(accountId: string) { this.assertOpen(); this.vault.lock(accountId) }
+  unlockVault(accountId: string) { return this.track(() => this.#vault.unlock(accountId)) }
+  lockVault(accountId: string) { this.assertOpen(); this.#vault.lock(accountId) }
   probe(accountId: string, id: string, signal?: AbortSignal) {
     return this.track(() => this.probes.probe(this.store.get(accountId, id), signal
       ? AbortSignal.any([this.lifetime, signal]) : this.lifetime))
@@ -102,9 +115,9 @@ export class Connections {
       if (!model) throw new Error('Model not found in the provider catalog')
       const signal = call.signal ? AbortSignal.any([this.lifetime, call.signal]) : this.lifetime
       try {
-        return await this.vault.inject(connection, call.background ?? false, async key => {
+        return await this.#vault.inject(accountId, id, call.background ?? false, async key => {
           assertApiKey(connection.provider, key)
-          this.vault.assertScrubbingReady(accountId)
+          this.#vault.assertScrubbingReady(accountId)
           signal.throwIfAborted()
           // Scrub the complete context, including tool results and tool schemas,
           // before pi-ai turns it into a provider-specific request.
@@ -132,8 +145,8 @@ export class Connections {
     return this.track(async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'local_runtime') throw new Error('Not a local runtime connection')
-      if (call.background && (!connection.unattended || !this.vault.unattendedAvailable)) throw new Error('Unattended access disabled')
-      this.vault.assertScrubbingReady(accountId)
+      if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) throw new Error('Unattended access disabled')
+      this.#vault.assertScrubbingReady(accountId)
       const host = new URL(this.localHost())
       if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')
       const context = request.options?.num_ctx
@@ -157,7 +170,7 @@ export class Connections {
   /** Caller supplies a pre-authorized destination; scrubbing precedes hashing. */
   writeArtifact(accountId: string, destination: string, value: unknown) {
     return this.track(async () => {
-      this.vault.assertScrubbingReady(accountId)
+      this.#vault.assertScrubbingReady(accountId)
       const bytes = Buffer.from(JSON.stringify(this.scrubber.scrub(value)))
       await writeFile(destination, bytes, { mode: 0o600, flag: 'wx', signal: this.lifetime })
       return { sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length }

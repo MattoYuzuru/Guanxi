@@ -10,7 +10,6 @@ import { Connections } from './service.ts'
 import type { PiTransport } from './pi.ts'
 
 export const CONNECTIONS_SERVICE = 'connections.registry'
-export const VAULT_SERVICE = 'connections.vault'
 export interface ConnectionsConfig {
   databasePath: string; localHost: () => string
   policy?: VaultPolicy
@@ -19,17 +18,16 @@ export interface ConnectionsConfig {
 }
 export const connectionsPlugin = definePlugin<ConnectionsConfig>({
   manifest: { id: 'guanxi.connections', engines: { guanxi: '^0.1.0' },
-    provides: [CONNECTIONS_SERVICE, VAULT_SERVICE], requires: [EGRESS_SERVICE, 'ollama', 'governor'], trust: 'T0' },
+    provides: [CONNECTIONS_SERVICE], requires: [EGRESS_SERVICE, 'ollama', 'governor'], trust: 'T0' },
   apply(ctx, config) {
     const scrubber = ctx.service<EgressScrubber>(EGRESS_SERVICE)
     const store = new ConnectionStore(config.databasePath, scrubber)
-    const vault = new Vault(store.db, config.keychain ?? (() => osKeychain(config.databasePath)), scrubber,
+    const vault = new Vault(store, config.keychain ?? (() => osKeychain(config.databasePath)), scrubber,
       config.policy ?? { ownerDevice: true, nodeKeyOptIn: false })
     const probes = new BalanceProbes(store, vault, config.transport)
     const connections = new Connections(store, vault, probes, scrubber, ctx.signal,
       ctx.service<OllamaAdapter>('ollama'), ctx.service<ResourceGovernor>('governor'), config.localHost, config.pi, config.transport)
     ctx.effect(() => async () => { vault.close(); await connections.close(); store.close() }, 'connections.close')
     ctx.provide(CONNECTIONS_SERVICE, connections)
-    ctx.provide(VAULT_SERVICE, vault)
   },
 })

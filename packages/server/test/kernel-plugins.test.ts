@@ -140,9 +140,9 @@ describe('server boot through the kernel', () => {
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
         assert.equal(server.kernel.node.counters().fibers, 4, 'governor, Ollama, egress bridge and connections')
-        assert.equal(server.kernel.node.counters().services, 6, 'kernel slots, governor, Ollama, egress, registry and vault')
+        assert.equal(server.kernel.node.counters().services, 5, 'kernel slots, governor, Ollama, egress and registry')
         assert.ok(server.kernel.node.service('connections.registry'))
-        assert.ok(server.kernel.node.service('connections.vault'))
+        assert.equal(server.kernel.node.service('connections.vault'), undefined)
         assert.ok(server.kernel.node.service('egress.scrubber'))
       } finally {
         await server.close()

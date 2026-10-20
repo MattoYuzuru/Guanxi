@@ -33,6 +33,13 @@ export class ConnectionStore {
           INSERT INTO k3_migrations VALUES(1);
         `)
       }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=2').get()) {
+        this.db.exec(`
+          CREATE TABLE vault_node_keys(account_id TEXT PRIMARY KEY, wrapped TEXT NOT NULL);
+          CREATE TABLE vault_node_secrets(connection_id TEXT PRIMARY KEY REFERENCES connections(id), account_id TEXT NOT NULL, ref TEXT NOT NULL REFERENCES vault_secrets(ref), ciphertext TEXT NOT NULL);
+          INSERT INTO k3_migrations VALUES(2);
+        `)
+      }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
   }
