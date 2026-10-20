@@ -17,6 +17,22 @@ const STATUS: Record<UiCatalogError['code'], 403 | 404 | 409 | 503> = {
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+const LOOPBACK_PEER = /^(127\.|::1$|::ffff:127\.)/
+
+type NodeBindings = { incoming?: { socket?: { remoteAddress?: string } } }
+
+/**
+ * Loopback only, whatever HOST the node binds: the Host header (DNS rebinding) and, when the
+ * request came over a socket, the peer address (a LAN client can forge Host).
+ */
+function foreignHost(context: Context): string | null {
+  const url = new URL(context.req.url)
+  const host = context.req.header('host') ?? url.host
+  if (!LOOPBACK_HOSTS.has(host.replace(/:\d+$/, ''))) return 'non_loopback_host'
+  const peer = (context.env as NodeBindings | undefined)?.incoming?.socket?.remoteAddress
+  if (peer !== undefined && !LOOPBACK_PEER.test(peer)) return 'non_loopback_peer'
+  return null
+}
 
 function fail(context: Context, error: unknown) {
   if (error instanceof UiCatalogError) {
@@ -32,8 +48,8 @@ function rejectForeignWrite(context: Context, allowedOrigins: readonly string[])
     context.json({ code: 'approvals_read_only', message: 'This request cannot write reviews', details: { reason } } satisfies ApiError, 403)
   const url = new URL(context.req.url)
   const host = context.req.header('host') ?? url.host
-  const hostname = host.replace(/:\d+$/, '')
-  if (!LOOPBACK_HOSTS.has(hostname)) return deny('non_loopback_host')
+  const hostProblem = foreignHost(context)
+  if (hostProblem) return deny(hostProblem)
   const site = context.req.header('sec-fetch-site')
   if (site !== undefined && site !== 'same-origin' && site !== 'none') {
     const origin = context.req.header('origin')
@@ -54,9 +70,15 @@ function rejectForeignWrite(context: Context, allowedOrigins: readonly string[])
 export function uiCatalogRoutes(service: UiCatalogReviewService, allowedOrigins: readonly string[] = []): Hono {
   const routes = new Hono()
 
-  routes.get('/review-capability', async (context) => context.json(await service.capability()))
+  routes.get('/review-capability', async (context) => {
+    const problem = foreignHost(context)
+    if (problem) return context.json({ code: 'approvals_read_only', message: 'Loopback only', details: { reason: problem } } satisfies ApiError, 403)
+    return context.json(await service.capability())
+  })
 
   routes.get('/components/:id/review', (context) => {
+    const problem = foreignHost(context)
+    if (problem) return context.json({ code: 'approvals_read_only', message: 'Loopback only', details: { reason: problem } } satisfies ApiError, 403)
     try {
       return context.json(service.get(context.req.param('id')))
     } catch (error) {

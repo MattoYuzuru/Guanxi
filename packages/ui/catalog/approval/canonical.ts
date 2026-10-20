@@ -1,7 +1,8 @@
 /**
- * Canonical JSON for signed approval payloads: object keys sorted by code point at every
- * level, no insignificant whitespace, UTF-8. Both the signer (node route) and the verifier
- * (G12, manifest) serialize through this one function.
+ * Canonical JSON for signed approval payloads: object keys sorted by UTF-16 code unit (the
+ * JavaScript string order) at every level, no insignificant whitespace, UTF-8. Both the signer
+ * (node route) and the verifier (G12, manifest) serialize through this one function; a
+ * verifier in another language must sort the same way (payload keys are ASCII today).
  */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value === 'boolean' || typeof value === 'number') {

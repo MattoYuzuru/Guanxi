@@ -27,6 +27,7 @@ export interface ApprovalSigner {
 export type SignerErrorReason =
   | 'signing_key_missing'
   | 'signing_denied'
+  | 'signing_timeout'
   | 'signing_key_invalid'
   | 'platform_unsupported'
 
@@ -61,6 +62,7 @@ export function keyObjectSigner(privateKey: KeyObject): ApprovalSigner {
 interface ExecResult {
   code: number
   stdout: string
+  timedOut: boolean
 }
 
 function run(file: string, args: string[], timeoutMs: number): Promise<ExecResult> {
@@ -71,7 +73,7 @@ function run(file: string, args: string[], timeoutMs: number): Promise<ExecResul
         return
       }
       const code = error ? ((error as { code?: number }).code ?? 1) : 0
-      resolve({ code, stdout: String(stdout) })
+      resolve({ code, stdout: String(stdout), timedOut: Boolean(error && (error as { killed?: boolean }).killed) })
     })
   })
 }
@@ -115,7 +117,10 @@ export function keychainSigner(options: KeychainSignerOptions = {}): ApprovalSig
       if (platform !== 'darwin') throw new SignerError('platform_unsupported', 'Keychain signing needs macOS')
       const result = await run(security, [...lookup, '-w', ...keychainArgs], options.promptTimeoutMs ?? 120_000)
       if (result.code === ITEM_NOT_FOUND) throw new SignerError('signing_key_missing', 'No approval key in the keychain')
+      if (result.timedOut) throw new SignerError('signing_timeout', 'Nobody answered the keychain prompt in time')
       if (result.code !== 0) throw new SignerError('signing_denied', 'The keychain did not release the approval key')
+      // The secret also lives in `result.stdout` until it is collected; the buffer is cleared
+      // so it is not kept longer than this call, which is the most Node allows.
       const der = Buffer.from(result.stdout.trim(), 'base64')
       let privateKey: KeyObject
       try {

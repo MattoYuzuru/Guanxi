@@ -84,7 +84,13 @@ export class UiCatalogReviewService {
     })
     if (this.options.release) return readOnly('release_build')
     if (this.options.uiRoot === null) return readOnly('not_source_checkout')
-    const status = await this.options.signer.status()
+    let status: Awaited<ReturnType<ApprovalSigner['status']>>
+    try {
+      status = await this.options.signer.status()
+    } catch {
+      // The keychain tool could not run at all: report the key as unavailable, not a 500.
+      return readOnly('signing_key_missing')
+    }
     if (status.state === 'unavailable') return readOnly(status.reason)
     let trusted: string[]
     try {
@@ -119,6 +125,7 @@ export class UiCatalogReviewService {
 
   private async submitLocked(uiRoot: string, id: string, body: UiComponentReviewBody): Promise<UiComponentReview> {
     const paths = uiPaths(uiRoot)
+    const original = existsSync(paths.reviewFile(id)) ? readFileSync(paths.reviewFile(id), 'utf8') : null
     const { record } = this.readRecord(uiRoot, id)
     if (record.status === 'deprecated') {
       throw new UiCatalogError('review_conflict', 'deprecated', 'Deprecated components are not reviewed')
@@ -171,6 +178,12 @@ export class UiCatalogReviewService {
       }
     }
 
+    // The keychain prompt can take a while: if anyone rewrote the record meanwhile, do not
+    // overwrite their change; the owner reloads and decides again.
+    const now = existsSync(paths.reviewFile(id)) ? readFileSync(paths.reviewFile(id), 'utf8') : null
+    if (now !== original) {
+      throw new UiCatalogError('review_conflict', 'record_changed', 'The review record changed while it was being signed')
+    }
     this.writeRecord(paths.reviewFile(id), next)
     return this.project(uiRoot, id, next)
   }

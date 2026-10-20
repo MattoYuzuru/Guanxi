@@ -44,7 +44,7 @@ export function readProps(uiRoot: string, folders: ComponentFolder[]): Map<strin
           description: ts.displayPartsToString(property.getDocumentationComment(checker)),
         })
       }
-      byExport[exported.name] = props.sort((a, b) => a.name.localeCompare(b.name))
+      byExport[exported.name] = props.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     }
     result.set(folder.id, byExport)
   }

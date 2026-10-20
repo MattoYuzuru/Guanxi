@@ -378,10 +378,13 @@ describe('refusals', () => {
   it('rejects unknown, traversing and malformed component ids', async () => {
     const fx = fixture()
     const server = app(new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: keyObjectSigner(fx.privateKey) }))
-    for (const id of ['missing', '..', 'Button', 'button%2F..', '../../etc']) {
+    for (const id of ['missing', 'Button', 'button%2F..', '..%2F..%2Fetc', 'button.']) {
       const response = await post(server, id, { decision: 'approve', comment: '', ...current(fx.uiRoot, 'button') })
-      assert.ok([404].includes(response.status), `${id} -> ${response.status}`)
+      assert.equal(response.status, 404, id)
+      assert.equal(((await response.json()) as { code: string }).code, 'component_not_found', id)
     }
+    // A bare `..` segment is resolved by URL normalisation before routing and never reaches the id.
+    assert.equal((await post(server, '..', {})).status, 404)
   })
 
   it('refuses writes from other origins, non-loopback hosts and non-JSON bodies', async () => {
@@ -401,8 +404,80 @@ describe('refusals', () => {
       assert.equal(response.status, 403, reason)
       assert.equal(((await response.json()) as { details: { reason: string } }).details.reason, reason)
     }
+    // With HOST=0.0.0.0 a LAN client can send Host: 127.0.0.1; the peer address still decides.
+    const lan = await server.request(
+      `http://127.0.0.1:4383${ROUTES.uiCatalogComponentReview('button')}`,
+      { method: 'POST', headers: { 'content-type': 'application/json', origin: DEV_ORIGIN }, body: JSON.stringify(body) },
+      { incoming: { socket: { remoteAddress: '192.168.1.20' } } },
+    )
+    assert.equal(lan.status, 403)
+    assert.equal(((await lan.json()) as { details: { reason: string } }).details.reason, 'non_loopback_peer')
+    const lanRead = await server.request(`http://127.0.0.1:4383${ROUTES.uiCatalogReviewCapability()}`, {}, {
+      incoming: { socket: { remoteAddress: '10.0.0.7' } },
+    })
+    assert.equal(lanRead.status, 403)
     assert.equal(signer.signs, 0)
     assert.equal(readRecord(fx.uiRoot, 'button').status, 'draft')
+  })
+})
+
+describe('failure behaviour', () => {
+  it('does not overwrite a record that changed while the owner answered the keychain prompt', async () => {
+    const fx = fixture()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const inner = keyObjectSigner(fx.privateKey)
+    const slow: ApprovalSigner = { status: () => inner.status(), sign: async (bytes) => (await gate, inner.sign(bytes)) }
+    const service = new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: slow })
+    const pending = post(app(service), 'badge', { decision: 'approve', comment: '', ...current(fx.uiRoot, 'badge') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const path = uiPaths(fx.uiRoot).reviewFile('badge')
+    const edited = readFileSync(path, 'utf8').replace('"requests": []', '"requests": [{ "id": "r-1", "at": "2026-10-20T12:00:00.000Z", "text": "agent note", "state": "open" }]')
+    writeFileSync(path, edited)
+    release()
+    const response = await pending
+    assert.equal(response.status, 409)
+    assert.equal(((await response.json()) as { details: { reason: string } }).details.reason, 'record_changed')
+    assert.equal(readFileSync(path, 'utf8'), edited)
+  })
+
+  it('reports a keychain tool that cannot run as a missing key, not a server error', async () => {
+    const fx = fixture()
+    const broken: ApprovalSigner = {
+      status: () => Promise.reject(new Error('spawn /usr/bin/security ENOENT')),
+      sign: () => Promise.reject(new Error('unreachable')),
+    }
+    const response = await app(new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: broken })).request(
+      ROUTES.uiCatalogReviewCapability(),
+    )
+    assert.equal(response.status, 200)
+    assert.equal(uiCatalogReviewCapabilityResponse.parse(await response.json()).reason, 'signing_key_missing')
+  })
+})
+
+describe('release builds', () => {
+  it('both bundles define __GUANXI_RELEASE_BUILD__, which turns RELEASE_BUILD on', async () => {
+    const { build } = await import('esbuild')
+    const root = join(realUiRoot, '..')
+    for (const script of ['server/scripts/build.mjs', 'cli/scripts/build.mjs']) {
+      assert.match(readFileSync(join(root, script), 'utf8'), /define:\s*\{\s*__GUANXI_RELEASE_BUILD__:\s*'true'\s*\}/, script)
+    }
+    const bundle = async (define: Record<string, string>) => {
+      const out = await build({
+        entryPoints: [join(root, 'server', 'src', 'release.ts')],
+        bundle: true,
+        write: false,
+        format: 'esm',
+        platform: 'node',
+        define,
+      })
+      const code = out.outputFiles[0]!.text
+      return (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).RELEASE_BUILD as boolean
+    }
+    assert.equal(await bundle({ __GUANXI_RELEASE_BUILD__: 'true' }), true)
+    assert.equal(await bundle({}), false)
   })
 })
 
@@ -441,6 +516,11 @@ describe('keychain signer', () => {
     await assert.rejects(keychainSigner({ securityPath: denied, platform: 'darwin' }).sign(Buffer.from('x')), {
       reason: 'signing_denied',
     })
+    const unanswered = fakeSecurity('sleep 5')
+    await assert.rejects(
+      keychainSigner({ securityPath: unanswered, platform: 'darwin', promptTimeoutMs: 200 }).sign(Buffer.from('x')),
+      { reason: 'signing_timeout' },
+    )
     assert.deepEqual(await keychainSigner({ platform: 'linux' }).status(), {
       state: 'unavailable',
       reason: 'platform_unsupported',

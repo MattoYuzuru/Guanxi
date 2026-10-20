@@ -57,7 +57,7 @@ export function buildManifest(uiRoot: string, scope: UsageScope = defaultUsageSc
       since: folder.docs?.since ?? null,
     }
   })
-  return { $comment: MANIFEST_COMMENT, version: 1, components: components.sort((a, b) => a.id.localeCompare(b.id)) }
+  return { $comment: MANIFEST_COMMENT, version: 1, components: components.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) }
 }
 
 export function serialiseManifest(manifest: CatalogManifest): string {

@@ -16,6 +16,9 @@ import { defaultDbPath } from './store/db.ts'
 import { UiCatalogReviewService } from './ui-catalog/service.ts'
 import { keychainSigner } from './ui-catalog/signer.ts'
 import { findSourceCheckoutUiRoot } from './ui-catalog/source-checkout.ts'
+import { RELEASE_BUILD } from './release.ts'
+
+export { RELEASE_BUILD } from './release.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
@@ -89,10 +92,6 @@ export type {
 
 const APP_VERSION = '0.1.0'
 
-/** Set to true by the bundled release builds (server and CLI esbuild `define`). */
-declare const __GUANXI_RELEASE_BUILD__: boolean | undefined
-export const RELEASE_BUILD =
-  typeof __GUANXI_RELEASE_BUILD__ !== 'undefined' && __GUANXI_RELEASE_BUILD__ === true
 export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
