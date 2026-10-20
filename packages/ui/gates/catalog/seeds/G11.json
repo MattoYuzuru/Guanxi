@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/web/src/features/seeded/SeededScreen.tsx": "// G11 seed: a product screen uses a draft component.\nimport { Button } from \"@guanxi/ui\"\n\nexport function SeededScreen({ label }: { label: string }) {\n  return <Button>{label}</Button>\n}\n"
+  },
+  "expectedError": "product code uses draft component \"button\""
+}

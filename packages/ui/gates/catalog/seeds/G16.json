@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/gates/catalog/fixtures/browser/selected.json": "{\"stories\":[\"g16--looping-spinner\"],\"fixtures\":true}"
+  },
+  "expectedError": "loops: span.gx-seeded-spinner"
+}
