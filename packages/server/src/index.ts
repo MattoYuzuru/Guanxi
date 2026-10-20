@@ -181,14 +181,16 @@ export async function start(options: StartOptions = {}) {
       } finally {
         context.jobService.closeSubscriptions()
         await listenerClosed
+        // Unload plugins (bounded by the kernel's unload deadline) before the
+        // database they may use is closed.
+        try {
+          await kernel.node.dispose()
+        } catch (error) {
+          shutdownError ??= error
+        }
         context.db.close()
         process.removeListener('SIGINT', shutdown)
         process.removeListener('SIGTERM', shutdown)
-      }
-      try {
-        await kernel.node.dispose()
-      } catch (error) {
-        shutdownError ??= error
       }
       if (shutdownError) throw shutdownError
     })()

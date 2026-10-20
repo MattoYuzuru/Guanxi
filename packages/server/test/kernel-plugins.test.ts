@@ -113,6 +113,21 @@ describe('server boot through the kernel', () => {
       await kernel.node.dispose()
     }
     assert.equal(kernel.governor.snapshot().accepting, false, 'disposing the node closed the governor')
+  })
+
+  it('pins the rows whose services the legacy context holds', async () => {
+    const kernel = await bootServerKernel()
+    try {
+      await assert.rejects(
+        kernel.node.apply([LEGACY_SERVER_PROFILE, { name: 'user', patch: [{ id: 'resource-governor', disabled: true }] }]),
+        /row "resource-governor" is pinned/,
+      )
+      await assert.rejects(kernel.node.replacePlugin(resourceGovernorPlugin), /pinned/)
+      assert.ok(isActive(kernel.node.fiberOf('resource-governor')!))
+      assert.equal(kernel.node.root.get(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
+    } finally {
+      await kernel.node.dispose()
+    }
     assert.equal(LEGACY_SERVER_PROFILE.insert?.length, 2)
   })
 

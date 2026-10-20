@@ -29,6 +29,9 @@ export async function bootServerKernel(
   const node = await bootNode({
     plugins: [resourceGovernorPlugin, ollamaAdapterPlugin],
     profile,
+    // The legacy context keeps the instances handed out below, so these rows
+    // must not reload until their consumers are plugins themselves.
+    pinned: LEGACY_SERVER_PROFILE.insert?.map((row) => row.id) ?? [],
   })
   try {
     return {
