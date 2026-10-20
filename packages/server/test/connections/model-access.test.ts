@@ -524,10 +524,12 @@ test('H3: apply registers every historical secret after restart without granting
   const f = await setup(t); const s = f.service(); const secret = fakeKey(); const retired = fakeKey()
   const row = s.create(account, apiInput)
   await s.unlockVault(account); s.saveSecret(account, row.id, retired); s.saveSecret(account, row.id, secret)
-  await f.restart()
+  await f.restart(true)
   const ready = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
   assert.equal(ready.ready, true); ready.assertReady()
   const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  assert.equal(scrubber.isReady(), true)
+  assert.deepEqual(scrubber.pendingSources(), [])
   assert.equal(scrubber.scrub(`${secret} ${retired}`).includes(secret), false)
   assert.equal(scrubber.scrub(`${secret} ${retired}`).includes(retired), false)
   assert.equal(f.service().snapshot(account).vault.unlocked, false)
@@ -535,9 +537,10 @@ test('H3: apply registers every historical secret after restart without granting
     model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'still-locked',
   }), /locked/)
   f.config.keychain = async () => { throw new Error('Fixture keychain locked') }
-  await f.restart()
+  await f.restart(true)
   const failed = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
   assert.equal(failed.ready, false)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.isReady(), false)
   assert.throws(() => failed.assertReady(), /registration incomplete/)
 })
 
