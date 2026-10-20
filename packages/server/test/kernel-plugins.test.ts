@@ -4,6 +4,7 @@
  * plugin reclaims what it owns.
  */
 import assert from 'node:assert/strict'
+import { request as httpRequest } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -136,6 +137,17 @@ describe('server boot through the kernel', () => {
     try {
       const server = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
       try {
+        const health = (host: string) => new Promise<number>((resolve, reject) => {
+          const req = httpRequest({ hostname: '127.0.0.1', port: server.port, path: '/api/health',
+            headers: { Host: host } }, res => {
+            res.resume(); res.on('end', () => resolve(res.statusCode!))
+          })
+          req.on('error', reject); req.end()
+        })
+        assert.notEqual(server.port, 0)
+        assert.equal(await health(`127.0.0.1:${server.port}`), 200)
+        assert.equal(await health(`localhost:${server.port}`), 200)
+        assert.equal(await health(`evil.example:${server.port}`), 403)
         assert.equal(server.context.governor, server.kernel.governor)
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
