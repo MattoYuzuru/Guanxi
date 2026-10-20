@@ -117,3 +117,45 @@ describe('R4: a readiness change during the catch-up hand-off cannot strand the 
     assert.deepEqual(log.readAll(threadId, 'person').map((event) => event.type), ['session.created', 'writer.acquired', 'prompt', 'job.lifecycle'])
   })
 })
+
+describe('R5: a closed log is not retained by a readiness wait that never resolves', () => {
+  it('releases closed logs and mirrors while a declared source stays pending forever', async () => {
+    const { setFlagsFromString } = await import('node:v8')
+    const { runInNewContext } = await import('node:vm')
+    setFlagsFromString('--expose-gc')
+    const gc = runInNewContext('gc') as () => void
+    const { ChatSessionMirror } = await import('../src/session-log/chat-mirror.ts')
+    const { JobStore } = await import('../src/store/jobs.ts')
+    const { ThreadStore } = await import('../src/store/threads.ts')
+
+    const db = openDb(':memory:')
+    const scrubber = new SecretScrubber({ expectedSources: ['vault'] }) // never becomes ready
+    // Each log and mirror is created in its own call, so no frame of this test keeps one alive.
+    const make = (index: number): WeakRef<object>[] => {
+      const log = new SessionLog({ db, scrubber })
+      const mirror = new ChatSessionMirror({ log, db })
+      const threadId = new ThreadStore(db).create({
+        title: `Leak ${index}`, mode: 'chat', model: 'fixture', workspaceId: null,
+        options: { numCtx: 4_096, temperature: 0, think: 'off' },
+      }).id
+      new JobStore(db, { sessionMirror: mirror }).createChat({
+        threadId,
+        idempotencyScope: `chat:${threadId}:send:v1`,
+        idempotencyKey: crypto.randomUUID(),
+        requestFingerprint: 'fixture',
+        input: { content: `deferred ${index}`, attachments: [], autoApprove: null },
+        derivedTitle: 'Leak',
+      })
+      log.close()
+      return [new WeakRef(log), new WeakRef(mirror)]
+    }
+    const refs = [0, 1, 2, 3, 4].flatMap(make)
+    for (let round = 0; round < 10 && refs.some((ref) => ref.deref() !== undefined); round++) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      gc()
+    }
+    assert.equal(refs.filter((ref) => ref.deref() !== undefined).length, 0, 'closed logs and mirrors were collected')
+    assert.equal(scrubber.isReady(), false)
+    assert.equal((db.prepare('SELECT COUNT(*) AS n FROM session_mirror_backlog').get() as { n: number }).n, 5, 'the deferrals stay durable')
+  })
+})

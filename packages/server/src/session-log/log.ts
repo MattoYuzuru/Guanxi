@@ -306,6 +306,7 @@ export class SessionLog {
   private readonly writers = new Map<string, { epoch: number; handle: Handle | null }>()
   private readonly subscribers = new Map<string, Set<SubscriptionWake>>()
   private subscriptionsClosed = false
+  private readonly lifetime = new AbortController()
   private closing = false
 
   constructor(options: SessionLogOptions) {
@@ -332,9 +333,12 @@ export class SessionLog {
     return this.scrubber.pendingSources()
   }
 
-  /** Resolves when the egress scrubber is ready; at once if it is. */
+  /**
+   * Resolves when the egress scrubber is ready; at once if it is. Rejects when
+   * this log closes first, and the scrubber then holds nothing of it (R5).
+   */
   whenEgressReady(): Promise<void> {
-    return this.scrubber.whenReady()
+    return this.scrubber.whenReady(this.lifetime.signal)
   }
 
   private notReady(): SessionLogError {
@@ -481,6 +485,7 @@ export class SessionLog {
     }
     this.writers.clear()
     LIVE_WRITER_IDS.delete(this.writer.id)
+    this.lifetime.abort(new SessionLogError('closed', 'The session log is closed'))
     this.closeSubscriptions()
   }
 

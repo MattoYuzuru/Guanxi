@@ -26,7 +26,7 @@ export interface EgressScrubber {
   ready(sourceId: string): void
   isReady(): boolean
   pendingSources(): readonly string[]
-  whenReady(): Promise<void>
+  whenReady(signal?: AbortSignal): Promise<void>
 }
 
 export interface EgressScrubberConfig {
@@ -86,8 +86,10 @@ scrubber.ready('vault')
   `whenReady()`.
 - `isReady()` is true when every declared source is ready, and also when none is declared.
 - `pendingSources()` lists the ids still pending, for diagnostics. Ids are not secret.
-- `whenReady()` resolves at once when ready, or the next time every declared source is; it
-  rejects with `closed` if the instance closes first.
+- `whenReady(signal?)` resolves at once when ready, or the next time every declared source is;
+  it rejects with `closed` if the instance closes first, and with the signal's reason if the
+  signal aborts first. An aborted wait leaves the waiter list, so a consumer that unloads while a
+  source stays pending is not retained.
 - Source ids match `SECRET_SOURCE_PATTERN` (`[a-z][a-z0-9.-]{0,63}`); others throw
   `invalid_source`.
 - Declare every source in `expectedSources`. An `expect` in the source's own `apply` comes too
@@ -128,7 +130,7 @@ const stub: EgressScrubber = {
   ready() {},
   isReady() { return false },
   pendingSources() { return ['egress.stub'] },
-  whenReady() { return new Promise(() => {}) },
+  whenReady() { return Promise.reject(new Error('egress.scrubber is not available before K2 merges')) },
 }
 ```
 

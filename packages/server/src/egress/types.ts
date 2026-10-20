@@ -58,9 +58,11 @@ export interface EgressScrubber {
   pendingSources(): readonly string[]
   /**
    * Resolves the next time every declared source is ready, at once if it
-   * already is. Rejects with `closed` if the instance closes first.
+   * already is. Rejects with `closed` if the instance closes first, and with
+   * the signal's reason if `signal` aborts first; an aborted wait is dropped,
+   * so it retains nothing.
    */
-  whenReady(): Promise<void>
+  whenReady(signal?: AbortSignal): Promise<void>
 }
 
 /** Configuration of the `guanxi.egress-scrubber` kernel plugin (JSON, from the profile row). */

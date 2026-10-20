@@ -89,10 +89,29 @@ export class SecretScrubber implements EgressScrubber {
     return [...this.sources].filter(([, ready]) => !ready).map(([sourceId]) => sourceId).sort()
   }
 
-  whenReady(): Promise<void> {
+  whenReady(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(new EgressScrubberError('closed', 'The egress scrubber was closed'))
+    if (signal?.aborted) return Promise.reject(signal.reason)
     if (this.isReady()) return Promise.resolve()
-    return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }))
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        resolve: () => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve()
+        },
+        reject: (error: unknown) => {
+          signal?.removeEventListener('abort', onAbort)
+          reject(error)
+        },
+      }
+      // An aborted wait leaves the list, so the scrubber holds no reference to its owner.
+      const onAbort = () => {
+        this.waiters = this.waiters.filter((entry) => entry !== waiter)
+        reject(signal!.reason)
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      this.waiters.push(waiter)
+    })
   }
 
   register(ref: SecretRef, value: string): void {
@@ -170,7 +189,7 @@ export class SecretScrubber implements EgressScrubber {
       ready: (sourceId: string) => this.ready(sourceId),
       isReady: () => this.isReady(),
       pendingSources: () => this.pendingSources(),
-      whenReady: () => this.whenReady(),
+      whenReady: (signal?: AbortSignal) => this.whenReady(signal),
     })
   }
 
