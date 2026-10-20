@@ -24,6 +24,10 @@
       "slower": {
         "$type": "duration",
         "$value": "{primitive.duration.instant}"
+      },
+      "loop": {
+        "$type": "duration",
+        "$value": "{primitive.duration.instant}"
       }
     },
     "fade": {
@@ -48,6 +52,10 @@
         "$value": "{primitive.duration.fast}"
       },
       "slower": {
+        "$type": "duration",
+        "$value": "{primitive.duration.fast}"
+      },
+      "loop": {
         "$type": "duration",
         "$value": "{primitive.duration.fast}"
       }

@@ -195,6 +195,7 @@
   --motion-distance-sm: 4px;
   --motion-duration-fast: 100ms;
   --motion-duration-instant: 0ms;
+  --motion-duration-loop: 1000ms;
   --motion-duration-medium: 200ms;
   --motion-duration-moderate: 150ms;
   --motion-duration-slow: 300ms;
@@ -206,6 +207,7 @@
   --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-fade-fast: 100ms;
   --motion-fade-instant: 0ms;
+  --motion-fade-loop: 1000ms;
   --motion-fade-medium: 200ms;
   --motion-fade-moderate: 150ms;
   --motion-fade-slow: 300ms;
@@ -325,6 +327,7 @@
   --primitive-distance-sm: 4px;
   --primitive-duration-fast: 100ms;
   --primitive-duration-instant: 0ms;
+  --primitive-duration-loop: 1000ms;
   --primitive-duration-medium: 200ms;
   --primitive-duration-moderate: 150ms;
   --primitive-duration-slow: 300ms;
@@ -782,6 +785,7 @@
   --motion-distance-sm: 4px;
   --motion-duration-fast: 100ms;
   --motion-duration-instant: 0ms;
+  --motion-duration-loop: 1000ms;
   --motion-duration-medium: 200ms;
   --motion-duration-moderate: 150ms;
   --motion-duration-slow: 300ms;
@@ -793,6 +797,7 @@
   --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-fade-fast: 100ms;
   --motion-fade-instant: 0ms;
+  --motion-fade-loop: 1000ms;
   --motion-fade-medium: 200ms;
   --motion-fade-moderate: 150ms;
   --motion-fade-slow: 300ms;
@@ -804,6 +809,7 @@
   --motion-distance-sm: 0px;
   --motion-duration-fast: 0ms;
   --motion-duration-instant: 0ms;
+  --motion-duration-loop: 0ms;
   --motion-duration-medium: 0ms;
   --motion-duration-moderate: 0ms;
   --motion-duration-slow: 0ms;
@@ -815,6 +821,7 @@
   --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-fade-fast: 100ms;
   --motion-fade-instant: 0ms;
+  --motion-fade-loop: 100ms;
   --motion-fade-medium: 100ms;
   --motion-fade-moderate: 100ms;
   --motion-fade-slow: 100ms;
@@ -1241,6 +1248,7 @@
   --motion-distance-sm: 0px;
   --motion-duration-fast: 0ms;
   --motion-duration-instant: 0ms;
+  --motion-duration-loop: 0ms;
   --motion-duration-medium: 0ms;
   --motion-duration-moderate: 0ms;
   --motion-duration-slow: 0ms;
@@ -1252,6 +1260,7 @@
   --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-fade-fast: 100ms;
   --motion-fade-instant: 0ms;
+  --motion-fade-loop: 100ms;
   --motion-fade-medium: 100ms;
   --motion-fade-moderate: 100ms;
   --motion-fade-slow: 100ms;
