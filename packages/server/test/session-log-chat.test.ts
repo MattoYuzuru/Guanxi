@@ -24,13 +24,14 @@ import {
 } from '@guanxi/contract'
 import { createApp } from '../src/app.ts'
 import { createAppContext, type AppContext } from '../src/context.ts'
-import { SecretScrubber, formsOf } from '../src/egress/index.ts'
+import { formsOf } from '../src/egress/index.ts'
+import { SecretScrubber } from '../src/egress/scrubber.ts'
 import type { OllamaClient } from '../src/ollama/client.ts'
 import type { OllamaAdapter } from '../src/ollama/plugin.ts'
 import type { OllamaChatChunk } from '../src/ollama/types.ts'
 import {
   SessionLog,
-  audienceForModelEndpoint,
+  audienceForAgent,
   createSessionQueryTool,
   projectSpans,
   projectTokenMeter,
@@ -270,17 +271,18 @@ describe('session log through the legacy Chat Job owner', () => {
       'session.created': 1,
       'writer.acquired': 1,
       prompt: 2,
-      'job.lifecycle': state.counts['job.lifecycle'],
+      'job.lifecycle': 24,
       'assistant.started': 4,
       reasoning: 4,
       'assistant.message': 4,
       'tool.call': 2,
       'tool.result': 2,
-      usage: state.counts.usage,
-      context: state.counts.context,
+      usage: 4,
+      context: 4,
       'turn.done': 2,
     })
-    assert.ok((state.counts['job.lifecycle'] ?? 0) >= 2 * 8, 'every Job transition is in the trace')
+    const lifecycle = (context.db.prepare("SELECT COUNT(*) AS n FROM job_events WHERE type = 'lifecycle'").get() as { n: number }).n
+    assert.equal(state.counts['job.lifecycle'], lifecycle, 'every lifecycle Job event is in the trace, once')
     assert.equal(state.lastSeq, replayed.length)
     assert.deepEqual(Object.values(state.turns), ['completed', 'completed'])
     assert.equal(state.reasoningEvents, 4)
@@ -311,18 +313,31 @@ describe('session log through the legacy Chat Job owner', () => {
     const stored = sessionLog.readAll(threadId, 'person').filter((event) => event.class === 'reasoning')
     assert.equal(stored.length, 2, 'the session holds reasoning')
 
-    assert.equal(audienceForModelEndpoint('http://127.0.0.1:11434'), 'local_agent')
-    assert.equal(audienceForModelEndpoint('http://localhost:11434'), 'local_agent')
-    assert.equal(audienceForModelEndpoint('http://[::1]:11434'), 'local_agent')
-    for (const endpoint of ['https://api.deepseek.com', 'http://192.168.1.20:11434', 'http://studio.local:11434', 'not a url', null]) {
-      assert.equal(audienceForModelEndpoint(endpoint), 'remote_agent', String(endpoint))
+    const onDevice = { endpoint: 'http://127.0.0.1:11434', runtime: 'ollama', model: 'qwen3:8b' }
+    assert.equal(audienceForAgent(onDevice), 'local_agent')
+    assert.equal(audienceForAgent({ ...onDevice, endpoint: 'http://localhost:11434' }), 'local_agent')
+    assert.equal(audienceForAgent({ ...onDevice, endpoint: 'http://[::1]:11434' }), 'local_agent')
+    for (const [label, execution] of [
+      ['remote API', { ...onDevice, endpoint: 'https://api.deepseek.com' }],
+      ['LAN host', { ...onDevice, endpoint: 'http://192.168.1.20:11434' }],
+      ['mDNS host', { ...onDevice, endpoint: 'http://studio.local:11434' }],
+      ['not a URL', { ...onDevice, endpoint: 'not a url' }],
+      ['no endpoint', { ...onDevice, endpoint: null }],
+      ['Ollama cloud model on the local daemon', { ...onDevice, model: 'gpt-oss:120b-cloud' }],
+      ['Ollama :cloud tag', { ...onDevice, model: 'deepseek-v3.1:cloud' }],
+      ['loopback proxy of unknown runtime', { ...onDevice, runtime: 'litellm' }],
+      ['unknown runtime', { ...onDevice, runtime: null }],
+      ['unknown model', { ...onDevice, model: null }],
+    ] as const) {
+      assert.equal(audienceForAgent(execution), 'remote_agent', label)
     }
 
     const run = async (endpoint: string, args: Record<string, unknown>) => {
+      const audience = audienceForAgent({ endpoint, runtime: 'ollama', model: 'qwen3:8b' })
       const registry = new ToolRegistry({
         hasWorkspace: false,
         enableBash: false,
-        external: [createSessionQueryTool({ log: sessionLog, sessionId: threadId, audience: audienceForModelEndpoint(endpoint) })],
+        external: [createSessionQueryTool({ log: sessionLog, sessionId: threadId, audience })],
       })
       const tool = registry.get(SESSION_QUERY_TOOL_NAME)!
       const output = await tool.execute(args, { workspaceRoot: null, enableBash: false, signal: new AbortController().signal })

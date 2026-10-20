@@ -9,13 +9,13 @@ import { createKernel, definePlugin, service } from '@guanxi/kernel'
 import {
   EGRESS_SCRUBBER_SERVICE,
   EgressScrubberError,
-  SecretScrubber,
   egressScrubberPlugin,
   formsOf,
   redactionMarker,
   type EgressScrubber,
   type SecretRef,
 } from '../src/egress/index.ts'
+import { SecretScrubber } from '../src/egress/scrubber.ts'
 
 function fakeSecret(prefix = 'fake-'): string {
   return `${prefix}${randomBytes(12).toString('hex')}`

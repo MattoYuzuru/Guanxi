@@ -24,7 +24,7 @@ import { JobStore } from '../src/store/jobs.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 
 const WORKER = fileURLToPath(new URL('./fixtures/session-log-crash-worker.ts', import.meta.url))
-const IN_TRANSACTION_POINTS: SessionAppendPoint[] = ['writer_checked', 'head_advanced', 'event_inserted']
+const IN_TRANSACTION_POINTS: SessionAppendPoint[] = ['writer_checked', 'event_inserted']
 const COMMITTED_BEFORE = 3
 
 class InjectedCrash extends Error {}

@@ -9,15 +9,19 @@ export function downgradeSessionLogToV28(db: DatabaseSync): void {
     DROP TABLE session_events_fts;
     DROP TRIGGER session_events_delete_with_session_only;
     DROP TRIGGER session_events_append_only_update;
-    DROP TRIGGER session_events_follow_head;
+    DROP TRIGGER session_events_advance_head;
+    DROP TRIGGER session_events_policy_insert;
+    DROP TRIGGER session_events_placement;
     DROP INDEX idx_session_events_reasoning_expiry;
     DROP INDEX idx_session_events_job;
     DROP TABLE session_events;
+    DROP TRIGGER session_writers_delete_with_session_only;
     DROP TRIGGER session_writers_epoch_monotonic;
     DROP TABLE session_writers;
     DROP TRIGGER sessions_delete_with_thread_only;
-    DROP TRIGGER sessions_head_advances_by_one;
+    DROP TRIGGER sessions_head_follows_events;
     DROP TRIGGER sessions_identity_immutable;
+    DROP TRIGGER sessions_policy_insert;
     DROP TABLE sessions;
     PRAGMA user_version = 28;
   `)

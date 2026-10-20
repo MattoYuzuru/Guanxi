@@ -12,7 +12,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { describe, it } from 'node:test'
 import { createKernel } from '@guanxi/kernel'
 import { sessionEventSchema, type SessionEvent } from '@guanxi/contract'
-import { SecretScrubber, egressScrubberPlugin } from '../src/egress/index.ts'
+import { egressScrubberPlugin } from '../src/egress/index.ts'
+import { SecretScrubber } from '../src/egress/scrubber.ts'
 import { bootServerKernel, SESSION_LOG_LAYER, LEGACY_SERVER_PROFILE } from '../src/runtime/kernel.ts'
 import {
   SESSION_LOG_SERVICE,
@@ -166,8 +167,6 @@ describe('session log: single writer (D-116)', () => {
     crashed.open('s-gone', { kind: 'agent' })
     const next = logFor(db, { writer: { id: 'w-next', pid: 40_002, host: 'node-a' }, isProcessAlive: alive })
     assert.equal(code(() => next.open('s-gone', { kind: 'agent' })), 'writer_busy', 'a live writer keeps the session')
-    const otherHost = logFor(db, { writer: { id: 'w-remote', pid: 40_003, host: 'node-b' }, isProcessAlive: () => false })
-    assert.equal(code(() => otherHost.open('s-gone', { kind: 'agent' })), 'writer_busy', 'liveness is only judged on the same host')
     dead.add(40_001)
     const handle = next.open('s-gone', { kind: 'agent' })
     assert.equal(handle.epoch, 2)
@@ -175,12 +174,50 @@ describe('session log: single writer (D-116)', () => {
     assert.equal(last.type === 'writer.acquired' && last.data.reason, 'writer_process_gone')
   })
 
+  it('judges liveness by process, not host name, and treats an earlier incarnation of this PID as gone', () => {
+    const db = openDb(':memory:')
+    // The host name changed (macOS follows the network); the old process is gone.
+    const before = logFor(db, { writer: { id: 'w-before', pid: 40_010, host: 'mac.local' }, isProcessAlive: () => false })
+    before.open('s-host', { kind: 'agent' })
+    const after = logFor(db, { writer: { id: 'w-after', pid: 40_011, host: 'mac.home' }, isProcessAlive: () => false })
+    assert.equal(after.open('s-host', { kind: 'agent' }).epoch, 2)
+
+    // A container restart reuses PID 1: a row with this PID but a writer id no live log holds is gone.
+    db.exec("INSERT INTO sessions (id, kind, thread_id, created_at, last_seq) VALUES ('s-pid', 'agent', NULL, '2026-10-20T10:00:00.000Z', 0)")
+    db.prepare(
+      `INSERT INTO session_writers (session_id, writer_id, epoch, pid, host, acquired_at, renewed_at, expires_at, released_at)
+       VALUES ('s-pid', 'w-previous-incarnation', 1, ?, 'node', '2026-10-20T10:00:00.000Z', '2026-10-20T10:00:00.000Z', '2999-01-01T00:00:00.000Z', NULL)`,
+    ).run(process.pid)
+    const restarted = logFor(db, { writer: { id: 'w-restarted', pid: process.pid, host: 'node' }, isProcessAlive: () => true })
+    const handle = restarted.open('s-pid', { kind: 'agent' })
+    assert.equal(handle.epoch, 2)
+    const reason = restarted.readAll('s-pid', 'person').at(-1)!
+    assert.equal(reason.type === 'writer.acquired' && reason.data.reason, 'writer_process_gone')
+
+    // A writer id that is live in this process keeps its session, even with the same PID.
+    const sibling = logFor(db, { writer: { id: 'w-sibling', pid: process.pid, host: 'node' }, isProcessAlive: () => true })
+    assert.equal(code(() => sibling.open('s-pid', { kind: 'agent' })), 'writer_busy')
+  })
+
+  it('renews a handle on append, so a second writer cannot take over a busy session', () => {
+    const db = openDb(':memory:')
+    const clock = clockAt()
+    const first = logFor(db, { clock: clock.now, writerTtlMs: 30_000 })
+    const handle = first.open('s-renew', { kind: 'agent' })
+    clock.advance(20_000)
+    handle.append(prompt('still here'))
+    clock.advance(15_000)
+    const second = logFor(db, { clock: clock.now, writerTtlMs: 30_000, isProcessAlive: () => true })
+    assert.equal(code(() => second.open('s-renew', { kind: 'agent' })), 'writer_busy', 'the append at T+20 s renewed the row')
+    clock.advance(30_000)
+    assert.equal(second.open('s-renew', { kind: 'agent' }).epoch, 2, 'an idle handle still expires')
+  })
+
   it('refuses in the database an event whose epoch is not the current writer epoch', () => {
     const db = openDb(':memory:')
     const log = logFor(db)
     log.open('s-db', { kind: 'agent' }).append(prompt('ok'))
     const head = (db.prepare("SELECT last_seq FROM sessions WHERE id = 's-db'").get() as { last_seq: number }).last_seq
-    db.prepare("UPDATE sessions SET last_seq = last_seq + 1 WHERE id = 's-db'").run()
     const insert = (epoch: number) =>
       db.prepare(
         `INSERT INTO session_events (session_id, seq, id, event_version, type, class, writer_epoch, payload, payload_sha256, created_at)
@@ -189,6 +226,12 @@ describe('session log: single writer (D-116)', () => {
     assert.throws(() => insert(7), /current writer/)
     db.prepare("UPDATE session_writers SET released_at = '2026-10-20T10:00:00.000Z' WHERE session_id = 's-db'").run()
     assert.throws(() => insert(1), /current writer/, 'a released epoch cannot append')
+    assert.throws(
+      () => db.prepare("UPDATE session_writers SET released_at = NULL WHERE session_id = 's-db'").run(),
+      /released epoch cannot resume/,
+    )
+    assert.throws(() => db.prepare("DELETE FROM session_writers WHERE session_id = 's-db'").run(), /only with its session/)
+    assert.equal((db.prepare("SELECT last_seq FROM sessions WHERE id = 's-db'").get() as { last_seq: number }).last_seq, head)
   })
 
   it('keeps the system writer and an open handle exclusive', () => {
@@ -227,8 +270,9 @@ describe('session log: append-only schema', () => {
     assert.throws(() => db.prepare("UPDATE session_events SET payload = '{}' WHERE type = 'prompt'").run(), /append-only/)
     assert.throws(() => db.prepare("UPDATE session_events SET type = 'error' WHERE seq = 1").run(), /append-only/)
     assert.throws(() => db.prepare('DELETE FROM session_events').run(), /append-only/)
-    assert.throws(() => db.prepare("UPDATE sessions SET last_seq = last_seq + 2 WHERE id = 's-ro'").run(), /exactly one/)
-    assert.throws(() => db.prepare("UPDATE sessions SET last_seq = last_seq - 1 WHERE id = 's-ro'").run(), /exactly one/)
+    assert.throws(() => db.prepare("UPDATE sessions SET last_seq = last_seq + 1 WHERE id = 's-ro'").run(), /next event/, 'no head move without an event')
+    assert.throws(() => db.prepare("UPDATE sessions SET last_seq = last_seq + 2 WHERE id = 's-ro'").run(), /next event/)
+    assert.throws(() => db.prepare("UPDATE sessions SET last_seq = last_seq - 1 WHERE id = 's-ro'").run(), /next event/)
     assert.throws(() => db.prepare("UPDATE sessions SET kind = 'chat' WHERE id = 's-ro'").run(), /immutable/)
     assert.throws(() => db.prepare("DELETE FROM sessions WHERE id = 's-ro'").run(), /only with its Thread/)
     assert.throws(
@@ -241,20 +285,45 @@ describe('session log: append-only schema', () => {
     )
   })
 
-  it('refuses an event inserted at any seq but the head', () => {
+  it('refuses an event inserted at any seq but the next one, and events that break the policy', () => {
     const db = openDb(':memory:')
     const log = logFor(db)
     const handle = log.open('s-head', { kind: 'agent' })
     handle.append(prompt('one'))
-    const insert = (seq: number) =>
+    const sum = createHash('sha256').update('{}').digest('hex')
+    const insert = (seq: number, columns: { type?: string; class?: string; version?: number; payload?: string | null; expires?: string | null } = {}) =>
       db.prepare(
-        `INSERT INTO session_events (session_id, seq, id, event_version, type, class, writer_epoch, payload, payload_sha256, created_at)
-         VALUES ('s-head', ?, ?, 1, 'prompt', 'standard', 1, '{}', ?, '2026-10-20T10:00:00.000Z')`,
-      ).run(seq, crypto.randomUUID(), createHash('sha256').update('{}').digest('hex'))
-    const head = (db.prepare("SELECT last_seq FROM sessions WHERE id = 's-head'").get() as { last_seq: number }).last_seq
-    assert.throws(() => insert(head + 1), /session head/, 'not advanced first')
-    assert.throws(() => insert(head), /UNIQUE/, 'a duplicate seq')
-    assert.throws(() => insert(head - 1), /session head|UNIQUE/)
+        `INSERT INTO session_events (session_id, seq, id, event_version, type, class, writer_epoch, payload, payload_sha256, created_at, expires_at)
+         VALUES ('s-head', ?, ?, ?, ?, ?, 1, ?, ?, '2026-10-20T10:00:00.000Z', ?)`,
+      ).run(
+        seq, crypto.randomUUID(), columns.version ?? 1, columns.type ?? 'prompt', columns.class ?? 'standard',
+        columns.payload === undefined ? '{}' : columns.payload, sum, columns.expires ?? null,
+      )
+    const head = () => (db.prepare("SELECT last_seq FROM sessions WHERE id = 's-head'").get() as { last_seq: number }).last_seq
+    const start = head()
+    assert.throws(() => insert(start + 2), /next seq/, 'a gap')
+    assert.throws(() => insert(start), /next seq|UNIQUE/, 'a duplicate seq')
+    assert.throws(() => insert(start - 1), /next seq|UNIQUE/)
+    assert.throws(() => insert(start + 1, { version: 2 }), /event policy/)
+    assert.throws(() => insert(start + 1, { payload: null }), /event policy/)
+    assert.throws(() => insert(start + 1, { class: 'reasoning' }), /event policy/, 'a reasoning class needs the reasoning type')
+    assert.throws(() => insert(start + 1, { type: 'reasoning', class: 'reasoning' }), /event policy/, 'reasoning needs an expiry')
+    assert.equal(head(), start, 'no refused insert moved the head')
+    insert(start + 1)
+    assert.equal(head(), start + 1, 'the insert itself advances the head')
+  })
+
+  it('leaves no gap when a caller catches a refused append and commits', () => {
+    const db = openDb(':memory:')
+    const log = logFor(db)
+    db.exec('BEGIN IMMEDIATE')
+    log.appendAsSystemWithin('s-gap', { kind: 'agent' }, prompt('first'))
+    assert.equal(code(() => log.appendAsSystemWithin('s-gap', { kind: 'agent' }, { ...prompt('bad'), spanId: 'x'.repeat(201) })), 'stored_data_invalid')
+    log.appendAsSystemWithin('s-gap', { kind: 'agent' }, prompt('third'))
+    db.exec('COMMIT')
+    const seqs = rows(db, 's-gap').map((row) => row.seq)
+    assert.deepEqual(seqs, seqs.map((_seq, index) => index + 1))
+    assert.equal((db.prepare("SELECT last_seq FROM sessions WHERE id = 's-gap'").get() as { last_seq: number }).last_seq, seqs.length)
   })
 
   it('deletes a chat session with its Thread only, FTS index included', () => {
@@ -335,24 +404,32 @@ describe('session log: reasoning class (D-113)', () => {
   it('purges expired reasoning content in place; the event and seq stay', () => {
     const db = openDb(':memory:')
     const clock = clockAt()
-    const log = logFor(db, { clock: clock.now, reasoningRetentionMs: 60_000, writerTtlMs: 10 * 60_000 })
+    const log = logFor(db, { clock: clock.now, reasoningRetentionMs: 120_000, writerTtlMs: 10 * 60_000 })
     const handle = log.open('s-purge', { kind: 'agent' })
-    handle.append({ type: 'reasoning', data: { messageId: 'm1', step: 0, text: 'ephemeral narwhal' } })
-    handle.append({ type: 'reasoning', data: { messageId: 'm2', step: 1, text: 'later narwhal' }, expiresAt: new Date(T0 + 120_000).toISOString() })
+    handle.append({ type: 'reasoning', data: { messageId: 'm1', step: 0, text: 'ephemeral narwhal' }, expiresAt: new Date(T0 + 60_000).toISOString() })
+    handle.append({ type: 'reasoning', data: { messageId: 'm2', step: 1, text: 'later narwhal' } })
+    handle.append({ type: 'reasoning', data: { messageId: 'm3', step: 2, text: 'clamped' }, expiresAt: new Date(T0 + 10 * 86_400_000).toISOString() })
+    const expiries = log.readAll('s-purge', 'person').flatMap((event) => event.type === 'reasoning' ? [Date.parse(event.expiresAt) - T0] : [])
+    assert.deepEqual(expiries, [60_000, 120_000, 120_000], 'a caller may shorten the retention, never extend it')
     handle.append(prompt('durable narwhal'))
 
     assert.equal(log.purgeExpiredReasoning().purged, 0)
     clock.advance(60_000)
+    // Expired but not purged yet: reads and search already treat it as gone.
+    const expired = log.readAll('s-purge', 'person').find((event) => event.type === 'reasoning' && event.data === null)
+    assert.ok(expired && expired.type === 'reasoning' && expired.purgedAt === expired.expiresAt)
+    assert.deepEqual(log.search('ephemeral', { audience: 'person' }), [])
+    assert.equal(log.counts('s-purge').purged, 1)
     assert.equal(log.purgeExpiredReasoning().purged, 1)
     const events = log.readAll('s-purge', 'person')
     const purged = events.find((event) => event.type === 'reasoning' && event.purgedAt !== null)
     assert.ok(purged && purged.type === 'reasoning')
     assert.equal(purged.data, null)
-    assert.equal(events.length, 5, 'no event disappeared')
+    assert.equal(events.length, 6, 'no event disappeared')
     assert.deepEqual(log.search('narwhal', { audience: 'person' }).map((hit) => hit.type).sort(), ['prompt', 'reasoning'])
     assert.equal(log.counts('s-purge').purged, 1)
     clock.advance(60_000)
-    assert.equal(log.purgeExpiredReasoning().purged, 1)
+    assert.equal(log.purgeExpiredReasoning().purged, 2)
     assert.deepEqual(log.search('narwhal', { audience: 'person' }).map((hit) => hit.type), ['prompt'])
     assert.equal(log.purgeExpiredReasoning().purged, 0, 'a purge is not repeated')
     db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES ('integrity-check')")
