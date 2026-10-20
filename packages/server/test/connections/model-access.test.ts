@@ -1,16 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes, createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
-import { createKernel, definePlugin } from '@guanxi/kernel'
+import { createKernel } from '@guanxi/kernel'
+import { Hono } from 'hono'
 import { createConnectionSchema, connectionSnapshotSchema } from '@guanxi/contract'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
 import { connectionsPlugin, CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
 import { temporaryEgressPlugin, EGRESS_SERVICE, type EgressScrubber } from '../../src/connections/egress.ts'
+import { fixtureEgressPlugin } from './egress-fixture.ts'
 import { connectionRoutes } from '../../src/connections/routes.ts'
 import { Connections } from '../../src/connections/service.ts'
 import { piModels, assertApiKey } from '../../src/connections/pi.ts'
@@ -24,7 +26,7 @@ import type { VaultKeychain } from '../../src/vault/keychain.ts'
 const account = 'test-owner'
 const apiInput = { name: 'Test model', kind: 'model_api' as const, provider: 'deepseek' as const, auth: 'api_key' as const }
 const fakeKey = () => `test_${randomBytes(32).toString('hex')}`
-async function setup(t: { after(fn: () => unknown): void }, options: { transport?: typeof fetch; pi?: PiTransport; unattended?: boolean } = {}) {
+async function setup(t: { after(fn: () => unknown): void }, options: { transport?: typeof fetch; pi?: PiTransport; unattended?: boolean; ownerDevice?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k3-'))
   const keys = new Map<string, Buffer>()
   const keychain: VaultKeychain = { key(id, create) {
@@ -35,9 +37,9 @@ async function setup(t: { after(fn: () => unknown): void }, options: { transport
   const kernel = createKernel()
   await kernel.plugin(resourceGovernorPlugin)
   await kernel.plugin(ollamaAdapterPlugin, { fetch: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }) })
-  await kernel.plugin(temporaryEgressPlugin)
+  await kernel.plugin(fixtureEgressPlugin)
   const config = { databasePath: join(dir, 'connections.sqlite'), localHost: () => 'http://127.0.0.1:11434',
-    policy: { ownerDevice: true, nodeKeyOptIn: options.unattended ?? false }, keychain: async () => keychain,
+    policy: { ownerDevice: options.ownerDevice ?? true, nodeKeyOptIn: options.unattended ?? false }, keychain: async () => keychain,
     transport: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }), pi: options.pi }
   let handle = await kernel.plugin(connectionsPlugin, config)
   const service = () => kernel.service<Connections>(CONNECTIONS_SERVICE)!
@@ -153,8 +155,9 @@ test('unattended needs both per-connection consent and owner-device node-key opt
   s.vault.lock(account)
   await s.vault.inject(enabled, true, async key => assert.ok(key.length > 32))
   assert.equal(s.vault.unlocked(account), false)
-  s.vault.policy.ownerDevice = false
-  await assert.rejects(s.vault.inject(enabled, true, async () => null), /disabled/)
+  const cloud = await setup(t, { unattended: true, ownerDevice: false })
+  assert.equal(cloud.service().vault.unattendedAvailable, false)
+  assert.throws(() => cloud.service().setUnattended(account, enabled.id, true), /not enabled/)
 })
 
 test('Anthropic OAuth cannot be enabled through schema, key aliasing, config flags or environment', async t => {
@@ -189,7 +192,7 @@ for (const provider of BALANCE_PROBES) {
     } })
     const s = f.service(); const row = s.create(account, { ...apiInput, provider })
     await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
-    const balance = await s.probes.probe(s.store.get(account, row.id))
+    const balance = await s.probe(account, row.id)
     assert.equal(calls, 1)
     assert.equal(balance.amount, provider === 'openrouter' ? 74.5 : 110)
     assert.equal(balance.currency, provider === 'openrouter' ? 'USD' : 'CNY')
@@ -207,7 +210,7 @@ test('unlimited and unavailable balance observations stay unknown; malformed pro
   const f = await setup(t, { transport: async () => { throw new Error(secret) } })
   const s = f.service(); const row = s.create(account, apiInput)
   await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
-  await assert.rejects(s.probes.probe(s.store.get(account, row.id)), error => !String(error).includes(secret))
+  await assert.rejects(s.probe(account, row.id), error => !String(error).includes(secret))
   assert.equal(s.store.get(account, row.id).balance, null)
 })
 
@@ -286,4 +289,174 @@ test('models.dev evidence retains its own source, observation time and confidenc
   assert.ok(facts['models.dev.context']!.observedAt)
   assert.equal(facts['models.dev.context']!.confidence, 'medium')
   assert.deepEqual(modelsDevFacts('unknown', 'unknown'), {})
+})
+
+test('the pre-K2 production stub refuses all egress instead of claiming protection', async () => {
+  const kernel = createKernel()
+  await kernel.plugin(temporaryEgressPlugin)
+  const scrubber = kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  assert.throws(() => scrubber.scrub({ content: 'any content' }), /not available/)
+  await kernel.dispose()
+})
+
+test('mislabeled Anthropic OAuth tokens are refused for every provider before pi-ai can choose bearer auth', async t => {
+  let calls = 0
+  const f = await setup(t, { transport: async () => { calls++; return responseSse() } })
+  const s = f.service(); await s.vault.unlock(account)
+  const forbidden = ['sk', 'ant', 'oat01', randomBytes(20).toString('hex')].join('-')
+  for (const provider of ['openrouter', 'deepseek', 'google', 'anthropic'] as const) {
+    const row = s.create(account, { ...apiInput, provider })
+    assert.throws(() => s.saveSecret(account, row.id, forbidden), /API key/)
+    // Defence in depth if a record was imported or mislabeled outside the UI.
+    s.store.setSecret(account, row.id, s.vault.put(account, forbidden))
+    const model = piModels(provider).find(item => item.api === 'anthropic-messages') ?? piModels(provider)[0]!
+    await assert.rejects(s.complete(account, row.id, { messages: [] }, { model: model.id, runId: 'run', requestId: `oauth-${provider}` }), /Model request failed/)
+  }
+  assert.equal(calls, 0)
+})
+
+test('Anthropic API dispatch uses only the vault key even when OAuth environment variables exist', async t => {
+  const variables = ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
+  const previous = variables.map(name => process.env[name])
+  const fakeEnv = ['sk', 'ant', 'oat01', randomBytes(20).toString('hex')].join('-')
+  for (const name of variables) process.env[name] = fakeEnv
+  t.after(() => variables.forEach((name, i) => { if (previous[i] === undefined) delete process.env[name]; else process.env[name] = previous[i] }))
+  const secret = `sk-ant-api03-${randomBytes(24).toString('hex')}`
+  let calls = 0
+  const f = await setup(t, { transport: async (_url, init) => {
+    calls++
+    const headers = new Headers(init?.headers)
+    assert.equal(headers.get('x-api-key'), secret)
+    assert.equal(headers.get('authorization'), null)
+    assert.equal(headers.get('anthropic-beta')?.includes('oauth-'), false)
+    assert.equal(String(init?.body).includes(fakeEnv), false)
+    const events = [
+      ['message_start', { type: 'message_start', message: { id: 'fixture-message', role: 'assistant', type: 'message', model: 'fixture', content: [], usage: { input_tokens: 10, output_tokens: 0 } } }],
+      ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }],
+      ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } }],
+      ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+      ['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 2 } }],
+      ['message_stop', { type: 'message_stop' }],
+    ]
+    return new Response(events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
+  } })
+  const s = f.service(); const row = s.create(account, { ...apiInput, provider: 'anthropic' })
+  await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+  const result = await s.complete(account, row.id, { messages: [{ role: 'user', content: 'Hello', timestamp: Date.now() }] }, { model: piModels('anthropic')[0]!.id, runId: 'run', requestId: 'api-key-only' })
+  assert.equal(calls, 1); assert.equal(result.stopReason, 'stop')
+})
+
+test('Google dispatch serializes a scrubbed body and uses its explicit vault key through the SDK transport', async t => {
+  const originalFetch = globalThis.fetch
+  const secret = fakeKey(); let calls = 0
+  globalThis.fetch = async (input, init) => {
+    calls++
+    const request = new Request(input, init)
+    assert.equal(new URL(request.url).hostname, 'generativelanguage.googleapis.com')
+    assert.equal(request.headers.get('x-goog-api-key'), secret)
+    assert.equal(request.signal.aborted, false)
+    const body = await request.text()
+    assert.equal(body.includes(secret), false); assert.match(body, /REDACTED/)
+    return new Response(`data: ${JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, totalTokenCount: 12 } })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  try {
+    const f = await setup(t)
+    const s = f.service(); const row = s.create(account, { ...apiInput, provider: 'google' })
+    await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+    const result = await s.complete(account, row.id, { messages: [{ role: 'user', content: secret, timestamp: Date.now() }] }, { model: piModels('google')[0]!.id, runId: 'run', requestId: 'google-fixture' })
+    assert.equal(result.stopReason, 'stop'); assert.equal(calls, 1)
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('late vault unlock cannot override an explicit lock or outlive plugin unload', async t => {
+  const f = await setup(t)
+  const keychain = f.config.keychain
+  let release!: () => void
+  let entered!: () => void
+  const enteredKeychain = new Promise<void>(resolve => { entered = resolve })
+  const held = new Promise<void>(resolve => { release = resolve })
+  f.config.keychain = async () => { entered(); await held; return keychain() }
+  await f.restart()
+  const s = f.service()
+  const unlocking = s.unlockVault(account)
+  await enteredKeychain
+  s.lockVault(account)
+  release()
+  await assert.rejects(unlocking, /could not be unlocked/)
+  assert.equal(s.vault.unlocked(account), false)
+  const oldVault = s.vault
+  await f.restart()
+  await assert.rejects(oldVault.unlock(account), /closed/)
+})
+
+test('in-flight balance probes are cancelled before the plugin database closes', async t => {
+  let entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  const f = await setup(t, { transport: async (_url, init) => {
+    entered()
+    await new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }))
+    return Response.json(deepseekFixture.response)
+  } })
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.vault.unlock(account); s.saveSecret(account, row.id, fakeKey())
+  const probe = s.probe(account, row.id)
+  const rejection = assert.rejects(probe, /Balance probe failed/)
+  await started; await f.restart(); await rejection
+  assert.equal(f.service().snapshot(account).connections[0]!.balance, null)
+})
+
+test('configured Vite origins can mutate; mismatched origins and non-JSON requests cannot', async t => {
+  const f = await setup(t)
+  const routes = new Hono().route('/api/connections', connectionRoutes(f.service(), account, ['http://127.0.0.1:5187']))
+  const request = (origin: string, type = 'application/json') => routes.request('http://127.0.0.1:4387/api/connections', {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': type }, body: JSON.stringify(apiInput),
+  })
+  assert.equal((await request('http://127.0.0.1:5187')).status, 201)
+  assert.equal((await request('https://127.0.0.1:4387')).status, 403)
+  assert.equal((await request('http://127.0.0.1:4387', 'text/plain')).status, 415)
+})
+
+test('unload cancels a pending keychain unlock and late completion cannot revive the old vault', async t => {
+  const f = await setup(t)
+  const keychain = f.config.keychain
+  let release!: () => void
+  let entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  const held = new Promise<void>(resolve => { release = resolve })
+  f.config.keychain = async () => { entered(); await held; return keychain() }
+  await f.restart()
+  const old = f.service()
+  const unlocking = old.unlockVault(account)
+  const rejected = assert.rejects(unlocking, /closed/)
+  await started
+  await f.restart()
+  await rejected
+  release()
+  await Promise.resolve()
+  assert.equal(old.vault.unlocked(account), false)
+  assert.equal(f.service().vault.unlocked(account), false)
+})
+
+test('Google SDK transport observes cancellation and records no completed usage after abort', async t => {
+  const originalFetch = globalThis.fetch
+  let entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  let seenSignal: AbortSignal | undefined
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init)
+    seenSignal = request.signal
+    entered()
+    return new Promise((_resolve, reject) => request.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }))
+  }
+  try {
+    const f = await setup(t)
+    const s = f.service(); const row = s.create(account, { ...apiInput, provider: 'google' })
+    await s.vault.unlock(account); s.saveSecret(account, row.id, fakeKey())
+    const controller = new AbortController()
+    const result = s.complete(account, row.id, { messages: [{ role: 'user', content: 'Hello', timestamp: Date.now() }] }, { model: piModels('google')[0]!.id, runId: 'run', requestId: 'google-cancel', signal: controller.signal })
+    const rejection = assert.rejects(result, /cancelled/)
+    await started; controller.abort(); await rejection
+    assert.equal(seenSignal?.aborted, true)
+    assert.equal(s.store.costs(account).length, 0)
+  } finally { globalThis.fetch = originalFetch }
 })

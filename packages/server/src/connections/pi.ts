@@ -16,7 +16,7 @@ export function piModels(provider: string): readonly Model<Api>[] { return catal
 export function assertApiKey(provider: string, key: string) {
   // pi-ai automatically switches to OAuth bearer auth for this token family.
   // Reject it even if a caller mislabels it as an API key.
-  if (!key || (provider === 'anthropic' && (key.includes('sk-ant-oat') || !key.startsWith('sk-ant-api')))) {
+  if (!key || key.includes('sk-ant-oat') || (provider === 'anthropic' && !key.startsWith('sk-ant-api'))) {
     throw new Error('An API key is required; subscription access uses the official CLI')
   }
 }

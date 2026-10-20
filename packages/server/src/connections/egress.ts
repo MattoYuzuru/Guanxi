@@ -1,36 +1,21 @@
-/** K2 seam: replace the temporary provider below with K2's service after merge. */
+/** Temporary copy of K2's stable interface. Delete after K2 merges. */
 import { definePlugin } from '@guanxi/kernel'
 export const EGRESS_SERVICE = 'egress.scrubber'
+export type SecretRef = `secret://${string}`
 export interface EgressScrubber {
-  register(ref: string, value: string): void
-  unregister(ref: string): void
+  register(ref: SecretRef, value: string): void
+  unregister(ref: SecretRef): boolean
   scrub<T>(value: T): T
 }
 
-/** Temporary exact-match bridge, not K2's rule-based scrubber. Never logs input. */
-export function createLocalScrubber(): EgressScrubber {
-  const secrets = new Map<string, string>()
-  const scrub = <T>(value: T): T => {
-    const entries = [...secrets.values()].sort((a, b) => b.length - a.length)
-    const visit = (item: unknown): unknown => {
-      if (typeof item === 'string') {
-        for (const secret of entries) item = (item as string).split(secret).join('[REDACTED]')
-        return item
-      }
-      if (Array.isArray(item)) return item.map(visit)
-      if (item && typeof item === 'object') return Object.fromEntries(
-        Object.entries(item).map(([key, val]) => [visit(key), visit(val)]),
-      )
-      return item
-    }
-    return visit(value) as T
-  }
-  return {
-    register(ref, value) { if (!value) throw new Error('Empty secret'); secrets.set(ref, value) },
-    unregister(ref) { secrets.delete(ref) }, scrub,
-  }
-}
+/** K2's documented pre-merge stub: no unprotected data can leave the node. */
 export const temporaryEgressPlugin = definePlugin({
   manifest: { id: 'guanxi.k3-temporary-egress', engines: { guanxi: '^0.1.0' }, provides: [EGRESS_SERVICE], trust: 'T0' },
-  apply(ctx) { ctx.provide(EGRESS_SERVICE, createLocalScrubber()) },
+  apply(ctx) {
+    const stub: EgressScrubber = {
+      register() {}, unregister() { return false },
+      scrub() { throw new Error('egress.scrubber is not available before K2 merges') },
+    }
+    ctx.provide(EGRESS_SERVICE, stub)
+  },
 })

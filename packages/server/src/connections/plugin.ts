@@ -28,7 +28,7 @@ export const connectionsPlugin = definePlugin<ConnectionsConfig>({
     const probes = new BalanceProbes(store, vault, config.transport)
     const connections = new Connections(store, vault, probes, scrubber, ctx.signal,
       ctx.service<OllamaAdapter>('ollama'), ctx.service<ResourceGovernor>('governor'), config.localHost, config.pi, config.transport)
-    ctx.effect(() => async () => { await connections.close(); vault.close(); store.close() }, 'connections.close')
+    ctx.effect(() => async () => { vault.close(); await connections.close(); store.close() }, 'connections.close')
     ctx.provide(CONNECTIONS_SERVICE, connections)
     ctx.provide(VAULT_SERVICE, vault)
   },

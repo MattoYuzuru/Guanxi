@@ -17,6 +17,7 @@ import { defaultDbPath } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
 import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
 import { temporaryEgressPlugin, EGRESS_SERVICE } from './connections/egress.ts'
+import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
 import { connectionRoutes } from './connections/routes.ts'
 
@@ -107,6 +108,7 @@ export interface StartOptions {
   /** Директория со сборкой фронта. По умолчанию ищется рядом с пакетом. */
   webDir?: string
   devOrigins?: string[]
+  connectionsPolicy?: VaultPolicy
 }
 
 export async function start(options: StartOptions = {}) {
@@ -135,6 +137,7 @@ export async function start(options: StartOptions = {}) {
     await kernel.node.plugin(connectionsPlugin, {
       databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
       localHost: () => context.settings.get().ollamaHost,
+      policy: options.connectionsPolicy,
     })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
@@ -148,7 +151,7 @@ export async function start(options: StartOptions = {}) {
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
   })
 
-  server.route('/api/connections', connectionRoutes(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!, 'local'))
+  server.route('/api/connections', connectionRoutes(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>

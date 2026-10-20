@@ -23,7 +23,7 @@ export class Connections {
   private active = new Set<Promise<unknown>>()
   readonly store: ConnectionStore
   readonly vault: Vault
-  readonly probes: BalanceProbes
+  private readonly probes: BalanceProbes
   private readonly scrubber: EgressScrubber
   private readonly lifetime: AbortSignal
   private readonly ollama: OllamaAdapter
@@ -46,7 +46,7 @@ export class Connections {
     this.localHost = localHost
     this.pi = pi
     this.transport = transport
-}
+  }
   private assertOpen() { if (this.closed) throw new Error('Connections plugin unloaded'); this.lifetime.throwIfAborted() }
   private track<T>(task: () => Promise<T>): Promise<T> {
     this.assertOpen()
@@ -78,6 +78,12 @@ export class Connections {
     const ref = this.vault.put(accountId, value)
     return this.store.setSecret(accountId, id, ref)
   }
+  unlockVault(accountId: string) { return this.track(() => this.vault.unlock(accountId)) }
+  lockVault(accountId: string) { this.assertOpen(); this.vault.lock(accountId) }
+  probe(accountId: string, id: string, signal?: AbortSignal) {
+    return this.track(() => this.probes.probe(this.store.get(accountId, id), signal
+      ? AbortSignal.any([this.lifetime, signal]) : this.lifetime))
+  }
   models(accountId: string, id: string) {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
@@ -107,7 +113,9 @@ export class Connections {
             temperature: call.options?.temperature, maxTokens: call.options?.maxTokens,
             reasoning: call.options?.reasoning, apiKey: key, signal,
             // Redirects must not forward the credential to a different host.
-            fetch: (url, init) => this.transport(url, { ...init, redirect: 'error', signal }),
+            ...(model.api === 'google-generative-ai' ? {} : {
+              fetch: (url: Parameters<typeof fetch>[0], init?: RequestInit) => this.transport(url, { ...init, redirect: 'error', signal }),
+            }),
           })
           signal.throwIfAborted()
           if (result.stopReason === 'error' || result.stopReason === 'aborted') throw new Error('Model request failed')

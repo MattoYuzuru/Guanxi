@@ -3,14 +3,14 @@ import { createConnectionSchema, updateConnectionSchema, connectionSecretInputSc
 import type { Connections } from './service.ts'
 
 /** Local owner scope only; account authentication replaces this binding in the account stage. */
-export function connectionRoutes(connections: Connections, accountId: string): Hono {
+export function connectionRoutes(connections: Connections, accountId: string, devOrigins: readonly string[] = []): Hono {
   const routes = new Hono()
   routes.onError((_error, c) => c.json({ code: 'connection_failed' }, 400))
   // Same-origin mutations only: a website cannot use the local owner's unlocked vault.
   routes.use('*', async (c, next) => {
     if (c.req.method !== 'GET') {
       const origin = c.req.header('origin')
-      if (origin && new URL(origin).host !== new URL(c.req.url).host) return c.json({ code: 'origin_denied' }, 403)
+      if (origin && new URL(origin).origin !== new URL(c.req.url).origin && !devOrigins.includes(origin)) return c.json({ code: 'origin_denied' }, 403)
       if (c.req.method !== 'DELETE' && !c.req.header('content-type')?.startsWith('application/json')) return c.json({ code: 'json_required' }, 415)
     }
     c.header('Cache-Control', 'no-store')
@@ -22,13 +22,13 @@ export function connectionRoutes(connections: Connections, accountId: string): H
     const input = updateConnectionSchema.parse(await c.req.json())
     return c.json(connections.setUnattended(accountId, c.req.param('id'), input.unattended))
   })
-  routes.post('/vault/unlock', async c => { await connections.vault.unlock(accountId); return c.json({ ok: true }) })
-  routes.post('/vault/lock', c => { connections.vault.lock(accountId); return c.json({ ok: true }) })
+  routes.post('/vault/unlock', async c => { await connections.unlockVault(accountId); return c.json({ ok: true }) })
+  routes.post('/vault/lock', c => { connections.lockVault(accountId); return c.json({ ok: true }) })
   routes.put('/:id/secret', async c => {
     const input = connectionSecretInputSchema.parse(await c.req.json())
     return c.json(connections.saveSecret(accountId, c.req.param('id'), input.value))
   })
   routes.get('/:id/models', c => c.json(connections.models(accountId, c.req.param('id'))))
-  routes.post('/:id/probe', async c => c.json(await connections.probes.probe(connections.store.get(accountId, c.req.param('id')), c.req.raw.signal)))
+  routes.post('/:id/probe', async c => c.json(await connections.probe(accountId, c.req.param('id'), c.req.raw.signal)))
   return routes
 }
