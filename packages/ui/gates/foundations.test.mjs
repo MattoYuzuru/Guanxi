@@ -3,13 +3,14 @@ import assert from 'node:assert/strict'
 import { mkdtemp, cp, rm, realpath, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createContext } from './context.mjs'
 import { resolveTokens, resolvedFlat } from '../tokens/resolve.mjs'
 import { generate } from '../tokens/build.mjs'
 import { designSystem } from './scan.mjs'
 import postcss from 'postcss'
+import { __unstable__loadDesignSystem } from 'tailwindcss'
 
 const ctx = await createContext()
 const document = await ctx.read('docs/design/FOUNDATIONS.md')
@@ -183,6 +184,42 @@ test('M4: cleared Tailwind defaults disappear; semantic replacements compile', a
   assert.match(theme, /--default-transition-timing-function: var\(--motion-easing-standard\)/)
   assert.match(theme, /--default-font-family: var\(--font-family-sans\)/)
   assert.match(theme, /--default-mono-font-family: var\(--font-family-mono\)/)
+})
+test('K1: actual web CSS compiles every sidebar semantic role; missing bridge aliases fail', async () => {
+  const file = 'packages/web/src/index.css'
+  const source = await ctx.read(file)
+  const sidebar = await ctx.read('packages/web/src/kernel/SidebarSlot.tsx')
+  const expected = [
+    ['border-divider', 'border-color', '--color-divider', '--color-border-primary'],
+    ['text-secondary', 'color', '--color-secondary', '--color-text-secondary'],
+    ['hover:text-foreground', 'color', '--color-foreground', '--color-text-primary'],
+    ['hover:bg-inset', 'background-color', '--color-inset', '--color-background-tertiary'],
+    ['rounded-control', 'border-radius', '--radius-control', '--border-radius-control'],
+    ['text-12', 'font-size', '--text-12', '--font-size-12'],
+  ]
+  async function verify(css) {
+    const system = await __unstable__loadDesignSystem(css, {
+      base: join(ctx.root, 'packages/web/src'),
+      async loadStylesheet(id, base) {
+        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : resolve(base, id)
+        return { path, base: dirname(path), content: await readFile(path, 'utf8') }
+      },
+    })
+    for (const [cls, property, , token] of expected) {
+      assert.ok(sidebar.includes(cls), `sidebar must use ${cls}`)
+      const compiled = system.candidatesToCss([cls])[0]
+      assert.ok(compiled, `${cls} must compile from the actual web stylesheet`)
+      const values = []
+      postcss.parse(compiled).walkDecls(property, decl => values.push(decl.value))
+      assert.deepEqual(values, [`var(${token})`], cls)
+    }
+  }
+  await verify(source)
+  for (const [, , alias, token] of expected) {
+    const declaration = `${alias}: var(${token});`
+    assert.ok(source.includes(declaration))
+    await assert.rejects(verify(source.replace(declaration, '')), { name: 'AssertionError' }, alias)
+  }
 })
 test('M2/N2: FOUNDATIONS rejects missing, extra and incorrect container widths', async () => {
   const file = 'packages/ui/tokens/base.tokens.json'
