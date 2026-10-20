@@ -24,6 +24,9 @@ import { sessionLogRoutes } from '../src/session-log/routes.ts'
 import { buildSnippet, searchTerms } from '../src/session-log/snippet.ts'
 import { openDb } from '../src/store/db.ts'
 
+/** The Node server's request bindings with a loopback peer; the session routes refuse any other peer. */
+const LOOPBACK = { incoming: { socket: { remoteAddress: '127.0.0.1' } } }
+
 function fake(prefix = 'fake-'): string {
   return `${prefix}${randomBytes(12).toString('hex')}`
 }
@@ -217,7 +220,7 @@ describe('review fixes: boundaries', () => {
     const app = new Hono()
     app.route('/api/sessions', sessionLogRoutes(() => log))
     for (const path of ['/api/sessions/search?q=a%00b', '/api/sessions/search?q=a%0Ab', '/api/sessions/bad%20id', '/api/sessions/bad%22id/export']) {
-      const response = await app.request(path)
+      const response = await app.request(path, {}, LOOPBACK)
       assert.equal(response.status, 400, path)
       assert.equal(apiErrorSchema.parse(await response.json()).code, 'validation_failed', path)
     }

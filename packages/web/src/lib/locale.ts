@@ -819,6 +819,8 @@ const english = {
   'error.streamBodyMissing': 'The response has no body, so streaming cannot continue',
   'error.api.unavailable': 'The requested local service is unavailable.',
   'error.api.notFound': 'The requested item no longer exists.',
+  'error.api.loopbackOnly':
+    'The session inspector answers this machine only. Open Guanxi on the computer that runs it.',
   'error.api.egressNotReady':
     'Secret redaction is not ready: a secret source has not registered its values yet. The trace opens once it has.',
   'error.api.conflict': 'The request conflicts with the current saved state. Refresh and try again.',
@@ -2629,6 +2631,8 @@ const russian: Messages = {
   'error.streamBodyMissing': 'В ответе нет тела, поэтому стрим нельзя продолжить',
   'error.api.unavailable': 'Запрошенный локальный сервис недоступен.',
   'error.api.notFound': 'Запрошенного объекта больше нет.',
+  'error.api.loopbackOnly':
+    'Инспектор сессий отвечает только на этом компьютере. Откройте Guanxi на компьютере, где он запущен.',
   'error.api.egressNotReady':
     'Скрытие секретов ещё не готово: один из источников секретов не передал свои значения. Трасса откроется, когда он это сделает.',
   'error.api.conflict': 'Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.',

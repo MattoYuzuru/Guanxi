@@ -1,9 +1,16 @@
 /**
  * Inspector routes over the session log (K2). People read every event of a
- * session; exports leave reasoning out. Every payload is scrubbed again on the
- * way out. The node binds to loopback; these routes add no remote access.
+ * session, reasoning included; exports leave reasoning out. Every payload is
+ * scrubbed again on the way out.
+ *
+ * The `person` audience is only for someone at this machine: until the remote
+ * security profile exists (accounts, TLS, scoped credentials), every route
+ * answers loopback socket peers only, even when the server listens on another
+ * interface (`HOST`). A Host-header allowlist does not authenticate a peer, so
+ * this checks the socket's remote address, and refuses when it is unknown.
  */
 import { Hono, type Context } from 'hono'
+import { getConnInfo } from '@hono/node-server/conninfo'
 import {
   SESSION_EXPORT_VERSION,
   SSE_ERROR_EVENT_NAME,
@@ -30,6 +37,19 @@ const encoder = new TextEncoder()
 
 function apiError(code: ApiError['code'], message: string): ApiError {
   return { code, message, details: null }
+}
+
+/** True only for a loopback socket peer: 127.0.0.0/8, ::1, or their IPv4-mapped form. */
+export function isLoopbackPeer(context: Context): boolean {
+  let address: string | undefined
+  try {
+    address = getConnInfo(context).remote.address
+  } catch {
+    return false
+  }
+  if (!address) return false
+  const plain = address.toLowerCase().replace(/^::ffff:/u, '')
+  return plain === '::1' || /^127(\.\d{1,3}){3}$/u.test(plain)
 }
 
 function invalid(context: Context, message: string): Response {
@@ -76,6 +96,12 @@ function eventFrame(event: SessionEvent): Uint8Array {
 
 export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
   const routes = new Hono()
+  routes.use('*', async (context, next) => {
+    if (!isLoopbackPeer(context)) {
+      return context.json(apiError('loopback_only', 'The session inspector answers this machine only'), 403)
+    }
+    await next()
+  })
   const log = (): SessionLog => {
     const current = resolve()
     if (!current) throw new SessionLogError('closed', 'The session log is not available')

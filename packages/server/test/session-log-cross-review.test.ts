@@ -159,3 +159,52 @@ describe('R5: a closed log is not retained by a readiness wait that never resolv
     assert.equal((db.prepare('SELECT COUNT(*) AS n FROM session_mirror_backlog').get() as { n: number }).n, 5, 'the deferrals stay durable')
   })
 })
+
+describe('R3: the person audience answers loopback peers only', () => {
+  it('refuses a request from a non-loopback socket peer, and with no known peer, and keeps local access', async () => {
+    const db = openDb(':memory:')
+    const log = new SessionLog({ db, scrubber: new SecretScrubber() })
+    log.open('s-peer', { kind: 'agent' }).append({ type: 'reasoning', data: { messageId: 'm', step: 0, text: 'peer-only reasoning' } })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const peer = (remoteAddress: string | undefined) => ({ incoming: { socket: { remoteAddress } } })
+    const refused = [peer('192.168.1.20'), peer('10.0.0.5'), peer('::ffff:192.168.1.20'), peer('fe80::1'), peer(undefined), undefined]
+    for (const bindings of refused) {
+      const response = await app.request('/api/sessions/s-peer/events', {}, bindings)
+      assert.equal(response.status, 403, String(bindings?.incoming.socket.remoteAddress))
+      const body = await response.text()
+      assert.equal(body.includes('peer-only reasoning'), false)
+      assert.match(body, /loopback_only/)
+    }
+    for (const address of ['127.0.0.1', '127.10.0.1', '::1', '::ffff:127.0.0.1']) {
+      const response = await app.request('/api/sessions/s-peer/events', {}, peer(address))
+      assert.equal(response.status, 200, address)
+    }
+  })
+
+  it('a server listening on 0.0.0.0 refuses the inspector through a private address (the reviewer case)', { timeout: 30_000 }, async () => {
+    const { networkInterfaces, tmpdir } = await import('node:os')
+    const { mkdtemp, rm } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { start } = await import('../src/index.ts')
+    const lan = Object.values(networkInterfaces()).flat().find((entry) => entry && entry.family === 'IPv4' && !entry.internal)
+    const dataDir = await mkdtemp(join(tmpdir(), 'guanxi-k2-peer-'))
+    const server = await start({ port: 0, host: '0.0.0.0', dataDir, webDir: dataDir, devOrigins: [] })
+    try {
+      server.context.sessionLog!.open('network-test', { kind: 'agent' }).append({
+        type: 'reasoning', data: { messageId: 'm', step: 0, text: 'network reasoning' },
+      })
+      const local = await fetch(`http://127.0.0.1:${server.port}/api/sessions/network-test/events`)
+      assert.equal(local.status, 200)
+      assert.ok((await local.text()).includes('network reasoning'), 'local access keeps working')
+      if (lan) {
+        const remote = await fetch(`http://${lan.address}:${server.port}/api/sessions/network-test/events`)
+        assert.equal(remote.status, 403)
+        assert.equal((await remote.text()).includes('network reasoning'), false)
+      }
+    } finally {
+      await server.close()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+})

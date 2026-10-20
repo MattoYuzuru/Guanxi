@@ -28,6 +28,9 @@ import { openDb, type Db } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 
+/** The Node server's request bindings with a loopback peer; the session routes refuse any other peer. */
+const LOOPBACK = { incoming: { socket: { remoteAddress: '127.0.0.1' } } }
+
 const SECRET = `fake-${randomBytes(16).toString('hex')}`
 const REF = 'secret://vault/planted' as const
 const WORKER = fileURLToPath(new URL('./fixtures/session-log-crash-worker.ts', import.meta.url))
@@ -280,7 +283,7 @@ describe('session log while the egress scrubber is not ready', () => {
     const app = new Hono()
     app.route('/api/sessions', sessionLogRoutes(() => log))
     for (const path of ['/api/sessions', '/api/sessions/s-x', '/api/sessions/s-x/events', '/api/sessions/s-x/export', '/api/sessions/s-x/spans', '/api/sessions/search?q=key', '/api/sessions/s-x/stream']) {
-      const response = await app.request(path)
+      const response = await app.request(path, {}, LOOPBACK)
       assert.equal(response.status, 503, path)
       const body = apiErrorSchema.parse(await response.json())
       assert.equal(body.code, 'egress_not_ready', path)

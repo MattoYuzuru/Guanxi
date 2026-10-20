@@ -87,9 +87,15 @@ and the mirror works by catching up:
 
 ## Reading
 
+The inspector routes serve the `person` audience, so until the remote security profile exists
+(accounts, TLS, scoped credentials) they answer **loopback socket peers only** (`403
+loopback_only` otherwise, and when the peer is unknown), even if the server listens on another
+interface through `HOST`. The check reads the socket's remote address; a Host-header allowlist
+(K3) does not authenticate a peer and does not replace it.
+
 | Audience | Gets |
 | --- | --- |
-| `person` (inspector routes) | every event, reasoning included |
+| `person` (inspector routes, loopback peers only) | every event, reasoning included |
 | `local_agent` | every event |
 | `remote_agent` | every event except the reasoning class, filtered in SQL |
 

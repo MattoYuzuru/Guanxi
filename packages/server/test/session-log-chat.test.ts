@@ -41,6 +41,9 @@ import {
 import { openDb } from '../src/store/db.ts'
 import { ToolRegistry } from '../src/tools/registry.ts'
 
+/** The Node server's request bindings with a loopback peer; the session routes refuse any other peer. */
+const LOOPBACK = { incoming: { socket: { remoteAddress: '127.0.0.1' } } }
+
 const SECRET = `fake-${randomBytes(16).toString('hex')}`
 const REASONING_WORD = 'walrusthought'
 
@@ -208,18 +211,18 @@ describe('session log through the legacy Chat Job owner', () => {
       `/api/sessions/search?q=${encodeURIComponent(SECRET)}`,
     ]
     for (const route of routes) {
-      const response = await app.request(route)
+      const response = await app.request(route, {}, LOOPBACK)
       assert.equal(response.status, 200, route)
       assertNoSecret(await response.text(), route)
     }
-    const exported = await (await app.request(`/api/sessions/${threadId}/export`)).json() as {
+    const exported = await (await app.request(`/api/sessions/${threadId}/export`, {}, LOOPBACK)).json() as {
       events: SessionEvent[]
       excluded: { reasoning: number }
     }
     assert.equal(exported.events.filter((event) => event.class === 'reasoning').length, 0, 'exports carry no reasoning')
     assert.equal(exported.excluded.reasoning, 2)
 
-    const stream = await app.request(`/api/sessions/${threadId}/stream?after=0`)
+    const stream = await app.request(`/api/sessions/${threadId}/stream?after=0`, {}, LOOPBACK)
     const streamed = await collectStream(stream, (event) => event.type === 'job.lifecycle' && event.data.state === 'completed')
     assertNoSecret(streamed.raw, 'SSE stream')
 
@@ -235,7 +238,7 @@ describe('session log through the legacy Chat Job owner', () => {
     await waitForTerminal(context, 1)
 
     // A live inspector subscribes from the start and stays through a second turn.
-    const stream = await app.request(`/api/sessions/${threadId}/stream?after=0`)
+    const stream = await app.request(`/api/sessions/${threadId}/stream?after=0`, {}, LOOPBACK)
     let completed = 0
     const live = collectStream(stream, (event) => event.type === 'job.lifecycle' && event.data.state === 'completed' && ++completed === 2)
     await sendTurn(app, threadId, 'second question')
@@ -255,7 +258,7 @@ describe('session log through the legacy Chat Job owner', () => {
     const paged: SessionEvent[] = []
     let after = 0
     while (true) {
-      const page = await (await app.request(`/api/sessions/${threadId}/events?after=${after}&limit=3`)).json() as {
+      const page = await (await app.request(`/api/sessions/${threadId}/events?after=${after}&limit=3`, {}, LOOPBACK)).json() as {
         events: SessionEvent[]
         nextAfter: number
         hasMore: boolean
@@ -391,7 +394,7 @@ describe('session log through the legacy Chat Job owner', () => {
       await sendTurn(app, threadId, 'log check')
       await waitForTerminal(context, 1)
       for (const route of [`/api/sessions/${threadId}/events`, `/api/sessions/${threadId}/export`, `/api/sessions/search?q=${REASONING_WORD}`]) {
-        await (await app.request(route)).text()
+        await (await app.request(route, {}, LOOPBACK)).text()
       }
       assert.equal(sessionLog.readAll(threadId, 'person').filter((event) => event.class === 'reasoning').length, 2)
     } finally {

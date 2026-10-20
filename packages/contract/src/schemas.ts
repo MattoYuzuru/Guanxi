@@ -3325,6 +3325,7 @@ export const apiErrorSchema = z.object({
     'project_chat_mismatch',
     'session_not_found',
     'egress_not_ready',
+    'loopback_only',
     'path_outside_workspace',
     'tool_disabled',
     'validation_failed',
