@@ -45,6 +45,7 @@ export declare class Fiber {
   dispose(): Promise<void>
   await(): Promise<this>
   effect(execute: () => unknown, label?: string): Disposer
+  getEffects(): Array<{ readonly label: string }>
   restart(): Promise<void>
   update(config: unknown, noSave?: boolean): unknown
 }

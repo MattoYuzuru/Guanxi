@@ -3,7 +3,7 @@
  * the Cordis logger, the slot registry, and leak counters.
  */
 import { Context, FIBER_STATE, installLifecycleGuard, type Fiber, type Message } from './cordis.ts'
-import type { GuanxiPlugin } from './plugin.ts'
+import { isGuanxiPlugin, type GuanxiPlugin } from './plugin.ts'
 import { SLOTS_SERVICE, SlotRegistry } from './slots.ts'
 
 export interface KernelLogRecord {
@@ -18,6 +18,23 @@ export interface KernelOptions {
    * in-memory buffer only, which would hide a failed plugin. Default: console.
    */
   readonly onLog?: (record: KernelLogRecord) => void
+  /**
+   * Upper bound for one unload (default 10 s). Cordis waits without limit for
+   * dependents and async cleanups; past the bound the kernel reports which
+   * plugins and effects are still pending instead of hanging its caller.
+   */
+  readonly disposeTimeoutMs?: number
+}
+
+export class KernelTimeoutError extends Error {
+  /** `<plugin>: <effect labels>` for every plugin still unloading. */
+  readonly pending: readonly string[]
+
+  constructor(action: string, timeoutMs: number, pending: readonly string[]) {
+    super(`${action} did not finish within ${timeoutMs} ms; still unloading: ${pending.join('; ') || 'unknown'}`)
+    this.name = 'KernelTimeoutError'
+    this.pending = pending
+  }
 }
 
 export interface KernelCounters {
@@ -34,6 +51,7 @@ export interface KernelCounters {
   readonly slots: number
   readonly slotEntries: number
   readonly slotSubscribers: number
+  readonly slotHolds: number
   /** Slot entries dropped because their slot vanished first (should stay 0). */
   readonly slotOrphans: number
 }
@@ -47,11 +65,16 @@ export interface PluginHandle {
 export interface Kernel {
   readonly root: Context
   readonly slots: SlotRegistry
-  /** Load a plugin under the root and wait until it is active (rejects if it fails). */
+  /**
+   * Load a plugin under the root. Resolves when it is active, or right away
+   * while it waits (PENDING) for a required service; rejects if it fails.
+   */
   plugin<C>(plugin: GuanxiPlugin<C>, config?: C): Promise<PluginHandle>
   counters(): KernelCounters
-  /** Unload every plugin, then the kernel services. */
+  /** Unload every plugin (bounded by `disposeTimeoutMs`). */
   dispose(): Promise<void>
+  /** Run `task` under the unload bound; rejects with KernelTimeoutError past it. */
+  withinDisposeBound<T>(action: string, task: Promise<T>): Promise<T>
 }
 
 function format(message: Message): string {
@@ -99,18 +122,24 @@ export function createKernel(options: KernelOptions = {}): Kernel {
   const slots = new SlotRegistry()
   root.provide(SLOTS_SERVICE, slots)
 
-  const pluginDisposers = new Set<() => Promise<void>>()
+  const timeoutMs = options.disposeTimeoutMs ?? 10_000
+  const withinDisposeBound = <T>(action: string, task: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const bound = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new KernelTimeoutError(action, timeoutMs, pendingUnloads(root))), timeoutMs)
+    })
+    return Promise.race([task, bound]).finally(() => clearTimeout(timer))
+  }
 
   return {
     root,
     slots,
     async plugin(plugin, config) {
-      const fiber = root.plugin(plugin as never, config as never) as unknown as Fiber
-      const dispose = async () => {
-        pluginDisposers.delete(dispose)
-        await fiber.dispose()
+      if (!isGuanxiPlugin(plugin)) {
+        throw new TypeError('kernel.plugin() accepts only plugins built by definePlugin()')
       }
-      pluginDisposers.add(dispose)
+      const fiber = root.plugin(plugin as never, config as never) as unknown as Fiber
+      const dispose = () => withinDisposeBound(`unloading ${plugin.manifest.id}`, unloadFiber(fiber))
       try {
         await fiber.await()
       } catch (error) {
@@ -122,13 +151,33 @@ export function createKernel(options: KernelOptions = {}): Kernel {
     counters() {
       return countKernel(root, slots)
     },
+    withinDisposeBound,
     async dispose() {
-      for (const runtime of [...root.registry.values()]) {
-        for (const fiber of [...runtime.fibers]) await fiber.dispose()
-      }
-      pluginDisposers.clear()
+      const fibers = [...root.registry.values()].flatMap((runtime) => [...runtime.fibers])
+      await withinDisposeBound(
+        'kernel dispose',
+        Promise.all(fibers.map((fiber) => unloadFiber(fiber))).then(() => undefined),
+      )
     },
   }
+}
+
+/** Dispose a fiber and wait until it settled, also when another caller started the unload. */
+export async function unloadFiber(fiber: Fiber): Promise<void> {
+  await fiber.dispose()
+  while (fiber.inertia) await fiber.inertia.catch(() => undefined)
+}
+
+function pendingUnloads(root: Context): string[] {
+  const pending: string[] = []
+  for (const runtime of root.registry.values()) {
+    for (const fiber of runtime.fibers) {
+      if (fiber.state !== FIBER_STATE.unloading) continue
+      const labels = fiber.getEffects().map((effect) => effect.label)
+      pending.push(`${fiber.name}${labels.length ? ` (${labels.join(', ')})` : ''}`)
+    }
+  }
+  return pending
 }
 
 export function countKernel(root: Context, slots: SlotRegistry): KernelCounters {
@@ -147,6 +196,7 @@ export function countKernel(root: Context, slots: SlotRegistry): KernelCounters 
     slots: slotCounts.slots,
     slotEntries: slotCounts.entries,
     slotSubscribers: slotCounts.subscribers,
+    slotHolds: slotCounts.holds,
     slotOrphans: slots.orphansDropped,
   }
 }

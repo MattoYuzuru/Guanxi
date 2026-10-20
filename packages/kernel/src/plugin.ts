@@ -55,7 +55,10 @@ export function definePlugin<C = undefined>(definition: PluginDefinition<C>): Gu
     ...manifest.requires,
     ...manifest.contributes.slots.map((slot) => SLOT_SERVICE_PREFIX + slot),
   ]
-  function apply(ctx: Context, config: C): unknown {
+  // An arrow function on purpose: Cordis calls any function with a
+  // `prototype` as a constructor and drops its return value, which would
+  // leave async applies unawaited and returned disposers unused.
+  const apply = (ctx: Context, config: C): unknown => {
     if (!satisfiesEngine(manifest.engines.guanxi)) {
       throw new PluginContractError(
         manifest.id,
@@ -101,6 +104,12 @@ function assertProvisions(fiber: Fiber, manifest: GuanxiManifest): void {
   }
 }
 
+/** True only for plugins built by `definePlugin` (manifest checked, T2 refused). */
+export function isGuanxiPlugin(value: unknown): value is GuanxiPlugin<any> {
+  const apply = (value as { apply?: unknown } | null)?.apply
+  return typeof apply === 'function' && manifests.has(apply)
+}
+
 /** The manifest of the Guanxi plugin that owns this context, if any. */
 export function manifestOf(ctx: Context): GuanxiManifest | undefined {
   let fiber: Fiber = ctx.fiber
@@ -125,12 +134,20 @@ export function effect(ctx: Context, setup: () => () => unknown, label?: string)
   return ctx.effect(setup, label)
 }
 
-/** Listen to a kernel event for the lifetime of the context. */
+/**
+ * Listen to a kernel event for the lifetime of the context. Cordis lifecycle
+ * hooks (`internal/*`) are refused: an async `internal/update` handler races
+ * concurrent updates (cordiverse/cordis#194) and a throwing `internal/plugin`
+ * observer aborts a disposal (#185); plugins restart on config changes instead.
+ */
 export function on(
   ctx: Context,
   name: string,
   listener: (...args: any[]) => unknown,
 ): () => boolean {
+  if (name.startsWith('internal/')) {
+    throw new Error(`plugins may not listen to Cordis lifecycle event "${name}"`)
+  }
   return (ctx.on as (name: string, listener: (...args: any[]) => unknown) => () => boolean)(name, listener)
 }
 

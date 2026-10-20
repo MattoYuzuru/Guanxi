@@ -26,6 +26,7 @@ export {
   emit,
   inject,
   interval,
+  isGuanxiPlugin,
   manifestOf,
   on,
   optionalService,
@@ -41,5 +42,5 @@ export type { ListSlotEntry, SlotCounts, SlotKind } from './slots.ts'
 export { ProfileError, assertPlainData, resolveProfile } from './profile.ts'
 export type { ProfileEntry, ProfileLayer, ProfilePatch, ResolvedEntry } from './profile.ts'
 
-export { countKernel, createKernel, isActive } from './kernel.ts'
+export { KernelTimeoutError, countKernel, createKernel, isActive } from './kernel.ts'
 export type { Kernel, KernelCounters, KernelLogRecord, KernelOptions, PluginHandle } from './kernel.ts'

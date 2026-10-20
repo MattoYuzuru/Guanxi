@@ -26,6 +26,8 @@ export interface SlotCounts {
   readonly slots: number
   readonly entries: number
   readonly subscribers: number
+  /** Open `hold()`s; non-zero after a swap means a hold was never released. */
+  readonly holds: number
 }
 
 interface Declaration {
@@ -172,7 +174,7 @@ export class SlotRegistry {
   counts(): SlotCounts {
     let entries = 0
     for (const bucket of this.entries.values()) entries += bucket.size
-    return { slots: this.declarations.size, entries, subscribers: this.subscribers.size }
+    return { slots: this.declarations.size, entries, subscribers: this.subscribers.size, holds: this.holds }
   }
 
   private notify(slot: string): void {

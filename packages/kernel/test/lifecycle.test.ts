@@ -71,9 +71,12 @@ describe('kernel lifecycle guard', () => {
       resumed.resolve()
     }))
     await tick()
-    await fiber.dispose()
+    assert.equal(fiber.state, FIBER_STATE.loading, 'apply is still running')
+    // Cordis lets a disposal wait for the running apply to return.
+    const disposing = fiber.dispose()
     gate.resolve()
     await resumed.promise
+    await disposing
     await settle()
     assert.equal(cleaned, 1)
     assert.match(late, /inactive context/)

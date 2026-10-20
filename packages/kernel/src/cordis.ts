@@ -32,10 +32,12 @@ export function fiberStateName(fiber: Fiber): FiberStateName {
 
 const GUARDED = Symbol.for('guanxi.kernel.lifecycle-guard')
 
+/** Only a LOADING or ACTIVE plugin fiber may register; the root fiber always may. */
 function isInactivePlugin(fiber: Fiber): boolean {
   return Boolean(
     fiber.runtime &&
-      (fiber.state === FIBER_STATE.unloading || fiber.state === FIBER_STATE.pending),
+      fiber.state !== FIBER_STATE.loading &&
+      fiber.state !== FIBER_STATE.active,
   )
 }
 
@@ -48,11 +50,14 @@ function inactiveError(fiber: Fiber): Error {
 
 /**
  * Kernel patch 1 of the ADR-0015 budget (10): refuse new registrations on a
- * plugin fiber that is UNLOADING or still PENDING.
+ * plugin fiber that is not LOADING or ACTIVE (that is PENDING, UNLOADING or
+ * FAILED).
  *
- * Upstream Cordis 4.0.0-rc.11 accepts both. A registration made while a fiber
- * unloads lands after `_unload()` has drained its list and is never disposed; a
- * registration on a never-activated fiber is never drained by `dispose()`.
+ * Upstream Cordis 4.0.0-rc.11 accepts all three. A registration made while a
+ * fiber unloads lands after `_unload()` has drained its list and is never
+ * disposed; a registration on a never-activated fiber is never drained by
+ * `dispose()`; a FAILED fiber keeps its uid but `dispose()` skips the drain, so
+ * a late continuation of a failed async apply would leak too.
  * Listeners (`ctx.on`) are effects, so guarding `Fiber#effect` covers effects
  * and listeners; `RegistryService#plugin` is guarded too, before it records a
  * runtime, so a refused child plugin leaves no registry entry behind. Upstream
