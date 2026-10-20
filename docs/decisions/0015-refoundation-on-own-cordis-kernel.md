@@ -1,6 +1,8 @@
 # ADR-0015: Re-found Guanxi on an own thin kernel over Cordis 4 and pi-ai
 
-**Status:** accepted (owner decision D-108), gated by the K1 spike · **Date:** 2026-10-19
+**Status:** accepted (owner decision D-108); **the Cordis part is rejected by D-183** after the
+K1 spike, and the own-kernel fallback of validation 5 applies (ADR-0037, in progress in lane
+K1) · **Date:** 2026-10-19
 **Supersedes:** legacy ADR-0001 (local modular monolith) as the target structure; legacy
 ADR-0010 (first-party coding agent) is carried forward as the native agent of ADR-0021.
 

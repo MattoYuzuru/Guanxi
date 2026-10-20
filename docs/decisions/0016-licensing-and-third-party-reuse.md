@@ -19,7 +19,9 @@ GPL/AGPL by the FSF.
 - **Allowed to copy and to depend on:** MIT, MIT-0, ISC, 0BSD, BSD-2-Clause, BSD-3-Clause,
   Apache-2.0, Zlib, CC0-1.0, Unlicense, BlueOak-1.0.0, Python-2.0, MPL-2.0 (file level;
   modified MPL files stay MPL). CC-BY-4.0 is allowed only for data packages (for example
-  browser-support tables), with attribution.
+  browser-support tables), with attribution. OFL-1.1 is allowed only for unmodified font
+  binaries shipped with their `OFL.txt` (IBM Plex, D-129); a modified font must be renamed
+  as the licence requires.
 - **Process-only** (installed by the user, talked to over a protocol, never copied or
   bundled): GPL, AGPL, LGPL binaries, SSPL, BSL/BUSL, FSL, ELv2, custom "community"
   licenses, proprietary tools (Claude Code, LM Studio).
