@@ -95,12 +95,13 @@ describe('definePlugin', () => {
     )
   })
 
-  it('derives the Cordis name and injections from the manifest', () => {
+  it('names the plugin after its manifest id and keeps the parsed manifest', () => {
     const plugin = definePlugin({
       manifest: { ...base, requires: ['governor'], contributes: { slots: ['sidebar.items'] } },
       apply() {},
     })
     assert.equal(plugin.name, 'fixture.sample')
-    assert.deepEqual(plugin.inject, ['governor', 'slot:sidebar.items'])
+    assert.deepEqual(plugin.manifest.requires, ['governor'])
+    assert.deepEqual(plugin.manifest.contributes.slots, ['sidebar.items'])
   })
 })

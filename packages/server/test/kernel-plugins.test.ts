@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { createKernel, isActive, service } from '@guanxi/kernel'
+import { createKernel } from '@guanxi/kernel'
 import { processResources } from '@guanxi/kernel/node'
 import { start } from '../src/index.ts'
 import { OllamaUnavailableError } from '../src/ollama/client.ts'
@@ -40,12 +40,12 @@ describe('legacy tests run through the facade', () => {
     assert.ok(governor instanceof ResourceGovernor)
     const governorKernel = kernelOf(governor)
     assert.ok(governorKernel, 'the governor came from a kernel')
-    assert.equal(governorKernel.root.get(RESOURCE_GOVERNOR_SERVICE), governor)
+    assert.equal(governorKernel.service(RESOURCE_GOVERNOR_SERVICE), governor)
 
     const client = await ollamaClientThroughKernel({ host: 'http://fixture.invalid/' })
     const clientKernel = kernelOf(client)
     assert.ok(clientKernel, 'the client came from a kernel')
-    assert.equal(service<OllamaAdapter>(clientKernel.root, OLLAMA_ADAPTER_SERVICE).client('http://fixture.invalid'), client)
+    assert.equal(clientKernel.service<OllamaAdapter>(OLLAMA_ADAPTER_SERVICE)!.client('http://fixture.invalid'), client)
   })
 })
 
@@ -53,7 +53,7 @@ describe('Resource Governor plugin', () => {
   it('closes the governor on unload and finishes only after the active lease is released', async () => {
     const kernel = createKernel()
     const handle = await kernel.plugin(resourceGovernorPlugin)
-    const governor = service<ResourceGovernor>(kernel.root, RESOURCE_GOVERNOR_SERVICE)
+    const governor = kernel.service<ResourceGovernor>(RESOURCE_GOVERNOR_SERVICE)!
     const owner = new AbortController()
     const lease = await governor.acquire(governor.enqueue(request('active')), {
       abortOwner: () => owner.abort('shutdown'),
@@ -70,7 +70,7 @@ describe('Resource Governor plugin', () => {
     lease.release()
     await unloading
     assert.equal(governor.snapshot().accepting, false)
-    assert.equal(kernel.root.get(RESOURCE_GOVERNOR_SERVICE), undefined)
+    assert.equal(kernel.service(RESOURCE_GOVERNOR_SERVICE), undefined)
   })
 })
 
@@ -78,7 +78,7 @@ describe('Ollama adapter plugin', () => {
   it('keeps one client per host and replaces it when the host changes', async () => {
     const kernel = createKernel()
     await kernel.plugin(ollamaAdapterPlugin, { fetch: stalled })
-    const adapter = service<OllamaAdapter>(kernel.root, OLLAMA_ADAPTER_SERVICE)
+    const adapter = kernel.service<OllamaAdapter>(OLLAMA_ADAPTER_SERVICE)!
     const first = adapter.client('http://a.invalid/')
     assert.equal(adapter.client('http://a.invalid'), first)
     assert.notEqual(adapter.client('http://b.invalid'), first)
@@ -88,7 +88,7 @@ describe('Ollama adapter plugin', () => {
     const kernel = createKernel()
     const before = processResources().timers
     const handle = await kernel.plugin(ollamaAdapterPlugin, { fetch: stalled, connectTimeoutMs: 60_000 })
-    const client = service<OllamaAdapter>(kernel.root, OLLAMA_ADAPTER_SERVICE).client('http://fixture.invalid')
+    const client = kernel.service<OllamaAdapter>(OLLAMA_ADAPTER_SERVICE)!.client('http://fixture.invalid')
     const inFlight = client.ps()
     await new Promise((resolve) => setTimeout(resolve, 5))
     assert.equal(processResources().timers, before + 1, 'the connect deadline is armed')
@@ -106,9 +106,9 @@ describe('server boot through the kernel', () => {
     const kernel = await bootServerKernel()
     try {
       assert.deepEqual(kernel.node.entries().map((entry) => entry.id), ['resource-governor', 'ollama'])
-      assert.ok(isActive(kernel.node.fiberOf('resource-governor')!))
-      assert.ok(isActive(kernel.node.fiberOf('ollama')!))
-      assert.equal(kernel.node.root.get(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
+      assert.equal(kernel.node.stateOf('resource-governor'), 'active')
+      assert.equal(kernel.node.stateOf('ollama'), 'active')
+      assert.equal(kernel.node.service(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
     } finally {
       await kernel.node.dispose()
     }
@@ -123,8 +123,8 @@ describe('server boot through the kernel', () => {
         /row "resource-governor" is pinned/,
       )
       await assert.rejects(kernel.node.replacePlugin(resourceGovernorPlugin), /pinned/)
-      assert.ok(isActive(kernel.node.fiberOf('resource-governor')!))
-      assert.equal(kernel.node.root.get(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
+      assert.equal(kernel.node.stateOf('resource-governor'), 'active')
+      assert.equal(kernel.node.service(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
     } finally {
       await kernel.node.dispose()
     }
@@ -139,7 +139,7 @@ describe('server boot through the kernel', () => {
         assert.equal(server.context.governor, server.kernel.governor)
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
-        assert.equal(server.kernel.node.counters().fibers, 4, 'loader, isolate, governor, ollama')
+        assert.equal(server.kernel.node.counters().fibers, 2, 'governor and ollama')
       } finally {
         await server.close()
       }

@@ -13,9 +13,5 @@
   "scripts": {
     "test": "node --test 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@cordisjs/plugin-loader": "1.0.0-rc.8",
-    "cordis": "4.0.0-rc.11"
   }
 }

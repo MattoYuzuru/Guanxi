@@ -1,23 +1,18 @@
 /**
- * `@guanxi/kernel/node` — Node-only kernel parts: the Cordis loader, profile
- * boot and reconciliation, and process resource counters.
+ * `@guanxi/kernel/node` — Node-only kernel parts: profile boot and
+ * reconciliation, and process resource counters.
  *
- * Plugins are registered as loader builtins (`cordis:<plugin id>`), so a profile
- * can only load plugins the node already knows; it never imports a module path.
- * Source hot reload through `@cordisjs/plugin-hmr` is not used: it needs Node
- * internals (`--expose-internals` or a native addon). Code replacement goes
- * through `replacePlugin` with a fresh module import instead (see README).
+ * A profile row names a plugin the node registered by manifest id, so a
+ * profile can only load known plugins; it never imports a module path and
+ * never evaluates code. Code replacement goes through `replacePlugin` with a
+ * freshly imported module (see README).
  */
 import { readFile } from 'node:fs/promises'
-import { Loader } from './loader-runtime.js'
-import type { Fiber } from './cordis.ts'
-import type { LoaderEntryOptions } from './loader-runtime.js'
-import { FIBER_STATE } from './cordis.ts'
-import { createKernel, unloadFiber, type Kernel, type KernelOptions } from './kernel.ts'
-import { isGuanxiPlugin, type GuanxiPlugin } from './plugin.ts'
+import type { Fiber, GuanxiPlugin, PluginState } from './core.ts'
+import { KernelImpl, type Kernel } from './kernel.ts'
+import type { KernelOptions } from './core.ts'
+import { isGuanxiPlugin } from './plugin.ts'
 import { ProfileError, resolveProfile, type ProfileLayer, type ResolvedEntry } from './profile.ts'
-
-export { Loader }
 
 export interface BootOptions extends KernelOptions {
   /** Plugins this node can load, by manifest id. */
@@ -38,11 +33,10 @@ export interface BootOptions extends KernelOptions {
 }
 
 export interface NodeKernel extends Kernel {
-  readonly loader: Loader
   /** The resolved rows currently applied. */
   entries(): readonly ResolvedEntry[]
-  /** The fiber of a row, if it is loaded. */
-  fiberOf(rowId: string): Fiber | undefined
+  /** The lifecycle state of a row's plugin; `undefined` for a disabled or unknown row. */
+  stateOf(rowId: string): PluginState | undefined
   /** Reconcile to a new profile: only added, removed or changed rows reload. */
   apply(profile: readonly ProfileLayer[]): Promise<void>
   /** Swap the code of a known plugin and reload every row that uses it. */
@@ -60,83 +54,58 @@ export class NodeLoadError extends Error {
   }
 }
 
-const BUILTIN_PREFIX = 'cordis:'
 /** Services the kernel itself provides; rows may require them without a provider row. */
-const KERNEL_SERVICES = new Set(['slots', 'loader'])
+const KERNEL_SERVICES = new Set(['slots'])
 
-export async function bootNode(options: BootOptions): Promise<NodeKernel> {
-  const known = new Map<string, GuanxiPlugin<any>>()
-  for (const plugin of options.plugins) {
-    if (!isGuanxiPlugin(plugin)) throw new TypeError('bootNode() accepts only plugins built by definePlugin()')
-    if (known.has(plugin.manifest.id)) {
-      throw new ProfileError('plugins', `plugin "${plugin.manifest.id}" is registered twice`)
+class NodeKernelImpl extends KernelImpl implements NodeKernel {
+  private readonly known = new Map<string, GuanxiPlugin<any>>()
+  private readonly pinned: ReadonlySet<string>
+  private readonly safeMode: boolean
+  private readonly rows = new Map<string, Fiber>()
+  private applied: ResolvedEntry[] = []
+
+  constructor(options: BootOptions) {
+    super(options)
+    for (const plugin of options.plugins) {
+      if (!isGuanxiPlugin(plugin)) throw new TypeError('bootNode() accepts only plugins built by definePlugin()')
+      if (this.known.has(plugin.manifest.id)) {
+        throw new ProfileError('plugins', `plugin "${plugin.manifest.id}" is registered twice`)
+      }
+      this.known.set(plugin.manifest.id, plugin)
     }
-    known.set(plugin.manifest.id, plugin)
-  }
-  const pinned = new Set(options.pinned ?? [])
-
-  const kernel = createKernel(options)
-  await kernel.root.plugin(Loader)
-  const loader = kernel.root.get('loader') as Loader
-  const internals = loader
-  for (const [id, plugin] of known) internals.builtins[id] = plugin
-
-  let applied: ResolvedEntry[] = []
-  let queue: Promise<unknown> = Promise.resolve()
-  /** One profile change at a time: the loader's reconcile is not re-entrant. */
-  const serial = <T>(task: () => Promise<T>): Promise<T> => {
-    const next = queue.then(task, task)
-    queue = next.catch(() => undefined)
-    return next
+    this.pinned = new Set(options.pinned ?? [])
+    this.safeMode = Boolean(options.safeMode)
   }
 
-  const toOptions = (entry: ResolvedEntry): LoaderEntryOptions => ({
-    id: entry.id,
-    name: BUILTIN_PREFIX + entry.plugin,
-    config: entry.config,
-    disabled: entry.disabled,
-  })
+  entries(): readonly ResolvedEntry[] {
+    return this.applied
+  }
 
-  const resolve = (profile: readonly ProfileLayer[]): ResolvedEntry[] =>
-    closeGraph(
+  stateOf(rowId: string): PluginState | undefined {
+    return this.rows.get(rowId)?.state
+  }
+
+  private resolve(profile: readonly ProfileLayer[]): ResolvedEntry[] {
+    return closeGraph(
       resolveProfile(profile).map((entry) => {
-        const plugin = known.get(entry.plugin)
-        if (!plugin) throw new ProfileError(entry.layers.at(-1) ?? 'profile', `row "${entry.id}" names unknown plugin "${entry.plugin}"`)
-        if (options.safeMode && plugin.manifest.trust !== 'T0' && !entry.disabled) {
+        const plugin = this.known.get(entry.plugin)
+        if (!plugin) {
+          throw new ProfileError(entry.layers.at(-1) ?? 'profile', `row "${entry.id}" names unknown plugin "${entry.plugin}"`)
+        }
+        if (this.safeMode && plugin.manifest.trust !== 'T0' && !entry.disabled) {
           return Object.freeze({ ...entry, disabled: true })
         }
         return entry
       }),
-      known,
-      Boolean(options.safeMode),
+      this.known,
+      this.safeMode,
     )
-
-  /** Remove a loader row and wait until its plugin has fully unloaded. */
-  const removeRow = async (id: string) => {
-    const fiber = internals.store[id]?.fiber
-    const unloading = fiber ? unloadFiber(fiber) : Promise.resolve()
-    internals.remove(id)
-    await unloading
   }
 
-  /** The loader logs and swallows load failures; surface them to the caller. */
-  const assertServing = () => {
-    const failed: string[] = []
-    for (const entry of applied) {
-      if (entry.disabled) continue
-      const fiber = internals.store[entry.id]?.fiber
-      if (!fiber?.uid) failed.push(`${entry.id}: not loaded`)
-      else if (fiber.state === FIBER_STATE.failed) failed.push(`${entry.id}: failed`)
-    }
-    if (failed.length) throw new NodeLoadError(failed)
-  }
-
-  const settle = (action: string) => kernel.withinDisposeBound(action, internals.await())
-
-  const assertPinned = (next: readonly ResolvedEntry[]) => {
-    const before = new Map(applied.map((entry) => [entry.id, entry]))
+  private assertPinned(next: readonly ResolvedEntry[]): void {
+    const before = new Map(this.applied.map((entry) => [entry.id, entry]))
     const after = new Map(next.map((entry) => [entry.id, entry]))
-    for (const id of pinned) {
+    for (const id of this.pinned) {
       const left = before.get(id)
       const right = after.get(id)
       if (!left) continue
@@ -151,67 +120,89 @@ export async function bootNode(options: BootOptions): Promise<NodeKernel> {
     }
   }
 
-  const apply = (profile: readonly ProfileLayer[]) =>
-    serial(async () => {
-      const next = resolve(profile)
-      if (applied.length) assertPinned(next)
-      const previous = new Map(applied.map((entry) => [entry.id, entry]))
-      // The pinned loader keeps a live entry bound to its first plugin name
-      // (upstream cordiverse/cordis#218 is open), so a row that switches plugin
-      // is removed, and fully unloaded, before the reconcile re-creates it.
-      for (const entry of next) {
-        const before = previous.get(entry.id)
-        if (before && before.plugin !== entry.plugin && internals.store[entry.id]) await removeRow(entry.id)
-      }
-      applied = next
-      await internals.root.update(next.map(toOptions))
-      await settle('applying the profile')
-      assertServing()
-    })
+  /** The kernel does not swallow load failures; a failed row fails the change. */
+  private assertServing(): void {
+    const failed: string[] = []
+    for (const entry of this.applied) {
+      if (entry.disabled) continue
+      const state = this.rows.get(entry.id)?.state
+      if (state === 'failed' || state === undefined || state === 'disposed') failed.push(`${entry.id}: ${state ?? 'not loaded'}`)
+    }
+    if (failed.length) throw new NodeLoadError(failed)
+  }
 
+  private async unloadRow(id: string): Promise<void> {
+    const fiber = this.rows.get(id)
+    if (!fiber) return
+    this.rows.delete(id)
+    await this.core.stop(fiber, 'disposed')
+  }
+
+  private loadRow(entry: ResolvedEntry): Fiber {
+    const fiber = this.core.createFiber(this.known.get(entry.plugin)!, structuredClone(entry.config), null)
+    this.rows.set(entry.id, fiber)
+    return fiber
+  }
+
+  apply(profile: readonly ProfileLayer[]): Promise<void> {
+    return this.core.transition('applying the profile', async () => {
+      const next = this.resolve(profile)
+      if (this.applied.length) this.assertPinned(next)
+      const before = new Map(this.applied.map((entry) => [entry.id, entry]))
+      const after = new Map(next.map((entry) => [entry.id, entry]))
+      const changed = (left: ResolvedEntry, right: ResolvedEntry) =>
+        left.plugin !== right.plugin || JSON.stringify(left.config) !== JSON.stringify(right.config)
+
+      // Unload first (removed, disabled, changed rows), then load, in profile order.
+      for (const [id, left] of before) {
+        const right = after.get(id)
+        if (!right || right.disabled || changed(left, right)) await this.unloadRow(id)
+      }
+      const started: Fiber[] = []
+      for (const entry of next) {
+        if (entry.disabled || this.rows.has(entry.id)) continue
+        started.push(this.loadRow(entry))
+      }
+      this.applied = next
+      for (const fiber of started) await this.core.start(fiber)
+      await this.core.settle()
+      this.assertServing()
+    })
+  }
+
+  replacePlugin(plugin: GuanxiPlugin<any>): Promise<void> {
+    return this.core.transition(`replacing ${plugin?.manifest?.id}`, async () => {
+      if (!isGuanxiPlugin(plugin)) throw new TypeError('replacePlugin() accepts only plugins built by definePlugin()')
+      const id = plugin.manifest.id
+      const current = this.known.get(id)
+      if (!current) throw new ProfileError('replacePlugin', `plugin "${id}" is not known to this node`)
+      for (const entry of this.applied) {
+        if (entry.plugin === id && this.pinned.has(entry.id)) {
+          throw new ProfileError('replacePlugin', `row "${entry.id}" is pinned: its services are held outside the kernel`)
+        }
+      }
+      if (JSON.stringify(current.manifest) !== JSON.stringify(plugin.manifest)) {
+        throw new ProfileError('replacePlugin', `plugin "${id}" changed its manifest; apply a profile instead`)
+      }
+      this.known.set(id, plugin)
+      const rows = this.applied.filter((entry) => entry.plugin === id && this.rows.has(entry.id))
+      for (const entry of rows) await this.unloadRow(entry.id)
+      for (const entry of rows) await this.core.start(this.loadRow(entry))
+      await this.core.settle()
+      this.assertServing()
+    })
+  }
+}
+
+export async function bootNode(options: BootOptions): Promise<NodeKernel> {
+  const node = new NodeKernelImpl(options)
   try {
-    await apply(options.profile)
+    await node.apply(options.profile)
   } catch (error) {
-    await kernel.dispose().catch(() => undefined)
+    await node.dispose().catch(() => undefined)
     throw error
   }
-
-  return {
-    ...kernel,
-    loader,
-    entries: () => applied,
-    fiberOf: (rowId) => {
-      const fiber = internals.store[rowId]?.fiber
-      return fiber?.uid ? fiber : undefined
-    },
-    apply,
-    replacePlugin: (plugin) =>
-      serial(async () => {
-        if (!isGuanxiPlugin(plugin)) throw new TypeError('replacePlugin() accepts only plugins built by definePlugin()')
-        const id = plugin.manifest.id
-        const current = known.get(id)
-        if (!current) throw new ProfileError('replacePlugin', `plugin "${id}" is not known to this node`)
-        for (const entry of applied) {
-          if (entry.plugin === id && pinned.has(entry.id)) {
-            throw new ProfileError('replacePlugin', `row "${entry.id}" is pinned: its services are held outside the kernel`)
-          }
-        }
-        if (
-          JSON.stringify({ ...current.manifest }) !== JSON.stringify({ ...plugin.manifest })
-        ) {
-          throw new ProfileError('replacePlugin', `plugin "${id}" changed its manifest; apply a profile instead`)
-        }
-        known.set(id, plugin)
-        internals.builtins[id] = plugin
-        for (const entry of applied) {
-          if (entry.plugin !== id || !internals.store[entry.id]) continue
-          await removeRow(entry.id)
-          await internals.create(toOptions(entry))
-        }
-        await settle(`replacing ${id}`)
-        assertServing()
-      }),
-  }
+  return node
 }
 
 /**

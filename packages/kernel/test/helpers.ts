@@ -1,11 +1,11 @@
-import { definePlugin, type Context, type GuanxiPlugin } from '../src/index.ts'
+import { definePlugin, type GuanxiPlugin, type PluginContext } from '../src/index.ts'
 
 let sequence = 0
 
 /** A T0 test plugin with a unique id unless one is given. */
 export function testPlugin<C = undefined>(
   manifest: Record<string, unknown>,
-  apply: (ctx: Context, config: C) => unknown,
+  apply: (ctx: PluginContext, config: C) => unknown,
 ): GuanxiPlugin<C> {
   sequence += 1
   return definePlugin<C>({

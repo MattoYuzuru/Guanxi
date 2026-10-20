@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { ProfileError, contribute, declareSlot, effect, isActive, type ProfileLayer } from '../src/index.ts'
-import { bootNode } from '../src/node.ts'
-import { testPlugin } from './helpers.ts'
+import { ProfileError, contribute, createKernel, declareSlot, effect, provide, service, type ProfileLayer } from '../src/index.ts'
+import { NodeLoadError, bootNode } from '../src/node.ts'
+import { deferred, testPlugin, tick } from './helpers.ts'
 
 function counted(id: string, trust: 'T0' | 'T1' = 'T0') {
   const calls: unknown[] = []
@@ -13,7 +13,7 @@ function counted(id: string, trust: 'T0' | 'T1' = 'T0') {
   return { plugin, calls }
 }
 
-describe('node boot through the Cordis loader', () => {
+describe('node boot and profile reconciliation', () => {
   it('loads profile rows and reconciles only the rows that changed', async () => {
     const a = counted('fixture.a')
     const b = counted('fixture.b')
@@ -26,7 +26,7 @@ describe('node boot through the Cordis loader', () => {
     }
     const node = await bootNode({ plugins: [a.plugin, b.plugin], profile: [base] })
     assert.deepEqual(a.calls, [{ value: 1 }])
-    assert.ok(node.fiberOf('a') && isActive(node.fiberOf('a')!))
+    assert.equal(node.stateOf('a'), 'active')
 
     await node.apply([base, { name: 'user', patch: [{ id: 'b', config: { value: 2 } }] }])
     assert.deepEqual(a.calls, [{ value: 1 }], 'unchanged row did not reload')
@@ -34,7 +34,7 @@ describe('node boot through the Cordis loader', () => {
 
     await node.apply([base, { name: 'user', patch: [{ id: 'a', disabled: true }, { id: 'b', config: { value: 2 } }] }])
     assert.deepEqual(a.calls, [{ value: 1 }, 'unloaded'])
-    assert.equal(node.fiberOf('a'), undefined)
+    assert.equal(node.stateOf('a'), undefined)
 
     await node.apply([base, { name: 'user', patch: [{ id: 'a', remove: true }] }])
     assert.deepEqual(b.calls.at(-1), { value: 1 })
@@ -89,7 +89,164 @@ describe('node boot through the Cordis loader', () => {
     await node.replacePlugin(v2.plugin)
     assert.deepEqual(v1.calls, [undefined, 'unloaded'])
     assert.deepEqual(v2.calls, [undefined])
-    assert.deepEqual(node.counters(), before, 'one hot fiber replaced another')
+    assert.deepEqual(node.counters(), before, 'one fiber replaced another')
     await node.dispose()
+  })
+})
+
+function providerPlugin(id: string, order: string[], release?: Promise<void>) {
+  return testPlugin({ id, provides: ['permit'] }, (ctx) => {
+    order.push(`${id} up`)
+    provide(ctx, 'permit', id)
+    effect(ctx, () => async () => {
+      await release
+      order.push(`${id} down`)
+    })
+  })
+}
+
+describe('node reconciliation', () => {
+  it('replaces a provider only after the old one fully unloaded, with its dependent intact', async () => {
+    const order: string[] = []
+    const release = deferred()
+    const consumer = testPlugin({ id: 'fixture.consumer', requires: ['permit'] }, (ctx) => {
+      order.push(`consumer sees ${service<string>(ctx, 'permit')}`)
+    })
+    const node = await bootNode({
+      plugins: [providerPlugin('fixture.provider', order, release.promise), consumer],
+      profile: [{ name: 'p', insert: [{ id: 'provider', plugin: 'fixture.provider' }, { id: 'consumer', plugin: 'fixture.consumer' }] }],
+    })
+    const replacing = node.replacePlugin(providerPlugin('fixture.provider', order))
+    await tick(10)
+    assert.equal(order.filter((line) => line.endsWith(' up')).length, 1, 'the new provider waits for the old unload')
+    release.resolve()
+    await replacing
+    assert.deepEqual(order, [
+      'fixture.provider up',
+      'consumer sees fixture.provider',
+      'fixture.provider down',
+      'fixture.provider up',
+      'consumer sees fixture.provider',
+    ])
+    assert.equal(node.stateOf('consumer'), 'active')
+    await node.dispose()
+  })
+
+  it('serialises concurrent applies so a disabled row stays disabled', async () => {
+    const plugin = testPlugin({ id: 'fixture.row' }, async () => {
+      await tick(5)
+    })
+    const enabled: ProfileLayer[] = [{ name: 'p', insert: [{ id: 'row', plugin: 'fixture.row' }] }]
+    const disabled: ProfileLayer[] = [{ name: 'p', insert: [{ id: 'row', plugin: 'fixture.row', disabled: true }] }]
+    const node = await bootNode({ plugins: [plugin], profile: disabled })
+    await Promise.all([node.apply(enabled), node.apply(disabled)])
+    assert.equal(node.stateOf('row'), undefined)
+    await node.dispose()
+  })
+
+  it('surfaces a row whose plugin failed to load', async () => {
+    const broken = testPlugin({ id: 'fixture.broken' }, () => {
+      throw new Error('broken apply')
+    })
+    await assert.rejects(
+      bootNode({ plugins: [broken], profile: [{ name: 'p', insert: [{ id: 'b', plugin: 'fixture.broken' }] }], onLog: () => {} }),
+      (error: unknown) => error instanceof NodeLoadError && error.rows.includes('b: failed'),
+    )
+  })
+
+  it('refuses a requirement that no row provides', async () => {
+    const orphan = testPlugin({ id: 'fixture.orphan', requires: ['nothing'] }, () => {})
+    await assert.rejects(
+      bootNode({ plugins: [orphan], profile: [{ name: 'p', insert: [{ id: 'o', plugin: 'fixture.orphan' }] }] }),
+      /requires "nothing", which no row provides/,
+    )
+  })
+
+  it('refuses to change pinned rows and to hot-swap a changed manifest', async () => {
+    const order: string[] = []
+    const base: ProfileLayer = { name: 'p', insert: [{ id: 'provider', plugin: 'fixture.pinned' }] }
+    const node = await bootNode({ plugins: [providerPlugin('fixture.pinned', order)], profile: [base], pinned: ['provider'] })
+    await assert.rejects(node.apply([base, { name: 'u', patch: [{ id: 'provider', disabled: true }] }]), /pinned/)
+    await assert.rejects(node.replacePlugin(providerPlugin('fixture.pinned', order)), /pinned/)
+    assert.equal(node.stateOf('provider'), 'active')
+    await node.dispose()
+
+    const plain = await bootNode({ plugins: [providerPlugin('fixture.swap', order)], profile: [{ name: 'p', insert: [{ id: 's', plugin: 'fixture.swap' }] }] })
+    const trusted = testPlugin({ id: 'fixture.swap', provides: ['permit'], trust: 'T1' }, (ctx) => provide(ctx, 'permit', 1))
+    await assert.rejects(plain.replacePlugin(trusted), /changed its manifest/)
+    await plain.dispose()
+  })
+
+  it('cascades safe mode to rows that need a disabled service or slot, and still boots', async () => {
+    const t1 = testPlugin({ id: 'fixture.t1', trust: 'T1', provides: ['extra'], contributes: { slotDeclarations: ['extra.slot'] } }, (ctx) => {
+      provide(ctx, 'extra', 1)
+      declareSlot(ctx, 'extra.slot')
+    })
+    const needsService = testPlugin({ id: 'fixture.needs-service', requires: ['extra'] }, () => {})
+    const needsSlot = testPlugin({ id: 'fixture.needs-slot', contributes: { slots: ['extra.slot'] } }, (ctx) => {
+      contribute(ctx, 'extra.slot', { id: 'x', value: 1 })
+    })
+    const core = testPlugin({ id: 'fixture.core-only' }, () => {})
+    const node = await bootNode({
+      plugins: [t1, needsService, needsSlot, core],
+      safeMode: true,
+      profile: [{
+        name: 'p',
+        insert: [
+          { id: 't1', plugin: 'fixture.t1' },
+          { id: 'needs-service', plugin: 'fixture.needs-service' },
+          { id: 'needs-slot', plugin: 'fixture.needs-slot' },
+          { id: 'core', plugin: 'fixture.core-only' },
+        ],
+      }],
+    })
+    assert.deepEqual(
+      node.entries().map((entry) => [entry.id, entry.disabled]),
+      [['t1', true], ['needs-service', true], ['needs-slot', true], ['core', false]],
+    )
+    assert.equal(node.stateOf('core'), 'active')
+    await node.dispose()
+  })
+})
+
+describe('context tree', () => {
+  it('starts a child after its parent is active and unloads it with the parent', async () => {
+    const kernel = createKernel()
+    const before = kernel.counters()
+    const order: string[] = []
+    let refused = ''
+    const child = testPlugin({ id: 'fixture.child' }, (ctx) => {
+      order.push('child up')
+      effect(ctx, () => () => order.push('child down'))
+    })
+    const parent = await kernel.plugin(testPlugin({ id: 'fixture.parent' }, async (ctx) => {
+      const handle = ctx.plugin(child)
+      await handle.ready().catch((error: Error) => {
+        refused = error.message
+      })
+      order.push('parent applied')
+      effect(ctx, () => () => order.push('parent down'))
+    }))
+    assert.match(refused, /starts after fixture\.parent's apply returns/)
+    assert.deepEqual(order, ['parent applied', 'child up'])
+    assert.equal(kernel.counters().fibers - before.fibers, 2)
+    await parent.dispose()
+    assert.deepEqual(order, ['parent applied', 'child up', 'child down', 'parent down'])
+    assert.deepEqual(kernel.counters(), before)
+  })
+
+  it('loads a child from an active parent as its own transition', async () => {
+    const kernel = createKernel()
+    let load: (() => Promise<void>) | undefined
+    await kernel.plugin(testPlugin({ id: 'fixture.lazy-parent' }, (ctx) => {
+      load = async () => {
+        const handle = ctx.plugin(testPlugin({ id: 'fixture.lazy-child', provides: ['lazy'] }, (child) => provide(child, 'lazy', 1)))
+        await handle.ready()
+      }
+    }))
+    await load!()
+    assert.equal(kernel.service('lazy'), 1)
+    await kernel.dispose()
+    assert.equal(kernel.service('lazy'), undefined)
   })
 })

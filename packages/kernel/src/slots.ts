@@ -3,13 +3,12 @@
  *
  * Semantics follow DeepSeek Harness's ui-slots model (declaring a slot claims it;
  * contributing to an undeclared slot fails at load; unloading removes every
- * contribution). No DSH code is copied. Declarations are also Cordis services
- * named `slot:<name>`, and contributors inject them (see `definePlugin`), so
- * Cordis orders teardown: contributors unload before the slot's owner, and come
- * back when the owner reloads.
+ * contribution). No DSH code is copied. A declaration is also a kernel service
+ * named `slot:<name>` that every contributor needs, so the kernel orders
+ * teardown: contributors unload before the slot's owner and come back when the
+ * owner reloads.
  */
-import type { Context } from './cordis.ts'
-import { PluginContractError, SLOT_SERVICE_PREFIX, requireManifest } from './plugin.ts'
+import { PluginContractError, SLOT_SERVICE_PREFIX, type PluginContext } from './core.ts'
 
 export type SlotKind = 'list'
 
@@ -55,8 +54,8 @@ export class SlotRegistry {
   orphansDropped = 0
 
   /** Declare a slot owned by the calling plugin; reverted when it unloads. */
-  declare(ctx: Context, name: string, kind: SlotKind = 'list'): void {
-    const manifest = requireManifest(ctx, `declareSlot("${name}")`)
+  declare(ctx: PluginContext, name: string, kind: SlotKind = 'list'): void {
+    const manifest = ctx.manifest
     if (!manifest.contributes.slotDeclarations.includes(name)) {
       throw new PluginContractError(manifest.id, `slot "${name}" is not in contributes.slotDeclarations`)
     }
@@ -84,8 +83,8 @@ export class SlotRegistry {
   }
 
   /** Contribute one entry to a declared slot; removed when the contributor unloads. */
-  contribute<T>(ctx: Context, slot: string, entry: { id: string; order?: number; value: T }): void {
-    const manifest = requireManifest(ctx, `contribute("${slot}")`)
+  contribute<T>(ctx: PluginContext, slot: string, entry: { id: string; order?: number; value: T }): void {
+    const manifest = ctx.manifest
     if (!manifest.contributes.slots.includes(slot)) {
       throw new PluginContractError(manifest.id, `slot "${slot}" is not in contributes.slots`)
     }
@@ -186,16 +185,14 @@ export class SlotRegistry {
 
 export const SLOTS_SERVICE = 'slots'
 
-function registry(ctx: Context): SlotRegistry {
-  const value = ctx.get(SLOTS_SERVICE) as SlotRegistry | undefined
-  if (!value) throw new Error('the kernel slot registry is not available')
-  return value
+function registry(ctx: PluginContext): SlotRegistry {
+  return ctx.service<SlotRegistry>(SLOTS_SERVICE)
 }
 
-export function declareSlot(ctx: Context, name: string, kind: SlotKind = 'list'): void {
+export function declareSlot(ctx: PluginContext, name: string, kind: SlotKind = 'list'): void {
   registry(ctx).declare(ctx, name, kind)
 }
 
-export function contribute<T>(ctx: Context, slot: string, entry: { id: string; order?: number; value: T }): void {
+export function contribute<T>(ctx: PluginContext, slot: string, entry: { id: string; order?: number; value: T }): void {
   registry(ctx).contribute(ctx, slot, entry)
 }

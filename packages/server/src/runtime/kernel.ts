@@ -3,7 +3,7 @@
  * loads the Resource Governor and the Ollama adapter as plugins, then hands
  * their services to the legacy application context.
  */
-import { service, type ProfileLayer } from '@guanxi/kernel'
+import type { ProfileLayer } from '@guanxi/kernel'
 import { bootNode, type NodeKernel } from '@guanxi/kernel/node'
 import { OLLAMA_ADAPTER_SERVICE, ollamaAdapterPlugin, type OllamaAdapter } from '../ollama/plugin.ts'
 import { RESOURCE_GOVERNOR_SERVICE, resourceGovernorPlugin } from './governor-plugin.ts'
@@ -33,14 +33,11 @@ export async function bootServerKernel(
     // must not reload until their consumers are plugins themselves.
     pinned: LEGACY_SERVER_PROFILE.insert?.map((row) => row.id) ?? [],
   })
-  try {
-    return {
-      node,
-      governor: service<ResourceGovernor>(node.root, RESOURCE_GOVERNOR_SERVICE),
-      ollama: service<OllamaAdapter>(node.root, OLLAMA_ADAPTER_SERVICE),
-    }
-  } catch (error) {
+  const governor = node.service<ResourceGovernor>(RESOURCE_GOVERNOR_SERVICE)
+  const ollama = node.service<OllamaAdapter>(OLLAMA_ADAPTER_SERVICE)
+  if (!governor || !ollama) {
     await node.dispose()
-    throw error
+    throw new Error('the server kernel profile did not provide the governor and Ollama services')
   }
+  return { node, governor, ollama }
 }

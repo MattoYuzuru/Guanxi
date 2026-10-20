@@ -5,7 +5,7 @@
  * forced GC stays ≤ 5% of the first cycle.
  *
  * Variant A reloads the same plugin code through profile reconciliation (the
- * Cordis loader disables and re-enables the rows). Variant B replaces plugin code
+ * node disables and re-enables the provider rows). Variant B replaces plugin code
  * by importing a fresh module record per cycle; those records cannot be freed by
  * Node, so they are counted and their cost reported instead of being held to the
  * 5% bound.

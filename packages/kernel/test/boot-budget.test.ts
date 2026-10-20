@@ -24,6 +24,6 @@ describe('empty node budget', () => {
     assert.equal(typeof report.bootMs, 'number')
     assert.ok(report.bootMs <= BOOT_BUDGET_MS, `boot ${report.bootMs} ms > ${BOOT_BUDGET_MS} ms`)
     assert.ok(report.idleRssBytes <= IDLE_RSS_BUDGET_BYTES, `idle RSS ${report.idleRssBytes} B > 200 MB`)
-    assert.equal(report.counters.fibers, 2, 'loader and its isolate helper only')
+    assert.equal(report.counters.fibers, 0, 'an empty profile loads no plugin')
   })
 })

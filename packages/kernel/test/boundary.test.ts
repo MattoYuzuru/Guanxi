@@ -1,6 +1,6 @@
 /**
- * ADR-0015 invariant: no Guanxi feature imports Cordis directly. Inside the
- * kernel, only the two runtime bridges do.
+ * ADR-0037: Guanxi runs on its own kernel. No package imports or depends on
+ * Cordis or DeepSeek Harness's Cordis copy.
  */
 import assert from 'node:assert/strict'
 import { readdir, readFile } from 'node:fs/promises'
@@ -10,39 +10,40 @@ import { describe, it } from 'node:test'
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url))
 const CORDIS_IMPORT = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)['"](?:cordis|@cordisjs\/[^'"]+|@deepseek-ai\/cordis[^'"]*)['"]/
-const BRIDGES = new Set(['packages/kernel/src/cordis-runtime.js', 'packages/kernel/src/loader-runtime.js'])
+const CORDIS_DEPENDENCY = /^(?:cordis|@cordisjs\/.+|@deepseek-ai\/cordis.*)$/
 const SKIP = new Set(['node_modules', 'dist', 'build', 'test-results', '.lane-data'])
-// Tests that must name Cordis: the upstream canary and this file's self-check.
-const EXEMPT = new Set(['packages/kernel/test/upstream-canary.test.ts', 'packages/kernel/test/boundary.test.ts'])
+const SELF = 'packages/kernel/test/boundary.test.ts'
 
-async function* sources(dir: string): AsyncGenerator<string> {
+async function* files(dir: string): AsyncGenerator<string> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue
     const path = join(dir, entry.name)
-    if (entry.isDirectory()) yield* sources(path)
-    else if (/\.(?:[cm]?[jt]sx?)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) yield path
+    if (entry.isDirectory()) yield* files(path)
+    else yield path
   }
 }
 
-describe('kernel import boundary', () => {
-  it('lets only the kernel runtime bridges import Cordis', async () => {
+describe('kernel boundary', () => {
+  it('has no Cordis import or dependency anywhere in the workspace', async () => {
     const offenders: string[] = []
-    const bridges: string[] = []
-    for await (const path of sources(join(repository, 'packages'))) {
+    for await (const path of files(join(repository, 'packages'))) {
       const file = relative(repository, path)
-      if (EXEMPT.has(file)) continue
-      if (!CORDIS_IMPORT.test(await readFile(path, 'utf8'))) continue
-      if (BRIDGES.has(file)) bridges.push(file)
-      else offenders.push(file)
+      if (file === SELF) continue
+      if (/\.(?:[cm]?[jt]sx?)$/.test(path) && CORDIS_IMPORT.test(await readFile(path, 'utf8'))) offenders.push(file)
+      if (path.endsWith('package.json')) {
+        const pkg = JSON.parse(await readFile(path, 'utf8'))
+        for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+          for (const name of Object.keys(pkg[field] ?? {})) if (CORDIS_DEPENDENCY.test(name)) offenders.push(`${file}#${field}.${name}`)
+        }
+      }
     }
     assert.deepEqual(offenders, [])
-    assert.deepEqual(bridges.sort(), [...BRIDGES].sort())
   })
 
-  it('detects a direct Cordis import (self-check of the pattern)', () => {
+  it('detects a Cordis import (self-check of the pattern)', () => {
     assert.match("import { Context } from 'cordis'", CORDIS_IMPORT)
     assert.match('const x = await import("@cordisjs/plugin-hmr")', CORDIS_IMPORT)
     assert.match("import x from '@deepseek-ai/cordis'", CORDIS_IMPORT)
-    assert.doesNotMatch("import { Context } from '@guanxi/kernel'", CORDIS_IMPORT)
+    assert.doesNotMatch("import { definePlugin } from '@guanxi/kernel'", CORDIS_IMPORT)
   })
 })

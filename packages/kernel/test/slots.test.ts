@@ -5,7 +5,6 @@ import {
   contribute,
   createKernel,
   declareSlot,
-  isActive,
   type Kernel,
 } from '../src/index.ts'
 import { testPlugin } from './helpers.ts'
@@ -64,17 +63,17 @@ describe('list slots', () => {
   it('keeps contributors waiting until the slot exists, and unloads them before its owner', async () => {
     const kernel = createKernel()
     const contributor = await kernel.plugin(item('projects', 'Projects'))
-    assert.equal(isActive(contributor.fiber), false)
+    assert.equal(contributor.state, 'pending')
     assert.deepEqual(labels(kernel), [])
     const owner = await kernel.plugin(shell())
-    await contributor.fiber.await()
+    assert.equal(contributor.state, 'active')
     assert.deepEqual(labels(kernel), ['Projects'])
     await owner.dispose()
     assert.equal(kernel.slots.isDeclared(SLOT), false)
     assert.equal(kernel.counters().slotEntries, 0)
     assert.equal(kernel.counters().slotOrphans, 0, 'contributors left before the slot did')
     await kernel.plugin(shell())
-    await contributor.fiber.await()
+    assert.equal(contributor.state, 'active')
     assert.deepEqual(labels(kernel), ['Projects'], 'contribution returns with its slot')
   })
 

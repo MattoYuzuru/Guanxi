@@ -2,11 +2,12 @@
  * Profiles: a node's plugin tree assembled from ordered patch layers
  * (TARGET_ARCHITECTURE §3), e.g. `headless` base + user patch.
  *
- * The layer model follows DeepSeek Harness profiles and `cordis.patch.yml`
- * (insert rows, then patch rows by id). No DSH code is copied. Two deliberate
+ * The layer model follows DeepSeek Harness profiles and patch files (insert
+ * rows, then patch rows by id). No DSH code is copied. Two deliberate
  * differences from DSH: a patch that names an unknown id fails instead of
- * warning, and any `__jsExpr` value is rejected, because the Cordis loader
- * evaluates it as JavaScript (`new Function` + `eval`) and profile layers are data.
+ * warning, and profile data must be plain JSON. Loader configs elsewhere
+ * evaluate `{ __jsExpr }` objects as JavaScript; Guanxi profiles are data, so
+ * such values are refused outright.
  */
 
 export interface ProfileEntry {

@@ -3,7 +3,7 @@
  * kernel facade. Each call boots a fresh kernel, loads the plugin and returns
  * the service the plugin provides, so legacy tests exercise the plugin path.
  */
-import { createKernel, service, type Kernel } from '@guanxi/kernel'
+import { createKernel, type Kernel } from '@guanxi/kernel'
 import type { OllamaClient, OllamaClientOptions } from '../../src/ollama/client.ts'
 import {
   OLLAMA_ADAPTER_SERVICE,
@@ -28,7 +28,7 @@ export async function governorThroughKernel(
 ): Promise<ResourceGovernor> {
   const kernel = createKernel()
   await kernel.plugin(resourceGovernorPlugin, options)
-  const governor = service<ResourceGovernor>(kernel.root, RESOURCE_GOVERNOR_SERVICE)
+  const governor = kernel.service<ResourceGovernor>(RESOURCE_GOVERNOR_SERVICE)!
   kernels.set(governor, kernel)
   return governor
 }
@@ -37,7 +37,7 @@ export async function ollamaClientThroughKernel(options: OllamaClientOptions): P
   const { host, ...config } = options
   const kernel = createKernel()
   await kernel.plugin(ollamaAdapterPlugin, config)
-  const client = service<OllamaAdapter>(kernel.root, OLLAMA_ADAPTER_SERVICE).client(host)
+  const client = kernel.service<OllamaAdapter>(OLLAMA_ADAPTER_SERVICE)!.client(host)
   kernels.set(client, kernel)
   return client
 }
