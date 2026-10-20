@@ -55,6 +55,7 @@ export default function CatalogRoute() {
       initialView={initialView(search)}
       initialRegime={regimeFromSearch(search)}
       onLocationChange={onLocationChange}
+      reviewBinding={import.meta.env.DEV ? 'live' : 'bundle'}
     />
   )
 }

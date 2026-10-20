@@ -32,7 +32,7 @@ import {
   TRANSPARENCIES,
   type Regime,
 } from './regimes.ts'
-import { ReviewPanel } from './ReviewPanel.tsx'
+import { ReviewPanel, type ReviewBinding } from './ReviewPanel.tsx'
 import type { ReviewApi } from './review-api.ts'
 import { StatusBadge, entryStatus } from './status-badge.tsx'
 import { StoryBoundary, StoryView } from './StoryView.tsx'
@@ -54,6 +54,8 @@ export interface CatalogAppProps {
   onLocationChange?: (view: CatalogView, regime: Regime) => void
   /** Raw story sources by component id, for the Code tab. */
   storySources?: Record<string, string>
+  /** `live` under Vite dev (source on disk is what renders), `bundle` for a built app. */
+  reviewBinding?: ReviewBinding
 }
 
 const STATUS_FILTERS = ['all', 'draft', 'review', 'approved', 'stale', 'deprecated', 'invalid'] as const
@@ -242,21 +244,25 @@ function ComponentPage({
   entry,
   regime,
   reviewApi,
+  reviewBinding,
   storySource,
 }: {
   entry: CatalogEntry
   regime: Regime
   reviewApi: ReviewApi | null
+  reviewBinding: ReviewBinding
   storySource: string | undefined
 }) {
   const t = useUiText()
   const manifest = entry.manifest
   const snapshots = Object.keys(manifest?.snapshotHashes ?? {}).length
+  // The node's status wins over the bundled one once the review panel has read it.
+  const [status, setStatus] = useState(entryStatus(entry))
   return (
     <article className="gx-catalog-page" aria-labelledby="catalog-component-title">
       <header className="gx-catalog-page-head">
         <h2 id="catalog-component-title">{entry.title}</h2>
-        <StatusBadge status={entryStatus(entry)} />
+        <StatusBadge status={status} />
       </header>
       <dl className="gx-catalog-meta">
         <MetaItem label={t('catalog.meta.level')}>
@@ -303,7 +309,7 @@ function ComponentPage({
           </RegimeFrame>
         </TabsPanel>
         <TabsPanel value="review">
-          <ReviewPanel entry={entry} api={reviewApi} />
+          <ReviewPanel entry={entry} api={reviewApi} binding={reviewBinding} onStatus={setStatus} />
         </TabsPanel>
       </Tabs>
     </article>
@@ -416,6 +422,7 @@ export function CatalogApp({
   initialRegime = DEFAULT_REGIME,
   onLocationChange,
   storySources = {},
+  reviewBinding = 'live',
 }: CatalogAppProps) {
   const [view, setView] = useState<CatalogView>(initialView)
   const [regime, setRegime] = useState<Regime>(initialRegime)
@@ -439,6 +446,7 @@ export function CatalogApp({
         setRegime={setRegime}
         entry={entry}
         reviewApi={reviewApi}
+        reviewBinding={reviewBinding}
         storySources={storySources}
       />
     </RegimeFrame>
@@ -453,6 +461,7 @@ function CatalogChrome({
   setRegime,
   entry,
   reviewApi,
+  reviewBinding,
   storySources,
 }: {
   entries: CatalogEntry[]
@@ -462,6 +471,7 @@ function CatalogChrome({
   setRegime: (regime: Regime) => void
   entry: CatalogEntry | undefined
   reviewApi: ReviewApi | null
+  reviewBinding: ReviewBinding
   storySources: Record<string, string>
 }) {
   const t = useUiText()
@@ -485,6 +495,7 @@ function CatalogChrome({
               entry={entry}
               regime={regime}
               reviewApi={reviewApi}
+              reviewBinding={reviewBinding}
               storySource={storySources[entry.id]}
             />
           ) : null}

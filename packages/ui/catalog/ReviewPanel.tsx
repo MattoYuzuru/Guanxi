@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { Button, Textarea } from '../src/index.ts'
 import { intlLocale, useUiLocale, useUiText } from '../src/i18n/context.tsx'
 import type { UiMessageKey } from '../src/i18n/messages.ts'
+import type { EffectiveReviewStatus } from './approval/record.ts'
 import type { CatalogEntry } from './entries.ts'
 import {
   ReviewApiError,
@@ -25,10 +26,27 @@ const OUTCOME_KEYS: Record<Outcome, UiMessageKey> = {
 }
 
 /**
+ * Which hashes an approval binds: `live` when the catalog renders the source on disk (Vite dev
+ * with hot reload), `bundle` when it renders a built bundle, whose manifest says what the owner
+ * actually sees. The node refuses (409) when they differ from the source on disk.
+ */
+export type ReviewBinding = 'live' | 'bundle'
+
+/**
  * Approve / Request changes for one component. The node decides whether writes are possible;
  * without a node (or in a release build) the panel shows the bundled record read-only.
  */
-export function ReviewPanel({ entry, api }: { entry: CatalogEntry; api: ReviewApi | null }) {
+export function ReviewPanel({
+  entry,
+  api,
+  binding = 'live',
+  onStatus,
+}: {
+  entry: CatalogEntry
+  api: ReviewApi | null
+  binding?: ReviewBinding
+  onStatus?: (status: EffectiveReviewStatus) => void
+}) {
   const t = useUiText()
   const locale = intlLocale(useUiLocale())
   const commentId = useId()
@@ -41,6 +59,7 @@ export function ReviewPanel({ entry, api }: { entry: CatalogEntry; api: ReviewAp
   const [pending, setPending] = useState<'approve' | 'request_changes' | null>(null)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
 
+  const [reload, setReload] = useState(0)
   useEffect(() => {
     if (!api) return
     const controller = new AbortController()
@@ -49,14 +68,23 @@ export function ReviewPanel({ entry, api }: { entry: CatalogEntry; api: ReviewAp
     })
     api.get(entry.id, controller.signal).then(setLive, () => undefined)
     return () => controller.abort()
-  }, [api, entry.id])
+  }, [api, entry.id, reload])
 
   const record = live?.record ?? entry.review
   const status = live?.status ?? entryStatus(entry)
-  const writable = typeof capability === 'object' && capability.writable && live !== null
+  useEffect(() => {
+    onStatus?.(status)
+  }, [status, onStatus])
+  const shown =
+    binding === 'bundle' && entry.manifest
+      ? { sourceHash: entry.manifest.sourceHash, snapshotHashes: entry.manifest.snapshotHashes }
+      : live?.current ?? null
+  // A built bundle older than the source would make the owner approve code they never saw.
+  const bundleBehind = binding === 'bundle' && live !== null && shown !== null && shown.sourceHash !== live.current.sourceHash
+  const writable = typeof capability === 'object' && capability.writable && live !== null && shown !== null && !bundleBehind
 
   const submit = async (decision: 'approve' | 'request_changes') => {
-    if (!api || !live || pending) return
+    if (!api || !live || !shown || pending) return
     if (decision === 'request_changes' && comment.trim() === '') {
       setOutcome('commentRequired')
       return
@@ -67,14 +95,17 @@ export function ReviewPanel({ entry, api }: { entry: CatalogEntry; api: ReviewAp
       const next = await api.submit(entry.id, {
         decision,
         comment: comment.trim(),
-        expectedSourceHash: live.current.sourceHash,
-        expectedSnapshotHashes: live.current.snapshotHashes,
+        expectedSourceHash: shown.sourceHash,
+        expectedSnapshotHashes: shown.snapshotHashes,
       })
       setLive(next)
       setComment('')
       setOutcome(decision === 'approve' ? 'approved' : 'requested')
     } catch (error) {
-      setOutcome(error instanceof ReviewApiError ? error.kind : 'failed')
+      const kind = error instanceof ReviewApiError ? error.kind : 'failed'
+      setOutcome(kind)
+      // Read the current record and hashes again, so the owner sees what changed.
+      if (kind === 'conflict') setReload((value) => value + 1)
     } finally {
       setPending(null)
     }
@@ -120,6 +151,12 @@ export function ReviewPanel({ entry, api }: { entry: CatalogEntry; api: ReviewAp
       ) : (
         <p className="gx-catalog-muted">{t('catalog.review.noRequests')}</p>
       )}
+
+      {bundleBehind ? (
+        <div className="gx-catalog-readonly" data-review-bundle-behind="">
+          <p>{t('catalog.review.bundleBehind')}</p>
+        </div>
+      ) : null}
 
       {readOnlyReason ? (
         <div className="gx-catalog-readonly" data-review-readonly="">

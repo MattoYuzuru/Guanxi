@@ -101,3 +101,48 @@ describe('review panel', () => {
     )
   })
 })
+
+describe('review binding', () => {
+  const manifestHashes = { sourceHash: button.manifest!.sourceHash, snapshotHashes: button.manifest!.snapshotHashes }
+
+  it('in a built bundle, signs the bundled hashes and refuses when the source moved on', async () => {
+    const behind = fakeApi({ get: vi.fn(async () => state({ current: { sourceHash: `sha256:${'b'.repeat(64)}`, snapshotHashes: {} } })) })
+    const { unmount } = render(<ReviewPanel entry={button} api={behind} binding="bundle" />)
+    expect(await screen.findByText(/This build is older than the source on disk/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    unmount()
+
+    const fresh = fakeApi({ get: vi.fn(async () => state({ current: manifestHashes })) })
+    render(<ReviewPanel entry={button} api={fresh} binding="bundle" />)
+    const approve = await screen.findByRole('button', { name: 'Approve' })
+    await act(async () => {
+      fireEvent.click(approve)
+    })
+    expect(fresh.submit).toHaveBeenCalledWith('button', expect.objectContaining({ expectedSourceHash: manifestHashes.sourceHash }))
+  })
+
+  it('reads the record again after a conflict', async () => {
+    const api = fakeApi({ submit: vi.fn(async () => Promise.reject(new ReviewApiError('conflict', 'changed'))) })
+    render(<ReviewPanel entry={button} api={api} />)
+    const approve = await screen.findByRole('button', { name: 'Approve' })
+    await act(async () => {
+      fireEvent.click(approve)
+    })
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
+  })
+
+  it('updates the page header status once the node reports it', async () => {
+    const api = fakeApi({ get: vi.fn(async () => state({ status: 'stale', signature: 'valid' })) })
+    render(
+      <CatalogApp
+        entries={catalogEntries}
+        chromeTheme="light"
+        chromeLocale="en"
+        reviewApi={api}
+        initialView={{ kind: 'component', id: 'button' }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: 'Review' }))
+    await waitFor(() => expect(document.querySelector('.gx-catalog-page-head [data-status]')?.getAttribute('data-status')).toBe('stale'))
+  })
+})

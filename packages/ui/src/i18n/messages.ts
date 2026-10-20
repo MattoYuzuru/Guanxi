@@ -184,7 +184,9 @@ export const en = {
   'catalog.review.requestOpen': 'open',
   'catalog.review.requestResolved': 'resolved',
   'catalog.review.keychainPrompt':
-    'macOS may ask you to allow access to the approval key. Allow it only if you just clicked.',
+    'macOS may ask you to allow access to the approval key. Allow it only if you just clicked, and never choose Always Allow.',
+  'catalog.review.bundleBehind':
+    'This build is older than the source on disk, so approving would sign code you are not seeing. Rebuild or use the dev server.',
   'catalog.t2.title': 'Plugin iframe preview',
   'catalog.t2.description':
     'An untrusted plugin in a sandboxed iframe. It receives the theme only as MCP Apps variables.',
@@ -375,7 +377,9 @@ export const ru: UiMessages = {
   'catalog.review.requestOpen': 'открыт',
   'catalog.review.requestResolved': 'закрыт',
   'catalog.review.keychainPrompt':
-    'macOS может попросить разрешить доступ к ключу одобрения. Разрешайте, только если вы сами только что нажали кнопку.',
+    'macOS может попросить разрешить доступ к ключу одобрения. Разрешайте, только если вы сами только что нажали кнопку, и никогда не выбирайте «Всегда разрешать».',
+  'catalog.review.bundleBehind':
+    'Эта сборка старше исходников на диске: одобрение подписало бы код, которого вы не видите. Пересоберите приложение или откройте dev-сервер.',
   'catalog.t2.title': 'Предпросмотр iframe-плагина',
   'catalog.t2.description':
     'Недоверенный плагин в изолированном iframe. Тему он получает только через переменные MCP Apps.',
