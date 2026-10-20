@@ -245,13 +245,70 @@ describe('egress scrubber: registration bounds', () => {
   })
 })
 
+describe('egress scrubber: readiness (K3 H3)', () => {
+  it('is ready only when every declared source is ready, and resolves waiters then', async () => {
+    const scrubber = new SecretScrubber({ expectedSources: ['vault'] })
+    assert.equal(scrubber.isReady(), false)
+    assert.deepEqual(scrubber.pendingSources(), ['vault'])
+    let resolved = false
+    const waiting = scrubber.whenReady().then(() => { resolved = true })
+    scrubber.expect('vault')
+    scrubber.expect('env.shell')
+    scrubber.ready('vault')
+    await Promise.resolve()
+    assert.equal(resolved, false, 'one declared source is still pending')
+    assert.deepEqual(scrubber.pendingSources(), ['env.shell'])
+    scrubber.ready('env.shell')
+    await waiting
+    assert.equal(resolved, true)
+    assert.equal(scrubber.isReady(), true)
+    scrubber.expect('vault')
+    assert.equal(scrubber.isReady(), true, 'declaring a ready source keeps it ready')
+    scrubber.ready('late')
+    assert.equal(scrubber.isReady(), true, 'ready() declares an undeclared source as ready')
+    scrubber.expect('later')
+    assert.equal(scrubber.isReady(), false, 'a new declaration makes the scrubber not ready again')
+    const settled = await Promise.race([scrubber.whenReady().then(() => 'ready'), Promise.resolve().then(() => 'pending')])
+    assert.equal(settled, 'pending', 'whenReady waits for the new source')
+  })
+
+  it('refuses invalid source ids and rejects waiters when closed', async () => {
+    const scrubber = new SecretScrubber()
+    assert.equal(scrubber.isReady(), true, 'with no declared source the scrubber is ready')
+    for (const bad of ['', 'Vault', '1vault', 'a b', 'x'.repeat(65)]) {
+      assert.equal(errorCode(() => scrubber.expect(bad)), 'invalid_source')
+      assert.equal(errorCode(() => scrubber.ready(bad)), 'invalid_source')
+    }
+    scrubber.expect('vault')
+    const waiting = scrubber.whenReady()
+    scrubber.close()
+    await assert.rejects(waiting, (error: unknown) => error instanceof EgressScrubberError && error.code === 'closed')
+    await assert.rejects(scrubber.whenReady(), (error: unknown) => error instanceof EgressScrubberError && error.code === 'closed')
+    assert.equal(errorCode(() => scrubber.isReady()), 'closed')
+  })
+
+  it('declares sources from the plugin config before any consumer loads', async () => {
+    const kernel = createKernel()
+    await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] })
+    const facade = kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
+    assert.equal(facade.isReady(), false)
+    assert.deepEqual(facade.pendingSources(), ['vault'])
+    facade.ready('vault')
+    assert.equal(facade.isReady(), true)
+    await kernel.dispose()
+  })
+})
+
 describe('egress scrubber: kernel service', () => {
   it('provides a frozen three-method facade that fails closed after unload', async () => {
     const kernel = createKernel()
     const handle = await kernel.plugin(egressScrubberPlugin)
     const facade = kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
     assert.ok(Object.isFrozen(facade))
-    assert.deepEqual(Object.keys(facade).sort(), ['register', 'scrub', 'unregister'])
+    assert.deepEqual(
+      Object.keys(facade).sort(),
+      ['expect', 'isReady', 'pendingSources', 'ready', 'register', 'scrub', 'unregister', 'whenReady'],
+    )
     const value = fakeSecret()
     facade.register('secret://test/kernel', value)
     assert.equal(facade.scrub(value), redactionMarker('secret://test/kernel'))
