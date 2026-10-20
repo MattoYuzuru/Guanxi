@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { UiLocaleProvider } from '../src/i18n/context.tsx'
 import { PortalContainerProvider } from '../src/lib/portal.tsx'
 import { regimeAttributes, type Regime } from './regimes.ts'
+import './regime-frame.css'
 
 /**
  * A themed subtree with its own portal container, so popovers, menus, dialogs and toasts of a
