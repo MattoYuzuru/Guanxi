@@ -1,4 +1,9 @@
 export const connectionEnglish = {
+  'connections.money': '{amount} {currency}',
+  'connections.route': '{provider} · {kind}',
+  'connections.provenance': ' · {provenance}',
+  'connections.observation': '{value} · {provenance}',
+  'connections.unattended.label': 'Allow unattended use · {name}',
   'connections.title': 'Connections',
   'connections.description': 'Model APIs, official subscription agents, local runtimes and services.',
   'connections.loading': 'Loading connections',
@@ -60,6 +65,11 @@ export const connectionEnglish = {
   'connections.cost.none': 'No usage observations yet.',
 } as const
 export const connectionRussian: Record<keyof typeof connectionEnglish, string> = {
+  'connections.money': '{amount} {currency}',
+  'connections.route': '{provider} · {kind}',
+  'connections.provenance': ' · {provenance}',
+  'connections.observation': '{value} · {provenance}',
+  'connections.unattended.label': 'Разрешить фоновое использование · {name}',
   'connections.title': 'Подключения',
   'connections.description': 'API моделей, официальные агенты с подпиской, локальные среды и сервисы.',
   'connections.loading': 'Загрузка подключений',

@@ -65,6 +65,7 @@ it('create sends no unattended opt-in; saving a key clears the password input', 
   expect(bodies[0]).toEqual({ name: 'New', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
   const password = screen.getByLabelText('API key') as HTMLInputElement
   expect(password.type).toBe('password')
+  expect(password.autocomplete).toBe('off')
   const fakeKey = crypto.randomUUID()
   fireEvent.change(password, { target: { value: fakeKey } })
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save key' })))

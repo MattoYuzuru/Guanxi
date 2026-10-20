@@ -11,6 +11,9 @@ const providers = {
   agent: ['claude-code', 'codex', 'copilot'], model_api: ['anthropic', 'openai', 'google', 'openrouter', 'deepseek'],
   local_runtime: ['ollama'], service: ['brave', 'tavily', 'openai-stt'],
 } as const
+function money(amount: number, currency: string) {
+  return translate('connections.money', { amount: amount.toLocaleString(getActiveLocale()), currency })
+}
 function provenance(value: { source: string; observedAt?: string | null; confidence: 'high' | 'medium' | 'low' | 'unknown' }) {
   if (!value.observedAt || !Number.isFinite(Date.parse(value.observedAt))) return translate('connections.unknown')
   return translate('connections.observed', { source: value.source, time: new Date(value.observedAt).toLocaleString(getActiveLocale()),
@@ -18,7 +21,7 @@ function provenance(value: { source: string; observedAt?: string | null; confide
 }
 export function balanceLabel(balance: ConnectionBalance | null): string {
   if (!balance?.observedAt || !Number.isFinite(Date.parse(balance.observedAt)) || balance.amount === null || !balance.currency || balance.confidence === 'unknown') return translate('connections.unknown')
-  return `${balance.amount.toLocaleString(getActiveLocale())} ${balance.currency}`
+  return money(balance.amount, balance.currency)
 }
 
 export function ConnectionsView({ snapshot, loading = false, error = false, errorCode, offline = false, busy = false, saved = false,
@@ -84,7 +87,7 @@ function ConnectionRow({ connection, snapshot, busy, mutate }: {
   const costs = snapshot.costs.filter(cost => cost.connectionId === connection.id)
   return <article className="connections-record border-t pt-4" aria-labelledby={`${base}-name`}>
     <h3 id={`${base}-name`} className="break-words connections-heading">{connection.name}</h3>
-    <p className="connections-muted text-12">{translate(`connections.provider.${connection.provider}`)} · {translate(`connections.kind.${connection.kind}`)}</p>
+    <p className="connections-muted text-12">{translate('connections.route', { provider: translate(`connections.provider.${connection.provider}`), kind: translate(`connections.kind.${connection.kind}`) })}</p>
     <p className="mt-2">{translate(connection.balance?.scope === 'key_allowance' ? 'connections.allowance' : 'connections.balance')}: <span data-testid="connection-balance">{balanceLabel(connection.balance)}</span></p>
     {connection.balance?.observedAt && <p className="connections-muted break-words text-12">{provenance(connection.balance)}</p>}
     {['openrouter', 'deepseek'].includes(connection.provider)
@@ -92,10 +95,10 @@ function ConnectionRow({ connection, snapshot, busy, mutate }: {
       : <p className="connections-muted text-12">{translate('connections.noProbe')}</p>}
     {Object.entries(connection.facts).map(([key, fact]) => <p key={key} className="break-words text-12">
       <span className="font-mono">{key}: {fact.observedAt ? String(fact.value ?? translate('connections.unknown')) : translate('connections.unknown')}</span>
-      <span className="connections-muted"> · {provenance(fact)}</span>
+      <span className="connections-muted">{translate('connections.provenance', { provenance: provenance(fact) })}</span>
     </p>)}
     <div className="my-3 flex flex-wrap items-center gap-3">
-      <Button type="button" role="switch" aria-checked={connection.unattended} aria-label={`${translate('connections.unattended')} · ${connection.name}`}
+      <Button type="button" role="switch" aria-checked={connection.unattended} aria-label={translate('connections.unattended.label', { name: connection.name })}
         disabled={busy || (!connection.unattended && !snapshot.vault.unattendedAvailable)}
         onClick={() => void mutate(() => connectionApi.unattended(connection.id, !connection.unattended))}>{translate(connection.unattended ? 'connections.unattended.on' : 'connections.unattended.off')}</Button>
       <p className="connections-muted text-12">{translate('connections.unattended.hint')}</p>
@@ -104,7 +107,7 @@ function ConnectionRow({ connection, snapshot, busy, mutate }: {
       <p className="break-all font-mono text-12">{connection.secretRef ?? translate('connections.secret.absent')}</p>
       <form onSubmit={event => { event.preventDefault(); const value = secret; setSecret(''); void mutate(() => connectionApi.secret(connection.id, value)) }} className="mt-2 flex flex-wrap items-end gap-3">
         <Field label={translate('connections.secret')} htmlFor={`${base}-secret`}>
-          <Input id={`${base}-secret`} type="password" autoComplete="new-password" value={secret} disabled={busy || !snapshot.vault.unlocked} onChange={e => setSecret(e.target.value)} />
+          <Input id={`${base}-secret`} type="password" autoComplete="off" value={secret} disabled={busy || !snapshot.vault.unlocked} onChange={e => setSecret(e.target.value)} />
         </Field>
         <Button type="submit" disabled={busy || !secret || !snapshot.vault.unlocked}>{translate('connections.secret.save')}</Button>
       </form>
@@ -113,7 +116,7 @@ function ConnectionRow({ connection, snapshot, busy, mutate }: {
     <p className="mt-2 text-12 connections-heading">{translate('connections.cost')}</p>
     {costs.length === 0 ? <p className="connections-muted text-12">{translate('connections.cost.none')}</p>
       : costs.map(cost => <p key={cost.id} className="break-words text-12">
-        {cost.costUsd === null ? translate('connections.unknown') : `${cost.costUsd.toLocaleString(getActiveLocale())} USD`} · {provenance(cost)}
+        {translate('connections.observation', { value: cost.costUsd === null ? translate('connections.unknown') : money(cost.costUsd, 'USD'), provenance: provenance(cost) })}
       </p>)}
   </article>
 }
