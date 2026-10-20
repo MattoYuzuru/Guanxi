@@ -1504,6 +1504,8 @@ export function openDb(path: string): Db {
   // WAL держит чтение неблокирующим, пока идёт запись стрима сообщений.
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA foreign_keys = ON')
+  // Deleted content (purged reasoning, deleted Chats) is overwritten, not left in free pages.
+  db.exec('PRAGMA secure_delete = ON')
 
   try {
     migrate(db)

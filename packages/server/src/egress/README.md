@@ -137,10 +137,17 @@ are lost like a crash before they were written; they are never written unscrubbe
   - `Uint8Array` and `Buffer`, matched on the UTF-8 bytes of each form, with the same class
     returned;
   - arrays and plain objects (prototype `Object.prototype` or `null`), keys included;
-  - `Date`, numbers, booleans, bigints, `null` and `undefined`, returned unchanged.
+  - numbers and bigints, unchanged unless their digits contain a registered value; then they
+    become the marker string (a card number or PIN registered as a secret);
+  - `Date`, booleans, `null` and `undefined`, returned unchanged.
 
   Anything else (Map, Set, class instances, functions, symbols, cycles) throws
-  `unsupported_value`, so nothing passes through unscrubbed.
+  `unsupported_value`, so nothing passes through unscrubbed; so do two keys of one object that
+  scrub to the same text. An own `__proto__` key stays a plain key.
+- **Joined output.** `scrub` works on the value it is given. A consumer that joins or
+  serialises scrubbed parts must scrub the result again: two parts can form a value across the
+  join. The session log scrubs each serialised payload and each joined search text again and
+  refuses a payload that would still change.
 - **Errors never contain a registered value**, a fragment of it or its length.
 - **Lifetime.** Registrations belong to one scrubber instance. When the provider plugin
   unloads, the instance closes and every later call throws `closed` (fail closed). The kernel

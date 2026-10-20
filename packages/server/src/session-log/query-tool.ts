@@ -21,20 +21,47 @@ export type AgentAudience = Extract<SessionAudience, 'local_agent' | 'remote_age
 
 const LOOPBACK_HOSTS = new Set(['localhost', '::1', '[::1]'])
 
-/**
- * `local_agent` only for a model endpoint on this machine's loopback interface.
- * Anything else, including an unparsable endpoint or none, is `remote_agent`.
- */
-export function audienceForModelEndpoint(endpoint: string | URL | null | undefined): AgentAudience {
-  if (!endpoint) return 'remote_agent'
+/** Runtime adapters that execute the model on this machine. */
+const LOCAL_RUNTIMES: ReadonlySet<string> = new Set(['ollama'])
+
+/** Where an agent's model actually runs, as far as the node knows it. */
+export interface AgentExecution {
+  /** The endpoint model requests go to. */
+  endpoint: string | URL | null | undefined
+  /** The runtime adapter serving the model (for example `ollama`); anything not known to run locally is remote. */
+  runtime: string | null | undefined
+  /** The model name; cloud-backed models served through a local daemon are remote. */
+  model: string | null | undefined
+}
+
+function isLoopback(endpoint: string | URL | null | undefined): boolean {
+  if (!endpoint) return false
   let host: string
   try {
     host = (endpoint instanceof URL ? endpoint : new URL(endpoint)).hostname.toLowerCase()
   } catch {
-    return 'remote_agent'
+    return false
   }
-  if (LOOPBACK_HOSTS.has(host) || /^127(\.\d{1,3}){3}$/u.test(host)) return 'local_agent'
-  return 'remote_agent'
+  return LOOPBACK_HOSTS.has(host) || /^127(\.\d{1,3}){3}$/u.test(host)
+}
+
+/** Ollama serves `…:…-cloud` and `…:cloud` models from its local daemon but runs them on ollama.com. */
+function isCloudBacked(model: string): boolean {
+  return /cloud/iu.test(model)
+}
+
+/**
+ * `local_agent` only when every fact says the model runs on this machine: a
+ * loopback endpoint, a runtime adapter that executes locally, and a model that
+ * is not cloud-backed. A loopback endpoint alone is not enough (a local proxy,
+ * a port forward or an Ollama cloud model sends requests elsewhere). Anything
+ * unknown is `remote_agent`, which never receives reasoning (D-113).
+ */
+export function audienceForAgent(execution: AgentExecution): AgentAudience {
+  if (!isLoopback(execution.endpoint)) return 'remote_agent'
+  if (!execution.runtime || !LOCAL_RUNTIMES.has(execution.runtime)) return 'remote_agent'
+  if (!execution.model || isCloudBacked(execution.model)) return 'remote_agent'
+  return 'local_agent'
 }
 
 export function querySessionLog(

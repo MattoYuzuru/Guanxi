@@ -19,7 +19,7 @@
  */
 import type { ChatJobInputSnapshot, ChatJobOutput, JobStreamEvent, SessionEventType, SessionKind } from '@guanxi/contract'
 import type { Db } from '../store/db.ts'
-import type { SessionEventInput, SessionLog } from './log.ts'
+import { DEFAULT_REASONING_RETENTION_MS, type SessionEventInput, type SessionLog } from './log.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
 
@@ -65,7 +65,7 @@ export class ChatSessionMirror implements JobEventMirror {
   constructor(options: { log: SessionLog; db: Db; reasoningRetentionMs?: number }) {
     this.log = options.log
     this.db = options.db
-    this.reasoningRetentionMs = options.reasoningRetentionMs ?? 7 * DAY_MS
+    this.reasoningRetentionMs = options.reasoningRetentionMs ?? DEFAULT_REASONING_RETENTION_MS
   }
 
   recordChatCreated(input: {

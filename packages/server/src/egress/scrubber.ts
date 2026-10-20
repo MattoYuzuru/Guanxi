@@ -197,13 +197,13 @@ export class SecretScrubber implements EgressScrubber {
 
   private scrubAny(value: unknown, ancestors: Set<object>): unknown {
     if (typeof value === 'string') return this.scrubString(value)
-    if (
-      value === null ||
-      value === undefined ||
-      typeof value === 'number' ||
-      typeof value === 'boolean' ||
-      typeof value === 'bigint'
-    ) {
+    if (typeof value === 'number' || typeof value === 'bigint') {
+      // A number whose digits hold a registered value (a card number, a PIN) becomes its marker string.
+      const digits = String(value)
+      const scrubbed = this.scrubString(digits)
+      return scrubbed === digits ? value : scrubbed
+    }
+    if (value === null || value === undefined || typeof value === 'boolean') {
       return value
     }
     if (typeof value !== 'object') {
@@ -227,7 +227,17 @@ export class SecretScrubber implements EgressScrubber {
       }
       const copy: Record<string, unknown> = prototype === null ? Object.create(null) : {}
       for (const key of Object.keys(value)) {
-        copy[this.scrubString(key)] = this.scrubAny((value as Record<string, unknown>)[key], ancestors)
+        const scrubbedKey = this.scrubString(key)
+        if (Object.hasOwn(copy, scrubbedKey)) {
+          throw new EgressScrubberError('unsupported_value', 'Two keys scrub to the same text')
+        }
+        // defineProperty keeps an own "__proto__" key a plain key instead of a prototype change.
+        Object.defineProperty(copy, scrubbedKey, {
+          value: this.scrubAny((value as Record<string, unknown>)[key], ancestors),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        })
       }
       return copy
     } finally {

@@ -75,8 +75,10 @@ writer row in that transaction:
 | `local_agent` | every event |
 | `remote_agent` | every event except the reasoning class, filtered in SQL |
 
-`audienceForModelEndpoint(url)` returns `local_agent` only for a loopback model endpoint.
-Anything else, including no endpoint, is `remote_agent`.
+`audienceForAgent({ endpoint, runtime, model })` returns `local_agent` only when the endpoint is
+loopback, the runtime adapter executes on this machine (today: `ollama`) and the model is not
+cloud-backed (Ollama's `…-cloud` and `:cloud` models run on ollama.com through the local
+daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`.
 
 ## Residuals
 

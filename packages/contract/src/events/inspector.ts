@@ -16,7 +16,8 @@ import {
 
 export const SESSION_EXPORT_VERSION = 1
 
-const sessionId = z.string().min(1).max(200)
+/** URL- and header-safe: session ids appear in paths and in the export's file name. */
+const sessionId = z.string().regex(/^[A-Za-z0-9._:-]{1,200}$/u)
 
 export const sessionPathParams = z.object({ sessionId }).strict()
 
@@ -110,7 +111,12 @@ export type SessionSpansResponse = z.infer<typeof sessionSpansResponse>
 
 export const sessionSearchQuery = z
   .object({
-    q: z.string().trim().min(1).max(200),
+    q: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .refine((value) => !/\p{Cc}/u.test(value), 'Search text has no control characters'),
     sessionId: sessionId.optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
   })

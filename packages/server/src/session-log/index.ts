@@ -22,8 +22,8 @@ export { ChatSessionMirror, stepSpanId, toolSpanId, turnSpanId } from './chat-mi
 export type { JobEventMirror } from './chat-mirror.ts'
 export { projectSpans, projectTokenMeter, projectTranscript } from './projection.ts'
 export type { SessionTranscriptState } from './projection.ts'
-export { audienceForModelEndpoint, createSessionQueryTool, querySessionLog } from './query-tool.ts'
-export type { AgentAudience } from './query-tool.ts'
+export { audienceForAgent, createSessionQueryTool, querySessionLog } from './query-tool.ts'
+export type { AgentAudience, AgentExecution } from './query-tool.ts'
 export { sessionLogRoutes } from './routes.ts'
 export {
   REASONING_PURGE_INTERVAL_MS,

@@ -166,6 +166,7 @@ export async function start(options: StartOptions = {}) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
+    context.sessionLog?.closeSubscriptions()
     await kernel.node.dispose().catch(() => undefined)
     context.db.close()
     throw error
@@ -194,6 +195,8 @@ export async function start(options: StartOptions = {}) {
         shutdownError ??= error
       } finally {
         context.jobService.closeSubscriptions()
+        // Inspector streams are open-ended; end them so the listener can close.
+        context.sessionLog?.closeSubscriptions()
         await listenerClosed
         // Unload plugins before the database they may use is closed. Each
         // plugin cleanup is bounded by the kernel's step timeout; the HTTP

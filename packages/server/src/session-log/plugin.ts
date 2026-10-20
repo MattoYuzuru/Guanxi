@@ -30,11 +30,14 @@ export function createSessionLogPlugin(
       effect(ctx, () => () => log.close(), 'sessionLog.close()')
       const purge = () => {
         try {
-          log.purgeExpiredReasoning()
+          log.purgeAllExpiredReasoning()
         } catch {
-          // The next tick retries; a purge failure never stops the node.
+          // The next tick retries; a purge failure never stops the node. Reads
+          // already treat expired reasoning as purged.
         }
       }
+      // Once at start, so a node that restarts often still purges, then periodically.
+      purge()
       interval(ctx, purge, purgeIntervalMs ?? REASONING_PURGE_INTERVAL_MS)
       provide(ctx, SESSION_LOG_SERVICE, log)
     },

@@ -3,24 +3,39 @@
  * tables only and never touches an earlier table.
  *
  * The database itself enforces the log's shape:
- * - `sessions.last_seq` only moves forward by one;
- * - an event's `seq` must equal the session head it was appended under, so a
- *   gap or a duplicate cannot be committed, and its `writer_epoch` must be the
- *   session's current unreleased writer epoch, so a fenced writer cannot append;
+ * - an event is inserted only at `last_seq + 1` and only under the session's
+ *   current unreleased writer epoch, so a fenced writer cannot append;
+ * - inserting the event advances the head (trigger), and the head can move
+ *   only onto an event that exists, so a gap or a duplicate cannot be
+ *   committed, even by a caller that catches an error and commits anyway;
  * - events are immutable except one transition: retention purges a reasoning
  *   event's content (payload and search text become NULL, `purged_at` is set);
- * - events, writers and sessions disappear only with their owning Thread.
+ * - a writer epoch only moves forward, a released epoch cannot resume, and
+ *   writer rows, events and sessions disappear only with their owning Thread.
+ *
+ * CHECK constraints hold only structural facts. Policy that later stages may
+ * change (event versions, which types are reasoning, what may be purged) lives
+ * in triggers, which an append-only migration can drop and recreate without
+ * rebuilding the table.
+ *
  * The FTS5 index follows `session_events` through triggers in the same
  * statement, so an event and its index entry commit or roll back together.
  */
 export const SESSION_LOG_MIGRATION = `
   CREATE TABLE sessions (
     id          TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 200),
-    kind        TEXT NOT NULL CHECK (kind IN ('chat','agent')),
+    kind        TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 32),
     thread_id   TEXT UNIQUE REFERENCES threads(id) ON DELETE CASCADE,
     created_at  TEXT NOT NULL,
     last_seq    INTEGER NOT NULL DEFAULT 0 CHECK (last_seq >= 0)
   );
+
+  CREATE TRIGGER sessions_policy_insert
+    BEFORE INSERT ON sessions
+    WHEN NEW.kind NOT IN ('chat','agent') OR NEW.last_seq <> 0
+    BEGIN
+      SELECT RAISE(ABORT, 'A session starts empty with a known kind');
+    END;
 
   CREATE TRIGGER sessions_identity_immutable
     BEFORE UPDATE OF id, kind, thread_id, created_at ON sessions
@@ -28,11 +43,15 @@ export const SESSION_LOG_MIGRATION = `
       SELECT RAISE(ABORT, 'Session identity is immutable');
     END;
 
-  CREATE TRIGGER sessions_head_advances_by_one
+  CREATE TRIGGER sessions_head_follows_events
     BEFORE UPDATE OF last_seq ON sessions
     WHEN NEW.last_seq <> OLD.last_seq + 1
+      OR NOT EXISTS (
+        SELECT 1 FROM session_events event
+        WHERE event.session_id = NEW.id AND event.seq = NEW.last_seq
+      )
     BEGIN
-      SELECT RAISE(ABORT, 'A session head advances by exactly one');
+      SELECT RAISE(ABORT, 'A session head moves only onto its next event');
     END;
 
   CREATE TRIGGER sessions_delete_with_thread_only
@@ -60,8 +79,16 @@ export const SESSION_LOG_MIGRATION = `
     WHEN NEW.epoch < OLD.epoch
       OR (NEW.epoch = OLD.epoch AND NEW.writer_id <> OLD.writer_id)
       OR (NEW.epoch > OLD.epoch + 1)
+      OR (NEW.epoch = OLD.epoch AND OLD.released_at IS NOT NULL AND NEW.released_at IS NULL)
     BEGIN
-      SELECT RAISE(ABORT, 'A writer change must begin the next epoch');
+      SELECT RAISE(ABORT, 'A writer change must begin the next epoch, and a released epoch cannot resume');
+    END;
+
+  CREATE TRIGGER session_writers_delete_with_session_only
+    BEFORE DELETE ON session_writers
+    WHEN EXISTS (SELECT 1 FROM sessions owner WHERE owner.id = OLD.session_id)
+    BEGIN
+      SELECT RAISE(ABORT, 'A writer row is deleted only with its session');
     END;
 
   CREATE TABLE session_events (
@@ -69,7 +96,7 @@ export const SESSION_LOG_MIGRATION = `
     session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     seq             INTEGER NOT NULL CHECK (seq >= 1),
     id              TEXT NOT NULL UNIQUE,
-    event_version   INTEGER NOT NULL CHECK (event_version = 1),
+    event_version   INTEGER NOT NULL CHECK (event_version >= 1),
     type            TEXT NOT NULL CHECK (length(type) BETWEEN 1 AND 64),
     class           TEXT NOT NULL CHECK (class IN ('standard','reasoning')),
     span_id         TEXT,
@@ -88,27 +115,39 @@ export const SESSION_LOG_MIGRATION = `
     expires_at      TEXT,
     purged_at       TEXT,
     UNIQUE (session_id, seq),
-    UNIQUE (session_id, idempotency_key),
-    CHECK ((payload IS NULL) = (purged_at IS NOT NULL)),
-    CHECK (purged_at IS NULL OR (class = 'reasoning' AND search_text IS NULL)),
-    CHECK ((class = 'reasoning') = (expires_at IS NOT NULL)),
-    CHECK ((class = 'reasoning') = (type = 'reasoning'))
+    UNIQUE (session_id, idempotency_key)
   );
   CREATE INDEX idx_session_events_job
     ON session_events(job_id, job_sequence) WHERE job_id IS NOT NULL;
   CREATE INDEX idx_session_events_reasoning_expiry
     ON session_events(expires_at) WHERE class = 'reasoning' AND purged_at IS NULL;
 
-  CREATE TRIGGER session_events_follow_head
+  CREATE TRIGGER session_events_placement
     BEFORE INSERT ON session_events
-    WHEN NEW.seq IS NOT (SELECT head.last_seq FROM sessions head WHERE head.id = NEW.session_id)
+    WHEN NEW.seq IS NOT (SELECT head.last_seq + 1 FROM sessions head WHERE head.id = NEW.session_id)
       OR NEW.writer_epoch IS NOT (
         SELECT writer.epoch FROM session_writers writer
         WHERE writer.session_id = NEW.session_id AND writer.released_at IS NULL
       )
-      OR NEW.purged_at IS NOT NULL
     BEGIN
-      SELECT RAISE(ABORT, 'A session event must be appended at the session head by its current writer');
+      SELECT RAISE(ABORT, 'A session event must be appended at the next seq of the session head by its current writer');
+    END;
+
+  CREATE TRIGGER session_events_policy_insert
+    BEFORE INSERT ON session_events
+    WHEN NEW.event_version <> 1
+      OR NEW.payload IS NULL
+      OR NEW.purged_at IS NOT NULL
+      OR (NEW.class = 'reasoning') <> (NEW.type = 'reasoning')
+      OR (NEW.class = 'reasoning') <> (NEW.expires_at IS NOT NULL)
+    BEGIN
+      SELECT RAISE(ABORT, 'A session event must carry its payload and match the event policy');
+    END;
+
+  CREATE TRIGGER session_events_advance_head
+    AFTER INSERT ON session_events
+    BEGIN
+      UPDATE sessions SET last_seq = NEW.seq WHERE id = NEW.session_id;
     END;
 
   CREATE TRIGGER session_events_append_only_update

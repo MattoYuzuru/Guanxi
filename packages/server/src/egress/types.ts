@@ -35,8 +35,9 @@ export interface EgressScrubber {
    * Returns a copy of `value` in which every occurrence of every registered
    * value is replaced by its redaction marker. Supports strings, `Uint8Array`
    * (including `Buffer`), arrays, plain objects (keys and values), `Date` and
-   * primitives; anything else throws `unsupported_value` rather than pass
-   * through unscrubbed.
+   * primitives; a number or bigint whose digits contain a registered value
+   * becomes its marker string. Anything else, and two keys that scrub to the
+   * same text, throw `unsupported_value` rather than pass through unscrubbed.
    */
   scrub<T>(value: T): T
   /**

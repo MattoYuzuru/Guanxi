@@ -22,8 +22,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import {
   SESSION_EVENT_VERSION,
-  SEARCH_MATCH_CLOSE,
-  SEARCH_MATCH_OPEN,
   sessionEventClassOf,
   sessionEventDataSchemas,
   sessionEventSchema,
@@ -37,7 +35,8 @@ import {
   type SessionTokenMeter,
   type SessionWriterReason,
 } from '@guanxi/contract'
-import { REDACTION_MARKER_PREFIX, type EgressScrubber } from '../egress/types.ts'
+import { REDACTION_MARKER_CLOSE, REDACTION_MARKER_PREFIX, type EgressScrubber } from '../egress/types.ts'
+import { buildSnippet, searchTerms } from './snippet.ts'
 import type { Db } from '../store/db.ts'
 
 export const DEFAULT_WRITER_TTL_MS = 30_000
@@ -50,7 +49,6 @@ const MAX_PAGE = 1_000
 export const SESSION_APPEND_POINTS = [
   'begin',
   'writer_checked',
-  'head_advanced',
   'event_inserted',
   'before_commit',
   'committed',
@@ -252,6 +250,35 @@ export function literalFtsQuery(text: string): string | null {
   return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(' ')
 }
 
+type ListItemRow = SessionRow & { first_prompt: string | null; last_event_at: string | null }
+
+/** The newest event is the one at the head, so no scan over the session's events is needed. */
+const LIST_ITEM_SELECT = `SELECT s.id, s.kind, s.thread_id, s.created_at, s.last_seq,
+         (SELECT p.payload FROM session_events p
+          WHERE p.session_id = s.id AND p.type = 'prompt' ORDER BY p.seq LIMIT 1) AS first_prompt,
+         (SELECT e.created_at FROM session_events e
+          WHERE e.session_id = s.id AND e.seq = s.last_seq) AS last_event_at
+       FROM sessions s`
+
+const TITLE_LENGTH = 60
+
+/** The first line of a scrubbed prompt, cut at 60 characters but never inside a redaction marker. */
+export function titleOf(scrubbed: string): string | null {
+  const line = scrubbed.trim().split('\n')[0] ?? ''
+  if (line.length === 0) return null
+  if (line.length <= TITLE_LENGTH) return line
+  let end = TITLE_LENGTH
+  const open = line.lastIndexOf(REDACTION_MARKER_PREFIX, end)
+  if (open >= 0) {
+    const close = line.indexOf(REDACTION_MARKER_CLOSE, open)
+    if (close >= end - 1 || close < 0) end = close < 0 ? open : close + REDACTION_MARKER_CLOSE.length
+  }
+  return line.slice(0, end)
+}
+
+/** Writer ids of the session logs open in this process. */
+const LIVE_WRITER_IDS = new Set<string>()
+
 class SubscriptionWake {
   version = 0
   private resolveWait: (() => void) | null = null
@@ -292,6 +319,7 @@ export class SessionLog {
   private readonly pending: PendingWrite[] = []
   private pendingBytes = 0
   private flushScheduled = false
+  private subscriptionsClosed = false
   private closing = false
 
   constructor(options: SessionLogOptions) {
@@ -304,6 +332,7 @@ export class SessionLog {
     this.isProcessAlive = options.isProcessAlive ?? defaultProcessAlive
     this.fault = options.fault
     this.pendingLimit = options.pendingLimit ?? DEFAULT_PENDING_LIMIT
+    LIVE_WRITER_IDS.add(this.writer.id)
   }
 
   /* ──────────────────────────── readiness ─────────────────────────── */
@@ -374,6 +403,10 @@ export class SessionLog {
     options: AppendOptions = {},
   ): AppendResult | { buffered: true } {
     this.assertOpen()
+    // The system path never opens its own transaction; it must run inside the caller's.
+    if ((this.db as unknown as { isTransaction?: boolean }).isTransaction === false) {
+      throw new SessionLogError('invalid_event', 'appendAsSystemWithin must run inside a transaction')
+    }
     const held = this.writers.get(sessionId)
     if (held?.handle) {
       throw new SessionLogError('writer_busy', `Session ${sessionId} has an open handle`)
@@ -534,6 +567,22 @@ export class SessionLog {
   }
 
   /**
+   * Purges every expired reasoning event in bounded batches, then rewrites the
+   * FTS5 index so the purged terms leave its segments too. With the
+   * connection's `secure_delete` on (openDb), freed pages are zeroed as well.
+   */
+  purgeAllExpiredReasoning(batch = 200): number {
+    let total = 0
+    while (true) {
+      const { purged } = this.purgeExpiredReasoning(batch)
+      total += purged
+      if (purged < batch) break
+    }
+    if (total > 0) this.db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES ('optimize')")
+    return total
+  }
+
+  /**
    * Writes what is held back if the scrubber is ready, then releases every
    * writer row this process holds and ends every subscription. Writes still
    * held back because the scrubber never became ready are lost with the
@@ -552,6 +601,16 @@ export class SessionLog {
       else this.releaseSystemWriter(sessionId, held.epoch)
     }
     this.writers.clear()
+    LIVE_WRITER_IDS.delete(this.writer.id)
+    this.closeSubscriptions()
+  }
+
+  /**
+   * Ends every live subscription now, so an HTTP server can finish closing
+   * while an inspector stream is open. Later subscriptions end at once.
+   */
+  closeSubscriptions(): void {
+    this.subscriptionsClosed = true
     for (const subscribers of this.subscribers.values()) {
       for (const subscriber of subscribers) subscriber.notify()
     }
@@ -572,40 +631,40 @@ export class SessionLog {
   session(sessionId: string): SessionListItem | null {
     this.assertEgressReady()
     const row = this.db
-      .prepare(
-        `SELECT s.id, s.kind, s.thread_id, s.created_at, s.last_seq, t.title,
-                (SELECT MAX(created_at) FROM session_events e WHERE e.session_id = s.id) AS last_event_at
-         FROM sessions s LEFT JOIN threads t ON t.id = s.thread_id
-         WHERE s.id = ?`,
-      )
-      .get(sessionId) as unknown as (SessionRow & { title: string | null; last_event_at: string | null }) | undefined
+      .prepare(`${LIST_ITEM_SELECT} WHERE s.id = ?`)
+      .get(sessionId) as unknown as ListItemRow | undefined
     return row ? this.toListItem(row) : null
   }
 
   list(limit = 50): SessionListItem[] {
     this.assertEgressReady()
     const rows = this.db
-      .prepare(
-        `SELECT s.id, s.kind, s.thread_id, s.created_at, s.last_seq, t.title,
-                (SELECT MAX(created_at) FROM session_events e WHERE e.session_id = s.id) AS last_event_at
-         FROM sessions s LEFT JOIN threads t ON t.id = s.thread_id
-         ORDER BY COALESCE(last_event_at, s.created_at) DESC, s.id
-         LIMIT ?`,
-      )
-      .all(Math.min(Math.max(1, limit), 200)) as unknown as (SessionRow & {
-      title: string | null
-      last_event_at: string | null
-    })[]
+      .prepare(`${LIST_ITEM_SELECT} ORDER BY COALESCE(last_event_at, s.created_at) DESC, s.id LIMIT ?`)
+      .all(Math.min(Math.max(1, limit), 200)) as unknown as ListItemRow[]
     return rows.map((row) => this.toListItem(row))
   }
 
-  /** Thread titles are derived from the first prompt, so they are scrubbed too. */
-  private toListItem(row: SessionRow & { title: string | null; last_event_at: string | null }): SessionListItem {
+  /**
+   * The title comes from the session's first prompt event, which was scrubbed
+   * when it was stored, and is cut only after scrubbing. The legacy Thread
+   * title is never used: it is the raw prompt cut at 60 characters, and a cut
+   * secret no longer matches exactly.
+   */
+  private toListItem(row: ListItemRow): SessionListItem {
+    let title: string | null = null
+    if (row.first_prompt !== null) {
+      try {
+        const text = (JSON.parse(row.first_prompt) as { text?: unknown }).text
+        if (typeof text === 'string') title = titleOf(this.scrubber.scrub(text))
+      } catch {
+        title = null
+      }
+    }
     return {
       sessionId: row.id,
       kind: row.kind as SessionKind,
       threadId: row.thread_id,
-      title: row.title === null ? null : this.scrubber.scrub(row.title),
+      title,
       createdAt: row.created_at,
       lastSeq: row.last_seq,
       lastEventAt: row.last_event_at,
@@ -658,36 +717,47 @@ export class SessionLog {
     const limit = Math.min(Math.max(1, options.limit ?? 25), 100)
     const rows = this.db
       .prepare(
-        `SELECT e.session_id, e.seq, e.type, e.class, e.created_at,
-                snippet(session_events_fts, 0, ?, ?, '…', 16) AS snippet
+        `SELECT e.session_id, e.seq, e.type, e.class, e.created_at, e.search_text
          FROM session_events_fts
          JOIN session_events e ON e.row_id = session_events_fts.rowid
          WHERE session_events_fts MATCH ?
            ${options.sessionId ? 'AND e.session_id = ?' : ''}
            ${options.audience === 'remote_agent' ? "AND e.class = 'standard'" : ''}
+           AND (e.class = 'standard' OR e.expires_at > ?)
          ORDER BY rank, e.session_id, e.seq
          LIMIT ?`,
       )
       .all(
-        ...[SEARCH_MATCH_OPEN, SEARCH_MATCH_CLOSE, query],
+        query,
         ...(options.sessionId ? [options.sessionId] : []),
-        limit,
+        this.clock().toISOString(),
+        // Hits can be dropped below (a term matched only a now-redacted value), so read ahead.
+        Math.min(limit * 3, 300),
       ) as unknown as {
       session_id: string
       seq: number
       type: SessionEventType
       class: 'standard' | 'reasoning'
       created_at: string
-      snippet: string
+      search_text: string
     }[]
-    return rows.map((row) => ({
-      sessionId: row.session_id,
-      seq: row.seq,
-      type: row.type,
-      class: row.class,
-      snippet: this.scrubber.scrub(row.snippet),
-      createdAt: row.created_at,
-    }))
+    const terms = searchTerms(text)
+    const hits: SessionSearchHit[] = []
+    for (const row of rows) {
+      // The snippet comes from the whole indexed text, scrubbed with every value registered now.
+      const snippet = buildSnippet(this.scrubber.scrub(row.search_text), terms)
+      if (snippet === null) continue
+      hits.push({
+        sessionId: row.session_id,
+        seq: row.seq,
+        type: row.type,
+        class: row.class,
+        snippet,
+        createdAt: row.created_at,
+      })
+      if (hits.length === limit) break
+    }
+    return hits
   }
 
   /** Per-type counts over every event (people see all of them). */
@@ -696,10 +766,12 @@ export class SessionLog {
     this.requireSession(sessionId)
     const rows = this.db
       .prepare(
-        `SELECT type, COUNT(*) AS count, SUM(purged_at IS NOT NULL) AS purged, SUM(redactions) AS redactions
+        `SELECT type, COUNT(*) AS count,
+                SUM(purged_at IS NOT NULL OR (class = 'reasoning' AND expires_at <= ?)) AS purged,
+                SUM(redactions) AS redactions
          FROM session_events WHERE session_id = ? GROUP BY type`,
       )
-      .all(sessionId) as unknown as { type: SessionEventType; count: number; purged: number; redactions: number }[]
+      .all(this.clock().toISOString(), sessionId) as unknown as { type: SessionEventType; count: number; purged: number; redactions: number }[]
     const counts: Partial<Record<SessionEventType, number>> = {}
     let purged = 0
     let redactions = 0
@@ -754,7 +826,7 @@ export class SessionLog {
     this.subscribers.set(sessionId, set)
     let cursor = afterSeq
     try {
-      while (!signal.aborted && !this.closing) {
+      while (!signal.aborted && !this.closing && !this.subscriptionsClosed) {
         const observed = wake.version
         const page = this.read(sessionId, { afterSeq: cursor, limit: 200, audience })
         if (page.events.length === 0) {
@@ -886,14 +958,37 @@ export class SessionLog {
     return epoch
   }
 
+  /** Extends this writer's row when less than half of its time to live remains. */
+  private renewWithin(sessionId: string, epoch: number): void {
+    const now = this.clock()
+    this.db
+      .prepare(
+        `UPDATE session_writers SET renewed_at = ?, expires_at = ?
+         WHERE session_id = ? AND writer_id = ? AND epoch = ? AND released_at IS NULL AND expires_at < ?`,
+      )
+      .run(
+        now.toISOString(),
+        new Date(now.getTime() + this.writerTtlMs).toISOString(),
+        sessionId,
+        this.writer.id,
+        epoch,
+        new Date(now.getTime() + this.writerTtlMs / 2).toISOString(),
+      )
+  }
+
+  /**
+   * Whether the process that wrote `row` is gone. The node database is local to
+   * this machine, so every writer row was written on this machine; the recorded
+   * host name is kept for diagnostics only (it changes with the network on
+   * macOS). A row with this process's PID belongs to an earlier incarnation in
+   * the same PID namespace (a container restart) unless its writer id is live
+   * in this process. PID reuse by an unrelated process can only delay a
+   * handover until the row expires; it never creates a second writer.
+   */
   private writerProcessGone(row: WriterRow): boolean {
-    return (
-      row.host !== null &&
-      row.host === this.writer.host &&
-      row.pid !== null &&
-      row.pid !== this.writer.pid &&
-      !this.isProcessAlive(row.pid)
-    )
+    if (row.pid === null) return false
+    if (row.pid === this.writer.pid) return !LIVE_WRITER_IDS.has(row.writer_id)
+    return !this.isProcessAlive(row.pid)
   }
 
   /** Inside a transaction: the append itself. */
@@ -910,8 +1005,14 @@ export class SessionLog {
 
     const data = this.scrubber.scrub(parsed.data) as SessionEventData<T>
     const payload = JSON.stringify(data)
+    // Fields are scrubbed one by one; refuse a payload whose serialisation re-forms a value.
+    if (this.scrubber.scrub(payload) !== payload) {
+      throw new SessionLogError('invalid_event', `The ${input.type} payload would re-form a registered secret`)
+    }
     const payloadSha256 = sha256(payload)
     const redactions = Math.max(0, countMarkers(payload) - countMarkers(JSON.stringify(parsed.data)))
+    const joined = searchTextOf(input.type, data)
+    const searchText = joined === null ? null : this.scrubber.scrub(joined)
 
     const writer = this.db
       .prepare('SELECT writer_id, epoch, released_at FROM session_writers WHERE session_id = ?')
@@ -919,6 +1020,7 @@ export class SessionLog {
     if (!writer || writer.writer_id !== this.writer.id || writer.epoch !== epoch || writer.released_at !== null) {
       throw new SessionLogError('writer_fenced', `Writer epoch ${epoch} no longer owns session ${sessionId}`)
     }
+    this.renewWithin(sessionId, epoch)
     this.fault?.('writer_checked', { sessionId, type: input.type })
 
     if (options.idempotencyKey !== undefined) {
@@ -950,21 +1052,18 @@ export class SessionLog {
       }
     }
 
-    const advanced = this.db
-      .prepare('UPDATE sessions SET last_seq = last_seq + 1 WHERE id = ? AND last_seq = ? RETURNING last_seq')
-      .get(sessionId, head) as unknown as { last_seq: number } | undefined
-    if (!advanced) throw new SessionLogError('sequence_conflict', `Session ${sessionId} head moved`)
-    this.fault?.('head_advanced', { sessionId, type: input.type })
-
     const createdAt = this.clock().toISOString()
     const eventClass = sessionEventClassOf(input.type)
+    // A caller may shorten the reasoning retention (a sooner parent TTL), never extend it.
+    const defaultExpiry = Date.parse(createdAt) + this.reasoningRetentionMs
+    const requested = input.expiresAt === undefined ? Number.NaN : Date.parse(input.expiresAt)
     const expiresAt = eventClass === 'reasoning'
-      ? input.expiresAt ?? new Date(Date.parse(createdAt) + this.reasoningRetentionMs).toISOString()
+      ? new Date(Number.isFinite(requested) ? Math.min(requested, defaultExpiry) : defaultExpiry).toISOString()
       : null
     const row: EventRow = {
       row_id: 0,
       session_id: sessionId,
-      seq: advanced.last_seq,
+      seq: head + 1,
       id: randomUUID(),
       event_version: SESSION_EVENT_VERSION,
       type: input.type,
@@ -977,12 +1076,14 @@ export class SessionLog {
       idempotency_key: options.idempotencyKey ?? null,
       payload,
       payload_sha256: payloadSha256,
-      search_text: searchTextOf(input.type, data),
+      search_text: searchText,
       redactions,
       created_at: createdAt,
       expires_at: expiresAt,
       purged_at: null,
     }
+    // Validate the whole envelope before anything is written; the insert below
+    // advances the head through a trigger, so a refused event leaves no gap.
     const event = this.toEvent(row, { rescrub: false })
     this.db
       .prepare(
@@ -1003,7 +1104,10 @@ export class SessionLog {
 
   private toEvent(row: EventRow, options: { rescrub?: boolean } = {}): SessionEvent {
     let data: unknown = null
-    if (row.payload !== null) {
+    // Retention is enforced on read as well: expired reasoning is gone before the purge runs.
+    const expired = row.class === 'reasoning' && row.purged_at === null && row.expires_at !== null &&
+      Date.parse(row.expires_at) <= this.clock().getTime()
+    if (row.payload !== null && !expired) {
       if (sha256(row.payload) !== row.payload_sha256) {
         throw new SessionLogError('stored_data_invalid', `Session event ${row.id} failed its checksum`)
       }
@@ -1031,7 +1135,7 @@ export class SessionLog {
     }
     if (row.class === 'reasoning') {
       candidate['expiresAt'] = row.expires_at
-      candidate['purgedAt'] = row.purged_at
+      candidate['purgedAt'] = row.purged_at ?? (expired ? row.expires_at : null)
     }
     const parsed = sessionEventSchema.safeParse(candidate)
     if (!parsed.success) {

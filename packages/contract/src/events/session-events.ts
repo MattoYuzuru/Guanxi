@@ -41,7 +41,11 @@ export type SessionAudience = z.infer<typeof sessionAudienceSchema>
 export const promptOriginSchema = z.enum(['typed', 'voice', 'queued', 'remote', 'delegated'])
 export type PromptOrigin = z.infer<typeof promptOriginSchema>
 
-/** Why a writer epoch began (ADR-0018: grant, release, expiry, fenced handover). */
+/**
+ * Why a writer epoch began. The epoch is a process-level fencing token for one
+ * node database, not an ADR-0018 lease: `writer_process_gone` hands over before
+ * expiry when the previous process is known to be dead.
+ */
 export const sessionWriterReasonSchema = z.enum([
   'initial',
   'released',
@@ -88,7 +92,11 @@ export const sessionEventDataSchemas = {
       arguments: z.record(z.unknown()),
       source: z.enum(['builtin', 'mcp']),
       parsedFrom: z.enum(['native', 'content_json']),
-      /** Only the path of a write preview; workspace content stays out of the log. */
+      /**
+       * Only the path of a write preview; the preview's before/after text is not
+       * stored. Tool arguments and results are stored as the tool saw them
+       * (scrubbed); bounding them is K4's (ADR-0023 §4).
+       */
       diffPath: z.string().nullable(),
     })
     .strict(),
