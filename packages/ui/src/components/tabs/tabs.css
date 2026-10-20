@@ -11,8 +11,9 @@
   position: relative;
   display: flex;
   gap: var(--spacing-4);
+  /* Tabs wrap rather than scroll, so nothing clips the focus ring outside a tab. */
+  flex-wrap: wrap;
   border-bottom: var(--border-width-regular) solid var(--color-border-primary);
-  overflow-x: auto;
 }
 
 .gx-tabs-tab {
@@ -43,12 +44,6 @@
 [data-gx-force~='hover'] .gx-tabs-tab:not([data-disabled]) {
   background-color: var(--color-background-hover);
   color: var(--color-text-primary);
-}
-
-/* The list scrolls horizontally, which clips anything outside it: draw the ring inside. */
-.gx-tabs-tab.gx-focusable:focus-visible,
-[data-gx-force~='focus-visible'] .gx-tabs-tab.gx-focusable {
-  @apply -outline-offset-2;
 }
 
 .gx-tabs-tab[data-active] {

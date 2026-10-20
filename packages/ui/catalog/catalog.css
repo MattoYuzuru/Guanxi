@@ -118,8 +118,7 @@
 
 @media (forced-colors: active) {
   .gx-catalog-nav-link[aria-current='page'] {
-    outline: var(--focus-ring-width) solid Highlight;
-    @apply -outline-offset-2;
+    border-left-color: Highlight;
   }
 }
 

@@ -166,9 +166,10 @@ const GLASS = {
     opacity: { light: '0.9', dark: '0.9' },
     strongOpacity: { light: '0.96', dark: '0.96' },
   },
+  // Solid keeps the recipe with zero blur; only forced Solid (HC, reduced transparency) is 'none'.
   solid: {
-    blur: 'none',
-    strongBlur: 'none',
+    blur: 'blur(0px) saturate(1)',
+    strongBlur: 'blur(0px) saturate(1)',
     opacity: { light: '1', dark: '1' },
     strongOpacity: { light: '1', dark: '1' },
   },
@@ -232,12 +233,12 @@ test('every component shows every declared state in all 24 theme, density and gl
           if (cell.glassFill !== null) {
             if (hc) expect(cell.glassFill, `${label} ${cell.key}`).not.toContain('color-mix')
             else expect(cell.glassFill, `${label} ${cell.key}`).toMatch(fillOf(GLASS[glass].opacity[family]))
-            expect(cell.glassBackdrop, `${label} ${cell.key}`).toBe(hc ? GLASS.solid.blur : GLASS[glass].blur)
+            expect(cell.glassBackdrop, `${label} ${cell.key}`).toBe(hc ? 'none' : GLASS[glass].blur)
           }
           if (cell.strongFill !== null) {
             if (hc) expect(cell.strongFill, `${label} ${cell.key}`).not.toContain('color-mix')
             else expect(cell.strongFill, `${label} ${cell.key}`).toMatch(fillOf(GLASS[glass].strongOpacity[family]))
-            expect(cell.strongBackdrop, `${label} ${cell.key}`).toBe(hc ? GLASS.solid.strongBlur : GLASS[glass].strongBlur)
+            expect(cell.strongBackdrop, `${label} ${cell.key}`).toBe(hc ? 'none' : GLASS[glass].strongBlur)
           }
         }
         // Glass layers exist in this regime (popover, menu, select, toast stories; dialogs strong).
