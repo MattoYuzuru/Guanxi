@@ -646,3 +646,23 @@ test('vault database and pre-existing WAL/SHM sidecars are private after reopen'
   try { for (const file of files) assert.equal((await stat(file)).mode & 0o777, 0o600) }
   finally { reopened.close() }
 })
+
+
+test('Google SDK mode environment overrides cannot switch an API-key connection to Vertex/Enterprise', async t => {
+  const previousFetch = globalThis.fetch; let calls = 0
+  globalThis.fetch = async () => { calls++; throw new Error('Unexpected HTTP call') }
+  t.after(() => { globalThis.fetch = previousFetch })
+  const f = await setup(t); const s = f.service()
+  const row = s.create(account, { ...apiInput, provider: 'google' })
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
+  for (const name of ['GOOGLE_GENAI_USE_VERTEXAI', 'GOOGLE_GENAI_USE_ENTERPRISE']) {
+    const previous = process.env[name]; process.env[name] = 'true'
+    try {
+      await assert.rejects(s.complete(account, row.id, { messages: [] }, {
+        model: piModels('google')[0]!.id, runId: 'run', requestId: name,
+      }), error => error instanceof ConnectionError && error.code === 'policy_denied')
+      assert.equal(process.env[name], 'true', 'dispatch must not mutate global environment state')
+    } finally { if (previous === undefined) delete process.env[name]; else process.env[name] = previous }
+  }
+  assert.equal(calls, 0); assert.equal(s.store.costs(account).length, 0)
+})

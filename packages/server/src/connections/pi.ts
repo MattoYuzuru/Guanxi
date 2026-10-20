@@ -28,6 +28,10 @@ export interface PiTransport {
 export const piTransport: PiTransport = {
   async complete(model, context, options) {
     // The caller supplies only a catalog model, explicit API key and abort signal.
+    if (model.api === 'google-generative-ai' && Object.entries(process.env).some(([name, value]) =>
+      name.startsWith('GOOGLE_GENAI_USE_') && value && value.toLowerCase() !== 'false')) {
+      throw new ConnectionError('policy_denied', 'Google SDK mode overrides must be unset for API-key connections')
+    }
     const transcript = normalizeContext(context)
     switch (model.api) {
       case 'anthropic-messages': return (await import('@earendil-works/pi-ai/api/anthropic-messages')).streamSimple(model as Model<'anthropic-messages'>, transcript, options).result()
