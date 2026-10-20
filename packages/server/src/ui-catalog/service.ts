@@ -15,6 +15,7 @@ import type {
 } from '@guanxi/contract'
 import {
   COMPONENT_ID_PATTERN,
+  SourceHashError,
   approvalPayload,
   approvalSigningBytes,
   componentSnapshotHashes,
@@ -130,7 +131,7 @@ export class UiCatalogReviewService {
     if (record.status === 'deprecated') {
       throw new UiCatalogError('review_conflict', 'deprecated', 'Deprecated components are not reviewed')
     }
-    const sourceHash = componentSourceHash(paths.componentDir(id))
+    const sourceHash = this.sourceHash(paths.componentDir(id))
     const snapshotHashes = componentSnapshotHashes(paths.snapshots, id)
     if (sourceHash !== body.expectedSourceHash) {
       throw new UiCatalogError('review_conflict', 'source_changed', 'The component changed since it was shown')
@@ -217,7 +218,7 @@ export class UiCatalogReviewService {
   private project(uiRoot: string, id: string, record: ReviewRecord): UiComponentReview {
     const paths = uiPaths(uiRoot)
     const current = {
-      sourceHash: componentSourceHash(paths.componentDir(id)),
+      sourceHash: this.sourceHash(paths.componentDir(id)),
       snapshotHashes: componentSnapshotHashes(paths.snapshots, id),
     }
     const verdict = verifyRecordApproval(record, this.trustedKeys())
@@ -230,6 +231,15 @@ export class UiCatalogReviewService {
       signatureReason: verdict.state === 'invalid' ? verdict.reason : null,
       status: effectiveStatus(record, signature, current),
       observedAt: this.now().toISOString(),
+    }
+  }
+
+  private sourceHash(dir: string): string {
+    try {
+      return componentSourceHash(dir)
+    } catch (error) {
+      if (error instanceof SourceHashError) throw new UiCatalogError('review_conflict', 'source_unresolvable', error.message)
+      throw error
     }
   }
 

@@ -255,3 +255,62 @@ describe('component source hash', async () => {
     }
   })
 })
+
+describe('component source hash covers what the component runs (GPT H3)', async () => {
+  const { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { componentSourceHash } = await import('../../../catalog/approval/hash.ts')
+
+  function tree(imports: string) {
+    const src = join(mkdtempSync(join(tmpdir(), 'guanxi-hash-forms-')), 'src')
+    const write = (path: string, text: string) => {
+      mkdirSync(join(src, path, '..'), { recursive: true })
+      writeFileSync(join(src, path), text)
+    }
+    write('components/a/a.tsx', `${imports}\nexport const A = 1\n`)
+    write('lib/plain.ts', 'export const plain = 1\n')
+    write('lib/js-specifier.ts', 'export const js = 1\n')
+    write('lib/dir/index.ts', 'export const dir = 1\n')
+    write('lib/lazy.ts', 'export const lazy = 1\n')
+    write('lib/reexported.tsx', 'export const re = 1\n')
+    write('lib/deep.ts', 'export const deep = 1\n')
+    write('lib/via.ts', "export { deep } from './deep'\n")
+    write('styles/base.css', '.gx-focusable:focus-visible { outline: var(--x) solid; }\n')
+    write('styles/token-stub.css', '[data-theme] { --x: red; }\n')
+    return { src, dir: join(src, 'components', 'a'), dispose: () => rmSync(join(src, '..'), { recursive: true, force: true }) }
+  }
+
+  const forms: Array<[string, string, string]> = [
+    ['extensionless import', "import { plain } from '../../lib/plain'", 'lib/plain.ts'],
+    ['.js specifier for a .ts file', "import { js } from '../../lib/js-specifier.js'", 'lib/js-specifier.ts'],
+    ['directory index', "import { dir } from '../../lib/dir'", 'lib/dir/index.ts'],
+    ['dynamic import', "export const load = () => import('../../lib/lazy')", 'lib/lazy.ts'],
+    ['export-from', "export * from '../../lib/reexported'", 'lib/reexported.tsx'],
+    ['transitive extensionless re-export', "import { deep } from '../../lib/via'", 'lib/deep.ts'],
+    ['shared focus styles', '', 'styles/base.css'],
+    ['token inputs', '', 'styles/token-stub.css'],
+  ]
+
+  for (const [name, imports, changed] of forms) {
+    it(`changes when a dependency reached by ${name} changes`, () => {
+      const t = tree(imports)
+      try {
+        const before = componentSourceHash(t.dir)
+        appendFileSync(join(t.src, changed), '\n// behaviour changed\n')
+        assert.notEqual(componentSourceHash(t.dir), before)
+      } finally {
+        t.dispose()
+      }
+    })
+  }
+
+  it('fails closed on a local import it cannot resolve', () => {
+    const t = tree("import '../../lib/missing-helper'")
+    try {
+      assert.throws(() => componentSourceHash(t.dir), /cannot resolve '\.\.\/\.\.\/lib\/missing-helper'/)
+    } finally {
+      t.dispose()
+    }
+  })
+})

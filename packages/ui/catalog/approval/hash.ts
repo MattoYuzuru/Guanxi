@@ -16,6 +16,17 @@ const TEXT = /\.(tsx?|mts|mjs|css|md|json)$/
  */
 const CLOSURE_EXCLUDED = new Set(['i18n/messages.ts'])
 const IMPORT = /(?:^|[\s;])(?:import|export)\s+(?:[^'"`;]*?\s+from\s+)?['"](\.{1,2}\/[^'"]+)['"]/g
+const DYNAMIC_IMPORT = /\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g
+/** Package-wide inputs every component renders with: shared base styles and the token layer. */
+const SHARED_DIR = 'styles'
+const RESOLVE_SUFFIXES = ['', '.ts', '.tsx', '.mts', '.js', '.mjs', '.css', '/index.ts', '/index.tsx']
+
+export class SourceHashError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SourceHashError'
+  }
+}
 
 function sha256(data: Buffer | string): string {
   return createHash('sha256').update(data).digest('hex')
@@ -45,29 +56,48 @@ function content(file: string): Buffer | string {
   return TEXT.test(file) ? raw.toString('utf8').replace(/\r\n/g, '\n') : raw
 }
 
-/** Relative imports of a source file that stay inside `root` and exist. */
-function localImports(file: string, root: string): string[] {
-  if (!/\.(tsx?|mts)$/.test(file)) return []
-  const source = readFileSync(file, 'utf8')
-  const found: string[] = []
-  for (const match of source.matchAll(IMPORT)) {
-    const target = resolve(dirname(file), match[1] as string)
-    if (!target.startsWith(root + sep) || !existsSync(target)) continue
-    const stat = lstatSync(target)
-    if (stat.isFile() && !stat.isSymbolicLink()) found.push(target)
+function regularFile(path: string): boolean {
+  if (!existsSync(path)) return false
+  const stat = lstatSync(path)
+  return stat.isFile() && !stat.isSymbolicLink()
+}
+
+/** Bundler-style resolution of a relative specifier: extensionless, `.js` for `.ts`, index files. */
+function resolveLocal(spec: string, from: string, root: string): string {
+  const base = resolve(dirname(from), spec)
+  const candidates = RESOLVE_SUFFIXES.map((suffix) => base + suffix)
+  if (/\.(m?js|jsx)$/.test(base)) {
+    const stem = base.replace(/\.(m?js|jsx)$/, '')
+    candidates.push(`${stem}.ts`, `${stem}.tsx`, `${stem}.mts`)
   }
+  const found = candidates.find(regularFile)
+  const rel = relative(root, from).split(sep).join('/')
+  if (!found) throw new SourceHashError(`cannot resolve '${spec}' from ${rel}`)
+  if (!found.startsWith(root + sep)) throw new SourceHashError(`'${spec}' from ${rel} leaves packages/ui/src`)
   return found
 }
 
+/** Every local static, re-export and dynamic import of a source file, resolved; fails closed. */
+function localImports(file: string, root: string): string[] {
+  if (!/\.(tsx?|mts|m?js)$/.test(file)) return []
+  const source = readFileSync(file, 'utf8')
+  const specs = [...source.matchAll(IMPORT), ...source.matchAll(DYNAMIC_IMPORT)].map((match) => match[1] as string)
+  return specs.map((spec) => resolveLocal(spec, file, root))
+}
+
 /**
- * sha256 over `"<json path>\n<sha256 of the content>\n"` for the component's own files and every
- * file they import inside packages/ui/src (transitively), sorted by path. Paths are relative to
+ * sha256 over `"<json path>\n<sha256 of the content>\n"` for the component's own files, the shared
+ * styles and token layer (`src/styles/`), and every file they import inside packages/ui/src
+ * (static, re-export and dynamic imports, resolved like the bundler; transitively), sorted by
+ * path. An import that cannot be resolved, or that leaves packages/ui/src, throws. Paths are relative to
  * packages/ui/src and JSON-encoded, text is LF-normalised so checkouts on Windows hash the same,
  * and binary files are hashed as bytes.
  */
 export function componentSourceHash(componentDir: string): string {
   const srcRoot = resolve(componentDir, '..', '..')
   const files = new Set(listFiles(componentDir).filter((file) => !isHashExcluded(componentDir, file)))
+  const shared = join(srcRoot, SHARED_DIR)
+  if (existsSync(shared) && lstatSync(shared).isDirectory()) for (const file of listFiles(shared)) files.add(file)
   const queue = [...files]
   while (queue.length > 0) {
     for (const target of localImports(queue.pop() as string, srcRoot)) {

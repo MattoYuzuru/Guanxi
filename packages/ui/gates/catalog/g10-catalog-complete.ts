@@ -80,7 +80,14 @@ export const g10: CatalogGate = {
     } catch {
       findings.push({ severity: 'error', message: 'catalog/manifest.json is missing' })
     }
-    if (committed !== '' && committed !== serialiseManifest(buildManifest(context.uiRoot, context.usageScope))) {
+    let fresh: string | null = null
+    try {
+      fresh = serialiseManifest(buildManifest(context.uiRoot, context.usageScope))
+    } catch (problem) {
+      // Source hashes fail closed (an import they cannot resolve): report, never pass silently.
+      findings.push({ severity: 'error', message: `manifest cannot be built: ${(problem as Error).message}` })
+    }
+    if (committed !== '' && fresh !== null && committed !== fresh) {
       findings.push({
         severity: 'error',
         file: 'packages/ui/catalog/manifest.json',

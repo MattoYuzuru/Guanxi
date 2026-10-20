@@ -46,6 +46,7 @@ export {
 export {
   componentSnapshotHashes,
   componentSourceHash,
+  SourceHashError,
   isHashExcluded,
   sameSnapshotHashes,
 } from './hash.ts'

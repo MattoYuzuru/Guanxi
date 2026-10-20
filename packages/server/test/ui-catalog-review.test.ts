@@ -72,9 +72,8 @@ function fixture(trust = true): Fixture {
   const repoRoot = mkdtempSync(join(tmpdir(), 'guanxi-review-repo-'))
   cleanups.push(() => rmSync(repoRoot, { recursive: true, force: true }))
   const uiRoot = join(repoRoot, 'packages', 'ui')
-  for (const id of ['button', 'badge']) {
-    cpSync(join(realUiRoot, 'src', 'components', id), join(uiRoot, 'src', 'components', id), { recursive: true })
-  }
+  // The whole src tree: source hashes follow each component's imports and fail closed.
+  cpSync(join(realUiRoot, 'src'), join(uiRoot, 'src'), { recursive: true })
   mkdirSync(join(uiRoot, 'catalog', 'snapshots', 'button'), { recursive: true })
   writeFileSync(join(uiRoot, 'catalog', 'snapshots', 'button', 'default.light.png'), 'baseline-bytes')
   mkdirSync(join(repoRoot, '.git'))
@@ -237,6 +236,20 @@ describe('approving a component', () => {
       assert.equal(body.status, 'stale')
     } finally {
       writeFileSync(tsx, original)
+    }
+  })
+
+  it('goes stale when a transitive helper or the shared styles change after approval (GPT H3)', async () => {
+    for (const shared of ['src/lib/cx.ts', 'src/styles/base.css', 'src/story-kit/index.tsx']) {
+      const path = join(fx.uiRoot, shared)
+      const original = readFileSync(path, 'utf8')
+      try {
+        writeFileSync(path, `${original}\n/* behaviour changed after approval */\n`)
+        const body = uiComponentReviewResponse.parse(await (await app(service).request(ROUTES.uiCatalogComponentReview('button'))).json())
+        assert.equal(body.status, 'stale', shared)
+      } finally {
+        writeFileSync(path, original)
+      }
     }
   })
 

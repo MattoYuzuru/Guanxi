@@ -24,10 +24,17 @@ export function componentStatuses(inventory: UiInventory): Map<string, Effective
     }
     const verdict = verifyRecordApproval(parsed.record, trusted)
     const signature = verdict.state === 'invalid' ? 'invalid' : verdict.state === 'valid' ? 'valid' : 'absent'
+    let sourceHash: string
+    try {
+      sourceHash = componentSourceHash(folder.dir)
+    } catch {
+      statuses.set(folder.id, 'invalid')
+      continue
+    }
     statuses.set(
       folder.id,
       effectiveStatus(parsed.record, signature, {
-        sourceHash: componentSourceHash(folder.dir),
+        sourceHash,
         snapshotHashes: componentSnapshotHashes(paths.snapshots, folder.id),
       }),
     )
