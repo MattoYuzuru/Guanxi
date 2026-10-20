@@ -1,11 +1,12 @@
 # DS1-a hand-off
 
-**Status:** Review 2 fixes implemented; N7 resolved. Validation blocked by K1 sidebar literals merged from main. Not ready to merge.
+**Status:** Ready to merge with `--no-ff`. Review 2 fixes and K1 sidebar integration are locally validated; all required checks pass.
 **Date:** 2026-10-20. **Branch:** `lane/ds1-a-tokens`.
 **Worktree:** `/Users/yuzuru/Projects/Guanxi-lanes/ds1-a`.
 
-The original delivery and validation below are historical. The **Review 2 fixes** section
-supersedes earlier counts, remaining work and integration status.
+The original delivery and validation below are historical. **Final K1 sidebar integration**
+supersedes earlier validation counts, the K1 blocker and integration status. Review 2's
+deferred follow-ups and required merge protocol remain applicable.
 
 ## Delivered
 
@@ -367,3 +368,90 @@ in feature code") and its own shrink-only suppressions, including:
 Dynamic style expressions in legacy features (for example ContextPanel/FitIndicator colour
 expressions) also remain G9 migration inputs. G6 does not resolve runtime expressions or
 imported style objects. Existing G5/G7 checks continue on the legacy file.
+
+## Final K1 sidebar integration
+
+**Status:** implemented and locally validated; ready for integrator merge with `--no-ff`.
+**Code revision:** `2db0e28`; only this hand-off changed after the final checks.
+This continuation starts at `dbd70f6`; N7 was already resolved.
+
+### Shared edits and token mapping
+
+The integrator explicitly authorized migrating K1's new
+`packages/web/src/kernel/SidebarSlot.tsx`; it is a **shared edit in K1's file**, not legacy
+debt. Commit `8239582` replaces exactly these six classes:
+
+| Previous class | Generated semantic utility / role |
+| --- | --- |
+| `border-[var(--border)]` | `border-divider` → decorative `color.border.primary` |
+| `text-[var(--fg-muted)]` | `text-secondary` → `color.text.secondary` |
+| `hover:text-[var(--fg)]` | `hover:text-foreground` → `color.text.primary` |
+| `hover:bg-[var(--bg-subtle)]` | `hover:bg-inset` → subtle fill `color.background.tertiary` |
+| `rounded-md` | `rounded-control` → 10 px control radius |
+| `text-xs` | `text-12` → matching 12 px type-scale token |
+
+The legacy app imports runtime tokens but does not yet import the generated utility theme.
+The shared CSS edit in `packages/web/src/index.css` bridges only these six aliases, exactly
+as declared in `packages/ui/generated/theme.css`, so the new classes actually compile.
+No existing utility alias is overridden. `packages/ui/tokens/README.md` records the bridge.
+DS1-c should remove it when importing the generated theme for the legacy utility migration.
+**The slot may look slightly different from the surrounding legacy sidebar until DS1-c's
+codemod moves the legacy sidebar onto the same tokens.**
+
+No freeze entry, ratchet correction, policy change, path exclusion or generated output was
+added or changed. G5/G6/G7 retain 1,543 / 152 / 17 frozen occurrences; the six unbudgeted K1
+occurrences are gone. Both K1 test files are byte-unchanged relative to `dbd70f6`:
+`packages/web/test/component/kernel-sidebar-slot.test.tsx` and
+`packages/web/test/browser/kernel-slot.spec.ts`. They select by roles and data attributes;
+no selector change was needed. HMR, focus preservation, unload and focus return retain their
+original assertions and intent. No new component, catalog entry or approval status changed.
+
+### Independent verification and new / regression envelope
+
+A separate read-only reviewer checked `dbd70f6..8239582`: all six mappings and bridge aliases
+were correct, with no behavioral or K1 test change. It identified an evidence gap: G5 compiles
+the generated theme, so it alone cannot prove the app's bridge emits those utilities.
+Separate commit `2db0e28` adds a compiler assertion over the actual web stylesheet and its
+imports. It checks all six utility property/token mappings and rejects removal of each alias.
+The reviewer verified that fix and reported **no further findings**; it made no edits and ran
+no heavy checks.
+
+- **New:** 1 node test in `foundations.test.mjs`; all six missing-alias mutations are rejected.
+- **Regression envelope:** 49 existing gate tests, all passing (50 total, zero skipped).
+- **Core/CLI/kernel/web envelope:** all existing suites pass; 690 core/CLI tests and 264 web
+  component tests, including K1's unchanged two-test sidebar file. The kernel suite also passes.
+- **Browser envelope:** 0 new / 48 existing tests pass, including the unchanged K1 real Vite
+  HMR test and DS1's production-font/theme assertions. This is a mocked Chromium gate; it
+  does not validate live Ollama, GPU inference or production operation.
+
+### Final commands and receipts
+
+Current Mac, Node 26.9.0. Every check shell exported `GUANXI_WEB_PORT=5182`,
+`GUANXI_API_PORT=4382`, `GUANXI_DATA_DIR="$PWD/.lane-data"`.
+Direct logs are in `.lane-data/sidebar-token-evidence/`. All required checks below passed
+at `2db0e28`; the Markdown check was also rerun after this hand-off edit.
+
+| Command | Final result / evidence |
+| --- | --- |
+| `npm run ui:check` | G1–G7 + G17 pass; 249 tokens per context, zero unresolved variables, unchanged freeze. `ui-check.log`. |
+| `npm run test:gates --workspace @guanxi/ui` | 50 passed / 0 failed / 0 skipped. `gate-tests.log`. |
+| `npm run typecheck` | All six workspaces pass. `typecheck.log`. |
+| `npm run lint:md` | 100 files, zero errors. `lint-md.log`. |
+| `npm run check:licenses` | 358 packages, zero not allowed. `check-licenses.log`. |
+| `agent-dev run --cwd "$PWD" --node 26 --resource heavy -- npm test` | Passed all root suites. Receipt `~/.local/state/agent-dev/check-85vpv3ps/result.json`. |
+| `agent-dev run --cwd "$PWD" --node 26 --resource heavy -- npm run test:web:browser` | 48 passed. Receipt `~/.local/state/agent-dev/check-ya8o0zh3/result.json`. |
+| `agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 50 -- npm run build` | Web/server/CLI builds pass. Receipt `~/.local/state/agent-dev/check-kk6oa8hc/result.json`. |
+
+Heavy commands ran one per call through the shared `heavy` lock. The first build acquisition
+returned `resource_busy` without executing the build; the retry waited for the same lock and
+passed. No executed check failed. Final receipts record exit 0, no capture errors and
+`source_changed: false`. The existing `.claude/skills/guanxi-ui` symlink still makes reusable
+source verification unavailable; these are local execution results, not source-bound
+certification. Only documentation changed after them.
+
+Residual scope: no new screenshot/theme/device matrix or forced-colours walkthrough was
+performed. Review 2's deferred N5/N8 follow-ups remain separate work, not newly claimed fixes.
+Next: integrator applies the N1 `--no-ff` protocol, regenerates the lockfile and reruns its
+integration checks; DS1-c then migrates the legacy sidebar and removes the alias bridge.
+No push, merge into main, rebase, dependency change, or PHASE_STATUS/NEXT_AGENT_PROMPT edit
+was performed in this continuation.
