@@ -660,10 +660,11 @@ export class SessionLog {
         title = null
       }
     }
+    const ids = this.scrubber.scrub({ sessionId: row.id, threadId: row.thread_id })
     return {
-      sessionId: row.id,
+      sessionId: ids.sessionId,
       kind: row.kind as SessionKind,
-      threadId: row.thread_id,
+      threadId: ids.threadId,
       title,
       createdAt: row.created_at,
       lastSeq: row.last_seq,
@@ -748,7 +749,7 @@ export class SessionLog {
       const snippet = buildSnippet(this.scrubber.scrub(row.search_text), terms)
       if (snippet === null) continue
       hits.push({
-        sessionId: row.session_id,
+        sessionId: this.scrubber.scrub(row.session_id),
         seq: row.seq,
         type: row.type,
         class: row.class,
@@ -886,6 +887,7 @@ export class SessionLog {
 
   /** Inside a transaction: create the session if needed and make this process its writer. */
   private acquireWithin(sessionId: string, input: OpenSessionInput): number {
+    this.assertIdentifiersClean({ sessionId, threadId: input.threadId ?? null })
     const now = this.clock()
     const nowText = now.toISOString()
     const expires = new Date(now.getTime() + this.writerTtlMs).toISOString()
@@ -958,6 +960,19 @@ export class SessionLog {
     return epoch
   }
 
+  /**
+   * Refuses identifiers (session, span, Job, idempotency key, Thread) that
+   * contain a registered value. Payloads are scrubbed; identifiers cannot be
+   * rewritten without breaking the links they carry, so they are refused.
+   */
+  private assertIdentifiersClean(identifiers: Record<string, string | null | undefined>): void {
+    for (const [name, value] of Object.entries(identifiers)) {
+      if (typeof value === 'string' && this.scrubber.scrub(value) !== value) {
+        throw new SessionLogError('invalid_event', `The ${name} would store a registered secret`)
+      }
+    }
+  }
+
   /** Extends this writer's row when less than half of its time to live remains. */
   private renewWithin(sessionId: string, epoch: number): void {
     const now = this.clock()
@@ -1003,6 +1018,14 @@ export class SessionLog {
     const parsed = schema.safeParse(input.data)
     if (!parsed.success) throw new SessionLogError('invalid_event', `Invalid ${input.type} event data`)
 
+    // Identifiers are stored and returned verbatim, so they must not hold a registered value.
+    this.assertIdentifiersClean({
+      sessionId,
+      spanId: input.spanId ?? null,
+      parentSpanId: input.parentSpanId ?? null,
+      jobId: input.jobId ?? null,
+      idempotencyKey: options.idempotencyKey ?? null,
+    })
     const data = this.scrubber.scrub(parsed.data) as SessionEventData<T>
     const payload = JSON.stringify(data)
     // Fields are scrubbed one by one; refuse a payload whose serialisation re-forms a value.
@@ -1118,16 +1141,20 @@ export class SessionLog {
       }
       if (options.rescrub !== false) data = this.scrubber.scrub(data)
     }
+    // A value registered after the write is hidden in identifiers too on the way out.
+    const ids = options.rescrub === false
+      ? { sessionId: row.session_id, spanId: row.span_id, parentSpanId: row.parent_span_id, jobId: row.job_id }
+      : this.scrubber.scrub({ sessionId: row.session_id, spanId: row.span_id, parentSpanId: row.parent_span_id, jobId: row.job_id })
     const candidate: Record<string, unknown> = {
-      sessionId: row.session_id,
+      sessionId: ids.sessionId,
       seq: row.seq,
       id: row.id,
       version: row.event_version,
       type: row.type,
       class: row.class,
-      spanId: row.span_id,
-      parentSpanId: row.parent_span_id,
-      jobId: row.job_id,
+      spanId: ids.spanId,
+      parentSpanId: ids.parentSpanId,
+      jobId: ids.jobId,
       writerEpoch: row.writer_epoch,
       redactions: row.redactions,
       createdAt: row.created_at,

@@ -141,14 +141,15 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     const parsed = raw ? sessionEventsQuery.safeParse(raw) : null
     if (!sessionId || !parsed?.success) return invalid(context, 'Invalid session events query')
     try {
-      const page = log().read(sessionId, {
+      const current = log()
+      const page = current.read(sessionId, {
         afterSeq: parsed.data.after,
         limit: parsed.data.limit,
         audience: 'person',
       })
       return context.json(
         sessionEventsResponse.parse({
-          sessionId,
+          sessionId: current.redact(sessionId),
           events: page.events,
           nextAfter: page.events.at(-1)?.seq ?? parsed.data.after,
           lastSeq: page.lastSeq,
@@ -164,8 +165,9 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     const sessionId = sessionIdOf(context)
     if (!sessionId || !query(context, [])) return invalid(context, 'Invalid session spans request')
     try {
-      const events = log().readAll(sessionId, 'person')
-      return context.json(sessionSpansResponse.parse({ sessionId, spans: projectSpans(events) }))
+      const current = log()
+      const events = current.readAll(sessionId, 'person')
+      return context.json(sessionSpansResponse.parse({ sessionId: current.redact(sessionId), spans: projectSpans(events) }))
     } catch (error) {
       return fail(context, error)
     }
@@ -180,13 +182,14 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       const events = all.filter((event) => event.class !== 'reasoning')
       const body = sessionExportSchema.parse({
         exportVersion: SESSION_EXPORT_VERSION,
-        sessionId,
+        sessionId: current.redact(sessionId),
         exportedAt: new Date().toISOString(),
         lastSeq: all.at(-1)?.seq ?? 0,
         excluded: { reasoning: all.length - events.length },
         events,
       })
-      context.header('content-disposition', `attachment; filename="session-${sessionId}.json"`)
+      const fileId = current.redact(sessionId) === sessionId ? sessionId : 'redacted'
+      context.header('content-disposition', `attachment; filename="session-${fileId}.json"`)
       return context.json(body)
     } catch (error) {
       return fail(context, error)
