@@ -133,7 +133,7 @@ function rawWords(value) {
       } else {
         if (node.type === 'word' && !keywords.has(node.value.toLowerCase()) && node.value !== '0') raw.push(node.value)
         if (node.type === 'function') {
-          if (/^(?:oklch|oklab|rgba?|hsla?|color|cubic-bezier|steps|linear)$/.test(node.value)) raw.push(node.value)
+          if (/^(?:oklch|oklab|rgba?|hsla?|color|cubic-bezier|steps|linear)$/.test(node.value.toLowerCase())) raw.push(node.value.toLowerCase())
           visit(node.nodes)
         }
       }

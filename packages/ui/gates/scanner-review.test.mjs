@@ -87,7 +87,7 @@ test('M5/L3: feature directories and HTML/JSX/SCSS extensions cannot evade scann
   }
 })
 test('L3: colour, geometry and function properties reject raw values, including var fallbacks', () => {
-  for (const value of ['accent-color:red', 'caret-color:#f00', 'text-decoration-color:red', 'scrollbar-color:red blue', 'filter:drop-shadow(0 0 2px red)', 'backdrop-filter:blur(20px)', 'transform:translateY(8px)', 'color:var(--token, #ff0000)', 'color:var(--token, var(--other, rgb(255 0 0)))']) assert.ok(cssFindings('fixture.scss', `.x { ${value} }`).some(f => f.gate === 'G6'), value)
+  for (const value of ['accent-color:red', 'caret-color:#f00', 'text-decoration-color:red', 'scrollbar-color:red blue', 'filter:drop-shadow(0 0 2px red)', 'backdrop-filter:blur(20px)', 'transform:translateY(8px)', 'color:var(--token, #ff0000)', 'color:var(--token, var(--other, rgb(255 0 0)))', 'color:RGB(0 0 0)', 'color:var(--token, RGBA(0, 0, 0, 0))']) assert.ok(cssFindings('fixture.scss', `.x { ${value} }`).some(f => f.gate === 'G6'), value)
   assert.deepEqual(cssFindings('fixture.css', '.x { color:var(--token, var(--other)); transform:translateY(var(--motion-distance-sm)); }'), [])
 })
 test('L7: off-scale spacing fails in JSX and CSS apply; accepted scale and zero compile', async () => {
