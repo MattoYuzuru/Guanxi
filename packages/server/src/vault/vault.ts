@@ -113,11 +113,24 @@ export class Vault {
     finally { plaintext.fill(0) }
     return ref
   }
-  /** Refuse unsanitized context after restart if secrets have not been registered yet. */
-  assertScrubbingReady(accountId: string) {
+  /** Registration-only keychain access: never opens an injection session or uses the node key. */
+  async registerForScrubbing() {
     this.assertOpen()
-    const rows = this.db.prepare('SELECT ref FROM vault_secrets WHERE account_id=?').all(accountId)
-    if (rows.some(row => !this.registered.has(String(row.ref) as SecretRef))) throw new Error('Unlock the vault before model access')
+    for (const row of this.db.prepare('SELECT DISTINCT account_id FROM vault_secrets').all()) {
+      const accountId = String(row.account_id)
+      const key = await this.dataKey(accountId, false, false)
+      try { this.assertOpen(); this.registerAll(accountId, key) } finally { key.fill(0) }
+    }
+  }
+  get scrubbingReady(): boolean {
+    if (this.closed) return false
+    return this.db.prepare('SELECT ref FROM vault_secrets').all()
+      .every(row => this.registered.has(String(row.ref) as SecretRef))
+  }
+  /** K2 must gate its own writes on the same source readiness during integration. */
+  assertScrubbingReady(_accountId: string) {
+    this.assertOpen()
+    if (!this.scrubbingReady) throw new Error('Unlock the vault before model access; egress registration incomplete')
   }
   /** Only an unlocked session can grant a node-encrypted copy of this connection's key. */
   prepareUnattended(accountId: string, connectionId: string, enabled: boolean, ref?: string) {

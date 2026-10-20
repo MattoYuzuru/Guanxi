@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { createConnectionSchema, connectionSnapshotSchema } from '@guanxi/contract'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
-import { connectionsPlugin, CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
+import { connectionsPlugin, CONNECTIONS_SERVICE, CONNECTIONS_EGRESS_READINESS, type ConnectionsEgressReadiness } from '../../src/connections/plugin.ts'
 import { temporaryEgressPlugin, EGRESS_SERVICE, type EgressScrubber } from '../../src/connections/egress.ts'
 import { fixtureEgressPlugin } from './egress-fixture.ts'
 import { connectionRoutes } from '../../src/connections/routes.ts'
@@ -463,7 +463,7 @@ test('unload cancels a pending keychain unlock and late completion cannot revive
   await rejected
   release()
   await Promise.resolve()
-  await assert.rejects(old.unlockVault(account), /unloaded/)
+  assert.throws(() => old.unlockVault(account), /unloaded/)
   assert.equal(Object.hasOwn(old, 'vault'), false)
   assert.equal(f.service().snapshot(account).vault.unlocked, false)
 })
@@ -490,4 +490,26 @@ test('Google SDK transport observes cancellation and records no completed usage 
     assert.equal(seenSignal?.aborted, true)
     assert.equal(s.store.costs(account).length, 0)
   } finally { globalThis.fetch = originalFetch }
+})
+
+
+test('H3: apply registers every historical secret after restart without granting injection permission', async t => {
+  const f = await setup(t); const s = f.service(); const secret = fakeKey(); const retired = fakeKey()
+  const row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, retired); s.saveSecret(account, row.id, secret)
+  await f.restart()
+  const ready = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
+  assert.equal(ready.ready, true); ready.assertReady()
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  assert.equal(scrubber.scrub(`${secret} ${retired}`).includes(secret), false)
+  assert.equal(scrubber.scrub(`${secret} ${retired}`).includes(retired), false)
+  assert.equal(f.service().snapshot(account).vault.unlocked, false)
+  await assert.rejects(f.service().complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'still-locked',
+  }), /unlock/)
+  f.config.keychain = async () => { throw new Error('Fixture keychain locked') }
+  await f.restart()
+  const failed = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
+  assert.equal(failed.ready, false)
+  assert.throws(() => failed.assertReady(), /registration incomplete/)
 })
