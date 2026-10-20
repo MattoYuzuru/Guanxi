@@ -60,6 +60,7 @@ import type { StreamBuffer } from './streamBuffer.ts'
 import { useChat, type ChatSendOptions, type TurnPhase } from './useChat.ts'
 import { useModelPrewarm, type ModelPrewarmState } from './useModelPrewarm.ts'
 import { ChatRetentionInfo } from './ChatRetentionInfo.tsx'
+import { SidebarSlot } from '../../kernel/SidebarSlot.tsx'
 import {
   ResourceConflictDialog,
   useResourceConflictDecision,
@@ -99,17 +100,27 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
   const createErrorRef = useRef<HTMLDivElement>(null)
   const projectHeadingRef = useRef<HTMLHeadingElement>(null)
   const projectContextErrorRef = useRef<HTMLHeadingElement>(null)
+  // Once creation starts or fails, a still-pending initial focus must not
+  // take focus away from what the user is acting on.
+  const initialFocusSuppressedRef = useRef(false)
 
   useEffect(() => {
-    if (createError) createErrorRef.current?.focus()
+    if (!createError) return
+    initialFocusSuppressedRef.current = true
+    createErrorRef.current?.focus()
   }, [createError])
 
   useEffect(() => {
-    if (projectId && projectContext.data) {
-      requestAnimationFrame(() => projectHeadingRef.current?.focus())
-    } else if (projectId && projectContext.error) {
-      requestAnimationFrame(() => projectContextErrorRef.current?.focus())
-    }
+    const target = projectId && projectContext.data
+      ? projectHeadingRef
+      : projectId && projectContext.error
+        ? projectContextErrorRef
+        : null
+    if (!target) return
+    const frame = requestAnimationFrame(() => {
+      if (!initialFocusSuppressedRef.current) target.current?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [projectId, projectContext.data, projectContext.error])
 
   const requestedContextText = query.get('numCtx')
@@ -157,6 +168,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
     if (creatingRef.current || !model || contextBlocked || contextInputInvalid) return
 
     creatingRef.current = true
+    initialFocusSuppressedRef.current = true
     setCreating(true)
     setCreateError(null)
     try {
@@ -1177,6 +1189,7 @@ function ThreadSidebar({
 
   return (
     <aside className="hidden min-h-0 overflow-y-auto p-2 md:block">
+      <SidebarSlot />
       <div className="mb-2 flex items-center justify-between gap-2 px-1">
         <span className="text-2xs font-semibold text-[var(--fg-muted)]">
           {projectId ? translate('projects.chats.group') : translate('projects.chats.projectless')}

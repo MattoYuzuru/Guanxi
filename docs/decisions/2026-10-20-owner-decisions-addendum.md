@@ -1,6 +1,6 @@
 # Owner decisions — 2026-10-20 addendum (open questions)
 
-**Status:** accepted · **Date:** 2026-10-20 · **Decisions:** D-141–D-183
+**Status:** accepted · **Date:** 2026-10-20 · **Decisions:** D-141–D-184
 **Extends:** [2026-10-20](2026-10-20-owner-decisions.md).
 
 The owner was asked every open question from [OPEN_QUESTIONS](../plans/OPEN_QUESTIONS.md)
@@ -100,3 +100,9 @@ criterion.
 | ID | Topic | Decision |
 | --- | --- | --- |
 | D-183 | Kernel | **Reject Cordis; build the own kernel** that ADR-0015 names as the fallback: about 1–2k lines with Cordis semantics (context tree, services, inject, effects with disposers, events, plugin lifecycle, profiles and patch layers, manifest), designed so the upstream race classes cannot occur, behind a Guanxi-owned `PluginContext` facade. Every K1 exit-gate test stays and must pass against the own kernel. The owner chose this over "accept with an amended criterion" and "accept until P1". A superseding ADR-0037 records the design. |
+
+## Approval key custody (after the DS1-b review)
+
+| ID | Topic | Decision |
+| --- | --- | --- |
+| D-184 | Approval signing | The approval key moves into a separate code-signed **signing helper** outside the checkout that asks for Touch ID or the password on every signature and names the component and hash in the prompt (stage DS2). It is built right after DS1 merges, before the owner approves any component; until then the owner approves nothing and never chooses "Always Allow" on a keychain prompt. Chosen over accepting the risk until the first release and over taking an Apple Developer account now. |
