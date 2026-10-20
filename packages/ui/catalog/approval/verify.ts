@@ -111,7 +111,12 @@ export type KeySetVerdict =
   | { state: 'bootstrap' }
   | {
       state: 'invalid'
-      reason: 'unsigned_change' | 'untrusted_rotation_key' | 'bad_rotation_signature' | 'stale_rotation_version'
+      reason:
+        | 'unsigned_change'
+        | 'untrusted_rotation_key'
+        | 'bad_rotation_signature'
+        | 'stale_rotation_version'
+        | 'version_changed_without_rotation'
     }
 
 function sameKeys(a: readonly TrustedKey[], b: readonly TrustedKey[]): boolean {
@@ -124,14 +129,21 @@ function sameKeys(a: readonly TrustedKey[], b: readonly TrustedKey[]): boolean {
  * is reported separately: only the owner can confirm it, by merging it into the base branch.
  */
 export function verifyKeySetChange(current: TrustedKeyFile, base: TrustedKeyFile): KeySetVerdict {
-  if (sameKeys(current.keys, base.keys)) return { state: 'unchanged' }
-  if (base.keys.length === 0) return { state: 'bootstrap' }
+  const version = current.version ?? 0
+  const baseVersion = base.version ?? 0
+  if (sameKeys(current.keys, base.keys)) {
+    if (version === baseVersion) return { state: 'unchanged' }
+    // The version is part of the trust state: resetting or bumping it unsigned would let an
+    // old rotation (signed for a lower version) apply again later.
+    if (!current.rotation || base.keys.length === 0) return { state: 'invalid', reason: 'version_changed_without_rotation' }
+  } else if (base.keys.length === 0) {
+    return { state: 'bootstrap' }
+  }
   const rotation = current.rotation
   if (!rotation) return { state: 'invalid', reason: 'unsigned_change' }
   const signer = base.keys.find((key) => key.keyId === rotation.signedBy)
   if (!signer) return { state: 'invalid', reason: 'untrusted_rotation_key' }
-  const version = current.version ?? 0
-  if (version <= (base.version ?? 0)) return { state: 'invalid', reason: 'stale_rotation_version' }
+  if (version <= baseVersion) return { state: 'invalid', reason: 'stale_rotation_version' }
   return verifies(keySetSigningBytes(current.keys, version), signer, rotation.signature)
     ? { state: 'rotated', signedBy: signer.keyId }
     : { state: 'invalid', reason: 'bad_rotation_signature' }

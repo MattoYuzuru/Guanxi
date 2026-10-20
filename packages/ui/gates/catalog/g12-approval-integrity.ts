@@ -252,6 +252,20 @@ export const g12: CatalogGate = {
       },
     },
     {
+      name: 'key-version-reset',
+      description: 'A branch resets the key-set version without a rotation, to replay an old rotation later',
+      expect: /trusted keys changed without a valid rotation \(version_changed_without_rotation\)/,
+      apply({ uiRoot, context }) {
+        const key = createTestKey('owner test key')
+        try {
+          writeFileSync(uiPaths(uiRoot).trustedKeys, `${JSON.stringify({ version: 0, keys: [key.trusted], rotation: null }, null, 2)}\n`)
+          return { ...context, base: { label: 'main', trustedKeys: { version: 3, keys: [key.trusted] }, records: {} } }
+        } finally {
+          key.dispose()
+        }
+      },
+    },
+    {
       name: 'old-approval-restored',
       description: 'The owner requested changes (signed, on main); a branch restores the earlier approval',
       expect: /does not follow the signed revocation/,

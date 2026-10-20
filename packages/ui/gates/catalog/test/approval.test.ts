@@ -125,6 +125,36 @@ describe('trusted key set', () => {
     })
   })
 
+  it('rejects an unsigned version reset that would re-enable an old rotation (GPT H1)', () => {
+    const keys = [base.trusted, added.trusted]
+    const oldRotation = signKeySet(keys, 2, base.trusted.keyId, base.privateKey)
+    const mainNow = { version: 3, keys: [base.trusted] }
+    // Step 1: same keys, version reset to 0 (or omitted), no signature.
+    assert.deepEqual(verifyKeySetChange({ version: 0, keys: [base.trusted] }, mainNow), {
+      state: 'invalid',
+      reason: 'version_changed_without_rotation',
+    })
+    assert.deepEqual(verifyKeySetChange({ keys: [base.trusted] }, mainNow), {
+      state: 'invalid',
+      reason: 'version_changed_without_rotation',
+    })
+    // Step 2 (had step 1 been accepted onto main): the old v2 rotation must still not apply.
+    assert.deepEqual(verifyKeySetChange({ version: 2, keys, rotation: oldRotation }, { version: 3, keys: [base.trusted] }), {
+      state: 'invalid',
+      reason: 'stale_rotation_version',
+    })
+    // An unsigned version bump on unchanged keys is refused too; a signed one is a rotation.
+    assert.deepEqual(verifyKeySetChange({ version: 4, keys: [base.trusted] }, mainNow), {
+      state: 'invalid',
+      reason: 'version_changed_without_rotation',
+    })
+    const bump = signKeySet([base.trusted], 4, base.trusted.keyId, base.privateKey)
+    assert.deepEqual(verifyKeySetChange({ version: 4, keys: [base.trusted], rotation: bump }, mainNow), {
+      state: 'rotated',
+      signedBy: base.trusted.keyId,
+    })
+  })
+
   it('rejects a replayed rotation once the base moved past its version', () => {
     const keys = [base.trusted, added.trusted]
     // main: v1 [base] → v2 [base, added] (rotation by base) → v3 [base] (added revoked).
