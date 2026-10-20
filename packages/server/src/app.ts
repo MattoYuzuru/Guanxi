@@ -22,6 +22,7 @@ import { projectsRoutes } from './http/projects-routes.ts'
 import { quickRunsRoutes } from './http/quick-runs-routes.ts'
 import { recipesRoutes } from './http/recipes-routes.ts'
 import { artifactsRoutes } from './http/artifacts-routes.ts'
+import { sessionLogRoutes } from './session-log/routes.ts'
 import type { OllamaStatusOptions } from './ollama/status.ts'
 
 export interface CreateAppOptions {
@@ -94,6 +95,7 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   server.route('/api/quick-runs', quickRunsRoutes(app))
   server.route('/api/recipes', recipesRoutes(app))
   server.route('/api/artifacts', artifactsRoutes(app))
+  server.route('/api/sessions', sessionLogRoutes(() => app.sessionLog))
 
   server.post('/api/approvals/:id', async (context) => {
     const parsed = approvalBody.safeParse(await context.req.json().catch(() => null))

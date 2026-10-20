@@ -381,7 +381,7 @@ describe('ResourceGovernor composition inventory', () => {
     // direct construction for contexts built without a kernel.
     assert.match(context, /const governor = options\.governor \?\? new ResourceGovernor\(\)/)
     const index = readFileSync(`${sourceRoot}/index.ts`, 'utf8')
-    assert.match(index, /const kernel = await bootServerKernel\(\)/)
+    assert.match(index, /kernel = await bootServerKernel\(undefined, \{ db \}\)/)
     assert.match(index, /governor: kernel\.governor,/)
     assert.match(context, /chatExecution: new ChatJobExecutionOwner\(base\)/)
     assert.match(chat, /operation: 'chat'/)

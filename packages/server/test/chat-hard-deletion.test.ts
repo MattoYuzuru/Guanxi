@@ -26,6 +26,8 @@ import { threadsRoutes } from '../src/http/threads-routes.ts'
 import type { AppContext } from '../src/context.ts'
 import { createAppContext } from '../src/context.ts'
 import { downgradeChatHardDeletionToV19 } from './fixtures/retention-lifecycle-migration.ts'
+import { orderedRows } from './fixtures/table-rows.ts'
+import { SESSION_LOG_TABLES } from './fixtures/session-log-migration.ts'
 
 const HOUR_MS = 60 * 60 * 1_000
 const DAY_MS = 24 * HOUR_MS
@@ -125,7 +127,7 @@ function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): stri
       && name !== 'artifact_attachments')
   return JSON.stringify(Object.fromEntries(tables.map((name) => [
     name,
-    db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+    orderedRows(db, name),
   ])))
 }
 
@@ -204,7 +206,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 28)
+    assert.equal(version(seed), 29)
     const chat = createChat(seed, 'Legacy final answer')
     new ThreadStore(seed).addMessage({
       threadId: chat.id,
@@ -262,21 +264,21 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 28)
+    assert.equal(version(retried), 29)
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
     assert.equal(allTablesPayload(retried, new Set([
       'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
-      'recipe_job_snapshots', 'context_checkpoints',
+      'recipe_job_snapshots', 'context_checkpoints', ...SESSION_LOG_TABLES,
     ])), v19Payload)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 28)
+    assert.equal(version(reopened), 29)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
     assert.equal(allTablesPayload(reopened, new Set([
       'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',
-      'recipe_job_snapshots', 'context_checkpoints',
+      'recipe_job_snapshots', 'context_checkpoints', ...SESSION_LOG_TABLES,
     ])), v19Payload)
     reopened.close()
   })
@@ -546,6 +548,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       { child: 'recipe_job_snapshots', table: 'jobs', from: 'job_id', on_delete: 'RESTRICT' },
       { child: 'recipe_job_snapshots', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'recipes', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
+      { child: 'sessions', table: 'threads', from: 'thread_id', on_delete: 'CASCADE' },
       { child: 'threads', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'threads', table: 'workspaces', from: 'workspace_id', on_delete: 'SET NULL' },
       { child: 'tool_runs', table: 'threads', from: 'thread_id', on_delete: 'CASCADE' },

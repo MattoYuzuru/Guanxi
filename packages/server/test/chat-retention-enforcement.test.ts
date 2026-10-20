@@ -25,6 +25,8 @@ import { JobStore } from '../src/store/jobs.ts'
 import { ProjectStore } from '../src/store/projects.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 import { downgradeRetentionLifecycleToV14 } from './fixtures/retention-lifecycle-migration.ts'
+import { orderedRows } from './fixtures/table-rows.ts'
+import { SESSION_LOG_TABLES } from './fixtures/session-log-migration.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
 const NOW = '2026-08-11T12:00:00.000Z'
@@ -113,7 +115,7 @@ function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): stri
       && name !== 'artifact_attachments')
   return JSON.stringify(Object.fromEntries(names.map((name) => [
     name,
-    db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+    orderedRows(db, name),
   ])))
 }
 
@@ -234,7 +236,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 28)
+    assert.equal(version(upgraded), 29)
     assert.equal(lifecycleColumns(upgraded).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(upgraded), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     assert.equal((upgraded.prepare(
@@ -252,19 +254,19 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
         'recipes',
         'recipe_revisions',
         'recipe_job_snapshots',
-        'context_checkpoints',
+        'context_checkpoints', ...SESSION_LOG_TABLES,
       ])),
       before,
     )
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 28)
+    assert.equal(version(reopened), 29)
     assert.deepEqual(lifecycleSchemaObjects(reopened), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 28)
+    assert.equal(version(fresh), 29)
     assert.equal(lifecycleColumns(fresh).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(fresh), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     fresh.close()

@@ -18,6 +18,7 @@ import { ProjectStore } from '../src/store/projects.ts'
 import { ReasoningArtifactStore } from '../src/store/reasoning-artifacts.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 import { downgradeSessionLifecycleToV17 } from './fixtures/retention-lifecycle-migration.ts'
+import { orderedRows } from './fixtures/table-rows.ts'
 
 const OPTIONS = { numCtx: 8_192, temperature: 0.7, think: 'high' as const }
 const NOW = '2026-08-12T12:00:00.000Z'
@@ -159,7 +160,7 @@ function allTablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): stri
     .filter((name) => !excluded.has(name))
   return JSON.stringify(Object.fromEntries(tables.map((name) => [
     name,
-    db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+    orderedRows(db, name),
   ])))
 }
 
@@ -169,7 +170,7 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const seed = openDb(path)
-    assert.equal((seed.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 28)
+    assert.equal((seed.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 29)
     const chat = createChat(seed)
     const artifact = createArtifact(seed, chat.id, 'migration', 'exact final', 'exact diagnostic')
     seed.prepare(
@@ -219,11 +220,11 @@ describe('P3-G automatic Reasoning Artifact expiry enforcement', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 28)
+    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 29)
     assert.equal(count(retried, 'reasoning_artifact_deletion_audit'), 0)
     retried.close()
     const reopened = openDb(path)
-    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 28)
+    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 29)
     assert.equal((reopened.prepare(
       "SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'reasoning_artifact_deletion_audit'",
     ).get() as { count: number }).count, 1)
