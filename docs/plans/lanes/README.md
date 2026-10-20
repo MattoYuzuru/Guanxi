@@ -12,9 +12,9 @@ integrator, the coordinating Claude session, merges lanes into `main`.
 | Lane | Stage part | Runs in | Branch | `GUANXI_WEB_PORT` / `GUANXI_API_PORT` | Status |
 | --- | --- | --- | --- | --- | --- |
 | [K1](K1.md) | K1 kernel | Claude Opus session | session branch | 5181 / 4381 | merged ([evidence](../evidence/K1.md)) |
-| [DS1-a](DS1-a.md) | tokens, fonts, logo assets, gate runner, G1–G7 | GPT (Codex), xhigh | `lane/ds1-a-tokens` | 5182 / 4382 | review fixes; merge only with `--no-ff` |
+| [DS1-a](DS1-a.md) | tokens, fonts, logo assets, gate runner, G1–G7 | GPT (Codex), xhigh | `lane/ds1-a-tokens` | 5182 / 4382 | merged ([evidence](../evidence/DS1-a.md)) |
 | [DS1-b](DS1-b.md) | `@guanxi/ui` primitives, stories, catalog, approvals, G10–G16 | Claude Opus session | session branch | 5183 / 4383 | review fixes |
-| [DS1-c](DS1-c.md) | ESLint and stylelint, G8–G9, suppression ratchet, codemod | DeepSeek Flash | `lane/ds1-c-ratchet` | 5184 / 4384 | after DS1-a merges |
+| [DS1-c](DS1-c.md) | ESLint and stylelint, G8–G9, suppression ratchet, codemod | DeepSeek Flash | `lane/ds1-c-ratchet` | 5184 / 4384 | after DS1-b merges (both touch `packages/web` and the gate registry) |
 | [K2](K2.md) | K2 session log, inspector, egress scrubber core | Claude Opus session | session branch | 5186 / 4386 | wave 2, ready |
 | [K3](K3.md) | K3 connections, vault, pi-ai, probes | GPT (Codex), xhigh | `lane/k3-model-access` | 5187 / 4387 | wave 2, ready |
 | [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
@@ -47,10 +47,12 @@ DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open afte
    `npm run build`, Storybook builds and visual snapshots:
 
    ```bash
-   agent-dev run --cwd "$PWD" --node 26 --resource heavy -- npm run test:web:browser
+   agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- npm run test:web:browser
    ```
 
-   Run one check per call and stop at the first failure. If your sandbox cannot run
+   `--lock-timeout` makes the call wait for the lock; without it a busy lock returns
+   `resource_busy` at once, which is not a test failure. Run one check per call and stop at
+   the first failure. If your sandbox cannot run
    `agent-dev` or write `~/.local/state/agent-dev`, run the check directly with your lane's
    ports and write "ran without the shared lock" in the hand-off.
 6. **Live server:** never use the owner's `~/.guanxi`; two servers on one data directory

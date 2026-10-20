@@ -1,6 +1,6 @@
 # Lane DS1-c — Lint rules, suppression ratchet and codemod
 
-**Status:** waiting (starts after K1 and DS1-a are merged into `main`) · **Updated:** 2026-10-20 ·
+**Status:** waiting (K1 and DS1-a are merged; starts after DS1-b merges) · **Updated:** 2026-10-20 ·
 **Runs in:** DeepSeek Flash · **Branch:** `lane/ds1-c-ratchet` · **Ports:**
 `GUANXI_WEB_PORT=5184`, `GUANXI_API_PORT=4384`
 
@@ -48,6 +48,17 @@ Owned paths:
 
 Never change component behaviour, markup structure or tests' intent. If a test breaks because
 a class name changed, update only the selector and say so in the hand-off.
+
+Also close these DS1-a follow-ups (details in `docs/plans/evidence/DS1-a.md`):
+
+- Replace the six-alias `@theme inline` bridge in `packages/web/src/index.css` with the
+  `@guanxi/ui` theme import, and assert that no bridge or legacy alias remains (DS1-a review
+  D1: the bridge's exact contents were never asserted).
+- The legacy inline styles listed in the DS1-a evidence (`packages/web/src/components/ui.tsx`)
+  are frozen by G9's suppressions, not by a ratchet correction.
+- G6 gaps recorded as N5, N8 and D2 (cross-module class maps, `[base].join(' ')`, colours in
+  `stop-color`/`mask-image` and similar properties, same-file style objects bound to
+  identifiers, `style=` in `.svg`): fix what the lint rules can cover and list the rest.
 
 Exit gate:
 
