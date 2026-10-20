@@ -83,7 +83,14 @@ export const webKernelReady: Promise<void> = serial(async () => {
 
 if (import.meta.hot) {
   import.meta.hot.accept('./plugins/projects-shortcut.ts', (next) => {
-    if (next?.['plugin']) void replaceWebPlugin(next['plugin'] as GuanxiPlugin<any>)
+    const plugin = next?.['plugin'] as GuanxiPlugin<any> | undefined
+    if (!plugin) return
+    builtIns[plugin.manifest.id] = plugin
+    void replaceWebPlugin(plugin)
+  })
+  // Editing this module itself creates a new kernel; unload the old one.
+  import.meta.hot.dispose(() => {
+    void webKernel.dispose()
   })
 }
 
