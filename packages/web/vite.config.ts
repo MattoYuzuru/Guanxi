@@ -36,6 +36,21 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['@guanxi/contract', '@guanxi/ui'],
+    // The dependency scanner does not follow import.meta.glob (catalog stories), so Base UI
+    // would be discovered late and pre-bundled with a second React copy. List it up front.
+    include: [
+      '@base-ui/react/button',
+      '@base-ui/react/checkbox',
+      '@base-ui/react/dialog',
+      '@base-ui/react/input',
+      '@base-ui/react/menu',
+      '@base-ui/react/popover',
+      '@base-ui/react/select',
+      '@base-ui/react/switch',
+      '@base-ui/react/tabs',
+      '@base-ui/react/toast',
+      '@base-ui/react/tooltip',
+    ],
   },
   server: {
     port: webPort,
