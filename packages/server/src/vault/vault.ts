@@ -47,6 +47,14 @@ export class Vault {
   get unattendedAvailable() { return this.policy.ownerDevice && this.policy.nodeKeyOptIn }
   unlocked(accountId: string) { return this.sessions.has(accountId) }
   private async dataKey(accountId: string, node = false, create = true): Promise<Buffer> {
+    try { return await this.readDataKey(accountId, node, create) }
+    catch (error) {
+      if (this.closed) throw new Error('Vault closed')
+      if (error instanceof ConnectionError) throw error
+      throw new ConnectionError('vault_locked', 'Vault wrapping key unavailable')
+    }
+  }
+  private async readDataKey(accountId: string, node: boolean, create: boolean): Promise<Buffer> {
     this.assertOpen()
     const table = node ? 'vault_node_keys' : 'vault_keys'
     const aad = `${node ? 'node-key' : 'key'}:${accountId}`

@@ -707,3 +707,53 @@ test('review: queued localChat rechecks revoked unattended consent before dispat
   const next = await governor.acquire(admission('after-revocation'), { signal: AbortSignal.timeout(1000) })
   next.release()
 })
+
+
+test('review: pending node-key injection rejects revocation and rotation after await; keychain errors remain vault_locked', async t => {
+  const { vault, store, config, scrubber } = await setupVault(t)
+  const row = store.create(account, apiInput); await vault.unlock(account)
+  store.setSecret(account, row.id, vault.put(account, fakeKey()))
+  vault.prepareUnattended(account, row.id, true); store.setUnattended(account, row.id, true)
+  let used = 0
+  for (const change of ['revoke', 'rotate']) {
+    let release!: () => void; let entered!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const pending = new Vault(store, async () => { entered(); await held; return config.keychain() }, scrubber, config.policy)
+    const injection = pending.inject(account, row.id, true, async () => { used++ })
+    const rejected = assert.rejects(injection, error => error instanceof ConnectionError && error.code === 'policy_denied')
+    await started
+    if (change === 'revoke') {
+      vault.prepareUnattended(account, row.id, false); store.setUnattended(account, row.id, false)
+    } else {
+      const ref = vault.put(account, fakeKey()); store.setSecret(account, row.id, ref)
+      vault.prepareUnattended(account, row.id, true)
+    }
+    release(); await rejected; pending.close()
+    vault.prepareUnattended(account, row.id, true); store.setUnattended(account, row.id, true)
+  }
+  const unavailable = new Vault(store, async () => { throw new Error(fakeKey()) }, scrubber, config.policy)
+  await assert.rejects(unavailable.inject(account, row.id, true, async () => { used++ }), error => error instanceof ConnectionError && error.code === 'vault_locked')
+  unavailable.close(); assert.equal(used, 0)
+})
+
+test('review: migration 2 upgrades a version-1 vault without rewriting keys, ciphertext or connections', async t => {
+  const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput); const secret = fakeKey()
+  await s.unlockVault(account); s.saveSecret(account, row.id, secret)
+  const before = {
+    keys: s.store.db.prepare('SELECT * FROM vault_keys').all(),
+    secrets: s.store.db.prepare('SELECT * FROM vault_secrets').all(),
+    connections: s.store.db.prepare('SELECT * FROM connections').all(),
+  }
+  // Build a real on-disk version-1 fixture; this is only the throwaway test database.
+  s.store.db.exec('DROP TABLE vault_node_secrets; DROP TABLE vault_node_keys; DELETE FROM k3_migrations WHERE version=2;')
+  await f.restart()
+  const next = f.service()
+  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2])
+  assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_keys').all(), before.keys)
+  assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_secrets').all(), before.secrets)
+  assert.deepEqual(next.store.db.prepare('SELECT * FROM connections').all(), before.connections)
+  assert.equal(f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!.ready, true)
+  await next.unlockVault(account)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub(secret), '[REDACTED]')
+})
