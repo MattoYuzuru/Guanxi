@@ -66,6 +66,9 @@ describe('catalog gates self-test', () => {
     assert.match(messages(find('G12', 'base-branch-unknown')), /cannot verify the trusted key set: no base branch/)
     assert.match(messages(find('G12', 'agent-key-bootstrapped-on-branch')), /first trusted key was added outside the base branch/)
     assert.match(messages(find('G12', 'old-approval-restored')), /does not follow the signed revocation/)
+    assert.match(messages(find('G12', 'approval-over-base-deprecation')), /approval restores a component deprecated on main/)
+    assert.match(messages(find('G12', 'approval-revoked-in-record')), /approval is invalid: revoked/)
+    assert.match(messages(find('G12', 'key-version-reset')), /version_changed_without_rotation/)
   })
 
   it('G12 fails agent-written approvals, edited signatures and unsigned key additions for their own reasons', () => {

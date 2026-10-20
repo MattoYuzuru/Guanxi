@@ -61,6 +61,29 @@ describe('approval verification', () => {
     assert.deepEqual(verifyRecordApproval(forged, [owner.trusted]), { state: 'invalid', reason: 'bad_signature' })
   })
 
+  it('treats an approval followed by a signed revocation in the same record as revoked (GPT H2)', async () => {
+    const { revocationPayload, approvalSigningBytes } = await import('../../../catalog/approval/index.ts')
+    const { sign } = await import('node:crypto')
+    const record = approved(owner)
+    const at = '2026-10-21T09:00:00.000Z'
+    const revocation = {
+      at,
+      keyId: owner.trusted.keyId,
+      signature: sign(null, approvalSigningBytes(revocationPayload('button', { at, keyId: owner.trusted.keyId })), owner.privateKey).toString('base64'),
+    }
+    const both = { ...record, revocation }
+    assert.deepEqual(verifyRecordApproval(both, [owner.trusted]), { state: 'invalid', reason: 'revoked' })
+    assert.equal(effectiveStatus(both, 'invalid', { sourceHash: HASH, snapshotHashes: { 'default.light': HASH } }), 'invalid')
+    // An approval newer than the revocation is the owner's latest decision and stays valid.
+    const earlier = '2026-10-19T09:00:00.000Z'
+    const older = {
+      at: earlier,
+      keyId: owner.trusted.keyId,
+      signature: sign(null, approvalSigningBytes(revocationPayload('button', { at: earlier, keyId: owner.trusted.keyId })), owner.privateKey).toString('base64'),
+    }
+    assert.equal(verifyRecordApproval({ ...record, revocation: older }, [owner.trusted]).state, 'valid')
+  })
+
   it('rejects approvals on records that are not approved and approved records without one', () => {
     const record = approved(owner)
     assert.deepEqual(verifyRecordApproval({ ...record, status: 'review' }, [owner.trusted]), {

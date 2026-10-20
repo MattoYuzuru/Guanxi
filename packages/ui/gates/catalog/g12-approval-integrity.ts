@@ -165,6 +165,13 @@ export const g12: CatalogGate = {
         const baseParsed = parseReviewRecord(base.records[folder.id], folder.id)
         const baseKeys = base.trustedKeys.keys
         const newest = baseParsed.ok ? latestSignedDecision(baseParsed.record, baseKeys) : null
+        // Deprecation is the owner's decision too; nothing signed can reactivate it yet.
+        if (baseParsed.ok && baseParsed.record.status === 'deprecated') {
+          error(`approval restores a component deprecated on ${base.label}; reactivation needs an owner decision`, {
+            component: folder.id,
+            file,
+          })
+        }
         if (newest !== null && approvalPrecedes(record.approval.at, newest)) {
           error(`approval of ${record.approval.at} does not follow the signed ${newest.kind} of ${newest.at} on ${base.label}`, {
             component: folder.id,
@@ -248,6 +255,47 @@ export const g12: CatalogGate = {
         } finally {
           first.dispose()
           second.dispose()
+        }
+      },
+    },
+    {
+      name: 'approval-over-base-deprecation',
+      description: 'Main deprecated the component (approval cleared); a branch restores an earlier valid approval',
+      expect: /approval restores a component deprecated on main/,
+      apply({ uiRoot, context }) {
+        const key = createTestKey('owner test key')
+        try {
+          const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey)
+          const onMain: ReviewRecord = {
+            ...approved,
+            status: 'deprecated',
+            approval: null,
+            deprecated: { at: '2026-10-22T09:00:00.000Z', replacement: null, note: 'Replaced by StatusPill.' },
+          }
+          return { ...context, base: { label: 'main', trustedKeys: { version: 1, keys: [key.trusted] }, records: { badge: onMain } } }
+        } finally {
+          key.dispose()
+        }
+      },
+    },
+    {
+      name: 'approval-revoked-in-record',
+      description: 'The record carries the old approval and the owner\'s later signed revocation; base predates both',
+      expect: /approval is invalid: revoked/,
+      apply({ uiRoot, context }) {
+        const key = createTestKey('owner test key')
+        try {
+          const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey, 'First look.', '2026-10-20T12:00:00.000Z')
+          const at = '2026-10-21T09:00:00.000Z'
+          const revocation = {
+            at,
+            keyId: key.trusted.keyId,
+            signature: sign(null, approvalSigningBytes(revocationPayload('badge', { at, keyId: key.trusted.keyId })), key.privateKey).toString('base64'),
+          }
+          writeRecord(uiRoot, { ...approved, revocation })
+          return { ...context, base: { label: 'main', trustedKeys: { version: 1, keys: [key.trusted] }, records: {} } }
+        } finally {
+          key.dispose()
         }
       },
     },

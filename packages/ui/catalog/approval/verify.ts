@@ -17,6 +17,7 @@ export type ApprovalInvalidReason =
   | 'approval_on_non_approved_record'
   | 'untrusted_key'
   | 'bad_signature'
+  | 'revoked'
 
 export type ApprovalVerdict =
   | { state: 'absent' }
@@ -96,9 +97,19 @@ export function verifyRecordApproval(
   const key = trustedKeys.find((candidate) => candidate.keyId === approval.keyId)
   if (!key) return { state: 'invalid', reason: 'untrusted_key' }
   const { signature, ...signed } = approval
-  return verifies(approvalSigningBytes(approvalPayload(record.id, signed)), key, signature)
-    ? { state: 'valid', keyId: key.keyId }
-    : { state: 'invalid', reason: 'bad_signature' }
+  if (!verifies(approvalSigningBytes(approvalPayload(record.id, signed)), key, signature)) {
+    return { state: 'invalid', reason: 'bad_signature' }
+  }
+  // The newest signed decision wins: a valid revocation at or after the approval revokes it.
+  const revocation = record.revocation ?? null
+  if (
+    revocation !== null &&
+    Date.parse(revocation.at) >= Date.parse(approval.at) &&
+    verifyRecordRevocation(record, trustedKeys).state === 'valid'
+  ) {
+    return { state: 'invalid', reason: 'revoked' }
+  }
+  return { state: 'valid', keyId: key.keyId }
 }
 
 export function signKeySet(keys: readonly TrustedKey[], version: number, signedBy: string, privateKey: KeyObject) {
