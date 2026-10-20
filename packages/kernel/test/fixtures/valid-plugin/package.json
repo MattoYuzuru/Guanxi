@@ -1,0 +1,14 @@
+{
+  "name": "@guanxi-fixture/valid-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "guanxi": {
+    "id": "fixture.valid-plugin",
+    "engines": { "guanxi": "^0.1.0" },
+    "provides": ["fixture-service"],
+    "requires": ["governor"],
+    "uses": ["ollama"],
+    "contributes": { "slots": ["sidebar.items"], "locales": ["en", "ru"] },
+    "trust": "T1"
+  }
+}
