@@ -695,7 +695,7 @@
         "retrying-dark": "sha256:2851b81b718c7d9ed0e424018cefe5ae3eaf423c3efe6aaeea353b902b04e22b",
         "retrying-light": "sha256:05d64773d438970beab385977c150e55d768a03e8a5158b5b640723c0e879c08",
         "with-details-dark": "sha256:25243258e2b0155f6c6bb93c636b85335a672ee19a820eefa654e853abe1afdd",
-        "with-details-light": "sha256:02d469ad5c767dc3b8814afb7fcaf961171a27c97d49bfe0103102ccb9cbbe3a"
+        "with-details-light": "sha256:dc3e63c8f446a72aff1c96d66db857bbc5bd97f9313fd4ec02d428d2590a808f"
       },
       "storedStatus": "draft",
       "signature": "absent",
@@ -1782,10 +1782,10 @@
         "disabled-tab-dark": "sha256:1be09599e67e42f9a340978d88758a331f27501d7d20b7a080f560350ebeac96",
         "disabled-tab-light-hc": "sha256:57e0e25d39e0f0c2172ccea4fab87e089b9683c389091f4b6e5b502dd874d6e4",
         "disabled-tab-light": "sha256:465358ddee132a8fd6fd86595bb7d6d92de1aaf51f07feab5f06409ba32e1c08",
-        "focus-visible-dark-hc": "sha256:d199b74904d8cf42d3fd557860eb1420c8677910c987252d254af689575f97dc",
-        "focus-visible-dark": "sha256:72e51779882023adad42e00715050aff32c721c5d378c469297003af70248900",
-        "focus-visible-light-hc": "sha256:6fa61c1846cc9c0e0cdae8c2136b19cfb9205a2948f0bf407f697df85d40ee4b",
-        "focus-visible-light": "sha256:2015cf3afbfde5cf8b36dfc7aefd35bbe03947eccfc1c229f1d95ec4ab91e4ec",
+        "focus-visible-dark-hc": "sha256:4a1cae9fd03bc77cd518c5367dd18573adda24448598e8f3d47f354cc7c2c9c6",
+        "focus-visible-dark": "sha256:d8a987622ce41413d67011e38b90f9474686b8d12dbc33df1cc83535e61d5f3a",
+        "focus-visible-light-hc": "sha256:7780f59b28e5150fe162160341239232f65965716795ee2f5ca1976ec8815f1f",
+        "focus-visible-light": "sha256:7520917a866a934dce91a7bab2231b702a540cde79b96a353b30dd0e5fabe616",
         "hover-dark-hc": "sha256:73f00d9beec64a8a955855a39c0ae06f5e243955248281c3d35335759a415a0e",
         "hover-dark": "sha256:e0ff7241d46f17e3e335ad57115365be8189443be66aca9e5e0833c1a78b3dbc",
         "hover-light-hc": "sha256:f4f0141e6d2752b996a7f3430045722b027f0a1b53a2fa27900a57b0b7ac67d1",
