@@ -25,7 +25,7 @@ import deepseekFixture from '../../src/probes/fixtures/deepseek.json' with { typ
 import type { PiTransport } from '../../src/connections/pi.ts'
 import { Vault } from '../../src/vault/vault.ts'
 import { ConnectionStore } from '../../src/connections/store.ts'
-import type { VaultKeychain } from '../../src/vault/keychain.ts'
+import { keychainService, type VaultKeychain } from '../../src/vault/keychain.ts'
 
 const account = 'test-owner'
 const apiInput = { name: 'Test model', kind: 'model_api' as const, provider: 'deepseek' as const, auth: 'api_key' as const }
@@ -819,4 +819,14 @@ test('N1: failed session registration blocks background complete before provider
   error => error instanceof ConnectionError && error.code === 'egress_unavailable')
   assert.equal(calls, 0)
   assert.equal(f.service().store.costs(account).length, 0)
+})
+
+test('N2: production wrapping-key namespaces separate session, node and database identities', () => {
+  const path = '/throwaway/connections.sqlite'
+  const session = keychainService(path, 'session')
+  const node = keychainService(path, 'node')
+  assert.notEqual(node, session)
+  assert.equal(keychainService(path, 'session'), session)
+  assert.notEqual(keychainService('/other-throwaway/connections.sqlite', 'session'), session)
+  assert.equal(node, `${session}.node`)
 })

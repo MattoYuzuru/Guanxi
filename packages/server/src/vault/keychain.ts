@@ -4,6 +4,12 @@ import { PRODUCT_FILE_PREFIX } from '@guanxi/contract'
 /** Test doubles implement this boundary without ever opening the owner's keychain. */
 export interface VaultKeychain { key(accountId: string, create: boolean, purpose: 'session' | 'node'): Buffer }
 
+/** The node key must never share the interactive wrapping-key namespace. */
+export function keychainService(databasePath: string, purpose: 'session' | 'node'): string {
+  const namespace = createHash('sha256').update(databasePath).digest('hex')
+  return `${PRODUCT_FILE_PREFIX}.vault.${namespace}${purpose === 'node' ? '.node' : ''}`
+}
+
 /** Existing secrets require registration-only keychain access at apply; empty vaults stay lazy. */
 export async function osKeychain(databasePath: string): Promise<VaultKeychain> {
   if (process.platform === 'linux') {
@@ -13,10 +19,9 @@ export async function osKeychain(databasePath: string): Promise<VaultKeychain> {
   }
   const keyringPackage = '@napi-rs/keyring'
   const { Entry } = await import(keyringPackage) as typeof import('@napi-rs/keyring')
-  const namespace = createHash('sha256').update(databasePath).digest('hex')
   return {
     key(accountId, create, purpose) {
-      const entry = new Entry(`${PRODUCT_FILE_PREFIX}.vault.${namespace}${purpose === 'node' ? '.node' : ''}`, accountId)
+      const entry = new Entry(keychainService(databasePath, purpose), accountId)
       let encoded = entry.getPassword()
       if (!encoded && create) {
         encoded = randomBytes(32).toString('base64')
