@@ -1,4 +1,15 @@
-/* Existing semantic variables until DS1 supplies @guanxi/ui and its token aliases. */
-.connections { color: var(--fg); background: var(--bg-raised); border-color: var(--border); }
-.connections-muted { color: var(--fg-muted); }
-.connections-record { border-color: var(--border); }
+/* DS1-a tokens are available; DS1-b shared primitives are still pending. */
+@theme inline {
+  --radius-panel: var(--border-radius-panel);
+  --text-15: var(--font-size-15);
+}
+.connections {
+  color: var(--color-text-primary);
+  background: var(--color-background-secondary);
+  border-color: var(--color-border-primary);
+  font-family: var(--font-family-sans);
+}
+.connections-muted { color: var(--color-text-secondary); }
+.connections-record { border-color: var(--color-border-primary); }
+.connections-heading { font-weight: var(--font-weight-heading); }
+.connections .font-mono { font-family: var(--font-family-mono); }
