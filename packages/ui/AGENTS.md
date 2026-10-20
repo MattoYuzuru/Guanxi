@@ -15,16 +15,24 @@ commands prove a change.
 | `src/index.ts` | the only public entry; features and plugins import from `@guanxi/ui` and nothing deeper |
 | `src/story-kit/` | portable CSF 3 types, `msg()` for message keys in story args, `machine()` for untranslated machine values, `localizedRender()` for custom renders |
 | `src/i18n/` | English source, curated Russian and the +40% pseudo-locale for `ui.`, `story.` and `catalog.` keys |
-| `src/styles/token-stub.css` | **temporary** semantic token values from FOUNDATIONS; delete it when DS1-a's generated tokens are on main |
+| `src/styles/base.css`, `src/styles/tailwind-reference.css` | shared component styles; the Tailwind reference (with `generated/theme.css`) that component CSS uses for `@apply` |
+| `tokens/`, `generated/`, `fonts/`, `gates/*.mjs` | DS1-a's token sources, generated CSS/TS, local Plex and the G1–G7/G17 runner; regenerate with `npm run tokens:build` |
 | `catalog/` | the in-app catalog (renderer, regime frames, review panel, T2 iframe sample), `manifest.json` (generated), `approval/` (signed review records), `approval-keys.json` (trusted public keys), `snapshots/` (G13 baselines) |
 | `catalog/harness/` | the static page the browser gates render stories in |
-| `gates/catalog/` | G10–G16, their seeded violations and `run.ts` (interim runner until DS1-a's registry) |
+| `gates/catalog/`, `gates/extensions/catalog.gate.ts` | G10–G16, their seeded violations, `run.ts` (catalog runner with self-test) and the registration DS1-a's runner loads |
 | `.storybook/` | Storybook 10 over the same story files |
 
 ## Rules that are easy to miss
 
-- Style with semantic custom properties only (`var(--color-…)`, `--space-…`, `--density-…`,
-  `--motion-…`); no literal colours, spacing, sizes or durations. Glass only on floating layers.
+- Style with generated tokens only (`var(--color-…)`, `--spacing-…`, `--control-height`,
+  `--layer-…`, `--focus-ring-…`, `--motion-…`, `--material-…`); no literal colours, spacing,
+  sizes, layers or durations (G4–G7). A value no token expresses (`100%`, a transition list, a
+  multiple of a size) comes from a Tailwind utility through `@apply`, after
+  `@reference '…/styles/tailwind-reference.css'`. Glass only on floating layers; strong glass is
+  `data-elevation="3"`.
+- Fades use `--motion-fade-*`; spatial motion uses `--motion-duration-*` and
+  `--motion-distance-*`, which are 0 under reduced motion, so no per-component reduced-motion
+  rule is needed.
 - Every user-facing string is a message key; story args use `msg('story.…')`.
 - Declare states in the docs front matter; the stories' `name`s must be exactly those states.
 - Floating layers mount through `usePortalContainer()` so they inherit the theme of their frame.
@@ -40,6 +48,7 @@ commands prove a change.
 
 ```bash
 npm run ui:manifest          # regenerate catalog/manifest.json after any component change
+npm run ui:check             # DS1-a's runner: G1–G7, G10–G12, G15 and G17 (every seed fails)
 npm run ui:catalog:check     # G10, G11, G12, G15 (static); add --selftest to prove the seeds fail
 npm run ui:check:browser     # G13 (in Docker), G14, G15 clipping, G16
 npm run ui:snapshots         # rewrite G13 baselines in the pinned image

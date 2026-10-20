@@ -62,7 +62,7 @@ export function ${name}({ className, ...props }: ${name}Props) {
 `,
   [`${id}.css`]: `.gx-${id} {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--spacing-8);
   color: var(--color-text-primary);
 }
 `,

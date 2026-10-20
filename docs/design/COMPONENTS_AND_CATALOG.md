@@ -137,9 +137,10 @@ Built on the DS1-b lane branch; see [`packages/ui/AGENTS.md`](../../packages/ui/
 lane hand-off for evidence.
 
 - `@guanxi/ui` has 14 primitives (shadcn/ui on Base UI, adapted) and 4 patterns (StatusPill,
-  ProvenanceLabel, EmptyState, ErrorState), all `draft`. They style through semantic custom
-  properties; a temporary token stub supplies FOUNDATIONS values until DS1-a's generated tokens
-  land.
+  ProvenanceLabel, EmptyState, ErrorState), all `draft`. They style through DS1-a's generated
+  tokens (`packages/ui/generated/tokens.css`); values no token expresses come from Tailwind
+  utilities through `@apply`, so G1–G7 pass on the components. The spinner and the running pulse
+  stay still until the generated theme offers a loop animation (G6 rejects keyframe names).
 - The in-app catalog is at Settings → Developer → Components (`/settings/developer/components`),
   code-split and shown only with Developer mode on. Links keep the component and regime in the
   query (`?component=button&theme=dark-hc&density=comfortable&glass=solid`).
