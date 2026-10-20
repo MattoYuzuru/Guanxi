@@ -1,8 +1,4 @@
 /* DS1-a tokens are available; DS1-b shared primitives are still pending. */
-@theme inline {
-  --radius-panel: var(--border-radius-panel);
-  --text-15: var(--font-size-15);
-}
 .connections {
   color: var(--color-text-primary);
   background: var(--color-background-secondary);
