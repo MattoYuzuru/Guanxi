@@ -210,8 +210,10 @@ test('unlimited and unavailable balance observations stay unknown; malformed pro
   const f = await setup(t, { transport: async () => { throw new Error(secret) } })
   const s = f.service(); const row = s.create(account, apiInput)
   await s.vault.unlock(account); s.saveSecret(account, row.id, secret)
+  const prior = parseBalance('deepseek', deepseekFixture.response, deepseekFixture.recordedAt)
+  s.store.observe(account, row.id, {}, prior)
   await assert.rejects(s.probe(account, row.id), error => !String(error).includes(secret))
-  assert.equal(s.store.get(account, row.id).balance, null)
+  assert.deepEqual(s.store.get(account, row.id).balance, prior)
 })
 
 test('cost ledger is append-only, idempotent per connection receipt and isolated per account after restart', async t => {
