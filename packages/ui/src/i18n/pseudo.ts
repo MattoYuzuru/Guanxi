@@ -13,13 +13,10 @@ const ACCENTED: Record<string, string> = {
 export const PSEUDO_EXPANSION = 0.4
 
 export function pseudoLocalize(text: string): string {
-  let visible = 0
-  const accented = text.replace(/\{[^}]*\}|[A-Za-z]/g, (match) => {
-    if (match.startsWith('{')) return match
-    visible += 1
-    return ACCENTED[match] ?? match
-  })
-  const others = text.replace(/\{[^}]*\}/g, '').replace(/[A-Za-z]/g, '').length
-  const padding = Math.ceil((visible + others) * PSEUDO_EXPANSION)
+  const accented = text.replace(/\{[^}]*\}|[A-Za-z]/g, (match) =>
+    match.startsWith('{') ? match : (ACCENTED[match] ?? match),
+  )
+  // The brackets count towards the expansion; the dots make up the rest.
+  const padding = Math.ceil(text.length * PSEUDO_EXPANSION)
   return `⟦${accented}${'·'.repeat(Math.max(padding - 2, 0))}⟧`
 }
