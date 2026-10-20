@@ -76,7 +76,8 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   const ownedId = '22222222-2222-4222-8222-222222222222'
   let projectless: ReturnType<typeof run>[] = []
   const owned = [run(ownedId, project.id, 'ocr')]
-  let initialListFailures = 2
+  // Every projectless list request fails until the test presses Retry.
+  let failProjectlessList = true
   let createCalls = 0
   const createBodies: unknown[] = []
   let patchCalls = 0
@@ -96,8 +97,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
     }
     if (url.pathname === '/api/quick-runs' && method === 'GET') {
       listQueries.push(Object.fromEntries(url.searchParams))
-      if (initialListFailures > 0 && url.searchParams.get('scope') === 'projectless') {
-        initialListFailures -= 1
+      if (failProjectlessList && url.searchParams.get('scope') === 'projectless') {
         await new Promise((resolve) => setTimeout(resolve, 150))
         return route.fulfill(json({
           code: 'storage_error',
@@ -151,6 +151,12 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   const loadError = page.getByRole('heading', { name: 'Не удалось загрузить Quick Run' })
   await expect(loadError).toBeFocused()
   await expect(page.getByText('Не удалось сохранить запрос в локальное хранилище.')).toHaveCount(1)
+  // The development entrypoint uses React StrictMode, so the first load effect is aborted
+  // and replaced once; whether the aborted request reaches the route depends on timing.
+  const projectlessQueries = () => listQueries.filter(({ scope }) => scope === 'projectless')
+  const initialProjectlessQueries = projectlessQueries().length
+  expect([1, 2]).toContain(initialProjectlessQueries)
+  failProjectlessList = false
   const retry = page.getByRole('button', { name: 'Повторить', exact: true })
   await retry.focus()
   await retry.press('Enter')
@@ -214,11 +220,11 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   await expect(page.getByText(ownedId)).toHaveCount(1)
   await expect(page.getByText(projectlessId)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: project.name })).toHaveCount(1)
-  expect(listQueries.filter(({ scope }) => scope === 'projectless')).toEqual([
-    { quickRunVersion: '1', scope: 'projectless' },
-    { quickRunVersion: '1', scope: 'projectless' },
-    { quickRunVersion: '1', scope: 'projectless' },
-  ])
+  // Retry issued exactly one projectless request, and nothing after it re-read that scope.
+  expect(projectlessQueries()).toEqual(Array.from(
+    { length: initialProjectlessQueries + 1 },
+    () => ({ quickRunVersion: '1', scope: 'projectless' }),
+  ))
   const projectQueries = listQueries.filter(({ scope }) => scope === 'project')
   expect(projectQueries.length).toBeGreaterThan(0)
   expect(projectQueries.every((query) => JSON.stringify(query) === JSON.stringify({
