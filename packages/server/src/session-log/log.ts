@@ -41,8 +41,6 @@ import type { Db } from '../store/db.ts'
 
 export const DEFAULT_WRITER_TTL_MS = 30_000
 export const DEFAULT_REASONING_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000
-/** Writes held back while the scrubber is not ready: at most this many, and this many UTF-8 bytes of data. */
-export const DEFAULT_PENDING_LIMIT = Object.freeze({ events: 1_000, bytes: 8 * 1024 * 1024 })
 const MAX_PAGE = 1_000
 
 /** The points of one append, in order. Fault injection can stop at each. */
@@ -66,8 +64,6 @@ export type SessionLogErrorCode =
   | 'closed'
   /** A declared secret source has not registered yet (D-141); nothing is written or read. */
   | 'egress_not_ready'
-  /** The bounded buffer for writes held back while not ready is full; this write is refused. */
-  | 'egress_buffer_full'
 
 export class SessionLogError extends Error {
   readonly code: SessionLogErrorCode
@@ -96,8 +92,6 @@ export interface SessionLogOptions {
   isProcessAlive?: (pid: number) => boolean
   /** Fault injection for crash tests; it may throw or kill the process. */
   fault?: (point: SessionAppendPoint, detail: { sessionId: string; type: SessionEventType }) => void
-  /** Bound of the in-memory buffer for system writes held back while the scrubber is not ready. */
-  pendingLimit?: { events: number; bytes: number }
 }
 
 export interface SessionEventInput<T extends SessionEventType = SessionEventType> {
@@ -109,6 +103,12 @@ export interface SessionEventInput<T extends SessionEventType = SessionEventType
   jobSequence?: number | null
   /** Overrides the reasoning expiry (for example a shorter parent retention). */
   expiresAt?: string
+  /**
+   * When the recorded fact happened, if earlier than the append (the mirror
+   * passes the Job event's time, so a trace reconstructed later keeps it).
+   * Never later than now.
+   */
+  occurredAt?: string
 }
 
 export interface AppendOptions {
@@ -124,16 +124,6 @@ export interface AppendResult {
   duplicate: boolean
 }
 
-/** A system write held in memory until the scrubber is ready; never persisted or logged. */
-interface PendingWrite {
-  sessionId: string
-  session: OpenSessionInput
-  input: SessionEventInput
-  options: AppendOptions
-  bytes: number
-  /** Added inside the caller's transaction and not confirmed by its commit yet. */
-  provisional: boolean
-}
 
 export interface OpenSessionInput {
   kind: SessionKind
@@ -315,10 +305,6 @@ export class SessionLog {
   /** Sessions this process writes: an open handle, or the system writer's epoch. */
   private readonly writers = new Map<string, { epoch: number; handle: Handle | null }>()
   private readonly subscribers = new Map<string, Set<SubscriptionWake>>()
-  private readonly pendingLimit: { events: number; bytes: number }
-  private readonly pending: PendingWrite[] = []
-  private pendingBytes = 0
-  private flushScheduled = false
   private subscriptionsClosed = false
   private closing = false
 
@@ -331,7 +317,6 @@ export class SessionLog {
     this.reasoningRetentionMs = options.reasoningRetentionMs ?? DEFAULT_REASONING_RETENTION_MS
     this.isProcessAlive = options.isProcessAlive ?? defaultProcessAlive
     this.fault = options.fault
-    this.pendingLimit = options.pendingLimit ?? DEFAULT_PENDING_LIMIT
     LIVE_WRITER_IDS.add(this.writer.id)
   }
 
@@ -347,9 +332,9 @@ export class SessionLog {
     return this.scrubber.pendingSources()
   }
 
-  /** System writes held in memory until the scrubber is ready. */
-  get pendingCount(): number {
-    return this.pending.length
+  /** Resolves when the egress scrubber is ready; at once if it is. */
+  whenEgressReady(): Promise<void> {
+    return this.scrubber.whenReady()
   }
 
   private notReady(): SessionLogError {
@@ -386,125 +371,29 @@ export class SessionLog {
   /**
    * The system writer used by the legacy job store mirror: it appends inside a
    * transaction the caller owns, acquiring or renewing the writer row as needed.
-   *
-   * While the scrubber is not ready, or earlier writes are still held back,
-   * the write is held in a bounded in-memory buffer instead (`buffered`), and
-   * written in order, scrubbed, once the scrubber is ready. A full buffer
-   * refuses the write with `egress_buffer_full`, so the caller's transaction
-   * rolls back; nothing is dropped silently.
-   *
-   * The caller reports its transaction's end: `confirmPending` after COMMIT,
-   * `discardProvisional` after ROLLBACK, then `notify`.
+   * Like every write it refuses while the scrubber is not ready; the mirror
+   * defers instead and reconstructs the trace from the durable Job store later
+   * (`ChatSessionMirror`). The caller calls `notify` after its commit.
    */
   appendAsSystemWithin<T extends SessionEventType>(
     sessionId: string,
     session: OpenSessionInput,
     input: SessionEventInput<T>,
     options: AppendOptions = {},
-  ): AppendResult | { buffered: true } {
+  ): AppendResult {
     this.assertOpen()
     // The system path never opens its own transaction; it must run inside the caller's.
     if ((this.db as unknown as { isTransaction?: boolean }).isTransaction === false) {
       throw new SessionLogError('invalid_event', 'appendAsSystemWithin must run inside a transaction')
     }
+    this.assertEgressReady()
     const held = this.writers.get(sessionId)
     if (held?.handle) {
       throw new SessionLogError('writer_busy', `Session ${sessionId} has an open handle`)
     }
-    if (!this.scrubber.isReady() || this.pending.length > 0) {
-      this.holdBack({ sessionId, session, input: input as SessionEventInput, options })
-      return { buffered: true }
-    }
     const epoch = this.acquireWithin(sessionId, session)
     this.writers.set(sessionId, { epoch, handle: null })
     return this.appendWithin(sessionId, epoch, input, options)
-  }
-
-  private holdBack(write: Omit<PendingWrite, 'bytes' | 'provisional'>): void {
-    const bytes = Buffer.byteLength(JSON.stringify(write.input.data), 'utf8')
-    if (
-      this.pending.length + 1 > this.pendingLimit.events ||
-      this.pendingBytes + bytes > this.pendingLimit.bytes
-    ) {
-      throw new SessionLogError(
-        'egress_buffer_full',
-        `${this.pending.length} writes are already held back until secret redaction is ready`,
-      )
-    }
-    this.pending.push({ ...write, bytes, provisional: true })
-    this.pendingBytes += bytes
-  }
-
-  /** The caller's transaction committed: its held-back writes become flushable. */
-  confirmPending(): void {
-    let confirmed = false
-    for (const write of this.pending) {
-      if (write.provisional) {
-        write.provisional = false
-        confirmed = true
-      }
-    }
-    if (confirmed) this.scheduleFlush()
-  }
-
-  /** The caller's transaction rolled back: forget the writes it held back. */
-  discardProvisional(): void {
-    for (let index = this.pending.length - 1; index >= 0; index--) {
-      const write = this.pending[index]!
-      if (!write.provisional) break
-      this.pending.splice(index, 1)
-      this.pendingBytes -= write.bytes
-    }
-  }
-
-  /** Held-back writes of one Job, in order, for the mirror's own bookkeeping. */
-  pendingFor(sessionId: string, jobId: string): readonly SessionEventInput[] {
-    return this.pending
-      .filter((write) => write.sessionId === sessionId && write.input.jobId === jobId)
-      .map((write) => write.input)
-  }
-
-  private scheduleFlush(): void {
-    if (this.flushScheduled || this.closing) return
-    this.flushScheduled = true
-    this.scrubber.whenReady().then(
-      () => {
-        this.flushScheduled = false
-        try {
-          this.flushPending()
-        } catch {
-          // The writes stay held back; the next confirmed write schedules another flush.
-        }
-      },
-      () => {
-        this.flushScheduled = false
-      },
-    )
-  }
-
-  /**
-   * Writes held-back system writes in order, each in its own transaction,
-   * while the scrubber is ready. Stops at the first failure and keeps the rest.
-   */
-  flushPending(): number {
-    this.assertOpen()
-    let written = 0
-    while (this.pending.length > 0 && !this.pending[0]!.provisional && this.scrubber.isReady()) {
-      const write = this.pending[0]!
-      if (this.writers.get(write.sessionId)?.handle) {
-        throw new SessionLogError('writer_busy', `Session ${write.sessionId} has an open handle`)
-      }
-      this.transaction(() => {
-        const epoch = this.acquireWithin(write.sessionId, write.session)
-        this.writers.set(write.sessionId, { epoch, handle: null })
-        this.appendWithin(write.sessionId, epoch, write.input, write.options)
-      }, write.sessionId, write.input.type)
-      this.pending.shift()
-      this.pendingBytes -= write.bytes
-      this.notify([write.sessionId])
-      written++
-    }
-    return written
   }
 
   /** @internal Handle append: its own transaction, no re-acquisition. */
@@ -582,19 +471,9 @@ export class SessionLog {
     return total
   }
 
-  /**
-   * Writes what is held back if the scrubber is ready, then releases every
-   * writer row this process holds and ends every subscription. Writes still
-   * held back because the scrubber never became ready are lost with the
-   * process, exactly like a crash before they were written.
-   */
+  /** Releases every writer row this process holds and ends every subscription. */
   close(): void {
     if (this.closing) return
-    try {
-      if (this.scrubber.isReady()) this.flushPending()
-    } catch {
-      // Closing must not throw.
-    }
     this.closing = true
     for (const [sessionId, held] of [...this.writers]) {
       if (held.handle) held.handle.close()
@@ -1075,7 +954,9 @@ export class SessionLog {
       }
     }
 
-    const createdAt = this.clock().toISOString()
+    const now = this.clock().getTime()
+    const occurred = input.occurredAt === undefined ? Number.NaN : Date.parse(input.occurredAt)
+    const createdAt = new Date(Number.isFinite(occurred) ? Math.min(occurred, now) : now).toISOString()
     const eventClass = sessionEventClassOf(input.type)
     // A caller may shorten the reasoning retention (a sooner parent TTL), never extend it.
     const defaultExpiry = Date.parse(createdAt) + this.reasoningRetentionMs

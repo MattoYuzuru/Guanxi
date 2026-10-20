@@ -548,6 +548,8 @@ describe('P3-I Session Chat metadata hard deletion', () => {
       { child: 'recipe_job_snapshots', table: 'jobs', from: 'job_id', on_delete: 'RESTRICT' },
       { child: 'recipe_job_snapshots', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'recipes', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
+      { child: 'session_mirror_backlog', table: 'jobs', from: 'job_id', on_delete: 'CASCADE' },
+      { child: 'session_mirror_backlog', table: 'threads', from: 'thread_id', on_delete: 'CASCADE' },
       { child: 'sessions', table: 'threads', from: 'thread_id', on_delete: 'CASCADE' },
       { child: 'threads', table: 'projects', from: 'project_id', on_delete: 'RESTRICT' },
       { child: 'threads', table: 'workspaces', from: 'workspace_id', on_delete: 'SET NULL' },

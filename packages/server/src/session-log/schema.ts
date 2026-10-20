@@ -11,7 +11,9 @@
  * - events are immutable except one transition: retention purges a reasoning
  *   event's content (payload and search text become NULL, `purged_at` is set);
  * - a writer epoch only moves forward, a released epoch cannot resume, and
- *   writer rows, events and sessions disappear only with their owning Thread.
+ *   writer rows, events and sessions disappear only with their owning Thread;
+ * - `session_mirror_backlog` names Chat Jobs whose trace is still to be
+ *   reconstructed from the Job store (no payload).
  *
  * CHECK constraints hold only structural facts. Policy that later stages may
  * change (event versions, which types are reasoning, what may be purged) lives
@@ -186,6 +188,17 @@ export const SESSION_LOG_MIGRATION = `
     BEGIN
       SELECT RAISE(ABORT, 'Session events are append-only');
     END;
+
+  -- Chat Jobs whose trace the mirror deferred because the egress scrubber was not
+  -- ready. No payload: the trace is reconstructed from job_events and
+  -- chat_job_inputs once the scrubber is ready, so nothing secret-bearing is
+  -- queued and a crash before readiness loses nothing.
+  CREATE TABLE session_mirror_backlog (
+    job_id      TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    thread_id   TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    deferred_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_session_mirror_backlog_order ON session_mirror_backlog(deferred_at, job_id);
 
   CREATE VIRTUAL TABLE session_events_fts USING fts5(
     search_text,

@@ -3,6 +3,8 @@ import type { DatabaseSync } from 'node:sqlite'
 /** Reverse only migration 29 (K2 session log) so older fixtures can start from exact v28. */
 export function downgradeSessionLogToV28(db: DatabaseSync): void {
   db.exec(`
+    DROP INDEX idx_session_mirror_backlog_order;
+    DROP TABLE session_mirror_backlog;
     DROP TRIGGER session_events_fts_delete;
     DROP TRIGGER session_events_fts_purge;
     DROP TRIGGER session_events_fts_insert;
@@ -37,4 +39,5 @@ export const SESSION_LOG_TABLES = [
   'session_events_fts_data',
   'session_events_fts_docsize',
   'session_events_fts_idx',
+  'session_mirror_backlog',
 ] as const

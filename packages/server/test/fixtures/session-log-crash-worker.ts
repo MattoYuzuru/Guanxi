@@ -3,7 +3,11 @@
  * itself with SIGKILL at one append point, so the parent can check what a real
  * process death leaves in SQLite.
  *
- * argv: <dbPath> <mode: handle|mirror> <point> <committedBefore>
+ * argv: <dbPath> <mode: handle|mirror|deferred> <point> <committedBefore>
+ *
+ * `deferred` (GPT review R2): the scrubber waits for the `vault` source, the
+ * worker creates a Chat Job and moves it to `reserving`, prints the ids and
+ * SIGKILLs itself before the source is ever ready.
  */
 import { hostname } from 'node:os'
 import type { ChatJobInputSnapshot } from '@guanxi/contract'
@@ -16,7 +20,7 @@ import { ThreadStore } from '../../src/store/threads.ts'
 
 const [dbPath, mode, point, committedBeforeText] = process.argv.slice(2) as [
   string,
-  'handle' | 'mirror',
+  'handle' | 'mirror' | 'deferred',
   SessionAppendPoint,
   string,
 ]
@@ -26,7 +30,7 @@ let armed = false
 
 const log = new SessionLog({
   db,
-  scrubber: new SecretScrubber(),
+  scrubber: new SecretScrubber({ expectedSources: mode === 'deferred' ? ['vault'] : [] }),
   writer: { id: `crash-worker-${process.pid}`, pid: process.pid, host: hostname() },
   fault(at, detail) {
     if (!armed || at !== point) return
@@ -49,6 +53,27 @@ if (mode === 'handle') {
     { type: 'prompt', data: { origin: 'typed', messageId: 'm-torn', text: 'tornmarker', attachmentCount: 0 } },
     { idempotencyKey: `k-${committedBefore}` },
   )
+} else if (mode === 'deferred') {
+  const thread = new ThreadStore(db).create({
+    title: 'Deferred',
+    mode: 'chat',
+    model: 'fixture',
+    workspaceId: null,
+    options: { numCtx: 4_096, temperature: 0, think: 'off' },
+  })
+  const jobs = new JobStore(db, { sessionMirror: new ChatSessionMirror({ log, db }) })
+  const created = jobs.createChat({
+    threadId: thread.id,
+    idempotencyScope: `chat:${thread.id}:send:v1`,
+    idempotencyKey: crypto.randomUUID(),
+    requestFingerprint: 'fixture',
+    input: { content: `deferred prompt ${point}`, attachments: [], autoApprove: null },
+    derivedTitle: 'Deferred',
+  })
+  jobs.transition({ jobId: created.job.id, expectedStatus: 'queued', status: 'reserving', phase: 'resource_admission' })
+  process.stdout.write(`${JSON.stringify({ threadId: thread.id, jobId: created.job.id })}\n`, () => {
+    process.kill(process.pid, 'SIGKILL')
+  })
 } else {
   const threads = new ThreadStore(db)
   const thread = threads.create({
@@ -74,4 +99,4 @@ if (mode === 'handle') {
 }
 
 // Reaching this line means the fault never fired.
-process.exit(3)
+if (mode !== 'deferred') process.exit(3)

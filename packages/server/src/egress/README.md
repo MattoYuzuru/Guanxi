@@ -99,63 +99,9 @@ implements it as follows ([session-log README](../session-log/README.md)):
 
 | Path while not ready | Behaviour |
 | --- | --- |
-| Legacy Chat trace (job store mirror) | held in a bounded in-memory buffer (1,000 writes, 8 MiB of data by default), written in order, scrubbed, as soon as the scrubber is ready; a full buffer refuses the write with `egress_buffer_full`, so the Job transaction rolls back and nothing is dropped silently |
+| Legacy Chat trace (job store mirror) | writes no trace; inside the Job transaction it records only the Job id in `session_mirror_backlog` (no payload). Once the scrubber is ready, at the Job's next event or at the next start, the trace is reconstructed from the durable Job store, scrubbed, in order and with the Job events' times. Nothing secret-bearing is queued, and a crash before readiness loses nothing |
 | `SessionHandle` open and append | fail closed with `egress_not_ready` |
 | Reads, inspector routes, export, query tool | fail closed: `egress_not_ready`, HTTP 503 with `details.pendingSources` |
-
-Held-back writes live only in memory. If the process exits before the scrubber is ready, they
-are lost like a crash before they were written; they are never written unscrubbed.
-
-## Semantics
-
-- **Exact match.** Matching is on UTF-16 code units, case-sensitive, with no Unicode
-  normalisation and no trimming. For each value the scrubber also redacts two derived exact
-  forms when they differ from the raw value:
-  - the JSON-string-escaped form (`JSON.stringify(value)` without the quotes);
-  - the `encodeURIComponent` form.
-
-  Base64 and other encodings are not derived; see residuals.
-- **Marker.** Each occurrence becomes `⟦REDACTED secret://…⟧` (U+27E6 and U+27E7), naming
-  the ref. Overlapping occurrences of several refs become one marker per ref, side by side;
-  when two refs share a value, the marker names the one registered first. Values may not
-  contain `⟦` or `⟧`, so no occurrence can overlap a marker's edge, and
-  a replacement can never re-form a registered value with the text around it, not even across
-  two chunks scrubbed separately and then joined. As defence in depth, `scrub` checks its
-  output and throws `self_check_failed` rather than return a value that still contains one.
-- **Bounds.** `register` refuses with `EgressScrubberError`:
-  - `invalid_ref` for a ref that does not match `SECRET_REF_PATTERN`;
-  - `invalid_value` for a non-string, a value shorter than 8 or longer than 65,536 code units,
-    or a value containing `⟦` or `⟧`. A short value would redact ordinary text, so the caller
-    must decide what to do instead of being silently unprotected;
-  - `marker_collision` when the value occurs inside a registered ref's marker (including its
-    own), or the new ref's marker contains a registered value.
-- **Rotation.** `register` with a ref that is already registered replaces its value. The old
-  value is no longer redacted; register it under its own ref if it must stay redacted.
-  Two refs may share a value; the value stays redacted until both are unregistered.
-- **Types.** `scrub` returns a copy and never mutates its input:
-  - strings;
-  - `Uint8Array` and `Buffer`, matched on the UTF-8 bytes of each form, with the same class
-    returned;
-  - arrays and plain objects (prototype `Object.prototype` or `null`), keys included;
-  - numbers and bigints, unchanged unless their digits contain a registered value; then they
-    become the marker string (a card number or PIN registered as a secret);
-  - `Date`, booleans, `null` and `undefined`, returned unchanged.
-
-  Anything else (Map, Set, class instances, functions, symbols, cycles) throws
-  `unsupported_value`, so nothing passes through unscrubbed; so do two keys of one object that
-  scrub to the same text. An own `__proto__` key stays a plain key.
-- **Joined output.** `scrub` works on the value it is given. A consumer that joins or
-  serialises scrubbed parts must scrub the result again: two parts can form a value across the
-  join. The session log scrubs each serialised payload and each joined search text again and
-  refuses a payload that would still change.
-- **Errors never contain a registered value**, a fragment of it or its length. Value errors
-  leave out the ref as well, because in a collision the ref may contain the value.
-- **Lifetime.** Registrations belong to one scrubber instance. When the provider plugin
-  unloads, the instance closes and every later call throws `closed` (fail closed). The kernel
-  unloads every plugin that `requires` the service first and starts it again with the new
-  instance, so consumers must register in their own `apply`.
-- **Cost.** One `scrub` is `O(text length × registered forms)` through `indexOf`. That is enough
-  for vault-sized registries; an automaton is the upgrade if registries grow past hundreds.
 
 ## Where it runs
 

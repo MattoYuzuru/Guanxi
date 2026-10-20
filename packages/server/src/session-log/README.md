@@ -37,7 +37,7 @@ Event schemas are in `packages/contract/src/events/`.
 | Reasoning retention | reasoning events carry `expires_at` (7 days, or the parent Chat's sooner TTL; a caller may shorten it, never extend it); reads and search treat an expired event as purged; the plugin purges at start and every 10 minutes, then optimizes the FTS index; `secure_delete` zeroes freed pages; the event stays | `session-log.test.ts` (reasoning class), `session-log-review.test.ts` (no bytes left in the file) |
 | Events disappear only with their Thread | delete triggers on `sessions` and `session_events` | `session-log.test.ts` |
 | Reasoning never in plain logs | the module never writes to the console; the test captures stdout, stderr and console during a full turn | `session-log-chat.test.ts` |
-| Nothing written or read before every secret source registered (K3 review H3) | the mirror holds writes in a bounded buffer while `egress.scrubber` is not ready and flushes them in order once it is; a full buffer refuses the write (`egress_buffer_full`, the Job transaction rolls back); handles, reads, routes, exports and the query tool fail closed with `egress_not_ready` | `session-log-readiness.test.ts` |
+| Nothing written or read before every secret source registered (K3 review H3), and nothing lost meanwhile (GPT review R2) | while `egress.scrubber` is not ready the mirror records only the Job id in `session_mirror_backlog` inside the Job transaction; once ready (or at the Job's next event, or at the next start) it reconstructs the trace from `job_events` and `chat_job_inputs`, idempotently and with the Job events' times; handles, reads, routes, exports and the query tool fail closed with `egress_not_ready` | `session-log-readiness.test.ts` (including `SIGKILL` before ready) |
 
 ## Writing
 
@@ -50,13 +50,20 @@ handle.close() // releases the writer row
 
 The legacy Chat path does not open a handle. `JobStore` (constructed with a `ChatSessionMirror`)
 appends inside each Job transaction through `appendAsSystemWithin`, which acquires or renews the
-writer row in that transaction:
+writer row in that transaction. The trace is a deterministic function of the durable Job store,
+and the mirror works by catching up:
 
-- token and thinking deltas are not mirrored one by one;
-- at the next non-delta Job event the mirror reads the deltas since the last mirrored Job event
-  back from `job_events` and appends one `reasoning` and one `assistant.message` event, so the
-  scrubber sees whole messages and nothing is held in memory;
-- each mirrored event's idempotency key is `job:<jobId>:<jobSequence>:<part>`.
+- for a Job it mirrors every Job event after the trace's cursor (the highest mirrored Job
+  sequence), in order, through one mapping; normally that is just the event being inserted;
+- token and thinking deltas are not mirrored one by one; at the next non-delta Job event the
+  deltas since the cursor are read back and appended as one `reasoning` and one
+  `assistant.message` event, so the scrubber sees whole messages;
+- while the scrubber is not ready the mirror writes nothing and records the Job id in
+  `session_mirror_backlog`; the backlog is caught up when the scrubber becomes ready, at the
+  Job's next event, or when the next mirror starts;
+- each mirrored event carries the Job event's time (`occurredAt`) and the idempotency key
+  `job:<jobId>:<jobSequence>:<part>`, so a reconstruction equals the trace a ready mirror would
+  have written, and repeating it adds nothing.
 
 ## Writer epochs
 
@@ -73,7 +80,7 @@ writer row in that transaction:
   `writer_process_gone` hands over before expiry, which ADR-0018 forbids for leases; R1's
   lease table must not reuse `session_writers`.
 - **Trace failures block the Chat Job write.** The mirror runs inside the Job transaction, so a
-  refused trace write (a live second writer, a full held-back buffer) rolls the Job event back.
+  refused trace write (a live second writer, an identifier holding a secret) rolls the Job event back.
   This is deliberate: a Job event without its trace would break the trace's completeness and
   could hide an unscrubbed payload. Two servers on one data directory are unsupported; the
   second fails loudly instead of corrupting the first one's sessions.

@@ -208,7 +208,7 @@ describe('review fixes: retention', () => {
 
 describe('review fixes: boundaries', () => {
   it('pins migration 29, so a rewrite after it ships fails a test', () => {
-    assert.equal(createHash('sha256').update(SESSION_LOG_MIGRATION).digest('hex'), 'adac97d20e47ffd62877367def3c5c0cb6ca25c725cccaae89b34228a5bd1a87')
+    assert.equal(createHash('sha256').update(SESSION_LOG_MIGRATION).digest('hex'), 'd1e17096de8c2c81de075415cada99514fe219a23d0ebae4236cd0e23b57925a')
   })
 
   it('refuses control characters in search and unsafe session ids', async () => {
