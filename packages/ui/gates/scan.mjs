@@ -142,6 +142,10 @@ function rawWords(value) {
   visit(valueParser(value.replace(/!important\s*$/, '')).nodes)
   return raw
 }
+function literalDeclaration(file, prop, value, offset) {
+  return (propertyPattern.test(prop.toLowerCase()) || prop.startsWith('--')) && rawWords(value).length
+    ? [{ gate: 'G6', file, value: `${prop}:${value}`, offset }] : []
+}
 export function cssFindings(file, text) {
   const findings = []
   const ast = postcss.parse(text, { from: file })
@@ -149,11 +153,50 @@ export function cssFindings(file, text) {
     // Tokens, @font-face metadata and geometry variables have distinct authoring contracts.
     if (decl.parent?.name === 'font-face') return
     const words = rawWords(decl.value)
-    if ((propertyPattern.test(decl.prop.toLowerCase()) || decl.prop.startsWith('--')) && words.length) findings.push({ gate: 'G6', file, value: `${decl.prop}:${decl.value}`, offset: decl.source.start.offset })
+    findings.push(...literalDeclaration(file, decl.prop, decl.value, decl.source.start.offset))
     if (motionProperty.test(decl.prop.toLowerCase()) && (/(?:[\d.]+m?s\b|\b(?:cubic-bezier|steps|ease(?:-in|-out|-in-out)?|linear|step-start|step-end)\b)/.test(words.join(' ')))) findings.push({ gate: 'G7', file, value: `${decl.prop}:${decl.value}`, offset: decl.source.start.offset })
   })
   return findings
 }
+
+function jsxStyleFindings(file, text) {
+  const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const findings = []
+  const unwrap = node => node && (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) ? unwrap(node.expression) : node
+  function values(prop, node) {
+    node = unwrap(node)
+    if (!node) return
+    if (ts.isConditionalExpression(node)) { values(prop, node.whenTrue); values(prop, node.whenFalse) }
+    else if (ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) findings.push(...literalDeclaration(file, prop, node.text, node.getStart(ast)))
+    else if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)) findings.push(...literalDeclaration(file, prop, node.getText(ast), node.getStart(ast)))
+  }
+  function styles(node) {
+    node = unwrap(node)
+    if (!node) return
+    if (ts.isConditionalExpression(node)) { styles(node.whenTrue); styles(node.whenFalse) }
+    else if (ts.isObjectLiteralExpression(node)) for (const property of node.properties) {
+      if (ts.isSpreadAssignment(property)) styles(property.expression)
+      else if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name))) {
+        const name = property.name.text
+        values(name.startsWith('--') ? name : name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`), property.initializer)
+      }
+    }
+  }
+  const visit = node => {
+    if (ts.isJsxAttribute(node)) {
+      const name = node.name.getText(ast)
+      if (name === 'style') styles(node.initializer)
+      else if (name === 'fill' || name === 'stroke') values(name, node.initializer)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  return findings
+}
+
+// Only this existing legacy file has static inline debt; DS1-c's G9 owns it.
+// New paths, including other packages/web/src paths, receive the JSX G6 check.
+const legacyInlinePaths = new Set(['packages/web/src/components/ui.tsx'])
 
 export function motionFindings(file, text) {
   const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -200,6 +243,7 @@ export async function scanLiterals(ctx) {
       }
       result.push(...motionFindings(file, text))
       if (file.endsWith('.html')) for (const match of text.matchAll(/\bstyle\s*=\s*(["'])(.*?)\1/gs)) result.push(...cssFindings(file, `.inline { ${match[2]} }`))
+      if (!legacyInlinePaths.has(file)) result.push(...jsxStyleFindings(file, text))
     }
   }
   return result

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createContext } from './context.mjs'
-import { classStrings, scanLiterals, cssFindings } from './scan.mjs'
+import { classStrings, scanLiterals, cssFindings, counts } from './scan.mjs'
 import { checks } from './checks.mjs'
 import ts from 'typescript'
 
@@ -96,4 +96,37 @@ test('L7: off-scale spacing fails in JSX and CSS apply; accepted scale and zero 
   }
   const file = 'packages/ui/src/fixture.jsx'
   assert.ok(!(await scanLiterals(await ctx.withFiles({ [file]: '<div className="p-0 p-0.5 p-1.5 p-2 p-3 p-4 p-5 p-6 p-8 p-10 p-12 p-16 start-2 end-3 scroll-mt-8 scroll-p-3 indent-2"/>' }))).some(f => f.file === file))
+})
+
+test('N4: G6 rejects seeded JSX style literals and SVG paints in UI and new web paths', async () => {
+  for (const file of ['packages/ui/src/fixture.tsx', 'packages/web/src/features/new/Widget.jsx', 'packages/web/src/components/new-ui.tsx']) {
+    for (const [source, expected] of [
+      [`<div style={{ color: '#ff0000', zIndex: 999, padding: 13 }}/>`, ['color:#ff0000', 'z-index:999', 'padding:13']],
+      [`<div style={{ backgroundColor: 'rgb(255 0 0)', marginTop: -13 }}/>`, ['background-color:rgb(255 0 0)', 'margin-top:-13']],
+      [`<div style={ok ? { borderColor: '#ff0000' } : { color: 'var(--color-text-primary, red)' }}/>`, ['border-color:#ff0000', 'color:var(--color-text-primary, red)']],
+      [`<svg><path fill="#ff0000" stroke={'red'}/></svg>`, ['fill:#ff0000', 'stroke:red']],
+    ]) {
+      const seeded = await ctx.withFiles({ [file]: source })
+      const findings = (await scanLiterals(seeded)).filter(f => f.file === file && f.gate === 'G6')
+      assert.deepEqual(findings.map(f => f.value).sort(), expected.sort(), `${file}: ${source}`)
+      const report = await checks.G6(seeded)
+      for (const value of expected) assert.ok(report.errors.some(e => e.includes(`${file}|${value}:`) && e.includes('new violation')), value)
+    }
+  }
+  for (const file of ['packages/ui/src/icon.svg', 'packages/ui/src/fixture.html']) {
+    const report = await checks.G6(await ctx.withFiles({ [file]: '<svg><path fill="#ff0000" stroke="red"/></svg>' }))
+    for (const value of ['fill:#ff0000', 'stroke:red']) assert.ok(report.errors.some(e => e.includes(`${file}|${value}:`) && e.includes('new violation')), `${file}/${value}`)
+  }
+})
+
+test('N4: semantic JSX styles and SVG paints pass; the legacy inline debt stays with G9', async () => {
+  const file = 'packages/ui/src/fixture.tsx'
+  const source = `<svg style={{ color: 'var(--color-text-primary)', zIndex: 'var(--elevation-2-z-index)', padding: 0, borderTopColor: 'transparent' }}>
+    <path fill="none" stroke="currentColor"/><path fill={'var(--color-background-accent)'} stroke="var(--color-border-control)"/>
+  </svg>`
+  assert.deepEqual((await scanLiterals(await ctx.withFiles({ [file]: source }))).filter(f => f.file === file), [])
+  const legacy = 'packages/web/src/components/ui.tsx'
+  const findings = await scanLiterals(ctx)
+  assert.ok(!findings.some(f => f.file === legacy && f.gate === 'G6'))
+  assert.deepEqual(counts(findings), await ctx.json('packages/ui/gates/legacy-allowlist.json'), 'N4 must not grow or rebaseline the legacy ledger')
 })

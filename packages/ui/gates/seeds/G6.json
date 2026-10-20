@@ -1,6 +1,7 @@
 {
   "files": {
-    "packages/ui/src/seed.css": ".seed { color: #fff; padding: 13px; z-index: 17; }"
+    "packages/ui/src/seed.css": ".seed { color: #fff; padding: 13px; z-index: 17; }",
+    "packages/ui/src/seed.tsx": "export const Seed = () => <svg style={{ color: '#ff0000', zIndex: 999, padding: 13 }}><path fill=\"#ff0000\" stroke=\"red\" /></svg>"
   },
   "expectedError": "new violation"
 }

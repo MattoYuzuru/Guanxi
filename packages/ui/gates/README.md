@@ -18,9 +18,14 @@ geometry variables are explicitly scoped in `local-variables.json` and require d
 G5 uses the pinned Tailwind compiler plus CSS-declared custom classes, follows lexically scoped
 class constants and nested bound maps (property/element access), `*ClassName` props,
 `cva` variants, conditional/array class helpers and CSS `@apply`. Arbitrary classes, including v4 shorthand,
-always require a legacy allowance. G6 parses CSS declarations and functions; G7 checks CSS
-motion plus TypeScript strings, motion object properties and `@apply` parameters. HTML, JSX,
-JS and SCSS source are covered, as are raw fallbacks inside `var()`. Off-scale numeric spacing,
+always require a legacy allowance. G6 parses CSS declarations/functions, literal values in JSX
+`style` objects (including camelCase properties and conditional branches), and SVG `fill`/`stroke`
+attributes in JSX, HTML and SVG source. The existing legacy `packages/web/src/components/ui.tsx`
+inline styles are deferred to DS1-c's G9 ESLint rule and its shrink-only suppression file;
+this exact path exception does not exempt its classes or any new web/UI path. No third ratchet
+correction is authorized. G7 checks CSS motion plus TypeScript strings, motion object properties
+and `@apply` parameters. HTML, JSX, JS, SCSS and SVG source are scanned, including raw fallbacks
+inside `var()`. Runtime expressions and imported style objects are not resolved by G6. Off-scale numeric spacing,
 including logical offsets, scroll padding/margins and text indents, fails even when Tailwind
 can compile it. Special exclusions are anchored to the package's own
 token/font/brand/generated/gate and top-level test directories; a feature directory with the

@@ -256,3 +256,21 @@ correction snapshot, and the audit rejects that topology. Rewritten and original
 histories merged together are also rejected as duplicate introductions. The integrator deleted
 the old trial branch `integrate/ds1-a`. The optional merge-commit bound is deliberately omitted;
 the documented protocol is the accepted N1 fix and stands in for its test.
+
+### Legacy inline styles for DS1-c (N4)
+
+G6 now checks literal JSX style objects and SVG `fill`/`stroke` at every scanned path except
+the exact existing legacy `packages/web/src/components/ui.tsx`. New web paths are checked.
+No correction #3, allowance growth or legacy source edit was made; the scanner's legacy counts
+still exactly equal the ledger. DS1-c must handle that file with G9 ("no inline colour styles
+in feature code") and its own shrink-only suppressions, including:
+
+- `:95`: Spinner's computed `borderWidth` geometry; related width/height come from `size`.
+- `:327–331`: Select's embedded SVG background image (`stroke='%23888'`, width `1.4`),
+  `backgroundRepeat: 'no-repeat'`, `backgroundPosition: 'right 4px center'`, `backgroundSize: '12px'`.
+- Related literal branches in the same file: Switch's `left: checked ? 14 : 2` (`:250`),
+  chevron `rotate(90deg)` (`:602`) and SVG `strokeWidth="1.6"` (`:604`).
+
+Dynamic style expressions in legacy features (for example ContextPanel/FitIndicator colour
+expressions) also remain G9 migration inputs. G6 does not resolve runtime expressions or
+imported style objects. Existing G5/G7 checks continue on the legacy file.
