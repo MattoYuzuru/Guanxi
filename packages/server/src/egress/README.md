@@ -26,7 +26,8 @@ export interface EgressScrubber {
 
 `types.ts` also exports `SECRET_REF_PATTERN`, `MIN_SECRET_LENGTH` (8), `MAX_SECRET_LENGTH`
 (65,536), `redactionMarker(ref)`, `REDACTION_MARKER_PREFIX`, `REDACTION_MARKER_OPEN`,
-`REDACTION_MARKER_CLOSE` and `EgressScrubberError` with its `code`.
+`REDACTION_MARKER_CLOSE` and `EgressScrubberError` with its `code`. The three marker constants
+are defined in `@guanxi/contract` (scrubbed payloads carry them) and re-exported here.
 
 ## Using it from a plugin
 
