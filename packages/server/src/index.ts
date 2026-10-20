@@ -153,7 +153,11 @@ export async function start(options: StartOptions = {}) {
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
   })
 
-  server.route('/api/connections', connectionRoutes(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
+  server.route('/api/connections', connectionRoutes(() => {
+    const service = kernel.node.service<Connections>(CONNECTIONS_SERVICE)
+    if (!service) throw new Error('Connections unavailable')
+    return service
+  }, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>

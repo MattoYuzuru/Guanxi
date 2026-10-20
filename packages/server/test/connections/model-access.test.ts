@@ -303,7 +303,7 @@ test('provider error messages never leak credentials; unload aborts in-flight re
 })
 
 test('HTTP API exposes references only, validates routes and blocks cross-origin mutations', async t => {
-  const f = await setup(t); const routes = connectionRoutes(f.service(), account)
+  const f = await setup(t); const routes = connectionRoutes(f.service, account)
   const send = (path: string, body: unknown, method = 'POST', headers = {}) => routes.request(`http://localhost${path}`, { method,
     headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) })
   let response = await send('/', apiInput)
@@ -447,7 +447,7 @@ test('in-flight balance probes are cancelled before the plugin database closes',
 
 test('configured Vite origins can mutate; mismatched origins and non-JSON requests cannot', async t => {
   const f = await setup(t)
-  const routes = new Hono().route('/api/connections', connectionRoutes(f.service(), account, ['http://127.0.0.1:5187']))
+  const routes = new Hono().route('/api/connections', connectionRoutes(f.service, account, ['http://127.0.0.1:5187']))
   const request = (origin: string, type = 'application/json') => routes.request('http://127.0.0.1:4387/api/connections', {
     method: 'POST', headers: { Origin: origin, 'Content-Type': type }, body: JSON.stringify(apiInput),
   })
@@ -560,4 +560,18 @@ test('M2: production plugin defaults deny unattended localChat before runtime di
     runId: 'run', requestId: 'no-row-consent', background: true,
   }), /Unattended access disabled/)
   assert.equal(calls, 0)
+})
+
+
+test('E5: mounted routes resolve the current service after reload without losing stored connections', async t => {
+  const f = await setup(t)
+  const routes = connectionRoutes(f.service, account)
+  const create = () => routes.request('http://localhost/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(apiInput) })
+  assert.equal((await create()).status, 201)
+  await f.restart()
+  const response = await routes.request('http://localhost/')
+  assert.equal(response.status, 200)
+  assert.equal((await response.json() as { connections: unknown[] }).connections.length, 1)
+  assert.equal((await create()).status, 201)
+  assert.equal(f.service().snapshot(account).connections.length, 2)
 })
