@@ -26,15 +26,15 @@ Event schemas are in `packages/contract/src/events/`.
 
 | Property | Enforcement | Test |
 | --- | --- | --- |
-| Gap-free `seq` per session, no duplicates | the head advances by exactly one (trigger); an event must be inserted at the head (trigger); `UNIQUE (session_id, seq)` | `session-log.test.ts` (append-only schema) |
+| Gap-free `seq` per session, no duplicates | an event is inserted only at `last_seq + 1`, and inserting it advances the head (triggers); the head moves only onto an existing event; `UNIQUE (session_id, seq)`; the envelope is validated before the insert, so a caller that catches a refused append and commits leaves no gap | `session-log.test.ts` (append-only schema, gap test) |
 | Single writer (D-116) | one open `SessionHandle` per session per process; a `session_writers` row with an epoch; the database refuses an event whose epoch is not the current unreleased one | `session-log.test.ts` (single writer) |
-| A writer changes only by grant, release, expiry or handover from a gone process | `acquireWithin`; the epoch may only move to the next value (trigger); each change appends `writer.acquired` with its reason | same |
+| A writer changes only by grant, release, expiry or handover from a gone process | `acquireWithin`; the epoch may only move to the next value, a released epoch cannot resume and a writer row goes only with its session (triggers); each change appends `writer.acquired` with its reason | same, `session-log-review.test.ts` |
 | Crash at any append point leaves the event fully present or fully absent | one `BEGIN IMMEDIATE` transaction advances the head, inserts the event and indexes it (FTS5 triggers); the mirror shares the Job transaction | `session-log-crash.test.ts` (in-process throw and child `SIGKILL` at every point) |
 | A retried append is not a duplicate | `idempotencyKey` (`UNIQUE (session_id, idempotency_key)`) or `expectedSeq` returns the stored event | same |
-| Persisted before streamed | subscribers are woken after commit and read SQLite after their cursor | `session-log-routes.test.ts`, `session-log-chat.test.ts` |
-| No secret value in an event (D-141) | every payload passes the egress scrubber before it is stored and again when it is read; thread titles and echoed queries are scrubbed too | `session-log.test.ts` (scrubbing), `session-log-chat.test.ts` (planted secret) |
+| Persisted before streamed | subscribers are woken after commit and read SQLite after their cursor; `closeSubscriptions()` ends streams at shutdown | `session-log-routes.test.ts`, `session-log-chat.test.ts`, `session-log-review.test.ts` (shutdown) |
+| No secret value in an event (D-141) | every payload passes the egress scrubber before it is stored and again when it is read; the serialised payload and the joined search text are scrubbed again and a payload that would still change is refused; titles come from the scrubbed first prompt; search snippets are built from the scrubbed indexed text and drop hits that matched only a now-redacted value; echoed queries are scrubbed | `session-log.test.ts` (scrubbing), `session-log-chat.test.ts` (planted secret), `session-log-review.test.ts` |
 | Reasoning never reaches a remote agent or an export (D-113) | `remote_agent` reads filter `class = 'standard'` in SQL; exports drop reasoning | `session-log-chat.test.ts`, `session-log-routes.test.ts` |
-| Reasoning retention | reasoning events carry `expires_at` (7 days, or the parent Chat's sooner TTL); a bounded purge nulls the content and its index entry; the event stays | `session-log.test.ts` (reasoning class) |
+| Reasoning retention | reasoning events carry `expires_at` (7 days, or the parent Chat's sooner TTL; a caller may shorten it, never extend it); reads and search treat an expired event as purged; the plugin purges at start and every 10 minutes, then optimizes the FTS index; `secure_delete` zeroes freed pages; the event stays | `session-log.test.ts` (reasoning class), `session-log-review.test.ts` (no bytes left in the file) |
 | Events disappear only with their Thread | delete triggers on `sessions` and `session_events` | `session-log.test.ts` |
 | Reasoning never in plain logs | the module never writes to the console; the test captures stdout, stderr and console during a full turn | `session-log-chat.test.ts` |
 | Nothing written or read before every secret source registered (K3 review H3) | the mirror holds writes in a bounded buffer while `egress.scrubber` is not ready and flushes them in order once it is; a full buffer refuses the write (`egress_buffer_full`, the Job transaction rolls back); handles, reads, routes, exports and the query tool fail closed with `egress_not_ready` | `session-log-readiness.test.ts` |
@@ -62,10 +62,21 @@ writer row in that transaction:
 
 - **First grant:** epoch 1, `writer.acquired` with reason `initial`.
 - **Takeover:** the next epoch, allowed only when the previous writer `released` its row, its
-  row `expired` (TTL 30 s, renewed on append), or it ran on this host and its process is gone
-  (`writer_process_gone`, checked with `kill(pid, 0)`).
+  row `expired` (TTL 30 s, renewed by every append, handles included), or its process is gone
+  (`writer_process_gone`). A row with another PID is gone when `kill(pid, 0)` says so; a row
+  with this process's PID is gone unless its writer id is live in this process (a container
+  restart reuses PID 1). The host name is recorded for diagnostics only: the node database is
+  local, and macOS host names follow the network.
 - **A fenced writer** gets `writer_fenced` on its next append. Its in-flight transaction cannot
   commit an event either, because the insert trigger checks the current epoch.
+- **Not an ADR-0018 lease.** The epoch is a process-level fencing token for one node database.
+  `writer_process_gone` hands over before expiry, which ADR-0018 forbids for leases; R1's
+  lease table must not reuse `session_writers`.
+- **Trace failures block the Chat Job write.** The mirror runs inside the Job transaction, so a
+  refused trace write (a live second writer, a full held-back buffer) rolls the Job event back.
+  This is deliberate: a Job event without its trace would break the trace's completeness and
+  could hide an unscrubbed payload. Two servers on one data directory are unsupported; the
+  second fails loudly instead of corrupting the first one's sessions.
 
 ## Reading
 
@@ -93,5 +104,14 @@ daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`
   registers it by default; K4 does.
 - Reasoning retention is the fixed 7-day default (or the parent's sooner TTL); a per-project
   setting does not exist yet.
-- Writer liveness is judged per host by PID; PID reuse can only delay a handover (safe), never
-  create a second writer.
+- PID reuse by an unrelated process delays a handover until the row expires (30 s). Startup
+  recovery fails in that window. A data-directory lock in R1 replaces the PID heuristic.
+- Once the system writer (the mirror) has written a session, `open()` on it returns
+  `writer_busy` for the life of the process; K4 must hand sessions between the two.
+- `session.log` is provided as the `SessionLog` instance. A frozen facade with a node-bound
+  audience is K4's, before agents consume it.
+- A secret cut off by a cancel never appears in full in the output, so exact match cannot catch
+  its prefix.
+- Remote audiences see gaps in `seq` where reasoning events are; they learn how many there were,
+  not what they said.
+- Agent sessions (no Thread) cannot be deleted yet; they need their own retention.
