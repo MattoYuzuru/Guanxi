@@ -160,6 +160,25 @@ describe('R5: a closed log is not retained by a readiness wait that never resolv
   })
 })
 
+describe('R6: the query tool applies its cursor and type filters before its limits', () => {
+  it('finds the 101st hit after a cursor, and a type outside the first 100 unfiltered hits', () => {
+    const db = openDb(':memory:')
+    const log = new SessionLog({ db, scrubber: new SecretScrubber() })
+    const handle = log.open('s-many', { kind: 'agent' })
+    for (let index = 0; index < 101; index++) handle.append(prompt(`needle number ${index}`))
+    const last = log.read('s-many', { audience: 'person', limit: 1 }).lastSeq
+    assert.equal(last, 103)
+    const after = querySessionLog(log, 's-many', 'remote_agent', { text: 'needle', afterSeq: 102, limit: 5 })
+    assert.deepEqual(after.events.map((event) => event.seq), [103])
+
+    handle.append({ type: 'tool.result', data: { toolCallId: 't1', status: 'ok', result: 'needle in a result', error: null, durationMs: 1 } })
+    const typed = querySessionLog(log, 's-many', 'remote_agent', { text: 'needle', types: ['tool.result'], limit: 5 })
+    assert.deepEqual(typed.events.map((event) => event.type), ['tool.result'])
+    const firstFive = querySessionLog(log, 's-many', 'local_agent', { types: ['prompt'], afterSeq: 50, limit: 5 })
+    assert.deepEqual(firstFive.events.map((event) => event.seq), [51, 52, 53, 54, 55])
+  })
+})
+
 describe('R3: the person audience answers loopback peers only', () => {
   it('refuses a request from a non-loopback socket peer, and with no known peer, and keeps local access', async () => {
     const db = openDb(':memory:')

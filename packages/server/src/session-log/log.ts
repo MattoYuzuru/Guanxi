@@ -559,19 +559,24 @@ export class SessionLog {
   /** A page after `afterSeq`, filtered for the audience and scrubbed again. */
   read(
     sessionId: string,
-    options: { afterSeq?: number; limit?: number; audience: SessionAudience },
+    options: { afterSeq?: number; limit?: number; audience: SessionAudience; types?: readonly SessionEventType[]; seqs?: readonly number[] },
   ): { events: SessionEvent[]; lastSeq: number; hasMore: boolean } {
     this.assertEgressReady()
     const head = this.requireSession(sessionId)
     const afterSeq = options.afterSeq ?? 0
     const limit = Math.min(Math.max(1, options.limit ?? 200), MAX_PAGE)
+    // Every filter is applied in SQL, before the limit.
+    const types = options.types ?? []
+    const seqs = options.seqs ?? []
     const rows = this.db
       .prepare(
         `SELECT * FROM session_events
          WHERE session_id = ? AND seq > ? ${options.audience === 'remote_agent' ? "AND class = 'standard'" : ''}
+           ${types.length > 0 ? `AND type IN (${types.map(() => '?').join(', ')})` : ''}
+           ${options.seqs ? `AND seq IN (${seqs.length > 0 ? seqs.map(() => '?').join(', ') : 'NULL'})` : ''}
          ORDER BY seq LIMIT ?`,
       )
-      .all(sessionId, afterSeq, limit + 1) as unknown as EventRow[]
+      .all(sessionId, afterSeq, ...types, ...seqs, limit + 1) as unknown as EventRow[]
     const page = rows.slice(0, limit)
     return {
       events: page.map((row) => this.toEvent(row)),
@@ -594,7 +599,14 @@ export class SessionLog {
 
   search(
     text: string,
-    options: { sessionId?: string; audience: SessionAudience; limit?: number },
+    options: {
+      sessionId?: string
+      audience: SessionAudience
+      limit?: number
+      /** Only events after this seq (requires `sessionId`). */
+      afterSeq?: number
+      types?: readonly SessionEventType[]
+    },
   ): SessionSearchHit[] {
     this.assertEgressReady()
     const query = literalFtsQuery(text)
@@ -609,6 +621,8 @@ export class SessionLog {
            ${options.sessionId ? 'AND e.session_id = ?' : ''}
            ${options.audience === 'remote_agent' ? "AND e.class = 'standard'" : ''}
            AND (e.class = 'standard' OR e.expires_at > ?)
+           ${options.afterSeq !== undefined ? 'AND e.seq > ?' : ''}
+           ${options.types && options.types.length > 0 ? `AND e.type IN (${options.types.map(() => '?').join(', ')})` : ''}
          ORDER BY rank, e.session_id, e.seq
          LIMIT ?`,
       )
@@ -616,6 +630,8 @@ export class SessionLog {
         query,
         ...(options.sessionId ? [options.sessionId] : []),
         this.clock().toISOString(),
+        ...(options.afterSeq !== undefined ? [options.afterSeq] : []),
+        ...(options.types ?? []),
         // Hits can be dropped below (a term matched only a now-redacted value), so read ahead.
         Math.min(limit * 3, 300),
       ) as unknown as {

@@ -74,24 +74,20 @@ export function querySessionLog(
   if (!parsed.success) throw new ToolError('Invalid session_log_query arguments')
   const args = parsed.data
   const limit = args.limit ?? 20
-  const types = args.types ? new Set(args.types) : null
-
+  // Audience, session, cursor and types are predicates of the storage query,
+  // applied before the limit, so a filter never empties a bounded answer (R6).
   let events: SessionEvent[]
   if (args.text) {
-    const hits = log.search(args.text, { sessionId, audience, limit: 100 })
-    const wanted = new Set(hits.map((hit) => hit.seq))
-    events = log
-      .readAll(sessionId, audience)
-      .filter((event) => wanted.has(event.seq) && event.seq > (args.afterSeq ?? 0))
+    const hits = log.search(args.text, { sessionId, audience, afterSeq: args.afterSeq, types: args.types, limit })
+    events = log.read(sessionId, { audience, seqs: hits.map((hit) => hit.seq), limit }).events
   } else {
-    events = log.readAll(sessionId, audience).filter((event) => event.seq > (args.afterSeq ?? 0))
+    events = log.read(sessionId, { audience, afterSeq: args.afterSeq, types: args.types, limit }).events
   }
-  if (types) events = events.filter((event) => types.has(event.type))
 
   return sessionQueryToolResultSchema.parse({
     sessionId,
     audience,
-    events: events.slice(0, limit),
+    events,
     reasoningExcluded: audience === 'remote_agent',
   })
 }
