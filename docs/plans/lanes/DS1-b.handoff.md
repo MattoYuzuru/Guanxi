@@ -36,7 +36,7 @@ lane; the regression envelope is listed under [Commands](#commands).
 | An agent-written `approved` record fails G12 | seeds `agent-written-approved` (fake key id and signature) and `agent-written-approved-unsigned`, plus `gates/catalog/seeds/G12.json` for DS1-a's G17 | the self-test requires the failure text (`untrusted_key`, `unsigned_approval`) |
 | A record signed with the test key and then edited fails G12 | seed `signed-then-edited`; server test "fails G12 once any signed field of the record is edited" (comment, source hash, snapshot hashes, time, id) after a real approval through the route | each edit asserted to fail; the unedited record asserted to pass |
 | A `draft` component used on a product screen fails G11 | seed `draft-on-product-screen` (+ `deprecated-laundering`), `gates/catalog/seeds/G11.json` | failure text required |
-| Every seeded violation for G10–G16 fails its gate | `node packages/ui/gates/catalog/run.ts --selftest` (fast: 16 cases; browser: 8 cases) — clean copy passes, each seed fails with its named diagnostic; `gates.test.ts` and `extension.test.ts` | a seed that fails for another reason is reported as not ok |
+| Every seeded violation for G10–G16 fails its gate | `node packages/ui/gates/catalog/run.ts --selftest` (fast: 23 cases; browser: 11 cases) — clean copy passes, each seed fails with its named diagnostic; `gates.test.ts` and `extension.test.ts` | a seed that fails for another reason is reported as not ok |
 | typecheck, `npm test`, browser gate, build, `lint:md`, `check:licenses` | see [Commands](#commands) | — |
 
 Further claims with assertions: lazy loading behind Developer mode (request log shows no
@@ -51,38 +51,48 @@ race test); a record changed during the keychain prompt is not overwritten.
 
 ## Commands
 
-Final run on the committed tree, through `agent-dev run --cwd "$PWD" --node 26 --resource heavy`
-with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
+Final run after the cross-family fixes, on HEAD `f39d523`, through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy`, one check per call, with
+`GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`. The receipts
+say `dirty`: the only uncommitted file was this hand-off.
 
 | Check | Result | Receipt |
 | --- | --- | --- |
 | `npm run typecheck` | exit 0 (all workspaces) | direct (not heavy) |
-| `npm test` | core 701 tests: 700 pass, 1 skipped (the opt-in keychain test); web 261/261; ui node 28/28; ui vitest 17/17 | `check-0mzu4vn9` |
-| `npm run test:web:browser` | 47/47 in two consecutive runs; one earlier full run failed 1 legacy test (see below) | `check-qur_zopt`, `check-dmh1ypai`; failure `check-dk4vaat8` |
-| `npm run build` | exit 0 | `check-pqeq5sgk` |
-| `npm run build-storybook --workspace @guanxi/ui` | exit 0, 83 stories indexed | `check-2kmw9h7e` |
-| `run.ts --mode fast --selftest` | 16 cases ok | `check-u8yscubq` |
-| `run.ts --mode browser --selftest` (G13 in Docker, G14, G15 clipping, G16; clean runs + seeds) | 8 cases ok | `check-z1h52loq` |
+| `npm test` | core 705 tests: 704 pass, 1 skipped (the opt-in keychain test); ui node 39/39; web 263/263; ui vitest 17/17 | `check-lypcklj_` |
+| `npm run test:web:browser` | 51/51 | `check-nw17rt2d` |
+| `npm run build` | exit 0 | `check-30q0ygob` |
+| `npm run build-storybook --workspace @guanxi/ui` | exit 0 | `check-wpjgadax` |
+| `run.ts --mode fast --selftest` | 23 cases ok | `check-gek0zfzd` |
+| `run.ts --mode browser --selftest` (G13 in Docker, G14, G15 clipping, G16; clean runs + seeds) | 11 cases ok | `check-vr872fp6` |
+| `run.ts --mode browser --only G13`, 10 consecutive compares | 10/10 pass | `check-_otyjwhc`, `check-izoedrxj`, `check-rau0stoi`, `check-2sgxgufu`, `check-myp62wdm`, `check-drqakl0f`, `check-2s_1zfie`, `check-4r1bflbu`, `check-dl6d6m08`, `check-0k8yydw4` |
 | `npm run lint:md` | 0 errors | direct |
 | `npm run check:licenses` | 343 packages, 0 not allowed | direct |
+
+Before the cross-family fixes (`6930cb7`): `npm test` `check-0mzu4vn9`; browser gate 47/47
+twice (`check-qur_zopt`, `check-dmh1ypai`), one legacy failure `check-dk4vaat8`; build
+`check-pqeq5sgk`; Storybook `check-2kmw9h7e` (83 stories); self-tests `check-u8yscubq` (16),
+`check-z1h52loq` (8).
 
 **Open item:** in one of three full browser-gate runs, the legacy
 `localization.spec.ts` › "locale preview, persistence and glossary stay exact across failure
 and reload" saw 1 instead of 2 `/api/runtime` and `/api/models` reads (its expectation counts
 the StrictMode double fetch). It passed 3/3 alone (`check-zxbw3r20`, `check-5s3ti3zl`,
-`check-qr7cnsql`) and in the next two full runs. DS1-b changes no runtime or model fetching;
+`check-qr7cnsql`) and in the next three full runs (the last is `check-nw17rt2d`). The
+integrator sent it to a separate investigation; this lane does not touch it. DS1-b changes no runtime or model fetching;
 the pattern matches the StrictMode-aborted-request flakes fixed in S0. Not investigated further
 in this lane; it should be, rather than retried.
 
-New tests (by file): server `ui-catalog-review.test.ts` 20 (19 run, 1 opt-in); ui node
-`gates/catalog/test/{approval,gates,extension}.test.ts` 28; ui vitest
-`test/{components,catalog}.test.tsx` 17; web browser `component-catalog.spec.ts` 7; gate
-self-tests 16 fast + 8 browser cases; G13 304 screenshots; G14 304 + 2 chrome scans; G15
+New tests (by file): server `ui-catalog-review.test.ts` 24 (23 run, 1 opt-in); ui node
+`gates/catalog/test/{approval,gates,extension}.test.ts` 39; ui vitest
+`test/{components,catalog}.test.tsx` 17; web unit `developer-mode.test.ts` 2; web browser
+`component-catalog.spec.ts` 7 and `flows-axe.spec.ts` 4; gate self-tests 23 fast + 11 browser
+cases; G13 304 screenshots; G14 304 + 2 chrome scans + 3 app-flow scans; G15
 clipping 166; G16 166. Regression envelope: the existing core, web component and 40 legacy
 browser tests, unchanged.
 
-G13 determinism: exact pixels (`threshold: 0`); 10 consecutive compare runs passed
-(`check-75q5cqfy`, `check-g0g2dp76`, `check-00j37utd`, `check-3ar3lazl`, `check-x3hqm81y`,
+G13 determinism: exact pixels (`threshold: 0`); 10 consecutive compare runs passed again
+after the fixes (table above), and before them (`check-75q5cqfy`, `check-g0g2dp76`, `check-00j37utd`, `check-3ar3lazl`, `check-x3hqm81y`,
 `check-iky8isxd`, `check-zr_pcwb8`, `check-3vz6xm2a`, `check-zoej41ax`, `check-gln7ojzo`).
 
 ## Independent verification
@@ -96,6 +106,42 @@ G13 determinism: exact pixels (`threshold: 0`); 10 consecutive compare runs pass
 Not fixed, by decision: overview shows five toast regions (one per toast story); G14 does not
 scan the T2 iframe (sandboxed, opaque origin); dev origins on Vite's default port can still drive
 the route when Guanxi itself is not on that port (adversarial M1).
+
+### Cross-family review fixes
+
+GPT reviewed `6930cb7` (`ds1-b-review/REVIEW-GPT.md`, verdict "merge after fixes"). Each
+finding is fixed in its own commit. Each test or seed below was run against the code before the
+fix and fails there (for the browser seeds, `run.ts --selftest` on the old spec reported
+"expected fail, got pass": G16 `check-w_w2ix0x`, G15 `check-_udol4dw`).
+
+| Finding | Commit | Test that fails without the fix |
+| --- | --- | --- |
+| H1 unsigned key-set version reset re-enables a revoked rotation | `f3918bc` | `approval.test.ts` › "rejects an unsigned version reset that would re-enable an old rotation"; G12 seed `key-version-reset` |
+| H2 earlier approval overrides a later deprecation or in-record revocation | `64c73d3` | `approval.test.ts` › "treats an approval followed by a signed revocation in the same record as revoked"; G12 seeds `approval-over-base-deprecation`, `approval-revoked-in-record` |
+| H3 source hash omits executable dependencies and shared styles | `1e27eab` | `approval.test.ts` › "changes when a dependency reached by …" (static, re-export, dynamic import, extensionless, `index`), "fails closed on a local import it cannot resolve"; server › "goes stale when a transitive helper or the shared styles change after approval" (`src/lib/cx.ts`, `src/styles/base.css`, `src/story-kit/index.tsx`) |
+| M1 named root exports bypass G10 and G11 | `3a60a2b` | G10 seed `stray-named-export`; G11 seeds `aliased-draft`, `unknown-export` |
+| M2 component-directory symlink escapes the write boundary | `7665f58` | server › "refuses a component directory that is a symlink out of the checkout", "refuses a review record that is a symlink", "refuses when the component directory is swapped for a symlink during the keychain prompt" |
+| M3 G16 waits for finite motion to finish before checking | `43fc3f8` | G16 seeds `finite-entry-motion` (one finite rotation, OS source) and `interaction-motion` (switch thumb slides on Space, in-app source) |
+| M4 G15 misses indirect literals and frame clipping | `6b4e171` (static), `64f5530` (browser) | G15 seed `indirect-literal` (constant, conditional, `??`, template); G15 clipping seed `frame-clip` (the regime frame clips) |
+| M5 G14 never scans the Settings and new-session flows | `f39d523` | `flows-axe.spec.ts`: clean scans of `/settings` (Developer section on) and the new-session flow (empty chat, then the new dialog); seeds inject an unnamed icon button into each flow and require `button-name` |
+| L1 Developer mode cannot be enabled without localStorage | `0d54afa` | `developer-mode.test.ts` › "keeps a page-local value when storage throws on read and write" |
+
+Scope decisions in this round:
+
+- **G14 on the new-session flow has one known legacy violation.** The Context panel's cache bar
+  (`packages/web/src/features/context/ContextPanel.tsx`, `CacheBar`) dims inactive rows with
+  `opacity-45`, which fails `color-contrast` (2 nodes) on the new dialog at the desktop
+  viewport. It is a legacy screen outside DS1-b, and changing its classes collides with DS1-a's
+  G5 and DS1-c's ratchet. `flows-axe.spec.ts` lists it by exact rule and target and asserts it is
+  still present, so the entry must go when the screen is fixed. G14 is complete for Settings and
+  for every other node of the new-session flow; it is not complete for that row. Owner or U1:
+  fix the row (for example a muted text token instead of opacity).
+- **G14 flow scans run in the web browser gate** (`npm run test:web:browser`), not in
+  `run.ts`, because they need the app's routes and mocks.
+- `@axe-core/playwright` 4.13.0 is now also a web dev dependency (one lock line, generated by
+  `npm install --package-lock-only`).
+- Key custody (C1/H1) stays a residual; the integrator takes it to the owner.
+- `localization.spec.ts` is untouched; its open item is below.
 
 ## Residual risk
 
@@ -114,9 +160,15 @@ the route when Guanxi itself is not on that port (adversarial M1).
   "an agent cannot sign without the owner allowing a prompt", not "agents cannot forge".
 - G12 trusts `approval-keys.json` on the base branch; with no owner key yet, the first key is a
   social anchor (the owner commits it on main). CI should set `GUANXI_UI_APPROVAL_KEY_IDS`.
-- The source hash covers a component's own folder and its import closure in `packages/ui/src`,
-  except `i18n/messages.ts`; a label change that does not show in a screenshot (an accessible
-  name) does not make an approval stale.
+- The source hash covers a component's own folder, everything under `src/styles/`, and its
+  import closure in `packages/ui/src` (static, re-export and dynamic imports), except
+  `i18n/messages.ts`; a label change that does not show in a screenshot (an accessible name)
+  does not make an approval stale.
+- G12 decides precedence from what is on the trusted base and in the record: a later revocation
+  or a base deprecation beats an older approval. A decision deleted before it reached the base
+  cannot be recovered; git history of the base is the only record of it.
+- G16 drives stories by keyboard only (Tab, and Space on switches, checkboxes, radios, tabs and
+  toggle buttons); motion behind pointer-only interactions or Enter is not exercised.
 - G13 baselines are linux/arm64 renders with fallback fonts (Plex comes from DS1-a); they will be
   regenerated after DS1-a merges. 46 high-contrast baselines equal their normal-theme pair.
 - The stub's HC themes do not raise status and accent text to 7:1, and the Solid border (step 8)
