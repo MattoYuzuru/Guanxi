@@ -38,6 +38,19 @@ const expectedSpaces = numeric(document.match(/Spacing scale ([\d, ]+)/)[1])
 const containers = [...section('## 3.').matchAll(/\b([a-z\d]+) (\d+)rem/g)].map(([, name, value]) => [name, Number(value)])
 assert.equal(containers.length, 13, 'FOUNDATIONS container scale must be parsed in full')
 const expectedRadii = numeric(document.match(/\*\*Radius\*\*[^\n]*(?:\n  [^\n]+)*/)[0])
+// §1.3 interaction fills, §3 focus ring and layers (FOUNDATIONS addendum 2026-10-20).
+const interactions = tables(section('### 1.3')).find(table => table[0][0] === 'Role').slice(1)
+const focusRing = numeric(document.match(/\*\*Focus ring:\*\*[^\n]*(?:\n  [^\n]+)*/)[0])
+const layerText = document.match(/\*\*Layers \(z-index\):\*\*([^\n]*(?:\n  [^\n]+)*)/)[1]
+const layerNames = ['base', 'sticky', 'docked', 'floating', 'popover', 'scrim', 'dialog', 'toast', 'tooltip']
+const layers = numeric(layerText.split('.')[0])
+assert.equal(layers.length, layerNames.length, 'FOUNDATIONS layer scale must be parsed in full')
+// "accent mixed N% toward ink (light) or white (dark)", channel by channel in sRGB.
+function mixHex(from, to, amount) {
+  const channels = h => h.slice(1).match(/../g).map(c => parseInt(c, 16))
+  const [a, b] = [channels(from), channels(to)]
+  return '#' + a.map((v, i) => Math.round(v * (1 - amount) + b[i] * amount).toString(16).padStart(2, '0')).join('').toUpperCase()
+}
 
 function verifyRuntimeNames(runtime, tailwind, legacy) {
   const declared = css => {
@@ -118,6 +131,21 @@ async function verifyFoundations(context) {
       assert.equal(map[`material.glass.${role}`].hex, expectedHex)
       assert.equal(map[`material.glass.${role}`].alpha, Number(materialDetails.find(row => row[0] === label)[column].match(/(\d+)%/)[1]) / 100)
     }
+    for (const row of interactions) {
+      const name = `color.${row[0].replace('background-', 'background.')}`, rule = row[3]
+      if (/transparent/.test(row[column])) assert.equal(map[name].alpha, 0, `${theme}/${name}`)
+      else if (/step \d+/.test(row[column])) eq(name, map[`primitive.color.neutral.${base}.${numeric(row[column])[0]}`])
+      else {
+        // HC themes have no hue of their own: the same mix applies to their accent fill.
+        const accent = map['color.background.accent'].hex, toward = dark ? '#FFFFFF' : hex(ramps.at(-1)[1])
+        const expected = hc ? mixHex(accent, toward, numeric(rule)[0] / 100) : hex(row[column])
+        if (!hc) assert.equal(mixHex(accent, toward, numeric(rule)[0] / 100), expected, `FOUNDATIONS ${row[0]} follows its rule`)
+        assert.equal(map[name].hex, expected, `${theme}/${name}`)
+      }
+    }
+    eq('focus.ring.width', { value: focusRing[0], unit: 'px' })
+    eq('focus.ring.offset', { value: focusRing[1], unit: 'px' })
+    for (const [i, name] of layerNames.entries()) eq(`layer.${name}`, layers[i])
     eq('font.family.sans', ['IBM Plex Sans', 'system-ui', 'sans-serif'])
     eq('font.family.mono', ['IBM Plex Mono', 'ui-monospace', 'monospace'])
     eq('font.weight.regular', 400); eq('font.weight.label', 500); eq('font.weight.heading', 600)
@@ -157,6 +185,20 @@ test('N6: FOUNDATIONS semantic role assertions reject wrong neutral steps and st
     const file = `packages/ui/tokens/semantic/color.${theme}.tokens.json`, data = await ctx.json(file)
     data.color[group][role].$value = `{primitive.color.${wrong}}`
     await assert.rejects(verifyFoundations(await ctx.withFiles({ [file]: JSON.stringify(data) })), { name: 'AssertionError' }, `${theme}/${group}.${role}`)
+  }
+})
+test('FOUNDATIONS §1.3/§3 interaction fills, focus ring and layers reject wrong values', async () => {
+  for (const [path, mutate] of [
+    ['semantic/color.light.tokens.json', d => { d.color.background.hover.$value = '{primitive.color.neutral.light.3}' }],
+    ['semantic/color.dark.tokens.json', d => { d.color.background.pressed.$value = '{primitive.color.neutral.dark.4}' }],
+    ['semantic/color.light.tokens.json', d => { d.color.background.ghost.$value = '{primitive.color.neutral.light.1}' }],
+    ['semantic/color.dark.tokens.json', d => { d.color.background['accent-hover'].$value = '{primitive.color.accent-state.dark.pressed}' }],
+    ['semantic/color.light-hc.tokens.json', d => { d.color.background['accent-pressed'].$value = '{primitive.color.accent-state.light.pressed}' }],
+    ['base.tokens.json', d => { d.focus.ring.offset.$value.value = 1 }],
+    ['base.tokens.json', d => { d.layer.dialog.$value = 45 }],
+  ]) {
+    const file = `packages/ui/tokens/${path}`, data = await ctx.json(file); mutate(data)
+    await assert.rejects(verifyFoundations(await ctx.withFiles({ [file]: JSON.stringify(data) })), { name: 'AssertionError' }, path)
   }
 })
 test('H2: runtime tokens never declare Tailwind font/spacing names', async () => {
