@@ -64,6 +64,7 @@ export function auditRatchet(root, allowances, policy) {
     for (const parent of parents) {
       const oldLedger = version(parent, ledgerPath), oldPolicy = version(parent, policyPath)
       errors.push(...policyErrors(oldPolicy, currentPolicy, ` in ${revision} against ${parent}`))
+      if (oldLedger && !currentLedger) errors.push(`Legacy ledger removed in ${revision} against ${parent}`)
       if (oldLedger) errors.push(...ledgerErrors(oldLedger, currentLedger ?? {}, policy, ` in ${revision} against ${parent}`))
     }
   }

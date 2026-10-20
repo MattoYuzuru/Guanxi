@@ -63,6 +63,14 @@ test('L2: rewriting or removing a committed correction cannot bless growth', asy
   assert.ok(auditRatchet(repo.root, after, { corrections: [] }).some(e => e.includes('policy changed')))
 })
 
+test('H1/L2 self-review: deleting and recreating the ledger cannot reset the freeze', async t => {
+  const key = 'G5|packages/web/src/fixture.tsx|bg-red-500'
+  const repo = await repository(t, { [key]: 1 })
+  repo.git('rm', '-q', ledgerPath); repo.commit('Delete the ledger')
+  await repo.save(ledgerPath, { [key]: 2 }); repo.commit('Recreate a larger ledger')
+  assert.ok(auditRatchet(repo.root, { [key]: 2 }, { corrections: [] }).some(e => e.includes('ledger removed')))
+})
+
 test('H3/L2: two exact corrections are allowed; changed snapshots and a third correction fail', async t => {
   const key = 'G5|packages/web/src/fixture.tsx|bg-red-500', one = { [key]: 1 }, two = { [key]: 2 }, three = { [key]: 3 }
   const correction = (id, before, after) => ({ id, authorized: 'Test fixture', fromSHA256: snapshotHash(before), toSHA256: snapshotHash(after) })
