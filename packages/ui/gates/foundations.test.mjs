@@ -39,7 +39,10 @@ async function verifyFoundations(context) {
       const role = row[0].split(' ')[0]
       assert.equal(map[`primitive.color.status.${base}.${role}`].hex, hex(row[column]))
     }
-    for (const row of data) assert.equal(map[`primitive.color.data.${base}.${row[0]}`].hex, hex(row[dark ? 3 : 2]))
+    for (const row of data) {
+      assert.equal(map[`primitive.color.data.${base}.${row[0]}`].hex, hex(row[dark ? 3 : 2]))
+      if (!theme.endsWith('-hc')) eq(`data.${row[0]}`, map[`primitive.color.data.${base}.${row[0]}`])
+    }
     assert.deepEqual(entries.filter(t => t.path[0] === 'spacing').map(t => Number(t.path[1])).sort((a, b) => a - b), expectedSpaces)
     for (const n of expectedSpaces) eq(`spacing.${n}`, { value: n, unit: 'px' })
     for (const [i, role] of ['inline', 'control', 'panel', 'glass'].entries()) eq(`border-radius.${role}`, { value: expectedRadii[i], unit: 'px' })
@@ -73,6 +76,10 @@ async function verifyFoundations(context) {
       eq(`material.strong.${level}.blur`, { value: Number(strong[2].match(/blur\((\d+)px\)/)?.[1] ?? 0), unit: 'px' })
       eq(`material.strong.${level}.saturation`, map[`material.${level}.saturation`])
       if (level !== 'solid') assert.equal(map[`material.${level}.border`], undefined)
+      else {
+        const step = theme.endsWith('-hc') ? 11 : Number(row[1].match(/step-(\d+) border/)[1])
+        eq('material.solid.border', map[`primitive.color.neutral.${base}.${step}`])
+      }
     }
     for (const [role, label, expectedHex] of [['edge', 'Ice edge', '#FFFFFF'], ['seam', 'Ink seam', dark ? '#000000' : hex(ramps.at(-1)[1])]]) {
       assert.equal(map[`material.glass.${role}`].hex, expectedHex)
@@ -93,6 +100,9 @@ test('M2: changing an unmeasured ramp, duration, easing or glass fill breaks the
     ['primitive/motion.tokens.json', d => { d.primitive.duration.slow.$value.value = 900 }],
     ['primitive/motion.tokens.json', d => { d.primitive.easing.standard.$value = [0, 0, 0, 1] }],
     ['semantic/color.light.tokens.json', d => { d.material.glass['fill-opacity'].$value = .6 }],
+    ['semantic/color.light.tokens.json', d => { d.material.solid.border.$value = '{primitive.color.neutral.light.1}' }],
+    ['semantic/color.dark-hc.tokens.json', d => { d.material.solid.border.$value = '{primitive.color.neutral.dark.8}' }],
+    ['semantic/color.light.tokens.json', d => { d.data['1'].$value = '{primitive.color.data.light.2}' }],
   ]) {
     const file = `packages/ui/tokens/${path}`, data = await ctx.json(file); mutate(data)
     await assert.rejects(verifyFoundations(await ctx.withFiles({ [file]: JSON.stringify(data) })))

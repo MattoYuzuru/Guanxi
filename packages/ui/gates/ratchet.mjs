@@ -20,8 +20,7 @@ function policyErrors(before, after, where) {
   return errors
 }
 
-export function ledgerErrors(before, after, policy, where = '') {
-  if (corrections(policy).some(c => snapshotHash(before) === c.fromSHA256 && snapshotHash(after) === c.toSHA256)) return []
+export function ledgerErrors(before, after, where = '') {
   const available = new Map()
   const identity = key => { const [gate, , ...value] = key.split('|'); return `${gate}|${value.join('|')}` }
   // A relocation/split preserves the exact violation value and its total count. Only
@@ -36,6 +35,16 @@ export function ledgerErrors(before, after, policy, where = '') {
     else available.set(id, budget - increase)
   }
   return errors
+}
+
+function edgeErrors(before, after, oldPolicy, policy, where) {
+  const errors = policyErrors(oldPolicy, policy, where)
+  // Exceptions belong to the edge introducing their policy entry. Existing entries
+  // cannot be replayed after a shrink returns to the old snapshot. A merge can still
+  // propagate the authorized transition to a parent that has not received it yet.
+  const added = corrections(policy).slice(corrections(oldPolicy).length)
+  const corrected = !errors.length && added.some(c => snapshotHash(before) === c.fromSHA256 && snapshotHash(after) === c.toSHA256)
+  return [...errors, ...(corrected ? [] : ledgerErrors(before, after, where))]
 }
 
 export function auditRatchet(root, allowances, policy) {
@@ -56,20 +65,26 @@ export function auditRatchet(root, allowances, policy) {
     return cache.get(key)
   }
   const errors = []
+  const origins = new Map()
   for (const line of git(['rev-list', '--full-history', '--reverse', '--parents', 'HEAD', '--', ledgerPath, policyPath]).split('\n').filter(Boolean)) {
     const revision = line.split(' ')[0]
     // Path-limited rev-list can simplify parent links. Read the actual commit parents.
     const parents = git(['show', '-s', '--format=%P', revision]).split(' ').filter(Boolean)
     const currentLedger = version(revision, ledgerPath), currentPolicy = version(revision, policyPath)
+    for (const correction of corrections(currentPolicy)) {
+      if (parents.some(parent => corrections(version(parent, policyPath)).some(c => c.id === correction.id))) continue
+      if (origins.has(correction.id)) errors.push(`Legacy correction ${correction.id} introduced more than once in ${revision} and ${origins.get(correction.id)}`)
+      else origins.set(correction.id, revision)
+    }
     for (const parent of parents) {
       const oldLedger = version(parent, ledgerPath), oldPolicy = version(parent, policyPath)
-      errors.push(...policyErrors(oldPolicy, currentPolicy, ` in ${revision} against ${parent}`))
       if (oldLedger && !currentLedger) errors.push(`Legacy ledger removed in ${revision} against ${parent}`)
-      if (oldLedger) errors.push(...ledgerErrors(oldLedger, currentLedger ?? {}, policy, ` in ${revision} against ${parent}`))
+      if (oldLedger) errors.push(...edgeErrors(oldLedger, currentLedger ?? {}, oldPolicy, currentPolicy, ` in ${revision} against ${parent}`))
+      else errors.push(...policyErrors(oldPolicy, currentPolicy, ` in ${revision} against ${parent}`))
     }
   }
-  errors.push(...policyErrors(version('HEAD', policyPath), policy, ' in working tree'))
   const head = version('HEAD', ledgerPath)
-  if (head) errors.push(...ledgerErrors(head, allowances, policy))
+  if (head) errors.push(...edgeErrors(head, allowances, version('HEAD', policyPath), policy, ' in working tree'))
+  else errors.push(...policyErrors(version('HEAD', policyPath), policy, ' in working tree'))
   return errors
 }

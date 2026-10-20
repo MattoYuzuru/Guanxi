@@ -20,8 +20,9 @@ class constants and nested bound maps (property/element access), `*ClassName` pr
 `cva` variants, conditional/array class helpers and CSS `@apply`. Arbitrary classes, including v4 shorthand,
 always require a legacy allowance. G6 parses CSS declarations and functions; G7 checks CSS
 motion plus TypeScript strings, motion object properties and `@apply` parameters. HTML, JSX,
-JS and SCSS source are covered, as are raw fallbacks inside `var()`. Off-scale numeric spacing
-fails even when Tailwind can compile it. Special exclusions are anchored to the package's own
+JS and SCSS source are covered, as are raw fallbacks inside `var()`. Off-scale numeric spacing,
+including logical offsets, scroll padding/margins and text indents, fails even when Tailwind
+can compile it. Special exclusions are anchored to the package's own
 token/font/brand/generated/gate and top-level test directories; a feature directory with the
 same name remains scanned. Stories and catalog source are included.
 
@@ -34,7 +35,8 @@ increasing its total count. The owner authorized exactly two bootstrap correctio
 as an immutable list in `legacy-ratchet-policy.json`: the original `INPUT_CLASS` correction
 and Review 1's completed scanner/defaults baseline. Both are bound to exact before/after
 hashes. Policy history cannot rewrite/remove an entry or append a third; only those two
-transitions are exempt. Do not regenerate the list to accept a new violation.
+transitions are exempt on the edge introducing the corresponding policy entry. An existing
+entry cannot be replayed after its occurrences retire. Do not regenerate the list to accept a new violation.
 DS1-c can remove entries as it migrates the legacy UI. This is the DS1-a fast ratchet;
 DS1-c separately owns ESLint bulk suppressions.
 

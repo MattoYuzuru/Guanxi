@@ -72,6 +72,7 @@ export function classStrings(file, text) {
       values.add(node.head)
       for (const span of node.templateSpans) { collect(span.expression, next); values.add(span.literal) }
     } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(item => collect(item, next, objectMode))
+    else if (ts.isSpreadElement(node)) collect(node.expression, next, objectMode)
     else if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       for (const value of unwrap(node)) collect(value, next, objectMode)
     } else if (ts.isObjectLiteralExpression(node)) {
@@ -86,10 +87,10 @@ export function classStrings(file, text) {
       }
     } else if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) {
       const returns = body => {
-        if (ts.isReturnStatement(body)) collect(body.expression, next)
+        if (ts.isReturnStatement(body)) collect(body.expression, next, objectMode)
         else ts.forEachChild(body, child => { if (!ts.isFunctionLike(child)) returns(child) })
       }
-      if (node.body) { if (ts.isBlock(node.body)) returns(node.body); else collect(node.body, next) }
+      if (node.body) { if (ts.isBlock(node.body)) returns(node.body); else collect(node.body, next, objectMode) }
     } else if (ts.isCallExpression(node)) {
       const helper = nameOf(node.expression)?.split('.').at(-1)
       if (helper === 'cva') {
@@ -105,7 +106,7 @@ export function classStrings(file, text) {
           }
         }
       } else if (['cn', 'clsx', 'classnames', 'twMerge', 'cx'].includes(helper)) node.arguments.forEach(arg => collect(arg, next, 'conditions'))
-      else if (ts.isIdentifier(node.expression)) collect(binding(node.expression), next)
+      else if (ts.isIdentifier(node.expression)) collect(binding(node.expression), next, objectMode)
     }
   }
   const visit = node => {
@@ -182,7 +183,7 @@ export async function scanLiterals(ctx) {
   spacing.add(0)
   function invalidClass(value) {
     const utility = value.split(':').at(-1).replace(/^!|!$/g, '')
-    const step = /^-?(?:p[xysetblr]?|m[xysetblr]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left)-(\d+(?:\.\d+)?|px)$/.exec(utility)
+    const step = /^-?(?:(?:scroll-)?(?:p[xysetblr]?|m[xysetblr]?)|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|start|end|indent)-(\d+(?:\.\d+)?|px)$/.exec(utility)
     return value.includes('[') || value.includes('-(') || (step && (step[1] === 'px' || !spacing.has(Number(step[1])))) || (!custom.has(value) && system.candidatesToCss([value])[0] === null)
   }
   for (const [file, text] of sources) {

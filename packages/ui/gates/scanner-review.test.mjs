@@ -29,6 +29,9 @@ test('H3 self-review: nested maps and conditional/array helper objects retain cl
     `const A = clsx([{ 'bg-red-500': true }])`,
     `const A = cn(ok ? { 'bg-red-500': true } : {})`,
     `const A = cx(ok && { 'bg-red-500': true })`,
+    `const conditions = [{ 'bg-red-500': true }]; const A = clsx([...conditions])`,
+    `const conditions = () => ({ 'bg-red-500': true }); const A = clsx(conditions())`,
+    `function conditions() { return { 'bg-red-500': true } }; const A = cn(conditions())`,
   ]) assert.deepEqual(classStrings('fixture.tsx', code).map(t => t.value), ['bg-red-500'], code)
 })
 test('H3: every lexical legacy arbitrary-class occurrence is covered by the freeze', async () => {
@@ -88,9 +91,9 @@ test('L3: colour, geometry and function properties reject raw values, including 
   assert.deepEqual(cssFindings('fixture.css', '.x { color:var(--token, var(--other)); transform:translateY(var(--motion-distance-sm)); }'), [])
 })
 test('L7: off-scale spacing fails in JSX and CSS apply; accepted scale and zero compile', async () => {
-  for (const value of ['p-2.5', 'hover:p-3.5', 'gap-7', 'mx-px']) {
+  for (const value of ['p-2.5', 'hover:p-3.5', 'gap-7', 'mx-px', 'start-2.5', 'end-3.5', 'scroll-mt-7', 'scroll-p-7', 'indent-2.5']) {
     for (const [file, text] of [['packages/ui/src/fixture.jsx', `<div className="${value}"/>`], ['packages/ui/src/fixture.css', `.x { @apply ${value}; }`]]) assert.ok((await scanLiterals(await ctx.withFiles({ [file]: text }))).some(f => f.file === file && f.gate === 'G5'), value)
   }
   const file = 'packages/ui/src/fixture.jsx'
-  assert.ok(!(await scanLiterals(await ctx.withFiles({ [file]: '<div className="p-0 p-0.5 p-1.5 p-2 p-3 p-4 p-5 p-6 p-8 p-10 p-12 p-16"/>' }))).some(f => f.file === file))
+  assert.ok(!(await scanLiterals(await ctx.withFiles({ [file]: '<div className="p-0 p-0.5 p-1.5 p-2 p-3 p-4 p-5 p-6 p-8 p-10 p-12 p-16 start-2 end-3 scroll-mt-8 scroll-p-3 indent-2"/>' }))).some(f => f.file === file))
 })

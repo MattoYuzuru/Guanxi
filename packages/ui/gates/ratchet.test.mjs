@@ -45,10 +45,10 @@ test('H1: a merge restoring an occurrence removed by either parent fails', async
 test('M9: moved/split allowances preserve their exact value and cannot create a count', () => {
   const old = 'G5|packages/web/src/old.tsx|bg-red-500'
   const a = 'G5|packages/web/src/new/a.tsx|bg-red-500', b = 'G5|packages/web/src/new/b.tsx|bg-red-500'
-  assert.deepEqual(ledgerErrors({ [old]: 3 }, { [a]: 1, [b]: 2 }, {}), [])
-  assert.ok(ledgerErrors({ [old]: 3 }, { [a]: 1, [b]: 3 }, {}).length)
-  assert.ok(ledgerErrors({ [old]: 3 }, { [a.replace('red', 'blue')]: 3 }, {}).length)
-  assert.ok(ledgerErrors({ [old]: 3 }, { [old]: 2, [a]: 1 }, {}).length)
+  assert.deepEqual(ledgerErrors({ [old]: 3 }, { [a]: 1, [b]: 2 }), [])
+  assert.ok(ledgerErrors({ [old]: 3 }, { [a]: 1, [b]: 3 }).length)
+  assert.ok(ledgerErrors({ [old]: 3 }, { [a.replace('red', 'blue')]: 3 }).length)
+  assert.ok(ledgerErrors({ [old]: 3 }, { [old]: 2, [a]: 1 }).length)
 })
 
 test('L2: rewriting or removing a committed correction cannot bless growth', async t => {
@@ -83,4 +83,34 @@ test('H3/L2: two exact corrections are allowed; changed snapshots and a third co
   assert.deepEqual(auditRatchet(repo.root, three, second), [])
   assert.ok(auditRatchet(repo.root, { [key]: 4 }, second).some(e => e.includes('allowance grew')))
   assert.ok(auditRatchet(repo.root, { [key]: 4 }, { corrections: [...second.corrections, correction(3, three, { [key]: 4 })] }).some(e => e.includes('policy')))
+})
+
+test('H3/L2 self-review: a correction cannot be replayed after its occurrences retire', async t => {
+  const key = 'G5|packages/web/src/fixture.tsx|bg-red-500'
+  const one = { [key]: 1 }, two = { [key]: 2 }, three = { [key]: 3 }
+  const correction = (id, before, after) => ({ id, fromSHA256: snapshotHash(before), toSHA256: snapshotHash(after) })
+  const repo = await repository(t, one)
+  const first = { corrections: [correction(1, one, two)] }
+  await repo.save(policyPath, first); await repo.save(ledgerPath, two); repo.commit('First correction')
+  const second = { corrections: [...first.corrections, correction(2, two, three)] }
+  await repo.save(policyPath, second); await repo.save(ledgerPath, three); repo.commit('Second correction')
+  assert.deepEqual(auditRatchet(repo.root, three, second), [])
+  await repo.save(ledgerPath, two); repo.commit('Retire the corrected occurrence')
+  assert.deepEqual(auditRatchet(repo.root, two, second), [])
+  assert.ok(auditRatchet(repo.root, three, second).some(e => e.includes('allowance grew')))
+  await repo.save(ledgerPath, three); repo.commit('Replay correction two')
+  assert.ok(auditRatchet(repo.root, three, second).some(e => e.includes('allowance grew')))
+})
+
+test('H3/L2 self-review: the same correction cannot originate independently on two branches', async t => {
+  const key = 'G5|packages/web/src/fixture.tsx|bg-red-500'
+  const before = { [key]: 1 }, after = { [key]: 2 }
+  const policy = { corrections: [{ id: 1, fromSHA256: snapshotHash(before), toSHA256: snapshotHash(after) }] }
+  const repo = await repository(t, before)
+  repo.git('checkout', '-qb', 'first')
+  await repo.save(policyPath, policy); await repo.save(ledgerPath, after); repo.commit('First introduction')
+  repo.git('checkout', '-qb', 'second', 'main')
+  await repo.save(policyPath, policy); await repo.save(ledgerPath, after); repo.commit('Second introduction')
+  repo.git('checkout', '-q', 'first'); repo.git('merge', '--no-ff', '-m', 'Merge introductions', 'second')
+  assert.ok(auditRatchet(repo.root, after, policy).some(e => e.includes('introduced more than once')))
 })
