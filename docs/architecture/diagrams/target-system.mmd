@@ -1,0 +1,53 @@
+flowchart TB
+  subgraph Clients
+    D[Desktop<br/>Electron shell]
+    W[Web / PWA<br/>phone]
+    C[CLI / TUI<br/>guanxi agent exec --json]
+  end
+  subgraph Node["Guanxi node (same build on every machine)"]
+    API[Client API<br/>REST + SSE, Zod contract]
+    K[Kernel<br/>Cordis 4 facade]
+    subgraph Core["Core plugins (T0)"]
+      SL[Session log]
+      RE[Run engine<br/>attempts, leases, promises,<br/>timers, outbox]
+      CN[Connections<br/>registry + vault]
+      AG[Agent runtime<br/>native loop + external agents]
+      RL[Relay + judge]
+      GV[Resource governor]
+      FL[Federation<br/>replication + node agent]
+      CT[Catalog + fit]
+      WK[Work ledger]
+    end
+    subgraph Ext["Feature plugins (T0/T1)"]
+      VO[Voice + glossary]
+      EV[Evolution loop]
+      BE[Bench]
+      CU[Computer use]
+      IX[Indexing]
+      UIP[UI slots, themes, locales]
+    end
+    SB[(SQLite: events, runs,<br/>leases, replicas)]
+    CAS[(Content-addressed<br/>artifacts)]
+  end
+  subgraph Runtimes["Local runtimes (loopback only)"]
+    OL[Ollama]
+    LC[llama-server]
+    WH[whisper.cpp]
+    SD[sd-server]
+    MX[mlx-*]
+  end
+  subgraph External["External agents and APIs"]
+    CC[Claude Code<br/>user binary, ACP]
+    CX[Codex app-server]
+    CP[Copilot ACP]
+    APIs[Model / search / STT APIs]
+  end
+  Peers[[Other Guanxi nodes]]
+  Clients --> API --> K
+  K --- Core
+  K --- Ext
+  Core --> SB
+  Core --> CAS
+  AG --> Runtimes
+  AG --> External
+  FL <--> Peers

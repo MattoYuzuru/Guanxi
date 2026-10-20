@@ -1,252 +1,49 @@
-# Открытые продуктовые решения
-
-**Статус:** question register; Q-01–Q-37 отвечены, открыт только Q-27a
-
-**Проверено:** 2026-08-18
-
-Ответы Q-01–Q-36 зафиксированы в
-[decision log 2026-08-02](../decisions/2026-08-02-product-decisions.md), а Q-37
-и уточнения Phase 3/4 — в
-[decision log 2026-08-18](../decisions/2026-08-18-phase-3-4-decisions.md).
-
-## Что осталось открытым
-
-Q-37 закрыт владельцем 2026-08-18: Quick Run Session заканчивается успешной Job
-либо явной командой Finish; cleanup ждёт terminal Job и использует recoverable
-24-hour Trash. Q-28a и Q-34a закрыты 2026-08-07.
-
-Release-readiness audit 2026-08-09 дополнительно сверил `variant-first install
-и calibration`: это две отдельные exact-variant capabilities. Marketplace
-сохраняет accepted claimed-size preview до download, а installed/runtime
-calibration использует exact digest/context/runtime/hardware evidence. Ни один
-актуальный Phase 2 exit bullet не требует смешивать эти источники в один fit.
-Такое объединение было бы новой policy с freshness, precedence, thresholds и
-compatibility решениями, а не незакрытым требованием Phase 2.
-
-Другой незакрытый пункт — **Q-27a**: `wrap up and report` требует нового
-durable Job state, а не UI-флага, и нужно определить поведение при падении
-process во время wind-down (иначе P1-E recovery отнесёт run к `interrupted` и
-потеряет сам отчёт). Это design decision внутри Phase 5/8, к текущему slice
-отношения не имеет; ждёт architecture review 2026-08-07.
-
-### Q-37. Какое событие заканчивает Session для Quick Run?
-
-**Accepted 2026-08-18:** успешный terminal outcome `completed` заканчивает
-Session автоматически; отдельная команда `Finish Quick Run Session` заканчивает
-её явно. Failed/cancelled/interrupted исход не заканчивает Session автоматически.
-Команда во время active Job сохраняет intent, но cleanup ждёт terminal state.
-Закрытие view, reload, disconnect и export не считаются Finish. После окончания
-действует 24-hour Trash/Restore как для Session Chat. См. D-022.
-
-## Resolution Q-01–Q-21
-
-| Вопрос | Результат                                                       |
-| ------ | --------------------------------------------------------------- |
-| Q-01   | accepted: собственный resource-aware workbench                  |
-| Q-02   | accepted: Job продолжает работу при навигации                   |
-| Q-03   | accepted: single lane default, measured parallel later          |
-| Q-04   | accepted: Alamo service и Ollama daemon разделены               |
-| Q-05   | resolved: no permission/no live scrape; manual references       |
-| Q-06   | accepted: HF discovery и direct valid GGUF import               |
-| Q-07   | accepted: macOS Apple Silicon + Linux NVIDIA                    |
-| Q-08   | accepted: logical Project с filesystem bindings                 |
-| Q-09   | accepted: 7-day default; Keep override; Session recovery 24h    |
-| Q-10   | accepted: live reasoning + diagnostic retention 7 days          |
-| Q-11   | accepted: English + curated Russian + glossary                  |
-| Q-12   | accepted: full text foundation before STT                       |
-| Q-13   | accepted: browser capture first, hotkey later                   |
-| Q-14   | accepted: native STT и LLM post-processing разделены            |
-| Q-15   | accepted: video deferred indefinitely                           |
-| Q-16   | accepted with changed direction: first-party coding agent       |
-| Q-17   | accepted: deliberate long-run profile; limits — см. Q-27        |
-| Q-18   | accepted: MCP/Skills off by default and Project-scoped          |
-| Q-19   | accepted: background service, shared settings, opt-in autostart |
-| Q-20   | deferred: продолжаем с `Alamo`, см. Q-31                        |
-| Q-21   | accepted: JetBrains technical UI + document font                |
-
-## Resolution Q-22–Q-24
-
-### Q-22. Какой Chat retention является default?
-
-**Accepted 2026-08-02, уточнено 2026-08-18:** global default нового Chat —
-`7 days`. Project может задать retention default для новых Project Chats и
-Quick Runs; пользователь может его переопределить. Изменение Project default не
-переписывает существующие entities. См. D-025.
-
-### Q-23. Когда заканчивается `Session` Chat?
-
-**Accepted:** уход пользователя из Chat завершает Session lifecycle. Reload или
-reconnect сами по себе не считаются уходом. Пока связанная Job не terminal,
-удаление откладывается. Затем Chat попадает в Trash на 24 часа и может быть
-восстановлен или переведён в `7 days`/`Keep`.
-
-### Q-24. TTL продлевается от создания или последней активности?
-
-**Accepted:** rolling TTL считается от последней user activity. Model, tool,
-maintenance и background events не продлевают TTL. UI показывает exact expiry.
-
-## Resolved для Hugging Face import
-
-### Q-25. Какие форматы импортировать с Hugging Face первыми?
-
-**Accepted 2026-08-07:** только exact GGUF file/revision. Safetensors
-conversion и GGUF adapters не входят в scope и остаются возможной поздней
-capability, а не обещанием.
-
-Следствия: HF slice **разблокирован**. Non-GGUF repository не должен выглядеть
-importable — UI показывает explicit unsupported state, а не пустой список.
-HF URL по-прежнему нельзя обещать как direct `ollama pull`: pipeline остаётся
-metadata → exact GGUF → download/checksum → local Ollama import → probe
-(см. `research/EVIDENCE.md`).
-
-## Resolved для Add from Ollama
-
-### Q-26. Что принимать в поле «Add from Ollama»?
-
-**Accepted 2026-08-03:** model name (`qwen3:8b`) и URL официальной Ollama model
-page. Preview показывает нормализованное имя; pull начинается только после
-подтверждения.
-
-Произвольный URL не передаётся Ollama и не используется для server-side fetch.
-Это явно reconciled с accepted D-005 перед handoff P2-D. Q-25 закрыт 2026-08-07,
-поэтому HF import больше не заблокирован.
-
-## Resolved для autonomous agent safety
-
-### Q-27. Какие limits нужны long-running Agent Run?
-
-**Accepted 2026-08-07: только time-based control.** Memory, disk и output
-ceilings явно **не** вводятся.
-
-- пользователь задаёт expected duration до старта (например 8 часов);
-- duration можно менять mid-run в обе стороны — продлить и сократить;
-- hard interrupt доступен всегда;
-- отдельное graceful `wrap up and report`: агент быстро сворачивается и отдаёт
-  результат, вместо потери нескольких часов работы;
-- ранний финиш нормален: 5 часов из 8 — это success, а не отклонение;
-- нужен stall detector: ни input, ни output tokens не производятся.
-
-Открытый sub-question **Q-27a**: `wrap up and report` — новое durable Job state,
-а не UI-флаг. Точная граница state/transition и поведение при падении process
-во время wind-down требуют design decision до реализации (см. architecture
-review 2026-08-07).
-
-### Q-28. Какая модель разрешений у agent filesystem access?
-
-**Accepted 2026-08-07: три слоя scope.**
-
-1. main folder, выбранная через UI, где стартует Run;
-2. дополнительные folders, настраиваемые в UI;
-3. per-prompt grants: пользователь в промпте называет конкретные paths или
-   credentials; режим soft read/modify **без delete**.
-
-Удаление секретов (например `.env`) запрещено. Внутри разрешённого scope агент
-работает свободно — граница по scope, не по типу действия.
-
-**Q-28a resolved 2026-08-07:** три слоя scope определяют, **где** агент работает,
-и не отменяют approval за то, **что** он делает. Accepted ADR-0008/ADR-0010
-границы сохраняются: `push`/`publish`/`deploy`, изменение service/login
-configuration и расширение network allowlist по-прежнему требуют явного
-подтверждения даже в auto mode, потому что эти действия выходят за пределы
-файловой системы и не ограничиваются выбором папок.
-
-Layer 3 задаётся текстом промпта, поэтому граница безопасности определяется
-естественным языком, который читает сама модель. Из этого следует обязательное
-требование: grant принимается только от пользовательского ввода, никогда из
-содержимого файлов, tool output или repository. Path traversal (`..`, symlink,
-hardlink, case-insensitive macOS paths) резолвится до проверки. `no delete` в
-soft-режиме обязан покрывать эквиваленты удаления — truncate к нулю, overwrite
-пустым и rename-away, иначе гарантия только номинальная.
-
-## Resolved, не блокируют ранние фазы
-
-### Q-29. Completion sound default
-
-**Accepted 2026-08-07:** sound по умолчанию **выключен**. Звук допустим только
-когда Job фоновая либо вкладка закрыта; для открытой Job звука нет. Нужен
-короткий явно лицензированный sound; reduced-motion/sensory preferences
-уважаются, visual equivalent обязателен.
-
-### Q-30. Русская метка `Recipe`
-
-**Accepted 2026-08-07:** `Сценарий`. `Профиль` и `Шаблон` не используются как
-отдельные сущности; glossary объясняет, что это сохранённая настройка задачи.
-
-### Q-31. Новое название
-
-**Accepted 2026-08-07 как осознанная отсрочка:** продолжаем с `Alamo`. Имя пока
-не выбрано, поэтому главное требование — сохранять лёгкую заменяемость: ADR-0007
-central brand manifest, никаких новых hardcoded вариантов имени.
-
-**Уточнено 2026-08-18:** target canonical executable — `alamo`, текущий
-`alamo-ui` остаётся compatibility alias. Когда display brand изменится, старое
-имя исчезает из всего visible UI/CLI/docs/assets; скрытые storage/CLI aliases
-сохраняются только на migration window.
-
-### Q-32. Custom Project icons
-
-**Accepted 2026-08-07:** только большая встроенная searchable icon library и
-accessible palette. Upload custom SVG/image не делаем — sanitation/storage risks
-без потребности.
-
-## Resolved: процесс и платформа
-
-### Q-33. Нужен ли CI сейчас?
-
-**Accepted 2026-08-07: пока нет.** Проект ещё не привязан к remote; первым будет
-GitHub. До привязки все gates остаются ответственностью агента и владельца.
-
-Явный остаточный риск: без CI статус `independently verified` не имеет
-механизма, а browser gate легко пропустить. Поэтому protocol требует reviewer
-subagent и видимый review-fix commit (`plans/WORKFLOW.md`). CI добавляется сразу
-после привязки к GitHub.
-
-### Q-34. Где живёт feature-flag infrastructure?
-
-**Accepted 2026-08-07:** это отдельный slice, а не побочный эффект другой работы.
-Владелец считает слой важным и требующим research.
-
-Мотивация владельца — не generic flagging, а возможность на достаточно мощной
-машине одновременно вести generation/research flow и держать speech-to-text
-модель (STT дешёвая по compute). Это RES-009 measured parallelism.
-
-**Q-34a resolved 2026-08-07:** разделяем на две независимые вещи.
-
-**Estimated admission (можно делать без нового железа).** Владелец указал, что
-решение о втором слоте можно принимать по уже известным фактам: сколько модель
-потребляет и что известно про host. Такие факты в коде уже есть — declared model
-size, `estimateKvCacheBytes`/`computeFit` (`packages/server/src/hardware/fit.ts`),
-observed `/api/ps` VRAM в `CalibrationStore` и host memory sample. Поэтому Alamo
-может суммировать их и выдавать **estimated** вердикт о параллельном запуске.
-
-Жёсткое ограничение: такой вердикт остаётся `estimated` с источником и никогда
-не публикуется как `measured` или как гарантия будущего admission. Это прямое
-следствие текущего инварианта AGENTS.md — capability/fit не выводится как факт
-без источника и уровня уверенности. Apple current pressure остаётся `unknown`
-(`research/EVIDENCE.md`), значит estimated-решение обязано быть conservative и
-объяснимым.
-
-**Measured parallelism (только после Phase 4).** Подтверждение реальным
-замером, RES-009 pin/TTL policy и second verified tier ждут живого железа
-(Q-35). Flag infra не должна обещать measured там, где есть только estimate.
-
-Мотивация владельца — параллельный generation/research + STT. STT относится к
-Phase 6, а cross-phase rule запрещает audio до exit gate текстового фундамента.
-Поэтому flag slice отделяется от STT-цели: инфраструктура и estimated policy
-делаются раньше, а конкретный LLM+STT сценарий включается в свою фазу.
-
-### Q-35. Когда проверяем живой Ollama и Linux/NVIDIA?
-
-**Accepted 2026-08-07: после завершения Phase 4.** Linux+NVIDIA машина у владельца
-есть, но использоваться будет только тогда; live-Ollama и Linux tests
-проводятся вместе, на Mac и Linux.
-
-Следствие: `PLAT-002` verified tier и любые hardware claims не могут входить в
-exit gate Phase 2. До Phase 4 все tests остаются mocked, и это не production
-validation.
-
-### Q-36. Судьба `dev:mock`
-
-**Accepted 2026-08-07:** если fixture server не нужен агентскому flow — удалить
-script и убрать упоминания из docs, а не держать сломанным. Починка оправдана
-только при реальном использовании.
+# Open questions
+
+**Status:** proposed (owner answers needed) · **Updated:** 2026-10-19
+
+Each question names the stage it blocks and a recommended default. A stage may start with the
+default when the owner has not answered, and must record that it did. Answers move into a new
+owner decision record. Legacy questions `Q-1`–`Q-37` are in
+[`docs/legacy/alamo/plans/OPEN_QUESTIONS.md`](../legacy/alamo/plans/OPEN_QUESTIONS.md).
+
+| ID | Question | Blocks | Recommended default |
+| --- | --- | --- | --- |
+| Q-201 | The brief allows auditors to read secrets. Confirm the design choice that auditors and models never see secret values (D-113)? | K2, K3, E1 | Never; secrets are redacted by exact match. |
+| Q-202 | Claude as lead through Claude Code may be billed as extra usage (secondary source, since 2026-04-04), and `-p --bare` may stop reading the subscription login. Accept that risk, or run the lead on an Anthropic API key, or ask Anthropic for approval as an open-source project? | K5, MS1 | Support both; default to Claude Code; show the billing state. |
+| Q-203 | Which ChatGPT plan is used? Plan usage for Business is not confirmed in the docs. Is computer use on Guanxi's own tools acceptable instead of OpenAI's hosted tool? | K5, C1 | Plus/Pro via Sign in with ChatGPT; own computer-use tools. |
+| Q-204 | Is there a Google AI Pro/Ultra plan worth integrating through the closed Antigravity CLI, or is Gemini API-key only? | K5 | API key only. |
+| Q-205 | May "unattended" connections be unlocked by the node key so background runs work without an interactive login? | K3, R1 | Yes, per connection, off by default. |
+| Q-206 | Private network: hosted Tailscale (free personal plan, non-commercial, up to 6 users) or self-hosted Headscale on the VPS? | F1 | Tailscale first; Headscale documented. |
+| Q-207 | Should installing a model on a remote node become a durable node-owned run (changes the legacy rule that pulls are connection-owned)? | F2, W1 | Yes, with resumable download. ADR-0031 and W1 build on this default until confirmed. |
+| Q-208 | May Guanxi keep Macs and the Windows PC awake while they hold leases? Use Wake-on-LAN? | F2 | Power assertion while leases are active; WoL opt-in. |
+| Q-209 | Cloud rental: monthly cap, per-launch cap, providers (RunPod, Vast, Modal), SkyPilot yes/no? | F4 | $0 until set; RunPod v2 adapter first. |
+| Q-210 | Monthly API budget for benchmarks: about $200 (biweekly full A/B on DeepSeek Flash, smokes, free nightly local runs) or $300–450 (weekly full A/B, some V4-Pro)? | B1, B2 | $200. |
+| Q-211 | Which hosts may run untrusted benchmark containers: Windows PC (WSL2 Docker), Linux VPS (x86_64, 200–300 GB disk)? | B1 | Windows PC under WSL2. |
+| Q-212 | Which repositories form the private benchmark? Any never-published private repositories (best holdout)? | B2 | Guanxi plus one or two owner repositories. |
+| Q-213 | Can the owner label 50–100 trials at the start and 20–30 per month for judge calibration? | B2 | 50 at start, 20 per month. |
+| Q-214 | When an editor prompts in someone else's shared session, whose connections and budget pay? | U3 | The owner's only if allowed; otherwise the editor's. |
+| Q-215 | Can an admin ever read other users' sessions (for example children in a family)? | U3 | No; privacy is absolute in the UI. |
+| Q-216 | Will the project hold an Apple Developer account and run a push relay for native iOS? | U5 | Decide after the PWA. |
+| Q-217 | Audio retention period; will the owner record ~100 phrases (~20 minutes) for the STT eval set; which cloud STT vendors may receive the glossary; how to write inflected English terms in Russian speech? | V1 | Keep audio 7 days; record the set; no cloud glossary sharing by default. |
+| Q-218 | May a relay executor apply small plan amendments, or only propose them? | R2 | Propose only. |
+| Q-219 | Night wake policy: which events wake the lead immediately, which wait until morning; quota for advisor/L3 per night? | R3 | Failures and input_required immediately; completions batched until 08:00; 3 L3 reviews per night. |
+| Q-220 | L2 judge model: the same local model, a separate small local model, or cheap API (DeepSeek)? | R3 | A different local model family if available, else DeepSeek Flash. |
+| Q-221 | Do lessons become project skills automatically or only after the lead reviews them? | R3, E2 | After lead review (risk class RC1). |
+| Q-222 | Computer-use tiers 3–4 on the main MacBook, or only on the Mac Mini/Studio? Use the live browser profile? | C3 | Only on Mini/Studio; no live profile. |
+| Q-223 | Windows edition (Pro or Home)? Is WSL2 acceptable for vLLM/SGLang and benchmark containers? | C2, F3, B1 | Assume Pro; WSL2 acceptable. |
+| Q-224 | Is pooling Mac Studio + Mac Mini over Thunderbolt 5 (RDMA, enabled from Recovery) wanted for models larger than 256 GB? | W2 | Not now. |
+| Q-225 | May subscriptions (Claude Code, Codex) be used for automated benchmark runs, and what share of quota? | B2 | Only on a 30-task subset weekly. |
+| Q-226 | Publish benchmark tasks and results? | B2 | Publish aggregates only; never canary-marked or GPL task content. |
+| Q-227 | Is a Python tool (Harbor) acceptable as an external process next to the TypeScript monorepo? | B1 | Yes. |
+| Q-228 | Mobile: is a PWA enough at first; later Capacitor (code reuse) or Expo (background voice)? | U4, U5 | PWA first; Expo after a voice spike. |
+| Q-229 | Should embeddings (L3 index) ship in the first indexing slice or stay behind a flag until the A/B? | X1 | Behind a flag. |
+| Q-230 | Which machine should be the default always-on home for long lead sessions and phone access: Mac Mini or VPS? | F1, U4 | Mac Mini (private data stays home); VPS as relay. |
+| Q-231 | **Answered by D-122 (empty list).** Which actions, if any, should stop a run for confirmation (`requires_confirmation`, D-118)? Candidates: cloud launches, publishing packages, pushing to a protected remote branch, sending messages. | K4, F4 | Empty list; cloud spend is already capped by the budget ledger. |
+| Q-232 | **Answered by D-121 (both, REST).** Jira Cloud or Jira Data Center (Data Center has no official MCP server, so it needs a REST adapter)? | WG2 | Support both through REST; MCP only for Cloud. |
+| Q-233 | Where does the business backlog live: in GitHub/Jira (Guanxi mirrors execution state) or in Guanxi itself? | WG1, WG2 | In the external tracker when one is linked; in Guanxi otherwise. |
+| Q-234 | May agents create new work items without approval, or only propose them? | WG1 | Propose; the lead or the user accepts. |
+| Q-235 | Until the WL-series A/B decides: plan tool off for frontier models and on with periodic recitation for local small models? | K4, WG1 | Yes. |
+| Q-236 | Commit the Markdown projection of the board (`.guanxi/work/*.md`) to the project repository? | WG1 | No; export on demand. |
+| Q-237 | Read external trackers by polling (every 5–15 minutes) or add a relay plugin for webhooks? | WG2 | Poll every 10 minutes. |
+| Q-238 | Default WIP limits: how many parallel executors per project and how long a review queue? | WG1 | Derived from free worktree leases and governor permits; review queue of 3 per person. |

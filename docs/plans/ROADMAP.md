@@ -1,398 +1,576 @@
 # Roadmap
 
-**Статус:** accepted order, individual implementation designs pending
-
-**Проверено:** 2026-08-18
-**Правило:** следующая фаза начинается после exit gate предыдущей
-
-Roadmap — последовательность снижения рисков, а не обещание дат. Требования
-ссылаются на [PRODUCT](../PRODUCT.md), принятые решения — на
-[decision log](../decisions/2026-08-02-product-decisions.md) и
-[ADR](../decisions/README.md).
-
-## Phase 0 — Stabilize the truth
-
-**Цель:** первый Chat turn никогда не превращается в необъяснимый белый экран или
-пустой success.
-
-### Scope
-
-- исправить `useEffect`/`scrollIntoView` crash;
-- добавить root и feature Error Boundaries с diagnostics;
-- browser E2E `create → redirect → send → stream → done → reload`;
-- сохранять turn/run status, error, stop reason;
-- missing terminal Ollama chunk считать failure;
-- не оставлять пустой assistant как успешный ответ;
-- global exclusive inference mutex как временный safety bridge;
-- запретить compaction одновременно с active turn;
-- исправить повторную compaction sequence;
-- реальные network/catalog health states;
-- убрать несуществующий catalog endpoint;
-- показать `/api/ps` running models в Chat/Runtime status;
-- добавить Ollama connect/load/idle timeouts.
-
-### Requirements
-
-`RUN-002`, `RUN-006`, `RES-001`, `RES-002`, `MOD-001`, `BRD-001`.
-
-### Exit gate
-
-- deterministic browser test ловит старый white-screen defect;
-- каждый turn после reload: completed/failed/cancelled, но не ambiguous empty;
-- два threads не запускают два inference одновременно;
-- current running models видимы;
-- tests, web E2E, typecheck и build проходят.
-
-## Phase 1 — Durable Jobs и Resource Governor
-
-**Цель:** работа и память больше не принадлежат странице.
-
-### Scope
-
-- `jobs`, `job_events`, idempotency и terminal transactions;
-- POST create + GET replayable SSE + explicit cancel;
-- migration/bridge current threads/messages;
-- recovery non-terminal Jobs;
-- global queue, admission, leases и safe unload;
-- `/api/ps` reconciliation;
-- host telemetry interface и Apple Silicon implementation;
-- Runtime Bar;
-- navigation без cancellation;
-- queue/stop-and-switch dialog на dispatch;
-- prewarm low-priority lease после debounce;
-- context/model/digest-aware observation keys;
-- no artificial context/output UI caps.
-
-### Requirements
-
-`RUN-001..008`, `RES-001..008`.
-
-### Exit gate
-
-- Job продолжает работу после route change;
-- reload replay не дублирует output;
-- restart даёт interrupted/recovery state;
-- conflict queue предотвращает unsafe load;
-- lease не освобождается route;
-- resource decision имеет human explanation.
-
-## Phase 2 — Models, Capability Registry и import
-
-**Цель:** выбрать exact model variant под задачу и устройство без live scraping и
-ложных обещаний.
-
-### Scope
-
-- Model Reference/Variant/Installation/Runtime Instance;
-- descriptor/evidence schema;
-- installed inspect/load/unload/delete;
-- variant-first install и calibration;
-- controlled probes;
-- persisted provider cache, TTL/SWR;
-- local documented Ollama APIs;
-- `Add from Ollama` по model name/page URL;
-- HF search и exact GGUF/revision import;
-- license/gated/size/dry-run/fit preview;
-- local Ollama create/import, checksum и provenance;
-- faceted search/filter/compare;
-- bounded `/api/show` concurrency (реализовано в P1-M, `c86e537`);
-- Linux/NVIDIA telemetry prototype без verified claim;
-- feature-flag infrastructure как отдельный slice;
-- estimated parallel-admission вердикт из declared model size, KV-cache estimate,
-  observed `/api/ps` VRAM и host memory sample — всегда с source и confidence.
-
-### Requirements
-
-`MOD-001..010`, `RES-008`, `PLAT-001`.
-
-`RES-009`/`RES-010` measured parallelism и `PLAT-002` verified Linux tier
-перенесены за Phase 4 решением owner 2026-08-07 (Q-34a/Q-35): для них нужен
-measured evidence с реального железа, недоступный до тех пор.
-
-### Exit gate
-
-Пересобран 2026-08-07 так, чтобы каждый bullet был достижим mocked-тестами на
-Apple Silicon. Hardware-зависимые пункты вынесены явно, а не молча ослаблены.
-
-- installed и Marketplace не смешаны;
-- selected GGUF/quantization совпадает с fit/install;
-- unknown не отображается как supported;
-- network/provider offline не ломает local;
-- HF import фиксирует exact revision/checksum и license state для GGUF-only
-  scope; non-GGUF repository получает explicit unsupported state;
-- arbitrary URL не server-side fetch-ится;
-- Ollama human catalog не scrape-ится;
-- user override видим, экспортируем и не выдаётся за provider/runtime facts;
-- parallel-admission вердикт помечен `estimated` с источником и никогда не
-  публикуется как `measured` или как гарантия будущего admission.
-
-### Вынесено из exit gate Phase 2
-
-- measured parallel execution и pin/TTL policy (`RES-009`, `RES-010`) → Phase 9
-  либо отдельный post-Phase-4 slice;
-- Linux/NVIDIA verified tier (`PLAT-002`) → post-Phase-4; в Phase 2 остаётся
-  только prototype без verified claim;
-- любые live-Ollama/GPU тесты → post-Phase-4 (Q-35).
-
-## Phase 3 — Text, Projects, retention и localization
-
-**Цель:** полностью завершить text foundation до STT и закрепить рабочие
-сущности.
-
-### Scope
-
-- Project/Recipe/Artifact persistence;
-- current Workspace → filesystem binding migration;
-- Project name/icon/color;
-- large searchable icon library и accessible palette;
-- Quick Run и Chat retention control;
-- Keep/7 days/Session semantics с global 7-day default, optional Project
-  default, rolling user TTL и 24-hour Session recovery;
-- Maintenance Job, Trash/grace и reasoning TTL;
-- Chat Info: rename/delete/retention/reasoning/notifications;
-- Project Chat search по user/final-assistant text, active/archive/unarchive;
-- Recipe snapshots и routing;
-- attachment upload и Artifact store;
-- Markdown/thinking controls;
-- document batch foundation;
-- visible context compaction/checkpoint;
-- Project defaults, vocabulary и integration bindings;
-- target navigation shell и Warm Instrument Panel tokens;
-- English locale, curated Russian и Glossary;
-- in-app terminal Job notifications;
-- accessibility baseline.
-
-### Requirements
-
-`WORK-001..013`, `WB-001..003`, `I18N-001..003`, `NOT-001`, `AGT-001`.
-
-### Exit gate
-
-- Chat/Quick Run используют одну retention model без Save-type conversion;
-- cleanup не удаляет active work и может восстановить Trash;
-- reasoning удаляется отдельно от final answer;
-- stored history, context window и KV cache правдиво объяснены;
-- Project не требует filesystem root;
-- Recipe edit не меняет старый Job;
-- English/Russian/glossary проходят automated key/state/copy assertions;
-- Quick Run Session заканчивает successful Job либо explicit Finish;
-- Project search/archive и defaults не индексируют private content и не
-  переписывают existing entities;
-- mobile/keyboard/Error Boundary flows доступны.
-
-## Phase 4 — Background Service, CLI и TUI foundation
-
-**Цель:** приложение и Jobs переживают закрытие terminal, а все клиенты используют
-одни настройки.
-
-### Scope
-
-- single-instance Application Service;
-- advisory-lock + exact-instance identity и loopback control API;
-- `start --detach`, `status`, `stop`, `restart`, `open`;
-- shared settings/config client;
-- restart-sensitive settings preview;
-- scriptable models/jobs/chat/config commands;
-- `--json`, exit codes и shell completion;
-- no-args keyboard TUI;
-- opt-in login autostart на macOS;
-- opt-in user service adapter на Ubuntu/Fedora;
-- stale process/lock recovery;
-- bounded drain/interrupted/queue-preserving stop и controlled restart;
-- optional completion sound и channel deduplication;
-- UI Exit управляет только Alamo Service.
-
-### Requirements
-
-`CLI-001..007`, `NOT-002..004`, `PLAT-001`.
-Linux user-service adapter входит в Phase 4, но `PLAT-002` verified
-Linux/NVIDIA tier и live Ollama/GPU evidence остаются post-Phase-4 (Q-35).
-
-### Exit gate
-
-- terminal закрывается, service и active Job продолжают работать;
-- повторный start подключается к existing service;
-- Web/CLI/TUI видят одинаковые settings/Jobs;
-- controlled restart восстанавливает состояние;
-- login autostart opt-in обратим и диагностируем;
-- stop Alamo не останавливает Ollama;
-- sound не повторяется после reload и имеет visual equivalent.
-- no-args `alamo` подключает/запускает один profile; `alamo-ui` остаётся
-  compatibility alias;
-- stop никогда не убивает process по одному PID и не останавливает Ollama;
-- Agent CLI честно unsupported до Phase 5.
-
-## Phase 5 — First-party coding Agent MVP
-
-**Цель:** независимый Alamo coding agent без Claude Code/Codex dependency.
-
-### Scope
-
-- Agent API и `alamo agent`;
-- interactive Agent Chat/TUI и slash command discovery;
-- Project filesystem bindings;
-- read/search/list files;
-- previewed create/edit/delete;
-- command/test/build execution, включая repository-native tools;
-- docs/web research adapters;
-- Git inspection и разрешённые writes;
-- plan, steps, checkpoints и evidence;
-- Manual и Auto-within-policy modes;
-- allowed roots/commands/network;
-- Project MCP/Skills default-off bindings;
-- per-Run temporary integration toggle;
-- durable approvals/audit;
-- verification summary и final diff/artifacts;
-- bounded restart/resume.
-
-### Requirements
-
-`AGT-001..010`.
-
-### Exit gate
-
-- Agent завершает bounded repository task и показывает diff/tests/evidence;
-- no external branded executable required;
-- auto mode не выходит за policy;
-- manual approval переживает disconnect;
-- restart не повторяет mutating effect;
-- Skill/MCP enablement видимо и audit-able;
-- security-focused verification не находит обход allowed roots.
-
-## Phase 6 — Audio: STT, dictation и затем TTS
-
-**Цель:** проверить adapter/workbench architecture после стабильного text core.
-
-### Scope
-
-- browser record/upload с waveform/level animation;
-- audio Artifact streaming/storage;
-- transcription Task Adapter;
-- segment progress;
-- transcript copy/export;
-- language, timestamps/speaker только по evidence;
-- Project/Recipe vocabulary;
-- model-native raw/normalized mode;
-- cleanup/filler removal как отдельный LLM Job;
-- summary как отдельная pipeline stage;
-- Chat voice input;
-- Governor switching/measured parallel для speech + LLM;
-- TTS adapter/player/seek/speed/download только после provider proof;
-- browser capture/privacy/failure states;
-- design system hooks для будущего toggle/hold-to-talk hotkey.
-
-### Requirements
-
-`WB-004..006`, `WB-011`, `WORK-001`, `RES-005`, `RES-009`.
-
-### Exit gate
-
-- длинная запись не держится целиком в React memory;
-- cancellation имеет понятную partial-output policy;
-- model-native и LLM transformations визуально различаются;
-- vocabulary reusable;
-- speech и Chat models не загружаются небезопасно;
-- measured parallel отказывает при pressure;
-- unsupported STT/TTS fields не выдумываются UI.
-
-## Phase 7 — Vision, OCR и image artifacts
-
-**Цель:** расширить typed workbench без новой доменной taxonomy.
-
-### Scope
-
-- image/document input;
-- VLM caption/analysis;
-- OCR/extraction Artifact;
-- image generation adapter;
-- count/seed/size/progress/gallery/download;
-- batch processing;
-- generic parameter schema fallback;
-- artifact preview/cache/retention.
-
-Video намеренно отсутствует и вернётся только через новое product decision.
-
-### Requirements
-
-`WB-007..010`, кроме deferred `WB-009`.
-
-### Exit gate
-
-- operation выбирается descriptor, не именем модели;
-- media blobs не живут в SQLite messages;
-- output downloadable/reproducible;
-- unknown model получает safe fallback;
-- memory policy проверена на Apple и NVIDIA.
-
-## Phase 8 — Deliberate long-running Agent
-
-**Цель:** довести first-party agent до многочасовой качественной работы.
-
-### Scope
-
-- Q-27 watchdog policy;
-- durable task brief и hierarchical plan;
-- bounded step loop;
-- context reconstruction и compaction Artifacts;
-- repeated-failure/no-progress detection;
-- self-review и independent verification gates;
-- test/build/endpoint/data evidence adapters;
-- pause on unavailable dependency;
-- 4–6+ hour coding benchmark;
-- long research benchmark как secondary use case;
-- restart/resume и overnight notifications;
-- tool/output/disk audit.
-
-### Requirements
-
-`AGT-003..005`, `AGT-011`.
-
-### Exit gate
-
-- benchmark переживает restart;
-- no-progress loop гарантированно обнаруживается;
-- quality/evidence выше или надёжнее simple agent baseline;
-- invalid verification claim виден, а не считается success;
-- auto mode остаётся внутри immutable policy;
-- пользователь утром получает понятный result или actionable failure.
-
-## Phase 9 — Packaging, hotkey, rebrand и advanced deployment
-
-**Цель:** сделать систему переносимой и удобной на постоянной основе.
-
-### Scope
-
-- packaging/upgrade/uninstall/data backup;
-- central brand manifest и compatibility rename migration;
-- system-wide voice hotkey: toggle и hold-to-talk;
-- full NVIDIA telemetry/calibration;
-- multi-device measured scheduling;
-- remote security profile с auth/TLS/allowed roots;
-- multi-endpoint model routing;
-- multi-host scheduler только после capacity study;
-- visual polish, dark/dense mode и performance budgets.
-
-### Requirements
-
-`BRD-002`, `WB-012`, remaining platform/security work.
-
-### Exit gate
-
-- старая install/data path мигрирует без потери;
-- hotkey permissions/status управляются из UI;
-- remote profile проходит security review;
-- hardware status соответствует inference host;
-- deployment имеет rollback/backup;
-- второй host поддерживается только с measured scheduling evidence.
-
-## Cross-phase rules
-
-- Не начинать STT до exit gate text foundation.
-- Не начинать media до Job/Governor/Artifact foundation.
-- Не писать TUI вместо scriptable commands.
-- Coding Agent first-party; external branded agents не foundation.
-- Не запускать deliberate overnight loop до durable Agent MVP.
-- Не создавать Ollama catalog scraper.
-- Не вводить parallel execution как default.
-- Video не имеет фазы до нового решения.
-- Каждый phase добавляет deterministic failure tests и обновляет current docs.
+**Status:** proposed structure (the owner asked for a dependency graph; stage contents follow
+their ADRs) · **Updated:** 2026-10-19 (revised after the S0 review the same day)
+**Supersedes:** the legacy Phase 0–9 roadmap in
+[`docs/legacy/alamo/plans/ROADMAP.md`](../legacy/alamo/plans/ROADMAP.md) (Phases 0–3 are
+implemented in the legacy code and are ported, not repeated).
+
+The roadmap is a dependency graph, not a line. A stage may start when all its dependencies
+have passed their exit gates. Stages without a dependency between them can run in parallel
+sessions when they touch different packages. The last node, **Guanxi 1.0**, is reached when
+all five milestones are done. Requirement IDs are written `REQ-A1`; bare IDs such as `K1` or
+`F1` are stages.
+
+```mermaid
+flowchart LR
+  S0([S0 Re-foundation]) --> K1[K1 Kernel spike]
+  K1 --> K2[K2 Session log] & K3[K3 Model access] & U1[U1 Design system]
+  K2 & K3 --> K4[K4 Native agent]
+  K1 & U1 & K4 --> P1[P1 Plugin platform]
+  K4 --> K5[K5 External agents]
+  K2 --> R1[R1 Durable runs]
+  K4 & R1 --> R2[R2 Relay executor] --> R3[R3 Judge + ETA]
+  K2 & R1 --> F1[F1 Federation] --> F2[F2 Remote attempts] --> F3[F3 Resource leases] --> F4[F4 Cloud rental]
+  K3 --> F4
+  K4 --> B1[B1 Bench base] --> B2[B2 Private bench + gate]
+  B1 & R3 --> B3[B3 Relay benchmark]
+  K5 & R3 & F2 & B3 --> MS1{{MS1 Delegate to local}}
+```
+
+The full graph with every track is [`roadmap.mmd`](roadmap.mmd), the canonical render. An
+interactive view exists as a private page for the owner; it is a convenience, not a source.
+
+## How to read a stage
+
+Each stage lists: **Goal**, **Depends on**, **Scope**, **Reuse**, **Exit gate** (every bullet
+needs an assertion that fails when the property is violated, per [WORKFLOW](WORKFLOW.md)),
+**Before starting** (design obligations the S0 review attached to the stage), **Open
+questions** (from [OPEN_QUESTIONS](OPEN_QUESTIONS.md); a stage may proceed on the recommended
+default and must record that it did), and an estimate in full agent sessions.
+
+UI built in a stage before U1 is interim (legacy components) and is migrated by U1's gate.
+
+## Critical path to the north star (MS1)
+
+`S0 → K1 → K2 → {R1, K4 (needs K3)} → R2 → R3 → B3 → MS1`, with `F1 → F2`, `K5` and `B1`
+joining before MS1.
+
+Parallel lanes after K1: **(a)** K2 → R1 → F1; **(b)** K3; **(c)** U1. After K4: **(d)** B1;
+**(e)** K5; **(f)** P1 (also needs U1); **(g)** X1. After P1: C1. After K4 and U1: E1.
+
+---
+
+## S0 — Re-foundation (in review)
+
+- **Goal:** rename to Guanxi, relicense, research, rewrite canonical docs in English.
+- **Scope:** clean rename (D-101), Apache-2.0 + NOTICE + THIRD_PARTY_NOTICES (D-102), seven
+  research lanes, requirements, target architecture, ADR-0015–0032, this roadmap, legacy docs
+  archived, independent docs review and its fixes, `npm run lint:md`, `npm run check:licenses`.
+- **Exit gate:** no `alamo` identifier remains outside Markdown (code, config, package names,
+  runtime data paths, storage keys; the archive folder `docs/legacy/alamo/` is intentional);
+  typecheck, unit, component and build gates pass; the browser gate passes or its residual is
+  recorded by name; `npm run lint:md` reports 0 errors; `npm run check:licenses` reports 0
+  disallowed licenses; every independent-review finding is fixed or explicitly deferred to a
+  named stage.
+
+## Kernel and agent core
+
+### K1 — Kernel spike
+
+- **Goal:** prove Cordis 4 can carry Guanxi ([ADR-0015](../decisions/0015-refoundation-on-own-cordis-kernel.md)).
+- **Depends on:** S0.
+- **Scope:** `packages/kernel` facade (context, services, inject, effects, loader, HMR,
+  profiles); port the legacy Resource Governor and Ollama adapter into plugins; one web UI
+  slot; leak counters; pin upstream Cordis (DSH's hardened copy only as vendored source).
+- **Reuse:** Cordis 4 (MIT); DSH profile/patch loader and slot code (copy, MIT).
+- **Exit gate:** legacy governor and Ollama tests pass through the facade; 100 unload/reload
+  cycles leave 0 leaked listeners, timers, handles and slot entries, and heap growth after GC
+  ≤ 5%; a slot contribution appears, hot-updates and disappears on unload; an empty node boots
+  in ≤ 2 s and idles at ≤ 200 MB RSS on Apple Silicon; Cordis is rejected if ADR-0015's
+  rejection criteria hit.
+- **Estimate:** 2–3 sessions.
+
+### K2 — Session log and inspector
+
+- **Goal:** one append-only event log per session is the trace ([ADR-0023](../decisions/0023-session-event-log-and-tracing.md)).
+- **Depends on:** K1.
+- **Scope:** port the legacy job/event store behind a `SessionHandle`-style contract (single
+  writer, crash-safe append, replay); event schemas in `packages/contract`; egress scrubber at
+  event write; reasoning event class with retention, served only to local agents; interim
+  inspector (timeline, spans, FTS5 search, token meter); agent query tool.
+- **Reuse:** legacy durable job store; DSH session-handle contract and inspector ideas (copy).
+- **Exit gate:** crash at every append point never yields a torn or duplicated event; reload
+  replay reproduces UI state (count assertions); a planted secret never appears in events or
+  exports; an agent on a remote provider receives 0 reasoning events from the query tool.
+- **Open questions:** Q-201.
+- **Estimate:** 2–3 sessions.
+
+### K3 — Model access
+
+- **Goal:** one connection registry for subscriptions, keys, local runtimes and services
+  ([ADR-0017](../decisions/0017-model-access-connections-and-secrets.md)).
+- **Depends on:** K1.
+- **Scope:** connection kinds and capability facts with provenance; vault with keychain-wrapped
+  key; `secret://` refs and JIT injection; the egress scrubber at model-request construction
+  and artifact write; `pi-ai` integration with the Anthropic OAuth path disabled; balance
+  probes; cost ledger per connection; local runtime adapters on this node; search and STT
+  connections.
+- **Reuse:** `pi-ai`, models.dev data, legacy capability evidence and Ollama adapter.
+- **Exit gate:** a secret printed by a tool never reaches the next model request (end-to-end
+  trace test); balances without `observedAt` render `unknown`; recorded-fixture contract tests
+  per probe.
+- **Open questions:** Q-201, Q-205.
+- **Estimate:** 3–4 sessions.
+
+### K4 — Native agent, tools, access modes, projects
+
+- **Goal:** a usable light agent on any connection
+  ([ADR-0021](../decisions/0021-orchestration-roles-and-delegation.md),
+  [ADR-0027](../decisions/0027-accounts-sharing-and-access-modes.md)).
+- **Depends on:** K2, K3.
+- **Scope:** loop on `pi-agent-core`; tools (files, shell, search, fetch, attachments,
+  plan/queue, `note.add`); orientation block (≤300 tokens); Read-only and Full access enforced
+  by `sandbox-runtime`, with the egress proxy and the deny-write profile; projects with zero or
+  more roots; interim new-session screen; `guanxi agent exec --json` (REQ-M1); session-level
+  progress view (REQ-C9).
+- **Before starting:** define Read-only network as the GET/HEAD/OPTIONS egress proxy and Full
+  access with zero roots as scratch-only (done in ADR-0027; review M-7).
+- **Reuse:** `pi-agent-core`; Anthropic `sandbox-runtime`; legacy projects, attachments,
+  retention.
+- **Exit gate:** Read-only cannot write outside scratch and its `POST`/raw-socket attempts are
+  blocked; Full access acts only inside roots and the allowlist; zero-root projects write only
+  to scratch; `exec --json` emits a stable schema (snapshot test); the orientation block is
+  ≤300 tokens (asserted).
+- **Estimate:** 4–6 sessions.
+
+### K5 — External agents and role routing
+
+- **Goal:** subscriptions through official agents; roles bound to connections (REQ-A1, REQ-C1,
+  REQ-C2 manual part).
+- **Depends on:** K4.
+- **Scope:** ACP client adapters (Claude Code with the user's binary, Copilot, Gemini CLI,
+  OpenCode, Goose); Codex app-server adapter; "Sign in with ChatGPT" provider; per-adapter
+  capability declaration; role resolution (session → project); isolated vendor config dirs.
+- **Reuse:** ACP v1 SDK, Codex app-server protocol, Copilot SDK (MIT).
+- **Exit gate:** recorded-session tests per adapter version; role precedence golden tests; the
+  Claude Code `--bare`/subscription state is detected and reported.
+- **Open questions:** Q-202, Q-203, Q-204.
+- **Estimate:** 3–4 sessions.
+
+## Durable runs and relay
+
+### R1 — Durable runs, hibernation and wake (single node)
+
+- **Goal:** a lead can delegate, sleep at zero tokens and wake exactly once
+  ([ADR-0019](../decisions/0019-durable-runs-hibernation-and-wake.md)).
+- **Depends on:** K2.
+- **Scope:** additive migrations `run_attempts`, `leases`, `promises`, `timers`, `outbox`;
+  states incl. `waiting_children` and `wrapping_up` with the A2A mapping; restart
+  reconciliation table; signals vs promises; wake vs delivery; retained run-scoped resources;
+  cancel along the chain; cost ledger per run.
+- **Before starting:** reconciliation table, escalation-as-signal, deadline child policy,
+  retained resources (done in ADR-0019; review H-6, M-14, M-15, H-11).
+- **Exit gate:** property test over every crash point of hibernation **and** wake: one
+  resolution, one acknowledged wake; a deadline wakes the lead when the child never finishes;
+  a stale completion wakes nobody; an escalation then a completion produce two wakes and one
+  resolution; the lead's worktree survives an 8-hour hibernation; canceling a hibernating lead
+  cancels children exactly once.
+- **Open questions:** Q-205.
+- **Estimate:** 3–4 sessions.
+
+### R2 — Relay executor v1
+
+- **Goal:** a small-context model works through unlimited cycles without losing the task
+  ([ADR-0020](../decisions/0020-relay-executor-handoff-and-judge.md)).
+- **Depends on:** K4, R1.
+- **Scope:** cycle state machine; thresholds from reserves using the runtime's actual `W`;
+  truncation detection; run-scoped work ledger (ADR-0032 `run` mode), typed notes with
+  deterministic selection and `notes.search`, fresh-context narrative writer;
+  `guanxi.handoff/v1`; sealing by fenced upload to the home; probes with defined failure
+  transitions; observed-progress counter; normative caps; protected paths and clean-checkout
+  gates.
+- **Before starting:** sealing, observed progress, caps, protected paths (done in ADR-0020;
+  review H-8, M-12, M-13).
+- **Reuse:** handoff patterns from Codex, OpenCode, OpenHands, Cline (copy where licensed).
+- **Exit gate:** no request exceeds `H`; ledger↔handoff hash consistency 100%; a corrupted
+  handoff is caught by probes; a failed narrative falls back to `degraded` without losing
+  progress; a stale attempt's seal is rejected; a cycle that only adds notes does not count as
+  progress.
+- **Open questions:** Q-218.
+- **Estimate:** 4–6 sessions.
+
+### R3 — Judge cascade, ETA, delegation policy
+
+- **Goal:** watch long runs cheaply and escalate only when needed (REQ-C2 agent part, REQ-C3,
+  REQ-C6–C8).
+- **Depends on:** R2.
+- **Scope:** judge layers J0–J3 incl. the J1.5 lead-authored checker and `judge_unavailable`
+  handling; ETA; delegation policy with `p_success` and the escalation ladder; delegation
+  brief schema with normative caps.
+- **Exit gate:** on a replay corpus with injected loops, protected-path edits and premature
+  "done": recall ≥ 0.9 and precision ≥ 0.8; J3 wakes ≤ 1 per hour on average over a night run;
+  ETA P80 coverage between 0.7 and 0.9 over at least 20 runs.
+- **Open questions:** Q-219, Q-220, Q-221.
+- **Estimate:** 3–5 sessions.
+
+## Fleet
+
+### F1 — Federation base
+
+- **Goal:** the same Guanxi on several machines, sharing data without a hub
+  ([ADR-0018](../decisions/0018-federation-ownership-and-leases.md)).
+- **Depends on:** K2, R1.
+- **Scope:** node trust classes and enrollment by device authorization; private-network
+  guidance; telemetry with provenance; shared-config op-log (HLC with drift bound, remove-wins
+  grants, identity writes from admin nodes only); scoped replication of session and run logs;
+  versioned federation contract; command routing bound to state versions.
+- **Before starting:** replication scope, merge rules, federation contract (done in ADR-0018;
+  review CR-1, M-5, M-17).
+- **Exit gate:** replicas converge to an identical state hash after random op interleavings; a
+  revoke concurrent with a grant wins; a delayed stop never cancels work started after it; a
+  `cloud_ephemeral` or non-owner node receives 0 vault records, 0 session replicas and 0
+  reasoning events; unauthenticated nodes are refused; peers on an older major contract are
+  read-only.
+- **Open questions:** Q-206, Q-230.
+- **Estimate:** 4–6 sessions.
+
+### F2 — Remote attempts with fenced leases
+
+- **Goal:** run attempts and inference on another machine safely (REQ-C4, REQ-A4 remote).
+- **Depends on:** F1.
+- **Scope:** offers and accept/reject by the target governor; one fence per run execution
+  slot; ownership transitions per ADR-0018 §3; granter clock, grace period and epoch rules;
+  side-effect classes (attempt refs for git, namespaced resources, idempotency keys);
+  `strict`/`detached` modes; always-on homes and fenced handover; power assertions for
+  granters.
+- **Before starting:** effect classification, granter clock, keying (done in ADR-0018; review
+  CR-3, H-2, H-3, H-7, M-16).
+- **Exit gate:** deterministic simulation: ≤1 active lease per key, strictly increasing
+  tokens, no accepted stale mutation, one terminal per run; a holder paused past its TTL then
+  attempting a git push, a database write and a cloud launch lands **0 effects**; the home
+  sleeping mid-run ends in completion or exactly one wake; a home restored from backup bumps
+  its epoch and loses no peer events; the target governor is never bypassed.
+- **Open questions:** Q-207, Q-208.
+- **Estimate:** 4–6 sessions.
+
+### F3 — Resource leases, remote tests, fleet dashboard
+
+- **Goal:** parallel agents never collide; tests run where there is room (REQ-B4, REQ-B5,
+  REQ-H6).
+- **Depends on:** F2.
+- **Scope:** typed leases for port ranges, Docker namespaces/compose projects, databases,
+  worktrees, heavy slots; reaper by label; `exec.test` run kind with git mirrors and worktrees;
+  affinity memory; fleet dashboard.
+- **Exit gate:** 1,000 randomized allocations never give two worktrees overlapping ports,
+  compose names or databases; the reaper removes only its own labels.
+- **Open questions:** Q-223.
+- **Estimate:** 3–5 sessions.
+
+### F4 — Cloud rental with budget ledger
+
+- **Goal:** pay-per-minute machines only within approved money (REQ-B4).
+- **Depends on:** F3, K3.
+- **Scope:** provider adapters (RunPod REST v2, Vast, Modal; optional SkyPilot); reservation
+  before launch; monthly and per-launch caps; dead-man switch; `cloud_ephemeral` enrollment
+  with per-attempt secret grants only.
+- **Exit gate:** a launch without a reservation fails; the dead-man switch stops an instance
+  when its owner node disappears; the cloud node holds 0 vault records.
+- **Open questions:** Q-209.
+- **Estimate:** 2–3 sessions.
+
+## Bench
+
+### B1 — Bench base
+
+- **Goal:** measure before adding scaffolding ([ADR-0025](../decisions/0025-bench-stage-and-ab-gate.md)).
+- **Depends on:** K4.
+- **Scope:** Harbor as a managed external run; mini-swe-agent control arm; Guanxi via ACP or
+  `exec --json`; 50 fresh SWE-rebench tasks + 30 Verified tasks as regression; stats module
+  (paired bootstrap, McNemar, pass^k, non-inferiority at −5 points, superiority, Holm); HTML
+  report; noise floor (one arm × 5 seeds); budget caps.
+- **Before starting:** margin matched to sample size and budget matched to cadence (done in
+  ADR-0025; review M-11).
+- **Exit gate:** stats module matches Inspect AI reducers on a fixture; a planted 10-point
+  regression is detected; infra errors are reported separately; spend stays within the cap.
+- **Open questions:** Q-210, Q-211, Q-223, Q-227.
+- **Estimate:** 2–3 sessions.
+
+### B2 — Private bench and gate
+
+- **Goal:** gate harness changes on the owner's own work (REQ-M2, REQ-M5).
+- **Depends on:** B1, U1.
+- **Scope:** task factory (PR mining, RepoLaunch/SWE-smith builds, validation), splits
+  (dev/val/holdout/regression/canary), feature and epic tasks, graders (tests as gate; diff and
+  plan-level judges as guardrails, D-119), owner calibration queue, Bench section in the UI,
+  gate API for evolution, orientation series O0–O4 and TOOLS-1, the WL series (ADR-0032),
+  cadence scheduler.
+- **Exit gate:** each task passes oracle 3/3 and no-op fail; 100% of canary hacks are caught;
+  holdout access is audited; each experiment series ends with a recorded decision that cites
+  its CI; judge agreement with owner labels (κ) is reported.
+- **Open questions:** Q-210, Q-212, Q-213, Q-225, Q-226.
+- **Estimate:** 4–6 sessions.
+
+### B3 — Relay benchmark
+
+- **Goal:** prove the relay does not degrade (REQ-M4).
+- **Depends on:** B1, R3.
+- **Scope:** about 20 tasks requiring ≥5 cycles at `W = 32k`; arms: ledger relay, naive
+  summary compaction, observation masking, single large window; effective-length calibration
+  `E` per model×quant.
+- **Exit gate:** the lower bound of the 95% CI of the per-cycle slope of item success is
+  ≥ −1 point per cycle; relay item success ≥ naive compaction with a 3-point non-inferiority
+  margin; probe accuracy ≥ 95%; zero guarded dead-end repeats; zero truncation events.
+- **Estimate:** 3–4 sessions.
+
+## UX and clients
+
+### U1 — Design system and shell UI
+
+- **Goal:** one visual language for core and plugins (REQ-F2, REQ-F3, REQ-D2).
+- **Depends on:** K1.
+- **Scope:** DTCG tokens → Style Dictionary → CSS variables, Tailwind theme, MCP Apps
+  variables; shadcn/ui on Base UI; Lucide icons; assistant-ui; Streamdown; new-session screen;
+  sidebar list slot; English source strings with curated Russian; English glossary; migration
+  of interim UI from earlier stages.
+- **Exit gate:** lint forbids literal colours across the whole web package (interim UI
+  included); visual snapshots for light/dark; keyboard and screen-reader checks on the
+  new-session flow pass with 0 critical findings; reduced-motion respected.
+- **Estimate:** 3–5 sessions.
+
+### U2 — macOS desktop
+
+- **Depends on:** U1, K4.
+- **Scope:** Electron thin shell, service handshake, sandboxed renderer, DMG with
+  notarization, auto-update.
+- **Exit gate:** closing the window during a run does not stop the run; the renderer has no
+  Node access (test).
+- **Estimate:** 2–4 sessions.
+
+### U3 — Accounts and remote security profile
+
+- **Depends on:** K3, U1.
+- **Scope:** Better Auth (minimal plugins), grants, private-by-default ownership, sharing
+  (viewer/editor), per-account connections, vault and cost ledger, remote bind only with
+  accounts, TLS and allowed roots.
+- **Exit gate:** authorization matrix test over all roles × actions; remote bind refuses to
+  start without TLS, accounts and allowed roots.
+- **Open questions:** Q-214, Q-215.
+- **Estimate:** 3–5 sessions.
+
+### U4 — PWA remote client
+
+- **Depends on:** U3, F1.
+- **Scope:** live session and sub-agent view, prompt, stop, queue, voice upload, Web Push
+  (VAPID), offline read cache and outbox.
+- **Exit gate:** SSE resume by offset never duplicates events (count assertion); push arrives
+  on run completion on iOS and Android test devices.
+- **Open questions:** Q-228, Q-230.
+- **Estimate:** 3–4 sessions.
+
+### U5 — Native mobile
+
+- **Depends on:** U4, V1.
+- **Scope:** spike Capacitor vs Expo on locked-screen audio capture; then iOS and Android apps,
+  push relay or ntfy, voice mode.
+- **Exit gate:** a 5-minute dictation with the screen locked arrives complete on both
+  platforms; a content-free push wakes the app on run completion; the app's dependency tree
+  passes the license gate with 0 GPL/AGPL packages.
+- **Open questions:** Q-216, Q-228.
+- **Estimate:** 4–8 sessions.
+
+### U6 — Linux and Windows packaging
+
+- **Depends on:** U2.
+- **Scope:** AppImage, rpm (Fedora), Flatpak, NSIS; CI matrix; headless node package.
+- **Exit gate:** install, start, run a chat and uninstall on Fedora and Windows 11 in CI or a
+  recorded manual check.
+- **Estimate:** 2–4 sessions.
+
+## Plugins
+
+### P1 — Plugin platform
+
+- **Depends on:** K1, U1, K4 (the OS sandbox for MCP servers).
+- **Scope:** manifest, plugin manager with rollback and engine checks (adapted from DSH), T1
+  installs, safe mode, sandboxed MCP client (default off), Agent Skills with progressive
+  disclosure, AGENTS.md loading with a size budget
+  ([ADR-0022](../decisions/0022-plugin-trust-tiers-ui-slots-and-design-tokens.md) §§9–10).
+- **Exit gate:** a failed install rolls back manifest and lockfile; safe mode boots with all
+  T1/T2 disabled; contributing to an undeclared slot fails at load; an MCP server cannot read
+  outside its roots or reach a host outside its allowlist; skill bodies are absent from the
+  context until invoked (token count).
+- **Estimate:** 3–4 sessions.
+
+### P2 — Untrusted plugins
+
+- **Depends on:** P1.
+- **Scope:** agent-written and unreviewed T2 plugins out of process, capability broker, MCP
+  Apps host with theme variables, style/lint/a11y plugin gate (REQ-F5).
+- **Exit gate:** sandbox escape tests (fs, network, secrets) fail closed; a theme change
+  recolours T2 UI without plugin changes.
+- **Estimate:** 3–5 sessions.
+
+## Work
+
+### WG1 — Project work ledger and board
+
+- **Goal:** one evidence-driven work graph per project, visible as a board (REQ-C9, REQ-C10;
+  [ADR-0032](../decisions/0032-work-ledger-board-and-tracker-sync.md)).
+- **Depends on:** R2, U1.
+- **Scope:** `packages/work` (plan revisions, items, dependencies, evidence, derived status)
+  in `project` mode; activation rules; ≤300-token strip; `work.query`; board view; optional
+  Markdown export; WIP limits from capacity.
+- **Exit gate:** an agent's "done" without passing acceptance leaves the item open; the strip
+  never exceeds its budget; `project` mode is not the default until the WL series shows a gain.
+- **Open questions:** Q-233, Q-234, Q-235, Q-236, Q-238.
+- **Estimate:** 2–4 sessions.
+
+### WG2 — Tracker sync: GitHub Issues and Jira
+
+- **Depends on:** WG1, P1.
+- **Scope:** sync plugins (D-115): link issues to items, write status outward at transitions,
+  read by polling, honour rate limits; no tracker tools in agent context by default.
+- **Exit gate:** recorded-fixture tests: business fields never overwritten, one status comment
+  per transition, rate-limit backoff honoured.
+- **Open questions:** Q-232, Q-233, Q-237.
+- **Estimate:** 2–3 sessions.
+
+## Models workbench
+
+### W1 — Catalog and fit
+
+- **Depends on:** K3, F1, U1.
+- **Scope:** port legacy catalog and capability evidence; Hugging Face, Ollama (unofficial
+  label), models.dev; fit ladder FIT0–FIT4; model installs as node-owned runs with resumable
+  downloads (Q-207 default); Models section UI
+  ([ADR-0031](../decisions/0031-compute-fabric-node-agent-and-runtimes.md)).
+- **Exit gate:** only FIT3/FIT4 may display "fits"; every fact shows source, time and
+  confidence; an interrupted download resumes.
+- **Open questions:** Q-207.
+- **Estimate:** 3–5 sessions.
+
+### W2 — Media runtimes and adaptive composer
+
+- **Depends on:** W1, U1.
+- **Scope:** adapters for sd-server, ComfyUI (process), whisper.cpp, TTS; typed media
+  artifacts; per-model capability manifests; composer adapts to input modalities; every model
+  parameter exposed with presets (ADR-0031 §9); model composition tools.
+- **Exit gate:** an image-only model hides text input; no parameter is capped below the
+  adapter's declared limit (audit test like legacy P1-M).
+- **Open questions:** Q-224.
+- **Estimate:** 4–6 sessions.
+
+### W3 — Media UX and batch jobs
+
+- **Depends on:** W2, R1.
+- **Scope:** previews, image editor (Filerobot + Konva), batch runs in `detached` mode,
+  progress and ETA.
+- **Exit gate:** a batch of N files produces exactly N outputs after an interruption and resume.
+- **Estimate:** 3–4 sessions.
+
+## Voice
+
+### V1 — Dictation and glossary
+
+- **Depends on:** K3, U1.
+- **Scope:** STT adapters with biasing capability evidence; per-project glossary;
+  transliteration-aware post-ASR replacement; voice-origin markers; `voice.flag_term`
+  ([ADR-0028](../decisions/0028-voice-and-glossary.md)).
+- **Exit gate:** golden transliteration tests; on the eval set, term F1 rises by ≥ 10 points
+  while U-WER rises by ≤ 1 point.
+- **Open questions:** Q-217.
+- **Estimate:** 3–4 sessions.
+
+### V2 — Glossary learning
+
+- **Depends on:** V1, E2.
+- **Scope:** three candidate sources, RC0 pre-apply gate, auto-apply with revert, review
+  queue, B-WER/U-WER/term-F1 tracking.
+- **Exit gate:** a candidate that lowers term F1 on the eval set is not applied; an applied
+  entry reverts in one action.
+- **Estimate:** 2–3 sessions.
+
+## Self-evolution
+
+### E1 — Audit v1 (read-only)
+
+- **Depends on:** K2, K4, U1.
+- **Scope:** trajectory normalization, redaction (no reasoning in remote views), deterministic
+  detectors, sampled local facets with event evidence, clustering, Audit Report UI, friction
+  per 100 sessions ([ADR-0024](../decisions/0024-self-evolution-loop.md)).
+- **Exit gate:** seeded friction corpus recall ≥ 0.8 and precision ≥ 0.7; no secret and no
+  remote-bound reasoning in any auditor input.
+- **Open questions:** Q-201.
+- **Estimate:** 3–4 sessions.
+
+### E2 — RC0/RC1 changes through the gate
+
+- **Depends on:** E1, B2.
+- **Scope:** ChangeSets for glossary, project memory, AGENTS.md, skills and docs; per-class
+  pre-apply gates; provenance; revert.
+- **Exit gate:** a planted test-editing ChangeSet is rejected; an RC0 entry failing its eval is
+  not applied; accepted RC1 changes stay within the instruction token budget.
+- **Open questions:** Q-221.
+- **Estimate:** 3–4 sessions.
+
+### E3 — RC2 canary
+
+- **Depends on:** E2.
+- **Scope:** per-run harness version registry; concurrent canary; auto-rollback triggers.
+- **Exit gate:** an injected regression rolls back automatically within one canary window.
+- **Estimate:** 2–3 sessions.
+
+### E4 — RC3 sandboxed plugins and idle restart
+
+- **Depends on:** E3, P2, U2.
+- **Scope:** agent-written T2 plugin through the full gate; A/B version slots; idle restart
+  with drain and health check; expand/contract migrations.
+- **Exit gate:** a failing post-boot check falls back to the previous slot; restart never
+  happens with a running inference; in-process code is never changed by the loop.
+- **Estimate:** 3–5 sessions.
+
+### E5 — RC4 pull requests
+
+- **Depends on:** E2.
+- **Scope:** fork/branch/PR with provenance and redacted evidence only, for upstream and for
+  any in-process code.
+- **Exit gate:** every generated PR carries provenance trailers; a planted unredacted excerpt
+  blocks PR creation.
+- **Estimate:** 1–2 sessions.
+
+## Computer use
+
+- **C1 Browser tier** (depends on K4, P1): Playwright/Chrome DevTools MCP headless and
+  isolated; browser-profile leases. Exit: no visible window; open question Q-203; 2–3 sessions.
+- **C2 VM tier** (depends on C1, F3): Lume, Docker + Xvfb + noVNC, Windows Sandbox; VM-slot
+  leases. Exit: two agents never share a VM slot; open question Q-223; 3–4 sessions.
+- **C3 Accessibility tier** (depends on C2): Cua Driver background actions with an overlay
+  cursor; input-seat lease for tier 4. Exit: the system cursor never moves in tier 3; injected
+  page instructions cause no out-of-scope action; open question Q-222; 3–5 sessions.
+  ([ADR-0029](../decisions/0029-computer-use-tiers.md))
+
+## Indexing
+
+- **X1 Repo map + FTS** (depends on K4): tree-sitter map, FTS5 trigram, content-hash keys,
+  LSP. Exit: index fresh after branch switch across worktrees; open question Q-229; 2–3
+  sessions.
+- **X2 Embeddings after A/B** (depends on X1, B2): enable IX3 only if the localisation A/B
+  wins; 2–3 sessions. ([ADR-0030](../decisions/0030-project-knowledge-indexing.md))
+
+## Milestones
+
+| Milestone | Requires | Exit gate |
+| --- | --- | --- |
+| **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; the run lasts ≥ 6 hours; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Open question Q-202. |
+| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, K5, WG1, WG2 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
+| **MS3 Fleet and media** | F4, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
+| **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |
+| **MS5 Everywhere** | U5, U6, C3, P2 | Native phone apps, Linux and Windows desktops, the full computer-use ladder and untrusted plugins all pass their stage gates. |
+| **Guanxi 1.0** | MS1–MS5 | The vision in [VISION](../vision/VISION.md). |
+
+## Effort
+
+Sum of stage estimates: 112–172 full agent sessions including independent reviews; the
+ancestors of MS1 sum to 37–54. This is a complexity range, not a schedule.
+
+## Cross-stage rules
+
+- Every stage updates [PHASE_STATUS](PHASE_STATUS.md) and rewrites
+  [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md).
+- After B1 exists, every change to prompts, tools, routing or compaction carries a bench
+  result per ADR-0025 (simplifications: non-inferiority; additions: superiority or
+  non-inferiority with a ≥15% cost or time win).
+- Migrations are additive; schema changes follow expand/contract once E4 slots exist.
+- No stage claims a property in docs without an assertion that fails when it is violated.
+- Reused code is attributed in the same commit (ADR-0016).

@@ -1,138 +1,77 @@
-# Handoff: Phase 3 / P3-Q terminal Job notifications
+# Next agent prompt — K1 Kernel spike
 
-**Статус:** ready for implementation
-**Проверено:** 2026-08-18
-**Назначение:** закрыть bounded visual subset NOT-001: каждый новый canonical
-terminal Job создаёт durable content-free in-app notification, Runtime Bar
-показывает badge/panel и ведёт к безопасной Job/Chat projection. Sound, browser
-permission и policy inheritance остаются следующей фазе.
+**Status:** ready once S0 is committed · **Updated:** 2026-10-19 (after the S0 review)
 
-## Сначала прочитать
+**Precondition:** S0 is the current stage until its docs, review fixes and gates are
+committed (see [PHASE_STATUS](PHASE_STATUS.md)). If `git log` does not contain the S0
+commits, finish S0 first: commit it, then run this prompt.
 
-1. `AGENTS.md`, `docs/NAVIGATION.md`, `docs/plans/WORKFLOW.md`.
-2. `docs/PRODUCT.md` (NOT-001..004), `docs/DOMAIN_MODEL.md`, `docs/UX_IA.md`.
-3. `docs/DEVELOPMENT.md`, `docs/TESTING.md`, HLD/LLD,
-   `docs/architecture/RUNTIME_LIFECYCLE.md` и Job-related ADR.
-4. `docs/plans/PHASE_STATUS.md`, `docs/plans/ROADMAP.md`,
-   `docs/plans/OPEN_QUESTIONS.md`, accepted D-021 и D-023/D-034,
-   `docs/decisions/0014-notification-persistence-and-delivery.md`.
-5. Current Job contract/store/service, Chat terminal/recovery transactions,
-   Runtime Bar provider/polling и P3-P locale/error boundaries.
+Copy the block below into a new agent session started in the repository root.
 
-Используй `sde-agent:implementation-planning`, `sde-agent:sde-agent` и
-`sde-agent:implementation-evidence`; для Web также
-`frontend-agent:frontend-agent` и `frontend-agent:frontend-verification`.
-После candidate обязателен отдельный read-only reviewer; findings исправляются
-отдельным commit.
+```text
+You are implementing stage K1 (Kernel spike) of Guanxi.
 
-## Current state и границы
+First check that the S0 re-foundation is committed (docs/decisions/ADR-0032 and
+docs/plans/roadmap.mmd exist in git history). If not, stop and report.
 
-- SQLite schema version 28; migrations только append-only. P3-Q вероятно
-  использует migration 29, но номер сначала сверь с current HEAD.
-- Canonical Job и ordered events уже durable. Chat owner атомарно terminalize-ит
-  Message/Job/event; startup recovery сходится в terminal outcomes до listen.
-  Notification entity/store/routes пока отсутствуют.
-- P3-P независимо подтверждён на `789eaeb`: English/Russian locale, dynamic
-  localized errors, Settings Language, Glossary и copy inventory являются
-  current boundary. Новый user-facing copy проходит только через locale keys.
-- Full P3-P baseline: core 669/669, Web 244/244, mocked Chromium 40/40; это
-  regression envelope, не live Ollama/browser notification validation.
-- D-021 принимает in-app notification и optional sound, но P3-Q реализует только
-  NOT-001 visual state. NOT-002..004, browser permission и sound dedup входят в
-  Phase 4 и не должны быть частично обещаны здесь.
-- Q-37 закрыт: target Quick Run Session заканчивается successful Job либо
-  explicit Finish. Это не блокирует P3-Q, потому что current Quick Run metadata
-  ещё не создаёт Jobs и не подключается к execution.
+Read first, in order:
+1. AGENTS.md
+2. docs/NAVIGATION.md
+3. docs/plans/WORKFLOW.md (mandatory protocol)
+4. docs/decisions/0015-refoundation-on-own-cordis-kernel.md
+5. docs/decisions/0022-plugin-trust-tiers-ui-slots-and-design-tokens.md (manifest and slots only)
+6. docs/architecture/TARGET_ARCHITECTURE.md §§3, 11, 12
+7. docs/plans/ROADMAP.md, section K1
+8. docs/research/2026-10-19-landscape/02-plugins-ui-sync.md §1 (Cordis, DSH) — Russian
 
-## Bounded outcome P3-Q
+Goal: prove that Cordis 4 can carry Guanxi, behind a thin facade, using real legacy code.
 
-- Добавь strict versioned public Notification projection и additive SQLite
-  storage. Минимальный row: stable notification ID, exact Job ID, terminal Job
-  state/outcome, terminal-time effective policy, created/read timestamps и safe
-  navigation target. P3-Q сохраняет accepted global default
-  `when_background`; settings/Chat inheritance остаются Phase 4 и не меняют
-  старые rows задним числом. Prompt, result, reasoning, private error/body,
-  filesystem path и secret не хранятся.
-- Один canonical переход Job в `completed | failed | cancelled | interrupted`
-  создаёт ровно одну notification. Повторная terminalization, cancel retry,
-  subscriber reconnect, reload и startup recovery не создают duplicate;
-  уникальность должна иметь DB-level owner, а не только process-local guard.
-- Notification и terminal Job truth не могут расходиться. Предпочти общую
-  transaction boundary/central terminalization hook; если текущие terminal paths
-  различаются, инвентаризируй и докажи completed/failed/cancelled/interrupted,
-  recovery и rollback. Failure notification insert не должен оставлять ложный
-  terminal state, и наоборот.
-- Migration не выдумывает историю: accepted policy D-023 запрещает backfill для
-  existing terminal Jobs до feature cutover. Это должно быть явно
-  документировано и заassertено на v28→v29.
-- Добавь bounded newest-first list с explicit unread state/count и strict
-  idempotent mark-read command. Cursor/order/tie-break должны быть deterministic;
-  cross-Job/cross-row mutation и arbitrary fields fail-closed.
-- Runtime Bar показывает exact unread badge и keyboard-reachable panel с
-  terminal outcome/time и безопасным `Open`. Link ведёт к существующей Job/Chat
-  projection только при доказанной association; generic Job без UI route не
-  получает invented Chat link.
-- Foreground/open Job и future `off` policy тоже создают durable row: P3-Q не
-  вводит background detection/policy, но storage нельзя связать с delivery.
-  Panel различает loading/empty/error/retry, stale refresh и
-  mark-read failure; notification не исчезает оптимистично при failed mutation.
-- Locale switch/reload сохраняют одну и ту же durable row, меняя только Web-owned
-  localized presentation. Не сохраняй уже локализованный outcome text в SQLite.
-- Сохрани persistent Runtime Bar semantics, focus, 390 px, 200%, forced colors,
-  reduced motion и отсутствие horizontal overflow. Listing/read не запускают
-  Ollama, Governor, model, tool, filesystem, workspace или external network.
+Scope:
+- Create packages/kernel (@guanxi/kernel): re-export Context, Service, inject, effect,
+  events and the loader from Cordis 4 behind Guanxi names; add profile loading (ordered patch
+  layers) and a minimal manifest reader (`guanxi` field in package.json: id, engines.guanxi,
+  provides, requires, uses, contributes, trust).
+- Pin an exact upstream Cordis 4 version (`cordis@4.0.0-rc.*`). DSH's hardened Cordis may
+  be used only as vendored, attributed source (D-108), never as the `@deepseek-ai/cordis`
+  npm dependency; read DSH's change log for known lifecycle fixes. Record the choice.
+- Port the legacy Resource Governor (packages/server/src/runtime/resource-governor.ts,
+  tests: packages/server/test/resource-governor.test.ts) and the Ollama adapter
+  (packages/server/src/ollama/, tests: packages/server/test/ollama-*.test.ts) into kernel plugins WITHOUT changing their behaviour; their existing tests
+  must pass through the facade (adapt only wiring).
+- Add one UI slot in packages/web contributed by a plugin (list slot for the sidebar is fine),
+  hot-updated by HMR and removed on unload.
+- Add leak counters (listeners, timers, open handles, slot entries) and a test that runs 100
+  unload/reload cycles under synthetic load.
+- Measure empty-node boot time and RSS; record the baseline.
 
-## Non-goals
+Reuse: Cordis (MIT). Copy DSH loader/slot code only with attribution in THIRD_PARTY_NOTICES.md
+(repository + commit + license + local path) in the same commit.
 
-- sound, Web Notifications API, permission prompts, background-tab detection;
-- Off / When background / Always и global/per-Chat policy inheritance;
-- OS notification center, push, email, analytics или remote delivery;
-- notification payload с prompt/result/reasoning/private error;
-- Quick Run/Recipe execution либо implementation принятого Q-37 lifecycle;
-- Phase 4 daemon/service, CLI/TUI notification client или multi-process owner;
-- Chat rename/search/archive, Project policy/vocabulary и Workbench.
+Non-goals: no new agent features, no UI redesign, no fleet work, no data migrations.
 
-## Обязательные assertions
+Exit gate (each needs an assertion that fails when violated):
+- legacy governor and Ollama adapter tests pass through the facade;
+- 100 reload cycles → 0 leaked listeners/timers/handles/slot entries, and heap growth after
+  forced GC ≤ 5% (count non-freeable ES module records and document them);
+- the slot contribution appears, hot-updates, and disappears on unload;
+- an empty node boots in ≤ 2 s and idles at ≤ 200 MB RSS on Apple Silicon (record values);
+- Cordis is rejected if ADR-0015's rejection criteria hit; record the decision (accept with
+  the version, or fall back to an own kernel with a superseding ADR).
 
-- strict contract отклоняет unknown/future/extra/malformed rows и unsafe target;
-- каждый P3-Q row сохраняет exact `when_background` effective policy; смена
-  будущих global/Chat settings не переписывает terminal-time snapshot;
-- migration 29: fresh/v28/reopen/retry/true late rollback, exact unchanged legacy
-  payload и ноль retroactive notifications для old terminal Jobs;
-- каждый canonical terminal outcome даёт exact one row; non-terminal states —
-  zero; duplicate terminal/cancel/recovery/reload/concurrent retry остаются one;
-- injected notification failure откатывает terminal transition целиком, а
-  failed Job transition не оставляет notification;
-- stable newest-first pagination/unread count/read timestamp, exact tie-break,
-  idempotent repeated mark-read и cross-row isolation;
-- public payload и exported diagnostics не содержат prompt, answer, reasoning,
-  raw error, path, endpoint, secret или arbitrary event metadata;
-- Web loading/empty/error/retry/unread/read/open states имеют direct EN/RU
-  assertions; same persisted row re-localizes после delayed bootstrap;
-- browser exact counts: одна terminal transition → один badge item; hard reload
-  не дублирует; mark-read lost response/retry остаётся idempotent; open ведёт к
-  exact safe target;
-- badge/panel keyboard/focus/live semantics, 390 px, 200%, forced colors,
-  reduced motion и exact no-overflow assertions;
-- exact zero provider/Ollama/Governor/model/tool/workspace/filesystem/network
-  effects и zero unexpected REST requests.
+Validation commands: npm run typecheck; npm test; npm run test:web:browser; npm run build;
+npm run lint:md; npm run check:licenses; plus the new kernel tests.
 
-Mutation-check минимум: unique Job constraint, terminal-state filter, atomic
-notification insert, unread predicate, stable ordering/tie-break, redaction,
-mark-read idempotency и browser exact-count assertion.
+Independent verification: sde-agent:implementation-reviewer on the exact diff,
+architecture-agent:adversarial-architect on the kernel boundary, and
+frontend-agent:accessibility-reviewer on the new web slot. Fix findings in separate commits.
 
-## Gates и handoff
-
-```bash
-npm run typecheck
-npm test
-npm run test:web:browser
-npm run build
-npx markdownlint-cli2 AGENTS.md README.md packages/cli/README.md "docs/**/*.md"
-git diff --check
+Finish by updating docs/plans/PHASE_STATUS.md (evidence as "N new / M envelope") and rewriting
+docs/plans/NEXT_AGENT_PROMPT.md for the next unfinished slice (K2, K3 or U1 — whichever the
+owner picks; default K2).
 ```
 
-После independent `READY` обнови current-state docs и `PHASE_STATUS.md` с
-new/regression envelope. Затем выбери следующий подтверждённый Phase 3 gap; не
-объявляй Phase 3 завершённой и не переходи к Phase 4 до полного exit review.
-Mocked Chromium не является production/user validation.
+## Notes for the owner
+
+- K2, K3 and U1 can start in parallel sessions once K1 passes.
+- If the spike fails, the fallback is an own kernel of about 1–2k lines with Cordis semantics
+  (ADR-0015 §Validation 5).
