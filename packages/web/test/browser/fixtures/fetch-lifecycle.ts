@@ -4,6 +4,7 @@ type FetchRead = {
   id: number
   path: string
   aborted: boolean
+  abortedAtNetworkStart: boolean | null
   state: 'pending' | 'fulfilled' | 'rejected'
 }
 
@@ -30,6 +31,7 @@ export async function installFetchLifecycle(page: Page, deferNetworkStart: boole
         id: reads.length + 1,
         path,
         aborted: signal?.aborted ?? false,
+        abortedAtNetworkStart: null,
         state: 'pending',
       }
       reads.push(read)
@@ -39,6 +41,7 @@ export async function installFetchLifecycle(page: Page, deferNetworkStart: boole
         // StrictMode cleanup can abort before the network stack sees the request.
         // A microtask forces that valid ordering without sleeps or fake responses.
         if (defer) await Promise.resolve()
+        read.abortedAtNetworkStart = signal?.aborted ?? false
         const response = await nativeFetch(input, init)
         read.state = 'fulfilled'
         return response
