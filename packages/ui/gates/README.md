@@ -40,6 +40,19 @@ entry cannot be replayed after its occurrences retire. Do not regenerate the lis
 DS1-c can remove entries as it migrates the legacy UI. This is the DS1-a fast ratchet;
 DS1-c separately owns ESLint bulk suppressions.
 
+## Merge protocol
+
+Merge DS1-a into `main` only with `git merge --no-ff`; never squash or rebase its commits.
+The ratchet audits the original correction-introduction edges, so a rewritten history followed
+by a merge of the original commits is rejected as duplicate correction introductions.
+Later lanes must branch from `main` after this merge. Do not merge the DS1-a tip into a stale
+branch that already contains pre-correction DS1-a commits: the tip has retired allowances and
+no longer matches the exact authorized correction snapshot, so that topology fails the audit.
+The integrator deleted the old trial branch `integrate/ds1-a`; do not recreate that topology.
+The optional merge-commit allowance bound is not implemented; this protocol is required.
+
+## Gate extensions
+
 Other lanes add `extensions/*.gate.mjs` or `extensions/*.gate.ts`, exporting a default gate
 or array of gates. TypeScript registrations require Node 26 native type stripping and must
 use erasable syntax with explicit ESM extensions; `.tsx` is not loaded. Catalog modules under

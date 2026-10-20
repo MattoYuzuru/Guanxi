@@ -241,3 +241,18 @@ remains; the authorized residuals below are integration inputs.
 - Next: integrator rechecks the lane hand-off, merges in lane order, regenerates the lockfile
   and folds evidence into the central status files. DS1-c consumes the corrected scanner and
   shrink-only ledger; DS1-b consumes the token/font outputs and registration contract.
+
+## Review 2 fixes
+
+Review source: `/Users/yuzuru/Projects/Guanxi-lanes/ds1-a-review/REVIEW-2.md`, baseline
+`a8651a7`; verdict: merge after small fixes. Findings are being fixed in separate commits.
+
+### Required merge protocol (N1)
+
+Merge DS1-a into `main` only with `git merge --no-ff`; never squash or rebase DS1-a commits.
+Later lanes must branch from `main` after that merge. Do not merge the lane tip into a stale
+branch already containing pre-correction DS1-a commits: the tip is no longer the hash-bound
+correction snapshot, and the audit rejects that topology. Rewritten and original correction
+histories merged together are also rejected as duplicate introductions. The integrator deleted
+the old trial branch `integrate/ds1-a`. The optional merge-commit bound is deliberately omitted;
+the documented protocol is the accepted N1 fix and stands in for its test.
