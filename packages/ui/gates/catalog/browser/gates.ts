@@ -201,6 +201,12 @@ export const g15Clipping: CatalogGate = {
   },
   seeded: [
     {
+      name: 'frame-clip',
+      description: 'The regime frame itself clips the story',
+      expect: /clipped text in g15--frame-clip \(ru\).*data-gx-regime/,
+      apply: ({ context }) => ({ ...context, stories: ['g15--frame-clip'], fixtures: true }),
+    },
+    {
       name: 'fixed-width-label',
       description: 'A label in a fixed-width box that hides overflow',
       expect: /clipped text in g15--fixed-width-label \(ru\).*gx-seeded-fixed-width/,
