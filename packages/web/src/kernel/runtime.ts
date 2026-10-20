@@ -49,8 +49,9 @@ function load(plugin: GuanxiPlugin<any>): Promise<PluginHandle | null> {
   return handle
 }
 
-/** Unload a plugin by id; its slot entries disappear. */
+/** Unload a plugin by id; its slot entries disappear. The shell owns the slot and stays. */
 export function unloadWebPlugin(id: string): Promise<void> {
+  if (id === shell.manifest.id) return Promise.reject(new Error('the web shell owns the sidebar slot and cannot be unloaded'))
   return serial(async () => {
     const handle = await loaded.get(id)
     loaded.delete(id)
@@ -88,7 +89,9 @@ if (import.meta.hot) {
     builtIns[plugin.manifest.id] = plugin
     void replaceWebPlugin(plugin)
   })
-  // Editing this module itself creates a new kernel; unload the old one.
+  // Editing this module itself creates a new kernel; unload the old one. The
+  // list then disappears and reappears once (dev only): hold() cannot span
+  // two kernels.
   import.meta.hot.dispose(() => {
     void webKernel.dispose()
   })

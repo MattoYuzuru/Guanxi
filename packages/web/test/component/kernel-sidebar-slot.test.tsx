@@ -86,6 +86,6 @@ describe('plugin sidebar slot', () => {
     render(<SidebarSlot />)
     const nav = screen.getByRole('navigation', { name: 'Quick links' })
     expect(within(nav).getByRole('link', { name: 'All Projects' })).toBeTruthy()
-    expect(within(nav).getByRole('list')).toBeTruthy()
+    expect(within(nav).getByRole('list').getAttribute('role')).toBe('list')
   })
 })

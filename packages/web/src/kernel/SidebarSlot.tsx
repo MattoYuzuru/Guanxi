@@ -4,7 +4,7 @@
  * contributor removes the list. If the list held keyboard focus when it went
  * away, focus moves to the next control after the slot instead of the page body.
  */
-import { useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { Link } from '../lib/router.tsx'
 import { translate } from '../lib/locale.ts'
 import { useLocale } from '../lib/locale-context.tsx'
@@ -16,10 +16,9 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabi
 
 export function SidebarSlot({ slots = webKernel.slots }: { slots?: SlotRegistry }) {
   useLocale()
-  const entries = useSyncExternalStore(
-    (listener) => slots.subscribe(listener),
-    () => slots.list<SidebarEntry>(SIDEBAR_SLOT),
-  ) as readonly ListSlotEntry<SidebarEntry>[]
+  const subscribe = useCallback((listener: () => void) => slots.subscribe(listener), [slots])
+  const snapshot = useCallback(() => slots.list<SidebarEntry>(SIDEBAR_SLOT), [slots])
+  const entries = useSyncExternalStore(subscribe, snapshot) as readonly ListSlotEntry<SidebarEntry>[]
   const wrapper = useRef<HTMLDivElement>(null)
   const focusWasInside = useRef(false)
   // Read during render, before React removes a focused link from the DOM.
