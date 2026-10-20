@@ -10,7 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
-| [2026-10-20 addendum](2026-10-20-owner-decisions-addendum.md) (D-141–D-182: answers to every open question Q-201–Q-244) | accepted |
+| [2026-10-20 addendum](2026-10-20-owner-decisions-addendum.md) (D-141–D-182: answers to every open question Q-201–Q-244; D-183: own kernel instead of Cordis) | accepted |
 | [2026-10-20](2026-10-20-owner-decisions.md) (D-123–D-140: quota alerts, notifications, logo, design system, layout, modes, agent browser) | accepted |
 | [2026-10-19 addendum](2026-10-19-owner-decisions-addendum.md) (D-114–D-122: work methodology, trackers, clarifications after the S0 review) | accepted |
 | [2026-10-19 re-foundation](2026-10-19-owner-decisions.md) (D-101–D-113) | accepted |
@@ -21,7 +21,7 @@ lists the evidence it rests on.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0015](0015-refoundation-on-own-cordis-kernel.md) | Re-found on an own thin kernel over Cordis 4 and pi-ai | accepted (K1 spike gate) |
+| [0015](0015-refoundation-on-own-cordis-kernel.md) | Re-found on an own thin kernel over Cordis 4 and pi-ai | accepted; Cordis part rejected by D-183 (own kernel, ADR-0037 in lane K1) |
 | [0016](0016-licensing-and-third-party-reuse.md) | Apache-2.0 licensing and third-party reuse | accepted; implemented (including `npm run check:licenses`) |
 | [0017](0017-model-access-connections-and-secrets.md) | Model access: connections, subscription agents, secrets | accepted policy, proposed design |
 | [0018](0018-federation-ownership-and-leases.md) | Multi-master federation with single-writer ownership and fenced leases | accepted direction, proposed design |

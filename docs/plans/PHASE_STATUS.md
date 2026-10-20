@@ -156,7 +156,7 @@ Residual risks:
 
 | Stage | Status | Notes |
 | --- | --- | --- |
-| K1 Kernel spike | ready (lane K1, Claude) | prompt in [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md) plus [lanes/K1](lanes/K1.md) |
+| K1 Kernel spike | in progress (lane K1, Claude) | Cordis facade met every budget, but the owner rejected Cordis (D-183) because upstream races stay unfixed; the lane is building the own kernel behind a `PluginContext` facade with the same exit gate |
 | DS1 Design foundations | ready (lanes DS1-a GPT, DS1-b Claude; DS1-c DeepSeek after K1 and DS1-a merge) | [lanes/](lanes/README.md) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2, K3 | not started | can start in parallel after K1; U1 after K1 and DS1 |
