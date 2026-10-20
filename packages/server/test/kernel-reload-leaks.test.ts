@@ -37,7 +37,7 @@ setFlagsFromString('--expose-gc')
 const gc = runInNewContext('gc') as () => void
 
 const CYCLES = 100
-/** Cycles run before the reference sample, so JIT tiering is not counted as growth. */
+/** Cycles run before the reference sample, to reduce initial JIT compilation effects. */
 const WARMUP_CYCLES = 50
 const HEAP_GROWTH_LIMIT = 0.05
 const SLOT = 'sidebar.items'
@@ -60,7 +60,8 @@ const CODE_SPACES = new Set(['code_space', 'code_large_object_space', 'trusted_s
  * growth proportional to the cycles since the last major GC.
  *
  * V8 keeps compiling hot functions for many cycles (code space grows as
- * functions tier up); the warm-up keeps that out of the measured window.
+ * functions tier up); the warm-up reduces that effect, and later compilation
+ * stays inside the total that the gate bounds.
  */
 async function forcedHeap(): Promise<HeapSample> {
   for (let round = 0; round < 6; round += 1) {
