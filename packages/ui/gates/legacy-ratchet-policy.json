@@ -1,42 +1,45 @@
 {
-  "initialCorrection": {
-    "authorized": "Owner, DS1-a chat, 2026-10-20",
-    "reason": "Six unchanged INPUT_CLASS lexical occurrences were missed by the first scanner; six false positives removed. No legacy source changed.",
-    "sourceRevision": "ee069367c5a18f85ebd511db981e652edf3e8663",
-    "sourcePath": "packages/web/src/components/ui.tsx",
-    "fromSHA256": "add42e20ec27bce93a3875c5102a28312f0a32323be83856e36ad644068068fc",
-    "toSHA256": "3d40852098f06aecd9947f85630f882296ce651a2667f85bfec1d49cc3f719f8",
-    "increases": [
-      {
-        "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--bg-inset)]",
-        "from": 3,
-        "to": 4
-      },
-      {
-        "key": "G5|packages/web/src/components/ui.tsx|border-[var(--border-strong)]",
-        "from": 1,
-        "to": 2
-      },
-      {
-        "key": "G5|packages/web/src/components/ui.tsx|focus:border-[var(--accent)]",
-        "from": 0,
-        "to": 1
-      },
-      {
-        "key": "G5|packages/web/src/components/ui.tsx|placeholder:text-[var(--fg-subtle)]",
-        "from": 0,
-        "to": 1
-      },
-      {
-        "key": "G5|packages/web/src/components/ui.tsx|rounded-md",
-        "from": 1,
-        "to": 2
-      },
-      {
-        "key": "G5|packages/web/src/components/ui.tsx|text-xs",
-        "from": 7,
-        "to": 8
-      }
-    ]
-  }
+  "corrections": [
+    {
+      "id": 1,
+      "authorized": "Owner, DS1-a chat, 2026-10-20",
+      "reason": "Six unchanged INPUT_CLASS lexical occurrences were missed by the first scanner; six false positives removed. No legacy source changed.",
+      "sourceRevision": "ee069367c5a18f85ebd511db981e652edf3e8663",
+      "sourcePath": "packages/web/src/components/ui.tsx",
+      "fromSHA256": "add42e20ec27bce93a3875c5102a28312f0a32323be83856e36ad644068068fc",
+      "toSHA256": "3d40852098f06aecd9947f85630f882296ce651a2667f85bfec1d49cc3f719f8",
+      "increases": [
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|bg-[var(--bg-inset)]",
+          "from": 3,
+          "to": 4
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|border-[var(--border-strong)]",
+          "from": 1,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|focus:border-[var(--accent)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|placeholder:text-[var(--fg-subtle)]",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|rounded-md",
+          "from": 1,
+          "to": 2
+        },
+        {
+          "key": "G5|packages/web/src/components/ui.tsx|text-xs",
+          "from": 7,
+          "to": 8
+        }
+      ]
+    }
+  ]
 }

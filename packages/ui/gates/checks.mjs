@@ -1,12 +1,11 @@
 import { resolve } from 'node:path'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import Color from 'colorjs.io'
 import { resolveTokens, permutations, resolvedFlat } from '../tokens/resolve.mjs'
 import { validateTokens } from '../tokens/validate.mjs'
 import { generate, cssName } from '../tokens/build.mjs'
 import { scanLiterals, counts } from './scan.mjs'
 import { variableFiles } from './context.mjs'
+import { auditRatchet } from './ratchet.mjs'
 
 const result = (errors, details = {}) => ({ ok: errors.length === 0, errors, ...details })
 const color = value => new Color('oklch', value.components, value.alpha ?? 1).to('srgb')
@@ -108,23 +107,7 @@ async function ratchet(ctx) {
   const findings = await scanLiterals(ctx)
   const allowances = await ctx.json(allowPath)
   const policy = await ctx.json('packages/ui/gates/legacy-ratchet-policy.json')
-  const errors = []
-  const git = args => execFileSync('git', args, { cwd: ctx.root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-  let previous
-  const hash = value => createHash('sha256').update(JSON.stringify(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))).digest('hex')
-  const monotonic = (before, after, where) => {
-    // The owner authorized exactly this initial scan correction in the DS1-a chat.
-    // Hashes bind both snapshots; subsequent allowances may only shrink.
-    if (hash(before) === policy.initialCorrection.fromSHA256 && hash(after) === policy.initialCorrection.toSHA256) return
-    for (const [key, count] of Object.entries(after)) if (count > (before[key] ?? 0)) errors.push(`Legacy allowance grew${where}: ${key}`)
-  }
-  // Follow the full committed history: a removed suppression cannot be reintroduced later.
-  for (const revision of git(['log', '--format=%H', '--reverse', '--', allowPath]).split('\n').filter(Boolean)) {
-    const version = JSON.parse(git(['show', `${revision}:${allowPath}`]))
-    if (previous) monotonic(previous, version, ` in ${revision}`)
-    previous = version
-  }
-  if (previous) monotonic(previous, allowances, '')
+  const errors = auditRatchet(ctx.root, allowances, policy)
   const actual = counts(findings)
   for (const [key, count] of Object.entries(allowances)) {
     if (!/^G[567]\|packages\/web\/src\//.test(key) || !Number.isInteger(count) || count < 1) errors.push(`Invalid legacy allowance: ${key}`)
