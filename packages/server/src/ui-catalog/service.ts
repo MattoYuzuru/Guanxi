@@ -6,7 +6,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type {
   UiCatalogReadOnlyReason,
   UiCatalogReviewCapability,
@@ -245,7 +245,8 @@ export class UiCatalogReviewService {
   }
 
   private writeRecord(file: string, record: ReviewRecord): void {
-    const temp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`
+    // A dot-prefixed .tmp name is junk to the source hash even if a crash leaves it behind.
+    const temp = join(dirname(file), `.${basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`)
     try {
       writeFileSync(temp, serialise(record), { flag: 'wx' })
       renameSync(temp, file)

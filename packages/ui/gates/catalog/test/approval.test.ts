@@ -124,3 +124,69 @@ describe('trusted key set', () => {
     })
   })
 })
+
+describe('component source hash', async () => {
+  const { appendFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { componentSourceHash } = await import('../../../catalog/approval/hash.ts')
+
+  function tree() {
+    const src = join(mkdtempSync(join(tmpdir(), 'guanxi-hash-')), 'src')
+    const write = (path: string, text: string) => {
+      mkdirSync(join(src, path, '..'), { recursive: true })
+      writeFileSync(join(src, path), text)
+    }
+    write('components/a/a.tsx', "import '../b/b.css'\nimport { x } from '../../lib/x.ts'\nimport { t } from '../../i18n/messages.ts'\nexport const A = x + t\n")
+    write('components/a/a.docs.md', '# A\n')
+    write('components/a/a.review.json', '{}\n')
+    write('components/b/b.css', '.b { color: var(--x); }\n')
+    write('lib/x.ts', 'export const x = 1\n')
+    write('i18n/messages.ts', "export const t = 'a'\n")
+    return { src, dir: join(src, 'components', 'a'), write, dispose: () => rmSync(join(src, '..'), { recursive: true, force: true }) }
+  }
+
+  it('ignores junk, symlinks, its own docs and review record, and the message catalog', () => {
+    const t = tree()
+    try {
+      const before = componentSourceHash(t.dir)
+      writeFileSync(join(t.dir, '.DS_Store'), 'finder')
+      writeFileSync(join(t.dir, 'a.tsx.orig'), 'merge leftover')
+      writeFileSync(join(t.dir, '.a.review.json.123.abcd.tmp'), '{}')
+      symlinkSync('/etc/hosts', join(t.dir, 'linked.tsx'))
+      appendFileSync(join(t.dir, 'a.docs.md'), 'more docs\n')
+      appendFileSync(join(t.dir, 'a.review.json'), '\n')
+      appendFileSync(join(t.src, 'i18n', 'messages.ts'), "export const u = 'b'\n")
+      assert.equal(componentSourceHash(t.dir), before)
+    } finally {
+      t.dispose()
+    }
+  })
+
+  it('changes when the component, a shared file it imports, or a nested docs file changes', () => {
+    const t = tree()
+    try {
+      const seen = new Set([componentSourceHash(t.dir)])
+      for (const path of ['components/b/b.css', 'lib/x.ts', 'components/a/a.tsx']) {
+        appendFileSync(join(t.src, path), '\n/* changed */\n')
+        seen.add(componentSourceHash(t.dir))
+      }
+      t.write('components/a/nested/extra.docs.md', 'nested docs are part of the component\n')
+      seen.add(componentSourceHash(t.dir))
+      assert.equal(seen.size, 5)
+    } finally {
+      t.dispose()
+    }
+  })
+
+  it('hashes CRLF and LF checkouts the same', () => {
+    const t = tree()
+    try {
+      const lf = componentSourceHash(t.dir)
+      t.write('components/a/a.tsx', "import '../b/b.css'\r\nimport { x } from '../../lib/x.ts'\r\nimport { t } from '../../i18n/messages.ts'\r\nexport const A = x + t\r\n")
+      assert.equal(componentSourceHash(t.dir), lf)
+    } finally {
+      t.dispose()
+    }
+  })
+})

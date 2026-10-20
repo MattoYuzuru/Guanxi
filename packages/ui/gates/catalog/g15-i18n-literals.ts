@@ -4,7 +4,7 @@
  * through `machine()`. The browser part (clipping in Russian and the +40% pseudo-locale) runs
  * in ./browser/g15-i18n-clipping.spec.ts.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import ts from 'typescript'
 import { overlay } from './lib/scratch.ts'
@@ -33,7 +33,9 @@ function walk(dir: string, out: string[], skip: (path: string) => boolean): void
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
     if (skip(full)) continue
-    if (statSync(full).isDirectory()) walk(full, out, skip)
+    const stat = lstatSync(full)
+    if (stat.isSymbolicLink()) continue
+    if (stat.isDirectory()) walk(full, out, skip)
     else if (name.endsWith('.tsx')) out.push(full)
   }
 }

@@ -2,7 +2,7 @@
  * Where product code uses @guanxi/ui (G11 and the manifest usage count). Product code is the
  * web app and plugins; the catalog feature folder is catalog-only and may use drafts.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import ts from 'typescript'
 
@@ -36,7 +36,9 @@ function walk(dir: string, out: string[]): void {
   for (const name of readdirSync(dir)) {
     if (name === 'node_modules' || name.startsWith('.')) continue
     const full = join(dir, name)
-    if (statSync(full).isDirectory()) walk(full, out)
+    const stat = lstatSync(full)
+    if (stat.isSymbolicLink()) continue
+    if (stat.isDirectory()) walk(full, out)
     else if (/\.(tsx?|jsx?|mts)$/.test(name) && !/\.(test|spec|stories)\./.test(name)) out.push(full)
   }
 }

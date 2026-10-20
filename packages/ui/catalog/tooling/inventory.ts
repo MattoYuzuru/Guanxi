@@ -2,7 +2,7 @@
  * Static inventory of @guanxi/ui for the manifest builder and the catalog gates (G10–G12,
  * G15). Node only; parses TypeScript with the compiler API and never imports component code.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import ts from 'typescript'
 import { parseDocs, type ComponentDocs } from '../docs.ts'
@@ -146,8 +146,10 @@ function listFiles(dir: string): string[] {
   const out: string[] = []
   for (const name of readdirSync(dir).sort()) {
     const full = join(dir, name)
-    if (statSync(full).isDirectory()) out.push(...listFiles(full))
-    else out.push(full)
+    const stat = lstatSync(full)
+    if (stat.isSymbolicLink()) continue
+    if (stat.isDirectory()) out.push(...listFiles(full))
+    else if (stat.isFile()) out.push(full)
   }
   return out
 }
@@ -196,7 +198,7 @@ export function readFolder(uiRoot: string, id: string): ComponentFolder {
 export function readInventory(uiRoot: string): UiInventory {
   const componentsDir = join(uiRoot, 'src', 'components')
   const ids = existsSync(componentsDir)
-    ? readdirSync(componentsDir).filter((name) => statSync(join(componentsDir, name)).isDirectory()).sort()
+    ? readdirSync(componentsDir).filter((name) => lstatSync(join(componentsDir, name)).isDirectory()).sort()
     : []
   const publicFolders: string[] = []
   const strayExports: string[] = []
