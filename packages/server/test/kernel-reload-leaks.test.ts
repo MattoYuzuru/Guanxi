@@ -2,13 +2,17 @@
  * K1 exit gate (ADR-0015 validation 2): 100 unload/reload cycles of the legacy
  * Resource Governor and Ollama adapter plugins under synthetic load leave zero
  * leaked listeners, timers, handles and slot entries, and heap growth after
- * forced GC stays ≤ 5% of the first cycle.
+ * forced GC stays ≤ 5% of the first measured cycle.
  *
  * Variant A reloads the same plugin code through profile reconciliation (the
- * node disables and re-enables the provider rows). Variant B replaces plugin code
- * by importing a fresh module record per cycle; those records cannot be freed by
- * Node, so they are counted and their cost reported instead of being held to the
- * 5% bound.
+ * node disables and re-enables the provider rows). It runs warm-up cycles first
+ * so V8 has compiled the hot code, then bounds the **total** heap (every V8
+ * space) over the next 100 cycles, and the object heap alongside it.
+ *
+ * Variant B replaces plugin code by importing a fresh module per cycle. Node
+ * never frees module records, so variant B is held to a coarse memory budget
+ * per reload instead of the 5% bound, and to collection of every replaced
+ * lifecycle object.
  */
 import assert from 'node:assert/strict'
 import { getHeapSpaceStatistics, setFlagsFromString } from 'node:v8'
@@ -24,7 +28,7 @@ import {
   type KernelCounters,
   type ProfileLayer,
 } from '@guanxi/kernel'
-import { bootNode, processResources, type NodeKernel, type ProcessResources } from '@guanxi/kernel/node'
+import { bootNode, processResources, retainedObjects, type NodeKernel, type ProcessResources } from '@guanxi/kernel/node'
 import { ollamaAdapterPlugin, type OllamaAdapter } from '../src/ollama/plugin.ts'
 import { resourceGovernorPlugin } from '../src/runtime/governor-plugin.ts'
 import type { AdmissionRequest, ResourceGovernor } from '../src/runtime/resource-governor.ts'
@@ -33,6 +37,8 @@ setFlagsFromString('--expose-gc')
 const gc = runInNewContext('gc') as () => void
 
 const CYCLES = 100
+/** Cycles run before the reference sample, so JIT tiering is not counted as growth. */
+const WARMUP_CYCLES = 50
 const HEAP_GROWTH_LIMIT = 0.05
 const SLOT = 'sidebar.items'
 
@@ -41,7 +47,7 @@ interface HeapSample {
   readonly total: number
   /** Compiled code and bytecode/feedback metadata (code and trusted spaces). */
   readonly code: number
-  /** `total - code`: the objects the program retains. The 5% gate applies here. */
+  /** `total - code`: the objects the program retains. */
   readonly objects: number
 }
 
@@ -54,8 +60,7 @@ const CODE_SPACES = new Set(['code_space', 'code_large_object_space', 'trusted_s
  * growth proportional to the cycles since the last major GC.
  *
  * V8 keeps compiling hot functions for many cycles (code space grows as
- * functions tier up), which is not retained program state. The gate therefore
- * bounds the object heap and reports the total next to it.
+ * functions tier up); the warm-up keeps that out of the measured window.
  */
 async function forcedHeap(): Promise<HeapSample> {
   for (let round = 0; round < 6; round += 1) {
@@ -237,7 +242,8 @@ describe('K1 reload cycles under load', () => {
       let firstHeap: HeapSample | undefined
       let lastHeap: HeapSample | undefined
       let reclaimed = 0
-      for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
+      const last = WARMUP_CYCLES + CYCLES
+      for (let cycle = 1; cycle <= last; cycle += 1) {
         const current = probe
         assert.equal(node.slots.list(SLOT).length, 1, `cycle ${cycle}: one load entry while loaded`)
         const loadedNow = census(node)
@@ -255,25 +261,31 @@ describe('K1 reload cycles under load', () => {
         const unloadedNow = census(node)
         if (unloaded) assert.deepEqual(unloadedNow, unloaded, `cycle ${cycle}: unloaded census drifted`)
         else unloaded = unloadedNow
-        if (cycle === 1) firstHeap = await forcedHeap()
-        if (cycle === CYCLES) lastHeap = await forcedHeap()
+        if (cycle === WARMUP_CYCLES + 1) firstHeap = await forcedHeap()
+        if (cycle === last) lastHeap = await forcedHeap()
 
         await node.apply(profile(true))
         await probe.ready
       }
 
-      instances.splice(0, instances.length - (CYCLES + 1))
       await forcedHeap()
       const governors = collectedExceptLast()
-      assert.equal(governors.total, CYCLES + 1)
+      assert.equal(governors.total, last + 1)
+      const live = node.counters()
+      assert.deepEqual(
+        retainedObjects(node),
+        { fibers: live.fibers, contexts: live.fibers - live.pending - live.failed },
+        'every disposed fiber and context was collected',
+      )
       assert.equal(governors.alive, 0, `${governors.alive} unloaded governor instances are still reachable`)
 
       const heap = growth(firstHeap!, lastHeap!)
-      console.log(`variant A: ${JSON.stringify({ cycles: CYCLES, firstHeap, lastHeap, heap, reclaimedInFlight: reclaimed, unloaded, loaded })}`)
-      assert.equal(reclaimed, CYCLES * 4, 'every waiter and stalled request ended when its provider unloaded')
+      console.log(`variant A: ${JSON.stringify({ warmup: WARMUP_CYCLES, cycles: CYCLES, firstHeap, lastHeap, heap, reclaimedInFlight: reclaimed, unloaded, loaded })}`)
+      assert.equal(reclaimed, last * 4, 'every waiter and stalled request ended when its provider unloaded')
       assert.equal(unloaded!.kernel.slotEntries, 0)
       assert.equal(unloaded!.kernel.slotOrphans, 0)
       assert.equal(unloaded!.process.timers, loaded!.process.timers - 2, 'the interval and the stalled request deadline are gone')
+      assert.ok(heap.totalPercent <= HEAP_GROWTH_LIMIT * 100, `total heap grew ${heap.totalPercent}% (> 5%)`)
       assert.ok(heap.objectsPercent <= HEAP_GROWTH_LIMIT * 100, `object heap grew ${heap.objectsPercent}% (> 5%)`)
       assert.deepEqual(logs, [], 'no plugin error or warning during the cycles')
     } finally {
@@ -314,16 +326,24 @@ describe('K1 reload cycles under load', () => {
       const lastHeap = await forcedHeap()
       const contexts = collectedExceptLast()
       assert.equal(contexts.total, CYCLES + 1)
+      const live = node.counters()
+      assert.deepEqual(
+        retainedObjects(node),
+        { fibers: live.fibers, contexts: live.fibers - live.pending - live.failed },
+        'every replaced fiber and context was collected',
+      )
       assert.equal(contexts.alive, 0, `${contexts.alive} replaced plugin contexts are still reachable`)
-      // Node exposes no module-record counter: each distinct import URL is one
-      // record that stays for the life of the process.
+      // Node exposes no module-record counter. Each distinct import URL of the
+      // fixture is one record that stays for the life of the process; its own
+      // imports (@guanxi/kernel, the governor types) resolve to cached records,
+      // so this is the known minimum.
       const moduleRecords = new Set(versions).size
       const heap = growth(firstHeap, lastHeap)
       const bytesPerRecord = Math.round((lastHeap.total - firstHeap.total) / CYCLES)
       console.log(`variant B: ${JSON.stringify({ cycles: CYCLES, moduleRecords, firstHeap, lastHeap, heap, bytesPerModuleRecord: bytesPerRecord })}`)
-      assert.equal(moduleRecords, CYCLES + 1, 'one non-freeable module record per import')
-      // A retained kernel context or plugin instance per cycle would cost far
-      // more than one small module record; this bound catches that.
+      assert.equal(moduleRecords, CYCLES + 1, 'one fixture module record per import')
+      // A coarse memory budget per reload, not a zero-leak proof: retained
+      // lifecycle objects are checked above through collection.
       assert.ok(bytesPerRecord <= 32 * 1024, `${bytesPerRecord} B retained per reload`)
     } finally {
       await node.dispose()
