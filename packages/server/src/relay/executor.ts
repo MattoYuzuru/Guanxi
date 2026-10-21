@@ -32,7 +32,6 @@ export class RelayExecutor {
     if (c.tokens !== null && l.tokens >= c.tokens) return 'tokens'
     if (c.moneyMicros !== null && (l.moneyMicros >= c.moneyMicros || l.unknownCosts > 0)) return 'money'
     if (c.wallMs !== null && this.store.clock() - l.startedAt >= c.wallMs) return 'wall'
-    if (c.j3 !== null && l.j3 > c.j3) return 'j3'
     return null
   }
   private wrap(a: Attempt, reason: string): void {
@@ -48,6 +47,10 @@ export class RelayExecutor {
   }
   private dropped(a: Attempt, cycle: number, dropped: number, cut: number): void {
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'context_dropped', dropped, cut, cycle }) } })
+  }
+  /** A cancel or takeover can revoke the fence while the executor is already reporting. */
+  private lost(error: unknown): boolean {
+    return error instanceof Error && 'code' in error && ['stale_lease', 'writer_busy', 'invalid_transition'].includes(String((error as { code?: unknown }).code))
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal): Promise<Reply> {
     signal.throwIfAborted()
@@ -285,10 +288,14 @@ export class RelayExecutor {
     } catch (error) {
       if (error instanceof RelayError && error.code === 'cap_reached') return this.store.read(a.run_id)
       if (wall.signal.aborted) { this.wrap(a, 'wall'); return this.store.read(a.run_id) }
-      if (error instanceof RelayError && ['probe_failed_twice', 'no_progress'].includes(error.code)) this.store.transition(a, 'escalate')
+      if (error instanceof RelayError && ['probe_failed_twice', 'no_progress'].includes(error.code)) {
+        try { this.store.transition(a, 'escalate') } catch (report) { if (!this.lost(report)) throw report }
+      }
       // Cancellation and restart never continue a model or mutating tool automatically.
-      this.store.emit(a, { type: 'error', data: { code: signal.aborted ? 'relay_stopped' : error instanceof RelayError ? error.code : 'relay_failed', message: 'Relay execution stopped; ledger retained.' } })
-      this.store.runs.inputRequired(a)
+      try {
+        this.store.emit(a, { type: 'error', data: { code: signal.aborted ? 'relay_stopped' : error instanceof RelayError ? error.code : 'relay_failed', message: 'Relay execution stopped; ledger retained.' } })
+      } catch (report) { if (!this.lost(report)) throw report }
+      try { this.store.runs.inputRequired(a) } catch (report) { if (!this.lost(report)) throw report }
       return this.store.read(a.run_id)
     } finally { clearInterval(renewal); cancelDeadline(); this.running = false }
   }

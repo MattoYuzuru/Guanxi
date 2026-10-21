@@ -19,7 +19,7 @@ export const planSchema = z.object({
 })
 export type Plan = z.infer<typeof planSchema>
 export const capsSchema = z.object({ cycles: z.number().int().positive().nullable(), tokens: z.number().int().positive().nullable(),
-  moneyMicros: z.number().int().nonnegative().nullable(), wallMs: z.number().int().positive().nullable(), j3: z.number().int().nonnegative().nullable() }).strict()
+  moneyMicros: z.number().int().nonnegative().nullable(), wallMs: z.number().int().positive().nullable() }).strict()
 export type Caps = z.infer<typeof capsSchema>
 export const states = ['boot', 'orient', 'work', 'wind_down', 'handoff_write', 'handoff_validate', 'sealed', 'harness_fallback', 'finish', 'escalate'] as const
 export type CycleState = typeof states[number]
@@ -35,8 +35,8 @@ export interface Ledger {
   plan: Plan; caps: Caps; cycle: number; state: CycleState; startedAt: number;
   items: Record<string, 'open' | 'verification_requested' | 'done'>;
   head: string; files: string[]; diffstat: string; evidence: Evidence[];
-  noProgress: number; tokens: number; moneyMicros: number; unknownCosts: number; j3: number;
-  errors: number; proposals: string[]; eta: null;
+  noProgress: number; tokens: number; moneyMicros: number; unknownCosts: number;
+  errors: number; proposals: string[]; eta: null; withheld?: boolean;
   baseline: { statuses: string; gates: string; head: string; done?: string[]; passed?: string[] }; pendingCall: string | null;
 }
 export interface Handoff {

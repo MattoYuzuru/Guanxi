@@ -109,3 +109,20 @@ test('explicit restart recovery preserves observed ledger progress and notes wit
     } finally {g.close()}
   } finally {rmSync(root,{recursive:true,force:true})}
 })
+test('seal fence fields must match the live attempt', () => {
+  const f = prepared(); try {
+    const good = candidate(f)
+    for (const bad of [{ ...good, runId: 'other-run' }, { ...good, attemptId: 'other-attempt' }, { ...good, epoch: good.epoch + 1 }, { ...good, token: good.token + 1 }]) {
+      assert.throws(() => f.relay.seal(f.attempt, bad, Buffer.from('fixture-git-bundle'), 2400), /seal_fence/)
+      assert.equal(f.db.prepare('SELECT COUNT(*) n FROM relay_seals').get()!.n, 0)
+    }
+  } finally { f.close() }
+})
+test('the generic sealed transition requires a matching seal row', () => {
+  const f = prepared(); try {
+    assert.throws(() => f.relay.transition(f.attempt, 'sealed'), /seal_missing/)
+    assert.equal(f.relay.read(f.run.id).state, 'handoff_validate')
+    f.relay.seal(f.attempt, candidate(f), Buffer.from('fixture-git-bundle'), 2400)
+    assert.equal(f.relay.read(f.run.id).state, 'sealed')
+  } finally { f.close() }
+})

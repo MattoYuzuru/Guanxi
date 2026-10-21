@@ -104,3 +104,15 @@ test('an unreadable handoff body is a degraded critical probe failure with retai
     assert.ok(f.log.readAll(f.run.session_id,'person').some(e=>e.type==='agent.note'&&e.data.text.includes('"damaged":true')))
   } finally {f.close()}
 })
+test('a value registered after stored evidence returns a withheld marker and reads continue', () => {
+  const f = fixture(); try {
+    f.relay.begin(f.attempt)
+    f.relay.observe(f.attempt, { head: plan.base, files: [], diffstat: '', evidence: { item: 'one', ok: true, output: 'late-evidence-secret' } })
+    f.scrubber.register('secret://fixture/late-evidence', 'late-evidence-secret')
+    const withheld = f.relay.read(f.run.id)
+    assert.equal(withheld.withheld, true)
+    assert.equal(JSON.stringify(withheld).includes('late-evidence-secret'), false)
+    f.relay.note(f.attempt, 'decision', 'recovered read', ['one'], null)
+    assert.equal(f.relay.read(f.run.id).withheld, true)
+  } finally { f.close() }
+})

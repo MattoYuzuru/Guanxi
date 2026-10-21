@@ -52,7 +52,9 @@ export class RelayStore {
     invariant(row, 'relay_not_found')
     const value = JSON.parse(row.snapshot) as Ledger
     // Late secret registration must not silently change an already hashed snapshot.
-    invariant(canonical(this.scrubber.scrub(value)) === canonical(value), 'ledger_withheld')
+    // Return a redacted copy with an explicit marker; the next mutation persists it.
+    const clean = this.scrubber.scrub(value)
+    if (canonical(clean) !== canonical(value)) return { ...clean, withheld: true }
     return value
   }
   private event(emit: (e: SessionEventInput) => void, action: string, data: unknown): void {
@@ -74,14 +76,21 @@ export class RelayStore {
     this.runs.mutate(a, (db, emit) => {
       invariant(!db.prepare('SELECT run_id FROM relay_runs WHERE run_id=?').get(a.run_id), 'already_initialized')
       const l: Ledger = { plan, caps, cycle: 0, state: 'boot', startedAt: this.clock(), items: Object.fromEntries(plan.items.map(i => [i.id, 'open'])),
-        head: plan.base, files: [], diffstat: '', evidence: [], noProgress: 0, tokens: 0, moneyMicros: 0, unknownCosts: 0, j3: 0,
+        head: plan.base, files: [], diffstat: '', evidence: [], noProgress: 0, tokens: 0, moneyMicros: 0, unknownCosts: 0,
         errors: 0, proposals: [], eta: null, baseline: { statuses: '', gates: '', head: plan.base }, pendingCall: null }
       db.prepare('INSERT INTO relay_runs VALUES (?,?)').run(a.run_id, canonical(l))
       this.event(emit, 'initialized', { revision: plan.revision, hash: hash(l) })
     })
   }
   transition(a: Attempt, state: CycleState): void {
-    this.change(a, 'transition', l => { invariant(transitions[l.state].includes(state), 'cycle_transition'); l.state = state })
+    this.change(a, 'transition', l => {
+      invariant(transitions[l.state].includes(state), 'cycle_transition')
+      if (state === 'sealed') {
+        const seal = this.db.prepare('SELECT 1 FROM relay_seals WHERE run_id=? AND cycle=? AND attempt_id=? AND epoch=? AND token=?').get(a.run_id, l.cycle, a.id, a.epoch, a.token)
+        invariant(seal, 'seal_missing')
+      }
+      l.state = state
+    })
   }
   begin(a: Attempt): void {
     this.change(a, 'cycle_begin', l => {

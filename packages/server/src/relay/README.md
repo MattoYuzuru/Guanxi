@@ -68,7 +68,11 @@ fence inside the same `BEGIN IMMEDIATE` as extension SQL and K2 appends. A seal 
 JSON, Markdown, its SHA-256, the ledger snapshot and git bundle as one immutable row in the
 home database; it updates the live ledger to `sealed` in that transaction. A stale attempt
 cannot upload or become last sealed. Reads of last sealed take the run's latest accepted
-seal, whichever admitted attempt wrote it; the current attempt still owns the fence.
+seal, whichever admitted attempt wrote it; the current attempt still owns the fence. A value
+registered after evidence was stored makes the live-ledger read a redacted copy marked
+`withheld: true`; the next mutation persists it so the run continues instead of failing every
+read. Earlier immutable seals and bundles cannot be rewritten, so their historical bytes are
+a retained residual rather than a live-context source.
 Explicit recovery under a newly admitted attempt uses the live ledger; it never replays a
 pending model/tool call automatically.
 
@@ -80,7 +84,7 @@ required. R2 emits judge requests; R3 owns judge execution and verdict policy.
 Progress counts a verified item becoming `done`, a gate becoming passing, or a nonempty
 committed diff. The first observation of a failing gate, notes, proposals and verification
 requests are not progress. Two empty cycles request J2; three escalate.
-Cycle, token, money, wall-time and J3 caps are normative. Calls reserve the full admissible input ceiling plus output reserve as their worst-case
+Cycle, token, money and wall-time caps are normative; J3 review execution belongs to R3, so the relay has no J3 counter to enforce. Calls reserve the full admissible input ceiling plus output reserve as their worst-case
 tokens and a host-supplied monetary bound before dispatch. Unknown price with a money cap
 refuses dispatch. Failed/crashed calls retain conservative reservations. Exhaustion enters
 R1 `wrapping_up`; no new work/model calls run there. The retained ledger is the deterministic

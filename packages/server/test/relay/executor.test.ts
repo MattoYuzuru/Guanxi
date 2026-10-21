@@ -75,13 +75,12 @@ test('executor proposals and unverified done requests cannot change plan or coun
     assert.deepEqual(f.relay.read(f.run.id).proposals, ['remove tests'])
   } finally { f.close() }
 })
-test('normative cycle/token/money/wall/J3 caps wrap up before another model call', async () => {
-  for (const kind of ['cycles','tokens','money','wall','j3']) {
+test('normative cycle/token/money/wall caps wrap up before another model call', async () => {
+  for (const kind of ['cycles','tokens','money','wall']) {
     const f = fixture({ caps: { cycles: kind === 'cycles' ? 1 : null, tokens: kind === 'tokens' ? 1 : null,
-      moneyMicros: kind === 'money' ? 0 : null, wallMs: kind === 'wall' ? 1 : null, j3: kind === 'j3' ? 0 : null }, actions: () => canonical({ action: 'handoff' }) })
+      moneyMicros: kind === 'money' ? 0 : null, wallMs: kind === 'wall' ? 1 : null }, actions: () => canonical({ action: 'handoff' }) })
     try {
       if (kind === 'wall') f.relay.change(f.attempt, 'fixture_time', l => { l.startedAt -= 2 })
-      if (kind === 'j3') f.relay.change(f.attempt, 'fixture_judge', l => { l.j3 = 1 })
       await f.executor.run(f.attempt)
       assert.equal(f.store.get(f.run.id).state, 'wrapping_up', kind)
       assert.equal(f.prompts.filter(p => p.startsWith('Execute')).length, kind === 'cycles' ? 1 : 0, kind)
@@ -316,5 +315,14 @@ test('a local runtime reports known zero cost and does not trip a generous money
     assert.equal(l.moneyMicros, 0)
     assert.equal(l.unknownCosts, 0)
     assert.equal(f.store.get(f.run.id).state, 'completed')
+  } finally { f.close() }
+})
+test('a cancel racing seal preparation ends the run cleanly without stale_lease', async () => {
+  const f = fixture()
+  try {
+    f.workspace.bundle = async () => { f.store.cancel(f.run.id); return Buffer.from('fixture-git-bundle') }
+    await f.executor.run(f.attempt)
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM relay_seals').get()!.n, 0)
+    assert.equal(f.store.get(f.run.id).state, 'canceled')
   } finally { f.close() }
 })
