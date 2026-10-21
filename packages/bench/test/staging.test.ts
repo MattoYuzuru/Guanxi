@@ -168,6 +168,41 @@ test('source roots and entries must be ordinary, non-symlinked files and directo
   await refuses(inspectTaskDirectory(source), 'nonregular_refused')
 })
 
+test('source paths with internal dot components are refused instead of hashing a lexical sibling', async (t) => {
+  const root = await workspace(t)
+  const a = join(root, 'a')
+  const b = join(root, 'b')
+  await mkdir(a, { recursive: true })
+  await mkdir(join(b, 'child', 'sub'), { recursive: true })
+  await symlink(join('..', 'b', 'child'), join(a, 'link'))
+  await put(a, 'source/item.txt', 'LEXICAL')
+  await put(b, 'source/item.txt', 'ACTUAL')
+
+  const lexical = await inspectTaskDirectory(join(a, 'source'))
+  const actual = await inspectTaskDirectory(join(b, 'source'))
+  assert.deepEqual(lexical.files.map(file => [file.path, file.sha256, file.bytes]), [['item.txt', sha256('LEXICAL'), 7]])
+  assert.deepEqual(actual.files.map(file => [file.path, file.sha256, file.bytes]), [['item.txt', sha256('ACTUAL'), 6]])
+  assert.notEqual(lexical.revision, actual.revision)
+
+  const variants = [
+    `${a}/link/../source`,
+    `${a}/link/./../source`,
+    `${a}/./link/../source`,
+    `${a}/link/sub/../../source`,
+    `${a}/link/../source/`,
+    `${a}/link/../source/../source`,
+  ]
+  for (const [index, variant] of variants.entries()) {
+    await refuses(inspectTaskDirectory(variant), 'invalid_path')
+    await refuses(verifyTaskDirectory({ path: variant, revision: lexical.revision }), 'invalid_path')
+    const destinationRoot = join(root, `published-${index}`)
+    await refuses(stageTaskDirectory(variant, destinationRoot, lexical.revision), 'invalid_path')
+    await assertNoPublication(destinationRoot)
+  }
+  assert.equal(await readFile(join(a, 'source', 'item.txt'), 'utf8'), 'LEXICAL')
+  assert.equal(await readFile(join(b, 'source', 'item.txt'), 'utf8'), 'ACTUAL')
+})
+
 test('inspection refuses bytes changed while it is hashing', async (t) => {
   const root = await workspace(t)
   const source = join(root, 'source')

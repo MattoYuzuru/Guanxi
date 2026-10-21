@@ -169,6 +169,11 @@ async function walk(directory: string, prefix: string, opened: OpenedDirectory, 
 
 function sourceRootPath(value: string): string {
   const root = parse(value).root
+  const separatorPattern = process.platform === 'win32' ? /[\\/]/ : sep
+  // A '.' or '..' component is resolved by the kernel for lstat/readdir but normalized
+  // lexically by join() for each entry, so the verified root and hashed paths could differ.
+  // Refuse ambiguous source roots before traversal; invalid_path is the stable error code.
+  if (value.slice(root.length).split(separatorPattern).some(component => component === '.' || component === '..')) refuse('invalid_path')
   let end = value.length
   while (end > root.length && value[end - 1] === sep) end--
   const stripped = value.slice(0, end)
