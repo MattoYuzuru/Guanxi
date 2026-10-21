@@ -43,3 +43,10 @@ test('H1 promotes muted text and placeholders on inset surfaces, including desce
   assert.equal(result.output, 'const x = <div className="bg-inset"><p className="text-secondary"/><input className="bg-inset placeholder:text-secondary"/></div>')
   assert.equal(rewrite('fixture.tsx', result.output, theme).output, result.output)
 })
+
+test('L6 codemod inventories outline, accent and shadow residuals too', () => {
+  const source = "const x = 'outline-[var(--unknown)] accent-[var(--missing)] shadow-[var(--shadow-card)]'"
+  const result = rewrite('fixture.ts', source, theme)
+  assert.equal(result.output, source)
+  assert.deepEqual(result.unresolved.map(f => f.class), ['outline-[var(--unknown)]', 'accent-[var(--missing)]', 'shadow-[var(--shadow-card)]'])
+})

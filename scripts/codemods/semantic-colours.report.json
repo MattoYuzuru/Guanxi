@@ -540,6 +540,61 @@
       "line": 281,
       "class": "bg-[var(--accent-subtle)]",
       "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ErrorBoundary.tsx",
+      "line": 93,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 387,
+      "class": "accent-[var(--accent)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 518,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/features/health/HealthGate.tsx",
+      "line": 188,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/features/models/CatalogFilters.tsx",
+      "line": 102,
+      "class": "outline-[var(--accent)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/features/models/CatalogVariantInstall.tsx",
+      "line": 225,
+      "class": "outline-[var(--accent)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/features/models/ModelCard.tsx",
+      "line": 68,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/features/recipes/RecipesPage.tsx",
+      "line": 618,
+      "class": "outline-[var(--accent)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
+    },
+    {
+      "file": "packages/web/src/features/recipes/RecipesPage.tsx",
+      "line": 641,
+      "class": "outline-[var(--accent)]",
+      "reason": "Not handled by initial bg/text/border/ring pass"
     }
-  ]
+  ],
+  "measuredAt": "0def92c (initial migration; Review 1 restores nine omitted residuals)"
 }

@@ -46,11 +46,13 @@ roles; it preserves variants, opacity, important markers, quoting and template b
 One-variable classes without a role-equivalent alias are reported, never guessed. Compound
 values/fallbacks are left alone. Unit tests cover determinism, idempotence and unsupported forms.
 
-The historical ADR count is not this checkout's measured count:
+The ADR's 683 counts **all** `[var(--` classes at base `2ab9c41`, rather than
+backgrounds alone. The original pass removed 591, leaving 92:
 
 | Measurement | Before | After |
 | --- | ---: | ---: |
 | `bg-[var(--` occurrences in web source | 133 | 31 |
+| All `[var(--` occurrences (initial migration) | 683 | 92 |
 | Total mapped bg/text/border/ring occurrences | 591 | 0 remaining mapped uses |
 | Files touched by the codemod | 37 | 0 on the second write run |
 | DS1-a G5 allowance occurrences | 1,543 | 952 |
@@ -60,7 +62,8 @@ The historical ADR count is not this checkout's measured count:
 The final repeat run reports 31 backgrounds before/after, zero replacements and zero changed
 files; `git diff --exit-code` stays clean. The committed
 [`semantic-colours.report.json`](../../../scripts/codemods/semantic-colours.report.json)
-records the first run, every touched path, and all 83 unmapped occurrences with file/line.
+records the first run, every touched path, and all 92 residual occurrences (including the nine outline/accent/shadow uses
+omitted from the initial report) with file/line.
 These include fit colours, subtle accent fills, accent text/borders, status backgrounds/borders,
 and text/background uses of border or tertiary-text variables without corresponding aliases.
 Some runtime tokens already exist; extending the utility aliases still needs an explicit mapping.
