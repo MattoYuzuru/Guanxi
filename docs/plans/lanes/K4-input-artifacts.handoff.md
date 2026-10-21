@@ -17,6 +17,7 @@ full/browser/native gates pending. **Does not close `K4-INPUT-ARTIFACTS`.**
 | `7a9d617` | self-review: quarantine removal bound to the captured identity |
 | `750471b` | self-review: `0400` input files and a malformed-migration-33 rollback guard |
 | `8b85fe9` | self-review: minimal incompatible-trace copy (no internal code) |
+| `bc7596e` | self-review: queued appends overtaken by a failure cannot follow the terminal |
 | this commit | handoff evidence update |
 
 No source file from another lane, no `PHASE_STATUS`/`NEXT_AGENT_PROMPT`, package manifest/lock,
@@ -74,15 +75,15 @@ approval record/token, user data or infrastructure was edited.
 
 ## New / regression evidence
 
-**New tests: 40.**
+**New tests: 41.**
 - `packages/server/test/session-log-input-artifacts.test.ts` — 17.
 - `packages/server/test/session-log-version-negotiation.test.ts` — 6.
-- `packages/server/test/native-agent/input-artifacts.test.ts` — 11 (fake provider and injected
+- `packages/server/test/native-agent/input-artifacts.test.ts` — 12 (fake provider and injected
   command runner; no sandbox, container, network or live model).
 - `packages/web/test/component/inspector-input-artifacts.test.tsx` — 5.
 - `packages/web/test/component/sse-terminal.test.tsx` — 1 new typed-error case.
 
-**Regression envelope actually run: 81 server tests in 9 files (47 regression) and 32 web tests
+**Regression envelope actually run: 82 server tests in 9 files (47 regression) and 32 web tests
 in 4 files (26 regression).**
 
 ```bash
@@ -96,7 +97,7 @@ nice -n 10 node --test \
   packages/server/test/migration.test.ts \
   packages/server/test/durable-run-migration.test.ts \
   packages/server/test/relay/schema.test.ts
-# 81 pass / 0 fail
+# 82 pass / 0 fail
 nice -n 10 npx tsc --noEmit -p packages/contract/tsconfig.json
 nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
 nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json
