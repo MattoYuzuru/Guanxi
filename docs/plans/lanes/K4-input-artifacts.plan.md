@@ -216,3 +216,78 @@ the proposed status, base and no-check statement and corrects the plan only:
 
 **Pin:** this docs commit on `codex/k4-input-artifacts`, parent `52397bb`; no production, install,
 test or gate ran. The root verifies the exact `git rev-parse HEAD` and an empty `git status`.
+
+## Implementation-contract correction (2026-10-22)
+
+Independent implementation-contract review
+`../../../../reviews/codex-k4-input-contract-20261022.md` accepted the bounded native typed-input
+slice only after four corrections. This section records them as binding. It keeps the
+`proposed` status and every earlier historical claim; it makes no implementation or validation
+claim. A separate docs commit carries this correction before production code.
+
+1. **The pinned directory is verified before the first input byte.** The earlier crash-ordering
+   text created and wrote a temporary file through its session pathname and only then handed a
+   basename to the pinned helper. An ancestor swap could therefore write the full input into a
+   replacement directory even when no digest was published. The implementation instead:
+   - validates the trusted session directory identity, spawns the short-lived helper with that
+     directory as `cwd`, and compares the helper-reported `cwd`/`dev`/`ino` with the trusted
+     identity **before** any payload byte leaves the parent;
+   - creates the random temporary basename, writes every chunk, hashes, `fsync`s, publishes by
+     relative link, verifies the published digest and unlinks only that temporary file, all
+     relative to the pinned helper `cwd`;
+   - accepts no absolute-path content operation, environment payload, argument payload or
+     fallback; the payload travels only over the private stdio pipe and never enters argv,
+     environment, logs, stderr or error details;
+   - re-checks the trusted directory identity after the operation and fails closed, leaving a
+     published orphan rather than retargeting or unlinking it.
+   The swap assertion is strengthened: after a swap before the helper handshake and after the
+   handshake but before byte transfer, the attacker destination must contain **zero** temporary
+   files and **zero** payload bytes, not merely lack a published digest. The existing
+   `packages/server/test/artifacts.test.ts` suite is a regression envelope for the extracted
+   primitive and keeps every symlink, corrupt-blob, checksum/size and publish/read-swap
+   assertion and rejection code.
+
+2. **Durable tool-call acknowledgment gates the tool body explicitly.** Serialising `tool.call`
+   before `tool.result` does not by itself prevent a tool body from running early. The
+   installed, lockfile-pinned `@earendil-works/pi-agent-core@1.3.0` does await returned listener
+   promises (`dist/agent.js:432-434`), and the current native subscriber wrongly returns `void`.
+   The implementation therefore both returns the queue promise from every native listener and
+   adds an explicit awaited per-`toolCallId` durable-append acknowledgment inside
+   `packages/server/src/native-agent/tools.ts` before `guard`, path resolution, command execution
+   or any other tool body effect. A missing, sealed, rejected or timed-out acknowledgment aborts
+   the turn and invokes **zero** actual tool bodies. All service- and tool-owned native trace
+   appends (`plan`, `note_add`, queue mutation, `tool.result`, reasoning, terminal pair) go
+   through the one FIFO; `stop()` enqueues its intervention before aborting and never awaits
+   blocking artifact I/O before issuing the abort. The initial prompt's durable append
+   acknowledgment precedes the first model dispatch, so a failed initial write dispatches zero
+   model calls. Assertions count actual tool/command invocations and model dispatches, not event
+   order alone.
+
+3. **Version negotiation protects an old client against the new server, not the reverse.** An old
+   binary cannot parse v2, and its own routes have no negotiation handler; reusing a v2-bearing
+   database with an older binary is explicitly unsupported. Supported rollback is restoring a
+   stopped, consistent pre-upgrade SQLite/WAL backup without rewriting applied migrations. A new
+   client gets the typed non-retryable v2 compatibility state. An already-open old client cannot
+   be made to understand the new frame: it receives no `id:` line and no v2 payload for the
+   unread event, may stop or reconnect, and a reconnect to the new server returns 406 without
+   advancing the cursor. Documentation states the observed old-client behavior instead of
+   requiring shipped clients to recognise a new code.
+
+4. **Queued-input artifactization is deferred explicitly.** `NativeAgents.queue()` persists the
+   full queued text in the immutable `agent.queue.items[].text` payload, and that copy survives
+   consumption. This slice therefore claims session input artifacts only for native typed
+   (non-queued) prompts and `tool.call` arguments, adds no new queue cap and does not change queue
+   representation. A consumed queued prompt may take the v2 path as its own `prompt` event, but
+   the earlier `agent.queue` event still contains the full text inline; that is a declared
+   residual. No-full-inline assertions are narrowed to typed prompt and `tool.call` records, and
+   the handoff keeps the whole canonical K4-INPUT-ARTIFACTS issue open.
+
+**Binding verification additions:** (a) the swapped destination contains no temporary file and no
+payload bytes; (b) the actual tool-body counter stays `0` while the acknowledgment is held and
+after its failure; (c) an initial prompt write failure yields zero model dispatches; (d) a legacy
+client/new-server 406 keeps the cursor unchanged, with an optional reconnect after an unknown SSE
+error frame; (e) queued-input behavior and its inline residual are asserted honestly; (f) exact
+duplicate metadata reuse and stale-writer successor digest preservation remain asserted.
+
+**Commit pin:** this docs correction is committed separately on `codex/k4-input-artifacts` before
+any production edit; no test, install, gate or runtime check is claimed by it.
