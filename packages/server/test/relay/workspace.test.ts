@@ -3,7 +3,8 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitRelayWorkspace, protectedName } from '../../src/relay/workspace.ts'
+import { randomBytes } from 'node:crypto'
+import { GitRelayWorkspace, protectedName, catObjects } from '../../src/relay/workspace.ts'
 import { fixture, plan, reserves } from './fixture.ts'
 import { canonical } from '../../src/relay/handoff.ts'
 import { RelayExecutor } from '../../src/relay/executor.ts'
@@ -67,6 +68,39 @@ test('a cycle before the first checkpoint seals an empty bundle and the next com
     const events = s.f.log.readAll(s.f.run.session_id, 'person')
     assert.equal(events.some(e => e.type === 'error'), false)
     assert.equal(events.some(e => e.type === 'agent.note' && e.data.text.includes('"relay":"probe_degraded"')), false)
+  } finally { await s.close() }
+})
+test('catObjects frames stay byte-exact and an 8 MiB blob reads in under a second', async () => {
+  const s = await setup()
+  try {
+    const blobs = [Buffer.alloc(0), Buffer.from('x'), Buffer.from('a'.repeat(40) + ' blob 5\nhello\n\n'),
+      randomBytes(3 * 1024 * 1024), Buffer.concat([Buffer.from('\n\n\n'), randomBytes(70000)])]
+    const ids: string[] = []
+    for (const [index, blob] of blobs.entries()) {
+      const file = join(s.root, `blob-${index}`)
+      await writeFile(file, blob)
+      ids.push(await git(s.repo, ['hash-object', '-w', file]))
+    }
+    const out: Buffer[] = []
+    for await (const content of catObjects(s.repo, ids)) out.push(Buffer.from(content))
+    assert.equal(out.length, blobs.length)
+    out.forEach((content, index) => assert.ok(content.equals(blobs[index]!), `frame ${index} differs`))
+    const big = randomBytes(8 * 1024 * 1024), file = join(s.root, 'blob-big')
+    await writeFile(file, big)
+    const id = await git(s.repo, ['hash-object', '-w', file])
+    const started = performance.now()
+    const received: Buffer[] = []
+    const concat = Buffer.concat
+    let copied = 0
+    Buffer.concat = (list, totalLength) => { copied += list.reduce((sum, chunk) => sum + chunk.length, 0); return concat(list, totalLength) }
+    try {
+      for await (const content of catObjects(s.repo, [id])) received.push(Buffer.from(content))
+    } finally { Buffer.concat = concat }
+    const elapsed = performance.now() - started
+    assert.equal(received.length, 1)
+    assert.ok(received[0]!.equals(big), '8 MiB frame differs')
+    assert.ok(elapsed < 1000, `8 MiB object took ${Math.round(elapsed)} ms`)
+    assert.ok(copied < 2 * big.length, `catObjects copied ${copied} bytes to assemble ${big.length} bytes`)
   } finally { await s.close() }
 })
 test('gates see only the committed clean tree with planner protected paths and scrubbed output', async () => {

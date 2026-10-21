@@ -15,7 +15,7 @@ const gitEnv = { PATH: '/usr/bin:/bin', HOME: tmpdir(), GIT_CONFIG_NOSYSTEM: '1'
 const gitFlags = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'commit.gpgsign=false']
 /** One long-running cat-file process for a set of objects. Frames are `<oid> <type> <size>\n<content>\n`;
  * blobs are streamed so no fixed maxBuffer applies to object contents. */
-async function* catObjects(root: string, ids: readonly string[], signal?: AbortSignal): AsyncGenerator<Buffer> {
+export async function* catObjects(root: string, ids: readonly string[], signal?: AbortSignal): AsyncGenerator<Buffer> {
   if (!ids.length) return
   const child = spawn('/usr/bin/git', [...gitFlags, 'cat-file', '--batch'], { cwd: root, env: gitEnv, stdio: ['pipe', 'pipe', 'pipe'] })
   let stderr = ''
@@ -27,25 +27,57 @@ async function* catObjects(root: string, ids: readonly string[], signal?: AbortS
   signal?.addEventListener('abort', abort, { once: true })
   try {
     child.stdin.end(ids.join('\n') + '\n')
-    let pending = Buffer.alloc(0)
+    // Keep the unread bytes as chunks. Concat only when a complete frame is available, so
+    // assembling one large blob is linear in its size instead of repeatedly recopying it.
+    const chunks: Buffer[] = []
+    let length = 0, offset = 0
+    const compact = () => {
+      while (chunks.length && offset >= chunks[0]!.length) {
+        offset -= chunks[0]!.length
+        chunks.shift()
+      }
+    }
+    const newline = (): number => {
+      let seen = 0
+      for (let index = 0; index < chunks.length; index++) {
+        const chunk = chunks[index]!, from = index === 0 ? offset : 0
+        const found = chunk.indexOf(10, from)
+        if (found >= 0) return seen + found - from
+        seen += chunk.length - from
+      }
+      return -1
+    }
+    const copy = (size: number): Buffer => {
+      const out = Buffer.allocUnsafe(size)
+      let written = 0
+      for (let index = 0; index < chunks.length && written < size; index++) {
+        const chunk = chunks[index]!, from = index === 0 ? offset : 0
+        const take = Math.min(chunk.length - from, size - written)
+        chunk.copy(out, written, from, from + take)
+        written += take
+      }
+      invariant(written === size, 'git_object_invalid')
+      return out
+    }
+    const consume = (size: number) => { length -= size; offset += size; compact() }
     for await (const chunk of child.stdout as AsyncIterable<Buffer>) {
-      pending = pending.length ? Buffer.concat([pending, chunk]) : chunk
+      chunks.push(chunk); length += chunk.length
       while (true) {
-        const newline = pending.indexOf(10)
-        if (newline < 0) break
-        const match = /^([a-f0-9]{40,64}) (blob|tree|commit|tag) (\d+)$/.exec(pending.subarray(0, newline).toString('utf8'))
+        const newlineAt = newline()
+        if (newlineAt < 0) break
+        const match = /^([a-f0-9]{40,64}) (blob|tree|commit|tag) (\d+)$/.exec(copy(newlineAt).toString('utf8'))
         invariant(match, 'git_object_invalid')
         const size = Number(match[3])
         invariant(Number.isSafeInteger(size) && size >= 0, 'git_object_invalid')
-        const end = newline + 1 + size
-        if (pending.length < end + 1) break
-        const content = pending.subarray(newline + 1, end)
-        pending = pending.subarray(end + 1)
+        const end = newlineAt + 1 + size
+        if (length < end + 1) break
+        const content = copy(end).subarray(newlineAt + 1)
+        consume(end + 1)
         yield content
       }
     }
     const code = await closed
-    invariant(code === 0 && pending.length === 0, stderr ? `git_failed:${stderr}` : 'git_failed')
+    invariant(code === 0 && length === 0, stderr ? `git_failed:${stderr}` : 'git_failed')
   } finally {
     signal?.removeEventListener('abort', abort)
     child.kill()
