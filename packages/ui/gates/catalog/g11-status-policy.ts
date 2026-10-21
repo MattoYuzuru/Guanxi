@@ -76,7 +76,7 @@ export const g11: CatalogGate = {
       expect: /product code uses draft component "button"/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'draft-on-product-screen'), repoRoot)
-        return context
+        return { ...context, usageScope: { ...context.usageScope, productRoots: [join(repoRoot, 'packages/web/src/features/seeded')] } }
       },
     },
     {
@@ -85,7 +85,7 @@ export const g11: CatalogGate = {
       expect: /product code uses draft component "button"/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'aliased-draft'), repoRoot)
-        return context
+        return { ...context, usageScope: { ...context.usageScope, productRoots: [join(repoRoot, 'packages/web/src/features/seeded')] } }
       },
     },
     {
@@ -94,7 +94,7 @@ export const g11: CatalogGate = {
       expect: /product code uses draft component "button"/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'utility-laundered-alias'), repoRoot)
-        return { ...context, release: true }
+        return { ...context, release: true, usageScope: { ...context.usageScope, productRoots: [join(repoRoot, 'packages/web/src/features/seeded')] } }
       },
     },
     {
