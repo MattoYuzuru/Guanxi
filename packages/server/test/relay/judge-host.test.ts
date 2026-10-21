@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { RelayExecutor } from '../../src/relay/executor.ts'
-import { hash } from '../../src/relay/handoff.ts'
+import { canonical, hash } from '../../src/relay/handoff.ts'
 import { prepareJudgeSignals, type RelayJudgeInput } from '../../src/relay/judge-host.ts'
 import type { JudgeObservation, JudgeSignalPolicy } from '../../src/relay/judge-signals.ts'
 import { DEFAULT_RELAY_LIMITS, type Ledger } from '../../src/relay/types.ts'
@@ -65,6 +65,23 @@ function judgeNotes(f: Fixture): ParsedNote[] {
 
 function withJudge(f: Fixture, judge?: RelayJudgeInput): RelayExecutor {
   return new RelayExecutor(f.relay, f.model, f.workspace, reserves, f.scrubber, DEFAULT_RELAY_LIMITS, undefined, judge)
+}
+
+const COLLECTOR_GUARD_MS = 1_000
+
+/** Turn a non-settling executor into a bounded test failure instead of a hung suite. */
+async function settledWithin(promise: Promise<unknown>, label: string): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} did not settle while the collector was pending`)), COLLECTOR_GUARD_MS)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 test('absence of judge configuration preserves prior execution and publishes no judge event', async () => {
@@ -193,6 +210,94 @@ test('cancellation across a pending collector yields zero judge events and zero 
     assert.equal(f.store.get(f.run.id).state, 'input_required')
     assert.equal(ledger.pendingCall, null)
   } finally { f.close() }
+})
+
+test('explicit stop reaches its terminal state while the collector is pending and discards a late result', async () => {
+  const f = fixture()
+  let entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  let release!: (value: JudgeObservation) => void
+  const pending = new Promise<JudgeObservation>(resolve => { release = resolve })
+  let calls = 0
+  const judge: RelayJudgeInput = {
+    policy,
+    collect: async () => { calls++; entered(); return pending },
+  }
+  const executor = withJudge(f, judge)
+  let running: ReturnType<RelayExecutor['run']> | undefined
+  try {
+    running = executor.run(f.attempt)
+    await started
+    executor.stop()
+    // The collector is still pending here: completion must not depend on it.
+    await settledWithin(running, 'explicit stop')
+    assert.equal(calls, 1)
+    assert.equal(f.store.get(f.run.id).state, 'input_required')
+    const ledger = canonical(f.relay.read(f.run.id))
+    const events = f.log.readAll(f.run.session_id, 'person').length
+    assert.equal(judgeNotes(f).length, 0)
+    assert.equal(f.prompts.length, 0)
+    release(observation())
+    await new Promise(resolve => setTimeout(resolve, 25))
+    assert.equal(judgeNotes(f).length, 0)
+    assert.equal(f.prompts.length, 0)
+    assert.equal(f.store.get(f.run.id).state, 'input_required')
+    assert.equal(canonical(f.relay.read(f.run.id)), ledger)
+    assert.equal(f.log.readAll(f.run.session_id, 'person').length, events)
+  } finally {
+    release?.(observation())
+    await running?.catch(() => {})
+    f.close()
+  }
+})
+
+test('wall cap reaches wrapping_up while the collector is pending and consumes a late rejection', async () => {
+  const f = fixture({ caps: { wallMs: 100 } })
+  let clock = f.relay.clock()
+  // wallDeadline rechecks this authoritative clock and rearms rather than trusting the first delay.
+  Object.assign(f.relay, { clock: () => clock })
+  let entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  let rejectLate!: (error: Error) => void
+  const pending = new Promise<JudgeObservation>((_resolve, reject) => { rejectLate = reject })
+  let calls = 0
+  const judge: RelayJudgeInput = {
+    policy,
+    collect: async () => { calls++; entered(); return pending },
+  }
+  const executor = withJudge(f, judge)
+  let running: ReturnType<RelayExecutor['run']> | undefined
+  try {
+    running = executor.run(f.attempt)
+    await started
+    clock += 250
+    f.setTime(clock)
+    // The collector is still pending here: the existing wall cap must end the run.
+    await settledWithin(running, 'wall cap')
+    assert.equal(calls, 1)
+    assert.equal(f.store.get(f.run.id).state, 'wrapping_up')
+    const ledger = canonical(f.relay.read(f.run.id))
+    const events = f.log.readAll(f.run.session_id, 'person').length
+    assert.equal(judgeNotes(f).length, 0)
+    assert.equal(f.prompts.length, 0)
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason) }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      rejectLate(new Error('synthetic late collector rejection'))
+      await new Promise(resolve => setTimeout(resolve, 25))
+    } finally { process.off('unhandledRejection', onUnhandled) }
+    assert.deepEqual(unhandled, [])
+    assert.equal(judgeNotes(f).length, 0)
+    assert.equal(f.prompts.length, 0)
+    assert.equal(f.store.get(f.run.id).state, 'wrapping_up')
+    assert.equal(canonical(f.relay.read(f.run.id)), ledger)
+    assert.equal(f.log.readAll(f.run.session_id, 'person').length, events)
+  } finally {
+    rejectLate?.(new Error('test cleanup late rejection'))
+    await running?.catch(() => {})
+    f.close()
+  }
 })
 
 test('a fence lost while the collector is pending yields zero stale judge events and zero model calls', async () => {

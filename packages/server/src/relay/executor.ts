@@ -10,7 +10,7 @@ import { boundary, bounded, request, thresholds, upperTokens, wallDeadline, type
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 import { etaInputSchema, type EtaInput } from './eta.ts'
 import { evaluateJudgeSignals, type JudgeObservation } from './judge-signals.ts'
-import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type PreparedRelayJudge, type RelayJudgeInput } from './judge-host.ts'
+import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type PreparedRelayJudge, type RelayJudgeCollectInput, type RelayJudgeInput } from './judge-host.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tool'), name: z.string(), args: z.record(z.unknown()) }).strict(),
@@ -64,6 +64,35 @@ export class RelayExecutor {
   private checkExecution(a: Attempt): void {
     this.store.runs.mutate(a, () => undefined)
   }
+  /** Await the trusted read-only collector without letting it own run completion. The race uses
+   * the existing run signal only: there is no timeout and no new cancellation authority. A
+   * collector that ignores the signal may still need cooperative cleanup of its underlying read,
+   * but it cannot hold the executor, renewal or plugin disposal open. Late resolution/rejection
+   * is consumed and discarded, so it cannot publish a note or resume work. */
+  private collectJudge(judge: PreparedRelayJudge, input: RelayJudgeCollectInput): Promise<JudgeObservation> {
+    const { signal } = input
+    return new Promise<JudgeObservation>((resolve, reject) => {
+      let settled = false
+      const finish = (action: () => void): void => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', aborted)
+        action()
+      }
+      const aborted = () => finish(() => reject(signal.reason))
+      if (signal.aborted) { aborted(); return }
+      signal.addEventListener('abort', aborted, { once: true })
+      // Recheck after installing the listener so an abort cannot slip between the two steps.
+      if (signal.aborted) { aborted(); return }
+      let pending: Promise<JudgeObservation>
+      try { pending = judge.collect(input) } catch (error) { finish(() => reject(error)); return }
+      // Both outcomes stay observed even after an abort wins the race.
+      pending.then(
+        observation => finish(() => resolve(observation)),
+        error => finish(() => reject(error)),
+      )
+    })
+  }
   /** One host observation at a synchronous boundary. The collector gets a detached ledger,
    * a detached attempt and the actual run signal; the note is published only after a successful
    * collection and evaluation, in the same R1-fenced transaction. No signal changes control flow. */
@@ -77,7 +106,7 @@ export class RelayExecutor {
     const attempt = { id: a.id, runId: a.run_id, epoch: a.epoch, token: a.token }
     let observation: JudgeObservation
     try {
-      observation = await judge.collect({ attempt, ledger, signal })
+      observation = await this.collectJudge(judge, { attempt, ledger, signal })
     } catch (error) {
       // Cancellation and a revoked fence keep their existing loss/cancel semantics. Only a
       // live collector failure becomes the fixed observer error; no exception text is kept.
@@ -86,6 +115,8 @@ export class RelayExecutor {
       throw new RelayError('judge_observation_unavailable')
     }
     signal.throwIfAborted()
+    // The collector is a host await: recheck the execution fence before any publication.
+    this.checkExecution(a)
     let signals: ReturnType<typeof evaluateJudgeSignals>
     try {
       signals = evaluateJudgeSignals(observation, judge.policy)
