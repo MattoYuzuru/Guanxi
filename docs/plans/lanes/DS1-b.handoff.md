@@ -1,6 +1,6 @@
 # Lane DS1-b hand-off — components, catalog and approvals
 
-**Status:** bounded-check fixes done (N8/N1, N10/N2), ready for GPT's two-item check · **Updated:** 2026-10-21 ·
+**Status:** all review findings fixed; ready for the integrator's verification of N10/N2 · **Updated:** 2026-10-21 ·
 **Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `1510c0e`; DS1-a integrated) · **Ports:** 5183 / 4383
 
 Everything in [DS1-b](DS1-b.md) is built. The three independent reviews ran, and their findings
@@ -51,7 +51,24 @@ race test); a record changed during the keychain prompt is not overwritten.
 
 ## Commands
 
-Final run after the bounded-check fixes, on the clean tree `65888cd`, through
+Final run after the last N10/N2 fix, on the clean tree `8a2b29b`, through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
+with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
+
+| Check | Result | Receipt |
+| --- | --- | --- |
+| `npm run typecheck` | exit 0 (all workspaces) | direct |
+| `npm test` | `ui:check` ok; gate tests 51/51; core 719 (718 pass, 1 skipped opt-in keychain); kernel 106/106; web 266/266; ui node 70/70; ui vitest 17/17 | `check-7gi9mfuo` |
+| `npm run ui:check:browser` (G13, G14, G15-clipping, G16, G17) | ok | `check-bivnwrlc` |
+| `npm run test:web:browser` | 62/62 | `check-92ua4koy` |
+| `npm run build` | exit 0 | `check-jm2e8udu` |
+| `npm run build-storybook --workspace @guanxi/ui` | exit 0 | `check-q9p816xu` |
+| `run.ts --mode fast --selftest` | 28 cases ok | `check-dt5ezn31` |
+| `run.ts --mode browser --selftest` | 11 cases ok | `check-i08k_mv0` |
+| `run.ts --mode browser --only G13`, 10 consecutive compares | 10/10 pass | `check-sz2ahou8`, `check-6t3o3huq`, `check-k33m894k`, `check-op8jdxtd`, `check-zwi8fufx`, `check-me9hmb_f`, `check-cza9fbp8`, `check-cyu1hlzg`, `check-9q7qdn2x`, `check-2ybupsph` |
+| `npm run lint:md`, `npm run check:licenses` | 0 errors; 439 packages, 0 not allowed | direct |
+
+Previous run, after the bounded-check fixes, on the clean tree `65888cd`, through
 `agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
 with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
 
@@ -325,6 +342,17 @@ parent (`git rev-list --full-history --simplify-merges --parents`), and checks e
 against the merged state of all its parents. The hasher has one table of module types: esbuild
 gets exactly those loaders, any other input type is refused, and every script type (`.js .mjs
 .cjs .jsx .ts .mts .cts .tsx`) goes through the computed-import guard.
+
+**Scoped check (`bea8574`, `REVIEW-GPT-5.md`):** N8/N1 closed; one High left in N10/N2, fixed in
+`8a2b29b`. The closure accepted scripts under `packages/ui/generated` but tested their
+`../generated/…` path against the dotfile junk pattern, so they were neither hashed nor guarded,
+and the final guard looked only under `src`. Now every script the bundler reaches is guarded
+first, from every accepted root, and imported inputs are hashed whatever their name; the only
+exclusion is the documented message catalog, which is guarded too. Tests (the reviewer's
+regressions, all three failing at `bea8574`): `approval.test.ts` › "hashes an executable module
+imported from the generated root", "refuses a computed import in generated/loader.cts / .jsx".
+The reviewer's own `generated-hash-regression.test.mts` and `variant-regressions.test.mts`
+pass against this tree.
 
 Named residual (Medium, non-blocking, DS2): an unreadable or malformed historical record before
 the first valid decision (for example a first approval with `signature: "AAAA"`, then a valid
