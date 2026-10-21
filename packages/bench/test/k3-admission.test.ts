@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createKernel } from '@guanxi/kernel'
 import { Budget } from '../src/budget.ts'
-import { preparedRequestAdmission, type RequestQuote } from '../src/request-admission.ts'
+import type { RequestQuote } from '../src/request-admission.ts'
+import { createTrialGateway } from '../src/k3-gateway.ts'
 import { plan } from './helpers.ts'
 import { resourceGovernorPlugin } from '../../server/src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../server/src/ollama/plugin.ts'
@@ -18,7 +19,7 @@ import { piModels } from '../../server/src/connections/pi.ts'
 test('actual K3 prepared hook reserves after scrubbing and rejects a second request before provider dispatch', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'b1-k3-admission-'))
   const kernel = createKernel(), now = new Date('2026-10-21T12:00:00Z'), budget = new Budget(':memory:', () => now)
-  let dispatches = 0, quoted = 0
+  let dispatches = 0, quoted = 0, observedOutputLimit: number | undefined, observedRetries: number | undefined
   const key = `fixture_${randomBytes(32).toString('hex')}`, wrappingKey = randomBytes(32)
   const model = piModels('deepseek')[0]!
   try {
@@ -33,7 +34,8 @@ test('actual K3 prepared hook reserves after scrubbing and rejects a second requ
         dispatches++
         assert.equal(quoted, 1)
         assert.equal(budget.requestRows()[0]!.state, 'reserved', 'durable hold exists before the provider is called')
-        assert.equal(options.maxTokens, 5)
+        observedOutputLimit = options.maxTokens
+        observedRetries = options.maxRetries
         assert.equal(JSON.stringify(context).includes(key), false)
         return { role: 'assistant', api: model.api, provider: model.provider, model: model.id,
           content: [{ type: 'text', text: 'fixture' }], stopReason: 'stop', timestamp: now.getTime(),
@@ -56,15 +58,15 @@ test('actual K3 prepared hook reserves after scrubbing and rejects a second requ
         meter: { ...fact, format: 'provider-request-upper-bound' },
         price: { ...fact, currency: 'USD', inputMicrousdPerMillion: 1_000_000, outputMicrousdPerMillion: 1_000_000, requestMicrousd: 0 } }
     }
-    const call = async (requestId: string) => {
-      const gate = preparedRequestAdmission(budget, { runId: p.id, task: p.tasks[0]!.id, arm: 'control', seed: 0, requestId }, 5, quote)
-      const result = await k3.complete('bench-owner', connection.id, { messages: [{ role: 'user', content: key, timestamp: now.getTime() }] },
-        { model: model.id, runId: p.id, requestId, options: { maxTokens: 5 }, onPrepared: gate.onPrepared })
-      gate.settle({ tokens: 2, costMicrousd: 0, source: 'fixture:usage', observedAt: now.toISOString(), confidence: 'verified' })
-      return result
-    }
-    await call('first')
-    await assert.rejects(call('over-step'), error => error instanceof Error && 'code' in error && error.code === 'provider_failed')
+    const gateway = createTrialGateway({ budget, k3, accountId: 'bench-owner', connectionId: connection.id,
+      model: model.id, provider: 'deepseek', outputTokenLimit: 5,
+      trial: { runId: p.id, task: p.tasks[0]!.id, arm: 'control', seed: 0 },
+      billing: { quote, usage: () => ({ tokens: 2, costMicrousd: 0, source: 'fixture:usage', observedAt: now.toISOString(), confidence: 'verified' }) } })
+    const context = { messages: [{ role: 'user' as const, content: key, timestamp: now.getTime() }] }
+    await gateway.complete(context)
+    assert.equal(observedOutputLimit, 5)
+    assert.equal(observedRetries, 0)
+    await assert.rejects(gateway.complete(context), /request_budget_exceeded/)
     assert.equal(dispatches, 1)
     assert.equal(budget.requestRows().length, 1)
   } finally { await kernel.dispose(); wrappingKey.fill(0); budget.close(); await rm(directory, { recursive: true, force: true }) }

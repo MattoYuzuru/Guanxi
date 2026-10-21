@@ -25,6 +25,10 @@ const cases = [
   { id: 'request-digest-binding', file: 'src/request-admission.ts', before: 'quote.preparedSha256 !== digest', after: 'false', test: 'test/request-admission.test.ts' },
   { id: 'request-output-binding', file: 'src/request-admission.ts', before: 'quote.outputTokenLimit !== outputTokenLimit', after: 'false', test: 'test/request-admission.test.ts' },
   { id: 'request-before-dispatch', file: 'src/request-admission.ts', before: 'budget.admitRequest(identity, quote)', after: 'void 0', test: 'test/request-admission.test.ts' },
+  { id: 'gateway-unknown-result', file: 'src/k3-gateway.ts', before: "if (observed === null) { unknown(); throw new BenchGatewayError('gateway_usage_unknown') }", after: 'if (false) {}', test: 'test/k3-gateway.test.ts' },
+  { id: 'gateway-output-ceiling', file: 'src/k3-gateway.ts', before: 'maxTokens: outputTokenLimit', after: 'maxTokens: undefined', test: 'test/k3-gateway.test.ts' },
+  { id: 'gateway-error-hold', file: 'src/k3-gateway.ts', before: 'if (admitted) unknown()', after: 'if (false) unknown()', test: 'test/k3-gateway.test.ts' },
+  { id: 'gateway-single-attempt', file: 'src/k3-gateway.ts', before: 'singleAttempt: true', after: 'singleAttempt: undefined', test: 'test/k3-gateway.test.ts' },
 ]
 for (const mutation of cases) {
   const dir = mkdtempSync(join(tmpdir(), 'b1-mutation-'))

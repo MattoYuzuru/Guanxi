@@ -1,5 +1,6 @@
 export * from './budget.ts'
 export * from './corpus.ts'
+export * from './k3-gateway.ts'
 export * from './plugin.ts'
 export * from './protocol.ts'
 export * from './request-admission.ts'
