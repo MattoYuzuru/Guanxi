@@ -1,7 +1,7 @@
 # Lane DS1-b hand-off — components, catalog and approvals
 
-**Status:** all review findings fixed; ready for the integrator's verification of N10/N2 · **Updated:** 2026-10-21 ·
-**Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `1510c0e`; DS1-a integrated) · **Ports:** 5183 / 4383
+**Status:** cross-family review passed; main merge checked; ready for integration · **Updated:** 2026-10-21 ·
+**Branch:** `claude/lane-ds1-b-catalog-421657` (main `b4d240b` merged in `d5aeab6`; DS1-a integrated) · **Ports:** 5183 / 4383
 
 Everything in [DS1-b](DS1-b.md) is built. The three independent reviews ran, and their findings
 are fixed in separate commits, except one inherent residual risk (key custody, below) that needs a
@@ -479,6 +479,95 @@ Open, for DS1-a/DS1-c or the integrator:
 - Size mappings changed with the stub: dialog max width 448 px (`layout.container.md`, was 480),
   toast 384 px (`sm`, was 360), catalog cell 256 px (`3xs`, was 240); disabled control borders
   use the divider (`border.primary`); the glass grain layer is gone (no grain image token).
+
+## Main merge
+
+Merged main `b4d240b9102eab433c5822b46dcebdf7fedf1296` into lane HEAD `510235e` with
+`git merge --no-ff main`, producing merge commit `d5aeab6` (no rebase). The integrator had
+already verified the last High fix, `8a2b29b`; this work checks the integration with K2, K3,
+R1 and main's flake fixes. Nothing was pushed or merged into main.
+
+During these checks, main advanced to `0e151d1` (K4 merge and evidence). The merge and results
+in this section are pinned to the requested `b4d240b`; they do not cover that later K4 change.
+
+### Conflict resolutions
+
+| File | Resolution |
+| --- | --- |
+| `package.json` | Kept main's scripts, including quoted recursive `test:core` globs; retained DS1-b's UI scripts and appended `test:ui` to `test`. |
+| `package-lock.json` | Started from main's lockfile, ran `npm install --package-lock-only`, then `npm ci`. The `node_modules/@rollup/rollup-linux-x64-gnu` entry remained present and exactly equal to main before and after installation; no manual restoration was needed. Workspace contract resolution points inside this worktree. |
+| `packages/contract/src/index.ts` | Combined the UI catalog export with main's connections, brand and event exports. |
+| `packages/server/src/app.ts` | Kept the global Host allowlist before CORS/routes, its options, and the session-log route; added the catalog route and its read-only fallback alongside them. |
+| `packages/server/src/index.ts` | Combined catalog/release imports and service initialization with K3 connection initialization and routes; retained main's cleanup paths, bound-port getter and startup wiring. |
+| `packages/web/src/App.tsx` | Kept inspector navigation/rendering and catalog rendering; Settings remains active on the catalog route. |
+| `packages/web/src/features/settings/SettingsPage.tsx` | Kept both Connections and Developer imports and rendered sections. |
+| `packages/web/src/index.css` | Combined both semantic alias sets and the heading utility; updated the bridge comment. A duplicate identical radius alias was removed in the follow-up fix. |
+| `packages/web/src/lib/locale.ts` | Combined both dictionaries without changing parent key values: English source and curated Russian retained for catalog, inspector, connections and existing screens. |
+| `packages/web/src/lib/router.tsx` | Kept both catalog and inspector route types, parsers and path helpers. |
+
+Main's Host allowlist implementation, egress scrubber/readiness, connection/vault services,
+runtime kernel, application context and R1 stores/fencing have no diff from `b4d240b`.
+The auto-merged contract schemas, API client and third-party notices retain both sides.
+
+### Follow-up fix and independent verification
+
+The first `npm test` on `d5aeab6` failed 20 catalog review-route tests: the fixture sent POSTs
+to port 4383 without configuring that port in the newly merged Host allowlist. Core result:
+922 passed, 20 failed, 1 opt-in skip (`check-hfmu565f`); later test steps did not run.
+This was an integration fixture failure, not a failure attributed to main.
+
+Separate fix commit `bb51304` configures the fixture port and aligns its read URLs. Its refusal
+test asserts global wrong-host/wrong-port rejection, catalog rejection of an allowlisted
+non-loopback authority, and the existing origin, peer, JSON and zero-signature checks. Production
+guards were unchanged. The same commit removes the duplicate radius alias. Targeted route
+check: 28 passed, 1 opt-in keychain skip (`check-s3mkgpjr`, dirty tree containing exactly this fix).
+
+A separate read-only reviewer compared all ten resolutions against both parents, confirmed
+the preserved guards, scripts, locale union, gate registry and approval closure, and reported
+only the duplicate alias (Low). Its follow-up review of the fix found no findings and confirmed
+that no guard or assertion was weakened. The prior cross-family review remains complete.
+
+### Gates and invariant evidence
+
+Final code checks ran on clean `bb51304`, Node 26.9.0, with:
+
+```bash
+export GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"
+```
+
+The four heavy commands each ran separately through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- <command>`.
+Receipt IDs below are directories under `~/.local/state/agent-dev/`, each holding `result.json`
+and `output.log`.
+
+| Check | Result and real scope | Receipt |
+| --- | --- | --- |
+| `npm run typecheck` | exit 0, all six workspaces | direct |
+| `npm run lint:md` | exit 0, 135 files, 0 errors; repeated after this handoff update | direct |
+| `npm run check:licenses` | exit 0, 517 packages, 0 not allowed | direct |
+| `npm run ui:check` | exit 0; G1–G7, G10–G12, G15 literals and G17's 11 fast seeds | direct |
+| `npm test` | exit 0; gate tests 51/51; core 943 (942 pass, 1 opt-in keychain skip); kernel 106/106; web component tests pass in 34 files; UI node 70/70 and UI component tests 17/17 | `check-n9ilf875` |
+| `npm run test:web:browser` | exit 0, 64/64 mocked Chromium tests, including catalog, connections and inspector flows | `check-8s1knhwt` |
+| `npm run ui:check:browser` | exit 0, no skips/warnings; G13 pinned-image visual comparison, G14 axe, G15-clipping, G16 reduced motion and G17's four browser seeds | `check-s5zcztiy` |
+| `npm run build` | exit 0, web/server/CLI release bundles | `check-4i6osy87` |
+
+**New:** no new test cases; strengthened Host-boundary assertions in the existing refusal test
+and repaired the review fixture. **Regression envelope:** the suites above, including the
+approval closure regressions for executable generated-root inputs and computed imports in
+`.cts`, `.jsx`, `.cjs` and `.mjs`, and G12 history across every merge parent. G8–G9 remain
+DS1-c work and are not registered or claimed as passed here.
+
+The approval hasher, ledger, keys, component sources, manifest and visual baselines are unchanged
+from `510235e`; the N10/N2 fix remains intact. All 18 tracked review records are still `draft`
+with null approvals. No owner approval or keychain access was performed; signing tests use
+throwaway keys, and the real-keychain test remains opt-in. Checks use mocked providers and
+local fixtures, not live model/GPU or production validation. No unrelated failure remains to
+attribute to main. Existing DS2 and other residuals above remain open.
+
+All final heavy receipts report `ok: true`, child exit 0 and `source_changed: false`. Their
+`reusable` flag is false because the existing `.claude/skills/guanxi-ui` symlink is unsupported
+by the runner's source fingerprinting; these receipts document local execution, not reusable
+source attestation. This subsequent handoff-only commit does not change checked code.
 
 ## Next slice
 
