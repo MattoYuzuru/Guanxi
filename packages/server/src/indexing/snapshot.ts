@@ -14,7 +14,7 @@ export type AllowContent = (text: string) => Promise<boolean>
 
 /** No git config, hooks, filters, helpers or shell expansion are executed. */
 async function commitAt(root: string): Promise<string | null> {
-  return new Promise(resolve => execFile('git', ['--no-optional-locks', '-C', root, 'rev-parse', '--verify', 'HEAD'], {
+  return new Promise(resolve => execFile('/usr/bin/git', ['--no-optional-locks', '-C', root, 'rev-parse', '--verify', 'HEAD'], {
     env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0' }, timeout: 3000,
   }, (error, stdout) => resolve(!error && /^[a-f0-9]{40,64}\s*$/.test(stdout) ? stdout.trim() : null)))
 }

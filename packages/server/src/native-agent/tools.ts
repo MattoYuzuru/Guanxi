@@ -8,8 +8,9 @@ import { sandboxCommand, quote, type SandboxPolicy } from './sandbox.ts'
 import type { ProjectIndexService } from '../indexing/plugin.ts'
 import { directSymbols } from '../indexing/lsp.ts'
 import { boundMap } from '../indexing/engine.ts'
-import { executeIndex } from '../indexing/engine.ts'
-import { DEFAULT_INDEX_SETTINGS, type IndexRequest, type MapResult } from '../indexing/types.ts'
+import { ProjectIndex } from '../indexing/service.ts'
+import { ResourceGovernor } from '../runtime/resource-governor.ts'
+import { type MapResult } from '../indexing/types.ts'
 import { dirname, relative, sep, join } from 'node:path'
 import { NativeOutputs } from './outputs.ts'
 
@@ -48,14 +49,14 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       }
       return JSON.stringify(boundMap(scrubber.scrub(result) as MapResult, budget ?? 2048))
     }
-    // IX0 and a file-level map remain available in scratch and when the optional
-    // index plugin is absent. No OS grep/ripgrep binary is required or bundled.
-    signal?.throwIfAborted()
-    const request: IndexRequest = { kind, root, path: scopedPath, text, budget }
-    return JSON.stringify(await executeIndex({ request, database: '', settings: { ...DEFAULT_INDEX_SETTINGS } }, async value => {
-      signal?.throwIfAborted()
-      return scrubber.isReady() && scrubber.scrub(value) === value
-    }))
+    // The same captured scanner and OS boundary serve scratch, attachments and
+    // installations with no index plugin. No host-filesystem scanner fallback.
+    const governor = new ResourceGovernor()
+    const fallback = new ProjectIndex({ dataDir: policy.runtimeBase ?? dirname(policy.scratch), scrubber, governor, ephemeral: true })
+    try { return JSON.stringify(kind === 'search'
+      ? await fallback.search(root, text!, scopedPath, signal)
+      : await fallback.map(root, budget, scopedPath, signal)) }
+    finally { await fallback.close(); await governor.close() }
   }
   const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true) => {
     const result = await (ctx.executeCommand ?? sandboxCommand)(policy, command, signal, 120_000, fixed, scrubber)

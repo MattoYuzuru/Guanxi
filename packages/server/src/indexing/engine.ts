@@ -29,7 +29,7 @@ export function boundMap(result: MapResult, budget: number): MapResult {
   return result
 }
 
-export async function executeIndex(data: IndexWorkerData, allow: AllowContent, checkpoint: () => Promise<void> = async () => {}): Promise<unknown> {
+export async function executeIndex(data: IndexWorkerData, allow: AllowContent, checkpoint: () => Promise<void> = async () => {}, parse = symbols): Promise<unknown> {
   const { request, settings } = data
   // IX3 has no loader/provider/model route in X1, even if a caller sets the future flag.
   const tree = await snapshot(request.root, settings, allow)
@@ -42,7 +42,7 @@ export async function executeIndex(data: IndexWorkerData, allow: AllowContent, c
       for (const file of tree.files) {
         await checkpoint()
         const cached = store.map(file.hash, file.language)
-        const map = cached ?? await symbols(file.text, file.language, data.grammarDisabled)
+        const map = cached ?? await parse(file.text, file.language, data.grammarDisabled, data.grammarDirectories)
         // Readiness and registered values are rechecked immediately before each write.
         if (!(await allow(file.text)) || !(await allow(file.path))) throw new Error('index_secret_changed')
         if (!cached || cached.source === 'file' && file.language !== 'file' || fts && !store.hasFts(file.hash)) store.put(file.hash, file.text, file.language, map, fts)
@@ -56,6 +56,7 @@ export async function executeIndex(data: IndexWorkerData, allow: AllowContent, c
       return provenance(tree, store)
     }
     try { store = new IndexStore(data.database) } catch { /* IX0 is available without a database */ }
+    store?.db.exec('BEGIN')
     const source = provenance(tree, store)
     const selectedPath = request.path ? resolve(request.root, request.path) : request.root
     if (!inside(request.root, selectedPath)) throw new Error('index_path_denied')
@@ -89,5 +90,8 @@ export async function executeIndex(data: IndexWorkerData, allow: AllowContent, c
       }
     }
     return result
-  } finally { store?.close() }
+  } finally {
+    if (request.kind === 'build' && store) await store.purgeUnsafe(allow)
+    store?.close()
+  }
 }

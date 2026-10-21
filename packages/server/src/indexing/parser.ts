@@ -9,7 +9,7 @@ const languages = new Map<string, Language | null>()
 let initialized: Promise<void> | undefined
 const declarations = /^(function_declaration|function_definition|method_definition|method_declaration|class_declaration|class_definition|interface_declaration|type_alias_declaration|type_declaration|struct_item|enum_item|trait_item|impl_item|function_item|struct_specifier|class_specifier|enum_specifier|type_spec|lexical_declaration|variable_declaration)$/
 
-export async function symbols(text: string, language: string, disabled: readonly string[] = []): Promise<{ entries: SymbolEntry[]; source: 'tree-sitter' | 'markdown' | 'file' }> {
+export async function symbols(text: string, language: string, disabled: readonly string[] = [], directories: Record<string, string> = {}): Promise<{ entries: SymbolEntry[]; source: 'tree-sitter' | 'markdown' | 'file' }> {
   if (language === 'markdown') {
     const entries: SymbolEntry[] = []
     let fence: string | null = null
@@ -31,7 +31,7 @@ export async function symbols(text: string, language: string, disabled: readonly
     await initialized
     if (!languages.has(language)) {
       const pkg = `tree-sitter-${language === 'tsx' ? 'typescript' : language}`
-      const base = dirname(require.resolve(`${pkg}/package.json`))
+      const base = directories[language] ?? dirname(require.resolve(`${pkg}/package.json`))
       languages.set(language, await Language.load(join(base, `tree-sitter-${language}.wasm`)))
     }
     const grammar = languages.get(language)

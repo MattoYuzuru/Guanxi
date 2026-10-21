@@ -48,7 +48,7 @@ is captured at service creation so later checkout edits cannot replace a launche
 
 SHA-256 of file content keys `contents`; `(hash, language, parser-version)` keys `maps`. One
 content and FTS row is shared across every worktree. A canonical-root hash selects the
-separate `files` manifest and `roots` observation. Every query reads a fresh filesystem
+separate `files` manifest and `roots` observation. Every query uses one SQLite read snapshot for cache coverage/FTS decisions and reads a fresh filesystem
 snapshot and hashes its eligible content before trusting the cache. Newly edited content
 uses literal search; removed/renamed/ignored paths cannot contribute stale hits. Every
 successful result includes observation time, current commit, indexed commit, index age,
@@ -68,10 +68,15 @@ sidecar while the node is stopped rebuilds the index from roots and leaves proje
 
 ## Scheduling and tools
 
-Builds run in a worker thread under `ResourceGovernor.tryIdleLease`. This CPU/IO lease is
+Builds run in a sandboxed worker process under `ResourceGovernor.tryIdleLease`. This CPU/IO lease is
 separate from the accelerator permit: queued or active model work prevents admission, any
 new model ticket aborts the exact idle owner, and a second idle writer waits for actual
-release. Interactive admission never awaits index cleanup. Unload/cancel terminates workers.
+release. Interactive admission never awaits index cleanup. Unload/cancel terminates process groups. The scanner uses a read-only Seatbelt profile on macOS
+and a network-isolated bubblewrap namespace on Linux. Only the sidecar directory is writable;
+source/runtime dependencies and git metadata have explicit read grants. Missing sandbox support
+fails closed. Scratch/attachment and plugin-absent navigation use the same captured scanner.
+System executable/library/config reads remain required exceptions. Linux implementation is
+unvalidated by this Mac-only lane; no remote host was used.
 This is a process-local background run, not an R1 durable inference run or a fleet lease.
 
 D-189 admission and one-second resampling use CPU counters/load, available memory, thermal

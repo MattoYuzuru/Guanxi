@@ -410,3 +410,92 @@ test('close waits for invocations that have not created a worker and removes the
     assert.equal(service.close(), service.close())
   } finally { await service.close(); await governor.close(); await f.close() }
 })
+
+test('FTS candidate and coverage reads share a snapshot while another builder adds postings', async () => {
+  const f = await fixture()
+  const { IndexStore } = await import('../../src/indexing/store.ts')
+  const original = IndexStore.prototype.fts
+  let inserted = false
+  const hook = mock.method(IndexStore.prototype, 'fts', function(this: InstanceType<typeof IndexStore>, text: string) {
+    const candidates = original.call(this, text)
+    const writer = new DatabaseSync(f.database)
+    const row = writer.prepare('SELECT hash, text FROM contents').get()!
+    writer.prepare('INSERT INTO fulltext(hash, text) VALUES (?, ?)').run(row.hash!, row.text!)
+    writer.close(); inserted = true
+    return candidates
+  })
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'Needle')
+    await executeIndex({ ...f.request('build'), settings: { ...settings, ftsMinFiles: 2 } }, f.allow)
+    assert.deepEqual(await f.search(), ['a.ts:1:Needle'])
+    assert.equal(inserted, true)
+  } finally { hook.mock.restore(); await f.close() }
+})
+
+test('unchanged content is not parsed again across builds or worktrees', async () => {
+  const f = await fixture(), parse = mock.fn(symbols)
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
+    f.git('add', '.'); f.git('commit', '-m', 'base'); f.git('worktree', 'add', '-b', 'other', f.other)
+    await executeIndex(f.request('build'), f.allow, undefined, parse)
+    assert.equal(parse.mock.callCount(), 1)
+    await executeIndex(f.request('build', f.other), f.allow, undefined, parse)
+    await executeIndex(f.request('build'), f.allow, undefined, parse)
+    assert.equal(parse.mock.callCount(), 1)
+    await writeFile(join(f.root, 'a.ts'), 'export const changedNeedle = 1')
+    await executeIndex(f.request('build'), f.allow, undefined, parse)
+    assert.equal(parse.mock.callCount(), 2)
+  } finally { await f.close() }
+})
+
+test('registration after content commit purges all worktree references even when the build fails', async () => {
+  const f = await fixture()
+  try {
+    const value = `during-${randomUUID()}`
+    await writeFile(join(f.root, 'a.ts'), value)
+    f.git('add', '.'); f.git('commit', '-m', 'base'); f.git('worktree', 'add', '-b', 'other', f.other)
+    await f.run('build'); await f.run('build', f.other)
+    let checkpoints = 0
+    await assert.rejects(executeIndex(f.request('build'), f.allow, async () => {
+      if (++checkpoints === 2) f.scrubber.register('secret://during', value)
+    }), /index_tree_changed/)
+    const db = new DatabaseSync(f.database, { readOnly: true })
+    assert.equal(db.prepare('SELECT count(*) n FROM files').get()!.n, 0)
+    for (const table of ['contents', 'maps', 'fulltext']) assert.equal(JSON.stringify(db.prepare(`SELECT * FROM ${table}`).all()).includes(value), false)
+    db.close()
+  } finally { await f.close() }
+})
+
+test('the scanner OS boundary denies ancestor symlink escapes and root writes', async () => {
+  const f = await fixture()
+  const { indexProcess, stopIndexProcess } = await import('../../src/indexing/process.ts')
+  try {
+    await mkdir(join(f.data, 'runtime')); await mkdir(join(f.data, 'outside'))
+    await writeFile(join(f.root, 'allowed'), 'inside')
+    await writeFile(join(f.data, 'outside', 'private'), 'outsideNeedle')
+    await symlink(join(f.data, 'outside'), join(f.root, 'nested'))
+    const entry = join(f.data, 'runtime', 'probe.mjs')
+    await writeFile(entry, `import {readFile,writeFile} from 'node:fs/promises';process.once('message',async()=>{const result={inside:await readFile(${JSON.stringify(join(f.root, 'allowed'))},'utf8'),escape:false,write:false};try{await readFile(${JSON.stringify(join(f.root, 'nested', 'private'))},'utf8');result.escape=true}catch{}try{await writeFile(${JSON.stringify(join(f.root, 'new'))},'bad');result.write=true}catch{}process.send(result);process.disconnect()})`)
+    const child = await indexProcess(entry, f.root, f.data)
+    try {
+      const result = await new Promise((resolve, reject) => { child.once('message', resolve); child.once('error', reject); child.once('close', () => reject(new Error('probe_closed'))); child.send({ start: true }) })
+      assert.deepEqual(result, { inside: 'inside', escape: false, write: false })
+    } finally { await stopIndexProcess(child) }
+  } finally { await f.close() }
+})
+
+test('shrinking headroom preempts a running build and allows a later healthy rebuild', async () => {
+  const f = await fixture(), governor = new ResourceGovernor()
+  let samples = 0, shrink = true
+  const service = new ProjectIndex({ dataDir: f.data, governor, scrubber: f.scrubber, settings: { pollMs: 60_000 }, headroomPollMs: 5,
+    headroom: async () => ({ ...await green(), allowed: !shrink || ++samples === 1 }) })
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
+    await assert.rejects(service.build(f.root), /index_cancelled|index_interrupted/)
+    assert.ok(samples >= 2)
+    assert.equal(service.status().headroom!.allowed, false)
+    shrink = false
+    await service.build(f.root)
+    assert.equal(service.status().build, 'complete')
+  } finally { await service.close(); await governor.close(); await f.close() }
+})
