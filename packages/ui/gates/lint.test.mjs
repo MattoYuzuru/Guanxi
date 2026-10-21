@@ -220,3 +220,11 @@ test('L1 parse errors fail both gates instead of matching a null rule id', async
     assert.ok(result.errors.some(e => e.includes('(parse error)') && e.includes(file)), gate.id)
   }
 })
+
+test('L4 test-named production modules retain every G8/G9 rule', async () => {
+  for (const file of ['packages/web/src/features/a.spec.tsx', 'packages/web/src/features/a.test.tsx', 'plugins/demo/ui/a.test.tsx']) {
+    assert.equal(await eslint.isPathIgnored(file), false, file)
+    const messages = await lint("import X from 'lucide-react'; const x = <button style={{ color: 'red', padding: '13px' }} className='bg-red-500'/>", file)
+    for (const name of ['import-boundaries', 'reuse-primitives', 'no-inline-colours', 'no-literal-styles', 'semantic-classes']) assert.ok(messages.some(m => m.ruleId === `guanxi/${name}`), `${file}: ${name}`)
+  }
+})

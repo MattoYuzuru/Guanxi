@@ -9,7 +9,7 @@ export default [
   { files: ['**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'], languageOptions: { parser, parserOptions: { ecmaFeatures: { jsx: true } } } },
   {
     files: source,
-    ignores: ['packages/ui/**', 'packages/server/**', 'packages/cli/**', 'packages/kernel/**', 'packages/contract/**', '**/*.test.*', '**/*.spec.*'],
+    ignores: ['packages/ui/**', 'packages/server/**', 'packages/cli/**', 'packages/kernel/**', 'packages/contract/**'],
     plugins: { guanxi },
     rules: {
       'guanxi/import-boundaries': 'error',
