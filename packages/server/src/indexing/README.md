@@ -57,6 +57,12 @@ a snapshot observation, not a filesystem-wide transaction against concurrent ext
 The scan cost is linear in eligible bytes; X1 claims incremental parsing and shared content,
 not a measured localisation speedup or an O(1) freshness check. B1/X2 benchmarking remains.
 
+Idle refresh first compares eligible path sizes/mtimes, commit, registered-value digest,
+parser version and content-affecting settings. An unchanged fingerprint skips the worker
+and manifest rewrite. Queries still hash live bytes. Losing or replacing the root during
+the fingerprint walk rejects that observation before admission. Existing ignore policies
+that cannot be read safely, including `.git/info/exclude`, fail closed for their subtree.
+
 Content writes commit individually. The manifest is published in a single transaction only
 after a second scan matches the content fingerprint and commit. Worker termination can leave
 reusable content, but cannot publish half a manifest. Restart/retry rebuilds the manifest;
@@ -75,9 +81,17 @@ release. Interactive admission never awaits index cleanup. Unload/cancel termina
 and a network-isolated bubblewrap namespace on Linux. Only the sidecar directory is writable;
 source/runtime dependencies and git metadata have explicit read grants. Missing sandbox support
 fails closed. Scratch/attachment and plugin-absent navigation use the same captured scanner.
-System executable/library/config reads remain required exceptions. Linux implementation is
-unvalidated by this Mac-only lane; no remote host was used.
+System executable/library/config reads remain required exceptions. Fedora bwrap startup,
+containment and worker priority are runtime-verified in the
+[Review 1 evidence](../../../../docs/plans/lanes/X1.handoff.md#review-1-fix-verification).
 This is a process-local background run, not an R1 durable inference run or a fleet lease.
+
+Build calls within one service serialize through worker termination and lease release;
+external governor contention still defers admission. Removing a tracked root cancels its
+queued and active idle work. Cancellation before worker startup returns `index_cancelled`.
+Captured runtime, sidecar and sandbox grants use canonical data-directory paths, including
+symlinked data directories. Workers inherit background scheduling through `taskpolicy -b`
+on macOS and `nice -n 19` with `ionice -c3` where installed on Linux.
 
 D-189 admission and one-second resampling use CPU counters/load, available memory, thermal
 observations and foreground input idle time where available. macOS uses `memory_pressure -Q`,
