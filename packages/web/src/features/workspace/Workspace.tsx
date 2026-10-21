@@ -92,7 +92,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     return contribution ? translate(contribution.title as LocaleKey) : id
   }
   function say(message: string) { setAnnouncement(message); setAnnouncementRevision(value => value + 1) }
-  const announceMove = (id: string, zone: WorkspaceZone) => say(translate('workspace.moved', { block: title(id), zone: translate(`workspace.zone.${zone}`) }))
+  const announceMove = (id: string, zone: WorkspaceZone) => say(translate('workspaceLayout.moved', { block: title(id), zone: translate(`workspaceLayout.zone.${zone}`) }))
 
   const load = useCallback(() => {
     const controller = new AbortController()
@@ -209,7 +209,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
         setName(winner.name)
         setGeneration(value => value + 1)
       }
-      say(translate(result.recovered.length || !won ? 'workspace.recovered' : 'workspace.saved'))
+      say(translate(result.recovered.length || !won ? 'workspaceLayout.recovered' : 'workspaceLayout.saved'))
     } catch { setSaveError(true) }
     finally { operationBusy.current = false; setSaving(false) }
   }
@@ -229,9 +229,9 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     setMoving(null)
     try {
       const success = await engine.current?.move(id, destination)
-      if (!success) say(translate('workspace.popoutFailed'))
+      if (!success) say(translate('workspaceLayout.popoutFailed'))
       remember()
-    } catch { say(translate('workspace.popoutFailed')) }
+    } catch { say(translate('workspaceLayout.popoutFailed')) }
     finally { operationBusy.current = false; setSwitching(false) }
   }
   function hide(id: string) {
@@ -244,7 +244,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     engine.current?.hide(id)
     if (!phone) { remember(); requestAnimationFrame(() => { const id = engine.current?.activeBlock(); if (id) engine.current?.focus(id) }) }
     else requestAnimationFrame(() => document.getElementById(`tab-${visible.find(block => block !== id) ?? ''}`)?.focus())
-    say(translate('workspace.hiddenAnnouncement', { block: title(id) }))
+    say(translate('workspaceLayout.hiddenAnnouncement', { block: title(id) }))
   }
   function addBlock(contributionId: string) {
     const contribution = contributions.find(entry => entry.key === contributionId)?.value
@@ -263,7 +263,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     setDocuments(previous => ({ ...previous, [mode]: next }))
     setGeneration(value => value + 1)
     setSelected(id)
-    say(translate('workspace.added', { block: translate(contribution.title as LocaleKey) }))
+    say(translate('workspaceLayout.added', { block: translate(contribution.title as LocaleKey) }))
   }
   function show(id: string) {
     engine.current?.show(id, contributionFor(id)?.defaultZone ?? 'center')
@@ -272,7 +272,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
       setDocuments(previous => ({ ...previous, [mode]: layoutDocumentSchema.parse(next) }))
       setSelected(id)
     } else remember()
-    say(translate('workspace.added', { block: title(id) }))
+    say(translate('workspaceLayout.added', { block: title(id) }))
   }
 
   useEffect(() => {
@@ -296,8 +296,8 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     return () => { Reflect.deleteProperty(window, '__GUANXI_WORKSPACE__') }
   })
 
-  if (loading) return <WorkspaceChrome kind="state" title={translate('workspace.loading')} />
-  if (loadError || !doc) return <WorkspaceChrome kind="state" title={translate('workspace.error')} error action={{ label: translate('workspace.retry'), onClick: load }} />
+  if (loading) return <WorkspaceChrome kind="state" title={translate('workspaceLayout.loading')} />
+  if (loadError || !doc) return <WorkspaceChrome kind="state" title={translate('workspaceLayout.error')} error action={{ label: translate('workspaceLayout.retry'), onClick: load }} />
   for (const id of Object.keys(doc.blocks)) if (!paneHosts.current.has(id)) { const host = document.createElement('div'); host.className = 'workspace-retained-pane'; paneHosts.current.set(id, host) }
   for (const host of paneHosts.current.values()) { host.dataset.theme = theme; host.dataset.density = doc.density; host.lang = locale }
   const visible = Object.keys(doc.blocks).filter(id => !doc.hidden.includes(id)).sort((a, b) => doc.blocks[a]!.priority - doc.blocks[b]!.priority || a.localeCompare(b))
@@ -309,43 +309,43 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     const name = contribution?.id.split('/')[1] as BuiltInBlock | undefined
     const Renderer = contribution && 'component' in contribution.pane ? paneRegistry.get(contribution.pane.component) : undefined
     const unavailable = !contribution || !contribution.modes.includes(mode) || (safeMode && !builtIn) || (!builtIn && !Renderer)
-    if (unavailable) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)} description={translate(safeMode ? 'workspace.safePlaceholder' : 'workspace.placeholder')} />
-    if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
+    if (unavailable) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspaceLayout.move')} hideLabel={translate('workspaceLayout.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)} description={translate(safeMode ? 'workspaceLayout.safePlaceholder' : 'workspaceLayout.placeholder')} />
+    if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspaceLayout.move')} hideLabel={translate('workspaceLayout.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
     return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? children : null}</BuiltInPane>
   }
   return <UiLocaleProvider locale={locale}><div className="workspace" data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
     if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
-    <WorkspaceChrome kind="toolbar" label={translate('workspace.title')} busy={saving || switching} fields={[
-      { label: translate('workspace.mode'), value: mode, choices: (['developer', 'visual'] as const).map(id => ({ id, label: translate(`workspace.${id}`) })), onChange: next => { void switchMode(next as ExperienceMode) } },
-      { label: translate('workspace.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspace.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
-      { label: translate('workspace.layout'), value: `${layoutScopeKey(doc.scope)}#${doc.id}`, choices: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: row.name === 'Recovered layout' ? translate('workspace.recoveredName') : row.name })), onChange: id => {
+    <WorkspaceChrome kind="toolbar" label={translate('workspaceLayout.title')} busy={saving || switching} fields={[
+      { label: translate('workspaceLayout.mode'), value: mode, choices: (['developer', 'visual'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => { void switchMode(next as ExperienceMode) } },
+      { label: translate('workspaceLayout.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
+      { label: translate('workspaceLayout.layout'), value: `${layoutScopeKey(doc.scope)}#${doc.id}`, choices: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: row.name === 'Recovered layout' ? translate('workspaceLayout.recoveredName') : row.name })), onChange: id => {
         const next = list.documents.find(row => `${layoutScopeKey(row.scope)}#${row.id}` === id && row.scope.mode === mode)
         if (next) void activateDocument(next, true)
       } },
-      { label: translate('workspace.add'), value: '', choices: contributions.filter(entry => entry.value.modes.includes(mode) && (!safeMode || entry.pluginId === 'guanxi.core')).map(entry => ({ id: entry.key, label: translate(entry.value.title as LocaleKey) })), onChange: addBlock },
-      { label: translate('workspace.hidden'), value: '', choices: doc.hidden.map(id => ({ id, label: title(id) })), onChange: show },
-    ]} name={{ label: translate('workspace.layout'), value: name, onChange: setName }} actions={[
-      { label: translate('workspace.save'), onClick: () => { void save() }, disabled: saving },
-      { label: translate('workspace.saveAs'), onClick: () => { void save(true) }, disabled: saving },
-      { label: translate('workspace.move'), onClick: () => openMove(), disabled: phone },
-      { label: translate('workspace.reset'), onClick: () => { const next = builtInLayout(query(mode)); setDocuments(previous => ({ ...previous, [mode]: next })); phoneSnapshot.current = undefined; setGeneration(value => value + 1) } },
+      { label: translate('workspaceLayout.add'), value: '', choices: contributions.filter(entry => entry.value.modes.includes(mode) && (!safeMode || entry.pluginId === 'guanxi.core')).map(entry => ({ id: entry.key, label: translate(entry.value.title as LocaleKey) })), onChange: addBlock },
+      { label: translate('workspaceLayout.hidden'), value: '', choices: doc.hidden.map(id => ({ id, label: title(id) })), onChange: show },
+    ]} name={{ label: translate('workspaceLayout.layout'), value: name, onChange: setName }} actions={[
+      { label: translate('workspaceLayout.save'), onClick: () => { void save() }, disabled: saving },
+      { label: translate('workspaceLayout.saveAs'), onClick: () => { void save(true) }, disabled: saving },
+      { label: translate('workspaceLayout.move'), onClick: () => openMove(), disabled: phone },
+      { label: translate('workspaceLayout.reset'), onClick: () => { const next = builtInLayout(query(mode)); setDocuments(previous => ({ ...previous, [mode]: next })); phoneSnapshot.current = undefined; setGeneration(value => value + 1) } },
     ]} />
-    {saveError && <WorkspaceChrome kind="state" title={translate('workspace.saveError')} error action={{ label: translate('workspace.retry'), onClick: () => retryOperation.current() }} />}
+    {saveError && <WorkspaceChrome kind="state" title={translate('workspaceLayout.saveError')} error action={{ label: translate('workspaceLayout.retry'), onClick: () => retryOperation.current() }} />}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>
-    {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspace.popoutRestore')}</p>}
+    {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspaceLayout.popoutRestore')}</p>}
     <div className="workspace-content" inert={switching || undefined}>
       {visible.length === 0 ? (
-        <WorkspaceChrome kind="state" title={translate('workspace.noVisibleBlocks')} action={{ label: translate('workspace.add'), onClick: () => { const id = Object.keys(doc.blocks)[0]; if (id) show(id) } }} />
+        <WorkspaceChrome kind="state" title={translate('workspaceLayout.noVisibleBlocks')} action={{ label: translate('workspaceLayout.add'), onClick: () => { const id = Object.keys(doc.blocks)[0]; if (id) show(id) } }} />
       ) : phone ? <>
-        <WorkspaceChrome kind="phone" label={translate('workspace.phone')} selected={selectedId} blocks={visible.map(id => ({ id, label: title(id) }))} onSelect={setSelected} />
+        <WorkspaceChrome kind="phone" label={translate('workspaceLayout.phone')} selected={selectedId} blocks={visible.map(id => ({ id, label: title(id) }))} onSelect={setSelected} />
         {visible.map(id => <div key={id} id={`phone-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} hidden={id !== selectedId} ref={element => { if (element) element.append(paneHosts.current.get(id)!) }} />)}
       </> : (
-        <WorkspaceLayout key={`${mode}:${generation}`} document={doc} geometry={geometry} hosts={paneHosts.current} title={title} handleRef={engine} hideLabel={translate('workspace.hide')} onHidden={id => say(translate('workspace.hiddenAnnouncement', { block: title(id) }))} onChange={capture} onMove={announceMove} onReady={elapsed => { restoreTime.current = elapsed }} />
+        <WorkspaceLayout key={`${mode}:${generation}`} document={doc} geometry={geometry} hosts={paneHosts.current} title={title} handleRef={engine} hideLabel={translate('workspaceLayout.hide')} onHidden={id => say(translate('workspaceLayout.hiddenAnnouncement', { block: title(id) }))} onChange={capture} onMove={announceMove} onReady={elapsed => { restoreTime.current = elapsed }} />
       )}
     </div>
-    <PortalContainerProvider container={moving ? paneHosts.current.get(moving)?.ownerDocument.body ?? null : null}><WorkspaceChrome kind="mover" open={moving !== null} title={translate('workspace.moveTitle')} description={translate('workspace.move')} blockLabel={translate('workspace.block')} zoneLabel={translate('workspace.destination')} cancelLabel={translate('workspace.cancel')} moveLabel={translate('workspace.move')} blocks={choices.filter(choice => visible.includes(choice.id))} zones={zoneOrder.map(id => ({ id, label: translate(`workspace.zone.${id}`) }))} block={moving ?? ''} zone={destination} onBlock={setMoving} onZone={id => setDestination(id as WorkspaceZone)} onClose={() => { const id = moving; setMoving(null); requestAnimationFrame(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); else if (id) engine.current?.focus(id) }) }} onMove={() => { void move() }} /></PortalContainerProvider>
+    <PortalContainerProvider container={moving ? paneHosts.current.get(moving)?.ownerDocument.body ?? null : null}><WorkspaceChrome kind="mover" open={moving !== null} title={translate('workspaceLayout.moveTitle')} description={translate('workspaceLayout.move')} blockLabel={translate('workspaceLayout.block')} zoneLabel={translate('workspaceLayout.destination')} cancelLabel={translate('workspaceLayout.cancel')} moveLabel={translate('workspaceLayout.move')} blocks={choices.filter(choice => visible.includes(choice.id))} zones={zoneOrder.map(id => ({ id, label: translate(`workspaceLayout.zone.${id}`) }))} block={moving ?? ''} zone={destination} onBlock={setMoving} onZone={id => setDestination(id as WorkspaceZone)} onClose={() => { const id = moving; setMoving(null); requestAnimationFrame(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); else if (id) engine.current?.focus(id) }) }} onMove={() => { void move() }} /></PortalContainerProvider>
     {Object.keys(doc.blocks).map(id => createPortal(<PortalContainerProvider container={paneHosts.current.get(id)!}>{renderPane(id)}{paneHosts.current.get(id)!.ownerDocument !== document && <p className="sr-only" aria-live="polite" aria-atomic="true"><span key={announcementRevision}>{announcement}</span></p>}</PortalContainerProvider>, paneHosts.current.get(id)!, id))}
   </div></UiLocaleProvider>
 }
@@ -354,5 +354,5 @@ function BuiltInPane({ id, name, title, onMove, onHide, canMove, children }: { i
   const [draft, setDraft] = useState('')
   const hasDraft = name === 'terminal' || name === 'browser'
   const known = blockNames.includes(name)
-  return <WorkspaceChrome kind="pane" id={id} title={title} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} onMove={onMove} onHide={onHide} canMove={canMove} description={name !== 'chat' && known ? translate(`workspace.empty.${name}`) : undefined} draft={hasDraft ? { label: translate(name === 'terminal' ? 'workspace.draft' : 'workspace.preview'), value: draft, onChange: setDraft } : undefined}>{children}</WorkspaceChrome>
+  return <WorkspaceChrome kind="pane" id={id} title={title} moveLabel={translate('workspaceLayout.move')} hideLabel={translate('workspaceLayout.hide')} onMove={onMove} onHide={onHide} canMove={canMove} description={name !== 'chat' && known ? translate(`workspaceLayout.empty.${name}`) : undefined} draft={hasDraft ? { label: translate(name === 'terminal' ? 'workspaceLayout.draft' : 'workspaceLayout.preview'), value: draft, onChange: setDraft } : undefined}>{children}</WorkspaceChrome>
 }

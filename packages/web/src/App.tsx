@@ -121,7 +121,7 @@ function TopBar() {
   useLocale()
 
   const tabs = [
-    { to: paths.workspace(), label: translate('workspace.title'), active: route.name === 'workspace' },
+    { to: paths.workspace(), label: translate('workspaceLayout.title'), active: route.name === 'workspace' },
     { to: paths.agent(), label: translate('native.nav'), active: route.name === 'agent' },
     { to: paths.launcher(), label: translate('app.navigation.models'), active: route.name === 'launcher' || route.name === 'model' },
     { to: paths.chat(), label: translate('app.navigation.chat'), active: route.name === 'chat' },

@@ -44,6 +44,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const zones = useRef(new Map<string, WorkspaceZone>())
   const muted = useRef(false)
   const ownedHandle = useRef<WorkspaceLayoutHandle | null>(null)
+  const resume = useRef<() => void>(() => undefined)
+  const alive = useRef(true)
   const components = useMemo(() => ({ host: function PaneHost({ api }: IDockviewPanelProps) {
     return <div className="workspace-pane-host" ref={element => {
       const host = latest.current.hosts.get(api.id)
@@ -51,10 +53,18 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     }} />
   } }), [])
 
-  useEffect(() => () => {
-    subscriptions.current.forEach(item => item.dispose())
-    apiRef.current = null
-    if (latest.current.handleRef.current === ownedHandle.current) latest.current.handleRef.current = null
+  useEffect(() => {
+    alive.current = true
+    // Dockview keeps its instance through React StrictMode's effect replay.
+    // Rebind our subscriptions and handle when effects resume too.
+    if (ownedHandle.current) latest.current.handleRef.current = ownedHandle.current
+    resume.current()
+    return () => {
+      alive.current = false
+      subscriptions.current.forEach(item => item.dispose())
+      subscriptions.current = []
+      if (latest.current.handleRef.current === ownedHandle.current) latest.current.handleRef.current = null
+    }
   }, [])
 
   useEffect(() => {
@@ -90,7 +100,12 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       const existing = api.groups.find(g => zoneOf(g) === zone && g.api.location.type === 'grid')
       if (existing) return existing
       const direction = zone === 'left' ? 'left' : zone === 'right' ? 'right' : zone === 'top' ? 'above' : zone === 'bottom' ? 'below' : 'right'
-      const group = api.addGroup({ direction, locked: zone !== 'center' && zone !== 'floating' && zone !== 'popout' })
+      const group = api.addGroup({
+        direction, locked: zone !== 'center' && zone !== 'floating' && zone !== 'popout',
+        // Resizable starting proportions, never ceilings or persisted overrides.
+        initialWidth: zone === 'left' || zone === 'right' ? api.width / 5 : undefined,
+        initialHeight: zone === 'top' || zone === 'bottom' ? api.height * 0.3 : undefined,
+      })
       groupZones.set(group.id, zone)
       return group
     }
@@ -157,7 +172,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           latest.current.onMove(id, zone)
           latest.current.onChange()
           panel.api.setActive()
-          requestAnimationFrame(() => { panel.api.getWindow().focus(); latest.current.hosts.get(id)?.querySelector<HTMLElement>('[data-block]')?.focus() })
+          panel.api.getWindow().requestAnimationFrame(() => { panel.api.getWindow().focus(); latest.current.hosts.get(id)?.querySelector<HTMLElement>('[data-block]')?.focus() })
         }
         return success
       },
@@ -179,10 +194,13 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     }
     ownedHandle.current = handle
     latest.current.handleRef.current = handle
+    resume.current = () => {
+    subscriptions.current.forEach(item => item.dispose())
+    subscriptions.current = []
     let dropZone: WorkspaceZone | undefined
     subscriptions.current.push(api.onWillDrop(event => { dropZone = event.group ? zoneOf(event.group) : event.position === 'left' || event.position === 'right' || event.position === 'top' || event.position === 'bottom' ? event.position : 'center' }), api.onDidDrop(() => { dropZone = undefined }), api.onDidRemovePanel(panel => {
       queueMicrotask(() => {
-        if (apiRef.current !== api || muted.current || api.getPanel(panel.id)) return
+        if (!alive.current || apiRef.current !== api || muted.current || api.getPanel(panel.id)) return
         latest.current.onHidden(panel.id)
         const active = api.activePanel?.id
         if (active) handle.focus(active)
@@ -192,8 +210,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       const zone = zoneOf(event.to)
       event.to.api.locked = zone !== 'center' && zone !== 'floating' && zone !== 'popout'
       if (!muted.current) latest.current.onMove(event.panel.id, zone)
-    }), api.onDidLayoutChange(() => { if (!muted.current) latest.current.onChange() }))
-    requestAnimationFrame(() => requestAnimationFrame(() => latest.current.onReady?.(performance.now() - start)))
+    }), api.onDidLayoutChange(() => { if (alive.current && !muted.current) latest.current.onChange() }))
+    }
+    resume.current()
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (alive.current && apiRef.current === api) latest.current.onReady?.(performance.now() - start) }))
   }
   return <div className="workspace-layout"><DockviewReact components={components} theme={{ name: 'workspace', className: 'gx-dockview' }} onReady={event => ready(event.api)} disableTabsOverflowList scrollbars="native" watermarkComponent={() => null} announcements={false} keyboardNavigation={false} messages={{ closeTab: title => `${props.hideLabel} ${title}`, closeTabPlain: () => props.hideLabel }} getTabContextMenuItems={() => []} getTabGroupChipContextMenuItems={() => []} groupDragGhostComponent={({ group }) => <span>{group.panels.map(panel => panel.title).join(', ')}</span>} popoutUrl="/workspace-popout.html" /></div>
 }

@@ -9,3 +9,5 @@
   .workspace-content { overflow: visible; }
   .workspace-content > [role='tabpanel']:not([hidden]) { display: block; }
 }
+
+.workspace-chat-content { display: flex; flex-direction: column; min-height: 0; min-width: 0; @apply h-full; }

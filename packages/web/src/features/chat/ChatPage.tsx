@@ -226,8 +226,8 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
   const project = projectContext.data?.project ?? null
 
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-5 px-4 py-5 sm:px-5 md:grid-cols-[240px_minmax(0,1fr)]">
-      <ThreadSidebar currentId={null} projectId={projectId} />
+    <div className={inWorkspace ? 'workspace-chat-content' : 'mx-auto grid w-full min-w-0 max-w-6xl gap-5 px-4 py-5 sm:px-5 md:grid-cols-[240px_minmax(0,1fr)]'}>
+      {!inWorkspace && <ThreadSidebar currentId={null} projectId={projectId} />}
 
       <section className="surface min-w-0 rounded-xl p-4">
         <h1
@@ -256,7 +256,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
           </div>
         )}
 
-        {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspace.dockLanes')}>{translate('workspace.lanesEmpty')}</aside>}
+        {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
         <form onSubmit={create} className="w-full min-w-0 max-w-xl space-y-4">
           {!projectId && <fieldset>
             <legend className="mb-1.5 text-xs font-medium">{translate('chat.create.mode')}</legend>
@@ -476,8 +476,8 @@ function ThreadPage({
 
   if (chat.loading) {
     return (
-      <div className="grid h-full md:grid-cols-[240px_minmax(0,1fr)]">
-        <ThreadSidebar currentId={threadId} projectId={projectId} />
+      <div className={inWorkspace ? 'workspace-chat-content' : 'grid h-full md:grid-cols-[240px_minmax(0,1fr)]'}>
+        {!inWorkspace && <ThreadSidebar currentId={threadId} projectId={projectId} />}
         <div className="space-y-3 p-5">
           <Skeleton className="h-8 w-72" />
           <Skeleton className="h-24 w-3/4" />
@@ -505,8 +505,8 @@ function ThreadPage({
   }
 
   return (
-    <div className="grid h-full min-h-0 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]">
-      <ThreadSidebar currentId={threadId} projectId={projectId} />
+    <div className={inWorkspace ? 'workspace-chat-content' : 'grid h-full min-h-0 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]'}>
+      {!inWorkspace && <ThreadSidebar currentId={threadId} projectId={projectId} />}
 
       <section className="flex min-h-0 min-w-0 flex-col border-l border-[var(--border)]">
         <header className="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-1.5">
@@ -585,7 +585,7 @@ function ThreadPage({
             </details>
           </div>
 
-          {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspace.dockLanes')}>{translate('workspace.lanesEmpty')}</aside>}
+          {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
           <Composer
             inputRef={composerRef}
             disabled={!health.ollama.running}
@@ -601,7 +601,7 @@ function ThreadPage({
         </div>
       </section>
 
-      <aside className="hidden min-h-0 border-l border-[var(--border)] xl:block">
+      {!inWorkspace && <aside className="hidden min-h-0 border-l border-[var(--border)] xl:block">
         <ContextPanel
           context={chat.context}
           usage={chat.usage}
@@ -609,7 +609,7 @@ function ThreadPage({
           onCompact={chat.compact}
           disabled={chat.isStreaming}
         />
-      </aside>
+      </aside>}
 
       {chat.thread.mode === 'agent' && (
         <WorkspacePicker

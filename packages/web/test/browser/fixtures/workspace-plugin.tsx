@@ -8,7 +8,7 @@ export async function load(): Promise<void> {
     apply(ctx) {
       registerBlockPane(ctx, 'test.workspace/pane', () => <p>Plugin pane fixture</p>)
       contribute(ctx, WORKSPACE_BLOCK_SLOT, { id: 'pane', value: {
-        id: 'test.workspace/pane', title: 'workspace.block.plan', icon: 'PanelTop', modes: ['developer', 'visual'],
+        id: 'test.workspace/pane', title: 'workspaceLayout.block.plan', icon: 'PanelTop', modes: ['developer', 'visual'],
         defaultZone: 'right', multiInstance: false, keepAlive: false, pane: { component: 'test.workspace/pane' },
       } })
     },
