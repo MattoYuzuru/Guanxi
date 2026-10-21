@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { renameSync } from 'node:fs'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
+import { mock } from 'node:test'
+import { projectFingerprint } from '../../src/indexing/snapshot.ts'
+import { DEFAULT_INDEX_SETTINGS } from '../../src/indexing/types.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { ProjectIndex, type IndexEvent } from '../../src/indexing/service.ts'
@@ -184,20 +188,129 @@ test('untracking cancels an idle build already queued behind an explicit build',
   } finally { resume(); await build?.catch(() => {}); await service.close(); await f.governor.close(); await f.close() }
 })
 
-test('a root removed during the fingerprint never reaches idle admission', async () => {
+test('a root removed during the sandboxed fingerprint cannot publish a partial tree', async () => {
   const f = await fixture(1), events: IndexEvent[] = []
-  let moved = false, admissions = 0
+  let moved = false, admissions = 0, checks = 0
   const facade = f.scrubber.facade()
   const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, settings: { pollMs: 60_000 },
     onIndexEvent: event => events.push(event), headroom: async () => { admissions++; return green() },
-    scrubber: { ...facade, scrub: value => {
-      if (!moved) { renameSync(f.root, join(f.dir, 'removed')); moved = true }
-      return facade.scrub(value)
+    scrubber: { ...facade, snapshot: () => {
+      // The second registration snapshot answers the fingerprint worker's
+      // first policy/path check, after its read-only sandbox has started.
+      if (++checks === 2) { renameSync(f.root, join(f.dir, 'removed')); moved = true }
+      return facade.snapshot!()
     } } })
   try {
-    await assert.rejects(service.build(f.root), { code: 'ENOENT' })
+    await assert.rejects(service.build(f.root), /index_unavailable|index_tree_changed/)
     assert.equal(moved, true)
-    assert.equal(admissions, 0)
+    assert.ok(admissions >= 1, 'fingerprint and headroom resampling share idle admission')
+    const lease = f.governor.tryIdleLease(() => {})
+    assert.ok(lease, 'root-change refusal settles after its idle lease is released')
+    lease.release()
     assert.equal(events.filter(event => event.type === 'build' || event.type === 'publish').length, 0)
   } finally { await service.close(); await f.governor.close(); await f.close() }
+})
+
+
+test('fingerprint policy reads happen only in the sandbox, never in the server parent', async () => {
+  const f = await fixture(1), events: IndexEvent[] = []
+  await writeFile(join(f.root, '.gitignore'), 'ignored.ts\n')
+  await writeFile(join(f.root, 'ignored.ts'), 'excluded fixture text')
+  const fs = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
+  const original = fs.open, originalReadFile = fs.readFile
+  let parentReads = 0
+  const trap = mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+    const handle = await original(...args)
+    if (String(args[0]).startsWith(f.root + '/')) {
+      mock.method(handle, 'read', async () => { parentReads++; throw new Error('fixture_parent_project_read') })
+    }
+    return handle
+  })
+  const fileTrap = mock.method(fs, 'readFile', async (...args: Parameters<typeof fs.readFile>) => {
+    if (String(args[0]).startsWith(f.root + '/')) { parentReads++; throw new Error('fixture_parent_project_read') }
+    return originalReadFile(...args)
+  })
+  syncBuiltinESMExports()
+  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, scrubber: f.scrubber,
+    settings: { pollMs: 60_000 }, headroom: green, onIndexEvent: event => events.push(event) })
+  try {
+    // Positive instrumentation control: the formerly parent-side helper really
+    // attempts to read the ignore policy through the trapped FileHandle.
+    await projectFingerprint(f.root, DEFAULT_INDEX_SETTINGS, async () => true)
+    assert.equal(parentReads, 1)
+    parentReads = 0
+    await service.build(f.root)
+    await service.build(f.root)
+    assert.equal(parentReads, 0, 'server parent must read zero project/ignore bytes')
+    assert.deepEqual(events.map(event => event.type), ['build', 'publish', 'skip'])
+    const db = new DatabaseSync(service.database, { readOnly: true })
+    try {
+      const paths = db.prepare('SELECT path FROM files ORDER BY path').all().map(row => row.path)
+      assert.deepEqual(paths, ['.gitignore', 'f0.ts'])
+    } finally { db.close() }
+  } finally {
+    trap.mock.restore(); fileTrap.mock.restore(); syncBuiltinESMExports()
+    await service.close(); await f.governor.close(); await f.close()
+  }
+})
+
+test('a query cannot replace its immutable root grant by recanonicalizing an outside symlink', async () => {
+  const { symlink } = await import('node:fs/promises')
+  const f = await fixture(1)
+  const outside = join(f.dir, 'outside')
+  await mkdir(outside); await writeFile(join(outside, 'private.ts'), 'outside fixture text')
+  await rename(f.root, join(f.dir, 'original')); await symlink(outside, f.root)
+  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, scrubber: f.scrubber,
+    settings: { pollMs: 60_000 }, headroom: green })
+  try {
+    await assert.rejects(service.search(f.root, 'outside'), /index_tree_changed/)
+    await assert.rejects(service.map(f.root), /index_tree_changed/)
+    assert.equal((Reflect.get(service, 'workers') as Set<unknown>).size, 0)
+    assert.equal(Reflect.get(service, 'runtime'), undefined, 'refusal precedes sandbox grants/runtime creation')
+  } finally { await service.close(); await f.governor.close(); await f.close() }
+})
+
+test('result validation settles correctly when worker close arrives during the final root check', async () => {
+  const f = await fixture(1)
+  const fs = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
+  const original = fs.lstat
+  let received = false, held = false, settled = false
+  let worker: import('node:child_process').ChildProcess | undefined
+  let release!: () => void
+  const hold = new Promise<void>(resolve => { release = resolve })
+  const trap = mock.method(fs, 'lstat', async (...args: Parameters<typeof fs.lstat>) => {
+    if (received && String(args[0]) === f.root && !held) {
+      held = true
+      // Inject the OS event ordering deterministically; natural worker lifetime
+      // varies with loaded parser resources and need not close this quickly.
+      queueMicrotask(() => worker!.emit('close', 0))
+      await hold
+    }
+    return original(...args)
+  })
+  syncBuiltinESMExports()
+  const scrubber = f.scrubber.facade()
+  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, settings: { pollMs: 60_000 }, headroom: green,
+    scrubber: { ...scrubber, snapshot: () => {
+      const active = [...Reflect.get(service, 'workers') as Set<import('node:child_process').ChildProcess>][0]
+      if (active && !worker) {
+        worker = active
+        worker.prependListener('message', message => { if (message && typeof message === 'object' && 'kind' in message && message.kind === 'result') received = true })
+      }
+      return scrubber.snapshot!()
+    } } })
+  let build: Promise<unknown> | undefined
+  try {
+    build = service.build(f.root)
+    void build.then(() => { settled = true }, () => { settled = true })
+    await waitFor(() => held)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(settled, false, 'a complete result must await validation rather than reject on close')
+    release(); await build
+    assert.equal(service.status().build, 'complete')
+  } finally {
+    release(); await build?.catch(() => {})
+    trap.mock.restore(); syncBuiltinESMExports()
+    await service.close(); await f.governor.close(); await f.close()
+  }
 })

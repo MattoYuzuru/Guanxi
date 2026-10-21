@@ -6,7 +6,9 @@
 `guanxi.project-index` provides the frozen `project.index` kernel service. It requires the
 process-local Resource Governor and K2 `egress.scrubber`. Native projects register their
 roots on load, root changes and session creation. Registration schedules a background build;
-queries also register roots. No model or network is used by the index.
+queries also register roots. Search/map/build callers supply the canonical immutable root;
+a root path that now resolves elsewhere is refused before new sandbox grants are made.
+No model or network is used by the index.
 
 ## Levels and settings
 
@@ -58,9 +60,12 @@ The scan cost is linear in eligible bytes; X1 claims incremental parsing and sha
 not a measured localisation speedup or an O(1) freshness check. B1/X2 benchmarking remains.
 
 Idle refresh first compares eligible path sizes/mtimes, commit, registered-value digest,
-parser version and content-affecting settings. An unchanged fingerprint skips the worker
-and manifest rewrite. Queries still hash live bytes. Losing or replacing the root during
-the fingerprint walk rejects that observation before admission. Existing ignore policies
+parser version and content-affecting settings. The fingerprint walk reads ignore policies
+inside the captured sandbox worker, under the same idle lease and headroom monitor as the
+content build. An unchanged fingerprint skips source-content scans, parsing, purge, publish
+and manifest rewrite; it still starts the sandboxed metadata/policy worker. Queries hash live
+bytes. Parent-side root identity checks read metadata only at worker checkpoints and before
+accepting results, so a host rename cannot publish a Linux worker's still-mounted old tree. Existing ignore policies
 that cannot be read safely, including `.git/info/exclude`, fail closed for their subtree.
 
 Content writes commit individually. The manifest is published in a single transaction only

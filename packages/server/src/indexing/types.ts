@@ -20,6 +20,7 @@ export interface Provenance {
   freshness: 'verified-snapshot'
   embeddings: false
 }
+export interface IndexBuildResult { provenance: Provenance; skipped: boolean }
 export interface SearchHit { path: string; line: number; text: string }
 export interface SearchResult { hits: SearchHit[]; provenance: Provenance; engine: 'fts5+grep' | 'node-grep'; truncated: boolean }
 export interface MapResult { entries: { path: string; symbols: SymbolEntry[]; source: 'tree-sitter' | 'markdown' | 'file' | 'lsp' }[]; provenance: Provenance; truncated: boolean; tokenBound: number; tokenMeasure: 'utf8-bytes' }

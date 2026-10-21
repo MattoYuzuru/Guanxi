@@ -1,6 +1,9 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { executeIndex } from './engine.ts'
-import type { IndexWorkerData } from './types.ts'
+import { projectFingerprint, hash } from './snapshot.ts'
+import { IndexStore } from './store.ts'
+import { PARSER_VERSION } from './parser.ts'
+import type { IndexWorkerData, IndexBuildResult, Provenance } from './types.ts'
 
 let next = 0
 const pending = new Map<number, (allowed: boolean) => void>()
@@ -41,7 +44,36 @@ async function run(data: IndexWorkerData) {
     return scrub.text(value) === value
   }
   const checkpoint = async () => { if (data.request.kind === 'build' && !(await check())) throw new Error('index_secret_changed') }
-  try { send({ kind: 'result', result: scrub.any(await executeIndex(data, allow, checkpoint)) }) }
+  try {
+    if (data.request.kind === 'build' && data.secretDigest) {
+      // Ignore policies contain project bytes too. Keep even the cheap metadata
+      // walk inside the same read-only OS boundary as the content scanner.
+      const tree = await projectFingerprint(data.request.root, data.settings, allow)
+      data.changeFingerprint = hash(JSON.stringify([data.request.root, tree.commit, tree.fingerprint, data.secretDigest,
+        PARSER_VERSION, data.settings.ftsMinFiles, data.settings.maxFileBytes]))
+      await checkpoint()
+      let cached: IndexStore | undefined
+      let unchanged: Provenance | undefined
+      try {
+        cached = new IndexStore(data.database)
+        const key = hash(data.request.root), row = cached.root(key)
+        if (row?.fingerprint === data.changeFingerprint) {
+          const count = cached.indexed(key).size
+          unchanged = { source: 'live-tree+content-cache', observedAt: new Date().toISOString(), commit: tree.commit,
+            indexCommit: row.commit_id, indexAgeMs: Math.max(0, Date.now() - Date.parse(row.indexed_at)),
+            coverage: { eligible: count, indexed: count, skipped: 0, symbols: 0 }, freshness: 'verified-snapshot', embeddings: false }
+        }
+      } catch { /* Missing/uninitialized cache requires a content build. */ }
+      finally { cached?.close() }
+      if (unchanged) {
+        send({ kind: 'result', result: scrub.any({ provenance: unchanged, skipped: true } satisfies IndexBuildResult) })
+        return
+      }
+      send({ kind: 'build' })
+      const provenance = await executeIndex(data, allow, checkpoint) as Provenance
+      send({ kind: 'result', result: scrub.any({ provenance, skipped: false } satisfies IndexBuildResult) })
+    } else send({ kind: 'result', result: scrub.any(await executeIndex(data, allow, checkpoint)) })
+  }
   catch (error) { send({ kind: 'error', code: error instanceof Error && /^index_[a-z_]+$/.test(error.message) ? error.message : 'index_unavailable' }) }
   finally { if (parentPort) parentPort.close(); else process.disconnect?.() }
 }

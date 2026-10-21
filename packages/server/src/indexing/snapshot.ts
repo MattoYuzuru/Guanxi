@@ -152,8 +152,9 @@ export async function snapshot(rootPath: string, settings: IndexSettings, allow:
   return { rootKey: hash(root), commit, files, skipped, observedAt: new Date().toISOString(), fingerprint: hash(JSON.stringify(files.map(f => [f.path, f.hash]))) }
 }
 
-/** Cheap change detection with the same ignore policy as `snapshot`. It stats
- * eligible files but never reads their bytes. */
+/** Cheap change detection with the same ignore policy as `snapshot`. It reads
+ * ignore policies and stats eligible source files without reading source bytes.
+ * Production callers must run it inside the scanner's OS sandbox. */
 export async function projectFingerprint(rootPath: string, settings: IndexSettings, allow: AllowContent): Promise<ProjectFingerprint> {
   const root = await realpath(rootPath)
   if (root === sep) throw new Error('index_root_denied')

@@ -66,3 +66,63 @@ test('Linux sandbox worker runs at nice 19 and idle IO priority', { skip: proces
     assert.equal(result.io, hasIonice ? 'idle' : null)
   } finally { await stopIndexProcess(child); await rm(directory, { recursive: true, force: true }) }
 })
+
+test('sandbox denies actual ignore-file reads after an ancestor swap; unsandboxed control reads the bytes', { timeout: 20_000 }, async () => {
+  const { readFile, rename, symlink } = await import('node:fs/promises')
+  const { spawn } = await import('node:child_process')
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'guanxi-x1-read-race-')))
+  const root = join(directory, 'repo'), data = join(directory, 'data'), outside = join(directory, 'outside'), runtime = join(data, 'runtime')
+  await mkdir(join(root, 'nested'), { recursive: true }); await mkdir(runtime, { recursive: true }); await mkdir(outside)
+  const marker = 'SYNTHETIC_OUTSIDE_READ_SENTINEL\n'
+  await writeFile(join(root, 'allowed'), 'inside')
+  await writeFile(join(root, 'nested', '.gitignore'), 'allowed-pattern\n')
+  await writeFile(join(outside, '.gitignore'), marker)
+  // Run the production reader inside exactly the scanner's OS profile. Only
+  // the fixture callback coordinates the swap after its first containment check.
+  const reader = (await readFile(new URL('../../src/indexing/snapshot.ts', import.meta.url), 'utf8'))
+    .replace("from 'ignore'", `from ${JSON.stringify(import.meta.resolve('ignore'))}`)
+  await writeFile(join(runtime, 'snapshot.ts'), reader)
+  const entry = join(runtime, 'probe.mjs')
+  await writeFile(entry, `import {createRequire,syncBuiltinESMExports} from 'node:module';
+    const fs=createRequire(import.meta.url)('node:fs/promises');const original=fs.open;let bytes=0;
+    fs.open=async(...args)=>{const h=await original(...args);if(args[0]===${JSON.stringify(join(root, 'nested', '.gitignore'))}){const read=h.read.bind(h);h.read=async(...a)=>{const r=await read(...a);bytes+=r.bytesRead;return r}}return h};
+    syncBuiltinESMExports();const {readProjectFile}=await import('./snapshot.ts');
+    process.once('message',async()=>{try{
+      const inside=await readProjectFile(${JSON.stringify(root)},'allowed',1024);let content=null,code=null;
+      try{content=await readProjectFile(${JSON.stringify(root)},'nested/.gitignore',1024,()=>new Promise(resolve=>{process.once('message',resolve);process.send({kind:'swap'})}))}catch(e){code=e.code}
+      process.send({kind:'result',inside,content,bytes,code});
+    }catch(e){process.send({kind:'failure',code:e.code})}finally{process.disconnect()}})`)
+  type Result = { kind: string; inside: string; content: string | null; bytes: number; code: string | null }
+  const run = async (sandbox: boolean): Promise<Result> => {
+    const child = sandbox ? await indexProcess(entry, root, data) : spawn(process.execPath, [entry], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+    try {
+      return await new Promise<Result>((resolve, reject) => {
+        child.on('message', message => {
+          const result = message as Result
+          if (result.kind === 'swap') {
+            void (async () => {
+              await rename(join(root, 'nested'), join(root, 'original'))
+              await symlink(outside, join(root, 'nested'))
+              child.send({ swapped: true })
+            })().catch(reject)
+          } else if (result.kind === 'result') resolve(result)
+          else reject(new Error(`fixture_reader_failed:${result.code}`))
+        })
+        child.once('error', reject)
+        child.once('close', () => reject(new Error('fixture_reader_closed')))
+        child.send({ start: true })
+      })
+    } finally { await stopIndexProcess(child) }
+  }
+  try {
+    const control = await run(false)
+    assert.equal(control.inside, 'inside')
+    assert.equal(control.bytes, Buffer.byteLength(marker), 'control observes the real outside FileHandle.read')
+    await rm(join(root, 'nested')); await rename(join(root, 'original'), join(root, 'nested'))
+    const protectedRead = await run(true)
+    assert.equal(protectedRead.inside, 'inside', 'sandbox still permits an ordinary in-root read')
+    assert.equal(protectedRead.bytes, 0, 'outside bytes must never be read, even when discarded later')
+    assert.equal(protectedRead.content, null)
+    assert.ok(['EPERM', 'EACCES', 'ENOENT'].includes(protectedRead.code ?? ''), `actual OS read denial: ${protectedRead.code}`)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

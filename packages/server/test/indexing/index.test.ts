@@ -482,17 +482,17 @@ test('an in-flight worker cancellation releases the idle lease only after termin
   } finally { hook.mock.restore(); await service.close(); await governor.close(); await f.close() }
 })
 
-test('cancellation during the fingerprint returns index_cancelled without admitting a worker', async () => {
+test('cancellation during build preparation returns index_cancelled without admitting a worker', async () => {
   const f = await fixture(), governor = new ResourceGovernor(), control = new AbortController()
   const scrubber = f.scrubber.facade()
-  let paths = 0
+  let snapshots = 0
   const service = new ProjectIndex({ dataDir: f.data, governor, settings: { pollMs: 60_000 }, headroom: green,
-    scrubber: { ...scrubber, scrub: value => { paths++; control.abort(); return scrubber.scrub(value) } } })
+    scrubber: { ...scrubber, snapshot: () => { snapshots++; control.abort(); return scrubber.snapshot!() } } })
   const admission = mock.method(governor, 'tryIdleLease')
   try {
     await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
     await assert.rejects(service.build(f.root, control.signal), { message: 'index_cancelled' })
-    assert.equal(paths, 1, 'cancelled while scrubbing the first fingerprint path')
+    assert.equal(snapshots, 1, 'cancelled before the fingerprint worker is admitted')
     assert.equal(admission.mock.callCount(), 0)
     assert.equal((Reflect.get(service, 'workers') as Set<ChildProcess>).size, 0)
     assert.deepEqual(await readdir(f.data), [], 'no runtime or sidecar created')
