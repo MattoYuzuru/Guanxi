@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, rename, chmod, readdir, symlin
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { Worker } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
@@ -352,7 +353,7 @@ test('headroom denial defers indexing; cancellation interrupts worker and permit
     assert.equal((await service.search(f.root, 'Needle')).hits.length, 1)
     allowed = true
     const control = new AbortController(); control.abort()
-    await assert.rejects(service.build(f.root, control.signal))
+    await assert.rejects(service.build(f.root, control.signal), /index_cancelled/)
     await service.build(f.root)
     assert.equal((await service.map(f.root)).provenance.coverage.indexed, 1)
   } finally { await service.close(); await governor.close(); await f.close() }
@@ -431,17 +432,58 @@ test('purged secrets leave no trigrams in FTS5 shadow segments', async () => {
 
 test('an in-flight worker cancellation releases the idle lease only after termination', async () => {
   const f = await fixture(), governor = new ResourceGovernor(), control = new AbortController()
-  let checks = 0
+  let snapshots = 0, worker: ChildProcess | undefined, terminated = false, releasedAfterTermination = false
+  let leaseDuringAbort: ReturnType<ResourceGovernor['tryIdleLease']> = null
   const scrubber = f.scrubber.facade()
   const service = new ProjectIndex({ dataDir: f.data, governor, settings: { pollMs: 60_000 }, headroom: green,
-    scrubber: { ...scrubber, scrub: value => { checks++; if (checks === 1) control.abort(); return scrubber.scrub(value) } } })
+    scrubber: { ...scrubber, snapshot: () => {
+      if (++snapshots === 2) {
+        // The first snapshot precedes the fingerprint. The second answers an
+        // actual worker IPC check, while its idle lease must still be held.
+        worker = [...Reflect.get(service, 'workers') as Set<ChildProcess>][0]
+        worker?.once('close', () => { terminated = true })
+        control.abort()
+        leaseDuringAbort = governor.tryIdleLease(() => {})
+        leaseDuringAbort?.release()
+      }
+      return scrubber.snapshot!()
+    } } })
+  const acquire = governor.tryIdleLease.bind(governor)
+  const hook = mock.method(governor, 'tryIdleLease', (abort: () => void) => {
+    const lease = acquire(abort)
+    return lease && { release: () => { releasedAfterTermination = terminated; lease.release() } }
+  })
   try {
     await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
     await assert.rejects(service.build(f.root, control.signal), /index_cancelled|index_interrupted/)
-    assert.ok(checks > 0, 'cancellation reached a live worker')
+    assert.ok(worker, 'cancellation reached a live worker IPC check')
+    assert.equal(leaseDuringAbort, null, 'abort alone cannot release a live worker lease')
+    assert.equal(terminated, true, 'build settles after the worker close event')
+    assert.equal(releasedAfterTermination, true, 'lease release follows worker termination')
+    hook.mock.restore()
     await service.build(f.root)
     assert.equal(service.status().build, 'complete')
-  } finally { await service.close(); await governor.close(); await f.close() }
+  } finally { hook.mock.restore(); await service.close(); await governor.close(); await f.close() }
+})
+
+test('cancellation during the fingerprint returns index_cancelled without admitting a worker', async () => {
+  const f = await fixture(), governor = new ResourceGovernor(), control = new AbortController()
+  const scrubber = f.scrubber.facade()
+  let paths = 0
+  const service = new ProjectIndex({ dataDir: f.data, governor, settings: { pollMs: 60_000 }, headroom: green,
+    scrubber: { ...scrubber, scrub: value => { paths++; control.abort(); return scrubber.scrub(value) } } })
+  const admission = mock.method(governor, 'tryIdleLease')
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
+    await assert.rejects(service.build(f.root, control.signal), { message: 'index_cancelled' })
+    assert.equal(paths, 1, 'cancelled while scrubbing the first fingerprint path')
+    assert.equal(admission.mock.callCount(), 0)
+    assert.equal((Reflect.get(service, 'workers') as Set<ChildProcess>).size, 0)
+    assert.deepEqual(await readdir(f.data), [], 'no runtime or sidecar created')
+    admission.mock.restore()
+    await service.build(f.root)
+    assert.equal(service.status().build, 'complete')
+  } finally { admission.mock.restore(); await service.close(); await governor.close(); await f.close() }
 })
 
 

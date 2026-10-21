@@ -111,13 +111,16 @@ export class ProjectIndex {
     }
   }
   private async root(path: string): Promise<string> {
-    this.abort.signal.throwIfAborted()
+    this.checkCancellation()
     const [root, data] = await Promise.all([realpath(path), realpath(this.options.dataDir)])
     if (root === '/' || inside(root, data) || !this.options.ephemeral && inside(data, root)) throw new Error('index_root_denied')
     return root
   }
   private safe(text: string): boolean {
     try { return this.options.scrubber.isReady() && this.options.scrubber.scrub(text) === text } catch { return false }
+  }
+  private checkCancellation(signal?: AbortSignal): void {
+    if (this.abort.signal.aborted || signal?.aborted) throw new Error('index_cancelled')
   }
   private invoke(request: IndexRequest, signal?: AbortSignal, extras: Partial<IndexWorkerData> = {}): Promise<unknown> {
     const task = this.invokeWorker(request, signal, extras)
@@ -128,10 +131,11 @@ export class ProjectIndex {
   private async invokeWorker(request: IndexRequest, signal?: AbortSignal, extras: Partial<IndexWorkerData> = {}): Promise<unknown> {
     const root = await this.root(request.root)
     if (!this.options.scrubber.isReady()) throw new Error('index_scrubber_unavailable')
-    signal?.throwIfAborted()
+    this.checkCancellation(signal)
     if (request.kind === 'build') await mkdir(join(this.options.dataDir, 'knowledge-index'), { recursive: true, mode: 0o700 })
     this.runtime ??= this.prepareRuntime()
     const runtime = await this.runtime
+    this.checkCancellation(signal)
     const worker = await indexProcess(join(runtime, this.captured[0]!.name), root, this.options.dataDir)
     this.workers.add(worker)
     const combined = AbortSignal.any([this.abort.signal, ...(signal ? [signal] : [])])
@@ -170,7 +174,7 @@ export class ProjectIndex {
     return directory
   }
   async build(root: string, signal?: AbortSignal): Promise<Provenance> {
-    signal?.throwIfAborted()
+    this.checkCancellation(signal)
     // A query can schedule an idle tick just before an explicit build. Keep
     // this service's writers in order; the governor still refuses other owners.
     const previous = this.buildTask
@@ -188,13 +192,19 @@ export class ProjectIndex {
     return task
   }
   private async buildRoot(root: string, signal?: AbortSignal): Promise<Provenance> {
+    this.checkCancellation(signal)
     const canonical = await this.root(root)
-    this.abort.signal.throwIfAborted()
+    this.checkCancellation(signal)
     if (!this.options.scrubber.isReady()) throw new Error('index_scrubber_unavailable')
     let secrets = this.secretSnapshot()
     let digest = this.secretDigest(secrets)
-    const tree = await projectFingerprint(canonical, this.settings, async path => this.safe(path))
-    signal?.throwIfAborted()
+    const tree = await projectFingerprint(canonical, this.settings, async path => {
+      this.checkCancellation(signal)
+      const allowed = this.safe(path)
+      this.checkCancellation(signal)
+      return allowed
+    })
+    this.checkCancellation(signal)
     let changeFingerprint = this.fingerprint(canonical, tree.commit, tree.fingerprint, digest)
     // An unchanged tree means no content scan, purge, publish or manifest
     // rewrite. Registration state is part of the fingerprint because a newly
@@ -206,6 +216,7 @@ export class ProjectIndex {
     }
     const control = new AbortController()
     const observation = this.lastHeadroom = await this.headroom()
+    this.checkCancellation(signal)
     if (!observation.allowed) { this.lastBuild = 'deferred'; throw new Error('index_headroom') }
     const lease = this.options.governor.tryIdleLease(() => control.abort())
     if (!lease) { this.lastBuild = 'deferred'; throw new Error('index_governor_busy') }
