@@ -62,7 +62,10 @@ test('trust scope: cloud, shared and other-owner receive zero vault, session and
       owner.trust(peer); peer.trust(owner)
       const response = await peer.request(owner, 'GET', '/replicas/session')
       assert.equal(response.status, 200)
-      const { entries } = await response.json() as { entries: unknown[] }
+      const payload = await response.json() as { entries: unknown[] }
+      // Also fail if a transport adds vault records alongside the replica list.
+      assert.deepEqual(Object.keys(payload), ['entries'])
+      const { entries } = payload
       assert.equal(JSON.stringify(entries).includes('private chain'), false)
       assert.equal(entries.filter((e) => (e as { event: { class: string } }).event.class === 'reasoning').length, 0)
       assert.equal(entries.filter((e) => 'vault' in (e as object)).length, 0)
