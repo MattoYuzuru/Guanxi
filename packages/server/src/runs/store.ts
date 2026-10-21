@@ -165,7 +165,7 @@ export class RunStore {
     return result
   }
   private event(run: Run, action: Action, relatedId: string | null = null, wakeSeq: number | null = null): void {
-    this.log.appendAsSystemWithin(run.session_id, { kind: 'agent' }, {
+    this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, {
       type: 'run.lifecycle', data: { runId: run.id, state: run.state, version: run.version, action, relatedId, wakeSeq },
     })
     this.changedSessions.add(run.session_id)

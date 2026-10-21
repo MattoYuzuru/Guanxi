@@ -117,3 +117,25 @@ test('M2: an hour without an executor creates no wake attempts or trace churn', 
     assert.deepEqual(f.store.dispatch(() => true), [])
   } finally { f.close() }
 })
+
+test('M3: R1 lifecycle events and an agent handle share a session in either order', () => {
+  const f = runFixture()
+  try {
+    for (const order of ['run-first', 'handle-first']) {
+      let handle
+      if (order === 'run-first') f.store.create({ id: order })
+      handle = f.log.open(order, { kind: 'agent' })
+      try {
+        if (order === 'handle-first') f.store.create({ id: order })
+        handle.append({ type: 'assistant.message', data: { messageId: null, step: null, text: 'agent narrative' } })
+        f.store.start(order)
+        handle.append({ type: 'assistant.message', data: { messageId: null, step: null, text: 'after run event' } })
+        assert.throws(() => f.log.open(order, { kind: 'agent' }), { code: 'writer_busy' })
+        const events = f.log.read(order, { audience: 'person' }).events
+        assert.equal(events.filter((e) => e.type === 'run.lifecycle').length, 2)
+        assert.equal(events.filter((e) => e.type === 'assistant.message').length, 2)
+        assert.deepEqual(events.map((e) => e.seq), events.map((_, i) => i + 1))
+      } finally { handle.close() }
+    }
+  } finally { f.close() }
+})
