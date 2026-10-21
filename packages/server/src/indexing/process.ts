@@ -31,7 +31,8 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
     command = '/usr/bin/sandbox-exec'; args = ['-p', profile, executable, entry]
   } else if (process.platform === 'linux') {
     rootHandle = await open(root, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
-    if (await realpath(`/proc/self/fd/${rootHandle.fd}`) !== root) { await rootHandle.close(); throw new Error('index_root_changed') }
+    try { if (await realpath(`/proc/self/fd/${rootHandle.fd}`) !== root) throw new Error('index_root_changed') }
+    catch (error) { await rootHandle.close(); throw error }
     command = '/usr/bin/bwrap'
     args = ['--die-with-parent', '--unshare-all', '--new-session', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
     for (const path of [...new Set(['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths])].sort((a, b) => a.length - b.length)) {
