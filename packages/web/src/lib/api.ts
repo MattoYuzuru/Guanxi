@@ -7,7 +7,7 @@
 import type { output, ZodTypeAny } from 'zod'
 import {
   ROUTES,
-  layoutListResponse, saveLayoutResponse, layoutGeometryResponse,
+  layoutListResponse, saveLayoutResponse, layoutGeometryResponse, layoutContextResponse,
   type LayoutQuery, type LayoutDocument, type LayoutGeometry, type LayoutClock, type LayoutScope,
   apiErrorSchema,
   approvalResponse,
@@ -278,6 +278,7 @@ function safeJson(text: string): unknown {
 
 export const api = {
   layouts: (query: LayoutQuery, signal?: AbortSignal) => request(ROUTES.layouts(), layoutListResponse, { query, signal }),
+  layoutContext: (signal?: AbortSignal) => request(ROUTES.layoutContext(), layoutContextResponse, { signal }),
   saveLayout: (document: LayoutDocument, activate = true, basedOn?: LayoutClock) => request(ROUTES.layouts(), saveLayoutResponse, { method: 'PUT', body: { document, activate, basedOn } }),
   layoutGeometry: (scope: LayoutScope, device: string, layoutId: string, signal?: AbortSignal) => request(ROUTES.layoutGeometry(), layoutGeometryResponse, { query: { ...scope, device, scopeDevice: scope.device, layoutId }, signal }),
   saveLayoutGeometry: (scope: LayoutScope, device: string, layoutId: string, geometry: LayoutGeometry) => request(ROUTES.layoutGeometry(), layoutGeometryResponse, { method: 'PUT', body: { scope, device, layoutId, geometry } }),

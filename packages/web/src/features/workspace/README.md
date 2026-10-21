@@ -43,11 +43,26 @@ it. Different content with exactly equal clocks is rejected with HTTP 409. Param
 boolean/finite numeric configuration and opaque resource/secret references, never free text or
 executable objects. Geometry is absent from replicated documents.
 
+When the host configures F1, Save creates a signed `layout` configuration operation and applies
+the document, recovered loser and activation in that operation's SQLite transaction. The
+existing authenticated `FederationChannel` exchanges it; constructing a workspace never starts
+network activity. Named-layout activation uses the signed configuration clock, while competing
+versions of one document use the layout clock above. Window geometry remains node/device-local.
+`GET /api/layouts/context` supplies the node-owned account before the browser resolves layouts;
+the configured facade rejects another account's reads and writes. Without F1, existing local
+persistence remains available. Previously local documents are not silently reassigned to an
+account or signed; the host must save an explicitly scoped document to publish it.
+
+Layout configuration needs federation protocol 1.1. A peer requesting a history containing
+layout operations with minor version 0 receives `426 contract_feature_unavailable`; the node
+never omits layout operations and strands dependent settings behind missing causal counters.
+
 ## Verification scope
 
 The 30-block engine restore budget is 2000 ms in deterministic local Chromium. Browser tests
 mock node/model APIs and never run models, shell commands or external pages. Node tests cover
-validation, resolution, replication, restart and the import/licence boundary. These do not
+validation, resolution, signed replication between independent node stores through authenticated
+channels/routes, restart and the import/licence boundary. These do not
 prove live terminal processes, real embedded browser sessions, screen-reader output or Electron
 renderer behavior. See [the lane handoff](../../../../../docs/plans/lanes/U1a.handoff.md) for executed results
 and residuals.

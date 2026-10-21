@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z, ZodError } from 'zod'
-import { devicePollSchema, deviceRequestSchema, FEDERATION_VERSION, replicaEntrySchema,
+import { devicePollSchema, deviceRequestSchema, FEDERATION_VERSION, LAYOUT_CONFIG_MINOR, replicaEntrySchema,
   signedConfigOperationSchema, federationAuthSchema } from '@guanxi/contract/federation'
 import { FederationError } from './crypto.ts'
 import type { Federation, PeerContext } from './service.ts'
@@ -54,13 +54,20 @@ export function federationRoutes(resolve: () => Federation) {
   app.get('/handshake', (c) => c.json({ version: FEDERATION_VERSION, negotiated: c.get('peer').version, readOnly: c.get('peer').readOnly }))
   app.get('/config', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'config')
-    return c.json({ operations: f.config.operations().filter((op) => op.operation.accountId === peer.accountId) })
+    const operations = f.config.operations().filter((op) => op.operation.accountId === peer.accountId)
+    if (c.get('peer').version.minor < LAYOUT_CONFIG_MINOR && operations.some(op => op.operation.value.kind === 'layout')) {
+      // Omitting a layout dot would also omit a causal dependency of later settings. Require
+      // an upgrade instead of exporting a truncated history that can never converge.
+      throw new FederationError('contract_feature_unavailable', 426)
+    }
+    return c.json({ operations })
   })
   app.post('/config', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'config', true)
     const body = c.get('body')
     if (Array.isArray(body) && body.length > f.configOpsPerRequest) throw new FederationError('config_batch_too_large', 413)
     const ops = z.array(signedConfigOperationSchema).parse(body)
+    if (c.get('peer').version.minor < LAYOUT_CONFIG_MINOR && ops.some(op => op.operation.value.kind === 'layout')) throw new FederationError('contract_feature_unavailable', 426)
     if (ops.some((op) => op.operation.accountId !== peer.accountId)) throw new FederationError('owner_mismatch', 403)
     return c.json({ applied: true, ...f.config.ingest(ops) })
   })

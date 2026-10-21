@@ -16,9 +16,13 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
     for (const doc of documents) if (!active.some(row => JSON.stringify(row.scope) === JSON.stringify(doc.scope))) active.push({ scope: doc.scope, layoutId: doc.id })
     const geometry = new Map<string, any>(Object.entries(extra.geometry ?? {}))
     ;(window as any).__LAYOUT_WRITES__ = []
+    ;(window as any).__LAYOUT_READS__ = []
     ;(window as any).__GEOMETRY_WRITES__ = []
     window.fetch = async (input, init) => {
       const url = new URL(String(input), location.origin)
+      if (url.pathname === '/api/layouts/context') return fail
+        ? Response.json({ code: 'unavailable' }, { status: 503 })
+        : Response.json({ account: initial?.scope.account ?? 'local', replication: false })
       if (url.pathname === '/api/layouts') {
         if (fail) return Response.json({ code: 'unavailable' }, { status: 503 })
         if (init?.method === 'PUT') {
@@ -35,6 +39,7 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
           return Response.json({ document: body.document, recovered: [] })
         }
         const mode = url.searchParams.get('mode')
+        ;(window as any).__LAYOUT_READS__.push(Object.fromEntries(url.searchParams))
         return Response.json({ documents: documents.filter(doc => doc.scope.mode === mode), active: active.filter(row => row.scope.mode === mode) })
       }
       if (url.pathname === '/api/layouts/geometry') {
@@ -234,6 +239,17 @@ test('node unavailable state is truthful and retry remains reachable', async ({ 
   await expect(page.getByRole('alert').filter({ hasText: 'Layouts could not be loaded' })).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
   await expect(page.locator('.dv-dockview')).toHaveCount(0)
+})
+
+test('workspace discovers the node account before resolving and saving a layout', async ({ page }) => {
+  const layout = builtInLayout({ account: 'owner', device: 'device-a', mode: 'developer', deviceClass: 'desktop' })
+  layout.name = 'Owner layout'
+  await open(page, layout)
+  expect((await state(page)).scope.account).toBe('owner')
+  expect(await page.evaluate(() => (window as any).__LAYOUT_READS__.map((row: any) => row.account))).toEqual(['owner', 'owner'])
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(1)
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document.scope.account)).toBe('owner')
 })
 
 

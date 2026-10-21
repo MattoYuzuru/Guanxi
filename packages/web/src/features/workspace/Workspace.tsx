@@ -45,11 +45,12 @@ export interface WorkspaceProps {
 }
 
 /** Node-owned documents; browser memory owns pane lifetimes, never credentials or processes. */
-export function Workspace({ children, account = 'local', project, safeMode = false }: WorkspaceProps) {
+export function Workspace({ children, account, project, safeMode = false }: WorkspaceProps) {
   const { locale, setLocale } = useLocale()
   const { resolved: theme } = useTheme()
   const phone = usePhone()
   const [device] = useState(deviceId)
+  const [nodeAccount, setNodeAccount] = useState(account ?? 'local')
   const [deviceClass] = useState<LayoutQuery['deviceClass']>(() => phone ? 'phone' : 'desktop')
   const [mode, setMode] = useState<ExperienceMode>('developer')
   const [documents, setDocuments] = useState<Partial<Record<ExperienceMode, LayoutDocument>>>({})
@@ -82,7 +83,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     useCallback(callback => webKernel.slots.subscribe(callback), []),
     useCallback(() => webKernel.slots.list<BlockContribution>(WORKSPACE_BLOCK_SLOT), []),
   )
-  const query = useCallback((nextMode: ExperienceMode): LayoutQuery => ({ account, ...(project ? { project } : {}), device, deviceClass, mode: nextMode }), [account, project, device, deviceClass])
+  const query = useCallback((nextMode: ExperienceMode): LayoutQuery => ({ account: account ?? nodeAccount, ...(project ? { project } : {}), device, deviceClass, mode: nextMode }), [account, nodeAccount, project, device, deviceClass])
   const doc = documents[mode]
   latestDocument.current = doc
   const contributionFor = (id: string) => contributions.find(entry => entry.key === doc?.blocks[id]?.contribution && entry.value.id === entry.key)?.value
@@ -98,15 +99,20 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     setLoading(true)
     setLoadError(false)
     void webKernelReady.then(async () => {
-      const lists = await Promise.all((['developer', 'visual'] as const).map(next => api.layouts(query(next), controller.signal)))
+      if (controller.signal.aborted) return
+      const ownedAccount = account ?? (await api.layoutContext(controller.signal)).account
+      if (controller.signal.aborted) return
+      const queryFor = (nextMode: ExperienceMode): LayoutQuery => ({ account: ownedAccount, ...(project ? { project } : {}), device, deviceClass, mode: nextMode })
+      const lists = await Promise.all((['developer', 'visual'] as const).map(next => api.layouts(queryFor(next), controller.signal)))
       const nextDocuments: Partial<Record<ExperienceMode, LayoutDocument>> = {}
       for (let i = 0; i < 2; i++) {
         const nextMode = i === 0 ? 'developer' : 'visual'
-        nextDocuments[nextMode] = resolveLayout(lists[i]!, query(nextMode), builtInLayout(query(nextMode)))
+        nextDocuments[nextMode] = resolveLayout(lists[i]!, queryFor(nextMode), builtInLayout(queryFor(nextMode)))
       }
       const current = nextDocuments[mode]!
       const local = await api.layoutGeometry(current.scope, device, current.id, controller.signal)
       if (controller.signal.aborted) return
+      setNodeAccount(ownedAccount)
       setList({ documents: lists.flatMap(row => row.documents), active: lists.flatMap(row => row.active) })
       setDocuments(nextDocuments)
       geometryCache.current.set(`${layoutScopeKey(current.scope)}#${current.id}`, local.geometry)
@@ -117,7 +123,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     }).catch(() => { if (!controller.signal.aborted) { setLoadError(true); setLoading(false) } })
     return () => controller.abort()
     // Initial hydration and explicit retry only; mode changes use the loaded documents.
-  }, [query, account, device])
+  }, [account, project, device, deviceClass])
   useEffect(load, [load])
 
   function snapshot(): LayoutDocument {

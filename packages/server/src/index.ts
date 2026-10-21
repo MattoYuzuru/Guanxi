@@ -194,6 +194,11 @@ export async function start(options: StartOptions = {}) {
     host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
     uiCatalog,
+    layouts: options.federation ? () => {
+      const federation = kernel.node.service<Federation>(FEDERATION_SERVICE)
+      if (!federation) throw new FederationError('federation_unavailable', 503)
+      return federation.layouts
+    } : undefined,
   })
 
   server.route('/api/connections', connectionRoutes(() => {

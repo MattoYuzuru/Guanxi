@@ -9,6 +9,7 @@ import { canonical, FederationError, hash, publicKey, requestProof, signValue, v
 import { DeviceEnrollment } from './enrollment.ts'
 import { Replicas } from './replicas.ts'
 import { migrateFederation } from './schema.ts'
+import { ReplicatedLayouts } from '../layouts/replication.ts'
 
 export interface FederationOptions {
   db: Db
@@ -27,6 +28,7 @@ export interface PeerContext { identity: NodeIdentity; readOnly: boolean; versio
 export class Federation {
   readonly configOpsPerRequest: number
   readonly config: SharedConfig
+  readonly layouts: ReplicatedLayouts
   readonly replicas: Replicas
   readonly enrollment: DeviceEnrollment
   readonly identity: NodeIdentity
@@ -50,7 +52,8 @@ export class Federation {
     this.trust(this.identity)
     for (const peer of options.peers ?? []) this.trust(peer)
     this.config = new SharedConfig(options.db, this.identity, privateKey, (id) => this.peer(id), this.now,
-      (v) => this.clean(v))
+      (v) => this.clean(v), operation => this.layouts.project(operation))
+    this.layouts = new ReplicatedLayouts(options.db, this.identity.accountId, this.config, () => this.clean(null))
     this.replicas = new Replicas(options.db, this.identity, privateKey, options.log, (id) => this.peer(id), (v) => this.clean(v))
     this.enrollment = new DeviceEnrollment(options.db, this.identity, this.now, (id) => this.trust(id), () => this.assertOpen())
   }

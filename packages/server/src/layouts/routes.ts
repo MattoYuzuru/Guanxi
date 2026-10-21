@@ -3,11 +3,18 @@ import { Hono } from 'hono'
 import { layoutGeometryBody, layoutGeometryQuerySchema, layoutQuerySchema, saveLayoutBody } from '@guanxi/contract'
 import type { Db } from '../store/db.ts'
 import { LayoutStore } from './store.ts'
+import type { ReplicatedLayouts, LayoutRepository } from './replication.ts'
+import { FederationError } from '../federation/crypto.ts'
 
-export function layoutsRoutes(db: Db | (() => Db), allowedOrigins: readonly string[] = []): Hono {
+export function layoutsRoutes(db: Db | (() => Db), allowedOrigins: readonly string[] = [], replicated?: () => ReplicatedLayouts | null): Hono {
   const routes = new Hono()
   let store: LayoutStore | undefined
-  const getStore = () => store ??= new LayoutStore(typeof db === 'function' ? db() : db)
+  const getStore = (): LayoutRepository => replicated?.() ?? (store ??= new LayoutStore(typeof db === 'function' ? db() : db))
+  routes.onError((error, context) => {
+    if (error instanceof FederationError) return context.json({ code: 'validation_failed', message: error.code, details: null }, error.status as 403)
+    if (error.message === 'layout_clock_collision') return context.json({ code: 'layout_conflict', message: 'Different layouts have the same writer clock', details: null }, 409)
+    throw error
+  })
   routes.use('*', bodyLimit({ maxSize: 1_048_576, onError: context => context.json({ code: 'validation_failed', message: 'Layout request exceeds the node JSON budget', details: null }, 413) }))
   routes.use('*', async (context, next) => {
     if (context.req.method !== 'GET') {
@@ -21,6 +28,10 @@ export function layoutsRoutes(db: Db | (() => Db), allowedOrigins: readonly stri
     await next()
   })
   const invalid = { code: 'validation_failed', message: 'Invalid layout request', details: null }
+  routes.get('/context', context => {
+    const repository = replicated?.()
+    return context.json({ account: repository?.account ?? 'local', replication: repository !== null && repository !== undefined })
+  })
   routes.get('/', context => {
     const query = layoutQuerySchema.safeParse(context.req.query())
     return query.success ? context.json(getStore().list(query.data)) : context.json(invalid, 400)

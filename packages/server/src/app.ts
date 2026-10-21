@@ -7,6 +7,7 @@
  * работает с файловой системой напрямую.
  */
 import { layoutsRoutes } from './layouts/routes.ts'
+import type { ReplicatedLayouts } from './layouts/replication.ts'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { hostAllowlist, type HostAllowlistOptions } from './http/host-allowlist.ts'
@@ -40,6 +41,8 @@ export interface CreateAppOptions extends HostAllowlistOptions {
    * no signer, so the catalog shows bundled records only.
    */
   uiCatalog?: UiCatalogReviewService
+  /** The configured F1 node owns the account and signed layout write boundary. */
+  layouts?: () => ReplicatedLayouts | null
 }
 
 export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono {
@@ -96,7 +99,7 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
     })
   })
 
-  server.route('/api/layouts', layoutsRoutes(() => app.db, options.devOrigins))
+  server.route('/api/layouts', layoutsRoutes(() => app.db, options.devOrigins, options.layouts))
   server.route('/api/models', modelsRoutes(app))
   server.route('/api/feature-flags', featureFlagsRoutes(app))
   server.route('/api/runtime', runtimeRoutes(app))

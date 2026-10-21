@@ -183,6 +183,22 @@ an intermediary able to alter responses can force a read-only downgrade or denia
 Response authenticity relies on the host-provided authenticated private transport or TLS;
 request signatures alone do not provide downgrade protection.
 
+### Portable workspace layouts (U1-a continuation)
+
+Protocol 1.1 adds the strict `layout` configuration value (`guanxi.layout/1`, activation and
+an optional base clock). Its key hashes the document scope and id, and the document's account
+must match the signed operation. F1 verifies the author and signature before applying layout,
+recovery and active-layout projection inside the same transaction as the operation and HLC.
+Local layout REST writes use that same path when F1 is configured. The layout ledger remains
+component-owned; no global migration or additional network transport is introduced.
+
+One document merges by `(rev, updatedAt, device)`, with a deduplicated `Recovered layout`
+loser. Named-layout activation uses the signed configuration order, so arrival order cannot
+change it. Float/popout geometry never enters the signed operation. A minor-0 peer requesting
+a history containing layout operations receives `426 contract_feature_unavailable`; filtering
+out those operations would strand later causal dependencies, so no partial history is returned.
+Hosts upgrade such peers before synchronizing layout-bearing configuration.
+
 ## Storage, upgrade and recovery
 
 Migration **34** is additive and independently tracked by `federation_migrations` on the

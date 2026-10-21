@@ -2,11 +2,14 @@ import { z } from 'zod'
 
 export const LAYOUT_VERSION = 'guanxi.layout/1' as const
 export const WORKSPACE_ENGINE_MAJOR = 8
-const id = z.string().min(1).max(160).regex(/^[\w./:-]+$/).refine(value => !['__proto__', 'prototype', 'constructor'].includes(value))
+const identifier = (max: number) => z.string().min(1).max(max).regex(/^[\w./:-]+$/).refine(value => !['__proto__', 'prototype', 'constructor'].includes(value))
+const id = identifier(160)
+// F1 account identities allow 200 characters; retain every previously accepted layout id.
+const accountId = identifier(200)
 export const experienceModeSchema = z.enum(['developer', 'visual'])
 export const workspaceZoneSchema = z.enum(['left', 'right', 'top', 'bottom', 'center', 'floating', 'popout'])
 export const layoutScopeSchema = z.object({
-  account: id,
+  account: accountId,
   project: id.optional(),
   mode: experienceModeSchema,
   deviceClass: z.enum(['desktop', 'tablet', 'phone']),
@@ -127,6 +130,8 @@ export const layoutListResponse = z.object({
   documents: z.array(layoutDocumentSchema),
   active: z.array(z.object({ scope: layoutScopeSchema, layoutId: id }).strict()),
 }).strict()
+/** The local node selects account identity; browser storage never creates an account. */
+export const layoutContextResponse = z.object({ account: accountId, replication: z.boolean() }).strict()
 export type LayoutList = z.infer<typeof layoutListResponse>
 export const layoutGeometryKeySchema = z.object({ scope: layoutScopeSchema, device: id, layoutId: id }).strict()
 export const layoutGeometryQuerySchema = layoutScopeSchema.omit({ device: true }).extend({ device: id, scopeDevice: id.optional(), layoutId: id }).strict()

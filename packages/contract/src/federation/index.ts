@@ -1,8 +1,10 @@
 /** Node-to-node protocol. Separate from the browser REST/SSE contract (ADR-0018). */
 import { z } from 'zod'
 import { sessionEventSchema } from '../events/session-events.ts'
+import { layoutClockSchema, layoutDocumentSchema } from '../layouts.ts'
 
-export const FEDERATION_VERSION = { major: 1, minor: 0 } as const
+export const FEDERATION_VERSION = { major: 1, minor: 1 } as const
+export const LAYOUT_CONFIG_MINOR = 1
 export const federationVersionSchema = z.object({ major: z.number().int().nonnegative(), minor: z.number().int().nonnegative() }).strict()
 export const federationId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/)
 const integer = z.number().int().nonnegative().safe()
@@ -27,6 +29,8 @@ export const configValueSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('identity'), displayName: z.string(), disabled: z.boolean() }).strict(),
   z.object({ kind: z.literal('grant'), present: z.boolean() }).strict(),
   z.object({ kind: z.literal('membership'), present: z.boolean() }).strict(),
+  z.object({ kind: z.literal('layout'), document: layoutDocumentSchema,
+    activate: z.boolean(), basedOn: layoutClockSchema.optional() }).strict(),
 ])
 export const configOperationSchema = z.object({
   origin: federationId, counter: integer.refine((v) => v > 0), accountId: federationId,
