@@ -163,6 +163,10 @@ prompt/queue and `promptTextOf`, and the root should run the native envelope out
 - `packages/web/src/lib/sse.ts` + locale/API error map: typed server-error frame handling.
 - `packages/web/test/component/inspector.test.tsx`: export href now carries
   `exportVersion=2` (contract adaptation, no assertion removed).
+- Existing migration/fixture tests: current-version markers moved from 32 to 33, the session-log
+  downgrade fixture drops `session_input_artifacts`, and v2-safe `promptTextOf` /
+  async `prompt`/`queue` adaptations were applied in session-log, federation-persistence and
+  native tests. No assertion was removed or weakened.
 
 ## Review-fix
 
