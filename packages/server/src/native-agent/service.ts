@@ -49,7 +49,9 @@ export class NativeAgents {
   readonly connections: Connections
   readonly scrubber: EgressScrubber
   readonly dataDir: string
-  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, readonly nodePorts = [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)]) {
+  readonly nodePorts: number[]
+  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)]) {
+    this.nodePorts = nodePorts
     this.host = host; this.log = log; this.connections = connections; this.scrubber = scrubber; this.dataDir = dataDir
     this.projectRoots = new NativeProjectRoots(join(dataDir, 'native-projects.sqlite'), host)
   }
