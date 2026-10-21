@@ -6,7 +6,7 @@
  * the same rule and controlled state survives resizing.
  */
 import { PanelLeft } from 'lucide-react'
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Button } from '../button/button.tsx'
 import { IconButton } from '../icon-button/icon-button.tsx'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../menu/menu.tsx'
@@ -73,7 +73,7 @@ export function AppShellChrome({
   const returnFocusToShow = useRef(false)
   const returnFocusToSidebar = useRef(false)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previous = previousVisibility.current
     previousVisibility.current = visibility
     if (visibility === 'hidden' && previous !== 'hidden' && (returnFocusToShow.current || sidebarHadFocus.current)) {
