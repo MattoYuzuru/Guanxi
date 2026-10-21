@@ -58,7 +58,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('url_denied')
       const method = a.method!.toUpperCase()
       if (!/^[A-Z]+$/.test(method) || (policy.mode === 'read-only' && !['GET', 'HEAD', 'OPTIONS'].includes(method))) throw new Error('method_denied')
-      return run(`/usr/bin/curl --disable --noproxy '' --silent --show-error --fail --max-time 60 --request ${quote(method)} ${method === 'HEAD' ? '--head' : ''} ${a.body ? `--data-binary ${quote(a.body)}` : ''} -- ${quote(url.href)}`, s)
+      return run(`/usr/bin/curl --disable --noproxy '' --silent --show-error --fail --max-time 60 --request ${quote(method)} ${method === 'HEAD' ? '--head' : ''} ${a.body ? `--data-raw ${quote(a.body)}` : ''} -- ${quote(url.href)}`, s)
     }),
     tool('attachments', 'List the selected, read-only attachments. Use file_read for text; unsupported binary formats need a converter.', {}, async () => JSON.stringify(policy.attachmentMetadata ?? policy.attachments)),
     tool('plan', 'Replace the light session plan (off-ledger). Completed agent items request verification; they do not prove completion. items is a JSON array.', { items: Type.String() }, async a => {

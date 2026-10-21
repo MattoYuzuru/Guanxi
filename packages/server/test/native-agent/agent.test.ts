@@ -179,6 +179,29 @@ test('arbitrary shell execution fails closed in both modes pending descendant su
     } finally { handle.close() }
   }
 })
+test('fetch treats an at-prefixed body as literal text rather than a file upload', { timeout: 30000 }, async t => {
+  const { nativeTools } = await import('../../src/native-agent/tools.ts')
+  const { createServer } = await import('node:http')
+  const f = await fixture(t)
+  const scratch = join(f.dir, 'fetch-scratch'); await mkdir(scratch)
+  const file = join(scratch, 'body'); await writeFile(file, 'must-not-upload-file-contents')
+  let body = ''
+  const server = createServer(async (req, res) => {
+    for await (const chunk of req) body += chunk.toString()
+    res.end('received')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  const port = (server.address() as { port: number }).port
+  const handle = f.log.open('literal-fetch', { kind: 'agent' })
+  try {
+    const tools = nativeTools({ policy: { mode: 'full-access', scratch, roots: [], attachments: [], protectedPaths: [], domains: [`127.0.0.1:${port}`] }, log: f.log, handle, scrubber: f.scrubber, queue() {} })
+    const result = await tools.find(tool => tool.name === 'fetch')!.execute('fetch', { url: `http://127.0.0.1:${port}/`, method: 'POST', body: `@${file}` })
+    assert.notEqual(result.isError, true)
+    assert.equal(body, `@${file}`)
+    assert.equal(body.includes('must-not-upload-file-contents'), false)
+  } finally { handle.close() }
+})
 test('shutdown during attachment staging prevents a late model dispatch', { timeout: 30000 }, async t => {
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
