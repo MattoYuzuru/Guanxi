@@ -49,7 +49,7 @@ commands prove a change.
 ```bash
 npm run ui:manifest          # regenerate catalog/manifest.json after any component change
 npm run ui:check             # DS1-a's runner: G1–G7, G10–G12, G15 and G17 (one seed per gate)
-npm run ui:check:browser     # same runner, browser gates: G13 (in Docker), G14 with G15 clipping, G16, G17
+npm run ui:check:browser     # same runner, browser gates: G13 (in Docker), G14, G15-clipping, G16, G17
 npm run ui:catalog:selftest  # catalog runner: every seed of every catalog gate, fast and browser
 npm run ui:snapshots         # rewrite G13 baselines in the pinned image
 npm run ui:storybook         # Storybook dev server on GUANXI_WEB_PORT

@@ -35,7 +35,7 @@ function context(overrides: Record<string, string> = {}) {
 describe('DS1-a extension registrations', () => {
   it('registers unique ids with names, modes and existing seeds', () => {
     const ids = registrations.map((gate) => gate.id)
-    assert.deepEqual(ids, ['G10', 'G11', 'G12', 'G15', 'G13', 'G14', 'G16'])
+    assert.deepEqual(ids, ['G10', 'G11', 'G12', 'G15', 'G13', 'G14', 'G15-clipping', 'G16'])
     for (const gate of registrations) {
       assert.ok(gate.name && ['fast', 'browser'].includes(gate.mode), gate.id)
       const seed = JSON.parse(readFileSync(join(root, gate.seed), 'utf8')) as { files: object; expectedError: string }
@@ -77,7 +77,7 @@ describe('canonical commands run DS1-a\'s registry and G17 (GPT N6)', () => {
       runGates: (ctx: unknown, gates: unknown[], mode: string) => Promise<{ results: Array<{ id: string; ok: boolean }> }>
     }
     const gates = await registry({ root })
-    assert.deepEqual(gates.filter((gate) => gate.mode === 'browser').map((gate) => gate.id), ['G13', 'G14', 'G16'])
+    assert.deepEqual(gates.filter((gate) => gate.mode === 'browser').map((gate) => gate.id), ['G13', 'G14', 'G15-clipping', 'G16'])
     // Stand-in checks: a pass on the checkout, a failure naming each seed's expected error.
     const seeds = new Map<string, string>()
     const stubs = gates
@@ -89,8 +89,11 @@ describe('canonical commands run DS1-a\'s registry and G17 (GPT N6)', () => {
       })
     const ctx = { json: async (path: string) => JSON.parse(readFileSync(join(root, path), 'utf8')), withFiles: async () => ({ seeded: true }) }
     const report = await runGates(ctx, stubs, 'browser')
-    assert.deepEqual(report.results.map((result) => result.id), ['G13', 'G14', 'G16', 'G17'])
+    assert.deepEqual(report.results.map((result) => result.id), ['G13', 'G14', 'G15-clipping', 'G16', 'G17'])
     assert.ok(report.results.every((result) => result.ok))
-    assert.equal(seeds.size, 3)
+    assert.equal(seeds.size, 4)
+    // Each browser checker has its own G17 seed, so removing either axe or clipping fails G17 (N12).
+    assert.match(seeds.get('G14')!, /button-name/)
+    assert.match(seeds.get('G15-clipping')!, /clipped text/)
   })
 })

@@ -4,9 +4,9 @@
  * the extension contract: the runner's context may overlay files (G17 seeds), so overlaid
  * files are written into a scratch copy of the checkout before the checker runs.
  *
- * G15's browser half (no clipping in Russian or the +40% pseudo-locale) runs inside the G14
- * registration, because registrations need unique ids; `node packages/ui/gates/catalog/run.ts
- * --mode browser` still reports it as its own gate with its own seed.
+ * G15's browser half (no clipping in Russian or the +40% pseudo-locale) is its own registration,
+ * `G15-clipping`, because ids are unique and G17 runs one seed per registration: grouped with
+ * G14, removing either checker would still pass G17 (GPT N12).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -67,7 +67,7 @@ function adapt(outcomes: GateResult[]): ExtensionResult {
   return { ok: outcomes.every((outcome) => outcome.status !== 'fail'), errors, warnings }
 }
 
-function register(id: CatalogGate['id'], name: string, gates: CatalogGate[]) {
+function register(id: string, name: string, gates: CatalogGate[]) {
   const mode = gates[0]!.mode
   return {
     id,
@@ -103,6 +103,7 @@ export default [
   register('G12', g12.title, [g12]),
   register('G15', g15.title, [g15]),
   register('G13', g13.title, [g13]),
-  register('G14', `${g14.title}, with G15 clipping`, [g14, g15Clipping]),
+  register('G14', g14.title, [g14]),
+  register('G15-clipping', g15Clipping.title, [g15Clipping]),
   register('G16', g16.title, [g16]),
 ]
