@@ -287,10 +287,16 @@ func keychainQuery(service: String, account: String) -> [String: Any] {
 }
 
 #if GUANXI_SIGNER_TESTING
-func withKeychain(_ query: [String: Any], path: String?) throws -> [String: Any] {
+func withKeychain(_ query: [String: Any], path: String?, adding: Bool) throws -> [String: Any] {
     guard let path else { return query }
     var scoped = query
-    scoped[kSecUseKeychain as String] = try openKeychain(path)
+    let keychain = try openKeychain(path)
+    // `kSecUseKeychain` selects the destination of an add; searches need an explicit list.
+    if adding {
+        scoped[kSecUseKeychain as String] = keychain
+    } else {
+        scoped[kSecMatchSearchList as String] = [keychain] as CFArray
+    }
     return scoped
 }
 #endif
@@ -299,7 +305,7 @@ func keychainMetadata(service: String, account: String, keychainPath: String?) t
     var query = keychainQuery(service: service, account: account)
     query[kSecReturnAttributes as String] = true
     #if GUANXI_SIGNER_TESTING
-    query = try withKeychain(query, path: keychainPath)
+    query = try withKeychain(query, path: keychainPath, adding: false)
     #endif
     var result: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -329,7 +335,7 @@ func addKeychainItem(
     query[kSecAttrDescription as String] = publicKey
     query[kSecAttrLabel as String] = service
     #if GUANXI_SIGNER_TESTING
-    query = try withKeychain(query, path: keychainPath)
+    query = try withKeychain(query, path: keychainPath, adding: true)
     #endif
     let status = SecItemAdd(query as CFDictionary, nil)
     if status == errSecDuplicateItem {
