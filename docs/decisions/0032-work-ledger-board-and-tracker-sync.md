@@ -91,3 +91,12 @@ sync plugin to maintain.
 - Sync test against recorded GitHub and Jira fixtures: business fields untouched, status
   comment posted once per transition, rate-limit backoff honoured.
 - WL-series A/B recorded before `project` mode becomes a default.
+
+## Implementation boundary (R2, 2026-10-21)
+
+The `run` mode is implemented internally by
+[agent.relay](../../packages/server/src/relay/README.md): immutable planner revision,
+dependencies, acceptance evidence, derived item state, a bounded work strip and paged
+`work.query`. Relay amendments are proposals only. The target `packages/work` extraction,
+project mode, board and external tracker sync remain later work; the design status above
+is not promoted as a whole.
