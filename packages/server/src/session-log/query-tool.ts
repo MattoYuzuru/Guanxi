@@ -85,6 +85,7 @@ export function querySessionLog(
   }
 
   return sessionQueryToolResultSchema.parse({
+    // The reads above refuse an id holding a registered value (`session_withheld`), so it is safe to return.
     sessionId,
     audience,
     events,
@@ -121,6 +122,10 @@ export function createSessionQueryTool(options: {
       } catch (error) {
         if (error instanceof SessionLogError && error.code === 'egress_not_ready') {
           throw new ToolError('The session log cannot be read until secret redaction is ready')
+        }
+        if (error instanceof SessionLogError && error.code === 'session_withheld') {
+          // Content-free: neither the id nor the secret reference (GPT re-check N1).
+          throw new ToolError('This session log is withheld because its id contains a registered secret')
         }
         throw error
       }

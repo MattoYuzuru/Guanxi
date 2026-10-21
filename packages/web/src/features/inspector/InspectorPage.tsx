@@ -123,7 +123,12 @@ function SessionList() {
       {sessions.error != null && (
         <LoadError error={sessions.error} route={SESSION_ROUTES.sessions()} onRetry={sessions.reload} title={translate('inspector.list.error')} />
       )}
-      {sessions.data && sessions.data.sessions.length === 0 && (
+      {sessions.data && sessions.data.withheld > 0 && (
+        <p className="text-12 text-secondary" role="status">
+          {translate('inspector.list.withheld', { count: sessions.data.withheld })}
+        </p>
+      )}
+      {sessions.data && sessions.data.sessions.length === 0 && sessions.data.withheld === 0 && (
         <EmptyState
           title={translate('inspector.list.empty.title')}
           description={translate('inspector.list.empty.description')}

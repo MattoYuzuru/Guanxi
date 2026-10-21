@@ -50,7 +50,13 @@ export type SessionListItem = z.infer<typeof sessionListItemSchema>
 export const listSessionsQuery = z
   .object({ limit: z.coerce.number().int().min(1).max(200).default(50) })
   .strict()
-export const listSessionsResponse = z.object({ sessions: z.array(sessionListItemSchema) }).strict()
+export const listSessionsResponse = z
+  .object({
+    sessions: z.array(sessionListItemSchema),
+    /** Sessions left out because their id contains a value registered as a secret after it was created. */
+    withheld: z.number().int().nonnegative(),
+  })
+  .strict()
 export type ListSessionsResponse = z.infer<typeof listSessionsResponse>
 
 export const sessionSummarySchema = sessionListItemSchema

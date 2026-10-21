@@ -6,17 +6,27 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { describe, it } from 'node:test'
-import type { ChatJobInputSnapshot } from '@guanxi/contract'
+import { Hono } from 'hono'
+import {
+  apiErrorSchema,
+  listSessionsResponse,
+  sessionSearchResponse,
+  type ChatJobInputSnapshot,
+} from '@guanxi/contract'
 import { SecretScrubber } from '../src/egress/scrubber.ts'
 import { ChatSessionMirror } from '../src/session-log/chat-mirror.ts'
 import { SessionLog } from '../src/session-log/log.ts'
-import { querySessionLog } from '../src/session-log/query-tool.ts'
+import { createSessionQueryTool, querySessionLog } from '../src/session-log/query-tool.ts'
+import { sessionLogRoutes } from '../src/session-log/routes.ts'
 import { openDb, type Db } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
 import { ThreadStore } from '../src/store/threads.ts'
 
 const SECRET = `fake-${randomBytes(16).toString('hex')}`
 const REF = 'secret://vault/planted' as const
+
+/** The Node server's request bindings with a loopback peer; the session routes refuse any other peer. */
+const LOOPBACK = { incoming: { socket: { remoteAddress: '127.0.0.1' } } }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -123,5 +133,83 @@ describe('K2 re-check N4: no false-empty search after late redaction', () => {
       assert.deepEqual(log.search('needle', { sessionId: 's-needle', audience: 'person', limit }).map((hit) => hit.seq), [visible])
     }
     assert.equal(JSON.stringify(querySessionLog(log, 's-needle', 'remote_agent', { text: 'needle', limit: 5 })).includes(SECRET), false)
+  })
+})
+
+describe('K2 re-check N1: a session id that holds a later-registered secret', () => {
+  it('is withheld from the query tool, every route and the list, which stays valid for other sessions', async () => {
+    const value = `late-${SECRET}`
+    const sensitiveId = `agent:${value}`
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open(sensitiveId, { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'an ordinary prompt', attachmentCount: 0 } })
+    log.open('agent-clean', { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-2', text: 'another ordinary prompt', attachmentCount: 0 } })
+    // Registered after the session was created and written.
+    scrubber.register(REF, value)
+
+    assert.throws(() => querySessionLog(log, sensitiveId, 'remote_agent', {}), { code: 'session_withheld' })
+    assert.throws(() => querySessionLog(log, sensitiveId, 'remote_agent', { text: 'ordinary' }), { code: 'session_withheld' })
+    const tool = createSessionQueryTool({ log, sessionId: sensitiveId, audience: 'remote_agent' })
+    await assert.rejects(
+      tool.execute({}, { workspaceRoot: null, enableBash: false, signal: new AbortController().signal }),
+      (error: Error) => {
+        assert.equal(error.message.includes(SECRET), false, 'the tool error is content-free')
+        assert.equal(error.message.includes(REF), false)
+        return /withheld/.test(error.message)
+      },
+    )
+    assert.equal(querySessionLog(log, 'agent-clean', 'remote_agent', {}).sessionId, 'agent-clean')
+
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const list = await app.request('/api/sessions', {}, LOOPBACK)
+    assert.equal(list.status, 200)
+    const listText = await list.text()
+    assert.equal(listText.includes(SECRET), false)
+    const listed = listSessionsResponse.parse(JSON.parse(listText))
+    assert.deepEqual(listed.sessions.map((session) => session.sessionId), ['agent-clean'])
+    assert.equal(listed.withheld, 1)
+
+    for (const suffix of ['', '/events', '/spans', '/export', '/stream']) {
+      const response = await app.request(`/api/sessions/${sensitiveId}${suffix}`, {}, LOOPBACK)
+      const text = await response.text()
+      assert.equal(response.status, 403, suffix)
+      assert.equal(apiErrorSchema.parse(JSON.parse(text)).code, 'session_withheld', suffix)
+      assert.equal(text.includes(SECRET), false, suffix)
+      assert.equal((response.headers.get('content-disposition') ?? '').includes(SECRET), false)
+    }
+
+    const everywhere = await app.request('/api/sessions/search?q=ordinary', {}, LOOPBACK)
+    assert.equal(everywhere.status, 200)
+    const everywhereText = await everywhere.text()
+    assert.equal(everywhereText.includes(SECRET), false)
+    assert.deepEqual(sessionSearchResponse.parse(JSON.parse(everywhereText)).hits.map((hit) => hit.sessionId), ['agent-clean'])
+    const scoped = await app.request(`/api/sessions/search?q=ordinary&sessionId=${sensitiveId}`, {}, LOOPBACK)
+    assert.equal(scoped.status, 403)
+    assert.equal((await scoped.text()).includes(SECRET), false)
+  })
+})
+
+describe('K2 re-check N1: an open stream when the value is registered', () => {
+  it('ends with a content-free session_withheld frame at its next wake-up', async () => {
+    const value = `late-${SECRET}`
+    const sensitiveId = `agent:${value}`
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open(sensitiveId, { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'streamed', attachmentCount: 0 } })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const response = await app.request(`/api/sessions/${sensitiveId}/stream?after=3`, {}, LOOPBACK)
+    assert.equal(response.status, 200)
+    const reader = response.body!.getReader()
+    const pending = reader.read()
+    await tick()
+    scrubber.register(REF, value)
+    log.notify([sensitiveId])
+    const frame = new TextDecoder().decode((await pending).value)
+    assert.match(frame, /event: guanxi-error/)
+    assert.match(frame, /"code":"session_withheld"/)
+    assert.equal(frame.includes(SECRET), false)
+    assert.equal((await reader.read()).done, true, 'the stream ends after the error frame')
   })
 })

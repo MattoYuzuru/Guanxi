@@ -187,6 +187,7 @@ const API_ERROR_KEYS = {
   session_not_found: 'error.api.notFound',
   egress_not_ready: 'error.api.egressNotReady',
   loopback_only: 'error.api.loopbackOnly',
+  session_withheld: 'error.api.sessionWithheld',
   path_outside_workspace: 'error.api.notAllowed',
   tool_disabled: 'error.api.notAllowed',
   validation_failed: 'error.api.validation',

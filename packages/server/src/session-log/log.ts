@@ -14,7 +14,9 @@
  * - **Persisted before streamed.** Subscribers are woken only after commit and
  *   read the log from SQLite after their own cursor.
  * - **Scrubbed at write and at read.** Every payload passes the egress scrubber
- *   before it is stored and again on the way out (D-141).
+ *   before it is stored and again on the way out (D-141). Identifiers holding a
+ *   registered value are refused at write; a session whose id holds a value
+ *   registered later is withheld from every read (`session_withheld`).
  * - **Reasoning** is its own class with an expiry; agents on remote providers
  *   never receive it, and exports never contain it (D-113).
  */
@@ -64,6 +66,12 @@ export type SessionLogErrorCode =
   | 'closed'
   /** A declared secret source has not registered yet (D-141); nothing is written or read. */
   | 'egress_not_ready'
+  /**
+   * The session id now contains a registered value (registered after the
+   * session was created), so the session cannot be returned by any outward
+   * path without exposing it (GPT re-check N1). The message never names it.
+   */
+  | 'session_withheld'
 
 export class SessionLogError extends Error {
   readonly code: SessionLogErrorCode
@@ -514,18 +522,32 @@ export class SessionLog {
 
   session(sessionId: string): SessionListItem | null {
     this.assertEgressReady()
+    this.assertReturnable(sessionId)
     const row = this.db
       .prepare(`${LIST_ITEM_SELECT} WHERE s.id = ?`)
       .get(sessionId) as unknown as ListItemRow | undefined
     return row ? this.toListItem(row) : null
   }
 
-  list(limit = 50): SessionListItem[] {
+  /**
+   * The most recent sessions. Sessions whose id holds a registered value are
+   * left out before the limit and only counted (`withheld`), so one such id
+   * never breaks the list (GPT re-check N1).
+   */
+  list(limit = 50): { sessions: SessionListItem[]; withheld: number } {
     this.assertEgressReady()
+    const withheld: string[] = []
+    for (const row of this.db.prepare('SELECT id FROM sessions').iterate() as Iterable<{ id: string }>) {
+      if (!this.returnable(row.id)) withheld.push(row.id)
+    }
     const rows = this.db
-      .prepare(`${LIST_ITEM_SELECT} ORDER BY COALESCE(last_event_at, s.created_at) DESC, s.id LIMIT ?`)
-      .all(Math.min(Math.max(1, limit), 200)) as unknown as ListItemRow[]
-    return rows.map((row) => this.toListItem(row))
+      .prepare(
+        `${LIST_ITEM_SELECT}
+         WHERE s.id NOT IN (SELECT value FROM json_each(?))
+         ORDER BY COALESCE(last_event_at, s.created_at) DESC, s.id LIMIT ?`,
+      )
+      .all(JSON.stringify(withheld), Math.min(Math.max(1, limit), 200)) as unknown as ListItemRow[]
+    return { sessions: rows.map((row) => this.toListItem(row)), withheld: withheld.length }
   }
 
   /**
@@ -544,11 +566,11 @@ export class SessionLog {
         title = null
       }
     }
-    const ids = this.scrubber.scrub({ sessionId: row.id, threadId: row.thread_id })
     return {
-      sessionId: ids.sessionId,
+      // Callers leave out sessions whose id holds a registered value; a Thread id is not routable and is scrubbed.
+      sessionId: row.id,
       kind: row.kind as SessionKind,
-      threadId: ids.threadId,
+      threadId: row.thread_id === null ? null : this.scrubber.scrub(row.thread_id),
       title,
       createdAt: row.created_at,
       lastSeq: row.last_seq,
@@ -562,6 +584,7 @@ export class SessionLog {
     options: { afterSeq?: number; limit?: number; audience: SessionAudience; types?: readonly SessionEventType[]; seqs?: readonly number[] },
   ): { events: SessionEvent[]; lastSeq: number; hasMore: boolean } {
     this.assertEgressReady()
+    this.assertReturnable(sessionId)
     const head = this.requireSession(sessionId)
     const afterSeq = options.afterSeq ?? 0
     const limit = Math.min(Math.max(1, options.limit ?? 200), MAX_PAGE)
@@ -609,6 +632,7 @@ export class SessionLog {
     },
   ): SessionSearchHit[] {
     this.assertEgressReady()
+    if (options.sessionId !== undefined) this.assertReturnable(options.sessionId)
     const query = literalFtsQuery(text)
     if (!query) return []
     const limit = Math.min(Math.max(1, options.limit ?? 25), 100)
@@ -653,8 +677,10 @@ export class SessionLog {
       // The snippet comes from the whole indexed text, scrubbed with every value registered now.
       const snippet = buildSnippet(this.scrubber.scrub(row.search_text), terms)
       if (snippet === null) continue
+      // A hit in a session whose id holds a registered value is never returned (N1).
+      if (!this.returnable(row.session_id)) continue
       hits.push({
-        sessionId: this.scrubber.scrub(row.session_id),
+        sessionId: row.session_id,
         seq: row.seq,
         type: row.type,
         class: row.class,
@@ -669,6 +695,7 @@ export class SessionLog {
   /** Per-type counts over every event (people see all of them). */
   counts(sessionId: string): { counts: Partial<Record<SessionEventType, number>>; purged: number; redactions: number } {
     this.assertEgressReady()
+    this.assertReturnable(sessionId)
     this.requireSession(sessionId)
     const rows = this.db
       .prepare(
@@ -692,6 +719,7 @@ export class SessionLog {
   /** Totals of every usage event and the latest context state. */
   tokenMeter(sessionId: string): SessionTokenMeter {
     this.assertEgressReady()
+    this.assertReturnable(sessionId)
     this.requireSession(sessionId)
     const totals = this.db
       .prepare(
@@ -725,6 +753,7 @@ export class SessionLog {
     signal: AbortSignal,
   ): AsyncGenerator<SessionEvent> {
     this.assertEgressReady()
+    this.assertReturnable(sessionId)
     this.requireSession(sessionId)
     const wake = new SubscriptionWake()
     const set = this.subscribers.get(sessionId) ?? new Set<SubscriptionWake>()
@@ -788,6 +817,18 @@ export class SessionLog {
       | undefined
     if (!row) throw new SessionLogError('session_not_found', `Session ${sessionId} was not found`)
     return row
+  }
+
+  /** False when the session id contains a registered value and so cannot leave the log. */
+  private returnable(sessionId: string): boolean {
+    return this.scrubber.scrub(sessionId) === sessionId
+  }
+
+  /** Every session-scoped read refuses a session whose id contains a registered value (N1). */
+  private assertReturnable(sessionId: string): void {
+    if (!this.returnable(sessionId)) {
+      throw new SessionLogError('session_withheld', 'The session id contains a registered secret')
+    }
   }
 
   /** Inside a transaction: create the session if needed and make this process its writer. */

@@ -56,9 +56,15 @@ function invalid(context: Context, message: string): Response {
   return context.json(apiError('validation_failed', message), 400)
 }
 
+const WITHHELD_MESSAGE = 'This session is withheld: its id contains a registered secret'
+
 function failure(context: Context, error: unknown, log?: SessionLog): Response {
   if (error instanceof SessionLogError && error.code === 'session_not_found') {
     return context.json(apiError('session_not_found', 'Session not found'), 404)
+  }
+  if (error instanceof SessionLogError && error.code === 'session_withheld') {
+    // Content-free: the id is never echoed back (GPT re-check N1).
+    return context.json(apiError('session_withheld', WITHHELD_MESSAGE), 403)
   }
   if (error instanceof SessionLogError && error.code === 'egress_not_ready') {
     // Fail closed: nothing leaves the log until every declared secret source has registered.
@@ -115,7 +121,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     const parsed = raw ? listSessionsQuery.safeParse(raw) : null
     if (!parsed?.success) return invalid(context, 'Invalid session list query')
     try {
-      return context.json(listSessionsResponse.parse({ sessions: log().list(parsed.data.limit) }))
+      return context.json(listSessionsResponse.parse(log().list(parsed.data.limit)))
     } catch (error) {
       return fail(context, error)
     }
@@ -175,7 +181,8 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       })
       return context.json(
         sessionEventsResponse.parse({
-          sessionId: current.redact(sessionId),
+          // The read above refused an id holding a registered value, so the id is safe to echo.
+          sessionId,
           events: page.events,
           nextAfter: page.events.at(-1)?.seq ?? parsed.data.after,
           lastSeq: page.lastSeq,
@@ -193,7 +200,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     try {
       const current = log()
       const events = current.readAll(sessionId, 'person')
-      return context.json(sessionSpansResponse.parse({ sessionId: current.redact(sessionId), spans: projectSpans(events) }))
+      return context.json(sessionSpansResponse.parse({ sessionId, spans: projectSpans(events) }))
     } catch (error) {
       return fail(context, error)
     }
@@ -208,14 +215,13 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       const events = all.filter((event) => event.class !== 'reasoning')
       const body = sessionExportSchema.parse({
         exportVersion: SESSION_EXPORT_VERSION,
-        sessionId: current.redact(sessionId),
+        sessionId,
         exportedAt: new Date().toISOString(),
         lastSeq: all.at(-1)?.seq ?? 0,
         excluded: { reasoning: all.length - events.length },
         events,
       })
-      const fileId = current.redact(sessionId) === sessionId ? sessionId : 'redacted'
-      context.header('content-disposition', `attachment; filename="session-${fileId}.json"`)
+      context.header('content-disposition', `attachment; filename="session-${sessionId}.json"`)
       return context.json(body)
     } catch (error) {
       return fail(context, error)
@@ -259,8 +265,11 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
               return
             }
             controller.enqueue(eventFrame(next.value))
-          } catch {
-            const error = apiError('storage_error', 'Session event subscription failed')
+          } catch (failed) {
+            // A value registered while the stream is open withholds the session from then on.
+            const error = failed instanceof SessionLogError && failed.code === 'session_withheld'
+              ? apiError('session_withheld', WITHHELD_MESSAGE)
+              : apiError('storage_error', 'Session event subscription failed')
             controller.enqueue(encoder.encode(`event: ${SSE_ERROR_EVENT_NAME}\ndata: ${JSON.stringify(error)}\n\n`))
             subscriber.abort()
             await iterator.return(undefined)

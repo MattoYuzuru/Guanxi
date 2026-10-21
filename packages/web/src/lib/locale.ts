@@ -823,6 +823,8 @@ const english = {
     'The session inspector answers this machine only. Open Guanxi on the computer that runs it.',
   'error.api.egressNotReady':
     'Secret redaction is not ready: a secret source has not registered its values yet. The trace opens once it has.',
+  'error.api.sessionWithheld':
+    'This trace is hidden: its session id contains a value now registered as a secret.',
   'error.api.conflict': 'The request conflicts with the current saved state. Refresh and try again.',
   'error.api.storage': 'The request could not be saved to local storage.',
   'error.api.validation': 'The request contains an invalid or unsupported value.',
@@ -1717,6 +1719,7 @@ const english = {
   'inspector.list.empty.description': 'A trace starts with the next message you send in a chat.',
   'inspector.list.empty.action': 'Open chat',
   'inspector.list.events': 'Events: {count}',
+  'inspector.list.withheld': 'Hidden because the session id contains a registered secret: {count}',
   'inspector.loading': 'Loading the trace',
   'inspector.retry': 'Retry',
   'inspector.untitled': 'Untitled session',
@@ -2635,6 +2638,8 @@ const russian: Messages = {
     'Инспектор сессий отвечает только на этом компьютере. Откройте Guanxi на компьютере, где он запущен.',
   'error.api.egressNotReady':
     'Скрытие секретов ещё не готово: один из источников секретов не передал свои значения. Трасса откроется, когда он это сделает.',
+  'error.api.sessionWithheld':
+    'Трасса скрыта: идентификатор сессии содержит значение, которое теперь зарегистрировано как секрет.',
   'error.api.conflict': 'Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.',
   'error.api.storage': 'Не удалось сохранить запрос в локальное хранилище.',
   'error.api.validation': 'Запрос содержит недопустимое или неподдерживаемое значение.',
@@ -3528,6 +3533,7 @@ const russian: Messages = {
   'inspector.list.empty.description': 'Трасса начнётся со следующего сообщения в чате.',
   'inspector.list.empty.action': 'Открыть чат',
   'inspector.list.events': 'Событий: {count}',
+  'inspector.list.withheld': 'Скрыто, потому что идентификатор сессии содержит зарегистрированный секрет: {count}',
   'inspector.loading': 'Загружаем трассу',
   'inspector.retry': 'Повторить',
   'inspector.untitled': 'Сессия без названия',
