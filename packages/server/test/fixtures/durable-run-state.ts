@@ -31,6 +31,8 @@ export function runStateSnapshot(db: Db): unknown {
   for (const table of ['durable_runs', 'run_attempts', 'promises', 'timers', 'outbox', 'run_resources', 'run_costs']) {
     tables[table] = db.prepare(`SELECT * FROM ${table}`).all().map((r) => JSON.stringify(normalize(r))).sort()
   }
+  tables.sessions = db.prepare('SELECT * FROM sessions').all().map((r) => JSON.stringify(normalize(r))).sort()
+  tables.writers = db.prepare('SELECT session_id,epoch,acquired_at,renewed_at,expires_at,released_at FROM session_writers').all().map((r) => JSON.stringify(normalize(r))).sort()
   tables.leases = db.prepare("SELECT key,epoch,token,holder,expires_at,released FROM leases WHERE key LIKE 'run:%/exec'").all().map((r) => JSON.stringify(normalize(r))).sort()
   tables.events = db.prepare('SELECT seq,type,payload,writer_epoch FROM session_events ORDER BY session_id,seq').all().map((r) => normalize({ ...r, payload: JSON.parse(r.payload as string) }))
   return tables
