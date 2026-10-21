@@ -19,10 +19,13 @@ export interface FederationOptions {
   scrubber: EgressScrubber
   log: SessionLog
   runs: RunStore
+  /** Maximum operations per POST /config; default 256. Split larger batches. */
+  configOpsPerRequest?: number
   clock?: () => number
 }
 export interface PeerContext { identity: NodeIdentity; readOnly: boolean; version: { major: number; minor: number } }
 export class Federation {
+  readonly configOpsPerRequest: number
   readonly config: SharedConfig
   readonly replicas: Replicas
   readonly enrollment: DeviceEnrollment
@@ -31,6 +34,8 @@ export class Federation {
   private readonly now: () => number
   private closed = false
   constructor(options: FederationOptions) {
+    this.configOpsPerRequest = options.configOpsPerRequest ?? 256
+    if (!Number.isSafeInteger(this.configOpsPerRequest) || this.configOpsPerRequest < 1) throw new FederationError('invalid_config_budget')
     this.#options = options
     this.now = options.clock ?? Date.now
     this.identity = nodeIdentitySchema.parse(options.identity)

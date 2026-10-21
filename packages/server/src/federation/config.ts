@@ -33,6 +33,22 @@ export function configState(ops: readonly SignedConfigOperation[]) {
     return [key, sorted.at(-1)!.value]
   }))
 }
+interface StoredHistory {
+  vector: Record<string, number>
+  sparse: Map<string, Set<number>>
+}
+interface PreparedOperation { signed: SignedConfigOperation; author: NodeIdentity }
+function advance(history: StoredHistory, origin: string, counter: number): number {
+  const before = counterAt(history.vector, origin)
+  if (counter <= before) return before
+  let sparse = history.sparse.get(origin)
+  if (!sparse) { sparse = new Set(); history.sparse.set(origin, sparse) }
+  sparse.add(counter)
+  let prefix = before
+  while (sparse.delete(prefix + 1)) prefix++
+  if (prefix > before) history.vector[origin] = prefix
+  return prefix
+}
 export class SharedConfig {
   private readonly db: Db
   private readonly local: NodeIdentity
@@ -55,23 +71,27 @@ export class SharedConfig {
   stateHash() { return hash(this.state()) }
   private clock(): Hlc { return this.db.prepare('SELECT wall,logical FROM federation_clock WHERE id=1').get() as unknown as Hlc }
   private setClock(clock: Hlc) { this.db.prepare('UPDATE federation_clock SET wall=?,logical=? WHERE id=1').run(clock.wall, clock.logical) }
-  private vector(accountId = this.local.accountId): Record<string, number> {
-    const seen: Record<string, number> = Object.create(null)
-    for (const { operation: op } of this.operations()) {
-      // Another account's administrator has no authority over our privilege
-      // history or local counters, even on a shared installation.
-      if (op.accountId !== accountId) continue
-      // Only the unbroken, actually stored prefix is evidence of observation.
-      // Neither a sparse dot nor an author's claimed context fills a gap.
-      if (op.counter === (seen[op.origin] ?? 0) + 1) seen[op.origin] = op.counter
+  private histories(): Map<string, StoredHistory> {
+    // Read only counters/account ids once. Admission never reparses or re-scrubs
+    // the stored log; signed payloads are scrubbed on export instead.
+    const histories = new Map<string, StoredHistory>()
+    for (const row of this.db.prepare(`SELECT origin,counter,
+      json_extract(data,'$.operation.accountId') AS account FROM federation_operations ORDER BY origin,counter`).all()) {
+      let history = histories.get(row.account as string)
+      if (!history) { history = { vector: Object.create(null), sparse: new Map() }; histories.set(row.account as string, history) }
+      advance(history, row.origin as string, row.counter as number)
     }
-    return seen
+    return histories
+  }
+  private missing(signed: SignedConfigOperation, stored: Record<string, number>): [string, number][] {
+    return Object.entries(signed.operation.context).filter(([origin, counter]) => counter > counterAt(stored, origin))
   }
   create(key: string, value: ConfigOperation['value']): SignedConfigOperation {
     this.clean(null)
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      const context = this.vector()
+      const history = this.histories().get(this.local.accountId) ?? { vector: Object.create(null), sparse: new Map() }
+      const context = { ...history.vector }
       const last = this.db.prepare('SELECT MAX(counter) AS counter FROM federation_operations WHERE origin=?').get(this.local.id)?.counter as number | null
       const ownCounter = last ?? 0
       if ((context[this.local.id] ?? 0) > ownCounter) throw new FederationError('local_history_missing')
@@ -81,60 +101,92 @@ export class SharedConfig {
       const operation = configOperationSchema.parse({ origin: this.local.id, counter: ownCounter + 1,
         accountId: this.local.accountId, key, clock, context, value })
       const signed = { operation, signature: signValue(this.#privateKey, operation) }
-      this.acceptWithin(signed)
+      const prepared = this.prepare(signed)!
+      if (this.missing(signed, history.vector).length) throw new FederationError('context_missing')
+      this.acceptWithin(prepared)
       this.db.exec('COMMIT'); return signed
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
   ingest(operations: readonly SignedConfigOperation[]) {
     this.clean(null)
     const result = { accepted: 0, duplicates: 0, deferred: 0, skipped: 0, reasons: {} as Record<string, number> }
-    let pending = [...operations]
-    while (pending.length) {
-      const deferred: SignedConfigOperation[] = []
-      for (const op of pending) {
-        // Each admitted op commits independently. Inadmissible authors and
-        // future timestamps cannot roll back independent work in the batch.
+    const histories = this.histories()
+    type Entry = PreparedOperation & { remaining: number }
+    // Register every missing dot once. Prefix advancement wakes each dependency
+    // once, and only fully ready operations reach signature verification/SQLite.
+    const waiting = new Map<string, Entry[]>()
+    const ready: Entry[] = []
+    let head = 0
+    const dot = (account: string, origin: string, counter: number) => canonical([account, origin, counter])
+    const skipped = (error: unknown) => {
+      if (!(error instanceof FederationError) ||
+        !['unauthenticated', 'forbidden', 'admin_required', 'clock_drift'].includes(error.code)) throw error
+      result.skipped++; result.reasons[error.code] = (result.reasons[error.code] ?? 0) + 1
+    }
+    for (const input of operations) {
+      let prepared: PreparedOperation | undefined
+      try { prepared = this.prepare(input) } catch (error) { skipped(error); continue }
+      if (!prepared) { result.duplicates++; continue }
+      const op = prepared.signed.operation
+      let history = histories.get(op.accountId)
+      if (!history) { history = { vector: Object.create(null), sparse: new Map() }; histories.set(op.accountId, history) }
+      const missing = this.missing(prepared.signed, history.vector)
+      const entry: Entry = { ...prepared, remaining: missing.length }
+      result.deferred++
+      for (const [origin, counter] of missing) {
+        const key = dot(op.accountId, origin, counter)
+        const entries = waiting.get(key) ?? []
+        entries.push(entry); waiting.set(key, entries)
+      }
+      if (!entry.remaining) ready.push(entry)
+      while (head < ready.length) {
+        const current = ready[head++]!
+        const accepted = current.signed.operation
+        const stored = histories.get(accepted.accountId)!
+        result.deferred--
         this.db.exec('BEGIN IMMEDIATE')
         try {
-          const status = this.acceptWithin(op)
+          // A duplicate dot may have been waiting alongside this one.
+          const status = this.existing(current.signed) ? 'duplicates' : this.acceptWithin(current)
           this.db.exec('COMMIT'); result[status]++
-        } catch (error) {
-          this.db.exec('ROLLBACK')
-          if (!(error instanceof FederationError)) throw error
-          if (error.code === 'context_missing') { deferred.push(op); continue }
-          if (!['unauthenticated', 'forbidden', 'admin_required', 'clock_drift'].includes(error.code)) throw error
-          result.skipped++; result.reasons[error.code] = (result.reasons[error.code] ?? 0) + 1
+        } catch (error) { this.db.exec('ROLLBACK'); skipped(error); continue }
+        const before = counterAt(stored.vector, accepted.origin)
+        const prefix = advance(stored, accepted.origin, accepted.counter)
+        for (let counter = before + 1; counter <= prefix; counter++) {
+          const key = dot(accepted.accountId, accepted.origin, counter)
+          for (const dependent of waiting.get(key) ?? []) if (--dependent.remaining === 0) ready.push(dependent)
+          waiting.delete(key)
         }
       }
-      if (deferred.length === pending.length) { pending = deferred; break }
-      pending = deferred
     }
-    result.deferred = pending.length
     return result
   }
-  private acceptWithin(input: SignedConfigOperation): 'accepted' | 'duplicates' {
+  private existing(signed: SignedConfigOperation): boolean {
+    const op = signed.operation
+    const existing = this.db.prepare('SELECT data FROM federation_operations WHERE origin=? AND counter=?').get(op.origin, op.counter)
+    if (!existing) return false
+    if (canonical(JSON.parse(existing.data as string)) !== canonical(signed)) throw new FederationError('operation_conflict')
+    return true
+  }
+  private prepare(input: SignedConfigOperation): PreparedOperation | undefined {
     const signed = signedConfigOperationSchema.parse(input)
     const op = signed.operation
     this.clean(signed)
     // Stored acceptance survives credential revocation. Otherwise every full
     // anti-entropy batch containing a revoked author's history would be wedged.
     // New or changed dots still require CURRENT author admission below.
-    const existing = this.db.prepare('SELECT data FROM federation_operations WHERE origin=? AND counter=?').get(op.origin, op.counter)
-    if (existing) {
-      if (canonical(JSON.parse(existing.data as string)) !== canonical(signed)) throw new FederationError('operation_conflict')
-      return 'duplicates'
-    }
+    if (this.existing(signed)) return undefined
     const author = this.peer(op.origin)
     if (author.accountId !== op.accountId || !author.scopes.includes('config')) throw new FederationError('forbidden', 403)
     if (['grant', 'membership', 'identity'].includes(op.value.kind) && !author.admin) throw new FederationError('admin_required', 403)
     if (op.value.kind === 'connection' && op.value.ownerAccountId !== op.accountId) throw new FederationError('owner_mismatch', 403)
     if (counterAt(op.context, op.origin) !== op.counter - 1) throw new FederationError('invalid_context')
-    if (!validSignature(author.publicKey, op, signed.signature)) throw new FederationError('unauthenticated', 401)
     if (op.clock.wall > this.now() + MAX_CLOCK_DRIFT_MS) throw new FederationError('clock_drift')
-    const stored = this.vector(op.accountId)
-    if (Object.entries(op.context).some(([origin, counter]) => counter > counterAt(stored, origin))) {
-      throw new FederationError('context_missing')
-    }
+    return { signed, author }
+  }
+  private acceptWithin({ signed, author }: PreparedOperation): 'accepted' {
+    const op = signed.operation
+    if (!validSignature(author.publicKey, op, signed.signature)) throw new FederationError('unauthenticated', 401)
     this.setClock(mergeClock(this.clock(), op.clock, this.now()))
     this.db.prepare('INSERT INTO federation_operations VALUES (?,?,?)').run(op.origin, op.counter, canonical(signed))
     return 'accepted'

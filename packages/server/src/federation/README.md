@@ -33,7 +33,12 @@ the local audience, revocation, a 60-second time window and durable nonce unique
 network encryption or TLS protects responses; signatures do not encrypt payloads. The two
 device code/token endpoints are the only public bootstrap routes; neither approves a device.
 The request-body budget is 1 MiB (413); callers split large batches. It is a transport budget,
-not a fleet-size or context cap.
+not a fleet-size or context cap. `FederationOptions.configOpsPerRequest` is a positive safe
+integer (default **256**) limiting operations in one `POST /config`. Larger batches return
+`413 config_batch_too_large` before operation validation; callers split them. The byte budget
+still applies. This host setting bounds synchronous request work, not total log size. The local
+regression envelope requires a 3,000-op request within the byte budget to yield to a timer
+within **250 ms** on the test machine; this is a measured fixture bound, not a real-time SLA.
 
 `FederationChannel` signs requests through an injected transport, so constructing it opens
 no network. The host maps its logical `https://federation.invalid` origin to one pinned peer
@@ -73,7 +78,12 @@ node id and explicit approval. No vendor OAuth tokens are read, copied or transf
 context and HLC. Receive order, retries and forwarding cannot change the signed author.
 Vectors cover only the unbroken run of actually stored operations per origin; signed contexts
 never fill gaps. Ingest defers an operation if any claimed context (including the local origin)
-is absent. Reordered batches are retried to a fixed point; deferred operations are not persisted
+is absent. Ingest reads account-specific stored counters once and updates contiguous prefixes incrementally.
+A ready queue registers each missing dot once; each operation is prepared once and reaches
+signature verification at most once after its cheap context check succeeds. Work is linear in
+stored counters plus input bytes/context entries (apart from indexed SQLite lookups). It never
+re-parses or re-scrubs the stored log per incoming operation. The isolated 1,000-op reverse-order
+regression must finish ingest within **2 seconds**. Deferred operations are not persisted
 and must be retried by anti-entropy with their dependencies. Local counters derive only from
 actual locally signed operations. Operations more than 60 seconds
 in the future are rejected before persistence; local writes also refuse after a clock rollback

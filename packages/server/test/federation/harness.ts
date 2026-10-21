@@ -6,7 +6,7 @@ import { openDb } from '../../src/store/db.ts'
 import { SessionLog } from '../../src/session-log/log.ts'
 import { RunStore } from '../../src/runs/store.ts'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
-import { Federation } from '../../src/federation/service.ts'
+import { Federation, type FederationOptions } from '../../src/federation/service.ts'
 import { federationRoutes } from '../../src/federation/routes.ts'
 import { requestProof, signValue } from '../../src/federation/crypto.ts'
 
@@ -27,14 +27,14 @@ export class SimNode {
   readonly runs: RunStore
   readonly federation: Federation
   readonly app: Hono
-  constructor(keys: ReturnType<typeof identity>, path = ':memory:') {
+  constructor(keys: ReturnType<typeof identity>, path = ':memory:', options: Pick<FederationOptions, 'configOpsPerRequest'> = {}) {
     this.keys = keys
     this.db = openDb(path)
     this.scrubber = new SecretScrubber()
     this.log = new SessionLog({ db: this.db, scrubber: this.scrubber, clock: () => new Date(this.time) })
     this.runs = new RunStore({ db: this.db, scrubber: this.scrubber, log: this.log, clock: () => this.time, leaseClock: () => this.time, alwaysOn: true })
     this.runs.heartbeat()
-    this.federation = new Federation({ ...keys, db: this.db, scrubber: this.scrubber, log: this.log, runs: this.runs, clock: () => this.time })
+    this.federation = new Federation({ ...options, ...keys, db: this.db, scrubber: this.scrubber, log: this.log, runs: this.runs, clock: () => this.time })
     this.app = new Hono().route('/api/federation', federationRoutes(() => this.federation))
   }
   trust(other: SimNode) { this.federation.trust(other.keys.identity) }

@@ -58,7 +58,9 @@ export function federationRoutes(resolve: () => Federation) {
   })
   app.post('/config', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'config', true)
-    const ops = z.array(signedConfigOperationSchema).parse(c.get('body'))
+    const body = c.get('body')
+    if (Array.isArray(body) && body.length > f.configOpsPerRequest) throw new FederationError('config_batch_too_large', 413)
+    const ops = z.array(signedConfigOperationSchema).parse(body)
     if (ops.some((op) => op.operation.accountId !== peer.accountId)) throw new FederationError('owner_mismatch', 403)
     return c.json({ applied: true, ...f.config.ingest(ops) })
   })
