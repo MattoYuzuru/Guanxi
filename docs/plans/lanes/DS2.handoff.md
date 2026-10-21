@@ -140,3 +140,149 @@ The integrator should merge the lane, run the full gates, and have the owner ins
 (`node packages/ui/catalog/scripts/approval-key.ts init`) on `main`. Until that public entry is
 committed, `approval-keys.json` is empty and G12 correctly reports no trusted key. The catalog
 cannot write approvals before that.
+
+## Review-fix round (2026-10-21)
+
+Two independent GPT review findings in this lane were closed. The earlier sections above are
+historical evidence for the original slice and are not rewritten.
+
+### Finding 1 — unsupported platform guard
+
+`helperSigner` now refuses before `execFile` on a host other than macOS:
+
+- `status()` returns `{ state: 'unavailable', reason: 'platform_unsupported' }`;
+- `sign()` throws `SignerError` with reason `platform_unsupported` and a macOS/Secure Enclave
+  message, not install guidance or `signer_helper_missing`.
+
+`HelperSignerOptions.platform` is the explicitly documented test seam. Production uses
+`process.platform`; no caller passes it outside tests. The existing fixture-helper test seam
+(`env`) is unchanged, so the test build is still invoked only deliberately.
+
+**New test** (`packages/server/test/ui-catalog-signer-install.test.ts`):
+`reports platform_unsupported on a Linux injection without spawning the helper`. It covers a
+missing helper (the old Linux case) and a marker-writing fake helper, and asserts the marker
+does not exist after both `status()` and `sign()`.
+
+**Mutation control:** removing both guards made the test fail with
+`actual { state: 'unavailable', reason: 'signer_helper_missing' }` versus the expected
+`platform_unsupported`; restoring the guards made it pass.
+
+**Commit:** `6bd9dc1 fix(server): report platform_unsupported before helper invocation`.
+
+### Finding 2 — production confirmation policy
+
+The previous test build compiled out the `.privateKeyUsage`/`.userPresence` access control and
+the `LAContext` localized reason/zero reuse, so the fake-auth call count could not detect their
+removal. The production policy is now built by shared functions outside the conditional
+branches:
+
+- `approvalKeyAccessPolicy()` is the single source of
+  `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, `[.privateKeyUsage, .userPresence]` and
+  reuse duration `0`;
+- `makeApprovalAccessControl()` passes that policy to the public
+  `SecAccessControlCreateWithFlags` API and is used by production `init`;
+- `configureConfirmationContext(_:reason:)` sets `localizedReason` and the policy reuse
+  duration; `makeConfirmationContext(reason:)` is the fresh-context wrapper used by production
+  `sign`;
+- `signingReason(schema:id:sourceHash:)` builds the exact approval/revocation prompt, including
+  the full `sha256:…` source hash, for both the production sign path and the probe.
+
+The test build gains only `test-policy`, guarded by `#if GUANXI_SIGNER_TESTING`, and
+`operationTestPolicyProbe` calls those same builders. It never loads a key, prompts, signs or
+writes a keychain item. The probe seeds a nonzero `LAContext` reuse value first, so deleting
+the explicit zero assignment cannot pass by matching the API default.
+
+**New test** (`packages/server/test/ui-catalog-signer-exit-gates.test.ts`):
+`wires the production access-control and confirmation policy through the shared builders`
+asserts the access control was created, device-only accessibility, `.privateKeyUsage`,
+`.userPresence`, `confirmationReuseDuration: 0`, the exact
+`approve the "button" component, source sha256:<64 hex>` reason, no signature field and no
+fake-auth line.
+
+**Mutation controls after the refactor:** each mutation made that test fail; each was restored.
+
+| Removed/changed production policy | Observed failure |
+| --- | --- |
+| `.userPresence` removed from `accessFlags` | `userPresence: false` |
+| `.privateKeyUsage` removed from `accessFlags` | `privateKeyUsage: false` |
+| accessibility changed to `kSecAttrAccessibleWhenUnlocked` | `accessibilityDeviceOnly: false` |
+| reuse duration changed from `0` to `30` | `confirmationReuseDuration: 30` |
+| `context.localizedReason = reason` removed | `localizedReason: ''` |
+| `context.touchIDAuthenticationAllowableReuseDuration = …` removed | seeded value `120` remained |
+| `, source <sourceHash>` removed from `signingReason` | shortened `localizedReason` |
+
+Before the refactor, removing `.userPresence` and setting reuse duration to `30` each left the
+old `requires one confirmation per signature and none for a denial` test green, reproducing the
+review finding.
+
+**Commit:** `f15cf44 fix(signer): prove the production confirmation policy`.
+
+### Scope and evidence
+
+Changed files in this review-fix round:
+
+- `packages/server/src/ui-catalog/signer.ts` — platform guard and test seam;
+- `packages/server/test/ui-catalog-signer-install.test.ts` — Linux-injection regression;
+- `native/approval-signer/Sources/main.swift` — shared policy/context/reason builders and the
+  test-build-only probe;
+- `packages/server/test/ui-catalog-signer-exit-gates.test.ts` — policy-wiring regression;
+- `docs/plans/lanes/DS2.handoff.md` — this review-fix section.
+
+**New / regression envelope:** 2 new tests; the scoped regression run below executes 45 tests
+in 4 files (43 pre-existing plus the 2 new).
+
+Commands and final result lines, run from the repository root:
+
+```sh
+nice -n 10 node --test packages/server/test/ui-catalog-review.test.ts \
+  packages/server/test/ui-catalog-signer-install.test.ts \
+  packages/server/test/ui-catalog-signer-helper.test.ts \
+  packages/server/test/ui-catalog-signer-exit-gates.test.ts
+```
+
+```text
+ℹ tests 45
+ℹ suites 10
+ℹ pass 45
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+```
+
+```sh
+nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
+```
+
+Exit 0, no output.
+
+```sh
+nice -n 10 sh native/approval-signer/build.sh --test
+nice -n 10 sh native/approval-signer/build.sh
+nice -n 10 sh native/approval-signer/build.sh --check native/approval-signer/.build/approval-signer
+```
+
+All exit 0. The only stderr was codesign's `replacing existing signature` line; `swiftc` emitted
+no warnings. The production hook check passed. `strings` also reports `test-policy` zero times
+in `.build/approval-signer` and once in `.build/approval-signer-test`, and `SIGNER_TEST_` zero
+times in the production binary, so the test-only probe is not compiled into production.
+
+### Residuals and boundaries
+
+- **Policy wiring, not hardware confirmation.** The probe proves the values passed to the public
+  `SecAccessControlCreateWithFlags` and `LAContext` APIs. It does not prove that the Secure
+  Enclave enforces them, that Touch ID or the password dialog appeared, or that hardware user
+  presence was verified. No production `init`/`sign` was called, no Secure Enclave key or
+  keychain item was created, and no real prompt was shown. The hardware claim remains exactly
+  the original local spike, not this test.
+- The platform guard was exercised by injecting `platform: 'linux'` on macOS. A native Linux run
+  was not performed; the guard returns before any platform-specific API or process spawn.
+- The test-only `test-policy` operation exists only under `GUANXI_SIGNER_TESTING`; production
+  `strings` checking still rejects leaked `SIGNER_TEST_` hooks, and the production build above
+  passed that check.
+- Full `npm test`, `npm run typecheck`, builds, browser gates, `lint:md` and license checks
+  remain the integrator's job; this sandbox ran only the scoped signer tests, package `tsc` and
+  the native helper builds.
+- The original residuals (misleading reason from a process holding the blob and the owner's
+  touch, ad-hoc identity changes, any local process asking for a canonical payload, deprecated
+  access-list APIs) are unchanged.
