@@ -18,45 +18,11 @@ import { openDb } from '../../src/store/db.ts'
 import { ProjectStore } from '../../src/store/projects.ts'
 import { ProjectService } from '../../src/projects/service.ts'
 import { WorkspaceStore } from '../../src/store/workspaces.ts'
+import { RunStore } from '../../src/runs/store.ts'
 import { NativeAgents } from '../../src/native-agent/service.ts'
 import { emptyUsage } from '../../src/native-agent/model.ts'
 
-async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: number, context: string, signal?: AbortSignal) => Promise<AssistantMessage['content']>, localFetch?: typeof fetch, nodePorts?: () => number[], commandRunner?: typeof import('../../src/native-agent/sandbox.ts').sandboxCommand) {
-  await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
-  const dir = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'k4-agent-')))
-  const data = join(dir, 'data'); await mkdir(data)
-  const db = openDb(join(data, 'test.sqlite'))
-  const kernel = createKernel()
-  await kernel.plugin(resourceGovernorPlugin)
-  await kernel.plugin(ollamaAdapterPlugin, { fetch: localFetch ?? (async () => { throw new Error('No external network in K4 tests') }) })
-  await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] })
-  await kernel.plugin(createSessionLogPlugin({ db }))
-  const requests: string[] = []
-  const model = piModels('deepseek')[0]!
-  let calls = 0
-  await kernel.plugin(connectionsPlugin, { databasePath: join(data, 'connections.sqlite'), localHost: () => '127.0.0.1:11434',
-    keychain: async () => ({ key: () => randomBytes(32) }),
-    pi: { async complete(_model, context, options) {
-      const serialized = JSON.stringify(context); requests.push(serialized)
-      const content = respond ? await respond(++calls, serialized, options.signal) : [{ type: 'text' as const, text: 'fixture answer' }]
-      return { role: 'assistant', api: model.api, provider: model.provider, model: model.id, content, usage: emptyUsage(),
-        stopReason: content.some(c => c.type === 'toolCall') ? 'toolUse' : 'stop', timestamp: Date.now() }
-    } } })
-  const connections = kernel.service<Connections>('connections.registry')!
-  const connection = connections.create('local', { name: 'Fixture', provider: 'deepseek', kind: 'model_api', auth: 'api_key' })
-  await connections.unlockVault('local')
-  const secret = 'test_' + randomBytes(24).toString('hex')
-  connections.saveSecret('local', connection.id, secret)
-  const projects = new ProjectService(new ProjectStore(db)), workspaces = new WorkspaceStore(db)
-  const project = projects.create('Fixture project')
-  const log = kernel.service<SessionLog>('session.log')!, scrubber = kernel.service<EgressScrubber>('egress.scrubber')!
-  const host = { projects, workspaces, artifactTransfers: { download: async () => { throw new Error('No attachment') } } } as unknown as ConstructorParameters<typeof NativeAgents>[0]
-  let agents = new NativeAgents(host, log, connections, scrubber, data, nodePorts, commandRunner)
-  t.after(async () => { await agents.close(); await kernel.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) })
-  return { dir, data, connections, agents: () => agents, log, scrubber, secret, requests, projects, workspaces,
-    input: { projectId: project.id, connectionId: connection.id, model: model.id, prompt: 'fixture prompt' },
-    async restart(dataDirectory = data) { await agents.close(); agents = new NativeAgents(host, log, connections, scrubber, dataDirectory, nodePorts, commandRunner) } }
-}
+import { fixture } from './fixture.ts'
 test('native pi loop uses K3 and K2; tool-printed secrets scrub before next request, reasoning stays in its class', { timeout: 30000 }, async t => {
   let secret = '', root = ''
   const f = await fixture(t, async (call): Promise<AssistantMessage['content']> => call === 1 ? [
@@ -308,10 +274,11 @@ test('a stored running session projects interrupted after restart and never disp
   const f = await fixture(t)
   const { sessionId } = await f.agents().create(f.input)
   await f.agents().wait(sessionId)
+  const run = f.runs.create({ sessionId }); f.runs.start(run.id)
   const writer = f.log.open(sessionId, { kind: 'agent' })
   writer.append({ type: 'agent.state', data: { status: 'running', error: null } }); writer.close()
-  await f.restart()
-  assert.equal(f.agents().progress(sessionId).status, 'interrupted')
+  await f.restart(f.data, true)
+  assert.equal(f.agents().progress(sessionId).status, 'input_required')
   assert.equal(f.agents().progress(sessionId).error, 'process_restarted')
   await new Promise(r => setTimeout(r, 30))
   assert.equal(f.requests.length, 1)

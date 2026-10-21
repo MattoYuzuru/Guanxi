@@ -81,3 +81,44 @@ it.each(['running', 'completed', 'failed', 'cancelled', 'interrupted'] as const)
   expect(screen.getByRole('button', { name: status === 'running' ? 'Queue prompt' : 'Continue session' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: status === 'running' ? 'Continue session' : 'Queue prompt' })).toBeNull()
 })
+
+it.each(['en', 'ru'] as const)('delete uses the contract once, describes discarded data, and preserves the page on refusal in %s', async locale => {
+  setActiveLocale(locale)
+  const deletes: string[] = []
+  let refuse = true
+  vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+    if (String(url) === '/api/agent/session' && init?.method === 'DELETE') {
+      deletes.push(String(url))
+      return refuse ? Response.json({ code: 'session_busy' }, { status: 409 }) : Response.json({ sessionId: 'session', deleted: true })
+    }
+    if (String(url) === '/api/agent/session') return Response.json({ ...progress, status: 'completed' })
+    if (String(url) === '/api/agent/projects') return Response.json({ projects: [] })
+    if (String(url) === '/api/connections') return Response.json({ connections: [] })
+    if (String(url) === '/api/workspaces') return Response.json({ workspaces: [] })
+    throw new Error('Unexpected request')
+  }))
+  render(<NativeAgentPage sessionId="session" />)
+  const button = await screen.findByRole('button', { name: locale === 'en' ? 'Delete session' : 'Удалить сессию' })
+  expect(button.getAttribute('aria-describedby')).toBe('native-delete-description')
+  expect(screen.getByText(locale === 'en' ? /Permanently removes this session/ : /Безвозвратно удаляет сессию/)).toBeTruthy()
+  fireEvent.click(button)
+  await screen.findByRole('alert')
+  expect(deletes).toHaveLength(1)
+  expect(screen.getByText('Response')).toBeTruthy()
+  refuse = false
+  fireEvent.click(button)
+  await waitFor(() => expect(deletes).toHaveLength(2))
+})
+
+it.each(['running', 'quarantine'] as const)('delete is disabled for %s sessions', async state => {
+  setActiveLocale('en')
+  vi.stubGlobal('fetch', vi.fn(async url => {
+    if (String(url) === '/api/agent/session') return Response.json({ ...progress, status: state === 'running' ? 'running' : 'failed', error: state === 'quarantine' ? 'cleanup_unconfirmed' : null })
+    if (String(url) === '/api/agent/projects') return Response.json({ projects: [] })
+    if (String(url) === '/api/connections') return Response.json({ connections: [] })
+    if (String(url) === '/api/workspaces') return Response.json({ workspaces: [] })
+    throw new Error('Unexpected request')
+  }))
+  render(<NativeAgentPage sessionId="session" />)
+  expect((await screen.findByRole('button', { name: 'Delete session' }) as HTMLButtonElement).disabled).toBe(true)
+})

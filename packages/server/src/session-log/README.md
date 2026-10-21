@@ -130,7 +130,9 @@ daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`
   its prefix.
 - Remote audiences see gaps in `seq` where reasoning events are; they learn how many there were,
   not what they said.
-- Agent sessions (no Thread) cannot be deleted yet; they need their own retention.
+- Native agent sessions now have a Thread owner and coordinated retention/deletion through
+  K4; see the [native lifecycle](../native-agent/README.md#durable-execution-and-retention-k4f2).
+  Other unowned agent sessions remain undeletable.
 
 R1 node-home services use `appendFromHomeWithin` in their existing SQLite transaction. It
 appends through this log's current handle fence if present. Otherwise it acquires a node-home

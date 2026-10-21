@@ -13,7 +13,8 @@ records remain.
 
 ## Boundary
 
-This is the durable orchestration substrate for K4/R2, not a model executor. No model, shell,
+This is the durable orchestration substrate for K4/R2, not a model executor. K4 now consumes it through the native executor bridge described in
+[the native README](../native-agent/README.md#durable-execution-and-retention-k4f2). No model, shell,
 worktree creation or network call is performed here. An executor calls `start`, consumes a
 pending wake with `deliver` (an explicit claim) or `dispatch(claim)`, then calls `modelStarted` **after observing the first
 model call start**. Preparation is not acknowledgment. A crashed, unacknowledged delivery gets
@@ -45,6 +46,11 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
 
 - One `BEGIN IMMEDIATE` commits every state transition with its K2 event(s); notifications
   happen only after commit. A refused trace/readiness gate rolls the state change back.
+- `homeFence()` is the trusted host metadata extension: it captures the admitting home
+  generation, `assert()` rechecks it before each asynchronous phase, and `transaction()`
+  rechecks it inside the same `BEGIN IMMEDIATE` as the final synchronous mutation. Native
+  session deletion uses it; a deposed home stops and leaves its durable intent and rows to
+  the successor.
 - The execution home has a durable owner lease. Each mutation verifies its owner id/token
   and unreleased state. The same holder/token may renew after a stall because no successor
   has acquired the row. A released or replaced holder is fenced. Home renewal happens at
@@ -98,6 +104,10 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
 | `wrapping_up` | Remains a durable report request; `start` resumes a report-only attempt |
 | Terminal | Unchanged |
 
+Native sessions registered by K4 additionally reconcile inherited nonterminal runs to
+`input_required`; a fresh explicit user prompt is required even for an interrupted report.
+This does not change the generic R1 restart table above.
+
 An `interrupted` lead with an unacknowledged wake may resume on the next explicit executor
 claim without a separate run retry. This retries the wake handler under a fresh fence; an
 acknowledged wake never resumes implicitly (L6).
@@ -126,7 +136,9 @@ Migration 30 adds `durable_runs`, `run_attempts`, `leases`, `promises`, `timers`
 `run_resources`, `run_costs` and K2's additive
 `idx_session_mirror_backlog_thread` index on `session_mirror_backlog(thread_id, job_id)`.
 The index supports thread readiness/catch-up lookups; it changes no K2 table or wire schema. Migration 31 adds the persisted home regrant bound;
-migration 30 remains byte-identical. Migrations 1–29 remain byte-identical
+migration 30 remains byte-identical. K4 migration 32 adds the executor policy/counter/reason table and native Thread ownership.
+R1 exposes a fenced trace append, execution checks and quota stop seam; native callers use
+these together with `recordCost`. Migrations 1–29 remain byte-identical
 and are pinned by digest. No legacy Job is backfilled into an inferred agent run.
 
 Stop the node and back up SQLite with its WAL before upgrading. Prefer a forward fix. No
