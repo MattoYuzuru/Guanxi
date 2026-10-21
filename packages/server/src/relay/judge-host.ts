@@ -15,7 +15,7 @@ export interface RelayJudgeAttempt {
 }
 
 export interface RelayJudgeCollectInput {
-  attempt: Readonly<RelayJudgeAttempt>
+  attempt: RelayJudgeAttempt
   ledger: Readonly<Ledger>
   signal: AbortSignal
 }

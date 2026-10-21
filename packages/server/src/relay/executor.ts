@@ -74,7 +74,7 @@ export class RelayExecutor {
     this.checkExecution(a)
     const ledger = structuredClone(this.store.read(a.run_id))
     const cycle = ledger.cycle
-    const attempt = Object.freeze({ id: a.id, runId: a.run_id, epoch: a.epoch, token: a.token })
+    const attempt = { id: a.id, runId: a.run_id, epoch: a.epoch, token: a.token }
     let observation: JudgeObservation
     try {
       observation = await judge.collect({ attempt, ledger, signal })

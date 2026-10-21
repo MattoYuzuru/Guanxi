@@ -135,7 +135,7 @@ test('admission copies and freezes policy, rejects invalid configuration without
       copy.plan.goal = canary
       copy.cycle = 999
       copy.items.one = 'done'
-      assert.equal(Object.isFrozen(input.attempt), true)
+      input.attempt.id = 'mutated-attempt-copy'
       return observation({ noProgressCycles: 2, heartbeatAt: 999, lease: { expiresAt: 1_001, current: true } })
     },
   }
