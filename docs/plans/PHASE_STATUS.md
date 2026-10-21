@@ -232,7 +232,7 @@ decision was made.
 | K3 Model access | implemented, merged | see the K3 section above |
 | K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
-| K5 External agents | in progress (lane K5, Codex) | [lanes/K5](lanes/K5.md) |
+| K5 External agents | handed off (partial: real release recordings, effective `--bare` detection and statusline ingestion open); Claude cross-family review running | [lanes/K5](lanes/K5.md) |
 | B1 Bench base | ready (lane B1, Codex, next free slot); host provisioned | [lanes/B1](lanes/B1.md) |
 | X1 Repo map and FTS | in progress (lane X1, Codex) | [lanes/X1](lanes/X1.md) |
 | R2 Relay executor | in progress (lane R2, Codex) | [lanes/R2](lanes/R2.md) |

@@ -13,7 +13,8 @@ Open lanes:
   merge after fixes (contrast regression, untested guards, mixed palette); fix round queued.
   DS2 and U1 open when it merges.
 - **R2 — relay executor v1:** [lanes/R2](lanes/R2.md), running in Codex.
-- **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), running in Codex.
+- **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), handed off (partial);
+  Claude cross-family review running.
 - **X1 — repository map and full-text index:** [lanes/X1](lanes/X1.md), running in Codex.
 - **F1 — federation base:** [lanes/F1](lanes/F1.md). Claude review 1 returned "merge after
   fixes" with four High findings (revoke versus grant causality, request audience binding,
