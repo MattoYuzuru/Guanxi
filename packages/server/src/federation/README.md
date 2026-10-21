@@ -66,7 +66,12 @@ node id and explicit approval. No vendor OAuth tokens are read, copied or transf
 
 `SharedConfig.create()` persists signed operations with an origin counter, version-vector
 context and HLC. Receive order, retries and forwarding cannot change the signed author.
-Signed dots and their transitive contexts advance causal high-water marks even when earlier payloads are delayed. Operations more than 60 seconds
+Authenticated dots advance causal high-water marks even when earlier payloads are delayed.
+Only pinned admin-authorized origins may attest transitive context for privilege decisions;
+a non-admin metadata writer contributes its own dot, and cannot invent an admin's unseen
+revoke or the local node's next counter. A regrant through a non-admin relay must first fetch
+the actual privileged dependencies. Local counters derive only from actual locally signed
+operations; a foreign claim of missing local history fails closed. Operations more than 60 seconds
 in the future are rejected before persistence; local writes also refuse after a clock rollback
 beyond the bound. Wall/logical state and origin counters survive restart.
 

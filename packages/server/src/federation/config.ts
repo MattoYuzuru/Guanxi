@@ -40,7 +40,12 @@ export class SharedConfig {
   private readonly peer: (id: string) => NodeIdentity
   private readonly now: () => number
   private readonly clean: (value: unknown) => void
-  constructor(db: Db, local: NodeIdentity, privateKey: string, peer: (id: string) => NodeIdentity, now: () => number, clean: (value: unknown) => void) { this.db = db; this.local = local; this.#privateKey = privateKey; this.peer = peer; this.now = now; this.clean = clean }
+  private readonly canAttest: (origin: string) => boolean
+  constructor(db: Db, local: NodeIdentity, privateKey: string, peer: (id: string) => NodeIdentity,
+    now: () => number, clean: (value: unknown) => void, canAttest: (origin: string) => boolean) {
+    this.db = db; this.local = local; this.#privateKey = privateKey; this.peer = peer
+    this.now = now; this.clean = clean; this.canAttest = canAttest
+  }
 
   operations(): SignedConfigOperation[] {
     this.clean(null)
@@ -58,7 +63,12 @@ export class SharedConfig {
       // arrive out of order. Propagate its context as well as the observed dot;
       // otherwise a later write can become concurrent with an observed revoke.
       seen[op.origin] = Math.max(seen[op.origin] ?? 0, op.counter)
-      for (const [origin, counter] of Object.entries(op.context)) seen[origin] = Math.max(seen[origin] ?? 0, counter)
+      // Metadata writers cannot invent a privileged origin's unseen revoke
+      // and thereby authorize a later regrant. Only admins may attest that
+      // transitive observation; other origins contribute their signed dot.
+      if (this.canAttest(op.origin)) {
+        for (const [origin, counter] of Object.entries(op.context)) seen[origin] = Math.max(seen[origin] ?? 0, counter)
+      }
     }
     return seen
   }
@@ -67,9 +77,13 @@ export class SharedConfig {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const context = this.vector()
+      const last = this.db.prepare('SELECT MAX(counter) AS counter FROM federation_operations WHERE origin=?').get(this.local.id)?.counter as number | null
+      const ownCounter = last ?? 0
+      if ((context[this.local.id] ?? 0) > ownCounter) throw new FederationError('local_history_missing')
+      context[this.local.id] = ownCounter
       const clock = mergeClock(this.clock(), { wall: 0, logical: 0 }, this.now())
       if (clock.wall > this.now() + MAX_CLOCK_DRIFT_MS) throw new FederationError('clock_drift')
-      const operation = configOperationSchema.parse({ origin: this.local.id, counter: (context[this.local.id] ?? 0) + 1,
+      const operation = configOperationSchema.parse({ origin: this.local.id, counter: ownCounter + 1,
         accountId: this.local.accountId, key, clock, context, value })
       const signed = { operation, signature: signValue(this.#privateKey, operation) }
       this.acceptWithin(signed)

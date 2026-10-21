@@ -44,9 +44,10 @@ export class Federation {
     options.db.prepare('INSERT OR IGNORE INTO federation_local VALUES (1,?)').run(canonical(this.identity))
     this.trust(this.identity)
     for (const peer of options.peers ?? []) this.trust(peer)
-    this.config = new SharedConfig(options.db, this.identity, privateKey, (id) => this.peer(id), this.now, (v) => this.clean(v))
+    this.config = new SharedConfig(options.db, this.identity, privateKey, (id) => this.peer(id), this.now,
+      (v) => this.clean(v), (id) => this.pinnedIdentity(id).admin)
     this.replicas = new Replicas(options.db, this.identity, privateKey, options.log, (id) => this.peer(id), (v) => this.clean(v))
-    this.enrollment = new DeviceEnrollment(options.db, this.identity, this.now, (id) => this.trust(id))
+    this.enrollment = new DeviceEnrollment(options.db, this.identity, this.now, (id) => this.trust(id), () => this.assertOpen())
   }
   private assertOpen() { if (this.closed) throw new FederationError('closed', 503) }
   private clean(value: unknown): void {
@@ -64,8 +65,14 @@ export class Federation {
     this.#options.db.prepare('INSERT OR IGNORE INTO federation_peers(id,identity) VALUES (?,?)').run(identity.id, canonical(identity))
   }
   revokePeer(id: string): void {
+    this.assertOpen()
     if (!this.identity.admin) throw new FederationError('admin_required', 403)
     this.#options.db.prepare('UPDATE federation_peers SET revoked=1 WHERE id=?').run(id)
+  }
+  private pinnedIdentity(id: string): NodeIdentity {
+    const row = this.#options.db.prepare('SELECT identity FROM federation_peers WHERE id=?').get(id)
+    if (!row) throw new FederationError('unauthenticated',401)
+    return nodeIdentitySchema.parse(JSON.parse(row.identity as string))
   }
   peer(id: string): NodeIdentity {
     this.assertOpen()

@@ -8,8 +8,12 @@ export class DeviceEnrollment {
   private readonly local: NodeIdentity
   private readonly now: () => number
   private readonly trust: (identity: NodeIdentity) => void
-  constructor(db: Db, local: NodeIdentity, now: () => number, trust: (identity: NodeIdentity) => void) { this.db = db; this.local = local; this.now = now; this.trust = trust }
+  private readonly assertOpen: () => void
+  constructor(db: Db, local: NodeIdentity, now: () => number, trust: (identity: NodeIdentity) => void, assertOpen: () => void) {
+    this.db = db; this.local = local; this.now = now; this.trust = trust; this.assertOpen = assertOpen
+  }
   begin(key: string) {
+    this.assertOpen()
     publicKey(key)
     const device_code = randomBytes(32).toString('base64url')
     const user_code = randomBytes(8).toString('hex').toUpperCase()
@@ -19,6 +23,7 @@ export class DeviceEnrollment {
   }
   /** Host-only authority; never exposed on the node channel or trusted from request JSON. */
   approve(userCode: string, options: Omit<NodeIdentity, 'id' | 'publicKey'>): NodeIdentity {
+    this.assertOpen()
     if (!this.local.admin) throw new FederationError('admin_required', 403)
     const row = this.db.prepare('SELECT * FROM federation_devices WHERE user_hash=?').get(hash(userCode))
     if (!row || row.state !== 'pending' || (row.expires_at as number) <= this.now()) throw new FederationError('expired_token', 400)
@@ -32,10 +37,12 @@ export class DeviceEnrollment {
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
   deny(userCode: string): void {
+    this.assertOpen()
     if (!this.local.admin) throw new FederationError('admin_required', 403)
     this.db.prepare("UPDATE federation_devices SET state='denied' WHERE user_hash=? AND state='pending'").run(hash(userCode))
   }
   poll(deviceCode: string): NodeIdentity {
+    this.assertOpen()
     const row = this.db.prepare('SELECT * FROM federation_devices WHERE device_hash=?').get(hash(deviceCode))
     if (!row) throw new FederationError('invalid_grant', 400)
     if ((row.expires_at as number) <= this.now() || row.state === 'consumed') throw new FederationError('expired_token', 400)

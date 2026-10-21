@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { signValue } from '../../src/federation/crypto.ts'
 import { SimNetwork, SimNode, identity } from './harness.ts'
 
 // Reproducible schedules; keys are throwaway, and do not enter the projected state hash.
@@ -88,5 +89,25 @@ test('revoked-origin historical duplicates cannot wedge unrelated current-author
     assert.throws(()=>c.federation.config.ingest([{...historical,operation:{...historical.operation,value:{kind:'setting',value:'altered'}}}]),/operation_conflict/)
     assert.throws(()=>c.federation.config.ingest([unseen]),/unauthenticated/)
     assert.equal(c.federation.config.operations().length,2)
+  } finally {a.close();b.close();c.close()}
+})
+
+test('non-admin forged transitive context cannot defeat a concurrent revoke or invent local counters', () => {
+  const a=new SimNode(identity('a'));const b=new SimNode(identity('b',{trust:'shared_device',admin:false}));const c=new SimNode(identity('c'))
+  try {
+    for(const n of [a,b,c]) for(const peer of [a,b,c]) n.trust(peer)
+    // B has its own legitimate metadata credential, but no signature from A
+    // and no authority to attest another admin's privileged causal history.
+    const operation={origin:'b',counter:1,accountId:'owner',key:'metadata',clock:{wall:b.time,logical:0},context:{a:1,c:999},value:{kind:'setting' as const,value:true}}
+    const forged={operation,signature:signValue(b.keys.privateKey,operation)}
+    c.federation.config.ingest([forged])
+    const grant=c.federation.config.create('editor',{kind:'grant',present:true})
+    assert.equal(grant.operation.counter,1)
+    assert.equal(grant.operation.context.a,undefined)
+    assert.equal(grant.operation.context.c,0)
+    const revoke=a.federation.config.create('editor',{kind:'grant',present:false})
+    for(const n of [a,c]) n.federation.config.ingest([grant,revoke,forged])
+    for(const n of [a,c]) assert.equal((n.federation.config.state()['["owner","grant","editor"]'] as {present:boolean}).present,false)
+    assert.equal(a.federation.config.stateHash(),c.federation.config.stateHash())
   } finally {a.close();b.close();c.close()}
 })

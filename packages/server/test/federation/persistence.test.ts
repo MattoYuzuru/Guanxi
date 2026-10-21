@@ -226,3 +226,16 @@ test('restart preserves nonce rejection, command receipts and prompt acceptance 
     assert.deepEqual(prompts.map((e)=>e.data.text),['first','second'])
   } finally {home.close();peer.close();rmSync(dir,{recursive:true,force:true})}
 })
+
+test('unload fences held enrollment references and peer revocation without later database writes', () => {
+  const {home,peer,close}=setup()
+  try {
+    const enrollment=home.federation.enrollment
+    const code=enrollment.begin(peer.keys.identity.publicKey)
+    const before=home.db.prepare('SELECT total_changes() AS n').get()!.n
+    home.federation.close()
+    const {id,publicKey,...options}=peer.keys.identity;void id
+    for(const call of [()=>enrollment.begin(publicKey),()=>enrollment.poll(code.device_code),()=>enrollment.deny(code.user_code),()=>enrollment.approve(code.user_code,options),()=>home.federation.revokePeer('peer')]) assert.throws(call,/closed/)
+    assert.equal(home.db.prepare('SELECT total_changes() AS n').get()!.n,before)
+  } finally {close()}
+})
