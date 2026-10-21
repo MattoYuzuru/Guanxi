@@ -17,8 +17,12 @@ import { modelsDevFacts } from './metadata.ts'
 export interface ModelCall {
   model: string; runId: string; requestId: string; background?: boolean
   signal?: AbortSignal
-  /** Executor observes actual transport dispatch, after readiness/governor admission. */
+  /** Trusted executor observation after dispatch starts; never supplied by HTTP/model input. */
   onStarted?: () => void
+  /** API response/chunk observation for native inference acknowledgment. */
+  onResponseObserved?: () => void
+  /** Trusted validation of the final scrubbed request, immediately before dispatch. */
+  onPrepared?: (request: Context | OllamaChatRequest) => void
   /** Adapter parameters, not arbitrary transport/auth headers. */
   options?: Pick<SimpleStreamOptions, 'temperature' | 'maxTokens' | 'reasoning'>
 }
@@ -118,7 +122,8 @@ export class Connections {
       if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
       const model = piModels(connection.provider).find(item => item.id === call.model)
       if (!model) throw new ConnectionError('connection_not_found', 'Model not found in the provider catalog')
-      const signal = call.signal ? AbortSignal.any([this.lifetime, call.signal]) : this.lifetime
+      const dispatchAbort = new AbortController()
+      const signal = AbortSignal.any([this.lifetime, dispatchAbort.signal, ...(call.signal ? [call.signal] : [])])
       try {
         return await this.#vault.inject(accountId, id, call.background ?? false, async key => {
           assertApiKey(connection.provider, key)
@@ -127,14 +132,18 @@ export class Connections {
           // Scrub the complete context, including tool results and tool schemas,
           // before pi-ai turns it into a provider-specific request.
           const clean = this.scrubber.scrub(context)
+          call.onPrepared?.(clean)
           let quota = false
+          const observeResponse = () => {
+            try { call.onResponseObserved?.() } catch (error) { dispatchAbort.abort(); throw error }
+          }
           const pending = this.pi.complete(model, clean, {
             temperature: call.options?.temperature, maxTokens: call.options?.maxTokens,
             reasoning: call.options?.reasoning, apiKey: key, signal, maxRetries: 0,
-            onResponse: () => call.onStarted?.(),
+            onResponse: observeResponse,
             // pi-ai's Google adapter has no response hook; a provider chunk is
             // an observation of a started request, not preparation.
-            onProviderStreamEvent: model.api === 'google-generative-ai' ? () => call.onStarted?.() : undefined,
+            onProviderStreamEvent: model.api === 'google-generative-ai' ? observeResponse : undefined,
             // Redirects must not forward the credential to a different host.
             ...(model.api === 'google-generative-ai' ? {} : {
               fetch: async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -144,6 +153,7 @@ export class Connections {
               },
             }),
           })
+          try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); void pending.catch(() => undefined); throw error }
           const result = await pending
           if (model.api === 'google-generative-ai' && result.stopReason === 'error') {
             // The SDK serializes its API error JSON into ApiError.message; pi-ai
@@ -176,7 +186,8 @@ export class Connections {
       if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')
       const context = request.options?.num_ctx
       if (!context || !Number.isSafeInteger(context) || context <= 0) throw new Error('Explicit runtime context is required')
-      const signal = call.signal ? AbortSignal.any([this.lifetime, call.signal]) : this.lifetime
+      const dispatchAbort = new AbortController()
+      const signal = AbortSignal.any([this.lifetime, dispatchAbort.signal, ...(call.signal ? [call.signal] : [])])
       const ticket = this.governor.enqueue({ owner: { kind: 'operation', operationId: call.requestId },
         operation: 'chat', model: { provider: 'ollama', name: request.model }, requestedContext: context,
         priority: 'normal', enqueuedAt: new Date().toISOString() })
@@ -184,8 +195,12 @@ export class Connections {
       try {
         const current = this.store.get(accountId, id)
         if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
-        const pending = this.ollama.client(host.href).chat(this.scrubber.scrub(request), signal, call.onStarted)
-        const result = await pending
+        const clean = this.scrubber.scrub(request)
+        call.onPrepared?.(clean)
+        const dispatched = this.ollama.client(host.href).chat(clean, signal, () => {
+          try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); throw error }
+        })
+        const result = await dispatched
         signal.throwIfAborted()
         this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
           inputTokens: result.prompt_eval_count ?? null, outputTokens: result.eval_count ?? null,
@@ -197,6 +212,29 @@ export class Connections {
         throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed')
       }
       finally { lease.release() }
+    })
+  }
+  /** K5's trusted process boundary. Identity is the original prompt author, including delegation.
+   * A sharing grant never enables another person's prompt on a subscription connection. */
+  dispatchAgent<T>(ownerAccountId: string, id: string, actorAccountId: string, editorAllowed: boolean,
+    call: { background?: boolean; signal?: AbortSignal },
+    launch: (connection: import('@guanxi/contract').Connection, key: string | undefined, signal: AbortSignal) => Promise<T>): Promise<T> {
+    return this.track(async () => {
+      const connection = this.store.get(ownerAccountId, id)
+      if (actorAccountId !== ownerAccountId &&
+        (connection.auth === 'cli_login' || !editorAllowed || !['model_api', 'local_runtime'].includes(connection.kind))) {
+        throw new ConnectionError('policy_denied', 'Connection cannot pay for this prompt author')
+      }
+      const signal = call.signal ? AbortSignal.any([this.lifetime, call.signal]) : this.lifetime
+      this.#vault.assertScrubbingReady(ownerAccountId)
+      signal.throwIfAborted()
+      if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) {
+        throw new ConnectionError('policy_denied', 'Unattended access disabled')
+      }
+      if (connection.kind === 'service') throw new ConnectionError('policy_denied', 'Not an agent payment connection')
+      if (connection.auth === 'api_key') return this.#vault.inject(ownerAccountId, id, call.background ?? false,
+        key => { assertApiKey(connection.provider, key); return launch(connection, key, signal) })
+      return launch(connection, undefined, signal)
     })
   }
   /** Caller supplies a pre-authorized destination; scrubbing precedes hashing. */

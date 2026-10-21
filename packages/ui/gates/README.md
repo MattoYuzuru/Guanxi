@@ -3,6 +3,9 @@
 `npm run ui:check --silent` emits one JSON report and exits nonzero on a failed gate.
 G1–G7 and G17 run without a browser. `npm run test:gates --workspace @guanxi/ui` exercises
 additional negative cases, file provenance and byte determinism.
+DS1-c appends G8 and G9 through `extensions/lint.gate.mjs`; it does not replace registrations.
+`npm run lint` runs the repository ESLint flat config, CSS stylelint and the suppression-growth
+audit. The new dependencies are pinned exactly in the root manifest.
 Both commands are also mandatory parts of the root `npm test` command. The gate tests parse
 FOUNDATIONS tables to verify all ramps, status/data colours, spacing, radii, densities, motion
 and material values across the 16 resolver contexts. Neutral semantic roles use §1.1's steps
@@ -50,6 +53,53 @@ DS1-c can remove entries as it migrates the legacy UI. This is the DS1-a fast ra
 DS1-c separately owns ESLint bulk suppressions.
 
 ## Merge protocol
+
+### DS1-c lint freeze
+
+G8 checks static imports, exports, dynamic imports, TypeScript import types and CommonJS
+requires in feature/plugin source, including bound paths, constant templates and TypeScript
+external module references. Underlying UI libraries and private UI paths fail; documented
+public asset/catalog/approval exports remain usable.
+Server/CLI/kernel/contract code and the UI implementation are outside the feature boundary.
+G9 rejects raw controls and inline colour styles, including bound same-file objects and
+unresolved style objects. Known props spreads and React element factories are also checked.
+Runtime geometry longhands are allowed. Literal inline geometry
+in the legacy `components/ui.tsx` is frozen by `guanxi/no-literal-styles`, not a G6 correction.
+
+`eslint-suppressions.json` is ESLint's native bulk format. Only legacy web source may have
+entries. Counts must match actual lint errors; prune retired entries with
+`npx eslint . --prune-suppressions`. The audit checks each committed parent edge and the
+working tree, rejects new/increased entries, deletion/recreation and shallow history, and
+allows one initial freeze. A file move needs migration of its violations, not a new budget.
+The stylelint colour/geometry rule uses the same CSS count in this file; ESLint also checks
+CSS through a source-preserving parser so no separate stylelint allowance can grow.
+Inline disable comments cannot bypass the ESLint rules.
+
+The G5 lexical fallback catches arbitrary/palette class literals in imported maps and
+`[base].join(' ')` without depending on variable names or call-site analysis. G6's supplemental
+CSS rule covers `stop-color`, `mask-image`, WebKit text fill, column rules and text decoration,
+while allowing property lists and tokenized transitions. SVG/HTML style attributes and paints
+and same-file style objects are also checked. The original DS1-a scanner/ledger stays intact
+apart from removing allowances retired by the codemod.
+
+Residual static limits: runtime-generated class fragments, imported/computed style-value
+contents, unknown whole-props spreads, DOM style mutations and custom CSS properties whose names conceal colour usage
+need migration/review. Unknown JSX style objects are rejected conservatively. The existing
+G5 scanner still owns full compiled-class/spacing validation; the lexical fallback targets
+arbitrary values and numbered palette colours. Colour-related suppression counts are included
+in G9's JSON report; U1 cannot exit until those counts are zero.
+
+The web stylesheet keeps an app-only default-priority Tailwind theme import until U1 migrates
+the frozen non-colour utilities. Regression assertions compare legacy utility CSS with the
+lane baseline, check every retained compilable class still compiles, verify generated mappings
+and prove new legacy/palette uses still fail G5. No local alias bridge or copied bridge alias
+is allowed back into the stylesheet.
+
+The deterministic codemod is `npm run codemod:semantic -- --write`; omit `--write` to preview.
+Its committed report records the first migration, every touched file and every unmapped
+single-variable colour class. Re-running it reports zero replacements; it never invents aliases.
+
+### DS1-a history
 
 Merge DS1-a into `main` only with `git merge --no-ff`; never squash or rebase its commits.
 The ratchet audits the original correction-introduction edges, so a rewritten history followed

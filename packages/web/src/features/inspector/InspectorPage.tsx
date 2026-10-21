@@ -689,7 +689,7 @@ function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted:
         highlighted && 'bg-inset outline outline-1 outline-accent',
       )}
     >
-      <div className="flex flex-wrap items-center gap-2 text-12 text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-12 text-secondary">
         <span className="font-mono tabular-nums">#{event.seq}</span>
         <time dateTime={event.createdAt} className="font-mono tabular-nums">{time(event.createdAt)}</time>
         <Badge tone={event.class === 'reasoning' ? 'yellow' : event.type === 'error' ? 'red' : 'neutral'}>

@@ -34,7 +34,8 @@ export function connectionStream(connections: Connections, scrubber: EgressScrub
       try {
         runs.checkExecution(attempt, true)
         const clean = scrubber.scrub(context)
-        const call = { model: input.model, runId: attempt.run_id, requestId: randomUUID(), signal: options?.signal, onStarted: () => runs.modelStarted(attempt) }
+        const call = { model: input.model, runId: attempt.run_id, requestId: randomUUID(), signal: options?.signal, ...(model.provider === 'ollama'
+          ? { onStarted: () => runs.modelStarted(attempt) } : { onResponseObserved: () => runs.modelStarted(attempt) }) }
         if (model.provider !== 'ollama') result = await connections.complete('local', input.connectionId, clean, call)
         else result = await local(connections, input, clean, call)
         runs.recordCost(attempt, { key: call.requestId, inputTokens: result.usage.input + result.usage.cacheRead + result.usage.cacheWrite,
