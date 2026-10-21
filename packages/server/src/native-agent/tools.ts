@@ -26,7 +26,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     throw new Error('path_denied')
   }
   const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true) => {
-    const result = await sandboxCommand(policy, command, signal, 120_000, fixed)
+    const result = await sandboxCommand(policy, command, signal, 120_000, fixed, scrubber)
     const clean = scrubber.scrub(result)
     if (clean.code === null || !accepted.includes(clean.code)) throw new Error('tool_failed')
     return JSON.stringify(clean)

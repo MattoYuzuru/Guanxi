@@ -9,6 +9,22 @@ import { filterNativeRequest } from './request-policy.ts'
 import { linuxBindingFilter, type SandboxPolicy } from './sandbox-protocol.ts'
 import { LinuxExecutionOwner, FixedExecutionOwner, ContainerExecutionOwner, type ExecutionOwner } from './execution-owner.ts'
 
+// Query the trusted parent: registered secret values never enter a worker policy.
+let nextEgress = 0
+const egress = new Map<number, (allow: boolean) => void>()
+process.on('message', (message: { egressDecision?: { id: number; allow: boolean } }) => {
+  if (message.egressDecision) egress.get(message.egressDecision.id)?.(message.egressDecision.allow === true)
+})
+function authorizeEgress(request: Request): Promise<boolean> {
+  return new Promise(resolve => {
+    const id = ++nextEgress
+    const timer = setTimeout(() => finish(false), 1000)
+    const finish = (allow: boolean) => { clearTimeout(timer); egress.delete(id); resolve(allow) }
+    egress.set(id, finish)
+    if (!process.connected) { finish(false); return }
+    process.send?.({ egress: { id, url: request.url, headers: [...request.headers] } }, error => { if (error) finish(false) })
+  })
+}
 let owner: ExecutionOwner | undefined
 let stopped = false
 process.on('message', (message: { stop?: boolean }) => { if (message.stop) { stopped = true; void owner?.stop().catch(() => undefined) } })
@@ -38,7 +54,7 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
         allowUnixSockets: [], allowLocalBinding: false, allowAllUnixSockets: false,
         // The HTTP parser observes HTTPS too. No raw CONNECT or SOCKS escape.
         tlsTerminate: {}, refuseOpaqueTunnels: true, requireHostMatch: true,
-        filterRequest: request => filterNativeRequest(request, policy),
+        filterRequest: request => filterNativeRequest(request, policy, authorizeEgress),
       },
       filesystem: { denyRead: ['/', ...(policy.hiddenPaths ?? [])].map(literal), allowRead: read.map(literal),
         allowWrite: [policy.scratch, ...(policy.mode === 'full-access' ? policy.roots : [])].map(literal),

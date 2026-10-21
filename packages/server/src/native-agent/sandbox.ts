@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { join, sep, delimiter, isAbsolute } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { removeContainer, STOP_GRACE_MS } from './cleanup.ts'
+import type { EgressScrubber } from '../egress/types.ts'
 import type { SandboxPolicy, CommandResult } from './sandbox-protocol.ts'
 export { TOOL_OUTPUT_BYTES } from './sandbox-protocol.ts'
 export type { SandboxPolicy, CommandResult } from './sandbox-protocol.ts'
@@ -34,7 +35,7 @@ function resolveDockerBinary(): { path: string; protectedPaths: string[] } | nul
 const dockerBinary = resolveDockerBinary()
 
 /** A fresh worker owns the runtime singleton, proxies and child process group. */
-export async function sandboxCommand(policy: SandboxPolicy, command: string, signal?: AbortSignal, timeoutMs = 120_000, fixed = false): Promise<CommandResult> {
+export async function sandboxCommand(policy: SandboxPolicy, command: string, signal?: AbortSignal, timeoutMs = 120_000, fixed = false, scrubber?: Pick<EgressScrubber, 'scrub' | 'isReady'>): Promise<CommandResult> {
   signal?.throwIfAborted()
   if (!['linux', 'darwin'].includes(process.platform)) throw new Error('supervision_unavailable')
   let dockerEndpoint = ''
@@ -92,7 +93,16 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
     }
     const timer = setTimeout(abort, timeoutMs)
     signal?.addEventListener('abort', abort, { once: true })
-    child.on('message', (message: { result?: CommandResult; error?: string }) => {
+    child.on('message', (message: { result?: CommandResult; error?: string; egress?: { id: number; url: string; headers: [string, string][] } }) => {
+      if (message.egress) {
+        let allow = false
+        try {
+          const { url, headers } = message.egress
+          const observed = { url, headers }
+          allow = !!scrubber?.isReady() && JSON.stringify(scrubber.scrub(observed)) === JSON.stringify(observed)
+        } catch { /* Missing/not-ready/closed scrubber denies egress. Never log payloads. */ }
+        if (child.connected) child.send({ egressDecision: { id: message.egress.id, allow } }, () => {})
+      }
       if (message.result) result = message.result
       if (message.error) failure = message.error
     })

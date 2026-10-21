@@ -14,7 +14,8 @@ export async function isNodeRequest(url: URL, ports: number[]): Promise<boolean>
   try { return (await lookup(host, { all: true })).some(entry => isLocal(addressKey(entry.address))) }
   catch { return true } // No destination evidence: fail closed on a node port.
 }
-export async function filterNativeRequest(request: Request, policy: SandboxPolicy): Promise<{ action: 'allow' | 'deny' }> {
+export async function filterNativeRequest(request: Request, policy: SandboxPolicy, authorizeEgress: (request: Request) => Promise<boolean> = async () => false): Promise<{ action: 'allow' | 'deny' }> {
   if (await isNodeRequest(new URL(request.url), policy.nodePorts ?? [])) return { action: 'deny' }
-  return { action: policy.mode === 'full-access' || ['GET', 'HEAD', 'OPTIONS'].includes(request.method) ? 'allow' : 'deny' }
+  if (policy.mode !== 'full-access' && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return { action: 'deny' }
+  return { action: await authorizeEgress(request) ? 'allow' : 'deny' }
 }

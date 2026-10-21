@@ -3,8 +3,12 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath, link } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
-import { sandboxCommand, quote, type SandboxPolicy } from '../../src/native-agent/sandbox.ts'
+import { sandboxCommand as rawSandboxCommand, quote, type SandboxPolicy } from '../../src/native-agent/sandbox.ts'
 import { orientation } from '../../src/native-agent/orientation.ts'
+
+import { SecretScrubber } from '../../src/egress/scrubber.ts'
+const fixtureScrubber = new SecretScrubber()
+const sandboxCommand: typeof rawSandboxCommand = (policy, command, signal, timeout, fixed, scrubber = fixtureScrubber) => rawSandboxCommand(policy, command, signal, timeout, fixed, scrubber)
 
 async function fixture(t: { after(fn: () => unknown): void }) {
   // Colima shares the checkout; its default VM does not share macOS /private/tmp.
@@ -398,4 +402,33 @@ esac
   assert.equal(entries.length, 1)
   const { assertRootsClean } = await import('../../src/native-agent/cleanup.ts')
   assert.throws(() => assertRootsClean(dir, policy.roots), /cleanup_unconfirmed/)
+})
+
+test('egress denies URLs and headers the live scrubber changes, including late registration and readiness loss', { timeout: 30000 }, async t => {
+  const { policy, root } = await fixture(t)
+  const scrubber = new SecretScrubber()
+  // Synthetic fixture only: no real credential is read, stored or sent.
+  const value = 'synthetic egress fixture'
+  await writeFile(join(root, 'value'), value)
+  const seen: string[] = []
+  const server = createServer((req, res) => {
+    seen.push(req.url!)
+    if (req.url === '/register') scrubber.register('secret://fixture-egress', value)
+    res.end('ok')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  const port = (server.address() as { port: number }).port
+  const curl = `curl --noproxy '' -s --max-time 3 -o /dev/null -w '%{http_code} '`
+  const result = await rawSandboxCommand({ ...policy, domains: [`127.0.0.1:${port}`] },
+    `value=$(cat ${quote(join(root, 'value'))}); ${curl} http://127.0.0.1:${port}/register; ${curl} 'http://127.0.0.1:${port}/?value=synthetic%20egress%20fixture'; ${curl} -H "X-Fixture: $value" http://127.0.0.1:${port}/header; ${curl} http://127.0.0.1:${port}/clean`,
+    undefined, undefined, false, scrubber)
+  assert.equal(result.stdout, '200 403 403 200 ')
+  assert.deepEqual(seen, ['/register', '/clean'])
+  scrubber.expect('pending-fixture')
+  const denied = await rawSandboxCommand({ ...policy, domains: [`127.0.0.1:${port}`] }, `${curl} http://127.0.0.1:${port}/not-ready`, undefined, undefined, false, scrubber)
+  assert.equal(denied.stdout, '403 ')
+  const absent = await rawSandboxCommand({ ...policy, domains: [`127.0.0.1:${port}`] }, `${curl} http://127.0.0.1:${port}/no-scrubber`)
+  assert.equal(absent.stdout, '403 ')
+  assert.deepEqual(seen, ['/register', '/clean'])
 })
