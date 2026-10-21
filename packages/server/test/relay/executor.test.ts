@@ -135,3 +135,39 @@ test('wake is acknowledged at dispatch while the model response is still pending
     assert.equal(f.store.deliver(f.run.id,1),null)
   } finally {f.close()}
 })
+test('an output-limited narrative degrades and seals exactly once without stopping the run', async () => {
+  const f = fixture(); try {
+    const call = f.model.call
+    f.model.call = async (p, o) => {
+      const reply = await call(p, o)
+      return p.startsWith('Write a fresh') ? { ...reply, outputLimited: true } : reply
+    }
+    await f.executor.run(f.attempt)
+    const l = f.relay.read(f.run.id)
+    const seals = f.db.prepare('SELECT COUNT(*) n FROM relay_seals').get()!.n
+    assert.equal(seals, 1)
+    assert.equal(f.relay.sealed(f.attempt)!.handoff.degraded, true)
+    assert.equal(l.items.one, 'done')
+    assert.notEqual(f.store.get(f.run.id).state, 'input_required')
+    assert.equal(f.log.readAll(f.run.session_id, 'person').some(e => e.type === 'error' && e.data.code === 'truncation_protocol'), false)
+  } finally { f.close() }
+})
+test('an output-limited work reply is an invalid action and the run continues', async () => {
+  let work = 0
+  const f = fixture({ actions: () => canonical(++work <= 2 ? { action: 'verify', item: 'one' } : { action: 'handoff' }) }); try {
+    const call = f.model.call
+    let limited = false
+    f.model.call = async (p, o) => {
+      const reply = await call(p, o)
+      if (p.startsWith('Execute') && !limited) { limited = true; return { ...reply, outputLimited: true } }
+      return reply
+    }
+    await f.executor.run(f.attempt)
+    const workPrompts = f.prompts.filter(p => p.startsWith('Execute'))
+    assert.ok(f.relay.read(f.run.id).errors >= 1)
+    assert.ok(workPrompts.length >= 3)
+    assert.ok(workPrompts[1]!.includes('Your reply hit the output limit; return one short valid JSON action.'))
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+  } finally { f.close() }
+})

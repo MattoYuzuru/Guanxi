@@ -56,7 +56,7 @@ test('oversize counter refuses dispatch; prompt_eval_count truncation is a proto
   } finally { f.close() }
   const g = fixture(); try {
     const call = g.model.call
-    g.model.call = async (p,o) => ({ ...await call(p,o), truncated: true })
+    g.model.call = async (p,o) => ({ ...await call(p,o), inputTruncated: true })
     await g.executor.run(g.attempt)
     assert.equal(g.prompts.length, 1)
     assert.ok(g.log.readAll(g.run.session_id, 'person').some(e => e.type === 'error' && e.data.code === 'truncation_protocol'))

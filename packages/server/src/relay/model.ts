@@ -2,7 +2,7 @@ import type { Connections } from '../connections/service.ts'
 import type { WindowObservation } from './types.ts'
 import { invariant } from './types.ts'
 
-export interface Reply { text: string; inputTokens: number; outputTokens: number; moneyMicros: number | null; truncated: boolean }
+export interface Reply { text: string; inputTokens: number; outputTokens: number; moneyMicros: number | null; inputTruncated: boolean; outputLimited: boolean }
 /** Host adapter, never model-authored. W and token counts refer to the ACTUAL rendered
  * request and loaded context, including template tokens. Missing observations fail closed. */
 export interface RuntimeMeter {
@@ -40,13 +40,14 @@ export class ConnectionRelayModel implements RelayModel {
       const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false,
         messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } }, call)
       invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')
-      return { text: r.message?.content ?? '', inputTokens: r.prompt_eval_count!, outputTokens: r.eval_count!, moneyMicros: null,
-        truncated: r.prompt_eval_count! !== this.count(dispatchedPrompt) || r.done_reason === 'length' }
+      const inputTokens = r.prompt_eval_count!
+      return { text: r.message?.content ?? '', inputTokens, outputTokens: r.eval_count!, moneyMicros: null,
+        inputTruncated: inputTokens !== this.count(dispatchedPrompt), outputLimited: r.done_reason === 'length' }
     }
     invariant(connection.kind === 'model_api', 'connection_not_supported')
     const r = await this.connections.complete('local', this.connectionId, { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] },
       { ...call, model: this.model, options: { maxTokens: o.maxOutput } })
     return { text: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n'), inputTokens: r.usage.input + r.usage.cacheRead + r.usage.cacheWrite,
-      outputTokens: r.usage.output, moneyMicros: Math.ceil(r.usage.cost.total * 1e6), truncated: r.stopReason === 'length' }
+      outputTokens: r.usage.output, moneyMicros: Math.ceil(r.usage.cost.total * 1e6), inputTruncated: false, outputLimited: r.stopReason === 'length' }
   }
 }

@@ -48,7 +48,7 @@ test('real local adapter detects prompt_eval_count mismatch and passes dispatch 
   }} as unknown as Connections
   const model=new ConnectionRelayModel(connections,'fixture','model',{observe:async()=>window,count:()=>100})
   const result=await model.call('prompt',{runId:'fixture',requestId:'call',maxOutput:10,maxInput:14000,window,onStarted:()=>{started++}})
-  assert.equal(started,1);assert.equal(result.truncated,true)
+  assert.equal(started,1);assert.equal(result.inputTruncated,true);assert.equal(result.outputLimited,false)
   const preparedText='prepared text after registered redaction'
   const preparedConnections={snapshot:()=>({connections:[{id:'fixture',kind:'local_runtime'}]}),
     localChat:async(_a:unknown,_b:unknown,_r:unknown,call:{onPrepared?:(request:unknown)=>void})=>{
@@ -57,7 +57,7 @@ test('real local adapter detects prompt_eval_count mismatch and passes dispatch 
     }} as unknown as Connections
   const preparedModel=new ConnectionRelayModel(preparedConnections,'fixture','model',{observe:async()=>window,count:p=>Buffer.byteLength(p)+32})
   const prepared=await preparedModel.call('original',{runId:'fixture',requestId:'prepared',maxOutput:10,maxInput:14000,window})
-  assert.equal(prepared.truncated,false,'within-H redaction rewrite uses the exact prepared prompt count')
+  assert.equal(prepared.inputTruncated,false,'within-H redaction rewrite uses the exact prepared prompt count')
 })
 test('cleanup uncertainty stops the loop before a following checkpoint', async () => {
   let actions=0,checkpoints=0

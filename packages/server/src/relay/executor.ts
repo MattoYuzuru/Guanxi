@@ -90,7 +90,11 @@ export class RelayExecutor {
     this.store.runs.recordCost(a, { key: id, inputTokens: reply.inputTokens, outputTokens: reply.outputTokens, costMicrounits: reply.moneyMicros, currency: 'USD' })
     // Drop reasoning entirely. It is neither a narrative input nor a plaintext event.
     this.store.emit(a, { type: 'assistant.message', data: { messageId: id, step: l.cycle, text: reply.text } })
-    invariant(!reply.truncated && reply.inputTokens <= t.H && reply.outputTokens <= this.reserves.turn, 'truncation_protocol')
+    invariant(!reply.inputTruncated && reply.inputTokens <= t.H && reply.outputTokens <= this.reserves.turn, 'truncation_protocol')
+    if (reply.outputLimited) {
+      if (purpose === 'narrative') throw new RelayError('narrative_output_limited')
+      if (purpose !== 'work') throw new RelayError('truncation_protocol')
+    }
     const exhausted = this.caps(this.store.read(a.run_id))
     if (exhausted) { this.wrap(a, exhausted); throw new RelayError('cap_reached') }
     return reply
@@ -213,6 +217,7 @@ export class RelayExecutor {
         this.store.begin(a)
         const narrative = await this.orient(a, w, t, signal, measure)
         this.store.transition(a, 'work'); this.turns = []
+        let invalidActions = 0
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
@@ -224,8 +229,14 @@ export class RelayExecutor {
           }
           if (boundary(t, used, false, this.reserves.stepMedian) && this.turns.length) { this.store.transition(a, 'wind_down'); break }
           const reply = await this.call(a, 'work', context.text, w, t, signal)
+          if (reply.outputLimited) {
+            this.store.change(a, 'invalid_action', s => { s.errors++ })
+            this.turns.push('Your reply hit the output limit; return one short valid JSON action.')
+            if (++invalidActions >= 3) break
+            continue
+          }
           const action = actionSchema.safeParse((() => { try { return JSON.parse(reply.text) } catch { return null } })())
-          if (!action.success) { this.store.change(a, 'invalid_action', s => { s.errors++ }); this.turns.push('Invalid action; return valid JSON.'); if (this.turns.length >= 3) break; continue }
+          if (!action.success) { this.store.change(a, 'invalid_action', s => { s.errors++ }); this.turns.push('Invalid action; return valid JSON.'); if (++invalidActions >= 3) break; continue }
           const x = action.data
           if (x.action === 'handoff' || x.action === 'finish') break
           let result = ''

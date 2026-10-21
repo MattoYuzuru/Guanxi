@@ -32,7 +32,7 @@ export function fixture(options: { path?: string; fault?: (point: string) => voi
       } else if (prompt.startsWith('Answer these five')) {
         text = options.probeFails ? '{}' : canonical(probes(relay.sealed(attempt)!.ledger))
       } else text = options.actions ? await options.actions(prompt, ++workCalls) : canonical({ action: workCalls++ === 0 ? 'verify' : 'handoff', ...(workCalls === 1 ? { item: 'one' } : {}) })
-      return { text, inputTokens: model.count(prompt), outputTokens: Math.min(200, opts.maxOutput), moneyMicros: 1, truncated: false }
+      return { text, inputTokens: model.count(prompt), outputTokens: Math.min(200, opts.maxOutput), moneyMicros: 1, inputTruncated: false, outputLimited: false }
     },
   }
   let head = plan.base
