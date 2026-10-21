@@ -382,6 +382,7 @@ test('daemon loss during cancellation settles with cleanup_unconfirmed and retai
   const { dir, policy } = await fixture(t)
   const fake = join(dir, 'docker'), marker = join(dir, 'started')
   await writeFile(fake, `#!/bin/sh
+if [ "$1" = context ]; then if [ "$2" = show ]; then printf fixture; else printf unix:///fixture; fi; exit 0; fi
 case "$3" in
   context) printf 'unix:///fixture';;
   info) printf linux;;
