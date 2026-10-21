@@ -23,7 +23,7 @@ CREATE TRIGGER relay_notes_no_delete BEFORE DELETE ON relay_notes BEGIN SELECT R
 CREATE TRIGGER relay_seals_immutable BEFORE UPDATE ON relay_seals BEGIN SELECT RAISE(ABORT,'append only'); END;
 CREATE TRIGGER relay_seals_no_delete BEFORE DELETE ON relay_seals BEGIN SELECT RAISE(ABORT,'append only'); END;
 `
-export const progressState = (l: Ledger) => ({ statuses: hash(Object.fromEntries(Object.entries(l.items).map(([k, v]) => [k, v === 'done']))), gates: hash(Object.fromEntries(l.evidence.map(e => [e.item, e.ok]))) })
+export const progressState = (l: Ledger) => ({ statuses: hash(Object.fromEntries(Object.entries(l.items).map(([k, v]) => [k, v === 'done']))), gates: hash(Object.fromEntries(l.evidence.filter(e => e.head === l.head).map(e => [e.item, e.ok]))) })
 const transitions: Record<CycleState, readonly CycleState[]> = {
   boot: ['orient'], orient: ['work', 'escalate'], work: ['wind_down', 'handoff_write', 'finish', 'escalate'],
   wind_down: ['handoff_write'], handoff_write: ['handoff_validate', 'harness_fallback'],
@@ -115,6 +115,7 @@ export class RelayStore {
   }
   observe(a: Attempt, input: { head: string; files: string[]; diffstat: string; evidence?: { item: string; ok: boolean; output: string } }): void {
     this.change(a, 'observed', l => {
+      if (input.head !== l.head) for (const id of Object.keys(l.items)) l.items[id] = 'open'
       l.head = input.head; l.files = this.scrubber.scrub(input.files); l.diffstat = this.scrubber.scrub(input.diffstat)
       if (input.evidence) {
         const e = input.evidence
@@ -154,6 +155,8 @@ export class RelayStore {
   }
   sealed(a: Attempt): { handoff: Handoff; ledger: Ledger; bundle: Uint8Array; artifactHash: string } | null {
     this.read(a.run_id)
+    const lease = this.db.prepare('SELECT holder,epoch,token FROM leases WHERE key=?').get(`run:${a.run_id}/exec`)
+    if (!lease || lease.holder !== a.id || lease.epoch !== a.epoch || lease.token !== a.token) return null
     const r = this.db.prepare('SELECT * FROM relay_seals WHERE run_id=? AND attempt_id=? AND epoch=? AND token=? ORDER BY cycle DESC LIMIT 1').get(a.run_id, a.id, a.epoch, a.token)
     if (!r) return null
     return { handoff: JSON.parse(String(r.handoff)), ledger: JSON.parse(String(r.ledger)), bundle: r.bundle as Uint8Array, artifactHash: String(r.artifact_hash) }

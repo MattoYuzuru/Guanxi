@@ -62,12 +62,11 @@ export class RelayExecutor {
     })
     this.store.emit(a, { type: 'assistant.started', data: { messageId: id, model: 'relay:' + purpose, step: l.cycle } })
     let reply: Reply
-    try { reply = this.scrubber.scrub(await this.model.call(clean, { runId: a.run_id, requestId: id, maxOutput: this.reserves.turn, window: w, signal })) }
+    try { reply = this.scrubber.scrub(await this.model.call(clean, { runId: a.run_id, requestId: id, maxOutput: this.reserves.turn, window: w, signal, onStarted: () => this.store.runs.modelStarted(a) })) }
     catch {
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
       throw new RelayError('model_failed')
     }
-    this.store.runs.modelStarted(a)
     invariant([reply.inputTokens, reply.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) &&
       (reply.moneyMicros === null || Number.isSafeInteger(reply.moneyMicros) && reply.moneyMicros >= 0), 'usage_invalid')
     this.store.change(a, 'call_observed', state => {
@@ -112,7 +111,7 @@ export class RelayExecutor {
       try { correct = !damaged && canonical(JSON.parse((await this.call(a, 'probe', prompt, w, t, signal)).text)) === canonical(expected) }
       catch (e) { if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed'].includes(e.code)) throw e }
       this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe', retry, correct, damaged }) } })
-      if (correct) return h.narrative
+      if (correct) return canonical({ narrative: h.narrative, notes: h.notes })
       damaged = false
     }
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'judge_requested', reason: 'probes' }) } })
@@ -125,6 +124,15 @@ export class RelayExecutor {
     this.store.observe(a, observation)
     const l = this.store.read(a.run_id)
     await this.workspace.validate(l.plan, l.head, l.files)
+    if (Object.values(l.items).every(status => status === 'done')) {
+      for (const item of l.plan.items) {
+        const evidence = await this.workspace.verify(l.plan, item.id, signal)
+        const after = await this.workspace.observe(l.plan.base, l.baseline.head)
+        invariant(after.head === l.head && evidence.head === l.head, 'gate_head_changed')
+        this.store.observe(a, { ...after, evidence })
+        if (!evidence.ok) break
+      }
+    }
     this.store.countProgress(a, observation.nonemptyCommit)
     let narrative = '', degraded = false
     try {
@@ -139,6 +147,8 @@ export class RelayExecutor {
     }
     this.store.transition(a, 'handoff_validate')
     const bundle = await this.workspace.bundle()
+    const current = this.store.read(a.run_id)
+    await this.workspace.validate(current.plan, current.head, current.files)
     for (let tries = 0; tries < 2; tries++) {
       try {
         const ledger = this.store.read(a.run_id); ledger.state = 'sealed'
@@ -164,7 +174,9 @@ export class RelayExecutor {
       const text = name === 'work.query' ? canonical(this.store.read(a.run_id)) : canonical(this.store.notes(a.run_id).filter(n => n.text.includes(String(args.query ?? ''))))
       const offset = Number(args.offset ?? 0)
       invariant(Number.isSafeInteger(offset) && offset >= 0, 'invalid_offset')
-      return canonical({ text: bounded(text.slice(offset), 2048), nextOffset: offset + Math.min(2000, text.length - offset) })
+      invariant(offset <= text.length, 'invalid_offset')
+      const page = Buffer.from(text.slice(offset)).subarray(0, 2048).toString('utf8').replace(/\uFFFD$/u, '')
+      return canonical({ text: page, nextOffset: offset + page.length, more: offset + page.length < text.length })
     }
     return this.workspace.tool(name, args, signal)
   }
@@ -201,11 +213,16 @@ export class RelayExecutor {
           let result = ''
           if (x.action === 'note') this.store.note(a, x.kind, x.text, x.items, x.expiresAt)
           if (x.action === 'propose') this.store.propose(a, x.text)
-          if (x.action === 'checkpoint') await this.workspace.checkpoint(signal)
+          if (x.action === 'checkpoint') {
+            await this.workspace.checkpoint(signal)
+            this.store.observe(a, await this.workspace.observe(l.plan.base, l.baseline.head))
+          }
           if (x.action === 'verify') {
             this.store.requestVerification(a, x.item)
             const e = await this.workspace.verify(l.plan, x.item, signal)
-            this.store.observe(a, { ...await this.workspace.observe(l.plan.base, l.baseline.head), evidence: e }); result = canonical(e)
+            const after = await this.workspace.observe(l.plan.base, l.baseline.head)
+            invariant(after.head === e.head, 'gate_head_changed')
+            this.store.observe(a, { ...after, evidence: e }); result = canonical(e)
           }
           if (x.action === 'tool') {
             const id = randomUUID()

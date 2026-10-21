@@ -22,7 +22,7 @@ test('failed fresh-context narrative seals degraded without losing verified prog
   const f = fixture({ narrativeFails: true }); try {
     await f.executor.run(f.attempt)
     const s = f.relay.sealed(f.attempt)!
-    assert.ok(s.handoff.degraded); assert.equal(s.ledger.items.one, 'done'); assert.equal(s.ledger.evidence.length, 1)
+    assert.ok(s.handoff.degraded); assert.equal(s.ledger.items.one, 'done'); assert.equal(s.ledger.evidence.length, 2)
     assert.equal(s.handoff.ledgerHash, hash(s.ledger))
     assert.ok(f.prompts.find(p => p.startsWith('Write a fresh')))
   } finally { f.close() }
@@ -89,14 +89,20 @@ test('normative cycle/token/money/wall/J3 caps wrap up before another model call
 test('stopping an in-flight model preserves the ledger and never replays it on recovery', async () => {
   const f=fixture()
   try {
+    let dispatched=0
     let started!:()=>void
     const ready=new Promise<void>(resolve=>{started=resolve})
-    f.model.call=async(_p,o)=>{started();return new Promise((_resolve,reject)=>o.signal!.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}))}
-    const pending=f.executor.run(f.attempt); await ready; f.executor.stop(); await pending
+    f.model.call=async(_p,o)=>{dispatched++;o.onStarted?.();started();return new Promise((_resolve,reject)=>o.signal!.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}))}
+    const pending=f.executor.run(f.attempt); await ready; assert.notEqual(f.store.attempts(f.run.id)[0]!.first_model_at,null); f.executor.stop(); await pending
     assert.equal(f.store.get(f.run.id).state,'input_required')
     assert.equal(f.relay.read(f.run.id).items.one,'open')
     assert.ok(f.relay.read(f.run.id).tokens>0)
     assert.equal(f.relay.read(f.run.id).pendingCall,null)
+    const replacement=f.store.decide(f.run.id)
+    f.relay.recover(replacement)
+    assert.equal(f.relay.read(f.run.id).state,'boot')
+    assert.equal(dispatched,1)
+    assert.ok(replacement.token>f.attempt.token)
   } finally {f.close()}
 })
 test('refused K2 append rolls back the ledger mutation and refused seal rolls back uploaded bytes', () => {
@@ -107,5 +113,20 @@ test('refused K2 append rolls back the ledger mutation and refused seal rolls ba
     assert.throws(()=>f.relay.propose(f.attempt,'new proposal'),/fixture trace refused/)
     assert.equal(canonical(f.relay.read(f.run.id)),before)
     f.log.appendFromHomeWithin=append
+  } finally {f.close()}
+})
+test('wake is acknowledged at dispatch while the model response is still pending', async () => {
+  const f=fixture()
+  try {
+    const promise=f.store.delegate(f.attempt,{key:'fixture-wake',deadline:1800000300000})
+    const child=f.store.start(promise.child_id);f.store.complete(child,'completed')
+    const lead=f.store.deliver(f.run.id,1)!
+    let started!:()=>void; const ready=new Promise<void>(resolve=>{started=resolve})
+    f.model.call=async(_p,o)=>{o.onStarted?.();started();return new Promise((_resolve,reject)=>o.signal!.addEventListener('abort',()=>reject(new Error('stop')),{once:true}))}
+    const pending=f.executor.run(lead);await ready
+    assert.notEqual(f.store.wakes(f.run.id)[0]!.acknowledged_at,null)
+    assert.equal(f.store.wakes(f.run.id)[0]!.deliveries,1)
+    f.executor.stop();await pending
+    assert.equal(f.store.deliver(f.run.id,1),null)
   } finally {f.close()}
 })

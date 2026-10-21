@@ -65,3 +65,43 @@ test('bundle refuses a registered secret in reachable history before upload', as
     await assert.rejects(w.bundle(), /bundle_secret/)
   } finally { await s.close() }
 })
+test('linked base trees cannot escape clean gate preparation or delete an outside sentinel', async () => {
+  const s=await setup()
+  try {
+    const {symlink}=await import('node:fs/promises'), outside=join(s.root,'outside')
+    await mkdir(outside); await writeFile(join(outside,'victim'),'retained')
+    await symlink(outside,join(s.repo,'linked'))
+    await git(s.repo,['add','linked']); await git(s.repo,['-c','user.name=Fixture','-c','user.email=fixture@localhost','commit','-m','link'])
+    const p={...s.p,base:await git(s.repo,['rev-parse','HEAD']),protectedPaths:['linked/victim']}
+    await assert.rejects(GitRelayWorkspace.create(s.repo,p,s.context),/unsupported_tree_entry/)
+    assert.equal(await readFile(join(outside,'victim'),'utf8'),'retained')
+  } finally {await s.close()}
+})
+test('checkpoint, observation and gate preparation never execute git filters or archive attributes', async () => {
+  const s=await setup()
+  try {
+    const marker=join(s.root,'outside-marker')
+    await git(s.repo,['config','filter.review.clean',`touch ${marker}; cat`])
+    await git(s.repo,['config','filter.review.smudge',`touch ${marker}; cat`])
+    const w=await GitRelayWorkspace.create(s.repo,s.p,s.context)
+    await writeFile(join(s.repo,'.gitattributes'),'src/a.txt filter=review export-ignore\n')
+    await writeFile(join(s.repo,'src','a.txt'),'raw candidate')
+    await w.checkpoint()
+    const observed=await w.observe(s.p.base,s.p.base); await w.validate(s.p,observed.head,observed.files)
+    s.context.executeCommand=async policy=>{
+      assert.equal(await readFile(join(policy.roots[0]!,'src','a.txt'),'utf8'),'raw candidate')
+      return {code:0,stdout:'pass',stderr:'',truncated:false}
+    }
+    assert.equal((await w.verify(s.p,'one')).ok,true)
+    await assert.rejects(access(marker))
+  } finally {await s.close()}
+})
+test('cleanup uncertainty from native tools is fatal before another checkpoint', async () => {
+  const s=await setup()
+  try {
+    s.context.executeCommand=async()=>{throw new Error('cleanup_unconfirmed')}
+    const w=await GitRelayWorkspace.create(s.repo,s.p,s.context)
+    await assert.rejects(w.tool('shell',{command:'echo unsafe'}),/cleanup_unconfirmed/)
+    assert.equal(await git(s.repo,['rev-parse','HEAD']),s.p.base)
+  } finally {await s.close()}
+})

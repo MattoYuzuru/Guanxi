@@ -37,6 +37,7 @@ test('oversize counter refuses dispatch; prompt_eval_count truncation is a proto
     f.model.count = () => 100000
     await f.executor.run(f.attempt)
     assert.equal(f.prompts.length, 0)
+    assert.ok(f.log.readAll(f.run.session_id, 'person').some(e => e.type === 'error' && e.data.code === 'context_ceiling'))
     assert.equal(f.store.get(f.run.id).state, 'input_required')
   } finally { f.close() }
   const g = fixture(); try {

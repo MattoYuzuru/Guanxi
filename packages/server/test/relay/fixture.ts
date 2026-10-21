@@ -21,6 +21,7 @@ export function fixture(options: { path?: string; fault?: (point: string) => voi
     observe: async () => window, count: text => Buffer.byteLength(text) + window.framingTokens, maxCostMicros: () => 10,
     async call(prompt, opts): Promise<Reply> {
       if (model.count(prompt) > thresholds(opts.window, { ...reserves, effective: opts.window.tokens }).H) throw new Error('FIXTURE OVERSIZE REQUEST')
+      opts.onStarted?.()
       prompts.push(prompt)
       let text: string
       if (prompt.startsWith('Write a fresh')) {
@@ -37,7 +38,7 @@ export function fixture(options: { path?: string; fault?: (point: string) => voi
     observe: async () => ({ head, files: head === plan.base ? [] : ['src/fixture.ts'], diffstat: '', nonemptyCommit: head !== plan.base }),
     validate: async () => {}, bundle: async () => Buffer.from('fixture-git-bundle'),
     checkpoint: async () => { head = 'b'.repeat(40) },
-    verify: async (_p, item) => ({ item, ok: true, output: 'fixture pass' }),
+    verify: async (_p, item) => ({ item, head, ok: true, output: 'fixture pass' }),
     tool: async (_name, args) => String(args.output ?? 'fixture tool result'),
   }
   const executor = new RelayExecutor(relay, model, workspace, reserves, f.scrubber)

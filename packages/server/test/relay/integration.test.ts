@@ -47,13 +47,14 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
     service.init(a,{...plan,goal:'Task '+secret},caps)
     const f=fixture()
     try {
-      const workspace={...f.workspace,verify:async()=>({item:'one',ok:true,output:secret})}
+      const workspace={...f.workspace,verify:async()=>({item:'one',head:plan.base,ok:true,output:secret})}
       const output:string[]=[]; const old=process.stdout.write
       process.stdout.write=((chunk: unknown)=>{ output.push(String(chunk));return true }) as typeof old
       try { await service.execute(a,{connectionId:c.id,model:model.id,meter:{observe:async()=>window,count:p=>Buffer.byteLength(p)+32},workspace,reserves}) }
       finally {process.stdout.write=old}
       assert.equal(runs.get(run.id).state,'completed',JSON.stringify(kernel.service<SessionLog>('session.log')!.readAll(run.session_id,'person').filter(e=>e.type==='error')))
       assert.equal(requests.length,3)
+      assert.notEqual(runs.attempts(run.id)[0]!.first_model_at,null)
       const persisted=JSON.stringify(db.prepare('SELECT * FROM relay_runs').all())+JSON.stringify(db.prepare('SELECT handoff,ledger,markdown FROM relay_seals').all())
       const events=JSON.stringify(kernel.service<SessionLog>('session.log')!.readAll(run.session_id,'person'))
       for(const text of [...requests,persisted,events,...output]) {assert.equal(text.includes(secret),false);assert.equal(text.includes(thinking),false)}
@@ -72,6 +73,7 @@ test('no hidden cycle limit with observed commits; boundaries retain exact hashe
     return canonical({action:n%2?'checkpoint':'handoff'})
   }})
   f.workspace.checkpoint=async()=>{checkpoint++}
+  f.workspace.verify=async(_p,item)=>({item,head:checkpoint.toString(16).padStart(40,'0'),ok:true,output:'pass'})
   f.workspace.observe=async()=>({head:checkpoint.toString(16).padStart(40,'0'),files:['src/task'],diffstat:'1 file',nonemptyCommit:true})
   try {
     await f.executor.run(f.attempt)

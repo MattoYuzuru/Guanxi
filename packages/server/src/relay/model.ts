@@ -11,7 +11,7 @@ export interface RuntimeMeter {
   maxCostMicros?(input: number, output: number): number | null
 }
 export interface RelayModel extends RuntimeMeter {
-  call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; window: WindowObservation; signal?: AbortSignal }): Promise<Reply>
+  call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void }): Promise<Reply>
 }
 export class ConnectionRelayModel implements RelayModel {
   readonly connections: Connections; readonly connectionId: string; readonly model: string; readonly meter: RuntimeMeter; readonly background: boolean
@@ -24,7 +24,7 @@ export class ConnectionRelayModel implements RelayModel {
   async call(prompt: string, o: Parameters<RelayModel['call']>[1]): Promise<Reply> {
     const connection = this.connections.snapshot('local').connections.find(c => c.id === this.connectionId)
     invariant(connection, 'connection_not_found')
-    const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background }
+    const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background, onStarted: o.onStarted }
     if (connection.kind === 'local_runtime') {
       const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false,
         messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } }, call)
