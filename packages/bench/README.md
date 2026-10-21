@@ -1,7 +1,7 @@
 # Bench base
 
 **Status:** partially implemented B1; fixture foundation locally validated. Real corpus execution
-and a real model noise floor remain unfinished · **Updated:** 2026-10-21
+and a real model noise floor remain unfinished · **Updated:** 2026-10-22
 
 `@guanxi/bench` implements the B1 measurement core from
 [ADR-0025](../../docs/decisions/0025-bench-stage-and-ab-gate.md). It adds no scaffolding to the
@@ -9,6 +9,11 @@ native agent. `createBenchPlugin` provides `bench.runner` over R1's `runs.durabl
 `egress.scrubber`; the server does not load it by default. The CLI is also usable without a
 server. Harbor and mini-swe-agent run in a separately installed Python process, never in a
 node bundle. No shared wire contract, server route or migration changes.
+
+The continuation adds a [trial-bound K3 admission gateway](REQUEST_ADMISSION.md) and
+[task-content staging](STAGING.md). These have synthetic assertions and independent review;
+they do not supply a real provider meter/price adapter, task image, public corpus or measured
+five-seed experiment. Stock real/paid execution still refuses.
 
 ## Commands
 
