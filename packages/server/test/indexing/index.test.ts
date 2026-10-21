@@ -563,6 +563,21 @@ test('oversized ignore policy fails closed and does not turn exclusions into ind
   } finally { await f.close() }
 })
 
+test('oversized git info/exclude fails closed instead of indexing locally excluded files', async () => {
+  const f = await fixture()
+  try {
+    await mkdir(join(f.root, '.git', 'info'), { recursive: true })
+    await writeFile(join(f.root, '.git', 'info', 'exclude'), 'private.txt\n#' + 'padding'.repeat(30))
+    await writeFile(join(f.root, 'private.txt'), 'Needle')
+    await executeIndex({ ...f.request('build'), settings: { ...settings, maxFileBytes: 32 } }, f.allow)
+    const db = new DatabaseSync(f.database, { readOnly: true })
+    try {
+      assert.equal(db.prepare('SELECT count(*) n FROM files').get()!.n, 0)
+      assert.equal(db.prepare('SELECT count(*) n FROM contents').get()!.n, 0)
+    } finally { db.close() }
+  } finally { await f.close() }
+})
+
 test('close waits for invocations that have not created a worker and removes their captured runtime', async () => {
   const f = await fixture(), governor = new ResourceGovernor()
   const service = new ProjectIndex({ dataDir: f.data, governor, scrubber: f.scrubber, settings: { pollMs: 60_000 }, headroom: green })

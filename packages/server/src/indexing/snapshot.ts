@@ -52,14 +52,14 @@ export async function readProjectFile(root: string, path: string, maxBytes: numb
   } finally { await file.close() }
 }
 
-async function gitText(path: string, maxBytes: number): Promise<string | null> {
+async function gitText(path: string, maxBytes: number): Promise<string | null | undefined> {
   try {
     const named = await lstat(path)
     if (!named.isFile() || named.size > maxBytes) return null
     const bytes = await readFile(path)
     if (bytes.includes(0)) return null
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-  } catch { return null }
+  } catch (error) { return ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '') ? undefined : null }
 }
 
 async function repositoryRoot(path: string): Promise<boolean> {
@@ -78,8 +78,10 @@ async function walkProject(root: string, settings: IndexSettings, allow: AllowCo
     if (repository) {
       const resolved = await gitResult(dir, 'rev-parse', '--path-format=absolute', '--git-path', 'info/exclude')
       const fallback = join(dir, '.git', 'info', 'exclude')
-      const excludePath = resolved ?? await lstat(fallback).then(() => fallback, () => null)
-      const exclude = excludePath ? await gitText(excludePath, settings.maxFileBytes) : null
+      const exclude = await gitText(resolved ?? fallback, settings.maxFileBytes)
+      // Missing policy is normal; an existing policy we cannot safely read
+      // must not turn locally excluded files into indexable content.
+      if (exclude === null) { skipped++; return null }
       if (exclude) rules.push({ base: relative(root, dir).split(sep).join('/'), matcher: ignore().add(exclude) })
     }
     const ignorePath = relative(root, join(dir, '.gitignore')).split(sep).join('/')
