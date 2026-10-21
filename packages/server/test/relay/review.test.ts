@@ -61,3 +61,18 @@ test('cleanup uncertainty stops the loop before a following checkpoint', async (
     assert.equal(actions,1);assert.equal(checkpoints,0);assert.equal(f.store.get(f.run.id).state,'input_required')
   } finally {f.close()}
 })
+test('a refused local start observer consumes the aborted response rejection', async () => {
+  const {OllamaClient}=await import('../../src/ollama/client.ts')
+  const controller=new AbortController(), unhandled:unknown[]=[]
+  const onUnhandled=(error:unknown)=>{unhandled.push(error)}
+  process.on('unhandledRejection',onUnhandled)
+  try {
+    const client=new OllamaClient({host:'http://127.0.0.1:11434',fetch:async(url,init)=>{
+      if(new URL(String(url)).pathname==='/api/version')return Response.json({version:'fixture'})
+      return new Promise<Response>((_resolve,reject)=>init!.signal!.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}))
+    }})
+    await assert.rejects(client.chat({model:'fixture',messages:[{role:'user',content:'fixture'}]},controller.signal,()=>{controller.abort();throw new Error('fixture_stale_lease')}),/fixture_stale_lease/)
+    await new Promise<void>(r=>setImmediate(r));await new Promise<void>(r=>setImmediate(r))
+    assert.equal(unhandled.length,0)
+  } finally {controller.abort();process.removeListener('unhandledRejection',onUnhandled)}
+})

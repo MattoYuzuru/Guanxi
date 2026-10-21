@@ -629,7 +629,7 @@ export class OllamaClient {
         timeoutMs: this.loadTimeoutMs,
       },
     })
-    onStarted?.()
+    try { onStarted?.() } catch (error) { void response.catch(() => undefined); throw error }
     return response
   }
 
