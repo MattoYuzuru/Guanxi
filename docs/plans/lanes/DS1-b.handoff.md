@@ -1,6 +1,6 @@
 # Lane DS1-b hand-off — components, catalog and approvals
 
-**Status:** final-check fixes done (N8–N12), ready for GPT's bounded check · **Updated:** 2026-10-21 ·
+**Status:** bounded-check fixes done (N8/N1, N10/N2), ready for GPT's two-item check · **Updated:** 2026-10-21 ·
 **Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `1510c0e`; DS1-a integrated) · **Ports:** 5183 / 4383
 
 Everything in [DS1-b](DS1-b.md) is built. The three independent reviews ran, and their findings
@@ -51,7 +51,24 @@ race test); a record changed during the keychain prompt is not overwritten.
 
 ## Commands
 
-Final run after the final-check fixes and a merge of main (`1510c0e`, which brings main's
+Final run after the bounded-check fixes, on the clean tree `65888cd`, through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
+with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
+
+| Check | Result | Receipt |
+| --- | --- | --- |
+| `npm run typecheck` | exit 0 (all workspaces) | direct |
+| `npm test` | `ui:check` ok; gate tests 51/51; core 719 (718 pass, 1 skipped opt-in keychain); kernel 106/106; web 266/266; ui node 67/67; ui vitest 17/17 | `check-61bx2blq` |
+| `npm run ui:check:browser` (G13, G14, G15-clipping, G16, G17) | ok | `check-ttjzmb71` |
+| `npm run test:web:browser` | 62/62 | `check-y8lzkoob` |
+| `npm run build` | exit 0 | `check-bm1ja4c_` |
+| `npm run build-storybook --workspace @guanxi/ui` | exit 0 | `check-2f_45mby` |
+| `run.ts --mode fast --selftest` | 28 cases ok | `check-wfuuo28e` |
+| `run.ts --mode browser --selftest` | 11 cases ok | `check-eyo5dsp7` |
+| `run.ts --mode browser --only G13`, 10 consecutive compares | 10/10 pass | `check-906_7jx2`, `check-vf9vwmti`, `check-io3um5fv`, `check-zys8tz4i`, `check-22hkgsuj`, `check-gdhbhuhs`, `check-y8g8kret`, `check-j21s3ej0`, `check-utodf28e`, `check-y7kivxca` |
+| `npm run lint:md`, `npm run check:licenses` | 0 errors; 439 packages, 0 not allowed | direct |
+
+Previous run, after the final-check fixes and a merge of main (`1510c0e`, which brings main's
 `localization.spec.ts` fix), on that clean tree, through
 `agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
 with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
@@ -280,9 +297,9 @@ Residuals named under the stopping rule (none blocks the merge):
 - **History recovery (DS2).** A broken committed version on main makes G12 fail for every later
   change; there is no repair short of an owner-signed reset or checkpoint, which belongs to the
   DS2 signing helper.
-- **History scope.** G12 walks the first-parent histories of the base and of HEAD; a decision
-  that only ever existed on a side branch merged elsewhere is outside the walk. Shallow clones
-  fail closed.
+- **History scope.** Superseded by `65888cd`: G12 walks every commit reachable from HEAD across
+  all merge parents. A decision on a branch never merged into HEAD is outside the walk. Shallow
+  clones fail closed.
 - **Hash scope.** The closure is what esbuild binds from the component's scripts; code loaded by
   a runtime `fetch`, a worker URL or another loader is outside it, and imports are refused only
   in the forms N10 lists.
@@ -290,6 +307,30 @@ Residuals named under the stopping rule (none blocks the merge):
   registration order because the comparator yields 0 for it (stable sort). Low.
 - **M5 (unchanged).** The legacy cache-bar contrast exception in the new-session flow stays
   recorded until an owner decision or a fix in the legacy screen.
+
+### Bounded-check fixes
+
+GPT's bounded check of `735f080` (`ds1-b-review/REVIEW-GPT-4.md`): 5 closed, 4 partial, two
+High blockers and one non-blocking Medium. Both blockers are fixed in their own commits; GPT's
+own regressions (`.cache/finding-regressions.test.mts` in its scratch copy) were run against this
+tree with imports pointed here: all three pass (they fail at `735f080` per its log).
+
+| Finding | Commit | Test that fails without the fix |
+| --- | --- | --- |
+| N8/N1 (High) merged-side history allows approval replay | `65888cd` | `approval.test.ts` › "sees decisions committed on a merged side branch: a replay there fails" and "accepts a legitimate decision merged from a side branch, and fails sides whose decisions diverge" (real git, `--no-ff` merges); both fail with the first-parent walk |
+| N10/N2 (High) computed imports in `.jsx` / `.cts` bypass the guard | `6cdc54f` | `approval.test.ts` › "refuses a computed import in a reachable .jsx / .cts / .cjs module" fail with the previous hasher (`.mjs` is kept as a regression) |
+
+G12 now walks, per record, every commit reachable from HEAD that changed it, across every merge
+parent (`git rev-list --full-history --simplify-merges --parents`), and checks each version
+against the merged state of all its parents. The hasher has one table of module types: esbuild
+gets exactly those loaders, any other input type is refused, and every script type (`.js .mjs
+.cjs .jsx .ts .mts .cts .tsx`) goes through the computed-import guard.
+
+Named residual (Medium, non-blocking, DS2): an unreadable or malformed historical record before
+the first valid decision (for example a first approval with `signature: "AAAA"`, then a valid
+first approval) passes G12, because an unreadable version is reported only once a decision or
+a deprecation exists. No forged or replayed approval follows from it; complete historical
+validation and checkpoint semantics belong with the DS2 signing helper.
 
 ## Residual risk
 
