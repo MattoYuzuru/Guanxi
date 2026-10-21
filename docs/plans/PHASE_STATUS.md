@@ -193,7 +193,7 @@ Residual risks:
 | --- | --- | --- |
 | DS1-a: DTCG tokens, deterministic Style Dictionary build, self-hosted IBM Plex, legacy freeze ratchet, gates G1–G7 and the G17 self-test | implemented, independently verified, merged into `main` (`--no-ff`, as the ratchet requires) | Full evidence: [evidence/DS1-a](evidence/DS1-a.md). Token values are asserted against the FOUNDATIONS tables; the legacy UI's fonts and spacing are unchanged; all 32 Plex faces load from the same origin; the ratchet freezes 735 legacy keys with two owner-authorised corrections. Reviews: the lane's own reviewer, then three Claude cross-family rounds (19 + 9 findings closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (now including the UI gates; web 264), browser gate 48/48, build, lint:md, licenses (358/0). Follow-ups moved to DS1-c. |
 | DS1-b: `@guanxi/ui` components, catalog, signed approvals, G10–G16 | implemented, independently verified, merged into `main` (`7de9e6c`) | Full evidence and residuals: [evidence/DS1-b](evidence/DS1-b.md). Author Claude; GPT cross-family checks through round 5; the last High (generated-root scripts outside the approval hash) verified by the integrator with the reviewer's regressions and a fix-removal mutation. Integrator gates on `main`: typecheck, `ui:check`, licenses 521/0, `npm test` (UI gates 51, catalog 70, core 1007, kernel 106, web 314, UI 17), browser gate 65/65, `ui:check:browser`, build. Key custody moves to DS2. |
-| DS1-c: lint ratchet and codemod | Claude review 1: merge after fixes. One High: the codemod puts muted text on inset surfaces below 4.5:1 in about 36 places. Mediums: untested growth-audit call and ESLint config, G9 alias bypasses, and a mixed old/new palette. Fix round queued in Codex | [lanes/DS1-c](lanes/DS1-c.md) |
+| DS1-c: lint ratchet and codemod | Claude review 1: merge after fixes. One High: the codemod puts muted text on inset surfaces below 4.5:1 in about 36 places. Mediums: untested growth-audit call and ESLint config, G9 alias bypasses, and a mixed old/new palette. Fix round running in Codex | [lanes/DS1-c](lanes/DS1-c.md) |
 
 ## Repository presentation and documentation (2026-10-21)
 
@@ -235,6 +235,6 @@ decision was made.
 | K5 External agents | handed off (partial: real release recordings, effective `--bare` detection and statusline ingestion open); Claude cross-family review running | [lanes/K5](lanes/K5.md) |
 | B1 Bench base | ready (lane B1, Codex, next free slot); host provisioned | [lanes/B1](lanes/B1.md) |
 | X1 Repo map and FTS | in progress (lane X1, Codex) | [lanes/X1](lanes/X1.md) |
-| R2 Relay executor | in progress (lane R2, Codex) | [lanes/R2](lanes/R2.md) |
-| F1 Federation base | review 1 fixes re-checked: H1–H3 closed; H4 partial and one new High (config ingest cost grows cubically, remotely triggerable); fix round 2 queued in Codex | [lanes/F1](lanes/F1.md) |
+| R2 Relay executor | handed off; Claude cross-family review running | [lanes/R2](lanes/R2.md) |
+| F1 Federation base | review 1 fixes re-checked: H1–H3 closed; H4 partial and one new High (config ingest cost grows cubically, remotely triggerable); fix round 2 running in Codex | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
