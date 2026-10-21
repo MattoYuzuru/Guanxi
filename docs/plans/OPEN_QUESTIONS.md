@@ -30,7 +30,7 @@ stated in full.
 | Q-208 | May Guanxi keep Macs and the Windows PC awake while they hold leases? Use Wake-on-LAN? | F2 | D-148: Power assertion while leases are active; WoL opt-in. |
 | Q-209 | Cloud rental: monthly cap, per-launch cap, providers (RunPod, Vast, Modal), SkyPilot yes/no? | F4 | D-149: $0 until set; RunPod v2 adapter first. |
 | Q-210 | Monthly API budget for benchmarks: about $200 (biweekly full A/B on DeepSeek Flash, smokes, free nightly local runs) or $300–450 (weekly full A/B, some V4-Pro)? | B1, B2 | D-150: $200. |
-| Q-211 | Which hosts may run untrusted benchmark containers: Windows PC (WSL2 Docker), Linux VPS (x86_64, 200–300 GB disk)? | B1 | D-151: Windows PC under WSL2. |
+| Q-211 | Which hosts may run untrusted benchmark containers: Windows PC (WSL2 Docker), Linux VPS (x86_64, 200–300 GB disk)? | B1 | D-151: Windows PC under WSL2; amended by D-194: the Fedora PC in rootless Podman under a dedicated user. |
 | Q-212 | Which repositories form the private benchmark? Any never-published private repositories (best holdout)? | B2 | D-152: Guanxi plus one or two owner repositories. |
 | Q-213 | Can the owner label 50–100 trials at the start and 20–30 per month for judge calibration? | B2 | D-153: 50 at start, 20 per month. |
 | Q-214 | When an editor prompts in someone else's shared session, whose connections and budget pay? | U3 | D-154, amended by D-190: only API/local connections may pay for an editor if allowed; subscriptions are owner-bound. |
