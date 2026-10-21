@@ -24,7 +24,6 @@ export function holdAnimationFrames() {
           callback(performance.now())
         }
       })
-      return batch.length
     },
   }
 }

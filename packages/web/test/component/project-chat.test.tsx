@@ -91,7 +91,7 @@ describe('Project Chat Web boundary', () => {
     const heading = await screen.findByRole('heading', {
       name: `Новый чат в проекте «${PROJECT.name}»`,
     })
-    expect(frames.pending()).toBe(1)
+    await waitFor(() => expect(frames.pending()).toBe(1))
     await frames.flush()
     expect(heading).toBe(document.activeElement)
     await frames.flush()
@@ -141,6 +141,7 @@ describe('Project Chat Web boundary', () => {
     const heading = await screen.findByRole('heading', {
       name: 'Не удалось безопасно открыть чат проекта',
     })
+    // Finding the DOM does not imply that ThreadPage's passive focus effect ran.
     await waitFor(() => expect(heading).toBe(document.activeElement))
     await frames.flush()
     expect(heading).toBe(document.activeElement)
@@ -150,5 +151,11 @@ describe('Project Chat Web boundary', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
     await waitFor(() => expect(api.getProjectChat).toHaveBeenCalledTimes(2))
+    const retryHeading = await screen.findByRole('heading', {
+      name: 'Не удалось безопасно открыть чат проекта',
+    })
+    await waitFor(() => expect(retryHeading).toBe(document.activeElement))
+    await frames.flush()
+    expect(retryHeading).toBe(document.activeElement)
   })
 })

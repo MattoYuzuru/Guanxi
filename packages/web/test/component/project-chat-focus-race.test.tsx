@@ -5,7 +5,7 @@
  * frames are held and released explicitly, so the ordering is deterministic.
  * Adapted from the reviewer's review-focus-race.test.tsx.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Health } from '@guanxi/contract'
 import { ChatPage } from '../../src/features/chat/ChatPage.tsx'
@@ -78,6 +78,30 @@ beforeEach(() => {
 })
 
 describe('Project Chat focus ordering', () => {
+  it('keeps the active control focused while creation is pending and its heading frame runs late', async () => {
+    const frames = holdAnimationFrames()
+    let resolveCreation!: (chat: typeof CHAT) => void
+    vi.spyOn(api, 'createProjectChat').mockReturnValue(new Promise((resolve) => {
+      resolveCreation = resolve
+    }))
+
+    renderChat(null)
+    const create = await screen.findByRole('button', { name: 'Создать диалог' })
+    await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false))
+    const model = screen.getByRole('combobox', { name: 'Модель для нового диалога' })
+    act(() => model.focus())
+    fireEvent.submit(create.closest('form')!)
+    expect(api.createProjectChat).toHaveBeenCalledTimes(1)
+    expect(create.hasAttribute('disabled')).toBe(true)
+    expect(model).toBe(document.activeElement)
+    expect(frames.pending()).toBe(1)
+    await frames.flush()
+    expect(model).toBe(document.activeElement)
+
+    await act(async () => resolveCreation(CHAT))
+    expect(window.location.pathname).toBe(`/projects/${PROJECT.id}/chats/${CHAT.id}`)
+  })
+
   it('keeps focus on a create failure when the initial heading focus frame runs late', async () => {
     const frames = holdAnimationFrames()
     vi.spyOn(api, 'createProjectChat')
