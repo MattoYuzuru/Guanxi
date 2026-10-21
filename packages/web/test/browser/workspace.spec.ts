@@ -120,7 +120,14 @@ test('Terminal and Browser retain input and the same DOM node across move, float
     await expect(detached).toHaveValue(`retained-${name}`)
     expect(await detached.evaluate(node => (node as any).__retainedIdentity)).toBe('original')
     await detached.fill(`returned-${name}`)
-    // Keyboard entry point in the popout opens its move dialog in the same document.
+    // Native engine tabs are outside the retained React pane portal.
+    const popupTab = popup.getByRole('tab').first()
+    await popupTab.focus()
+    await expect(popupTab).toBeFocused()
+    const firstZoneActive = (await state(page)).engineState.groups.find(group => group.zone === 'left')!.active
+    await popup.keyboard.press('F6')
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-block'))).toBe(firstZoneActive)
+    await popupTab.focus()
     await popup.keyboard.press('Alt+Shift+m')
     await expect(popup.getByRole('dialog', { name: 'Move block', exact: true })).toBeVisible()
     await pick(popup, 'Destination', 'Bottom')
@@ -245,8 +252,8 @@ test('named/mode selections restore scoped float geometry and a future engine fa
   const developer = builtInLayout(query)
   const floated = (doc: LayoutDocument, id: string, name: string) => {
     doc.id = id; doc.name = name
-    doc.engineState.groups = doc.engineState.groups.map(group => ({ ...group, blocks: group.blocks.filter(block => block !== 'guanxi.core/terminal'), active: group.active === 'guanxi.core/terminal' ? undefined : group.active })).filter(group => group.blocks.length)
-    doc.engineState.groups.push({ id: 'saved-float', zone: 'floating', blocks: ['guanxi.core/terminal'], active: 'guanxi.core/terminal' })
+    doc.engineState.groups = doc.engineState.groups.map(group => ({ ...group, blocks: group.blocks.filter(block => !['guanxi.core/terminal', 'guanxi.core/browser'].includes(block)), active: group.active === 'guanxi.core/terminal' ? undefined : group.active })).filter(group => group.blocks.length)
+    doc.engineState.groups.push({ id: 'saved-float', zone: 'floating', blocks: ['guanxi.core/terminal', 'guanxi.core/browser'], active: 'guanxi.core/terminal' })
     return doc
   }
   const named = floated(builtInLayout(query), 'named-developer', 'Named geometry')
@@ -259,12 +266,15 @@ test('named/mode selections restore scoped float geometry and a future engine fa
   await pick(page, 'Named layout', 'Named geometry')
   await expect(page.locator('.dv-resize-container:visible')).toHaveCount(1)
   await expect.poll(() => page.locator('.dv-resize-container:visible').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(420)
+  expect((await state(page)).engineState.groups.find(group => group.zone === 'floating')!.active).toBe('guanxi.core/terminal')
   await pick(page, 'Experience mode', 'Visual')
   await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'visual')
+  expect((await state(page)).engineState.groups.find(group => group.zone === 'floating')!.active).toBe('guanxi.core/terminal')
   await expect.poll(() => page.locator('.dv-resize-container:visible').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(460)
   await pick(page, 'Experience mode', 'Developer')
   await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'developer')
   await expect.poll(() => page.locator('.dv-resize-container:visible').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(420)
+  expect((await state(page)).engineState.groups.find(group => group.zone === 'floating')!.active).toBe('guanxi.core/terminal')
   await pick(page, 'Named layout', 'Future engine')
   await expect(page.locator('.dv-resize-container:visible')).toHaveCount(0)
   expect((await state(page)).engineState.major).toBe(8)

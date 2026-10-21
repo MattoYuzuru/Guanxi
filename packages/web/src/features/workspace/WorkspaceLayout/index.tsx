@@ -23,6 +23,7 @@ export interface WorkspaceLayoutProps {
   title: (id: string) => string
   handleRef: RefObject<WorkspaceLayoutHandle | null>
   hideLabel: string
+  onMoveRequested: (id: string) => void
   onHidden: (id: string) => void
   onChange: () => void
   onMove: (id: string, zone: WorkspaceZone) => void
@@ -131,6 +132,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         const box = latest.current.geometry[saved.id]
         api.addFloatingGroup(group, box ? { x: box.left, y: box.top, width: box.width, height: box.height } : {})
       }
+      if (saved.active) api.getPanel(saved.active)?.api.setActive()
     }
     const snapshot: WorkspaceLayoutHandle['snapshot'] = () => {
       const raw = api.toJSON()
@@ -155,18 +157,27 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         try {
           const box = latest.current.geometry[panel.group.id] ?? restoredGeometry.get(id)
           if (zone === 'floating') api.addFloatingGroup(panel, box ? { x: box.left, y: box.top, width: box.width, height: box.height } : {})
-          else if (zone === 'popout') success = await api.addPopoutGroup(panel, {
+          else if (zone === 'popout') {
+            const keyboard = (event: KeyboardEvent) => {
+              if (event.defaultPrevented) return
+              if (event.key === 'F6') { event.preventDefault(); handle.cycleZone(event.shiftKey) }
+              if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') { event.preventDefault(); latest.current.onMoveRequested(id) }
+            }
+            success = await api.addPopoutGroup(panel, {
             popoutUrl: new URL('/workspace-popout.html', window.location.origin).href,
             position: box,
             onDidOpen: event => {
+              event.window.addEventListener('keydown', keyboard)
+              subscriptions.current.push({ dispose: () => event.window.removeEventListener('keydown', keyboard) })
               const host = latest.current.hosts.get(id)
               event.window.document.title = document.title
               event.window.document.documentElement.lang = host?.lang || document.documentElement.lang
               if (host?.dataset.theme) event.window.document.documentElement.dataset.theme = host.dataset.theme
               event.window.document.documentElement.dataset.density = latest.current.document.density
             },
+            onWillClose: event => event.window.removeEventListener('keydown', keyboard),
           })
-          else panel.api.moveTo({ group: ensureGroup(zone), position: 'center' })
+          } else panel.api.moveTo({ group: ensureGroup(zone), position: 'center' })
         } finally { muted.current = false }
         if (success) {
           latest.current.onMove(id, zone)
