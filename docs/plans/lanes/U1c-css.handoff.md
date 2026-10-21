@@ -343,3 +343,75 @@ for this spec.
 The test fix is `c8d509e` on top of `2c4a02f`; this handoff update is the next documentation
 commit. No push, merge or rebase was performed. Final clean pin: the HEAD documentation commit
 containing this section, with `git status --porcelain` empty.
+
+## Review-fix: direct abort-before-network evidence (2026-10-22)
+
+**Finding.** The forced `abort before interception` schedule installed a one-microtask deferral
+for `/api/projects`, but it did not record whether the project fetch signal was already
+aborted when the actual fetch was invoked. The test only observed intercepted route reads and
+the committed focused error. A schedule that never aborts a project read before the network
+could therefore still pass the claimed forced schedule; AGENTS.md Definition of done item 4
+requires a direct assertion for every claimed property.
+
+**Source pin.** `codex/u1c-css` at `e73936b` before this fix; test commit `3d14692`.
+
+### Change (test-only)
+
+`packages/web/test/browser/projects.spec.ts`:
+
+- The existing local `deferProjectReadBeforeNetwork` wrapper now records, only for
+  `GET /api/projects`: a local sequence id, `aborted` at wrapper entry,
+  `abortedAtNetworkStart` after the one-microtask deferral immediately before calling the
+  native fetch, and the promise `state` (`pending` / `fulfilled` / `rejected`). It records no
+  request or response body.
+- The records live only in page memory (`window.__guanxiProjectFetchReads`) and the spec reads
+  them through a local helper. The wrapper adds an `abort` listener and removes it in
+  `finally`. The shared `fixtures/fetch-lifecycle.ts`, production code and production globals
+  are unchanged.
+- In the forced schedule, after the committed focused error and `initialReadCount >= 1`, the
+  test now asserts that at least one project read has `abortedAtNetworkStart === true`. It uses
+  `.some(...)`, not an exact StrictMode attempt count, and `expect.poll` rather than an
+  arbitrary sleep. The existing focused error and route count prove the non-aborted committed
+  read; the retry, create and other assertions are unchanged.
+
+### New tests / regression envelope
+
+**New:** 0. The two existing Projects schedule cases are strengthened; no new test case and no
+new schedule were added. The native-timing schedule still runs the same flow without the local
+project observation.
+
+**Evidence pending:** This worker cannot run Playwright or Chromium. The direct red/green of the
+new forced-schedule assertion is pending the root coordinator's full actual-Chromium browser
+gate. Static inspection of `e73936b` found no `abortedAtNetworkStart` observation or assertion
+in `projects.spec.ts`, so the previous forced schedule could not fail on the claimed property;
+that is the structural red evidence, not a browser result. If Chromium/React's actual schedule
+never aborts a project read before native fetch, root must report the red rather than weaken
+this assertion.
+
+### Commands (this round)
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `nice -n 10 npx eslint packages/web/test/browser/projects.spec.ts` | exit 0 |
+| `nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json` | exit 0 |
+| `git diff --check` | exit 0 |
+
+`packages/web/tsconfig.json` includes `src`, `vite.config.ts`, `dev-ports.ts` and `test/unit`,
+not `test/browser`; the scoped tsc is a package regression check. The root Chromium gate
+remains the authority for this spec.
+
+### Residuals (this round)
+
+- Root must run the full actual-Chromium gate; the new forced-schedule assertion is not claimed
+  as passing here.
+- The local records observe only `GET /api/projects` in the forced schedule. They are
+  content-free (no URL query, headers or body) and are not shared with other specs.
+- The aborted read's promise `state` is recorded for diagnosis, but the assertion targets
+  `abortedAtNetworkStart`, the ordering property the claim names. Route counts still cannot
+  observe an attempt Chromium drops.
+- No production CSS/TSX, shared fixture, other tests, status files or approvals were edited.
+
+The test fix is `3d14692` on top of `e73936b`; this handoff update is the next documentation
+commit. No push, merge or rebase was performed. Final clean pin: the HEAD documentation commit
+containing this section, with `git status --porcelain` empty.
