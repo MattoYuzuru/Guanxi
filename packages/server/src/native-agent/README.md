@@ -96,7 +96,8 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   Commas in bind paths are refused. Absent protected paths conservatively make their nearest
   existing parent read-only. No runtime/image means arbitrary shell is disabled with a localized
   reason; fixed read commands remain available. Image provisioning is never done by a tool.
-- Linux uses upstream bubblewrap/seccomp, the packaged apply-seccomp helper and util-linux
+- Linux requires `bwrap`, `socat` and `rg` on the worker PATH, plus the packaged apply-seccomp
+  helper and util-linux
   `setpriv` with `--seccomp-filter` support. After trusted proxy bridges start, a workload-only
   BPF filter denies bind, listen, ptrace, process_vm_writev, unshare, setns, mount, socketpair
   and non-INET sockets. x64/arm64 audit ABIs and unknown/x32 syscall numbers are checked;
