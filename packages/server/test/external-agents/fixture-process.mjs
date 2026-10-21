@@ -129,6 +129,11 @@ lines.on('line', line => {
     if (frame.method === 'turn/start') {
       if (config.scenario === 'hang') return
       if (config.scenario === 'crash') process.exit(22)
+      if (config.scenario === 'after-start-response') {
+        reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } })
+        setTimeout(() => { for (const notification of tape.notifications) send(replace(notification)) }, 10)
+        return
+      }
       for (const notification of tape.notifications) send(replace(notification))
       reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } }); return
     }

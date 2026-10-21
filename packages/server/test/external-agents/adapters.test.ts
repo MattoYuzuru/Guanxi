@@ -167,7 +167,7 @@ test('Codex exact version matching excludes prereleases with the same numeric ve
   await assert.rejects(f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' }), /adapter_version_mismatch/)
 })
 
-test('Codex ignores foreign thread and turn text, plan and completion even when notifications precede turn/start response', async t => {
+test('Codex ignores foreign thread and turn text, plan and completion before and after turn/start response', async t => {
   const f = await fixture(t)
   const tape = structuredClone(f.tapes.get('codex')!)
   const foreign: unknown[] = []
@@ -177,13 +177,15 @@ test('Codex ignores foreign thread and turn text, plan and completion even when 
       { method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'completed' } } })
   }
   tape.notifications = [...foreign, ...(tape.notifications as unknown[])]
-  await f.scenario('codex', { tape })
   f.service().setProjectRoles(owner, owner, 'p', { lead: f.bindings[0]! })
-  const result = await f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' })
-  assert.match(result.text, /fixture completed/)
-  assert.equal(result.text.includes('FOREIGN_TEXT'), false)
-  const events = f.kernel.sessionLog!.readAll(result.sessionId, 'person')
-  assert.equal(JSON.stringify(events).includes('FOREIGN_PLAN'), false)
-  assert.equal(events.filter(e => e.type === 'agent.plan').length, 1)
-  assert.equal(events.filter(e => e.type === 'turn.done').length, 1)
+  for (const scenario of ['', 'after-start-response']) {
+    await f.scenario('codex', { tape, scenario })
+    const result = await f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' })
+    assert.match(result.text, /fixture completed/)
+    assert.equal(result.text.includes('FOREIGN_TEXT'), false)
+    const events = f.kernel.sessionLog!.readAll(result.sessionId, 'person')
+    assert.equal(JSON.stringify(events).includes('FOREIGN_PLAN'), false)
+    assert.equal(events.filter(e => e.type === 'agent.plan').length, 1)
+    assert.equal(events.filter(e => e.type === 'turn.done').length, 1)
+  }
 })

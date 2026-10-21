@@ -94,7 +94,7 @@ test('account reports aggregate same reset window conservatively across nodes, i
   f.service().observeQuota(owner, binding.connectionId, older, Date.parse('2026-10-21T12:00:02Z'))
   assert.equal(f.service().limits(owner, binding.connectionId, Date.parse('2026-10-21T12:00:02Z')).windows.find(w => w.name === 'newer')?.used.value, 90)
   f.service().observeQuota(owner, binding.connectionId, { ...older, nodeId: 'zz-precision-peer', observedAt: latest.observedAt,
-    windows: [{ name: 'newer', usedPercent: 95, resetsAt: '2026-10-22T12:00:00Z' }] }, Date.parse('2026-10-21T12:00:02Z'))
+    windows: [{ name: 'newer', usedPercent: 95, resetsAt: '2026-10-22T12:00:00.000Z' }] }, Date.parse('2026-10-21T12:00:02Z'))
   const equivalent = f.service().limits(owner, binding.connectionId, Date.parse('2026-10-21T12:00:02Z')).windows.filter(w => w.name === 'newer')
   assert.equal(equivalent.length, 1)
   assert.equal(equivalent[0]!.used.value, 95)
