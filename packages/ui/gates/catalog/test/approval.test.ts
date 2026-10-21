@@ -354,6 +354,31 @@ describe('component source hash covers what the component runs (GPT H3)', async 
     })
   }
 
+  // GPT N10/N2 (bea8574): scripts under the allowed generated root were skipped as junk.
+  it('hashes an executable module imported from the generated root', () => {
+    const t = tree("export { value } from '../../../generated/loader.cts'")
+    try {
+      writeFileSync(join(t.src, '..', 'generated', 'loader.cts'), 'export const value = 1\n')
+      const before = componentSourceHash(t.dir)
+      writeFileSync(join(t.src, '..', 'generated', 'loader.cts'), 'export const value = 2\n')
+      assert.notEqual(componentSourceHash(t.dir), before)
+    } finally {
+      t.dispose()
+    }
+  })
+
+  for (const extension of ['cts', 'jsx']) {
+    it(`refuses a computed import in generated/loader.${extension}`, () => {
+      const t = tree(`export { load } from '../../../generated/loader.${extension}'`)
+      try {
+        writeFileSync(join(t.src, '..', 'generated', `loader.${extension}`), 'export const load = (name) => import(`${name}`)\n')
+        assert.throws(() => componentSourceHash(t.dir), new RegExp(`computed dynamic import in \\.\\./generated/loader\\.${extension}`))
+      } finally {
+        t.dispose()
+      }
+    })
+  }
+
   for (const [name, code, expected] of unbound) {
     it(`refuses ${name}, which no hash can bind (GPT N10)`, () => {
       const t = tree(code)

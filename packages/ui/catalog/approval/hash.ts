@@ -200,11 +200,15 @@ export function componentSourceHash(dir: string): string {
     if (!input.startsWith(srcRoot + sep) && !input.startsWith(join(packageRoot, 'generated') + sep) && !input.startsWith(join(packageRoot, 'fonts') + sep)) {
       throw new SourceHashError(`${relative(srcRoot, input).split(sep).join('/')} is outside packages/ui/src`)
     }
-    const rel = relative(srcRoot, input).split(sep).join('/')
-    if (CLOSURE_EXCLUDED.has(rel) || JUNK.test(rel)) continue
+    // Every script the bundler reached runs, wherever it lives: guard it first (N10).
+    rejectComputedImports(input, srcRoot)
+    // An imported file is hashed whatever its name: JUNK only filters folder listings, and a
+    // generated input's `../generated/…` path must not read as a dotfile. The one exclusion is
+    // the message catalog (documented residual: accessible names).
+    if (CLOSURE_EXCLUDED.has(relative(srcRoot, input).split(sep).join('/'))) continue
     files.add(input)
   }
-  for (const file of files) if (file.startsWith(srcRoot + sep)) rejectComputedImports(file, srcRoot)
+  for (const file of files) rejectComputedImports(file, srcRoot)
   const entries = [...files]
     .map((file) => ({ file, rel: relative(srcRoot, file).split(sep).join('/') }))
     .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
