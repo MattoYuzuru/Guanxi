@@ -413,4 +413,31 @@ describe('K2 re-check fixes, in-session review', () => {
     assert.deepEqual(mirror.backlog(), [failed, newer], 'the newer turn waits behind it')
     log.close()
   })
+
+  it('L1: an unknown id holding a registered value answers exactly like an unknown clean id', async () => {
+    const scrubber = new SecretScrubber()
+    scrubber.register(REF, SECRET)
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const answer = async (path: string) => {
+      const response = await app.request(path, {}, LOOPBACK)
+      const text = await response.text()
+      assert.equal(text.includes(SECRET), false, path)
+      return { status: response.status, body: text }
+    }
+    const guess = `agent:${SECRET}`
+    const clean = 'agent:not-a-session'
+    assert.equal(log.session(guess), null)
+    assert.deepEqual(log.search('anything', { sessionId: guess, audience: 'person' }), [])
+    assert.throws(() => log.read(guess, { audience: 'person' }), { code: 'session_not_found' })
+    for (const suffix of ['', '/events', '/spans', '/export', '/stream']) {
+      const unknown = await answer(`/api/sessions/${guess}${suffix}`)
+      assert.equal(unknown.status, 404, suffix)
+      assert.deepEqual(unknown, await answer(`/api/sessions/${clean}${suffix}`), suffix)
+    }
+    const search = await answer(`/api/sessions/search?q=anything&sessionId=${guess}`)
+    assert.equal(search.status, 200)
+    assert.deepEqual(search, await answer(`/api/sessions/search?q=anything&sessionId=${clean}`))
+  })
 })

@@ -559,6 +559,7 @@ export class SessionLog {
 
   session(sessionId: string): SessionListItem | null {
     this.assertEgressReady()
+    if (!this.returnable(sessionId) && !this.knownSession(sessionId)) return null
     this.assertReadable(sessionId)
     const row = this.db
       .prepare(`${LIST_ITEM_SELECT} WHERE s.id = ?`)
@@ -679,7 +680,11 @@ export class SessionLog {
     },
   ): SessionSearchHit[] {
     this.assertEgressReady()
-    if (options.sessionId !== undefined) this.assertReadable(options.sessionId)
+    if (options.sessionId !== undefined) {
+      // An unknown id answers like any unknown id, whatever it contains (review L1).
+      if (!this.returnable(options.sessionId) && !this.knownSession(options.sessionId)) return []
+      this.assertReadable(options.sessionId)
+    }
     const query = literalFtsQuery(text)
     if (!query) return []
     const limit = Math.min(Math.max(1, options.limit ?? 25), 100)
@@ -867,6 +872,12 @@ export class SessionLog {
     return row
   }
 
+  /** A session row, or Chat Jobs deferred for that session. */
+  private knownSession(sessionId: string): boolean {
+    return this.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(sessionId) !== undefined ||
+      this.db.prepare('SELECT 1 FROM session_mirror_backlog WHERE thread_id = ? LIMIT 1').get(sessionId) !== undefined
+  }
+
   /** False when the session id contains a registered value and so cannot leave the log. */
   private returnable(sessionId: string): boolean {
     return this.scrubber.scrub(sessionId) === sessionId
@@ -879,6 +890,9 @@ export class SessionLog {
    */
   private assertReadable(sessionId: string): void {
     if (!this.returnable(sessionId)) {
+      // Only an existing session is withheld: an unknown id answers not found like
+      // any other, so the routes are no oracle for guessing a registered value (review L1).
+      if (!this.knownSession(sessionId)) throw new SessionLogError('session_not_found', 'Session was not found')
       throw new SessionLogError('session_withheld', 'The session id contains a registered secret')
     }
     if (this.db.prepare('SELECT 1 FROM session_mirror_backlog WHERE thread_id = ? LIMIT 1').get(sessionId) !== undefined) {
