@@ -119,7 +119,7 @@ test('editing a writable checkout cannot replace the next trusted sandbox launch
   await writeFile(join(root, 'protected'), 'original')
   const { copyFile } = await import('node:fs/promises')
   const { pathToFileURL } = await import('node:url')
-  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
+  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'egress-ipc.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(root, 'node_modules'))
   const { sandboxCommand: cloned } = await import(pathToFileURL(join(root, 'sandbox.ts')).href)
   const full = { ...policy, mode: 'full-access' as const, roots: [root] }
