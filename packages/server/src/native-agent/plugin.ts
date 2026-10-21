@@ -4,7 +4,7 @@ import type { SessionLog } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { NativeAgents, type NativeHost } from './service.ts'
 export const NATIVE_AGENT_SERVICE = 'agent.native'
-export const nativeAgentPlugin = definePlugin<{ host: NativeHost; dataDir: string; nodePorts?: number[] }>({
+export const nativeAgentPlugin = definePlugin<{ host: NativeHost; dataDir: string; nodePorts?: () => number[] }>({
   manifest: { id: 'guanxi.native-agent', engines: { guanxi: '^0.1.0' }, provides: [NATIVE_AGENT_SERVICE],
     requires: ['connections.registry', 'session.log', 'egress.scrubber'], trust: 'T0' },
   apply(ctx, config) {

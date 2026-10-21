@@ -49,8 +49,8 @@ export class NativeAgents {
   readonly connections: Connections
   readonly scrubber: EgressScrubber
   readonly dataDir: string
-  readonly nodePorts: number[]
-  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)]) {
+  readonly nodePorts: () => number[]
+  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)]) {
     this.nodePorts = nodePorts
     this.host = host; this.log = log; this.connections = connections; this.scrubber = scrubber; this.dataDir = dataDir
     this.projectRoots = new NativeProjectRoots(join(dataDir, 'native-projects.sqlite'), host)
@@ -103,7 +103,7 @@ export class NativeAgents {
         }
         throw new NativeAgentError('protected_path_invalid')
       }))).flat())]
-      const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, nodePorts: this.nodePorts, runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
+      const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, nodePorts: [...this.nodePorts()], runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
       this.ready()
       this.ensureRoots(policy, sessionId)
       handle = this.log.open(sessionId, { kind: 'agent' })
@@ -199,7 +199,7 @@ export class NativeAgents {
     const events = this.events(id)
     const event = events.find(e => e.type === 'agent.policy')!
     if (event.type !== 'agent.policy') throw new NativeAgentError('session_not_found')
-    const policy = { ...event.data, nodePorts: this.nodePorts }
+    const policy = { ...event.data, nodePorts: [...this.nodePorts()] }
     const input = nativeAgentInputSchema.parse({ projectId: policy.projectId, connectionId: policy.connectionId, model: policy.model,
       mode: policy.mode, domains: policy.domains, protectedPaths: policy.protectedPaths, attachmentIds: policy.attachmentIds,
       contextTokens: policy.contextTokens, prompt: text })

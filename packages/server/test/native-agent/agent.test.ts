@@ -21,7 +21,7 @@ import { WorkspaceStore } from '../../src/store/workspaces.ts'
 import { NativeAgents } from '../../src/native-agent/service.ts'
 import { emptyUsage } from '../../src/native-agent/model.ts'
 
-async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: number, context: string, signal?: AbortSignal) => Promise<AssistantMessage['content']>, localFetch?: typeof fetch) {
+async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: number, context: string, signal?: AbortSignal) => Promise<AssistantMessage['content']>, localFetch?: typeof fetch, nodePorts?: () => number[]) {
   await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
   const dir = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'k4-agent-')))
   const data = join(dir, 'data'); await mkdir(data)
@@ -51,11 +51,11 @@ async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: n
   const project = projects.create('Fixture project')
   const log = kernel.service<SessionLog>('session.log')!, scrubber = kernel.service<EgressScrubber>('egress.scrubber')!
   const host = { projects, workspaces, artifactTransfers: { download: async () => { throw new Error('No attachment') } } } as unknown as ConstructorParameters<typeof NativeAgents>[0]
-  let agents = new NativeAgents(host, log, connections, scrubber, data)
+  let agents = new NativeAgents(host, log, connections, scrubber, data, nodePorts)
   t.after(async () => { await agents.close(); await kernel.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) })
   return { dir, data, connections, agents: () => agents, log, scrubber, secret, requests, projects, workspaces,
     input: { projectId: project.id, connectionId: connection.id, model: model.id, prompt: 'fixture prompt' },
-    async restart(dataDirectory = data) { await agents.close(); agents = new NativeAgents(host, log, connections, scrubber, dataDirectory) } }
+    async restart(dataDirectory = data) { await agents.close(); agents = new NativeAgents(host, log, connections, scrubber, dataDirectory, nodePorts) } }
 }
 test('native pi loop uses K3 and K2; tool-printed secrets scrub before next request, reasoning stays in its class', { timeout: 30000 }, async t => {
   let secret = '', root = ''
@@ -396,4 +396,18 @@ test('shell-unavailable projection uses a structured shell error, never output s
     writer.append({ type: 'tool.result', data: { toolCallId: id!, status: 'error', result: 'printed container_runtime_unavailable', error: error!, durationMs: 1 } })
     assert.equal(f.agents().progress(sessionId).shellUnavailable, undefined)
   }
+})
+
+test('policies capture the bound node ports and refresh them on continuation after restart', async t => {
+  let port = 0
+  const f = await fixture(t, undefined, undefined, () => [port, 5189])
+  port = 4389 // The listener resolves its ephemeral port before sessions can start.
+  const { sessionId } = await f.agents().create(f.input)
+  await f.agents().wait(sessionId)
+  const event = f.log.readAll(sessionId, 'person').find(e => e.type === 'agent.policy')!
+  assert.deepEqual(event.type === 'agent.policy' && event.data.nodePorts, [4389, 5189])
+  await f.restart(); port = 4390
+  f.agents().prompt(sessionId, 'continue')
+  await f.agents().wait(sessionId)
+  assert.deepEqual(event.type === 'agent.policy' && event.data.nodePorts, [4389, 5189], 'the stored policy remains immutable')
 })

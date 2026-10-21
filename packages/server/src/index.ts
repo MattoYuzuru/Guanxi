@@ -117,6 +117,7 @@ export interface StartOptions {
 
 export async function start(options: StartOptions = {}) {
   const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
+  let actualPort = port
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
 
@@ -154,7 +155,7 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
-    await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: [port, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
+    await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
@@ -163,7 +164,6 @@ export async function start(options: StartOptions = {}) {
     context.db.close()
     throw error
   }
-  let actualPort = port
   const server = createApp(context, {
     host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
