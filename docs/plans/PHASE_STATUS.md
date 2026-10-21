@@ -184,7 +184,7 @@ Residual risks:
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Native agent on pi-agent-core with tools, two access modes and projects; `ExecutionOwner` that owns every descendant (Linux bubblewrap with a PID namespace; macOS one `--network none` container per command on Colima; Windows refuses); egress through the sandbox-runtime proxy with node ports reserved and exact registered secret forms denied; bounded cleanup with a persistent root quarantine (ADR-0027) | partially implemented, independently verified, merged into `main` (`0e22a92`) | Full evidence and residuals: [evidence/K4](evidence/K4.md). Author GPT/Codex; Claude review 1 (merge after fixes: H1, H2, M1–M3, L4–L7), then a final Claude check with no High: 29 guard-removal probes fail as intended, 17 control-API spellings × 2 backends reach zero connections. Integrator gates on `main`: typecheck, `ui:check`, licenses 441/0, `npm test` (core 978, kernel 106, web 312), browser gate 52/52, build; Fedora core 972 + 6 macOS-only skips. Unfinished: retention, input artifacts, HTTPS positive path, UI evidence, platform envelope and R1 integration (named in the evidence). Final-check residuals R1, R3, R4 go to `lane/k4-followup`. |
+| Native agent on pi-agent-core with tools, two access modes and projects; `ExecutionOwner` that owns every descendant (Linux bubblewrap with a PID namespace; macOS one `--network none` container per command on Colima; Windows refuses); egress through the sandbox-runtime proxy with node ports reserved and exact registered secret forms denied; bounded cleanup with a persistent root quarantine (ADR-0027) | partially implemented, independently verified, merged into `main` (`0e22a92`) | Full evidence and residuals: [evidence/K4](evidence/K4.md). Author GPT/Codex; Claude review 1 (merge after fixes: H1, H2, M1–M3, L4–L7), then a final Claude check with no High: 29 guard-removal probes fail as intended, 17 control-API spellings × 2 backends reach zero connections. Integrator gates on `main`: typecheck, `ui:check`, licenses 441/0, `npm test` (core 978, kernel 106, web 312), browser gate 52/52, build; Fedora core 972 + 6 macOS-only skips. Unfinished: retention, input artifacts, HTTPS positive path, UI evidence, platform envelope and R1 integration (named in the evidence). Final-check residuals R1, R3 and R4 fixed by the follow-up, merged as `a2c2f90`; see [evidence/K4-followup](evidence/K4-followup.md). |
 
 ## DS1 — Design foundations
 
@@ -229,7 +229,7 @@ decision was made.
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
-| K4 Native agent | partially implemented, merged; follow-up `lane/k4-followup` running | see the K4 section above |
+| K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | F1 Federation base | in review fixes (Claude review 1: merge after fixes, 4 High) | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

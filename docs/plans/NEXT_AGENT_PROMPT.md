@@ -1,4 +1,4 @@
-# Next agent prompt — wave 3 (DS1-c, F1, K4 follow-up)
+# Next agent prompt — wave 3 (DS1-c, F1)
 
 **Status:** ready · **Updated:** 2026-10-21 (K1, DS1-a, DS1-b, K2, K3, R1 with its follow-up,
 and K4 merged into `main`)
@@ -14,10 +14,9 @@ Open lanes:
 - **F1 — federation base:** [lanes/F1](lanes/F1.md). Claude review 1 returned "merge after
   fixes" with four High findings (revoke versus grant causality, request audience binding,
   non-admin revocation, per-op admission); the fix round runs in Codex.
-- **K4 follow-up:** `lane/k4-followup` closes the final-check residuals R1, R3 and R4 listed in
-  [evidence/K4](evidence/K4.md).
 
-After DS1 and K4: K5, B1, X1, F2, R2 (after K4 and R1), DS2 and U1 open. See
+K4 is merged with its follow-up, so K5, B1, X1 and R2 are open now; F2 opens after F1, and DS2
+and U1 after DS1-c. See
 [PHASE_STATUS](PHASE_STATUS.md) and the [roadmap graph](roadmap.mmd).
 
 Any session without a lane: pick the first `ready` lane in [PHASE_STATUS](PHASE_STATUS.md)

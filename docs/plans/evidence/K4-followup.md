@@ -1,6 +1,13 @@
 # K4F — Native agent follow-up
 
-**Status:** locally validated follow-up; inherited K4 residual scope remains · **Updated:** 2026-10-21
+**Status:** implemented, verified by the integrator, merged into `main` (`a2c2f90`); inherited K4 residual scope remains · **Updated:** 2026-10-21
+
+This file was the lane hand-off; the integrator moved it here at the merge. Integrator check
+(Claude, cross-family): the production diff was read in full. Removing the IP-literal port
+requirement from the contract fails 3 tests; disabling the request-time literal-host check
+fails 1. Gates on `main` at `a2c2f90`: typecheck, `lint:md`, licenses, `ui:check`, `npm test`
+(core 1018, kernel 106, catalog 70, UI gates 51), browser gate 65/65, `ui:check:browser` and
+build.
 
 **Branch:** `lane/k4-followup` · **Base:** `0e22a92` · **Validated code:** `36ef4ba`
 
@@ -140,7 +147,7 @@ The final hand-off commit changes documentation only; markdown lint is repeated 
 - **K4-EGRESS-BODIES:** arbitrary request bodies are not inspected, including GET bodies.
 - Existing API capability authentication, x32-container parity, hardlink/CA cost, progress
   polling, cleanup recovery, retention, input artifacts, HTTPS-positive/UI/platform evidence
-  and durable-run integration residuals remain as named in [K4 evidence](../evidence/K4.md).
+  and durable-run integration residuals remain as named in [K4 evidence](K4.md).
   This follow-up closes only R1, R3, R4 and the R2 documentation correction.
 - Shared edits: the contract's native-agent schema and its server contract test, the K4
   evidence text, and native-agent implementation/tests/README. Changes to shared status,
