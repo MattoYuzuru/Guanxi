@@ -271,10 +271,11 @@ test('arbitrary execution cannot connect to a Unix socket exposed inside a selec
   assert.equal(denied.code, 0); assert.equal(denied.stdout, 'blocked\n'); assert.equal(connections, 0)
 })
 
-async function fixtureLauncher(dir: string, transformWorker: (source: string) => string) {
+async function fixtureLauncher(dir: string, transformWorker: (source: string) => string, transformSandbox: (source: string) => string = source => source) {
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'fixture-launcher'); await mkdir(launcher)
   for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  await writeFile(join(launcher, 'sandbox.ts'), transformSandbox(await readFile(join(launcher, 'sandbox.ts'), 'utf8')))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox-worker.ts', import.meta.url), 'utf8')
   await writeFile(join(launcher, 'sandbox-worker.ts'), transformWorker(source))
@@ -294,6 +295,13 @@ test('trusted executable/dependency deny-write grants reach both execution backe
   assert.notEqual(result.code, 0)
   assert.equal(await readFile(join(root, 'control'), 'utf8'), 'control')
   assert.equal(await readFile(join(install, 'node'), 'utf8'), 'fixture executable')
+  const nested = join(install, 'nested'); await mkdir(nested)
+  await writeFile(join(nested, 'library'), 'fixture library')
+  const control = join(dir, 'control-root'); await mkdir(control)
+  const nestedResult = await launch({ ...policy, mode: 'full-access', roots: [nested, control], protectedPaths: [] }, `printf control > ${quote(join(control, 'control'))}; printf bad > ${quote(join(nested, 'library'))}`)
+  assert.notEqual(nestedResult.code, 0)
+  assert.equal(await readFile(join(control, 'control'), 'utf8'), 'control')
+  assert.equal(await readFile(join(nested, 'library'), 'utf8'), 'fixture library')
 })
 test('the actual ephemeral CA key is unreadable while its public trust bundle is readable', { timeout: 30000 }, async t => {
   const { dir, policy } = await fixture(t)
@@ -305,4 +313,23 @@ test('the actual ephemeral CA key is unreadable while its public trust bundle is
   })
   const result = await launch(policy, 'fixture substituted after proxy initialization')
   assert.equal(result.code, 0); assert.equal(result.stdout, 'isolated')
+})
+test('macOS refuses a writable root that could replace its pinned Docker CLI before cleanup', { skip: process.platform !== 'darwin', timeout: 30000 }, async t => {
+  const { dir, root, other, policy } = await fixture(t)
+  const { execFileSync } = await import('node:child_process')
+  const realDocker = await realpath(execFileSync('/usr/bin/which', ['docker'], { encoding: 'utf8' }).trim())
+  const cli = join(root, 'docker'), marker = join(other, 'host-execution')
+  const original = `#!/bin/sh\nexec ${quote(realDocker)} "$@"\n`
+  await writeFile(cli, original, { mode: 0o700 })
+  const launch = await fixtureLauncher(dir, source => source, source => {
+    const expected = 'const dockerBinary = resolveDockerBinary()'
+    assert.ok(source.includes(expected))
+    return source.replace(expected, `const dockerBinary = ${JSON.stringify({ path: cli, protectedPaths: [cli] })}`)
+  })
+  // If the guard is removed, replacing this fixture CLI writes only a temporary marker,
+  // then delegates real cleanup, so the regression cannot strand a container.
+  const replacement = `#!/bin/sh\nprintf ESCAPED > ${quote(marker)}\nexec ${quote(realDocker)} "$@"\n`
+  for (const fixed of [false, true]) await assert.rejects(launch({ ...policy, mode: 'full-access', protectedPaths: [] }, `printf %s ${quote(replacement)} > ${quote(cli)}`, undefined, 5000, fixed), /container_runtime_protected/)
+  assert.equal(await readFile(cli, 'utf8'), original)
+  await assert.rejects(readFile(marker), { code: 'ENOENT' })
 })

@@ -1,6 +1,7 @@
 export const nativeEnglish = {
   'native.container_runtime_unavailable': 'Shell execution is disabled: the local container runtime or execution image is unavailable. Start Colima or Docker Desktop and provision the node execution image.',
   'native.container_path_unsupported': 'Shell execution is disabled for a folder containing a comma. Choose another project folder.',
+  'native.container_runtime_protected': 'Shell execution is disabled: a writable project folder contains the node container runtime executable. Choose specific project folders.',
   'native.container_home_root_denied': 'Shell execution cannot mount your whole home folder. Choose specific project folders.',
   'native.shellLimited': 'Shell commands follow the access mode. On macOS they require a local Linux container runtime.', 'native.story.result': 'Fixture result', 'native.folders': 'Project folders', 'native.saveFolders': 'Save folders', 'native.note': 'Note', 'native.title': 'New agent session', 'native.nav': 'Agent', 'native.project': 'Project', 'native.connection': 'Connection',
   'native.model': 'Model ID', 'native.prompt': 'What should the agent do?', 'native.mode': 'Access mode',
@@ -21,6 +22,7 @@ export const nativeEnglish = {
 export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
   'native.container_runtime_unavailable': 'Оболочка отключена: локальный контейнерный движок или образ выполнения недоступен. Запустите Colima или Docker Desktop и установите образ выполнения узла.',
   'native.container_path_unsupported': 'Оболочка отключена для папки с запятой в пути. Выберите другую папку проекта.',
+  'native.container_runtime_protected': 'Оболочка отключена: в доступной для записи папке проекта находится контейнерный движок узла. Выберите отдельные папки проекта.',
   'native.container_home_root_denied': 'Нельзя подключить домашнюю папку целиком. Выберите отдельные папки проекта.',
   'native.shellLimited': 'Команды оболочки работают в выбранном режиме доступа. На macOS для них нужен локальный контейнер Linux.', 'native.story.result': 'Пример результата', 'native.folders': 'Папки проекта', 'native.saveFolders': 'Сохранить папки', 'native.note': 'Заметка', 'native.title': 'Новая сессия агента', 'native.nav': 'Агент', 'native.project': 'Проект', 'native.connection': 'Подключение',
   'native.model': 'ID модели', 'native.prompt': 'Что должен сделать агент?', 'native.mode': 'Режим доступа',

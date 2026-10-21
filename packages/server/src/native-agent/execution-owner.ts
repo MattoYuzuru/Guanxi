@@ -59,10 +59,11 @@ export class ContainerExecutionOwner implements ExecutionOwner {
   private endpoint: string
   private name: string
   private directory: string
-  constructor(policy: SandboxPolicy, endpoint: string, name: string, directory: string) {
-    this.policy = policy; this.endpoint = endpoint; this.name = name; this.directory = directory
+  private dockerPath: string
+  constructor(policy: SandboxPolicy, endpoint: string, name: string, directory: string, dockerPath: string) {
+    this.policy = policy; this.endpoint = endpoint; this.name = name; this.directory = directory; this.dockerPath = dockerPath
   }
-  private docker(args: string[]) { return exec('docker', ['--host', this.endpoint, ...args], { timeout: 15_000, maxBuffer: 256 * 1024 }) }
+  private docker(args: string[]) { return exec(this.dockerPath, ['--host', this.endpoint, ...args], { timeout: 15_000, maxBuffer: 256 * 1024 }) }
   async stop() {
     this.stopped = true
     // No settlement on an uncertain daemon response. Keep ownership while retrying.
@@ -115,6 +116,8 @@ export class ContainerExecutionOwner implements ExecutionOwner {
       try { dependencies.push(await realpath(path)) } catch { /* absent dependency tree */ }
     }
     for (const path of [...policy.protectedPaths, ...policy.attachments, ...dependencies]) {
+      // A selected root inside a trusted/protected directory is read-only too.
+      for (const root of writable) if (root.startsWith(path + sep)) mount(root, root, true)
       if (!writable.some(root => path === root || path.startsWith(root + sep))) continue
       let cover = path
       while (true) {
@@ -142,7 +145,7 @@ export class ContainerExecutionOwner implements ExecutionOwner {
     try {
       await (this.creation = this.docker(args))
       if (this.stopped) throw new Error('sandbox_failed')
-      const child = spawn('docker', ['--host', this.endpoint, 'start', '--attach', '--interactive', this.name], { stdio: ['pipe', 'pipe', 'ignore'] })
+      const child = spawn(this.dockerPath, ['--host', this.endpoint, 'start', '--attach', '--interactive', this.name], { stdio: ['pipe', 'pipe', 'ignore'] })
       const send = (value: unknown) => { if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(value) + '\n') }
       child.stdin.on('error', () => {})
       let result: CommandResult | undefined

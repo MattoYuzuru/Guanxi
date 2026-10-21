@@ -12,7 +12,7 @@ let owner: ExecutionOwner | undefined
 let stopped = false
 process.on('message', (message: { stop?: boolean }) => { if (message.stop) { stopped = true; void owner?.stop() } })
 process.once('disconnect', () => { stopped = true; void owner?.stop().finally(() => process.exit(1)) })
-process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerName, directory }: { policy: SandboxPolicy; command: string; fixed: boolean; dockerEndpoint: string; ownerName: string; directory: string }) => {
+process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerName, directory, dockerPath }: { policy: SandboxPolicy; command: string; fixed: boolean; dockerEndpoint: string; ownerName: string; directory: string; dockerPath: string }) => {
   try {
     // Windows requires machine-wide provisioning; refuse until Guanxi validates that profile.
     if (!['darwin', 'linux'].includes(process.platform) || !SandboxManager.isSupportedPlatform()) throw new Error('unsupported_sandbox')
@@ -24,6 +24,7 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
     const installedRuntime = fileURLToPath(import.meta.resolve('@anthropic-ai/sandbox-runtime'))
     const modules = installedRuntime.split('/node_modules/')[0] + '/node_modules'
     const trustedDeny = [modules, dirname(realpathSync(process.execPath))]
+    if (process.platform === 'darwin') trustedDeny.push(...system.filter(path => path !== '/dev'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/sbin', '/sbin')
     const seccomp = join(dirname(installedRuntime), '..', 'vendor', 'seccomp', process.arch, 'apply-seccomp')
     if (process.platform === 'linux') { accessSync(seccomp, constants.X_OK); read.push(seccomp) }
     const bindingFilter = join(directory ?? policy.scratch, 'network-bind.bpf')
@@ -56,7 +57,7 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
       SandboxManager.updateConfig({ ...config, filesystem: { ...config.filesystem, allowRead: [...read, ...networkReads].map(literal) } })
     }
     const quotePath = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
-    owner = process.platform === 'linux' ? new LinuxExecutionOwner(bindingFilter) : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner({ ...policy, protectedPaths: [...policy.protectedPaths, ...trustedDeny] }, dockerEndpoint, ownerName, directory)
+    owner = process.platform === 'linux' ? new LinuxExecutionOwner(bindingFilter) : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner({ ...policy, protectedPaths: [...policy.protectedPaths, ...trustedDeny] }, dockerEndpoint, ownerName, directory, dockerPath)
     if (stopped) throw new Error('sandbox_failed')
     const result = await owner.execute(`export HOME=${quotePath(policy.scratch)} TMPDIR=${quotePath(policy.scratch)}; ${command}`)
     await SandboxManager.reset()

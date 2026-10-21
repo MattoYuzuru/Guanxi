@@ -151,7 +151,7 @@ export class NativeAgents {
       if (event.type === 'agent.queue') queue = event.data.items
       if (event.type === 'assistant.message') summary = event.data.text
       if (event.type === 'tool.result' && event.data.status === 'error') {
-        for (const reason of ['container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied'] as const) {
+        for (const reason of ['container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected'] as const) {
           if (event.data.result?.includes(reason)) shellUnavailable = reason
         }
       }
