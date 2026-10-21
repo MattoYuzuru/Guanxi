@@ -401,7 +401,13 @@ test('shell-unavailable projection uses a structured shell error, never output s
 
 test('policies capture the bound node ports and refresh them on continuation after restart', async t => {
   let port = 0
-  const f = await fixture(t, undefined, undefined, () => [port, 5189])
+  const observed: number[][] = []
+  const f = await fixture(t, async call => call === 1 || call === 3
+    ? [{ type: 'toolCall', id: `port-${call}`, name: 'shell', arguments: { command: 'printf fixture' } }]
+    : [{ type: 'text', text: 'finished' }], undefined, () => [port, 5189], async policy => {
+      observed.push([...policy.nodePorts!])
+      return { code: 0, stdout: 'fixture', stderr: '', truncated: false }
+    })
   port = 4389 // The listener resolves its ephemeral port before sessions can start.
   const { sessionId } = await f.agents().create(f.input)
   await f.agents().wait(sessionId)
@@ -411,6 +417,7 @@ test('policies capture the bound node ports and refresh them on continuation aft
   f.agents().prompt(sessionId, 'continue')
   await f.agents().wait(sessionId)
   assert.deepEqual(event.type === 'agent.policy' && event.data.nodePorts, [4389, 5189], 'the stored policy remains immutable')
+  assert.deepEqual(observed, [[4389, 5189], [4390, 5189]], 'continued tools must protect the currently bound ports')
 })
 
 test('unload records cleanup_unconfirmed consistently, blocks roots and never dispatches a queued prompt', async t => {

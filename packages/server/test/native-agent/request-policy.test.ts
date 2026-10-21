@@ -21,6 +21,7 @@ test('node-port denial recognizes loopback aliases, IPv6, mapped IPv4 and every 
     const host = entry.family === 'IPv6' ? `[${entry.address.split('%')[0]}]` : entry.address
     assert.equal(await isNodeRequest(new URL(`http://${host}:5189/`), [4389, 5189]), true, host)
   }
+  assert.equal(await isNodeRequest(new URL('http://198.51.100.7:4389/'), [4389, 5189]), true, 'reserve node ports even on remote addresses before DNS rebinding')
   assert.equal(await isNodeRequest(new URL('http://rebind.invalid:4389/'), [4389, 5189]), true, 'deny before any DNS resolution can change the destination')
   assert.equal(await isNodeRequest(new URL('http://localhost:12345/'), [4389, 5189]), false)
 })
