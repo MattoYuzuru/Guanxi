@@ -27,10 +27,10 @@ Current queue:
    at `e5f8e0a`, including separate review fixes; handoff `646bf3d`. Initial candidate gates pass;
    candidate `a613f7a` now includes verified main `5e9bbfe` and is under integration gates. Shell and
    partial CSS token migration are active in separate worktrees; zero-suppression exit remains.
-4. B1 `codex/b1-completion` handoff `25189cf`: admission and its independent repair, actual K3
-   gateway, staging with separate repair, and private-channel protocol are reviewed. Combined
-   131/131 = 45 new / 86 inherited envelope pass; full integration gates remain. Continue private
-   stream binding, corpus/images and paired execution. No fixture
+4. **Current boundary:** B1 source merged locally as `7366df8`; [candidate evidence](evidence/B1.md)
+   includes full affected gates and independent private stream review. Run full post-merge checks
+   before another executable merge. Continue process/peer/K2 binding, corpus/images and paired
+   execution. No fixture
    measurement activates ADR-0025 or authorizes an unbounded paid run.
 5. R3 `codex/ms1-r3` (`bf6a222`): independently reviewed ETA foundation, integration pending.
    Judge/delegation and real replay/calibration/night evidence remain. F2 offer/reservation work

@@ -130,3 +130,21 @@ Chromium. The full browser envelope failed 6/86 because six legacy cases require
 is strengthening those assertions to zero motion in a separate commit; the gate remains red
 until rerun. AppShellChrome is a new draft pattern under independent verification, with zero
 product usage and no owner approval.
+
+## B1 local integration boundary
+
+Reviewed source and private stream adapter are merged locally as `7366df8`. The
+[B1 evidence](B1.md) records candidate `70e4be2` and all affected passing gates, including
+132 selected cases (55 new / 77 inherited) plus full npm regression. Browser source is unchanged.
+Post-merge checks are pending; no whole B1 or MS1 closure is claimed.
+
+R3 repaired candidate `cd00a82` now includes verified main and passes server types, all relay/R1
+155-case envelope (31 new / 124 inherited), Markdown, licenses and lint. It remains unmerged.
+F2-b handoff `ffa9d1a` has independent review closure and author 181/181 (30 new / 151 existing);
+its exact attempt/grant cancellation repairs are separate commits. Integration follows U1/F2-a.
+
+U1-c `2c4a02f` now passes 86/86 mocked Chromium and UI browser gates (`check-j2meccpr`,
+`check-b77scail`). U1 candidate `a613f7a` passed types/full tests but failed Projects at its
+initial-failure fixture (84/85); a separate two-schedule Retry fixture repair is active. The
+new shell pattern passed bounded axe/clipping/motion but the 390px controlled host exposed a
+2px sidebar border-box overflow; a separate author repair is active before snapshots/product use.
