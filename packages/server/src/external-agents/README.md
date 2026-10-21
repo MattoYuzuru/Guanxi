@@ -100,12 +100,15 @@ that boundary as K4 access-mode enforcement. Project roots are not handed to the
 by this service. Escaped/detached descendants of a vendor program are outside its process-group
 cleanup guarantee; these adapters must not execute untrusted arbitrary agent programs.
 
-Calls have an explicit default 300-second operator timeout and an 8-MiB JSON-frame safety
-policy, configurable in `ExternalPolicy`. Neither is a model context/output limit. Cancellation,
-unload and timeout terminate the subprocess group and await child close before releasing
-this service's admission. Responses are node-owned kernel calls; no HTTP subscriber owns them.
-There is no automatic resume, durable inference continuation or retry. K2 holds the transcript;
-R1/R2 integration is a later consumer, not a second run state machine.
+Calls have an explicit `runDeadlineMs` operator setting (default 300 seconds) and an 8-MiB
+JSON-frame safety policy, configurable in `ExternalPolicy`. A run that reaches its deadline ends
+with the `timeout` error code, not `cancelled`, and the deadline is recorded in the run's events
+as a fact. `requestTimeoutMs` bounds sign-in and authentication probes. Neither is a model
+context/output limit. Cancellation, unload and timeout terminate the subprocess group and await
+child close before releasing this service's admission. Responses are node-owned kernel calls;
+no HTTP subscriber owns them. There is no automatic resume, durable inference continuation or
+retry. K2 holds the transcript; R1/R2 integration is a later consumer, not a second run state
+machine.
 
 Claude `auth status` is invoked on the configured unmodified binary, with the isolated
 environment; only login/auth-method facts are retained. Explicit `claudeBare: true` refuses a

@@ -53,6 +53,8 @@ export interface ExternalPolicy {
   installations: readonly AgentInstallation[]
   /** Transport safety and liveness policies, not model context/output limits. */
   frameBytes?: number
+  /** Wall-clock deadline for one agent run. A timeout is reported as `timeout`. */
+  runDeadlineMs?: number
   requestTimeoutMs?: number
   quotaMaxAgeMs?: number
 }

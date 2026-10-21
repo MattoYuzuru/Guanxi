@@ -51,6 +51,7 @@ export class ExternalAgents {
     this.connections = connections; this.log = log; this.scrubber = scrubber; this.root = root; this.store = store
     if (!policy.nodeId || !Number.isSafeInteger(policy.frameBytes ?? 8 * 1024 * 1024) || (policy.frameBytes ?? 1) < 1 ||
       !Number.isSafeInteger(policy.requestTimeoutMs ?? 300_000) || (policy.requestTimeoutMs ?? 1) < 1 ||
+      !Number.isSafeInteger(policy.runDeadlineMs ?? 300_000) || (policy.runDeadlineMs ?? 1) < 1 ||
       !Number.isSafeInteger(policy.quotaMaxAgeMs ?? 300_000) || (policy.quotaMaxAgeMs ?? 1) < 1) throw new ExternalAgentError('invalid_policy')
     const installations = policy.installations.map(i => Object.freeze(installationSchema.parse(i)))
     if (new Set(installations.map(i => `${i.ownerAccountId}/${i.connectionId}`)).size !== installations.length) throw new ExternalAgentError('duplicate_installation')
@@ -196,7 +197,8 @@ export class ExternalAgents {
     if (typeof input.prompt !== 'string' || !input.prompt.trim()) throw new ExternalAgentError('empty_prompt')
     if (binding.params.temperature !== undefined || binding.params.maxTokens !== undefined ||
       (install.adapter !== 'codex' && binding.params.reasoning !== undefined)) throw new ExternalAgentError('unsupported_parameter')
-    const signal = AbortSignal.any([this.abort.signal, ...(input.signal ? [input.signal] : []), AbortSignal.timeout(this.policy.requestTimeoutMs ?? 300_000)])
+    const runDeadlineMs = this.policy.runDeadlineMs ?? 300_000
+    const signal = AbortSignal.any([this.abort.signal, ...(input.signal ? [input.signal] : []), AbortSignal.timeout(runDeadlineMs)])
     return this.connections.dispatchAgent(input.ownerAccountId, binding.connectionId, input.actorAccountId,
       this.store.editorAllowed(input.ownerAccountId, binding.connectionId, input.actorAccountId), { background: input.background, signal }, async (row, key, dispatchSignal) => {
         const group = this.group(install)
@@ -233,7 +235,7 @@ export class ExternalAgents {
           dispatchSignal.throwIfAborted()
           handle = this.log.open(sessionId, { kind: 'agent' })
           handle.append({ type: 'agent.note', data: { text: JSON.stringify(this.scrubber.scrub({ role: input.role, source: resolved.source, binding,
-            ownerAccountId: input.ownerAccountId, actorAccountId: input.actorAccountId, nodeId: install.nodeId })) } })
+            ownerAccountId: input.ownerAccountId, actorAccountId: input.actorAccountId, nodeId: install.nodeId, runDeadlineMs })) } })
           handle.append({ type: 'agent.state', data: { status: 'running', error: null } })
           const prompt = this.scrubber.scrub(input.prompt)
           handle.append({ type: 'prompt', data: { origin: input.actorAccountId === input.ownerAccountId ? 'typed' : 'remote', messageId, text: prompt, attachmentCount: 0 } })
@@ -277,10 +279,12 @@ export class ExternalAgents {
           this.store.learn(input.ownerAccountId, install.billingAccount, install.adapter, parallel, 'success', new Date().toISOString())
           return this.scrubber.scrub({ sessionId, ...safe })
         } catch (error) {
-          const code = dispatchSignal.aborted ? 'cancelled' : error instanceof ExternalAgentError ? error.code : 'agent_failed'
+          const timedOut = dispatchSignal.aborted && (dispatchSignal.reason as { name?: string } | undefined)?.name === 'TimeoutError'
+          const cancelled = dispatchSignal.aborted && !timedOut
+          const code = timedOut ? 'timeout' : cancelled ? 'cancelled' : error instanceof ExternalAgentError ? error.code : 'agent_failed'
           if (handle) {
-            handle.append({ type: 'agent.state', data: { status: dispatchSignal.aborted ? 'cancelled' : 'failed', error: code } })
-            handle.append({ type: 'turn.done', data: { messageId, outcome: dispatchSignal.aborted ? 'cancelled' : 'failed', stopReason: code, steps: 0 } })
+            handle.append({ type: 'agent.state', data: { status: cancelled ? 'cancelled' : 'failed', error: code } })
+            handle.append({ type: 'turn.done', data: { messageId, outcome: cancelled ? 'cancelled' : 'failed', stopReason: code, steps: 0 } })
           }
           throw new ExternalAgentError(code)
         } finally {

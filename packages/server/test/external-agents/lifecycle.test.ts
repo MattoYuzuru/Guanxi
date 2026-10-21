@@ -19,7 +19,7 @@ for (const adapter of ['copilot', 'codex'] as const) test(`${adapter}: cancellat
   f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
   for (const action of ['abort', 'unload', 'timeout'] as const) {
     await f.scenario(adapter, { scenario: 'hang' })
-    if (action === 'timeout') await f.reload({ requestTimeoutMs: 1500 })
+    if (action === 'timeout') await f.reload({ runDeadlineMs: 1500 })
     const controller = new AbortController()
     const run = f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello', signal: controller.signal })
     const settled = run.then(value => ({ value }), error => ({ error }))
@@ -30,7 +30,13 @@ for (const adapter of ['copilot', 'codex'] as const) test(`${adapter}: cancellat
     if (action === 'unload') await f.reload()
     const result = await settled
     assert.ok('error' in result)
-    assert.equal('error' in result ? result.error.code : '', 'cancelled')
+    assert.equal('error' in result ? result.error.code : '', action === 'timeout' ? 'timeout' : 'cancelled')
+    if (action === 'timeout') {
+      // The deadline is a recorded fact, not a hidden wall-clock cap.
+      const sessionId = f.kernel.sessionLog!.list().sessions[0]!.sessionId
+      const note = f.kernel.sessionLog!.readAll(sessionId, 'person').find(event => event.type === 'agent.note')
+      assert.equal(JSON.parse(note!.data.text).runDeadlineMs, 1500)
+    }
     assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
     await f.reload()
     assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
