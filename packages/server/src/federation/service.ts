@@ -1,6 +1,6 @@
 import { federationAuthSchema, FEDERATION_VERSION, nodeIdentitySchema, routedCommandSchema, telemetrySchema,
-  ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, signedDispatchGrantSchema, signedDispatchEventSchema, dispatchRefSchema,
-  type LocalInferenceJob, type RemoteAttemptReceipt, type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef,
+  ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, signedDispatchGrantSchema, signedDispatchEventSchema, dispatchRefSchema, dispatchCancelSchema,
+  type LocalInferenceJob, type RemoteAttemptReceipt, type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptOfferSchema, remoteAttemptCancelSchema,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
@@ -266,11 +266,21 @@ export class Federation {
     }
     validate(); this.dispatches().ingest(signed, validate)
   }
-  dispatchState(context: PeerContext, raw: DispatchRef, cancel = false) {
+  dispatchState(context: PeerContext, raw: DispatchRef) {
     const ref = dispatchRefSchema.parse(raw), dispatch = this.dispatches()
     this.validateDispatchPeer(context, ref, true)
     if (canonical(dispatch.binding(ref.id)) !== canonical(ref)) throw new FederationError('dispatch_binding')
-    return cancel ? dispatch.cancel(ref.id) : dispatch.state(ref.id)
+    return dispatch.state(ref.id)
+  }
+  cancelDispatch(context: PeerContext, raw: DispatchCancel) {
+    const input = dispatchCancelSchema.parse(raw), peer = this.authorize(context, 'attempts', true), dispatch = this.dispatches()
+    if (context.version.major !== FEDERATION_VERSION.major || context.version.minor < ATTEMPT_DISPATCH_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    this.clean(input)
+    if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || input.executorNodeId !== this.identity.id) throw new FederationError('owner_mismatch', 403)
+    if (input.expiresAt <= this.now()) throw new FederationError('command_expired')
+    const ref = dispatchRefSchema.parse({ id: input.id, homeNodeId: input.homeNodeId, executorNodeId: input.executorNodeId })
+    if (canonical(dispatch.binding(input.id)) !== canonical(ref)) throw new FederationError('dispatch_binding')
+    return dispatch.cancel(input.id)
   }
   close(): void { if (this.closed) return; this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
 }

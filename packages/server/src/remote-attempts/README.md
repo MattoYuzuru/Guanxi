@@ -83,7 +83,13 @@ after governor admission and Ollama version preflight maintain this bound. Final
 `onPrepared` run synchronously immediately before the model POST. Loss, revocation, suspension,
 cancel and restart never renew a lost holder back into execution. Under a partition, home Stop
 can take up to the outstanding holder TTL to reach the inference; a successful direct signed
-`/attempts/dispatch-cancel` aborts immediately on receipt. This path has no external tools/effects.
+`/attempts/dispatch-cancel` aborts the target request on receipt. It also accepts a different
+trusted same-account `owner_device` with the `attempts` scope while the home is unreachable.
+The signed request names the exact grant/home/executor and expiry; it cannot cancel a newer
+attempt and carries no caller-controlled actor identity. Shared, foreign and unscoped peers
+are refused. Target cancellation is reported through the durable event outbox. A complete
+browser/CLI owner-command workflow remains unfinished. This path has no external tools/effects;
+actual runtime/backend cancellation has not been measured with an installed model.
 
 Actual transport start emits a signed ordered source event. Terminal events retain only public
 assistant content and nullable usage counts (`ollama:/api/chat`); raw thinking is discarded.

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { DispatchPolicy } from '../src/remote-attempts/dispatch.ts'
-import type { LocalInferenceJob, SignedDispatchEvent } from '@guanxi/contract/federation'
+import type { LocalInferenceJob, SignedDispatchEvent, NodeIdentity } from '@guanxi/contract/federation'
 import { FederationChannel } from '../src/federation/channel.ts'
 import { ResourceGovernor } from '../src/runtime/resource-governor.ts'
 import { OllamaClient } from '../src/ollama/client.ts'
@@ -428,4 +428,61 @@ test('holder expiry releases K3 while authorization renewal is indefinitely pend
   assert.equal(f.posts, 0); assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'lost')
   gate.resolve(); await new Promise(r => setTimeout(r, 5))
   assert.equal(f.posts, 0); assert.equal(f.tg.snapshot().activeLease, null)
+})
+
+test('another trusted owner device cancels the exact executor grant while the home is unreachable, with durable report replay', async t => {
+  const entered = deferred(), f = await fixture(t, { modelPost: signal => new Promise((_resolve, reject) => {
+    entered.resolve(); signal.addEventListener('abort', () => reject(new Error('fixture stop')), { once: true })
+  }) }), p = await f.prepare(), controller = new SimNode(keys('controller'))
+  t.after(() => controller.close()); f.target.trust(controller)
+  await f.outgoing.dispatch(p.grant); await entered.promise
+  f.blockEvents(true); f.interceptRenew(async () => { throw new Error('fixture home partition') })
+  const channel = new FederationChannel({ local: controller.keys.identity, privateKey: controller.keys.privateKey, peer: f.target.keys.identity,
+    clock: () => controller.time, transport: async request => f.target.app.request(request) })
+  const cancel = { ...p.ref, expiresAt: controller.time + 1000 }, captured = f.target.federation.attemptDispatch!.settled(p.offer.id)
+  assert.equal((await channel.cancelDispatch(cancel)).status, 'canceled')
+  await captured
+  assert.equal((await channel.cancelDispatch(cancel)).status, 'canceled')
+  assert.equal(f.posts, 1); assert.equal(f.tg.snapshot().activeLease, null)
+  assert.equal(f.home.runs.get(f.run.id).state, 'working', 'partitioned target Stop has not yet changed home state')
+  assert.ok(Number(f.target.db.prepare('SELECT COUNT(*) n FROM remote_dispatch_events WHERE delivered=0').get()!.n) >= 1)
+  f.blockEvents(false); await f.target.federation.attemptDispatch!.flush(p.offer.id)
+  assert.equal(f.home.runs.get(f.run.id).state, 'canceled')
+})
+
+test('direct cancel refuses foreign/shared/unscoped/forged/expired or mismatched identities before stopping work', async t => {
+  const entered = deferred(), f = await fixture(t, { modelPost: signal => new Promise((_resolve, reject) => {
+    entered.resolve(); signal.addEventListener('abort', () => reject(new Error('fixture stop')), { once: true })
+  }) }), p = await f.prepare()
+  await f.outgoing.dispatch(p.grant); await entered.promise
+  const input = { ...p.ref, expiresAt: f.target.time + 1000 }
+  const cases: [string, Partial<NodeIdentity>][] = [['foreign-controller', { accountId: 'foreign' }], ['shared-controller', { trust: 'shared_device', admin: false }], ['unscoped-controller', { scopes: ['config'] }]]
+  for (const [id, override] of cases) {
+    const peerKeys = identity(id, { scopes: ['attempts'], ...override })
+    f.target.federation.trust(peerKeys.identity)
+    const channel = new FederationChannel({ local: peerKeys.identity, privateKey: peerKeys.privateKey, peer: f.target.keys.identity,
+      clock: () => f.target.time, transport: async request => f.target.app.request(request) })
+    await assert.rejects(channel.cancelDispatch(input))
+    assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'running')
+  }
+  const controller = new SimNode(keys('valid-controller')); t.after(() => controller.close()); f.target.trust(controller)
+  const channel = new FederationChannel({ local: controller.keys.identity, privateKey: controller.keys.privateKey, peer: f.target.keys.identity,
+    clock: () => controller.time, transport: async request => f.target.app.request(request) })
+  for (const bad of [{ ...input, expiresAt: f.target.time }, { ...input, homeNodeId: 'forged-home' }, { ...input, id: 'different-grant' }]) {
+    await assert.rejects(channel.cancelDispatch(bad))
+    assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'running')
+  }
+  await assert.rejects(channel.cancelDispatch({ ...input, actorAccountId: 'owner' } as never))
+  const forged = new FederationChannel({ local: controller.keys.identity, privateKey: controller.keys.privateKey, peer: f.target.keys.identity,
+    clock: () => controller.time, transport: async request => {
+      if (request.method === 'POST') {
+        const body = await request.json() as typeof input
+        return f.target.app.request(new Request(request.url, { method: 'POST', headers: request.headers, body: JSON.stringify({ ...body, expiresAt: body.expiresAt + 1 }) }))
+      }
+      return f.target.app.request(request)
+    } })
+  await assert.rejects(forged.cancelDispatch(input))
+  assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'running')
+  assert.equal(f.posts, 1)
+  await channel.cancelDispatch(input); await f.target.federation.attemptDispatch!.settled(p.offer.id)
 })
