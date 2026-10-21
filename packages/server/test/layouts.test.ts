@@ -5,11 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createApp } from '../src/app.ts'
 import type { AppContext } from '../src/context.ts'
-import { DatabaseSync } from 'node:sqlite'
-import { downgradeLayoutsToV31 } from './fixtures/session-log-migration.ts'
 import { Hono } from 'hono'
 import { ROUTES, layoutListResponse, compareLayouts, layoutClock, layoutDocumentSchema, resolveLayout, type LayoutDocument, type LayoutQuery, type LayoutList } from '@guanxi/contract'
-import { openDb } from '../src/store/db.ts'
+import { openDb, MIGRATIONS } from '../src/store/db.ts'
 import { LayoutStore } from '../src/layouts/store.ts'
 import { layoutsRoutes } from '../src/layouts/routes.ts'
 import { builtInLayout } from '../../web/src/features/workspace/defaults.ts'
@@ -153,24 +151,30 @@ test('Developer and Visual default block placement matches the committed golden'
   }
 })
 
-test('migration 32 rolls back partial DDL on collision and safely retries', () => {
-  const root = mkdtempSync(join(tmpdir(), 'guanxi-layout-migration-'))
-  const path = join(root, 'node.db')
+test('component migration rolls back, retries once and rejects future versions without touching main migrations', () => {
+  const db = openDb(':memory:')
+  const mainVersion = db.prepare('PRAGMA user_version').get()!.user_version
+  const mainMigrations = JSON.stringify(MIGRATIONS)
+  const settings = db.prepare('SELECT * FROM settings').all()
   try {
-    const seed = openDb(path)
-    downgradeLayoutsToV31(seed)
-    seed.exec('PRAGMA user_version=31; CREATE TABLE layout_active (collision TEXT)')
-    seed.close()
-    assert.throws(() => openDb(path), /Миграция 32/u)
-    const repair = new DatabaseSync(path)
-    assert.equal((repair.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 31)
-    assert.equal(repair.prepare("SELECT name FROM sqlite_master WHERE name='layout_documents'").get(), undefined)
-    repair.exec('DROP TABLE layout_active'); repair.close()
-    const upgraded = openDb(path)
-    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
-    assert.equal((upgraded.prepare('SELECT COUNT(*) AS n FROM layout_documents').get() as { n: number }).n, 0)
-    upgraded.close()
-  } finally { rmSync(root, { recursive: true, force: true }) }
+    db.exec('CREATE TABLE layout_active (collision TEXT)')
+    assert.throws(() => new LayoutStore(db), /already exists/)
+    for (const name of ['layout_migrations', 'layout_documents']) assert.equal(db.prepare('SELECT name FROM sqlite_master WHERE name=?').get(name), undefined)
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, mainVersion)
+    db.exec('DROP TABLE layout_active')
+    const store = new LayoutStore(db)
+    store.save(fixture(), true)
+    new LayoutStore(db)
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM layout_migrations').get()!.n, 1)
+    assert.equal(db.prepare('SELECT version FROM layout_migrations').get()!.version, 1)
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, mainVersion)
+    assert.equal(JSON.stringify(MIGRATIONS), mainMigrations)
+    assert.deepEqual(db.prepare('SELECT * FROM settings').all(), settings)
+    db.exec('UPDATE layout_migrations SET version=2')
+    assert.throws(() => new LayoutStore(db), /Unsupported layout storage version/)
+    assert.equal(db.prepare('SELECT version FROM layout_migrations').get()!.version, 2)
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM layout_documents').get()!.n, 1)
+  } finally { db.close() }
 })
 
 test('the real application mounts the contract routes without model or filesystem services', async () => {

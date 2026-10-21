@@ -1497,22 +1497,6 @@ export const MIGRATIONS: readonly string[] = [
   DURABLE_RUNS_MIGRATION,
   // 31 — persist the granting home's safety bound across configuration changes.
   DURABLE_RUN_HOME_BOUND_MIGRATION,
-  // 32 — workspace layout documents and device-local window geometry (U1-a).
-  `CREATE TABLE layout_documents (
-    scope_key TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL,
-    PRIMARY KEY (scope_key, id)
-  );
-  CREATE TABLE layout_active (
-    scope_key TEXT PRIMARY KEY, layout_id TEXT NOT NULL
-  );
-  CREATE TABLE layout_recoveries (
-    scope_key TEXT NOT NULL, layout_id TEXT NOT NULL, digest TEXT NOT NULL,
-    PRIMARY KEY (scope_key, layout_id, digest)
-  );
-  CREATE TABLE layout_geometry (
-    scope_key TEXT NOT NULL, device TEXT NOT NULL, layout_id TEXT NOT NULL, geometry TEXT NOT NULL,
-    PRIMARY KEY (scope_key, device, layout_id)
-  );`,
 ]
 
 export function openDb(path: string): Db {

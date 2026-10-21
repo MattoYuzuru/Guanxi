@@ -28,3 +28,19 @@ U1-c legacy migration and U2 Electron integration remain outside this slice.
 - Review: commit implementation, then fresh-context whole-diff review of accessibility,
   validation, replication, licensing and adapter isolation, with fixes in separate commits.
   Merge main when DS1-c is there, rerun gates, leave U1a.handoff.md; never push.
+
+## Integration correction: component-owned storage
+
+Main's [F1 evidence](../evidence/F1.md) reserves global migrations 32–33 for K4; the
+completed K4 follow-up branch uses 32. The unreleased U1-a draft must not occupy that slot.
+Move its unchanged four-table layout schema to a component-owned `layout_migrations` ledger,
+version 1, following the independently tracked federation/relay pattern. No live node/data
+migration has been run in this lane; tests use temporary or in-memory databases. There is no
+production cutover, dual write or backfill. Keep REST and document shapes unchanged.
+
+Initialize lazily on the first valid layout request, under `BEGIN IMMEDIATE`, checking the
+ledger again inside the transaction. Retry must be idempotent; collision must roll back both
+DDL and ledger; unknown/future versions must fail closed without changing rows. Assert that
+main migrations and `user_version` remain unchanged. Restore unrelated legacy migration tests
+to main. Re-run storage/regression gates and request an independent review of this correction.
+Rollback retains additive tables while the route is disabled; repair uses a forward fix.

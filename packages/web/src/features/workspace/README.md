@@ -18,8 +18,9 @@ process attribution, filesystem and telemetry shells explain what is unavailable
   is reverted on unload. Missing contributions/renderers become placeholders without deleting
   the saved block map. T2 MCP App hosting belongs to P1; its panes remain unavailable here.
 - `guanxi.layout/1`, REST paths and both response shapes are exported by `@guanxi/contract`.
-  The node writes migration 32's additive SQLite tables. Older code can leave these tables
-  untouched; no down migration or rewriting of previous migrations is required.
+  The node lazily initializes the component's additive SQLite schema through
+  `layout_migrations` version 1. Global migrations and K4's reserved slots remain untouched.
+  Older code can leave these tables intact; no down migration is required.
 
 ## Documents and interaction
 

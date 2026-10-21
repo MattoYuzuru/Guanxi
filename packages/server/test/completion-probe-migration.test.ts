@@ -24,7 +24,7 @@ describe('SQLite completion probe migration 8', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const first = openDb(path)
-    assert.equal(version(first), 32)
+    assert.equal(version(first), 31)
     assert.equal(
       (first.prepare(
         `SELECT COUNT(*) AS count FROM sqlite_schema
@@ -34,7 +34,7 @@ describe('SQLite completion probe migration 8', () => {
     )
     first.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 32)
+    assert.equal(version(reopened), 31)
     assert.equal(
       (reopened.prepare('SELECT COUNT(*) AS count FROM completion_probe_evidence').get() as {
         count: number
@@ -71,7 +71,7 @@ describe('SQLite completion probe migration 8', () => {
     downgradeToV7(fixture)
     fixture.close()
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 32)
+    assert.equal(version(upgraded), 31)
     assert.equal(
       (upgraded.prepare('SELECT COUNT(*) AS count FROM completion_probe_evidence').get() as {
         count: number
@@ -108,7 +108,7 @@ describe('SQLite completion probe migration 8', () => {
     repair.exec('DROP TABLE completion_probe_evidence')
     repair.close()
     const recovered = openDb(path)
-    assert.equal(version(recovered), 32)
+    assert.equal(version(recovered), 31)
     recovered.close()
   })
 })

@@ -32,7 +32,6 @@ export function downgradeSessionLogToV28(db: DatabaseSync): void {
 
 /** Reverse only R1 in test databases; production migrations never run down. */
 export function downgradeDurableRunsToV29(db: DatabaseSync): void {
-  downgradeLayoutsToV31(db)
   db.exec(`
     DROP INDEX idx_session_mirror_backlog_thread;
     DROP TABLE run_costs;
@@ -50,13 +49,7 @@ export const DURABLE_RUN_TABLES = ['durable_runs', 'run_attempts', 'leases', 'pr
   'outbox', 'run_resources', 'run_costs'] as const
 
 /** Tables added since v28; older snapshot fixtures exclude these, including FTS shadows. */
-export const LAYOUT_TABLES = ['layout_documents', 'layout_active', 'layout_recoveries', 'layout_geometry'] as const
-export function downgradeLayoutsToV31(db: DatabaseSync): void {
-  for (const table of LAYOUT_TABLES) db.exec(`DROP TABLE IF EXISTS ${table}`)
-}
-
 export const SESSION_LOG_TABLES = [
-  ...LAYOUT_TABLES,
   ...DURABLE_RUN_TABLES,
   'sessions',
   'session_writers',

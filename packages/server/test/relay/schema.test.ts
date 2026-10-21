@@ -8,8 +8,8 @@ import { MIGRATIONS } from '../../src/store/db.ts'
 test('relay migration is independent of user_version and F1 ledger; existing migrations are untouched', () => {
   const f=fixture()
   try {
-    assert.equal(MIGRATIONS.length,32)
-    assert.equal(f.db.prepare('PRAGMA user_version').get()!.user_version,32)
+    assert.equal(MIGRATIONS.length,31)
+    assert.equal(f.db.prepare('PRAGMA user_version').get()!.user_version,31)
     assert.equal(f.db.prepare('SELECT version FROM relay_migrations').get()!.version,35)
     assert.equal(f.db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'federation%'").all().length,0)
     f.relay.note(f.attempt,'decision','immutable',[],null)
