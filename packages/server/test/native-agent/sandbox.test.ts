@@ -279,7 +279,7 @@ test('worker crash tears down every descendant before the next command settles',
   const { dir, policy } = await fixture(t)
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'launcher'); await mkdir(launcher)
-  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'egress-ipc.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox.ts', import.meta.url), 'utf8')
   const hook = `if (signal?.aborted) abort(); const crashTimer = setInterval(() => { if (existsSync(${JSON.stringify(join(policy.scratch, 'ready'))})) { clearInterval(crashTimer); child.kill('SIGKILL') } }, 10); child.once('exit', () => clearInterval(crashTimer))`
@@ -306,7 +306,7 @@ test('arbitrary execution cannot connect to a Unix socket exposed inside a selec
 async function fixtureLauncher(dir: string, transformWorker: (source: string) => string, transformSandbox: (source: string) => string = source => source) {
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'fixture-launcher'); await mkdir(launcher)
-  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'egress-ipc.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await writeFile(join(launcher, 'sandbox.ts'), transformSandbox(await readFile(join(launcher, 'sandbox.ts'), 'utf8')))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox-worker.ts', import.meta.url), 'utf8')
