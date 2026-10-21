@@ -18,7 +18,7 @@ integrator, the coordinating Claude session, merges lanes into `main`.
 | [K2](K2.md) | K2 session log, inspector, egress scrubber core | Claude Opus session | session branch | 5186 / 4386 | merged ([evidence](../evidence/K2.md)) |
 | [K3](K3.md) | K3 connections, vault, pi-ai, probes | GPT (Codex), xhigh | `lane/k3-model-access` | 5187 / 4387 | merged ([evidence](../evidence/K3.md)) |
 | [R1](R1.md) | R1 durable runs, hibernation and wake | GPT (Codex), xhigh | `lane/r1-durable-runs` | 5188 / 4388 | merged ([evidence](../evidence/R1.md)); follow-up `lane/r1-followup` |
-| [F1](F1.md) | F1 federation base | GPT (Codex), xhigh | `lane/f1-federation` | 5194 / 4394 | review 1 fixes done; scoped Claude re-check |
+| [F1](F1.md) | F1 federation base | GPT (Codex), xhigh | `lane/f1-federation` | 5194 / 4394 | review 2 fixes queued (N1 ingest cost, H4 rest) |
 | [K4](K4.md) | K4 native agent, tools, access modes, projects | GPT (Codex), xhigh | `lane/k4-native-agent` | 5189 / 4389 | merged ([evidence](../evidence/K4.md)); follow-up merged ([evidence](../evidence/K4-followup.md)) |
 | [R2](R2.md) | R2 relay executor v1 | GPT (Codex), xhigh | `lane/r2-relay-executor` | 5195 / 4395 | running |
 | [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | running |
