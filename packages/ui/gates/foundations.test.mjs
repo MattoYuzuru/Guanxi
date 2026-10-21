@@ -309,7 +309,7 @@ test('DS1-c review: the app preserves frozen legacy utilities without weakening 
   const classes = new Set()
   for (const file of ctx.files.filter(f => /^packages\/web\/src\/.+\.[jt]sx?$/.test(f))) for (const { value } of classStrings(file, await ctx.read(file))) classes.add(value)
   for (const cls of classes) if (before.candidatesToCss([cls])[0]) assert.ok(after.candidatesToCss([cls])[0], `retained utility disappeared: ${cls}`)
-  for (const [cls, token] of [['max-w-md', '--layout-container-md'], ['bg-surface', '--color-background-secondary'], ['text-12', '--font-size-12'], ['rounded-control', '--border-radius-control']]) assert.ok(after.candidatesToCss([cls])[0].includes(`var(${token})`), cls)
+  for (const [cls, token] of [['text-13', '--font-size-13'], ['text-14', '--font-size-14'], ['text-18', '--font-size-18'], ['font-label', '--font-weight-label'], ['bg-success', '--color-text-success'], ['bg-muted', '--color-text-tertiary'], ['max-w-md', '--layout-container-md'], ['bg-surface', '--color-background-secondary'], ['text-12', '--font-size-12'], ['rounded-control', '--border-radius-control']]) assert.ok(after.candidatesToCss([cls])[0].includes(`var(${token})`), cls)
   assert.equal(after.resolveThemeValue('--spacing'), 'var(--grid-unit)')
   assert.equal(after.resolveThemeValue('--default-font-family'), 'var(--font-family-sans)')
   const invalid = await checks.G5(await ctx.withFiles({ 'packages/web/src/features/seeded/legacy.tsx': '<div className="text-xs rounded-md bg-red-500"/>' }))

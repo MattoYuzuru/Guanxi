@@ -220,3 +220,18 @@ Next: integrator arranges the Claude review, merges in lane order without squash
 ratchet history, regenerates the lockfile if needed and reruns its gates. Fold this evidence
 into the central tracker at integration. U1 must resolve the reported aliases and remaining
 colour debt, migrate raw primitives and other frozen utilities, then retire compatibility CSS.
+
+## Visible changes (L7)
+
+The generated theme changes the legacy blue accent (264° OKLCH hue) to verdigris
+(about 178°), neutral surfaces to Glacier/brand ink, and control borders to step 9.
+Review 1 aligns the body, default borders, focus ring and scrollbars with that palette,
+strengthens inset metadata/placeholders to secondary text, and restores ToolCallCard's
+inset-to-surface hover. Subtle blue fills now use the semantic accent at 10% opacity;
+previous extra 50%/55% opacity becomes 5%/5.5% respectively. These are visible changes.
+
+Theme import also replaces Tailwind's default transition easing with
+`motion.easing.standard` and makes its duration zero under reduced motion. Previously
+uncompiled InspectorPage classes now render: `text-13`, `text-14`, `font-label`,
+`bg-success` and `bg-muted`; NativeAgentPage's `text-18` now renders too. This is an
+intentional consequence of loading the existing generated theme, not a component redesign.
