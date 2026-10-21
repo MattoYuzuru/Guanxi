@@ -313,7 +313,7 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
   if (loading) return <InspectorSkeleton />
   if (loadError) {
     if (loadError instanceof ApiRequestError && loadError.code === 'session_event_version_unsupported') {
-      return <IncompatibleTrace error={loadError} />
+      return <IncompatibleTrace />
     }
     const notFound = loadError instanceof ApiRequestError && loadError.code === 'session_not_found'
     return (
@@ -480,15 +480,14 @@ function IncompatibleNotice() {
   )
 }
 
-function IncompatibleTrace({ error }: { error: ApiRequestError }) {
+function IncompatibleTrace() {
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-3 py-4 sm:px-6" aria-labelledby="inspector-incompatible-title">
       <h1 id="inspector-incompatible-title" tabIndex={-1} className="text-14 font-heading">
         {translate('inspector.incompatible.title')}
       </h1>
-      <Callout tone="danger" title={translate('inspector.incompatible.title')}>
+      <Callout tone="danger">
         <p className="text-13">{translate('inspector.incompatible.description')}</p>
-        <p className="mt-1 text-12 text-muted">{translate('inspector.incompatible.details', { code: error.code })}</p>
       </Callout>
       <Link to={paths.inspector()} className={LINK}>{translate('inspector.backToList')}</Link>
     </section>
