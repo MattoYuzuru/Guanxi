@@ -18,6 +18,7 @@ export default defineConfig({
       // поэтому резолвим его напрямую и не даём Vite его пре-бандлить.
       '@guanxi/contract': contractSrc,
       // @guanxi/ui is source too; only the lazily loaded catalog route imports it today.
+      '@guanxi/ui/fonts.css': `${uiRoot}/fonts/fonts.css`,
       '@guanxi/ui/catalog': `${uiRoot}/catalog/index.ts`,
       '@guanxi/ui': `${uiRoot}/src/index.ts`,
     },
