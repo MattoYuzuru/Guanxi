@@ -185,6 +185,62 @@ func availableResponse(keyId: String, publicKey: String) -> [String: Any] {
     ["ok": true, "state": "available", "algorithm": "p256", "keyId": keyId, "publicKey": publicKey]
 }
 
+// MARK: - Confirmation policy
+
+struct ApprovalKeyAccessPolicy {
+    let accessibility: CFString
+    let accessFlags: SecAccessControlCreateFlags
+    let confirmationReuseDuration: TimeInterval
+}
+
+/// The single production source of the Secure Enclave access policy. The test-only probe reads
+/// this builder and creates the access control through `makeApprovalAccessControl`, but never
+/// creates a key or a keychain item.
+func approvalKeyAccessPolicy() -> ApprovalKeyAccessPolicy {
+    ApprovalKeyAccessPolicy(
+        accessibility: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        accessFlags: [.privateKeyUsage, .userPresence],
+        confirmationReuseDuration: 0
+    )
+}
+
+func makeApprovalAccessControl() throws -> SecAccessControl {
+    let policy = approvalKeyAccessPolicy()
+    guard let accessControl = SecAccessControlCreateWithFlags(
+        nil,
+        policy.accessibility,
+        policy.accessFlags,
+        nil
+    ) else {
+        throw HelperFailure("keychain_access_unavailable", "Cannot create the Secure Enclave access control")
+    }
+    return accessControl
+}
+
+/// Applies the confirmation policy to a context. Production passes a fresh `LAContext`; the
+/// test probe seeds a nonzero reuse value to prove that the explicit zero is applied.
+func configureConfirmationContext(_ context: LAContext, reason: String) -> LAContext {
+    let policy = approvalKeyAccessPolicy()
+    context.localizedReason = reason
+    context.touchIDAuthenticationAllowableReuseDuration = policy.confirmationReuseDuration
+    return context
+}
+
+func makeConfirmationContext(reason: String) -> LAContext {
+    configureConfirmationContext(LAContext(), reason: reason)
+}
+
+/// The exact source-bound reason shown by the confirmation prompt. The production sign path
+/// and the test-only probe use this one builder.
+func signingReason(schema: String, id: String, sourceHash: String?) -> String? {
+    if schema == approvalSchema {
+        guard let sourceHash, !sourceHash.isEmpty else { return nil }
+        return "approve the \"\(id)\" component, source \(sourceHash)"
+    }
+    guard schema == revocationSchema else { return nil }
+    return "request changes to the \"\(id)\" component"
+}
+
 #if GUANXI_SIGNER_TESTING
 func testEnvironment(_ name: String) -> String? {
     guard let value = ProcessInfo.processInfo.environment[name], !value.isEmpty else { return nil }
@@ -460,15 +516,8 @@ func operationInit(service: String, account: String, keychainPath: String?) {
     guard SecureEnclave.isAvailable else {
         refuse("platform_unsupported", "This Mac has no Secure Enclave")
     }
-    guard let accessControl = SecAccessControlCreateWithFlags(
-        nil,
-        kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        [.privateKeyUsage, .userPresence],
-        nil
-    ) else {
-        refuse("keychain_access_unavailable", "Cannot create the Secure Enclave access control")
-    }
     do {
+        let accessControl = try makeApprovalAccessControl()
         let key = try SecureEnclave.P256.Signing.PrivateKey(accessControl: accessControl)
         let keyId = keyIdentifier(publicKeyDER: key.publicKey.derRepresentation)
         try addKeychainItem(
@@ -504,14 +553,8 @@ func operationSign(service: String, account: String, payload: String) {
         refuse("payload_id", "The payload id is not a component id")
     }
 
-    let reason: String
-    if schema == approvalSchema {
-        guard let sourceHash = object["sourceHash"] as? String, !sourceHash.isEmpty else {
-            refuse("payload_schema", "An approval payload has no sourceHash")
-        }
-        reason = "approve the \"\(id)\" component, source \(sourceHash)"
-    } else {
-        reason = "request changes to the \"\(id)\" component"
+    guard let reason = signingReason(schema: schema, id: id, sourceHash: object["sourceHash"] as? String) else {
+        refuse("payload_schema", "An approval payload has no sourceHash")
     }
 
     #if GUANXI_SIGNER_TESTING
@@ -548,9 +591,7 @@ func operationSign(service: String, account: String, payload: String) {
     } catch {
         refuse("keychain_access_unavailable", "Cannot read the wrapped approval key")
     }
-    let context = LAContext()
-    context.localizedReason = reason
-    context.touchIDAuthenticationAllowableReuseDuration = 0
+    let context = makeConfirmationContext(reason: reason)
     do {
         let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob, authenticationContext: context)
         let signature = try key.signature(for: payloadData)
@@ -572,6 +613,40 @@ func operationSign(service: String, account: String, payload: String) {
     }
     #endif
 }
+
+#if GUANXI_SIGNER_TESTING
+/// Introspection only: calls the production access-control and confirmation-context builders
+/// with a seeded reuse value. It never loads a key, prompts, signs or writes a keychain item.
+func operationTestPolicyProbe(payload: String) {
+    guard let object = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
+          let schema = object["schema"] as? String,
+          let id = object["id"] as? String,
+          let reason = signingReason(schema: schema, id: id, sourceHash: object["sourceHash"] as? String) else {
+        refuse("payload_schema", "The test policy probe needs an approval or revocation payload")
+    }
+    do {
+        let policy = approvalKeyAccessPolicy()
+        _ = try makeApprovalAccessControl()
+        let seeded = LAContext()
+        seeded.touchIDAuthenticationAllowableReuseDuration = 120
+        let context = configureConfirmationContext(seeded, reason: reason)
+        emit([
+            "ok": true,
+            "accessControlCreated": true,
+            "accessibilityDeviceOnly": CFEqual(policy.accessibility, kSecAttrAccessibleWhenUnlockedThisDeviceOnly),
+            "privateKeyUsage": policy.accessFlags.contains(.privateKeyUsage),
+            "userPresence": policy.accessFlags.contains(.userPresence),
+            "confirmationReuseDuration": context.touchIDAuthenticationAllowableReuseDuration,
+            "localizedReason": context.localizedReason,
+        ])
+        exit(0)
+    } catch let failure as HelperFailure {
+        refuse(failure.code, failure.message)
+    } catch {
+        refuse("keychain_access_unavailable", "Cannot create the confirmation policy")
+    }
+}
+#endif
 
 // MARK: - Main
 
@@ -595,6 +670,13 @@ guard let service = request["service"] as? String, !service.isEmpty,
 let keychainPath = request["keychain"] as? String
 
 switch operation {
+#if GUANXI_SIGNER_TESTING
+case "test-policy":
+    guard let payload = request["payload"] as? String else {
+        usage("request.payload is required for test-policy")
+    }
+    operationTestPolicyProbe(payload: payload)
+#endif
 case "status":
     operationStatus(service: service, account: account, keychainPath: keychainPath)
 case "init":

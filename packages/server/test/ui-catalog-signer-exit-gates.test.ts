@@ -195,6 +195,24 @@ describe('approval signer exit gates', { skip: swiftSkip }, () => {
     assert.equal(authLines(fx.authLog).length, 4)
   })
 
+  it('wires the production access-control and confirmation policy through the shared builders', () => {
+    const fx = fixture()
+    const payload = canonicalJson(approval(fx.key.trusted.keyId))
+    const probe = run({ op: 'test-policy', service: SERVICE, account: ACCOUNT, payload }, fx.env)
+    assert.equal(probe.status, 0, probe.stderr.toString())
+    assert.equal(probe.json?.['signature'], undefined, 'the policy probe must not sign')
+    assert.deepEqual(probe.json, {
+      ok: true,
+      accessControlCreated: true,
+      accessibilityDeviceOnly: true,
+      privateKeyUsage: true,
+      userPresence: true,
+      confirmationReuseDuration: 0,
+      localizedReason: `approve the "button" component, source sha256:${'a'.repeat(64)}`,
+    })
+    assert.equal(authLines(fx.authLog).length, 0, 'the policy probe must not prompt')
+  })
+
   it('refuses non-canonical payloads, the removed /2 schema and invalid ids', () => {
     const fx = fixture()
     const init = initialise(fx)
