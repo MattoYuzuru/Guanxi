@@ -12,6 +12,7 @@ export function runFixture(path = ':memory:', options: Partial<RunStoreOptions> 
   const log = new SessionLog({ db, scrubber, clock: () => new Date(now),
     fault: options.logFault, isProcessAlive: () => false })
   const store = new RunStore({ db, log, scrubber, alwaysOn: true, clock: () => now, ...options })
+  store.heartbeat()
   return { db, log, store, scrubber, setTime: (time: number) => { now = time },
     close: () => { store.close(); log.close(); db.close(); scrubber.close() } }
 }

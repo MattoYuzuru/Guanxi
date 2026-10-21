@@ -18,6 +18,7 @@ const log = new SessionLog({ db, scrubber, clock: () => new Date(RUN_TIME),
   fault: (point) => fault(`log:${point}`) })
 const store = new RunStore({ db, log, scrubber, alwaysOn: true, clock: () => RUN_TIME,
   fault: (operation, point) => fault(`${operation}:${point}`) })
+store.heartbeat()
 const lead = store.create({ id: 'lead' })
 const a = store.start(lead.id); store.modelStarted(a)
 if (stage === 'hibernate') {

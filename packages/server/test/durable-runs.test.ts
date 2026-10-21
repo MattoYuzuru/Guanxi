@@ -38,7 +38,7 @@ test('deadline wakes a lead whose child never starts; wrap-up cancels after its 
   f.store.close()
   const store = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, alwaysOn: true, clock: () => RUN_DEADLINE })
   cleanup = () => store.close()
-  store.reconcile(); store.tick()
+  store.heartbeat(); store.reconcile(); store.tick()
   assert.equal(store.promises('lead')[0]!.outcome, 'deadline')
   assert.equal(store.wakes('lead').length, 1)
   assert.equal(store.get(promise.child_id).state, 'wrapping_up')
@@ -125,7 +125,7 @@ test('retained worktree survives eight hours of hibernation with zero token or e
   const before = f.store.costs(lead.id)
   f.store.close()
   const store = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, alwaysOn: true, clock: () => RUN_TIME + 8 * 3_600_000 })
-  cleanup = () => store.close(); store.reconcile()
+  cleanup = () => store.close(); store.heartbeat(); store.reconcile()
   for (const key of store.reapResources()) { if (key === 'resource:worktree') rmSync(worktree, { recursive: true }) }
   assert.equal(existsSync(worktree), true)
   assert.equal(readFileSync(join(worktree, 'kept'), 'utf8'), 'fixture')
@@ -194,11 +194,12 @@ test('restart table preserves wait/input/report, interrupts local work and redel
 
 test('single writer fails closed on takeover and expired owner, no plain restart epoch bump', (t) => {
   const f = runFixture(); let cleanup = () => {}; t.after(() => { cleanup(); f.close() })
-  assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber }), code('writer_busy'))
+  assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME }).heartbeat(), code('writer_busy'))
   f.setTime(RUN_TIME + 30_001)
   assert.throws(() => f.store.create(), code('stale_lease'))
-  assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME + 60_000 }), code('writer_busy'))
+  assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME + 60_000 }).heartbeat(), code('writer_busy'))
   const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME + 91_001 })
+  next.heartbeat()
   cleanup = () => next.close()
   assert.throws(() => f.store.create(), code('stale_lease'))
   assert.equal((f.db.prepare("SELECT epoch FROM leases WHERE key='durable-runs/home'").get() as { epoch: number }).epoch, 1)
@@ -328,12 +329,12 @@ test('review R3: lowering successor TTL cannot shorten the predecessor home safe
   t.after(() => { next?.close(); f.close() })
   const run = f.store.create(); const oldAttempt = f.store.start(run.id)
   assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
-    clock: () => RUN_TIME + 31_002, maxAttemptTtlMs: 1 }), code('writer_busy'))
+    clock: () => RUN_TIME + 31_002, maxAttemptTtlMs: 1 }).heartbeat(), code('writer_busy'))
   assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
-    clock: () => RUN_TIME + 90_999, maxAttemptTtlMs: 1 }), code('writer_busy'))
+    clock: () => RUN_TIME + 90_999, maxAttemptTtlMs: 1 }).heartbeat(), code('writer_busy'))
   next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
     clock: () => RUN_TIME + 91_001, maxAttemptTtlMs: 1 })
-  next.reconcile()
+  next.heartbeat(); next.reconcile()
   const newAttempt = next.start(run.id)
   assert.ok(newAttempt.token > oldAttempt.token)
   assert.throws(() => f.store.complete(oldAttempt, 'completed'), code('stale_lease'))

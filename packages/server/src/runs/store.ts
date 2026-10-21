@@ -36,7 +36,8 @@ export class RunStore {
   private readonly log: SessionLog
   private readonly scrubber: EgressScrubber
   private readonly ownerId = randomUUID()
-  private readonly owner: Lease
+  private owner: Lease | null = null
+  private predecessor: { token: number; holder: string; bound: number } | null = null
   private readonly ownerTtl: number
   private readonly maxTtl: number
   private readonly clock: () => number
@@ -59,27 +60,35 @@ export class RunStore {
     this.maxTtl = options.maxAttemptTtlMs ?? 60_000
     this.integer(this.ownerTtl, 1)
     this.integer(this.maxTtl, 1)
+  }
+
+  /** Called by the pump; construction never prevents the rest of the node booting. */
+  private claimHome(): void {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const prior = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
-      // On an unclean restart wait out every possible old execution lease plus epsilon.
-      // No PID heuristic or plain restart epoch bump can create a second writer.
+      const now = this.now()
       const activeExpiry = this.row<{ expiry: number | null }>("SELECT MAX(expires_at) AS expiry FROM leases WHERE key LIKE 'run:%/exec' AND released=0")?.expiry ?? 0
-      const priorBound = prior ? Math.max(prior.regrant_after, prior.expires_at + this.maxTtl + EPSILON_MS,
-        activeExpiry + EPSILON_MS) : 0
-      if (prior && !prior.released && this.now() < priorBound) {
-        throw new RunError('writer_busy')
+      if (prior && !prior.released) {
+        const persistedBound = Math.max(prior.regrant_after, prior.expires_at + this.maxTtl + EPSILON_MS, activeExpiry + EPSILON_MS)
+        // Fix the cap on first observation, rather than moving it on every retry.
+        // Wall-clock corrections in a predecessor cannot prevent boot indefinitely.
+        if (this.predecessor?.token !== prior.token || this.predecessor.holder !== prior.holder) {
+          this.predecessor = { token: prior.token, holder: prior.holder,
+            bound: Math.min(persistedBound, now + this.ownerTtl + this.maxTtl + EPSILON_MS) }
+        }
+        if (now < this.predecessor.bound) throw new RunError('writer_busy')
       }
       const token = (prior?.token ?? 0) + 1
       this.db.prepare(`INSERT INTO leases (key,epoch,token,holder,expires_at,released,regrant_after) VALUES (?,1,?,?,?,0,?)
         ON CONFLICT(key) DO UPDATE SET token=excluded.token,holder=excluded.holder,
         expires_at=excluded.expires_at,released=0,regrant_after=excluded.regrant_after`).run(HOME_KEY, token, this.ownerId,
-        this.now() + this.ownerTtl, this.now() + this.ownerTtl + this.maxTtl + EPSILON_MS)
-      this.owner = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)!
-      for (const attempt of this.rows<{ id: string }>("SELECT id FROM run_attempts WHERE state IN ('delivered','started')")) {
-        this.startupAttempts.add(attempt.id)
-      }
+        now + this.ownerTtl, now + this.ownerTtl + this.maxTtl + EPSILON_MS)
+      const owner = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)!
+      const inherited = this.rows<{ id: string }>("SELECT id FROM run_attempts WHERE state IN ('delivered','started')")
       this.db.exec('COMMIT')
+      this.owner = owner
+      for (const attempt of inherited) this.startupAttempts.add(attempt.id)
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
 
@@ -113,6 +122,7 @@ export class RunStore {
   private point(point: string): void { this.options.fault?.(this.operation, point) }
   private assertOwner(): void {
     if (this.closed) throw new RunError('closed')
+    if (!this.owner) throw new RunError('writer_busy')
     const lease = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
     if (!lease || lease.holder !== this.ownerId || lease.token !== this.owner.token ||
       lease.released || lease.expires_at <= this.now()) throw new RunError('stale_lease')
@@ -377,7 +387,11 @@ export class RunStore {
   wrappingUp(attempt: Attempt): void {
     this.tx('wrapping_up', () => { this.fenced(attempt); this.setState(attempt.run_id, 'wrapping_up', 'wrapping_up') })
   }
-  heartbeat(): void { this.tx('heartbeat', () => {}, false) }
+  heartbeat(): void {
+    if (this.closed) throw new RunError('closed')
+    if (!this.owner) this.claimHome()
+    else this.tx('heartbeat', () => {}, false)
+  }
   private lose(attempt: Attempt): void {
     this.write("UPDATE run_attempts SET state='lost' WHERE id=?", attempt.id)
     this.release(attempt.run_id)
@@ -495,7 +509,7 @@ export class RunStore {
   close(): void {
     if (this.closed) return
     try {
-      this.db.prepare('UPDATE leases SET released=1 WHERE key=? AND holder=? AND token=?').run(HOME_KEY, this.ownerId, this.owner.token)
+      if (this.owner) this.db.prepare('UPDATE leases SET released=1 WHERE key=? AND holder=? AND token=?').run(HOME_KEY, this.ownerId, this.owner.token)
     } finally { this.closed = true }
   }
 }
