@@ -71,8 +71,11 @@ test('standalone report contains separate infra columns, task flips and no scrip
   assert.doesNotMatch(htmlReport(p, rows, true), /task-0|\/tasks\//)
   assert.match(html, /holdout and guardrails/)
   assert.match(html, /Fixture smoke with synthetic outcomes/)
-  assert.match(html, /fixture-free \/ fixture/)
+  assert.match(html, /<dt>Experiment<\/dt><dd>task-0-source<\/dd>/)
+  assert.match(html, /<dt>Mode<\/dt><dd>fixture<\/dd>/)
+  assert.match(html, /<dt>Model \/ provider<\/dt><dd>fixture-free \/ fixture<\/dd>/)
   assert.match(html, /mini-swe-agent@2\.4\.6/)
+  assert.match(html, /candidate: fixture@1/)
   assert.match(html, /Results recorded \(UTC\)<\/dt><dd>not recorded/)
   const recordedAt = '2026-10-21T12:00:00.000Z'
   assert.match(htmlReport(p, rows, false, recordedAt), /2026-10-21T12:00:00\.000Z/)

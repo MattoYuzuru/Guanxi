@@ -13,6 +13,9 @@ const cases = [
   { id: 'budget-before-dispatch', file: 'src/runner.ts', before: 'budget.reserve(plan)', after: '// reservation removed', test: 'test/budget.test.ts' },
   { id: 'host-user', file: 'python/guanxi_bench/environment.py', before: "if os.getuid() != 1001 or pwd.getpwuid(os.getuid()).pw_name != 'guanxi-bench':", after: 'if False:', test: 'test/python.test.ts' },
   { id: 'lease-loss-abort', file: 'src/plugin.ts', before: 'home.renew(attempt)', after: 'void 0', test: 'test/plugin.test.ts' },
+  { id: 'report-private-source', file: 'src/report.ts', before: "publicAggregate ? 'Aggregate publication' : esc(plan.id)", after: "'Aggregate publication'", test: 'test/protocol.test.ts' },
+  { id: 'report-mode', file: 'src/report.ts', before: '${esc(plan.mode)}', after: 'unknown', test: 'test/protocol.test.ts' },
+  { id: 'report-candidate-version', file: 'src/report.ts', before: '${a.kind}@${a.version}', after: '${a.kind}@${a.id === "candidate" ? "removed" : a.version}', test: 'test/protocol.test.ts' },
 ]
 for (const mutation of cases) {
   const dir = mkdtempSync(join(tmpdir(), 'b1-mutation-'))
