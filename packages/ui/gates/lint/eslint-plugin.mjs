@@ -13,7 +13,7 @@ function resolveBinding(node, context, seen = new Set()) {
     const variable = scope.set.get(node.name)
     if (variable) {
       const name = variable.defs[0]?.name
-      if (name?.parent?.type === 'AssignmentPattern' && name.parent.left === name) return resolveBinding(name.parent.right, context, seen)
+      if (node.type === 'JSXIdentifier' && name?.parent?.type === 'AssignmentPattern' && name.parent.left === name) return resolveBinding(name.parent.right, context, seen)
       if (variable.defs[0]?.node?.id && variable.defs[0].node.id.type !== 'Identifier') return node
       const init = variable.defs[0]?.node?.init
       return init ? resolveBinding(init, context, seen) : node

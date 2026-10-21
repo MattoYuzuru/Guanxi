@@ -204,6 +204,7 @@ test('M3 G9 rejects capitalised tag bindings and polymorphic defaults', async ()
     "const X = ({ as: Tag = 'dialog' }: Props) => <Tag/>",
   ]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/reuse-primitives'), source)
   assert.deepEqual(await lint('const X = ({ as: Tag = Button }) => <Tag/>'), [])
+  assert.deepEqual(await lint('const X = ({ width = 12 }) => <div style={{ width }}/>'), [], 'JSX default resolution must not turn runtime geometry into new literal debt')
 })
 test('M3 G9 rejects style elements in JSX, aliases and factories', async () => {
   for (const source of ["const x = <style>{'.x{color:red}'}</style>", "const Tag = 'style'; const x = <Tag/>", "const x = React.createElement('style')"]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/reuse-primitives'), source)
