@@ -43,7 +43,7 @@ test('crash at every native R1/K2 boundary: one writer, truthful recovery and no
       runs.heartbeat(); runs.reconcile(); runs.tick(); runs.dispatch()
       assert.equal(db.prepare("SELECT COUNT(*) AS n FROM run_attempts WHERE state IN ('delivered','started')").get()!.n, 0, `${index}: no active writer after recovery`)
       assert.equal(db.prepare("SELECT COUNT(*) AS n FROM leases WHERE key LIKE 'run:%/exec' AND released=0").get()!.n, 0)
-      const states = db.prepare('SELECT id,state FROM durable_runs').all() as { id: string; state: string }[]
+      const states = db.prepare('SELECT id,session_id,state FROM durable_runs').all() as { id: string; session_id: string; state: string }[]
       for (const row of states) assert.ok(['input_required','completed'].includes(row.state), `${index}: ${row.state}`)
       for (const row of states) {
         const attempts = runs.attempts(row.id)
@@ -72,8 +72,8 @@ test('crash at every native R1/K2 boundary: one writer, truthful recovery and no
           assert.deepEqual(events.map(e => e.seq), events.map((_, i) => i + 1))
           assert.equal(events.filter(e => e.type === 'agent.policy').length, 1)
           const progress = native.progress(String(row.id))
-          assert.ok(['completed','input_required','interrupted'].includes(progress.status), `${index}: native projection ${progress.status}`)
-          if (states.length && states[0]!.state === 'input_required') assert.equal(progress.status, 'input_required')
+          const state = states.find(run => run.session_id === row.id)?.state
+          assert.equal(progress.status, state ?? 'interrupted', `${index}: native projection follows the committed R1 state`)
         }
         assert.equal(inference, 0, `${index}: actual native startup never calls either model transport`)
         assert.equal(calls(), before)
