@@ -23,8 +23,10 @@ sandbox-runtime worker owns each command's runtime singleton and TLS proxy. All 
 commands go through one `ExecutionOwner` interface. Linux requires the upstream bubblewrap
 profile with `--unshare-pid --die-with-parent` and a fresh `/proc`; a weaker profile is refused.
 macOS uses one local Linux container per arbitrary command, with `--rm --init`, read-only image,
-no capabilities, no inherited credentials, and `--network none`. Its trusted stdio bridge reaches
-only the host's sandbox-runtime method/domain proxy. A workload-only seccomp filter denies Unix
+no workload capabilities or inherited credentials, and `--network none`. The trusted runner
+uses a distinct UID with only SETUID/GID, then clears workload capabilities. Its trusted stdio
+bridge reaches only the host's sandbox-runtime method/domain proxy. A workload-only seccomp
+filter denies arbitrary Unix
 sockets and local binding. Container removal is confirmed before settlement, including after a
 worker crash. Uncertain runtime cleanup retains the session's writer ownership while retrying.
 Fixed trusted commands retain the Seatbelt fast path on macOS without a container runtime. No
@@ -44,7 +46,7 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   development commits of this unmerged lane must be recreated; there is no deployed K4 policy migration.
 - Egress: exact host/optional-port allowlist, default empty. HTTPS is TLS-terminated using
   an ephemeral worker CA; Read-only allows GET/HEAD/OPTIONS. Opaque CONNECT/SOCKS tunnels,
-  direct sockets, Unix sockets and local binding are denied in both modes. Redirects are
+  direct sockets, arbitrary Unix-socket connections and local binding are denied in both modes. Redirects are
   not followed by `fetch`; domain policy also applies to subsequent proxy requests.
 - Upstream convenience write grants are explicitly denied. OS executable/library/config
   reads and stdio devices are necessary exceptions to project-only file access. Roots that
@@ -56,16 +58,23 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   reads metadata only. Root ownership excludes another native writer while this check runs;
   uncooperative external processes changing the same filesystem are outside that ownership.
 - macOS arbitrary shell requires a reachable local Unix-socket Docker endpoint (Colima/Lima
-  or Docker Desktop) and the execution image. It never mounts the whole home directory or a
-  Docker socket. The image uses a digest-pinned Node 26 Debian slim base; run
+  or Docker Desktop) and the execution image. It never mounts the whole home directory and adds
+  no dedicated Docker-socket mount. Selected roots may contain sockets; workload Unix-socket
+  connections are denied. The image uses a digest-pinned Node 26 Debian slim base; run
   `DOCKER_CONTEXT=colima sh packages/server/scripts/prepare-native-execution.sh` to provision it.
   Commands select the inspected content-addressed image ID, not a mutable tag at execution.
+  The absolute Docker CLI is captured and canonicalized at node boot; writable trees containing
+  its replacement points refuse both arbitrary and fixed invocations. Installing Docker after
+  node boot requires restarting the node to capture it. Trusted Node/dependency/helper deny-write
+  grants cover both backends, including roots nested inside a protected runtime directory.
   Colima must share the selected roots and node data directory; an unshared path fails closed.
   Commas in bind paths are refused. Absent protected paths conservatively make their nearest
   existing parent read-only. No runtime/image means arbitrary shell is disabled with a localized
   reason; fixed read commands remain available. Image provisioning is never done by a tool.
-- Linux uses upstream bubblewrap/seccomp and requires its dependencies. Windows refuses all
-  sandbox execution. Platform validation scope and residuals are in the handoff.
+- Linux uses upstream bubblewrap/seccomp, the packaged apply-seccomp helper and util-linux
+  `setpriv` with `--seccomp-filter` support. A workload-only BPF filter denies local binding
+  after the trusted proxy bridges start; missing/degraded dependencies refuse execution.
+  Windows refuses all sandbox execution. Platform validation scope and residuals are in the handoff.
 
 ## Session surface
 
@@ -92,8 +101,8 @@ session-bound `session_log_query`. Search uses the OS tool locally; connected se
 are not executed by this slice. Attachments reuse the existing scoped transfer policy, copy
 selected project artifacts into read-only session storage, and expose text through file reads.
 Images are sent only when the selected model declares image input. Other binary formats need
-conversion, which is currently unavailable until an explicit converter adapter or general
-command supervision exists; no format or modality is silently claimed.
+conversion, which requires an explicit converter adapter and provisioned format tools; no
+format or modality is silently claimed.
 
 Command stdout/stderr are bounded to 64 KiB per invocation with an explicit `truncated` flag.
 Every tool result is scrubbed and bounded to 64 KiB. Larger state/query results are stored as
@@ -102,8 +111,9 @@ byte count, artifact ID and `tool_output_read` continuation. Pages contain at mo
 UTF-8 content so JSON escaping fits the result budget. Artifacts are scrubbed again before
 paging; neither artifacts nor launcher/CA files are writable roots. Artifact storage currently
 keeps content with the session: automatic retention/deletion and an input-artifact policy remain
-unfinished. Tool arguments, large prompts and images still use K2's inline input path. Reading an
-output artifact currently scrubs it in memory before paging; bounded memory streaming is not
+unfinished. Tool arguments and large prompts still use K2's inline input path. Image bytes are
+inline in model requests; K2 stores policy references and attachment counts. Reading an output
+artifact currently scrubs it in memory before paging; bounded memory streaming is not
 claimed. Binary conversion remains a named residual. Images are referenced by policy, not
 stored as base64 in events. Reasoning stays in K2's retention class, outside model/CLI output
 and console logs.
