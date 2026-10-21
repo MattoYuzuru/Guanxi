@@ -201,3 +201,11 @@ test('20. command line exit codes', t => {
   assert.equal(spawnSync(process.execPath, [scriptPath, root]).status, 1)
   assert.equal(spawnSync(process.execPath, [scriptPath, '--bogus']).status, 2)
 })
+
+test('lane-local virtualenv documentation is excluded while repository links are checked', t => {
+  const root = makeRoot(t)
+  write(root, '.lane-data/bench-python/site-packages/tool/README.md', '# External\n\n[upstream](missing.md)\n')
+  write(root, 'source.md', '# Source\n\n[broken](missing.md)\n')
+  assert.deepEqual(listMarkdownFiles(root), ['source.md'])
+  assert.deepEqual(kinds(checkLinks({ root, files: listMarkdownFiles(root) })), ['missing-file@3'])
+})
