@@ -1,0 +1,105 @@
+{
+  "adapter": "codex",
+  "version": "0.163.0",
+  "recordedAt": "2026-10-21T12:00:00.000Z",
+  "source": "https://developers.openai.com/codex/app-server",
+  "provenance": "Independent reconstruction of documented wire sessions; version labels from public release metadata, not live CLI captures.",
+  "protocol": "codex-app-server",
+  "initialize": {
+    "userAgent": "codex_cli_rs/0.163.0 (fixture)",
+    "platformFamily": "unix",
+    "platformOs": "macos"
+  },
+  "account": {
+    "account": {
+      "type": "chatgpt",
+      "planType": "plus",
+      "email": "fixture@example.invalid"
+    },
+    "requiresOpenaiAuth": true
+  },
+  "rateLimits": {
+    "rateLimits": {
+      "limitId": "codex",
+      "primary": {
+        "usedPercent": 25,
+        "windowDurationMins": 300,
+        "resetsAt": 1792600000
+      },
+      "secondary": null
+    }
+  },
+  "notifications": [
+    {
+      "method": "turn/plan/updated",
+      "params": {
+        "threadId": "fixture-thread",
+        "turnId": "fixture-turn",
+        "explanation": "not persisted",
+        "plan": [
+          {
+            "step": "Inspect fixture",
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "method": "item/reasoning/summaryTextDelta",
+      "params": {
+        "threadId": "fixture-thread",
+        "turnId": "fixture-turn",
+        "delta": "PRIVATE_REASONING_FIXTURE"
+      }
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "fixture-thread",
+        "turnId": "fixture-turn",
+        "delta": "$SECRET_A"
+      }
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "fixture-thread",
+        "turnId": "fixture-turn",
+        "delta": "$SECRET_B"
+      }
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "fixture-thread",
+        "turnId": "fixture-turn",
+        "delta": " fixture completed"
+      }
+    },
+    {
+      "method": "account/rateLimits/updated",
+      "params": {
+        "rateLimits": {
+          "limitId": "codex",
+          "primary": {
+            "usedPercent": 31,
+            "windowDurationMins": 300,
+            "resetsAt": 1792600000
+          },
+          "secondary": null
+        }
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "fixture-thread",
+        "turn": {
+          "id": "fixture-turn",
+          "status": "completed",
+          "error": null
+        }
+      }
+    }
+  ]
+}

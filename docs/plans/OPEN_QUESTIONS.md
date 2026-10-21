@@ -1,6 +1,6 @@
 # Open questions
 
-**Status:** accepted (all answered; none open) · **Updated:** 2026-10-21
+**Status:** accepted (one K5 default open) · **Updated:** 2026-10-21
 
 New questions go under **Open** with the stage they block and a recommended default. A stage
 may start with the default when the owner has not answered, and must record that it did.
@@ -9,7 +9,11 @@ Answers move into a new owner decision record. Legacy questions `Q-1`–`Q-37` a
 
 ## Open
 
-None. The owner answered every question below on 2026-10-20.
+The owner answered the earlier questions below on 2026-10-20. One K5 default awaits an answer.
+
+| ID | Question | Blocked | Answer |
+| --- | --- | --- | --- |
+| Q-245 | The editor payment grant is connection-wide and has no expiry (K5 default, 2026-10-21). Should it be scoped per share or project, with an expiry? | K5, U3 | K5 default: connection-wide, no expiry; owner answer pending. |
 
 ## Answered
 

@@ -193,6 +193,29 @@ export class Connections {
       finally { lease.release() }
     })
   }
+  /** K5's trusted process boundary. Identity is the original prompt author, including delegation.
+   * A sharing grant never enables another person's prompt on a subscription connection. */
+  dispatchAgent<T>(ownerAccountId: string, id: string, actorAccountId: string, editorAllowed: boolean,
+    call: { background?: boolean; signal?: AbortSignal },
+    launch: (connection: import('@guanxi/contract').Connection, key: string | undefined, signal: AbortSignal) => Promise<T>): Promise<T> {
+    return this.track(async () => {
+      const connection = this.store.get(ownerAccountId, id)
+      if (actorAccountId !== ownerAccountId &&
+        (connection.auth === 'cli_login' || !editorAllowed || !['model_api', 'local_runtime'].includes(connection.kind))) {
+        throw new ConnectionError('policy_denied', 'Connection cannot pay for this prompt author')
+      }
+      const signal = call.signal ? AbortSignal.any([this.lifetime, call.signal]) : this.lifetime
+      this.#vault.assertScrubbingReady(ownerAccountId)
+      signal.throwIfAborted()
+      if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) {
+        throw new ConnectionError('policy_denied', 'Unattended access disabled')
+      }
+      if (connection.kind === 'service') throw new ConnectionError('policy_denied', 'Not an agent payment connection')
+      if (connection.auth === 'api_key') return this.#vault.inject(ownerAccountId, id, call.background ?? false,
+        key => { assertApiKey(connection.provider, key); return launch(connection, key, signal) })
+      return launch(connection, undefined, signal)
+    })
+  }
   /** Caller supplies a pre-authorized destination; scrubbing precedes hashing. */
   writeArtifact(accountId: string, destination: string, value: unknown) {
     return this.track(async () => {
