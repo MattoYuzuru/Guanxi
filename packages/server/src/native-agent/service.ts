@@ -63,7 +63,7 @@ export class NativeAgents {
   private commandRunner: typeof sandboxCommand
   constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)], commandRunner = sandboxCommand, runtime: { db: Db; runs: RunStore }) {
     this.runs = runtime.runs
-    this.sessions = new NativeSessions(runtime.db, log, dataDir)
+    this.sessions = new NativeSessions(runtime.db, log, dataDir, this.runs)
     this.maintenance = setInterval(() => { void this.maintain() }, 60000)
     this.maintenance.unref()
     void this.maintain()

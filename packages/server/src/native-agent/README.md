@@ -194,7 +194,10 @@ private pre-admission directories under the R1 home fence. It rechecks each poli
 active native attempt or held K2 writer and refuses quarantined roots. Scratch, copied attachments
 and private output artifacts are removed before deleting R1 rows and the owning Thread (which
 cascades K2 events, writer and FTS rows). A durable intent blocks continuation across partial
-cleanup/restart; failures retain that intent. Quarantine files are never a cleanup target and
+cleanup/restart; failures retain that intent. Deletion binds to the admitting R1 home
+generation: a home deposed during an await stops before later filesystem steps and cannot
+commit the final metadata transaction; the successor's maintenance retry finishes the same
+intent. An already-issued filesystem action cannot be undone. Quarantine files are never a cleanup target and
 have no automatic expiry. Cross-session delegation references refuse deletion rather than
 silently dropping another run's promise. Reasoning uses only K2 reasoning rows, with its seven-day
 maximum and the sooner parent TTL; it never enters provider history, outputs or cost metadata.

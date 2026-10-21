@@ -46,6 +46,11 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
 
 - One `BEGIN IMMEDIATE` commits every state transition with its K2 event(s); notifications
   happen only after commit. A refused trace/readiness gate rolls the state change back.
+- `homeFence()` is the trusted host metadata extension: it captures the admitting home
+  generation, `assert()` rechecks it before each asynchronous phase, and `transaction()`
+  rechecks it inside the same `BEGIN IMMEDIATE` as the final synchronous mutation. Native
+  session deletion uses it; a deposed home stops and leaves its durable intent and rows to
+  the successor.
 - The execution home has a durable owner lease. Each mutation verifies its owner id/token
   and unreleased state. The same holder/token may renew after a stall because no successor
   has acquired the row. A released or replaced holder is fenced. Home renewal happens at

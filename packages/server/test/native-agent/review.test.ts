@@ -6,6 +6,19 @@ import { fixture } from './fixture.ts'
 import { emptyUsage } from '../../src/native-agent/model.ts'
 import { piModels, piTransport } from '../../src/connections/pi.ts'
 
+type Fixture = Awaited<ReturnType<typeof fixture>>
+async function assertDeletionSettled(f: Fixture, sessionId: string, dirs: string[]) {
+  for (const dir of dirs) await assert.rejects(readdir(dir), { code: 'ENOENT' })
+  for (const [table, key] of [['threads','id'], ['sessions','id'], ['session_writers','session_id'], ['session_events','session_id'], ['native_sessions','session_id'], ['durable_runs','session_id']] as const) {
+    assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${key}=?`).get(sessionId)!.n, 0, table)
+  }
+  for (const table of ['run_costs','run_attempts','run_execution','run_resources']) assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n, 0, table)
+  assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), [])
+  f.db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES('integrity-check')")
+  // The settled intent cannot start a second destructive pass.
+  await assert.rejects(f.agents().sessions.remove(sessionId), { code: 'session_not_found' })
+}
+
 for (const cap of ['maxTokens','maxCostMicrounits'] as const) test(`nonzero ${cap} consumes actual K3 usage in R1 before stopping`, async t => {
   const usage = { ...emptyUsage(), input: 10, output: 7, cacheRead: 2, cacheWrite: 3, totalTokens: 22, cost: { input: 0.1, output: 0.025, cacheRead: 0, cacheWrite: 0, total: 0.125 } }
   const f = await fixture(t, undefined, undefined, undefined, undefined, { usage })
@@ -144,6 +157,69 @@ test('a deposed native home cannot delete a settled session or its resources', a
     await readdir(f.agents().sessions.paths(sessionId)[0]!)
     assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 0)
   } finally { successor.close() }
+})
+
+test('home handover during deletion stops later destructive steps and leaves the intent to the successor', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  assert.equal(f.runs.get(runId).state, 'completed')
+  const dirs = f.agents().sessions.paths(sessionId)
+  for (const dir of dirs) await mkdir(dir, { recursive: true })
+  const pending = f.agents().deleteSession(sessionId)
+  // The durable intent commits before the first awaited filesystem step.
+  assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 1)
+  f.runs.close()
+  const successor = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber })
+  try {
+    successor.heartbeat(); successor.reconcile()
+    assert.equal(successor.get(runId).state, 'completed', 'the successor sees the settled run')
+    await assert.rejects(pending, /deletion_failed/)
+    // The deposed home refuses before the next filesystem step and commits no metadata.
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 1)
+    assert.equal(successor.get(runId).state, 'completed')
+    assert.notEqual(f.log.session(sessionId), null)
+    // The rm already issued completed; the next two steps were never issued.
+    await assert.rejects(readdir(dirs[0]!), { code: 'ENOENT' })
+    await readdir(dirs[1]!)
+    await readdir(dirs[2]!)
+  } finally { successor.close() }
+  // The successor's maintenance retry finishes the same durable intent.
+  await f.restart(f.data, true)
+  await f.agents().close()
+  await assertDeletionSettled(f, sessionId, dirs)
+})
+
+test('home handover before the final deletion transaction refuses the metadata commit', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  let successor: InstanceType<typeof RunStore> | undefined
+  let current: Fixture | undefined
+  const f = await fixture(t, undefined, undefined, undefined, undefined, {
+    // A synchronous store boundary lets the successor take the home after every rm
+    // but before native deletion opens its final metadata transaction.
+    fault: (operation, point) => {
+      if (operation !== 'native_delete' || point !== 'before_begin' || successor || !current) return
+      current.runs.close()
+      successor = new RunStore({ db: current.db, log: current.log, scrubber: current.scrubber })
+      successor.heartbeat(); successor.reconcile()
+    },
+  })
+  current = f
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  const dirs = f.agents().sessions.paths(sessionId)
+  for (const dir of dirs) await mkdir(dir, { recursive: true })
+  try {
+    await assert.rejects(f.agents().deleteSession(sessionId), /deletion_failed/)
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 1)
+    assert.equal(successor!.get(runId).state, 'completed', 'the successor keeps the visible run')
+    assert.notEqual(f.log.session(sessionId), null)
+    for (const dir of dirs) await assert.rejects(readdir(dir), { code: 'ENOENT' })
+  } finally { successor?.close() }
+  await f.restart(f.data, true)
+  await f.agents().close()
+  await assertDeletionSettled(f, sessionId, dirs)
 })
 
 

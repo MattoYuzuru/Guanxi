@@ -6,7 +6,7 @@ import { routedCommandSchema, type RoutedCommand } from '@guanxi/contract/federa
 import type { Db } from '../store/db.ts'
 import type { SessionLog, SessionEventInput, AppendOptions, AppendResult } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
-import { RunError, TERMINAL_RUN_STATES, type Attempt, type PromiseRecord, type Run, type RunState,
+import { RunError, TERMINAL_RUN_STATES, type Attempt, type HomeAuthority, type HomeFence, type PromiseRecord, type Run, type RunState,
   type TerminalRunState, type Wake } from './types.ts'
 
 interface Lease { key: string; epoch: number; token: number; holder: string; expires_at: number; released: number; regrant_after: number }
@@ -35,7 +35,7 @@ type Action = SessionEventData<'run.lifecycle'>['action']
 const HOME_KEY = 'durable-runs/home'
 const EPSILON_MS = 1_000
 
-export class RunStore {
+export class RunStore implements HomeAuthority {
   private readonly db: Db
   private readonly log: SessionLog
   private readonly scrubber: EgressScrubber
@@ -556,6 +556,24 @@ export class RunStore {
     if (!this.owner) this.claimHome()
     else if (this.leaseNow() >= this.renewAt) this.tx('heartbeat', () => {}, false)
     else this.assertOwner()
+  }
+  /** Trusted in-process host extension: bind later metadata work to this home generation.
+   * Callers assert before each asynchronous phase and use `transaction` for the final
+   * synchronous mutation; a deposed generation can never commit it. */
+  homeFence(): HomeFence {
+    this.heartbeat()
+    const owner = this.owner
+    if (!owner) throw new RunError('writer_busy')
+    const token = owner.token
+    const assert = (): void => {
+      if (this.closed) throw new RunError('closed')
+      const lease = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
+      if (!lease || lease.released || lease.holder !== this.ownerId || lease.token !== token) throw new RunError('stale_lease')
+    }
+    return {
+      assert,
+      transaction: (operation, body) => this.tx(operation, () => { assert(); return body(this.db) }),
+    }
   }
   private lose(attempt: Attempt): void {
     this.write("UPDATE run_attempts SET state='lost' WHERE id=?", attempt.id)

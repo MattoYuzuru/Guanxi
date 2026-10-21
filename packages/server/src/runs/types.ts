@@ -1,6 +1,17 @@
 import type { RunState } from '@guanxi/contract'
+import type { Db } from '../store/db.ts'
 
 export type { RunState }
+/** A host-owned metadata operation bound to the home generation that admitted it. */
+export interface HomeFence {
+  /** Throw unless the captured generation still owns the durable-runs home. */
+  assert(): void
+  /** Assert the captured generation inside the same SQLite transaction as `body`. */
+  transaction<T>(operation: string, body: (db: Db) => T): T
+}
+export interface HomeAuthority {
+  homeFence(): HomeFence
+}
 export const TERMINAL_RUN_STATES: ReadonlySet<RunState> = new Set(['completed', 'failed', 'canceled', 'rejected'])
 export type TerminalRunState = 'completed' | 'failed' | 'canceled' | 'rejected'
 export interface Run {

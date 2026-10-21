@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { CHAT_RETENTION_DAYS, SESSION_TRASH_RECOVERY_HOURS, type SessionEventData } from '@guanxi/contract'
 import type { Db } from '../store/db.ts'
 import type { SessionLog } from '../session-log/log.ts'
+import type { HomeAuthority } from '../runs/types.ts'
 import { assertRootsClean } from './cleanup.ts'
 
 const DAY = 86400000
@@ -12,7 +13,8 @@ export class NativeSessions {
   readonly db: Db
   readonly log: SessionLog
   readonly dataDir: string
-  constructor(db: Db, log: SessionLog, dataDir: string) { this.db = db; this.log = log; this.dataDir = dataDir }
+  readonly home: HomeAuthority
+  constructor(db: Db, log: SessionLog, dataDir: string, home: HomeAuthority) { this.db = db; this.log = log; this.dataDir = dataDir; this.home = home }
   create(id: string, model: string, retention: 'keep' | 'ttl' | 'session', policy: SessionEventData<'agent.policy'>) {
     const now = new Date().toISOString()
     return this.log.open(id, { kind: 'agent', threadId: id }, {
@@ -78,6 +80,8 @@ export class NativeSessions {
       join(this.dataDir, 'native-output', createHash('sha256').update(id).digest('hex'))]
   }
   async remove(id: string) {
+    // Bind every later destructive step to the home generation that admitted this removal.
+    const home = this.home.homeFence()
     const paths = this.paths(id)
     const policy = this.log.readAll(id, 'remote_agent').find(e => e.type === 'agent.policy')
     if (policy?.type !== 'agent.policy') throw new Error('session_not_found')
@@ -87,8 +91,7 @@ export class NativeSessions {
     if (writer && writer.writer_id !== this.log.writer.id) throw new Error('writer_busy')
     const handle = this.log.open(id, { kind: 'agent', threadId: id })
     try {
-      this.db.exec('BEGIN IMMEDIATE')
-      try {
+      home.transaction('native_delete_intent', () => {
         const busy = this.db.prepare(`SELECT 1 FROM durable_runs r JOIN run_attempts a ON a.run_id=r.id
           WHERE r.session_id=? AND a.state IN ('delivered','started')`).get(id)
         if (busy) throw new Error('session_busy')
@@ -96,12 +99,15 @@ export class NativeSessions {
           WHERE (r.session_id=? OR c.session_id=?) AND r.session_id<>c.session_id`).get(id, id)
         if (foreignDependency) throw new Error('session_busy')
         if (!this.db.prepare('UPDATE native_sessions SET deletion_requested=1 WHERE session_id=?').run(id).changes) throw new Error('session_not_found')
-        this.db.exec('COMMIT')
-      } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      })
       // No caller can resume a session with a persisted deletion intent, even after a crash.
-      for (const path of paths) await rm(path, { recursive: true, force: true })
-      this.db.exec('BEGIN IMMEDIATE')
-      try {
+      // A deposed home stops before its next filesystem step; an already-issued rm cannot be undone.
+      for (const path of paths) {
+        home.assert()
+        await rm(path, { recursive: true, force: true })
+      }
+      // The admitting home generation and the metadata mutation commit or roll back together.
+      home.transaction('native_delete', () => {
         assertRootsClean(this.dataDir, [paths[0]!, ...policy.data.roots])
         const ids = (this.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').all(id) as { id: string }[]).map(r => r.id)
         for (const runId of ids) {
@@ -117,8 +123,7 @@ export class NativeSessions {
         for (const runId of ids) this.db.prepare("DELETE FROM leases WHERE key=? OR (key LIKE 'resource:%' AND holder=?)").run(`run:${runId}/exec`, runId)
         this.db.prepare('DELETE FROM native_sessions WHERE session_id=?').run(id)
         this.db.prepare('DELETE FROM threads WHERE id=?').run(id)
-        this.db.exec('COMMIT')
-      } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      })
       this.log.notify([id])
     } finally { handle.close() }
   }
