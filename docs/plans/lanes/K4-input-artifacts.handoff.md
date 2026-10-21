@@ -19,8 +19,9 @@ full/browser/native gates pending. **Does not close `K4-INPUT-ARTIFACTS`.**
 | `8b85fe9` | self-review: minimal incompatible-trace copy (no internal code) |
 | `bc7596e` | self-review: queued appends overtaken by a failure cannot follow the terminal |
 | `297cf00` | self-review: artifact-root identity pinned across ancestor swaps |
-| this commit | self-review: typed pre-open 406 on the live tail |
-| next commit | handoff evidence update |
+| `983d58e` | self-review: typed pre-open 406 on the live tail |
+| `6fb7d23` | handoff evidence update |
+| this commit | handoff table hashes only |
 
 No source file from another lane, no `PHASE_STATUS`/`NEXT_AGENT_PROMPT`, package manifest/lock,
 approval record/token, user data or infrastructure was edited.
