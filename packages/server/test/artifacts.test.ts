@@ -136,12 +136,12 @@ describe('P3-N generic Artifact contract and migration 26', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const freshPath = join(root, 'fresh.db')
     const fresh = openDb(freshPath)
-    assert.equal(version(fresh), 31)
+    assert.equal(version(fresh), 32)
     assert.equal(count(fresh, 'artifact_blobs'), 0)
     assert.equal(count(fresh, 'artifacts'), 0)
     fresh.close()
     const reopened = openDb(freshPath)
-    assert.equal(version(reopened), 31)
+    assert.equal(version(reopened), 32)
     reopened.close()
 
     const upgradePath = join(root, 'upgrade.db')
@@ -159,7 +159,7 @@ describe('P3-N generic Artifact contract and migration 26', () => {
     seed.close()
 
     const upgraded = openDb(upgradePath)
-    assert.equal(version(upgraded), 31)
+    assert.equal(version(upgraded), 32)
     assert.equal(storedV25Payload(upgraded), before)
     assert.equal(count(upgraded, 'artifact_blobs'), 0)
     downgradeArtifactStoreToV25(upgraded)
@@ -186,7 +186,7 @@ describe('P3-N generic Artifact contract and migration 26', () => {
     failed.close()
 
     const retried = openDb(upgradePath)
-    assert.equal(version(retried), 31)
+    assert.equal(version(retried), 32)
     assert.equal(storedV25Payload(retried), before)
     retried.close()
   })

@@ -1,13 +1,13 @@
 /** R1's single-node execution home. No model/process is held by a sleeping run. */
 import { createHash, randomUUID } from 'node:crypto'
 import type { SQLInputValue } from 'node:sqlite'
-import type { SessionEventData } from '@guanxi/contract'
+import type { NativeRunBudget, SessionEventType, SessionEventData } from '@guanxi/contract'
 import { routedCommandSchema, type RoutedCommand } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
-import type { SessionLog } from '../session-log/log.ts'
+import type { SessionLog, SessionEventInput, AppendOptions, AppendResult } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
-import { RunError, TERMINAL_RUN_STATES, type Attempt, type PromiseRecord, type Run, type RunState,
-  type TerminalRunState, type Wake } from './types.ts'
+import { RunError, TERMINAL_RUN_STATES, type Attempt, type HomeAuthority, type HomeFence, type PromiseRecord, type Run, type RunState,
+  type Synchronous, type TerminalRunState, type Wake } from './types.ts'
 
 interface Lease { key: string; epoch: number; token: number; holder: string; expires_at: number; released: number; regrant_after: number }
 export interface RunStoreOptions {
@@ -35,7 +35,7 @@ type Action = SessionEventData<'run.lifecycle'>['action']
 const HOME_KEY = 'durable-runs/home'
 const EPSILON_MS = 1_000
 
-export class RunStore {
+export class RunStore implements HomeAuthority {
   private readonly db: Db
   private readonly log: SessionLog
   private readonly scrubber: EgressScrubber
@@ -52,6 +52,7 @@ export class RunStore {
   private closed = false
   private operation = ''
   private readonly changedSessions = new Set<string>()
+  private readonly startupNativeRuns = new Set<string>()
   private readonly startupAttempts = new Set<string>()
   private readonly runFailures = new Map<string, { runId: string; operation: string; code: string }>()
   failures() {
@@ -119,10 +120,12 @@ export class RunStore {
         expires_at=excluded.expires_at,released=0,regrant_after=excluded.regrant_after`).run(HOME_KEY, token, this.ownerId,
         now + this.ownerTtl, now + this.ownerTtl + this.maxTtl + EPSILON_MS)
       const owner = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)!
+      const inheritedNative = this.rows<{ id: string }>('SELECT r.id FROM durable_runs r JOIN native_sessions n ON n.session_id=r.session_id')
       const inherited = this.rows<{ id: string }>("SELECT id FROM run_attempts WHERE state IN ('delivered','started')")
       this.db.exec('COMMIT')
       this.owner = owner
       this.renewAt = now + this.ownerTtl / 3
+      for (const run of inheritedNative) this.startupNativeRuns.add(run.id)
       for (const attempt of inherited) this.startupAttempts.add(attempt.id)
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
@@ -201,7 +204,7 @@ export class RunStore {
   }
   private event(run: Run, action: Action, relatedId: string | null = null, wakeSeq: number | null = null): void {
     this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, {
-      type: 'run.lifecycle', data: { runId: run.id, state: run.state, version: run.version, action, relatedId, wakeSeq },
+      type: 'run.lifecycle', data: { runId: run.id, state: run.state, version: run.version, action, relatedId, wakeSeq, ...(this.executionReason(run.id) ? { reason: this.executionReason(run.id)! } : {}) },
     })
     this.changedSessions.add(run.session_id)
     this.point('trace')
@@ -320,6 +323,72 @@ export class RunStore {
       }
     })
   }
+  /** The executor's trace and R1 fence commit in the same SQLite transaction. */
+  append<T extends SessionEventType>(attempt: Attempt, input: SessionEventInput<T>, options: AppendOptions & { expectedSeq: number }): AppendResult {
+    return this.tx('executor_append', () => {
+      this.fenced(attempt)
+      const run = this.get(attempt.run_id)
+      const result = this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, input, options)
+      this.changedSessions.add(run.session_id)
+      return result
+    })
+  }
+  configureExecution(attempt: Attempt, policy: NativeRunBudget): void {
+    this.tx('execution_policy', () => {
+      this.fenced(attempt)
+      this.write('INSERT INTO run_execution(run_id,policy,started_at) VALUES (?,?,?)', attempt.run_id, JSON.stringify(policy), this.now())
+    })
+  }
+  executionReason(runId: string): string | null {
+    return this.row<{ terminal_reason: string | null }>('SELECT terminal_reason FROM run_execution WHERE run_id=?', runId)?.terminal_reason ?? null
+  }
+  /** Checked before model calls, tool effects and periodically while a call is pending. */
+  checkExecution(attempt: Attempt, modelCall = false): 'working' | 'wrapping_up' {
+    const result = this.tx('execution_check', () => {
+      this.fenced(attempt)
+      const run = this.get(attempt.run_id)
+      const row = this.row<{ policy: string; calls: number; report_calls: number; started_at: number; report_started_at: number | null }>(
+        'SELECT * FROM run_execution WHERE run_id=?', run.id)
+      if (!row) throw new RunError('invalid_transition')
+      const policy = JSON.parse(row.policy) as NativeRunBudget
+      const reporting = run.state === 'wrapping_up'
+      let reason: 'report_budget_exhausted' | 'budget_exhausted' | null = null
+      if (reporting) {
+        if (row.report_started_at === null) this.write('UPDATE run_execution SET report_started_at=? WHERE run_id=?', this.now(), run.id)
+        if (this.now() - (row.report_started_at ?? this.now()) >= policy.reportMaxDurationMs ||
+          (modelCall && row.report_calls >= policy.reportMaxCalls)) reason = 'report_budget_exhausted'
+      } else {
+        const costs = this.costs(run.id)
+        const tokens = costs.reduce((n, c) => n + c.inputTokens + c.outputTokens, 0)
+        const money = costs.reduce((n, c) => n + (c.costMicrounits ?? 0), 0)
+        if ((modelCall && policy.maxModelCalls !== undefined && row.calls >= policy.maxModelCalls) ||
+          (policy.maxTokens !== undefined && tokens >= policy.maxTokens) ||
+          (policy.maxCostMicrounits !== undefined && (money >= policy.maxCostMicrounits || costs.some(c => c.costMicrounits === null || c.currency !== 'USD'))) ||
+          (policy.maxDurationMs !== undefined && this.now() - row.started_at >= policy.maxDurationMs)) reason = 'budget_exhausted'
+      }
+      if (reason) {
+        this.write('UPDATE run_execution SET terminal_reason=? WHERE run_id=?', reason, run.id)
+        this.terminal(run.id, 'canceled')
+        return { reason, reporting }
+      }
+      if (modelCall) this.write(`UPDATE run_execution SET ${reporting ? 'report_calls=report_calls+1' : 'calls=calls+1'} WHERE run_id=?`, run.id)
+      return { reason, reporting }
+    })
+    if (result.reason) throw new RunError(result.reason)
+    return result.reporting ? 'wrapping_up' : 'working'
+  }
+  stopExecution(attempt: Attempt, reason: 'quota_exhausted'): void {
+    this.tx('execution_stop', () => {
+      this.fenced(attempt)
+      this.signalQuotaWithin(attempt)
+      this.write('UPDATE run_execution SET terminal_reason=? WHERE run_id=?', reason, attempt.run_id)
+      this.terminal(attempt.run_id, 'canceled')
+    })
+  }
+  private signalQuotaWithin(attempt: Attempt): void {
+    const promise = this.row<PromiseRecord>('SELECT * FROM promises WHERE child_id=?', attempt.run_id)
+    if (promise && !promise.detached && promise.outcome === null) this.wake(promise.parent_id, 'quota', attempt.id)
+  }
   delegate(attempt: Attempt, input: DelegateInput): PromiseRecord {
     this.clean(input.key); this.integer(input.deadline)
     const deadlinePolicy = input.deadlinePolicy ?? 'cancel_wrap_up'
@@ -392,7 +461,9 @@ export class RunStore {
         throw new RunError('invalid_transition')
       }
       const deadline = this.row<PromiseRecord>("SELECT * FROM promises WHERE child_id=? AND outcome='deadline' AND deadline_policy='cancel_wrap_up'", attempt.run_id)
-      this.terminal(attempt.run_id, deadline ? 'canceled' : outcome)
+      const reporting = deadline || this.get(attempt.run_id).state === 'wrapping_up'
+      if (reporting) this.write("UPDATE run_execution SET terminal_reason=COALESCE(terminal_reason,'wrap_up_requested') WHERE run_id=?", attempt.run_id)
+      this.terminal(attempt.run_id, reporting ? 'canceled' : outcome)
     })
   }
   private terminal(runId: string, state: TerminalRunState): void {
@@ -486,6 +557,30 @@ export class RunStore {
     else if (this.leaseNow() >= this.renewAt) this.tx('heartbeat', () => {}, false)
     else this.assertOwner()
   }
+  /** Trusted in-process host extension: bind later metadata work to this home generation.
+   * Callers assert before each asynchronous phase and use `transaction` for the final
+   * synchronous mutation; a deposed generation can never commit it. */
+  homeFence(): HomeFence {
+    this.heartbeat()
+    const owner = this.owner
+    if (!owner) throw new RunError('writer_busy')
+    const token = owner.token
+    const assert = (): void => {
+      if (this.closed) throw new RunError('closed')
+      const lease = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
+      if (!lease || lease.released || lease.holder !== this.ownerId || lease.token !== token) throw new RunError('stale_lease')
+    }
+    return {
+      assert,
+      transaction: <T>(operation: string, body: (db: Db) => Synchronous<T>): T => this.tx(operation, () => {
+        assert()
+        const result = body(this.db) as T
+        // Mirror mutate(): a callback that hands back a Promise would commit before await.
+        if (result instanceof Promise) throw new RunError('invalid_input')
+        return result
+      }),
+    }
+  }
   private lose(attempt: Attempt): void {
     this.write("UPDATE run_attempts SET state='lost' WHERE id=?", attempt.id)
     this.release(attempt.run_id)
@@ -547,7 +642,21 @@ export class RunStore {
     return deliveries
   }
   /** ADR-0019 table, local only: no inference is started by this operation. */
-  reconcile(): void { this.reconcileAttempts(true) }
+  reconcile(): void {
+    this.reconcileAttempts(true)
+    // A native turn never replays work or a report after restart. The user must decide.
+    for (const id of this.startupNativeRuns) {
+      if (!this.row('SELECT 1 FROM durable_runs WHERE id=?', id)) { this.startupNativeRuns.delete(id); continue }
+      this.isolate(id, 'reconcile', () => this.tx('native_reconcile', () => {
+        const run = this.get(id)
+        if (!TERMINAL_RUN_STATES.has(run.state) && run.state !== 'input_required') {
+          if (this.attempts(id).some(a => ['delivered','started'].includes(a.state))) throw new RunError('invalid_transition')
+          this.setState(id, 'input_required', 'input_required')
+        }
+      }))
+      if (!this.runFailures.has(`reconcile:${id}`)) this.startupNativeRuns.delete(id)
+    }
+  }
   private reconcileAttempts(startupOnly: boolean): void {
     for (const attempt of this.rows<Attempt>("SELECT * FROM run_attempts WHERE state IN ('delivered','started')")) {
         // Readiness may open after this activation has admitted new work. Only

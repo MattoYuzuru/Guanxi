@@ -1,6 +1,7 @@
 {
   "files": {
-    "packages/web/src/features/seeded/SeededScreen.tsx": "// G11 seed: a product screen uses a draft component.\nimport { Button } from \"@guanxi/ui\"\n\nexport function SeededScreen({ label }: { label: string }) {\n  return <Button>{label}</Button>\n}\n"
+    "packages/web/src/features/seeded/SeededScreen.tsx": "// G11 seed: a product screen uses a draft component.\nimport { Button } from \"@guanxi/ui\"\n\nexport function SeededScreen({ label }: { label: string }) {\n  return <Button>{label}</Button>\n}\n",
+    "packages/ui/src/components/button/button.review.json": "{\n  \"$schema\": \"../../../catalog/review.schema.json\",\n  \"id\": \"button\",\n  \"status\": \"draft\",\n  \"approval\": null,\n  \"requests\": []\n}\n"
   },
   "expectedError": "product code uses draft component \"button\""
 }

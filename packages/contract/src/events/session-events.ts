@@ -84,6 +84,7 @@ export const sessionEventDataSchemas = {
   'agent.queue': z.object({ items: z.array(z.object({ id: z.string(), text: z.string() }).strict()) }).strict(),
   'agent.note': z.object({ text: z.string() }).strict(),
   'run.lifecycle': z.object({
+    reason: z.string().optional(),
     runId: id,
     state: runStateSchema,
     version: z.number().int().positive(),
