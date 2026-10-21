@@ -168,7 +168,7 @@ Residual risks:
 | DS1-b: `@guanxi/ui` components, catalog, approvals, G10–G16 | in review fixes | [lanes/DS1-b](lanes/DS1-b.md) |
 | DS1-c: lint ratchet and codemod | waiting for DS1-b | [lanes/DS1-c](lanes/DS1-c.md) |
 
-## Next stages
+## Repository presentation and documentation (2026-10-21)
 
 Repository presentation review (2026-10-21): GitHub About now has an English early-alpha
 description and ten topics. Website temporarily links to the README status because the
@@ -179,7 +179,21 @@ from the home page. This does not hide infrastructure or change deployment acces
 Documentation reconciliation: README now records the merged own kernel and DS1-a; the
 navigation includes ADR-0037/0038; VISION reflects D-193's uncapped fleet; the architecture and
 client ADR distinguish the planned phone relay from execution. No deployment or new hosting
-decision was made. Validation evidence is recorded after the independent review below.
+decision was made.
+
+- **New:** 0 product tests; seven Markdown files reconciled in `977e945`.
+- **Regression envelope:** `npm run lint:md` passed (103 files, 0 errors);
+  `git diff --check` passed. Product tests and the browser regression gate were not rerun for
+  this documentation-only change.
+- **Independent verification:** a separate read-only reviewer inspected
+  `1243d3c..977e945` against ADR-0037/0038, D-186/187/193, existing K1/DS1-a evidence,
+  package sources and the lane table; new relative links and heading fragments resolve;
+  no actionable findings. GitHub metadata readback and UI visibility checks were the author's
+  direct observations, outside the reviewer's local scope.
+- **Residuals:** public website and phone relay remain undeployed by this task; existing
+  Russian legacy docs and raw research remain preserved, not translated by this slice.
+
+## Next stages
 
 | Stage | Status | Notes |
 | --- | --- | --- |
