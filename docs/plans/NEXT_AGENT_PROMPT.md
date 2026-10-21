@@ -9,8 +9,8 @@ for U4 under D-187 and ADR-0038; no relay is deployed.
 
 Open lanes:
 
-- **DS1-c — lint ratchet and codemod:** [lanes/DS1-c](lanes/DS1-c.md), handed off; Claude
-  cross-family review running.
+- **DS1-c — lint ratchet and codemod:** [lanes/DS1-c](lanes/DS1-c.md). Claude review 1:
+  merge after fixes (contrast regression, untested guards, mixed palette); fix round queued.
   DS2 and U1 open when it merges.
 - **R2 — relay executor v1:** [lanes/R2](lanes/R2.md), running in Codex.
 - **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), running in Codex.
