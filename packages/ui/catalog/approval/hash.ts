@@ -4,6 +4,7 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 
 /** Editor, OS and tool leftovers that never belong to a component (and are often untracked). */
@@ -15,8 +16,6 @@ const TEXT = /\.(tsx?|mts|mjs|css|md|json)$/
  * visual baselines; accessible names are not (named in the DS1-b hand-off).
  */
 const CLOSURE_EXCLUDED = new Set(['i18n/messages.ts'])
-const IMPORT = /(?:^|[\s;])(?:import|export)\s+(?:[^'"`;]*?\s+from\s+)?['"](\.{1,2}\/[^'"]+)['"]/g
-const DYNAMIC_IMPORT = /\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g
 /** Package-wide inputs every component renders with: shared base styles under src/styles. */
 const SHARED_DIR = 'styles'
 /**
@@ -24,7 +23,7 @@ const SHARED_DIR = 'styles'
  * change alters every component, so it makes every approval stale.
  */
 const PACKAGE_INPUTS = ['generated/tokens.css', 'generated/theme.css', 'fonts']
-const RESOLVE_SUFFIXES = ['', '.ts', '.tsx', '.mts', '.js', '.mjs', '.css', '/index.ts', '/index.tsx']
+const SCRIPT = /\.(tsx?|mts|m?js)$/
 
 export class SourceHashError extends Error {
   constructor(message: string) {
@@ -61,50 +60,76 @@ function content(file: string): Buffer | string {
   return TEXT.test(file) ? raw.toString('utf8').replace(/\r\n/g, '\n') : raw
 }
 
-function regularFile(path: string): boolean {
-  if (!existsSync(path)) return false
-  const stat = lstatSync(path)
-  return stat.isFile() && !stat.isSymbolicLink()
-}
+// Loaded on use: release bundles of the node never hash sources, and must not bundle these.
+const load = createRequire(import.meta.url)
 
-/** Bundler-style resolution of a relative specifier: extensionless, `.js` for `.ts`, index files. */
-function resolveLocal(spec: string, from: string, root: string): string {
-  const base = resolve(dirname(from), spec)
-  const candidates = RESOLVE_SUFFIXES.map((suffix) => base + suffix)
-  if (/\.(m?js|jsx)$/.test(base)) {
-    const stem = base.replace(/\.(m?js|jsx)$/, '')
-    candidates.push(`${stem}.ts`, `${stem}.tsx`, `${stem}.mts`)
+/**
+ * The component's dependency closure as the bundler resolves it (N2): esbuild bundles every
+ * script in the component folder with a metafile, so each local file a static, re-export,
+ * side-effect or dynamic import reaches (any syntax, template specifiers included) is an input.
+ * Packages stay external; a specifier esbuild cannot resolve fails closed.
+ */
+function bundledInputs(entries: string[], srcRoot: string): string[] {
+  if (entries.length === 0) return []
+  const esbuild = load('esbuild') as typeof import('esbuild')
+  let metafile: import('esbuild').Metafile
+  try {
+    metafile = esbuild.buildSync({
+      absWorkingDir: srcRoot,
+      entryPoints: entries,
+      bundle: true,
+      write: false,
+      metafile: true,
+      packages: 'external',
+      platform: 'browser',
+      format: 'esm',
+      jsx: 'automatic',
+      outdir: join(srcRoot, '.source-hash'),
+      logLevel: 'silent',
+      loader: { '.css': 'css', '.md': 'text', '.svg': 'file', '.png': 'file', '.woff2': 'file' },
+    }).metafile
+  } catch (cause) {
+    const first = (cause as { errors?: Array<{ text: string; location?: { file: string } | null }> }).errors?.[0]
+    throw new SourceHashError(`cannot resolve the component's dependencies: ${first ? `${first.text}${first.location ? ` (${first.location.file})` : ''}` : String(cause)}`)
   }
-  const found = candidates.find(regularFile)
-  const rel = relative(root, from).split(sep).join('/')
-  if (!found) throw new SourceHashError(`cannot resolve '${spec}' from ${rel}`)
-  if (!found.startsWith(root + sep)) throw new SourceHashError(`'${spec}' from ${rel} leaves packages/ui/src`)
-  return found
+  return Object.keys(metafile.inputs).map((input) => resolve(srcRoot, input))
 }
 
-/** Every local static, re-export and dynamic import of a source file, resolved; fails closed. */
-function localImports(file: string, root: string): string[] {
-  if (!/\.(tsx?|mts|m?js)$/.test(file)) return []
-  const source = readFileSync(file, 'utf8')
-  const specs = [...source.matchAll(IMPORT), ...source.matchAll(DYNAMIC_IMPORT)].map((match) => match[1] as string)
-  return specs.map((spec) => resolveLocal(spec, file, root))
+/** A dynamic import whose specifier is computed at run time is outside any hash: refuse it. */
+function rejectComputedImports(file: string, root: string): void {
+  if (!SCRIPT.test(file)) return
+  const ts = load('typescript') as typeof import('typescript')
+  const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  const visit = (node: import('typescript').Node): void => {
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const [specifier] = node.arguments
+      const literal = specifier && (ts.isStringLiteral(specifier) || ts.isNoSubstitutionTemplateLiteral(specifier) || ts.isTemplateExpression(specifier))
+      if (!literal) {
+        throw new SourceHashError(`computed dynamic import in ${relative(root, file).split(sep).join('/')}: the hash cannot follow it`)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
 }
 
 /**
  * sha256 over `"<json path>\n<sha256 of the content>\n"` for the component's own files, the shared
  * styles (`src/styles/`), the generated token layer and fonts (`generated/tokens.css`,
- * `generated/theme.css`, `fonts/`), and every file they import inside packages/ui/src
- * (static, re-export and dynamic imports, resolved like the bundler; transitively), sorted by
- * path. An import that cannot be resolved, or that leaves packages/ui/src, throws. Paths are relative to
- * packages/ui/src and JSON-encoded, text is LF-normalised so checkouts on Windows hash the same,
- * and binary files are hashed as bytes.
+ * `generated/theme.css`, `fonts/`), and every local file the bundler reaches from the
+ * component's scripts (esbuild metafile; any import syntax), sorted by path. A dependency that
+ * cannot be resolved, one outside packages/ui, or a computed dynamic import throws. Paths are
+ * relative to packages/ui/src and JSON-encoded, text is LF-normalised so checkouts on Windows
+ * hash the same, and binary files are hashed as bytes.
  */
-export function componentSourceHash(componentDir: string): string {
+export function componentSourceHash(dir: string): string {
+  const componentDir = resolve(dir)
   const srcRoot = resolve(componentDir, '..', '..')
-  const files = new Set(listFiles(componentDir).filter((file) => !isHashExcluded(componentDir, file)))
+  const packageRoot = resolve(srcRoot, '..')
+  const own = listFiles(componentDir).filter((file) => !isHashExcluded(componentDir, file))
+  const files = new Set(own)
   const shared = join(srcRoot, SHARED_DIR)
   if (existsSync(shared) && lstatSync(shared).isDirectory()) for (const file of listFiles(shared)) files.add(file)
-  const packageRoot = resolve(srcRoot, '..')
   for (const input of PACKAGE_INPUTS) {
     const path = join(packageRoot, input)
     if (!existsSync(path)) continue
@@ -112,15 +137,16 @@ export function componentSourceHash(componentDir: string): string {
     if (stat.isDirectory() && !stat.isSymbolicLink()) for (const file of listFiles(path)) files.add(file)
     else if (stat.isFile()) files.add(path)
   }
-  const queue = [...files].filter((file) => file.startsWith(srcRoot + sep))
-  while (queue.length > 0) {
-    for (const target of localImports(queue.pop() as string, srcRoot)) {
-      const rel = relative(srcRoot, target).split(sep).join('/')
-      if (files.has(target) || CLOSURE_EXCLUDED.has(rel) || JUNK.test(rel)) continue
-      files.add(target)
-      queue.push(target)
+  for (const input of bundledInputs(own.filter((file) => SCRIPT.test(file)), srcRoot)) {
+    if (input.includes(`${sep}node_modules${sep}`)) continue
+    if (!input.startsWith(srcRoot + sep) && !input.startsWith(join(packageRoot, 'generated') + sep) && !input.startsWith(join(packageRoot, 'fonts') + sep)) {
+      throw new SourceHashError(`${relative(srcRoot, input).split(sep).join('/')} is outside packages/ui/src`)
     }
+    const rel = relative(srcRoot, input).split(sep).join('/')
+    if (CLOSURE_EXCLUDED.has(rel) || JUNK.test(rel)) continue
+    files.add(input)
   }
+  for (const file of files) if (file.startsWith(srcRoot + sep)) rejectComputedImports(file, srcRoot)
   const entries = [...files]
     .map((file) => ({ file, rel: relative(srcRoot, file).split(sep).join('/') }))
     .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))

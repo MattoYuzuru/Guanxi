@@ -254,6 +254,34 @@ describe('approving a component', () => {
     }
   })
 
+  it('goes stale when a dependency reached by compact or template-literal import syntax changes (GPT N2)', async () => {
+    const component = join(fx.uiRoot, 'src/components/badge/badge.tsx')
+    const record = uiPaths(fx.uiRoot).reviewFile('badge')
+    const helpers = { compact: join(fx.uiRoot, 'src/lib/n2-compact.ts'), lazy: join(fx.uiRoot, 'src/lib/n2-lazy.ts') }
+    const [componentBefore, recordBefore] = [readFileSync(component, 'utf8'), readFileSync(record, 'utf8')]
+    try {
+      writeFileSync(helpers.compact, 'export const compact = 1\n')
+      writeFileSync(helpers.lazy, 'export const lazy = 1\n')
+      writeFileSync(
+        component,
+        `${componentBefore}\nimport{ compact }from'../../lib/n2-compact'\nexport const n2Compact = compact\nexport const n2Lazy = () => import(\`../../lib/n2-lazy\`)\n`,
+      )
+      const approved = await post(app(service), 'badge', { decision: 'approve', comment: 'ok', ...current(fx.uiRoot, 'badge') })
+      assert.equal(approved.status, 200)
+      for (const helper of Object.values(helpers)) {
+        const before = readFileSync(helper, 'utf8')
+        writeFileSync(helper, before.replace('= 1', '= 2'))
+        const body = uiComponentReviewResponse.parse(await (await app(service).request(ROUTES.uiCatalogComponentReview('badge'))).json())
+        assert.equal(body.status, 'stale', helper)
+        writeFileSync(helper, before)
+      }
+    } finally {
+      writeFileSync(component, componentBefore)
+      writeFileSync(record, recordBefore)
+      for (const helper of Object.values(helpers)) rmSync(helper, { force: true })
+    }
+  })
+
   it('refuses with 409 and writes nothing when the source or baselines changed since they were shown', async () => {
     const path = uiPaths(fx.uiRoot).reviewFile('badge')
     const before = readFileSync(path, 'utf8')

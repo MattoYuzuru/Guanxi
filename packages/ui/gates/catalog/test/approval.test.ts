@@ -297,12 +297,15 @@ describe('component source hash covers what the component runs (GPT H3)', async 
   }
 
   const forms: Array<[string, string, string]> = [
-    ['extensionless import', "import { plain } from '../../lib/plain'", 'lib/plain.ts'],
-    ['.js specifier for a .ts file', "import { js } from '../../lib/js-specifier.js'", 'lib/js-specifier.ts'],
-    ['directory index', "import { dir } from '../../lib/dir'", 'lib/dir/index.ts'],
+    ['extensionless import', "import { plain } from '../../lib/plain'\nexport const usesPlain = plain", 'lib/plain.ts'],
+    ['.js specifier for a .ts file', "import { js } from '../../lib/js-specifier.js'\nexport const usesJs = js", 'lib/js-specifier.ts'],
+    ['directory index', "import { dir } from '../../lib/dir'\nexport const usesDir = dir", 'lib/dir/index.ts'],
     ['dynamic import', "export const load = () => import('../../lib/lazy')", 'lib/lazy.ts'],
     ['export-from', "export * from '../../lib/reexported'", 'lib/reexported.tsx'],
-    ['transitive extensionless re-export', "import { deep } from '../../lib/via'", 'lib/deep.ts'],
+    ['transitive extensionless re-export', "import { deep } from '../../lib/via'\nexport const usesDeep = deep", 'lib/deep.ts'],
+    // GPT N2: syntax the old regular expressions missed.
+    ['import without spaces', "import{ plain }from'../../lib/plain'\nexport const usesPlain = plain", 'lib/plain.ts'],
+    ['template-literal dynamic import', 'export const load = () => import(`../../lib/lazy`)', 'lib/lazy.ts'],
     ['shared focus styles', '', 'styles/base.css'],
     ['the Tailwind reference', '', 'styles/tailwind-reference.css'],
     ['generated tokens (outside src)', '', '../generated/tokens.css'],
@@ -324,10 +327,19 @@ describe('component source hash covers what the component runs (GPT H3)', async 
     })
   }
 
+  it('refuses a computed dynamic import, which no hash can follow (GPT N2)', () => {
+    const t = tree("const name = 'lazy'\nexport const load = () => import('../../lib/' + name)")
+    try {
+      assert.throws(() => componentSourceHash(t.dir), /computed dynamic import in components\/a\/a\.tsx/)
+    } finally {
+      t.dispose()
+    }
+  })
+
   it('fails closed on a local import it cannot resolve', () => {
     const t = tree("import '../../lib/missing-helper'")
     try {
-      assert.throws(() => componentSourceHash(t.dir), /cannot resolve '\.\.\/\.\.\/lib\/missing-helper'/)
+      assert.throws(() => componentSourceHash(t.dir), /cannot resolve the component's dependencies: Could not resolve "\.\.\/\.\.\/lib\/missing-helper"/)
     } finally {
       t.dispose()
     }
