@@ -137,8 +137,8 @@ describe('server boot through the kernel', () => {
     try {
       const server = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
       try {
-        const health = (host: string) => new Promise<number>((resolve, reject) => {
-          const req = httpRequest({ hostname: '127.0.0.1', port: server.port, path: '/api/health',
+        const health = (host: string, path = '/api/health') => new Promise<number>((resolve, reject) => {
+          const req = httpRequest({ hostname: '127.0.0.1', port: server.port, path,
             headers: { Host: host } }, res => {
             res.resume(); res.on('end', () => resolve(res.statusCode!))
           })
@@ -159,6 +159,10 @@ describe('server boot through the kernel', () => {
         // Exercise index.ts's mounted resolver after its service disappears.
         assert.ok(server.kernel.sessionLog, 'the kernel loaded the session log')
         assert.equal(server.context.sessionLog, server.kernel.sessionLog, 'the context uses the kernel session log')
+        const sessions = await fetch(`${server.url}/api/sessions`)
+        assert.equal(sessions.status, 200, 'K2 routes remain mounted in the real listener')
+        assert.deepEqual(await sessions.json(), { sessions: [], withheld: 0, catchingUp: 0, catchUpFailed: 0 })
+        assert.equal(await health(`evil.example:${server.port}`, '/api/sessions'), 403, 'the Host boundary also protects K2 routes')
         const modelsUrl = `${server.url}/api/connections/11111111-1111-4111-8111-111111111111/models`
         const initial = await fetch(modelsUrl)
         assert.equal(initial.status, 404)

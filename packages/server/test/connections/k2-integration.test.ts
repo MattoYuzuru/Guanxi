@@ -205,5 +205,10 @@ for (const failure of ['rejected', 'held'] as const) test(`K2 integration: ${fai
   noMatches(f.db.prepare('SELECT * FROM session_events').all(), [f.current, f.retired])
   noMatches(events, [f.current, f.retired])
   assert.match(JSON.stringify(events.find(event => event.type === 'prompt')), /REDACTED/)
-  assert.equal(mirror.catchUpBacklog(), 0, 'recovery writes no duplicate events')
+  const stored = f.db.prepare('SELECT * FROM session_events ORDER BY session_id,seq').all()
+  assert.equal(stored.length, events.length)
+  assert.equal(mirror.catchUpBacklog(), 0)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(f.db.prepare('SELECT * FROM session_events ORDER BY session_id,seq').all(), stored,
+    'repeated and background catch-up add zero rows and leave every stored event unchanged')
 })
