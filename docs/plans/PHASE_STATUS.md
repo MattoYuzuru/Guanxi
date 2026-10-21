@@ -232,6 +232,7 @@ decision was made.
 | K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | K5 External agents | in progress (lane K5, Codex) | [lanes/K5](lanes/K5.md) |
+| X1 Repo map and FTS | in progress (lane X1, Codex) | [lanes/X1](lanes/X1.md) |
 | R2 Relay executor | in progress (lane R2, Codex) | [lanes/R2](lanes/R2.md) |
-| F1 Federation base | in review fixes (Claude review 1: merge after fixes, 4 High) | [lanes/F1](lanes/F1.md) |
+| F1 Federation base | review 1 fixes done (4 High); scoped Claude re-check running | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

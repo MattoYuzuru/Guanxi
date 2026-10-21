@@ -1,4 +1,4 @@
-# Next agent prompt — wave 3 (DS1-c, F1, R2, K5)
+# Next agent prompt — wave 3 (DS1-c, F1, R2, K5, X1)
 
 **Status:** ready · **Updated:** 2026-10-21 (K1, DS1-a, DS1-b, K2, K3, R1 with its follow-up,
 and K4 merged into `main`)
@@ -14,11 +14,13 @@ Open lanes:
   DS2 and U1 open when it merges.
 - **R2 — relay executor v1:** [lanes/R2](lanes/R2.md), running in Codex.
 - **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), running in Codex.
+- **X1 — repository map and full-text index:** [lanes/X1](lanes/X1.md), running in Codex.
 - **F1 — federation base:** [lanes/F1](lanes/F1.md). Claude review 1 returned "merge after
   fixes" with four High findings (revoke versus grant causality, request audience binding,
-  non-admin revocation, per-op admission); the fix round runs in Codex.
+  non-admin revocation, per-op admission); the fixes are done and a scoped Claude re-check
+  runs.
 
-K4 is merged with its follow-up, so R2 and K5 run and B1 and X1 are open; F2 opens after F1, and DS2
+K4 is merged with its follow-up, so R2, K5 and X1 run and B1 is open; F2 opens after F1, and DS2
 and U1 after DS1-c. See
 [PHASE_STATUS](PHASE_STATUS.md) and the [roadmap graph](roadmap.mmd).
 
