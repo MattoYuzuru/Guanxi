@@ -155,7 +155,7 @@ running node. The down helper exists only for isolated migration test fixtures.
   rollback of failed DDL, retry and reopen.
 - `inspector.test.tsx`: exact one run-event row across persisted/live overlap and reload.
 
-See the [lane handoff](../../../../docs/plans/lanes/R1.handoff.md) for command results, independent
+See the [R1 evidence](../../../../docs/plans/evidence/R1.md) for command results, independent
 review, limits and the next integration slice.
 
 ## F1 command boundary
