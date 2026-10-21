@@ -29,6 +29,17 @@ export const FEDERATION_MIGRATION_34 = `
   CREATE TABLE federation_command_receipts (node_id TEXT NOT NULL, command_id TEXT NOT NULL, digest TEXT NOT NULL,
     result TEXT NOT NULL, PRIMARY KEY(node_id,command_id));
 `
+// Table-rebuilding main migrations drop attached triggers. Restore these guards on every boot.
+const FEDERATION_READ_ONLY_TRIGGERS = `
+  CREATE TRIGGER IF NOT EXISTS federation_remote_session_read_only BEFORE INSERT ON sessions
+  WHEN EXISTS (SELECT 1 FROM federation_streams WHERE json_extract(binding,'$.sessionId')=NEW.id
+    AND json_extract(binding,'$.homeNodeId')<>(SELECT json_extract(identity,'$.id') FROM federation_local WHERE id=1))
+  BEGIN SELECT RAISE(ABORT, 'replica_is_read_only'); END;
+  CREATE TRIGGER IF NOT EXISTS federation_remote_run_read_only BEFORE INSERT ON durable_runs
+  WHEN EXISTS (SELECT 1 FROM federation_streams WHERE json_extract(binding,'$.sessionId')=NEW.session_id
+    AND json_extract(binding,'$.homeNodeId')<>(SELECT json_extract(identity,'$.id') FROM federation_local WHERE id=1))
+  BEGIN SELECT RAISE(ABORT, 'replica_is_read_only'); END;
+`
 export function migrateFederation(db: Db): void {
   db.exec('BEGIN IMMEDIATE')
   try {
@@ -37,6 +48,7 @@ export function migrateFederation(db: Db): void {
       db.exec(FEDERATION_MIGRATION_34)
       db.prepare('INSERT INTO federation_migrations VALUES (34)').run()
     }
+    db.exec(FEDERATION_READ_ONLY_TRIGGERS)
     db.exec('COMMIT')
   } catch (error) { db.exec('ROLLBACK'); throw error }
 }

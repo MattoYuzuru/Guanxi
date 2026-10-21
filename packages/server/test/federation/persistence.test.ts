@@ -239,3 +239,16 @@ test('unload fences held enrollment references and peer revocation without later
     assert.equal(home.db.prepare('SELECT total_changes() AS n').get()!.n,before)
   } finally {close()}
 })
+
+test('every boot recreates read-only triggers after a main table rebuild drops them', () => {
+  const {home,peer,close} = setup()
+  try {
+    const binding: StreamBinding = {kind:'session',streamId:'remote',sessionId:'remote',homeNodeId:'home',homeEpoch:1,ownerAccountId:'owner'}
+    peer.federation.replicas.bind(binding)
+    peer.db.exec('DROP TRIGGER federation_remote_session_read_only; DROP TRIGGER federation_remote_run_read_only')
+    migrateFederation(peer.db)
+    assert.equal(peer.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name IN ('federation_remote_session_read_only','federation_remote_run_read_only')").get()!.n, 2, 'both read-only guards are restored on boot')
+    assert.throws(() => peer.log.open('remote',{kind:'agent'}), /replica_is_read_only/)
+    assert.throws(() => peer.runs.create({id:'remote-run',sessionId:'remote'}), /replica_is_read_only/)
+  } finally { close() }
+})
