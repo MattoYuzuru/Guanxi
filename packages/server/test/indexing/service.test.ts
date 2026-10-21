@@ -128,3 +128,27 @@ test('reopening an unchanged root with a lower FTS threshold rebuilds its postin
     after.close()
   } finally { await first.close(); await second?.close(); await f.governor.close(); await f.close() }
 })
+
+test('untracking a queued root prevents an older tick from building or publishing it', async () => {
+  const f = await fixture(1), events: IndexEvent[] = []
+  const other = join(f.dir, 'other')
+  await mkdir(other); await writeFile(join(other, 'b.ts'), 'export const other = 1')
+  f.scrubber.expect('fixture')
+  let removed = false
+  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+    settings: { pollMs: 50 }, onIndexEvent: event => events.push(event), headroom: async () => {
+      if (!removed) removed = await service.untrack(other)
+      return green()
+    } })
+  try {
+    // Readiness holds the first tick until both roots are in its snapshot.
+    await service.track(f.root); await service.track(other)
+    f.scrubber.ready('fixture')
+    await waitFor(() => events.some(event => event.type === 'skip' && event.root === f.root))
+    assert.equal(removed, true)
+    assert.equal(events.filter(event => event.root === other && (event.type === 'build' || event.type === 'publish')).length, 0)
+    const db = new DatabaseSync(service.database, { readOnly: true })
+    try { assert.equal(db.prepare('SELECT count(*) n FROM roots').get()!.n, 1) } finally { db.close() }
+    assert.equal(service.status().roots, 1)
+  } finally { await service.close(); await f.governor.close(); await f.close() }
+})

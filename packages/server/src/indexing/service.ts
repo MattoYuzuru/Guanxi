@@ -262,6 +262,7 @@ export class ProjectIndex {
     this.building = true
     try {
       for (const root of [...this.tracked]) {
+        if (!this.tracked.has(root)) continue
         try {
           const named = await lstat(root)
           if (!named.isDirectory() && !named.isFile()) { await this.untrack(root); continue }
