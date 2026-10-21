@@ -67,3 +67,27 @@ test('H2: pump recovers after ten minutes asleep and fires the deadline due in t
     assert.equal(store.create().state, 'submitted')
   } finally { await kernel.node.dispose(); f.close() }
 })
+
+test('M1: a refused run trace cannot block other timers, expired attempts, reconciliation or wakes', () => {
+  for (const operation of ['tick-timers', 'tick-attempts', 'reconcile', 'dispatch']) {
+    const f = runFixture()
+    try {
+      for (const id of ['alpha-customer-7781', 'beta']) {
+        const a = f.store.start(f.store.create({ id }).id)
+        if (operation === 'tick-timers' || operation === 'dispatch') {
+          const p = f.store.delegate(a, { key: 'child', deadline: RUN_TIME + 10 })
+          if (operation === 'dispatch') f.store.complete(f.store.start(p.child_id), 'completed')
+        }
+      }
+      f.scrubber.register('secret://late', 'alpha-customer-7781')
+      if (operation === 'tick-timers') f.setTime(RUN_TIME + 20)
+      if (operation === 'tick-attempts') f.setTime(RUN_TIME + 61_000)
+      assert.doesNotThrow(() => operation === 'dispatch' ? f.store.dispatch() : operation === 'reconcile' ? f.store.reconcile() : f.store.tick(), operation)
+      if (operation === 'tick-timers') assert.equal(f.store.wakes('beta').length, 1)
+      else if (operation === 'dispatch') assert.ok(f.store.wakes('beta')[0]!.attempt_id)
+      else assert.equal(f.store.attempts('beta')[0]!.state, 'lost')
+      assert.equal(f.store.failures()[0]!.runId, 'alpha-customer-7781')
+      assert.match(f.store.failures()[0]!.code, /invalid_(input|event)/)
+    } finally { f.close() }
+  }
+})

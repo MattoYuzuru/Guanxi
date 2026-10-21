@@ -46,6 +46,17 @@ export class RunStore {
   private operation = ''
   private readonly changedSessions = new Set<string>()
   private readonly startupAttempts = new Set<string>()
+  private readonly runFailures = new Map<string, { runId: string; operation: string; code: string }>()
+  failures() { return [...this.runFailures.values()] }
+  private isolate(runId: string, operation: string, body: () => void): void {
+    const key = `${operation}:${runId}`
+    try { body(); this.runFailures.delete(key) } catch (error) {
+      const code = error instanceof Error && 'code' in error ? String(error.code) : 'storage_error'
+      if (['closed', 'writer_busy', 'egress_not_ready'].includes(code)) throw error
+      if (code === 'stale_lease') this.assertOwner()
+      this.runFailures.set(key, { runId, operation, code })
+    }
+  }
   private readonly options: RunStoreOptions
 
   constructor(options: RunStoreOptions) {
@@ -398,14 +409,14 @@ export class RunStore {
     if (this.get(attempt.run_id).state === 'working') this.setState(attempt.run_id, 'interrupted', 'interrupted', attempt.id)
   }
   tick(): void {
-    this.tx('timers', () => {
-      for (const attempt of this.rows<Attempt>(`SELECT a.* FROM run_attempts a JOIN leases l
+    for (const attempt of this.rows<Attempt>(`SELECT a.* FROM run_attempts a JOIN leases l
         ON l.key='run:'||a.run_id||'/exec' WHERE a.state IN ('delivered','started') AND l.expires_at<=?`, this.now())) {
-        this.lose(attempt)
-      }
-      for (const timer of this.rows<{ promise_id: string }>("SELECT promise_id FROM timers WHERE state='pending' AND due_at<=? ORDER BY due_at,promise_id", this.now())) {
-        const promise = this.row<PromiseRecord>('SELECT * FROM promises WHERE id=?', timer.promise_id)!
-        if (!this.resolve(promise, 'deadline')) continue
+      this.isolate(attempt.run_id, 'expiry', () => this.tx('expiry', () => this.lose(attempt)))
+    }
+    for (const timer of this.rows<{ promise_id: string }>("SELECT promise_id FROM timers WHERE state='pending' AND due_at<=? ORDER BY due_at,promise_id", this.now())) {
+      const promise = this.row<PromiseRecord>('SELECT * FROM promises WHERE id=?', timer.promise_id)!
+      this.isolate(promise.parent_id, 'timers', () => this.tx('timers', () => {
+        if (!this.resolve(promise, 'deadline')) return
         if (promise.deadline_policy === 'detach') this.detach(promise)
         else {
           // Durable report request. The executor may finish its report under the existing
@@ -414,8 +425,8 @@ export class RunStore {
             this.setState(promise.child_id, 'wrapping_up', 'wrapping_up', promise.id)
           }
         }
-      }
-    })
+      }))
+    }
   }
   /** Retry returns the same live delivery. An unacknowledged lost delivery gets a new attempt. */
   deliver(runId: string, wakeSeq: number): Attempt | null {
@@ -439,22 +450,24 @@ export class RunStore {
   dispatch(): Attempt[] {
     const deliveries: Attempt[] = []
     for (const wake of this.rows<Wake>('SELECT * FROM outbox WHERE acknowledged_at IS NULL AND suppressed_at IS NULL ORDER BY run_id,wake_seq')) {
-      const attempt = this.deliver(wake.run_id, wake.wake_seq)
-      if (attempt) deliveries.push(attempt)
+      this.isolate(wake.run_id, 'wake', () => {
+        const attempt = this.deliver(wake.run_id, wake.wake_seq)
+        if (attempt) deliveries.push(attempt)
+      })
     }
     return deliveries
   }
   /** ADR-0019 table, local only: no inference is started by this operation. */
   reconcile(startupOnly = false): void {
-    this.tx('reconcile', () => {
-      for (const attempt of this.rows<Attempt>("SELECT * FROM run_attempts WHERE state IN ('delivered','started')")) {
+    for (const attempt of this.rows<Attempt>("SELECT * FROM run_attempts WHERE state IN ('delivered','started')")) {
         // Readiness may open after this activation has admitted new work. Only
         // attempts inherited from its predecessor are lost during startup recovery.
         if (startupOnly && !this.startupAttempts.has(attempt.id)) continue
+      this.isolate(attempt.run_id, 'reconcile', () => this.tx('reconcile', () => {
         this.lose(attempt)
         // waiting_children/input_required untouched; wrapping_up remains a report request.
-      }
-    })
+      }))
+    }
     this.tick()
   }
   retain(attempt: Attempt, input: { key: string; kind: 'worktree' | 'scratch'; retainUntil: number }): void {
