@@ -174,16 +174,18 @@ when a time cap or fence is lost; cleanup confirmation still governs root reuse.
 Migration **32** adds `run_execution` and `native_sessions`, adopts existing native sessions
 under a Thread owner, and leaves migrations 1–31 byte-identical. The private owning Thread is
 agent-mode/projectless to preserve the existing legacy Project→Chat ownership invariant; the
-immutable native policy retains the logical Project. Owner, session, policy and registration
+immutable native policy retains the logical Project. These private owners are excluded from
+legacy Chat projections and admission, so that API cannot start inference on a native session. Owner, session, policy and registration
 commit together. Keep a stopped pre-upgrade SQLite/WAL backup; rollback requires that backup.
 Prefer a forward fix; no production down migration is provided.
 
 Retention defaults to the canonical rolling seven days of user activity. Model/tool activity
 does not extend it. TTL expiry moves native metadata to Trash and retains recoverable bytes.
 `keep` retains until explicit deletion. `session` needs explicit `POST /api/agent/:id/leave`;
-maintenance keeps it recoverable for 24 hours and then uses coordinated deletion. Changing
+maintenance starts its 24-hour recovery window after active work finishes, then uses coordinated deletion. Changing
 retention with `PATCH /api/agent/:id/retention` can restore before that Session recovery deadline.
-A one-minute maintenance pass also retries persisted deletion intents after restart.
+A one-minute maintenance pass also retries persisted deletion intents after restart and cleans
+private pre-admission directories under the R1 home fence. It rechecks each policy after cleanup waits.
 
 `DELETE /api/agent/:id` is the explicit immediate, irreversible delete action. It refuses an
 active native attempt or held K2 writer and refuses quarantined roots. Scratch, copied attachments

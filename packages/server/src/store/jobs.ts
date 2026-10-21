@@ -447,7 +447,7 @@ export class JobStore {
       }
 
       const thread = this.db
-        .prepare('SELECT id, mode FROM threads WHERE id = ?')
+        .prepare('SELECT id, mode FROM threads WHERE id = ? AND NOT EXISTS (SELECT 1 FROM native_sessions n WHERE n.thread_id=threads.id)')
         .get(threadId) as unknown as { id: string; mode: string } | undefined
       if (!thread) throw new JobStoreError('invalid_input', `Thread ${threadId} was not found`)
 

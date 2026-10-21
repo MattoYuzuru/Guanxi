@@ -45,6 +45,7 @@ async function rejectUnresolvedLinks(path: string): Promise<void> {
   }
 }
 export class NativeAgents {
+  private preparing = new Set<string>()
   private active = new Map<string, Active>()
   private closed = false
   private projectRoots: NativeProjectRoots
@@ -55,23 +56,38 @@ export class NativeAgents {
   readonly dataDir: string
   readonly nodePorts: () => number[]
   readonly sessions: NativeSessions
+  private maintenanceTask: Promise<void> = Promise.resolve()
+  private maintaining = false
   private maintenance: ReturnType<typeof setInterval>
   readonly runs: RunStore
   private commandRunner: typeof sandboxCommand
   constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)], commandRunner = sandboxCommand, runtime: { db: Db; runs: RunStore }) {
     this.runs = runtime.runs
     this.sessions = new NativeSessions(runtime.db, log, dataDir)
-    this.maintenance = setInterval(() => { void this.sessions.maintain(new Set(this.active.keys())).catch(() => undefined) }, 60000)
+    this.maintenance = setInterval(() => { void this.maintain() }, 60000)
     this.maintenance.unref()
-    void this.sessions.maintain(new Set()).catch(() => undefined)
+    void this.maintain()
     this.commandRunner = commandRunner
     this.nodePorts = nodePorts
     this.host = host; this.log = log; this.connections = connections; this.scrubber = scrubber; this.dataDir = dataDir
     this.projectRoots = new NativeProjectRoots(join(dataDir, 'native-projects.sqlite'), host)
   }
 
+  private maintain(): Promise<void> {
+    if (this.maintaining || this.closed) return this.maintenanceTask
+    this.maintaining = true
+    this.maintenanceTask = Promise.resolve().then(async () => {
+      this.runs.heartbeat()
+      this.runs.reconcile()
+      await this.sessions.maintain(new Set(this.active.keys()))
+      await this.sessions.reapOrphans(id => this.preparing.has(id) || this.active.has(id), () => this.runs.heartbeat())
+    }).catch(() => { /* Readiness/home contention or cleanup failures retry next pass. */ })
+      .finally(() => { this.maintaining = false })
+    return this.maintenanceTask
+  }
   async create(raw: unknown): Promise<{ sessionId: string }> {
     this.ready()
+    this.runs.heartbeat()
     const input = nativeAgentInputSchema.parse(raw)
     selectedModel(this.connections, input)
     const project = this.projectRoots.get(input.projectId)
@@ -88,15 +104,17 @@ export class NativeAgents {
     const sessionId = randomUUID()
     const scratch = join(dataRoot, 'scratch', sessionId)
     const attachmentDir = join(dataRoot, 'native-attachments', sessionId)
-    await mkdir(scratch, { recursive: true, mode: 0o700 })
-    await mkdir(attachmentDir, { recursive: true, mode: 0o700 })
+    this.preparing.add(sessionId)
     let handle: SessionHandle | undefined
     try {
+      await mkdir(scratch, { recursive: true, mode: 0o700 })
+      await mkdir(attachmentDir, { recursive: true, mode: 0o700 })
       const attachments: string[] = []
       const attachmentMetadata: NonNullable<SandboxPolicy['attachmentMetadata']> = []
       for (const id of input.attachmentIds) {
         const attachment = await this.host.artifactTransfers.download(id, { scope: 'project', projectId: project.id }, new AbortController().signal)
         this.ready()
+        this.runs.heartbeat()
         const target = join(attachmentDir, `${attachments.length}.attachment`)
         await writeFile(target, attachment.content, { flag: 'wx', mode: 0o400 })
         attachments.push(target)
@@ -129,7 +147,7 @@ export class NativeAgents {
       await rm(scratch, { recursive: true, force: true })
       await rm(attachmentDir, { recursive: true, force: true })
       throw error
-    }
+    } finally { this.preparing.delete(sessionId) }
   }
   private ensureRoots(policy: SandboxPolicy, id: string) {
     if (policy.mode === 'full-access') for (const [otherId, active] of this.active) {
@@ -277,6 +295,7 @@ export class NativeAgents {
         const queue = this.progress(id).queue
         next = queue[0]?.text; queuedId = queue[0]?.id
         if (next !== undefined) {
+          this.sessions.assertAvailable(id)
           history = replay(this.events(id), selectedModel(this.connections, input).api, selectedModel(this.connections, input).provider, input.model)
           active.attempt = this.attempt(id, input)
           active.handle = this.fencedHandle(rawHandle, active.attempt)
@@ -342,7 +361,7 @@ export class NativeAgents {
       this.runs.complete(attempt, cleanupUnconfirmed ? 'failed' : signal.aborted ? 'canceled' : 'failed')
     } finally { signal.removeEventListener('abort', stop) }
   }
-  async close() { if (this.closed) return; this.closed = true; clearInterval(this.maintenance); for (const active of this.active.values()) active.abort.abort(); await Promise.allSettled([...this.active.values()].map(a => a.settled)); this.projectRoots.close() }
+  async close() { if (this.closed) return; this.closed = true; clearInterval(this.maintenance); for (const active of this.active.values()) active.abort.abort(); await Promise.allSettled([...this.active.values()].map(a => a.settled)); await this.maintenanceTask; this.projectRoots.close() }
 }
 function replay(events: SessionEvent[], api: AssistantMessage['api'], provider: AssistantMessage['provider'], model: string): AgentMessage[] {
   const messages: AgentMessage[] = []

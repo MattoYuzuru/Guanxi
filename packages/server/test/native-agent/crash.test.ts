@@ -1,16 +1,20 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { openDb } from '../../src/store/db.ts'
 import { SessionLog } from '../../src/session-log/log.ts'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
+import { NativeAgents } from '../../src/native-agent/service.ts'
+import { ProjectService } from '../../src/projects/service.ts'
+import { ProjectStore } from '../../src/store/projects.ts'
+import { WorkspaceStore } from '../../src/store/workspaces.ts'
 import { RunStore } from '../../src/runs/store.ts'
 const worker = fileURLToPath(new URL('./crash-worker.ts', import.meta.url))
 
-test('crash at every native R1/K2 boundary: one writer, truthful recovery and no inference replay', { timeout: 240000 }, t => {
+test('crash at every native R1/K2 boundary: one writer, truthful recovery and no inference replay', { timeout: 240000 }, async t => {
   mkdirSync(join(process.cwd(), '.lane-data'), { recursive: true })
   const root = mkdtempSync(join(process.cwd(), '.lane-data/k4-crash-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -50,11 +54,33 @@ test('crash at every native R1/K2 boundary: one writer, truthful recovery and no
       const other = new RunStore({ db, log, scrubber, clock: () => now })
       try { assert.throws(() => other.heartbeat(), /writer_busy/) } finally { other.close() }
       assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [])
-      for (const row of db.prepare('SELECT id,thread_id FROM sessions').all()) {
-        assert.equal(row.id, row.thread_id)
-        const events = log.readAll(String(row.id), 'person')
-        assert.deepEqual(events.map(e => e.seq), events.map((_, i) => i + 1))
-        assert.equal(events.filter(e => e.type === 'agent.policy').length, 1)
+      const sessions = db.prepare('SELECT id,thread_id FROM sessions').all()
+      let inference = 0
+      const policies = sessions.flatMap(row => log.readAll(String(row.id), 'person').filter(e => e.type === 'agent.policy'))
+      const connections = {
+        snapshot: () => ({ connections: policies.map(e => ({ id: e.data.connectionId, kind: 'model_api', provider: 'deepseek' })) }),
+        complete: async () => { inference++; throw new Error('restart must not infer') },
+        localChat: async () => { inference++; throw new Error('restart must not infer') },
+      } as unknown as ConstructorParameters<typeof NativeAgents>[2]
+      const host = { projects: new ProjectService(new ProjectStore(db)), workspaces: new WorkspaceStore(db) } as ConstructorParameters<typeof NativeAgents>[0]
+      const native = new NativeAgents(host, log, connections, scrubber, join(path, 'data'), undefined, undefined, { db, runs })
+      try {
+        await new Promise(r => setImmediate(r))
+        for (const row of sessions) {
+          assert.equal(row.id, row.thread_id)
+          const events = log.readAll(String(row.id), 'person')
+          assert.deepEqual(events.map(e => e.seq), events.map((_, i) => i + 1))
+          assert.equal(events.filter(e => e.type === 'agent.policy').length, 1)
+          const progress = native.progress(String(row.id))
+          assert.ok(['completed','input_required','interrupted'].includes(progress.status), `${index}: native projection ${progress.status}`)
+          if (states.length && states[0]!.state === 'input_required') assert.equal(progress.status, 'input_required')
+        }
+        assert.equal(inference, 0, `${index}: actual native startup never calls either model transport`)
+        assert.equal(calls(), before)
+      } finally { await native.close() }
+      if (sessions.length === 0) for (const dir of ['scratch','native-attachments']) {
+        let entries: string[] = []; try { entries = readdirSync(join(path, 'data', dir)) } catch { /* absent is empty */ }
+        assert.equal(entries.length, 0, `${index}: pre-admission orphan cleanup`)
       }
       db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES('integrity-check')")
     } finally { runs.close(); log.close(); db.close() }

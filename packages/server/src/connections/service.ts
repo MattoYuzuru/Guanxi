@@ -130,8 +130,11 @@ export class Connections {
           let quota = false
           const pending = this.pi.complete(model, clean, {
             temperature: call.options?.temperature, maxTokens: call.options?.maxTokens,
-            reasoning: call.options?.reasoning, apiKey: key, signal,
+            reasoning: call.options?.reasoning, apiKey: key, signal, maxRetries: 0,
             onResponse: () => call.onStarted?.(),
+            // pi-ai's Google adapter has no response hook; a provider chunk is
+            // an observation of a started request, not preparation.
+            onProviderStreamEvent: model.api === 'google-generative-ai' ? () => call.onStarted?.() : undefined,
             // Redirects must not forward the credential to a different host.
             ...(model.api === 'google-generative-ai' ? {} : {
               fetch: async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -142,6 +145,11 @@ export class Connections {
             }),
           })
           const result = await pending
+          if (model.api === 'google-generative-ai' && result.stopReason === 'error') {
+            // The SDK serializes its API error JSON into ApiError.message; pi-ai
+            // retains that string. Accept only the structured numeric code.
+            try { quota ||= JSON.parse(result.errorMessage ?? '').error?.code === 429 } catch { /* An unstructured error remains provider_failed. */ }
+          }
           if (quota) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
           signal.throwIfAborted()
           if (result.stopReason === 'error' || result.stopReason === 'aborted') throw new Error('Model request failed')
