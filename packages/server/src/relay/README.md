@@ -46,6 +46,40 @@ Fixture quantile assertions do **not** satisfy the R3/B3 gate requiring P80 cove
 0.7 and 0.9 across at least 20 real runs. Judge replay precision/recall, night wake rates,
 delegation policy and the six-hour MS1 envelope remain unfinished.
 
+## Judge observations (R3 follow-up)
+
+The trusted host may also supply `RelayInput.judgeSignals`: an explicit
+`JudgeSignalPolicy` and a `collect` function. This is T0 data like the runtime meter and the
+workspace, never parsed from model JSON or HTTP and not a public wire surface. Admission copies
+and freezes the flat policy, checks that `collect` is a function without calling it, and rejects
+invalid configuration with a fixed `judge_config_invalid` error. There are no policy defaults:
+every threshold must come from the host.
+
+When configured, the executor takes one observation at `cycle_start` immediately after
+`store.begin` and the ETA update, before orient or any model call, and one at `pre_seal` after
+the final ETA update and before the fresh narrative and handoff construction. The collector
+receives a detached ledger copy, a detached attempt identity (`id`, `runId`, `epoch`, `token`)
+and the actual run abort signal. It cannot mutate the authoritative ledger or the frozen policy.
+There is no timer or background writer; sampling is synchronous with the cycle.
+
+Only the reviewed `judge-signals.ts` pure module evaluates the observation. On success the
+executor appends exactly one `agent.note` with
+`{relay:'judge_signals', phase, cycle, signals, unknownFacts}` through the existing R1-fenced
+transaction. `unknownFacts` names `heartbeat`, `lease`, `deadline`, `disk` and `tokenBudget` for
+each missing observation field, so an empty `signals` array is not a health claim. The full
+observation and the `protectedPathEdits` / `outOfScopeEdits` values are never persisted or
+logged.
+
+A collector rejection or an invalid observation fails the cycle closed with the fixed
+`judge_observation_unavailable` or `judge_observation_invalid` code respectively; no judge note
+is published and no follow-up model call is made. Cancellation and a revoked/stale fence keep
+the existing loss/cancel semantics instead of being converted into an observer error. Signals
+themselves do not stop, reroute or wake anything; J2/J3, verdicts, routing and the action
+cascade remain future work. A collector that ignores the abort signal and never settles can
+still hold the cycle open; this slice deliberately adds no timeout. Fixture tests prove wiring,
+detached inputs, cancellation/fence behavior and seal consistency only; they are not real host
+observations, a calibrated classifier, or the R3 precision/recall/night-wake gates.
+
 ## Runtime and context
 
 The meter must observe the **actual loaded** context window (with source, observation time
