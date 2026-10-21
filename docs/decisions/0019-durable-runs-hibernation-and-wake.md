@@ -104,6 +104,16 @@ framework would otherwise provide (simulation, fault injection).
 - The lead's worktree still exists after an 8-hour hibernation.
 - Canceling a hibernating lead cancels its children exactly once.
 
+## Implementation boundary (R1, 2026-10-21)
+
+The single-node orchestration substrate is implemented in
+[`packages/server/src/runs`](../../packages/server/src/runs/README.md) as `guanxi.durable-runs`
+providing `runs.durable`, with migrations 30–31 and transactional K2 `run.lifecycle` events.
+Legacy Chat Jobs remain on their compatible state machine. The explicit executor seam owns
+first-model-call observation; no live model executor is claimed here. Remote attempts,
+federation handover, power assertions, full wake packets and external lead protocols remain
+proposed for their later stages. The design status above is not promoted as a whole.
+
 ## Evidence
 
 Lane 3 §5 and §7.9, lane 4 §8.4 ([research](../research/README.md)); Temporal timeouts;

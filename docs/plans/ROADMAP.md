@@ -234,7 +234,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   `cloud_ephemeral` or non-owner node receives 0 vault records, 0 session replicas and 0
   reasoning events; unauthenticated nodes are refused; peers on an older major contract are
   read-only.
-- **Owner answers:** D-146 (Q-206), D-170 (Q-230).
+- **Owner answers:** D-146 (Q-206), D-186 (supersedes D-170).
 - **Estimate:** 4–6 sessions.
 
 ### F2 — Remote attempts with fenced leases

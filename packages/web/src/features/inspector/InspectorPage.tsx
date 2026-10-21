@@ -67,6 +67,7 @@ const TYPE_KEYS: Record<SessionEventType, LocaleKey> = {
   usage: 'inspector.type.usage',
   context: 'inspector.type.context',
   'job.lifecycle': 'inspector.type.jobLifecycle',
+  'run.lifecycle': 'inspector.type.durableRun',
   intervention: 'inspector.type.intervention',
   error: 'inspector.type.error',
   'turn.done': 'inspector.type.turnDone',
@@ -76,6 +77,7 @@ const TYPE_KEYS: Record<SessionEventType, LocaleKey> = {
 const MACHINE_DETAIL: ReadonlySet<SessionEventType> = new Set([
   'assistant.started',
   'job.lifecycle',
+  'run.lifecycle',
   'usage',
   'context',
   'tool.approval',

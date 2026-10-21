@@ -168,6 +168,12 @@ Residual risks:
 | --- | --- | --- |
 | One append-only single-writer event log per session; crash-safe append and replay; durable payload-free readiness backlog; `egress.scrubber` kernel service with readiness; loopback-only interim inspector and query tool (ADR-0023) | implemented, independently verified, merged into `main` | Full evidence: [evidence/K2](evidence/K2.md). In-session reviews (implementation, architecture, accessibility) plus four GPT cross-family rounds; the final scoped check closed every item with no new High (14/14 mutations caught). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (web 275), browser gate 50/50, build, lint:md, licenses 358/0. Residuals named in the evidence; the `project-chat.test.tsx` focus flake seen during K2 runs is being fixed in its own lane. |
 
+## R1 — Durable runs, hibernation and wake (single node)
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Run attempts, fenced home and resource leases, promises, timers, outbox; `waiting_children`/`wrapping_up`; restart reconciliation; signals vs promises; exactly-once wake; cancel along the chain; per-run cost ledger; shared K2 session fence (ADR-0019) | implemented, independently verified, merged into `main` | Full evidence and residuals: [evidence/R1](evidence/R1.md). Author GPT/Codex; two Claude cross-family rounds (H1 boot after unclean shutdown and H2 self-fencing after stalls fixed; a 1.89M-operation fuzzer with clock skew, zombies and stalls found 0 violations). 628 crash points. Integrator gates on `main`: typecheck, `ui:check`, licenses 437/0, `npm test` (web 299), browser gate, build. Residuals go to the R1 follow-up lane. |
+
 ## K3 — Model access
 
 | Item | Status | Evidence |
@@ -218,5 +224,6 @@ decision was made.
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
 | K4 Native agent | in progress (lane K4, Codex) | [lanes/K4](lanes/K4.md) |
-| R1 Durable runs | in progress (lane R1, Codex) | [lanes/R1](lanes/R1.md) |
+| R1 Durable runs | implemented, merged; follow-up lane for residuals | see the R1 section above |
+| F1 Federation base | in progress (lane F1, Codex) | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

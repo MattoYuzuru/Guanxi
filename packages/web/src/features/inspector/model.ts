@@ -91,6 +91,8 @@ export function eventDetail(event: SessionEvent): string | null {
       return event.data.toolCallId
     case 'assistant.started':
       return `${event.data.model} · ${event.data.step}`
+    case 'run.lifecycle':
+      return `${event.data.runId} · ${event.data.state} · ${event.data.action}`
     case 'job.lifecycle':
       return event.data.phase ? `${event.data.state} · ${event.data.phase}` : event.data.state
     case 'usage':
