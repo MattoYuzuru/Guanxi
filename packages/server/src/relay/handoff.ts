@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@guanxi/contract'
 import { createHash } from 'node:crypto'
 import type { Handoff, Ledger, Note } from './types.ts'
 import { invariant } from './types.ts'
@@ -32,7 +33,7 @@ export function selectNotes(notes: Note[], ledger: Ledger, now: number, budget: 
   return selected
 }
 export function render(h: Handoff): string {
-  return `# Guanxi handoff ${h.cycle}\n\nLedger: ${h.ledger.ref}\nSHA-256: ${h.ledgerHash}\nHEAD: ${h.ledger.head}\nRevision: ${h.ledger.revision}\nDegraded: ${h.degraded}\n\n${h.ledger.strip}\n\n${h.narrative}\n\n${canonical(h.notes)}\n`
+  return `# ${PRODUCT_NAME} handoff ${h.cycle}\n\nLedger: ${h.ledger.ref}\nSHA-256: ${h.ledgerHash}\nHEAD: ${h.ledger.head}\nRevision: ${h.ledger.revision}\nDegraded: ${h.degraded}\n\n${h.ledger.strip}\n\n${h.narrative}\n\n${canonical(h.notes)}\n`
 }
 export function probes(l: Ledger): Record<string, string | null> {
   return { ledgerHash: hash(l), head: l.head, revision: l.plan.revision, nextItem: nextItem(l), nextStatus: nextItem(l) ? l.items[nextItem(l)!]! : null }

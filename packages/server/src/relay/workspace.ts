@@ -1,3 +1,4 @@
+import { PRODUCT_NAME, PRODUCT_FILE_PREFIX } from '@guanxi/contract'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdtemp, readFile, rm, mkdir, lstat, realpath, writeFile } from 'node:fs/promises'
@@ -129,7 +130,7 @@ export class GitRelayWorkspace implements RelayWorkspace {
       await this.git(['update-index', '--add', '--cacheinfo', entry.mode & 0o111 ? '100755' : '100644', object, p])
     }
     const tree = (await this.git(['write-tree'])).trim()
-    const commit = (await this.git(['-c', 'user.name=Guanxi Relay', '-c', 'user.email=relay@localhost', 'commit-tree', tree, '-p', head, '-m', 'chore: relay checkpoint'])).trim()
+    const commit = (await this.git(['-c', `user.name=${PRODUCT_NAME} Relay`, '-c', 'user.email=relay@localhost', 'commit-tree', tree, '-p', head, '-m', 'chore: relay checkpoint'])).trim()
     await this.git(['update-ref', 'HEAD', commit, head])
   }
   async bundle(): Promise<Uint8Array> {
@@ -141,7 +142,7 @@ export class GitRelayWorkspace implements RelayWorkspace {
       const value = await this.git(['cat-file', '-p', object])
       invariant(this.scrubber.scrub(value) === value, 'bundle_secret')
     }
-    const dir = await mkdtemp(join(tmpdir(), 'guanxi-relay-bundle-'))
+    const dir = await mkdtemp(join(tmpdir(), `${PRODUCT_FILE_PREFIX}-relay-bundle-`))
     try { await this.git(['bundle', 'create', join(dir, 'attempt.bundle'), 'HEAD']); return await readFile(join(dir, 'attempt.bundle')) }
     finally { await rm(dir, { recursive: true, force: true }) }
   }
@@ -150,7 +151,7 @@ export class GitRelayWorkspace implements RelayWorkspace {
     invariant(item, 'invalid_item')
     const before = await this.observe(plan.base, plan.base)
     await this.validate(plan, before.head, before.files)
-    const temp = await mkdtemp(join(this.context.policy.runtimeBase ?? tmpdir(), 'guanxi-relay-gate-'))
+    const temp = await mkdtemp(join(this.context.policy.runtimeBase ?? tmpdir(), `${PRODUCT_FILE_PREFIX}-relay-gate-`))
     let cleanup = true
     try {
       const checkout = join(temp, 'checkout'), scratch = join(temp, 'scratch')
