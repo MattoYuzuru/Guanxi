@@ -264,3 +264,82 @@ remains the authority for these specs.
 
 At this handoff the test fix is `092930e` on top of `dfe5a2e`; this handoff update is the next
 documentation commit. No push, merge or rebase was performed.
+
+## Review-fix: Projects StrictMode fixture (2026-10-22)
+
+**Source pin:** `codex/u1c-css` at `2c4a02f` before this fix; test commit `c8d509e`.
+**Root red:** U1 candidate `a613f7a` in the `u1-completion` clone, full gate
+`check-qj5p8r40`: 1/85 failed, 84 passed. `projects.spec.ts:105`
+`expect(errorHeading).toBeFocused()` found no heading; the failure context showed the empty
+Projects state instead. Receipt:
+`/Users/yuzuru/.local/state/agent-dev/check-qj5p8r40/result.json`, log:
+`/Users/yuzuru/.local/state/agent-dev/check-qj5p8r40/output.log`. No production file was
+changed.
+
+### Root cause and fix
+
+The old spec read `projectMode` when each `/api/projects` GET reached the route and set
+`projectMode = 'empty'` before releasing the held first response. React StrictMode can abort
+the first project request before Playwright intercepts it. The surviving second request then
+reached the route after the mode had already become `empty`, returned an empty list and never
+produced the intended failure.
+
+`packages/web/test/browser/projects.spec.ts` now runs the full existing scenario twice:
+`native timing` and `abort before interception`, driven by
+`installFetchLifecycle(page, deferNetworkStart)` as in `localization.spec.ts`. The shared
+fixture observes health/runtime/models only, so the second schedule also installs a local
+one-microtask deferral for `/api/projects`; this lets StrictMode cleanup cancel the first
+project read before the network without changing the shared fixture.
+
+The fixture now:
+
+- fails every initial project GET until the explicit keyboard retry;
+- releases the initial gate while the failure mode is still active;
+- waits for the focused `Не удалось загрузить проекты` heading;
+- switches to the empty projection immediately before `Повторить` + `Enter`;
+- records the observed initial read count and asserts the retry issued exactly one read;
+- separately asserts the expected one post-create reload, so the whole flow has no hidden
+  project reads.
+
+All previous scoping, keyboard, create, no-filesystem-root, 200% zoom and side-effect
+assertions are preserved. The reduced-motion duration assertion is unchanged.
+
+### New tests / regression envelope
+
+**New:** 1 additional schedule. The existing Projects case is now two cases (native timing and
+abort before interception); this is one strengthened existing scenario, not two new feature
+tests.
+
+**Browser regression envelope:** 87 pending the root coordinator's actual-Chromium run. This
+worker did not run Playwright, the browser gate, build or Storybook.
+
+### Commands (this round)
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `nice -n 10 npx eslint packages/web/test/browser/projects.spec.ts` | exit 0 |
+| `nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json` | exit 0 |
+| `git diff --check` | exit 0 |
+
+The scoped tsc does not include `test/browser`; the root Chromium gate remains the authority
+for this spec.
+
+### Residuals (this round)
+
+- Root must run the full actual-Chromium gate; the two-schedule Projects pass is not claimed
+  here.
+- The shared `fetch-lifecycle.ts` fixture is intentionally unchanged and still observes only
+  health/runtime/models. The project microtask deferral is local to `projects.spec.ts`.
+- Route counters observe only intercepted requests; an initial read aborted before
+  interception is not counted. The assertion is relative to the observed initial count, not a
+  fixed StrictMode attempt count.
+- The post-create reload count (+1) is asserted separately from the retry read (+1); the final
+  count is initial + 2. This is the intended create-and-refresh flow, not a retry duplicate.
+- The legacy `0s`/`1e-05s` reduced-motion allowance in this spec remains unchanged; it is
+  outside this fixture finding.
+- No production CSS/TSX, other tests, status files or approvals were edited.
+
+The test fix is `c8d509e` on top of `2c4a02f`; this handoff update is the next documentation
+commit. No push, merge or rebase was performed. Final clean pin: the HEAD documentation commit
+containing this section, with `git status --porcelain` empty.
