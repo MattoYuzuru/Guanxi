@@ -152,6 +152,8 @@ export class ApiShapeError extends Error {
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
     if (error.code === 'context_limit_exceeded') return translate('context.limit.exceeded')
+    const catchUpFailure = error.payload?.code === 'session_catching_up' ? error.payload.details?.['failure'] : null
+    if (typeof catchUpFailure === 'string') return translate('error.api.sessionCatchUpFailed', { code: catchUpFailure })
     if (error.payload) return translate(API_ERROR_KEYS[error.payload.code])
     return translate('error.api.internal')
   }
@@ -187,6 +189,11 @@ const API_ERROR_KEYS = {
   artifact_admission_full: 'error.api.admissionFull',
   range_not_supported: 'error.api.notSupported',
   project_chat_mismatch: 'error.api.conflict',
+  session_not_found: 'error.api.notFound',
+  egress_not_ready: 'error.api.egressNotReady',
+  loopback_only: 'error.api.loopbackOnly',
+  session_withheld: 'error.api.sessionWithheld',
+  session_catching_up: 'error.api.sessionCatchingUp',
   path_outside_workspace: 'error.api.notAllowed',
   tool_disabled: 'error.api.notAllowed',
   validation_failed: 'error.api.validation',

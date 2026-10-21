@@ -24,6 +24,7 @@ import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
 import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
+import { InspectorPage } from './features/inspector/InspectorPage.tsx'
 import { translate } from './lib/locale.ts'
 import { useLocale } from './lib/locale-context.tsx'
 import { PRODUCT_NAME } from './lib/brand.ts'
@@ -89,6 +90,7 @@ export function App() {
           {route.name === 'settings' && <SettingsPage />}
           {route.name === 'developerComponents' && <DeveloperCatalogPage />}
           {route.name === 'projects' && <ProjectsPage />}
+          {route.name === 'inspector' && <InspectorPage sessionId={route.sessionId} />}
           {route.name === 'notFound' && (
             <EmptyState
               title={translate('app.notFound.title')}
@@ -142,6 +144,7 @@ function TopBar() {
       label: translate('app.navigation.settings'),
       active: route.name === 'settings' || route.name === 'developerComponents',
     },
+    { to: paths.inspector(), label: translate('inspector.navigation'), active: route.name === 'inspector' },
   ]
 
   const nextTheme = preference === 'dark' ? 'light' : preference === 'light' ? 'system' : 'dark'

@@ -22,5 +22,8 @@
   "devDependencies": {
     "@guanxi/server": "*"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@napi-rs/keyring": "2.1.2"
+  }
 }

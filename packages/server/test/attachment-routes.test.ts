@@ -131,11 +131,11 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const freshPath = join(root, 'fresh.db')
     const fresh = openDb(freshPath)
-    assert.equal(version(fresh), 28)
+    assert.equal(version(fresh), 31)
     assert.equal(count(fresh, 'artifact_attachments'), 0)
     fresh.close()
     const reopened = openDb(freshPath)
-    assert.equal(version(reopened), 28)
+    assert.equal(version(reopened), 31)
     reopened.close()
 
     const upgradePath = join(root, 'upgrade.db')
@@ -166,7 +166,7 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     seed.close()
 
     const upgraded = openDb(upgradePath)
-    assert.equal(version(upgraded), 28)
+    assert.equal(version(upgraded), 31)
     assert.equal(JSON.stringify({
       projects: upgraded.prepare('SELECT * FROM projects ORDER BY id').all(),
       blobs: upgraded.prepare('SELECT * FROM artifact_blobs ORDER BY checksum').all(),
@@ -195,7 +195,7 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     failed.exec('DROP INDEX idx_artifact_attachments_created; DROP TABLE migration_27_sentinel')
     failed.close()
     const retried = openDb(upgradePath)
-    assert.equal(version(retried), 28)
+    assert.equal(version(retried), 31)
     downgradeAttachmentNameHardeningToV27(retried)
     const exactV27 = JSON.stringify({
       projects: retried.prepare('SELECT * FROM projects ORDER BY id').all(),
@@ -233,7 +233,7 @@ describe('P3-O attachment migration and public transfer boundary', () => {
     failedHardening.close()
 
     const hardened = openDb(upgradePath)
-    assert.equal(version(hardened), 28)
+    assert.equal(version(hardened), 31)
     for (let codePoint = 1; codePoint <= 31; codePoint += 1) {
       assert.throws(
         () => hardened.prepare(

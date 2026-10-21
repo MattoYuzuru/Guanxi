@@ -24,7 +24,7 @@ A fully local AI on owned hardware should work the same way. His fleet today (D-
 | --- | --- | --- |
 | MacBook | M5 Pro, 24 GB | main machine, interactive |
 | Fedora PC (dual-boot with Windows) | Ryzen 5 3600, 32 GB, RTX 3060 12 GB; a resident Qwen 27B of the owner's workstation holds about 10.6 GB of VRAM | always-on home, builds, tests, GPU work |
-| Fedora laptop | 16 GB, RTX 2060 | extra node, enrolled later |
+| Fedora laptop (`asus`) | Ryzen 7 4800H, 15 GB, RTX 2060 6 GB; also used interactively | extra node with interactive headroom |
 | VPS `keykomi` | 1 vCPU, 2 GB | relay only |
 
 Research ([2026-10-21 fleet lanes](../research/2026-10-21-fleet/)) found:

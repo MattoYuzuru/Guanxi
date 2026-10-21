@@ -9,6 +9,8 @@ import { contextCheckpointSchema } from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import { ContextCheckpointStoreError, ThreadStore } from '../src/store/threads.ts'
 import { downgradeContextCheckpointsToV23 } from './fixtures/context-checkpoint-migration.ts'
+import { orderedRows } from './fixtures/table-rows.ts'
+import { SESSION_LOG_TABLES } from './fixtures/session-log-migration.ts'
 
 function version(db: DatabaseSync): number {
   return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
@@ -29,7 +31,7 @@ function tablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string 
       && name !== 'artifact_attachments')
   return JSON.stringify(Object.fromEntries(tables.map((name) => [
     name,
-    db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+    orderedRows(db, name),
   ])))
 }
 
@@ -122,7 +124,7 @@ describe('P3-M non-destructive context checkpoints', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const seeded = openDb(path)
-    assert.equal(version(seeded), 28)
+    assert.equal(version(seeded), 31)
     const threads = new ThreadStore(seeded)
     const thread = createThread(threads)
     seed(threads, thread.id, 0, 2)
@@ -137,20 +139,20 @@ describe('P3-M non-destructive context checkpoints', () => {
     assert.equal(version(rolledBack), 23)
     assert.equal(count(rolledBack, 'context_checkpoints'), 1)
     assert.equal(
-      tablesPayload(rolledBack, new Set(['context_checkpoints'])),
+      tablesPayload(rolledBack, new Set(['context_checkpoints', ...SESSION_LOG_TABLES])),
       exactV23,
     )
     rolledBack.exec('DROP TABLE context_checkpoints')
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 28)
+    assert.equal(version(retried), 31)
     assert.equal(count(retried, 'context_checkpoints'), 0)
-    assert.equal(tablesPayload(retried, new Set(['context_checkpoints'])), exactV23)
+    assert.equal(tablesPayload(retried, new Set(['context_checkpoints', ...SESSION_LOG_TABLES])), exactV23)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 28)
-    assert.equal(tablesPayload(reopened, new Set(['context_checkpoints'])), exactV23)
+    assert.equal(version(reopened), 31)
+    assert.equal(tablesPayload(reopened, new Set(['context_checkpoints', ...SESSION_LOG_TABLES])), exactV23)
     reopened.close()
   })
 

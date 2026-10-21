@@ -53,7 +53,7 @@ describe('SQLite capability override migration 9', () => {
   it('creates the additive table on fresh and reopened databases', async (test) => {
     const path = await temporaryDbPath(test, 'fresh')
     const first = openDb(path)
-    assert.equal(version(first), 28)
+    assert.equal(version(first), 31)
     assert.equal(tables(first, 'model_capability_user_overrides'), 1)
     assert.equal(count(first, 'model_capability_user_overrides'), 0)
     assert.equal(
@@ -66,7 +66,7 @@ describe('SQLite capability override migration 9', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 28)
+    assert.equal(version(reopened), 31)
     assert.equal(count(reopened, 'model_capability_user_overrides'), 0)
     reopened.close()
   })
@@ -108,7 +108,7 @@ describe('SQLite capability override migration 9', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 28)
+    assert.equal(version(upgraded), 31)
     // Two adjacent provider/probe rows exist for the very same exact identity and
     // neither one becomes a user assertion.
     assert.equal(count(upgraded, 'installed_model_evidence_cache'), 1)
@@ -140,7 +140,7 @@ describe('SQLite capability override migration 9', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 28)
+    assert.equal(version(recovered), 31)
     assert.equal(count(recovered, 'model_capability_user_overrides'), 0)
     recovered.close()
   })
@@ -167,11 +167,11 @@ describe('SQLite capability override migration 9', () => {
     assert.throws(() => openDb(path), /Миграция 9 не применилась/u)
     const repair = new DatabaseSync(path)
     assert.equal(count(repair, 'model_capability_user_overrides'), 1)
-    repair.exec('PRAGMA user_version = 28')
+    repair.exec('PRAGMA user_version = 31')
     repair.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 28)
+    assert.equal(version(reopened), 31)
     const records = new ModelCapabilityOverrideStore(reopened).list(IDENTITY)
     assert.equal(records.length, 1)
     assert.equal(records[0]!.capability, 'tools')

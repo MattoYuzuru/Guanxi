@@ -7,6 +7,8 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { DURABLE_RUNS_MIGRATION, DURABLE_RUN_HOME_BOUND_MIGRATION } from '../runs/schema.ts'
+import { SESSION_LOG_MIGRATION } from '../session-log/schema.ts'
 
 export type Db = DatabaseSync
 
@@ -14,7 +16,7 @@ export type Db = DatabaseSync
  * Миграции применяются по порядку и однократно. Номер последней применённой
  * лежит в `user_version` — это встроенный счётчик SQLite, отдельная таблица не нужна.
  */
-const MIGRATIONS: readonly string[] = [
+export const MIGRATIONS: readonly string[] = [
   // 1 — базовые сущности
   `
   CREATE TABLE workspaces (
@@ -1489,6 +1491,12 @@ const MIGRATIONS: readonly string[] = [
       SELECT RAISE(ABORT, 'Attachment display name contains a control character');
     END;
   `,
+  // 29 — append-only session event log, writer epochs and FTS5 search (K2, ADR-0023).
+  SESSION_LOG_MIGRATION,
+  // 30 — single-node durable runs, fenced attempts, promises and wake outbox (R1).
+  DURABLE_RUNS_MIGRATION,
+  // 31 — persist the granting home's safety bound across configuration changes.
+  DURABLE_RUN_HOME_BOUND_MIGRATION,
 ]
 
 export function openDb(path: string): Db {
@@ -1501,6 +1509,8 @@ export function openDb(path: string): Db {
   // WAL держит чтение неблокирующим, пока идёт запись стрима сообщений.
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA foreign_keys = ON')
+  // Deleted content (purged reasoning, deleted Chats) is overwritten, not left in free pages.
+  db.exec('PRAGMA secure_delete = ON')
 
   try {
     migrate(db)

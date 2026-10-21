@@ -11,3 +11,7 @@ export * from './reasoning-artifacts.ts'
 export * from './context-checkpoints.ts'
 export * from './artifacts.ts'
 export * from './ui-catalog.ts'
+
+export * from './connections/index.ts'
+export * from './brand.ts'
+export * from './events/index.ts'

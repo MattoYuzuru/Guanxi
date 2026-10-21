@@ -1,0 +1,8 @@
+{
+  "source": "https://api-docs.deepseek.com/api/get-user-balance/",
+  "recordedAt": "2026-10-20T00:00:00.000Z",
+  "kind": "recorded documentation response; no account or credential",
+  "response": { "is_available": true, "balance_infos": [
+    { "currency": "CNY", "total_balance": "110.00", "granted_balance": "10.00", "topped_up_balance": "100.00" }
+  ] }
+}

@@ -1293,3 +1293,15 @@ promotion. Production pressure/available-memory source, safe parallel и дру�
 resource actions остаются target.
 
 Это bridge, а не повод закрепить current POST/SSE как финальный API.
+
+## R1 single-node durable-run extension (2026-10-21)
+
+The legacy Chat lifecycle above remains implemented on `jobs` and `job_events`. R1 adds
+`durable_runs` and its fenced attempts, promises, timers and wake outbox in the same SQLite
+database, through the own kernel's `runs.durable` service. It does not replay legacy Chat
+inference. Run transitions append typed `run.lifecycle` events to the K2 session log in the
+same transaction. Hibernation releases the execution lease while retaining run-owned worktree
+and scratch resources. Restart interrupts local executing attempts; pending waits and input
+requests remain durable. See [the R1 implementation](../../../../packages/server/src/runs/README.md)
+for the exact reconciliation table, lease takeover delay, migration/rollback and executor
+boundary. Multi-node fencing and live model execution are not validated by R1.

@@ -26,6 +26,8 @@ import {
 import { ProjectStore } from '../src/store/projects.ts'
 import { RecipeStore } from '../src/store/recipes.ts'
 import { downgradeContextCheckpointsToV23 } from './fixtures/context-checkpoint-migration.ts'
+import { orderedRows } from './fixtures/table-rows.ts'
+import { SESSION_LOG_TABLES } from './fixtures/session-log-migration.ts'
 
 const AT = '2026-08-14T10:00:00.000Z'
 const RECIPE_ID = '11111111-1111-4111-8111-111111111111'
@@ -62,7 +64,7 @@ function tablesPayload(db: DatabaseSync, excluded: ReadonlySet<string>): string 
       && name !== 'artifact_attachments')
   return JSON.stringify(Object.fromEntries(tables.map((name) => [
     name,
-    db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+    orderedRows(db, name),
   ])))
 }
 
@@ -153,7 +155,7 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const seeded = openDb(path)
-    assert.equal(version(seeded), 28)
+    assert.equal(version(seeded), 31)
     const project = new ProjectStore(seeded).create('Exact v22 Project', AT)
     new RecipeStore(seeded, { clock: () => AT, createId: () => RECIPE_ID }).create({
       name: 'Exact v22 Recipe',
@@ -184,22 +186,22 @@ describe('P3-L exact Recipe revision to queued Job snapshot', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 28)
+    assert.equal(version(retried), 31)
     assert.equal(count(retried, 'recipe_job_snapshots'), 0)
     assert.equal(
-      tablesPayload(retried, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
+      tablesPayload(retried, new Set(['recipe_job_snapshots', 'context_checkpoints', ...SESSION_LOG_TABLES])),
       exactV22,
     )
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 28)
+    assert.equal(version(reopened), 31)
     assert.equal(
-      tablesPayload(reopened, new Set(['recipe_job_snapshots', 'context_checkpoints'])),
+      tablesPayload(reopened, new Set(['recipe_job_snapshots', 'context_checkpoints', ...SESSION_LOG_TABLES])),
       exactV22,
     )
     reopened.close()
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 28)
+    assert.equal(version(fresh), 31)
     fresh.close()
   })
 

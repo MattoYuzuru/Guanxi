@@ -13,15 +13,20 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/listen-env.ts'
-import { defaultDbPath } from './store/db.ts'
+import { defaultDbPath, openDb } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
 import { UiCatalogReviewService } from './ui-catalog/service.ts'
 import { keychainSigner } from './ui-catalog/signer.ts'
 import { findSourceCheckoutUiRoot } from './ui-catalog/source-checkout.ts'
 import { RELEASE_BUILD } from './release.ts'
 
-export { RELEASE_BUILD } from './release.ts'
+import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
+import type { VaultPolicy } from './vault/vault.ts'
+import type { Connections } from './connections/service.ts'
+import { ConnectionError } from './connections/errors.ts'
+import { connectionRoutes } from './connections/routes.ts'
 
+export { RELEASE_BUILD } from './release.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
 export { RecipeStore } from './store/recipes.ts'
@@ -46,8 +51,10 @@ export {
 export { RESOURCE_GOVERNOR_SERVICE, resourceGovernorPlugin } from './runtime/governor-plugin.ts'
 export { OLLAMA_ADAPTER_SERVICE, ollamaAdapterPlugin } from './ollama/plugin.ts'
 export type { OllamaAdapter, OllamaAdapterConfig } from './ollama/plugin.ts'
-export { LEGACY_SERVER_PROFILE, bootServerKernel } from './runtime/kernel.ts'
-export type { ServerKernel } from './runtime/kernel.ts'
+export { LEGACY_SERVER_PROFILE, SESSION_LOG_LAYER, bootServerKernel } from './runtime/kernel.ts'
+export type { ServerKernel, ServerKernelOptions } from './runtime/kernel.ts'
+export * from './egress/index.ts'
+export * from './session-log/index.ts'
 export type {
   AdmissionExplanation,
   AdmissionPriority,
@@ -110,6 +117,7 @@ export interface StartOptions {
   /** Директория со сборкой фронта. По умолчанию ищется рядом с пакетом. */
   webDir?: string
   devOrigins?: string[]
+  connectionsPolicy?: VaultPolicy
 }
 
 export async function start(options: StartOptions = {}) {
@@ -117,19 +125,31 @@ export async function start(options: StartOptions = {}) {
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
 
-  // The governor and the Ollama adapter run as kernel plugins (K1); the legacy
-  // context consumes their services.
-  const kernel = await bootServerKernel()
+  // The governor, the Ollama adapter (K1), the egress scrubber and the session
+  // log (K2) run as kernel plugins; the legacy context consumes their services.
+  // The database opens first because the session log plugin is bound to it.
+  const dbPath = defaultDbPath(dataDir)
+  const db = openDb(dbPath)
+  let kernel: Awaited<ReturnType<typeof bootServerKernel>>
+  try {
+    kernel = await bootServerKernel(undefined, { db })
+  } catch (error) {
+    db.close()
+    throw error
+  }
   let context: Awaited<ReturnType<typeof createAppContext>>
   try {
     context = await createAppContext({
-      dbPath: defaultDbPath(dataDir),
+      dbPath,
+      db,
       appVersion: APP_VERSION,
       governor: kernel.governor,
       ollama: kernel.ollama,
+      sessionLog: kernel.sessionLog ?? undefined,
     })
   } catch (error) {
     await kernel.node.dispose().catch(() => undefined)
+    db.close()
     throw error
   }
 
@@ -140,10 +160,32 @@ export async function start(options: StartOptions = {}) {
     signer: keychainSigner(),
   })
 
+  try {
+    await kernel.node.plugin(connectionsPlugin, {
+      databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
+      localHost: () => context.settings.get().ollamaHost,
+      policy: options.connectionsPolicy,
+    })
+  } catch (error) {
+    await context.maintenance?.close().catch(() => undefined)
+    await context.chatExecution.shutdown().catch(() => undefined)
+    context.jobService.closeSubscriptions()
+    await kernel.node.dispose().catch(() => undefined)
+    context.db.close()
+    throw error
+  }
+  let actualPort = port
   const server = createApp(context, {
+    host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
     uiCatalog,
   })
+
+  server.route('/api/connections', connectionRoutes(() => {
+    const service = kernel.node.service<Connections>(CONNECTIONS_SERVICE)
+    if (!service) throw new ConnectionError('egress_unavailable', 'Connections unavailable')
+    return service
+  }, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>
@@ -153,7 +195,6 @@ export async function start(options: StartOptions = {}) {
   mountWeb(server, options.webDir ?? resolve(here, '../../web/dist'))
 
   let instance!: ReturnType<typeof serve>
-  let actualPort: number
   try {
     actualPort = await new Promise<number>((resolvePort, reject) => {
       const onError = (error: Error) => reject(error)
@@ -167,8 +208,9 @@ export async function start(options: StartOptions = {}) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
-    context.db.close()
+    context.sessionLog?.closeSubscriptions()
     await kernel.node.dispose().catch(() => undefined)
+    context.db.close()
     throw error
   }
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
@@ -195,6 +237,8 @@ export async function start(options: StartOptions = {}) {
         shutdownError ??= error
       } finally {
         context.jobService.closeSubscriptions()
+        // Inspector streams are open-ended; end them so the listener can close.
+        context.sessionLog?.closeSubscriptions()
         await listenerClosed
         // Unload plugins before the database they may use is closed. Each
         // plugin cleanup is bounded by the kernel's step timeout; the HTTP

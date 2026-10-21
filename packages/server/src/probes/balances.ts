@@ -1,0 +1,71 @@
+import { assertApiKey } from '../connections/pi.ts'
+import { ConnectionError } from '../connections/errors.ts'
+import { z } from 'zod'
+import type { Connection, ConnectionBalance } from '@guanxi/contract'
+import type { Vault } from '../vault/vault.ts'
+import type { ConnectionStore } from '../connections/store.ts'
+
+const decimal = z.string().regex(/^-?\d+(\.\d+)?$/).transform(Number).refine(Number.isFinite)
+const openrouter = z.object({ data: z.object({ limit_remaining: z.number().finite().nullable() }) })
+const deepseek = z.object({ is_available: z.boolean(), balance_infos: z.array(z.object({
+  currency: z.enum(['USD', 'CNY']), total_balance: decimal,
+})) })
+export const BALANCE_PROBES = ['openrouter', 'deepseek'] as const
+export type BalanceProbe = typeof BALANCE_PROBES[number]
+export const probeEndpoints: Record<BalanceProbe, string> = {
+  openrouter: 'https://openrouter.ai/api/v1/key', deepseek: 'https://api.deepseek.com/user/balance',
+}
+export function parseBalance(provider: BalanceProbe, payload: unknown, observedAt: string): ConnectionBalance {
+  z.string().datetime().parse(observedAt)
+  switch (provider) {
+    case 'openrouter': {
+      const amount = openrouter.parse(payload).data.limit_remaining
+      return { scope: 'key_allowance', amount, currency: amount === null ? null : 'USD',
+        source: probeEndpoints[provider], observedAt, confidence: amount === null ? 'unknown' : 'high' }
+    }
+    case 'deepseek': {
+      const data = deepseek.parse(payload)
+      const row = data.balance_infos.find(item => item.currency === 'USD') ?? data.balance_infos[0]
+      const amount = row?.total_balance ?? null
+      return { scope: 'account_balance', amount, currency: row?.currency ?? null,
+        source: probeEndpoints[provider], observedAt, confidence: amount === null ? 'unknown' : 'high' }
+    }
+    default: {
+      const unsupported: never = provider
+      throw new Error(`Unsupported balance probe: ${unsupported}`)
+    }
+  }
+}
+export class BalanceProbes {
+  private readonly store: ConnectionStore
+  readonly #vault: Vault
+  private readonly transport: typeof fetch
+  constructor(store: ConnectionStore, vault: Vault,
+    transport: typeof fetch = globalThis.fetch) {
+    this.store = store
+    this.#vault = vault
+    this.transport = transport
+}
+  async probe(connection: Connection, signal?: AbortSignal): Promise<ConnectionBalance> {
+    if (!BALANCE_PROBES.includes(connection.provider as BalanceProbe)) throw new Error('No balance API; usage is metered locally')
+    const provider = connection.provider as BalanceProbe
+    const combined = signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000)
+    try {
+      const balance = await this.#vault.inject(connection.accountId, connection.id, false, async key => {
+        assertApiKey(provider, key)
+        const response = await this.transport(probeEndpoints[provider], {
+          headers: { Authorization: `Bearer ${key}` }, signal: combined, redirect: 'error',
+        })
+        if (!response.ok) throw new Error('Balance probe failed')
+        const payload = await response.json()
+        combined.throwIfAborted()
+        return parseBalance(provider, payload, new Date().toISOString())
+      })
+      this.store.observe(connection.accountId, connection.id, {}, balance)
+      return balance
+    } catch (error) {
+      if (error instanceof ConnectionError) throw error
+      throw new ConnectionError('provider_failed', 'Balance probe failed')
+    }
+  }
+}
