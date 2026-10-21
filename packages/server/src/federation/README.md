@@ -154,7 +154,11 @@ Peers negotiate protocol major/minor. Older-major clients can authenticate and r
 mutation endpoint rejects them with `contract_read_only`. A newer major is refused with
 `contract_incompatible`. The outbound synchronizer also refuses to import writes from an
 older-major peer, and the channel negotiates before every outgoing command to prevent a write
-after an older-major read-only handshake. Version is signed on every request, preventing an intermediary downgrade.
+after an older-major read-only handshake. Version and audience are signed on every request,
+so an intermediary cannot edit the sender's request version. Handshake responses are unsigned:
+an intermediary able to alter responses can force a read-only downgrade or denial of service.
+Response authenticity relies on the host-provided authenticated private transport or TLS;
+request signatures alone do not provide downgrade protection.
 
 ## Storage, upgrade and recovery
 

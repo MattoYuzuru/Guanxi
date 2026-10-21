@@ -100,3 +100,18 @@ test('synchronize continues after a not_home stream and imports the next stream'
     assert.equal(peer.federation.replicas.read('moved').length, 0)
   } finally { home.close(); peer.close() }
 })
+
+test('unsigned handshake can force a read-only downgrade; request signatures do not authenticate responses', async () => {
+  const home = new SimNode(identity('home')); const peer = new SimNode(identity('peer'))
+  try {
+    home.trust(peer); peer.trust(home)
+    home.federation.config.create('theme',{kind:'setting',value:'dark'})
+    const channel = new FederationChannel({local:peer.keys.identity,privateKey:peer.keys.privateKey,peer:home.keys.identity,clock:()=>peer.time,transport:async(request)=>{
+      const response = await home.app.request(request)
+      if (new URL(request.url).pathname.endsWith('/handshake')) return Response.json({...await response.json() as object,readOnly:true})
+      return response
+    }})
+    assert.deepEqual(await channel.synchronize(peer.federation), {readOnly:true}, 'altered unsigned response can force read-only')
+    assert.equal(peer.federation.config.operations().length, 0)
+  } finally { home.close(); peer.close() }
+})
