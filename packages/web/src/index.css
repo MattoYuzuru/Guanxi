@@ -580,3 +580,20 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Legacy modal shells use the existing ink scrim without dimming their content. */
+.legacy-scrim {
+  isolation: isolate;
+}
+.legacy-scrim::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: var(--layer-base);
+  background-color: var(--scrim-color);
+  opacity: var(--scrim-opacity);
+}
+.legacy-scrim > * {
+  position: relative;
+  z-index: var(--layer-dialog);
+}

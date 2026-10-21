@@ -246,7 +246,7 @@ export function Toggle({
         )}
       >
         <span
-          className="absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-[left] duration-150"
+          className={cx('absolute top-0.5 h-3 w-3 rounded-full shadow-sm transition-[left] duration-150', checked ? 'bg-accent-foreground' : 'bg-foreground')}
           style={{ left: checked ? 14 : 2 }}
         />
       </button>
@@ -503,7 +503,7 @@ export function Modal({
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-2 pt-[min(8vh,3rem)] backdrop-blur-[2px] sm:p-4 sm:pt-[min(8vh,3rem)]"
+      className="fixed inset-0 z-50 flex items-start justify-center legacy-scrim p-2 pt-[min(8vh,3rem)] backdrop-blur-[2px] sm:p-4 sm:pt-[min(8vh,3rem)]"
       onMouseDown={(event) => {
         if (dismissable && event.target === event.currentTarget) onClose()
       }}

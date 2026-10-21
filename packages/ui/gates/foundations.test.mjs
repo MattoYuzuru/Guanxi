@@ -402,3 +402,19 @@ test('self-review: retained legacy aliases cannot paint a second palette', async
     assert.deepEqual(values, Array(2).fill(`var(--color-${semantic})`), `${legacy} must resolve to the semantic palette in both themes`)
   }
 })
+
+test('self-review: legacy modal scrims and switch thumb use semantic colour roles', async () => {
+  const ui = await ctx.read('packages/web/src/components/ui.tsx')
+  const picker = await ctx.read('packages/web/src/features/projects/ProjectPresentationPicker.tsx')
+  for (const text of [ui, picker]) {
+    assert.doesNotMatch(text, /bg-(?:black|white)(?:\b|\/)/)
+    assert.ok(text.includes('legacy-scrim'), 'both modal shells must use the ink scrim')
+  }
+  assert.ok(ui.includes("checked ? 'bg-accent-foreground' : 'bg-foreground'"), 'thumb must contrast with the active track role')
+  const backgrounds = []
+  postcss.parse(await ctx.read('packages/web/src/index.css')).walkRules('.legacy-scrim::before', rule => rule.walkDecls('background-color', d => backgrounds.push(d.value)))
+  assert.deepEqual(backgrounds, ['var(--scrim-color)'])
+  const css = await ctx.read('packages/web/src/index.css')
+  assert.match(css, /opacity: var\(--scrim-opacity\)/)
+  assert.match(css, /\.legacy-scrim > \*\s*\{\s*position: relative;\s*z-index: var\(--layer-dialog\)/)
+})
