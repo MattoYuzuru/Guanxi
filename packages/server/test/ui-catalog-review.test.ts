@@ -586,6 +586,42 @@ describe('filesystem boundary (GPT M2)', () => {
     assert.ok([404, 409].includes(response.status), String(response.status))
     assert.equal(JSON.parse(readFileSync(join(outside, 'badge', 'badge.review.json'), 'utf8')).status, 'draft')
   })
+
+  it('refuses when packages/ui itself is a symlink out of the checkout (GPT N11)', async () => {
+    const fx = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'guanxi-outside-'))
+    cleanups.push(() => rmSync(outside, { recursive: true, force: true }))
+    const shown = current(fx.uiRoot, 'badge')
+    cpSync(fx.uiRoot, outside, { recursive: true })
+    rmSync(fx.uiRoot, { recursive: true })
+    symlinkSync(outside, fx.uiRoot, 'dir')
+    const server = app(new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: keyObjectSigner(fx.privateKey) }))
+    const response = await post(server, 'badge', { decision: 'approve', comment: '', ...shown })
+    assert.equal(response.status, 404)
+    assert.equal(JSON.parse(readFileSync(join(outside, 'src', 'components', 'badge', 'badge.review.json'), 'utf8')).status, 'draft')
+  })
+
+  it('refuses when packages/ui is swapped for a symlink during the keychain prompt (GPT N11)', async () => {
+    const fx = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'guanxi-outside-'))
+    cleanups.push(() => rmSync(outside, { recursive: true, force: true }))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const inner = keyObjectSigner(fx.privateKey)
+    const slow: ApprovalSigner = { status: () => inner.status(), sign: async (bytes) => (await gate, inner.sign(bytes)) }
+    const service = new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: slow })
+    const pending = post(app(service), 'badge', { decision: 'approve', comment: '', ...current(fx.uiRoot, 'badge') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    cpSync(fx.uiRoot, outside, { recursive: true })
+    rmSync(fx.uiRoot, { recursive: true })
+    symlinkSync(outside, fx.uiRoot, 'dir')
+    release()
+    const response = await pending
+    assert.ok([404, 409].includes(response.status), String(response.status))
+    assert.equal(JSON.parse(readFileSync(join(outside, 'src', 'components', 'badge', 'badge.review.json'), 'utf8')).status, 'draft')
+  })
 })
 
 describe('failure behaviour', () => {

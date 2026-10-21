@@ -6,7 +6,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import type {
   UiCatalogReadOnlyReason,
   UiCatalogReviewCapability,
@@ -78,13 +78,16 @@ export class UiCatalogReviewService {
   private readonly locks = new Map<string, Promise<unknown>>()
   private readonly now: () => Date
   private readonly options: UiCatalogReviewOptions
-  /** The real path of packages/ui when the node started: every write stays below it (N4). */
+  /**
+   * The real path of the checkout root (packages/ui/../..) when the node started: every write
+   * stays below it, through real directories only (N4, N11).
+   */
   private readonly anchor: string | null
 
   constructor(options: UiCatalogReviewOptions) {
     this.options = options
     this.now = options.now ?? (() => new Date())
-    this.anchor = options.uiRoot === null ? null : realpathSync(options.uiRoot)
+    this.anchor = options.uiRoot === null ? null : realpathSync(resolve(options.uiRoot, '..', '..'))
   }
 
   /** Static capability: never reads the secret, so it never prompts the owner. */
@@ -273,10 +276,11 @@ export class UiCatalogReviewService {
 
   /**
    * The component folder, its implementation and its record must be real entries below the
-   * checkout's packages/ui as it was when the node started: no symlink anywhere from there down
-   * (src, src/components, the folder, the files), and the folder's real path must be the
-   * anchored one, so a symlinked components root cannot move the writer (N4). Checked when the
-   * request arrives and again right before the write (the keychain prompt takes time).
+   * checkout root as it was when the node started: no symlink anywhere from there down
+   * (packages, packages/ui, src, src/components, the folder, the files), and the folder's real
+   * path must be the anchored one, so a symlinked packages/ui or components root cannot move
+   * the writer (N4, N11). Checked when the request arrives and again right before the write
+   * (the keychain prompt takes time).
    */
   private requireComponent(uiRoot: string, id: string): void {
     const missing = () => new UiCatalogError('component_not_found', 'unknown_component', `No component "${id}"`)
@@ -284,12 +288,13 @@ export class UiCatalogReviewService {
     const paths = uiPaths(uiRoot)
     const dir = paths.componentDir(id)
     const entry = (path: string) => (existsSync(path) || isLink(path) ? lstatSync(path) : null)
-    if (realpathSync(uiRoot) !== this.anchor) throw missing()
-    for (const ancestor of [join(uiRoot, 'src'), paths.components, dir]) {
+    const checkout = resolve(uiRoot, '..', '..')
+    if (realpathSync(checkout) !== this.anchor) throw missing()
+    for (const ancestor of [join(checkout, 'packages'), uiRoot, join(uiRoot, 'src'), paths.components, dir]) {
       const stat = entry(ancestor)
       if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) throw missing()
     }
-    if (realpathSync(dir) !== join(this.anchor, 'src', 'components', id)) throw missing()
+    if (realpathSync(dir) !== join(this.anchor, 'packages', 'ui', 'src', 'components', id)) throw missing()
     const implementation = entry(join(dir, `${id}.tsx`))
     if (!implementation || implementation.isSymbolicLink() || !implementation.isFile()) throw missing()
     const record = entry(paths.reviewFile(id))
