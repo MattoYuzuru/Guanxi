@@ -78,10 +78,13 @@ export class UiCatalogReviewService {
   private readonly locks = new Map<string, Promise<unknown>>()
   private readonly now: () => Date
   private readonly options: UiCatalogReviewOptions
+  /** The real path of packages/ui when the node started: every write stays below it (N4). */
+  private readonly anchor: string | null
 
   constructor(options: UiCatalogReviewOptions) {
     this.options = options
     this.now = options.now ?? (() => new Date())
+    this.anchor = options.uiRoot === null ? null : realpathSync(options.uiRoot)
   }
 
   /** Static capability: never reads the secret, so it never prompts the owner. */
@@ -269,19 +272,24 @@ export class UiCatalogReviewService {
   }
 
   /**
-   * The component folder, its implementation and its record must be real entries inside the
-   * canonical components root: a symlink could point the writer anywhere on disk. Checked when
-   * the request arrives and again right before the write (the keychain prompt takes time).
+   * The component folder, its implementation and its record must be real entries below the
+   * checkout's packages/ui as it was when the node started: no symlink anywhere from there down
+   * (src, src/components, the folder, the files), and the folder's real path must be the
+   * anchored one, so a symlinked components root cannot move the writer (N4). Checked when the
+   * request arrives and again right before the write (the keychain prompt takes time).
    */
   private requireComponent(uiRoot: string, id: string): void {
     const missing = () => new UiCatalogError('component_not_found', 'unknown_component', `No component "${id}"`)
-    if (!COMPONENT_ID_PATTERN.test(id)) throw missing()
+    if (!COMPONENT_ID_PATTERN.test(id) || this.anchor === null) throw missing()
     const paths = uiPaths(uiRoot)
     const dir = paths.componentDir(id)
     const entry = (path: string) => (existsSync(path) || isLink(path) ? lstatSync(path) : null)
-    const folder = entry(dir)
-    if (!folder || folder.isSymbolicLink() || !folder.isDirectory()) throw missing()
-    if (realpathSync(dir) !== join(realpathSync(paths.components), id)) throw missing()
+    if (realpathSync(uiRoot) !== this.anchor) throw missing()
+    for (const ancestor of [join(uiRoot, 'src'), paths.components, dir]) {
+      const stat = entry(ancestor)
+      if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) throw missing()
+    }
+    if (realpathSync(dir) !== join(this.anchor, 'src', 'components', id)) throw missing()
     const implementation = entry(join(dir, `${id}.tsx`))
     if (!implementation || implementation.isSymbolicLink() || !implementation.isFile()) throw missing()
     const record = entry(paths.reviewFile(id))
