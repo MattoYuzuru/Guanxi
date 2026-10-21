@@ -1,8 +1,12 @@
 # Stage status
 
 **Status:** implemented tracker · **Updated:** 2026-10-21
-**Current stage:** wave 2 of [parallel lanes](lanes/README.md): K1 and DS1-a are merged;
-K2 and K3 are ready. DS1-b is in review fixes; DS1-c waits for DS1-b.
+**Current stage:** wave 3 integration and residuals. K1–K3, R1, F1 and DS1-a/b/c are
+merged; K4, K5 and R2 have merged bounded implementations with named unfinished scope.
+DS2, K4 follow-up 2 and X1 have independently reviewed repair candidates awaiting full
+integration gates; U1-a needs review/integration. B1 remains partial.
+See the [coordination audit](evidence/coordination-2026-10-21.md) for pinned heads, progress
+estimates, active ownership and the distinction between a merge and a stage exit.
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
@@ -194,7 +198,7 @@ Residual risks:
 | --- | --- | --- |
 | DS1-a: DTCG tokens, deterministic Style Dictionary build, self-hosted IBM Plex, legacy freeze ratchet, gates G1–G7 and the G17 self-test | implemented, independently verified, merged into `main` (`--no-ff`, as the ratchet requires) | Full evidence: [evidence/DS1-a](evidence/DS1-a.md). Token values are asserted against the FOUNDATIONS tables; the legacy UI's fonts and spacing are unchanged; all 32 Plex faces load from the same origin; the ratchet freezes 735 legacy keys with two owner-authorised corrections. Reviews: the lane's own reviewer, then three Claude cross-family rounds (19 + 9 findings closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (now including the UI gates; web 264), browser gate 48/48, build, lint:md, licenses (358/0). Follow-ups moved to DS1-c. |
 | DS1-b: `@guanxi/ui` components, catalog, signed approvals, G10–G16 | implemented, independently verified, merged into `main` (`7de9e6c`) | Full evidence and residuals: [evidence/DS1-b](evidence/DS1-b.md). Author Claude; GPT cross-family checks through round 5; the last High (generated-root scripts outside the approval hash) verified by the integrator with the reviewer's regressions and a fix-removal mutation. Integrator gates on `main`: typecheck, `ui:check`, licenses 521/0, `npm test` (UI gates 51, catalog 70, core 1007, kernel 106, web 314, UI 17), browser gate 65/65, `ui:check:browser`, build. Key custody moves to DS2. |
-| DS1-c: lint ratchet and codemod | Claude review 1: merge after fixes. One High: the codemod puts muted text on inset surfaces below 4.5:1 in about 36 places. Mediums: untested growth-audit call and ESLint config, G9 alias bypasses, and a mixed old/new palette. Fix round running in Codex | [lanes/DS1-c](lanes/DS1-c.md) |
+| DS1-c: lint ratchet and codemod | implemented, independently reviewed, merged (`a07d3d7`) | [evidence/DS1-c](evidence/DS1-c.md): review fixes, 89 gate + 6 codemod tests, 65 mocked browser regressions. Remaining U1 colour debt is explicit; a green ratchet does not mean zero suppressions. |
 
 ## Repository presentation and documentation (2026-10-21)
 
@@ -226,17 +230,38 @@ decision was made.
 | Stage | Status | Notes |
 | --- | --- | --- |
 | K1 Kernel | implemented, merged | see the K1 section above |
-| DS1 Design foundations | in progress (DS1-a and DS1-b merged; DS1-c running) | see the DS1 section above |
-| DS2 Approval signing helper | in progress (lane DS2, DeepSeek; design: a Secure Enclave P-256 key that cannot be exported, verified on this Mac without an Apple Developer account) | [lanes/DS2](lanes/DS2.md) |
+| DS1 Design foundations | implemented, reviewed, all three parts merged | see the DS1 section above and the integrated-main audit below |
+| DS2 Approval signing helper | partial candidate with reviewed fixes (`codex/ds2-review-fixes`, `785b814`); full gates/hardware validation pending | [lanes/DS2](lanes/DS2.md); production user-presence/installed-helper path remains unverified. Hardware support discovery does not prove the full signing gate. |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
 | K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
-| K5 External agents | partial; Claude review 1: merge after fixes. H1: OpenCode and Goose run with default autonomous host tools. H2: the vendor-token gate is bypassable through `child_process` and template paths. Fix round queued in Codex | [lanes/K5](lanes/K5.md) |
-| B1 Bench base | in progress (lane B1, Codex); host provisioned | [lanes/B1](lanes/B1.md) |
-| X1 Repo map and FTS | Claude review 1: merge after fixes. C1: the Linux bwrap sandbox never starts (`--ro-bind /proc/<pid>/fd` is denied in the user namespace; reviewer-verified fix `--ro-bind-fd`). H1: an ancestor `package.json` kills the macOS worker. H2: unchanged trees are rebuilt forever, with scrubbing on the main thread. Fix round queued in DeepSeek | [lanes/X1](lanes/X1.md) |
-| R2 Relay executor | Claude review 1: merge after fixes. H1: the ceiling is sized in bytes but the boundary in tokens, so the boundary never fires and new turns drop silently. H2: an output-truncated narrative does not degrade. H3: each seal bundles the whole history (about 123 s here). Fix round queued | [lanes/R2](lanes/R2.md) |
-| U1 Shell, layout, modes | U1-a (layout engine and modes) in progress (Codex); U1-b and U1-c follow | [lanes/U1](lanes/U1.md) |
+| K5 External agents | partial implementation merged (`80f7245`); review fixes included | [evidence/K5](evidence/K5.md); real release captures, effective implicit bare detection, automatic Claude quota producer and distributed admission remain open. |
+| B1 Bench base | partial fixture foundation handed off; no worker running at audit | [lanes/B1](lanes/B1.md); corpus staging, real bounded executor/billing gateway and five-seed model measurements remain open. |
+| X1 Repo map and FTS | repair reviewed in `codex/x1-parent-read-boundary` (`647c5d0`); current main incorporated, combined indexing/boot gate passed | [lanes/X1](lanes/X1.md); parent policy reads now use the sandbox worker. Full integration gates and repaired-source Linux checks remain; candidate is not merged. |
+| R2 Relay executor | internal single-node implementation merged (`726efc3`); review fixes included | [evidence/R2](evidence/R2.md); trusted live runtime meter/admission and independent semantic probe evidence remain open. No public start flow or live long-run claim. |
+| U1 Shell, layout, modes | U1-a handed off, awaiting independent review/integration; U1-b/c not started | [lanes/U1](lanes/U1.md); local persistence/conflict handling exists. Actual cross-node layout replication is absent and must not be inferred from in-memory merge tests. |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
+
+## Integration coordination audit (2026-10-21)
+
+See [evidence/coordination-2026-10-21](evidence/coordination-2026-10-21.md).
+The audit reconciles merged DS1-c/R2/K5 and completed worker handoffs, records fresh main
+regression gates, and keeps K4/K5/R2/B1/DS2/U1 residuals open. No unreviewed lane is
+closed by a percentage estimate.
+
+### Final continuation candidates
+
+- K4 follow-up 2: `codex/k4f2-review-fixes` at `baeac3c`, independent repair review closed;
+  5 new / 33 regression envelope = 38 targeted tests pass, server typecheck passes.
+- DS2: `codex/ds2-review-fixes` at `785b814`, independent repair review closed;
+  4 new / 43 regression envelope = 47 targeted tests pass; hardware signing remains unverified.
+- X1: `codex/x1-parent-read-boundary` at `647c5d0`, repair and integration-conflict review closed;
+  5 new / 49 indexing envelope, plus seven kernel boot tests = 61 total, 60 pass / 1 Linux-only
+  skip. All-workspace typecheck, links and licenses pass. Repaired-source Linux checks remain.
+
+All three candidates include published main `3f73ded`, have committed handoffs and remain
+unmerged into main. The full integrator gates are the next task, not evidence already earned
+by a targeted run. Detailed receipts and limits are in the [coordination audit](evidence/coordination-2026-10-21.md).

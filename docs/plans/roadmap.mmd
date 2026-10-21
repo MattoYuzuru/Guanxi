@@ -1,5 +1,5 @@
 flowchart LR
-  S0([S0 Re-foundation<br/>in review]):::review
+  S0([S0 Re-foundation<br/>merged]):::done
 
   subgraph Kernel["Kernel and agent core"]
     K1[K1 Kernel<br/>own, Cordis semantics]
@@ -130,3 +130,7 @@ flowchart LR
   classDef review fill:#fef3c7,stroke:#059669,stroke-dasharray:4 3
   classDef ms fill:#fef3c7,stroke:#d97706
   classDef final fill:#fff,stroke:#111,stroke-width:3px
+
+  classDef done fill:#d1fae5,stroke:#047857
+  class S0,K1,K2,K3,R1,F1,DS1 done
+  class K4,K5,R2,B1,DS2,U1,X1 review

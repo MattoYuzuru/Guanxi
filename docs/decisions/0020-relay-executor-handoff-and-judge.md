@@ -116,4 +116,4 @@ rendered-request token count; K3 has no universal meter yet. The tests use fixtu
 K3 fixture transports, without live models. Judge requests are emitted for R3; judge execution,
 ETA, delegation policy, cross-node transport and B3 quality/non-inferiority remain proposed.
 Linked/gitlink repository trees are refused by the current clean-checkout implementation.
-See the [R2 hand-off](../plans/lanes/R2.handoff.md) for assertions, mutations and exact scope.
+See the [R2 hand-off](../plans/evidence/R2.md) for assertions, mutations and exact scope.

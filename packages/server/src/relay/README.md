@@ -1,7 +1,7 @@
 # Relay executor (R2)
 
 **Status:** implemented internal single-node service; validation is recorded in the
-[R2 hand-off](../../../../docs/plans/lanes/R2.handoff.md).
+[R2 hand-off](../../../../docs/plans/evidence/R2.md).
 
 `guanxi.relay` provides `agent.relay`, loaded after K3 in the default server. Loading it
 starts no inference. A trusted execution host initializes an R1 attempt with an immutable
