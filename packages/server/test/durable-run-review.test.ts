@@ -159,3 +159,23 @@ test('M5: idle heartbeat/tick/dispatch take no write transaction until ownerTtl/
     assert.equal(changes(), before + 1)
   } finally { f.close() }
 })
+
+test('L1: wall-clock suspend wakes timers while execution fences use monotonic elapsed time', () => {
+  const f = runFixture(':memory:', { leaseClock: () => RUN_TIME })
+  try {
+    const a = f.store.start(f.store.create({ id: 'lead' }).id)
+    const p = f.store.delegate(a, { key: 'child', deadline: RUN_TIME + 10_000 })
+    const child = f.store.start(p.child_id)
+    f.setTime(RUN_TIME + 600_000) // Linux monotonic clock can exclude this suspended time.
+    f.store.heartbeat(); f.store.tick()
+    assert.equal(f.store.promises('lead')[0]!.outcome, 'deadline')
+    assert.equal(f.store.attempts(p.child_id)[0]!.state, 'delivered')
+    assert.doesNotThrow(() => f.store.renew(child))
+    f.store.retain(child, { key: 'wall-retention', kind: 'scratch', retainUntil: RUN_TIME + 700_000 })
+    f.store.complete(child, 'completed')
+    f.setTime(RUN_TIME + 1)
+    assert.deepEqual(f.store.reapResources(), [])
+    f.setTime(RUN_TIME + 700_000)
+    assert.deepEqual(f.store.reapResources(), ['resource:wall-retention'])
+  } finally { f.close() }
+})

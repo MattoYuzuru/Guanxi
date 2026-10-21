@@ -15,7 +15,10 @@ export interface RunStoreOptions {
   scrubber: EgressScrubber
   /** Explicit host assertion; a laptop must hand over in F1 before enabling delegation. */
   alwaysOn?: boolean
+  /** Wall time for durable deadlines and observations, clamped against clock rollback. */
   clock?: () => number
+  /** Monotonic elapsed time, anchored to wall time for persisted lease bounds. */
+  leaseClock?: () => number
   ownerTtlMs?: number
   maxAttemptTtlMs?: number
   /** Every store statement and transaction boundary; tests also inject K2 append points. */
@@ -43,6 +46,8 @@ export class RunStore {
   private readonly clock: () => number
   private renewAt = 0
   private highWater = 0
+  private leaseHighWater = 0
+  private readonly leaseClock: () => number
   private closed = false
   private operation = ''
   private readonly changedSessions = new Set<string>()
@@ -67,7 +72,8 @@ export class RunStore {
     this.scrubber = options.scrubber
     const wallReference = Date.now()
     const monotonicReference = performance.now()
-    this.clock = options.clock ?? (() => Math.floor(wallReference + performance.now() - monotonicReference))
+    this.clock = options.clock ?? Date.now
+    this.leaseClock = options.leaseClock ?? options.clock ?? (() => Math.floor(wallReference + performance.now() - monotonicReference))
     this.ownerTtl = options.ownerTtlMs ?? 30_000
     this.maxTtl = options.maxAttemptTtlMs ?? 60_000
     this.integer(this.ownerTtl, 1)
@@ -79,7 +85,7 @@ export class RunStore {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const prior = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
-      const now = this.now()
+      const now = this.leaseNow()
       const activeExpiry = this.row<{ expiry: number | null }>("SELECT MAX(expires_at) AS expiry FROM leases WHERE key LIKE 'run:%/exec' AND released=0")?.expiry ?? 0
       if (prior && !prior.released) {
         const persistedBound = Math.max(prior.regrant_after, prior.expires_at + this.maxTtl + EPSILON_MS, activeExpiry + EPSILON_MS)
@@ -106,11 +112,17 @@ export class RunStore {
   }
 
   private now(): number {
-    // Never extend a lease by rolling this process's clock back.
+    // Durable timers include suspend on platforms whose monotonic clock excludes it.
     const time = this.clock()
     this.integer(time, 0)
     this.highWater = Math.max(this.highWater, time)
     return this.highWater
+  }
+  private leaseNow(): number {
+    const time = this.leaseClock()
+    this.integer(time, 0)
+    this.leaseHighWater = Math.max(this.leaseHighWater, time)
+    return this.leaseHighWater
   }
   private integer(value: number, min = 0): void {
     if (!Number.isSafeInteger(value) || value < min) throw new RunError('invalid_input')
@@ -152,9 +164,9 @@ export class RunStore {
       this.point('begin')
       this.assertOwner()
       if (requiresReady && !this.scrubber.isReady()) throw new RunError('egress_not_ready')
-      if (this.now() >= this.renewAt) {
-        this.write('UPDATE leases SET expires_at=?,regrant_after=? WHERE key=?', this.now() + this.ownerTtl,
-          this.now() + this.ownerTtl + this.maxTtl + EPSILON_MS, HOME_KEY)
+      if (this.leaseNow() >= this.renewAt) {
+        this.write('UPDATE leases SET expires_at=?,regrant_after=? WHERE key=?', this.leaseNow() + this.ownerTtl,
+          this.leaseNow() + this.ownerTtl + this.maxTtl + EPSILON_MS, HOME_KEY)
         renewed = true
       }
       result = body()
@@ -165,7 +177,7 @@ export class RunStore {
       this.changedSessions.clear()
       throw error
     }
-    if (renewed) this.renewAt = this.now() + this.ownerTtl / 3
+    if (renewed) this.renewAt = this.leaseNow() + this.ownerTtl / 3
     this.point('committed')
     this.log.notify(this.changedSessions)
     this.changedSessions.clear()
@@ -218,10 +230,10 @@ export class RunStore {
   }
   private grant(key: string, holder: string, ttl: number): Lease {
     const old = this.row<Lease>('SELECT * FROM leases WHERE key=?', key)
-    if (old && !old.released && old.expires_at > this.now()) throw new RunError('stale_lease')
+    if (old && !old.released && old.expires_at > this.leaseNow()) throw new RunError('stale_lease')
     this.write(`INSERT INTO leases (key,epoch,token,holder,expires_at,released) VALUES (?,1,?,?,?,0) ON CONFLICT(key) DO UPDATE SET
       token=excluded.token,holder=excluded.holder,expires_at=excluded.expires_at,released=0`,
-    key, (old?.token ?? 0) + 1, holder, this.now() + ttl)
+    key, (old?.token ?? 0) + 1, holder, this.leaseNow() + ttl)
     return this.row<Lease>('SELECT * FROM leases WHERE key=?', key)!
   }
   private release(runId: string): void {
@@ -232,7 +244,7 @@ export class RunStore {
     const lease = this.row<Lease>('SELECT * FROM leases WHERE key=?', `run:${attempt.run_id}/exec`)
     if (!stored || stored.run_id !== attempt.run_id || stored.epoch !== attempt.epoch || stored.token !== attempt.token ||
       !['delivered', 'started'].includes(stored.state) || !lease || lease.holder !== attempt.id ||
-      lease.epoch !== attempt.epoch || lease.token !== attempt.token || lease.released || lease.expires_at <= this.now()) {
+      lease.epoch !== attempt.epoch || lease.token !== attempt.token || lease.released || lease.expires_at <= this.leaseNow()) {
       throw new RunError('stale_lease')
     }
     return stored
@@ -259,7 +271,7 @@ export class RunStore {
     if (ttl > this.maxTtl) throw new RunError('invalid_input')
     this.tx('renew', () => {
       this.fenced(attempt)
-      this.write('UPDATE leases SET expires_at=? WHERE key=?', this.now() + ttl, `run:${attempt.run_id}/exec`)
+      this.write('UPDATE leases SET expires_at=? WHERE key=?', this.leaseNow() + ttl, `run:${attempt.run_id}/exec`)
     })
   }
   /** Called by an executor only after observing its first model call start. */
@@ -408,7 +420,7 @@ export class RunStore {
   heartbeat(): void {
     if (this.closed) throw new RunError('closed')
     if (!this.owner) this.claimHome()
-    else if (this.now() >= this.renewAt) this.tx('heartbeat', () => {}, false)
+    else if (this.leaseNow() >= this.renewAt) this.tx('heartbeat', () => {}, false)
     else this.assertOwner()
   }
   private lose(attempt: Attempt): void {
@@ -418,7 +430,7 @@ export class RunStore {
   }
   tick(): void {
     for (const attempt of this.rows<Attempt>(`SELECT a.* FROM run_attempts a JOIN leases l
-        ON l.key='run:'||a.run_id||'/exec' WHERE a.state IN ('delivered','started') AND l.expires_at<=?`, this.now())) {
+        ON l.key='run:'||a.run_id||'/exec' WHERE a.state IN ('delivered','started') AND l.expires_at<=?`, this.leaseNow())) {
       this.isolate(attempt.run_id, 'expiry', () => this.tx('expiry', () => this.lose(attempt)))
     }
     for (const timer of this.rows<{ promise_id: string }>("SELECT promise_id FROM timers WHERE state='pending' AND due_at<=? ORDER BY due_at,promise_id", this.now())) {
