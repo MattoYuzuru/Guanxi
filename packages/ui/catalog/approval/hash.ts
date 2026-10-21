@@ -24,6 +24,8 @@ const SHARED_DIR = 'styles'
  */
 const PACKAGE_INPUTS = ['generated/tokens.css', 'generated/theme.css', 'fonts']
 const SCRIPT = /\.(tsx?|mts|m?js)$/
+/** A bare package specifier (react, @base-ui/react/toast): the lockfile pins what it runs. */
+const PACKAGE_SPECIFIER = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(?:\/[\w.@-]+)*$/i
 
 export class SourceHashError extends Error {
   constructor(message: string) {
@@ -92,20 +94,40 @@ function bundledInputs(entries: string[], srcRoot: string): string[] {
     const first = (cause as { errors?: Array<{ text: string; location?: { file: string } | null }> }).errors?.[0]
     throw new SourceHashError(`cannot resolve the component's dependencies: ${first ? `${first.text}${first.location ? ` (${first.location.file})` : ''}` : String(cause)}`)
   }
+  // Only third-party packages may stay external. A relative or absolute specifier esbuild could
+  // not bind (an import() or require() in a try, say) would run code no hash covers (N10).
+  for (const [input, info] of Object.entries(metafile.inputs)) {
+    for (const edge of info.imports) {
+      if (edge.external && !PACKAGE_SPECIFIER.test(edge.original ?? edge.path)) {
+        throw new SourceHashError(`unresolved ${edge.kind} '${edge.original ?? edge.path}' in ${input}: the hash cannot bind it`)
+      }
+    }
+  }
   return Object.keys(metafile.inputs).map((input) => resolve(srcRoot, input))
 }
 
-/** A dynamic import whose specifier is computed at run time is outside any hash: refuse it. */
+/**
+ * A module chosen at run time is outside any hash: `import()` and `require()` must name a
+ * literal specifier (a template with any substitution counts as computed), and
+ * `import.meta.glob` is refused (N10).
+ */
 function rejectComputedImports(file: string, root: string): void {
   if (!SCRIPT.test(file)) return
   const ts = load('typescript') as typeof import('typescript')
   const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
   const visit = (node: import('typescript').Node): void => {
-    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-      const [specifier] = node.arguments
-      const literal = specifier && (ts.isStringLiteral(specifier) || ts.isNoSubstitutionTemplateLiteral(specifier) || ts.isTemplateExpression(specifier))
-      if (!literal) {
-        throw new SourceHashError(`computed dynamic import in ${relative(root, file).split(sep).join('/')}: the hash cannot follow it`)
+    const where = () => relative(root, file).split(sep).join('/')
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      const loads = callee.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(callee) && callee.text === 'require')
+      if (loads) {
+        const [specifier] = node.arguments
+        if (!specifier || !(ts.isStringLiteral(specifier) || ts.isNoSubstitutionTemplateLiteral(specifier))) {
+          throw new SourceHashError(`computed dynamic import in ${where()}: the hash cannot follow it`)
+        }
+      }
+      if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'glob' && ts.isMetaProperty(callee.expression)) {
+        throw new SourceHashError(`import.meta.glob in ${where()}: the hash cannot follow it`)
       }
     }
     ts.forEachChild(node, visit)
@@ -137,6 +159,7 @@ export function componentSourceHash(dir: string): string {
     if (stat.isDirectory() && !stat.isSymbolicLink()) for (const file of listFiles(path)) files.add(file)
     else if (stat.isFile()) files.add(path)
   }
+  for (const file of own) rejectComputedImports(file, srcRoot)
   for (const input of bundledInputs(own.filter((file) => SCRIPT.test(file)), srcRoot)) {
     if (input.includes(`${sep}node_modules${sep}`)) continue
     if (!input.startsWith(srcRoot + sep) && !input.startsWith(join(packageRoot, 'generated') + sep) && !input.startsWith(join(packageRoot, 'fonts') + sep)) {

@@ -335,6 +335,23 @@ describe('component source hash covers what the component runs (GPT H3)', async 
     }
   })
 
+  const unbound: Array<[string, string, RegExp]> = [
+    ['an import() of a missing module behind catch', "export const load = () => import('../../lib/missing').catch(() => null)", /unresolved dynamic-import '\.\.\/\.\.\/lib\/missing'/],
+    ['a require() of a missing module behind try', "let x: unknown\ntry { x = require('../../lib/missing') } catch {}\nexport { x }", /unresolved require-call '\.\.\/\.\.\/lib\/missing'/],
+    ['a template specifier with a substitution', "export const load = (name: string) => import(`../../lib/${name}.ts`)", /computed dynamic import in components\/a\/a\.tsx/],
+    ['a fully computed template specifier', 'export const load = (name: string) => import(`${name}`)', /computed dynamic import in components\/a\/a\.tsx/],
+  ]
+  for (const [name, code, expected] of unbound) {
+    it(`refuses ${name}, which no hash can bind (GPT N10)`, () => {
+      const t = tree(code)
+      try {
+        assert.throws(() => componentSourceHash(t.dir), expected)
+      } finally {
+        t.dispose()
+      }
+    })
+  }
+
   it('fails closed on a local import it cannot resolve', () => {
     const t = tree("import '../../lib/missing-helper'")
     try {
