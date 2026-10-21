@@ -5,10 +5,16 @@ import { querySessionLog } from '../session-log/query-tool.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { resolveInWorkspace } from '../tools/jail.ts'
 import { sandboxCommand, quote, type SandboxPolicy } from './sandbox.ts'
-import { dirname } from 'node:path'
+import type { ProjectIndexService } from '../indexing/plugin.ts'
+import { directSymbols } from '../indexing/lsp.ts'
+import { boundMap } from '../indexing/engine.ts'
+import { executeIndex } from '../indexing/engine.ts'
+import { DEFAULT_INDEX_SETTINGS, type IndexRequest, type MapResult } from '../indexing/types.ts'
+import { dirname, relative, sep, join } from 'node:path'
 import { NativeOutputs } from './outputs.ts'
 
 export interface NativeToolContext {
+  index?: ProjectIndexService
   policy: SandboxPolicy
   log: SessionLog
   handle: SessionHandle
@@ -25,6 +31,31 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       try { return resolveInWorkspace(root, value) } catch { /* try the next allowed root */ }
     }
     throw new Error('path_denied')
+  }
+  const indexed = async (kind: 'search' | 'map', requested: string, text: string | undefined, budget: number | undefined, signal?: AbortSignal) => {
+    const target = path(requested)
+    const root = [...policy.roots, policy.scratch, ...policy.attachments].find(root => target === root || target.startsWith(root + sep))
+    if (!root) throw new Error('path_denied')
+    const scopedPath = relative(root, target)
+    if (ctx.index && policy.roots.includes(root)) {
+      if (kind === 'search') return JSON.stringify(await ctx.index.search(root, text!, scopedPath, signal))
+      const result = await ctx.index.map(root, budget, scopedPath, signal)
+      // Direct LSP is optional and is attempted only for a single-file request.
+      // Directory maps stay cheap and use the content cache.
+      if (result.entries.length === 1 && result.entries[0]!.path === scopedPath) {
+        const symbols = await directSymbols(policy, root, join(root, scopedPath), ctx.executeCommand ?? sandboxCommand, scrubber, signal)
+        if (symbols) { result.entries[0]!.symbols = symbols; result.entries[0]!.source = 'lsp' }
+      }
+      return JSON.stringify(boundMap(scrubber.scrub(result) as MapResult, budget ?? 2048))
+    }
+    // IX0 and a file-level map remain available in scratch and when the optional
+    // index plugin is absent. No OS grep/ripgrep binary is required or bundled.
+    signal?.throwIfAborted()
+    const request: IndexRequest = { kind, root, path: scopedPath, text, budget }
+    return JSON.stringify(await executeIndex({ request, database: '', settings: { ...DEFAULT_INDEX_SETTINGS } }, async value => {
+      signal?.throwIfAborted()
+      return scrubber.isReady() && scrubber.scrub(value) === value
+    }))
   }
   const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true) => {
     const result = await (ctx.executeCommand ?? sandboxCommand)(policy, command, signal, 120_000, fixed, scrubber)
@@ -57,7 +88,8 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       const binaries: Record<string, string> = { pwd: '/bin/pwd', ls: '/bin/ls', cat: '/bin/cat', head: '/usr/bin/head', tail: '/usr/bin/tail', wc: '/usr/bin/wc' }
       return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s)
     }),
-    tool('search', 'Search literal text recursively in an allowed path, without following symlinks.', { path: Type.String(), text: Type.String() }, async (a, s) => run(`/usr/bin/grep -r -n -F -- ${quote(a.text!)} ${quote(path(a.path!))}`, s, [0, 1])),
+    tool('search', 'Search literal text with FTS5 and Node grep fallback. Result includes checked-out commit, index age, coverage and explicit truncation. Ignored, .env and registered-secret files are excluded.', { path: Type.String(), text: Type.String() }, async (a, s) => indexed('search', a.path!, a.text, undefined, s)),
+    tool('repo_map', 'repo.map: repository files and cached tree-sitter symbols. budget is a positive token upper bound measured as UTF-8 bytes for the complete JSON result, including provenance. Small budgets may be refused. Wire alias repo_map.', { path: Type.String(), budget: Type.String() }, async (a, s) => indexed('map', a.path!, undefined, Number(a.budget), s)),
     tool('fetch', 'Fetch an allowlisted HTTP(S) URL. Read-only permits GET, HEAD, OPTIONS; redirects and raw tunnels are denied. Body is text.', { url: Type.String(), method: Type.String(), body: Type.String() }, async (a, s) => {
       const url = new URL(a.url!)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('url_denied')

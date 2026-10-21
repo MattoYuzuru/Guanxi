@@ -11,6 +11,7 @@ import type { Connections } from '../connections/service.ts'
 import { assertRootsClean } from './cleanup.ts'
 import { selectedModel, connectionStream, emptyUsage } from './model.ts'
 import { orientation } from './orientation.ts'
+import type { ProjectIndexService } from '../indexing/plugin.ts'
 import { nativeTools } from './tools.ts'
 import { NativeProjectRoots } from './projects.ts'
 import { sandboxCommand, type SandboxPolicy } from './sandbox.ts'
@@ -51,11 +52,21 @@ export class NativeAgents {
   readonly dataDir: string
   readonly nodePorts: () => number[]
   private commandRunner: typeof sandboxCommand
-  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)], commandRunner = sandboxCommand) {
+  private readonly index?: ProjectIndexService
+  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)], commandRunner = sandboxCommand, index?: ProjectIndexService) {
+    this.index = index
     this.commandRunner = commandRunner
     this.nodePorts = nodePorts
     this.host = host; this.log = log; this.connections = connections; this.scrubber = scrubber; this.dataDir = dataDir
     this.projectRoots = new NativeProjectRoots(join(dataDir, 'native-projects.sqlite'), host)
+    this.trackProjects()
+  }
+  private trackProjects() {
+    if (!this.index) return
+    for (const project of this.projectRoots.list()) for (const binding of project.filesystemBindings) {
+      const workspace = this.host.workspaces.get(binding.workspaceId)
+      if (workspace) void this.index.track(workspace.rootPath).catch(() => undefined)
+    }
   }
 
   async create(raw: unknown): Promise<{ sessionId: string }> {
@@ -108,6 +119,7 @@ export class NativeAgents {
       const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, nodePorts: [...this.nodePorts()], runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
       this.ready()
       this.ensureRoots(policy, sessionId)
+      for (const root of roots) void this.index?.track(root).catch(() => undefined)
       handle = this.log.open(sessionId, { kind: 'agent' })
       const { prompt: _prompt, ...settings } = input
       handle.append({ type: 'agent.policy', data: { ...settings, ...policy } })
@@ -135,6 +147,7 @@ export class NativeAgents {
   setRoots(id: string, workspaceIds: string[]) {
     this.ready()
     const project = this.projectRoots.set(id, workspaceIds)
+    this.trackProjects()
     if (!project) throw new NativeAgentError('project_not_found')
     return project
   }
@@ -225,7 +238,7 @@ export class NativeAgents {
     let promptId: string = randomUUID()
     let promptOrigin: 'typed' | 'queued' = 'typed'
     const turnId = randomUUID()
-    const tools = nativeTools({ policy, log: this.log, handle, scrubber: this.scrubber, queue: text => this.queue(id, text), executeCommand: this.commandRunner })
+    const tools = nativeTools({ policy, log: this.log, handle, scrubber: this.scrubber, queue: text => this.queue(id, text), executeCommand: this.commandRunner, index: this.index })
     const model = selectedModel(this.connections, input)
     const images: import('@earendil-works/pi-ai').ImageContent[] = []
     for (const attachment of policy.attachmentMetadata ?? []) {
