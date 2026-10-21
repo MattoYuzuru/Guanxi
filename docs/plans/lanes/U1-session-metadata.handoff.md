@@ -1,6 +1,7 @@
 # U1 session metadata continuation
 
-**Status:** implementation and focused checks complete; independent review/full gates pending.
+**Status:** foundation independently reviewed; navigation follow-up and focused checks complete;
+follow-up independent review/full gates pending.
 **Date:** 2026-10-22 · **Branch:** `codex/u1-shell`. Local Mac only, synthetic in-memory SQLite.
 
 The shell needs a paged session list and actual execution observations. The existing strict
@@ -35,3 +36,24 @@ Independent acceptance must cover pagination boundaries/withholding, read-time p
 root/child mappings, version compatibility and actual HTTP trust guards. Root owns full gates
 and integration. The shell consumer, navigation, palette and remaining U1-b/c scope are not
 closed by this endpoint.
+
+## Independent review and explicit navigation follow-up
+
+Separate review accepted foundation `4a7ce83` with no bounded blocker: 37/37 cases passed
+(`check-m24qwpo5`), plus an external distinct-date/withheld-gap/cursor-replay probe
+(`check-n5v8huna`). Report:
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-u1-session-metadata-20261022.md`.
+
+The consumer must not assume every K2 `agent` is a native agent, or treat a scrubbed display
+thread ID as a routable reference. The follow-up adds explicit node-derived navigation:
+active `native_sessions` records select the native session; an active thread record with clean
+thread/project references selects the correctly scoped workspace; other records select the
+read-only inspector. Native leave/trash/deletion intents and legacy trashed chats never fall
+through into active chat. Newly withheld references select the inspector without exporting
+the raw reference. This is navigation metadata, not a write grant or a capability credential.
+The frontend route mapper consumes this discriminated target instead of inferring a route.
+
+Three new follow-up cases assert actual native/thread/project association, generic-agent trace
+fallback, late thread/project withholding, and retained/trash routing. Follow-up envelope:
+3 new + 37 prior = 40/40 pass, zero skips; cumulative metadata evidence is **7 new / 33 inherited**.
+All-workspace types pass. Separate follow-up review remains required before completion.

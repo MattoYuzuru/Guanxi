@@ -76,7 +76,15 @@ export const sessionExecutionSchema = z.object({
   attemptState: z.enum(['delivered', 'started', 'sleeping', 'completed', 'lost', 'canceled']).nullable(),
   source: z.literal('run-home'), observedAt: z.string().datetime(), confidence: z.literal('observed'),
 }).strict()
-export const sessionPageItemSchema = sessionListItemSchema.extend({ execution: sessionExecutionSchema.nullable() }).strict()
+export const sessionPageNavigationSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('native'), sessionId }).strict(),
+  z.object({ kind: z.literal('chat'), threadId: z.string().min(1), projectId: z.string().min(1).nullable() }).strict(),
+  z.object({ kind: z.literal('inspector'), sessionId }).strict(),
+])
+export type SessionPageNavigation = z.infer<typeof sessionPageNavigationSchema>
+export const sessionPageItemSchema = sessionListItemSchema.extend({
+  execution: sessionExecutionSchema.nullable(), navigation: sessionPageNavigationSchema,
+}).strict()
 export type SessionPageItem = z.infer<typeof sessionPageItemSchema>
 export const sessionPageResponse = z.object({
   sessions: z.array(sessionPageItemSchema), nextCursor: z.string().nullable(),

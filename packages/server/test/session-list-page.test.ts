@@ -9,6 +9,7 @@ import { ChatSessionMirror } from '../src/session-log/chat-mirror.ts'
 import { RunStore } from '../src/runs/store.ts'
 import { JobStore } from '../src/store/jobs.ts'
 import { ThreadStore } from '../src/store/threads.ts'
+import { ProjectStore } from '../src/store/projects.ts'
 import { openDb } from '../src/store/db.ts'
 
 const LOOPBACK = { incoming: { socket: { remoteAddress: '127.0.0.1' } } }
@@ -19,6 +20,10 @@ function fixture() {
   return { db, scrubber, log, app, close() { log.close(); db.close() } }
 }
 function cursor(value: string) { return sessionPageCursorSchema.parse(JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))) }
+function thread(f: ReturnType<typeof fixture>, projectId?: string) {
+  const store = new ThreadStore(f.db), input = { title: 'Synthetic', model: 'fixture', options: { numCtx: 4096, temperature: 0, think: 'high' as const } }
+  return projectId ? store.createWithOwnership({ ...input, projectId }) : store.create({ ...input, mode: 'chat', workspaceId: null })
+}
 
 test('session metadata pages pass the legacy 200 boundary with stable tied dates, exact counts and no duplicate IDs', async () => {
   const f = fixture()
@@ -112,5 +117,58 @@ test('page query validation and loopback trust boundary fail closed; deferred mi
     const page = f.log.page(1)
     assert.equal(page.sessions.length, 0); assert.equal(page.omitted.catchingUp, true)
     await new Promise(resolve => setTimeout(resolve, 0))
+  } finally { f.close() }
+})
+
+test('navigation targets come from native and thread ownership records rather than session kind or guessed IDs', () => {
+  const f = fixture()
+  try {
+    const project = new ProjectStore(f.db).create('Synthetic project'), local = thread(f), owned = thread(f, project.id), native = thread(f)
+    f.log.open('local-chat', { kind: 'chat', threadId: local.id }).close()
+    f.log.open('owned-chat', { kind: 'chat', threadId: owned.id }).close()
+    f.log.open('native-record', { kind: 'agent', threadId: native.id }).close()
+    f.db.prepare('INSERT INTO native_sessions(session_id,thread_id) VALUES (?,?)').run('native-record', native.id)
+    f.log.open('generic-agent', { kind: 'agent' }).close()
+    const page = f.log.page(50)
+    const navigation = (id: string) => page.sessions.find(session => session.sessionId === id)!.navigation
+    assert.deepEqual(navigation('local-chat'), { kind: 'chat', threadId: local.id, projectId: null })
+    assert.deepEqual(navigation('owned-chat'), { kind: 'chat', threadId: owned.id, projectId: project.id })
+    assert.deepEqual(navigation('native-record'), { kind: 'native', sessionId: 'native-record' })
+    assert.deepEqual(navigation('generic-agent'), { kind: 'inspector', sessionId: 'generic-agent' })
+  } finally { f.close() }
+})
+
+test('later-withheld thread and project references never become route targets or leak raw values', () => {
+  const f = fixture()
+  try {
+    const project = new ProjectStore(f.db).create('Synthetic project'), local = thread(f), owned = thread(f, project.id)
+    f.log.open('local-record', { kind: 'chat', threadId: local.id }).close()
+    f.log.open('project-record', { kind: 'chat', threadId: owned.id }).close()
+    f.scrubber.register('secret://fixture/thread', local.id)
+    f.scrubber.register('secret://fixture/project', project.id)
+    const page = f.log.page(50), text = JSON.stringify(page)
+    assert.equal(text.includes(local.id), false); assert.equal(text.includes(project.id), false)
+    for (const session of page.sessions) assert.deepEqual(session.navigation, { kind: 'inspector', sessionId: session.sessionId })
+  } finally { f.close() }
+})
+
+test('retained native and trashed chat records never become active chat targets', () => {
+  const f = fixture()
+  try {
+    const native = thread(f)
+    f.log.open('retained-native', { kind: 'agent', threadId: native.id }).close()
+    f.db.prepare('INSERT INTO native_sessions(session_id,thread_id) VALUES (?,?)').run('retained-native', native.id)
+    for (const field of ['leave_at', 'trashed_at', 'deletion_requested']) {
+      f.db.prepare('UPDATE native_sessions SET leave_at=NULL,trashed_at=NULL,deletion_requested=0').run()
+      f.db.prepare(`UPDATE native_sessions SET ${field}=?`).run(field === 'deletion_requested' ? 1 : '2026-10-22T00:00:00.000Z')
+      assert.deepEqual(f.log.page(50).sessions[0]!.navigation, { kind: 'inspector', sessionId: 'retained-native' })
+    }
+    const legacy = thread(f)
+    f.log.open('trashed-chat', { kind: 'chat', threadId: legacy.id }).close()
+    f.db.prepare(`UPDATE threads SET chat_lifecycle_state='trash',chat_tombstoned_at=?,
+      chat_tombstone_activity_at=?,chat_tombstone_reason='ttl_expired',chat_lifecycle_reason='ttl_expired' WHERE id=?`)
+      .run('2026-10-22T00:00:00.000Z', '2026-10-22T00:00:00.000Z', legacy.id)
+    assert.deepEqual(f.log.page(50).sessions.find(row => row.sessionId === 'trashed-chat')!.navigation,
+      { kind: 'inspector', sessionId: 'trashed-chat' })
   } finally { f.close() }
 })

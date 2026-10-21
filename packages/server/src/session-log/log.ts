@@ -36,6 +36,7 @@ import {
   type SessionListItem,
   type SessionPageCursor,
   type SessionPageItem,
+  type SessionPageNavigation,
   type SessionPageResponse,
   type SessionSearchHit,
   type SessionTokenMeter,
@@ -657,6 +658,7 @@ export class SessionLog {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new RangeError('Invalid session page size')
     const sessions: SessionPageItem[] = [], omitted = { withheld: false, catchingUp: false }
     const hasRuns = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durable_runs'").get())
+    const hasNative = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_sessions'").get())
     const rows = this.db.prepare(`${LIST_ITEM_SELECT}
       ${cursor ? 'WHERE (s.created_at < ? OR (s.created_at = ? AND s.id < ?))' : ''}
       ORDER BY s.created_at DESC,s.id DESC`).iterate(...(cursor ? [cursor.createdAt, cursor.createdAt, cursor.sessionId] : [])) as unknown as Iterable<ListItemRow>
@@ -670,10 +672,24 @@ export class SessionLog {
         FROM durable_runs r WHERE r.session_id=? AND r.parent_id IS NULL ORDER BY r.updated_at DESC,r.id DESC LIMIT 1`).get(row.id) : undefined
       const execution = run ? sessionExecutionSchema.safeParse({ state: run.state, attemptState: run.attempt_state ?? null,
         source: 'run-home', observedAt: new Date(Number(run.updated_at)).toISOString(), confidence: 'observed' }) : undefined
-      sessions.push({ ...this.toListItem(row), execution: execution?.success ? execution.data : null })
+      sessions.push({ ...this.toListItem(row), execution: execution?.success ? execution.data : null,
+        navigation: this.navigation(row, hasNative) })
     }
     const last = sessions.at(-1)
     return { sessions, omitted, nextCursor: more && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt, sessionId: last.sessionId })).toString('base64url') : null }
+  }
+
+  private navigation(row: ListItemRow, hasNative: boolean): SessionPageNavigation {
+    const trace = { kind: 'inspector' as const, sessionId: row.id }
+    const native = hasNative ? this.db.prepare('SELECT trashed_at,leave_at,deletion_requested FROM native_sessions WHERE session_id=?').get(row.id) : undefined
+    if (native) return native.trashed_at !== null || native.leave_at !== null || native.deletion_requested
+      ? trace : { kind: 'native', sessionId: row.id }
+    if (!row.thread_id || !this.returnable(row.thread_id)) return trace
+    const thread = this.db.prepare('SELECT project_id,chat_lifecycle_state FROM threads WHERE id=?').get(row.thread_id)
+    if (!thread || thread.chat_lifecycle_state !== 'active') return trace
+    const projectId = thread.project_id as string | null
+    if (projectId !== null && !this.returnable(projectId)) return trace
+    return { kind: 'chat', threadId: row.thread_id, projectId }
   }
 
   /**
