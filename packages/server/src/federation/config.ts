@@ -6,7 +6,7 @@ import { validateLayoutOperation } from '../layouts/operation.ts'
 import { canonical, FederationError, hash, signValue, validSignature } from './crypto.ts'
 
 export const MAX_CLOCK_DRIFT_MS = 60_000
-export function compareConfigOperations(a: ConfigOperation, b: ConfigOperation): number {
+export function compareConfigOperations(a: Pick<ConfigOperation, 'clock' | 'origin' | 'counter'>, b: Pick<ConfigOperation, 'clock' | 'origin' | 'counter'>): number {
   return a.clock.wall - b.clock.wall || a.clock.logical - b.clock.logical ||
     (a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : 0) || a.counter - b.counter
 }

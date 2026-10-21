@@ -30,5 +30,37 @@ export function initializeLayoutSchema(db: Db): void {
     } catch (error) { db.exec('ROLLBACK'); throw error }
   }
   const versions = db.prepare('SELECT version FROM layout_migrations ORDER BY version').all() as { version: number }[]
-  if (versions.length !== 1 || versions[0]?.version !== 1) throw new Error('Unsupported layout storage version')
+  if (versions[0]?.version !== 1 || versions.some((row, i) => row.version !== i + 1) || versions.length > 2) throw new Error('Unsupported layout storage version')
+}
+
+/** Additive replication metadata. Called after F1 exists, including when a local
+ * LayoutStore initialized the v1 tables before federation was enabled. */
+export function initializeLayoutReplicationSchema(db: Db): void {
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    if (!db.prepare('SELECT 1 FROM layout_migrations WHERE version=2').get()) {
+      db.exec(`CREATE TABLE layout_activation_clock (
+        scope_key TEXT PRIMARY KEY, wall INTEGER NOT NULL, logical INTEGER NOT NULL,
+        origin TEXT NOT NULL, counter INTEGER NOT NULL
+      );
+      INSERT INTO layout_activation_clock
+      SELECT scope_key, wall, logical, origin, counter FROM (
+        SELECT *, row_number() OVER (PARTITION BY scope_key ORDER BY wall DESC, logical DESC, origin DESC, counter DESC) AS rank
+        FROM (
+          SELECT json_array(
+            json_extract(data,'$.operation.value.document.scope.account'),
+            json_extract(data,'$.operation.value.document.scope.project'),
+            json_extract(data,'$.operation.value.document.scope.mode'),
+            json_extract(data,'$.operation.value.document.scope.deviceClass'),
+            json_extract(data,'$.operation.value.document.scope.device')
+          ) AS scope_key, json_extract(data,'$.operation.clock.wall') AS wall,
+          json_extract(data,'$.operation.clock.logical') AS logical, origin, counter
+          FROM federation_operations WHERE json_extract(data,'$.operation.value.kind')='layout'
+          AND json_extract(data,'$.operation.value.activate')=1
+        )
+      ) WHERE rank=1;
+      INSERT INTO layout_migrations VALUES (2);`)
+    }
+    db.exec('COMMIT')
+  } catch (error) { db.exec('ROLLBACK'); throw error }
 }

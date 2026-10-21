@@ -4,8 +4,9 @@ export const LAYOUT_VERSION = 'guanxi.layout/1' as const
 export const WORKSPACE_ENGINE_MAJOR = 8
 const identifier = (max: number) => z.string().min(1).max(max).regex(/^[\w./:-]+$/).refine(value => !['__proto__', 'prototype', 'constructor'].includes(value))
 const id = identifier(160)
-// F1 account identities allow 200 characters; retain every previously accepted layout id.
-const accountId = identifier(200)
+// F1 account identities include names such as "constructor"; accounts are values,
+// never object-property keys. Preserve the wider legacy layout account domain too.
+const accountId = z.string().min(1).max(200).regex(/^[\w./:-]+$/)
 export const experienceModeSchema = z.enum(['developer', 'visual'])
 export const workspaceZoneSchema = z.enum(['left', 'right', 'top', 'bottom', 'center', 'floating', 'popout'])
 export const layoutScopeSchema = z.object({

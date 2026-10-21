@@ -35,7 +35,7 @@ on the original candidate. The correction and subsequent rerun must be included 
 
 ## New / regression evidence
 
-**New:** 10 Node integration cases in `layout-replication.test.ts`, plus 1 Chromium case for
+**New:** 13 Node integration cases in `layout-replication.test.ts`, plus 1 Chromium case for
 node-owned account discovery. Existing cases are not counted as new tests.
 
 Assertions cover both replicas' exact winner, recovered copy count/content, state hash,
@@ -46,18 +46,26 @@ node-supplied account. The fixture performs no live model or external page reque
 
 Targeted checks so far:
 
-- Layout tests: 10 new integration cases and the 12 existing storage cases form the focused envelope.
+- Layout tests: 13 new integration cases and the 12 existing storage cases form the focused envelope.
 - Server and web TypeScript checks pass (direct package checks).
 - Workspace Chromium: 1 new + 18 existing cases pass under the heavy lock;
   receipt `check-wjr3stcr`, stable dirty implementation source before commit.
 
-Full regression, UI gates/build and independent review results will be appended after execution.
+Full `npm test` passed at clean `af6f7fb` before the independent-review fixes, receipt
+`check-3l7wso17`, with unchanged source. This is a prior-candidate regression observation;
+the fix candidate still needs its required gates. Full UI browser/build and final independent
+review results will be appended after execution.
 Receipts are under `/Users/yuzuru/.local/state/agent-dev/`; the pre-existing external skill
 symlink prevents reusable source certification. These are local command observations.
 
 ## Compatibility and residuals
 
-No schema/table/global migration rewrite is introduced. Existing local documents are not
+The v1 schema remains unchanged. An append-only component migration v2 adds a per-scope
+activation clock projection; it seeds existing admitted layout activation metadata once,
+after federation tables exist, including when a local-only LayoutStore initialized first.
+Each admitted layout reads one indexed scope row rather than decoding/re-scrubbing the
+signed operation history. Winner metadata and document projection share F1's transaction.
+No global migration is added or rewritten. Existing local documents are not
 silently reassigned to a federation account or signed; an explicitly scoped save publishes
 them. Disabling federation retains existing tables/history; rollback should leave them intact
 and use a forward fix. Actual network provisioning/peer scheduling remains host-owned F1
@@ -67,3 +75,16 @@ No live fleet, Electron renderer, hardware, screen-reader speech or model infere
 Root coordinates a separate review of this new implementation; this author cannot be its
 sole reviewer. Fixes must be separate commits. Then U1-b and U1-c continue as distinct slices;
 this handoff does not mark the entire U1 stage complete.
+
+## Independent review fixes
+
+The separate GPT reviewer confirmed two P2 findings at `af6f7fb`: activation scanned and
+re-scrubbed the full signed history on every layout admission; account validation rejected
+valid F1 names `constructor` and `prototype`. The fix replaces the scan with the transactional
+scalar projection above and permits those names only in the account field, preserving
+layout-only identifier restrictions. Three additional Node cases assert zero full-log reads
+for 20 local writes and remote admissions, existing-history upgrade after local initialization,
+and both reserved account names through context parsing and REST save. The existing rollback
+case now asserts activation metadata is unchanged after a rejected projection.
+Focused verification: 13 new integration + 12 existing layout cases pass. Independent fix
+re-review is pending; this implementation author does not close their own findings.

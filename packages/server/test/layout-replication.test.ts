@@ -7,6 +7,9 @@ import { layoutClock, layoutContextResponse, type LayoutDocument, type LayoutQue
 import { FederationChannel } from '../src/federation/channel.ts'
 import { layoutsRoutes } from '../src/layouts/routes.ts'
 import { layoutOperationKey } from '../src/layouts/operation.ts'
+import { LayoutStore } from '../src/layouts/store.ts'
+import { ReplicatedLayouts } from '../src/layouts/replication.ts'
+import { openDb } from '../src/store/db.ts'
 import { identity, SimNode } from './federation/harness.ts'
 import { builtInLayout } from '../../web/src/features/workspace/defaults.ts'
 
@@ -129,15 +132,82 @@ test('layout context and persistence support the full F1 account identifier budg
   } finally { node.close() }
 })
 
+test('valid F1 reserved-name accounts parse in the browser contract and save through REST', async () => {
+  for (const account of ['constructor', 'prototype']) {
+    const node = mount(new SimNode(identity('reserved-account-node', { accountId: account })))
+    try {
+      const context = await node.app.request('/api/layouts/context')
+      assert.equal(context.status, 200)
+      assert.deepEqual(layoutContextResponse.parse(await context.json()), { account, replication: true })
+      const layout = document('reserved-account-node', { scope: { ...document('a').scope, account } })
+      const saved = await node.app.request('/api/layouts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document: layout, activate: true }) })
+      assert.equal(saved.status, 200)
+      assert.equal(node.federation.layouts.list({ ...query, account }).documents.length, 1)
+    } finally { node.close() }
+  }
+})
+
+test('layout admission projects activation without decoding the full stored operation log', () => {
+  const nodes = pair(); const { a, b } = nodes
+  try {
+    let fullScans = 0
+    for (const node of [a, b]) {
+      const operations = node.federation.config.operations.bind(node.federation.config)
+      node.federation.config.operations = () => { fullScans++; return operations() }
+    }
+    for (let i = 0; i < 20; i++) a.federation.layouts.save(document('a', { id: `named-${i}` }), true)
+    assert.equal(fullScans, 0, 'local writes must not decode/re-scrub historical payloads')
+    const history = a.federation.config.operations()
+    fullScans = 0
+    assert.equal(b.federation.config.ingest(history).accepted, 20)
+    assert.equal(fullScans, 0, 'batch ingest must not decode/re-scrub historical payloads')
+    assert.equal(b.federation.layouts.list(query).active[0]?.layoutId, 'named-19')
+    assert.equal(b.db.prepare('SELECT COUNT(*) AS count FROM layout_activation_clock').get()!.count, 1)
+  } finally { nodes.close() }
+})
+
+test('activation metadata upgrades existing admitted history once after local-only initialization', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'guanxi-layout-upgrade-'))
+  const path = join(directory, 'node.db')
+  const db = openDb(path)
+  new LayoutStore(db).save(document('local', { scope: { ...document('a').scope, account: 'local' } }), true)
+  db.close()
+  const local = mount(new SimNode(identity('upgrading'), path)), remote = mount(new SimNode(identity('older')))
+  try {
+    local.trust(remote); remote.trust(local)
+    remote.federation.layouts.save(document('older', { id: 'older' }), true)
+    local.time++
+    local.federation.layouts.save(document('upgrading', { id: 'latest' }), true)
+    const history = local.federation.config.operations()
+    const globalVersion = local.db.prepare('PRAGMA user_version').get()!.user_version
+    // Recreate the prior candidate's v1 projection, whose signed history already exists.
+    local.db.exec('DROP TABLE layout_activation_clock; DELETE FROM layout_migrations WHERE version=2')
+    new LayoutStore(local.db)
+    new ReplicatedLayouts(local.db, 'owner', local.federation.config, () => undefined)
+    assert.equal(local.db.prepare('SELECT COUNT(*) AS count FROM layout_activation_clock').get()!.count, 1)
+    local.federation.config.ingest(remote.federation.config.operations())
+    assert.equal(local.federation.layouts.list(query).active[0]?.layoutId, 'latest')
+    const metadata = local.db.prepare('SELECT * FROM layout_activation_clock').all()
+    new ReplicatedLayouts(local.db, 'owner', local.federation.config, () => undefined)
+    assert.deepEqual(local.db.prepare('SELECT * FROM layout_activation_clock').all(), metadata)
+    assert.deepEqual(local.db.prepare('SELECT version FROM layout_migrations ORDER BY version').all().map(row => row.version), [1, 2])
+    assert.equal(local.db.prepare('PRAGMA user_version').get()!.user_version, globalVersion)
+    assert.equal(new LayoutStore(local.db).list({ ...query, account: 'local' }).documents.length, 1)
+    assert.equal(local.federation.config.operations().length, history.length + 1)
+  } finally { local.close(); remote.close(); rmSync(directory, { recursive: true, force: true }) }
+})
+
 test('projection conflict rolls back signed operation, HLC clock and layout rows atomically', () => {
   const nodes = pair(); const { a } = nodes
   try {
     const original = document('a')
     a.federation.layouts.save(original, true)
     const clock = a.db.prepare('SELECT * FROM federation_clock').all()
+    const activation = a.db.prepare('SELECT * FROM layout_activation_clock').all()
     assert.throws(() => a.federation.layouts.save({ ...original, name: 'Divergent same clock' }, true), /layout_clock_collision/)
     assert.equal(a.federation.config.operations().length, 1)
     assert.deepEqual(a.db.prepare('SELECT * FROM federation_clock').all(), clock)
+    assert.deepEqual(a.db.prepare('SELECT * FROM layout_activation_clock').all(), activation)
     assert.deepEqual(a.federation.layouts.list(query).documents, [original])
     assert.throws(() => a.federation.config.create('wrong-key', { kind: 'layout', document: original, activate: true }), /invalid_layout_key/)
     const foreign = { ...original, scope: { ...original.scope, account: 'other' } }
