@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, realpath, rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -61,7 +61,11 @@ test('two unchanged ticks build and publish once; a change rebuilds; a deleted r
     await writeFile(join(f.root, 'f0.ts'), 'export const changedNeedle = 0\n')
     await waitFor(() => count('publish') === 2)
     assert.equal(count('build'), 2)
-    await rm(f.root, { recursive: true, force: true })
+    // Remove the root name atomically: recursive rm exposes partially deleted
+    // trees to a tick, which legitimately admits another changed-tree build.
+    const removed = join(f.dir, 'removed')
+    await rename(f.root, removed)
+    await rm(removed, { recursive: true, force: true })
     await waitFor(() => count('untrack') === 1)
     await service.untrack(f.root)
     await new Promise(resolve => setTimeout(resolve, 150))
