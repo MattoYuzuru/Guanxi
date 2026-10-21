@@ -1,28 +1,24 @@
-# Next agent prompt — wave 2 (K2 and K3)
+# Next agent prompt — wave 3 (DS1-b, F1, K4 follow-up)
 
-**Status:** ready · **Updated:** 2026-10-21 (K1, DS1-a and K2 merged into `main`; R1 opened)
+**Status:** ready · **Updated:** 2026-10-21 (K1, DS1-a, K2, K3, R1 with its follow-up, and K4
+merged into `main`)
 
-The repository presentation review did not advance implementation stages. Continue wave 2
-below. Phone access remains planned for U4 under D-187 and ADR-0038; no public website or relay
-was deployed by that review.
+Work runs as parallel lanes. Start from [lanes/README](lanes/README.md), which lists every lane,
+its runner, branch and ports, and the rules every lane follows. Phone access remains planned
+for U4 under D-187 and ADR-0038; no relay is deployed.
 
-Work now runs as parallel lanes. Start from [lanes/README](lanes/README.md), which lists every
-lane, its runner, branch and ports, and the rules every lane follows.
+Open lanes:
 
-- **K2 — session log, inspector, egress scrubber core:** [lanes/K2](lanes/K2.md). Start a Claude
-  session in its own worktree with this prompt:
+- **DS1-b — `@guanxi/ui`, catalog, approvals:** review closed; the lane is merging current
+  `main` before the integrator merge. Then DS1-c starts in Codex ([lanes/DS1-c](lanes/DS1-c.md)).
+- **F1 — federation base:** [lanes/F1](lanes/F1.md). Claude review 1 returned "merge after
+  fixes" with four High findings (revoke versus grant causality, request audience binding,
+  non-admin revocation, per-op admission); the fix round runs in Codex.
+- **K4 follow-up:** `lane/k4-followup` closes the final-check residuals R1, R3 and R4 listed in
+  [evidence/K4](evidence/K4.md).
 
-  ```text
-  You are lane K2 of Guanxi. Run `npm ci` in your worktree first and confirm @guanxi/contract
-  resolves inside it. Then read AGENTS.md, docs/plans/lanes/README.md, docs/plans/lanes/K2.md
-  and docs/plans/WORKFLOW.md, and do the task in K2.md exactly. Write status only to
-  docs/plans/lanes/K2.handoff.md; commit on your branch; never push or merge.
-  ```
-
-- **K3 — model access:** [lanes/K3](lanes/K3.md). Paste the prompt in that file into a GPT
-  (Codex) session in its own worktree.
-- **DS1:** DS1-a is merged; DS1-b is finishing review fixes; DS1-c starts after DS1-b merges;
-  DS2 and U1 open after DS1.
+After DS1 and K4: K5, B1, X1, F2, R2 (after K4 and R1), DS2 and U1 open. See
+[PHASE_STATUS](PHASE_STATUS.md) and the [roadmap graph](roadmap.mmd).
 
 Any session without a lane: pick the first `ready` lane in [PHASE_STATUS](PHASE_STATUS.md)
 that nobody runs, and follow its lane file.

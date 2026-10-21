@@ -180,12 +180,18 @@ Residual risks:
 | --- | --- | --- |
 | Connection registry with provenance; encrypted vault with a node-key boundary for unattended connections only (D-145); `secret://` refs and just-in-time injection; pi-ai with the Anthropic OAuth path blocked; recorded-fixture balance probes; cost ledger; whole-server Host allowlist against DNS rebinding; vault wired to K2's `egress.scrubber` readiness | implemented, independently verified, merged into `main` | Full evidence and residuals: [evidence/K3](evidence/K3.md). Author GPT/Codex; three Claude cross-family rounds (H1–H3 and M1–M6, then N1–N8, then a final check of the K2 integration with no High). The restart → tool print → K2 event test finds zero secret matches in storage, exports, inspector and query output. Integrator gates on `main`: typecheck, `ui:check`, licenses 437/0, `npm test` (web 298), browser gate, build. |
 
+## K4 — Native agent
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Native agent on pi-agent-core with tools, two access modes and projects; `ExecutionOwner` that owns every descendant (Linux bubblewrap with a PID namespace; macOS one `--network none` container per command on Colima; Windows refuses); egress through the sandbox-runtime proxy with node ports reserved and exact registered secret forms denied; bounded cleanup with a persistent root quarantine (ADR-0027) | partially implemented, independently verified, merged into `main` (`0e22a92`) | Full evidence and residuals: [evidence/K4](evidence/K4.md). Author GPT/Codex; Claude review 1 (merge after fixes: H1, H2, M1–M3, L4–L7), then a final Claude check with no High: 29 guard-removal probes fail as intended, 17 control-API spellings × 2 backends reach zero connections. Integrator gates on `main`: typecheck, `ui:check`, licenses 441/0, `npm test` (core 978, kernel 106, web 312), browser gate 52/52, build; Fedora core 972 + 6 macOS-only skips. Unfinished: retention, input artifacts, HTTPS positive path, UI evidence, platform envelope and R1 integration (named in the evidence). Final-check residuals R1, R3, R4 go to `lane/k4-followup`. |
+
 ## DS1 — Design foundations
 
 | Item | Status | Evidence |
 | --- | --- | --- |
 | DS1-a: DTCG tokens, deterministic Style Dictionary build, self-hosted IBM Plex, legacy freeze ratchet, gates G1–G7 and the G17 self-test | implemented, independently verified, merged into `main` (`--no-ff`, as the ratchet requires) | Full evidence: [evidence/DS1-a](evidence/DS1-a.md). Token values are asserted against the FOUNDATIONS tables; the legacy UI's fonts and spacing are unchanged; all 32 Plex faces load from the same origin; the ratchet freezes 735 legacy keys with two owner-authorised corrections. Reviews: the lane's own reviewer, then three Claude cross-family rounds (19 + 9 findings closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (now including the UI gates; web 264), browser gate 48/48, build, lint:md, licenses (358/0). Follow-ups moved to DS1-c. |
-| DS1-b: `@guanxi/ui` components, catalog, approvals, G10–G16 | in review fixes | [lanes/DS1-b](lanes/DS1-b.md) |
+| DS1-b: `@guanxi/ui` components, catalog, approvals, G10–G16 | review closed; merging current `main` into the lane before the integrator merge | [lanes/DS1-b](lanes/DS1-b.md) |
 | DS1-c: lint ratchet and codemod | waiting for DS1-b | [lanes/DS1-c](lanes/DS1-c.md) |
 
 ## Repository presentation and documentation (2026-10-21)
@@ -223,7 +229,7 @@ decision was made.
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
-| K4 Native agent | in progress (lane K4, Codex) | [lanes/K4](lanes/K4.md) |
+| K4 Native agent | partially implemented, merged; follow-up `lane/k4-followup` running | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
-| F1 Federation base | in progress (lane F1, Codex) | [lanes/F1](lanes/F1.md) |
+| F1 Federation base | in review fixes (Claude review 1: merge after fixes, 4 High) | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
