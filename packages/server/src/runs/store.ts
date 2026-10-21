@@ -44,6 +44,7 @@ export class RunStore {
   private closed = false
   private operation = ''
   private readonly changedSessions = new Set<string>()
+  private readonly startupAttempts = new Set<string>()
   private readonly options: RunStoreOptions
 
   constructor(options: RunStoreOptions) {
@@ -75,6 +76,9 @@ export class RunStore {
         expires_at=excluded.expires_at,released=0,regrant_after=excluded.regrant_after`).run(HOME_KEY, token, this.ownerId,
         this.now() + this.ownerTtl, this.now() + this.ownerTtl + this.maxTtl + EPSILON_MS)
       this.owner = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)!
+      for (const attempt of this.rows<{ id: string }>("SELECT id FROM run_attempts WHERE state IN ('delivered','started')")) {
+        this.startupAttempts.add(attempt.id)
+      }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
@@ -427,9 +431,12 @@ export class RunStore {
     return deliveries
   }
   /** ADR-0019 table, local only: no inference is started by this operation. */
-  reconcile(): void {
+  reconcile(startupOnly = false): void {
     this.tx('reconcile', () => {
       for (const attempt of this.rows<Attempt>("SELECT * FROM run_attempts WHERE state IN ('delivered','started')")) {
+        // Readiness may open after this activation has admitted new work. Only
+        // attempts inherited from its predecessor are lost during startup recovery.
+        if (startupOnly && !this.startupAttempts.has(attempt.id)) continue
         this.lose(attempt)
         // waiting_children/input_required untouched; wrapping_up remains a report request.
       }

@@ -247,6 +247,7 @@ test('kernel boots R1 with K2, ticks deadlines, exposes health and releases its 
   const f = runFixture(); f.store.close(); f.log.close(); t.after(() => { f.db.close(); f.scrubber.close() })
   const kernel = await bootServerKernel(undefined, { db: f.db, sessionLog: { clock: () => new Date(RUN_TIME) },
     runs: { alwaysOn: true, clock: () => RUN_TIME, tickMs: 5 } })
+  kernel.scrubber.ready('vault')
   const store = kernel.durableRuns!.store
   const run = store.create(); const a = store.start(run.id)
   store.delegate(a, { key: 'due', deadline: RUN_TIME })
@@ -355,4 +356,27 @@ test('review E2: a refused K2 append after child insertion rolls back all delega
   armed = false
   f.store.delegate(a, { key: 'refused-trace', deadline: RUN_DEADLINE })
   assert.equal(f.store.promises(run.id).length, 1)
+})
+
+test('K3 integration: readiness opening cannot reconcile away a newly admitted live attempt', async (t) => {
+  const f = runFixture()
+  const inherited = f.store.create({ id: 'inherited-before-ready' })
+  f.store.start(inherited.id)
+  f.store.close(); f.log.close()
+  t.after(() => { f.db.close(); f.scrubber.close() })
+  const kernel = await bootServerKernel([LEGACY_SERVER_PROFILE, {
+    name: 'test:readiness-race', patch: [{ id: 'egress-scrubber', config: { expectedSources: ['vault'] } }],
+  }], { db: f.db, runs: { tickMs: 5 } })
+  try {
+    kernel.scrubber.ready('vault')
+    const run = kernel.durableRuns!.store.create()
+    const attempt = kernel.durableRuns!.store.start(run.id)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    assert.equal(kernel.durableRuns!.health().failure, null, 'startup pump completed')
+    assert.equal(kernel.durableRuns!.store.get(inherited.id).state, 'interrupted')
+    assert.equal(kernel.durableRuns!.store.attempts(inherited.id)[0]!.state, 'lost')
+    assert.equal(kernel.durableRuns!.store.get(run.id).state, 'working')
+    assert.equal(kernel.durableRuns!.store.attempts(run.id)[0]!.state, 'delivered')
+    kernel.durableRuns!.store.modelStarted(attempt)
+  } finally { await kernel.node.dispose() }
 })

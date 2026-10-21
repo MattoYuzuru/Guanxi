@@ -26,7 +26,7 @@ export function createDurableRunsPlugin(host: Omit<RunStoreOptions, 'log' | 'scr
             failure = 'egress_not_ready'
             return
           }
-          if (!reconciled) { store.reconcile(); reconciled = true }
+          if (!reconciled) { store.reconcile(true); reconciled = true }
           store.tick()
           store.dispatch()
           failure = null

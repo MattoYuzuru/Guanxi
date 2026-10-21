@@ -16,6 +16,9 @@ a new fenced attempt; an acknowledged wake is never delivered again. Model execu
 is not exactly once. External effects still need the ADR-0018 target-side fences/idempotency
 keys at their executor boundary.
 
+Startup recovery snapshots inherited attempts before exposing the service. If vault readiness
+is delayed, reconciliation cannot mark newly admitted attempts as lost when readiness opens.
+
 The default server boots this plugin but does **not** assert `alwaysOn`. Delegation fails with
 `no_always_on_home` until the host explicitly supplies `runs.alwaysOn: true`. No power assertion
 or handover is invented for a laptop. Those integrations belong to F1/ADR-0038.
