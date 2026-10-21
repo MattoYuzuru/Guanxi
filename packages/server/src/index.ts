@@ -5,6 +5,10 @@
  * что-либо, что имеет к ней доступ, нельзя. Смена адреса — осознанное действие
  * через переменную окружения, а не значение по умолчанию.
  */
+import { federationRoutes } from './federation/routes.ts'
+import { FEDERATION_SERVICE, type FederationHostOptions } from './federation/plugin.ts'
+import type { Federation } from './federation/service.ts'
+import { FederationError } from './federation/crypto.ts'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -123,6 +127,7 @@ export interface StartOptions {
   devOrigins?: string[]
   connectionsPolicy?: VaultPolicy
   indexSettings?: Partial<IndexSettings>
+  federation?: Omit<FederationHostOptions, 'db'>
 }
 
 export async function start(options: StartOptions = {}) {
@@ -138,7 +143,7 @@ export async function start(options: StartOptions = {}) {
   const db = openDb(dbPath)
   let kernel: Awaited<ReturnType<typeof bootServerKernel>>
   try {
-    kernel = await bootServerKernel(undefined, { db })
+    kernel = await bootServerKernel(undefined, { db, federation: options.federation })
   } catch (error) {
     db.close()
     throw error
@@ -198,6 +203,12 @@ export async function start(options: StartOptions = {}) {
     if (!service) throw new Error('agent_unavailable')
     return service
   }, options.devOrigins ?? devOriginsFromEnv(process.env)))
+
+  if (options.federation) server.route('/api/federation', federationRoutes(() => {
+    const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
+    if (!service) throw new FederationError('federation_unavailable', 503)
+    return service
+  }))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>

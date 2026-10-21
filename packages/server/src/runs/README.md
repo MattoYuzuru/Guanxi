@@ -33,7 +33,7 @@ attempt; acknowledging it cannot be undone by a later startup reconciliation pas
 
 The default server boots this plugin but does **not** assert `alwaysOn`. Delegation fails with
 `no_always_on_home` until the host explicitly supplies `runs.alwaysOn: true`. No power assertion
-or handover is invented for a laptop. Those integrations belong to F1/ADR-0038.
+or handover is invented for a laptop. Those integrations remain F2/ADR-0038; F1 does not invent power or handover.
 
 Migrations 30–31 extend the legacy Job store's persisted-first, transactional patterns in the
 same node SQLite database. Its `durable_runs` table keeps the new state machine separate from
@@ -62,7 +62,7 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
   is never stolen from merely because an old observation aged. Defaults are 30 s owner TTL
   and 60 s execution TTL: recovery waits at most 91 s after the last observed bound change. The pump keeps serving
   with `writer_busy` meanwhile. A clean close releases the home. A plain restart does not
-  bump the epoch; backup restore/cloning and epoch handover belong to F1.
+  bump the epoch; backup restore/cloning and epoch handover remain F2.
 - Each run has one `run:<id>/exec` lease. Tokens increase on each grant. Expired, released,
   mismatched and superseded attempts fail with `409 stale_lease`. Timeouts stop execution;
   `tick` marks expired local attempts lost before another attempt can be admitted. There is
@@ -155,5 +155,13 @@ running node. The down helper exists only for isolated migration test fixtures.
   rollback of failed DDL, retry and reopen.
 - `inspector.test.tsx`: exact one run-event row across persisted/live overlap and reload.
 
-See the [lane handoff](../../../../docs/plans/lanes/R1.handoff.md) for command results, independent
+See the [R1 evidence](../../../../docs/plans/evidence/R1.md) for command results, independent
 review, limits and the next integration slice.
+
+## F1 command boundary
+
+`applyFederatedCommand` checks the session, current version and expiry inside R1's existing
+home-fenced transaction. The effect, K2 trace, prompt inbox and command receipt commit
+together; a stale stop returns `stale_version` without cancellation. This is separate from
+legacy Chat stop routes. Prompt input is durable and does not start inference; the native
+executor integration consumes it explicitly. See [federation](../federation/README.md).

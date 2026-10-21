@@ -1,6 +1,6 @@
 # Open questions
 
-**Status:** accepted (all answered; none open) · **Updated:** 2026-10-20
+**Status:** accepted (all answered; none open) · **Updated:** 2026-10-21
 
 New questions go under **Open** with the stage they block and a recommended default. A stage
 may start with the default when the owner has not answered, and must record that it did.
@@ -33,7 +33,7 @@ stated in full.
 | Q-211 | Which hosts may run untrusted benchmark containers: Windows PC (WSL2 Docker), Linux VPS (x86_64, 200–300 GB disk)? | B1 | D-151: Windows PC under WSL2; amended by D-194: the Fedora PC in rootless Podman under a dedicated user. |
 | Q-212 | Which repositories form the private benchmark? Any never-published private repositories (best holdout)? | B2 | D-152: Guanxi plus one or two owner repositories. |
 | Q-213 | Can the owner label 50–100 trials at the start and 20–30 per month for judge calibration? | B2 | D-153: 50 at start, 20 per month. |
-| Q-214 | When an editor prompts in someone else's shared session, whose connections and budget pay? | U3 | D-154: The owner's only if allowed; otherwise the editor's. |
+| Q-214 | When an editor prompts in someone else's shared session, whose connections and budget pay? | U3 | D-154, amended by D-190: only API/local connections may pay for an editor if allowed; subscriptions are owner-bound. |
 | Q-215 | Can an admin ever read other users' sessions (for example children in a family)? | U3 | D-155: No; privacy is absolute in the UI. |
 | Q-216 | Will the project hold an Apple Developer account and run a push relay for native iOS? | U5 | D-156: Decide after the PWA. |
 | Q-217 | Audio retention period; will the owner record ~100 phrases (~20 minutes) for the STT eval set; which cloud STT vendors may receive the glossary; how to write inflected English terms in Russian speech? | V1 | D-157: Keep audio 7 days; record the set; no cloud glossary sharing by default; inflected English terms as the Latin-script term plus a hyphenated Russian ending. |
@@ -49,7 +49,7 @@ stated in full.
 | Q-227 | Is a Python tool (Harbor) acceptable as an external process next to the TypeScript monorepo? | B1 | D-167: Yes. |
 | Q-228 | Mobile: is a PWA enough at first; later Capacitor (code reuse) or Expo (background voice)? | U4, U5 | D-168: PWA first; Expo after a voice spike. |
 | Q-229 | Should embeddings (L3 index) ship in the first indexing slice or stay behind a flag until the A/B? | X1 | D-169: Behind a flag. |
-| Q-230 | Which machine should be the default always-on home for long lead sessions and phone access: Mac Mini or VPS? | F1, U4 | D-170: Mac Mini (private data stays home); VPS as relay. |
+| Q-230 | Which machine should be the default always-on home for long lead sessions and phone access: Mac Mini or VPS? | F1, U4 | D-186 supersedes D-170: Fedora PC home; MacBook and Fedora laptop are interactive nodes; VPS is relay only. |
 | Q-231 | Which actions, if any, should stop a run for confirmation (`requires_confirmation`, D-118)? Candidates: cloud launches, publishing packages, pushing to a protected remote branch, sending messages. | K4, F4 | D-122: Empty list; cloud spend is already capped by the budget ledger. |
 | Q-232 | Jira Cloud or Jira Data Center (Data Center has no official MCP server, so it needs a REST adapter)? | WG2 | D-121: Support both through REST; MCP only for Cloud. |
 | Q-233 | Where does the business backlog live: in GitHub/Jira (Guanxi mirrors execution state) or in Guanxi itself? | WG1, WG2 | D-171: In the external tracker when one is linked; in Guanxi otherwise. |

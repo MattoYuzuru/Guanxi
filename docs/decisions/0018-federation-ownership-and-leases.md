@@ -171,3 +171,11 @@ Lane 2 §5, lane 3 §§4, 7 ([research](../research/README.md)); Gray & Cheriton
 Chubby sequencers and grace period, Kleppmann (fencing tokens), Kulkarni et al. (hybrid
 logical clocks), Shapiro et al. (CRDT remove-wins sets), Kleppmann et al. (local-first
 software); S0 review findings CR-1, CR-3, H-1, H-2, H-3, H-7, H-11, M-5, M-16, M-17.
+
+## F1 implementation boundary (2026-10-21)
+
+The [F1 module guide](../../packages/server/src/federation/README.md) records the implemented
+base: signed device credentials, HLC/remove-wins configuration, scoped read-only log replicas,
+provenance telemetry and version-bound home commands. [Network guidance](../architecture/FEDERATION_NETWORK.md)
+is documentation only. Remote attempts, direct executor cancel, fenced home handover, power
+assertions and restored-home epoch recovery remain F2; this ADR as a whole is not implemented.
