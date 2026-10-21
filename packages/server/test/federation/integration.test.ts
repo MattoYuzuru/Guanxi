@@ -64,3 +64,19 @@ test('outbound older-major negotiation imports zero data and sends zero mutation
     assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_command_receipts').get()!.n,0)
   } finally {home.close();peer.close()}
 })
+
+test('P6 revoked configured peer does not fail kernel boot or regain trust', async () => {
+  const db = openDb(':memory:'); const keys = identity('local'); const other = identity('other')
+  try {
+    const first = await bootServerKernel(undefined, {db,federation:{...keys,peers:[other.identity]}})
+    first.federation!.revokePeer('other'); await first.node.dispose()
+    let second: Awaited<ReturnType<typeof bootServerKernel>> | undefined
+    await assert.doesNotReject(async () => { second = await bootServerKernel(undefined, {db,federation:{...keys,peers:[other.identity]}}) }, 'a persisted revocation survives a stale peers option')
+    try {
+      assert.ok(second!.federation)
+      assert.throws(() => second!.federation!.peer('other'), /unauthenticated/)
+      assert.throws(() => second!.federation!.trust({...other.identity,accountId:'changed'}), /identity_conflict/)
+      assert.equal(db.prepare("SELECT revoked FROM federation_peers WHERE id='other'").get()!.revoked, 1)
+    } finally { await second!.node.dispose() }
+  } finally { db.close() }
+})

@@ -61,7 +61,8 @@ export class Federation {
     const identity = nodeIdentitySchema.parse(input)
     publicKey(identity.publicKey)
     const old = this.#options.db.prepare('SELECT identity,revoked FROM federation_peers WHERE id=?').get(identity.id)
-    if (old && (old.identity !== canonical(identity) || old.revoked)) throw new FederationError('identity_conflict')
+    if (old && old.identity !== canonical(identity)) throw new FederationError('identity_conflict')
+    // Reopening a host pin is idempotent; INSERT OR IGNORE never clears revocation.
     this.#options.db.prepare('INSERT OR IGNORE INTO federation_peers(id,identity) VALUES (?,?)').run(identity.id, canonical(identity))
   }
   revokePeer(id: string): void {
