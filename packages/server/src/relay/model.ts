@@ -11,7 +11,7 @@ export interface RuntimeMeter {
   maxCostMicros?(input: number, output: number): number | null
 }
 export interface RelayModel extends RuntimeMeter {
-  call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void }): Promise<Reply>
+  call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; maxInput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void }): Promise<Reply>
 }
 export class ConnectionRelayModel implements RelayModel {
   readonly connections: Connections; readonly connectionId: string; readonly model: string; readonly meter: RuntimeMeter; readonly background: boolean
@@ -24,13 +24,20 @@ export class ConnectionRelayModel implements RelayModel {
   async call(prompt: string, o: Parameters<RelayModel['call']>[1]): Promise<Reply> {
     const connection = this.connections.snapshot('local').connections.find(c => c.id === this.connectionId)
     invariant(connection, 'connection_not_found')
-    const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background, onStarted: o.onStarted }
+    let dispatchedPrompt = prompt
+    const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background, onStarted: o.onStarted,
+      onPrepared: (request: import('@earendil-works/pi-ai').Context | import('../ollama/types.ts').OllamaChatRequest) => {
+        invariant(request.messages.length === 1 && request.messages[0]!.role === 'user' && typeof request.messages[0]!.content === 'string', 'request_shape')
+        dispatchedPrompt = request.messages[0]!.content as string
+        const tokens = this.count(dispatchedPrompt)
+        invariant(Number.isSafeInteger(tokens) && tokens >= 0 && tokens <= o.maxInput, 'context_ceiling')
+      } }
     if (connection.kind === 'local_runtime') {
       const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false,
         messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } }, call)
       invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')
       return { text: r.message?.content ?? '', inputTokens: r.prompt_eval_count!, outputTokens: r.eval_count!, moneyMicros: null,
-        truncated: r.prompt_eval_count! !== this.count(prompt) || r.done_reason === 'length' }
+        truncated: r.prompt_eval_count! !== this.count(dispatchedPrompt) || r.done_reason === 'length' }
     }
     invariant(connection.kind === 'model_api', 'connection_not_supported')
     const r = await this.connections.complete('local', this.connectionId, { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] },

@@ -26,7 +26,7 @@ test('randomized prompts, notes and tool outputs never exceed H in a rejecting f
       const parts = [0,1,2].map(() => 'Ж'.repeat(random() % 300000))
       const prompt = request('fixture prompt ' + 'x'.repeat(random() % 1000), parts, w, t.H)
       assert.ok(upperTokens(prompt, w) <= t.H, `seed ${seed}`)
-      const reply = await f.model.call(prompt, { runId: f.run.id, requestId: String(i), maxOutput: 100, window: w })
+      const reply = await f.model.call(prompt, { runId: f.run.id, requestId: String(i), maxOutput: 100, maxInput: t.H, window: w })
       assert.ok(reply.inputTokens <= t.H)
     }
     assert.throws(() => request('x'.repeat(20000), [], window, 1000), /context_ceiling/)

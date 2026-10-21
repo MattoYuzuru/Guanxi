@@ -47,7 +47,7 @@ test('real local adapter detects prompt_eval_count mismatch and passes dispatch 
     call.onStarted?.();return {message:{content:'{}'},prompt_eval_count:4,eval_count:1,done_reason:'stop'}
   }} as unknown as Connections
   const model=new ConnectionRelayModel(connections,'fixture','model',{observe:async()=>window,count:()=>100})
-  const result=await model.call('prompt',{runId:'fixture',requestId:'call',maxOutput:10,window,onStarted:()=>{started++}})
+  const result=await model.call('prompt',{runId:'fixture',requestId:'call',maxOutput:10,maxInput:14000,window,onStarted:()=>{started++}})
   assert.equal(started,1);assert.equal(result.truncated,true)
 })
 test('cleanup uncertainty stops the loop before a following checkpoint', async () => {

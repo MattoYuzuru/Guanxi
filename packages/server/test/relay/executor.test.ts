@@ -96,7 +96,7 @@ test('stopping an in-flight model preserves the ledger and never replays it on r
     const pending=f.executor.run(f.attempt); await ready; assert.notEqual(f.store.attempts(f.run.id)[0]!.first_model_at,null); f.executor.stop(); await pending
     assert.equal(f.store.get(f.run.id).state,'input_required')
     assert.equal(f.relay.read(f.run.id).items.one,'open')
-    assert.ok(f.relay.read(f.run.id).tokens>0)
+    assert.equal(f.relay.read(f.run.id).tokens,thresholds(window,reserves).H+reserves.turn)
     assert.equal(f.relay.read(f.run.id).pendingCall,null)
     const replacement=f.store.decide(f.run.id)
     f.relay.recover(replacement)

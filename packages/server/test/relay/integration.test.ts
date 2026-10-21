@@ -28,8 +28,9 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
   const apiResponse=new Promise<void>(r=>{releaseApi=r}), apiDispatch=new Promise<void>(r=>{apiStarted=r})
   const localResponse=new Promise<void>(r=>{releaseLocal=r}), localDispatch=new Promise<void>(r=>{localStarted=r})
   try {
-    await kernel.plugin(resourceGovernorPlugin); await kernel.plugin(ollamaAdapterPlugin,{ fetch:async url=>{
+    await kernel.plugin(resourceGovernorPlugin); await kernel.plugin(ollamaAdapterPlugin,{ fetch:async (url,init)=>{
       if(new URL(String(url)).pathname==='/api/version')return Response.json({version:'fixture'})
+      if(String(init?.body).length>1000)return Response.json({model:'fixture',created_at:new Date().toISOString(),message:{role:'assistant',content:'fixture'},done:true,prompt_eval_count:20000,eval_count:1})
       localStarted(); await localResponse
       return new Response(JSON.stringify({model:'fixture',created_at:new Date().toISOString(),message:{role:'assistant',content:'fixture'},done:true,prompt_eval_count:10,eval_count:1}),{status:200,headers:{'Content-Type':'application/json'}})
     } })
@@ -72,6 +73,20 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
       const events=JSON.stringify(kernel.service<SessionLog>('session.log')!.readAll(run.session_id,'person'))
       for(const text of [...requests,persisted,events,...output]) {assert.equal(text.includes(secret),false);assert.equal(text.includes(thinking),false)}
       assert.equal(db.prepare('SELECT COUNT(*) n FROM run_costs').get()!.n,3)
+      // A value registered after relay request assembly expands at K3's final scrub.
+      const {ConnectionRelayModel}=await import('../../src/relay/model.ts')
+      const late='late_relay_'+randomBytes(8).toString('hex')
+      const H=window.tokens-reserves.turn-reserves.safety
+      const prompt=late.repeat(Math.floor((H-window.framingTokens)/Buffer.byteLength(late)))
+      kernel.service<import('../../src/egress/types.ts').EgressScrubber>('egress.scrubber')!.register('secret://fixture/late-expansion-with-long-reference',late)
+      const guarded=new ConnectionRelayModel(connections,c.id,model.id,{observe:async()=>window,count:p=>Buffer.byteLength(p)+32})
+      const before=requests.length
+      await assert.rejects(guarded.call(prompt,{runId:run.id,requestId:'late-api',maxOutput:100,maxInput:H,window}))
+      assert.equal(requests.length,before,'redaction expansion is refused before API transport')
+      const localGuard=connections.create('local',{name:'Guard local',kind:'local_runtime',provider:'ollama',auth:'none'})
+      const localModel=new ConnectionRelayModel(connections,localGuard.id,'fixture',{observe:async()=>window,count:p=>Buffer.byteLength(p)+32},false)
+      await assert.rejects(localModel.call(prompt,{runId:run.id,requestId:'late-local',maxOutput:100,maxInput:H,window}))
+
     } finally {f.close()}
     const governor=kernel.service<import('../../src/runtime/resource-governor.ts').ResourceGovernor>('governor')!
     const blocker=governor.enqueue({owner:{kind:'operation',operationId:'relay-fixture-blocker'},operation:'chat',model:{provider:'ollama',name:'fixture'},requestedContext:16000,priority:'normal',enqueuedAt:new Date().toISOString()})

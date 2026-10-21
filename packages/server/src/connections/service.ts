@@ -19,6 +19,8 @@ export interface ModelCall {
   signal?: AbortSignal
   /** Trusted executor observation after dispatch starts; never supplied by HTTP/model input. */
   onStarted?: () => void
+  /** Trusted validation of the final scrubbed request, immediately before dispatch. */
+  onPrepared?: (request: Context | OllamaChatRequest) => void
   /** Adapter parameters, not arbitrary transport/auth headers. */
   options?: Pick<SimpleStreamOptions, 'temperature' | 'maxTokens' | 'reasoning'>
 }
@@ -128,6 +130,7 @@ export class Connections {
           // Scrub the complete context, including tool results and tool schemas,
           // before pi-ai turns it into a provider-specific request.
           const clean = this.scrubber.scrub(context)
+          call.onPrepared?.(clean)
           const dispatched = this.pi.complete(model, clean, {
             temperature: call.options?.temperature, maxTokens: call.options?.maxTokens,
             reasoning: call.options?.reasoning, apiKey: key, signal,
@@ -172,7 +175,9 @@ export class Connections {
       try {
         const current = this.store.get(accountId, id)
         if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
-        const dispatched = this.ollama.client(host.href).chat(this.scrubber.scrub(request), signal, () => {
+        const clean = this.scrubber.scrub(request)
+        call.onPrepared?.(clean)
+        const dispatched = this.ollama.client(host.href).chat(clean, signal, () => {
           try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); throw error }
         })
         const result = await dispatched

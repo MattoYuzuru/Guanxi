@@ -49,21 +49,23 @@ export class RelayExecutor {
     invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
     const l = this.store.read(a.run_id), reason = this.caps(l)
     if (reason) { this.wrap(a, reason); throw new RelayError('cap_reached') }
-    const quote = this.model.maxCostMicros?.(count, this.reserves.turn) ?? null
+    // K3 may expand late redactions; reserve the entire admissible input ceiling.
+    const inputReserve = t.H
+    const quote = this.model.maxCostMicros?.(inputReserve, this.reserves.turn) ?? null
     invariant(quote === null || Number.isSafeInteger(quote) && quote >= 0, 'cost_bound_invalid')
-    if ((l.caps.tokens !== null && l.tokens + count + this.reserves.turn > l.caps.tokens) ||
+    if ((l.caps.tokens !== null && l.tokens + inputReserve + this.reserves.turn > l.caps.tokens) ||
       (l.caps.moneyMicros !== null && (quote === null || l.moneyMicros + quote > l.caps.moneyMicros))) {
       this.wrap(a, 'call_reserve'); throw new RelayError('cap_reached')
     }
     const id = randomUUID()
     this.store.change(a, 'call_reserved', state => {
       invariant(state.pendingCall === null, 'call_pending')
-      state.pendingCall = id; state.tokens += count + this.reserves.turn
+      state.pendingCall = id; state.tokens += inputReserve + this.reserves.turn
       if (quote !== null) state.moneyMicros += quote
     })
     this.store.emit(a, { type: 'assistant.started', data: { messageId: id, model: 'relay:' + purpose, step: l.cycle } })
     let reply: Reply
-    try { reply = this.scrubber.scrub(await this.model.call(clean, { runId: a.run_id, requestId: id, maxOutput: this.reserves.turn, window: w, signal, onStarted: () => this.store.runs.modelStarted(a) })) }
+    try { reply = this.scrubber.scrub(await this.model.call(clean, { runId: a.run_id, requestId: id, maxOutput: this.reserves.turn, maxInput: t.H, window: w, signal, onStarted: () => this.store.runs.modelStarted(a) })) }
     catch {
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
       throw new RelayError('model_failed')
@@ -71,7 +73,7 @@ export class RelayExecutor {
     invariant([reply.inputTokens, reply.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) &&
       (reply.moneyMicros === null || Number.isSafeInteger(reply.moneyMicros) && reply.moneyMicros >= 0), 'usage_invalid')
     this.store.change(a, 'call_observed', state => {
-      state.pendingCall = null; state.tokens += reply.inputTokens + reply.outputTokens - count - this.reserves.turn
+      state.pendingCall = null; state.tokens += reply.inputTokens + reply.outputTokens - inputReserve - this.reserves.turn
       if (quote !== null) state.moneyMicros -= quote
       if (reply.moneyMicros === null) state.unknownCosts++; else state.moneyMicros += reply.moneyMicros
     })

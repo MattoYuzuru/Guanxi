@@ -19,7 +19,7 @@ Fixture meters are used in the tests; no live-model quality claim is made.
 
 `H = W - R_turn - S`, `T_hard = H - R_ho - R_tool` and the soft/boundary rules come from
 ADR-0020. Every call, including probes and the fresh writer, checks its scrubbed request
-against H. Local Ollama also compares `prompt_eval_count` with the meter's count; mismatch
+against H, including a final check after K3 scrubs immediately before dispatch. Local Ollama also compares `prompt_eval_count` with the meter's count; mismatch
 or length termination is a protocol error, never a successful handoff. Output has the
 runtime/policy turn reserve. There is no fixed context or cycle ceiling.
 
@@ -62,7 +62,7 @@ required. R2 emits judge requests; R3 owns judge execution and verdict policy.
 
 Progress counts verified item/gate changes or a nonempty committed diff. Notes, proposals
 and verification requests are not progress. Two empty cycles request J2; three escalate.
-Cycle, token, money, wall-time and J3 caps are normative. Calls reserve their worst-case
+Cycle, token, money, wall-time and J3 caps are normative. Calls reserve the full admissible input ceiling plus output reserve as their worst-case
 tokens and a host-supplied monetary bound before dispatch. Unknown price with a money cap
 refuses dispatch. Failed/crashed calls retain conservative reservations. Exhaustion enters
 R1 `wrapping_up`; no new work/model calls run there. The retained ledger is the deterministic
