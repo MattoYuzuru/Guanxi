@@ -10,7 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
-| [2026-10-21](2026-10-21-owner-decisions.md) (D-185–D-193: real fleet, Fedora home, own phone relay, compute-provider protocol, interactive headroom, owner-bound subscriptions, local AI, training, scale) | accepted |
+| [2026-10-21](2026-10-21-owner-decisions.md) (D-185–D-194: real fleet, Fedora home, own phone relay, compute-provider protocol, interactive headroom, owner-bound subscriptions, local AI, training, scale, benchmark host) | accepted |
 | [2026-10-20 addendum](2026-10-20-owner-decisions-addendum.md) (D-141–D-182: answers to every open question Q-201–Q-244; D-183: own kernel instead of Cordis; D-184: approval signing helper) | accepted |
 | [2026-10-20](2026-10-20-owner-decisions.md) (D-123–D-140: quota alerts, notifications, logo, design system, layout, modes, agent browser) | accepted |
 | [2026-10-19 addendum](2026-10-19-owner-decisions-addendum.md) (D-114–D-122: work methodology, trackers, clarifications after the S0 review) | accepted |
