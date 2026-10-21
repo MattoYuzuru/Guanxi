@@ -28,7 +28,8 @@ the full run ledger; `notes.search` pages matching typed notes. Tool results rem
 and K4 output artifacts where applicable. Context turns stay in the current cycle until
 wind-down; only the last three enter the fresh narrative writer. Previous narratives never
 enter that writer. All calls use K3, all state events use K2, and all persisted/model-facing
-values pass the scrubber. Structured provider reasoning is discarded.
+values pass the scrubber. Structured provider reasoning is discarded. K3 observes dispatch start before awaiting
+the response, so R1 can acknowledge a wake while inference is still in flight.
 
 ## Ledger, probes and sealing
 
@@ -70,12 +71,14 @@ report; a later lead decides completion/cancellation.
 ## Workspace boundary
 
 `GitRelayWorkspace` uses K4's tools and ExecutionOwner with Full access, a dedicated root,
-planner protected paths and harness-owned `.git`. Checkpoints use fixed git argv without
-hooks or inherited credential environment. Tests/specs/CI paths are additionally rejected
+planner protected paths and harness-owned `.git`. Checkpoints use raw hash-object/update-index/commit-tree plumbing without filters,
+hooks or inherited credential environment. Dirty checks also hash raw bytes. Tests/specs/CI paths are additionally rejected
 at checkpoint and seal validation. A dirty checkout cannot seal or run a gate.
 
-Gates extract the attempt commit without `.git` or untracked files, restore planner-owned
+Gates materialize raw objects without archive attributes, `.git` or untracked files, restore planner-owned
 protected paths from the base revision and run acceptance argv in K4 Read-only mode.
+Linked/gitlink trees are refused before preparation. All done evidence is invalidated
+when HEAD changes, and final acceptance rechecks every item at the final HEAD.
 A bundle is refused if reachable objects contain a registered secret; compressed bundles
 are never scrubbed in place. The host must assign an isolated worktree/root and immutable
 sandbox policy; external processes changing that tree are outside the single-writer model.

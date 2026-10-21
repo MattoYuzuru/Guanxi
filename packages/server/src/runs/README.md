@@ -157,3 +157,12 @@ running node. The down helper exists only for isolated migration test fixtures.
 
 See the [lane handoff](../../../../docs/plans/lanes/R1.handoff.md) for command results, independent
 review, limits and the next integration slice.
+
+## Trusted executor extensions (R2)
+
+`mutate(attempt, body)` checks the home and execution fence in R1's transaction, then gives
+trusted in-process extensions the database and a K2 append function. The callback must be
+synchronous; a returned Promise refuses the transaction. Never expose this seam over HTTP or
+to a model. Relay uses it for atomic ledger changes and fenced handoff/bundle uploads.
+The [relay service](../relay/README.md) owns runtime metering, dispatch-start observation,
+cycle caps and protected clean-checkout acceptance; R1 owns durable orchestration.
