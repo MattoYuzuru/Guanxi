@@ -130,7 +130,7 @@ export class RunStore {
       throw error
     }
     this.point('committed')
-    for (const sessionId of this.changedSessions) this.log.notify(sessionId)
+    this.log.notify(this.changedSessions)
     this.changedSessions.clear()
     return result
   }

@@ -277,3 +277,25 @@ test('kernel waits for scrubber readiness without losing its home or exposing ru
     assert.equal(kernel.durableRuns!.store.create().state, 'submitted')
   } finally { await kernel.node.dispose() }
 })
+
+
+test('review R1: committed run transitions wake an already-waiting K2 subscriber', async (t) => {
+  const f = runFixture(); t.after(f.close)
+  const run = f.store.create({ id: 'live-run-session' })
+  const cursor = f.log.read(run.session_id, { audience: 'person' }).lastSeq
+  const controller = new AbortController()
+  const iterator = f.log.subscribe(run.session_id, cursor, 'person', controller.signal)
+  const next = iterator.next()
+  assert.equal(f.log.subscriberCount(run.session_id), 1)
+  const timeout = setTimeout(() => controller.abort(), 2_000)
+  try {
+    f.store.start(run.id)
+    const result = await next
+    assert.equal(result.done, false, 'a committed run event must notify the whole session id')
+    assert.equal(result.value!.type, 'run.lifecycle')
+    if (result.value!.type === 'run.lifecycle') assert.equal(result.value!.data.action, 'attempt')
+    assert.equal(f.db.isTransaction, false, 'the subscriber sees the event after commit')
+  } finally {
+    clearTimeout(timeout); controller.abort(); await iterator.return(undefined)
+  }
+})
