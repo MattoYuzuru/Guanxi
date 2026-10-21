@@ -55,13 +55,16 @@ export class ContainerExecutionOwner implements ExecutionOwner {
   private stopped = false
   private created = false
   private creation?: Promise<unknown>
+  creationOutcome: 'not-started' | 'pending' | 'confirmed' = 'not-started'
+  private onCreated: () => void
   private sockets = new Map<number, Socket>()
   private policy: SandboxPolicy
   private endpoint: string
   private name: string
   private directory: string
   private dockerPath: string
-  constructor(policy: SandboxPolicy, endpoint: string, name: string, directory: string, dockerPath: string) {
+  constructor(policy: SandboxPolicy, endpoint: string, name: string, directory: string, dockerPath: string, onCreated: () => void = () => {}) {
+    this.onCreated = onCreated
     this.policy = policy; this.endpoint = endpoint; this.name = name; this.directory = directory; this.dockerPath = dockerPath
   }
   private docker(args: string[]) { return exec(this.dockerPath, ['--host', this.endpoint, ...args], { timeout: 15_000, maxBuffer: 256 * 1024 }) }
@@ -139,8 +142,11 @@ export class ContainerExecutionOwner implements ExecutionOwner {
     if (this.stopped) throw new Error('sandbox_failed')
     // Mark before create: stop during create must also remove a late-created container.
     this.created = true
+    this.creationOutcome = 'pending'
     try {
       await (this.creation = this.docker(args))
+      this.creationOutcome = 'confirmed'
+      this.onCreated()
       if (this.stopped) throw new Error('sandbox_failed')
       const child = spawn(this.dockerPath, ['--host', this.endpoint, 'start', '--attach', '--interactive', this.name], { stdio: ['pipe', 'pipe', 'ignore'] })
       const send = (value: unknown) => { if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(value) + '\n') }

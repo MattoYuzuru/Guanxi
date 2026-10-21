@@ -13,7 +13,7 @@ import { selectedModel, connectionStream, emptyUsage } from './model.ts'
 import { orientation } from './orientation.ts'
 import { nativeTools } from './tools.ts'
 import { NativeProjectRoots } from './projects.ts'
-import type { SandboxPolicy } from './sandbox.ts'
+import { sandboxCommand, type SandboxPolicy } from './sandbox.ts'
 import { apiPortFromEnv, portFromEnv, DEFAULT_WEB_PORT, WEB_PORT_ENV } from '../config/listen-env.ts'
 import { resolveInWorkspace } from '../tools/jail.ts'
 
@@ -50,7 +50,9 @@ export class NativeAgents {
   readonly scrubber: EgressScrubber
   readonly dataDir: string
   readonly nodePorts: () => number[]
-  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)]) {
+  private commandRunner: typeof sandboxCommand
+  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)], commandRunner = sandboxCommand) {
+    this.commandRunner = commandRunner
     this.nodePorts = nodePorts
     this.host = host; this.log = log; this.connections = connections; this.scrubber = scrubber; this.dataDir = dataDir
     this.projectRoots = new NativeProjectRoots(join(dataDir, 'native-projects.sqlite'), host)
@@ -119,12 +121,11 @@ export class NativeAgents {
     }
   }
   private ensureRoots(policy: SandboxPolicy, id: string) {
-    assertRootsClean(this.dataDir, [policy.scratch, ...policy.roots])
-    if (policy.mode !== 'full-access') return
-    for (const [otherId, active] of this.active) {
+    if (policy.mode === 'full-access') for (const [otherId, active] of this.active) {
       if (otherId === id || active.policy.mode !== 'full-access') continue
       if (policy.roots.some(root => active.policy.roots.some(other => inside(root, other) || inside(other, root)))) throw new NativeAgentError('root_busy')
     }
+    assertRootsClean(this.dataDir, [policy.scratch, ...policy.roots])
   }
   private ready() {
     if (this.closed) throw new NativeAgentError('agent_unavailable')
@@ -224,7 +225,7 @@ export class NativeAgents {
     let promptId: string = randomUUID()
     let promptOrigin: 'typed' | 'queued' = 'typed'
     const turnId = randomUUID()
-    const tools = nativeTools({ policy, log: this.log, handle, scrubber: this.scrubber, queue: text => this.queue(id, text) })
+    const tools = nativeTools({ policy, log: this.log, handle, scrubber: this.scrubber, queue: text => this.queue(id, text), executeCommand: this.commandRunner })
     const model = selectedModel(this.connections, input)
     const images: import('@earendil-works/pi-ai').ImageContent[] = []
     for (const attachment of policy.attachmentMetadata ?? []) {
@@ -263,6 +264,7 @@ export class NativeAgents {
       while (next !== undefined) {
         signal.throwIfAborted()
         await agent.prompt(next, images)
+        if (cleanupUnconfirmed) throw new Error('cleanup_unconfirmed')
         if (agent.state.errorMessage) throw new Error('model_failed')
         const queue = this.progress(id).queue
         next = queue[0]?.text
@@ -274,7 +276,7 @@ export class NativeAgents {
       handle.append({ type: 'turn.done', data: { messageId: turnId, outcome: 'completed', stopReason: 'stop', steps: step } })
     } catch {
       handle.append({ type: 'agent.state', data: { status: cleanupUnconfirmed ? 'failed' : signal.aborted ? 'cancelled' : 'failed', error: cleanupUnconfirmed ? 'cleanup_unconfirmed' : signal.aborted ? null : 'agent_failed' } })
-      handle.append({ type: 'turn.done', data: { messageId: turnId, outcome: signal.aborted ? 'cancelled' : 'failed', stopReason: signal.aborted ? 'stopped_by_user' : 'agent_failed', steps: step } })
+      handle.append({ type: 'turn.done', data: { messageId: turnId, outcome: cleanupUnconfirmed ? 'failed' : signal.aborted ? 'cancelled' : 'failed', stopReason: cleanupUnconfirmed ? 'cleanup_unconfirmed' : signal.aborted ? 'stopped_by_user' : 'agent_failed', steps: step } })
     } finally { signal.removeEventListener('abort', stop) }
   }
   async close() { if (this.closed) return; this.closed = true; for (const active of this.active.values()) active.abort.abort(); await Promise.allSettled([...this.active.values()].map(a => a.settled)); this.projectRoots.close() }

@@ -433,3 +433,37 @@ test('egress denies URLs and headers the live scrubber changes, including late r
   assert.equal(absent.stdout, '403 ')
   assert.deepEqual(seen, ['/register', '/clean'])
 })
+
+test('fork error followed by close without exit settles and does not hold unload forever', { timeout: 3000 }, async t => {
+  const { dir, policy } = await fixture(t)
+  const launch = await fixtureLauncher(dir, s => s, source => `import {EventEmitter} from 'node:events'
+function fixtureFork(..._args: unknown[]) {
+  const child = Object.assign(new EventEmitter(), {connected:false,pid:undefined,send(){}})
+  setImmediate(()=>{child.emit('error',new Error('fixture spawn failure'));child.emit('close',null)})
+  return child
+}
+` + source.replace('const child = fork(worker,', 'const child = fixtureFork(worker,'))
+  await assert.rejects(launch(policy, 'printf MUST_NOT_RUN', undefined, 50, true), /sandbox_failed/)
+})
+
+test('interrupted container create retains quarantine even if the daemon currently reports no container', { skip: process.platform !== 'darwin', timeout: 5000 }, async t => {
+  const { dir, policy } = await fixture(t)
+  const fake = join(dir, 'docker'), marker = join(dir, 'creating')
+  await writeFile(fake, `#!/bin/sh
+if [ "$1" = context ]; then if [ "$2" = show ]; then printf fixture; else printf unix:///fixture; fi; exit 0; fi
+case "$3" in
+  info) printf linux;;
+  image) printf 'sha256:${'a'.repeat(64)}';;
+  create) touch ${quote(marker)}; exec sleep 30;;
+  rm|ps) exit 0;;
+  *) exit 1;;
+esac
+`, { mode: 0o700 })
+  const launch = await fixtureLauncher(dir, s => s, s => s.replace('const dockerBinary = resolveDockerBinary()', `const dockerBinary = {path:${JSON.stringify(fake)},protectedPaths:[]}`))
+  const abort = new AbortController()
+  const running = launch({ ...policy, mode: 'full-access' }, 'printf MUST_NOT_START', abort.signal)
+  const rejected = assert.rejects(running, /cleanup_unconfirmed/)
+  while (true) { try { await readFile(marker); break } catch { await pause(10) } }
+  abort.abort(); await rejected
+  assert.equal((await (await import('node:fs/promises')).readdir(join(dir, 'native-cleanup'))).length, 1)
+})

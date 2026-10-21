@@ -82,6 +82,7 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
         HOME: networkDirectory, TMPDIR: networkDirectory, LANG: 'en_US.UTF-8' },
       // Runtime diagnostics may include command contents. They never enter plain logs.
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+    let creationKnown = false
     let result: CommandResult | null = null
     let failure: string | null = null
     const kill = () => { try { process.kill(-child.pid!, 'SIGKILL') } catch { /* already exited */ } }
@@ -93,7 +94,8 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
     }
     const timer = setTimeout(abort, timeoutMs)
     signal?.addEventListener('abort', abort, { once: true })
-    child.on('message', (message: { result?: CommandResult; error?: string; egress?: { id: number; url: string; headers: [string, string][] } }) => {
+    child.on('message', (message: { result?: CommandResult; error?: string; containerCreated?: boolean; containerNotCreated?: boolean; egress?: { id: number; url: string; headers: [string, string][] } }) => {
+      if (message.containerCreated || message.containerNotCreated) creationKnown = true
       if (message.egress) {
         let allow = false
         try {
@@ -107,12 +109,13 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
       if (message.error) failure = message.error
     })
     child.once('error', () => { failure = 'sandbox_failed'; kill() })
-    child.once('exit', async () => {
+    child.once('close', async () => {
       kill()
       // Also covers a worker crash: killing a Docker CLI does not stop its container.
       if (dockerEndpoint) {
         try {
           await removeContainer(dockerBinary!.path, dockerEndpoint, ownerName)
+          if (!creationKnown) throw new Error('cleanup_unconfirmed')
           await rm(quarantine, { force: true })
           if (failure === 'cleanup_unconfirmed') failure = 'sandbox_failed'
         } catch { failure = 'cleanup_unconfirmed' }

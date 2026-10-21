@@ -74,12 +74,13 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
       SandboxManager.updateConfig({ ...config, filesystem: { ...config.filesystem, allowRead: [...read, ...networkReads].map(literal) } })
     }
     const quotePath = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
-    owner = process.platform === 'linux' ? new LinuxExecutionOwner(bindingFilter) : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner({ ...policy, protectedPaths: [...policy.protectedPaths, ...trustedDeny] }, dockerEndpoint, ownerName, directory, dockerPath)
+    owner = process.platform === 'linux' ? new LinuxExecutionOwner(bindingFilter) : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner({ ...policy, protectedPaths: [...policy.protectedPaths, ...trustedDeny] }, dockerEndpoint, ownerName, directory, dockerPath, () => process.send?.({ containerCreated: true }))
     if (stopped) throw new Error('sandbox_failed')
     const result = await owner.execute(`export HOME=${quotePath(policy.scratch)} TMPDIR=${quotePath(policy.scratch)}; ${command}`)
     await SandboxManager.reset()
     process.send?.({ result }, () => process.exit(0))
   } catch (error) {
+    if (!owner || (owner instanceof ContainerExecutionOwner && owner.creationOutcome === 'not-started')) process.send?.({ containerNotCreated: true })
     await owner?.stop().catch(() => undefined)
     await SandboxManager.reset().catch(() => undefined)
     process.send?.({ error: error instanceof Error && ['container_runtime_unavailable', 'container_path_unsupported', 'supervision_unavailable', 'cleanup_unconfirmed'].includes(error.message) ? error.message : 'sandbox_failed' }, () => process.exit(1))

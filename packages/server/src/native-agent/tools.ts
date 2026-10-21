@@ -13,6 +13,7 @@ export interface NativeToolContext {
   log: SessionLog
   handle: SessionHandle
   scrubber: EgressScrubber
+  executeCommand?: typeof sandboxCommand
   queue(text: string): void
 }
 export function nativeTools(ctx: NativeToolContext): AgentTool[] {
@@ -26,7 +27,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     throw new Error('path_denied')
   }
   const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true) => {
-    const result = await sandboxCommand(policy, command, signal, 120_000, fixed, scrubber)
+    const result = await (ctx.executeCommand ?? sandboxCommand)(policy, command, signal, 120_000, fixed, scrubber)
     const clean = scrubber.scrub(result)
     if (clean.code === null || !accepted.includes(clean.code)) throw new Error('tool_failed')
     return JSON.stringify(clean)
