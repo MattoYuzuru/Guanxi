@@ -13,7 +13,12 @@
  *  - отмену через AbortController (кнопка «Стоп»).
  */
 import type { ZodType, ZodTypeDef } from 'zod'
-import { SSE_LAST_EVENT_ID_HEADER } from '@guanxi/contract'
+import {
+  SSE_ERROR_EVENT_NAME,
+  SSE_LAST_EVENT_ID_HEADER,
+  apiErrorSchema,
+  type ApiError,
+} from '@guanxi/contract'
 
 /* ──────────────────────────── Разбор кадров ───────────────────────────── */
 
@@ -120,13 +125,47 @@ export type SseStreamOptions<T> = {
 }
 
 export class SseHttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly bodyText: string,
-  ) {
+  readonly status: number
+  readonly bodyText: string
+  readonly payload: ApiError | null
+
+  constructor(status: number, bodyText: string) {
     super(`SSE ${status}: ${bodyText.slice(0, 400)}`)
     this.name = 'SseHttpError'
+    this.status = status
+    this.bodyText = bodyText
+    let parsed: unknown = null
+    try { parsed = JSON.parse(bodyText) } catch { parsed = null }
+    const payload = apiErrorSchema.safeParse(parsed)
+    this.payload = payload.success ? payload.data : null
   }
+}
+
+/**
+ * A typed `guanxi-error` frame sent after the stream opened. It is never
+ * retried: the cursor was not advanced, so a reconnect would loop.
+ */
+export class SseServerError extends Error {
+  readonly payload: ApiError
+  readonly retryable = false
+
+  constructor(payload: ApiError) {
+    super(payload.message)
+    this.name = 'SseServerError'
+    this.payload = payload
+  }
+}
+
+function serverErrorFrame(frame: SseFrame): SseServerError | null {
+  if (frame.event !== SSE_ERROR_EVENT_NAME) return null
+  let json: unknown = null
+  try { json = JSON.parse(frame.data) } catch { json = null }
+  const parsed = apiErrorSchema.safeParse(json)
+  return new SseServerError(parsed.success ? parsed.data : {
+    code: 'internal_error',
+    message: 'The server ended the stream with an unreadable error frame',
+    details: null,
+  })
 }
 
 /**
@@ -177,6 +216,7 @@ export async function* sseStream<T>(
       })
     } catch (error) {
       if (isAbort(error, signal)) return
+      if (error instanceof SseServerError) throw error
       if (attempt >= maxRetries) throw error
       attempt += 1
       onReconnect?.(attempt, lastSeq)
@@ -211,6 +251,8 @@ export async function* sseStream<T>(
         if (done) {
           const tail = parser.flush()
           if (tail) {
+            const typed = serverErrorFrame(tail)
+            if (typed) throw typed
             const event = decodeFrame(tail, schema, onInvalidFrame)
             const sequence = event ? sequenceOf(event) : -1
             if (event && sequence > lastSeq) {
@@ -226,6 +268,8 @@ export async function* sseStream<T>(
         const frames = parser.push(decoder.decode(value, { stream: true }))
 
         for (const frame of frames) {
+          const typed = serverErrorFrame(frame)
+          if (typed) throw typed
           const event = decodeFrame(frame, schema, onInvalidFrame)
           if (!event) continue
 
@@ -243,6 +287,7 @@ export async function* sseStream<T>(
       }
     } catch (error) {
       if (isAbort(error, signal)) return
+      if (error instanceof SseServerError) throw error
       if (attempt >= maxRetries) throw error
       attempt += 1
       onReconnect?.(attempt, lastSeq)

@@ -23,6 +23,7 @@ import {
   SEARCH_MATCH_CLOSE,
   SEARCH_MATCH_OPEN,
   SESSION_ROUTES,
+  inputArtifactOf,
   type SessionEvent,
   type SessionEventType,
   type SessionSearchHit,
@@ -31,7 +32,8 @@ import {
 } from '@guanxi/contract'
 import { Badge, Button, Callout, CopyButton, EmptyState, Input, Skeleton, cx } from '../../components/ui.tsx'
 import { ApiRequestError, errorMessage } from '../../lib/api.ts'
-import { formatRelativeTime } from '../../lib/format.ts'
+import { formatBytes, formatRelativeTime } from '../../lib/format.ts'
+import { SseServerError } from '../../lib/sse.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { Link, paths } from '../../lib/router.tsx'
@@ -95,6 +97,7 @@ type Live =
   | { state: 'live'; since: string }
   | { state: 'reconnecting'; since: string }
   | { state: 'stopped'; at: string; opened: boolean }
+  | { state: 'incompatible' }
 
 function time(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -248,7 +251,11 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
               return next
             })
           }
-        } catch {
+        } catch (failure) {
+          if (failure instanceof SseServerError && failure.payload.code === 'session_event_version_unsupported') {
+            if (!controller.signal.aborted) setLive({ state: 'incompatible' })
+            return
+          }
           // Reported as the stopped state below.
         }
         if (!controller.signal.aborted) setLive({ state: 'stopped', at: new Date().toISOString(), opened })
@@ -305,6 +312,9 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
 
   if (loading) return <InspectorSkeleton />
   if (loadError) {
+    if (loadError instanceof ApiRequestError && loadError.code === 'session_event_version_unsupported') {
+      return <IncompatibleTrace error={loadError} />
+    }
     const notFound = loadError instanceof ApiRequestError && loadError.code === 'session_not_found'
     return (
       <section className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-3 py-4 sm:px-6" aria-labelledby="inspector-error-title">
@@ -357,6 +367,7 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
             <RedactedText text={summary?.title ?? translate('inspector.untitled')} />
           </h1>
           <LiveStatus live={live} loadedAt={loadedAt} onReconnect={reload} />
+          {live.state === 'incompatible' && <IncompatibleNotice />}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {summary?.threadId && (
@@ -440,9 +451,11 @@ function LiveStatus({ live, loadedAt, onReconnect }: { live: Live; loadedAt: str
       ? translate('inspector.live.connecting')
       : live.state === 'reconnecting'
         ? translate('inspector.live.reconnecting', { time: time(live.since) })
-        : live.opened
-          ? translate('inspector.live.offline', { time: time(live.at), age: formatRelativeTime(live.at) })
-          : translate('inspector.live.failed', { time: time(loadedAt ?? live.at) })
+        : live.state === 'incompatible'
+          ? translate('inspector.live.incompatible')
+          : live.opened
+            ? translate('inspector.live.offline', { time: time(live.at), age: formatRelativeTime(live.at) })
+            : translate('inspector.live.failed', { time: time(loadedAt ?? live.at) })
   return (
     <div className="flex flex-wrap items-center gap-2">
       <p role="status" aria-live="polite" className="flex items-center gap-1.5 text-12 text-muted">
@@ -453,6 +466,32 @@ function LiveStatus({ live, loadedAt, onReconnect }: { live: Live; loadedAt: str
         <Button size="sm" onClick={onReconnect}>{translate('inspector.live.reconnect')}</Button>
       )}
     </div>
+  )
+}
+
+/** A typed v2 boundary: the saved trace stays intact, the client cannot read it. */
+function IncompatibleNotice() {
+  return (
+    <div role="alert" className="mt-1 max-w-md">
+      <Callout tone="danger" title={translate('inspector.incompatible.title')}>
+        <p className="text-13">{translate('inspector.incompatible.description')}</p>
+      </Callout>
+    </div>
+  )
+}
+
+function IncompatibleTrace({ error }: { error: ApiRequestError }) {
+  return (
+    <section className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-3 py-4 sm:px-6" aria-labelledby="inspector-incompatible-title">
+      <h1 id="inspector-incompatible-title" tabIndex={-1} className="text-14 font-heading">
+        {translate('inspector.incompatible.title')}
+      </h1>
+      <Callout tone="danger" title={translate('inspector.incompatible.title')}>
+        <p className="text-13">{translate('inspector.incompatible.description')}</p>
+        <p className="mt-1 text-12 text-muted">{translate('inspector.incompatible.details', { code: error.code })}</p>
+      </Callout>
+      <Link to={paths.inspector()} className={LINK}>{translate('inspector.backToList')}</Link>
+    </section>
   )
 }
 
@@ -676,6 +715,7 @@ function Timeline({
 function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted: boolean }) {
   const detail = eventDetail(event)
   const depth = spanDepth(event.spanId)
+  const artifact = inputArtifactOf(event)
   return (
     <li
       id={`inspector-event-${event.seq}`}
@@ -712,6 +752,15 @@ function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted:
             <RedactedText text={detail} />
           </p>
         )
+      )}
+      {artifact !== null && (
+        <p className="text-12 text-muted">
+          <span className="font-label">{translate('inspector.input.bounded')}</span>{' '}
+          {translate('inspector.input.boundedDetail', {
+            excerpt: formatBytes(artifact.excerptBytes),
+            total: formatBytes(artifact.byteSize),
+          })}
+        </p>
       )}
     </li>
   )

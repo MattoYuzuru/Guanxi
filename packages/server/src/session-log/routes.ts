@@ -12,7 +12,9 @@
 import { Hono, type Context } from 'hono'
 import { getConnInfo } from '@hono/node-server/conninfo'
 import {
+  SESSION_EVENT_VERSION_2,
   SESSION_EXPORT_VERSION,
+  SESSION_EXPORT_VERSION_2,
   SSE_ERROR_EVENT_NAME,
   SSE_EVENT_NAME,
   SSE_LAST_EVENT_ID_HEADER,
@@ -21,6 +23,7 @@ import {
   sessionEventSchema,
   sessionEventsQuery,
   sessionEventsResponse,
+  sessionExportQuery,
   sessionExportSchema,
   sessionPathParams,
   sessionSearchQuery,
@@ -30,7 +33,7 @@ import {
   type ApiError,
   type SessionEvent,
 } from '@guanxi/contract'
-import { SessionLogError, type SessionLog } from './log.ts'
+import { SessionEventVersionError, SessionLogError, type SessionLog } from './log.ts'
 import { projectSpans } from './projection.ts'
 
 const encoder = new TextEncoder()
@@ -65,7 +68,17 @@ function catchingUp(error: SessionLogError): ApiError {
 }
 
 /** One mapping of read failures for JSON responses and SSE error frames; every body is content-free. */
-function errorBody(error: unknown, log?: SessionLog): { status: 403 | 404 | 500 | 503; body: ApiError } {
+function errorBody(error: unknown, log?: SessionLog): { status: 403 | 404 | 406 | 500 | 503; body: ApiError } {
+  if (error instanceof SessionEventVersionError) {
+    return {
+      status: 406,
+      body: {
+        code: 'session_event_version_unsupported',
+        message: 'The next session event needs a newer envelope version',
+        details: { seq: error.seq, supported: error.supported, required: error.required },
+      },
+    }
+  }
   if (error instanceof SessionLogError && error.code === 'session_not_found') {
     return { status: 404, body: apiError('session_not_found', 'Session not found') }
   }
@@ -184,7 +197,7 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
 
   routes.get('/:sessionId/events', (context) => {
     const sessionId = sessionIdOf(context)
-    const raw = query(context, ['after', 'limit'])
+    const raw = query(context, ['after', 'limit', 'eventVersion'])
     const parsed = raw ? sessionEventsQuery.safeParse(raw) : null
     if (!sessionId || !parsed?.success) return invalid(context, 'Invalid session events query')
     try {
@@ -193,7 +206,11 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
         afterSeq: parsed.data.after,
         limit: parsed.data.limit,
         audience: 'person',
+        maxVersion: parsed.data.eventVersion,
       })
+      if (page.unsupportedSeq !== null) {
+        throw new SessionEventVersionError(page.unsupportedSeq, parsed.data.eventVersion, SESSION_EVENT_VERSION_2)
+      }
       return context.json(
         sessionEventsResponse.parse({
           // The read above refused an id holding a registered value, so the id is safe to echo.
@@ -223,13 +240,19 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
 
   routes.get('/:sessionId/export', (context) => {
     const sessionId = sessionIdOf(context)
-    if (!sessionId || !query(context, [])) return invalid(context, 'Invalid session export request')
+    const raw = query(context, ['exportVersion'])
+    const parsed = raw ? sessionExportQuery.safeParse(raw) : null
+    if (!sessionId || !parsed?.success) return invalid(context, 'Invalid session export request')
     try {
       const current = log()
       const all = current.readAll(sessionId, 'person')
       const events = all.filter((event) => event.class !== 'reasoning')
+      const v2 = all.find((event) => event.version === SESSION_EVENT_VERSION_2)
+      if (v2 !== undefined && parsed.data.exportVersion === SESSION_EXPORT_VERSION) {
+        throw new SessionEventVersionError(v2.seq, parsed.data.exportVersion, SESSION_EVENT_VERSION_2)
+      }
       const body = sessionExportSchema.parse({
-        exportVersion: SESSION_EXPORT_VERSION,
+        exportVersion: v2 === undefined ? SESSION_EXPORT_VERSION : SESSION_EXPORT_VERSION_2,
         sessionId,
         exportedAt: new Date().toISOString(),
         lastSeq: all.at(-1)?.seq ?? 0,
@@ -245,8 +268,8 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
 
   routes.get('/:sessionId/stream', (context) => {
     const sessionId = sessionIdOf(context)
-    const raw = query(context, ['after'])
-    const parsed = raw ? sessionEventsQuery.pick({ after: true }).safeParse(raw) : null
+    const raw = query(context, ['after', 'eventVersion'])
+    const parsed = raw ? sessionEventsQuery.pick({ after: true, eventVersion: true }).safeParse(raw) : null
     const lastEventId = context.req.header(SSE_LAST_EVENT_ID_HEADER)
     const reconnect = lastEventId === undefined ? undefined : Number(lastEventId)
     if (
@@ -264,11 +287,24 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       return fail(context, error)
     }
     const after = reconnect ?? parsed.data.after
+    try {
+      const first = current.read(sessionId, {
+        afterSeq: after,
+        limit: 1,
+        audience: 'person',
+        maxVersion: parsed.data.eventVersion,
+      })
+      if (first.unsupportedSeq !== null) {
+        throw new SessionEventVersionError(first.unsupportedSeq, parsed.data.eventVersion, SESSION_EVENT_VERSION_2)
+      }
+    } catch (error) {
+      return fail(context, error)
+    }
     const subscriber = new AbortController()
     const requestSignal = context.req.raw.signal
     const onAbort = () => subscriber.abort()
     requestSignal.addEventListener('abort', onAbort, { once: true })
-    const iterator = current.subscribe(sessionId, after, 'person', subscriber.signal)
+    const iterator = current.subscribe(sessionId, after, 'person', subscriber.signal, parsed.data.eventVersion)
     const stream = new ReadableStream<Uint8Array>(
       {
         async pull(controller) {
@@ -286,7 +322,9 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
             // A value registered while the stream is open withholds the session from then on;
             // a Job deferred meanwhile makes its history incomplete until it is caught up;
             // a source declared meanwhile closes the gate.
-            const error = failed instanceof SessionLogError ? errorBody(failed, current).body : apiError('storage_error', 'Session event subscription failed')
+            const error = failed instanceof SessionLogError || failed instanceof SessionEventVersionError
+              ? errorBody(failed, current).body
+              : apiError('storage_error', 'Session event subscription failed')
             controller.enqueue(encoder.encode(`event: ${SSE_ERROR_EVENT_NAME}\ndata: ${JSON.stringify(error)}\n\n`))
             subscriber.abort()
             await iterator.return(undefined)
