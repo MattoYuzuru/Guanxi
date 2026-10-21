@@ -15,7 +15,9 @@ full/browser/native gates pending. **Does not close `K4-INPUT-ARTIFACTS`.**
 | `2f23813` | REST/export/SSE negotiation and inspector excerpt/incompatible states |
 | `d28faef` | self-review: R1 fence rechecked before each input artifact write |
 | `7a9d617` | self-review: quarantine removal bound to the captured identity |
-| this commit | handoff only |
+| `750471b` | self-review: `0400` input files and a malformed-migration-33 rollback guard |
+| `8b85fe9` | self-review: minimal incompatible-trace copy (no internal code) |
+| this commit | handoff evidence update |
 
 No source file from another lane, no `PHASE_STATUS`/`NEXT_AGENT_PROMPT`, package manifest/lock,
 approval record/token, user data or infrastructure was edited.
@@ -29,12 +31,13 @@ approval record/token, user data or infrastructure was edited.
   `session_event_version_unsupported` 406. v1-only export bodies are unchanged; a v2 session
   exports at `exportVersion: 2` only to a max-2 client.
 - **Migration 33.** Main ledger appends `session_input_artifacts` (session-owned, unique
-  `(session_id, checksum)`, cascade) and replaces only `session_events_policy_insert`: v2 is
+  `(session_id, checksum)`, cascade), verifies a pre-existing table's shape (an incompatible
+  table fails and rolls back) and replaces only `session_events_policy_insert`: v2 is
   limited to prompt/tool.call, requires an `artifact` object, forbids inline `text`/`arguments`,
   and requires the referenced row to exist for the same session with matching checksum, size
   and media type. Migrations 1–32 are byte-identical; independent ledgers 34–37 are untouched.
 - **Store.** New session CAS under `<dataDir>/session-artifacts/<sha256(sessionId)>/`, directory
-  `0700`, file `0400`. The repository-owned pinned helper is extracted to
+  `0700`, file `0400` (asserted). The repository-owned pinned helper is extracted to
   `store/pinned-directory.ts` and retains the legacy `ArtifactStore` behavior and its full
   security regression suite. The helper reports its `cwd`/`dev`/`ino`; the parent compares them
   with the trusted identity **before any payload byte**, creates its own random temporary name,
@@ -71,15 +74,15 @@ approval record/token, user data or infrastructure was edited.
 
 ## New / regression evidence
 
-**New tests: 38.**
-- `packages/server/test/session-log-input-artifacts.test.ts` — 15.
+**New tests: 40.**
+- `packages/server/test/session-log-input-artifacts.test.ts` — 17.
 - `packages/server/test/session-log-version-negotiation.test.ts` — 6.
 - `packages/server/test/native-agent/input-artifacts.test.ts` — 11 (fake provider and injected
   command runner; no sandbox, container, network or live model).
 - `packages/web/test/component/inspector-input-artifacts.test.tsx` — 5.
 - `packages/web/test/component/sse-terminal.test.tsx` — 1 new typed-error case.
 
-**Regression envelope actually run: 79 server tests in 9 files (47 regression) and 32 web tests
+**Regression envelope actually run: 81 server tests in 9 files (47 regression) and 32 web tests
 in 4 files (26 regression).**
 
 ```bash
@@ -93,7 +96,7 @@ nice -n 10 node --test \
   packages/server/test/migration.test.ts \
   packages/server/test/durable-run-migration.test.ts \
   packages/server/test/relay/schema.test.ts
-# 79 pass / 0 fail
+# 81 pass / 0 fail
 nice -n 10 npx tsc --noEmit -p packages/contract/tsconfig.json
 nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
 nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json
