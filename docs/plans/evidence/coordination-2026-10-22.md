@@ -70,3 +70,22 @@ The Fedora SSH route returned connection refused. The owner explicitly selected 
 continuation** on 2026-10-22. No more SSH/remote-host operations are authorized by this
 continuation. Mac/Colima fixture work continues; real Fedora/Linux-host checks, live remote
 MS1 and benchmark runs remain deferred. No service, VPN, relay or resident model was changed.
+
+## K4 main verification and DS2 integration
+
+After K4 merge, full gates passed again at clean main `c09e2be`: typecheck
+`check-s7dpcuv5`, full tests `check-ajoti6zd`, mocked browser `check-h8gdh3c4`, UI browser
+`check-epidljb_`, build `check-syr7k_in`, Markdown/links `check-7zrq92bv`, licenses
+`check-4g0yz7zc`, source lint `check-x8ldslnp`. These are the unchanged K4 source envelope
+already counted above, not additional new tests. The separate central-doc correction
+`133869e` is independently reviewed and incorporated; only Markdown changed after those gates.
+
+DS2's complete candidate gates pass at clean `250517f`; source merged locally as `03c655b`.
+[DS2 evidence](DS2.md) gives exact receipts and the still-unverified production signing path.
+The separately reviewed [positive HTTPS case](K4-https.md) is also merged locally.
+Full post-merge gates are pending on the combined main; no remote-host validation is claimed.
+
+U1 layout/replication `646bf3d` (executable `e5f8e0a`) has completed its candidate gates.
+F2 reservations `5c66e27` is independently reviewed,17new/9governor envelope26pass, and must
+follow U1 integration. Neither receipt grants remote execution; F2-b is next bounded work.
+All work currently remains local under the owner's runtime constraint.

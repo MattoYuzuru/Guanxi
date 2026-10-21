@@ -39,7 +39,7 @@ import {
 } from '../../catalog/approval/index.ts'
 import { readInventory } from '../../catalog/tooling/inventory.ts'
 import { overlay } from './lib/scratch.ts'
-import { createTestKey } from './lib/test-key.ts'
+import { p256TestKey } from './lib/test-key.ts'
 import { result, type BaseSnapshot, type CatalogGate, type GateContext, type GateFinding, type HistoryVersion } from './types.ts'
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'g12')
@@ -294,7 +294,7 @@ export const g12: CatalogGate = {
       description: 'A record signed with a throwaway test key, trusted in the scratch copy, then edited',
       expect: /approval is invalid: bad_signature/,
       apply({ uiRoot, context }) {
-        const key = createTestKey()
+        const key = p256TestKey()
         try {
           const record = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey)
           writeRecord(uiRoot, { ...record, approval: { ...record.approval, comment: `${record.approval.comment} (edited by an agent)` } })
@@ -309,7 +309,7 @@ export const g12: CatalogGate = {
       description: 'A branch adds its own first trusted key and self-signs an approval',
       expect: /first trusted key was added outside the base branch/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('agent key')
+        const key = p256TestKey('agent key')
         try {
           signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey)
         } finally {
@@ -332,8 +332,8 @@ export const g12: CatalogGate = {
       description: 'A branch adds a second trusted key without a rotation signed by the base key',
       expect: /trusted keys changed without a valid rotation \(unsigned_change\)/,
       apply({ uiRoot, context }) {
-        const first = createTestKey('base key')
-        const second = createTestKey('agent key')
+        const first = p256TestKey('base key')
+        const second = p256TestKey('agent key')
         try {
           writeFileSync(
             uiPaths(uiRoot).trustedKeys,
@@ -351,7 +351,7 @@ export const g12: CatalogGate = {
       description: 'Main deprecated the component; a branch drops the deprecation and restores the approval',
       expect: /removes the deprecation of 2026-10-22T09:00:00.000Z \(main\) without a newer signed decision/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('owner test key')
+        const key = p256TestKey('owner test key')
         try {
           const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey)
           return { ...context, base: { label: 'main', trustedKeys: { version: 1, keys: [key.trusted] }, records: { badge: deprecate(approved) } } }
@@ -365,7 +365,7 @@ export const g12: CatalogGate = {
       description: 'The record carries the approval and the owner\'s revocation chained to it',
       expect: /approval is invalid: revoked/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('owner test key')
+        const key = p256TestKey('owner test key')
         try {
           const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey, 'First look.', '2026-10-20T12:00:00.000Z')
           writeRecord(uiRoot, { ...approved, revocation: signTestRevocation(approved, key.privateKey, '2026-10-21T09:00:00.000Z') })
@@ -380,7 +380,7 @@ export const g12: CatalogGate = {
       description: 'A branch resets the key-set version without a rotation, to replay an old rotation later',
       expect: /trusted keys changed without a valid rotation \(version_changed_without_rotation\)/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('owner test key')
+        const key = p256TestKey('owner test key')
         try {
           writeFileSync(uiPaths(uiRoot).trustedKeys, `${JSON.stringify({ version: 0, keys: [key.trusted], rotation: null }, null, 2)}\n`)
           return { ...context, base: { label: 'main', trustedKeys: { version: 3, keys: [key.trusted] }, records: {} } }
@@ -394,7 +394,7 @@ export const g12: CatalogGate = {
       description: 'The owner requested changes (signed, on main); a branch restores the earlier approval',
       expect: /the working tree: the signed approval of 2026-10-20T12:00:00.000Z does not descend from the owner's current decision, the signed revocation of 2026-10-21T09:00:00.000Z \(main\)/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('owner test key')
+        const key = p256TestKey('owner test key')
         try {
           const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey, 'First look.', '2026-10-20T12:00:00.000Z')
           const onMain = revoke(approved, key.privateKey)
@@ -409,7 +409,7 @@ export const g12: CatalogGate = {
       description: 'Main deprecated an approved component; an unsigned change on main drops the deprecation; a branch restores the approval',
       expect: /the working tree removes the deprecation of 2026-10-22T09:00:00.000Z \(main~1\) without a newer signed decision/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('owner test key')
+        const key = p256TestKey('owner test key')
         try {
           const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey)
           const deprecated = deprecate(approved)
@@ -426,7 +426,7 @@ export const g12: CatalogGate = {
       description: 'Main holds the owner\'s signed revocation; an unsigned change on main drops it; a branch restores the approval',
       expect: /main drops the signed revocation of 2026-10-21T09:00:00.000Z \(main~1\)/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('owner test key')
+        const key = p256TestKey('owner test key')
         try {
           const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey, 'First look.', '2026-10-20T12:00:00.000Z')
           const revoked = revoke(approved, key.privateKey)
@@ -442,7 +442,7 @@ export const g12: CatalogGate = {
       description: 'A branch deletes a record that holds the owner\'s signed revocation',
       expect: /the working tree removes the review record, which holds the signed revocation of 2026-10-21T09:00:00.000Z \(main\)/,
       apply({ uiRoot, context }) {
-        const key = createTestKey('owner test key')
+        const key = p256TestKey('owner test key')
         try {
           const approved = signTestApproval(uiRoot, 'badge', key.trusted, key.privateKey, 'First look.', '2026-10-20T12:00:00.000Z')
           const revoked = revoke(approved, key.privateKey)
@@ -475,7 +475,7 @@ export function signTestRevocation(
   at: string,
 ): NonNullable<ReviewRecord['revocation']> {
   const unsigned = { at, keyId: record.approval.keyId, previous: decisionDigest(record.id, 'approval', record.approval) }
-  return { ...unsigned, signature: sign(null, approvalSigningBytes(revocationPayload(record.id, unsigned)), privateKey).toString('base64') }
+  return { ...unsigned, signature: sign('sha256', approvalSigningBytes(revocationPayload(record.id, unsigned)), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64') }
 }
 
 /** A fixture history: the last step is the base branch. */
@@ -509,7 +509,7 @@ export function signTestApproval(
     keyId: trusted.keyId,
     previous,
   }
-  const signature = sign(null, approvalSigningBytes(approvalPayload(id, unsigned)), privateKey).toString('base64')
+  const signature = sign('sha256', approvalSigningBytes(approvalPayload(id, unsigned)), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64')
   const current = JSON.parse(readFileSync(paths.reviewFile(id), 'utf8')) as ReviewRecord
   const record = { ...current, status: 'approved' as const, approval: { ...unsigned, signature } }
   writeRecord(uiRoot, record)
