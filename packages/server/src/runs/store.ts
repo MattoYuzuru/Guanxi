@@ -53,7 +53,17 @@ export class RunStore {
   private readonly changedSessions = new Set<string>()
   private readonly startupAttempts = new Set<string>()
   private readonly runFailures = new Map<string, { runId: string; operation: string; code: string }>()
-  failures() { return [...this.runFailures.values()] }
+  failures() {
+    for (const [key, failure] of this.runFailures) {
+      const pending = failure.operation === 'timers'
+        ? this.row("SELECT 1 FROM timers t JOIN promises p ON p.id=t.promise_id WHERE p.parent_id=? AND t.state='pending'", failure.runId)
+        : failure.operation === 'wake'
+          ? this.row('SELECT 1 FROM outbox WHERE run_id=? AND acknowledged_at IS NULL AND suppressed_at IS NULL', failure.runId)
+          : this.row("SELECT 1 FROM run_attempts WHERE run_id=? AND state IN ('delivered','started')", failure.runId)
+      if (!pending) this.runFailures.delete(key)
+    }
+    return [...this.runFailures.values()].map((failure) => ({ ...failure }))
+  }
   private isolate(runId: string, operation: string, body: () => void): void {
     const key = `${operation}:${runId}`
     try { body(); this.runFailures.delete(key) } catch (error) {

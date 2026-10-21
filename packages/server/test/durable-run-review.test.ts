@@ -331,3 +331,18 @@ test('self-review: a forward wall correction cannot replace elapsed successor re
     assert.throws(() => f.store.renew(f.store.attempts('live')[0]!), { code: 'stale_lease' })
   } finally { next.close(); f.close() }
 })
+
+test('self-review: successful cancellation clears health for a failed timer that is no longer pending', () => {
+  let armed = false
+  const f = runFixture(':memory:', { fault: (op, point) => {
+    if (armed && op === 'timers' && point === 'begin') throw new Error('fixture storage refusal')
+  } })
+  try {
+    const a = f.store.start(f.store.create({ id: 'lead' }).id)
+    f.store.delegate(a, { key: 'child', deadline: RUN_TIME })
+    armed = true; f.store.tick()
+    assert.equal(f.store.failures().length, 1)
+    armed = false; f.store.cancel('lead'); f.store.tick(); f.store.reconcile()
+    assert.deepEqual(f.store.failures(), [])
+  } finally { f.close() }
+})
