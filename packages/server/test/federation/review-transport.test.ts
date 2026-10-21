@@ -7,7 +7,7 @@ test('device code allocation requires JSON Content-Type before unauthenticated m
   const home = new SimNode(identity('home')); const device = identity('device')
   try {
     const body = JSON.stringify({publicKey:device.identity.publicKey})
-    for (const headers of [{}, {'Content-Type':'text/plain'}, {'Content-Type':'application/x-www-form-urlencoded'}]) {
+    for (const headers of [new Headers(), new Headers({'Content-Type':'text/plain'}), new Headers({'Content-Type':'application/x-www-form-urlencoded'})]) {
       const response = await home.app.request('http://node/api/federation/device/code', {method:'POST',headers,body})
       assert.equal(response.status, 415, 'simple POST cannot allocate a bootstrap code')
       assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_devices').get()!.n, 0)
