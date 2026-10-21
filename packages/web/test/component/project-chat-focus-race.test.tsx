@@ -12,6 +12,7 @@ import { ChatPage } from '../../src/features/chat/ChatPage.tsx'
 import { RuntimeProvider } from '../../src/features/health/RuntimeContext.tsx'
 import { api } from '../../src/lib/api.ts'
 import { runtimeSnapshotFixture } from '../fixtures/runtime.ts'
+import { holdAnimationFrames } from '../helpers/animation-frames.ts'
 
 const PROJECT = {
   id: 'project-1',
@@ -77,9 +78,32 @@ beforeEach(() => {
 })
 
 describe('Project Chat focus ordering', () => {
+  it('keeps the active control focused while creation is pending and its heading frame runs late', async () => {
+    const frames = holdAnimationFrames()
+    let resolveCreation!: (chat: typeof CHAT) => void
+    vi.spyOn(api, 'createProjectChat').mockReturnValue(new Promise((resolve) => {
+      resolveCreation = resolve
+    }))
+
+    renderChat(null)
+    const create = await screen.findByRole('button', { name: 'Создать диалог' })
+    await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false))
+    const model = screen.getByRole('combobox', { name: 'Модель для нового диалога' })
+    act(() => model.focus())
+    fireEvent.submit(create.closest('form')!)
+    expect(api.createProjectChat).toHaveBeenCalledTimes(1)
+    expect(create.hasAttribute('disabled')).toBe(true)
+    expect(model).toBe(document.activeElement)
+    expect(frames.pending()).toBe(1)
+    await frames.flush()
+    expect(model).toBe(document.activeElement)
+
+    await act(async () => resolveCreation(CHAT))
+    expect(window.location.pathname).toBe(`/projects/${PROJECT.id}/chats/${CHAT.id}`)
+  })
+
   it('keeps focus on a create failure when the initial heading focus frame runs late', async () => {
-    const frames: FrameRequestCallback[] = []
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
+    const frames = holdAnimationFrames()
     vi.spyOn(api, 'createProjectChat')
       .mockRejectedValueOnce(new Error('create failed safely'))
       .mockResolvedValue(CHAT)
@@ -90,7 +114,8 @@ describe('Project Chat focus ordering', () => {
     fireEvent.click(create)
     const error = await screen.findByText('create failed safely')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
-    await act(async () => { for (const callback of frames.splice(0)) callback(0) })
+    expect(frames.pending()).toBe(1)
+    await frames.flush()
     expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement)
     fireEvent.click(create)
     await waitFor(() => expect(api.createProjectChat).toHaveBeenCalledTimes(2))
