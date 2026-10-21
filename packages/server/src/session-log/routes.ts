@@ -64,16 +64,17 @@ function catchingUp(error: SessionLogError): ApiError {
   return { code: 'session_catching_up', message: CATCHING_UP_MESSAGE, details: { failure: error.catchUpFailure } }
 }
 
-function failure(context: Context, error: unknown, log?: SessionLog): Response {
+/** One mapping of read failures for JSON responses and SSE error frames; every body is content-free. */
+function errorBody(error: unknown, log?: SessionLog): { status: 403 | 404 | 500 | 503; body: ApiError } {
   if (error instanceof SessionLogError && error.code === 'session_not_found') {
-    return context.json(apiError('session_not_found', 'Session not found'), 404)
+    return { status: 404, body: apiError('session_not_found', 'Session not found') }
   }
   if (error instanceof SessionLogError && error.code === 'session_withheld') {
     // Content-free: the id is never echoed back (GPT re-check N1).
-    return context.json(apiError('session_withheld', WITHHELD_MESSAGE), 403)
+    return { status: 403, body: apiError('session_withheld', WITHHELD_MESSAGE) }
   }
   if (error instanceof SessionLogError && error.code === 'session_catching_up') {
-    return context.json(catchingUp(error), 503)
+    return { status: 503, body: catchingUp(error) }
   }
   if (error instanceof SessionLogError && error.code === 'egress_not_ready') {
     // Fail closed: nothing leaves the log until every declared secret source has registered.
@@ -83,12 +84,17 @@ function failure(context: Context, error: unknown, log?: SessionLog): Response {
     } catch {
       pendingSources = []
     }
-    return context.json(
-      { code: 'egress_not_ready', message: 'Secret redaction is not ready yet', details: { pendingSources: [...pendingSources] } },
-      503,
-    )
+    return {
+      status: 503,
+      body: { code: 'egress_not_ready', message: 'Secret redaction is not ready yet', details: { pendingSources: [...pendingSources] } },
+    }
   }
-  return context.json(apiError('storage_error', 'Session log read failed'), 500)
+  return { status: 500, body: apiError('storage_error', 'Session log read failed') }
+}
+
+function failure(context: Context, error: unknown, log?: SessionLog): Response {
+  const { status, body } = errorBody(error, log)
+  return context.json(body, status)
 }
 
 /** Strict query parsing: unknown or repeated keys are refused. */
@@ -273,15 +279,14 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
               controller.close()
               return
             }
-            controller.enqueue(eventFrame(next.value))
+            // The actual output boundary, after the await: check and scrub again
+            // right before serialising (GPT final check N5).
+            controller.enqueue(eventFrame(current.outward(sessionId, next.value)))
           } catch (failed) {
             // A value registered while the stream is open withholds the session from then on;
-            // a Job deferred meanwhile makes its history incomplete until it is caught up.
-            const error = failed instanceof SessionLogError && failed.code === 'session_withheld'
-              ? apiError('session_withheld', WITHHELD_MESSAGE)
-              : failed instanceof SessionLogError && failed.code === 'session_catching_up'
-                ? catchingUp(failed)
-                : apiError('storage_error', 'Session event subscription failed')
+            // a Job deferred meanwhile makes its history incomplete until it is caught up;
+            // a source declared meanwhile closes the gate.
+            const error = failed instanceof SessionLogError ? errorBody(failed, current).body : apiError('storage_error', 'Session event subscription failed')
             controller.enqueue(encoder.encode(`event: ${SSE_ERROR_EVENT_NAME}\ndata: ${JSON.stringify(error)}\n\n`))
             subscriber.abort()
             await iterator.return(undefined)

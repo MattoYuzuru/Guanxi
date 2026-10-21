@@ -489,3 +489,119 @@ describe('K2 re-check fixes, in-session review M2: claimed properties with their
     log.close()
   })
 })
+
+/** Reads one SSE frame per call; the stream pulls only when a frame is asked for. */
+function frames(response: Response) {
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  return {
+    async next(): Promise<string | null> {
+      while (!buffer.includes('\n\n')) {
+        const chunk = await reader.read()
+        if (chunk.done) return null
+        buffer += decoder.decode(chunk.value, { stream: true })
+      }
+      const end = buffer.indexOf('\n\n')
+      const frame = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      return frame
+    },
+  }
+}
+
+function dataOf(frame: string): { type?: string; code?: string; details?: unknown; data?: unknown; sessionId?: string } {
+  return JSON.parse(frame.split('\n').find((line) => line.startsWith('data: '))!.slice(6)) as never
+}
+
+describe('K2 final check N5: an open stream checks and scrubs each frame when it is emitted', () => {
+  it('a session id registered after the first frame of a page withholds the next frame', async () => {
+    const value = `late-${SECRET}`
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open(`agent:${value}`, { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'ordinary', attachmentCount: 0 } })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const stream = frames(await app.request(`/api/sessions/agent:${value}/stream?after=0`, {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created', 'the first frame of a three-event page')
+    scrubber.register(REF, value)
+    const next = (await stream.next())!
+    assert.equal(next.includes(SECRET), false)
+    assert.match(next, /^event: guanxi-error/)
+    assert.equal(dataOf(next).code, 'session_withheld')
+    assert.equal(await stream.next(), null)
+  })
+
+  it('a payload value registered after the first frame is scrubbed in the frames that follow', async () => {
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open('agent-clean', { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: `my key is ${SECRET}`, attachmentCount: 0 } })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const stream = frames(await app.request('/api/sessions/agent-clean/stream?after=0', {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+    scrubber.register(REF, SECRET)
+    const rest = [(await stream.next())!, (await stream.next())!]
+    assert.deepEqual(rest.map((frame) => dataOf(frame).type), ['writer.acquired', 'prompt'])
+    assert.equal(rest.join('\n').includes(SECRET), false)
+    assert.ok(rest[1]!.includes('REDACTED secret://vault/planted'))
+  })
+
+  it('layer 1: the log subscription itself refuses at the next yield, for any consumer', async () => {
+    const value = `late-${SECRET}`
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open(`agent:${value}`, { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'ordinary', attachmentCount: 0 } })
+    const events = log.subscribe(`agent:${value}`, 0, 'person', new AbortController().signal)
+    assert.equal((await events.next()).value?.type, 'session.created')
+    scrubber.register(REF, value)
+    await assert.rejects(events.next(), { code: 'session_withheld' })
+  })
+
+  it('layer 2: the route checks again after its await, right before serialising', async () => {
+    const value = `late-${SECRET}`
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open(`agent:${value}`, { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'ordinary', attachmentCount: 0 } })
+    // A consumer-side gap: the value is registered after the log has checked and yielded the second event.
+    const gap = Object.create(log) as SessionLog
+    gap.subscribe = async function* (...args: Parameters<SessionLog['subscribe']>) {
+      let yielded = 0
+      for await (const event of log.subscribe(...args)) {
+        if (yielded++ === 1) scrubber.register(REF, value)
+        yield event
+      }
+    }
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => gap))
+    const stream = frames(await app.request(`/api/sessions/agent:${value}/stream?after=0`, {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+    const next = (await stream.next())!
+    assert.equal(next.includes(SECRET), false)
+    assert.equal(dataOf(next).code, 'session_withheld')
+  })
+
+  it('a session that starts catching up after the first frame answers session_catching_up on the next one', async () => {
+    const { db, scrubber, jobs, log, mirror } = setup({ ready: true, catchUpRetryMs: 60_000 })
+    const threadId = thread(db)
+    send(jobs, threadId, 'streamed chat')
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const stream = frames(await app.request(`/api/sessions/${threadId}/stream?after=0`, {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+
+    scrubber.expect('env.shell')
+    failingToolTurn(jobs, threadId)
+    scrubber.register(REF, SECRET)
+    scrubber.ready('env.shell')
+    await tick()
+    assert.equal(mirror.backlog().length, 1)
+    assert.equal(mirror.lastCatchUpFailure, 'invalid_event')
+    const next = (await stream.next())!
+    assert.equal(dataOf(next).code, 'session_catching_up')
+    assert.deepEqual(dataOf(next).details, { failure: 'invalid_event' })
+    assert.equal(next.includes(SECRET), false)
+    assert.equal(await stream.next(), null)
+    log.close()
+  })
+})

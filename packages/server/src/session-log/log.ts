@@ -551,6 +551,28 @@ export class SessionLog {
 
   /* ───────────────────────────── reading ───────────────────────────── */
 
+  /**
+   * The per-frame output boundary of a stream: called right before an event
+   * that was read earlier is serialised. Checks readiness and the session's
+   * readability now (withheld, catching up) and scrubs the event's payload and
+   * identifiers again with every value registered now (GPT final check N5).
+   */
+  outward(sessionId: string, event: SessionEvent): SessionEvent {
+    this.assertEgressReady()
+    this.assertReadable(sessionId)
+    const ids = this.scrubber.scrub({
+      sessionId: event.sessionId,
+      spanId: event.spanId,
+      parentSpanId: event.parentSpanId,
+      jobId: event.jobId,
+    })
+    const parsed = sessionEventSchema.safeParse({ ...event, ...ids, data: this.scrubber.scrub(event.data) })
+    if (!parsed.success) {
+      throw new SessionLogError('stored_data_invalid', `Session event #${event.seq} failed validation on the way out`)
+    }
+    return parsed.data
+  }
+
   /** Scrubs a value that leaves the log by another path (for example an echoed query). */
   redact<T>(value: T): T {
     this.assertEgressReady()
@@ -823,8 +845,11 @@ export class SessionLog {
         }
         for (const event of page.events) {
           if (signal.aborted) return
+          // The page was read before this frame was asked for: check the
+          // session and scrub the event again now (GPT final check N5).
+          const current = this.outward(sessionId, event)
           cursor = event.seq
-          yield event
+          yield current
         }
       }
     } finally {
