@@ -119,12 +119,17 @@ describe('Project Chat Web boundary', () => {
       .mockResolvedValue(CHAT)
 
     renderChat(null)
+    // Ordinary order: the initial heading frame has run before creation fails.
+    // The late-frame order is covered by project-chat-focus-race.test.tsx.
+    const heading = await screen.findByRole('heading', { name: `Новый чат в проекте «${PROJECT.name}»` })
+    await waitFor(() => expect(frames.pending()).toBe(1))
+    await frames.flush()
+    expect(heading).toBe(document.activeElement)
     const create = await screen.findByRole('button', { name: 'Создать диалог' })
     await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false))
     fireEvent.click(create)
     const error = await screen.findByText('create failed safely')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
-    expect(frames.pending()).toBe(1)
     await frames.flush()
     expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement)
     fireEvent.click(create)
