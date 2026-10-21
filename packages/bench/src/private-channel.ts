@@ -133,6 +133,7 @@ export class PrivateTrialChannel {
     this.policy = Object.freeze({ ...policy })
   }
   close(): void { this.closed = true; this.lifetime.abort() }
+  get isClosed(): boolean { return this.closed }
   async settled(): Promise<void> { await this.pending?.then(() => undefined, () => undefined) }
   handle(raw: unknown): Promise<Buffer> {
     if (this.closed) return Promise.reject(new BenchChannelError('channel_closed'))

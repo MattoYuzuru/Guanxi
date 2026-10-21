@@ -35,6 +35,9 @@ Podman mounts, process supervision, startup capability transfer, Python mini-swe
 client, native-agent remote K3 port or real image is implemented here. Those are separate
 prerequisites; a caller must not turn this pure module into a generic K3 endpoint.
 
+The separate [stream adapter](PRIVATE_STREAM.md) now binds coordinator-owned Node streams to
+this protocol. It does not supply process supervision, peer checks or an executable endpoint.
+
 The ten local synthetic tests cover split/coalesced UTF-8 frames, invalid/oversized/truncated
 frames, strict request identity, replay/quota/byte limits, private retention before output,
 reasoning omission, close/timeout/concurrent cancellation and acknowledged settlement.
