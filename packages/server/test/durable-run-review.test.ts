@@ -204,3 +204,47 @@ test('L5: public reconciliation cannot discard attempts admitted by this activat
     assert.equal(f.store.attempts('live')[0]!.state, 'delivered')
   } finally { f.close() }
 })
+
+test('M4: tick itself marks an expired attempt lost before a replacement can be admitted', () => {
+  const f = runFixture()
+  try {
+    const a = f.store.start(f.store.create({ id: 'live' }).id)
+    f.setTime(RUN_TIME + 60_000); f.store.heartbeat(); f.store.tick()
+    assert.equal(f.store.attempts('live')[0]!.state, 'lost')
+    assert.equal(f.store.get('live').state, 'interrupted')
+    assert.equal((f.db.prepare("SELECT released FROM leases WHERE key='run:live/exec'").get() as { released: number }).released, 1)
+    assert.ok(f.store.start('live').token > a.token)
+  } finally { f.close() }
+})
+
+test('M4: terminal retained resources remain protected until retain_until, including its boundary', () => {
+  const f = runFixture()
+  try {
+    const a = f.store.start(f.store.create({ id: 'lead' }).id)
+    f.store.retain(a, { key: 'retained', kind: 'worktree', retainUntil: RUN_TIME + 100 })
+    f.store.complete(a, 'completed')
+    f.setTime(RUN_TIME + 99)
+    assert.deepEqual(f.store.reapResources(), [])
+    assert.equal((f.db.prepare("SELECT released FROM leases WHERE key='resource:retained'").get() as { released: number }).released, 0)
+    f.setTime(RUN_TIME + 100)
+    assert.deepEqual(f.store.reapResources(), ['resource:retained'])
+  } finally { f.close() }
+})
+
+test('M4: a wake cannot bypass input_required before an explicit decision', () => {
+  const f = runFixture()
+  try {
+    const a = f.store.start(f.store.create({ id: 'lead' }).id)
+    const p = f.store.delegate(a, { key: 'child', deadline: RUN_TIME + 100 })
+    const child = f.store.start(p.child_id)
+    f.store.signal(child, 'needs-decision')
+    const handler = f.store.deliver('lead', 1)!
+    f.store.modelStarted(handler); f.store.inputRequired(handler)
+    f.store.complete(child, 'completed')
+    const before = f.store.attempts('lead').length
+    assert.equal(f.store.deliver('lead', 2), null)
+    assert.deepEqual(f.store.dispatch(() => true), [])
+    assert.equal(f.store.attempts('lead').length, before)
+    assert.equal(f.store.wakes('lead')[1]!.deliveries, 0)
+  } finally { f.close() }
+})

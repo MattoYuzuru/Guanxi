@@ -5,29 +5,47 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
+import { runStateSnapshot } from './fixtures/durable-run-state.ts'
 import { runFixture, reconcileAllForTest, RUN_TIME, RUN_DEADLINE } from './fixtures/durable-runs.ts'
 
 const worker = fileURLToPath(new URL('./fixtures/durable-run-crash-worker.ts', import.meta.url))
-for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal', 'input', 'yield', 'resleep', 'cancel']) {
+for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal', 'input', 'yield', 'resleep', 'cancel', 'child-start', 'child-model', 'report', 'recovery']) {
   test(`crash property: every ${stage} store/K2 boundary preserves resolution, wake or cancellation counts`, (t) => {
     const root = mkdtempSync(join(tmpdir(), `guanxi-r1-${stage}-`))
     t.after(() => rmSync(root, { recursive: true, force: true }))
+    let seedIndex = -1
+    if (stage === 'recovery') {
+      const seedProbe = spawnSync(process.execPath, [worker, join(root, 'seed-probe.db'), 'wake', '-1'], { encoding: 'utf8' })
+      assert.equal(seedProbe.status, 0, seedProbe.stderr)
+      seedIndex = (JSON.parse(seedProbe.stdout) as { points: string[] }).points.indexOf('wake:committed')
+      assert.ok(seedIndex >= 0)
+    }
+    const seedRecovery = (path: string) => {
+      const killed = spawnSync(process.execPath, [worker, path, 'wake', String(seedIndex)], { encoding: 'utf8' })
+      assert.equal(killed.signal, 'SIGKILL')
+    }
+    if (stage === 'recovery') seedRecovery(join(root, 'probe.db'))
     const probe = spawnSync(process.execPath, [worker, join(root, 'probe.db'), stage, '-1'], { encoding: 'utf8' })
     assert.equal(probe.status, 0, probe.stderr)
-    const points = JSON.parse(probe.stdout) as string[]
+    const { points, windows } = JSON.parse(probe.stdout) as { points: string[]; windows: { from: number; to: number; before: unknown; after: unknown }[] }
     assert.ok(points.length > 5)
-    const operations: Record<string, string> = { resolve: 'complete', ack: 'model_started', deadline: 'timers', signal: 'signal', input: 'input_required', yield: 'hibernate', resleep: 'hibernate' }
+    const operations: Record<string, string> = { resolve: 'complete', ack: 'model_started', deadline: 'timers', signal: 'signal', input: 'input_required', yield: 'hibernate', resleep: 'hibernate', 'child-start': 'start', 'child-model': 'model_started', report: 'complete', recovery: 'reconcile' }
     const operation = operations[stage] ?? stage
     assert.ok(points.includes(`${operation}:committed`))
     assert.ok(points.includes('log:event_inserted'), 'fault injection reaches K2 inside the run transaction')
     for (let index = 0; index < points.length; index++) {
       const path = join(root, `crash-${index}.db`)
+      if (stage === 'recovery') seedRecovery(path)
       const killed = spawnSync(process.execPath, [worker, path, stage, String(index)], { encoding: 'utf8' })
       assert.equal(killed.signal, 'SIGKILL', `${index} ${points[index]}: ${killed.stderr}`)
       // The crashed owner is never presumed dead from a PID. Advance past its persisted
       // owner TTL + maximum attempt TTL + epsilon before claiming the execution home.
-      const f = runFixture(path, { clock: () => RUN_TIME + 100_000 })
+      const f = runFixture(path, { clock: () => RUN_TIME + (stage === 'recovery' ? 200_000 : 100_000) })
       try {
+        const window = windows.find((w) => w.from <= index && index <= w.to)!
+        assert.ok(window, `transaction window for ${index} ${points[index]}`)
+        assert.deepEqual(runStateSnapshot(f.db), index === window.to ? window.after : window.before,
+          `legal committed pre/post state at ${stage}:${index}:${points[index]}`)
         reconcileAllForTest(f.store)
         let promise = f.store.promises('lead')[0]
         if (!promise) {
@@ -55,6 +73,10 @@ for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal'
             }
             f.store.complete(child, 'completed')
           }
+          if (stage === 'report' && f.store.get(promise.child_id).state !== 'canceled') {
+            f.store.complete(f.store.start(promise.child_id), 'completed')
+          }
+          if (stage === 'report') assert.equal(f.store.get(promise.child_id).cancel_count, 1)
           for (const wake of f.store.wakes('lead')) {
             const delivery = f.store.deliver('lead', wake.wake_seq)
             if (delivery) {
@@ -65,7 +87,7 @@ for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal'
           f.store.tick(); reconcileAllForTest(f.store)
           const wakes = ['signal', 'input', 'yield', 'resleep'].includes(stage) ? 2 : 1
           assert.equal(f.store.promises('lead').length, 1, `one delegation: ${index}`)
-          assert.equal(f.store.promises('lead')[0]!.outcome, stage === 'deadline' ? 'deadline' : 'completed')
+          assert.equal(f.store.promises('lead')[0]!.outcome, ['deadline', 'report'].includes(stage) ? 'deadline' : 'completed')
           assert.equal(f.store.wakes('lead').length, wakes, `exact wake count: ${index}`)
           assert.equal(f.store.wakes('lead').filter((w) => w.acknowledged_at !== null).length, wakes)
           assert.equal(f.store.deliver('lead', 1), null, 'acknowledged wake is never delivered again')

@@ -243,26 +243,29 @@ test('delegation requires an explicitly always-on home', (t) => {
 })
 
 test('kernel boots R1 with K2, ticks deadlines, exposes health and releases its writer on unload', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
   const f = runFixture(); f.store.close(); f.log.close(); t.after(() => { f.db.close(); f.scrubber.close() })
   const kernel = await bootServerKernel(undefined, { db: f.db, sessionLog: { clock: () => new Date(RUN_TIME) },
     runs: { alwaysOn: true, clock: () => RUN_TIME, tickMs: 5 } })
-  kernel.scrubber.ready('vault')
   const store = kernel.durableRuns!.store
+  try {
+  kernel.scrubber.ready('vault')
   const run = store.create(); const a = store.start(run.id)
   store.delegate(a, { key: 'due', deadline: RUN_TIME })
-  await new Promise((resolve) => setTimeout(resolve, 25))
+  t.mock.timers.tick(5)
   assert.equal(store.wakes(run.id).length, 1)
   assert.equal(store.wakes(run.id)[0]!.attempt_id, null)
   assert.equal(store.dispatch(() => true).length, 1)
   assert.equal(store.wakes(run.id)[0]!.acknowledged_at, null)
   assert.deepEqual(kernel.durableRuns!.health(), { failure: null })
-  await kernel.node.dispose()
+  } finally { await kernel.node.dispose() }
   assert.throws(() => store.create(), code('closed'))
   assert.equal((f.db.prepare("SELECT released FROM leases WHERE key='durable-runs/home'").get() as { released: number }).released, 1)
 })
 
 
 test('kernel waits for scrubber readiness without losing its home or exposing run events', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
   const f = runFixture(); f.store.close(); f.log.close()
   t.after(() => { f.db.close(); f.scrubber.close() })
   const kernel = await bootServerKernel([LEGACY_SERVER_PROFILE, {
@@ -273,7 +276,7 @@ test('kernel waits for scrubber readiness without losing its home or exposing ru
     assert.throws(() => kernel.durableRuns!.store.create(), code('egress_not_ready'))
     assert.equal((f.db.prepare('SELECT COUNT(*) AS n FROM durable_runs').get() as { n: number }).n, 0)
     kernel.scrubber.ready('vault')
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    t.mock.timers.tick(5)
     assert.equal(kernel.durableRuns!.health().failure, null)
     assert.equal(kernel.durableRuns!.store.create().state, 'submitted')
   } finally { await kernel.node.dispose() }
@@ -359,6 +362,7 @@ test('review E2: a refused K2 append after child insertion rolls back all delega
 })
 
 test('K3 integration: readiness opening cannot reconcile away a newly admitted live attempt', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
   const f = runFixture()
   const inherited = f.store.create({ id: 'inherited-before-ready' })
   f.store.start(inherited.id)
@@ -371,7 +375,7 @@ test('K3 integration: readiness opening cannot reconcile away a newly admitted l
     kernel.scrubber.ready('vault')
     const run = kernel.durableRuns!.store.create()
     const attempt = kernel.durableRuns!.store.start(run.id)
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    t.mock.timers.tick(5)
     assert.equal(kernel.durableRuns!.health().failure, null, 'startup pump completed')
     assert.equal(kernel.durableRuns!.store.get(inherited.id).state, 'interrupted')
     assert.equal(kernel.durableRuns!.store.attempts(inherited.id)[0]!.state, 'lost')
