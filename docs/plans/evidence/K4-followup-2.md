@@ -363,9 +363,9 @@ commit are fenced. Existing quarantine and runtime recovery boundaries remain.
 At clean `73dd577` (published main `1067a04` incorporated), observed local gates passed:
 
 - workspace typecheck: `check-4zuvtbyo`;
-- full `npm test`: `check-g3yn0mm5`; core 1237 total, UI gate 89, codemod 6, kernel 106,
+- full `npm test`: `check-g3yn0mm5`; core 1237 total (1236 pass / 1 opt-in skip), UI gate 89, codemod 6, kernel 106,
   web 318, catalog 70 and UI 17 (see receipt log for passes and platform/opt-in skips);
-- mocked Chromium regression: `check-u_eprgx5`;
+- mocked Chromium regression: 66/66, `check-u_eprgx5`;
 - UI catalog browser gate: `check-urlu1wo5`;
 - build: `check-9ohu32r2`.
 
@@ -374,3 +374,9 @@ The sequence stopped there; license and source lint were not run by that failed 
 This documentation-only correction precedes their next run. No executable source changed.
 All credited receipts have `source_changed: false`; the inherited external skill symlink means
 they are observed local evidence, not portable certified source receipts.
+
+The corrected handoff passes Markdown/link lint (`check-e0x17f69`), licenses
+(`check-m4yyyi2e`) and source lint (`check-3mm4m_zz`) at clean `4afe2c3`.
+Integrator merge `8006cd8` changes no executable bytes relative to the tested candidate.
+Retention/R1 integration is now merged; input-artifact integration, positive HTTPS evidence,
+expanded UI evidence and the remaining platform envelope are still separate work.
