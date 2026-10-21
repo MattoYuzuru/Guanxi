@@ -90,10 +90,15 @@ test('stopping an in-flight model preserves the ledger and never replays it on r
   const f=fixture()
   try {
     let dispatched=0
+    const quoted:number[][]=[]
+    f.model.maxCostMicros=(input,output)=>{quoted.push([input,output]);return 10}
     let started!:()=>void
     const ready=new Promise<void>(resolve=>{started=resolve})
     f.model.call=async(_p,o)=>{dispatched++;o.onStarted?.();started();return new Promise((_resolve,reject)=>o.signal!.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}))}
-    const pending=f.executor.run(f.attempt); await ready; assert.notEqual(f.store.attempts(f.run.id)[0]!.first_model_at,null); f.executor.stop(); await pending
+    const pending=f.executor.run(f.attempt); await ready; assert.notEqual(f.store.attempts(f.run.id)[0]!.first_model_at,null);
+    assert.deepEqual(quoted,[[thresholds(window,reserves).H,reserves.turn]])
+    assert.equal(f.relay.read(f.run.id).moneyMicros,10)
+    f.executor.stop(); await pending
     assert.equal(f.store.get(f.run.id).state,'input_required')
     assert.equal(f.relay.read(f.run.id).items.one,'open')
     assert.equal(f.relay.read(f.run.id).tokens,thresholds(window,reserves).H+reserves.turn)
