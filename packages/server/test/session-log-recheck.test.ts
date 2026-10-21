@@ -682,3 +682,41 @@ describe('K2 final check fixes, in-session review: emit-time properties with the
     assert.equal(log.subscriberCount('agent-clean'), 0)
   })
 })
+
+describe('K2 final check fixes, in-session review: a cached frame reflects retention and deletion', () => {
+  it('reasoning that expires and is purged after the first frame is not streamed', async () => {
+    let now = Date.parse('2026-10-21T00:00:00.000Z')
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber, clock: () => new Date(now), reasoningRetentionMs: 60_000 })
+    log.open('agent-clean', { kind: 'agent' }).append({ type: 'reasoning', data: { messageId: 'm-0', step: 0, text: 'private thought words' } })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const stream = frames(await app.request('/api/sessions/agent-clean/stream?after=0', {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+    now += 120_000
+    assert.equal(log.purgeExpiredReasoning().purged, 1)
+    const rest = [(await stream.next())!, (await stream.next())!]
+    assert.equal(rest.join('\n').includes('private thought words'), false)
+    const reasoning = dataOf(rest[1]!) as { type?: string; data?: unknown; purgedAt?: string | null }
+    assert.equal(reasoning.type, 'reasoning')
+    assert.equal(reasoning.data, null)
+    assert.equal(typeof reasoning.purgedAt, 'string')
+  })
+
+  it('a Thread deleted after the first frame ends the stream with session_not_found', async () => {
+    const { db, jobs, log } = setup({ ready: true })
+    const threadId = thread(db)
+    const jobId = send(jobs, threadId, 'words of a deleted chat').job.id
+    finish(jobs, jobId)
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const stream = frames(await app.request(`/api/sessions/${threadId}/stream?after=0`, {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+    assert.equal(new ThreadStore(db).delete(threadId), true)
+    const next = (await stream.next())!
+    assert.equal(next.includes('words of a deleted chat'), false)
+    assert.equal(dataOf(next).code, 'session_not_found')
+    assert.equal(await stream.next(), null)
+    log.close()
+  })
+})

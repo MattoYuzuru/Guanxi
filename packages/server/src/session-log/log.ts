@@ -554,24 +554,19 @@ export class SessionLog {
   /**
    * The per-frame output boundary of a stream: called right before an event
    * that was read earlier is serialised. Checks readiness and the session's
-   * readability now (withheld, catching up) and scrubs the event's payload and
-   * identifiers again with every value registered now (GPT final check N5).
+   * readability now (withheld, catching up) and reads the event's row again,
+   * so the frame reflects the log as it is now: payload and identifiers
+   * scrubbed with every value registered now, the event id checked, retention
+   * and purge applied, and a deleted session refused (GPT final check N5).
    */
   outward(sessionId: string, event: SessionEvent): SessionEvent {
     this.assertEgressReady()
     this.assertReadable(sessionId)
-    this.assertEventIdReturnable(event.id)
-    const ids = this.scrubber.scrub({
-      sessionId: event.sessionId,
-      spanId: event.spanId,
-      parentSpanId: event.parentSpanId,
-      jobId: event.jobId,
-    })
-    const parsed = sessionEventSchema.safeParse({ ...event, ...ids, data: this.scrubber.scrub(event.data) })
-    if (!parsed.success) {
-      throw new SessionLogError('stored_data_invalid', `Session event #${event.seq} failed validation on the way out`)
-    }
-    return parsed.data
+    const row = this.db
+      .prepare('SELECT * FROM session_events WHERE session_id = ? AND seq = ?')
+      .get(sessionId, event.seq) as unknown as EventRow | undefined
+    if (!row || row.id !== event.id) throw new SessionLogError('session_not_found', 'Session was not found')
+    return this.toEvent(row)
   }
 
   /** Scrubs a value that leaves the log by another path (for example an echoed query). */
