@@ -33,7 +33,7 @@ import {
 import { Badge, Button, Callout, CopyButton, EmptyState, Input, Skeleton, cx } from '../../components/ui.tsx'
 import { ApiRequestError, errorMessage } from '../../lib/api.ts'
 import { formatBytes, formatRelativeTime } from '../../lib/format.ts'
-import { SseServerError } from '../../lib/sse.ts'
+import { SseHttpError, SseServerError } from '../../lib/sse.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { Link, paths } from '../../lib/router.tsx'
@@ -252,7 +252,12 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
             })
           }
         } catch (failure) {
-          if (failure instanceof SseServerError && failure.payload.code === 'session_event_version_unsupported') {
+          const code = failure instanceof SseServerError
+            ? failure.payload.code
+            : failure instanceof SseHttpError
+              ? failure.payload?.code
+              : null
+          if (code === 'session_event_version_unsupported') {
             if (!controller.signal.aborted) setLive({ state: 'incompatible' })
             return
           }

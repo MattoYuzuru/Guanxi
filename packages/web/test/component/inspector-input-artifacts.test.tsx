@@ -76,6 +76,7 @@ function stream(frames: string): Response {
 function mockFetch(options: {
   events?: SessionEvent[]
   eventsStatus?: () => Response | null
+  streamStatus?: () => Response | null
   liveFrames?: string
 } = {}): string[] {
   const events = options.events ?? sessionTrace()
@@ -98,6 +99,8 @@ function mockFetch(options: {
       })
     }
     if (url.pathname === `/api/sessions/${SESSION_ID}/stream`) {
+      const blocked = options.streamStatus?.()
+      if (blocked) return blocked
       return stream(options.liveFrames ?? '')
     }
     if (url.pathname === `/api/sessions/${SESSION_ID}/spans`) {
@@ -170,6 +173,15 @@ describe('inspector bounded input artifacts', () => {
     await waitFor(() => expect(calls.filter((call) => call.includes('/stream'))).toHaveLength(1))
     expect(screen.queryByRole('button', { name: /Reconnect/ })).toBeNull()
     expect(document.body.textContent).not.toContain(REASONING_TEXT)
+  })
+
+  it('treats a pre-open 406 on the live tail as a typed incompatible state', async () => {
+    setActiveLocale('en')
+    const calls = mockFetch({ streamStatus: () => incompatible(2) })
+    render(<InspectorPage sessionId={SESSION_ID} />)
+    expect(await screen.findByText('Live updates stopped: the next event needs a newer trace format')).toBeTruthy()
+    await waitFor(() => expect(calls.filter((call) => call.includes('/stream'))).toHaveLength(1))
+    expect(screen.queryByRole('button', { name: /Reconnect/ })).toBeNull()
   })
 
   it('keeps the excerpt bound under the byte limit for a multi-byte excerpt', async () => {
