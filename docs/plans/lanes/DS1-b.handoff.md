@@ -1,6 +1,6 @@
 # Lane DS1-b hand-off — components, catalog and approvals
 
-**Status:** ready for the cross-family re-review · **Updated:** 2026-10-21 ·
+**Status:** re-check fixes done, ready for GPT's last check · **Updated:** 2026-10-21 ·
 **Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `dfadc2e`, main `4b68731`; DS1-a
 integrated) · **Ports:** 5183 / 4383
 
@@ -52,7 +52,24 @@ race test); a record changed during the keychain prompt is not overwritten.
 
 ## Commands
 
-Final run after the DS1-a integration, on the clean tree `573d56a`, through
+Final run after the re-check fixes, on the clean tree `e6a731f`, through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
+with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
+
+| Check | Result | Receipt |
+| --- | --- | --- |
+| `npm run typecheck` | exit 0 (all workspaces) | direct |
+| `npm test` | `ui:check` ok; gate tests 51/51; core 717 (716 pass, 1 skipped opt-in keychain); kernel 106/106; web 266/266; ui node 54/54; ui vitest 17/17 | `check-5yfgqtj7` |
+| `npm run ui:check:browser` (now DS1-a's runner: G13, G14, G16 and G17) | ok | `check-a0ra34t0` |
+| `npm run test:web:browser` | 61/61 (adds `toast-viewport.spec.ts`) | `check-7k4ki54s` |
+| `npm run build` | exit 0 | `check-03wiza4x` |
+| `npm run build-storybook --workspace @guanxi/ui` | exit 0 | `check-9oc0tj_x` |
+| `run.ts --mode fast --selftest` | 28 cases ok | `check-9ioafikx` |
+| `run.ts --mode browser --selftest` | 11 cases ok | `check-em9o2c2t` |
+| `run.ts --mode browser --only G13`, 10 consecutive compares | 10/10 pass | `check-mim_idl3`, `check-gjoedwww`, `check-uppl0ynr`, `check-m7e623ri`, `check-8wrmekm3`, `check-0q24eunu`, `check-r2xlrf4z`, `check-jdu1yi3l`, `check-9yz4dqhf`, `check-ui40lje_` |
+| `npm run lint:md`, `npm run check:licenses` | 0 errors; 439 packages, 0 not allowed | direct |
+
+Previous run, after the DS1-a integration, on the clean tree `573d56a`, through
 `agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
 with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
 
@@ -178,6 +195,45 @@ Scope decisions in this round:
 - Key custody (C1/H1) stays a residual; it is stage DS2 (D-184).
 - `localization.spec.ts` is untouched; its open item is below.
 
+### Re-check fixes
+
+GPT re-checked `0708ef1` (`ds1-b-review/REVIEW-GPT-2.md`, "merge after fixes": 3 closed, 6
+partial, 0 open; 7 findings). Each fix has its own commit, and its test or seed was run against
+the code before the fix and failed there (or passed wrongly, for seeds).
+
+| Finding | Commit | Test that fails without the fix |
+| --- | --- | --- |
+| N1 (High) unsigned intermediate erases lifecycle replay protection | `6d7bc28` (+ `8f3c746` keeps `record.ts` browser-safe) | G12 seeds `deprecation-erased-by-unsigned-intermediate`, `revocation-erased-by-unsigned-intermediate`, `review-record-removed` and the reworked `approval-over-base-deprecation` pass wrongly with the walk disabled; `approval.test.ts` › "lifecycle across committed versions" and "G12 walks the committed history of a record" (real git, shallow fails closed, re-adding repairs); server › re-approval chains to the revocation |
+| N2 (High) valid import syntax leaves dependencies outside the hash | `da1020f` | `approval.test.ts` › "changes when a dependency reached by import without spaces / template-literal dynamic import changes", "refuses a computed dynamic import"; server › "goes stale when a dependency reached by compact or template-literal import syntax changes" |
+| N3 (Medium) utility module launders a draft component alias | `a2482c4` | G11 seed `utility-laundered-alias` (GPT's `src/lib/confirm.ts` route, release mode) |
+| N4 (Medium) symlinked components root allows external writes | `71fe617` | server › "refuses when the components root itself is a symlink out of the checkout", "… is swapped for a symlink during the keychain prompt" |
+| N5 (Medium) template substitutions bypass G15 | `69760ca` | G15 seed `indirect-template` (GPT's case) |
+| N6 (Medium) canonical browser command bypasses DS1-a's registry and G17 | `c7f1aeb` | `extension.test.ts` › "npm run ui:check and ui:check:browser invoke gates/run.mjs", "the browser scope of the common runner holds G13, G14 and G16 and appends G17" |
+| N7 (Medium) toast viewport overflows narrow screens | `e6a731f` | `toast-viewport.spec.ts` › "at 320 px the toast, its action and its close button stay inside both window edges" (left was −16 px) |
+
+Record format for DS2: approvals and revocations now sign `previous` (schemas
+`guanxi.ui-approval/2`, `guanxi.ui-revocation/2`), forming a hash chain over the owner's
+decisions; [COMPONENTS_AND_CATALOG §4.1](../../design/COMPONENTS_AND_CATALOG.md#41-review-record-format-stable-ds2-signs-it)
+documents the fields, payloads, digest and what G12 enforces across history. No signed record
+existed before this change, so nothing needs migrating.
+
+Design notes:
+
+- N1 chains decisions, not whole records, so agents can still edit `status` (draft, review),
+  `requests` and add deprecations unsigned. G12 keeps a barrier through the first-parent
+  history of the base and of HEAD: an erasing commit never resets it, so the old approval
+  still fails later, and re-adding the erased decision repairs the history. An agent who
+  deprecates keeps the approval in the record.
+- N2 uses esbuild's metafile (the bundler's resolution), loaded on use so release bundles of
+  the node never include it; unused and type-only imports no longer count, which changed seven
+  manifest hashes. Computed dynamic imports are refused (TypeScript AST).
+- N3 attributes root exports with the TypeScript checker; `UTILITY_EXPORTS` is the reviewed list
+  of non-component exports.
+- N6: `ui:catalog:selftest` and `ui:snapshots` are the only scripts left on the catalog runner.
+
+Not in this round: the M5 legacy cache-bar contrast exception in the new-session flow is still
+the recorded exception, pending an owner decision or a fix in the legacy screen.
+
 ## Residual risk
 
 - **Key custody (adversarial C1, H1).** The node decrypts the owner key in its own process, which
@@ -211,7 +267,12 @@ Scope decisions in this round:
   and grayscale text antialiasing (`573d56a`); they do not match a macOS or GPU render, by
   design.
 - The source hash now also covers `generated/tokens.css`, `generated/theme.css` and `fonts/`; a
-  token rebuild makes every approval stale, as intended.
+  token rebuild makes every approval stale, as intended. Its dependency closure is what esbuild
+  bundles from the component's scripts; a module reached only through a mechanism esbuild does
+  not see (a runtime `fetch`, a string handed to another loader) is outside it.
+- G12's history walk trusts the git history it can read: it covers the first-parent histories
+  of the base and of HEAD, not side branches merged elsewhere, and fails closed on a shallow
+  clone.
 - `review` and `stale` warn but do not block slices (by design); nothing uses `@guanxi/ui` on a
   product screen yet.
 - The real keychain prompt path (`-T ""`) was checked only by its access list on a throwaway
