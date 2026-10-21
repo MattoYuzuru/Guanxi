@@ -1,6 +1,7 @@
 import { conclusion, holm, mcnemar, mean, noiseFloor, pairedBootstrap, type Pair } from './stats.ts'
 import { passHat } from './reducers.ts'
 import { validateRecordedPlan, validateResults, type Plan, type Trial } from './protocol.ts'
+import { z } from 'zod'
 export function analyze(plan: Plan, raw: unknown) {
   plan = validateRecordedPlan(plan)
   const trials = validateResults(plan, raw)
@@ -56,7 +57,8 @@ function measuredSaving(rows: Trial[], control: string, candidate: string): numb
 function averageDefined(xs: (number | null)[]) { return xs.some(x => x === null) ? null : mean(xs as number[]) }
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 /** Standalone English report. Internal mode includes opaque flipped task IDs; never task content. */
-export function htmlReport(plan: Plan, trials: Trial[], publicAggregate = false): string {
+export function htmlReport(plan: Plan, trials: Trial[], publicAggregate = false, recordedAt: string | null = null): string {
+  z.string().datetime().nullable().parse(recordedAt)
   const result = analyze(plan, trials)
   const comparisons = result.comparisons.map(c => ({ ...c,
     excluded: publicAggregate ? c.excluded.length : c.excluded,
@@ -64,7 +66,9 @@ export function htmlReport(plan: Plan, trials: Trial[], publicAggregate = false)
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <title>Benchmark measurement</title><style>body{font:16px system-ui;max-width:72rem;margin:2rem auto;padding:0 1rem;line-height:1.5}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #888}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
-<h1>Benchmark measurement</h1><p>Fixed horizon, task-clustered paired bootstrap. Measurement only: release requires holdout and guardrails. Rates exclude infrastructure errors and tainted tasks from both paired arms.</p>
+<h1>Benchmark measurement</h1><p>${plan.mode === 'fixture' ? 'Fixture smoke with synthetic outcomes.' : 'Recorded benchmark outcomes.'}</p>
+<dl><dt>Experiment</dt><dd>${publicAggregate ? 'Aggregate publication' : esc(plan.id)}</dd><dt>Mode</dt><dd>${esc(plan.mode)}</dd><dt>Model / provider</dt><dd>${esc(plan.model)} / ${esc(plan.provider)}</dd><dt>Arms</dt><dd>${plan.arms.map(a => esc(`${a.id}: ${a.kind}@${a.version}`)).join('; ')}</dd><dt>Results recorded (UTC)</dt><dd>${esc(recordedAt ?? 'not recorded')}</dd></dl>
+<p>Fixed horizon, task-clustered paired bootstrap. Measurement only: release requires holdout and guardrails. Rates exclude infrastructure errors and tainted tasks from both paired arms.</p>
 <table><caption>Hidden-test outcomes and separate infrastructure counts</caption><thead><tr><th>Arm</th><th>Passed</th><th>Failed</th><th>Infra errors</th><th>Tainted</th><th>Cost (USD micro-units)</th></tr></thead><tbody>${result.summaries.map(s => `<tr>${[s.arm, s.passed, s.failed, s.infraErrors, s.infraTainted, s.costMicrousd ?? 'unknown'].map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
 <h2>Paired comparisons</h2><p>Intervals control family-wise coverage; McNemar tests all-seed success per task with Holm correction. Missing pass^k means fewer than k seeds. Infra exclusions can bias estimates; rerun them before deciding.</p><pre>${esc(JSON.stringify(comparisons, null, 2))}</pre>
 <h2>Noise floor</h2><pre>${esc(JSON.stringify(result.noise, null, 2))}</pre></html>`

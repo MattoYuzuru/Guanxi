@@ -21,7 +21,7 @@ async function main(args: string[]) {
   if (command === 'analyze' && path) {
     const input = await read(path)
     const plan = validateRecordedPlan(input.plan)
-    await writeFile(join(dir, `${plan.id}.html`), htmlReport(plan, input.trials, hostPath === 'public'), { mode: 0o600 })
+    await writeFile(join(dir, `${plan.id}.html`), htmlReport(plan, input.trials, hostPath === 'public', input.recordedAt ?? null), { mode: 0o600 })
     console.log(JSON.stringify({ status: 'reported', id: plan.id, report: join(dir, `${plan.id}.html`) }))
     return
   }
@@ -41,8 +41,9 @@ async function main(args: string[]) {
   process.once('SIGINT', stop); process.once('SIGTERM', stop)
   try {
     const trials = await runBench(plan, budget, executor, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(plan.timeoutSec * 1000)]) })
-    await writeFile(join(dir, `${plan.id}.json`), JSON.stringify({ plan, trials }, null, 2) + '\n', { mode: 0o600 })
-    await writeFile(join(dir, `${plan.id}.html`), htmlReport(plan, trials), { mode: 0o600 })
+    const recordedAt = new Date().toISOString()
+    await writeFile(join(dir, `${plan.id}.json`), JSON.stringify({ plan, trials, recordedAt }, null, 2) + '\n', { mode: 0o600 })
+    await writeFile(join(dir, `${plan.id}.html`), htmlReport(plan, trials, false, recordedAt), { mode: 0o600 })
     console.log(JSON.stringify({ version: 1, id: plan.id, trials: trials.length, report: join(dir, `${plan.id}.html`), spendMicrousd: trials.some(t => t.costMicrousd === null) ? null : trials.reduce((n, t) => n + t.costMicrousd!, 0) }))
   } finally {
     process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop)

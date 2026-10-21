@@ -64,12 +64,19 @@ test('selects exactly 50 fresh SWE-rebench and 30 Verified metadata records with
   assert.throws(() => validatePlan({ ...plan(), mode: 'ab', tasks: corpus.tasks.map(t => ({ ...t, published: '2020-01-01' })) }, now), /stale_ab_corpus/)
 })
 test('standalone report contains separate infra columns, task flips and no scripts/network; public mode has no task IDs', async () => {
-  const p = plan(); const rows = validateResults(p, await fixtureExecutor({ 'task-0:candidate:0': 'failed' }).run(p))
+  const p = plan({ id: 'task-0-source' }); const rows = validateResults(p, await fixtureExecutor({ 'task-0:candidate:0': 'failed' }).run(p))
   const html = htmlReport(p, rows)
   assert.match(html, /Infra errors/); assert.match(html, /task-0/)
   assert.match(html, /default-src 'none'/); assert.doesNotMatch(html, /<script|https?:\/\//)
   assert.doesNotMatch(htmlReport(p, rows, true), /task-0|\/tasks\//)
   assert.match(html, /holdout and guardrails/)
+  assert.match(html, /Fixture smoke with synthetic outcomes/)
+  assert.match(html, /fixture-free \/ fixture/)
+  assert.match(html, /mini-swe-agent@2\.4\.6/)
+  assert.match(html, /Results recorded \(UTC\)<\/dt><dd>not recorded/)
+  const recordedAt = '2026-10-21T12:00:00.000Z'
+  assert.match(htmlReport(p, rows, false, recordedAt), /2026-10-21T12:00:00\.000Z/)
+  assert.throws(() => htmlReport(p, rows, false, 'invalid-time'))
 })
 test('transport always changes to dedicated user, clears inherited environment and rejects command/path injection', () => {
   const command = remoteCommand({ ssh: 'bench-test', root: '/home/guanxi-bench/b1' }).join(' ')
@@ -102,6 +109,24 @@ test('CLI renders an archived A/B receipt while launch still refuses the stale c
     const output = execFileSync(process.execPath, [new URL('../src/cli.ts', import.meta.url).pathname, 'analyze', input], { encoding: 'utf8', env: { PATH: process.env.PATH, GUANXI_DATA_DIR: join(dir, 'private') } })
     const receipt = JSON.parse(output)
     assert.equal(receipt.status, 'reported')
-    assert.match(readFileSync(receipt.report, 'utf8'), /Benchmark measurement/)
+    assert.match(readFileSync(receipt.report, 'utf8'), /Results recorded \(UTC\)<\/dt><dd>not recorded/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('CLI fixture receipts record UTC collection time and label synthetic outcomes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'b1-recorded-'))
+  try {
+    const before = Date.now()
+    const output = execFileSync(process.execPath, [new URL('../src/cli.ts', import.meta.url).pathname, 'fixture'], { encoding: 'utf8', env: { PATH: process.env.PATH, GUANXI_DATA_DIR: dir } })
+    const after = Date.now()
+    const result = JSON.parse(output)
+    const receipt = JSON.parse(readFileSync(join(dir, 'bench', result.id + '.json'), 'utf8'))
+    const time = Date.parse(receipt.recordedAt)
+    assert.ok(time >= Math.min(before, after) && time <= Math.max(before, after))
+    assert.equal(new Date(time).toISOString(), receipt.recordedAt)
+    const html = readFileSync(result.report, 'utf8')
+    assert.ok(html.includes(receipt.recordedAt))
+    assert.match(html, /Fixture smoke with synthetic outcomes/)
+    assert.equal(result.spendMicrousd, 0)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

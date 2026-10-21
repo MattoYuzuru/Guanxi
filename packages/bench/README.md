@@ -29,6 +29,9 @@ label is a fixture, not a measured mini-swe-agent score. The actual control inte
 exercised by the host smoke. Reports use English source text and no app UI, remote fonts,
 scripts or network resources. `htmlReport(plan, trials, true)` removes task identifiers for
 aggregate publication; the default private report lists flipped and excluded task IDs.
+Reports identify the protocol, model/provider and arm versions and label synthetic fixture
+outcomes. New CLI receipts carry `recordedAt` in UTC; older receipts show an unrecorded time.
+Public mode also omits the experiment identifier.
 
 ## Locked external environment and host
 
