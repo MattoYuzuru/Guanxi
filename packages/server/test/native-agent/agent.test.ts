@@ -346,7 +346,7 @@ test('runtime recovery clears a historical shell-unavailable projection', async 
   const writer = f.log.open(sessionId, { kind: 'agent' })
   const call = (id: string) => writer.append({ type: 'tool.call', data: { toolCallId: id, name: 'shell', arguments: {}, source: 'builtin', parsedFrom: 'native', diffPath: null } })
   call('failed')
-  writer.append({ type: 'tool.result', data: { toolCallId: 'failed', status: 'error', result: 'container_runtime_unavailable', error: 'tool_failed', durationMs: 1 } })
+  writer.append({ type: 'tool.result', data: { toolCallId: 'failed', status: 'error', result: 'container_runtime_unavailable', error: 'container_runtime_unavailable', durationMs: 1 } })
   assert.equal(f.agents().progress(sessionId).shellUnavailable, 'container_runtime_unavailable')
   call('recovered')
   writer.append({ type: 'tool.result', data: { toolCallId: 'recovered', status: 'ok', result: 'owned', error: null, durationMs: 1 } })
@@ -383,4 +383,17 @@ test('cleanup quarantine keeps roots blocked across service reload and explicit 
   await f.restart()
   await assert.rejects(f.agents().create({ ...f.input, mode: 'full-access' }), /cleanup_unconfirmed/)
   assert.throws(() => f.agents().prompt(sessionId, 'continue'), /cleanup_unconfirmed/)
+})
+
+
+test('shell-unavailable projection uses a structured shell error, never output substrings or another tool', async t => {
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  const writer = f.log.open(sessionId, { kind: 'agent' })
+  t.after(() => writer.close())
+  for (const [id, name, error] of [['printed', 'shell', 'tool_failed'], ['other', 'file_read', 'container_runtime_unavailable']]) {
+    writer.append({ type: 'tool.call', data: { toolCallId: id!, name: name!, arguments: {}, source: 'builtin', parsedFrom: 'native', diffPath: null } })
+    writer.append({ type: 'tool.result', data: { toolCallId: id!, status: 'error', result: 'printed container_runtime_unavailable', error: error!, durationMs: 1 } })
+    assert.equal(f.agents().progress(sessionId).shellUnavailable, undefined)
+  }
 })

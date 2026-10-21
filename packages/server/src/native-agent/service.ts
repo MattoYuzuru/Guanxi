@@ -153,9 +153,9 @@ export class NativeAgents {
       if (event.type === 'agent.plan') plan = event.data.items
       if (event.type === 'agent.queue') queue = event.data.items
       if (event.type === 'assistant.message') summary = event.data.text
-      if (event.type === 'tool.result' && event.data.status === 'error') {
+      if (event.type === 'tool.result' && event.data.status === 'error' && events.some(call => call.type === 'tool.call' && call.data.toolCallId === event.data.toolCallId && call.data.name === 'shell')) {
         for (const reason of ['container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected'] as const) {
-          if (event.data.result?.includes(reason)) shellUnavailable = reason
+          if (event.data.error === reason) shellUnavailable = reason
         }
       }
       if (event.type === 'tool.result' && event.data.status === 'ok' && events.some(call => call.type === 'tool.call' && call.data.toolCallId === event.data.toolCallId && call.data.name === 'shell')) shellUnavailable = undefined
@@ -254,7 +254,7 @@ export class NativeAgents {
       }
       if (event.type === 'tool_execution_end' && event.result.details?.code === 'cleanup_unconfirmed') { cleanupUnconfirmed = true; agent.abort() }
       if (event.type === 'tool_execution_end') handle.append({ type: 'tool.result', data: { toolCallId: event.toolCallId, status: event.isError ? 'error' : 'ok',
-        result: JSON.stringify(event.result.content), error: event.isError ? 'tool_failed' : null, durationMs: Math.round(event.durationMs ?? 0) } })
+        result: JSON.stringify(event.result.content), error: event.isError ? event.result.details?.code ?? 'tool_failed' : null, durationMs: Math.round(event.durationMs ?? 0) } })
     })
     try {
       let next: string | undefined = prompt
