@@ -82,7 +82,7 @@ test('M1: a refused run trace cannot block other timers, expired attempts, recon
       f.scrubber.register('secret://late', 'alpha-customer-7781')
       if (operation === 'tick-timers') f.setTime(RUN_TIME + 20)
       if (operation === 'tick-attempts') f.setTime(RUN_TIME + 61_000)
-      assert.doesNotThrow(() => operation === 'dispatch' ? f.store.dispatch() : operation === 'reconcile' ? f.store.reconcile() : f.store.tick(), operation)
+      assert.doesNotThrow(() => operation === 'dispatch' ? f.store.dispatch(() => true) : operation === 'reconcile' ? f.store.reconcile() : f.store.tick(), operation)
       if (operation === 'tick-timers') assert.equal(f.store.wakes('beta').length, 1)
       else if (operation === 'dispatch') assert.ok(f.store.wakes('beta')[0]!.attempt_id)
       else assert.equal(f.store.attempts('beta')[0]!.state, 'lost')
@@ -90,4 +90,30 @@ test('M1: a refused run trace cannot block other timers, expired attempts, recon
       assert.match(f.store.failures()[0]!.code, /invalid_(input|event)/)
     } finally { f.close() }
   }
+})
+
+test('M2: an hour without an executor creates no wake attempts or trace churn', () => {
+  const f = runFixture()
+  try {
+    const a = f.store.start(f.store.create({ id: 'lead' }).id)
+    f.store.delegate(a, { key: 'child', deadline: RUN_TIME + 1 })
+    f.setTime(RUN_TIME + 1); f.store.tick()
+    const before = f.log.read('lead', { audience: 'person' }).events.length
+    for (let minute = 1; minute <= 60; minute++) {
+      f.setTime(RUN_TIME + minute * 60_000)
+      f.store.heartbeat(); f.store.tick()
+      assert.deepEqual(f.store.dispatch(), [])
+    }
+    assert.equal(f.store.attempts('lead').length, 1)
+    assert.equal(f.store.wakes('lead')[0]!.deliveries, 0)
+    assert.equal(f.store.get('lead').state, 'waiting_children')
+    assert.equal(f.log.read('lead', { audience: 'person' }).events.length, before)
+    assert.deepEqual(f.store.dispatch(() => false), [])
+    const [claimed] = f.store.dispatch(() => true)
+    assert.ok(claimed)
+    assert.equal(f.store.wakes('lead')[0]!.deliveries, 1)
+    assert.equal(f.store.wakes('lead')[0]!.acknowledged_at, null)
+    f.store.modelStarted(claimed)
+    assert.deepEqual(f.store.dispatch(() => true), [])
+  } finally { f.close() }
 })

@@ -446,11 +446,13 @@ export class RunStore {
       return attempt
     })
   }
-  /** The waker prepares durable deliveries; an executor attaches separately and acknowledges. */
-  dispatch(): Attempt[] {
+  /** A synchronous executor claim is required before allocating a delivery attempt. */
+  dispatch(claim?: (wake: Readonly<Wake>) => boolean): Attempt[] {
+    if (!claim) return []
     const deliveries: Attempt[] = []
     for (const wake of this.rows<Wake>('SELECT * FROM outbox WHERE acknowledged_at IS NULL AND suppressed_at IS NULL ORDER BY run_id,wake_seq')) {
       this.isolate(wake.run_id, 'wake', () => {
+        if (!claim(wake)) return
         const attempt = this.deliver(wake.run_id, wake.wake_seq)
         if (attempt) deliveries.push(attempt)
       })
