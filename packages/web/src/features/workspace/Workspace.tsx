@@ -323,6 +323,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? children : null}</BuiltInPane>
   }
   return <UiLocaleProvider locale={locale}><div className="workspace" data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
+    if (event.defaultPrevented) return
     if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
