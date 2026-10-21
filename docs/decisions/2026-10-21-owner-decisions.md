@@ -1,6 +1,6 @@
 # Owner decisions — 2026-10-21 (fleet, compute providers, phone access)
 
-**Status:** accepted · **Date:** 2026-10-21 · **Decisions:** D-185–D-193
+**Status:** accepted · **Date:** 2026-10-21 · **Decisions:** D-185–D-194
 **Extends:** [2026-10-20 addendum](2026-10-20-owner-decisions-addendum.md).
 **Evidence:** [2026-10-21 fleet research](../research/2026-10-21-fleet/) (three lanes);
 design in [ADR-0038](0038-compute-providers-fleet-placement-and-remote-control.md).
@@ -29,6 +29,7 @@ He answered the questions below in chat.
 | D-191 | Fully local AI | A whole model on one machine is the default. A loaded model holds a **residency lease** that builds and tests never evict. Splitting one model across machines (llama.cpp RPC, Parallax) is experimental and behind a flag. | owner direction plus integrator default |
 | D-192 | Training and provider sign-up | A **train** run kind runs on owned GPUs or on a service using the user's key from the vault. An agent may help the user sign up for a provider: it prepares the plan, prices and cost cap and opens the official page. The user completes the CAPTCHA, email check, 2FA, payment and terms acceptance. Keys enter the vault through the provider's OAuth or device flow, or through a field Guanxi owns outside the transcript; the model sees only a `secret://` reference. | owner direction plus integrator default |
 | D-193 | Fleet scale | No cap on fleet size. A site (LAN or datacenter) is a failure domain. Beyond about 50–100 nodes, or across sites, placement switches to sampling with late binding. Replaces the "about ten machines" sizing in REQ-B6 as a limit; ten machines in one site stays the first target. | owner direction plus integrator default |
+| D-194 | Benchmark host | Untrusted benchmark containers run on the **Fedora PC in rootless Podman under a dedicated user**, with CPU and memory limits. They never touch the owner's workstation services or the resident Qwen on the GPU. The MacBook runs only fixture smokes. The benchmark API budget stays $200 per month (D-150). Amends D-151 (Windows PC under WSL2), which predates the corrected fleet (D-185); Windows with WSL2 remains possible only when the PC is booted into Windows. | owner answer 2026-10-21 |
 
 ## Notes
 

@@ -20,7 +20,8 @@ Open lanes:
   non-admin revocation, per-op admission); the fixes are done and a scoped Claude re-check
   runs.
 
-K4 is merged with its follow-up, so R2, K5 and X1 run and B1 is open; F2 opens after F1, and DS2
+K4 is merged with its follow-up, so R2, K5 and X1 run, and B1 ([lanes/B1](lanes/B1.md)) is ready for the next free
+Codex slot with its benchmark host provisioned (D-194); F2 opens after F1, and DS2
 and U1 after DS1-c. See
 [PHASE_STATUS](PHASE_STATUS.md) and the [roadmap graph](roadmap.mmd).
 
