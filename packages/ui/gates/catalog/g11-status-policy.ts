@@ -89,6 +89,15 @@ export const g11: CatalogGate = {
       },
     },
     {
+      name: 'utility-laundered-alias',
+      description: 'The draft Button re-exported through src/lib under another name and used on a product screen',
+      expect: /product code uses draft component "button"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'utility-laundered-alias'), repoRoot)
+        return { ...context, release: true }
+      },
+    },
+    {
       name: 'unknown-export',
       description: 'Product code imports a name G11 cannot attribute to a catalogued component',
       expect: /imports "Fancy", which is not a catalogued @guanxi\/ui export/,

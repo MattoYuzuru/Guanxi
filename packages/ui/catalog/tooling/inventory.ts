@@ -3,7 +3,7 @@
  * G15). Node only; parses TypeScript with the compiler API and never imports component code.
  */
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { parseDocs, type ComponentDocs } from '../docs.ts'
 
@@ -49,8 +49,42 @@ export interface UiInventory {
   utilityExports: string[]
 }
 
-/** Root re-exports allowed besides component folders: providers, hooks and helpers, no UI. */
-const UTILITY_MODULE = /^\.\/(i18n|lib)\/[^/]+\.tsx?$/
+/**
+ * The root's non-component value exports, by name (N3): providers, hooks and helpers, no UI.
+ * Each must be declared outside src/components; adding one is a reviewed change to this list,
+ * never a consequence of where a file lives.
+ */
+export const UTILITY_EXPORTS = new Set(['PortalContainerProvider', 'UiLocaleProvider', 'intlLocale', 'translateUi', 'useUiLocale', 'useUiText'])
+
+/**
+ * Where each value the root exports is declared, as the TypeScript checker resolves it through
+ * every re-export and alias: exported name → declaring file. Types are skipped.
+ */
+function rootDeclarations(indexPath: string): Map<string, string> {
+  const program = ts.createProgram([indexPath], {
+    allowImportingTsExtensions: true,
+    jsx: ts.JsxEmit.ReactJSX,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    noEmit: true,
+    skipLibCheck: true,
+    target: ts.ScriptTarget.ES2022,
+    types: [],
+  })
+  const checker = program.getTypeChecker()
+  const entry = program.getSourceFile(indexPath)
+  const moduleSymbol = entry && checker.getSymbolAtLocation(entry)
+  const result = new Map<string, string>()
+  if (!moduleSymbol) return result
+  for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+    const symbol = exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported
+    if (symbol.flags & ts.SymbolFlags.Value) {
+      const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0]
+      if (declaration) result.set(exported.name, resolve(declaration.getSourceFile().fileName))
+    } else if (symbol.flags & ts.SymbolFlags.Type) result.set(exported.name, 'type')
+  }
+  return result
+}
 
 function sourceFile(path: string): ts.SourceFile {
   return ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -213,6 +247,7 @@ export function readInventory(uiRoot: string): UiInventory {
   const utilityExports: string[] = []
   const folders = ids.map((id) => readFolder(uiRoot, id))
   const indexPath = join(uiRoot, 'src', 'index.ts')
+  const named: Array<{ name: string; target: string | null }> = []
   if (existsSync(indexPath)) {
     for (const statement of sourceFile(indexPath).statements) {
       const exported = ts.canHaveModifiers(statement) && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
@@ -237,13 +272,24 @@ export function readInventory(uiRoot: string): UiInventory {
       }
       for (const element of statement.exportClause.elements) {
         if (element.isTypeOnly) continue
-        const name = element.name.text
-        const original = (element.propertyName ?? element.name).text
-        const owner = folder ? folders.find((item) => item.id === folder) : undefined
-        if (owner && owner.valueExports.includes(original)) aliases[name] = owner.id
-        else if (target && UTILITY_MODULE.test(target)) utilityExports.push(name)
-        else strayExports.push(`"${name}" from ${target ?? 'a local binding'}`)
+        named.push({ name: element.name.text, target })
       }
+    }
+    // Named exports are attributed by where the checker says the value is declared, so a
+    // component routed through any module is still that component (N3).
+    const declared = named.length > 0 ? rootDeclarations(indexPath) : new Map<string, string>()
+    const componentsRoot = resolve(componentsDir) + sep
+    for (const { name, target } of named) {
+      const file = declared.get(name)
+      if (file === 'type') continue
+      if (!file) {
+        strayExports.push(`"${name}" from ${target ?? 'a local binding'} (its declaration cannot be resolved)`)
+        continue
+      }
+      const owner = file.startsWith(componentsRoot) ? file.slice(componentsRoot.length).split(sep)[0] : undefined
+      if (owner && folders.some((folder) => folder.id === owner)) aliases[name] = owner
+      else if (UTILITY_EXPORTS.has(name)) utilityExports.push(name)
+      else strayExports.push(`"${name}" from ${target ?? 'a local binding'}`)
     }
   }
   return { uiRoot, folders, publicFolders, strayExports, aliases, utilityExports }
