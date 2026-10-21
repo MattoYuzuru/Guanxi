@@ -1,0 +1,235 @@
+{
+  "source": "UKGovernmentBEIS/inspect_ai",
+  "commit": "5e06ec2d8ba569c4ec867bfd48a7d66cda53c370",
+  "procedure": "Execute upstream _compute_scalar_stat and pass_k_k AST unchanged; mean uses upstream statistics.mean; replace only Score wrapper.",
+  "rows": [
+    {
+      "scores": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "k": 1,
+      "mean": 0.0,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "k": 2,
+      "mean": 0.0,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "k": 3,
+      "mean": 0.0,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "k": 5,
+      "mean": 0.0,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "k": 1,
+      "mean": 1.0,
+      "passHat": 1.0
+    },
+    {
+      "scores": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "k": 2,
+      "mean": 1.0,
+      "passHat": 1.0
+    },
+    {
+      "scores": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "k": 3,
+      "mean": 1.0,
+      "passHat": 1.0
+    },
+    {
+      "scores": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "k": 5,
+      "mean": 1.0,
+      "passHat": 1.0
+    },
+    {
+      "scores": [
+        1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "k": 1,
+      "mean": 0.6,
+      "passHat": 0.6
+    },
+    {
+      "scores": [
+        1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "k": 2,
+      "mean": 0.6,
+      "passHat": 0.3
+    },
+    {
+      "scores": [
+        1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "k": 3,
+      "mean": 0.6,
+      "passHat": 0.1
+    },
+    {
+      "scores": [
+        1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "k": 5,
+      "mean": 0.6,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        1,
+        0
+      ],
+      "k": 1,
+      "mean": 0.5,
+      "passHat": 0.5
+    },
+    {
+      "scores": [
+        1,
+        0
+      ],
+      "k": 2,
+      "mean": 0.5,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        1,
+        0
+      ],
+      "k": 3,
+      "mean": 0.5,
+      "passHat": null
+    },
+    {
+      "scores": [
+        1,
+        0
+      ],
+      "k": 5,
+      "mean": 0.5,
+      "passHat": null
+    },
+    {
+      "scores": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "k": 1,
+      "mean": 0.2,
+      "passHat": 0.2
+    },
+    {
+      "scores": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "k": 2,
+      "mean": 0.2,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "k": 3,
+      "mean": 0.2,
+      "passHat": 0.0
+    },
+    {
+      "scores": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "k": 5,
+      "mean": 0.2,
+      "passHat": 0.0
+    }
+  ]
+}

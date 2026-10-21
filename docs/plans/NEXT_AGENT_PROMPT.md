@@ -13,22 +13,24 @@ D-194 still excludes real benchmark execution on this Mac.
 
 K4 follow-up 2 is merged as `8006cd8` after full gates;
 [evidence](evidence/K4-followup-2.md) retains exact scope and receipts. Remaining K4 work is
-input-artifact integration, positive HTTPS case (source `8803855`, scoped review passed, merged locally), expanded UI evidence and the platform envelope.
+input-artifact integration, expanded UI evidence and the platform envelope. Positive HTTPS
+source `8803855` is reviewed, merged locally and included in the passing full core envelope.
 
 Current queue:
 
-1. **Current boundary:** DS2 source merged locally as `03c655b`, and positive HTTPS test
-   `8803855` is incorporated. Full candidate gates passed; run full post-merge gates on
-   current main before another executable merge. [Evidence](evidence/DS2.md). Real production
+1. DS2 source merged locally as `03c655b`, and positive HTTPS test `8803855` is incorporated.
+   All eight post-merge gates pass at clean main `5e9bbfe`. [Evidence](evidence/DS2.md). Real production
    user-presence signing is unverified; never create an owner key in ordinary tests.
 2. X1 `codex/x1-parent-read-boundary` (`647c5d0`): perform repaired-source Linux evidence
    inside an explicit integration envelope, then full gates. Preserve named X1 residuals.
 3. U1 `codex/u1-completion`: local layout and signed replication are independently reviewed
-   at `e5f8e0a`, including separate review fixes; handoff `646bf3d`. Full candidate gates pass; integration is next after the current main boundary. Shell and
+   at `e5f8e0a`, including separate review fixes; handoff `646bf3d`. Initial candidate gates pass;
+   candidate `a613f7a` now includes verified main `5e9bbfe` and is under integration gates. Shell and
    partial CSS token migration are active in separate worktrees; zero-suppression exit remains.
-4. B1 `codex/b1-completion`: request-admission `d70d56a` plus independent-review repair
-   `3b9a140` is reviewed. Integrate staging only with review fix `0d1ff50` after the independent recheck;
-   continue corpus/images, the real K3 pricing/meter boundary and paired execution. No fixture
+4. **Current boundary:** B1 source merged locally as `7366df8`; [candidate evidence](evidence/B1.md)
+   includes full affected gates and independent private stream review. Run full post-merge checks
+   before another executable merge. Continue process/peer/K2 binding, corpus/images and paired
+   execution. No fixture
    measurement activates ADR-0025 or authorizes an unbounded paid run.
 5. R3 `codex/ms1-r3` (`bf6a222`): independently reviewed ETA foundation, integration pending.
    Judge/delegation and real replay/calibration/night evidence remain. F2 offer/reservation work
@@ -47,7 +49,9 @@ Prepare any owner-required action concretely while continuing independent work.
 Central-doc independent review found a stale B1 status row in `c09e2be`; the separate
 documentation correction names the reviewed request-admission source and active work.
 The R3 signal evaluator `5919d0b` is reviewed with 10 new independent passes but still needs
-actual relay integration; do not count an unused helper as the full judge stage.
+review closure of its relay integration at `a8d5997`. Independent review found a pending
+collector can block stop/wall cancellation; a separate DeepSeek repair is active. Do not merge
+until its narrow independent recheck passes, and do not count this as the full judge stage.
 
 After U1, integrate reviewed F2 reservation candidate `5c66e27` with its separate independent
 evidence. F2-b renewable home grants and actual execution are unfinished; reserved receipts
