@@ -27,13 +27,17 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
   if (writable.some(root => directory === root || directory.startsWith(root + sep))) {
     await rm(directory, { recursive: true, force: true }); throw new Error('runtime_overlaps_roots')
   }
+  const networkDirectory = await realpath(await mkdtemp(join(process.platform === 'darwin' ? '/private/tmp' : tmpdir(), 'gx-proxy-')))
+  if (writable.some(root => networkDirectory === root || networkDirectory.startsWith(root + sep))) {
+    await Promise.all([directory, networkDirectory].map(path => rm(path, { recursive: true, force: true }))); throw new Error('runtime_overlaps_roots')
+  }
   const worker = pathToFileURL(join(directory, built ? 'sandbox-worker.mjs' : 'sandbox-worker.ts'))
   await writeFile(worker, workerBytes, { mode: 0o400, flag: 'wx' })
   if (!built) await writeFile(join(directory, 'sandbox-protocol.ts'), protocolBytes, { mode: 0o400, flag: 'wx' })
   return new Promise((resolve, reject) => {
     const child = fork(worker, [], { detached: true, execArgv: [], cwd: policy.scratch,
       env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
-        HOME: policy.scratch, TMPDIR: policy.scratch, LANG: 'en_US.UTF-8' },
+        HOME: networkDirectory, TMPDIR: networkDirectory, LANG: 'en_US.UTF-8' },
       // Runtime diagnostics may include command contents. They never enter plain logs.
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
     let result: CommandResult | null = null
@@ -48,10 +52,10 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
     })
     child.once('error', () => { failure = true; kill() })
     child.once('exit', async () => {
-      kill() // Reap descendants even if the command backgrounded a process.
+      kill() // Kill remaining members of this group; detached descendants need a supervisor.
       clearTimeout(timer)
       signal?.removeEventListener('abort', abort)
-      await rm(directory, { recursive: true, force: true }).catch(() => undefined)
+      await Promise.all([directory, networkDirectory].map(path => rm(path, { recursive: true, force: true }).catch(() => undefined)))
       if (!failure && result && !signal?.aborted) resolve(result)
       else reject(new Error('sandbox_failed'))
     })

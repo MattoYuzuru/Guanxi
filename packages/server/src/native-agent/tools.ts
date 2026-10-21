@@ -36,7 +36,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
         const content = await execute(scrubber.scrub(raw as Record<string, string>), signal)
         return { content: [{ type: 'text', text: scrubber.scrub(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']
+        const safeCodes = ['supervision_unavailable', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']
         const code = error instanceof Error && safeCodes.includes(error.message) ? error.message : 'tool_denied_or_failed'
         return { content: [{ type: 'text', text: signal?.aborted ? 'cancelled' : code }], details: null, isError: true }
       }
@@ -44,19 +44,21 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   })
   return [
     tool('project_info', 'Read immutable roots, scratch, network policy, attachments and instruction paths. No token budget is invented.', {}, async () => JSON.stringify({ ...policy, budgets: 'model/runtime limits; no additional cap', instructions: policy.roots.map(root => `${root}/AGENTS.md`) })),
-    tool('file_read', 'Read a UTF-8 file in roots, scratch or attachments. Absolute paths select another root.', { path: Type.String() }, async (a, s) => run(`cat -- ${quote(path(a.path!))}`, s)),
+    tool('file_read', 'Read a UTF-8 file in roots, scratch or attachments. Absolute paths select another root.', { path: Type.String() }, async (a, s) => run(`/bin/cat -- ${quote(path(a.path!))}`, s)),
     tool('file_write', 'Write UTF-8 content. Read-only writes only to scratch. Protected paths are always denied.', { path: Type.String(), content: Type.String() }, async (a, s) => run(`printf %s ${quote(a.content!)} > ${quote(path(a.path!, true))}`, s)),
-    tool('shell', 'Run a command from scratch. Read-only permits pwd/ls/cat/head/tail/wc with plain arguments only. Full access uses the OS sandbox.', { command: Type.String() }, async (a, s) => {
-      if (policy.mode === 'read-only' && !/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) throw new Error('command_denied')
-      return run(a.command!, s)
+    tool('shell', 'Run pwd/ls/cat/head/tail/wc with plain arguments. Arbitrary execution is unavailable until descendant supervision exists, in both modes.', { command: Type.String() }, async (a, s) => {
+      if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) throw new Error('supervision_unavailable')
+      const [program, ...args] = a.command!.split(/ +/)
+      const binaries: Record<string, string> = { pwd: '/bin/pwd', ls: '/bin/ls', cat: '/bin/cat', head: '/usr/bin/head', tail: '/usr/bin/tail', wc: '/usr/bin/wc' }
+      return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s)
     }),
-    tool('search', 'Search literal text recursively in an allowed path, without following symlinks.', { path: Type.String(), text: Type.String() }, async (a, s) => run(`grep -r -n -F -- ${quote(a.text!)} ${quote(path(a.path!))}`, s, [0, 1])),
+    tool('search', 'Search literal text recursively in an allowed path, without following symlinks.', { path: Type.String(), text: Type.String() }, async (a, s) => run(`/usr/bin/grep -r -n -F -- ${quote(a.text!)} ${quote(path(a.path!))}`, s, [0, 1])),
     tool('fetch', 'Fetch an allowlisted HTTP(S) URL. Read-only permits GET, HEAD, OPTIONS; redirects and raw tunnels are denied. Body is text.', { url: Type.String(), method: Type.String(), body: Type.String() }, async (a, s) => {
       const url = new URL(a.url!)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('url_denied')
       const method = a.method!.toUpperCase()
       if (!/^[A-Z]+$/.test(method) || (policy.mode === 'read-only' && !['GET', 'HEAD', 'OPTIONS'].includes(method))) throw new Error('method_denied')
-      return run(`curl --noproxy '' --silent --show-error --fail --max-time 60 --request ${quote(method)} ${method === 'HEAD' ? '--head' : ''} ${a.body ? `--data-binary ${quote(a.body)}` : ''} -- ${quote(url.href)}`, s)
+      return run(`/usr/bin/curl --disable --noproxy '' --silent --show-error --fail --max-time 60 --request ${quote(method)} ${method === 'HEAD' ? '--head' : ''} ${a.body ? `--data-binary ${quote(a.body)}` : ''} -- ${quote(url.href)}`, s)
     }),
     tool('attachments', 'List the selected, read-only attachments. Use file_read for text; unsupported binary formats need a converter.', {}, async () => JSON.stringify(policy.attachmentMetadata ?? policy.attachments)),
     tool('plan', 'Replace the light session plan (off-ledger). Completed agent items request verification; they do not prove completion. items is a JSON array.', { items: Type.String() }, async a => {

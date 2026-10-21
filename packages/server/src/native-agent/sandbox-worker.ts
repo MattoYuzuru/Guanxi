@@ -10,7 +10,7 @@ process.once('disconnect', () => { try { process.kill(-process.pid, 'SIGKILL') }
 process.once('message', async ({ policy, command }: { policy: SandboxPolicy; command: string }) => {
   try {
     // Windows requires machine-wide provisioning; refuse until Guanxi validates that profile.
-    if (!['darwin', 'linux'].includes(process.platform)) throw new Error('unsupported_sandbox')
+    if (!['darwin', 'linux'].includes(process.platform) || !SandboxManager.isSupportedPlatform()) throw new Error('unsupported_sandbox')
     const literal = (path: string) => ({ path, literal: true as const })
     const system = process.platform === 'darwin'
       ? ['/bin', '/usr', '/System', '/Library/Apple', '/private/etc', '/private/var/select', '/dev', '/opt/homebrew/Cellar', '/opt/homebrew/opt']
@@ -28,12 +28,15 @@ process.once('message', async ({ policy, command }: { policy: SandboxPolicy; com
       filesystem: { denyRead: ['/', ...(policy.hiddenPaths ?? [])].map(literal), allowRead: read.map(literal),
         allowWrite: [policy.scratch, ...(policy.mode === 'full-access' ? policy.roots : [])].map(literal),
         // Cancel upstream convenience grants. Stdio devices are the only exceptions.
-        denyWrite: [...getDefaultWritePaths().filter(path => !path.startsWith('/dev/')), modules, dirname(realpathSync(process.execPath)), ...policy.protectedPaths, ...policy.attachments].map(literal),
+        denyWrite: [...getDefaultWritePaths().filter(path => !path.startsWith('/dev/')), ...system.filter(path => !['/dev', '/proc/self'].includes(path)), modules, dirname(realpathSync(process.execPath)), ...policy.protectedPaths, ...policy.attachments].map(literal),
       },
       allowPty: false, enableWeakerNetworkIsolation: false, enableWeakerNestedSandbox: false,
     }
+    if ((await SandboxManager.checkDependenciesAsync()).errors.length) throw new Error('sandbox_dependencies')
     await SandboxManager.initialize(config, undefined, false)
-    const wrapped = await SandboxManager.wrapWithSandbox(command, '/bin/sh')
+    if (!SandboxManager.isSandboxingEnabled()) throw new Error('sandbox_unavailable')
+    const quotePath = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
+    const wrapped = await SandboxManager.wrapWithSandbox(`export HOME=${quotePath(policy.scratch)} TMPDIR=${quotePath(policy.scratch)}; ${command}`, '/bin/sh')
     const result = await new Promise<CommandResult>((resolve, reject) => {
       const child = spawn('/bin/sh', ['-c', wrapped], { cwd: policy.scratch,
         env: { ...process.env, OPENSSL_CONF: '/dev/null', PAGER: 'cat', GIT_PAGER: 'cat', TERM: 'dumb', TMPDIR: policy.scratch }, stdio: ['ignore', 'pipe', 'pipe'] })

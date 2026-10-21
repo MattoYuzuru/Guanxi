@@ -61,6 +61,7 @@ export class NativeAgents {
       const attachmentMetadata: NonNullable<SandboxPolicy['attachmentMetadata']> = []
       for (const id of input.attachmentIds) {
         const attachment = await this.host.artifactTransfers.download(id, { scope: 'project', projectId: project.id }, new AbortController().signal)
+        this.ready()
         const target = join(attachmentDir, `${attachments.length}.attachment`)
         await writeFile(target, attachment.content, { flag: 'wx', mode: 0o400 })
         attachments.push(target)
@@ -70,6 +71,7 @@ export class NativeAgents {
       const protectedPaths = input.protectedPaths.map(path => resolve(roots[0] ?? scratch, path))
       if (protectedPaths.some(path => !roots.some(root => inside(root, path)) && !inside(scratch, path))) throw new NativeAgentError('protected_path_invalid')
       const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
+      this.ready()
       this.ensureRoots(policy, sessionId)
       handle = this.log.open(sessionId, { kind: 'agent' })
       const { prompt: _prompt, ...settings } = input
@@ -178,7 +180,7 @@ export class NativeAgents {
   }
   private async execute(id: string, input: NativeAgentInput, policy: SandboxPolicy, handle: SessionHandle, prompt: string, history: AgentMessage[], signal: AbortSignal) {
     let step = 0
-    let promptId = randomUUID()
+    let promptId: string = randomUUID()
     let promptOrigin: 'typed' | 'queued' = 'typed'
     const turnId = randomUUID()
     const tools = nativeTools({ policy, log: this.log, handle, scrubber: this.scrubber, queue: text => this.queue(id, text) })

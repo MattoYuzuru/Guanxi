@@ -4,7 +4,9 @@ import { agentExecResultSchema, agentProgressSchema, type AgentExecResult } from
 export async function agentExec(args: string[], transport: typeof fetch = fetch, signal?: AbortSignal): Promise<AgentExecResult> {
   let sessionId: string | null = null
   let endpoint: URL | null = null
+  let submitted = false
   try {
+    signal?.throwIfAborted()
     const values: Record<string, string> = {}
     const allowed = new Set(['--url', '--project', '--connection', '--model', '--prompt', '--mode', '--domains', '--context-tokens'])
     for (let index = 0; index < args.length; index++) {
@@ -22,6 +24,8 @@ export async function agentExec(args: string[], transport: typeof fetch = fetch,
       if (!response.ok) throw new Error('agent_failed')
       return response.json()
     }
+    signal?.throwIfAborted()
+    submitted = true
     const created = await request('', 'POST', { projectId: values['--project'], connectionId: values['--connection'], model: values['--model'],
       prompt: values['--prompt'], mode: values['--mode'] ?? 'read-only', domains: values['--domains']?.split(',').filter(Boolean) ?? [],
       ...(values['--context-tokens'] ? { contextTokens: Number(values['--context-tokens']) } : {}) }) as { sessionId: string }
@@ -41,8 +45,21 @@ export async function agentExec(args: string[], transport: typeof fetch = fetch,
       try {
         const stopped = await transport(new URL(`/api/agent/${encodeURIComponent(sessionId)}/stop`, endpoint), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(5000), redirect: 'error' })
         if (!stopped.ok) throw new Error('stop_failed')
+        const deadline = AbortSignal.timeout(5000)
+        for (;;) {
+          const response = await transport(new URL(`/api/agent/${encodeURIComponent(sessionId)}`, endpoint), { signal: deadline, redirect: 'error' })
+          if (!response.ok) throw new Error('status_failed')
+          if (agentProgressSchema.parse(await response.json()).status !== 'running') {
+            const final = await transport(new URL(`/api/agent/${encodeURIComponent(sessionId)}/result`, endpoint), { signal: deadline, redirect: 'error' })
+            if (!final.ok) throw new Error('result_failed')
+            return agentExecResultSchema.parse(await final.json())
+          }
+          await new Promise(resolve => setTimeout(resolve, 20))
+          deadline.throwIfAborted()
+        }
       } catch { return { version: 1, sessionId, status: 'interrupted', text: '', error: 'cancellation_unconfirmed' } }
     }
+    if (signal?.aborted && submitted) return { version: 1, sessionId, status: 'interrupted', text: '', error: 'cancellation_unconfirmed' }
     return { version: 1, sessionId, status: signal?.aborted ? 'cancelled' : 'failed', text: '', error: signal?.aborted ? null : 'agent_exec_failed' }
   }
 }

@@ -7,7 +7,7 @@ const progress: AgentProgress = { sessionId: 'session', projectId: 'p', connecti
   status: 'running', plan: [{ text: 'Inspect', status: 'verification_requested' }], queue: [{ id: 'q', text: 'Follow up' }],
   summary: 'Response', error: null, observedAt: '2026-10-21T00:00:00.000Z', source: 'session.log', confidence: 'high' }
 afterEach(() => { vi.unstubAllGlobals(); setActiveLocale('ru') })
-it.each(['en', 'ru'] as const)('progress renders exact plan/queue counts with provenance, keyboard actions and localized status in %s', locale => {
+it.each(['en', 'ru'] as const)('progress renders exact plan/queue counts with provenance, button actions and localized status in %s', locale => {
   setActiveLocale(locale)
   const stop = vi.fn(), remove = vi.fn()
   render(<NativeProgress progress={progress} stop={stop} remove={remove} />)
@@ -35,6 +35,9 @@ it('new session defaults to Read-only, exposes zero-root scratch state and submi
   fireEvent.change(screen.getByLabelText('Connection'), { target: { value: '11111111-1111-4111-8111-111111111111' } })
   expect(screen.getByText('No folders · scratch only')).toBeTruthy()
   expect((screen.getByLabelText('Access mode') as HTMLSelectElement).value).toBe('read-only')
+  fireEvent.change(screen.getByLabelText('Access mode'), { target: { value: 'full-access' } })
+  expect(screen.getByRole('status').textContent).toContain('Shell commands are limited until process supervision is available.')
+  fireEvent.change(screen.getByLabelText('Access mode'), { target: { value: 'read-only' } })
   fireEvent.change(screen.getByLabelText('Model ID'), { target: { value: 'fixture' } })
   fireEvent.change(screen.getByLabelText('What should the agent do?'), { target: { value: 'Inspect' } })
   fireEvent.click(screen.getByRole('button', { name: 'Start session' }))

@@ -77,6 +77,9 @@ test('native pi loop uses K3 and K2; tool-printed secrets scrub before next requ
   assert.equal(JSON.stringify(events).includes(secret), false)
   assert.equal(events.filter(e => e.type === 'tool.call').length, 2)
   assert.equal(events.filter(e => e.type === 'tool.result').length, 2)
+  const read = events.find(e => e.type === 'tool.result' && e.data.toolCallId === 'read')
+  assert.equal(read?.type === 'tool.result' && read.data.status, 'ok', 'the file tool must actually succeed, not merely return a scrubbed error')
+  assert.match(read?.type === 'tool.result' ? read.data.result! : '', /REDACTED/)
   assert.equal(events.filter(e => e.type === 'agent.note').length, 1)
   assert.equal(events.filter(e => e.type === 'reasoning').length, 1)
   assert.equal(f.log.readAll(sessionId, 'remote_agent').filter(e => e.type === 'reasoning').length, 0)
@@ -160,4 +163,34 @@ test('native HTTP routes enforce peer/origin/JSON boundaries and reach the share
   assert.equal((await app.request(`/${sessionId}`, undefined, peer)).status, 200)
   assert.equal((await app.request(`/${sessionId}/result`, undefined, peer)).status, 200)
   assert.equal(f.requests.length, 1)
+})
+test('arbitrary shell execution fails closed in both modes pending descendant supervision', { timeout: 30000 }, async t => {
+  const { nativeTools } = await import('../../src/native-agent/tools.ts')
+  const f = await fixture(t)
+  for (const mode of ['read-only', 'full-access'] as const) {
+    const scratch = join(f.dir, mode); await mkdir(scratch)
+    const handle = f.log.open(`test-${mode}`, { kind: 'agent' })
+    try {
+      const tools = nativeTools({ policy: { mode, scratch, roots: [], attachments: [], protectedPaths: [], domains: [] }, log: f.log, handle, scrubber: f.scrubber, queue() {} })
+      const shell = tools.find(tool => tool.name === 'shell')!
+      const result = await shell.execute('blocked', { command: `${process.execPath} -e 'process.exit(0)'` })
+      assert.equal(result.isError, true)
+      assert.deepEqual(result.content, [{ type: 'text', text: 'supervision_unavailable' }])
+    } finally { handle.close() }
+  }
+})
+test('shutdown during attachment staging prevents a late model dispatch', { timeout: 30000 }, async t => {
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const f = await fixture(t)
+  f.agents().host.artifactTransfers.download = async () => {
+    await held
+    return { content: new Uint8Array(), attachment: { artifact: { mediaType: 'text/plain' }, displayName: 'fixture' } } as Awaited<ReturnType<import('../../src/native-agent/service.ts').NativeHost['artifactTransfers']['download']>>
+  }
+  const creating = f.agents().create({ ...f.input, attachmentIds: ['fixture'] })
+  await new Promise(resolve => setTimeout(resolve, 10))
+  await f.agents().close()
+  release()
+  await assert.rejects(creating, /agent_unavailable/)
+  assert.equal(f.requests.length, 0)
 })

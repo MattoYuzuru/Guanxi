@@ -44,3 +44,12 @@ test('actual CLI --json stdout contains exactly the snapshot protocol record', {
   assert.equal(result.stdout, JSON.stringify(snapshot.failed) + '\n')
   assert.equal(result.code, 1)
 })
+test('abort after an uncertain creation response never claims confirmed cancellation', async () => {
+  const abort = new AbortController()
+  let calls = 0
+  const result = await agentExec(['--json'], async () => {
+    calls++; abort.abort(); throw new Error('response lost after node created work')
+  }, abort.signal)
+  assert.equal(calls, 1)
+  assert.deepEqual(result, { version: 1, sessionId: null, status: 'interrupted', text: '', error: 'cancellation_unconfirmed' })
+})

@@ -1,5 +1,5 @@
 export const nativeEnglish = {
-  'native.story.result': 'Fixture result', 'native.folders': 'Project folders', 'native.saveFolders': 'Save folders', 'native.note': 'Note', 'native.title': 'New agent session', 'native.nav': 'Agent', 'native.project': 'Project', 'native.connection': 'Connection',
+  'native.shellLimited': 'File writes are available inside project folders. Shell commands are limited until process supervision is available.', 'native.story.result': 'Fixture result', 'native.folders': 'Project folders', 'native.saveFolders': 'Save folders', 'native.note': 'Note', 'native.title': 'New agent session', 'native.nav': 'Agent', 'native.project': 'Project', 'native.connection': 'Connection',
   'native.model': 'Model ID', 'native.prompt': 'What should the agent do?', 'native.mode': 'Access mode',
   'native.read-only': 'Read-only', 'native.full-access': 'Full access', 'native.start': 'Start session',
   'native.choose': 'Choose…', 'native.domains': 'Network allowlist (comma-separated hosts)', 'native.context': 'Local runtime context (tokens)',
@@ -16,7 +16,7 @@ export const nativeEnglish = {
   'native.attachments': 'Project attachment IDs (comma-separated; upload in Attachments)', 'native.protected': 'Protected paths (one per line)',
 } as const
 export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
-  'native.story.result': 'Пример результата', 'native.folders': 'Папки проекта', 'native.saveFolders': 'Сохранить папки', 'native.note': 'Заметка', 'native.title': 'Новая сессия агента', 'native.nav': 'Агент', 'native.project': 'Проект', 'native.connection': 'Подключение',
+  'native.shellLimited': 'Запись файлов доступна в папках проекта. Команды оболочки ограничены до появления контроля дочерних процессов.', 'native.story.result': 'Пример результата', 'native.folders': 'Папки проекта', 'native.saveFolders': 'Сохранить папки', 'native.note': 'Заметка', 'native.title': 'Новая сессия агента', 'native.nav': 'Агент', 'native.project': 'Проект', 'native.connection': 'Подключение',
   'native.model': 'ID модели', 'native.prompt': 'Что должен сделать агент?', 'native.mode': 'Режим доступа',
   'native.read-only': 'Только чтение', 'native.full-access': 'Полный доступ', 'native.start': 'Начать сессию',
   'native.choose': 'Выберите…', 'native.domains': 'Разрешённые сетевые адреса (через запятую)', 'native.context': 'Контекст локальной модели (токены)',

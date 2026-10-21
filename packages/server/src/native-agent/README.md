@@ -1,6 +1,6 @@
 # Native agent (K4)
 
-**Status:** implemented; local validation recorded in the [lane handoff](../../../../docs/plans/lanes/K4.handoff.md).
+**Status:** partial implementation; arbitrary shell execution blocked on descendant supervision; local validation recorded in the [lane handoff](../../../../docs/plans/lanes/K4.handoff.md).
 
 `guanxi.native-agent` provides the frozen `agent.native` facade. It requires K3's
 `connections.registry`, K2's `session.log` and `egress.scrubber`. API-key models use K3
@@ -20,13 +20,19 @@ Launcher bytes are captured at node boot and copied to a private directory outsi
 roots for each invocation. Editing a working checkout cannot replace the next launcher; the
 installed dependency tree and Node executable directory are deny-write paths. A fresh
 sandbox-runtime worker owns each command's runtime singleton, TLS proxy and child
-process group. Unload, explicit stop and tool timeout kill the worker and descendants. No
+process group. Unload, explicit stop and tool timeout kill that group. Detached descendants
+can escape a process group, so the native shell tool refuses arbitrary code execution in
+**both** modes; it accepts only fixed read commands with plain arguments. A kernel/native
+supervisor that owns detached and double-forked descendants is required to finish K4. No
 unsandboxed fallback exists. Workers receive a small environment without inherited keys,
-agent credentials, startup scripts or debug flags. Runtime stdout/stderr never enter plain
+agent credentials, startup scripts or debug flags. Proxy sockets and CA files use a short
+private directory outside writable roots; command HOME/TMPDIR remain scratch.
+Runtime stdout/stderr never enter plain
 logs; command output is returned over IPC and scrubbed before the model or session trace.
 
 - Read-only: roots/attachments readable, scratch writable, shell commands limited to
-  `pwd`, `ls`, `cat`, `head`, `tail`, `wc` with plain arguments. The OS boundary also applies
+  `pwd`, `ls`, `cat`, `head`, `tail`, `wc` with plain arguments. The same fixed command
+  allowlist applies in Full access until supervision exists. The OS boundary also applies
   when a command is launched directly by a trusted tool implementation.
 - Full access: scratch and all project roots writable, attachments immutable. Zero roots
   means scratch only. Protected paths deny writes in both modes.
@@ -74,7 +80,9 @@ selected project artifacts into read-only session storage, and expose text throu
 Images are sent only when the selected model declares image input. Other binary formats need
 an installed converter available through the sandbox; no format or modality is silently claimed.
 
-Tool output is bounded to 64 KiB per invocation with an explicit `truncated` flag. Tool arguments,
+Command stdout/stderr are bounded to 64 KiB per invocation with an explicit `truncated` flag.
+State/query tool results are currently inline and unbounded; the all-tool artifact/output
+policy is unfinished and no all-tool byte-bound claim is made. Tool arguments,
 large prompts and images still use K2's inline storage/input path; content-addressed trace
 artifacts and native-session retention/deletion remain follow-up work. Images are referenced by
 policy, not duplicated as base64 in the event log. Reasoning is stored only as K2 reasoning,

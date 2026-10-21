@@ -105,3 +105,12 @@ test('Full access refuses pre-existing hardlinks that could mutate files outside
   await assert.rejects(sandboxCommand({ ...policy, mode: 'full-access' }, `printf bad > ${quote(join(root, 'alias'))}`), /hardlinked_writable_file/)
   assert.equal(await readFile(target, 'utf8'), 'safe')
 })
+test('long session scratch paths support actual writes, reads and scratch-local TMPDIR', { timeout: 30000 }, async t => {
+  const { dir, policy } = await fixture(t)
+  const scratch = join(dir, 'data-directory-with-a-long-but-valid-name', 'scratch', '11111111-1111-4111-8111-111111111111')
+  await mkdir(scratch, { recursive: true })
+  assert.ok(Buffer.byteLength(scratch) > 104)
+  const result = await sandboxCommand({ ...policy, scratch }, 'printf worked > "$TMPDIR/value"; /bin/cat "$TMPDIR/value"')
+  assert.equal(result.code, 0); assert.equal(result.stdout, 'worked')
+  assert.equal(await readFile(join(scratch, 'value'), 'utf8'), 'worked')
+})
