@@ -46,7 +46,7 @@ export interface Wake {
   suppressed_at: number | null
 }
 export type RunErrorCode = 'stale_lease' | 'writer_busy' | 'closed' | 'run_not_found' |
-  'invalid_transition' | 'egress_not_ready' | 'idempotency_conflict' | 'invalid_input' | 'no_always_on_home'
+  'budget_exhausted' | 'quota_exhausted' | 'report_budget_exhausted' | 'invalid_transition' | 'egress_not_ready' | 'idempotency_conflict' | 'invalid_input' | 'no_always_on_home'
 export class RunError extends Error {
   readonly code: RunErrorCode
   readonly status: number

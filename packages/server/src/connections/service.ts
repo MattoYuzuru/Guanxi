@@ -17,6 +17,8 @@ import { modelsDevFacts } from './metadata.ts'
 export interface ModelCall {
   model: string; runId: string; requestId: string; background?: boolean
   signal?: AbortSignal
+  /** Executor observes actual transport dispatch, after readiness/governor admission. */
+  onStarted?: () => void
   /** Adapter parameters, not arbitrary transport/auth headers. */
   options?: Pick<SimpleStreamOptions, 'temperature' | 'maxTokens' | 'reasoning'>
 }
@@ -125,14 +127,22 @@ export class Connections {
           // Scrub the complete context, including tool results and tool schemas,
           // before pi-ai turns it into a provider-specific request.
           const clean = this.scrubber.scrub(context)
-          const result = await this.pi.complete(model, clean, {
+          let quota = false
+          const pending = this.pi.complete(model, clean, {
             temperature: call.options?.temperature, maxTokens: call.options?.maxTokens,
             reasoning: call.options?.reasoning, apiKey: key, signal,
+            onResponse: () => call.onStarted?.(),
             // Redirects must not forward the credential to a different host.
             ...(model.api === 'google-generative-ai' ? {} : {
-              fetch: (url: Parameters<typeof fetch>[0], init?: RequestInit) => this.transport(url, { ...init, redirect: 'error', signal }),
+              fetch: async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                const response = await this.transport(url, { ...init, redirect: 'error', signal })
+                quota ||= response.status === 429
+                return response
+              },
             }),
           })
+          const result = await pending
+          if (quota) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
           signal.throwIfAborted()
           if (result.stopReason === 'error' || result.stopReason === 'aborted') throw new Error('Model request failed')
           this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
@@ -143,6 +153,7 @@ export class Connections {
         })
       } catch (error) {
         if (error instanceof ConnectionError) throw error
+        if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Model request cancelled' : 'Model request failed')
       }
     })
@@ -165,7 +176,8 @@ export class Connections {
       try {
         const current = this.store.get(accountId, id)
         if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
-        const result = await this.ollama.client(host.href).chat(this.scrubber.scrub(request), signal)
+        const pending = this.ollama.client(host.href).chat(this.scrubber.scrub(request), signal, call.onStarted)
+        const result = await pending
         signal.throwIfAborted()
         this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
           inputTokens: result.prompt_eval_count ?? null, outputTokens: result.eval_count ?? null,
@@ -173,6 +185,7 @@ export class Connections {
         return this.scrubber.scrub(result)
       } catch (error) {
         if (error instanceof ConnectionError) throw error
+        if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed')
       }
       finally { lease.release() }

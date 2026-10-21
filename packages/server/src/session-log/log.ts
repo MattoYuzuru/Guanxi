@@ -404,13 +404,18 @@ export class SessionLog {
    * Opens the single writer for a session, creating the session if needed.
    * Fails with `writer_busy` while another handle or another live writer holds it.
    */
-  open(sessionId: string, input: OpenSessionInput): SessionHandle {
+  open(sessionId: string, input: OpenSessionInput, setup?: { beforeAcquire(): void; afterAcquire(): void }): SessionHandle {
     this.assertOpen()
     this.assertEgressReady()
     if (this.writers.has(sessionId)) {
       throw new SessionLogError('writer_busy', `Session ${sessionId} already has a writer in this process`)
     }
-    const epoch = this.transaction(() => this.acquireWithin(sessionId, input), sessionId, 'session.created')
+    const epoch = this.transaction(() => {
+      setup?.beforeAcquire()
+      const acquired = this.acquireWithin(sessionId, input)
+      setup?.afterAcquire()
+      return acquired
+    }, sessionId, 'session.created')
     const handle = new Handle(this, sessionId, epoch)
     this.writers.set(sessionId, { epoch, handle })
     this.notify([sessionId])

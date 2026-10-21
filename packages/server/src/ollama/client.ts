@@ -78,6 +78,7 @@ export interface OllamaClientOptions {
 }
 
 type RequestOptions = RequestInit & {
+  onDispatched?: () => void
   connectTimeoutMs?: number
   requestPhase?: Exclude<OllamaTimeoutPhase, 'stream_idle'>
   responseTimeout?: {
@@ -271,6 +272,7 @@ export class OllamaClient {
 
   private async request<T>(path: string, init: RequestOptions = {}): Promise<T> {
     const {
+      onDispatched,
       connectTimeoutMs = this.connectTimeoutMs,
       requestPhase = 'connect',
       responseTimeout = { phase: 'connect' as const, timeoutMs: connectTimeoutMs },
@@ -289,15 +291,18 @@ export class OllamaClient {
         connectTimeoutMs,
         controller,
         externalSignal,
-        () =>
-          this.fetchImpl(`${this.host}${path}`, {
+        () => {
+          const pending = this.fetchImpl(`${this.host}${path}`, {
             ...requestInit,
             signal,
             headers: {
               'content-type': 'application/json',
               ...(requestInit.headers ?? {}),
             },
-          }),
+          })
+          try { onDispatched?.() } catch (error) { controller.abort(); void pending.catch(() => undefined); throw error }
+          return pending
+        },
       )
     } catch (error) {
       if (externalSignal?.aborted || error instanceof OllamaTimeoutError) throw error
@@ -613,12 +618,13 @@ export class OllamaClient {
     )
   }
 
-  async chat(request: OllamaChatRequest, signal?: AbortSignal): Promise<OllamaChatChunk> {
+  async chat(request: OllamaChatRequest, signal?: AbortSignal, onDispatched?: () => void): Promise<OllamaChatChunk> {
     // A non-stream Ollama response can withhold HTTP headers while loading the
     // model. A bounded version preflight establishes connect separately; the
     // model request that follows owns the load deadline.
     await this.version(signal)
     return this.request<OllamaChatChunk>('/api/chat', {
+      onDispatched,
       method: 'POST',
       body: JSON.stringify({ ...request, stream: false }),
       ...(signal ? { signal } : {}),

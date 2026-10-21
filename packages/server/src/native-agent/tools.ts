@@ -14,6 +14,7 @@ export interface NativeToolContext {
   handle: SessionHandle
   scrubber: EgressScrubber
   executeCommand?: typeof sandboxCommand
+  guard?(): void
   queue(text: string): void
 }
 export function nativeTools(ctx: NativeToolContext): AgentTool[] {
@@ -36,8 +37,11 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     name, label: name, description, parameters: Type.Object(properties),
     async execute(_id, raw, signal) {
       try {
+        ctx.guard?.()
+        signal?.throwIfAborted()
         // Whole results are scrubbed before the model, trace, or next tool sees them.
         const content = await execute(scrubber.scrub(raw as Record<string, string>), signal)
+        ctx.guard?.()
         return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
         const safeCodes = ['cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']

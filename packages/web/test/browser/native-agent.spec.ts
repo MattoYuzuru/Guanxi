@@ -40,3 +40,34 @@ test('native session keyboard creation and progress replay have exact counts on 
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test('native delete is keyboard accessible at mobile width and submits exactly one contract action', async ({ page }) => {
+  await installChatApiFixture(page, 'completed')
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window)
+    const state = { deletes: 0 }
+    Object.assign(window, { nativeDeleteFixture: state })
+    window.fetch = async (input, init) => {
+      const path = String(input)
+      if (path === '/api/agent/projects') return Response.json({ projects: [] })
+      if (path === '/api/connections') return Response.json({ connections: [] })
+      if (path === '/api/agent/delete-fixture') {
+        if (init?.method === 'DELETE') { state.deletes++; return Response.json({ sessionId: 'delete-fixture', deleted: true }) }
+        return Response.json({ sessionId: 'delete-fixture', projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only', status: 'completed',
+          plan: [], queue: [], summary: 'Fixture response', error: null, source: 'session.log', confidence: 'high', observedAt: '2026-10-21T00:00:00.000Z' })
+      }
+      return original(input, init)
+    }
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/agent/delete-fixture')
+  const button = page.getByRole('button', { name: 'Удалить сессию', exact: true })
+  await expect(button).toHaveCount(1)
+  await expect(button).toBeEnabled()
+  await expect(button).toHaveAttribute('aria-describedby', 'native-delete-description')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await button.focus(); await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/agent$/)
+  expect(await page.evaluate(() => (window as unknown as { nativeDeleteFixture: { deletes: number } }).nativeDeleteFixture.deletes)).toBe(1)
+})

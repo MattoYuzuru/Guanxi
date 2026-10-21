@@ -7,6 +7,8 @@ import type { Connections } from '../connections/service.ts'
 import { piModels } from '../connections/pi.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { OllamaChatMessage } from '../ollama/types.ts'
+import type { Attempt } from '../runs/types.ts'
+import type { RunStore } from '../runs/store.ts'
 import { randomUUID } from 'node:crypto'
 
 export const emptyUsage = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } })
@@ -24,18 +26,25 @@ export function selectedModel(connections: Connections, input: NativeAgentInput)
     input: ['text'], reasoning: false, contextWindow: input.contextTokens, maxTokens: input.contextTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
 }
-export function connectionStream(connections: Connections, scrubber: EgressScrubber, input: NativeAgentInput, sessionId: string): StreamFn {
+export function connectionStream(connections: Connections, scrubber: EgressScrubber, input: NativeAgentInput, attempt: Attempt, runs: RunStore): StreamFn {
   return (model, context, options) => {
     const stream = new AssistantMessageEventStream()
     void (async () => {
       let result: AssistantMessage
       try {
+        runs.checkExecution(attempt, true)
         const clean = scrubber.scrub(context)
-        const call = { model: input.model, runId: sessionId, requestId: randomUUID(), signal: options?.signal }
+        const call = { model: input.model, runId: attempt.run_id, requestId: randomUUID(), signal: options?.signal, onStarted: () => runs.modelStarted(attempt) }
         if (model.provider !== 'ollama') result = await connections.complete('local', input.connectionId, clean, call)
         else result = await local(connections, input, clean, call)
+        runs.recordCost(attempt, { key: call.requestId, inputTokens: result.usage.input + result.usage.cacheRead + result.usage.cacheWrite,
+          outputTokens: result.usage.output, costMicrounits: model.provider === 'ollama' ? null : Math.round(result.usage.cost.total * 1000000), currency: model.provider === 'ollama' ? 'unknown' : 'USD' })
+        runs.checkExecution(attempt)
         result = scrubber.scrub(result)
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'quota_exhausted') {
+          try { runs.stopExecution(attempt, 'quota_exhausted') } catch { /* Fencing wins over a late quota observation. */ }
+        }
         result = { role: 'assistant', content: [], api: model.api, provider: model.provider, model: model.id,
           usage: emptyUsage(), timestamp: Date.now(), stopReason: options?.signal?.aborted ? 'aborted' : 'error', errorMessage: 'model_failed' }
       }
@@ -46,7 +55,7 @@ export function connectionStream(connections: Connections, scrubber: EgressScrub
   }
 }
 async function local(connections: Connections, input: NativeAgentInput, context: TranscriptContext,
-  call: { runId: string; requestId: string; signal?: AbortSignal }): Promise<AssistantMessage> {
+  call: { runId: string; requestId: string; signal?: AbortSignal; onStarted?: () => void }): Promise<AssistantMessage> {
   const messages: OllamaChatMessage[] = context.messages.map(m => {
     if (m.role === 'system') return { role: 'system', content: typeof m.content === 'string' ? m.content : m.content.map(c => c.text).join('\n') }
     if (m.role === 'toolResult') return { role: 'tool', content: m.content.filter(c => c.type === 'text').map(c => c.text).join('\n'), tool_name: m.toolName }

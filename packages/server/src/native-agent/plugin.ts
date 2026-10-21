@@ -1,17 +1,19 @@
+import type { Db } from '../store/db.ts'
+import type { DurableRunsService } from '../runs/plugin.ts'
 import { definePlugin } from '@guanxi/kernel'
 import type { Connections } from '../connections/service.ts'
 import type { SessionLog } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { NativeAgents, type NativeHost } from './service.ts'
 export const NATIVE_AGENT_SERVICE = 'agent.native'
-export const nativeAgentPlugin = definePlugin<{ host: NativeHost; dataDir: string; nodePorts?: () => number[] }>({
+export const nativeAgentPlugin = definePlugin<{ db: Db; host: NativeHost; dataDir: string; nodePorts?: () => number[] }>({
   manifest: { id: 'guanxi.native-agent', engines: { guanxi: '^0.1.0' }, provides: [NATIVE_AGENT_SERVICE],
-    requires: ['connections.registry', 'session.log', 'egress.scrubber'], trust: 'T0' },
+    requires: ['runs.durable', 'connections.registry', 'session.log', 'egress.scrubber'], trust: 'T0' },
   apply(ctx, config) {
     const agents = new NativeAgents(config.host, ctx.service<SessionLog>('session.log'), ctx.service<Connections>('connections.registry'),
-      ctx.service<EgressScrubber>('egress.scrubber'), config.dataDir, config.nodePorts)
+      ctx.service<EgressScrubber>('egress.scrubber'), config.dataDir, config.nodePorts, undefined, { db: config.db, runs: ctx.service<DurableRunsService>('runs.durable').store })
     ctx.provide(NATIVE_AGENT_SERVICE, Object.freeze({
-      create: agents.create.bind(agents), prompt: agents.prompt.bind(agents), progress: agents.progress.bind(agents),
+      create: agents.create.bind(agents), deleteSession: agents.deleteSession.bind(agents), setRetention: agents.setRetention.bind(agents), leaveSession: agents.leaveSession.bind(agents), prompt: agents.prompt.bind(agents), progress: agents.progress.bind(agents),
       result: agents.result.bind(agents), wait: agents.wait.bind(agents), stop: agents.stop.bind(agents),
       queue: agents.queue.bind(agents), removeQueued: agents.removeQueued.bind(agents),
       projects: agents.projects.bind(agents), setRoots: agents.setRoots.bind(agents), shutdown: agents.close.bind(agents),
@@ -19,4 +21,4 @@ export const nativeAgentPlugin = definePlugin<{ host: NativeHost; dataDir: strin
     ctx.effect(() => () => agents.close(), 'native.close')
   },
 })
-export type NativeAgentService = Pick<NativeAgents, 'create' | 'prompt' | 'progress' | 'result' | 'wait' | 'stop' | 'queue' | 'removeQueued' | 'setRoots' | 'projects'> & { shutdown(): Promise<void> }
+export type NativeAgentService = Pick<NativeAgents, 'leaveSession' | 'setRetention' | 'deleteSession' | 'create' | 'prompt' | 'progress' | 'result' | 'wait' | 'stop' | 'queue' | 'removeQueued' | 'setRoots' | 'projects'> & { shutdown(): Promise<void> }

@@ -2,8 +2,7 @@
 
 **Status:** partial implementation; PID-namespace execution owners implemented; validation recorded in the [K4 evidence](../../../../docs/plans/evidence/K4.md).
 
-`guanxi.native-agent` provides the frozen `agent.native` facade. It requires K3's
-`connections.registry`, K2's `session.log` and `egress.scrubber`. API-key models use K3
+`guanxi.native-agent` provides the frozen `agent.native` facade. It requires R1's `runs.durable`, K3's `connections.registry`, K2's `session.log` and `egress.scrubber`. API-key models use K3
 `complete`; local Ollama uses K3 `localChat` and its governor. Subscription agents and service
 connections remain K5/provider work. There is no credential fallback or direct provider call.
 
@@ -109,8 +108,8 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
 `/agent` is an interim new-session screen; `/agent/:id` projects progress from the log, with
 plan, queue, latest response, continuation and stop. Native folder overrides are separate from
 legacy Chat bindings. Registered folder names can be selected and saved; an empty set is valid.
-No DS1-b primitives are available at this baseline, so the screen reuses legacy primitives
-with DS1-a semantic tokens. It has no component approval record or new shared primitive.
+The session action controls use the shared `@guanxi/ui` Button (in review) and semantic tokens.
+The rest of this interim screen still includes legacy form primitives; no new shared primitive or owner approval is claimed.
 
 Loopback-peer-only `/api/agent` routes use the whole-server Host gate and same-origin mutation
 checks. Creation returns 202; HTTP disconnection does not cancel the node-owned execution.
@@ -119,9 +118,11 @@ reasoning. K2's inspector remains the person-facing detailed trace.
 
 The light plan is explicitly off-ledger, agent-reported state: `verification_requested` never
 means harness-verified completion. Queue entries are visible/removable and consumed once during
-the live process. Explicit prompts can continue a completed/interrupted session. Overlapping Full-access roots have one live writer in this service. A process
-restart never starts inference automatically. A stored running state with no live owner projects
-as `interrupted`; R1 remains responsible for durable run scheduling and recovery.
+the live process. Explicit prompts can continue a completed/interrupted session or answer `input_required`.
+Overlapping Full-access roots have one live writer in this service. Each typed or consumed queued
+prompt creates its own R1 run/attempt. Startup reconciliation turns unfinished native runs into
+`input_required`; no inference or report resumes automatically. A policy committed before run
+admission projects as interrupted. Terminal R1 state takes precedence over old native state events.
 
 Tools: `project_info`, `file_read`, `file_write`, `shell`, literal recursive `search`, `fetch`,
 `attachments`, `plan`, `queue`, `note.add` (provider-safe wire alias `note_add`) and the
@@ -137,9 +138,8 @@ Every tool result is scrubbed and bounded to 64 KiB. Larger state/query results 
 private, session-scoped SHA-256 artifacts under `native-output/`, with an explicit excerpt,
 byte count, artifact ID and `tool_output_read` continuation. Pages contain at most 8 KiB of
 UTF-8 content so JSON escaping fits the result budget. Artifacts are scrubbed again before
-paging; neither artifacts nor launcher/CA files are writable roots. Artifact storage currently
-keeps content with the session: automatic retention/deletion and an input-artifact policy remain
-unfinished. Tool arguments and large prompts still use K2's inline input path. Image bytes are
+paging; neither artifacts nor launcher/CA files are writable roots. Artifact storage follows the native session's coordinated retention/deletion below.
+The canonical input-artifact policy remains unfinished. Tool arguments and large prompts still use K2's inline input path. Image bytes are
 inline in model requests; K2 stores policy references and attachment counts. Reading an output
 artifact currently scrubs it in memory before paging; bounded memory streaming is not
 claimed. Binary conversion remains a named residual. Images are referenced by policy, not
@@ -149,6 +149,50 @@ and console logs.
 The orientation is checked against a conservative 300 UTF-8-byte upper bound, independent of
 path length/root count. Full paths, policies and instruction locations are obtained from
 `project_info`. It invents no hardware fit, model capability or token budget.
+
+## Durable execution and retention (K4F2)
+
+Every native append during execution uses R1's atomic attempt/home fence and an explicit K2
+`expectedSeq`, read from the current session head so R1 lifecycle writes are included. Tools
+check the fence before dispatch and after completion; the existing ExecutionOwner still owns
+shell cleanup and quarantine. Native attempts renew once per second while pending. A stale
+attempt cannot append or complete. Model-start acknowledgment follows an API response observation
+or local `/api/chat` dispatch, after Ollama's version preflight.
+
+An optional immutable `budget` supplies model-call, observed-token, observed-USD-cost and wall-time
+caps. R1 stores the policy/counters, cost observations and terminal reason. A cap cancels with
+`budget_exhausted`; an observed HTTP 429 or typed quota refusal cancels with `quota_exhausted`.
+No balance is inferred from these observations. Tokens/costs are checked after each observed call
+and before the next; one already dispatched call can exceed an observation cap. Unknown monetary
+cost blocks further calls when a money cap is configured. No ordinary call/token cap is invented.
+`wrapping_up` forbids tools and has an explicit default report budget of one further call and
+10 seconds, configurable through `reportMaxCalls`/`reportMaxDurationMs`. Exhaustion cancels with
+`report_budget_exhausted`. Successfully finishing a requested report cancels with
+`wrap_up_requested`. Provider calls and tools are aborted on the next one-second control pass
+when a time cap or fence is lost; cleanup confirmation still governs root reuse.
+
+Migration **32** adds `run_execution` and `native_sessions`, adopts existing native sessions
+under a Thread owner, and leaves migrations 1–31 byte-identical. The private owning Thread is
+agent-mode/projectless to preserve the existing legacy Project→Chat ownership invariant; the
+immutable native policy retains the logical Project. Owner, session, policy and registration
+commit together. Keep a stopped pre-upgrade SQLite/WAL backup; rollback requires that backup.
+Prefer a forward fix; no production down migration is provided.
+
+Retention defaults to the canonical rolling seven days of user activity. Model/tool activity
+does not extend it. TTL expiry moves native metadata to Trash and retains recoverable bytes.
+`keep` retains until explicit deletion. `session` needs explicit `POST /api/agent/:id/leave`;
+maintenance keeps it recoverable for 24 hours and then uses coordinated deletion. Changing
+retention with `PATCH /api/agent/:id/retention` can restore before that Session recovery deadline.
+A one-minute maintenance pass also retries persisted deletion intents after restart.
+
+`DELETE /api/agent/:id` is the explicit immediate, irreversible delete action. It refuses an
+active native attempt or held K2 writer and refuses quarantined roots. Scratch, copied attachments
+and private output artifacts are removed before deleting R1 rows and the owning Thread (which
+cascades K2 events, writer and FTS rows). A durable intent blocks continuation across partial
+cleanup/restart; failures retain that intent. Quarantine files are never a cleanup target and
+have no automatic expiry. Cross-session delegation references refuse deletion rather than
+silently dropping another run's promise. Reasoning uses only K2 reasoning rows, with its seven-day
+maximum and the sooner parent TTL; it never enters provider history, outputs or cost metadata.
 
 ## CLI
 
@@ -162,7 +206,7 @@ guanxi agent exec --json --project PROJECT_ID --connection CONNECTION_ID \
 `--url` accepts a loopback HTTP node only (default `GUANXI_API_PORT` or 4310).
 `--domains host,other:443` sets tool egress; `--context-tokens N` is required for local Ollama.
 Stdout is exactly one JSON object: `{version:1, sessionId, status, text, error}`. Exit codes:
-0 completed, 1 failed/interrupted, 130 cancelled. SIGINT requests server cancellation; an
+0 completed, 1 failed/interrupted/input-required, 130 cancelled. SIGINT requests server cancellation; an
 unconfirmed stop returns `interrupted` with `cancellation_unconfirmed`.
 
 ## Reuse and license
