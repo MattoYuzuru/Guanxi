@@ -175,7 +175,9 @@ test('migration 32 rolls back partial DDL on collision and safely retries', () =
 
 test('the real application mounts the contract routes without model or filesystem services', async () => {
   const db = openDb(':memory:')
-  const app = createApp({ db, ollama: () => { throw new Error('Network/model access forbidden') } } as AppContext)
+  const context = { db } as AppContext
+  context.ollama = () => { throw new Error('Network/model access forbidden') }
+  const app = createApp(context)
   try {
     const saved = await app.request(ROUTES.layouts(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document: fixture() }) })
     assert.equal(saved.status, 200)
