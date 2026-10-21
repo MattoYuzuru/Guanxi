@@ -168,6 +168,12 @@ Residual risks:
 | --- | --- | --- |
 | One append-only single-writer event log per session; crash-safe append and replay; durable payload-free readiness backlog; `egress.scrubber` kernel service with readiness; loopback-only interim inspector and query tool (ADR-0023) | implemented, independently verified, merged into `main` | Full evidence: [evidence/K2](evidence/K2.md). In-session reviews (implementation, architecture, accessibility) plus four GPT cross-family rounds; the final scoped check closed every item with no new High (14/14 mutations caught). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (web 275), browser gate 50/50, build, lint:md, licenses 358/0. Residuals named in the evidence; the `project-chat.test.tsx` focus flake seen during K2 runs is being fixed in its own lane. |
 
+## K3 — Model access
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Connection registry with provenance; encrypted vault with a node-key boundary for unattended connections only (D-145); `secret://` refs and just-in-time injection; pi-ai with the Anthropic OAuth path blocked; recorded-fixture balance probes; cost ledger; whole-server Host allowlist against DNS rebinding; vault wired to K2's `egress.scrubber` readiness | implemented, independently verified, merged into `main` | Full evidence and residuals: [evidence/K3](evidence/K3.md). Author GPT/Codex; three Claude cross-family rounds (H1–H3 and M1–M6, then N1–N8, then a final check of the K2 integration with no High). The restart → tool print → K2 event test finds zero secret matches in storage, exports, inspector and query output. Integrator gates on `main`: typecheck, `ui:check`, licenses 437/0, `npm test` (web 298), browser gate, build. |
+
 ## DS1 — Design foundations
 
 | Item | Status | Evidence |
@@ -210,6 +216,7 @@ decision was made.
 | DS2 Approval signing helper | not started | after DS1 (D-184) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
-| K3 Model access | in review (lane K3, Codex): Review 1 and 2 fixes done; next the K2 scrubber integration step | [lanes/K3](lanes/K3.md) |
+| K3 Model access | implemented, merged | see the K3 section above |
+| K4 Native agent | in progress (lane K4, Codex) | [lanes/K4](lanes/K4.md) |
 | R1 Durable runs | in progress (lane R1, Codex) | [lanes/R1](lanes/R1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
