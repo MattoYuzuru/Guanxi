@@ -1,5 +1,6 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
-import { realpath, mkdir, stat } from 'node:fs/promises'
+import { realpath, mkdir, stat, open, type FileHandle } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 
@@ -23,22 +24,27 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
   const metadata = await gitMetadata(cwd)
   const paths = [...new Set([root, dirname(entry), databaseDir, dirname(executable), ...dependencies, ...metadata])]
   let command: string, args: string[]
+  let rootHandle: FileHandle | undefined
   if (process.platform === 'darwin') {
     const system = ['/System', '/usr', '/bin', '/sbin', '/Library/Apple', '/Library/Developer', '/private/etc', '/opt/homebrew/Cellar', '/opt/homebrew/opt']
     const profile = `(version 1)(allow default)(deny network*)(deny file-read*)(deny file-write*)(allow file-read-metadata)(allow file-read* (literal "/"))(allow file-read* ${[...system, ...paths].map(p => `(subpath ${quote(p)})`).join(' ')})(allow file-read* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))(allow file-write* (subpath ${quote(databaseDir)}) (literal "/dev/null"))`
     command = '/usr/bin/sandbox-exec'; args = ['-p', profile, executable, entry]
   } else if (process.platform === 'linux') {
+    rootHandle = await open(root, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    if (await realpath(`/proc/self/fd/${rootHandle.fd}`) !== root) { await rootHandle.close(); throw new Error('index_root_changed') }
     command = '/usr/bin/bwrap'
     args = ['--die-with-parent', '--unshare-all', '--new-session', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
     for (const path of [...new Set(['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths])].sort((a, b) => a.length - b.length)) {
       try { await realpath(path) } catch { continue }
-      args.push('--ro-bind', path, path)
+      args.push('--ro-bind', path === root ? `/proc/${process.pid}/fd/${rootHandle.fd}` : path, path)
     }
     args.push('--bind', databaseDir, databaseDir, '--chdir', cwd, executable, entry)
   } else throw new Error('index_sandbox_unavailable')
-  return spawn(command, args, { detached: true, cwd,
+  const child = spawn(command, args, { detached: true, cwd,
     env: { PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', HOME: databaseDir, TMPDIR: databaseDir, LANG: 'en_US.UTF-8', OPENSSL_CONF: '/dev/null' },
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+  child.once('close', () => { void rootHandle?.close().catch(() => undefined) })
+  return child
 }
 export async function stopIndexProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
