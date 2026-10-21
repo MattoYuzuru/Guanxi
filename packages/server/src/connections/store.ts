@@ -7,7 +7,7 @@ import {
   connectionSchema, createConnectionSchema, connectionCostSchema,
   type Connection, type CreateConnection, type ConnectionCost, type ConnectionBalance, type ConnectionFact,
 } from '@guanxi/contract'
-import type { EgressScrubber } from './egress.ts'
+import type { EgressScrubber } from '../egress/types.ts'
 
 /** A separate database keeps K3 migrations independent of K2 and legacy user_version. */
 export class ConnectionStore {

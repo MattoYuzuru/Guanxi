@@ -1,4 +1,4 @@
-import { MIN_SECRET_LENGTH } from './egress.ts'
+import { MIN_SECRET_LENGTH } from '../egress/types.ts'
 import { ConnectionError } from './errors.ts'
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from '@earendil-works/pi-ai'
 import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'

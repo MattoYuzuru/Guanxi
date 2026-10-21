@@ -1,9 +1,9 @@
-import { MIN_SECRET_LENGTH } from '../connections/egress.ts'
+import { MIN_SECRET_LENGTH } from '../egress/types.ts'
 import { ConnectionError } from '../connections/errors.ts'
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { ConnectionStore } from '../connections/store.ts'
-import type { EgressScrubber, SecretRef } from '../connections/egress.ts'
+import type { EgressScrubber, SecretRef } from '../egress/types.ts'
 import type { VaultKeychain } from './keychain.ts'
 
 function seal(key: Buffer, plaintext: Buffer, aad: string): string {

@@ -1,6 +1,6 @@
 # Model access (K3)
 
-**Status:** implemented consumer layer; locally validated with fixture services · **Updated:** 2026-10-20
+**Status:** implemented; K2 scrubber integrated, locally validated with fake credentials · **Updated:** 2026-10-21
 
 `guanxi.connections` is a T0 kernel plugin requiring `egress.scrubber`, `ollama` and
 `governor`. It provides `connections.registry` (`Connections`) and
@@ -89,29 +89,26 @@ the live service for each request after plugin reload.
 
 ## Integration and platform limits
 
-K2 has not merged into this lane's main baseline. `egress.ts` copies its documented interface
-and provides its required **fail-closed** production stub. The consumer tests use a separate
-minimal test scrubber; their trace proves the K3 boundaries, not the combined K2/K3 core.
-Until integration, production Connections requests that require scrubbing return an error.
-After merging K2: delete the copied interface/stub, import K2's types/provider, load that provider
-in the server kernel, switch the consumer tests to it and rerun the trace and full gates.
-H3 integration uses K2's push API:
+K3 imports K2's `egress/types.ts` and uses the real `egress.scrubber` service loaded by
+`bootServerKernel`. The legacy profile declares `expectedSources: ['vault']` before the
+session log or Connections loads, so a restart never exposes an empty-ready scrubber.
+Connections registers all current and retired vault values at apply, then pushes
+`ready('vault')`. Registration-only access leaves interactive injection locked.
+`connections.egress-readiness` remains a K3 diagnostic; K2 does not poll it.
 
-1. Configure K2's egress-scrubber row in `LEGACY_SERVER_PROFILE` with
-   `expectedSources: ['vault']` before any consumer loads. Do not call `expect('vault')`
-   only inside Connections apply: that would allow earlier writes through.
-2. Keep K3's `ready('vault')` push after full historical registration (or a later unlock
-   that completes it). `connections.egress-readiness` is a K3 diagnostic, not K2's barrier.
-3. Use K2's existing readiness gates: the job mirror buffers bounded writes and flushes in
-   order after readiness; reads, handles, inspector, export and query fail closed while
-   pending. Buffer overflow rejects the write and rolls back the job transaction.
-4. Replace the fixture provider and run restart → tool-print → real K2-event assertions
-   with zero secret matches, including delayed/failed registration and reload. Values stay
-   registered across vault unload because K2 readiness is monotonic; a new scrubber must
-   start with the expected source pending and register all rows again.
+While registration is pending, K2 refuses handles, reads, inspector, export and query with
+`egress_not_ready`. Its Job mirror records only a Job id in the durable
+`session_mirror_backlog`, then reconstructs and scrubs the deferred history after readiness.
+No secret-bearing payload is buffered in memory. Until catch-up completes, session reads
+answer `session_catching_up`. See [K2 readiness](../egress/README.md#readiness).
 
-K3's source readiness proves registration completeness, not availability of the temporary stub.
-K2 owns event writes/exports; K3 never claims those boundaries from its fixture tests.
+`test/connections/k2-integration.test.ts` restarts the node with fresh K2 services and a
+throwaway keychain, then writes a failing tool's current/retired vault output before the first
+unlock. It asserts zero matches in persisted events/FTS, inspector, exports and both query-tool
+audiences, then checks model serialization, response, ledger and the pre-hash artifact.
+Rejected/held keychain tests assert pending-source denials and deferred-history recovery.
+The consumer suite also uses K2's real provider. These are local fake-credential checks,
+not live provider or native keychain validation.
 
 The current native keyring is usable on macOS/Windows; real OS prompts/access have not been
 exercised in this lane. Its Linux binary statically links libdbus under AFL/GPL terms outside

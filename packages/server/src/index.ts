@@ -16,7 +16,6 @@ import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/list
 import { defaultDbPath, openDb } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
 import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
-import { temporaryEgressPlugin, EGRESS_SERVICE } from './connections/egress.ts'
 import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
 import { ConnectionError } from './connections/errors.ts'
@@ -148,7 +147,6 @@ export async function start(options: StartOptions = {}) {
   }
 
   try {
-    if (!kernel.node.service(EGRESS_SERVICE)) await kernel.node.plugin(temporaryEgressPlugin)
     await kernel.node.plugin(connectionsPlugin, {
       databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
       localHost: () => context.settings.get().ollamaHost,

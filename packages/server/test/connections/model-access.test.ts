@@ -12,8 +12,8 @@ import type { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
 import { connectionsPlugin, CONNECTIONS_SERVICE, CONNECTIONS_EGRESS_READINESS, type ConnectionsEgressReadiness } from '../../src/connections/plugin.ts'
-import { temporaryEgressPlugin, EGRESS_SERVICE, type EgressScrubber } from '../../src/connections/egress.ts'
-import { fixtureEgressPlugin } from './egress-fixture.ts'
+import { EGRESS_SCRUBBER_SERVICE, redactionMarker, type EgressScrubber, type SecretRef } from '../../src/egress/types.ts'
+import { egressScrubberPlugin } from '../../src/egress/plugin.ts'
 import { connectionRoutes } from '../../src/connections/routes.ts'
 import { ConnectionError } from '../../src/connections/errors.ts'
 import { Connections } from '../../src/connections/service.ts'
@@ -42,7 +42,7 @@ async function setup(t: { after(fn: () => unknown): void }, options: { transport
   const kernel = createKernel()
   await kernel.plugin(resourceGovernorPlugin)
   await kernel.plugin(ollamaAdapterPlugin, { fetch: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }) })
-  let egress = await kernel.plugin(fixtureEgressPlugin)
+  let egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] })
   const config = { databasePath: join(dir, 'connections.sqlite'), localHost: () => 'http://127.0.0.1:11434',
     policy: { ownerDevice: options.ownerDevice ?? true, nodeKeyOptIn: options.unattended ?? false }, keychain: async () => keychain,
     transport: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }), pi: options.pi }
@@ -51,7 +51,7 @@ async function setup(t: { after(fn: () => unknown): void }, options: { transport
   t.after(async () => { await kernel.dispose(); for (const key of keys.values()) key.fill(0); await rm(dir, { recursive: true, force: true }) })
   return { dir, kernel, service, config, async restart(freshEgress = false) {
     await handle.dispose()
-    if (freshEgress) { await egress.dispose(); egress = await kernel.plugin(fixtureEgressPlugin) }
+    if (freshEgress) { await egress.dispose(); egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] }) }
     handle = await kernel.plugin(connectionsPlugin, config)
   } }
 }
@@ -123,7 +123,7 @@ test('all connection kinds persist; unattended is explicitly false by default af
 async function setupVault(t: { after(fn: () => unknown): void }) {
   const f = await setup(t, { unattended: true })
   const store = f.service().store
-  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
   const vault = new Vault(store, f.config.keychain, scrubber, f.config.policy)
   t.after(() => vault.close())
   return { ...f, store, vault, scrubber }
@@ -141,13 +141,14 @@ test('vault ciphertext, wrapping, account isolation, rotation and restart regist
   assert.equal(stored.includes(secret), false); assert.equal(stored.includes(rotated), false)
   assert.equal(stored.includes('ciphertext'), true)
   assert.ok(store.db.prepare('SELECT wrapped FROM vault_keys').get())
-  assert.equal(scrubber.scrub(`${secret} ${rotated}`), '[REDACTED] [REDACTED]')
+  assert.equal(scrubber.scrub(`${secret} ${rotated}`), `${redactionMarker(first as SecretRef)} ${redactionMarker(second as SecretRef)}`)
   vault.lock(account)
   await assert.rejects(vault.inject(account, row.id, false, async () => null), /locked/)
   await assert.rejects(vault.inject('other-owner', row.id, true, async () => null), /not found/)
   await vault.unlock(account)
   await vault.inject(account, row.id, false, async value => assert.equal(value, rotated))
-  assert.equal(scrubber.scrub(secret), '[REDACTED]')
+  assert.equal(scrubber.scrub(secret).includes(secret), false)
+  assert.match(scrubber.scrub(secret), /REDACTED secret:\/\//)
 })
 
 test('vault rejects authenticated ciphertext moved to another ref or account', async t => {
@@ -281,21 +282,23 @@ test('cost ledger is append-only, idempotent per connection receipt and isolated
 test('local runtime uses K1 adapter and governor; fixture response is scrubbed and cost remains unknown', async t => {
   let calls = 0
   const secret = fakeKey()
+  let marker = ''
   const f = await setup(t, { transport: async (url, init) => {
     calls++; assert.equal(new URL(String(url)).hostname, '127.0.0.1')
     if (new URL(String(url)).pathname === '/api/version') return Response.json({ version: 'fixture' })
-    assert.equal(JSON.parse(String(init?.body)).messages[0].content, '[REDACTED]')
+    assert.equal(JSON.parse(String(init?.body)).messages[0].content, marker)
     return Response.json({ model: 'fixture', created_at: new Date().toISOString(), done: true,
       message: { role: 'assistant', content: `runtime echoed ${secret}` }, prompt_eval_count: 5, eval_count: 1 })
   } })
   f.config.localHost = () => '127.0.0.1:11434'
   await f.restart()
   const s = f.service(); const row = s.create(account, { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
-  await s.unlockVault(account); s.saveSecret(account, s.create(account, apiInput).id, secret)
+  await s.unlockVault(account)
+  marker = redactionMarker(s.saveSecret(account, s.create(account, apiInput).id, secret).secretRef as SecretRef)
   const request = { model: 'fixture', messages: [{ role: 'user' as const, content: secret }], options: { num_ctx: 1024 } }
   const result = await s.localChat(account, row.id, request, { runId: 'run', requestId: 'local-request' })
   assert.equal(result.done, true); assert.equal(calls, 2)
-  assert.equal(result.message?.content, 'runtime echoed [REDACTED]')
+  assert.equal(result.message?.content, `runtime echoed ${marker}`)
   assert.equal(JSON.stringify(result).includes(secret), false)
   assert.equal(s.store.costs(account)[0]!.costUsd, null)
   await assert.rejects(s.localChat(account, row.id, { ...request, options: {} }, { runId: 'run', requestId: 'invalid' }), /context/)
@@ -346,14 +349,6 @@ test('models.dev evidence retains its own source, observation time and confidenc
   assert.deepEqual(modelsDevFacts('unknown', 'unknown'), {})
 })
 
-test('the pre-K2 production stub refuses all egress instead of claiming protection', async () => {
-  const kernel = createKernel()
-  await kernel.plugin(temporaryEgressPlugin)
-  const scrubber = kernel.service<EgressScrubber>(EGRESS_SERVICE)!
-  assert.throws(() => scrubber.scrub({ content: 'any content' }), /not available/)
-  await kernel.dispose()
-})
-
 test('mislabeled Anthropic OAuth tokens are refused for every provider before pi-ai can choose bearer auth', async t => {
   let calls = 0
   const f = await setup(t, { transport: async () => { calls++; return responseSse() } })
@@ -363,7 +358,7 @@ test('mislabeled Anthropic OAuth tokens are refused for every provider before pi
     const row = s.create(account, { ...apiInput, provider })
     assert.throws(() => s.saveSecret(account, row.id, forbidden), /API key/)
     // Defence in depth if a record was imported or mislabeled outside the UI.
-    const imported = new Vault(s.store, f.config.keychain, f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!, f.config.policy)
+    const imported = new Vault(s.store, f.config.keychain, f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!, f.config.policy)
     t.after(() => imported.close())
     await imported.unlock(account)
     s.store.setSecret(account, row.id, imported.put(account, forbidden))
@@ -527,7 +522,7 @@ test('H3: apply registers every historical secret after restart without granting
   await f.restart(true)
   const ready = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
   assert.equal(ready.ready, true); ready.assertReady()
-  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
   assert.equal(scrubber.isReady(), true)
   assert.deepEqual(scrubber.pendingSources(), [])
   assert.equal(scrubber.scrub(`${secret} ${retired}`).includes(secret), false)
@@ -540,7 +535,7 @@ test('H3: apply registers every historical secret after restart without granting
   await f.restart(true)
   const failed = f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!
   assert.equal(failed.ready, false)
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.isReady(), false)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.isReady(), false)
   assert.throws(() => failed.assertReady(), /registration incomplete/)
 })
 
@@ -632,9 +627,9 @@ test('E6: short keys cannot enter the vault or corrupt scrubbed rows; probes val
   await s.unlockVault(account)
   for (const short of ['x', 'x'.repeat(7)]) assert.throws(() => s.saveSecret(account, row.id, short), /API key/)
   assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM vault_secrets').get()!.n, 0)
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub('hello'), 'hello')
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub('hello'), 'hello')
   assert.equal(s.store.get(account, row.id).secretRef, null)
-  const imported = new Vault(s.store, f.config.keychain, f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!, f.config.policy)
+  const imported = new Vault(s.store, f.config.keychain, f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!, f.config.policy)
   t.after(() => imported.close()); await imported.unlock(account)
   const oauth = ['sk', 'ant', 'oat01', randomBytes(20).toString('hex')].join('-')
   s.store.setSecret(account, row.id, imported.put(account, oauth))
@@ -659,7 +654,7 @@ test('vault database and pre-existing WAL/SHM sidecars are private after reopen'
   const f = await setup(t)
   const files = ['', '-wal', '-shm'].map(suffix => f.config.databasePath + suffix)
   for (const file of files) await chmod(file, 0o644)
-  const reopened = new ConnectionStore(f.config.databasePath, f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!)
+  const reopened = new ConnectionStore(f.config.databasePath, f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!)
   try { for (const file of files) assert.equal((await stat(file)).mode & 0o777, 0o600) }
   finally { reopened.close() }
 })
@@ -765,7 +760,7 @@ test('review: migration 2 upgrades a version-1 vault without rewriting keys, cip
   assert.deepEqual(next.store.db.prepare('SELECT * FROM connections').all(), before.connections)
   assert.equal(f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!.ready, true)
   await next.unlockVault(account)
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub(secret), '[REDACTED]')
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(secret), redactionMarker(next.store.get(account, row.id).secretRef as SecretRef))
 })
 
 test('review: registry grants and rotates only the current unattended credential, then revokes it atomically', async t => {
@@ -840,13 +835,15 @@ test('N4: unload and failed reload retain current and retired values in the long
   await s.unlockVault(account)
   const retired = fakeKey(); const current = fakeKey()
   s.saveSecret(account, row.id, retired); s.saveSecret(account, row.id, current)
-  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
+  const markers = scrubber.scrub(`${current} ${retired}`)
+  assert.equal(markers.includes(current), false); assert.equal(markers.includes(retired), false)
   f.config.keychain = async () => {
-    assert.equal(scrubber.scrub(`${current} ${retired}`), '[REDACTED] [REDACTED]', 'retained during reload')
+    assert.equal(scrubber.scrub(`${current} ${retired}`), markers, 'retained during reload')
     throw new Error('Fixture keychain unavailable')
   }
   await f.restart()
-  assert.equal(scrubber.scrub(`${current} ${retired}`), '[REDACTED] [REDACTED]')
+  assert.equal(scrubber.scrub(`${current} ${retired}`), markers)
 })
 
 test('N4: readiness is pushed only after every account is registered, including recovery by unlock', async t => {
@@ -863,22 +860,22 @@ test('N4: readiness is pushed only after every account is registered, including 
     return keychain
   }
   await f.restart(true)
-  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
   assert.equal(scrubber.isReady(), false)
   assert.deepEqual(scrubber.pendingSources(), ['vault'])
-  const ready = scrubber.ready.bind(scrubber)
   let readyCalls = 0
-  scrubber.ready = source => {
+  const whenReady = scrubber.whenReady().then(() => {
     readyCalls++
-    assert.equal(scrubber.scrub(`${firstSecret} ${secondSecret}`), '[REDACTED] [REDACTED]')
-    ready(source)
-  }
+    assert.equal(scrubber.scrub(`${firstSecret} ${secondSecret}`).includes(firstSecret), false)
+    assert.equal(scrubber.scrub(`${firstSecret} ${secondSecret}`).includes(secondSecret), false)
+  })
   blocked = false
   await f.service().unlockVault(account)
   assert.equal(readyCalls, 0); assert.equal(scrubber.isReady(), false)
   await f.service().unlockVault(second)
-  assert.equal(readyCalls, 1); assert.equal(scrubber.isReady(), true)
-  await scrubber.whenReady()
+  assert.equal(scrubber.isReady(), true)
+  await whenReady
+  assert.equal(readyCalls, 1)
 })
 
 test('N5: stalled startup keychain is bounded, stays pending and cannot publish late readiness', async t => {
@@ -894,7 +891,7 @@ test('N5: stalled startup keychain is bounded, stays pending and cannot publish 
   const started = Date.now()
   await f.restart(true)
   assert.ok(Date.now() - started < 3000, 'registration has its own bound below the kernel step bound')
-  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
   assert.equal(scrubber.isReady(), false)
   assert.equal(f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!.ready, false)
   release(tracked)
@@ -904,7 +901,8 @@ test('N5: stalled startup keychain is bounded, stays pending and cannot publish 
   stalled = false
   await f.service().unlockVault(account)
   assert.equal(scrubber.isReady(), true)
-  assert.equal(scrubber.scrub(secret), '[REDACTED]')
+  assert.equal(scrubber.scrub(secret).includes(secret), false)
+  assert.match(scrubber.scrub(secret), /REDACTED secret:\/\//)
 })
 
 test('N6: neither the registry nor its probe service exposes a runtime vault property', async t => {
@@ -939,7 +937,7 @@ test('N7: interactive rotation succeeds after node opt-in is disabled and remove
   const rotated = fakeKey(); const saved = next.saveSecret(account, row.id, rotated)
   assert.equal(saved.unattended, true, 'stored preference does not override node policy')
   assert.equal(next.store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets').get()!.n, 0)
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SERVICE)!.scrub(rotated), '[REDACTED]')
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(rotated), redactionMarker(f.service().store.get(account, row.id).secretRef as SecretRef))
   await next.complete(account, row.id, { messages: [] }, {
     model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'interactive-rotation',
   })

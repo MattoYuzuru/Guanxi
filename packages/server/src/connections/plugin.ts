@@ -5,7 +5,7 @@ import { ConnectionStore } from './store.ts'
 import { Vault, type VaultPolicy } from '../vault/vault.ts'
 import { osKeychain, type VaultKeychain } from '../vault/keychain.ts'
 import { BalanceProbes } from '../probes/balances.ts'
-import { EGRESS_SERVICE, type EgressScrubber } from './egress.ts'
+import { EGRESS_SCRUBBER_SERVICE, type EgressScrubber } from '../egress/types.ts'
 import { Connections } from './service.ts'
 import type { PiTransport } from './pi.ts'
 
@@ -20,9 +20,9 @@ export interface ConnectionsConfig {
 }
 export const connectionsPlugin = definePlugin<ConnectionsConfig>({
   manifest: { id: 'guanxi.connections', engines: { guanxi: '^0.1.0' },
-    provides: [CONNECTIONS_SERVICE, CONNECTIONS_EGRESS_READINESS], requires: [EGRESS_SERVICE, 'ollama', 'governor'], trust: 'T0' },
+    provides: [CONNECTIONS_SERVICE, CONNECTIONS_EGRESS_READINESS], requires: [EGRESS_SCRUBBER_SERVICE, 'ollama', 'governor'], trust: 'T0' },
   async apply(ctx, config) {
-    const scrubber = ctx.service<EgressScrubber>(EGRESS_SERVICE)
+    const scrubber = ctx.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)
     const store = new ConnectionStore(config.databasePath, scrubber)
     const vault = new Vault(store, config.keychain ?? (() => osKeychain(config.databasePath)), scrubber,
       config.policy ?? { ownerDevice: true, nodeKeyOptIn: false })

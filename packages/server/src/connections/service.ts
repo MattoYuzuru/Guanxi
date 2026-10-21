@@ -11,7 +11,7 @@ import type { Vault } from '../vault/vault.ts'
 import type { BalanceProbes } from '../probes/balances.ts'
 import { ConnectionStore } from './store.ts'
 import { assertApiKey, piModels, piTransport, type PiTransport } from './pi.ts'
-import type { EgressScrubber } from './egress.ts'
+import type { EgressScrubber } from '../egress/types.ts'
 import { modelsDevFacts } from './metadata.ts'
 
 export interface ModelCall {
