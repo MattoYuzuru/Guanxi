@@ -131,3 +131,17 @@ Catalog route: `/settings/developer/components?component=workspace-chrome`. Stor
 
 Next: integrator's Claude review, then U1-b shell using `requestBlockMove` and the adapter's
 Guanxi-only handle. U1-c migrates legacy pages independently.
+
+## Independent acceptance continuation (2026-10-22)
+
+An independent reviewer replayed all 18 workspace browser cases and the selected 21
+layout/storage/boundary/slot Node cases successfully after merging documentation-only main
+`1067a04`. The later fast UI check found G10 freshness was not established at the final
+candidate: the 16 workspace-chrome baseline PNGs exist, but the committed manifest still held
+an empty `snapshotHashes` object. The earlier fast check at `7dc0496` preceded their commit.
+Running the canonical manifest generator adds exactly those 16 existing hashes; it changes no
+implementation, story, baseline, approval or review status. This correction is a separate fix
+commit in `codex/u1-completion`; the continuation handoff records subsequent gates. The same
+acceptance review confirmed that original local conflict tests did not implement actual
+cross-node layout delivery, which the continuation addresses separately. These corrections
+supersede any inference that the old handoff alone closed the full U1-a gate.
