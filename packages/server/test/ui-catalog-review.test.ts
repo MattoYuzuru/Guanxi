@@ -76,6 +76,10 @@ function fixture(trust = true): Fixture {
   const uiRoot = join(repoRoot, 'packages', 'ui')
   // The whole src tree: source hashes follow each component's imports and fail closed.
   cpSync(join(realUiRoot, 'src'), join(uiRoot, 'src'), { recursive: true })
+  // Approval tests start from draft regardless of the real component's review lifecycle.
+  const buttonReview = uiPaths(uiRoot).reviewFile('button')
+  const draft = JSON.parse(readFileSync(buttonReview, 'utf8'))
+  writeFileSync(buttonReview, `${JSON.stringify({ ...draft, status: 'draft', approval: null, requests: [] }, null, 2)}\n`)
   mkdirSync(join(uiRoot, 'catalog', 'snapshots', 'button'), { recursive: true })
   writeFileSync(join(uiRoot, 'catalog', 'snapshots', 'button', 'default.light.png'), 'baseline-bytes')
   mkdirSync(join(repoRoot, '.git'))
