@@ -155,6 +155,7 @@ describe('server boot through the kernel', () => {
         assert.equal(server.kernel.node.counters().services, 9, 'kernel slots, governor, Ollama, egress, session log, durable runs, readiness, registry and native agent')
         assert.ok(server.kernel.node.service('connections.registry'))
         assert.ok(server.kernel.node.service('agent.native'))
+        assert.ok(server.kernel.node.service('runs.durable'))
         assert.equal(server.kernel.node.service('connections.vault'), undefined)
         assert.ok(server.kernel.node.service('egress.scrubber'))
         // Exercise index.ts's mounted resolver after its service disappears.
