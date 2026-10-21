@@ -1,0 +1,136 @@
+/*
+ * Shell geometry. The only responsive rule is the existing workspace phone breakpoint
+ * (639 px in packages/web/src/features/workspace/Workspace.tsx and workspace.css). It is a
+ * container query here so the shell stacks for a phone viewport and for a narrow host frame
+ * without a JavaScript viewport listener that would discard controlled state.
+ */
+@reference '../../styles/tailwind-reference.css';
+
+.gx-app-shell-chrome {
+  container-type: inline-size;
+  @apply h-full w-full;
+  min-width: 0;
+  min-height: 0;
+}
+
+.gx-app-shell-frame {
+  display: flex;
+  flex-direction: column;
+  @apply h-full w-full;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+}
+
+/* The status strip is glass and always present; the reading surface below it never is. */
+.gx-app-shell-status {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-width: 0;
+  padding: var(--spacing-4) var(--spacing-8);
+}
+
+.gx-app-shell-status-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-width: 0;
+}
+
+.gx-app-shell-status-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.gx-app-shell-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Sidebar and status are the only glass surfaces; the main reading surface stays opaque. */
+.gx-app-shell-sidebar {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--layout-container-2xs);
+  @apply max-w-full;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gx-app-shell-sidebar[hidden] {
+  display: none;
+}
+
+.gx-app-shell-sidebar[data-visibility='rail'] {
+  width: var(--spacing-48);
+}
+
+.gx-app-shell-sidebar-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-width: 0;
+  padding: var(--spacing-4);
+}
+
+.gx-app-shell-sidebar-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--spacing-4) var(--spacing-8) var(--spacing-8);
+  overflow: auto;
+}
+
+.gx-app-shell-sidebar[data-visibility='rail'] .gx-app-shell-sidebar-body {
+  padding: var(--spacing-4);
+  overflow: hidden;
+}
+
+.gx-app-shell-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background-color: var(--color-background-primary);
+  color: var(--color-text-primary);
+}
+
+@container (max-width: 639px) {
+  .gx-app-shell-frame {
+    height: auto;
+    @apply min-h-full;
+  }
+
+  .gx-app-shell-body {
+    flex: none;
+    flex-direction: column;
+  }
+
+  .gx-app-shell-sidebar[data-visibility='expanded'],
+  .gx-app-shell-sidebar[data-visibility='rail'] {
+    @apply w-full;
+  }
+
+  .gx-app-shell-main {
+    overflow: visible;
+  }
+}

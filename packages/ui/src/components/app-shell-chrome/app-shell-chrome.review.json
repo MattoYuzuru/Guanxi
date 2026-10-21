@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "app-shell-chrome",
+  "status": "draft",
+  "approval": null,
+  "requests": []
+}

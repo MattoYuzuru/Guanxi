@@ -3,6 +3,129 @@
   "version": 1,
   "components": [
     {
+      "id": "app-shell-chrome",
+      "title": "AppShellChrome",
+      "level": "pattern",
+      "folder": "src/components/app-shell-chrome",
+      "exports": [
+        "AppShellChrome",
+        "AppShellChromeProps",
+        "AppShellLabels",
+        "AppShellSide",
+        "AppShellVisibility"
+      ],
+      "componentExports": [
+        "AppShellChrome"
+      ],
+      "states": [
+        "default",
+        "rail",
+        "hidden",
+        "right",
+        "phone",
+        "loading",
+        "error",
+        "offline",
+        "unknown"
+      ],
+      "stories": [
+        "default",
+        "rail",
+        "hidden",
+        "right",
+        "phone",
+        "loading",
+        "error",
+        "offline",
+        "unknown"
+      ],
+      "props": {
+        "AppShellChrome": [
+          {
+            "name": "children",
+            "type": "ReactNode",
+            "required": true,
+            "description": "Main, opaque reading surface. It stays mounted while the sidebar changes."
+          },
+          {
+            "name": "labels",
+            "type": "AppShellLabels",
+            "required": true,
+            "description": "Translated product strings supplied by the localized host."
+          },
+          {
+            "name": "onOpenPalette",
+            "type": "() => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "onSide",
+            "type": "(side: AppShellSide) => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "onVisibility",
+            "type": "(visibility: AppShellVisibility) => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "side",
+            "type": "AppShellSide",
+            "required": true,
+            "description": "Controlled side. It changes both the visual column order and the DOM/focus order."
+          },
+          {
+            "name": "sidebar",
+            "type": "ReactNode",
+            "required": true,
+            "description": "Host navigation. It should adapt itself to `visibility === 'rail'`; the chrome does not invent rail content."
+          },
+          {
+            "name": "sidebarLabel",
+            "type": "string",
+            "required": true,
+            "description": "Accessible name for the navigation region and its menu trigger."
+          },
+          {
+            "name": "status",
+            "type": "ReactNode",
+            "required": true,
+            "description": "Persistent status items. The chrome adds Show (while hidden) and Palette actions."
+          },
+          {
+            "name": "visibility",
+            "type": "AppShellVisibility",
+            "required": true,
+            "description": "Controlled visibility. The sidebar stays mounted when it is hidden."
+          }
+        ]
+      },
+      "cssVariables": [
+        "--color-background-primary",
+        "--color-text-primary",
+        "--font-family-sans",
+        "--font-line-height-ui",
+        "--font-text-size",
+        "--layout-container-2xs",
+        "--spacing-4",
+        "--spacing-48",
+        "--spacing-8"
+      ],
+      "sourceHash": "sha256:75ee6605bb40b08a764421fc84fe28a3f6af7a1b65649bcd17637cd1e20d041d",
+      "snapshotHashes": {},
+      "storedStatus": "draft",
+      "signature": "absent",
+      "status": "draft",
+      "usage": {
+        "count": 0,
+        "files": []
+      },
+      "since": "0.1.0"
+    },
+    {
       "id": "badge",
       "title": "Badge",
       "level": "primitive",
@@ -778,7 +901,7 @@
           },
           {
             "name": "tooltipSide",
-            "type": "\"top\" | \"bottom\" | \"left\" | \"right\" | undefined",
+            "type": "\"left\" | \"right\" | \"top\" | \"bottom\" | undefined",
             "required": false,
             "description": ""
           },

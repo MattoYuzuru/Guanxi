@@ -4,6 +4,7 @@
  */
 import './styles/base.css'
 
+export * from './components/app-shell-chrome/index.ts'
 export * from './components/badge/index.ts'
 export * from './components/button/index.ts'
 export * from './components/checkbox/index.ts'
