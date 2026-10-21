@@ -441,3 +441,51 @@ describe('K2 re-check fixes, in-session review', () => {
     assert.deepEqual(search, await answer(`/api/sessions/search?q=anything&sessionId=${clean}`))
   })
 })
+
+describe('K2 re-check fixes, in-session review M2: claimed properties with their own assertions', () => {
+  it('cross-session search leaves out a catching-up session with indexed events', () => {
+    const { db, scrubber, jobs, log } = setup({ ready: true })
+    const older = thread(db)
+    send(jobs, older, 'shared words in the older chat')
+    busyWait(5)
+    const recent = thread(db)
+    const recentJob = send(jobs, recent, 'shared words in the recent chat').job.id
+    assert.deepEqual(log.search('shared', { audience: 'person' }).map((hit) => hit.sessionId).sort(), [older, recent].sort())
+
+    scrubber.expect('env.shell')
+    jobs.transition({ jobId: recentJob, expectedStatus: 'queued', status: 'reserving' })
+    scrubber.ready('env.shell')
+    // Synchronously, before the background pass: the recent chat has a deferred Job.
+    assert.deepEqual(log.search('shared', { audience: 'person' }).map((hit) => hit.sessionId), [older])
+    const listed = log.list(1)
+    assert.deepEqual(listed.sessions.map((session) => session.sessionId), [older], 'excluded before the limit, not after')
+    assert.equal(listed.catchingUp, 1)
+  })
+
+  it('the list leaves a withheld most recent session out before its limit', () => {
+    let now = Date.parse('2026-10-21T00:00:00.000Z')
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber, clock: () => new Date(now += 1_000) })
+    log.open('agent-older', { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'older', attachmentCount: 0 } })
+    log.open(`agent:${SECRET}`, { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-2', text: 'recent', attachmentCount: 0 } })
+    assert.deepEqual(log.list(1).sessions.map((session) => session.sessionId), [`agent:${SECRET}`])
+    scrubber.register(REF, SECRET)
+    const listed = log.list(1)
+    assert.deepEqual(listed.sessions.map((session) => session.sessionId), ['agent-older'])
+    assert.equal(listed.withheld, 1)
+  })
+
+  it('a failing session does not hold back another session\'s catch-up', async () => {
+    const { db, scrubber, jobs, log, mirror } = setup({ ready: false, catchUpRetryMs: 60_000 })
+    const [first, second] = [thread(db), thread(db)].sort()
+    const failing = failingToolTurn(jobs, first!)
+    send(jobs, second!, 'fine')
+    scrubber.register(REF, SECRET)
+    scrubber.ready('vault')
+    await tick()
+    assert.deepEqual(mirror.backlog(), [failing], 'the other session was caught up')
+    assert.equal(log.read(second!, { audience: 'person' }).events.filter((event) => event.type === 'prompt').length, 1)
+    assert.deepEqual(log.list(), { sessions: [log.session(second!)!], withheld: 0, catchingUp: 1, catchUpFailed: 1 })
+    log.close()
+  })
+})
