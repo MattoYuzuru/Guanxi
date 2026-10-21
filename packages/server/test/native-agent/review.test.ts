@@ -103,6 +103,88 @@ test('maintenance rechecks policy after an earlier cleanup await', async t => {
   assert.equal(sessions.retention(b.sessionId).state, 'active')
 })
 
+test('maintenance stops the whole pass when its home is deposed during a deletion', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const { NativeSessions } = await import('../../src/native-agent/sessions.ts')
+  let successor: InstanceType<typeof RunStore> | undefined
+  let current: Fixture | undefined
+  let later: string | undefined
+  const f = await fixture(t, undefined, undefined, undefined, undefined, {
+    // The first eligible removal yields after its durable intent commits. The old home
+    // closes and a successor claims the durable-runs home before the first rm.
+    fault: (operation, point) => {
+      if (operation !== 'native_delete_intent' || point !== 'committed' || successor || !current || !later) return
+      current.db.prepare("UPDATE threads SET last_user_activity_at='2020-01-01T00:00:00.000Z' WHERE id=?").run(later)
+      current.runs.close()
+      successor = new RunStore({ db: current.db, log: current.log, scrubber: current.scrubber })
+      successor.heartbeat(); successor.reconcile()
+    },
+  })
+  current = f
+  const first = await f.agents().create(f.input); await f.agents().wait(first.sessionId)
+  const second = await f.agents().create(f.input); await f.agents().wait(second.sessionId)
+  later = second.sessionId
+  const firstRun = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(first.sessionId)!.id)
+  f.db.prepare('UPDATE native_sessions SET deletion_requested=1 WHERE session_id=?').run(first.sessionId)
+  const dirs = f.agents().sessions.paths(first.sessionId)
+  // The old pass must refuse the whole pass instead of swallowing the lost authority
+  // and timestamping a session that became eligible later in the same pass.
+  await assert.rejects(f.agents().sessions.maintain(new Set()), { code: 'closed' })
+  assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(first.sessionId)!.deletion_requested, 1)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 1)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM durable_runs WHERE session_id=?').get(first.sessionId)!.n, 1)
+  assert.notEqual(f.log.session(first.sessionId), null)
+  assert.equal(f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at, null)
+  assert.equal(successor!.get(firstRun).state, 'completed', 'the successor sees the settled run')
+  const successorSessions = new NativeSessions(f.db, f.log, f.data, successor!)
+  try {
+    // The successor performs the retained deletion and the later TTL transition once.
+    await successorSessions.maintain(new Set())
+    for (const dir of dirs) await assert.rejects(readdir(dir), { code: 'ENOENT' })
+    for (const [table, key] of [['threads','id'], ['sessions','id'], ['session_writers','session_id'], ['session_events','session_id'], ['native_sessions','session_id'], ['durable_runs','session_id']] as const) {
+      assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${key}=?`).get(first.sessionId)!.n, 0, table)
+    }
+    for (const table of ['run_costs','run_attempts','run_execution','run_resources']) {
+      assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE run_id=?`).get(firstRun)!.n, 0, table)
+    }
+    const trashed = f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at
+    assert.notEqual(trashed, null)
+    await assert.rejects(successorSessions.remove(first.sessionId), { code: 'session_not_found' })
+    assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), [])
+    f.db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES('integrity-check')")
+    // A second successor pass is an idempotent no-op for the already-trashed session.
+    await successorSessions.maintain(new Set())
+    assert.equal(f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at, trashed)
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 0)
+  } finally { successor!.close() }
+})
+
+test('maintenance keeps a recoverable quarantine failure local to its session', async t => {
+  const f = await fixture(t)
+  const first = await f.agents().create(f.input); await f.agents().wait(first.sessionId)
+  const second = await f.agents().create(f.input); await f.agents().wait(second.sessionId)
+  f.db.prepare('UPDATE native_sessions SET deletion_requested=1 WHERE session_id=?').run(first.sessionId)
+  f.db.prepare("UPDATE threads SET last_user_activity_at='2020-01-01T00:00:00.000Z' WHERE id=?").run(second.sessionId)
+  const quarantine = join(f.data, 'native-cleanup'), record = join(quarantine, 'fixture.json')
+  await mkdir(quarantine, { recursive: true })
+  await writeFile(record, JSON.stringify([f.agents().sessions.paths(first.sessionId)[0]]))
+  try {
+    // Quarantine refuses the first deletion; the later TTL transition must still run.
+    await f.agents().sessions.maintain(new Set())
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(first.sessionId)!.deletion_requested, 1)
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 1)
+    assert.notEqual(f.log.session(first.sessionId), null)
+    assert.notEqual(f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at, null)
+    // Once quarantine clears, the next pass retries the same durable intent.
+    await rm(record)
+    await f.agents().sessions.maintain(new Set())
+    assert.equal(f.log.session(first.sessionId), null)
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 0)
+    assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), [])
+    f.db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES('integrity-check')")
+  } finally { await rm(quarantine, { recursive: true, force: true }) }
+})
+
 for (const quota of [false,true]) test(`actual Google pi transport ${quota ? 'quota' : 'start'} observation reaches native R1`, async t => {
   const original = globalThis.fetch
   let calls = 0

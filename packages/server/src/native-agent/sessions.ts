@@ -147,20 +147,35 @@ export class NativeSessions {
   }
   /** Canonical rolling seven-day TTL enters Trash, preserving recoverable data. */
   async maintain(active: ReadonlySet<string>, now = new Date()) {
+    // One home generation owns the whole pass. A deposed pass stops instead of letting
+    // later iterations or an awaited removal hand its writes to a stale authority.
+    const home = this.home.homeFence()
     const ids = this.db.prepare('SELECT session_id FROM native_sessions').all()
     for (const candidate of ids) {
+      home.assert()
       const id = String(candidate.session_id)
       // Earlier deletion awaits must not freeze a later session's policy/activity.
       const row = this.db.prepare(`SELECT n.*,t.retention_policy,t.last_user_activity_at,t.created_at FROM native_sessions n JOIN threads t ON t.id=n.thread_id WHERE n.session_id=?`).get(id)
       if (!row) continue
       if (active.has(id) || this.db.prepare(`SELECT 1 FROM durable_runs r JOIN run_attempts a ON a.run_id=r.id WHERE r.session_id=? AND a.state IN ('delivered','started')`).get(id) || this.db.prepare('SELECT 1 FROM session_writers WHERE session_id=? AND released_at IS NULL AND writer_id<>?').get(id, this.log.writer.id)) continue
-      if (row.deletion_requested) { try { await this.remove(id) } catch { /* Intent stays durable for the next maintenance pass. */ } }
-      else if (row.leave_at) {
-        if (row.trashed_at && Date.parse(String(row.trashed_at)) + SESSION_TRASH_RECOVERY_HOURS * 3600000 <= now.getTime()) { try { await this.remove(id) } catch { /* writer/quarantine is retried */ } }
-        else this.db.prepare('UPDATE native_sessions SET trashed_at=? WHERE session_id=? AND trashed_at IS NULL').run(now.toISOString(), id)
+      if (row.deletion_requested) {
+        try { await this.remove(id) } catch { /* Intent stays durable for the next maintenance pass. */ }
+        // Recoverable writer/quarantine failures stay local; lost authority aborts the pass.
+        home.assert()
+      } else if (row.leave_at) {
+        if (row.trashed_at && Date.parse(String(row.trashed_at)) + SESSION_TRASH_RECOVERY_HOURS * 3600000 <= now.getTime()) {
+          try { await this.remove(id) } catch { /* writer/quarantine is retried */ }
+          home.assert()
+        } else if (row.trashed_at === null) {
+          home.transaction('native_trash', () => {
+            this.db.prepare('UPDATE native_sessions SET trashed_at=? WHERE session_id=? AND trashed_at IS NULL').run(now.toISOString(), id)
+          })
+        }
       }
-      else if (row.retention_policy === 'ttl' && Date.parse(String(row.last_user_activity_at ?? row.created_at)) + CHAT_RETENTION_DAYS * DAY <= now.getTime()) {
-        this.db.prepare('UPDATE native_sessions SET trashed_at=? WHERE session_id=? AND trashed_at IS NULL').run(now.toISOString(), id)
+      else if (row.retention_policy === 'ttl' && row.trashed_at === null && Date.parse(String(row.last_user_activity_at ?? row.created_at)) + CHAT_RETENTION_DAYS * DAY <= now.getTime()) {
+        home.transaction('native_trash', () => {
+          this.db.prepare('UPDATE native_sessions SET trashed_at=? WHERE session_id=? AND trashed_at IS NULL').run(now.toISOString(), id)
+        })
       }
     }
   }
