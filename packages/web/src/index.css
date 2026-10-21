@@ -569,11 +569,27 @@
   }
 }
 
-/* A 0 ms infinite animation still counts as running; remove motion instead. */
+/* An explicit reduced setting removes motion even when the OS does not ask. A 0 ms
+   infinite animation still counts as running, so remove it instead of zeroing durations. */
+:root[data-motion="reduced"],
+:root[data-motion="reduced"]::before,
+:root[data-motion="reduced"]::after,
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* OS-level reduced motion covers the system setting and explicit reduced, but an explicit
+   full setting overrides the OS preference. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion="full"]),
+  :root:not([data-motion="full"])::before,
+  :root:not([data-motion="full"])::after,
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
     animation: none !important;
     transition: none !important;
   }

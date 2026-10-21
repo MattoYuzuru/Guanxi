@@ -27,6 +27,21 @@ function rawMotion(value) {
   return value.replace(/var\([^)]*\)/g, '')
 }
 
+// Both reduced-motion branches must remove animation entirely: a 0 ms infinite animation
+// still counts as running, and transition longhands can still animate.
+function assertMotionRemoved(rule) {
+  const declarations = rule.nodes.filter(node => node.type === 'decl')
+  assert.deepEqual(declarations.map(node => node.prop).sort(), ['animation', 'transition'])
+  for (const declaration of declarations) {
+    assert.equal(declaration.value, 'none')
+    assert.equal(declaration.important, true)
+  }
+  const text = rule.toString()
+  assert.doesNotMatch(text, /\b\d+(?:\.\d+)?m?s\b/)
+  assert.doesNotMatch(text, /infinite|step-end/)
+  assert.doesNotMatch(text, /(?:animation|transition)-(?:duration|iteration-count|timing-function|delay)/)
+}
+
 test('@theme and body typography consume the generated font tokens', () => {
   const theme = oneAtRule('theme', /^$/)
   const declarations = Object.fromEntries(theme.nodes.filter(node => node.type === 'decl').map(node => [node.prop, node.value]))
@@ -68,19 +83,44 @@ test('legacy motion utilities use motion tokens and the fade keyframe uses the d
   }
 })
 
-test('reduced motion removes animation and transition instead of zeroing them', () => {
+test('reduced motion removes animation and transition for explicit and OS settings', () => {
+  const explicitRules = []
+  css.walkRules(rule => {
+    if (rule.selectors.some(selector => selector.includes('[data-motion="reduced"]'))) explicitRules.push(rule)
+  })
+  assert.equal(explicitRules.length, 1, 'expected exactly one explicit reduced-motion rule')
+  const explicit = explicitRules[0]
+  assert.equal(explicit.parent.type, 'root', 'explicit reduced motion must not be media-gated')
+  assert.deepEqual(explicit.selectors.map(selector => selector.replace(/\s+/g, ' ').trim()).sort(), [
+    ':root[data-motion="reduced"]',
+    ':root[data-motion="reduced"] *',
+    ':root[data-motion="reduced"] *::after',
+    ':root[data-motion="reduced"] *::before',
+    ':root[data-motion="reduced"]::after',
+    ':root[data-motion="reduced"]::before',
+  ])
+  assertMotionRemoved(explicit)
+
   const media = oneAtRule('media', /prefers-reduced-motion:\s*reduce/)
   const rules = media.nodes.filter(node => node.type === 'rule')
   assert.equal(rules.length, 1)
-  assert.equal(rules[0].selector.replace(/\s+/g, ' ').trim(), '*, *::before, *::after')
-
-  const declarations = rules[0].nodes.filter(node => node.type === 'decl')
-  assert.deepEqual(declarations.map(node => node.prop).sort(), ['animation', 'transition'])
-  for (const declaration of declarations) {
-    assert.equal(declaration.value, 'none')
-    assert.equal(declaration.important, true)
+  const os = rules[0]
+  const fullOverride = ':root:not([data-motion="full"])'
+  const selectors = os.selectors.map(selector => selector.replace(/\s+/g, ' ').trim()).sort()
+  assert.deepEqual(selectors, [
+    fullOverride,
+    `${fullOverride} *`,
+    `${fullOverride} *::after`,
+    `${fullOverride} *::before`,
+    `${fullOverride}::after`,
+    `${fullOverride}::before`,
+  ])
+  // Every OS selector must carry the full-override predicate; a bare universal selector
+  // would also disable motion for the explicit full setting.
+  for (const selector of selectors) {
+    assert.ok(selector.startsWith(fullOverride), `${selector} must carry the full-override predicate`)
+    assert.doesNotMatch(selector, /^(?:\*|:root\[data-motion="full"\])/)
   }
-  const text = media.toString()
-  assert.doesNotMatch(text, /0\.01ms|infinite|step-end/)
-  assert.doesNotMatch(text, /(?:animation|transition)-duration|(?:animation|transition)-(?:iteration-count|timing-function)/)
+  assert.doesNotMatch(os.selector, /:root\[data-motion="full"\]/)
+  assertMotionRemoved(os)
 })

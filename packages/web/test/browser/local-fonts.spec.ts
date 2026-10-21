@@ -141,6 +141,69 @@ test('H2: built app applies IBM Plex typography, density type size and spacing',
   }
 })
 
+test('explicit reduced motion disables animations and explicit full overrides OS reduce', async ({ page }) => {
+  await installChatApiFixture(page, 'completed')
+  await page.goto(origin)
+  type Probe = { spinAnimation: string; caretAnimation: string; sheenAnimation: string; transitionProperty: string; animations: string[] }
+  const observed = new Map<string, Probe>()
+  for (const theme of ['light', 'dark'] as const) for (const os of ['no-preference', 'reduce'] as const) for (const motion of ['system', 'reduced', 'full'] as const) {
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: os })
+    const probe = await page.evaluate(({ theme, motion }) => {
+      const root = document.documentElement
+      root.dataset.theme = theme
+      root.classList.toggle('dark', theme === 'dark')
+      if (motion === 'system') root.removeAttribute('data-motion')
+      else root.dataset.motion = motion
+      const host = document.createElement('div')
+      host.id = 'u1c-motion-probe'
+      host.innerHTML = '<div class="anim-spin"></div><span class="stream-caret">x</span><div class="sheen" style="width:40px;height:12px"></div><div class="u1c-transition-probe"></div>'
+      document.body.append(host)
+      try {
+        const spin = host.querySelector('.anim-spin') as HTMLElement
+        const caret = host.querySelector('.stream-caret') as HTMLElement
+        const sheen = host.querySelector('.sheen') as HTMLElement
+        const transition = host.querySelector('.u1c-transition-probe') as HTMLElement
+        transition.style.transition = 'opacity 1s linear'
+        const animations = host.getAnimations({ subtree: true }).map(animation => {
+          const name = (animation as CSSAnimation).animationName
+          const property = (animation as CSSTransition).transitionProperty
+          return name ?? property ?? 'unknown'
+        })
+        return {
+          spinAnimation: getComputedStyle(spin).animationName,
+          caretAnimation: getComputedStyle(caret, '::after').animationName,
+          sheenAnimation: getComputedStyle(sheen, '::after').animationName,
+          transitionProperty: getComputedStyle(transition).transitionProperty,
+          animations,
+        }
+      } finally {
+        host.remove()
+      }
+    }, { theme, motion })
+    const label = `${theme}/os-${os}/motion-${motion}`
+    observed.set(label, probe)
+    if (motion === 'reduced' || (motion === 'system' && os === 'reduce')) {
+      expect(probe.spinAnimation, label).toBe('none')
+      expect(probe.caretAnimation, label).toBe('none')
+      expect(probe.sheenAnimation, label).toBe('none')
+      expect(probe.transitionProperty, label).toBe('none')
+      expect(probe.animations, `${label}: getAnimations count must be 0, pseudo-elements included`).toEqual([])
+    } else {
+      expect(probe.spinAnimation, label).toBe('guanxi-spin')
+      expect(probe.caretAnimation, label).toBe('guanxi-caret')
+      expect(probe.sheenAnimation, label).toBe('guanxi-sheen')
+      expect(probe.transitionProperty, label).toBe('opacity')
+      expect(probe.animations.length, label).toBeGreaterThanOrEqual(3)
+    }
+  }
+  // Positive control: without this, the reduced assertions could pass vacuously.
+  for (const theme of ['light', 'dark'] as const) {
+    const control = observed.get(`${theme}/os-reduce/motion-full`)
+    expect(control?.spinAnimation, `${theme}: explicit full must override OS reduce`).toBe('guanxi-spin')
+    expect(control?.animations.length, `${theme}: explicit full must keep animations running`).toBeGreaterThan(0)
+  }
+})
+
 test('automatic Solid overrides strong and locally selected glass recipes', async ({ page }) => {
   await installChatApiFixture(page, 'completed')
   await page.goto(origin)
