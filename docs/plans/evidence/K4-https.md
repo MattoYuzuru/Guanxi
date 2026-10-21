@@ -20,4 +20,5 @@ never use curl's insecure option. Fixtures contain no owner data or external net
 
 This is Mac/Colima evidence; repaired-source Linux and other platform envelopes remain
 unmeasured. Existing OpenSSL/curl and provisioned sandbox prerequisites are required.
-Whole-core post-merge regression is pending, separately from this one new case.
+Whole-core post-merge regression passes at clean `5e9bbfe`: 1256/1256, zero skipped,
+`check-08akwbn7`. This full envelope is separate from the one newly credited HTTPS case.

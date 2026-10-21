@@ -457,6 +457,7 @@ Receipts report unchanged source. The inherited external skill symlink prevents 
 source certification; these are observed local checks. This full regression envelope is
 distinct from the review repairs' **4 new / 43 targeted envelope**.
 
-`03c655b` merges the reviewed candidate into local main without conflicts. Post-merge gates
-are the next action. Production owner-present init/sign and actual installed-helper custody
+`03c655b` merges the reviewed candidate into local main without conflicts. All eight
+post-merge gates pass at clean `5e9bbfe`; the continuation record holds exact receipts.
+Production owner-present init/sign and actual installed-helper custody
 remain unverified; no component approval or real owner key was created by tests.
