@@ -308,7 +308,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   and one service (Together or HF Jobs); keys only on the controller node; the assisted
   sign-up flow in the agent browser where the user completes CAPTCHA, email, 2FA, payment and
   terms, and the key enters the vault through OAuth, a device flow or a Guanxi-owned field.
-- **Exit gate:** a small LoRA trains end to end on the Windows PC from fixture data and its
+- **Exit gate:** a small LoRA trains end to end on the PC's RTX 3060 from fixture data and its
   adapter returns with a checksum; the sign-up flow stops for the user at each of CAPTCHA,
   payment and terms (assertions); the key never appears in the transcript, events or model
   requests.
@@ -449,7 +449,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   (VAPID) for notification-center events with their actions, offline read cache and outbox;
   Guanxi's own end-to-end encrypted relay from the start (D-187, ADR-0038 §5) on `keykomi`
   behind Caddy, with QR pairing and outbound-only node connections; a phone prompt becomes a
-  durable run at the always-on home (the Fedora laptop, D-186).
+  durable run at the always-on home (the Fedora PC, D-186).
 - **Exit gate:** SSE resume by offset never duplicates events (count assertion); push arrives
   on run completion on iOS and Android test devices; the relay stores and logs no plaintext;
   pairing rejects replayed or forged handshakes.

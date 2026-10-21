@@ -28,8 +28,8 @@ Computer use is a ladder of tiers; the default allows tiers 0–2.
   project's `requires_confirmation` list (D-118).
 - REQ-H2 ("does not disturb the user") holds for tiers 0–3; tier 4 deliberately uses the real
   input and is allowed only while the user is idle.
-- Tiers 3–4 run only on a machine the owner is not using (today the Fedora laptop or the
-  Windows PC, D-185), never on the MacBook while the owner works on it, and never use the
+- Tiers 3–4 run only on a machine the owner is not using (today the Fedora PC or the
+  Fedora laptop, D-185), never on the MacBook while the owner works on it, and never use the
   live browser profile (D-162 as amended by ADR-0038 §9). Delegated control of the live Chrome is a per-site browser
   grant under ADR-0035 (D-179), not a computer-use tier.
 

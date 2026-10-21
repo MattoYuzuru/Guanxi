@@ -52,7 +52,7 @@ for several subscriptions still juggle them by hand:
 ## Who it is for
 
 - **Primary:** a technically confident owner of several machines (today's owner: a MacBook,
-  a Fedora laptop that stays on, a Windows GPU PC and a small VPS, D-185; others may run
+  a dual-boot Fedora/Windows GPU PC that stays on, a Fedora laptop and a small VPS, D-185; others may run
   anything from one laptop to geo-distributed servers) who pays for one or more
   subscriptions, holds a few API keys and runs local models.
 - **Secondary:** the owner's family or friends on the same installation, each with private

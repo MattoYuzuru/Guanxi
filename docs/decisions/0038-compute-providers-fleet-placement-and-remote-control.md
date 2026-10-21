@@ -23,8 +23,8 @@ A fully local AI on owned hardware should work the same way. His fleet today (D-
 | Machine | Spec | Role |
 | --- | --- | --- |
 | MacBook | M5 Pro, 24 GB | main machine, interactive |
-| Fedora laptop | 16 GB | always-on home |
-| Windows PC | 32 GB, RTX 3060 12 GB | woken for GPU work |
+| Fedora PC (dual-boot with Windows) | Ryzen 5 3600, 32 GB, RTX 3060 12 GB; a resident Qwen 27B of the owner's workstation holds about 10.6 GB of VRAM | always-on home, builds, tests, GPU work |
+| Fedora laptop | 16 GB, RTX 2060 | extra node, enrolled later |
 | VPS `keykomi` | 1 vCPU, 2 GB | relay only |
 
 Research ([2026-10-21 fleet lanes](../research/2026-10-21-fleet/)) found:
@@ -161,7 +161,9 @@ DRF. Priority: owner interactive > blocking agent step > speculative test > scav
 - A loaded model holds a **residency lease** (`model-resident:<node>:<digest>`) reserving its
   weights and KV cache. Builds and tests never evict it.
 - Splitting a model across machines (llama.cpp RPC, Parallax) is experimental and behind a
-  flag. It needs a gang lease across all participating nodes.
+  flag.
+- Models loaded by processes Guanxi does not own (for example the owner's workstation Qwen on
+  the Fedora PC) are observed as external residents and reserved the same way. It needs a gang lease across all participating nodes.
 
 The interference of builds on decode speed is measured per node and stored as a coefficient.
 
@@ -180,7 +182,7 @@ The interference of builds on decode speed is measured per node and stored as a 
 vendor CLI or runtime on the machine that holds the login.
 
 **From prompt to work.** A phone prompt becomes a durable run at the always-on home (the Fedora
-laptop, D-186). The home places the work with §2, which may wake the Windows PC.
+PC, D-186). The home places the work with §2 on itself, the MacBook or the Fedora laptop.
 
 **Fallbacks.** The vendors' Remote Control and Codex Remote stay optional, for the owner's own
 use.
@@ -229,13 +231,13 @@ machines in one site, and hierarchy is added only when needed.
 These items are replaced by D-185 and D-186:
 
 - the Mac Mini as the always-on home (D-170);
-- computer-use tiers 3–4 on a Mac Mini or Mac Studio (D-162). They now run on the Fedora laptop
-  or the Windows PC, never on the MacBook while the owner is using it;
+- computer-use tiers 3–4 on a Mac Mini or Mac Studio (D-162). They now run on the Fedora PC
+  or the Fedora laptop, never on the MacBook while the owner is using it;
 - Thunderbolt 5 pooling (D-164), which no longer applies;
 - the 32 GB and 256 GB Apple Silicon fleet assumed in ADR-0031.
 
-Benchmark containers (D-151) may run on the Fedora laptop under native Docker as well as on the
-Windows PC under WSL2.
+Benchmark containers (D-151) may run on the Fedora PC under native Docker as well as on the
+PC under Windows with WSL2 when it is booted into Windows.
 
 ## Consequences
 
@@ -271,4 +273,4 @@ Windows PC under WSL2.
 - [Lane 2 — sandboxes, provider protocol, training](../research/2026-10-21-fleet/02-sandboxes-providers-training.md)
 - [Lane 3 — fleet scheduling and local AI](../research/2026-10-21-fleet/03-fleet-scheduling-and-local-ai.md)
 - `keykomi` was inspected read-only on 2026-10-21: Ubuntu 26.04, 1 vCPU, 1.9 GB RAM, Caddy on
-  80 and 443, Docker, AmneziaWG on UDP. The Fedora laptop was unreachable at that time.
+  80 and 443, Docker, AmneziaWG on UDP. The Fedora PC was unreachable at that time.

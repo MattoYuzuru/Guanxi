@@ -135,7 +135,7 @@ A private network (hosted Tailscale first, self-hosted Headscale documented, D-1
 
 - Offline laptops keep working with their own sessions and local models and merge on
   reconnect without manual conflict resolution.
-- Long delegations need an always-on machine; for the owner this is the Fedora laptop (D-186,
+- Long delegations need an always-on machine; for the owner this is the Fedora PC (D-186,
   ADR-0038).
 - If a home node is lost permanently, its runs stay `home_unreachable` on peers and can be
   forked; there is no automatic failover.
