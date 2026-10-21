@@ -236,8 +236,9 @@ These items are replaced by D-185 and D-186:
 - Thunderbolt 5 pooling (D-164), which no longer applies;
 - the 32 GB and 256 GB Apple Silicon fleet assumed in ADR-0031.
 
-Benchmark containers (D-151) may run on the Fedora PC under native Docker as well as on the
-PC under Windows with WSL2 when it is booted into Windows.
+Benchmark containers run on the Fedora PC in rootless Podman under a dedicated user with CPU
+and memory limits (D-194, amending D-151); Windows with WSL2 remains possible only when the PC
+is booted into Windows.
 
 ## Consequences
 
