@@ -45,3 +45,25 @@ test('H1: pump claims the bounded predecessor lease and loses inherited attempts
     assert.throws(() => f.store.create(), { code: 'stale_lease' })
   } finally { await kernel.node.dispose(); f.close() }
 })
+
+test('H2: pump recovers after ten minutes asleep and fires the deadline due in the gap', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  const f = runFixture(); f.store.close(); f.log.close()
+  let now = RUN_TIME
+  const kernel = await bootServerKernel(undefined, { db: f.db, runs: { alwaysOn: true, clock: () => now, tickMs: 10 } })
+  try {
+    kernel.scrubber.ready('vault'); t.mock.timers.tick(10)
+    const store = kernel.durableRuns!.store
+    const a = store.start(store.create({ id: 'lead' }).id)
+    const p = store.delegate(a, { key: 'child', deadline: now + 100_000 })
+    store.start(p.child_id)
+    const before = f.db.prepare("SELECT holder,token FROM leases WHERE key='durable-runs/home'").get()
+    now += 600_000; t.mock.timers.tick(10)
+    assert.equal(kernel.durableRuns!.health().failure, null)
+    assert.deepEqual(f.db.prepare("SELECT holder,token FROM leases WHERE key='durable-runs/home'").get(), before)
+    assert.equal(store.attempts(p.child_id)[0]!.state, 'lost')
+    assert.equal(store.promises('lead')[0]!.outcome, 'deadline')
+    assert.equal(store.wakes('lead').length, 1)
+    assert.equal(store.create().state, 'submitted')
+  } finally { await kernel.node.dispose(); f.close() }
+})

@@ -192,11 +192,9 @@ test('restart table preserves wait/input/report, interrupts local work and redel
   assert.equal(count(f, 'acknowledged'), 1)
 })
 
-test('single writer fails closed on takeover and expired owner, no plain restart epoch bump', (t) => {
+test('single writer fails closed on takeover, no plain restart epoch bump', (t) => {
   const f = runFixture(); let cleanup = () => {}; t.after(() => { cleanup(); f.close() })
   assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME }).heartbeat(), code('writer_busy'))
-  f.setTime(RUN_TIME + 30_001)
-  assert.throws(() => f.store.create(), code('stale_lease'))
   assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME + 60_000 }).heartbeat(), code('writer_busy'))
   const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME + 91_001 })
   next.heartbeat()

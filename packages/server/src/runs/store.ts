@@ -125,7 +125,7 @@ export class RunStore {
     if (!this.owner) throw new RunError('writer_busy')
     const lease = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
     if (!lease || lease.holder !== this.ownerId || lease.token !== this.owner.token ||
-      lease.released || lease.expires_at <= this.now()) throw new RunError('stale_lease')
+      lease.released) throw new RunError('stale_lease')
   }
   private tx<T>(operation: string, body: () => T, requiresReady = true): T {
     if (this.closed) throw new RunError('closed')
