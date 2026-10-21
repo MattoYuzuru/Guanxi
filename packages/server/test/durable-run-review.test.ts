@@ -291,3 +291,11 @@ test('self-review: a session writer_busy failure is local to its run', () => {
     } finally { f.close() }
   }
 })
+
+
+test('L8: migration 30 supplies the documented K2 thread-backlog index', () => {
+  const f = runFixture()
+  try {
+    assert.deepEqual(f.db.prepare('PRAGMA index_info(idx_session_mirror_backlog_thread)').all().map((r) => r.name), ['thread_id', 'job_id'])
+  } finally { f.close() }
+})

@@ -139,3 +139,7 @@ log releases all durable rows owned by its writer identity.
 The caller notifies only after commit. This additive path permits K4's
 `log.open(sessionId, { kind: 'agent' })` before or after R1 lifecycle events; a second handle
 still fails with `writer_busy`. The legacy mirror API and its exclusivity are unchanged.
+
+R1 migration 30 also adds `idx_session_mirror_backlog_thread` on
+`session_mirror_backlog(thread_id, job_id)` for K2 thread readiness/catch-up lookups. Migration
+29 and its schema bytes stay unchanged; this shared additive index changes no event contract.

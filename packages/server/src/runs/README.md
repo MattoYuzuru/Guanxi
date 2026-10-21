@@ -5,18 +5,27 @@
 `guanxi.durable-runs` provides `runs.durable` on the own kernel. It depends on K2's
 `session.log` and `egress.scrubber`. The service exposes `store` and `health()`; unload closes
 the store, stops the scheduler and releases its home lease. A stale service cannot write.
+Construction does not claim the home: the pump retries `heartbeat` while health reports
+`writer_busy`, so an unclean predecessor never prevents the rest of the server from serving.
+`store.failures()` exposes per-run operation/error codes; one refused session trace does not
+block another run's timers, recovery or delivery. Health reports `run_failure` while these
+records remain.
 
 ## Boundary
 
 This is the durable orchestration substrate for K4/R2, not a model executor. No model, shell,
 worktree creation or network call is performed here. An executor calls `start`, consumes a
-prepared wake with `deliver`/`dispatch`, then calls `modelStarted` **after observing the first
+pending wake with `deliver` (an explicit claim) or `dispatch(claim)`, then calls `modelStarted` **after observing the first
 model call start**. Preparation is not acknowledgment. A crashed, unacknowledged delivery gets
-a new fenced attempt; an acknowledged wake is never delivered again. Model execution itself
+a new fenced attempt after another executor claim; an acknowledged wake is never delivered
+again. `dispatch()` without a claim callback allocates nothing: an unavailable executor does
+not create attempts, consume leases, change the lead to `working` or churn trace events. Model execution itself
 is not exactly once. External effects still need the ADR-0018 target-side fences/idempotency
 keys at their executor boundary.
 
-Startup recovery snapshots inherited attempts before exposing the service. If vault readiness
+Startup recovery snapshots inherited attempts when the home is claimed, before admitting
+work. Public `reconcile()` can only lose those inherited attempts; a force-all variant is
+private and accessed solely by the crash-simulation test adapter. If vault readiness
 is delayed, reconciliation cannot mark newly admitted attempts as lost when readiness opens.
 
 The default server boots this plugin but does **not** assert `alwaysOn`. Delegation fails with
@@ -33,29 +42,35 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
 
 - One `BEGIN IMMEDIATE` commits every state transition with its K2 event(s); notifications
   happen only after commit. A refused trace/readiness gate rolls the state change back.
-- The execution home has a durable owner lease. Competing stores are refused. Each mutation
-  verifies its owner id/token and expiry, and renews the home lease. A clean close releases it.
-  An unclean takeover waits for the predecessor's persisted
-  `regrant_after` (owner expiry + its maximum attempt TTL + 1000ms), also bounded by
-  persisted active execution expiries. A shorter successor configuration cannot shorten it.
-  Default owner TTL
-  is 30 s and maximum execution TTL 60 s. Recovery can therefore wait up to 91 s after a
-  crash; startup reports `writer_busy` during that interval and must be retried. A plain
-  restart does not bump the epoch. Backup restore/cloning and epoch handover belong to F1.
+- The execution home has a durable owner lease. Each mutation verifies its owner id/token
+  and unreleased state. The same holder/token may renew after a stall because no successor
+  has acquired the row. A released or replaced holder is fenced. Home renewal happens at
+  `ownerTtl/3`; idle pump passes do no writes or write transactions between renewals. Tick
+  reads for due attempts/timers before taking a separate transaction for each item.
+  An unclean takeover waits for the predecessor's persisted `regrant_after` (owner expiry +
+  maximum attempt TTL + 1000ms), with an active-execution expiry floor. On first observation
+  the successor caps this wait at its own `now + ownerTtl + maxAttemptTtl + 1000ms`, so a
+  predecessor clock ahead of the corrected clock cannot block recovery indefinitely. An
+  observed renewed bound restarts this cap; a live predecessor is never stolen from merely
+  because an old observation aged. Defaults are 30 s owner TTL and 60 s execution TTL:
+  recovery waits at most 91 s after the last observed bound change. The pump keeps serving
+  with `writer_busy` meanwhile. A clean close releases the home. A plain restart does not
+  bump the epoch; backup restore/cloning and epoch handover belong to F1.
 - Each run has one `run:<id>/exec` lease. Tokens increase on each grant. Expired, released,
   mismatched and superseded attempts fail with `409 stale_lease`. Timeouts stop execution;
   `tick` marks expired local attempts lost before another attempt can be admitted. There is
   no automatic replay of an interrupted mutating step.
-- Production time is a monotonic clock anchored to a wall reference; deterministic tests
-  inject time. The home, not a remote holder's clock, owns deadline decisions.
+- Deadlines, retention and observations use wall time with a process high-water mark, so
+  suspend is included even on Linux. Leases use monotonic elapsed time anchored to a wall
+  reference. Deterministic tests can inject both clocks. The home owns deadline decisions.
 - `delegate` atomically creates the child, promise and timer, releases the lead attempt and
   enters `waiting_children`. Retrying a delegation key returns its original child and rejects
   a changed brief. No per-run executor or model lease remains while waiting.
 - A child's terminal transition and its deadline race in SQLite: first commit resolves the
   promise once and creates one outbox wake. A fenced escalation/quota signal wakes the lead
   without resolution. The outbox deduplicates by source. Wake sequence and delivery attempt
-  are separate; later wakes wait while a handler is active. The plugin periodically prepares
-  pending deliveries; an executor still owns model calls and acknowledgment. A handler can
+  are separate; later wakes wait while a handler is active. The pump leaves pending wakes durable until an executor claims them; that executor owns
+  model calls and acknowledgment. A handler can
   yield for queued wakes even after its last promise resolves; normal completion refuses to
   discard an unacknowledged wake. Explicit cancellation may suppress pending wakes.
 - Default deadline policy requests `wrapping_up`; a report-only attempt finishes as `canceled`.
@@ -71,10 +86,14 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
 | `submitted` | Remains submitted; executor admission is explicit |
 | `waiting_children`, `input_required` | Remain unchanged |
 | `working` with local delivered/started attempt | Attempt lost, execution lease released, run interrupted |
-| Unacknowledged wake | Original attempt lost; dispatcher prepares a fresh attempt under a higher token |
+| Unacknowledged wake | Original attempt lost; the next executor claim creates a fresh attempt under a higher token |
 | Acknowledged wake | Never redelivered; interrupted work needs an explicit retry |
 | `wrapping_up` | Remains a durable report request; `start` resumes a report-only attempt |
 | Terminal | Unchanged |
+
+An `interrupted` lead with an unacknowledged wake may resume on the next explicit executor
+claim without a separate run retry. This retries the wake handler under a fresh fence; an
+acknowledged wake never resumes implicitly (L6).
 
 Remote attempts/grace, federation, power assertions, full wake-packet/handoff artifacts,
 external lead protocols and fallback connections are later integrations, not implemented R1
@@ -97,7 +116,9 @@ observations fail. These are caller observations, not provider balance or billin
 ## Migration and recovery
 
 Migration 30 adds `durable_runs`, `run_attempts`, `leases`, `promises`, `timers`, `outbox`,
-`run_resources`, `run_costs` and a backlog-by-thread index. Migration 31 adds the persisted home regrant bound;
+`run_resources`, `run_costs` and K2's additive
+`idx_session_mirror_backlog_thread` index on `session_mirror_backlog(thread_id, job_id)`.
+The index supports thread readiness/catch-up lookups; it changes no K2 table or wire schema. Migration 31 adds the persisted home regrant bound;
 migration 30 remains byte-identical. Migrations 1–29 remain byte-identical
 and are pinned by digest. No legacy Job is backfilled into an inferred agent run.
 
@@ -109,14 +130,20 @@ running node. The down helper exists only for isolated migration test fixtures.
 ## Evidence
 
 - `durable-run-crash.test.ts`: exhaustive `SIGKILL` at every store mutation/boundary and K2
-  append point in delegation, completion and deadline resolution, signal/input-required
-  wakes, delivery, acknowledgment, both handler sleep branches and recursive cancellation; recovery checks exact
+  append point in delegation, child admission/model start, completion, post-deadline reports,
+  deadline resolution, signal/input-required wakes, delivery, acknowledgment, both handler
+  sleep branches, recursive cancellation and a second crash during recovery. Before recovery,
+  each crash checks the exact legal committed pre-state or post-state across domain tables,
+  execution fences and K2 event payloads. Recovery checks exact
   promise, wake and acknowledgment counts, contiguous replay, SQLite/FK/FTS integrity.
 - `durable-runs.test.ts`: deadline without child progress, both resolution orders, stale
   fences, two signal/completion wakes, eight simulated hours with a real temporary worktree,
   unchanged cost/attempt counts while sleeping, recursive cancel, detach, restart table,
   owner exclusivity and changed-TTL takeover, cost conflicts/unknowns, readiness, refused
   post-mutation K2 writes, live subscriber notification, always-on admission and plugin cleanup.
+- `durable-run-review.test.ts`: regression probes for busy boot, clock correction, sleep,
+  independent run failures, executor-less idle operation, K2 handles in both orders,
+  retention/deadline boundaries and the three review mutations (all killed).
 - `durable-run-migration.test.ts`: all shipped migration bytes, unchanged prior table rows,
   rollback of failed DDL, retry and reopen.
 - `inspector.test.tsx`: exact one run-event row across persisted/live overlap and reload.
