@@ -243,3 +243,30 @@ test('command output preserves split UTF-8 and bounds decoded invalid bytes', { 
   assert.equal(invalid.code, 0); assert.equal(invalid.truncated, true)
   assert.ok(Buffer.byteLength(invalid.stdout) + Buffer.byteLength(invalid.stderr) <= 65536)
 })
+test('worker crash tears down every descendant before the next command settles', { timeout: 30000 }, async t => {
+  const { dir, policy } = await fixture(t)
+  const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
+  const launcher = join(dir, 'launcher'); await mkdir(launcher)
+  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
+  const source = await readFile(new URL('../../src/native-agent/sandbox.ts', import.meta.url), 'utf8')
+  const hook = `if (signal?.aborted) abort(); const crashTimer = setInterval(() => { if (existsSync(${JSON.stringify(join(policy.scratch, 'ready'))})) { clearInterval(crashTimer); child.kill('SIGKILL') } }, 10); child.once('exit', () => clearInterval(crashTimer))`
+  assert.ok(source.includes('if (signal?.aborted) abort()'))
+  await writeFile(join(launcher, 'sandbox.ts'), source.replace('if (signal?.aborted) abort()', hook))
+  const { sandboxCommand: crashing } = await import(pathToFileURL(join(launcher, 'sandbox.ts')).href)
+  await assert.rejects(crashing(policy, descendants(policy.scratch, true)), /sandbox_failed/)
+  assert.equal((await sandboxCommand(policy, 'printf next')).stdout, 'next')
+  await noLateWrites(policy.scratch)
+})
+test('arbitrary execution cannot connect to a Unix socket exposed inside a selected root', { timeout: 30000 }, async t => {
+  const { policy, root } = await fixture(t)
+  const { createServer } = await import('node:net')
+  let connections = 0
+  const server = createServer(socket => { connections++; socket.end() })
+  const socketPath = join(root, 'fixture.sock')
+  await new Promise<void>(resolve => server.listen(socketPath, resolve))
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  const command = `const s=require('node:net').connect(${JSON.stringify(socketPath)});s.on('connect',()=>{console.log('ESCAPED');s.end()});s.on('error',()=>console.log('blocked'))`
+  const denied = await sandboxCommand(policy, `node -e ${quote(command)}`)
+  assert.equal(denied.code, 0); assert.equal(denied.stdout, 'blocked\n'); assert.equal(connections, 0)
+})

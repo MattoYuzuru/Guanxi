@@ -2,8 +2,10 @@
 import { realpathSync, accessSync, constants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { SandboxManager, getDefaultWritePaths, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import type { SandboxPolicy } from './sandbox-protocol.ts'
+import { linuxBindingFilter, type SandboxPolicy } from './sandbox-protocol.ts'
 import { LinuxExecutionOwner, FixedExecutionOwner, ContainerExecutionOwner, type ExecutionOwner } from './execution-owner.ts'
 
 let owner: ExecutionOwner | undefined
@@ -23,6 +25,11 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
     const modules = installedRuntime.split('/node_modules/')[0] + '/node_modules'
     const seccomp = join(dirname(installedRuntime), '..', 'vendor', 'seccomp', process.arch, 'apply-seccomp')
     if (process.platform === 'linux') { accessSync(seccomp, constants.X_OK); read.push(seccomp) }
+    const bindingFilter = join(directory ?? policy.scratch, 'network-bind.bpf')
+    if (process.platform === 'linux') {
+      if (!execFileSync('/usr/bin/setpriv', ['--help'], { encoding: 'utf8' }).includes('--seccomp-filter')) throw new Error('supervision_unavailable')
+      await writeFile(bindingFilter, linuxBindingFilter(process.arch), { mode: 0o400, flag: 'wx' }); read.push(bindingFilter)
+    }
     const config: SandboxRuntimeConfig = {
       network: { allowedDomains: policy.domains, deniedDomains: [], strictAllowlist: true,
         allowUnixSockets: [], allowLocalBinding: false, allowAllUnixSockets: false,
@@ -42,8 +49,13 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
     if (dependencies.errors.length || dependencies.warnings.length) throw new Error('sandbox_dependencies')
     await SandboxManager.initialize(config, undefined, false)
     if (!SandboxManager.isSandboxingEnabled()) throw new Error('sandbox_unavailable')
+    if (process.platform === 'linux') {
+      await SandboxManager.waitForNetworkInitialization()
+      const networkReads = [SandboxManager.getLinuxHttpSocketPath(), SandboxManager.getLinuxSocksSocketPath(), SandboxManager.getMitmCA()?.trustBundlePath].filter((path): path is string => !!path)
+      SandboxManager.updateConfig({ ...config, filesystem: { ...config.filesystem, allowRead: [...read, ...networkReads].map(literal) } })
+    }
     const quotePath = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
-    owner = process.platform === 'linux' ? new LinuxExecutionOwner() : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner(policy, dockerEndpoint, ownerName, directory)
+    owner = process.platform === 'linux' ? new LinuxExecutionOwner(bindingFilter) : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner(policy, dockerEndpoint, ownerName, directory)
     if (stopped) throw new Error('sandbox_failed')
     const result = await owner.execute(`export HOME=${quotePath(policy.scratch)} TMPDIR=${quotePath(policy.scratch)}; ${command}`)
     await SandboxManager.reset()

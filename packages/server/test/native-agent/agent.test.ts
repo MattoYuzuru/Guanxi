@@ -353,3 +353,21 @@ test('runtime recovery clears a historical shell-unavailable projection', async 
   writer.close()
   assert.equal(f.agents().progress(sessionId).shellUnavailable, undefined)
 })
+test('oversized state tool results use a bounded artifact response and a session-bound reader', async t => {
+  const { nativeTools } = await import('../../src/native-agent/tools.ts')
+  const f = await fixture(t)
+  const handle = f.log.open('large-state', { kind: 'agent' })
+  try {
+    const tools = nativeTools({ policy: { mode: 'read-only', scratch: f.dir, runtimeBase: f.data,
+      roots: Array.from({ length: 2000 }, (_, i) => `/fixture/${i}/${'path'.repeat(30)}`), attachments: [], protectedPaths: [], domains: [] }, log: f.log, handle, scrubber: f.scrubber, queue() {} })
+    const result = await tools.find(t => t.name === 'project_info')!.execute('large', {})
+    assert.notEqual(result.isError, true)
+    const text = result.content[0]!.type === 'text' ? result.content[0]!.text : ''
+    assert.ok(Buffer.byteLength(text) <= 65536)
+    const reference = JSON.parse(text); assert.equal(reference.truncated, true)
+    const page = await tools.find(t => t.name === 'tool_output_read')!.execute('page', { artifact: reference.artifact, offset: '0' })
+    assert.notEqual(page.isError, true)
+    const data = page.content[0]!.type === 'text' ? JSON.parse(page.content[0]!.text) : null
+    assert.equal(data.offset, 0); assert.ok(data.nextOffset > 0); assert.equal(data.truncated, true)
+  } finally { handle.close() }
+})

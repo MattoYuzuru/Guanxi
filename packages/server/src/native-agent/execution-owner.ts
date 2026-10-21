@@ -20,12 +20,16 @@ export interface ExecutionOwner {
 export class LinuxExecutionOwner implements ExecutionOwner {
   private child?: ChildProcess
   private stopped = false
+  private bindingFilter: string
+  constructor(bindingFilter: string) { this.bindingFilter = bindingFilter }
   async stop() {
     this.stopped = true
     if (this.child?.pid) { try { this.child.kill('SIGKILL') } catch { /* exited */ } }
   }
   async execute(command: string): Promise<CommandResult> {
-    const wrapped = await SandboxManager.wrapWithSandbox(command, '/bin/sh')
+    const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
+    const guarded = `/usr/bin/setpriv --no-new-privs --seccomp-filter ${quote(this.bindingFilter)} /bin/sh -c ${quote(command)}`
+    const wrapped = await SandboxManager.wrapWithSandbox(guarded, '/bin/sh')
     // Do not silently accept a weaker upstream profile (including host /proc).
     if (!wrapped.includes('--unshare-pid') || !wrapped.includes('--die-with-parent') || !/--proc\s+['"]?\/proc/.test(wrapped)) throw new Error('supervision_unavailable')
     if (this.stopped) throw new Error('sandbox_failed')
@@ -176,7 +180,9 @@ async function collect(child: ChildProcess): Promise<CommandResult> {
   for (const channel of ['stdout', 'stderr'] as const) child[channel]!.on('data', (data: Buffer) => {
     const remaining = Math.max(0, TOOL_OUTPUT_BYTES - bytes)
     bytes += data.length; truncated ||= data.length > remaining
-    if (channel === 'stdout') stdout.push(data.subarray(0, remaining)); else stderr.push(data.subarray(0, remaining))
+    if (remaining) {
+      if (channel === 'stdout') stdout.push(data.subarray(0, remaining)); else stderr.push(data.subarray(0, remaining))
+    }
   })
   return new Promise((resolve, reject) => {
     child.once('error', reject)
