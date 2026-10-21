@@ -1,6 +1,6 @@
 import { bodyLimit } from 'hono/body-limit'
 import { Hono } from 'hono'
-import { layoutGeometryBody, layoutQuerySchema, saveLayoutBody } from '@guanxi/contract'
+import { layoutGeometryBody, layoutGeometryQuerySchema, layoutQuerySchema, saveLayoutBody } from '@guanxi/contract'
 import type { Db } from '../store/db.ts'
 import { LayoutStore } from './store.ts'
 
@@ -34,16 +34,16 @@ export function layoutsRoutes(db: Db, allowedOrigins: readonly string[] = []): H
     }
   })
   routes.get('/geometry', context => {
-    const parsed = layoutGeometryBody.omit({ geometry: true }).safeParse(context.req.query())
+    const parsed = layoutGeometryQuerySchema.safeParse(context.req.query())
     if (!parsed.success) return context.json(invalid, 400)
-    const { account, device, layoutId } = parsed.data
-    return context.json({ geometry: store.geometry(account, device, layoutId) })
+    const { scopeDevice, device, layoutId, ...scope } = parsed.data
+    return context.json({ geometry: store.geometry({ ...scope, ...(scopeDevice ? { device: scopeDevice } : {}) }, device, layoutId) })
   })
   routes.put('/geometry', async context => {
     const parsed = layoutGeometryBody.safeParse(await context.req.json().catch(() => null))
     if (!parsed.success) return context.json(invalid, 400)
-    const { account, device, layoutId, geometry } = parsed.data
-    store.saveGeometry(account, device, layoutId, geometry)
+    const { scope, device, layoutId, geometry } = parsed.data
+    store.saveGeometry(scope, device, layoutId, geometry)
     return context.json({ geometry })
   })
   return routes

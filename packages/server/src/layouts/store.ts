@@ -1,14 +1,16 @@
 import { createHash } from 'node:crypto'
-import { compareLayouts, layoutDocumentSchema, layoutScopeKey, layoutClock, type LayoutClock, type LayoutDocument, type LayoutQuery, type LayoutGeometry, type LayoutList } from '@guanxi/contract'
+import { compareLayouts, layoutDocumentSchema, layoutScopeKey, layoutClock, type LayoutClock, type LayoutDocument, type LayoutQuery, type LayoutScope, type LayoutGeometry, type LayoutList } from '@guanxi/contract'
 import type { Db } from '../store/db.ts'
 
 function canonical(value: unknown): string {
+  if (value === undefined) return 'null'
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-  return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`
+  return `{${Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`
 }
 export class LayoutStore {
-  constructor(private readonly db: Db) {}
+  private readonly db: Db
+  constructor(db: Db) { this.db = db }
 
   list(query: LayoutQuery): LayoutList {
     const documents = (this.db.prepare('SELECT document FROM layout_documents ORDER BY scope_key, id').all() as { document: string }[])
@@ -57,11 +59,11 @@ export class LayoutStore {
     }
   }
 
-  geometry(account: string, device: string, layoutId: string): LayoutGeometry {
-    const row = this.db.prepare('SELECT geometry FROM layout_geometry WHERE account=? AND device=? AND layout_id=?').get(account, device, layoutId) as { geometry: string } | undefined
+  geometry(scope: LayoutScope, device: string, layoutId: string): LayoutGeometry {
+    const row = this.db.prepare('SELECT geometry FROM layout_geometry WHERE scope_key=? AND device=? AND layout_id=?').get(layoutScopeKey(scope), device, layoutId) as { geometry: string } | undefined
     return row ? JSON.parse(row.geometry) as LayoutGeometry : {}
   }
-  saveGeometry(account: string, device: string, layoutId: string, geometry: LayoutGeometry): void {
-    this.db.prepare('INSERT INTO layout_geometry VALUES (?, ?, ?, ?) ON CONFLICT(account, device, layout_id) DO UPDATE SET geometry=excluded.geometry').run(account, device, layoutId, JSON.stringify(geometry))
+  saveGeometry(scope: LayoutScope, device: string, layoutId: string, geometry: LayoutGeometry): void {
+    this.db.prepare('INSERT INTO layout_geometry VALUES (?, ?, ?, ?) ON CONFLICT(scope_key, device, layout_id) DO UPDATE SET geometry=excluded.geometry').run(layoutScopeKey(scope), device, layoutId, JSON.stringify(geometry))
   }
 }

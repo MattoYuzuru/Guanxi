@@ -1510,8 +1510,8 @@ export const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (scope_key, layout_id, digest)
   );
   CREATE TABLE layout_geometry (
-    account TEXT NOT NULL, device TEXT NOT NULL, layout_id TEXT NOT NULL, geometry TEXT NOT NULL,
-    PRIMARY KEY (account, device, layout_id)
+    scope_key TEXT NOT NULL, device TEXT NOT NULL, layout_id TEXT NOT NULL, geometry TEXT NOT NULL,
+    PRIMARY KEY (scope_key, device, layout_id)
   );`,
 ]
 

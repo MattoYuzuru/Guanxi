@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import { downgradeLayoutsToV31 } from './fixtures/session-log-migration.ts'
 import { Hono } from 'hono'
 import { compareLayouts, layoutClock, layoutDocumentSchema, resolveLayout, type LayoutDocument, type LayoutQuery, type LayoutList } from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
@@ -10,6 +12,7 @@ import { LayoutStore } from '../src/layouts/store.ts'
 import { layoutsRoutes } from '../src/layouts/routes.ts'
 import { builtInLayout } from '../../web/src/features/workspace/defaults.ts'
 
+const golden = JSON.parse(readFileSync(new URL('./fixtures/layout-resolution.golden.json', import.meta.url), 'utf8'))
 const query: LayoutQuery = { account: 'local', project: 'project', mode: 'developer', deviceClass: 'desktop', device: 'device-a' }
 function fixture(patch: Partial<LayoutDocument> = {}): LayoutDocument { return layoutDocumentSchema.parse({ ...builtInLayout(query), ...patch }) }
 function listed(documents: LayoutDocument[]): LayoutList { return { documents, active: documents.map(d => ({ scope: d.scope, layoutId: d.id })) } }
@@ -21,7 +24,7 @@ test('layout resolution golden: device, project-mode, account-mode, built-in; na
   const device = fixture({ id: 'device' })
   const docs = [device, project, account]
   const actual = [0, 1, 2, 3].map(i => resolveLayout(listed(docs.slice(i)), query, base).id)
-  assert.deepEqual(actual, ['device', 'project', 'account', 'builtin'])
+  assert.deepEqual(actual, golden.resolution)
   assert.equal(resolveLayout({ documents: [device], active: [] }, query, base).id, 'builtin')
   assert.equal(resolveLayout(listed([fixture({ scope: { ...query, device: 'other' } })]), query, base).id, 'builtin')
   assert.equal(resolveLayout(listed([fixture({ scope: { ...query, deviceClass: 'phone' } })]), query, base).id, 'builtin')
@@ -71,7 +74,9 @@ test('concurrent delivery converges and preserves exactly one recovered loser, i
   for (const reverse of [false, true]) {
     const db = openDb(':memory:'); const store = new LayoutStore(db)
     try {
-      const a = fixture({ rev: 1, name: 'A' }); const b = fixture({ rev: 1, name: 'B', updatedBy: { device: 'device-b' } })
+      const a = fixture({ rev: 1, name: 'A' }); a.blocks['guanxi.core/chat']!.priority = 111
+      const b = fixture({ rev: 1, name: 'B', updatedBy: { device: 'device-b' } })
+      b.blocks['guanxi.core/chat']!.priority = 222
       const [first, second] = reverse ? [b, a] : [a, b]
       store.save(first!, true)
       store.save(second!, true)
@@ -105,13 +110,15 @@ test('mode layouts and named copies survive restart; geometry stays on its devic
     const visual = builtInLayout(visualQuery)
     store.save(developer, true); store.save(visual, true)
     store.save({ ...developer, id: 'named', name: 'Named' }, false)
-    store.saveGeometry('local', 'device-a', developer.id, { floating: { left: 15, top: 20, width: 640, height: 480 } })
+    store.saveGeometry(developer.scope, 'device-a', developer.id, { floating: { left: 15, top: 20, width: 640, height: 480 } })
     db.close(); db = openDb(join(dir, 'test.db')); store = new LayoutStore(db)
     assert.equal(resolveLayout(store.list(query), query, fixture()).name, 'Developer custom')
     assert.equal(resolveLayout(store.list(visualQuery), visualQuery, visual).scope.mode, 'visual')
     assert.equal(store.list(query).documents.length, 2)
-    assert.deepEqual(store.geometry('local', 'device-b', developer.id), {})
-    assert.equal(store.geometry('local', 'device-a', developer.id).floating?.left, 15)
+    assert.deepEqual(store.geometry(developer.scope, 'device-b', developer.id), {})
+    assert.deepEqual(store.geometry({ ...developer.scope, project: 'different-project' }, 'device-a', developer.id), {})
+    assert.deepEqual(store.geometry({ ...developer.scope, mode: 'visual' }, 'device-a', developer.id), {})
+    assert.equal(store.geometry(developer.scope, 'device-a', developer.id).floating?.left, 15)
     assert.ok(!JSON.stringify(store.list(query)).includes('640'))
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
 })
@@ -128,10 +135,38 @@ test('REST validates query, both writes, response, conflict and mode scope', asy
     assert.equal(response.status, 200)
     const list = await response.json() as LayoutList
     assert.equal(list.documents.length, 1); assert.equal(list.active.length, 1)
-    const body = { account: 'local', device: 'device-a', layoutId: fixture().id, geometry: { window: { left: 0, top: 0, width: 100, height: 100 } } }
+    const body = { scope: query, device: 'device-a', layoutId: fixture().id, geometry: { window: { left: 0, top: 0, width: 100, height: 100 } } }
     assert.equal((await put('/api/layouts/geometry', body)).status, 200)
     assert.equal((await put('/api/layouts/geometry', { ...body, geometry: { window: { left: 0, top: 0, width: -1, height: 100 } } })).status, 400)
-    const geometry = await app.request(`/api/layouts/geometry?account=local&device=device-b&layoutId=${body.layoutId}`)
+    const geometry = await app.request(`/api/layouts/geometry?account=local&project=project&mode=developer&deviceClass=desktop&scopeDevice=device-a&device=device-b&layoutId=${body.layoutId}`)
     assert.deepEqual(await geometry.json(), { geometry: {} })
   } finally { db.close() }
+})
+
+test('Developer and Visual default block placement matches the committed golden', () => {
+  for (const mode of ['developer', 'visual'] as const) {
+    const doc = builtInLayout({ ...query, mode })
+    const zones = Object.fromEntries(doc.engineState.groups.map(group => [group.zone, group.blocks.map(id => id.split('/')[1])]))
+    assert.deepEqual(zones, golden[mode])
+  }
+})
+
+test('migration 32 rolls back partial DDL on collision and safely retries', () => {
+  const root = mkdtempSync(join(tmpdir(), 'guanxi-layout-migration-'))
+  const path = join(root, 'node.db')
+  try {
+    const seed = openDb(path)
+    downgradeLayoutsToV31(seed)
+    seed.exec('PRAGMA user_version=31; CREATE TABLE layout_active (collision TEXT)')
+    seed.close()
+    assert.throws(() => openDb(path), /Миграция 32/u)
+    const repair = new DatabaseSync(path)
+    assert.equal((repair.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 31)
+    assert.equal(repair.prepare("SELECT name FROM sqlite_master WHERE name='layout_documents'").get(), undefined)
+    repair.exec('DROP TABLE layout_active'); repair.close()
+    const upgraded = openDb(path)
+    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
+    assert.equal((upgraded.prepare('SELECT COUNT(*) AS n FROM layout_documents').get() as { n: number }).n, 0)
+    upgraded.close()
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })

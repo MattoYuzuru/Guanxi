@@ -1,7 +1,7 @@
 ---
 id: workspace-chrome
 level: pattern
-states: [default, empty, placeholder, error, phone]
+states: [default, empty, placeholder, error, phone, draft, toolbar, mover]
 tokens: [panel-padding, font-text-size, color-background-primary, color-text-primary]
 since: 0.1.0
 ---
@@ -29,7 +29,7 @@ controlled by the host and do not execute commands or navigate.
 ## States
 
 Default pane; empty pane; unavailable block placeholder; error with retry; phone tab list.
-Toolbar actions expose disabled while persistence is pending. Move choices are named menus.
+Controlled terminal draft; toolbar with save; open move dialog. Toolbar actions expose disabled while persistence is pending. Move choices are named menus.
 
 ## Accessibility
 

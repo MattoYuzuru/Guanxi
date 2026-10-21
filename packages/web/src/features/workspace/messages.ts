@@ -1,5 +1,6 @@
 export const workspaceEnglish = {
   'workspace.title': 'Session workspace',
+  'workspace.noVisibleBlocks': 'All blocks are hidden. Add a block to continue.',
   'workspace.mode': 'Experience mode',
   'workspace.developer': 'Developer',
   'workspace.visual': 'Visual',
@@ -13,7 +14,7 @@ export const workspaceEnglish = {
   'workspace.loading': 'Loading workspace layouts…',
   'workspace.retry': 'Retry',
   'workspace.error': 'Layouts could not be loaded from the node. Retry to restore your workspace.',
-  'workspace.saveError': 'The layout could not be saved to the node. Your current arrangement is still open; retry saving.',
+  'workspace.saveError': 'The node could not complete this layout change. Your current workspace is still open; retry.',
   'workspace.saved': 'Layout saved to the node.',
   'workspace.recovered': 'A conflicting layout was kept as Recovered layout.',
   'workspace.recoveredName': 'Recovered layout',
@@ -61,13 +62,13 @@ export const workspaceEnglish = {
   'workspace.zone.left': 'Left', 'workspace.zone.right': 'Right', 'workspace.zone.top': 'Top', 'workspace.zone.bottom': 'Bottom', 'workspace.zone.center': 'Centre grid', 'workspace.zone.floating': 'Floating', 'workspace.zone.popout': 'Popout',
 } as const
 export const workspaceRussian: Record<keyof typeof workspaceEnglish, string> = {
-  'workspace.title': 'Рабочая область сессии', 'workspace.mode': 'Режим интерфейса',
+  'workspace.title': 'Рабочая область сессии', 'workspace.noVisibleBlocks': 'Все блоки скрыты. Добавьте блок, чтобы продолжить.', 'workspace.mode': 'Режим интерфейса',
   'workspace.developer': 'Разработчик', 'workspace.visual': 'Визуальный',
   'workspace.density': 'Плотность', 'workspace.compact': 'Компактная', 'workspace.comfortable': 'Комфортная',
   'workspace.layout': 'Название раскладки', 'workspace.save': 'Сохранить раскладку', 'workspace.saveAs': 'Сохранить как новую', 'workspace.reset': 'Сбросить раскладку',
   'workspace.loading': 'Загружаем раскладки…', 'workspace.retry': 'Повторить',
   'workspace.error': 'Не удалось загрузить раскладки с узла. Повторите попытку, чтобы восстановить рабочую область.',
-  'workspace.saveError': 'Не удалось сохранить раскладку на узле. Текущее расположение сохранено в открытом окне; повторите сохранение.',
+  'workspace.saveError': 'Узел не смог завершить изменение раскладки. Текущая рабочая область остаётся открытой; повторите попытку.',
   'workspace.saved': 'Раскладка сохранена на узле.', 'workspace.recovered': 'Конфликтующая копия сохранена как «Восстановленная раскладка».', 'workspace.recoveredName': 'Восстановленная раскладка',
   'workspace.move': 'Переместить блок…', 'workspace.moveTitle': 'Переместить блок', 'workspace.block': 'Блок', 'workspace.destination': 'Куда', 'workspace.cancel': 'Отмена',
   'workspace.hide': 'Скрыть блок', 'workspace.add': 'Добавить блок', 'workspace.hidden': 'Скрытые блоки',

@@ -35,6 +35,6 @@ Rules:
 
 ## Dockview (U1-a)
 
-- `dockview-core` and `dockview-react` 8.6.1, MIT, copyright Dockview contributors.
-- Source: <https://github.com/dockview/dockview>. Installed npm dependencies; no source copied.
+- `dockview-core` and `dockview-react` 8.6.1, MIT, Copyright (c) 2021 mathuo.
+- Source: [Dockview at a9e3092](https://github.com/dockview/dockview/tree/a9e3092fbd5c61aef69ca0922a86bf0be53cb891). Installed npm dependencies; no source copied.
 - Used only through the WorkspaceLayout adapter. The proprietary enterprise package is denied.

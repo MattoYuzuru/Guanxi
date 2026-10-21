@@ -10,27 +10,27 @@ import './workspace-chrome.css'
 type Choice = { id: string; label: string }
 type Base = { children?: ReactNode }
 export type WorkspaceChromeProps = Base & (
-  | { kind: 'pane'; id: string; title: string; moveLabel: string; hideLabel: string; onMove: () => void; onHide: () => void; description?: string; draft?: { label: string; value: string; onChange: (value: string) => void } }
-  | { kind: 'toolbar'; label: string; fields: { label: string; value: string; choices: Choice[]; onChange: (id: string) => void }[]; name: { label: string; value: string; onChange: (name: string) => void }; actions: { label: string; onClick: () => void; disabled?: boolean }[] }
+  | { kind: 'pane'; id: string; title: string; moveLabel: string; hideLabel: string; onMove: () => void; onHide: () => void; canMove?: boolean; description?: string; draft?: { label: string; value: string; onChange: (value: string) => void } }
+  | { kind: 'toolbar'; busy?: boolean; label: string; fields: { label: string; value: string; choices: Choice[]; onChange: (id: string) => void }[]; name: { label: string; value: string; onChange: (name: string) => void }; actions: { label: string; onClick: () => void; disabled?: boolean }[] }
   | { kind: 'mover'; open: boolean; title: string; description: string; blockLabel: string; zoneLabel: string; cancelLabel: string; moveLabel: string; blocks: Choice[]; zones: Choice[]; block: string; zone: string; onBlock: (id: string) => void; onZone: (id: string) => void; onClose: () => void; onMove: () => void }
   | { kind: 'phone'; label: string; blocks: Choice[]; selected: string; onSelect: (id: string) => void }
   | { kind: 'state'; title: string; action?: { label: string; onClick: () => void }; error?: boolean }
 )
-function ChoiceMenu({ label, value, choices, onChange }: { label: string; value: string; choices: Choice[]; onChange: (id: string) => void }) {
-  return <Menu><MenuTrigger render={<Button variant="secondary" />} aria-label={label}>{choices.find(c => c.id === value)?.label ?? label}</MenuTrigger><MenuContent>{choices.map(choice => <MenuItem key={choice.id} onClick={() => onChange(choice.id)} aria-current={choice.id === value ? 'true' : undefined}>{choice.label}</MenuItem>)}</MenuContent></Menu>
+function ChoiceMenu({ label, value, choices, onChange, disabled }: { disabled?: boolean; label: string; value: string; choices: Choice[]; onChange: (id: string) => void }) {
+  return <Menu><MenuTrigger render={<Button variant="secondary" />} disabled={disabled} aria-label={label}>{choices.find(c => c.id === value)?.label ?? label}</MenuTrigger><MenuContent>{choices.map(choice => <MenuItem key={choice.id} onClick={() => onChange(choice.id)} aria-current={choice.id === value ? 'true' : undefined}>{choice.label}</MenuItem>)}</MenuContent></Menu>
 }
 
 /** Workspace chrome owns controls only; pane content and the docking engine remain host-owned. */
 export function WorkspaceChrome(props: WorkspaceChromeProps) {
   const tabs = useRef<HTMLDivElement>(null)
   if (props.kind === 'pane') return <section className="gx-workspace-pane" data-block={props.id} aria-label={props.title} tabIndex={-1}>
-    <header className="gx-workspace-pane-header"><h2>{props.title}</h2><Menu><MenuTrigger render={<Button variant="ghost" />} aria-label={`${props.moveLabel} ${props.title}`}>{props.moveLabel}</MenuTrigger><MenuContent><MenuItem onClick={props.onMove}>{props.moveLabel}</MenuItem><MenuItem onClick={props.onHide}>{props.hideLabel}</MenuItem></MenuContent></Menu></header>
+    <header className="gx-workspace-pane-header"><h2>{props.title}</h2><Menu><MenuTrigger render={<Button variant="ghost" />} aria-label={`${props.moveLabel} ${props.title}`}>{props.moveLabel}</MenuTrigger><MenuContent><MenuItem disabled={props.canMove === false} onClick={props.onMove}>{props.moveLabel}</MenuItem><MenuItem onClick={props.onHide}>{props.hideLabel}</MenuItem></MenuContent></Menu></header>
     <div className="gx-workspace-pane-body">{props.description && <EmptyState title={props.description} />}{props.children}{props.draft && <label className="gx-workspace-field"><span>{props.draft.label}</span><Textarea value={props.draft.value} onChange={event => props.draft?.onChange(event.target.value)} /></label>}</div>
   </section>
   if (props.kind === 'toolbar') return <div className="gx-workspace-toolbar" role="group" aria-label={props.label}>
-    {props.fields.map(field => <ChoiceMenu key={field.label} {...field} />)}
-    <label className="gx-workspace-field"><span>{props.name.label}</span><Input value={props.name.value} onChange={event => props.name.onChange(event.target.value)} /></label>
-    {props.actions.map(action => <Button key={action.label} variant="secondary" onClick={action.onClick} disabled={action.disabled}>{action.label}</Button>)}
+    {props.fields.map(field => <ChoiceMenu key={field.label} {...field} disabled={props.busy} />)}
+    <label className="gx-workspace-field"><span>{props.name.label}</span><Input disabled={props.busy} value={props.name.value} onChange={event => props.name.onChange(event.target.value)} /></label>
+    {props.actions.map(action => <Button key={action.label} variant="secondary" onClick={action.onClick} disabled={action.disabled || props.busy}>{action.label}</Button>)}
   </div>
   if (props.kind === 'mover') return <Dialog open={props.open} onOpenChange={open => { if (!open) props.onClose() }}>
     <DialogContent><DialogTitle>{props.title}</DialogTitle><DialogDescription>{props.description}</DialogDescription>

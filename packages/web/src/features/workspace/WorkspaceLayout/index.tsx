@@ -1,9 +1,9 @@
 /** The only Dockview boundary. Public APIs expose Guanxi documents and pane hosts. */
-import { useEffect, useMemo, useRef, type Ref } from 'react'
+import { useEffect, useMemo, useRef, type RefObject } from 'react'
 import { DockviewReact, type IDockviewPanelProps } from 'dockview-react'
 import { Orientation, type DockviewApi, type DockviewGroupPanel, type SerializedDockview } from 'dockview-core'
 import { layoutDocumentSchema, type LayoutDocument, type LayoutGeometry, type LayoutTree, type WorkspaceZone } from '@guanxi/contract'
-import 'dockview-core/dist/styles/dockview.css'
+import 'dockview-react/dist/styles/dockview.css'
 import './workspace-layout.css'
 
 export interface WorkspaceLayoutHandle {
@@ -21,7 +21,9 @@ export interface WorkspaceLayoutProps {
   geometry: LayoutGeometry
   hosts: ReadonlyMap<string, HTMLElement>
   title: (id: string) => string
-  handleRef: Ref<WorkspaceLayoutHandle>
+  handleRef: RefObject<WorkspaceLayoutHandle | null>
+  hideLabel: string
+  onHidden: (id: string) => void
   onChange: () => void
   onMove: (id: string, zone: WorkspaceZone) => void
   onReady?: (elapsed: number) => void
@@ -34,11 +36,6 @@ function fromTree(tree: LayoutTree, doc: LayoutDocument): SerializedDockview['gr
   const group = doc.engineState.groups.find(g => g.id === tree.group)!
   return { type: 'leaf', data: { id: group.id, views: group.blocks, activeView: group.active, locked: group.zone !== 'center' }, size: tree.size }
 }
-function assignRef<T>(ref: Ref<T>, value: T | null) {
-  if (typeof ref === 'function') ref(value)
-  else if (ref) ref.current = value
-}
-
 export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const latest = useRef(props)
   latest.current = props
@@ -46,6 +43,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const subscriptions = useRef<{ dispose: () => void }[]>([])
   const zones = useRef(new Map<string, WorkspaceZone>())
   const muted = useRef(false)
+  const ownedHandle = useRef<WorkspaceLayoutHandle | null>(null)
   const components = useMemo(() => ({ host: function PaneHost({ api }: IDockviewPanelProps) {
     return <div className="workspace-pane-host" ref={element => {
       const host = latest.current.hosts.get(api.id)
@@ -55,14 +53,34 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
   useEffect(() => () => {
     subscriptions.current.forEach(item => item.dispose())
-    assignRef(latest.current.handleRef, null)
+    apiRef.current = null
+    if (latest.current.handleRef.current === ownedHandle.current) latest.current.handleRef.current = null
   }, [])
+
+  useEffect(() => {
+    for (const panel of apiRef.current?.panels ?? []) {
+      const title = props.title(panel.id)
+      if (panel.title !== title) panel.api.setTitle(title)
+      const host = props.hosts.get(panel.id)
+      const root = panel.api.getWindow().document.documentElement
+      if (host && root.ownerDocument !== document) {
+        root.lang = host.lang
+        root.dataset.theme = host.dataset.theme
+        root.dataset.density = props.document.density
+      }
+    }
+  })
 
   function ready(api: DockviewApi) {
     const start = performance.now()
     apiRef.current = api
     const doc = layoutDocumentSchema.parse(latest.current.document)
     const groupZones = zones.current
+    const restoredGeometry = new Map<string, LayoutGeometry[string]>()
+    doc.engineState.groups.forEach(group => {
+      const box = latest.current.geometry[group.id]
+      if (box) group.blocks.forEach(id => restoredGeometry.set(id, box))
+    })
     doc.engineState.groups.forEach(g => groupZones.set(g.id, g.zone))
     const zoneOf = (group: DockviewGroupPanel): WorkspaceZone => {
       const type = group.api.location.type
@@ -91,7 +109,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     for (const saved of doc.engineState.groups.filter(g => g.zone === 'floating' || g.zone === 'popout')) {
       // Browsers require a user gesture to open windows: restored popouts stay docked
       // until explicitly reopened. Never launch windows from untrusted layout JSON.
-      const group = api.addGroup({ direction: 'right' })
+      const group = api.addGroup({ id: saved.id, direction: 'right' })
       groupZones.set(group.id, saved.zone === 'popout' ? 'center' : 'floating')
       saved.blocks.forEach(id => add(id, group))
       if (saved.zone === 'floating') {
@@ -120,22 +138,33 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         muted.current = true
         let success = true
         try {
-          if (zone === 'floating') api.addFloatingGroup(panel)
-          else if (zone === 'popout') success = await api.addPopoutGroup(panel, { popoutUrl: new URL('/workspace-popout.html', window.location.origin).href })
+          const box = latest.current.geometry[panel.group.id] ?? restoredGeometry.get(id)
+          if (zone === 'floating') api.addFloatingGroup(panel, box ? { x: box.left, y: box.top, width: box.width, height: box.height } : {})
+          else if (zone === 'popout') success = await api.addPopoutGroup(panel, {
+            popoutUrl: new URL('/workspace-popout.html', window.location.origin).href,
+            position: box,
+            onDidOpen: event => {
+              const host = latest.current.hosts.get(id)
+              event.window.document.title = document.title
+              event.window.document.documentElement.lang = host?.lang || document.documentElement.lang
+              if (host?.dataset.theme) event.window.document.documentElement.dataset.theme = host.dataset.theme
+              event.window.document.documentElement.dataset.density = latest.current.document.density
+            },
+          })
           else panel.api.moveTo({ group: ensureGroup(zone), position: 'center' })
         } finally { muted.current = false }
         if (success) {
           latest.current.onMove(id, zone)
           latest.current.onChange()
           panel.api.setActive()
-          requestAnimationFrame(() => latest.current.hosts.get(id)?.querySelector<HTMLElement>('[data-block]')?.focus())
+          requestAnimationFrame(() => { panel.api.getWindow().focus(); latest.current.hosts.get(id)?.querySelector<HTMLElement>('[data-block]')?.focus() })
         }
         return success
       },
       hide(id) { api.getPanel(id)?.api.close(); latest.current.onChange() },
       show(id, zone) { if (!api.getPanel(id)) add(id, ensureGroup(zone)); latest.current.onChange() },
       snapshot,
-      focus(id) { api.getPanel(id)?.api.setActive(); latest.current.hosts.get(id)?.querySelector<HTMLElement>('[data-block]')?.focus() },
+      focus(id) { api.getPanel(id)?.api.setActive(); api.getPanel(id)?.api.getWindow().focus(); latest.current.hosts.get(id)?.querySelector<HTMLElement>('[data-block]')?.focus() },
       activeBlock: () => api.activePanel?.id,
       cycleZone(backward) {
         const ordered: WorkspaceZone[] = ['left', 'top', 'center', 'right', 'bottom', 'floating', 'popout']
@@ -148,14 +177,23 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       },
       diagnostics: () => ({ groups: api.groups.map(g => ({ id: g.id, zone: zoneOf(g), locked: g.api.locked === true })), blocks: api.panels.length }),
     }
-    assignRef(latest.current.handleRef, handle)
-    subscriptions.current.push(api.onDidMovePanel(event => {
-      if (!groupZones.has(event.to.id)) groupZones.set(event.to.id, groupZones.get(event.from.id) ?? 'center')
+    ownedHandle.current = handle
+    latest.current.handleRef.current = handle
+    let dropZone: WorkspaceZone | undefined
+    subscriptions.current.push(api.onWillDrop(event => { dropZone = event.group ? zoneOf(event.group) : event.position === 'left' || event.position === 'right' || event.position === 'top' || event.position === 'bottom' ? event.position : 'center' }), api.onDidDrop(() => { dropZone = undefined }), api.onDidRemovePanel(panel => {
+      queueMicrotask(() => {
+        if (apiRef.current !== api || muted.current || api.getPanel(panel.id)) return
+        latest.current.onHidden(panel.id)
+        const active = api.activePanel?.id
+        if (active) handle.focus(active)
+      })
+    }), api.onDidMovePanel(event => {
+      if (!groupZones.has(event.to.id)) groupZones.set(event.to.id, dropZone ?? groupZones.get(event.from.id) ?? 'center')
       const zone = zoneOf(event.to)
       event.to.api.locked = zone !== 'center' && zone !== 'floating' && zone !== 'popout'
       if (!muted.current) latest.current.onMove(event.panel.id, zone)
     }), api.onDidLayoutChange(() => { if (!muted.current) latest.current.onChange() }))
-    latest.current.onReady?.(performance.now() - start)
+    requestAnimationFrame(() => requestAnimationFrame(() => latest.current.onReady?.(performance.now() - start)))
   }
-  return <div className="workspace-layout"><DockviewReact components={components} theme={{ name: 'guanxi', className: 'gx-dockview' }} onReady={event => ready(event.api)} popoutUrl="/workspace-popout.html" /></div>
+  return <div className="workspace-layout"><DockviewReact components={components} theme={{ name: 'workspace', className: 'gx-dockview' }} onReady={event => ready(event.api)} disableTabsOverflowList scrollbars="native" watermarkComponent={() => null} announcements={false} keyboardNavigation={false} messages={{ closeTab: title => `${props.hideLabel} ${title}`, closeTabPlain: () => props.hideLabel }} getTabContextMenuItems={() => []} getTabGroupChipContextMenuItems={() => []} groupDragGhostComponent={({ group }) => <span>{group.panels.map(panel => panel.title).join(', ')}</span>} popoutUrl="/workspace-popout.html" /></div>
 }

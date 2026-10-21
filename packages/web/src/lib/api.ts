@@ -8,7 +8,7 @@ import type { output, ZodTypeAny } from 'zod'
 import {
   ROUTES,
   layoutListResponse, saveLayoutResponse, layoutGeometryResponse,
-  type LayoutQuery, type LayoutDocument, type LayoutGeometry, type LayoutClock,
+  type LayoutQuery, type LayoutDocument, type LayoutGeometry, type LayoutClock, type LayoutScope,
   apiErrorSchema,
   approvalResponse,
   uiCatalogReviewCapabilityResponse,
@@ -279,8 +279,8 @@ function safeJson(text: string): unknown {
 export const api = {
   layouts: (query: LayoutQuery, signal?: AbortSignal) => request(ROUTES.layouts(), layoutListResponse, { query, signal }),
   saveLayout: (document: LayoutDocument, activate = true, basedOn?: LayoutClock) => request(ROUTES.layouts(), saveLayoutResponse, { method: 'PUT', body: { document, activate, basedOn } }),
-  layoutGeometry: (account: string, device: string, layoutId: string, signal?: AbortSignal) => request(ROUTES.layoutGeometry(), layoutGeometryResponse, { query: { account, device, layoutId }, signal }),
-  saveLayoutGeometry: (account: string, device: string, layoutId: string, geometry: LayoutGeometry) => request(ROUTES.layoutGeometry(), layoutGeometryResponse, { method: 'PUT', body: { account, device, layoutId, geometry } }),
+  layoutGeometry: (scope: LayoutScope, device: string, layoutId: string, signal?: AbortSignal) => request(ROUTES.layoutGeometry(), layoutGeometryResponse, { query: { ...scope, device, scopeDevice: scope.device, layoutId }, signal }),
+  saveLayoutGeometry: (scope: LayoutScope, device: string, layoutId: string, geometry: LayoutGeometry) => request(ROUTES.layoutGeometry(), layoutGeometryResponse, { method: 'PUT', body: { scope, device, layoutId, geometry } }),
   health: (signal?: AbortSignal) => request(ROUTES.health(), getHealthResponse, { signal }),
 
   /* Модели */

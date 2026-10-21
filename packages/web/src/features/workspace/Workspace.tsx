@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { createPortal } from 'react-dom'
 import { PortalContainerProvider, UiLocaleProvider, WorkspaceChrome } from '@guanxi/ui'
 import { WORKSPACE_BLOCK_SLOT, type BlockContribution } from '@guanxi/kernel'
-import { layoutClock, layoutScopeKey, resolveLayout, layoutDocumentSchema, type ExperienceMode, type LayoutDocument, type LayoutGeometry, type LayoutList, type LayoutQuery, type WorkspaceZone } from '@guanxi/contract'
+import { WORKSPACE_ENGINE_MAJOR, compareLayouts, layoutClock, layoutScopeKey, resolveLayout, layoutDocumentSchema, type ExperienceMode, type LayoutDocument, type LayoutGeometry, type LayoutList, type LayoutQuery, type WorkspaceZone } from '@guanxi/contract'
 import { webKernel, webKernelReady } from '../../kernel/runtime.ts'
 import { api } from '../../lib/api.ts'
 import { PRODUCT_FILE_PREFIX } from '../../lib/brand.ts'
@@ -10,9 +10,11 @@ import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { builtInLayout } from './defaults.ts'
+import { MOVE_BLOCK_COMMAND } from './commands.ts'
 import { paneRegistry } from './renderers.ts'
 import { blockNames, type BuiltInBlock } from './blocks.ts'
 import { WorkspaceLayout, type WorkspaceLayoutHandle } from './WorkspaceLayout/index.tsx'
+import '@guanxi/ui/fonts.css'
 import './workspace.css'
 
 const zoneOrder: WorkspaceZone[] = ['left', 'right', 'top', 'bottom', 'center', 'floating', 'popout']
@@ -45,7 +47,7 @@ export interface WorkspaceProps {
 
 /** Node-owned documents; browser memory owns pane lifetimes, never credentials or processes. */
 export function Workspace({ children, account = 'local', project, safeMode = false }: WorkspaceProps) {
-  const { locale } = useLocale()
+  const { locale, setLocale } = useLocale()
   const { resolved: theme } = useTheme()
   const phone = usePhone()
   const [device] = useState(deviceId)
@@ -59,6 +61,8 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
   const [loadError, setLoadError] = useState(false)
   const [saveError, setSaveError] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [announcementRevision, setAnnouncementRevision] = useState(0)
   const [announcement, setAnnouncement] = useState('')
   const [name, setName] = useState('')
   const [selected, setSelected] = useState('guanxi.core/chat')
@@ -66,6 +70,11 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
   const [destination, setDestination] = useState<WorkspaceZone>('right')
   const engine = useRef<WorkspaceLayoutHandle | null>(null)
   const restoreTime = useRef(0)
+  const selectionEpoch = useRef(0)
+  const operationBusy = useRef(false)
+  const geometryCache = useRef(new Map<string, LayoutGeometry>())
+  const retryOperation = useRef<() => void>(() => undefined)
+  const returnFocus = useRef<HTMLElement | null>(null)
   const paneHosts = useRef(new Map<string, HTMLDivElement>())
   const latestDocument = useRef<LayoutDocument | undefined>(undefined)
   const phoneSnapshot = useRef<ReturnType<WorkspaceLayoutHandle['snapshot']> | undefined>(undefined)
@@ -82,7 +91,8 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     const contribution = contributionFor(id)
     return contribution ? translate(contribution.title as LocaleKey) : id
   }
-  const announceMove = (id: string, zone: WorkspaceZone) => setAnnouncement(translate('workspace.moved', { block: title(id), zone: translate(`workspace.zone.${zone}`) }))
+  function say(message: string) { setAnnouncement(message); setAnnouncementRevision(value => value + 1) }
+  const announceMove = (id: string, zone: WorkspaceZone) => say(translate('workspace.moved', { block: title(id), zone: translate(`workspace.zone.${zone}`) }))
 
   const load = useCallback(() => {
     const controller = new AbortController()
@@ -96,10 +106,11 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
         nextDocuments[nextMode] = resolveLayout(lists[i]!, query(nextMode), builtInLayout(query(nextMode)))
       }
       const current = nextDocuments[mode]!
-      const local = await api.layoutGeometry(account, device, current.id, controller.signal)
+      const local = await api.layoutGeometry(current.scope, device, current.id, controller.signal)
       if (controller.signal.aborted) return
       setList({ documents: lists.flatMap(row => row.documents), active: lists.flatMap(row => row.active) })
       setDocuments(nextDocuments)
+      geometryCache.current.set(`${layoutScopeKey(current.scope)}#${current.id}`, local.geometry)
       setGeometry(local.geometry)
       setName(current.name)
       setGeneration(value => value + 1)
@@ -119,6 +130,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     if (!engine.current || !latestDocument.current) return
     const state = engine.current.snapshot()
     phoneSnapshot.current = state
+    geometryCache.current.set(`${layoutScopeKey(latestDocument.current.scope)}#${latestDocument.current.id}`, state.geometry)
     const next = { ...latestDocument.current, engineState: state.engineState, hidden: state.hidden }
     latestDocument.current = next
     setDocuments(previous => ({ ...previous, [next.scope.mode]: next }))
@@ -130,52 +142,97 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     if (engine.current) {
       const state = engine.current.snapshot()
       phoneSnapshot.current = state
+      geometryCache.current.set(`${layoutScopeKey(next.scope)}#${next.id}`, state.geometry)
       setGeometry(state.geometry)
     }
     setDocuments(previous => ({ ...previous, [next.scope.mode]: next }))
     return next
   }
+  function compatible(candidate: LayoutDocument): LayoutDocument {
+    return candidate.engineState.major === WORKSPACE_ENGINE_MAJOR ? candidate : builtInLayout(query(candidate.scope.mode))
+  }
+  async function activateDocument(candidate: LayoutDocument, persist = false) {
+    if (operationBusy.current) return
+    operationBusy.current = true
+    const epoch = ++selectionEpoch.current
+    setSwitching(true)
+    setSaveError(false)
+    retryOperation.current = () => { void activateDocument(candidate, persist) }
+    try {
+      remember()
+      const response = persist ? await api.saveLayout(candidate, true, layoutClock(candidate)) : null
+      const next = compatible(response?.document ?? candidate)
+      if (response) {
+        const scopeKey = layoutScopeKey(response.document.scope)
+        setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === response.document.id && layoutScopeKey(row.scope) === scopeKey)), response.document, ...response.recovered], active: [...previous.active.filter(row => layoutScopeKey(row.scope) !== scopeKey), { scope: response.document.scope, layoutId: response.document.id }] }))
+      }
+      const key = `${layoutScopeKey(next.scope)}#${next.id}`
+      const local = geometryCache.current.get(key) ?? (await api.layoutGeometry(next.scope, device, next.id)).geometry
+      if (epoch !== selectionEpoch.current) return
+      geometryCache.current.set(key, local)
+      phoneSnapshot.current = undefined
+      setGeometry(local)
+      setDocuments(previous => ({ ...previous, [next.scope.mode]: next }))
+      setMode(next.scope.mode)
+      setName(next.name)
+      setSelected('guanxi.core/chat')
+      setGeneration(value => value + 1)
+    } catch { if (epoch === selectionEpoch.current) setSaveError(true) }
+    finally { if (epoch === selectionEpoch.current) { operationBusy.current = false; setSwitching(false) } }
+  }
   async function save(asNew = false) {
-    if (!doc || saving) return
+    if (!doc || operationBusy.current) return
+    operationBusy.current = true
     setSaving(true)
     setSaveError(false)
-    const current = snapshot()
-    const local = engine.current?.snapshot().geometry ?? geometry
-    const updated: LayoutDocument = { ...current, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
+    retryOperation.current = () => { void save(asNew) }
     try {
+      const current = snapshot()
+      const local = engine.current?.snapshot().geometry ?? geometry
+      const updated: LayoutDocument = { ...current, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
       const result = await api.saveLayout(updated, true, asNew ? undefined : layoutClock(current))
-      await api.saveLayoutGeometry(account, device, result.document.id, local)
-      setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === updated.id && row.scope.mode === updated.scope.mode)), result.document, ...result.recovered], active: [...previous.active.filter(row => row.scope.mode !== updated.scope.mode), { scope: result.document.scope, layoutId: result.document.id }] }))
-      setDocuments(previous => ({ ...previous, [updated.scope.mode]: result.document }))
-      setAnnouncement(translate(result.recovered.length ? 'workspace.recovered' : 'workspace.saved'))
+      const won = compareLayouts(result.document, updated) === 0
+      const scopeKey = layoutScopeKey(result.document.scope)
+      setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === updated.id && layoutScopeKey(row.scope) === scopeKey)), result.document, ...result.recovered], active: [...previous.active.filter(row => layoutScopeKey(row.scope) !== scopeKey), { scope: result.document.scope, layoutId: result.document.id }] }))
+      if (won) {
+        // Keep edits made while the request was in flight, but advance their base clock.
+        setDocuments(previous => ({ ...previous, [updated.scope.mode]: { ...previous[updated.scope.mode]!, id: result.document.id, name: result.document.name, rev: result.document.rev, updatedAt: result.document.updatedAt, updatedBy: result.document.updatedBy } }))
+        geometryCache.current.set(`${scopeKey}#${result.document.id}`, local)
+        await api.saveLayoutGeometry(result.document.scope, device, result.document.id, local)
+      } else {
+        const winner = compatible(result.document)
+        const savedGeometry = (await api.layoutGeometry(winner.scope, device, winner.id)).geometry
+        phoneSnapshot.current = undefined
+        geometryCache.current.set(`${layoutScopeKey(winner.scope)}#${winner.id}`, savedGeometry)
+        setDocuments(previous => ({ ...previous, [updated.scope.mode]: winner }))
+        setGeometry(savedGeometry)
+        setName(winner.name)
+        setGeneration(value => value + 1)
+      }
+      say(translate(result.recovered.length || !won ? 'workspace.recovered' : 'workspace.saved'))
     } catch { setSaveError(true) }
-    finally { setSaving(false) }
+    finally { operationBusy.current = false; setSaving(false) }
   }
-  async function switchMode(next: ExperienceMode) {
-    if (next === mode) return
-    remember()
-    setMode(next)
-    phoneSnapshot.current = undefined
-    setName(documents[next]?.name ?? next)
-    setSelected('guanxi.core/chat')
-    const nextDoc = documents[next]
-    setGeometry({})
-    setGeneration(value => value + 1)
-    if (nextDoc) {
-      try { const local = await api.layoutGeometry(account, device, nextDoc.id); setGeometry(local.geometry) } catch { setSaveError(true) }
-    }
+  function switchMode(next: ExperienceMode) {
+    if (next !== mode && documents[next]) void activateDocument(documents[next]!)
   }
   function openMove(id?: string) {
+    if (phone || switching || saving) return
     const next = id ?? engine.current?.activeBlock() ?? selected
-    if (doc?.blocks[next]) setMoving(next)
+    if (doc?.blocks[next] && !doc.hidden.includes(next)) { returnFocus.current = paneHosts.current.get(next)?.ownerDocument.activeElement as HTMLElement | null; setMoving(next) }
   }
   async function move() {
-    if (!moving) return
+    if (!moving || phone || operationBusy.current) return
+    operationBusy.current = true
+    setSwitching(true)
     const id = moving
     setMoving(null)
-    const success = await engine.current?.move(id, destination)
-    if (success === false) setAnnouncement(translate('workspace.popoutFailed'))
-    remember()
+    try {
+      const success = await engine.current?.move(id, destination)
+      if (!success) say(translate('workspace.popoutFailed'))
+      remember()
+    } catch { say(translate('workspace.popoutFailed')) }
+    finally { operationBusy.current = false; setSwitching(false) }
   }
   function hide(id: string) {
     if (phone && doc) {
@@ -185,8 +242,9 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
       setDocuments(previous => ({ ...previous, [mode]: next }))
     }
     engine.current?.hide(id)
-    if (!phone) remember()
-    setAnnouncement(translate('workspace.hiddenAnnouncement', { block: title(id) }))
+    if (!phone) { remember(); requestAnimationFrame(() => { const id = engine.current?.activeBlock(); if (id) engine.current?.focus(id) }) }
+    else requestAnimationFrame(() => document.getElementById(`tab-${visible.find(block => block !== id) ?? ''}`)?.focus())
+    say(translate('workspace.hiddenAnnouncement', { block: title(id) }))
   }
   function addBlock(contributionId: string) {
     const contribution = contributions.find(entry => entry.key === contributionId)?.value
@@ -200,27 +258,39 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     remember()
     const current = latestDocument.current!
     const id = contribution.multiInstance ? `${contributionId}/${crypto.randomUUID()}` : contributionId
-    const next = layoutDocumentSchema.parse({ ...current, blocks: { ...current.blocks, [id]: { contribution: contributionId, pluginVersion: '0.1.0', priority: Object.keys(current.blocks).length, params: {} } }, engineState: { ...current.engineState, grid: undefined, groups: [...current.engineState.groups, { id: `added-${crypto.randomUUID()}`, zone: contribution.defaultZone, blocks: [id], active: id }] } })
+    const next = layoutDocumentSchema.parse({ ...current, blocks: { ...current.blocks, [id]: { contribution: contributionId, pluginVersion: contributionId.startsWith('guanxi.core/') ? '0.1.0' : 'unknown', priority: Object.keys(current.blocks).length, params: {} } }, engineState: { ...current.engineState, grid: undefined, groups: [...current.engineState.groups, { id: `added-${crypto.randomUUID()}`, zone: contribution.defaultZone, blocks: [id], active: id }] } })
     phoneSnapshot.current = undefined
     setDocuments(previous => ({ ...previous, [mode]: next }))
     setGeneration(value => value + 1)
     setSelected(id)
-    setAnnouncement(translate('workspace.added', { block: translate(contribution.title as LocaleKey) }))
+    say(translate('workspace.added', { block: translate(contribution.title as LocaleKey) }))
   }
   function show(id: string) {
     engine.current?.show(id, contributionFor(id)?.defaultZone ?? 'center')
-    if (phone && doc) {
+    if ((phone || !engine.current) && doc) {
       const next = { ...doc, hidden: doc.hidden.filter(block => block !== id), engineState: { ...doc.engineState, grid: undefined, groups: [...doc.engineState.groups, { id: `phone-${crypto.randomUUID()}`, zone: 'center' as const, blocks: [id], active: id }] } }
       setDocuments(previous => ({ ...previous, [mode]: layoutDocumentSchema.parse(next) }))
       setSelected(id)
     } else remember()
-    setAnnouncement(translate('workspace.added', { block: title(id) }))
+    say(translate('workspace.added', { block: title(id) }))
   }
+
+  useEffect(() => {
+    const command = (event: Event) => openMove((event as CustomEvent<{ instanceId?: string }>).detail?.instanceId)
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+      if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
+      if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') { event.preventDefault(); openMove() }
+    }
+    window.addEventListener(MOVE_BLOCK_COMMAND, command)
+    window.addEventListener('keydown', keyboard)
+    return () => { window.removeEventListener(MOVE_BLOCK_COMMAND, command); window.removeEventListener('keydown', keyboard) }
+  })
 
   useEffect(() => {
     if (!import.meta.env.DEV) return
     Object.assign(window, { __GUANXI_WORKSPACE__: {
-      snapshot: () => snapshot(), diagnostics: () => engine.current?.diagnostics(), restoreMs: () => restoreTime.current,
+      setLocale, snapshot: () => snapshot(), diagnostics: () => engine.current?.diagnostics(), restoreMs: () => restoreTime.current,
       // Development inspection only; browser assertions exercise user movement through UI.
     } })
     return () => { Reflect.deleteProperty(window, '__GUANXI_WORKSPACE__') }
@@ -239,20 +309,20 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     const name = contribution?.id.split('/')[1] as BuiltInBlock | undefined
     const Renderer = contribution && 'component' in contribution.pane ? paneRegistry.get(contribution.pane.component) : undefined
     const unavailable = !contribution || !contribution.modes.includes(mode) || (safeMode && !builtIn) || (!builtIn && !Renderer)
-    if (unavailable) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} onMove={() => openMove(id)} onHide={() => hide(id)} description={translate(safeMode ? 'workspace.safePlaceholder' : 'workspace.placeholder')} />
-    if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
-    return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)}>{name === 'chat' ? <><aside className="workspace-dock-lanes" aria-label={translate('workspace.dockLanes')}>{translate('workspace.lanesEmpty')}</aside>{children}</> : null}</BuiltInPane>
+    if (unavailable) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)} description={translate(safeMode ? 'workspace.safePlaceholder' : 'workspace.placeholder')} />
+    if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
+    return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? <><aside className="workspace-dock-lanes" aria-label={translate('workspace.dockLanes')}>{translate('workspace.lanesEmpty')}</aside>{children}</> : null}</BuiltInPane>
   }
   return <UiLocaleProvider locale={locale}><div className="workspace" data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
     if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
-    <WorkspaceChrome kind="toolbar" label={translate('workspace.title')} fields={[
+    <WorkspaceChrome kind="toolbar" label={translate('workspace.title')} busy={saving || switching} fields={[
       { label: translate('workspace.mode'), value: mode, choices: (['developer', 'visual'] as const).map(id => ({ id, label: translate(`workspace.${id}`) })), onChange: next => { void switchMode(next as ExperienceMode) } },
       { label: translate('workspace.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspace.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
       { label: translate('workspace.layout'), value: `${layoutScopeKey(doc.scope)}#${doc.id}`, choices: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: row.name === 'Recovered layout' ? translate('workspace.recoveredName') : row.name })), onChange: id => {
         const next = list.documents.find(row => `${layoutScopeKey(row.scope)}#${row.id}` === id && row.scope.mode === mode)
-        if (next) { setDocuments(previous => ({ ...previous, [mode]: next })); setName(next.name); phoneSnapshot.current = undefined; setGeneration(value => value + 1) }
+        if (next) void activateDocument(next, true)
       } },
       { label: translate('workspace.add'), value: '', choices: contributions.filter(entry => entry.value.modes.includes(mode) && (!safeMode || entry.pluginId === 'guanxi.core')).map(entry => ({ id: entry.key, label: translate(entry.value.title as LocaleKey) })), onChange: addBlock },
       { label: translate('workspace.hidden'), value: '', choices: doc.hidden.map(id => ({ id, label: title(id) })), onChange: show },
@@ -262,20 +332,27 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
       { label: translate('workspace.move'), onClick: () => openMove(), disabled: phone },
       { label: translate('workspace.reset'), onClick: () => { const next = builtInLayout(query(mode)); setDocuments(previous => ({ ...previous, [mode]: next })); phoneSnapshot.current = undefined; setGeneration(value => value + 1) } },
     ]} />
-    {saveError && <WorkspaceChrome kind="state" title={translate('workspace.saveError')} error action={{ label: translate('workspace.retry'), onClick: () => { void save() } }} />}
-    <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement">{announcement}</p>
+    {saveError && <WorkspaceChrome kind="state" title={translate('workspace.saveError')} error action={{ label: translate('workspace.retry'), onClick: () => retryOperation.current() }} />}
+    <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>
     {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspace.popoutRestore')}</p>}
-    <div className="workspace-content">
-      {phone ? <><WorkspaceChrome kind="phone" label={translate('workspace.phone')} selected={selectedId} blocks={visible.map(id => ({ id, label: title(id) }))} onSelect={setSelected} />{visible.map(id => <div key={id} id={`phone-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} hidden={id !== selectedId} ref={element => { if (element) element.append(paneHosts.current.get(id)!) }} />)}</> : <WorkspaceLayout key={`${mode}:${generation}`} document={doc} geometry={geometry} hosts={paneHosts.current} title={title} handleRef={engine} onChange={capture} onMove={announceMove} onReady={elapsed => { restoreTime.current = elapsed }} />}
+    <div className="workspace-content" inert={switching || undefined}>
+      {visible.length === 0 ? (
+        <WorkspaceChrome kind="state" title={translate('workspace.noVisibleBlocks')} action={{ label: translate('workspace.add'), onClick: () => { const id = Object.keys(doc.blocks)[0]; if (id) show(id) } }} />
+      ) : phone ? <>
+        <WorkspaceChrome kind="phone" label={translate('workspace.phone')} selected={selectedId} blocks={visible.map(id => ({ id, label: title(id) }))} onSelect={setSelected} />
+        {visible.map(id => <div key={id} id={`phone-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} hidden={id !== selectedId} ref={element => { if (element) element.append(paneHosts.current.get(id)!) }} />)}
+      </> : (
+        <WorkspaceLayout key={`${mode}:${generation}`} document={doc} geometry={geometry} hosts={paneHosts.current} title={title} handleRef={engine} hideLabel={translate('workspace.hide')} onHidden={id => say(translate('workspace.hiddenAnnouncement', { block: title(id) }))} onChange={capture} onMove={announceMove} onReady={elapsed => { restoreTime.current = elapsed }} />
+      )}
     </div>
-    <PortalContainerProvider container={moving ? paneHosts.current.get(moving)?.ownerDocument.body ?? null : null}><WorkspaceChrome kind="mover" open={moving !== null} title={translate('workspace.moveTitle')} description={translate('workspace.move')} blockLabel={translate('workspace.block')} zoneLabel={translate('workspace.destination')} cancelLabel={translate('workspace.cancel')} moveLabel={translate('workspace.move')} blocks={choices.filter(choice => visible.includes(choice.id))} zones={zoneOrder.map(id => ({ id, label: translate(`workspace.zone.${id}`) }))} block={moving ?? ''} zone={destination} onBlock={setMoving} onZone={id => setDestination(id as WorkspaceZone)} onClose={() => setMoving(null)} onMove={() => { void move() }} /></PortalContainerProvider>
-    {Object.keys(doc.blocks).map(id => createPortal(<PortalContainerProvider container={paneHosts.current.get(id)!}>{renderPane(id)}</PortalContainerProvider>, paneHosts.current.get(id)!, id))}
+    <PortalContainerProvider container={moving ? paneHosts.current.get(moving)?.ownerDocument.body ?? null : null}><WorkspaceChrome kind="mover" open={moving !== null} title={translate('workspace.moveTitle')} description={translate('workspace.move')} blockLabel={translate('workspace.block')} zoneLabel={translate('workspace.destination')} cancelLabel={translate('workspace.cancel')} moveLabel={translate('workspace.move')} blocks={choices.filter(choice => visible.includes(choice.id))} zones={zoneOrder.map(id => ({ id, label: translate(`workspace.zone.${id}`) }))} block={moving ?? ''} zone={destination} onBlock={setMoving} onZone={id => setDestination(id as WorkspaceZone)} onClose={() => { const id = moving; setMoving(null); requestAnimationFrame(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); else if (id) engine.current?.focus(id) }) }} onMove={() => { void move() }} /></PortalContainerProvider>
+    {Object.keys(doc.blocks).map(id => createPortal(<PortalContainerProvider container={paneHosts.current.get(id)!}>{renderPane(id)}{paneHosts.current.get(id)!.ownerDocument !== document && <p className="sr-only" aria-live="polite" aria-atomic="true"><span key={announcementRevision}>{announcement}</span></p>}</PortalContainerProvider>, paneHosts.current.get(id)!, id))}
   </div></UiLocaleProvider>
 }
 
-function BuiltInPane({ id, name, title, onMove, onHide, children }: { id: string; name: BuiltInBlock; title: string; onMove: () => void; onHide: () => void; children?: ReactNode }) {
+function BuiltInPane({ id, name, title, onMove, onHide, canMove, children }: { id: string; name: BuiltInBlock; title: string; onMove: () => void; onHide: () => void; canMove: boolean; children?: ReactNode }) {
   const [draft, setDraft] = useState('')
   const hasDraft = name === 'terminal' || name === 'browser'
   const known = blockNames.includes(name)
-  return <WorkspaceChrome kind="pane" id={id} title={title} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} onMove={onMove} onHide={onHide} description={name !== 'chat' && known ? translate(`workspace.empty.${name}`) : undefined} draft={hasDraft ? { label: translate(name === 'terminal' ? 'workspace.draft' : 'workspace.preview'), value: draft, onChange: setDraft } : undefined}>{children}</WorkspaceChrome>
+  return <WorkspaceChrome kind="pane" id={id} title={title} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} onMove={onMove} onHide={onHide} canMove={canMove} description={name !== 'chat' && known ? translate(`workspace.empty.${name}`) : undefined} draft={hasDraft ? { label: translate(name === 'terminal' ? 'workspace.draft' : 'workspace.preview'), value: draft, onChange: setDraft } : undefined}>{children}</WorkspaceChrome>
 }

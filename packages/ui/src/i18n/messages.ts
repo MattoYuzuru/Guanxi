@@ -4,6 +4,20 @@
  * in-app catalog chrome. The pseudo-locale is generated from English (pseudo.ts).
  */
 export const en = {
+  'story.workspace.title': 'Context',
+  'story.workspace.move': 'Move block to…',
+  'story.workspace.hide': 'Hide block',
+  'story.workspace.empty': 'Context usage is unknown until the session has a model observation.',
+  'story.workspace.placeholder': 'This block is unavailable. Enable its plugin to restore it.',
+  'story.workspace.error': 'Layouts could not be loaded from the node.',
+  'story.workspace.draft': 'Terminal input draft',
+  'story.workspace.blocks': 'Workspace blocks',
+  'story.workspace.destination': 'Destination',
+  'story.workspace.right': 'Right',
+  'story.workspace.cancel': 'Cancel',
+  'story.workspace.name': 'Layout name',
+  'story.workspace.save': 'Save layout',
+
   'ui.button.loading': 'Working…',
   'ui.dialog.close': 'Close dialog',
   'ui.toast.close': 'Dismiss notification',
@@ -200,6 +214,20 @@ export type UiMessageKey = keyof typeof en
 export type UiMessages = Readonly<Record<UiMessageKey, string>>
 
 export const ru: UiMessages = {
+  'story.workspace.title': 'Контекст',
+  'story.workspace.move': 'Переместить блок…',
+  'story.workspace.hide': 'Скрыть блок',
+  'story.workspace.empty': 'Использование контекста неизвестно до наблюдения модели в сессии.',
+  'story.workspace.placeholder': 'Блок недоступен. Включите его плагин, чтобы восстановить блок.',
+  'story.workspace.error': 'Не удалось загрузить раскладки с узла.',
+  'story.workspace.draft': 'Черновик ввода терминала',
+  'story.workspace.blocks': 'Блоки рабочей области',
+  'story.workspace.destination': 'Куда',
+  'story.workspace.right': 'Справа',
+  'story.workspace.cancel': 'Отмена',
+  'story.workspace.name': 'Название раскладки',
+  'story.workspace.save': 'Сохранить раскладку',
+
   'ui.button.loading': 'Выполняется…',
   'ui.dialog.close': 'Закрыть диалог',
   'ui.toast.close': 'Скрыть уведомление',

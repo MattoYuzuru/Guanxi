@@ -128,7 +128,9 @@ export const layoutListResponse = z.object({
   active: z.array(z.object({ scope: layoutScopeSchema, layoutId: id }).strict()),
 }).strict()
 export type LayoutList = z.infer<typeof layoutListResponse>
-export const layoutGeometryBody = z.object({ account: id, device: id, layoutId: id, geometry: layoutGeometrySchema }).strict()
+export const layoutGeometryKeySchema = z.object({ scope: layoutScopeSchema, device: id, layoutId: id }).strict()
+export const layoutGeometryQuerySchema = layoutScopeSchema.omit({ device: true }).extend({ device: id, scopeDevice: id.optional(), layoutId: id }).strict()
+export const layoutGeometryBody = layoutGeometryKeySchema.extend({ geometry: layoutGeometrySchema }).strict()
 export const layoutGeometryResponse = z.object({ geometry: layoutGeometrySchema }).strict()
 
 export function layoutScopeKey(scope: LayoutScope): string {

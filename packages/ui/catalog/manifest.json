@@ -2145,14 +2145,20 @@
         "empty",
         "placeholder",
         "error",
-        "phone"
+        "phone",
+        "draft",
+        "toolbar",
+        "mover"
       ],
       "stories": [
         "default",
         "empty",
         "placeholder",
         "error",
-        "phone"
+        "phone",
+        "draft",
+        "toolbar",
+        "mover"
       ],
       "props": {
         "WorkspaceChrome": [
@@ -2186,7 +2192,7 @@
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:1d84eaf689a33cecfd9ad9d987092d2ff204bf3993a55ba45715a1d425c56dd9",
+      "sourceHash": "sha256:48eb83a2e6af9f979fc31fa7d823df5bd2de9f117d7331676bd5823c614c0763",
       "snapshotHashes": {},
       "storedStatus": "review",
       "signature": "absent",
