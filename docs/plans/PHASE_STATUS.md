@@ -161,6 +161,12 @@ Residual risks:
 | --- | --- | --- |
 | Own plugin kernel `@guanxi/kernel` (ADR-0037; Cordis rejected by D-183) | implemented, independently verified, merged into `main` | Full evidence and residuals: [evidence/K1](evidence/K1.md). Exit gate on the own kernel: 100 reload cycles with an identical census; total heap +2.17% after 50 warm-up cycles (≤ 5%); every unloaded governor, fiber and context collected; boot 37–40 ms, 81 MB idle RSS; real-HMR slot test. **119 new / 982 regression envelope.** Reviews: implementation, adversarial architecture, accessibility, then three GPT cross-family rounds (14 + 5 findings, all closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `npm test` (core + kernel, web 264), browser gate 41/41, build, lint:md, licenses (251/0). |
 
+## K2 — Session log, inspector, egress scrubber
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| One append-only single-writer event log per session; crash-safe append and replay; durable payload-free readiness backlog; `egress.scrubber` kernel service with readiness; loopback-only interim inspector and query tool (ADR-0023) | implemented, independently verified, merged into `main` | Full evidence: [evidence/K2](evidence/K2.md). In-session reviews (implementation, architecture, accessibility) plus four GPT cross-family rounds; the final scoped check closed every item with no new High (14/14 mutations caught). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (web 275), browser gate 50/50, build, lint:md, licenses 358/0. Residuals named in the evidence; the `project-chat.test.tsx` focus flake seen during K2 runs is being fixed in its own lane. |
+
 ## DS1 — Design foundations
 
 | Item | Status | Evidence |
@@ -202,5 +208,7 @@ decision was made.
 | DS1 Design foundations | in progress (DS1-a merged; DS1-b in review fixes; DS1-c after DS1-b) | see the DS1 section above |
 | DS2 Approval signing helper | not started | after DS1 (D-184) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
-| K2, K3 | ready (wave 2 lanes) | [lanes/K2](lanes/K2.md), [lanes/K3](lanes/K3.md); U1 after DS1 |
+| K2 Session log | implemented, merged | see the K2 section above |
+| K3 Model access | in review (lane K3, Codex): Review 1 and 2 fixes done; next the K2 scrubber integration step | [lanes/K3](lanes/K3.md) |
+| R1 Durable runs | ready (after K2) | [ROADMAP](ROADMAP.md) §R1 |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
