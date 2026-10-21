@@ -19,7 +19,8 @@ export type WorkspaceChromeProps = Base & (
 )
 function ChoiceMenu({ label, value, choices, onChange, disabled }: { disabled?: boolean; label: string; value: string; choices: Choice[]; onChange: (id: string) => void }) {
   const trigger = useRef<HTMLButtonElement>(null)
-  return <Menu modal={false} onOpenChangeComplete={open => { if (!open) trigger.current?.focus() }}><MenuTrigger ref={trigger} render={<Button variant="secondary" />} disabled={disabled} aria-label={label}>{choices.find(c => c.id === value)?.label ?? label}</MenuTrigger><MenuContent finalFocus={trigger}>{choices.map(choice => <MenuItem key={choice.id} onClick={() => onChange(choice.id)} aria-current={choice.id === value ? 'true' : undefined}>{choice.label}</MenuItem>)}</MenuContent></Menu>
+  const restoreFocus = useRef(false)
+  return <Menu modal={false} onOpenChange={(open, event) => { restoreFocus.current = !open && (event.reason === 'item-press' || event.reason === 'escape-key') }} onOpenChangeComplete={open => { if (!open && restoreFocus.current) { restoreFocus.current = false; trigger.current?.focus() } }}><MenuTrigger ref={trigger} render={<Button variant="secondary" />} disabled={disabled} aria-label={label}>{choices.find(c => c.id === value)?.label ?? label}</MenuTrigger><MenuContent>{choices.map(choice => <MenuItem key={choice.id} onClick={() => onChange(choice.id)} aria-current={choice.id === value ? 'true' : undefined}>{choice.label}</MenuItem>)}</MenuContent></Menu>
 }
 
 /** Workspace chrome owns controls only; pane content and the docking engine remain host-owned. */

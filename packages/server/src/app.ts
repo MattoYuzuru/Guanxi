@@ -96,7 +96,7 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
     })
   })
 
-  server.route('/api/layouts', layoutsRoutes(app.db, options.devOrigins))
+  server.route('/api/layouts', layoutsRoutes(() => app.db, options.devOrigins))
   server.route('/api/models', modelsRoutes(app))
   server.route('/api/feature-flags', featureFlagsRoutes(app))
   server.route('/api/runtime', runtimeRoutes(app))
