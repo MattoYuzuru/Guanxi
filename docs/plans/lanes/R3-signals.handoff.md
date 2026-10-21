@@ -119,3 +119,53 @@ attempt is not used for publication. The targeted suite remains 31/31 and `tsc` 
 Root independent review is pending. No root review-fix commit has been made yet. Append findings,
 their separate fix commits and the re-run command results here; do not rewrite the historical
 sections above.
+
+### Independent review P2 fix — collector stop/wall liveness (`e01998d`)
+
+The independent review found that `judgeSample` awaited the trusted collector directly. Aborting
+the existing run signal did not release that await when the collector was slow or never settled,
+so explicit stop, the existing wall cap and plugin disposal could remain blocked in
+working/orient with renewal installed. The previous cancellation test released the collector
+before awaiting `run` and therefore did not prove liveness.
+
+`RelayExecutor.collectJudge` now races the collector against the existing composite run signal
+(controller, wall and optional external). There is no new timeout, policy default, routing,
+background writer or cancellation authority. The abort listener is removed when either side
+settles, including a synchronous collector throw; both late resolution and late rejection stay
+observed and are discarded after the race, so they cannot publish a note or resume work.
+`judgeSample` keeps `signal.throwIfAborted()` and now rechecks the existing R1 execution fence
+after the host await and before evaluation/publication; publication still uses the same fenced
+`store.emit`. Explicit stop still ends at `input_required`, and the wall cap still ends at
+`wrapping_up`. Plugin disposal uses the same `stop()` path and now settles with it.
+
+Test-first evidence: the two new tests were added before production changed. With
+`packages/server/src/relay/executor.ts` temporarily restored to clean `a8d5997`, both failed at
+the 1000 ms test-only guard with `explicit stop did not settle while the collector was pending`
+and `wall cap did not settle while the collector was pending`, while the collector was still
+unreleased. Both pass at `e01998d`; the file was restored before committing.
+
+The two new tests use the real `RelayExecutor` and existing temp-DB fixture, with no model,
+network, sandbox or workspace cleanup:
+
+- explicit stop waits for run completion before releasing the pending collector, asserts
+  `input_required`, zero judge notes/events and zero prompts, then proves a late resolution leaves
+  the ledger, run state and event count unchanged;
+- wall cap advances the authoritative fixture clock while the collector is pending, waits for run
+  completion before rejecting it, asserts `wrapping_up`, zero judge notes/events and zero prompts,
+  then proves the late rejection produces no `unhandledRejection` and leaves the ledger, run
+  state and event count unchanged.
+
+| Command (at `e01998d`) | Result |
+| --- | --- |
+| `nice -n 10 node --test packages/server/test/relay/judge-signals.test.ts packages/server/test/relay/judge-host.test.ts packages/server/test/relay/eta.test.ts packages/server/test/relay/integration.test.ts` | **2 new / 31 regression envelope**, 33 pass, zero skips, zero failures |
+| `nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json` | Passed, exit 0, no diagnostics |
+
+Residual: the race releases the executor, renewal and plugin disposal, but it cannot cancel a
+collector that ignores the signal; that collector's read-only underlying work may continue until
+the host cooperatively cleans it up. Late outcomes are consumed but not awaited. Only
+`relay/executor.ts`, `test/relay/judge-host.test.ts` and this handoff changed; `relay/judge-host.ts`
+needed no helper change. No full suite, browser, build, nested sandbox, actual model or `agent-dev`
+run was performed.
+
+The targeted rerun was executed after this documentation edit and the resulting tree was clean
+before handoff; the fix commit remains `e01998d`.
