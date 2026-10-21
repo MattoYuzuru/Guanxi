@@ -440,3 +440,23 @@ delta from `cfb5a04` is Markdown/Mermaid only; reviewed executable source did no
 This candidate remains unmerged into main. Full integrator gates, installed-helper custody,
 actual owner-present Secure Enclave signing and the previously named lifecycle residuals
 remain open. No component was approved or real owner key created/migrated by this task.
+
+## Full integrator gate and merge (2026-10-22)
+
+All gates passed on clean `250517f`, with reviewed K4 integration included:
+
+- workspace typecheck: `check-4c2p41lz`;
+- full `npm test`: `check-biid3dx3` — core1255/1255, kernel106, web318,
+  UI gate89, codemod6, catalog74 and UI17; zero core skips;
+- mocked Chromium regression: `check-1jgjv1_h`;
+- UI browser gate: `check-ctlmz_5k`;
+- build: `check-d8csvtzd`;
+- Markdown/links: `check-6r50g9eg`; licenses: `check-x6wvx2uv`; lint: `check-o74zpf50`.
+
+Receipts report unchanged source. The inherited external skill symlink prevents portable
+source certification; these are observed local checks. This full regression envelope is
+distinct from the review repairs' **4 new / 43 targeted envelope**.
+
+`03c655b` merges the reviewed candidate into local main without conflicts. Post-merge gates
+are the next action. Production owner-present init/sign and actual installed-helper custody
+remain unverified; no component approval or real owner key was created by tests.
