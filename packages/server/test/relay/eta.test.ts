@@ -161,3 +161,39 @@ test('ETA sampling at executor boundaries survives handoff hash validation, burn
     assert.equal(f.db.prepare('SELECT COUNT(*) n FROM relay_seals').get()!.n, 1)
   } finally { f.close() }
 })
+
+test('ETA updates across multiple cycles preserve every sealed snapshot and the next-cycle orient probes', async () => {
+  const f = fixture({ eta: etaInput(), actions: (_prompt, call) => JSON.stringify(
+    call === 1 || call === 3 ? { action: 'checkpoint' } : call === 5 ? { action: 'verify', item: 'one' } : { action: 'handoff' }) })
+  try {
+    const result = await f.executor.run(f.attempt)
+    assert.equal(result.state, 'finish'); assert.equal(result.cycle, 3)
+    const seals = f.db.prepare('SELECT ledger,handoff FROM relay_seals ORDER BY cycle').all()
+    assert.equal(seals.length, 3)
+    for (const row of seals) {
+      const snapshot = JSON.parse(String(row.ledger)), handoff = JSON.parse(String(row.handoff))
+      assert.equal(handoff.ledgerHash, hash(snapshot))
+      assert.equal(snapshot.eta.status, snapshot.cycle === 3 ? 'complete' : 'estimated')
+    }
+    const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => JSON.parse(String(e.data.text)))
+    assert.equal(notes.filter(n => n.relay === 'eta_observed').length, 6)
+    const probes = notes.filter(n => n.relay === 'probe')
+    assert.equal(probes.length, 2); assert.equal(probes.every(p => p.correct), true)
+  } finally { f.close() }
+})
+
+test('ETA provenance is scrubbed before persistence and host history is not copied into the ledger', () => {
+  const f = fixture(), input = etaInput(), secret = 'eta-fixture-private-provenance'
+  try {
+    f.scrubber.register('secret://eta-fixture', secret)
+    input.history = input.history.map(h => ({ ...h, source: secret }))
+    input.scope.repo = secret
+    for (const sample of input.history) sample.scope.repo = secret
+    f.relay.updateEta(f.attempt, input)
+    const snapshot = String(f.db.prepare('SELECT snapshot FROM relay_runs WHERE run_id=?').get(f.run.id)!.snapshot)
+    assert.equal(snapshot.includes(secret), false)
+    assert.equal(snapshot.includes('observation-0'), false)
+    assert.equal(f.relay.read(f.run.id).eta!.basis.samples, 5)
+    assert.notEqual(f.relay.read(f.run.id).eta!.scope.repo, secret)
+  } finally { f.close() }
+})
