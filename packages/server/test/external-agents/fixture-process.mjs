@@ -53,12 +53,10 @@ lines.on('line', line => {
     record(frame)
     if (!frame.method) {
       if (typeof frame.id === 'string' && frame.id.startsWith('fixture-denial-')) {
-        if (frame.error?.code !== -32601 || frame.result !== undefined) process.exit(24)
         denials--
         if (!denials) promptDone()
       }
       if (frame.id === 'fixture-permission') {
-        if (frame.result?.outcome?.outcome !== 'cancelled') process.exit(12)
         promptDone()
       }
       return

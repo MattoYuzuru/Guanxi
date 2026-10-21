@@ -17,6 +17,8 @@ for (const adapter of Object.keys(ADAPTERS) as AdapterId[]) test(`${adapter}: ve
   assert.match(result.text, /fixture completed/)
   assert.equal(result.text.includes(f.secret), false)
   const trace = await f.trace(adapter)
+  if (adapter !== 'codex') assert.deepEqual(trace.find(frame => frame.method === 'initialize')?.params.clientCapabilities,
+    { fs: { readTextFile: false, writeTextFile: false }, terminal: false })
   assert.equal(trace.filter(frame => frame.method === (adapter === 'codex' ? 'turn/start' : 'session/prompt')).length, 1)
   assert.equal(JSON.stringify(trace).includes(f.secret), false)
   assert.match(JSON.stringify(trace), /REDACTED/)
