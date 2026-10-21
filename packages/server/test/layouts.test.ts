@@ -3,10 +3,12 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createApp } from '../src/app.ts'
+import type { AppContext } from '../src/context.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { downgradeLayoutsToV31 } from './fixtures/session-log-migration.ts'
 import { Hono } from 'hono'
-import { compareLayouts, layoutClock, layoutDocumentSchema, resolveLayout, type LayoutDocument, type LayoutQuery, type LayoutList } from '@guanxi/contract'
+import { ROUTES, layoutListResponse, compareLayouts, layoutClock, layoutDocumentSchema, resolveLayout, type LayoutDocument, type LayoutQuery, type LayoutList } from '@guanxi/contract'
 import { openDb } from '../src/store/db.ts'
 import { LayoutStore } from '../src/layouts/store.ts'
 import { layoutsRoutes } from '../src/layouts/routes.ts'
@@ -169,4 +171,18 @@ test('migration 32 rolls back partial DDL on collision and safely retries', () =
     assert.equal((upgraded.prepare('SELECT COUNT(*) AS n FROM layout_documents').get() as { n: number }).n, 0)
     upgraded.close()
   } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('the real application mounts the contract routes without model or filesystem services', async () => {
+  const db = openDb(':memory:')
+  const app = createApp({ db, ollama: () => { throw new Error('Network/model access forbidden') } } as AppContext)
+  try {
+    const saved = await app.request(ROUTES.layouts(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document: fixture() }) })
+    assert.equal(saved.status, 200)
+    const response = await app.request(`${ROUTES.layouts()}?${new URLSearchParams(query)}`)
+    assert.equal(response.status, 200)
+    assert.equal(layoutListResponse.parse(await response.json()).documents.length, 1)
+    const foreign = await app.request(ROUTES.layouts(), { method: 'PUT', headers: { 'Content-Type': 'application/json', Origin: 'https://foreign.invalid', 'Sec-Fetch-Site': 'cross-site' }, body: JSON.stringify({ document: fixture() }) })
+    assert.equal(foreign.status, 403)
+  } finally { db.close() }
 })

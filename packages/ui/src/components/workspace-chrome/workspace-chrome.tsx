@@ -1,10 +1,11 @@
-import { useRef, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Button } from '../button/button.tsx'
 import { Input } from '../input/input.tsx'
 import { Textarea } from '../textarea/textarea.tsx'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../menu/menu.tsx'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../dialog/dialog.tsx'
 import { EmptyState } from '../empty-state/empty-state.tsx'
+import { PortalContainerProvider } from '../../lib/portal.tsx'
 import './workspace-chrome.css'
 
 type Choice = { id: string; label: string }
@@ -23,6 +24,7 @@ function ChoiceMenu({ label, value, choices, onChange, disabled }: { disabled?: 
 /** Workspace chrome owns controls only; pane content and the docking engine remain host-owned. */
 export function WorkspaceChrome(props: WorkspaceChromeProps) {
   const tabs = useRef<HTMLDivElement>(null)
+  const [dialogContainer, setDialogContainer] = useState<HTMLDivElement | null>(null)
   if (props.kind === 'pane') return <section className="gx-workspace-pane" data-block={props.id} aria-label={props.title} tabIndex={-1}>
     <header className="gx-workspace-pane-header"><h2>{props.title}</h2><Menu><MenuTrigger render={<Button variant="ghost" />} aria-label={`${props.moveLabel} ${props.title}`}>{props.moveLabel}</MenuTrigger><MenuContent><MenuItem disabled={props.canMove === false} onClick={props.onMove}>{props.moveLabel}</MenuItem><MenuItem onClick={props.onHide}>{props.hideLabel}</MenuItem></MenuContent></Menu></header>
     <div className="gx-workspace-pane-body">{props.description && <EmptyState title={props.description} />}{props.children}{props.draft && <label className="gx-workspace-field"><span>{props.draft.label}</span><Textarea value={props.draft.value} onChange={event => props.draft?.onChange(event.target.value)} /></label>}</div>
@@ -33,10 +35,10 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
     {props.actions.map(action => <Button key={action.label} variant="secondary" onClick={action.onClick} disabled={action.disabled || props.busy}>{action.label}</Button>)}
   </div>
   if (props.kind === 'mover') return <Dialog open={props.open} onOpenChange={open => { if (!open) props.onClose() }}>
-    <DialogContent><DialogTitle>{props.title}</DialogTitle><DialogDescription>{props.description}</DialogDescription>
+    <DialogContent ref={setDialogContainer}><PortalContainerProvider container={dialogContainer}><DialogTitle>{props.title}</DialogTitle><DialogDescription>{props.description}</DialogDescription>
       <div className="gx-workspace-mover"><ChoiceMenu label={props.blockLabel} value={props.block} choices={props.blocks} onChange={props.onBlock} /><ChoiceMenu label={props.zoneLabel} value={props.zone} choices={props.zones} onChange={props.onZone} />
         <Button onClick={props.onMove} disabled={!props.block}>{props.moveLabel}</Button><Button variant="secondary" onClick={props.onClose}>{props.cancelLabel}</Button></div>
-    </DialogContent>
+    </PortalContainerProvider></DialogContent>
   </Dialog>
   if (props.kind === 'phone') return <div ref={tabs} className="gx-workspace-phone-tabs" role="tablist" aria-label={props.label} aria-orientation="vertical" onKeyDown={event => {
     const index = props.blocks.findIndex(block => block.id === props.selected)
