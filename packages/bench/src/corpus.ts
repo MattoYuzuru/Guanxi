@@ -5,7 +5,7 @@ export function selectCorpus(raw: unknown[], window: { from: string; through: st
   const candidates = raw.map(x => taskSchema.parse(x))
   if (!/^\d{4}-\d{2}-\d{2}$/.test(window.from) || !/^\d{4}-\d{2}-\d{2}$/.test(window.through) || window.from > window.through || window.through > now.toISOString().slice(0, 10)) throw new Error('invalid_fresh_window')
   const age = (Date.parse(window.through) - Date.parse(window.from)) / 86400000
-  if (!Number.isFinite(age) || age > 62) throw new Error('fresh_window_too_wide')
+  if (!Number.isFinite(age) || age > 62 || (now.getTime() - Date.parse(window.through)) / 86400000 > 31) throw new Error('fresh_window_too_wide')
   if (new Set(candidates.map(t => t.id)).size !== candidates.length) throw new Error('duplicate_task')
   const sorted = candidates.sort((a, b) => a.id.localeCompare(b.id, 'en'))
   const fresh = sorted.filter(t => t.suite === 'swe-rebench' && t.published >= window.from && t.published <= window.through).slice(0, 50)

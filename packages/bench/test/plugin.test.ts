@@ -29,5 +29,5 @@ test('unloading aborts active external work and waits for settlement before rele
   const rejection = assert.rejects(job.done, /bench_failed/)
   await kernel.dispose(); await rejection
   assert.equal(stopped, true)
-  assert.deepEqual(h.outcomes, ['canceled'])
+  assert.deepEqual(h.outcomes, ['failed'])
 })

@@ -20,19 +20,22 @@ export const planSchema = z.object({
 }).strict()
 export type Plan = z.infer<typeof planSchema>
 export type Task = z.infer<typeof taskSchema>
-export function validatePlan(raw: unknown): Plan {
+export function validatePlan(raw: unknown, now = new Date()): Plan {
   const p = planSchema.parse(raw)
   if (new Set(p.tasks.map(t => t.id)).size !== p.tasks.length || new Set(p.seeds).size !== p.seeds.length || new Set(p.arms.map(a => a.id)).size !== p.arms.length) throw new Error('duplicate_protocol_key')
   if (p.id.includes('/') || p.arms.some(a => a.id.includes('/'))) throw new Error('invalid_run_id')
+  if (p.mode === 'fixture' && p.tasks.some(t => t.suite !== 'fixture')) throw new Error('fixture_tasks_required')
   if (p.mode !== 'fixture' && !p.arms.some(a => a.kind === 'mini-swe-agent')) throw new Error('control_arm_required')
   if (p.mode === 'noise-floor' && (p.arms.length !== 1 || p.seeds.length !== 5)) throw new Error('noise_floor_requires_one_arm_five_seeds')
   if (p.mode === 'ab' && (p.arms.length < 2 || p.tasks.filter(t => t.suite === 'swe-rebench').length !== 50 || p.tasks.filter(t => t.suite === 'verified').length !== 30 || p.tasks.some(t => t.suite === 'fixture'))) throw new Error('ab_requires_50_fresh_30_regression')
+  if (p.mode === 'ab' && p.tasks.some(t => t.suite === 'swe-rebench' && (Date.parse(t.published) > now.getTime() || now.getTime() - Date.parse(t.published) > 93 * 86400000))) throw new Error('stale_ab_corpus')
   if (p.maxTrialMicrousd && (!p.connection || !p.maxTrialTokens)) throw new Error('paid_requires_connection_and_token_bound')
   return p
 }
 export const trialSchema = z.object({
   task: id, arm: id, seed: uint,
   outcome: z.enum(['passed', 'failed', 'infra_error', 'infra_tainted']),
+  errorType: z.enum(['none', 'RuntimeError', 'ValueError', 'KeyError', 'TypeError', 'AttributeError', 'UndefinedError', 'FileNotFoundError', 'RewardFileNotFoundError', 'other']).default('none'),
   costMicrousd: uint.nullable(), tokens: uint.nullable(), durationMs: uint,
   reason: z.enum(['none', 'hidden_tests', 'agent_limit', 'agent_error', 'environment', 'verifier', 'cancelled', 'preempted', 'malformed_result', 'cleanup_unconfirmed']),
 }).strict()

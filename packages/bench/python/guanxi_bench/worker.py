@@ -5,10 +5,8 @@ are discarded, and private temporary Harbor outputs are deleted after projection
 import asyncio
 from importlib.metadata import version
 import json
-import hashlib
 import fcntl
 import contextlib
-import tomllib
 import logging
 import os
 from pathlib import Path
@@ -27,11 +25,13 @@ def classify(result):
         safe = {'wrong_container_slice', 'container_isolation_mismatch', 'rootless_systemd_required', 'resource_profile_exceeds_host', 'prebuilt_image_required', 'host_mounts_forbidden', 'host_environment_forbidden'}
         message = getattr(result.exception_info, 'exception_message', '')
         print('harbor_trial_error:' + name + (':' + message if message in safe else ''), file=sys.stderr)
+        if name in {'BenchCancelled', 'BenchInterrupted'}:
+            return 'infra_tainted', 'cancelled' if name == 'BenchCancelled' else 'preempted'
         if name in {'AgentTimeoutError', 'AgentExecutionTimeoutError'}:
             return 'failed', 'agent_limit'
         if name in {'AgentExecutionError', 'AgentExecutionFailedError', 'NonZeroAgentExitCodeError'}:
             return 'failed', 'agent_error'
-        return 'infra_error', 'environment'
+        return 'infra_error', 'verifier' if 'Verifier' in name or 'Reward' in name else 'environment'
     reward = result.verifier_result.rewards if result.verifier_result else None
     if not isinstance(reward, dict) or len(reward) != 1 or not isinstance(next(iter(reward.values())), (int, float)):
         return 'infra_error', 'verifier'
@@ -41,12 +41,29 @@ def classify(result):
     return ('passed', 'none') if value == 1 else ('failed', 'hidden_tests')
 
 
+def usage(result):
+    from decimal import Decimal, ROUND_CEILING
+    context = result.agent_result
+    cost = getattr(context, 'cost_usd', None)
+    i = getattr(context, 'n_input_tokens', None)
+    o = getattr(context, 'n_output_tokens', None)
+    return {'costMicrousd': int((Decimal(str(cost)) * 1_000_000).to_integral_value(rounding=ROUND_CEILING)) if cost is not None else None,
+            'tokens': i + o if i is not None and o is not None else None}
+
+
+def safe_error_type(result):
+    allowed = {'RuntimeError', 'ValueError', 'KeyError', 'TypeError', 'AttributeError', 'UndefinedError', 'FileNotFoundError', 'RewardFileNotFoundError'}
+    if not result.exception_info:
+        return 'none'
+    return result.exception_info.exception_type if result.exception_info.exception_type in allowed else 'other'
+
+
 async def toy_tasks(root):
     """Build locally from the host's existing base image, never pull or use the network."""
     base = (await command('podman', 'image', 'inspect', 'docker.io/library/alpine:3.20', '--format', '{{.Id}}')).strip()
     build = root / 'build'
     build.mkdir()
-    (build / 'Dockerfile').write_text(f'FROM {base}\nWORKDIR /app\n')
+    (build / 'Dockerfile').write_text(f'FROM {base}\nUSER 0\nRUN mkdir -p /logs/agent /logs/verifier /logs/artifacts /tests /solution /app && chmod -R a+rwX /logs /tests /solution /app\nWORKDIR /app\nUSER 65532:65532\n')
     image = 'localhost/guanxi-b1-toy:' + root.name.lower().replace('_', '-')
     await command('podman', 'build', '--network=none', '--pull=never', '-t', image, build)
     paths = []
@@ -80,30 +97,9 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 ''')
+        (task / 'tests/test.sh').chmod(0o755)
         paths.append(task)
     return paths, image
-
-
-def staged_task(task):
-    """Only immutable, prepared offline Harbor tasks from the dedicated private registry."""
-    path = Path(task['path']).resolve()
-    if not path.is_relative_to('/home/guanxi-bench/tasks'):
-        raise ValueError('private_staged_task_required')
-    digest = hashlib.sha256()
-    for item in sorted(path.rglob('*')):
-        if item.is_symlink():
-            raise ValueError('task_symlink_forbidden')
-        if item.is_file():
-            digest.update(item.relative_to(path).as_posix().encode() + b'\0')
-            digest.update(hashlib.sha256(item.read_bytes()).digest())
-    if digest.hexdigest() != task['revision']:
-        raise ValueError('staged_task_digest_mismatch')
-    config = tomllib.loads((path / 'task.toml').read_text())
-    if config.get('verifier', {}).get('environment_mode') != 'separate':
-        raise ValueError('clean_verifier_required')
-    if any(config.get(section, {}).get('network_mode') != 'no-network' for section in ['environment', 'agent', 'verifier']):
-        raise ValueError('offline_task_required')
-    return path
 
 
 async def run(plan):
@@ -111,7 +107,11 @@ async def run(plan):
         raise ValueError('pinned_environment_required')
     if plan['maxTrialMicrousd'] != 0 or plan['model'] != 'fixture-free' or plan['connection'] is not None:
         raise ValueError('bounded_k3_gateway_required')
-    if plan['mode'] == 'fixture' and (len(plan['tasks']) != 2 or plan['seeds'] != [0] or len(plan['arms']) != 1 or plan['arms'][0]['kind'] != 'mini-swe-agent'):
+    if sys.version_info[:3] != (3, 12, 14):
+        raise ValueError('pinned_python_required')
+    if plan['mode'] != 'fixture':
+        raise ValueError('real_bench_executor_not_configured')
+    if len(plan['tasks']) != 2 or plan['seeds'] != [0] or len(plan['arms']) != 1 or plan['arms'][0]['kind'] != 'mini-swe-agent' or plan['arms'][0]['version'] != '2.4.6':
         raise ValueError('host_smoke_envelope_required')
     await preflight()
     from harbor.trial.trial import Trial
@@ -124,10 +124,7 @@ async def run(plan):
         os.environ['LITELLM_LOCAL_MODEL_COST_MAP'] = 'True'
         image = None
         try:
-            if plan['mode'] == 'fixture':
-                tasks, image = await toy_tasks(root)
-            else:
-                tasks = [staged_task(t) for t in plan['tasks']]
+            tasks, image = await toy_tasks(root)
             for i, path in enumerate(tasks):
                 for j, seed in enumerate(plan['seeds']):
                     arms = list(plan['arms'])
@@ -151,7 +148,8 @@ async def run(plan):
                         result = await trial.run()
                         outcome, reason = classify(result)
                         results.append({'task': plan['tasks'][i]['id'], 'arm': arm['id'], 'seed': seed,
-                                        'outcome': outcome, 'reason': reason, 'costMicrousd': 0, 'tokens': 0,
+                                        'outcome': outcome, 'reason': reason, **usage(result),
+                                        'errorType': safe_error_type(result),
                                         'durationMs': round((time.monotonic() - start) * 1000)})
         finally:
             # Harbor may preserve the first trial error and suppress later cleanup errors.
@@ -173,7 +171,7 @@ def main():
             asyncio.get_running_loop().add_signal_handler(sig, task.cancel)
         return await asyncio.wait_for(run(plan), timeout=plan['timeoutSec'])
     try:
-        with open('/home/guanxi-bench/b1/host.lock', 'a') as lock:
+        with open('/home/guanxi-bench/.guanxi-bench.lock', 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink):
                 result = asyncio.run(entry())

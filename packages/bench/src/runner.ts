@@ -43,7 +43,10 @@ export function remoteCommand(host: BenchHost): string[] {
 /** All untrusted execution is remote. There is no localhost/owner/root fallback. */
 export function harborExecutor(host: BenchHost): Executor {
   const args = remoteCommand(host)
-  return { run: (plan, signal) => processJson('ssh', args, plan, signal) }
+  return { run(plan, signal) {
+    if (plan.mode !== 'fixture' || plan.model !== 'fixture-free' || plan.tasks.length !== 2 || plan.seeds.length !== 1 || plan.seeds[0] !== 0 || plan.arms.length !== 1 || plan.arms[0]?.kind !== 'mini-swe-agent' || plan.arms[0]?.version !== '2.4.6') return Promise.reject(new Error('host_fixture_envelope_required'))
+    return processJson('ssh', args, plan, signal)
+  } }
 }
 export function decodeAgentExec(raw: unknown) {
   const parsed = agentExecResultSchema.parse(raw)

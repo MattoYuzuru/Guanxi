@@ -8,6 +8,8 @@ const cases = [
   { id: 'planted-regression', file: 'src/stats.ts', before: 'regression: ci.upper < 0', after: 'regression: false', test: 'test/stats.test.ts' },
   { id: 'infra-separation', file: 'src/report.ts', before: "if ([...a, ...b].some(t => t.outcome.startsWith('infra_')))", after: 'if (false)', test: 'test/protocol.test.ts' },
   { id: 'budget-cap', file: 'src/budget.ts', before: 'if (perArm > p.armCapMicrousd || spent.n + dollars > MONTHLY_CAP || daily.n + tokens > p.dailyTokenCap)', after: 'if (false)', test: 'test/budget.test.ts' },
+  { id: 'monthly-budget-only', file: 'src/budget.ts', before: 'spent.n + dollars > MONTHLY_CAP', after: 'false', test: 'test/budget.test.ts' },
+  { id: 'host-output-bound', file: 'python/guanxi_bench/environment.py', before: 'if total > OUTPUT_LIMIT:', after: 'if False:', test: 'test/python.test.ts' },
   { id: 'budget-before-dispatch', file: 'src/runner.ts', before: 'budget.reserve(plan)', after: '// reservation removed', test: 'test/budget.test.ts' },
   { id: 'host-user', file: 'python/guanxi_bench/environment.py', before: "if os.getuid() != 1001 or pwd.getpwuid(os.getuid()).pw_name != 'guanxi-bench':", after: 'if False:', test: 'test/python.test.ts' },
 ]

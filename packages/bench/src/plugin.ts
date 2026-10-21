@@ -34,7 +34,7 @@ export function createBenchPlugin(options: { ledger: string; executor: Executor 
           const timer = setInterval(() => { try { home.renew(attempt) } catch { abort.abort() } }, 1000)
           const done = runBench(plan, budget, options.executor, { signal: abort.signal }).then(
             trials => { home.complete(attempt, 'completed'); return { runId: run.id, trials } },
-            () => { home.complete(attempt, abort.signal.aborted ? 'canceled' : 'failed'); throw new Error('bench_failed') },
+            () => { home.complete(attempt, 'failed'); throw new Error('bench_failed') },
           ).finally(() => { clearInterval(timer); active.delete(run.id) })
           active.set(run.id, { abort, done })
           return { runId: run.id, done, cancel: () => abort.abort() }

@@ -18,6 +18,13 @@ async function main(args: string[]) {
     console.log(JSON.stringify({ status: 'selected', fresh: 50, regression: 30, sha256: corpus.sha256 }))
     return
   }
+  if (command === 'analyze' && path) {
+    const input = await read(path)
+    const plan = validatePlan(input.plan)
+    await writeFile(join(dir, `${plan.id}.html`), htmlReport(plan, input.trials, hostPath === 'public'), { mode: 0o600 })
+    console.log(JSON.stringify({ status: 'reported', id: plan.id, report: join(dir, `${plan.id}.html`) }))
+    return
+  }
   const plan = command === 'fixture' ? validatePlan({
     version: 1, id: `fixture-${randomUUID()}`, mode: 'fixture',
     tasks: [0, 1].map(i => ({ id: `toy-${i}`, suite: 'fixture', revision: '0'.repeat(40), path: `toy-${i}`, published: '2026-10-21' })),
@@ -36,7 +43,7 @@ async function main(args: string[]) {
     const trials = await runBench(plan, budget, executor, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(plan.timeoutSec * 1000)]) })
     await writeFile(join(dir, `${plan.id}.json`), JSON.stringify({ plan, trials }, null, 2) + '\n', { mode: 0o600 })
     await writeFile(join(dir, `${plan.id}.html`), htmlReport(plan, trials), { mode: 0o600 })
-    console.log(JSON.stringify({ version: 1, id: plan.id, trials: trials.length, report: join(dir, `${plan.id}.html`), spendMicrousd: trials.reduce((n, t) => n + (t.costMicrousd ?? 0), 0) }))
+    console.log(JSON.stringify({ version: 1, id: plan.id, trials: trials.length, report: join(dir, `${plan.id}.html`), spendMicrousd: trials.some(t => t.costMicrousd === null) ? null : trials.reduce((n, t) => n + t.costMicrousd!, 0) }))
   } finally {
     process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop)
     budget.close()

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { analyze, htmlReport } from '../src/report.ts'
 import { selectCorpus } from '../src/corpus.ts'
 import { schedule, validatePlan, validateResults } from '../src/protocol.ts'
-import { decodeAgentExec, fixtureExecutor, remoteCommand } from '../src/runner.ts'
+import { decodeAgentExec, fixtureExecutor, remoteCommand, harborExecutor } from '../src/runner.ts'
 import { plan } from './helpers.ts'
 
 test('infra errors and tainted trials are excluded from BOTH paired arms, counted separately from failures', async () => {
@@ -48,6 +48,8 @@ test('selects exactly 50 fresh SWE-rebench and 30 Verified metadata records with
   assert.throws(() => selectCorpus(candidates.slice(11), window), /50_fresh/)
   assert.throws(() => selectCorpus(candidates.map(t => ({ ...t, published: '2020-01-01' })), window), /50_fresh/)
   assert.throws(() => selectCorpus(candidates, { from: '2020-01-01', through: '2026-10-21' }), /too_wide/)
+  assert.throws(() => selectCorpus(candidates, { from: '2020-01-01', through: '2020-01-21' }), /too_wide/)
+  assert.throws(() => validatePlan({ ...plan(), mode: 'ab', tasks: corpus.tasks.map(t => ({ ...t, published: '2020-01-01' })) }), /stale_ab_corpus/)
 })
 test('standalone report contains separate infra columns, task flips and no scripts/network; public mode has no task IDs', async () => {
   const p = plan(); const rows = validateResults(p, await fixtureExecutor({ 'task-0:candidate:0': 'failed' }).run(p))
@@ -70,4 +72,8 @@ test('Guanxi exec adapter validates the exact K4 stdout schema without treating 
   assert.deepEqual(decodeAgentExec({ version: 1, sessionId: 's', status: 'completed', text: 'private text', error: null }), { completed: true, status: 'completed' })
   assert.throws(() => decodeAgentExec({ version: 2, status: 'completed' }))
   assert.throws(() => decodeAgentExec({ version: 1, sessionId: 's', status: 'completed', text: '', error: null, key: 'forbidden' }))
+})
+
+test('stock host executor refuses unsupported experiments before spawning SSH', async () => {
+  await assert.rejects(harborExecutor({ ssh: 'must-not-be-contacted', root: '/home/guanxi-bench/b1' }).run(plan()), /host_fixture_envelope_required/)
 })

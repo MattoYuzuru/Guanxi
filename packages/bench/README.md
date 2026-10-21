@@ -1,7 +1,7 @@
 # Bench base
 
-**Status:** implemented foundation, fixture validated; real corpus runs and paid noise floor
-are not measured · **Updated:** 2026-10-21
+**Status:** partially implemented B1; fixture foundation locally validated. Real corpus execution
+and a real model noise floor remain unfinished · **Updated:** 2026-10-21
 
 `@guanxi/bench` implements the B1 measurement core from
 [ADR-0025](../../docs/decisions/0025-bench-stage-and-ab-gate.md). It adds no scaffolding to the
@@ -19,6 +19,8 @@ export GUANXI_WEB_PORT=5198 GUANXI_API_PORT=4398 GUANXI_DATA_DIR="$PWD/.lane-dat
 npm run smoke --workspace @guanxi/bench
 npm run test:bench
 npm run test:mutations --workspace @guanxi/bench
+# After the separate locked environment is installed:
+.lane-data/bench-python/bin/python -B packages/bench/tools/external-smoke.py
 ```
 
 The Mac smoke uses in-memory fake arm results, no SSH, container engine, network or model.
@@ -33,7 +35,7 @@ aggregate publication; the default private report lists flipped and excluded tas
 `python/pyproject.toml` pins Harbor 0.24.0 and mini-swe-agent 2.4.6. `python/uv.lock` pins their
 transitive dependencies and artifact hashes; Python is 3.12.14. Do not use Harbor extras,
 which can introduce proprietary adapters. Dependencies stay in a lane-local or benchmark-user
-virtual environment. Check licenses before installation:
+virtual environment. The worker checks the interpreter patch version. Check licenses before installation:
 
 ```bash
 python3 packages/bench/tools/python-licenses.py
@@ -64,7 +66,9 @@ The transport changes to `/tmp`, executes `sudo -n -u guanxi-bench env -i`, sets
 uid-1001 runtime bus, and launches the host venv. There is no owner-user, root-container,
 localhost or Docker fallback. The worker checks the actual UID/name and Podman's rootless /
 systemd state. Containers have explicit CPU/memory ceilings, no GPU/device grants, no host
-binds, no network, dropped capabilities and a PID limit. Harbor's bookkeeping log binds are
+binds, no network, dropped capabilities and a PID limit. Workloads explicitly use container
+UID/GID 65532, including when host defaults select another container user. Each output pipe
+is bounded to 1 MiB; overflow kills the exec and removes its environment. Harbor's bookkeeping log binds are
 recognized but implemented as copies. Observed container cgroups must contain
 `user-1001.slice`. One host worker owns an advisory lock. Container UUIDs are removed and
 absence is checked; unresolved cleanup fails the worker. Owner services, port 8080 and the VPN
@@ -85,7 +89,7 @@ such a node; the adapter requires this explicit image preparation.
 ## Corpus and protocol
 
 `selectCorpus` consumes private metadata, never task contents. It locks exactly 50 fresh
-SWE-rebench tasks from an explicit window of at most 62 days and 30 Verified regression tasks,
+SWE-rebench tasks from an explicit window of at most 62 days ending within the last 31 days and 30 Verified regression tasks,
 with deterministic selection and a SHA-256 manifest receipt. Insufficient or stale input
 fails rather than substituting old tasks. The selection is not evidence that tasks were
 oracle/no-op/flakiness validated; the B2 factory owns those checks. No real benchmark task or
@@ -97,9 +101,9 @@ node packages/bench/src/cli.ts corpus .lane-data/task-metadata.json 2026-10-01 2
 
 Each metadata item has `id`, `suite` (`swe-rebench` or `verified`), `revision` (the SHA-256 of
 sorted relative file names, NUL, then each file's SHA-256 bytes), `path` (a staged directory
-under `/home/guanxi-bench/tasks`) and `published` (ISO date). The host rechecks the digest,
-rejects symlinks and requires separate hidden verifiers with offline phase policies. Tasks
-must have locally prepared images; missing images fail as infra errors, without pulling.
+under `/home/guanxi-bench/tasks`) and `published` (ISO date). Real task staging, digest validation, separate hidden-verifier preparation and image
+readiness remain continuation work before a real executor can be enabled. The stock worker
+refuses non-fixture modes; it does not run the toy model against real task identifiers.
 
 `validatePlan` is the executable schema: one fixed model/provider per experiment, fixed
 versions, same task/seed/resource pairs, explicit time/step/token/cost ceilings, an equal
@@ -107,9 +111,15 @@ per-arm experiment cap and the provider's daily token cap. The default change ty
 `simplification`; set `change: "addition"` for additions. Scheduling alternates adjacent arm
 order. Noise-floor mode requires one permanent control arm and exactly five distinct seeds;
 run it before the first A/B. Infra-tainted tasks must be rerun with new run IDs and fresh
-reservations before a decision. The stock host worker currently enables only `fixture-free`
-models; real task selection and a real model noise floor still require staged data and the
-bounded K3 gateway below. No live quality claim is made by fixture results.
+reservations before a decision. The stock host worker enables only the two-task, single-seed `fixture-free` smoke. It
+checks the actual pinned control version and refuses A/B and noise-floor execution. Real
+corpus execution and a model noise floor require the bounded K3 gateway below, immutable
+task staging, actual seed transport and prepared Guanxi task images. No live quality claim is made by fixture results. For already recorded validated results:
+
+```bash
+node packages/bench/src/cli.ts analyze .lane-data/recorded-results.json
+node packages/bench/src/cli.ts analyze .lane-data/recorded-results.json public
+```
 
 ## Budget boundary and managed lifetime
 
@@ -118,7 +128,7 @@ case (`tasks × seeds × arms × per-trial ceiling`) before executor dispatch. I
 per-arm cap, D-150's protected $200 monthly cap and provider daily token cap. Reopening the
 same ledger preserves holds. An existing experiment ID never dispatches again. Crashes,
 cancellation, unknown billing and invalid/oversized results keep the full reservation; even
-successful runs conservatively retain their reserved amount. Budget overflow is refused.
+successful runs conservatively retain their reserved amount. Budget overflow is refused. Metered runs whose timeout could cross a UTC budget day/month are refused before reservation.
 All processes using the same benchmark account must share this one private ledger; choosing
 a different file is a separate budget domain and must not be used to bypass D-150.
 
@@ -128,11 +138,13 @@ with an explicit integrator approval tied to its ID **and** a trusted executor w
 K3 billing gateway. That gateway must quote and reserve each request's worst-case input/output
 cost and enforce output/step/token bounds before contacting the provider. B1 does not ship
 such a paid gateway or claim that mini-swe-agent's post-call `cost_limit` enforces a hard cap.
-K3 connections remain the only credential owner: configs carry `secret://` references, never
+K4’s current exec JSON record contains no token/cost usage; the adapter preserves that as
+unknown, and unbilled scored records cannot be accepted. K3 connections remain the only credential owner: configs carry `secret://` references, never
 key values. Do not activate a paid executor by declaring an unbounded provider as bounded.
 
 The R1 plugin renews its attempt while the external process is active and aborts on lease
-loss or unload. There is no automatic inference restart. The managed process bounds stdout,
+loss or unload. Rejected or unconfirmed cancellation ends the run as failed; it never claims
+confirmed remote cleanup from an SSH disconnect. There is no automatic inference restart. The managed process bounds stdout,
 clears inherited provider credentials, returns codes only on failure and waits for child
 close. A dropped SSH channel does not prove remote cleanup; reservations stay charged and
 operators must check the dedicated user's containers before retrying. Worker timeouts bound

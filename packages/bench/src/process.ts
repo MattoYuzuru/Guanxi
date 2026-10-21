@@ -5,12 +5,12 @@ export async function processJson(command: string, args: string[], input: unknow
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'ignore'],
       env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8', PYTHONDONTWRITEBYTECODE: '1' } })
-    const output: Buffer[] = []; let bytes = 0; let failed = false
-    const fail = () => { if (failed) return; failed = true; child.kill('SIGTERM'); timer = setTimeout(() => child.kill('SIGKILL'), 1000); timer.unref() }
+    const output: Buffer[] = []; let bytes = 0; let failed = false; let stopping = false
+    const fail = () => { if (stopping) return; stopping = true; failed = true; child.kill('SIGTERM'); timer = setTimeout(() => child.kill('SIGKILL'), 1000); timer.unref() }
     let timer: ReturnType<typeof setTimeout> | undefined
     const aborted = () => fail()
     signal?.addEventListener('abort', aborted, { once: true })
-    child.stdin.on('error', () => { failed = true })
+    child.stdin.on('error', fail)
     child.stdin.end(JSON.stringify(input))
     child.stdout.on('data', (chunk: Buffer) => {
       bytes += chunk.length

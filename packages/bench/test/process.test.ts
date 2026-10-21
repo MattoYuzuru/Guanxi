@@ -15,3 +15,9 @@ test('malformed, oversized, nonzero and canceled processes never return a valid 
   await assert.rejects(processJson(process.execPath, ['-e', 'process.stdout.write("x".repeat(5*1024*1024))'], {}), /external_process_failed/)
   await assert.rejects(processJson(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {}, AbortSignal.timeout(50)), /cancelled/)
 })
+
+test('closed child stdin cannot suppress abort/termination or hang plugin disposal', async () => {
+  const start = performance.now()
+  await assert.rejects(processJson(process.execPath, ['-e', 'require("node:fs").closeSync(0);setTimeout(()=>{},5000)'], { payload: 'x'.repeat(1024 * 1024) }, AbortSignal.timeout(200)), /external_process_failed|cancelled/)
+  assert.ok(performance.now() - start < 2000, 'child was not terminated promptly after stdin failure/abort')
+})

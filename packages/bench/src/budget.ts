@@ -4,7 +4,9 @@ import { validatePlan, type Plan } from './protocol.ts'
 const MONTHLY_CAP = 200_000_000 // D-150; USD micro-units, never floating dollars.
 export class Budget {
   private db: DatabaseSync
-  constructor(path: string) {
+  private clock: () => Date
+  constructor(path: string, clock: () => Date = () => new Date()) {
+    this.clock = clock
     this.db = new DatabaseSync(path)
     this.db.exec(`PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS reservations (
@@ -13,13 +15,14 @@ export class Budget {
         tokens INTEGER NOT NULL, state TEXT NOT NULL CHECK(state IN ('reserved','settled'))
       ) STRICT;`)
   }
-  reserve(raw: Plan, now = new Date()): void {
+  reserve(raw: Plan, now = this.clock()): void {
     const p = validatePlan(raw)
     const perArm = p.tasks.length * p.seeds.length * p.maxTrialMicrousd
     const dollars = perArm * p.arms.length
     const tokens = p.tasks.length * p.seeds.length * p.maxTrialTokens * p.arms.length
     if (![perArm, dollars, tokens].every(Number.isSafeInteger)) throw new Error('budget_overflow')
     const iso = now.toISOString(); const day = iso.slice(0, 10); const month = iso.slice(0, 7)
+    if ((dollars > 0 || tokens > 0) && new Date(now.getTime() + p.timeoutSec * 1000).toISOString().slice(0, 10) !== day) throw new Error('run_crosses_utc_budget_day')
     const fingerprint = createHash('sha256').update(JSON.stringify(p)).digest('hex')
     this.db.exec('BEGIN IMMEDIATE')
     try {
