@@ -32,6 +32,10 @@ export function federationRoutes(resolve: () => Federation) {
   app.use('*', async (c, next) => {
     const federation = resolve()
     c.set('federation', federation)
+    if (c.req.method === 'POST' && c.req.path === '/api/federation/device/code' &&
+      c.req.header('Content-Type')?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {
+      throw new FederationError('json_required', 415)
+    }
     const body = await jsonBody(c.req.raw)
     c.set('body', body)
     const url = new URL(c.req.url)

@@ -21,7 +21,7 @@ test('device authorization requires local approval; codes expire, poll slowly an
   const { home, peer, close } = setup()
   try {
     const keys = identity('new')
-    const req = await home.app.request('http://node/api/federation/device/code', { method: 'POST', body: JSON.stringify({ publicKey: keys.identity.publicKey }) })
+    const req = await home.app.request('http://node/api/federation/device/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ publicKey: keys.identity.publicKey }) })
     assert.equal(req.status,200)
     const code = await req.json() as { device_code: string; user_code: string }
     assert.throws(() => home.federation.enrollment.poll(code.device_code), /slow_down/)

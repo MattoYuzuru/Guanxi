@@ -45,9 +45,12 @@ Transport failure leaves an item pending; expiration and stale-version responses
 
 ## Enrollment and authority
 
-`POST /device/code` takes a device's freshly generated public key and returns RFC 8628-style
+`POST /device/code` requires `Content-Type: application/json` (optional charset accepted),
+so a simple cross-origin form POST cannot allocate a code. It takes a device's freshly generated public key and returns RFC 8628-style
 `device_code`, `user_code`, `verification_uri`, `expires_in` and `interval` fields. Only hashes
-of both codes persist. Polling `/device/token` returns `authorization_pending`, `slow_down`,
+of both codes persist. Code storage is bounded to 128 unexpired requests, including approved,
+denied and consumed codes; expired rows are purged before each allocation. A full budget
+returns `429 enrollment_busy`; this is a bootstrap budget, not a fleet-size cap. Polling `/device/token` returns `authorization_pending`, `slow_down`,
 `access_denied` or `expired_token` as appropriate. Approval and consumption are one-shot.
 The issued node credential is its approved public-key identity; it is not a bearer secret.
 Possession of the corresponding private key is required for every subsequent peer request.

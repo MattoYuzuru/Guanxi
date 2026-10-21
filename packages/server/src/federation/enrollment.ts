@@ -3,6 +3,9 @@ import { nodeIdentitySchema, type NodeIdentity } from '@guanxi/contract/federati
 import type { Db } from '../store/db.ts'
 import { FederationError, hash, publicKey } from './crypto.ts'
 
+// Bootstrap storage budget, not a limit on enrolled devices. Expired codes free slots.
+export const MAX_DEVICE_CODES = 128
+
 export class DeviceEnrollment {
   private readonly db: Db
   private readonly local: NodeIdentity
@@ -15,6 +18,9 @@ export class DeviceEnrollment {
   begin(key: string) {
     this.assertOpen()
     publicKey(key)
+    this.db.prepare('DELETE FROM federation_devices WHERE expires_at<=?').run(this.now())
+    const count = this.db.prepare('SELECT COUNT(*) AS n FROM federation_devices').get()!.n as number
+    if (count >= MAX_DEVICE_CODES) throw new FederationError('enrollment_busy', 429)
     const device_code = randomBytes(32).toString('base64url')
     const user_code = randomBytes(8).toString('hex').toUpperCase()
     this.db.prepare('INSERT INTO federation_devices VALUES (?,?,?,?,?,?,?,NULL)').run(
