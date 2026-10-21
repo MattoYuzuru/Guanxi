@@ -127,6 +127,10 @@ test('forged grant, immutable job edits, wrong executor, old capability and unav
   await assert.rejects(f.target.federation.receiveDispatch({ ...f.homeContext, identity: f.target.keys.identity }, p.grant), /owner_mismatch/)
   f.attest(false)
   await assert.rejects(f.target.federation.receiveDispatch(f.homeContext, p.grant), /local_placement_required/)
+  for (const observedAt of [f.target.time - f.tp.maxModelAgeMs - 1, f.target.time + 1]) {
+    f.tp.localModel = model => ({ connectionId: f.store.list('owner')[0]!.id, model, placement: 'installed_local', source: 'fixture inventory', observedAt })
+    await assert.rejects(f.target.federation.receiveDispatch(f.homeContext, p.grant), /local_placement_required/)
+  }
   assert.equal(f.posts, 0); assert.ok(f.tg.snapshot().activeLease)
 })
 
