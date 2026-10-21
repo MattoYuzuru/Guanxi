@@ -105,7 +105,7 @@ describe('server boot through the kernel', () => {
   it('boots the legacy profile and gives the application context its services', async () => {
     const kernel = await bootServerKernel()
     try {
-      assert.deepEqual(kernel.node.entries().map((entry) => entry.id), ['resource-governor', 'ollama'])
+      assert.deepEqual(kernel.node.entries().map((entry) => entry.id), ['resource-governor', 'ollama', 'egress-scrubber'])
       assert.equal(kernel.node.stateOf('resource-governor'), 'active')
       assert.equal(kernel.node.stateOf('ollama'), 'active')
       assert.equal(kernel.node.service(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
@@ -128,7 +128,7 @@ describe('server boot through the kernel', () => {
     } finally {
       await kernel.node.dispose()
     }
-    assert.equal(LEGACY_SERVER_PROFILE.insert?.length, 2)
+    assert.equal(LEGACY_SERVER_PROFILE.insert?.length, 3)
   })
 
   it('start() wires context.governor and context.ollama() to the kernel services', async () => {
@@ -139,7 +139,9 @@ describe('server boot through the kernel', () => {
         assert.equal(server.context.governor, server.kernel.governor)
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
-        assert.equal(server.kernel.node.counters().fibers, 2, 'governor and ollama')
+        assert.equal(server.kernel.node.counters().fibers, 4, 'governor, ollama, egress scrubber and session log')
+        assert.ok(server.kernel.sessionLog, 'the kernel loaded the session log')
+        assert.equal(server.context.sessionLog, server.kernel.sessionLog, 'the context uses the kernel session log')
       } finally {
         await server.close()
       }
