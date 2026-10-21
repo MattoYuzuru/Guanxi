@@ -56,7 +56,10 @@ export function suppressionErrors(data, results) {
   }
   const errors = []
   for (const [file, rules] of Object.entries(data)) for (const [id, entry] of Object.entries(rules)) if (entry.count > (actual[file]?.[id] ?? 0)) errors.push(`Unused ESLint suppression must shrink: ${file} ${id}`)
-  for (const [file, messages] of results) for (const message of messages) if ((actual[file]?.[message.ruleId] ?? 0) > (data[file]?.[message.ruleId]?.count ?? 0)) errors.push(`${file}:${message.line}:${message.column} ${message.ruleId ?? 'parse'} ${message.message}`)
+  for (const [file, messages] of results) for (const message of messages) {
+    const id = message.ruleId ?? '(parse error)'
+    if ((actual[file]?.[id] ?? 0) > (data[file]?.[id]?.count ?? 0)) errors.push(`${file}:${message.line}:${message.column} ${id} ${message.message}`)
+  }
   return errors
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

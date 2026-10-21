@@ -43,7 +43,7 @@ async function lint(ctx) {
 }
 async function check(ctx, id) {
   const { errors, suppressions } = await lint(ctx)
-  const selected = id === 'G8' ? errors.filter(e => /import-boundaries|suppression|shallow|ESLint configuration/i.test(e)) : errors.filter(e => !/guanxi\/import-boundaries/.test(e) || /suppression|ESLint configuration/i.test(e))
+  const selected = id === 'G8' ? errors.filter(e => /import-boundaries|suppression|shallow|parse error|ESLint configuration/i.test(e)) : errors.filter(e => !/guanxi\/import-boundaries/.test(e) || /suppression|ESLint configuration/i.test(e))
   const colourRules = ['guanxi/no-inline-colours', 'guanxi/no-literal-css', 'guanxi/no-literal-styles', 'guanxi/semantic-classes', 'guanxi/svg-styles']
   const remaining = Object.entries(suppressions).flatMap(([file, rules]) => Object.entries(rules).filter(([rule]) => colourRules.includes(rule)).map(([rule, entry]) => ({ file, rule, count: entry.count })))
   return { ok: !selected.length, errors: selected, ...(id === 'G9' ? { colourSuppressions: remaining, u1ColourExitReady: remaining.length === 0 } : {}) }

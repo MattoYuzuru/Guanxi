@@ -209,3 +209,14 @@ test('M3 G9 rejects capitalised tag bindings and polymorphic defaults', async ()
 test('M3 G9 rejects style elements in JSX, aliases and factories', async () => {
   for (const source of ["const x = <style>{'.x{color:red}'}</style>", "const Tag = 'style'; const x = <Tag/>", "const x = React.createElement('style')"]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/reuse-primitives'), source)
 })
+
+test('L1 parse errors fail both gates instead of matching a null rule id', async () => {
+  const ctx = await createContext()
+  const file = 'packages/web/src/features/seeded/parse.tsx'
+  const seeded = await ctx.withFiles({ [file]: "import X from 'lucide-react'; const x = <button>" })
+  for (const gate of gates) {
+    const result = await gate.check(seeded)
+    assert.equal(result.ok, false, `${gate.id} must reject malformed JSX`)
+    assert.ok(result.errors.some(e => e.includes('(parse error)') && e.includes(file)), gate.id)
+  }
+})
