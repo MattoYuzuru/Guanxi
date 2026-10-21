@@ -2,13 +2,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, cp, rm, realpath, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createContext } from './context.mjs'
 import { resolveTokens, resolvedFlat } from '../tokens/resolve.mjs'
 import { generate } from '../tokens/build.mjs'
-import { designSystem } from './scan.mjs'
+import { designSystem, classStrings } from './scan.mjs'
+import { checks } from './checks.mjs'
 import postcss from 'postcss'
 import { __unstable__loadDesignSystem } from 'tailwindcss'
 
@@ -254,7 +256,7 @@ test('K1/DS1-c: actual web CSS imports the generated theme without a bridge or c
     const system = await __unstable__loadDesignSystem(css, {
       base: join(ctx.root, 'packages/web/src'),
       async loadStylesheet(id, base) {
-        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : id.startsWith('@guanxi/ui/') ? createRequire(import.meta.url).resolve(id) : resolve(base, id)
+        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : id.startsWith('@guanxi/ui/') || id.startsWith('tailwindcss/') ? createRequire(import.meta.url).resolve(id) : resolve(base, id)
         return { path, base: dirname(path), content: id === '@guanxi/ui/theme.css' ? generated : await readFile(path, 'utf8') }
       },
     })
@@ -277,6 +279,31 @@ test('K1/DS1-c: actual web CSS imports the generated theme without a bridge or c
   }
   await assert.rejects(verify(source.replace("@import '@guanxi/ui/theme.css';", '')), { name: 'AssertionError' })
   for (const alias of ['--color-surface', '--color-accent', '--color-divider', '--color-secondary', '--color-foreground', '--color-inset', '--radius-control', '--radius-panel', '--text-15', '--text-12']) assert.doesNotMatch(source, new RegExp(`${alias}:`), alias)
+})
+test('DS1-c review: the app preserves frozen legacy utilities without weakening the generated-only gate', async () => {
+  const source = await ctx.read('packages/web/src/index.css')
+  const base = execFileSync('git', ['show', '2ab9c41:packages/web/src/index.css'], { cwd: ctx.root, encoding: 'utf8' })
+  async function load(css) {
+    return __unstable__loadDesignSystem(css, {
+      base: join(ctx.root, 'packages/web/src'),
+      async loadStylesheet(id, directory) {
+        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : id.startsWith('@guanxi/ui/') || id.startsWith('tailwindcss/') ? createRequire(import.meta.url).resolve(id) : resolve(directory, id)
+        return { path, base: dirname(path), content: await readFile(path, 'utf8') }
+      },
+    })
+  }
+  const before = await load(base), after = await load(source)
+  const retained = ['text-xs', 'text-sm', 'text-lg', 'font-medium', 'font-semibold', 'rounded-md', 'rounded-lg', 'backdrop-blur-md', 'shadow-sm', 'tracking-tight', 'leading-relaxed']
+  assert.deepEqual(after.candidatesToCss(retained), before.candidatesToCss(retained), 'legacy typography/radius/material utilities must retain their CSS')
+  const classes = new Set()
+  for (const file of ctx.files.filter(f => /^packages\/web\/src\/.+\.[jt]sx?$/.test(f))) for (const { value } of classStrings(file, await ctx.read(file))) classes.add(value)
+  for (const cls of classes) if (before.candidatesToCss([cls])[0]) assert.ok(after.candidatesToCss([cls])[0], `retained utility disappeared: ${cls}`)
+  for (const [cls, token] of [['max-w-md', '--layout-container-md'], ['bg-surface', '--color-background-secondary'], ['text-12', '--font-size-12'], ['rounded-control', '--border-radius-control']]) assert.ok(after.candidatesToCss([cls])[0].includes(`var(${token})`), cls)
+  assert.equal(after.resolveThemeValue('--spacing'), 'var(--grid-unit)')
+  assert.equal(after.resolveThemeValue('--default-font-family'), 'var(--font-family-sans)')
+  const invalid = await checks.G5(await ctx.withFiles({ 'packages/web/src/features/seeded/legacy.tsx': '<div className="text-xs rounded-md bg-red-500"/>' }))
+  assert.equal(invalid.ok, false)
+  for (const value of ['text-xs', 'rounded-md', 'bg-red-500']) assert.ok(invalid.errors.some(error => error.includes(value)), value)
 })
 test('M2/N2: FOUNDATIONS rejects missing, extra and incorrect container widths', async () => {
   const file = 'packages/ui/tokens/base.tokens.json'

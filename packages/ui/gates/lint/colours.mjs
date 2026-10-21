@@ -3,10 +3,10 @@ import postcss from 'postcss'
 import valueParser from 'postcss-value-parser'
 import { cssFindings } from '../scan.mjs'
 
-export const colourProperty = /^(?:color|.*-color|background(?:-.*)?|border(?:-.*)?|outline(?:-.*)?|(?:box|text)-shadow|fill|stroke|stop-color|flood-color|lighting-color|column-rule|text-decoration|(?:-webkit-)?mask(?:-image)?|filter|backdrop-filter)$/
+export const colourProperty = /^(?:color|.*-color|background(?:-.*)?|border(?:-.*)?|outline(?:-.*)?|(?:box|text)-shadow|fill|stroke|stop-color|flood-color|lighting-color|column-rule|text-decoration|text-emphasis|(?:-webkit-)?text-stroke|(?:-webkit-)?mask(?:-image)?|filter|backdrop-filter)$/
 // Geometry longhands (border-width, background-position/size/repeat) stay usable
 // with runtime values. Shorthands can carry colours, so G9 forbids those inline.
-export const inlineColourProperty = /^(?:color|.*-color|background(?:-image)?|border(?:-(?:top|right|bottom|left|block(?:-start|-end)?|inline(?:-start|-end)?))?|outline|(?:box|text)-shadow|fill|stroke|stop-color|flood-color|lighting-color|column-rule|text-decoration|(?:-webkit-)?mask(?:-image)?|filter|backdrop-filter)$/
+export const inlineColourProperty = /^(?:color|.*-color|background(?:-image)?|border(?:-(?:image(?:-source)?|top|right|bottom|left|block(?:-start|-end)?|inline(?:-start|-end)?))?|outline|(?:box|text)-shadow|fill|stroke|stop-color|flood-color|lighting-color|column-rule|text-decoration|text-emphasis|(?:-webkit-)?text-stroke|(?:-webkit-)?mask(?:-image)?|filter|backdrop-filter)$/
 const permitted = /^(?:transparent|currentcolor|none|inherit|initial|unset|revert(?:-layer)?|canvas(?:text)?|button(?:text|face|border)|highlight(?:text)?|linktext|visitedtext|activetext|graytext|accentcolor(?:text)?)$/i
 export const cssName = name => name.startsWith('--') ? name : name.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)
 export function hasLiteralColour(value) {

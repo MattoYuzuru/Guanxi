@@ -66,16 +66,6 @@
       "count": 3
     }
   },
-  "packages/web/src/features/catalog/CatalogRoute.tsx": {
-    "guanxi/import-boundaries": {
-      "count": 1
-    }
-  },
-  "packages/web/src/features/catalog/review-api.ts": {
-    "guanxi/import-boundaries": {
-      "count": 1
-    }
-  },
   "packages/web/src/features/chat/ChatPage.tsx": {
     "guanxi/reuse-primitives": {
       "count": 1

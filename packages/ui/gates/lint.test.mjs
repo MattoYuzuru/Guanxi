@@ -26,6 +26,10 @@ test('G8 rejects every forbidden import form and relative internals in web and p
 test('G8 allows the public package and underlying imports in UI implementation', async () => {
   assert.deepEqual(await lint("import { Button } from '@guanxi/ui'; export const x = <Button />"), [])
   assert.deepEqual(await lint("import { Button } from '@base-ui/react/button'", 'packages/ui/src/fixture.tsx'), [])
+  for (const path of ['catalog', 'approval', 'theme.css', 'tokens.css', 'tokens', 'fonts.css', 'brand/logo.svg']) assert.deepEqual(await lint(`import x from '@guanxi/ui/${path}'`), [])
+})
+test('review: G8 rejects templated/bound imports and TypeScript external module references', async () => {
+  for (const source of ['const x = import(`lucide-react`)', "const target = 'motion/react'; const x = import(target)", "import Icon = require('lucide-react')"]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/import-boundaries'), source)
 })
 test('G9 rejects all raw controls separately, including createElement', async () => {
   for (const name of ['button', 'input', 'select', 'textarea', 'dialog']) {
@@ -41,6 +45,8 @@ test('G9 rejects semantic and dynamic inline colours and bound style objects, pe
     "const s = { maskImage: 'linear-gradient(red, blue)' }; const x = <div style={s} />",
     "const s = { ['color']: colour }; const x = <div style={{ ...s }} />",
     'const x = <div style={external} />',
+    "const {s} = {s:{color:'red'}}; const x = <div style={s} />",
+    'const x = <div style={{ borderImage: paint, textEmphasis: paint }} />',
   ]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/no-inline-colours'), source)
   assert.deepEqual(await lint('const s = { width: width, transform: transform }; const x = <div style={s} />'), [])
   assert.deepEqual(await lint('const x = <div style={{ borderWidth: width, backgroundPosition: position, backgroundSize: size }} />'), [])
@@ -53,6 +59,16 @@ test('N5 lexical fallback detects imported maps, arbitrary literals with any nam
   ]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/semantic-classes'), source)
   assert.deepEqual(await lint('export const palette = { primary: "bg-canvas text-foreground" }'), [])
 })
+test('review: G9 rejects inline colours in props spreads and element factories, including aliases', async () => {
+  for (const source of [
+    "const x = <div {...{style:{color:'red'}}} />",
+    "const props = { style: { color:'red' } }; const x = <div {...props} />",
+    "const x = React.createElement('div', {style:{color:'red'}})",
+    "import { createElement as h } from 'react'; const x = h('div', {style:{color:'red'}})",
+  ]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/no-inline-colours'), source)
+  for (const source of ["import { createElement as h } from 'react'; const x = h('button')", "import { jsx as h } from 'react/jsx-runtime'; const x = h('input', {})"]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/reuse-primitives'), source)
+  assert.deepEqual(await lint('const p = { style: { width: width } }; const x = <div {...p} />'), [])
+})
 test('N8 CSS colours include stop/mask/webkit/text-decoration/column-rule and avoid transition false positives', async () => {
   for (const decl of ['stop-color:red', '-webkit-text-fill-color:#f00', 'column-rule:1px solid blue', 'text-decoration:underline red', 'mask-image:linear-gradient(red, blue)', 'background:var(--token, #f00)']) {
     assert.ok(cssDiagnostics('fixture.css', `.x{${decl}}`).length, decl)
@@ -64,6 +80,7 @@ test('N8 CSS colours include stop/mask/webkit/text-decoration/column-rule and av
 })
 test('D2 same-file bound styles and SVG style attributes fail literal lint', async () => {
   assert.ok((await lint("const s = { padding: '13px' }; const x = <div style={s} />")).some(m => m.ruleId === 'guanxi/no-literal-styles'))
+  assert.ok((await lint('const s = { padding: `13px` }; const x = <div style={s} />')).some(m => m.ruleId === 'guanxi/no-literal-styles'))
   for (const file of ['packages/web/src/fixture.svg', 'packages/web/src/fixture.html']) {
     assert.ok((await lint('<svg style="stop-color:red;mask-image:linear-gradient(red,blue)"><path fill="#f00" /></svg>', file)).some(m => m.ruleId === 'guanxi/svg-styles'), file)
     assert.deepEqual(await lint('<svg style="color:var(--color-text-primary)"><path fill="currentColor" /></svg>', file), [])

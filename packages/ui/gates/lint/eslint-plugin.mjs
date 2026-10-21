@@ -12,6 +12,7 @@ function resolveBinding(node, context, seen = new Set()) {
   for (let scope = context.sourceCode.getScope(node); scope; scope = scope.upper) {
     const variable = scope.set.get(node.name)
     if (variable) {
+      if (variable.defs[0]?.node?.id && variable.defs[0].node.id.type !== 'Identifier') return node
       const init = variable.defs[0]?.node?.init
       return init ? resolveBinding(init, context, seen) : node
     }
@@ -38,20 +39,47 @@ function literalValues(node, context, emit, seen = new Set()) {
   if (node.type === 'ConditionalExpression') { literalValues(node.consequent, context, emit, next); literalValues(node.alternate, context, emit, next) }
   else if (node.type === 'Literal' && ['string', 'number'].includes(typeof node.value)) emit(String(node.value))
   else if (node.type === 'UnaryExpression' && node.argument.type === 'Literal') emit(`${node.operator}${node.argument.value}`)
+  else if (node.type === 'TemplateLiteral' && !node.expressions.length) emit(node.quasis[0].value.cooked)
+}
+function propsStyles(node, context, emit, seen = new Set()) {
+  node = resolveBinding(node, context)
+  if (!node || seen.has(node)) return
+  const next = new Set([...seen, node])
+  if (node.type === 'ConditionalExpression') { propsStyles(node.consequent, context, emit, next); propsStyles(node.alternate, context, emit, next) }
+  if (node.type === 'ObjectExpression') for (const prop of node.properties) {
+    if (prop.type === 'SpreadElement') propsStyles(prop.argument, context, emit, next)
+    else if (keyOf(prop.key) === 'style') styleProperties(prop.value, context, emit)
+  }
+}
+function elementFactory(node, context) {
+  const resolved = resolveBinding(node, context)
+  if (resolved?.type === 'MemberExpression') return ['createElement', 'jsx', 'jsxs', 'jsxDEV'].includes(keyOf(resolved.property))
+  if (resolved?.type !== 'Identifier') return false
+  if (['createElement', 'jsx', 'jsxs', 'jsxDEV'].includes(resolved.name)) return true
+  for (let scope = context.sourceCode.getScope(resolved); scope; scope = scope.upper) {
+    const definition = scope.set.get(resolved.name)?.defs[0]
+    if (definition?.type === 'ImportBinding') return ['createElement', 'jsx', 'jsxs', 'jsxDEV'].includes(keyOf(definition.node.imported)) && /^react(?:\/jsx(?:-dev)?-runtime)?$/.test(definition.parent.source.value)
+  }
+  return false
 }
 function forbiddenImport(value, filename) {
   if (typeof value !== 'string') return false
+  // These are public package exports, not component internals.
+  if (/^@guanxi\/ui\/(?:catalog|approval|tokens|(?:tokens|theme|fonts)\.css)$/.test(value) || /^@guanxi\/ui\/brand\/[^.][\w./-]*$/.test(value) && !value.includes('..')) return false
   if (/^(?:@guanxi\/ui\/|@base-ui\/react(?:\/|$)|lucide-react(?:\/|$)|motion(?:\/|$))/.test(value)) return true
   const target = value.startsWith('.') ? resolve(filename, '..', value) : value
   return /(?:^|\/)packages\/ui\/(?:src|catalog|generated|tokens)(?:\/|$)/.test(target) || /^@\/.*(?:ui\/src|ui\/components)/.test(target)
 }
 export const rules = {
   'import-boundaries': rule('G8 import boundary: {{value}}; use @guanxi/ui public exports.', context => {
-    const check = node => { if (forbiddenImport(node.value, context.physicalFilename)) context.report({ node, messageId: 'violation', data: { value: node.value } }) }
+    const check = node => {
+      literalValues(node, context, value => { if (forbiddenImport(value, context.physicalFilename)) context.report({ node, messageId: 'violation', data: { value } }) })
+    }
     return {
       ImportDeclaration: n => check(n.source), ExportNamedDeclaration: n => n.source && check(n.source), ExportAllDeclaration: n => check(n.source),
       ImportExpression: n => check(n.source),
       TSImportType: n => check(n.argument?.literal ?? n.argument),
+      TSExternalModuleReference: n => check(n.expression),
       CallExpression(n) { if ((n.callee.name === 'require' || n.callee.property?.name === 'resolve' && n.callee.object?.name === 'require') && n.arguments[0]) check(n.arguments[0]) },
     }
   }),
@@ -59,17 +87,21 @@ export const rules = {
     const raw = /^(?:button|input|select|textarea|dialog)$/
     return {
       JSXOpeningElement(node) { if (node.name.type === 'JSXIdentifier' && raw.test(node.name.name)) context.report({ node, messageId: 'violation', data: { value: node.name.name } }) },
-      CallExpression(node) { if ((node.callee.name === 'createElement' || node.callee.property?.name === 'createElement') && raw.test(node.arguments[0]?.value)) context.report({ node, messageId: 'violation', data: { value: node.arguments[0].value } }) },
+      CallExpression(node) { if (elementFactory(node.callee, context)) literalValues(node.arguments[0], context, value => { if (raw.test(value)) context.report({ node, messageId: 'violation', data: { value } }) }) },
     }
   }),
-  'no-inline-colours': rule('G9 inline colour style {{value}}; use semantic utilities.', context => ({
+  'no-inline-colours': rule('G9 inline colour style {{value}}; use semantic utilities.', context => {
+    const emit = (prop, name) => {
+      if (name === null || inlineColourProperty.test(name) || /^(?:--.*(?:color|colour|background|foreground)|--(?:bg|fg)(?:-|$)|--.*-(?:bg|fg)(?:-|$))/.test(name)) context.report({ node: prop, messageId: 'violation', data: { value: name ?? '(unresolved style object/key)' } })
+    }
+    return {
     JSXAttribute(node) {
       if (node.name.name !== 'style') return
-      styleProperties(node.value, context, (prop, name) => {
-        if (name === null || inlineColourProperty.test(name) || /^(?:--.*(?:color|colour|background|foreground)|--(?:bg|fg)(?:-|$)|--.*-(?:bg|fg)(?:-|$))/.test(name)) context.report({ node: prop, messageId: 'violation', data: { value: name ?? '(unresolved style object/key)' } })
-      })
+      styleProperties(node.value, context, emit)
     },
-  })),
+    JSXSpreadAttribute(node) { propsStyles(node.argument, context, emit) },
+    CallExpression(node) { if (elementFactory(node.callee, context)) propsStyles(node.arguments[1], context, emit) },
+  }}),
   'no-literal-styles': rule('G6 literal inline style {{value}}.', context => ({
     JSXAttribute(node) {
       if (node.name.name === 'style') styleProperties(node.value, context, (prop, name, value) => {

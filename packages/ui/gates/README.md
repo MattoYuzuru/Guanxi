@@ -57,10 +57,13 @@ DS1-c separately owns ESLint bulk suppressions.
 ### DS1-c lint freeze
 
 G8 checks static imports, exports, dynamic imports, TypeScript import types and CommonJS
-requires in feature/plugin source. Underlying UI libraries and private UI paths fail.
+requires in feature/plugin source, including bound paths, constant templates and TypeScript
+external module references. Underlying UI libraries and private UI paths fail; documented
+public asset/catalog/approval exports remain usable.
 Server/CLI/kernel/contract code and the UI implementation are outside the feature boundary.
 G9 rejects raw controls and inline colour styles, including bound same-file objects and
-unresolved style spreads. Runtime geometry longhands are allowed. Literal inline geometry
+unresolved style objects. Known props spreads and React element factories are also checked.
+Runtime geometry longhands are allowed. Literal inline geometry
 in the legacy `components/ui.tsx` is frozen by `guanxi/no-literal-styles`, not a G6 correction.
 
 `eslint-suppressions.json` is ESLint's native bulk format. Only legacy web source may have
@@ -80,11 +83,17 @@ and same-file style objects are also checked. The original DS1-a scanner/ledger 
 apart from removing allowances retired by the codemod.
 
 Residual static limits: runtime-generated class fragments, imported/computed style-value
-contents, DOM style mutations and custom CSS properties whose names conceal colour usage
+contents, unknown whole-props spreads, DOM style mutations and custom CSS properties whose names conceal colour usage
 need migration/review. Unknown JSX style objects are rejected conservatively. The existing
 G5 scanner still owns full compiled-class/spacing validation; the lexical fallback targets
-arbitrary values and default palette colours. Colour-related suppression counts are included
+arbitrary values and numbered palette colours. Colour-related suppression counts are included
 in G9's JSON report; U1 cannot exit until those counts are zero.
+
+The web stylesheet keeps an app-only default-priority Tailwind theme import until U1 migrates
+the frozen non-colour utilities. Regression assertions compare legacy utility CSS with the
+lane baseline, check every retained compilable class still compiles, verify generated mappings
+and prove new legacy/palette uses still fail G5. No local alias bridge or copied bridge alias
+is allowed back into the stylesheet.
 
 The deterministic codemod is `npm run codemod:semantic -- --write`; omit `--write` to preview.
 Its committed report records the first migration, every touched file and every unmapped

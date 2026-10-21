@@ -1,6 +1,10 @@
 @import 'tailwindcss';
 @import '@guanxi/ui/tokens.css';
 @import '@guanxi/ui/theme.css';
+/* Preserve frozen legacy utility defaults until U1 migrates them. Tailwind's
+   default-priority declarations cannot override the explicit generated tokens.
+   G5/G9 still reject new legacy uses against the generated-only lint theme. */
+@import 'tailwindcss/theme.css' layer(theme);
 
 @custom-variant dark (&:where(.dark, .dark *));
 

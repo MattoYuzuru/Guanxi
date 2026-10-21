@@ -31,6 +31,10 @@ primitive colours have no theme utilities. The web app imports both public style
 `@guanxi/ui/tokens.css` and `@guanxi/ui/theme.css`. DS1-c removed the temporary local bridge,
 including all ten aliases present at its baseline. Legacy runtime colours and font overrides
 remain migration debt; `--warning` and `--focus` retain their compatibility mappings.
+The web app then imports Tailwind's default-priority theme for frozen legacy utilities that
+U1 has not migrated yet. It restores missing type/radius/material classes without overriding
+explicit generated tokens. G5 still compiles against the generated-only theme and rejects
+new uses of those defaults. The UI package has no such compatibility import.
 Runtime font variables are `--font-family-sans` and `--font-family-mono`; runtime CSS does not
 declare bare `--spacing` or Tailwind's font-family names. Only the theme layer maps those
 names. A production-build comparison with the design-system CSS imports removed asserts unchanged legacy
