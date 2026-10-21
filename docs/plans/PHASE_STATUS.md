@@ -237,5 +237,6 @@ decision was made.
 | B1 Bench base | in progress (lane B1, Codex); host provisioned | [lanes/B1](lanes/B1.md) |
 | X1 Repo map and FTS | handed off; Claude cross-family review (with Linux validation) running | [lanes/X1](lanes/X1.md) |
 | R2 Relay executor | Claude review 1: merge after fixes. H1: the ceiling is sized in bytes but the boundary in tokens, so the boundary never fires and new turns drop silently. H2: an output-truncated narrative does not degrade. H3: each seal bundles the whole history (about 123 s here). Fix round queued | [lanes/R2](lanes/R2.md) |
+| U1 Shell, layout, modes | U1-a (layout engine and modes) in progress (Codex); U1-b and U1-c follow | [lanes/U1](lanes/U1.md) |
 | F1 Federation base | review 1 fixes re-checked: H1–H3 closed; H4 partial and one new High (config ingest cost grows cubically, remotely triggerable); fix round 2 running in Codex | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
