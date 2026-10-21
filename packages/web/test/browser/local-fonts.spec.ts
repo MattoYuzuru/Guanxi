@@ -127,9 +127,11 @@ test('H2: importing runtime tokens preserves legacy computed fonts and spacing',
   const inspect = (target: typeof page) => target.evaluate(() => {
     const sample = document.createElement('div')
     sample.className = 'font-mono p-2 gap-3'
+    // Compare resolved lengths: the generated grid token is 4px, Tailwind's is .25rem.
+    sample.style.marginTop = 'var(--spacing)'
     document.body.append(sample)
     const css = getComputedStyle(sample)
-    const result = { body: getComputedStyle(document.body).fontFamily, mono: css.fontFamily, padding: css.padding, gap: css.gap, spacing: getComputedStyle(document.documentElement).getPropertyValue('--spacing').trim() }
+    const result = { body: getComputedStyle(document.body).fontFamily, mono: css.fontFamily, padding: css.padding, gap: css.gap, spacing: css.marginTop }
     sample.remove()
     return result
   })
@@ -138,6 +140,7 @@ test('H2: importing runtime tokens preserves legacy computed fonts and spacing',
   expect(expected.mono).toContain('SF Mono')
   expect(expected.padding).toBe('8px')
   expect(expected.gap).toBe('12px')
+  expect(expected.spacing).toBe('4px')
   expect(await inspect(page)).toEqual(expected)
   await baseline.close()
 })

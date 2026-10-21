@@ -1233,7 +1233,7 @@ function ThreadSidebar({
               )}
             >
               <span className="block truncate text-xs font-medium">{thread.title}</span>
-              <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-muted">
+              <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-secondary">
                 <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : thread.model}</span>
                 <span className="shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
               </span>
