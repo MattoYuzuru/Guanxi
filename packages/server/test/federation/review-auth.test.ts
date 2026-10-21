@@ -55,3 +55,32 @@ test('P3 non-admin home revokes a peer locally and stops serving replicas', asyn
     assert.equal((await laptop.request(home, 'GET', '/replicas/session')).status, 401)
   } finally { home.close(); laptop.close() }
 })
+
+test('P7 command account binding refuses another account before prompt effects (D-190)', async () => {
+  const home = new SimNode(identity('home')); const other = new SimNode(identity('family-node', {accountId:'family'}))
+  try {
+    home.trust(other); other.trust(home)
+    const run = home.runs.create({id:'run',sessionId:'session'})
+    home.federation.replicas.bind({kind:'run',streamId:'run',sessionId:'session',homeNodeId:'home',homeEpoch:1,ownerAccountId:'owner'})
+    const response = await other.request(home, 'POST', '/commands', {id:'p',runId:'run',sessionId:'session',homeNodeId:'home',stateVersion:run.version,expiresAt:home.time+5000,action:{kind:'prompt',text:'cross-account prompt'}})
+    assert.equal(response.status, 403, 'commands are bound to the credential account')
+    assert.deepEqual(await response.json(), {code:'owner_mismatch'})
+    assert.equal(home.runs.get(run.id).version, run.version)
+    assert.deepEqual(home.federation.pendingPrompts(run.id), [])
+    assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_command_receipts').get()!.n, 0)
+  } finally { home.close(); other.close() }
+})
+
+test('revocation invalidates a previously authenticated held context', () => {
+  const home = new SimNode(identity('home')); const peer = new SimNode(identity('peer'))
+  try {
+    home.trust(peer)
+    const path = '/api/federation/config'
+    const auth = {nodeId:'peer',audience:'home',version:{major:1,minor:0},issuedAt:peer.time,nonce:randomUUID(),signature:''}
+    auth.signature = signValue(peer.keys.privateKey, requestProof('GET',path,null,auth))
+    const held = home.federation.authenticate('GET',path,null,auth)
+    assert.equal(home.federation.authorize(held,'config').id, 'peer')
+    home.federation.revokePeer('peer')
+    assert.throws(() => home.federation.authorize(held,'config'), /unauthenticated/, 'held contexts recheck current trust')
+  } finally { home.close(); peer.close() }
+})
