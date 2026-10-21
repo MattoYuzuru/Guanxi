@@ -1,14 +1,18 @@
 @reference '../../styles/tailwind-reference.css';
 
 .gx-toast-viewport {
+  /* Both gutters bound the width on a narrow screen; on a wide one the maximum width applies and
+     the auto margin keeps the stack at the right edge (N7). */
   position: fixed;
   right: var(--spacing-16);
   bottom: var(--spacing-16);
+  left: var(--spacing-16);
+  margin-left: auto;
   z-index: var(--layer-toast);
   display: flex;
   flex-direction: column-reverse;
   gap: var(--spacing-8);
-  @apply w-full max-w-sm;
+  @apply max-w-sm;
   outline: none;
 }
 
