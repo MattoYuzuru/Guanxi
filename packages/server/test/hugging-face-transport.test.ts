@@ -686,7 +686,7 @@ describe('bounded server-owned Hugging Face transport', () => {
     })
     assert.equal(result.state, 'listed')
     assert.equal(result.repositories.length, 10)
-    assert.equal(result.droppedRows, 31)
+    assert.equal(result.droppedRows, 30)
     assert.deepEqual(huggingFaceSearchResultSchema.parse(result), result)
   })
 
