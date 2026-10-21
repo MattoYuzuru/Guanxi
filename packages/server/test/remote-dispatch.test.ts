@@ -58,7 +58,7 @@ async function fixture(t: { after(fn: () => unknown): void }, options: { beforeV
     const receipt = await outgoing.offer(offer)
     const grant = home.federation.grantDispatch(offer.id, receipt)
     const ref = { id: offer.id, homeNodeId: 'home', executorNodeId: 'target' }
-    return { offer, receipt, grant, ref, attempt: home.runs.attempts(run.id)[0]! }
+    return { offer, receipt, grant, ref, attempt: home.runs.attempts(run.id).at(-1)! }
   }
   t.after(async () => { life.abort(); target.federation.close(); await connections.close(); home.close(); target.close(); store.close(); await hg.close(); await tg.close(); rmSync(dir, { recursive: true, force: true }) })
   return { home, get target() { return target }, hg, tg, clock, run, job, get outgoing() { return outgoing }, homeContext, targetContext, prepare, connections, store, tp,
@@ -402,7 +402,7 @@ test('cancel releases the K3 permit while post-preflight renewal remains blocked
 test('R1 rejects accidental async renewal/start/terminal receipt callbacks and rolls their writes back', async t => {
   const f = await fixture(t), a = f.home.runs.start(f.run.id)
   f.home.db.exec('CREATE TABLE callback_trace(value TEXT)')
-  const callback = async (db: typeof f.home.db) => { db.prepare('INSERT INTO callback_trace VALUES (?)').run('uncommitted'); await Promise.resolve() }
+  const callback = async (db: typeof f.home.db) => { db.prepare('INSERT INTO callback_trace VALUES (?)').run('uncommitted'); await Promise.resolve(); throw new Error('fixture late callback rejection') }
   const expiry = f.home.db.prepare('SELECT expires_at FROM leases WHERE key=?').get(`run:${f.run.id}/exec`)!.expires_at
   // @ts-expect-error Async validation is forbidden; runtime defense also protects JavaScript callers.
   assert.throws(() => f.home.runs.renew(a, 100, callback), /invalid_input/)
@@ -485,4 +485,46 @@ test('direct cancel refuses foreign/shared/unscoped/forged/expired or mismatched
   assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'running')
   assert.equal(f.posts, 1)
   await channel.cancelDispatch(input); await f.target.federation.attemptDispatch!.settled(p.offer.id)
+})
+
+test('settled captured during initial admission follows replacement work until inference cleanup finishes', async t => {
+  const modelEntered = deferred(), f = await fixture(t, { modelPost: signal => new Promise((_resolve, reject) => {
+    modelEntered.resolve(); signal.addEventListener('abort', () => reject(new Error('fixture stop')), { once: true })
+  }) }), p = await f.prepare(), admissionEntered = deferred(), gate = deferred()
+  let count = 0, returned = false
+  f.interceptRenew(async () => { if (++count === 1) { admissionEntered.resolve(); await gate.promise } })
+  const pending = f.outgoing.dispatch(p.grant)
+  await admissionEntered.promise
+  const lifetime = f.target.federation.attemptDispatch!.settled(p.offer.id).then(() => { returned = true })
+  gate.resolve(); await pending; await modelEntered.promise; await Promise.resolve()
+  assert.equal(returned, false, 'successful admission does not mean work has settled')
+  assert.ok(f.tg.snapshot().activeLease)
+  await f.outgoing.dispatchState(p.ref, true); await lifetime
+  assert.equal(returned, true); assert.equal(f.tg.snapshot().activeLease, null)
+})
+
+test('a delayed owner cancel for an expired grant cannot stop a newer attempt of the same run', async t => {
+  const f = await fixture(t, { modelPost: signal => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new Error('fixture stop')), { once: true })
+  }) })
+  f.hp.ttlMs = 300; f.hp.safetyMs = 10; f.tp.ttlMs = 300; f.tp.safetyMs = 10
+  const old = await f.prepare(); await f.outgoing.dispatch(old.grant); await waitFor(() => f.posts === 1)
+  f.home.time += 1000; f.target.time += 1000; f.clock.mono += 1000
+  f.home.runs.tick()
+  await waitFor(() => f.tg.snapshot().activeLease === null)
+  await f.target.federation.attemptDispatch!.settled(old.offer.id)
+  assert.equal(f.home.runs.get(f.run.id).state, 'interrupted')
+  assert.equal(f.home.runs.attempts(f.run.id).length, 1)
+  const next = await f.prepare(); assert.ok(next.attempt.token > old.attempt.token)
+  await f.outgoing.dispatch(next.grant); await waitFor(() => f.posts === 2)
+  const controller = new SimNode(keys('late-controller')); controller.time = f.target.time
+  t.after(() => controller.close()); f.target.trust(controller)
+  const channel = new FederationChannel({ local: controller.keys.identity, privateKey: controller.keys.privateKey, peer: f.target.keys.identity,
+    clock: () => controller.time, transport: async request => f.target.app.request(request) })
+  assert.equal((await channel.cancelDispatch({ ...old.ref, expiresAt: controller.time + 1000 })).status, 'lost')
+  assert.equal(f.target.federation.attemptDispatch!.state(next.offer.id).status, 'running')
+  assert.ok(f.tg.snapshot().activeLease)
+  await channel.cancelDispatch({ ...next.ref, expiresAt: controller.time + 1000 })
+  await f.target.federation.attemptDispatch!.settled(next.offer.id)
+  assert.equal(f.tg.snapshot().activeLease, null)
 })

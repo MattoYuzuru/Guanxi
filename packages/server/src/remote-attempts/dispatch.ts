@@ -313,7 +313,14 @@ export class AttemptDispatch {
     if (h) this.lose(h, 'canceled')
     return this.state(id)
   }
-  async settled(id: string): Promise<void> { await this.tasks.get(id)?.catch(() => undefined) }
+  async settled(id: string): Promise<void> {
+    // Admission can be replaced by work while this observer is awaiting it.
+    for (;;) {
+      const task = this.tasks.get(id)
+      if (!task) return
+      await task.catch(() => undefined)
+    }
+  }
   close(): void {
     if (this.closed) return
     for (const h of this.active.values()) { try { this.lose(h) } catch { h.controller.abort() } }

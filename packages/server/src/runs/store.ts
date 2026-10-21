@@ -258,10 +258,14 @@ export class RunStore implements HomeAuthority {
   private release(runId: string): void {
     this.write('UPDATE leases SET released=1 WHERE key=?', `run:${runId}/exec`)
   }
-  private syncCallback<T>(body: ((db: Db) => Synchronous<T>) | undefined): void {
-    const result = body?.(this.db)
-    if (result && typeof (result as { then?: unknown }).then === 'function') throw new RunError('invalid_input')
+  private syncResult(result: unknown): void {
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      // Reject the async boundary and observe late rejection; external effects cannot be undone.
+      void Promise.resolve(result).catch(() => undefined)
+      throw new RunError('invalid_input')
+    }
   }
+  private syncCallback<T>(body: ((db: Db) => Synchronous<T>) | undefined): void { this.syncResult(body?.(this.db)) }
   private remoteActor: { attemptId: string; executor: string } | undefined
   /** T0-only synchronous actor scope; the caller must derive executor from authenticated identity. */
   asRemoteExecutor<T>(attempt: Attempt, executor: string, body: () => Synchronous<T>): T {
@@ -269,7 +273,7 @@ export class RunStore implements HomeAuthority {
     this.remoteActor = { attemptId: attempt.id, executor }
     try {
       const result = body()
-      if (result && typeof (result as { then?: unknown }).then === 'function') throw new RunError('invalid_input')
+      this.syncResult(result)
       return result
     } finally { this.remoteActor = previous }
   }
@@ -330,7 +334,7 @@ export class RunStore implements HomeAuthority {
       const attempt = this.newAttempt(runId, null)
       this.db.prepare('INSERT INTO run_remote_bindings VALUES (?,?,?)').run(runId, attempt.id, executor)
       const result = initialize(attempt, this.db)
-      if (result && typeof (result as { then?: unknown }).then === 'function') throw new RunError('invalid_input')
+      this.syncResult(result)
       return result
     })
   }
