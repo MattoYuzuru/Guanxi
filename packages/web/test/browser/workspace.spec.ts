@@ -145,6 +145,7 @@ test('Terminal and Browser retain input and the same DOM node across move, float
     await popup.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Move block to…', exact: true }).click()
     await expect(page.getByLabel(label!, { exact: true })).toHaveValue(`returned-${name}`)
     expect(await page.getByLabel(label!, { exact: true }).evaluate(node => (node as any).__retainedIdentity)).toBe('original')
+    await expect(page.locator('.gx-dialog-backdrop')).toHaveCount(0)
   }
 })
 
@@ -429,4 +430,23 @@ test('a float dragged near the right and bottom retains normalized bounds after 
   const restored = await floating.boundingBox()
   expect(restored).not.toBeNull()
   for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(restored![key] - bounds![key])).toBeLessThan(2)
+})
+
+test('floating windows reject unsupported nested splits without losing a block', async ({ page }) => {
+  await open(page)
+  await move(page, 'Terminal', 'Floating')
+  const before = await state(page)
+  const source = await page.locator('.dv-tab').filter({ hasText: /^Browser$/ }).boundingBox()
+  const target = await page.locator('[data-block="guanxi.core/terminal"]').boundingBox()
+  expect(source).not.toBeNull(); expect(target).not.toBeNull()
+  await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height + 12, { steps: 5 })
+  await page.mouse.move(target!.x + target!.width - 8, target!.y + target!.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  const after = await state(page)
+  expect(after.engineState.groups.filter(group => group.zone === 'floating')).toHaveLength(1)
+  expect(after.engineState.groups.find(group => group.zone === 'floating')!.blocks).toEqual(['guanxi.core/terminal'])
+  expect(after.engineState.groups.find(group => group.zone === 'left')!.blocks).toEqual(before.engineState.groups.find(group => group.zone === 'left')!.blocks)
 })
