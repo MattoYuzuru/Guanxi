@@ -92,3 +92,18 @@ test('a newly registered value invalidates an unchanged fingerprint and purges s
     } finally { db.close() }
   } finally { await service.close(); await f.governor.close(); await f.close() }
 })
+
+test('overlapping builds share one writer and release the idle lease', async () => {
+  const f = await fixture(1), events: IndexEvent[] = []
+  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+    settings: { pollMs: 60_000 }, headroom: green, onIndexEvent: event => events.push(event) })
+  try {
+    await Promise.all([service.build(f.root), service.build(f.root)])
+    assert.equal(events.filter(event => event.type === 'build').length, 1)
+    assert.equal(events.filter(event => event.type === 'publish').length, 1)
+    assert.equal(events.filter(event => event.type === 'skip').length, 1)
+    const lease = f.governor.tryIdleLease(() => {})
+    assert.ok(lease, 'both callers settled after the writer released its lease')
+    lease.release()
+  } finally { await service.close(); await f.governor.close(); await f.close() }
+})

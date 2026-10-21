@@ -38,6 +38,7 @@ export class ProjectIndex {
   private readonly abort = new AbortController()
   private readonly timer: ReturnType<typeof setInterval>
   private building = false
+  private buildTask?: Promise<Provenance>
   private activeBuild?: AbortController
   private activeRoot?: string
   private readonly captured: { name: string; bytes: string }[]
@@ -169,6 +170,24 @@ export class ProjectIndex {
     return directory
   }
   async build(root: string, signal?: AbortSignal): Promise<Provenance> {
+    signal?.throwIfAborted()
+    // A query can schedule an idle tick just before an explicit build. Keep
+    // this service's writers in order; the governor still refuses other owners.
+    const previous = this.buildTask
+    const task = (async () => {
+      await previous?.catch(() => undefined)
+      return this.buildRoot(root, signal)
+    })()
+    this.buildTask = task
+    this.pending.add(task)
+    const settled = () => {
+      this.pending.delete(task)
+      if (this.buildTask === task) this.buildTask = undefined
+    }
+    void task.then(settled, settled)
+    return task
+  }
+  private async buildRoot(root: string, signal?: AbortSignal): Promise<Provenance> {
     const canonical = await this.root(root)
     this.abort.signal.throwIfAborted()
     if (!this.options.scrubber.isReady()) throw new Error('index_scrubber_unavailable')
