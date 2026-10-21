@@ -111,3 +111,14 @@ Run it once git metadata is writable. No other branch or repository file was tou
 
 The integrator can merge this lane. The three stale links above remain for a documentation
 owner to repair; the checker itself is ready for `npm run check:links`.
+
+## Integrator addition
+
+The integrator (Claude) added the kind `outside-root`: a relative link that resolves outside the
+repository root is reported even when the target happens to exist on the author's machine. On
+`main` this caught `docs/plans/evidence/R1.md`, whose link to `../../../../r1-review/` resolves
+only inside the lanes folder. New test 16b; replacing the `outside-root` return with a no-op makes
+16b fail. The integrator also verified the checker on edge cases that the specification did not
+list: nested brackets in link text, parentheses in a path, an escaped `\[`, Cyrillic headings with
+`&`, emoji, double hyphens, autolinks, directory links and links inside table rows. All were handled
+correctly. A full repository run takes about 0.13 s.

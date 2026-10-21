@@ -306,6 +306,11 @@ function inspectTarget({ rootAbs, absFile, target, anchorCache }) {
     resolved = resolve(dirname(absFile), decodedPath)
   }
 
+  // A link that leaves the repository works only on the machine that wrote it.
+  const fromRoot = relative(rootAbs, resolved)
+  if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    return { kind: 'outside-root', target, message: 'target is outside the repository' }
+  }
   if (!existsSync(resolved)) return { kind: 'missing-file', target, message: 'target does not exist' }
   if (fragmentPart === null) return null
 

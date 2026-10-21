@@ -163,6 +163,14 @@ test('16. machine-specific absolute paths are reported', t => {
   assert.deepEqual(kinds(checkLinks({ root, files: ['doc.md'] })), ['absolute-path@3'])
 })
 
+test('16b. links that leave the repository are reported even when the target exists', t => {
+  const parent = makeRoot(t)
+  write(parent, 'outside.md', '# Outside\n')
+  write(parent, 'repo/doc.md', '# Doc\n\n[t](../outside.md)\n[u](sub/../../outside.md#outside)\n')
+  const root = path.join(parent, 'repo')
+  assert.deepEqual(kinds(checkLinks({ root, files: ['doc.md'] })), ['outside-root@3', 'outside-root@4'])
+})
+
 test('17. fragments on non-Markdown targets are not checked', t => {
   const root = makeRoot(t)
   write(root, 'code.ts', 'export const x = 1\n')
