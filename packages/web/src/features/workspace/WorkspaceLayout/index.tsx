@@ -223,7 +223,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     const rejectDetachedSplit = (event: { group: DockviewGroupPanel | undefined; position: string; preventDefault: () => void }) => {
       if (event.group && event.group.api.location.type !== 'grid' && event.position !== 'center') event.preventDefault()
     }
-    subscriptions.current.push(api.onWillShowOverlay(rejectDetachedSplit), api.onWillDrop(event => { rejectDetachedSplit(event); dropZone = event.group ? zoneOf(event.group) : event.position === 'left' || event.position === 'right' || event.position === 'top' || event.position === 'bottom' ? event.position : 'center' }), api.onDidDrop(() => { dropZone = undefined }), api.onDidRemovePanel(panel => {
+    subscriptions.current.push(api.onWillShowOverlay(rejectDetachedSplit), api.onWillDrop(event => { rejectDetachedSplit(event); dropZone = event.group ? zoneOf(event.group) : event.position === 'left' || event.position === 'right' || event.position === 'top' || event.position === 'bottom' ? event.position : 'center' }), api.onDidDrop(() => { queueMicrotask(() => { dropZone = undefined }) }), api.onDidRemovePanel(panel => {
       queueMicrotask(() => {
         if (!alive.current || apiRef.current !== api || muted.current || api.getPanel(panel.id)) return
         latest.current.onHidden(panel.id)
@@ -231,7 +231,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         if (active) handle.focus(active)
       })
     }), api.onDidMovePanel(event => {
-      if (!groupZones.has(event.to.id)) groupZones.set(event.to.id, dropZone ?? groupZones.get(event.from.id) ?? 'center')
+      groupZones.set(event.to.id, dropZone ?? groupZones.get(event.to.id) ?? groupZones.get(event.from.id) ?? 'center')
       const zone = zoneOf(event.to)
       event.to.api.locked = zone !== 'center' && zone !== 'floating' && zone !== 'popout'
       if (!muted.current) latest.current.onMove(event.panel.id, zone)

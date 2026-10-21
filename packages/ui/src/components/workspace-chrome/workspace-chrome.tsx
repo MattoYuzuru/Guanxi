@@ -27,7 +27,7 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
   const [dialogContainer, setDialogContainer] = useState<HTMLDivElement | null>(null)
   if (props.kind === 'pane') return <section className="gx-workspace-pane" data-block={props.id} aria-label={props.title} tabIndex={-1}>
     <header className="gx-workspace-pane-header"><h2>{props.title}</h2><Menu><MenuTrigger render={<Button variant="ghost" />} aria-label={`${props.moveLabel} ${props.title}`}>{props.moveLabel}</MenuTrigger><MenuContent><MenuItem disabled={props.canMove === false} onClick={props.onMove}>{props.moveLabel}</MenuItem><MenuItem onClick={props.onHide}>{props.hideLabel}</MenuItem></MenuContent></Menu></header>
-    <div className="gx-workspace-pane-body">{props.description && <EmptyState title={props.description} />}{props.children}{props.draft && <label className="gx-workspace-field"><span>{props.draft.label}</span><Textarea value={props.draft.value} onChange={event => props.draft?.onChange(event.target.value)} /></label>}</div>
+    <div className="gx-workspace-pane-body">{props.description && <EmptyState title={props.description} />}{props.children}{props.draft && <label className="gx-workspace-field"><span>{props.draft.label}</span><Textarea aria-label={props.draft.label} value={props.draft.value} onChange={event => props.draft?.onChange(event.target.value)} /></label>}</div>
   </section>
   if (props.kind === 'toolbar') return <div className="gx-workspace-toolbar" role="group" aria-label={props.label}>
     {props.fields.map(field => <ChoiceMenu key={field.label} {...field} disabled={props.busy} />)}

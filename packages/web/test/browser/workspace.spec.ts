@@ -65,6 +65,7 @@ async function pick(page: Page, label: string, value: string, keyboard = false) 
     await expect(items.nth(index)).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('menu')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: label, exact: true })).toBeFocused()
     return
   }
   await page.getByRole('button', { name: label, exact: true }).click()
@@ -77,8 +78,12 @@ async function move(page: Page, block: string, zone: string, keyboard = false) {
   await expect(page.getByRole('dialog', { name: 'Move block', exact: true })).toBeVisible()
   await pick(page, 'Block', block, keyboard)
   await pick(page, 'Destination', zone, keyboard)
-  await page.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Move block to…', exact: true }).focus()
-  await page.keyboard.press('Enter')
+  const confirm = page.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Move block to…', exact: true })
+  if (keyboard) {
+    await page.keyboard.press('Tab')
+    await expect(confirm).toBeFocused()
+    await page.keyboard.press('Enter')
+  } else await confirm.click()
   await expect(page.getByRole('dialog', { name: 'Move block', exact: true })).toHaveCount(0)
 }
 async function state(page: Page) { return page.evaluate(() => (window as any).__GUANXI_WORKSPACE__.snapshot() as LayoutDocument) }
