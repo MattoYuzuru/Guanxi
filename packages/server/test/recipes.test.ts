@@ -140,7 +140,7 @@ describe('P3-K canonical Recipe revision foundation', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 30)
+    assert.equal(version(seed), 31)
     const project = new ProjectStore(seed).create('Exact v21 Project', CREATED_AT)
     seed.prepare(
       `INSERT INTO quick_runs (
@@ -166,7 +166,7 @@ describe('P3-K canonical Recipe revision foundation', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 30)
+    assert.equal(version(retried), 31)
     assert.equal(count(retried, 'recipes'), 0)
     assert.equal(count(retried, 'recipe_revisions'), 0)
     assert.equal(tablesPayload(retried, new Set([
@@ -174,13 +174,13 @@ describe('P3-K canonical Recipe revision foundation', () => {
     ])), exactV21)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 30)
+    assert.equal(version(reopened), 31)
     assert.equal(tablesPayload(reopened, new Set([
       'recipes', 'recipe_revisions', 'recipe_job_snapshots', 'context_checkpoints', ...SESSION_LOG_TABLES,
     ])), exactV21)
     reopened.close()
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 30)
+    assert.equal(version(fresh), 31)
     fresh.close()
   })
 

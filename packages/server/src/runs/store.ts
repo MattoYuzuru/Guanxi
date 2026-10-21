@@ -8,7 +8,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import { RunError, TERMINAL_RUN_STATES, type Attempt, type PromiseRecord, type Run, type RunState,
   type TerminalRunState, type Wake } from './types.ts'
 
-interface Lease { key: string; epoch: number; token: number; holder: string; expires_at: number; released: number }
+interface Lease { key: string; epoch: number; token: number; holder: string; expires_at: number; released: number; regrant_after: number }
 export interface RunStoreOptions {
   db: Db
   log: SessionLog
@@ -63,13 +63,17 @@ export class RunStore {
       const prior = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
       // On an unclean restart wait out every possible old execution lease plus epsilon.
       // No PID heuristic or plain restart epoch bump can create a second writer.
-      if (prior && !prior.released && this.now() < prior.expires_at + this.maxTtl + EPSILON_MS) {
+      const activeExpiry = this.row<{ expiry: number | null }>("SELECT MAX(expires_at) AS expiry FROM leases WHERE key LIKE 'run:%/exec' AND released=0")?.expiry ?? 0
+      const priorBound = prior ? Math.max(prior.regrant_after, prior.expires_at + this.maxTtl + EPSILON_MS,
+        activeExpiry + EPSILON_MS) : 0
+      if (prior && !prior.released && this.now() < priorBound) {
         throw new RunError('writer_busy')
       }
       const token = (prior?.token ?? 0) + 1
-      this.db.prepare(`INSERT INTO leases VALUES (?,1,?,?,?,0)
+      this.db.prepare(`INSERT INTO leases (key,epoch,token,holder,expires_at,released,regrant_after) VALUES (?,1,?,?,?,0,?)
         ON CONFLICT(key) DO UPDATE SET token=excluded.token,holder=excluded.holder,
-        expires_at=excluded.expires_at,released=0`).run(HOME_KEY, token, this.ownerId, this.now() + this.ownerTtl)
+        expires_at=excluded.expires_at,released=0,regrant_after=excluded.regrant_after`).run(HOME_KEY, token, this.ownerId,
+        this.now() + this.ownerTtl, this.now() + this.ownerTtl + this.maxTtl + EPSILON_MS)
       this.owner = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)!
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
@@ -120,7 +124,8 @@ export class RunStore {
       this.point('begin')
       this.assertOwner()
       if (requiresReady && !this.scrubber.isReady()) throw new RunError('egress_not_ready')
-      this.write('UPDATE leases SET expires_at = ? WHERE key = ?', this.now() + this.ownerTtl, HOME_KEY)
+      this.write('UPDATE leases SET expires_at=?,regrant_after=? WHERE key=?', this.now() + this.ownerTtl,
+        this.now() + this.ownerTtl + this.maxTtl + EPSILON_MS, HOME_KEY)
       result = body()
       this.point('before_commit')
       this.db.exec('COMMIT')
@@ -182,7 +187,7 @@ export class RunStore {
   private grant(key: string, holder: string, ttl: number): Lease {
     const old = this.row<Lease>('SELECT * FROM leases WHERE key=?', key)
     if (old && !old.released && old.expires_at > this.now()) throw new RunError('stale_lease')
-    this.write(`INSERT INTO leases VALUES (?,1,?,?,?,0) ON CONFLICT(key) DO UPDATE SET
+    this.write(`INSERT INTO leases (key,epoch,token,holder,expires_at,released) VALUES (?,1,?,?,?,0) ON CONFLICT(key) DO UPDATE SET
       token=excluded.token,holder=excluded.holder,expires_at=excluded.expires_at,released=0`,
     key, (old?.token ?? 0) + 1, holder, this.now() + ttl)
     return this.row<Lease>('SELECT * FROM leases WHERE key=?', key)!

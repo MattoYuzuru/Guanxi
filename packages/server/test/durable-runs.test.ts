@@ -321,3 +321,19 @@ test('review R2: a completion arriving during the escalation handler stays deliv
   assert.equal(count(f, 'resolved'), 1)
   assert.equal(count(f, 'acknowledged'), 2)
 })
+
+test('review R3: lowering successor TTL cannot shorten the predecessor home safety bound', (t) => {
+  const f = runFixture(); let next: RunStore | null = null
+  t.after(() => { next?.close(); f.close() })
+  const run = f.store.create(); const oldAttempt = f.store.start(run.id)
+  assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
+    clock: () => RUN_TIME + 31_002, maxAttemptTtlMs: 1 }), code('writer_busy'))
+  assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
+    clock: () => RUN_TIME + 90_999, maxAttemptTtlMs: 1 }), code('writer_busy'))
+  next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
+    clock: () => RUN_TIME + 91_001, maxAttemptTtlMs: 1 })
+  next.reconcile()
+  const newAttempt = next.start(run.id)
+  assert.ok(newAttempt.token > oldAttempt.token)
+  assert.throws(() => f.store.complete(oldAttempt, 'completed'), code('stale_lease'))
+})

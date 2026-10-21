@@ -108,7 +108,7 @@ framework would otherwise provide (simulation, fault injection).
 
 The single-node orchestration substrate is implemented in
 [`packages/server/src/runs`](../../packages/server/src/runs/README.md) as `guanxi.durable-runs`
-providing `runs.durable`, with migration 30 and transactional K2 `run.lifecycle` events.
+providing `runs.durable`, with migrations 30–31 and transactional K2 `run.lifecycle` events.
 Legacy Chat Jobs remain on their compatible state machine. The explicit executor seam owns
 first-model-call observation; no live model executor is claimed here. Remote attempts,
 federation handover, power assertions, full wake packets and external lead protocols remain

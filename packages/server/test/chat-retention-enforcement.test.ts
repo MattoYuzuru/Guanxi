@@ -236,7 +236,7 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 30)
+    assert.equal(version(upgraded), 31)
     assert.equal(lifecycleColumns(upgraded).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(upgraded), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     assert.equal((upgraded.prepare(
@@ -261,12 +261,12 @@ describe('P3-E Chat TTL Maintenance and recoverable Trash', () => {
     upgraded.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 30)
+    assert.equal(version(reopened), 31)
     assert.deepEqual(lifecycleSchemaObjects(reopened), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     reopened.close()
 
     const fresh = openDb(':memory:')
-    assert.equal(version(fresh), 30)
+    assert.equal(version(fresh), 31)
     assert.equal(lifecycleColumns(fresh).length, 6)
     assert.deepEqual(lifecycleSchemaObjects(fresh), EXPECTED_LIFECYCLE_SCHEMA_OBJECTS)
     fresh.close()

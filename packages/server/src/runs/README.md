@@ -20,7 +20,7 @@ The default server boots this plugin but does **not** assert `alwaysOn`. Delegat
 `no_always_on_home` until the host explicitly supplies `runs.alwaysOn: true`. No power assertion
 or handover is invented for a laptop. Those integrations belong to F1/ADR-0038.
 
-Migration 30 extends the legacy Job store's persisted-first, transactional patterns in the
+Migrations 30–31 extend the legacy Job store's persisted-first, transactional patterns in the
 same node SQLite database. Its `durable_runs` table keeps the new state machine separate from
 legacy Job CHECKs and chat recovery. Legacy Jobs/routes keep their existing wire contract;
 R1's internal plugin API is not a new REST endpoint. The additive `run.lifecycle` session event
@@ -32,7 +32,9 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
   happen only after commit. A refused trace/readiness gate rolls the state change back.
 - The execution home has a durable owner lease. Competing stores are refused. Each mutation
   verifies its owner id/token and expiry, and renews the home lease. A clean close releases it.
-  An unclean takeover waits until `expires_at + maxAttemptTtlMs + 1000ms`. Default owner TTL
+  An unclean takeover waits for the predecessor's persisted
+  `regrant_after` (owner expiry + its maximum attempt TTL + 1000ms), also bounded by
+  persisted active execution expiries. A shorter successor configuration cannot shorten it. Default owner TTL
   is 30 s and maximum execution TTL 60 s. Recovery can therefore wait up to 91 s after a
   crash; startup reports `writer_busy` during that interval and must be retried. A plain
   restart does not bump the epoch. Backup restore/cloning and epoch handover belong to F1.
@@ -91,7 +93,8 @@ observations fail. These are caller observations, not provider balance or billin
 ## Migration and recovery
 
 Migration 30 adds `durable_runs`, `run_attempts`, `leases`, `promises`, `timers`, `outbox`,
-`run_resources`, `run_costs` and a backlog-by-thread index. Migrations 1–29 remain byte-identical
+`run_resources`, `run_costs` and a backlog-by-thread index. Migration 31 adds the persisted home regrant bound;
+migration 30 remains byte-identical. Migrations 1–29 remain byte-identical
 and are pinned by digest. No legacy Job is backfilled into an inferred agent run.
 
 Stop the node and back up SQLite with its WAL before upgrading. Prefer a forward fix. No

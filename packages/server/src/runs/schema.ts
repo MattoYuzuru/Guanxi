@@ -85,3 +85,8 @@ export const DURABLE_RUNS_MIGRATION = `
   CREATE INDEX idx_run_session ON durable_runs(session_id);
   CREATE INDEX idx_session_mirror_backlog_thread ON session_mirror_backlog(thread_id, job_id);
 `
+
+/** Migration 31: retain the predecessor's grace even if successor configuration shrinks. */
+export const DURABLE_RUN_HOME_BOUND_MIGRATION = `
+  ALTER TABLE leases ADD COLUMN regrant_after INTEGER NOT NULL DEFAULT 0;
+`
