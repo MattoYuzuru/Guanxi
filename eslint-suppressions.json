@@ -1,0 +1,278 @@
+{
+  "packages/web/src/App.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 8
+    }
+  },
+  "packages/web/src/components/ErrorBoundary.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 26
+    }
+  },
+  "packages/web/src/components/ui.tsx": {
+    "guanxi/no-inline-colours": {
+      "count": 11
+    },
+    "guanxi/no-literal-styles": {
+      "count": 7
+    },
+    "guanxi/reuse-primitives": {
+      "count": 7
+    },
+    "guanxi/semantic-classes": {
+      "count": 69
+    }
+  },
+  "packages/web/src/features/agent/ApprovalPrompt.tsx": {
+    "guanxi/no-inline-colours": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 10
+    }
+  },
+  "packages/web/src/features/agent/DiffViewer.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 31
+    }
+  },
+  "packages/web/src/features/agent/ToolCallCard.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 18
+    }
+  },
+  "packages/web/src/features/agent/WorkspacePicker.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 3
+    },
+    "guanxi/semantic-classes": {
+      "count": 19
+    }
+  },
+  "packages/web/src/features/attachments/AttachmentsPage.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 2
+    },
+    "guanxi/semantic-classes": {
+      "count": 27
+    }
+  },
+  "packages/web/src/features/catalog/CatalogRoute.tsx": {
+    "guanxi/import-boundaries": {
+      "count": 1
+    }
+  },
+  "packages/web/src/features/catalog/review-api.ts": {
+    "guanxi/import-boundaries": {
+      "count": 1
+    }
+  },
+  "packages/web/src/features/chat/ChatPage.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 65
+    }
+  },
+  "packages/web/src/features/chat/ChatReasoningArtifacts.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 7
+    }
+  },
+  "packages/web/src/features/chat/ChatRetentionInfo.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 10
+    }
+  },
+  "packages/web/src/features/chat/ChatTrashList.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 14
+    }
+  },
+  "packages/web/src/features/chat/ResourceConflictDecision.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 16
+    }
+  },
+  "packages/web/src/features/context/ContextPanel.tsx": {
+    "guanxi/no-inline-colours": {
+      "count": 11
+    },
+    "guanxi/semantic-classes": {
+      "count": 18
+    }
+  },
+  "packages/web/src/features/health/HealthGate.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 11
+    }
+  },
+  "packages/web/src/features/health/RuntimeStatus.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 45
+    }
+  },
+  "packages/web/src/features/inspector/InspectorPage.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 3
+    }
+  },
+  "packages/web/src/features/launcher/LauncherPage.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 12
+    }
+  },
+  "packages/web/src/features/models/AddFromOllama.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 17
+    }
+  },
+  "packages/web/src/features/models/CapabilityOverrides.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 17
+    }
+  },
+  "packages/web/src/features/models/CatalogCompare.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 7
+    }
+  },
+  "packages/web/src/features/models/CatalogFilters.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 2
+    },
+    "guanxi/semantic-classes": {
+      "count": 13
+    }
+  },
+  "packages/web/src/features/models/CatalogVariantInstall.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 2
+    },
+    "guanxi/semantic-classes": {
+      "count": 39
+    }
+  },
+  "packages/web/src/features/models/CompletionProbe.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 8
+    }
+  },
+  "packages/web/src/features/models/FitIndicator.tsx": {
+    "guanxi/no-inline-colours": {
+      "count": 7
+    },
+    "guanxi/semantic-classes": {
+      "count": 6
+    }
+  },
+  "packages/web/src/features/models/HuggingFaceDiscovery.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 47
+    }
+  },
+  "packages/web/src/features/models/HuggingFaceImportControl.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 13
+    }
+  },
+  "packages/web/src/features/models/InstalledEvidence.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 12
+    }
+  },
+  "packages/web/src/features/models/ModelCard.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 13
+    }
+  },
+  "packages/web/src/features/models/ModelCarousel.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 4
+    }
+  },
+  "packages/web/src/features/models/ModelPage.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 23
+    }
+  },
+  "packages/web/src/features/models/PullControl.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 8
+    }
+  },
+  "packages/web/src/features/projects/ProjectIcon.tsx": {
+    "guanxi/import-boundaries": {
+      "count": 1
+    },
+    "guanxi/no-literal-styles": {
+      "count": 1
+    }
+  },
+  "packages/web/src/features/projects/ProjectPresentationPicker.tsx": {
+    "guanxi/no-inline-colours": {
+      "count": 1
+    },
+    "guanxi/reuse-primitives": {
+      "count": 2
+    },
+    "guanxi/semantic-classes": {
+      "count": 7
+    }
+  },
+  "packages/web/src/features/projects/ProjectsPage.tsx": {
+    "guanxi/no-inline-colours": {
+      "count": 1
+    },
+    "guanxi/semantic-classes": {
+      "count": 17
+    }
+  },
+  "packages/web/src/features/quick-runs/QuickRunsPage.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 2
+    },
+    "guanxi/semantic-classes": {
+      "count": 21
+    }
+  },
+  "packages/web/src/features/recipes/RecipesPage.tsx": {
+    "guanxi/reuse-primitives": {
+      "count": 9
+    },
+    "guanxi/semantic-classes": {
+      "count": 46
+    }
+  },
+  "packages/web/src/features/settings/Glossary.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 6
+    }
+  },
+  "packages/web/src/features/settings/SettingsPage.tsx": {
+    "guanxi/semantic-classes": {
+      "count": 3
+    }
+  },
+  "packages/web/src/index.css": {
+    "guanxi/no-literal-css": {
+      "count": 152
+    }
+  }
+}
