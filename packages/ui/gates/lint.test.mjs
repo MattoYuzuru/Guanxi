@@ -195,3 +195,16 @@ test('M2 gates reject seeded config ignores and each disabled feature/plugin rul
     }
   }
 })
+
+test('M3 G9 rejects capitalised tag bindings and polymorphic defaults', async () => {
+  for (const source of [
+    "const Tag = 'button'; const x = <Tag/>",
+    "const Base = 'input'; const Tag = Base; const x = <Tag/>",
+    "const X = ({ as: Tag = 'button' }) => <Tag/>",
+    "const X = ({ as: Tag = 'dialog' }: Props) => <Tag/>",
+  ]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/reuse-primitives'), source)
+  assert.deepEqual(await lint('const X = ({ as: Tag = Button }) => <Tag/>'), [])
+})
+test('M3 G9 rejects style elements in JSX, aliases and factories', async () => {
+  for (const source of ["const x = <style>{'.x{color:red}'}</style>", "const Tag = 'style'; const x = <Tag/>", "const x = React.createElement('style')"]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/reuse-primitives'), source)
+})

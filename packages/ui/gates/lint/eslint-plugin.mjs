@@ -7,11 +7,13 @@ const unwrap = node => node && ['TSAsExpression', 'TSSatisfiesExpression', 'TSNo
 const keyOf = node => node?.type === 'Identifier' ? node.name : node?.value
 function resolveBinding(node, context, seen = new Set()) {
   node = unwrap(node)
-  if (!node || node.type !== 'Identifier' || seen.has(node)) return node
+  if (!node || !['Identifier', 'JSXIdentifier'].includes(node.type) || seen.has(node)) return node
   seen.add(node)
   for (let scope = context.sourceCode.getScope(node); scope; scope = scope.upper) {
     const variable = scope.set.get(node.name)
     if (variable) {
+      const name = variable.defs[0]?.name
+      if (name?.parent?.type === 'AssignmentPattern' && name.parent.left === name) return resolveBinding(name.parent.right, context, seen)
       if (variable.defs[0]?.node?.id && variable.defs[0].node.id.type !== 'Identifier') return node
       const init = variable.defs[0]?.node?.init
       return init ? resolveBinding(init, context, seen) : node
@@ -84,9 +86,14 @@ export const rules = {
     }
   }),
   'reuse-primitives': rule('G9 raw {{value}}; reuse a @guanxi/ui primitive.', context => {
-    const raw = /^(?:button|input|select|textarea|dialog)$/
+    const raw = /^(?:button|input|select|textarea|dialog|style)$/
     return {
-      JSXOpeningElement(node) { if (node.name.type === 'JSXIdentifier' && raw.test(node.name.name)) context.report({ node, messageId: 'violation', data: { value: node.name.name } }) },
+      JSXOpeningElement(node) {
+        if (node.name.type !== 'JSXIdentifier') return
+        const report = value => { if (raw.test(value)) context.report({ node, messageId: 'violation', data: { value } }) }
+        if (/^[a-z]/.test(node.name.name)) report(node.name.name)
+        else literalValues(node.name, context, report)
+      },
       CallExpression(node) { if (elementFactory(node.callee, context)) literalValues(node.arguments[0], context, value => { if (raw.test(value)) context.report({ node, messageId: 'violation', data: { value } }) }) },
     }
   }),
