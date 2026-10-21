@@ -28,3 +28,8 @@ await build({
 
 await cp(webDist, resolve(outDir, 'web'), { recursive: true })
 await chmod(outfile, 0o755)
+await build({
+  entryPoints: [resolve(workspaceRoot, 'packages/server/src/native-agent/sandbox-worker.ts')],
+  outfile: resolve(outDir, 'sandbox-worker.js'), bundle: true, platform: 'node', target: 'node22',
+  format: 'esm', external: ['@anthropic-ai/sandbox-runtime'],
+})

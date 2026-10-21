@@ -21,3 +21,8 @@ await build({
 })
 
 await chmod(outfile, 0o755)
+await build({
+  entryPoints: [resolve(packageRoot, 'src/native-agent/sandbox-worker.ts')],
+  outfile: resolve(outDir, 'sandbox-worker.js'), bundle: true, platform: 'node', target: 'node22',
+  format: 'esm', external: ['@anthropic-ai/sandbox-runtime'],
+})

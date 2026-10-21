@@ -51,6 +51,7 @@ if (typeof window !== 'undefined') {
 /* ─────────────────────────────── Разбор пути ──────────────────────────── */
 
 export type Route =
+  | { name: 'agent'; sessionId: string | null }
   | { name: 'launcher' }
   | { name: 'model'; modelName: string }
   | { name: 'chat'; threadId: string | null }
@@ -71,6 +72,7 @@ export function parseRoute(pathWithSearch: string): Route {
 
   const first = segments[0] as string
   const rest = segments.slice(1)
+  if (first === 'agent' && rest.length <= 1) return { name: 'agent', sessionId: rest[0] ?? null }
 
   if (first === 'models' && rest.length > 0) {
     // Имя модели содержит ':' (llama3.1:8b) — склеиваем остаток обратно.
@@ -103,6 +105,7 @@ export function parseRoute(pathWithSearch: string): Route {
 }
 
 export const paths = {
+  agent: (id?: string | null) => id ? `/agent/${encodeURIComponent(id)}` : '/agent',
   launcher: () => '/',
   model: (name: string) => `/models/${encodeURIComponent(name)}`,
   chat: (threadId?: string | null) =>

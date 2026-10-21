@@ -151,9 +151,11 @@ describe('server boot through the kernel', () => {
         assert.equal(server.context.governor, server.kernel.governor)
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
-        assert.equal(server.kernel.node.counters().fibers, 6, 'governor, Ollama, scrubber, session log, durable runs and connections')
-        assert.equal(server.kernel.node.counters().services, 8, 'kernel slots, governor, Ollama, egress, session log, durable runs, readiness and registry')
+        assert.equal(server.kernel.node.counters().fibers, 7, 'governor, Ollama, scrubber, session log, durable runs, connections and native agent')
+        assert.equal(server.kernel.node.counters().services, 9, 'kernel slots, governor, Ollama, egress, session log, durable runs, readiness, registry and native agent')
         assert.ok(server.kernel.node.service('connections.registry'))
+        assert.ok(server.kernel.node.service('agent.native'))
+        assert.ok(server.kernel.node.service('runs.durable'))
         assert.equal(server.kernel.node.service('connections.vault'), undefined)
         assert.ok(server.kernel.node.service('egress.scrubber'))
         // Exercise index.ts's mounted resolver after its service disappears.
