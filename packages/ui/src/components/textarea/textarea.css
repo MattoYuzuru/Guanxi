@@ -1,0 +1,5 @@
+.gx-textarea {
+  display: block;
+  resize: vertical;
+  padding-block: var(--spacing-6);
+}

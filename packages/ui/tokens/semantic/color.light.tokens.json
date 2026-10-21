@@ -40,6 +40,26 @@
       "info": {
         "$type": "color",
         "$value": "{primitive.color.status.light.info}"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.4}"
+      },
+      "pressed": {
+        "$type": "color",
+        "$value": "{primitive.color.neutral.light.5}"
+      },
+      "ghost": {
+        "$type": "color",
+        "$value": "{primitive.color.transparent}"
+      },
+      "accent-hover": {
+        "$type": "color",
+        "$value": "{primitive.color.accent-state.light.hover}"
+      },
+      "accent-pressed": {
+        "$type": "color",
+        "$value": "{primitive.color.accent-state.light.pressed}"
       }
     },
     "text": {

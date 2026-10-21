@@ -31,7 +31,9 @@ export function renderCSS(contexts, declarations, diff) {
     if (level !== 'glass') css += material(level, `[data-material="${level}"]`)
     css += material(level, `[data-material="${level}"] [data-elevation="3"], [data-material="${level}"][data-elevation="3"]`, true)
   }
-  css += material('glass', ':root:not([data-material]) [data-elevation="3"]', true)
+  // The default only: :where() keeps it at one attribute of specificity, so a nested
+  // [data-material] (catalog frames, per-pane materials) still decides its strong layers.
+  css += material('glass', ':where(:root:not([data-material])) [data-elevation="3"]', true)
 
   // Accessibility and resource constraints override every local material recipe, including
   // strong descendants. Important is confined to these mandatory fallback properties.

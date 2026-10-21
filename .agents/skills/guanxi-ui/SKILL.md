@@ -24,13 +24,15 @@ lands, the commands below are mandatory.
 ## Decision ladder
 
 1. **Find** an existing component in the catalog (Settings → Developer → Components, Storybook,
-   or `packages/ui/catalog/manifest.json`) before writing anything.
+   or `packages/ui/catalog/manifest.json`) before writing anything:
+   `node .agents/skills/guanxi-ui/scripts/find-component.mjs "<need>"`.
 2. **Reuse** an approved component as is.
 3. **Extend** an existing component with a variant (this makes an approved component `stale`
    until the owner re-approves).
 4. **Compose** a pattern from primitives.
 5. **Create** a new component only when nothing above fits: scaffold its folder with stories per
-   state, docs and a `review.json` set to `draft`. Never restyle a primitive's colour or type
+   state, docs and a `review.json` set to `draft`
+   (`node .agents/skills/guanxi-ui/scripts/new-component.mjs <id> --level pattern --states a,b`). Never restyle a primitive's colour or type
    through `className` in a feature.
 
 ## Rules

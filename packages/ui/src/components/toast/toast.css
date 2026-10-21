@@ -1,0 +1,92 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-toast-viewport {
+  /* Both gutters bound the width on a narrow screen; on a wide one the maximum width applies and
+     the auto margin keeps the stack at the right edge (N7). */
+  position: fixed;
+  right: var(--spacing-16);
+  bottom: var(--spacing-16);
+  left: var(--spacing-16);
+  margin-left: auto;
+  z-index: var(--layer-toast);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--spacing-8);
+  @apply max-w-sm;
+  outline: none;
+}
+
+.gx-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-8);
+  padding: var(--spacing-12);
+  border-radius: var(--border-radius-panel);
+  @apply transition;
+  transition-duration: var(--motion-fade-medium);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+.gx-toast[data-starting-style],
+.gx-toast[data-ending-style] {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+}
+
+.gx-toast[data-ending-style] {
+  transition-duration: var(--motion-fade-fast);
+  transition-timing-function: var(--motion-easing-exit);
+}
+
+.gx-toast-icon {
+  display: inline-flex;
+  padding-top: var(--spacing-2);
+}
+
+.gx-toast-icon svg {
+  width: var(--icon-size-18);
+  height: var(--icon-size-18);
+}
+
+.gx-toast[data-tone='info'] .gx-toast-icon {
+  color: var(--color-text-info);
+}
+
+.gx-toast[data-tone='success'] .gx-toast-icon {
+  color: var(--color-text-success);
+}
+
+.gx-toast[data-tone='warning'] .gx-toast-icon {
+  color: var(--color-text-warning);
+}
+
+.gx-toast[data-tone='error'] .gx-toast-icon {
+  color: var(--color-text-danger);
+}
+
+.gx-toast-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.gx-toast-title {
+  margin: 0;
+  font-size: var(--font-text-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-line-height-ui);
+}
+
+.gx-toast-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+}
+
+.gx-toast-action {
+  margin-top: var(--spacing-6);
+}

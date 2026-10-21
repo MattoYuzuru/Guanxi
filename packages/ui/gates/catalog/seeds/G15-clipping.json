@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/gates/catalog/fixtures/browser/selected.json": "{\"stories\":[\"g15--frame-clip\"],\"fixtures\":true}"
+  },
+  "expectedError": "clipped text in g15--frame-clip"
+}

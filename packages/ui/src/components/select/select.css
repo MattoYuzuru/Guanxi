@@ -1,0 +1,122 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+  min-width: var(--layout-container-3xs);
+  min-height: var(--control-height);
+  padding-inline: var(--spacing-8);
+  border: var(--border-width-regular) solid var(--color-border-control);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+  cursor: pointer;
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-select-trigger:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-select-trigger:not([data-disabled]) {
+  /* The canvas keeps the muted placeholder at 4.5:1; the hover fill would not. */
+  background-color: var(--color-background-primary);
+}
+
+.gx-select-trigger[data-invalid] {
+  border-color: var(--color-border-danger);
+}
+
+.gx-select-trigger[data-disabled] {
+  border-color: var(--color-border-primary);
+  background-color: var(--color-background-disabled);
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.gx-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gx-select-value[data-placeholder] {
+  color: var(--color-text-tertiary);
+}
+
+.gx-select-icon {
+  display: inline-flex;
+  color: var(--color-text-tertiary);
+}
+
+.gx-select-icon svg,
+.gx-select-item-indicator svg {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+}
+
+.gx-select-positioner {
+  /* Base UI sets this inline on the positioner; the default keeps it defined. */
+  --anchor-width: auto;
+  --available-height: none;
+  z-index: var(--layer-popover);
+}
+
+.gx-select-content {
+  min-width: var(--anchor-width);
+  max-height: var(--available-height);
+  padding: var(--spacing-4);
+  overflow-y: auto;
+  border-radius: var(--border-radius-control);
+  outline: none;
+}
+
+.gx-select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+  min-height: var(--row-height);
+  padding-inline: var(--spacing-8);
+  border-radius: var(--border-radius-inline);
+  color: var(--color-text-primary);
+  font-size: var(--font-text-size);
+  cursor: default;
+  outline: none;
+  user-select: none;
+}
+
+.gx-select-item[data-highlighted] {
+  background-color: var(--color-background-hover);
+}
+
+.gx-select-item[data-disabled] {
+  color: var(--color-text-disabled);
+}
+
+.gx-select-item-indicator {
+  display: inline-flex;
+  color: var(--color-text-accent);
+}
+
+.gx-select-group-label {
+  padding: var(--spacing-4) var(--spacing-8);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+@media (forced-colors: active) {
+  .gx-select-trigger {
+    border-color: ButtonText;
+  }
+
+  .gx-select-item[data-highlighted] {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+}

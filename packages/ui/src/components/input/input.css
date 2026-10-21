@@ -1,0 +1,58 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-input,
+.gx-textarea {
+  box-sizing: border-box;
+  @apply w-full;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: var(--spacing-4) var(--spacing-8);
+  border: var(--border-width-regular) solid var(--color-border-control);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-input::placeholder,
+.gx-textarea::placeholder {
+  color: var(--color-text-tertiary);
+  opacity: 1;
+}
+
+.gx-input:hover:not(:disabled),
+.gx-textarea:hover:not(:disabled),
+[data-gx-force~='hover'] .gx-input,
+[data-gx-force~='hover'] .gx-textarea {
+  background-color: var(--color-background-primary);
+}
+
+.gx-input[data-invalid],
+.gx-textarea[data-invalid] {
+  border-color: var(--color-border-danger);
+}
+
+.gx-input:disabled,
+.gx-textarea:disabled {
+  border-color: var(--color-border-primary);
+  background-color: var(--color-background-disabled);
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.gx-input:read-only:not(:disabled),
+.gx-textarea:read-only:not(:disabled) {
+  background-color: var(--color-background-tertiary);
+}
+
+@media (forced-colors: active) {
+  .gx-input,
+  .gx-textarea {
+    border-color: CanvasText;
+  }
+}

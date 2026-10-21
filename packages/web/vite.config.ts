@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { apiPortFromEnv, webPortFromEnv } from './dev-ports.ts'
 
 const contractSrc = fileURLToPath(new URL('../contract/src/index.ts', import.meta.url))
+const uiRoot = fileURLToPath(new URL('../ui', import.meta.url))
 const webPort = webPortFromEnv(process.env)
 const apiPort = apiPortFromEnv(process.env)
 
@@ -16,10 +17,28 @@ export default defineConfig({
       // Контракт исполняется из исходников (внутри — импорты с .ts),
       // поэтому резолвим его напрямую и не даём Vite его пре-бандлить.
       '@guanxi/contract': contractSrc,
+      // @guanxi/ui is source too; only the lazily loaded catalog route imports it today.
+      '@guanxi/ui/catalog': `${uiRoot}/catalog/index.ts`,
+      '@guanxi/ui': `${uiRoot}/src/index.ts`,
     },
   },
   optimizeDeps: {
-    exclude: ['@guanxi/contract'],
+    exclude: ['@guanxi/contract', '@guanxi/ui'],
+    // The dependency scanner does not follow import.meta.glob (catalog stories), so Base UI
+    // would be discovered late and pre-bundled with a second React copy. List it up front.
+    include: [
+      '@base-ui/react/button',
+      '@base-ui/react/checkbox',
+      '@base-ui/react/dialog',
+      '@base-ui/react/input',
+      '@base-ui/react/menu',
+      '@base-ui/react/popover',
+      '@base-ui/react/select',
+      '@base-ui/react/switch',
+      '@base-ui/react/tabs',
+      '@base-ui/react/toast',
+      '@base-ui/react/tooltip',
+    ],
   },
   server: {
     port: webPort,

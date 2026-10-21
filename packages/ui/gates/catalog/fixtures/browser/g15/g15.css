@@ -1,0 +1,15 @@
+/* G15 seeded violation: a fixed box that hides overflow (only the English text fits). */
+.gx-seeded-fixed-width {
+  display: inline-block;
+  width: 7.5em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* G15 seeded violation: the regime frame clips its content. */
+[data-gx-regime]:has(.gx-seeded-frame-clip) {
+  width: 20px;
+  min-height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}

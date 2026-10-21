@@ -1,0 +1,82 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: var(--target-minimum);
+  color: var(--color-text-primary);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+  cursor: pointer;
+}
+
+.gx-choice[data-disabled] {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.gx-checkbox {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  padding: 0;
+  border: var(--border-width-regular) solid var(--color-border-control);
+  border-radius: var(--border-radius-inline);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-on-accent);
+  cursor: inherit;
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+/* Keeps a 24 px target when the checkbox has no visible label. */
+.gx-checkbox::after {
+  content: '';
+  position: absolute;
+  @apply -inset-1;
+}
+
+.gx-checkbox:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-checkbox:not([data-disabled]) {
+  background-color: var(--color-background-hover);
+}
+
+.gx-checkbox[data-checked],
+.gx-checkbox[data-indeterminate] {
+  border-color: var(--color-border-accent);
+  background-color: var(--color-background-accent);
+}
+
+.gx-checkbox[data-disabled] {
+  border-color: var(--color-border-primary);
+  background-color: var(--color-background-disabled);
+  color: var(--color-text-disabled);
+}
+
+.gx-checkbox-indicator {
+  display: inline-flex;
+}
+
+.gx-checkbox-indicator svg {
+  width: var(--spacing-12);
+  height: var(--spacing-12);
+  stroke-width: var(--icon-stroke);
+}
+
+@media (forced-colors: active) {
+  .gx-checkbox {
+    border-color: ButtonText;
+  }
+
+  .gx-checkbox[data-checked],
+  .gx-checkbox[data-indeterminate] {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+}
