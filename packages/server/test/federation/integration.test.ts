@@ -80,3 +80,23 @@ test('P6 revoked configured peer does not fail kernel boot or regain trust', asy
     } finally { await second!.node.dispose() }
   } finally { db.close() }
 })
+
+test('synchronize continues after a not_home stream and imports the next stream', async () => {
+  const home = new SimNode(identity('home')); const peer = new SimNode(identity('peer'))
+  try {
+    home.trust(peer); peer.trust(home)
+    const writer = home.log.open('live', {kind:'agent'}); writer.close()
+    for (const streamId of ['moved','live']) peer.federation.replicas.bind({kind:'session',streamId,sessionId:streamId,homeNodeId:'home',homeEpoch:1,ownerAccountId:'owner'})
+    home.federation.replicas.bind(peer.federation.replicas.binding('live'))
+    const requested: string[] = []
+    const channel = new FederationChannel({local:peer.keys.identity,privateKey:peer.keys.privateKey,peer:home.keys.identity,clock:()=>peer.time,transport:async(request)=>{
+      const path = new URL(request.url).pathname; requested.push(path)
+      if (path.endsWith('/replicas/moved')) return Response.json({code:'not_home'},{status:409})
+      return home.app.request(request)
+    }})
+    await assert.doesNotReject(() => channel.synchronize(peer.federation,['moved','live']), 'not_home is isolated to that stream')
+    assert.ok(requested.includes('/api/federation/replicas/live'))
+    assert.equal(peer.federation.replicas.read('live').length, 2)
+    assert.equal(peer.federation.replicas.read('moved').length, 0)
+  } finally { home.close(); peer.close() }
+})

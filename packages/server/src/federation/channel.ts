@@ -30,7 +30,11 @@ export class FederationChannel {
       method, headers: { 'X-Guanxi-Node': canonical(auth), 'Content-Type': 'application/json' },
       ...(method === 'GET' ? {} : { body: canonical(body) }), redirect: 'error',
     }))
-    if (!response.ok) throw new FederationError('peer_refused', response.status)
+    if (!response.ok) {
+      const error = await response.json().catch(() => null) as {code?: unknown} | null
+      if (response.status === 409 && error?.code === 'not_home') throw new FederationError('not_home')
+      throw new FederationError('peer_refused', response.status)
+    }
     return response.json()
   }
   private async negotiate(): Promise<{ readOnly: boolean }> {
@@ -53,8 +57,12 @@ export class FederationChannel {
     }
     for (const stream of streamIds) {
       if (local.replicas.binding(stream).homeNodeId !== peer.id) continue
-      const result=z.object({entries:z.array(replicaEntrySchema)}).strict().parse(await this.request('GET',`/replicas/${encodeURIComponent(stream)}`))
-      local.replicas.ingest(peer,result.entries)
+      try {
+        const result=z.object({entries:z.array(replicaEntrySchema)}).strict().parse(await this.request('GET',`/replicas/${encodeURIComponent(stream)}`))
+        local.replicas.ingest(peer,result.entries)
+      } catch (error) {
+        if (!(error instanceof FederationError) || error.code !== 'not_home') throw error
+      }
     }
     return { readOnly: false }
   }
