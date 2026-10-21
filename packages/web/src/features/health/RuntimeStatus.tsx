@@ -113,7 +113,7 @@ export function RuntimeStatusView({
             <ModelsProjection snapshot={data} />
             <HostProjection host={data.host} />
           </div>
-          <p className="mt-1 text-2xs text-muted">
+          <p className="mt-1 text-2xs text-secondary">
             {translate('runtime.sampled')} · {formatDateTime(data.observedAt)}
           </p>
         </details>

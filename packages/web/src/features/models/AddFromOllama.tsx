@@ -267,9 +267,9 @@ export function AddFromOllama({
         {state.kind === 'preview' && (
           <div className="mt-3 space-y-3" role="status" aria-live="polite">
             <div className="rounded-md border border-divider bg-inset p-3">
-              <p className="text-2xs text-muted">{translate('models.addOllama.normalized')}</p>
+              <p className="text-2xs text-secondary">{translate('models.addOllama.normalized')}</p>
               <p className="min-w-0 break-all font-mono text-sm">{state.preview.normalizedModelName}</p>
-              <p className="mt-2 text-2xs text-muted">
+              <p className="mt-2 text-2xs text-secondary">
                 {state.preview.inputKind === 'official_page_url'
                   ? translate('models.addOllama.kind.url')
                   : translate('models.addOllama.kind.name')}

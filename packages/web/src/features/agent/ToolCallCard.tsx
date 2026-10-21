@@ -87,7 +87,7 @@ export function ToolCallCard({
           </Badge>
         )}
 
-        <span className="ml-auto shrink-0 font-mono text-2xs text-muted tabular-nums">
+        <span className="ml-auto shrink-0 font-mono text-2xs text-secondary tabular-nums">
           {call.durationMs !== null ? formatDuration(call.durationMs) : ''}
         </span>
       </button>

@@ -169,7 +169,7 @@ export function FitIndicator({
             </div>
           )}
 
-          <p className="mt-2 text-2xs text-muted">{translate(basis.hint)}</p>
+          <p className="mt-2 text-2xs text-secondary">{translate(basis.hint)}</p>
         </div>
       </Disclosure>
     </div>

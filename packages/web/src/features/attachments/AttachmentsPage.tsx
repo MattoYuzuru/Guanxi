@@ -401,7 +401,7 @@ function AttachmentScopePanel({
             className="mt-2 block w-full min-w-0 text-xs file:mr-2 file:rounded-md file:border file:border-control file:bg-surface file:px-3 file:py-1.5 file:text-xs"
           />
         </label>
-        <p className="mt-2 text-2xs text-muted">
+        <p className="mt-2 text-2xs text-secondary">
           {enabled
             ? translate('attachments.file.hint').replace('{maxBytes}', formatBytes(policy.maxBytes))
             : translate('attachments.policy.unavailable')}

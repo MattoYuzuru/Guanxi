@@ -775,7 +775,7 @@ export function MessageView({ message }: { message: Message }) {
           <Badge tone={message.isCompaction ? 'yellow' : 'neutral'}>
             {message.isCompaction ? translate('chat.message.summary') : translate('chat.message.system')}
           </Badge>
-          <span className="text-2xs text-muted">{formatTime(message.createdAt)}</span>
+          <span className="text-2xs text-secondary">{formatTime(message.createdAt)}</span>
         </div>
         <Markdown source={message.content} />
       </div>
@@ -794,7 +794,7 @@ export function MessageView({ message }: { message: Message }) {
             : 'w-full',
         )}
       >
-        <div className="mb-1 flex items-center gap-2 text-2xs text-muted">
+        <div className="mb-1 flex items-center gap-2 text-2xs text-secondary">
           <span>{user ? translate('chat.role.you') : message.role === 'assistant' ? PRODUCT_NAME : translate('chat.role.tool')}</span>
           <span>{formatTime(message.createdAt)}</span>
           {message.usage?.cacheHit && <Badge tone="green">{translate('chat.cache.badge')}</Badge>}

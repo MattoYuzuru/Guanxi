@@ -221,7 +221,7 @@ export function CatalogVariantInstall({
                     'min-h-11 min-w-0 flex-1 rounded border px-2 py-1 text-left font-mono text-2xs transition-colors sm:min-h-8',
                     selectedNow
                       ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)]'
-                      : 'border-divider text-muted hover:border-control',
+                      : 'border-divider text-secondary hover:border-control',
                     'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]',
                     'disabled:cursor-not-allowed disabled:opacity-45',
                   )}
@@ -420,15 +420,15 @@ function VariantFacts({
         {variant.parameterSize ?? translate('models.catalogVariant.unknown')}
       </p>
       {variant.contextLength !== null ? (
-        <p className="text-2xs text-muted">
+        <p className="text-2xs text-secondary">
           {translate('models.catalogVariant.claimedContext')}: {formatContextLength(variant.contextLength)}
         </p>
       ) : null}
       <VariantFit variant={variant} />
-      <p className="text-2xs text-muted">
+      <p className="text-2xs text-secondary">
         {sourceLabel(variant)} · {freshnessLabel(variant)}
       </p>
-      <p className="text-2xs text-muted">
+      <p className="text-2xs text-secondary">
         {translate('models.catalogVariant.source.observed')}: {' '}
         {variant.sourceObservedAt
           ? formatDateTime(variant.sourceObservedAt)
@@ -440,7 +440,7 @@ function VariantFacts({
       </p>
       <VariantInstallation variant={variant} />
       {detailed ? (
-        <p className="text-2xs text-muted">
+        <p className="text-2xs text-secondary">
           {translate('models.catalogVariant.claimBoundary')}
         </p>
       ) : null}

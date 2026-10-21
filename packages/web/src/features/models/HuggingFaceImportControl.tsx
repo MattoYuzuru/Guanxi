@@ -345,7 +345,7 @@ function ImportTerminal({
         <Badge tone={success ? 'green' : warning ? 'yellow' : 'outline'}>{title}</Badge>
       </div>
       {state.kind === 'completed' ? (
-        <div className="mt-2 min-w-0 text-2xs text-muted">
+        <div className="mt-2 min-w-0 text-2xs text-secondary">
           <p>{translate('hf.import.installed')}</p>
           <p className="mt-1 min-w-0 break-all font-mono">
             {state.provenance.installation.normalizedModelReference} · {state.provenance.installation.digest}

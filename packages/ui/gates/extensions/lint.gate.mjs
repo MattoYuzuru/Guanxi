@@ -1,4 +1,5 @@
 import { ESLint } from 'eslint'
+import { insetMutedFindings } from '../../../../scripts/codemods/inset-contrast.mjs'
 import { resolve } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { auditSuppressions, suppressionErrors, suppressionPath } from '../lint/suppressions.mjs'
@@ -15,14 +16,16 @@ async function lint(ctx) {
   // The shared DS1-a context inventories web/UI. Plugin paths are added here, without
   // changing another lane's discovery contract. Overlays always go through ctx.read.
   const files = [...new Set([...ctx.files, ...await additionalSources(ctx.root, 'packages'), ...await additionalSources(ctx.root)])].sort()
-  const results = []
+  const results = [], contrastErrors = []
   for (const file of files) {
     if (!/\.(?:[cm]?[jt]sx?|css|svg|html)$/.test(file) || await eslint.isPathIgnored(resolve(ctx.root, file))) continue
-    const [result] = await eslint.lintText(await ctx.read(file), { filePath: file })
+    const text = await ctx.read(file)
+    if (file.endsWith('.tsx') && file.startsWith('packages/web/src/')) for (const hit of insetMutedFindings(file, text)) contrastErrors.push(`${file}:${hit.line} text-muted on bg-inset; use text-secondary for AA contrast`)
+    const [result] = await eslint.lintText(text, { filePath: file })
     results.push([file, result.messages.filter(m => m.severity === 2)])
   }
   const suppressions = await ctx.json(suppressionPath)
-  const errors = [...auditSuppressions(ctx.root, suppressions), ...suppressionErrors(suppressions, results)]
+  const errors = [...auditSuppressions(ctx.root, suppressions), ...suppressionErrors(suppressions, results), ...contrastErrors]
   const report = { results, errors, suppressions }
   cache.set(ctx, report)
   return report

@@ -280,7 +280,7 @@ export function Field({
 
 const INPUT_CLASS =
   'min-w-0 max-w-full w-full rounded-md border border-control bg-inset px-2 py-1.5 text-xs ' +
-  'placeholder:text-muted focus:border-[var(--accent)] ' +
+  'placeholder:text-secondary focus:border-[var(--accent)] ' +
   'disabled:opacity-50'
 
 export const Input = forwardRef<

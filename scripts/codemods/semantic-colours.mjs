@@ -1,4 +1,5 @@
 import ts from 'typescript'
+import { insetMutedFindings } from './inset-contrast.mjs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -35,6 +36,13 @@ export function rewrite(file, text, theme) {
   visit(ast)
   let output = text
   for (const edit of [...replacements].sort((a, b) => b.start - a.start)) output = output.slice(0, edit.start) + edit.to + output.slice(edit.end)
+  // Muted is only guaranteed on canvas. Promote inset text (including placeholders)
+  // after the surface rewrite, retaining the generated alias as the source of truth.
+  if (aliases.has('--color-text-secondary')) for (const edit of insetMutedFindings(file, output).reverse()) {
+    const to = `text-${aliases.get('--color-text-secondary')}`
+    output = output.slice(0, edit.start) + to + output.slice(edit.end)
+    replacements.push({ ...edit, from: 'text-muted', to })
+  }
   return { output, replacements, unresolved }
 }
 async function sources(root, dir = 'packages/web/src') {

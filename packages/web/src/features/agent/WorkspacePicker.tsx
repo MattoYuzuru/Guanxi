@@ -146,7 +146,7 @@ function SavedList({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs font-medium">{workspace.name}</span>
               <span
-                className="block truncate font-mono text-2xs text-muted"
+                className="block truncate font-mono text-2xs text-secondary"
                 title={workspace.rootPath}
               >
                 {workspace.rootPath}
@@ -154,7 +154,7 @@ function SavedList({
             </span>
             {!workspace.exists && <Badge tone="red">{translate('workspace.missing')}</Badge>}
             {workspace.id === currentId && <Badge tone="accent">{translate('workspace.selected')}</Badge>}
-            <span className="shrink-0 text-2xs text-muted">
+            <span className="shrink-0 text-2xs text-secondary">
               {formatRelativeTime(workspace.lastUsedAt ?? workspace.createdAt)}
             </span>
           </button>

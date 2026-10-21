@@ -84,7 +84,7 @@ export function InstalledEvidenceDetails({
                       <Badge key={capability} tone="accent">{capability}</Badge>
                     ))}
                   </div>
-                  <p className="mt-1 break-all text-muted">
+                  <p className="mt-1 break-all text-secondary">
                     {declaration.basis.artifact.state === 'exact_digest'
                       ? declaration.basis.artifact.digest
                       : translate('models.evidence.identityUnknown')}{' '}

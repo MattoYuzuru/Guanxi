@@ -278,7 +278,7 @@ export function CapabilityOverrides({
                 <div className="flex min-w-0 flex-wrap items-center gap-1">
                   <Badge tone="accent">{override.capability}</Badge>
                   <Badge tone="outline">{translate('models.override.state')}</Badge>
-                  <span className="text-muted">
+                  <span className="text-secondary">
                     {translate('models.override.source')}
                   </span>
                 </div>
@@ -305,11 +305,11 @@ export function CapabilityOverrides({
                   {translate('models.override.remove')}
                 </Button>
               </div>
-              <p className="mt-1 min-w-0 break-all text-muted">
+              <p className="mt-1 min-w-0 break-all text-secondary">
                 {translate('models.override.created')} {formatDateTime(override.createdAt)} ·{' '}
                 {translate('models.override.updated')} {formatDateTime(override.updatedAt)}
               </p>
-              <p className="mt-1 min-w-0 break-all font-mono text-muted">
+              <p className="mt-1 min-w-0 break-all font-mono text-secondary">
                 {override.normalizedModelReference} · {override.artifactDigest} · Ollama{' '}
                 {override.runtimeVersion}
               </p>

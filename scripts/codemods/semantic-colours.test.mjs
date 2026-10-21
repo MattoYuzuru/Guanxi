@@ -35,3 +35,11 @@ test('semantic codemod derives aliases from generated output, with no hardcoded 
     assert.equal(rewrite('fixture.ts', source, '').output, source)
   }
 })
+
+test('H1 promotes muted text and placeholders on inset surfaces, including descendants', () => {
+  const source = 'const x = <div className="bg-[var(--bg-subtle)]"><p className="text-[var(--fg-subtle)]"/><input className="bg-inset placeholder:text-muted"/></div>'
+  const result = rewrite('fixture.tsx', source, theme)
+  assert.equal(rewrite('fixture.ts', `const INPUT_CLASS = 'bg-inset ' + 'placeholder:text-muted'`, theme).output, `const INPUT_CLASS = 'bg-inset ' + 'placeholder:text-secondary'`)
+  assert.equal(result.output, 'const x = <div className="bg-inset"><p className="text-secondary"/><input className="bg-inset placeholder:text-secondary"/></div>')
+  assert.equal(rewrite('fixture.tsx', result.output, theme).output, result.output)
+})

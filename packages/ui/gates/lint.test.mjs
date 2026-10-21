@@ -142,3 +142,13 @@ test('G8 and G9 registered gates independently reject their own real overlaid se
     assert.ok(result.errors.some(e => e.includes(fixture.expectedError)), gate.id)
   }
 })
+
+test('H1 G9 rejects muted inset text and placeholders without a suppression escape', async () => {
+  const ctx = await createContext()
+  for (const code of ['<div className="bg-inset text-muted"/>', '<div className="bg-inset"><p className="text-muted"/></div>', '<input className="bg-inset placeholder:text-muted"/>']) {
+    const seeded = await ctx.withFiles({ 'packages/web/src/features/seeded/contrast.tsx': `const x = ${code}` })
+    const result = await gates.find(g => g.id === 'G9').check(seeded)
+    assert.equal(result.ok, false)
+    assert.ok(result.errors.some(e => e.includes('text-muted on bg-inset')), code)
+  }
+})

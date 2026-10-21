@@ -244,7 +244,7 @@ function pairRows(rows: VisibleRow[]): Array<{ left: Row | null; right: Row | nu
 
 function LineNumber({ value }: { value: number | null }) {
   return (
-    <td className="w-9 border-r border-divider bg-inset/60 px-1 py-px text-right align-top text-muted tabular-nums select-none">
+    <td className="w-9 border-r border-divider bg-inset/60 px-1 py-px text-right align-top text-secondary tabular-nums select-none">
       {value ?? ''}
     </td>
   )
@@ -304,7 +304,7 @@ function SkipRow({ count, colSpan }: { count: number; colSpan: number }) {
     <tr>
       <td
         colSpan={colSpan}
-        className="border-y border-divider bg-inset px-2 py-0.5 text-center text-muted select-none"
+        className="border-y border-divider bg-inset px-2 py-0.5 text-center text-secondary select-none"
       >
         · · · {translate(key, { count })} · · ·
       </td>
