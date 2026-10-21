@@ -4,7 +4,7 @@
  * temp directory; the production helper's init and sign are never invoked.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { createPublicKey, verify } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

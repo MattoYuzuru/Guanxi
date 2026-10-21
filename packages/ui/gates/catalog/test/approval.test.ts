@@ -10,7 +10,6 @@ import {
   componentSourceHash,
   decisionDigest,
   revocationPayload,
-  exportPublicKey,
   parseReviewRecord,
   parseTrustedKeys,
   serialiseRecord,
@@ -20,7 +19,6 @@ import {
   verifyKeySetChange,
   verifyRecordApproval,
   type ReviewRecord,
-  type TrustedKey,
 } from '../../../catalog/approval/index.ts'
 import { effectiveStatus } from '../../../catalog/approval/status.ts'
 import { p256TestKey } from '../lib/test-key.ts'
