@@ -96,3 +96,101 @@ No production or test defect was found in this round, so there is no additional 
 fix commit: `4a20756` already carries the behavior, test and suppression changes. This handoff
 commit records the evidence. No historical handoff existed, and no historical claim was
 rewritten.
+
+## Independent-review fixes (2026-10-22)
+
+Two confirmed U1c integration findings from the independent root review were fixed in separate
+commits on `codex/u1c-css` after `08b8b70`. The original three mapping cases in the Node gate
+are unchanged; the fourth reduced-motion case is strengthened. No other product CSS, generated
+file, snapshot or approval record was touched.
+
+### P2a — obsolete legacy font freeze (`4d37ab6`)
+
+`packages/web/test/browser/local-fonts.spec.ts`:
+
+- Replaced `H2: importing runtime tokens preserves legacy computed fonts and spacing` with
+  `H2: built app applies IBM Plex typography, density type size and spacing`. The old case
+  asserted `Inter`/`SF Mono` against a synthetic legacy build, which contradicts the approved
+  IBM Plex migration.
+- The replacement runs against the ordinary built app for light and dark and for compact and
+  comfortable density. It asserts IBM Plex Sans on `body`, IBM Plex Mono on `font-mono`,
+  13 px/19.5 px compact, 14 px/21 px comfortable, and the preserved `p-2` 8 px, `gap-3` 12 px
+  and `--spacing` 4 px checks.
+- Removed the now-unused `baselineDirectory`/`__legacy__` Vite build and static-server path
+  after `rg` confirmed H2 was its only user. The ordinary built-app Vite build, loopback
+  server, path jail, M1 32-local-face test and external-font-request test are unchanged.
+
+### P2b — explicit motion setting (`6ddf6bd`)
+
+`packages/web/src/index.css`:
+
+- Added the explicit reduced branch for `:root[data-motion="reduced"]`, its before/after
+  pseudo-elements, descendants and descendant pseudo-elements with
+  `animation: none !important` and `transition: none !important`.
+- Changed the OS media branch so every selector is rooted at
+  `:root:not([data-motion="full"])` (root, root pseudo-elements, descendants and descendant
+  pseudo-elements). An explicit full setting is therefore not blocked by OS reduce.
+- No token, raw duration, palette rule or other CSS changed.
+
+`packages/ui/gates/u1c-css.test.mjs`:
+
+- The fourth case now requires the explicit non-media-gated rule and exact six-selector
+  coverage, and requires every OS selector to carry the full-override predicate. Both branches
+  are asserted to contain only `animation: none !important` and `transition: none !important`,
+  with no raw duration, infinite iteration or longhand regression.
+- Before the CSS fix the same case failed first with `expected exactly one explicit
+  reduced-motion rule` and then, with only the explicit branch added, with the bare
+  `*, *::before, *::after` OS selectors. This is the recorded red evidence.
+
+`packages/web/test/browser/local-fonts.spec.ts`:
+
+- Added one built-app Chromium case covering light/dark × OS no-preference/reduce × setting
+  system/reduced/full (12 combinations). It inserts temporary `.anim-spin`, `.stream-caret`,
+  `.sheen` and transition probes, asserts `animationName: none`, `transitionProperty: none`
+  and an empty `getAnimations({ subtree: true })` result when the setting resolves to reduced,
+  and removes the probes in `finally`. It also asserts the animation names, `opacity`
+  transition property and at least three running animations otherwise, with an explicit-full
+  under OS-reduce positive control for both themes so the reduced checks cannot pass
+  vacuously.
+- This browser case has not been executed by this worker; root's Chromium run is pending.
+
+## New tests / regression envelope
+
+**New:** 1 Chromium test case (the 12-combination explicit/full motion matrix). The H2 browser
+case was replaced and the fourth Node case was expanded; neither increases the case count. The
+Node gate remains 4 cases.
+
+**Regression envelope (executed here):** `packages/ui/gates/u1c-css.test.mjs` 4/4,
+`packages/web/tsconfig.json` typecheck, and scoped ESLint/stylelint on
+`packages/web/src/index.css`.
+
+**Browser pending:** root must run the full browser gate in actual Chromium, including the
+rewritten H2 and the new motion matrix. This worker did not run Playwright and does not claim a
+browser pass.
+
+## Commands (this round)
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `nice -n 10 node --test packages/ui/gates/u1c-css.test.mjs` | 4 pass, 0 fail after the fix; the old CSS failed 1/4 as recorded above |
+| `nice -n 10 npx eslint packages/web/src/index.css` | exit 0 |
+| `nice -n 10 npx stylelint packages/web/src/index.css` | exit 0 |
+| `nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json` | exit 0 |
+| temporary-copy `eslint ... --prune-suppressions` | `packages/web/src/index.css` stays at 117 |
+
+The committed `eslint-suppressions.json` is unchanged: the new rules use `none` keywords and
+add no literal-CSS findings, so the count is verified unchanged at 117. No other allowance was
+touched.
+
+## Residuals (this round)
+
+- Root must run the full browser gate, including the rewritten H2 and the new motion matrix,
+  in actual Chromium; no browser/visual result is claimed here.
+- `packages/web/src/features/workspace/WorkspaceLayout/workspace-layout.css` has a separate
+  OS-only reduced-motion rule outside this finding's owned files. Inside `.workspace-layout`
+  that rule can still override an explicit full setting; it was not changed.
+- The prior residuals remain: 117 literal-CSS findings, the intentional 3→6 px inline focus
+  radius, and `step-end` on the caret until a step timing token exists.
+
+At handoff the fix commits are `4d37ab6` and `6ddf6bd` on top of `08b8b70`.
