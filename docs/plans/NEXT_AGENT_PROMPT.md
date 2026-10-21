@@ -7,11 +7,13 @@ Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/RE
 The owner authorized autonomous completion of current in-progress work and MS1 where feasible.
 Do not reopen an old lane prompt from its stale running label. Inspect branch, HEAD, live
 worker and latest handoff. Root owns central status; workers use isolated branches/handoffs.
+The owner currently requires **local-only work**. Do not use SSH/Fedora or other remote hosts
+until the owner changes that scope. Existing local Colima is available for bounded fixtures;
+D-194 still excludes real benchmark execution on this Mac.
 
 K4 follow-up 2 is merged as `8006cd8` after full gates;
 [evidence](evidence/K4-followup-2.md) retains exact scope and receipts. Remaining K4 work is
-input-artifact integration, positive HTTPS evidence (candidate `8803855`, independent review
-pending), expanded UI evidence and the platform envelope.
+input-artifact integration, positive HTTPS evidence (candidate `8803855`, independent scoped review passed), expanded UI evidence and the platform envelope.
 
 Current queue:
 
@@ -20,11 +22,11 @@ Current queue:
    user-presence signing is unverified; never create an owner key in ordinary tests.
 2. X1 `codex/x1-parent-read-boundary` (`647c5d0`): perform repaired-source Linux evidence
    inside an explicit integration envelope, then full gates. Preserve named X1 residuals.
-3. U1 `codex/u1-completion`: original local layout acceptance replayed, signed replication
-   implementation and catalog-manifest correction underway. Review pinned source before
-   integration. Shell and zero-suppression migration remain next.
+3. U1 `codex/u1-completion`: local layout and signed replication are independently reviewed
+   at `e5f8e0a`, including separate review fixes. Full integration gates are pending. Shell and
+   partial CSS token migration are active in separate worktrees; zero-suppression exit remains.
 4. B1 `codex/b1-completion`: request-admission `d70d56a` plus independent-review repair
-   `3b9a140` is reviewed. Integrate the separate immutable staging utility only after GPT review;
+   `3b9a140` is reviewed. Integrate staging only with review fix `0d1ff50` after the independent recheck;
    continue corpus/images, the real K3 pricing/meter boundary and paired execution. No fixture
    measurement activates ADR-0025 or authorizes an unbounded paid run.
 5. R3 `codex/ms1-r3` (`bf6a222`): independently reviewed ETA foundation, integration pending.
@@ -40,3 +42,8 @@ MS1 still requires K5/R3/F2/B3: real delegation to a 30B-class model on another 
 least six hours, zero lead tokens during hibernation, exactly one wake, all items/gates green
 in a clean checkout, and the B3 gate. Do not replace these observations with fixture passes.
 Prepare any owner-required action concretely while continuing independent work.
+
+Central-doc independent review found a stale B1 status row in `c09e2be`; the separate
+documentation correction names the reviewed request-admission source and active work.
+The R3 signal evaluator `5919d0b` is reviewed with 10 new independent passes but still needs
+actual relay integration; do not count an unused helper as the full judge stage.
