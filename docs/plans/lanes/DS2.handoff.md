@@ -421,3 +421,22 @@ absent from the production binary and present in the test binary.
 
 **Commit:** `c2b9d32 fix(signer): capture the actual policy arguments in tests` for the source
 and test changes; this review-fix evidence is in the following docs commit.
+
+## Coordinator final recheck (2026-10-21)
+
+A separate GPT 6.1 Sol / high reviewer closed both bounded review rounds at `cfb5a04`
+(source `c2b9d32`). The earlier two policy mutations now fail the intended assertions;
+production init/sign bypass patterns fail the dedicated call-site assertions. Independent
+selected tests and pinned scratch mutations passed with unchanged source (`check-rn6yf3uf`,
+`check-q06z47gl` under `~/.local/state/agent-dev`). The local review report is
+`Guanxi-lanes/reviews/codex-ds2-review-fixes-20261021.md`.
+
+Count clarification: review round 1 is 2 new + 43 existing = 45 total; round 2 is 2 new +
+45 previous = 47 total. Across both repairs this is **4 new / 43 regression envelope**,
+not 47 additional regression tests. Production/test Swift builds and server typecheck passed.
+
+Merge `3804065` incorporates published main `3f73ded` after the source checks. Its complete
+delta from `cfb5a04` is Markdown/Mermaid only; reviewed executable source did not change.
+This candidate remains unmerged into main. Full integrator gates, installed-helper custody,
+actual owner-present Secure Enclave signing and the previously named lifecycle residuals
+remain open. No component was approved or real owner key created/migrated by this task.
