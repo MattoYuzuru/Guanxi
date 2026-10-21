@@ -341,6 +341,19 @@ describe('component source hash covers what the component runs (GPT H3)', async 
     ['a template specifier with a substitution', "export const load = (name: string) => import(`../../lib/${name}.ts`)", /computed dynamic import in components\/a\/a\.tsx/],
     ['a fully computed template specifier', 'export const load = (name: string) => import(`${name}`)', /computed dynamic import in components\/a\/a\.tsx/],
   ]
+  // GPT N10/N2: a computed import in a reachable module of any type the resolver loads.
+  for (const extension of ['jsx', 'cts', 'cjs', 'mjs']) {
+    it(`refuses a computed import in a reachable .${extension} module`, () => {
+      const t = tree(`export { load } from '../../lib/loader.${extension}'`)
+      try {
+        writeFileSync(join(t.src, 'lib', `loader.${extension}`), 'export const load = (name) => import(`${name}`)\n')
+        assert.throws(() => componentSourceHash(t.dir), new RegExp(`computed dynamic import in lib/loader\\.${extension}`))
+      } finally {
+        t.dispose()
+      }
+    })
+  }
+
   for (const [name, code, expected] of unbound) {
     it(`refuses ${name}, which no hash can bind (GPT N10)`, () => {
       const t = tree(code)

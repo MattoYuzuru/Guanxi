@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 
 /** Editor, OS and tool leftovers that never belong to a component (and are often untracked). */
 const JUNK = /(^|\/)\.|\.(tmp|orig|rej|swp|bak)$|~$/
@@ -23,7 +23,34 @@ const SHARED_DIR = 'styles'
  * change alters every component, so it makes every approval stale.
  */
 const PACKAGE_INPUTS = ['generated/tokens.css', 'generated/theme.css', 'fonts']
-const SCRIPT = /\.(tsx?|mts|m?js)$/
+/**
+ * The one table of module types the hash accepts (N10): esbuild gets exactly these loaders, an
+ * input of any other type is refused, and every script loader's files go through the
+ * computed-import guard, so the guard and the resolver cannot drift apart.
+ */
+const LOADERS = {
+  '.js': 'js',
+  '.mjs': 'js',
+  '.cjs': 'js',
+  '.jsx': 'jsx',
+  '.ts': 'ts',
+  '.mts': 'ts',
+  '.cts': 'ts',
+  '.tsx': 'tsx',
+  '.css': 'css',
+  '.json': 'json',
+  '.md': 'text',
+  '.svg': 'file',
+  '.png': 'file',
+  '.woff2': 'file',
+} as const
+type Loader = (typeof LOADERS)[keyof typeof LOADERS]
+const SCRIPT_LOADERS = new Set<Loader>(['js', 'jsx', 'ts', 'tsx'])
+const loaderOf = (file: string): Loader | undefined => LOADERS[extname(file).toLowerCase() as keyof typeof LOADERS]
+const isScript = (file: string): boolean => {
+  const loader = loaderOf(file)
+  return loader !== undefined && SCRIPT_LOADERS.has(loader)
+}
 /** A bare package specifier (react, @base-ui/react/toast): the lockfile pins what it runs. */
 const PACKAGE_SPECIFIER = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(?:\/[\w.@-]+)*$/i
 
@@ -88,7 +115,8 @@ function bundledInputs(entries: string[], srcRoot: string): string[] {
       jsx: 'automatic',
       outdir: join(srcRoot, '.source-hash'),
       logLevel: 'silent',
-      loader: { '.css': 'css', '.md': 'text', '.svg': 'file', '.png': 'file', '.woff2': 'file' },
+      loader: { ...LOADERS },
+      resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mts', '.cts', '.mjs', '.cjs', '.css', '.json'],
     }).metafile
   } catch (cause) {
     const first = (cause as { errors?: Array<{ text: string; location?: { file: string } | null }> }).errors?.[0]
@@ -103,7 +131,13 @@ function bundledInputs(entries: string[], srcRoot: string): string[] {
       }
     }
   }
-  return Object.keys(metafile.inputs).map((input) => resolve(srcRoot, input))
+  const inputs = Object.keys(metafile.inputs).map((input) => resolve(srcRoot, input))
+  for (const input of inputs) {
+    if (!input.includes(`${sep}node_modules${sep}`) && loaderOf(input) === undefined) {
+      throw new SourceHashError(`unsupported module type ${relative(srcRoot, input).split(sep).join('/')}: the hash covers ${Object.keys(LOADERS).join(' ')}`)
+    }
+  }
+  return inputs
 }
 
 /**
@@ -112,9 +146,10 @@ function bundledInputs(entries: string[], srcRoot: string): string[] {
  * `import.meta.glob` is refused (N10).
  */
 function rejectComputedImports(file: string, root: string): void {
-  if (!SCRIPT.test(file)) return
+  if (!isScript(file)) return
   const ts = load('typescript') as typeof import('typescript')
-  const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  const kinds = { js: ts.ScriptKind.JS, jsx: ts.ScriptKind.JSX, ts: ts.ScriptKind.TS, tsx: ts.ScriptKind.TSX } as const
+  const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, kinds[loaderOf(file) as keyof typeof kinds])
   const visit = (node: import('typescript').Node): void => {
     const where = () => relative(root, file).split(sep).join('/')
     if (ts.isCallExpression(node)) {
@@ -160,7 +195,7 @@ export function componentSourceHash(dir: string): string {
     else if (stat.isFile()) files.add(path)
   }
   for (const file of own) rejectComputedImports(file, srcRoot)
-  for (const input of bundledInputs(own.filter((file) => SCRIPT.test(file)), srcRoot)) {
+  for (const input of bundledInputs(own.filter(isScript), srcRoot)) {
     if (input.includes(`${sep}node_modules${sep}`)) continue
     if (!input.startsWith(srcRoot + sep) && !input.startsWith(join(packageRoot, 'generated') + sep) && !input.startsWith(join(packageRoot, 'fonts') + sep)) {
       throw new SourceHashError(`${relative(srcRoot, input).split(sep).join('/')} is outside packages/ui/src`)
