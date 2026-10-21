@@ -93,3 +93,78 @@ test('R1 follow-up: home append tolerates an unavailable isTransaction property'
     }), { code: 'invalid_event' })
   } finally { log.close(); f.close() }
 })
+
+test('R1 follow-up: scheduler passes fail globally after losing the durable home', () => {
+  for (const operation of ['expiry', 'timers', 'reconcile', 'dispatch']) {
+    const f = runFixture()
+    const lead = f.store.start(f.store.create({ id: 'lead' }).id)
+    if (operation === 'timers' || operation === 'dispatch') {
+      const promise = f.store.delegate(lead, { key: 'child', deadline: RUN_TIME + 10 })
+      if (operation === 'dispatch') f.store.complete(f.store.start(promise.child_id), 'completed')
+    }
+    f.store.close()
+    const now = RUN_TIME + (operation === 'expiry' ? 61_000 : 20)
+    const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => now })
+    try {
+      next.heartbeat()
+      const before = { attempts: next.attempts('lead'), promises: next.promises('lead'), wakes: next.wakes('lead') }
+      f.db.prepare("UPDATE leases SET holder='successor',token=token+1 WHERE key='durable-runs/home'").run()
+      assert.throws(() => {
+        if (operation === 'dispatch') next.dispatch(() => true)
+        else if (operation === 'reconcile') next.reconcile()
+        else next.tick()
+      }, { code: 'stale_lease' }, operation)
+      assert.deepEqual(next.failures(), [], 'home loss must escape per-run failure isolation')
+      assert.deepEqual({ attempts: next.attempts('lead'), promises: next.promises('lead'), wakes: next.wakes('lead') }, before)
+    } finally { next.close(); f.close() }
+  }
+})
+
+test('R1 follow-up: closing a log releases only its own durable home writer rows', () => {
+  const f = runFixture()
+  const other = new SessionLog({ db: f.db, scrubber: f.scrubber, clock: () => new Date(RUN_TIME) })
+  try {
+    f.store.create({ id: 'home-one' }); f.store.create({ id: 'home-two' })
+    const otherHandle = other.open('other-writer', { kind: 'agent' })
+    const rows = () => f.db.prepare('SELECT session_id,writer_id,epoch,released_at FROM session_writers ORDER BY session_id').all()
+    const before = rows()
+    assert.equal(before.length, 3)
+    assert.ok(before.every((row) => row.released_at === null))
+    f.log.close()
+    const after = rows()
+    assert.deepEqual(after.filter((row) => row.session_id.startsWith('home-')).map((row) => row.released_at),
+      [new Date(RUN_TIME).toISOString(), new Date(RUN_TIME).toISOString()])
+    assert.deepEqual(after.find((row) => row.session_id === 'other-writer'), before.find((row) => row.session_id === 'other-writer'))
+    for (const id of ['home-one', 'home-two']) {
+      const handle = other.open(id, { kind: 'agent' })
+      assert.equal(handle.epoch, 2, 'a clean close permits immediate acquisition without expiry')
+      handle.close()
+    }
+    otherHandle.append({ type: 'assistant.message', data: { messageId: null, step: null, text: 'still live' } })
+  } finally { other.close(); f.close() }
+})
+
+test('R1 follow-up: busy transactions renew the home only at ownerTtl/3', () => {
+  const f = runFixture(':memory:', { ownerTtlMs: 300, maxAttemptTtlMs: 1_000 })
+  try {
+    // Observe actual UPDATEs, including no-op writes at the same timestamp.
+    f.db.exec(`CREATE TEMP TABLE home_renewals (expires_at INTEGER);
+      CREATE TEMP TRIGGER record_home_renewal AFTER UPDATE OF expires_at ON leases
+      WHEN NEW.key='durable-runs/home'
+      BEGIN INSERT INTO home_renewals VALUES (NEW.expires_at); END;`)
+    const renewals = () => f.db.prepare('SELECT expires_at FROM home_renewals ORDER BY rowid').all().map((row) => row.expires_at)
+    const attempt = f.store.start(f.store.create({ id: 'busy' }).id)
+    for (const elapsed of [0, 1, 50, 99]) {
+      f.setTime(RUN_TIME + elapsed); f.store.renew(attempt)
+      assert.deepEqual(renewals(), [], `no home update at ${elapsed}ms`)
+    }
+    f.setTime(RUN_TIME + 100); f.store.renew(attempt)
+    assert.deepEqual(renewals(), [RUN_TIME + 400])
+    for (const elapsed of [100, 101, 150, 199]) {
+      f.setTime(RUN_TIME + elapsed); f.store.renew(attempt)
+      assert.deepEqual(renewals(), [RUN_TIME + 400], `no second home update at ${elapsed}ms`)
+    }
+    f.setTime(RUN_TIME + 200); f.store.renew(attempt)
+    assert.deepEqual(renewals(), [RUN_TIME + 400, RUN_TIME + 500])
+  } finally { f.close() }
+})
