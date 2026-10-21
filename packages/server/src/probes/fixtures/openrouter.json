@@ -1,0 +1,6 @@
+{
+  "source": "https://openrouter.ai/docs/api/api-reference/api-keys/get-current-api-key",
+  "recordedAt": "2026-10-20T00:00:00.000Z",
+  "kind": "recorded documentation response; no account or credential",
+  "response": { "data": { "limit_remaining": 74.5 } }
+}

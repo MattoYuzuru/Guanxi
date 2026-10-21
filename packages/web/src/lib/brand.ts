@@ -1,3 +1,2 @@
-/** Single current product-name boundary; ADR-0007 owns future rename/migration. */
-export const PRODUCT_NAME = 'Guanxi'
-export const PRODUCT_FILE_PREFIX = 'guanxi'
+/** Compatibility re-export: browser and node share the same brand boundary. */
+export { PRODUCT_NAME, PRODUCT_FILE_PREFIX } from '@guanxi/contract'

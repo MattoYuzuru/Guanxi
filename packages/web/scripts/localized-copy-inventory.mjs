@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import ts from 'typescript'
 
 const USER_FACING_ATTRIBUTES = new Set([
@@ -264,13 +264,38 @@ function sourceFiles(directory) {
   })
 }
 
+function sourceModule(specifier, importer) {
+  const resolved = ts.resolveModuleName(specifier, importer, {
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    allowImportingTsExtensions: true,
+  }, ts.sys).resolvedModule?.resolvedFileName
+  return resolved && /\.tsx?$/u.test(resolved) && !resolved.endsWith('.d.ts') ? resolved : null
+}
+
 function exportedCopyIndex(files) {
   const index = new Map()
-  for (const path of files.filter((candidate) => candidate.endsWith('.ts'))) {
+  const load = (path) => {
+    if (!path) return new Map()
+    if (index.has(path)) return index.get(path)
     const sourceText = readFileSync(path, 'utf8')
     const source = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const exports = new Map()
+    index.set(path, exports) // Cyclic re-exports terminate without evaluating any module.
     for (const statement of source.statements) {
+      if (ts.isExportDeclaration(statement) && !statement.isTypeOnly && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+        const forwarded = load(sourceModule(statement.moduleSpecifier.text, path))
+        if (!statement.exportClause) {
+          for (const [name, values] of forwarded) exports.set(name, values)
+        } else if (ts.isNamedExports(statement.exportClause)) {
+          for (const binding of statement.exportClause.elements) {
+            if (binding.isTypeOnly) continue
+            const values = forwarded.get(binding.propertyName?.text ?? binding.name.text)
+            if (values) exports.set(binding.name.text, values)
+          }
+        }
+        continue
+      }
       if (!ts.isVariableStatement(statement)) continue
       if (!statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue
       for (const declaration of statement.declarationList.declarations) {
@@ -280,9 +305,10 @@ function exportedCopyIndex(files) {
         if (values.length > 0) exports.set(declaration.name.text, values)
       }
     }
-    if (exports.size > 0) index.set(path, exports)
+    return exports
   }
-  return index
+  for (const path of files.filter((candidate) => candidate.endsWith('.ts'))) load(path)
+  return { get: load }
 }
 
 function importedCopyValues(sourceText, filePath, exportIndex) {
@@ -290,19 +316,9 @@ function importedCopyValues(sourceText, filePath, exportIndex) {
   const values = new Map()
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
-    const specifier = statement.moduleSpecifier.text
-    if (!specifier.startsWith('.') || !statement.importClause?.namedBindings) continue
+    if (!statement.importClause?.namedBindings || statement.importClause.isTypeOnly) continue
     if (!ts.isNamedImports(statement.importClause.namedBindings)) continue
-    const target = resolve(dirname(filePath), specifier)
-    const candidates = [
-      target,
-      target.replace(/\.js$/u, '.ts'),
-      target.replace(/\.js$/u, '.tsx'),
-      `${target}.ts`,
-      `${target}.tsx`,
-    ]
-    const exported = candidates.map((candidate) => exportIndex.get(candidate)).find(Boolean)
-    if (!exported) continue
+    const exported = exportIndex.get(sourceModule(statement.moduleSpecifier.text, filePath))
     for (const binding of statement.importClause.namedBindings.elements) {
       const importedName = binding.propertyName?.text ?? binding.name.text
       const copies = exported.get(importedName)

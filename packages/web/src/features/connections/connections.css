@@ -1,0 +1,11 @@
+/* DS1-a tokens are available; DS1-b shared primitives are still pending. */
+.connections {
+  color: var(--color-text-primary);
+  background: var(--color-background-secondary);
+  border-color: var(--color-border-primary);
+  font-family: var(--font-family-sans);
+}
+.connections-muted { color: var(--color-text-secondary); }
+.connections-record { border-color: var(--color-border-primary); }
+.connections-heading { font-weight: var(--font-weight-heading); }
+.connections .font-mono { font-family: var(--font-family-mono); }

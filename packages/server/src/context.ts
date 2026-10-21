@@ -1,3 +1,4 @@
+import { normalizeHost } from './ollama/normalize-host.ts'
 /**
  * Сборка зависимостей приложения.
  *
@@ -59,10 +60,6 @@ export const DEFAULT_OLLAMA_HOST = process.env['OLLAMA_HOST']
   ? normalizeHost(process.env['OLLAMA_HOST'])
   : 'http://127.0.0.1:11434'
 
-function normalizeHost(host: string): string {
-  if (host.startsWith('http://') || host.startsWith('https://')) return host
-  return `http://${host}`
-}
 
 export interface AppContext {
   db: Db

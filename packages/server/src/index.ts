@@ -15,6 +15,11 @@ import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/listen-env.ts'
 import { defaultDbPath, openDb } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
+import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
+import type { VaultPolicy } from './vault/vault.ts'
+import type { Connections } from './connections/service.ts'
+import { ConnectionError } from './connections/errors.ts'
+import { connectionRoutes } from './connections/routes.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
@@ -105,6 +110,7 @@ export interface StartOptions {
   /** Директория со сборкой фронта. По умолчанию ищется рядом с пакетом. */
   webDir?: string
   devOrigins?: string[]
+  connectionsPolicy?: VaultPolicy
 }
 
 export async function start(options: StartOptions = {}) {
@@ -140,9 +146,31 @@ export async function start(options: StartOptions = {}) {
     throw error
   }
 
+  try {
+    await kernel.node.plugin(connectionsPlugin, {
+      databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
+      localHost: () => context.settings.get().ollamaHost,
+      policy: options.connectionsPolicy,
+    })
+  } catch (error) {
+    await context.maintenance?.close().catch(() => undefined)
+    await context.chatExecution.shutdown().catch(() => undefined)
+    context.jobService.closeSubscriptions()
+    await kernel.node.dispose().catch(() => undefined)
+    context.db.close()
+    throw error
+  }
+  let actualPort = port
   const server = createApp(context, {
+    host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
   })
+
+  server.route('/api/connections', connectionRoutes(() => {
+    const service = kernel.node.service<Connections>(CONNECTIONS_SERVICE)
+    if (!service) throw new ConnectionError('egress_unavailable', 'Connections unavailable')
+    return service
+  }, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>
@@ -152,7 +180,6 @@ export async function start(options: StartOptions = {}) {
   mountWeb(server, options.webDir ?? resolve(here, '../../web/dist'))
 
   let instance!: ReturnType<typeof serve>
-  let actualPort: number
   try {
     actualPort = await new Promise<number>((resolvePort, reject) => {
       const onError = (error: Error) => reject(error)
