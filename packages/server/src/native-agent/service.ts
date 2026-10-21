@@ -371,20 +371,20 @@ export class NativeAgents {
       },
       guard: () => { signal.throwIfAborted(); if (this.runs.checkExecution(attempt) === 'wrapping_up') throw new Error('report_only') },
     })
-    const model = selectedModel(this.connections, input)
-    const images: import('@earendil-works/pi-ai').ImageContent[] = []
-    for (const attachment of policy.attachmentMetadata ?? []) {
-      if (!attachment.mediaType.startsWith('image/')) continue
-      if (!model.input.includes('image')) throw new NativeAgentError('image_not_supported')
-      const file = await open(attachment.path, 'r')
-      try { images.push({ type: 'image', data: (await file.readFile()).toString('base64'), mimeType: attachment.mediaType }) } finally { await file.close() }
-    }
     let cleanupUnconfirmed = false
     let agent: Agent | null = null
     const stop = () => agent?.abort()
     signal.addEventListener('abort', stop, { once: true })
     try {
       await created.append({ type: 'agent.state', data: { status: 'running', error: null } })
+      const model = selectedModel(this.connections, input)
+      const images: import('@earendil-works/pi-ai').ImageContent[] = []
+      for (const attachment of policy.attachmentMetadata ?? []) {
+        if (!attachment.mediaType.startsWith('image/')) continue
+        if (!model.input.includes('image')) throw new NativeAgentError('image_not_supported')
+        const file = await open(attachment.path, 'r')
+        try { images.push({ type: 'image', data: (await file.readFile()).toString('base64'), mimeType: attachment.mediaType }) } finally { await file.close() }
+      }
       agent = new Agent({ initialState: { model, systemPrompt: orientation(policy), tools,
         ...(history.length ? { messages: [{ role: 'system', content: orientation(policy), toolsAdded: tools.map(({ name, description, parameters }) => ({ name, description, parameters })), timestamp: Date.now() }, ...history] } : {}) },
         streamFn: connectionStream(this.connections, this.scrubber, input, attempt, this.runs), toolExecution: 'sequential',

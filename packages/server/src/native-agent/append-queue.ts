@@ -70,7 +70,12 @@ export class NativeAppendQueue {
   enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
     if (this.failure !== null) return Promise.reject(this.failure)
     if (this.sealed) return Promise.reject(new NativeTraceError('trace_sealed'))
-    const run = this.tail.then(() => operation())
+    const run = this.tail.then(() => {
+      // An operation already queued before a failure must not append after the
+      // single terminal the failure handler wrote.
+      if (this.failure !== null) throw this.failure
+      return operation()
+    })
     // The caller sees the rejection only after the single failure handler has
     // written its terminal, so the service can distinguish a failed turn from
     // a still-running one without a microtask race.

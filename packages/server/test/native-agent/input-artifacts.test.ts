@@ -224,6 +224,37 @@ test('stop enqueues the intervention before the terminal pair and no native even
   await f.agents().close()
 })
 
+test('stop during an input artifact write leaves no event after the terminal', { timeout: 30_000 }, async (t) => {
+  const gate = deferred()
+  const started = deferred()
+  const f = await fixture(t, async (call) => call === 1
+    ? [{ type: 'toolCall', id: 'stop-write', name: 'file_write', arguments: { path: 'stop.txt', content: `${'s'.repeat(INPUT_INLINE_BYTES)}` } }]
+    : [{ type: 'text', text: 'unreachable' }], undefined, undefined, async () => runnerResult, {
+    inputArtifacts: (db, dataDir) => new SessionInputStore({
+      dataDir,
+      db,
+      hooks: {
+        beforeWrite: async () => {
+          started.resolve()
+          await gate.promise
+        },
+      },
+    }),
+  })
+  const { sessionId } = await f.agents().create({ ...f.input, prompt: 'stop the artifact write' })
+  await started.promise
+  f.agents().stop(sessionId)
+  gate.resolve()
+  assert.equal((await f.agents().wait(sessionId)).status, 'cancelled')
+  const events = f.log.readAll(sessionId, 'person')
+  const done = events.findIndex((event) => event.type === 'turn.done')
+  assert.ok(done >= 0)
+  assert.deepEqual(events.slice(done + 1).map((event) => event.type), ['run.lifecycle'])
+  assert.equal(events.some((event) => event.type === 'tool.call'), false)
+  const state = events.filter((event) => event.type === 'agent.state').at(-1)
+  assert.equal(state?.type === 'agent.state' ? state.data.status : null, 'cancelled')
+})
+
 test('keeps queued prompts inline in agent.queue and declares the v2 prompt residual honestly', { timeout: 30_000 }, async (t) => {
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })
