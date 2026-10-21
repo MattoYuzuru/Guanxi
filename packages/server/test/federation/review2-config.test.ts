@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 import { FederationChannel } from '../../src/federation/channel.ts'
 import { signValue } from '../../src/federation/crypto.ts'
+import { history } from './ingest-benchmark.ts'
 import { SimNode, identity } from './harness.ts'
 
 const present = (n: SimNode) => (n.federation.config.state()['["owner","grant","editor"]'] as { present: boolean } | undefined)?.present
@@ -103,5 +104,25 @@ test('P4e residual: revoked-author equivocation remains fatal without rewriting 
     // history itself still needs reviewed rebaseline, not an automatic overwrite.
     b.federation.config.ingest(y.federation.config.operations())
     assert.equal(present(b), false, 'targeted clean catch-up admits independent work')
+  } finally { nodes.forEach((n) => n.close()) }
+})
+
+
+test('self-review: ready queue waits for every missing origin before admission', () => {
+  const nodes = ['receiver', 'author', 'x', 'y'].map((id) => new SimNode(identity(id)))
+  const [receiver, author, x, y] = nodes as [SimNode, SimNode, SimNode, SimNode]
+  try {
+    for (const n of nodes) for (const p of nodes) n.trust(p)
+    const hx = history(x, 2); const hy = history(y, 2)
+    author.federation.config.ingest([...hx, ...hy])
+    const dependent = author.federation.config.create('editor', { kind: 'grant', present: false })
+    const first = receiver.federation.config.ingest([dependent, hx[0]!, hy[0]!, hx[1]!])
+    assert.equal(first.accepted, 3, 'one satisfied origin cannot release a multiply dependent op')
+    assert.equal(first.deferred, 1)
+    assert.equal(present(receiver), undefined)
+    const second = receiver.federation.config.ingest([dependent, hy[1]!])
+    assert.equal(second.accepted, 2, 'the final missing dot releases exactly one dependent')
+    assert.equal(second.deferred, 0)
+    assert.equal(present(receiver), false)
   } finally { nodes.forEach((n) => n.close()) }
 })

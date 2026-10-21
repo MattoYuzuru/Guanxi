@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Worker } from 'node:worker_threads'
+import { SharedConfig } from '../../src/federation/config.ts'
 import { history } from './ingest-benchmark.ts'
 import { SimNode, identity } from './harness.ts'
 
@@ -67,5 +68,29 @@ test('N1: missing admissible context is checked before signature verification', 
     const retry = receiver.federation.config.ingest([invalid, operations[0]!])
     assert.equal(retry.accepted, 1)
     assert.equal(retry.reasons.unauthenticated, 1, 'ready operations still require valid signatures')
+  } finally { receiver.close(); author.close() }
+})
+
+
+test('self-review: ingest scans stored counters once and scrubs each input once', (t) => {
+  const receiver = new SimNode(identity('receiver')); const author = new SimNode(identity('author'))
+  try {
+    receiver.trust(author)
+    const operations = history(author, 64)
+    receiver.federation.config.ingest(operations.slice(0, 32))
+    const prepare = receiver.db.prepare.bind(receiver.db)
+    let scans = 0
+    t.mock.method(receiver.db, 'prepare', (sql: string) => {
+      if (sql.includes('FROM federation_operations') && !sql.includes('WHERE origin=?')) scans++
+      return prepare(sql)
+    })
+    let scrubs = 0
+    const config = new SharedConfig(receiver.db, receiver.keys.identity, receiver.keys.privateKey,
+      (id) => receiver.federation.peer(id), () => receiver.time, (value) => { if (value !== null) scrubs++ })
+    const result = config.ingest(operations.slice(32).reverse())
+    assert.equal(result.accepted, 32)
+    assert.equal(result.deferred, 0)
+    assert.equal(scans, 1, 'stored history is scanned once per ingest')
+    assert.equal(scrubs, 32, 'only incoming signed payloads are scrubbed once')
   } finally { receiver.close(); author.close() }
 })
