@@ -24,14 +24,41 @@ if (stage === 'hibernate') {
   armed = true
   store.delegate(a, { key: 'child', deadline: RUN_DEADLINE })
 } else {
-  const promise = store.delegate(a, { key: 'child', deadline: RUN_DEADLINE })
-  const child = store.start(promise.child_id)
-  if (stage === 'resolve') armed = true
-  store.complete(child, 'completed')
-  if (stage === 'wake') armed = true
-  const delivery = store.deliver('lead', 1)!
-  if (stage === 'ack') armed = true
-  store.modelStarted(delivery)
+  const promise = store.delegate(a, { key: 'child', deadline: stage === 'deadline' ? RUN_TIME : RUN_DEADLINE })
+  if (stage === 'deadline') {
+    armed = true
+    store.tick()
+    const delivery = store.deliver('lead', 1)!
+    store.modelStarted(delivery)
+  } else {
+    let child = store.start(promise.child_id)
+    if (stage === 'cancel') {
+      store.delegate(child, { key: 'grandchild', deadline: RUN_DEADLINE })
+      armed = true
+      store.cancel('lead')
+    } else if (['signal', 'input', 'yield', 'resleep'].includes(stage)) {
+      if (stage === 'signal' || stage === 'input') armed = true
+      if (stage === 'input') {
+        store.inputRequired(child)
+        child = store.decide(promise.child_id)
+      } else store.signal(child, 'crash-signal')
+      if (stage !== 'resleep') store.complete(child, 'completed')
+      const first = store.deliver('lead', 1)!
+      store.modelStarted(first)
+      if (stage === 'yield' || stage === 'resleep') armed = true
+      store.hibernate(first)
+      if (stage === 'resleep') store.complete(child, 'completed')
+      const second = store.deliver('lead', 2)!
+      store.modelStarted(second)
+    } else {
+      if (stage === 'resolve') armed = true
+      store.complete(child, 'completed')
+      if (stage === 'wake') armed = true
+      const delivery = store.deliver('lead', 1)!
+      if (stage === 'ack') armed = true
+      store.modelStarted(delivery)
+    }
+  }
 }
 armed = false
 store.close(); log.close(); db.close()

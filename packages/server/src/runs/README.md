@@ -34,7 +34,8 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
   verifies its owner id/token and expiry, and renews the home lease. A clean close releases it.
   An unclean takeover waits for the predecessor's persisted
   `regrant_after` (owner expiry + its maximum attempt TTL + 1000ms), also bounded by
-  persisted active execution expiries. A shorter successor configuration cannot shorten it. Default owner TTL
+  persisted active execution expiries. A shorter successor configuration cannot shorten it.
+  Default owner TTL
   is 30 s and maximum execution TTL 60 s. Recovery can therefore wait up to 91 s after a
   crash; startup reports `writer_busy` during that interval and must be retried. A plain
   restart does not bump the epoch. Backup restore/cloning and epoch handover belong to F1.
@@ -105,12 +106,14 @@ running node. The down helper exists only for isolated migration test fixtures.
 ## Evidence
 
 - `durable-run-crash.test.ts`: exhaustive `SIGKILL` at every store mutation/boundary and K2
-  append point in delegation, resolution, delivery and acknowledgment; recovery checks exact
+  append point in delegation, completion and deadline resolution, signal/input-required
+  wakes, delivery, acknowledgment, both handler sleep branches and recursive cancellation; recovery checks exact
   promise, wake and acknowledgment counts, contiguous replay, SQLite/FK/FTS integrity.
 - `durable-runs.test.ts`: deadline without child progress, both resolution orders, stale
   fences, two signal/completion wakes, eight simulated hours with a real temporary worktree,
   unchanged cost/attempt counts while sleeping, recursive cancel, detach, restart table,
-  owner exclusivity, cost conflicts/unknowns, readiness, always-on admission and plugin cleanup.
+  owner exclusivity and changed-TTL takeover, cost conflicts/unknowns, readiness, refused
+  post-mutation K2 writes, live subscriber notification, always-on admission and plugin cleanup.
 - `durable-run-migration.test.ts`: all shipped migration bytes, unchanged prior table rows,
   rollback of failed DDL, retry and reopen.
 - `inspector.test.tsx`: exact one run-event row across persisted/live overlap and reload.

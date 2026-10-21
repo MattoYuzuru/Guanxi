@@ -337,3 +337,22 @@ test('review R3: lowering successor TTL cannot shorten the predecessor home safe
   assert.ok(newAttempt.token > oldAttempt.token)
   assert.throws(() => f.store.complete(oldAttempt, 'completed'), code('stale_lease'))
 })
+
+test('review E2: a refused K2 append after child insertion rolls back all delegation mutations', (t) => {
+  let armed = false
+  const f = runFixture(':memory:', { logFault: (point, detail) => {
+    if (armed && detail.type === 'run.lifecycle' && point === 'event_inserted') throw new Error('fixture_trace_refused')
+  } }); t.after(f.close)
+  const run = f.store.create({ id: 'lead' }); const a = f.store.start(run.id)
+  const before = f.log.read('lead', { audience: 'person' }).events
+  armed = true
+  assert.throws(() => f.store.delegate(a, { key: 'refused-trace', deadline: RUN_DEADLINE }), /fixture_trace_refused/)
+  assert.equal((f.db.prepare('SELECT COUNT(*) AS n FROM durable_runs').get() as { n: number }).n, 1)
+  assert.equal((f.db.prepare('SELECT COUNT(*) AS n FROM promises').get() as { n: number }).n, 0)
+  assert.equal((f.db.prepare('SELECT COUNT(*) AS n FROM timers').get() as { n: number }).n, 0)
+  assert.deepEqual(f.log.read('lead', { audience: 'person' }).events, before)
+  assert.equal(f.store.get(run.id).state, 'working')
+  armed = false
+  f.store.delegate(a, { key: 'refused-trace', deadline: RUN_DEADLINE })
+  assert.equal(f.store.promises(run.id).length, 1)
+})
