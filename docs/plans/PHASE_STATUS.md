@@ -191,8 +191,8 @@ Residual risks:
 | Item | Status | Evidence |
 | --- | --- | --- |
 | DS1-a: DTCG tokens, deterministic Style Dictionary build, self-hosted IBM Plex, legacy freeze ratchet, gates G1–G7 and the G17 self-test | implemented, independently verified, merged into `main` (`--no-ff`, as the ratchet requires) | Full evidence: [evidence/DS1-a](evidence/DS1-a.md). Token values are asserted against the FOUNDATIONS tables; the legacy UI's fonts and spacing are unchanged; all 32 Plex faces load from the same origin; the ratchet freezes 735 legacy keys with two owner-authorised corrections. Reviews: the lane's own reviewer, then three Claude cross-family rounds (19 + 9 findings closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (now including the UI gates; web 264), browser gate 48/48, build, lint:md, licenses (358/0). Follow-ups moved to DS1-c. |
-| DS1-b: `@guanxi/ui` components, catalog, approvals, G10–G16 | review closed; merging current `main` into the lane before the integrator merge | [lanes/DS1-b](lanes/DS1-b.md) |
-| DS1-c: lint ratchet and codemod | waiting for DS1-b | [lanes/DS1-c](lanes/DS1-c.md) |
+| DS1-b: `@guanxi/ui` components, catalog, signed approvals, G10–G16 | implemented, independently verified, merged into `main` (`7de9e6c`) | Full evidence and residuals: [evidence/DS1-b](evidence/DS1-b.md). Author Claude; GPT cross-family checks through round 5; the last High (generated-root scripts outside the approval hash) verified by the integrator with the reviewer's regressions and a fix-removal mutation. Integrator gates on `main`: typecheck, `ui:check`, licenses 521/0, `npm test` (UI gates 51, catalog 70, core 1007, kernel 106, web 314, UI 17), browser gate 65/65, `ui:check:browser`, build. Key custody moves to DS2. |
+| DS1-c: lint ratchet and codemod | in progress (lane DS1-c, Codex) | [lanes/DS1-c](lanes/DS1-c.md) |
 
 ## Repository presentation and documentation (2026-10-21)
 
@@ -224,7 +224,7 @@ decision was made.
 | Stage | Status | Notes |
 | --- | --- | --- |
 | K1 Kernel | implemented, merged | see the K1 section above |
-| DS1 Design foundations | in progress (DS1-a merged; DS1-b in review fixes; DS1-c after DS1-b) | see the DS1 section above |
+| DS1 Design foundations | in progress (DS1-a and DS1-b merged; DS1-c running) | see the DS1 section above |
 | DS2 Approval signing helper | not started | after DS1 (D-184) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |

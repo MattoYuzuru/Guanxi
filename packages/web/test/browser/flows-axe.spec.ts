@@ -5,7 +5,7 @@
  * also has a seeded violation, an unnamed icon-only button injected into it, which the scan
  * must report, so a scan that silently checks nothing fails.
  *
- * One legacy violation is known and not fixed in DS1-b (scope decision in DS1-b.handoff.md):
+ * One legacy violation is known and not fixed in DS1-b (scope decision in docs/plans/evidence/DS1-b.md):
  * the inactive rows of the Context panel's cache bar dim their text with `opacity-45`, which
  * fails color-contrast. It is listed by exact rule and target, and the test asserts it is still
  * present, so the entry has to be removed once the screen is fixed.
