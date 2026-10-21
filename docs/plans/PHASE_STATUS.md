@@ -233,8 +233,8 @@ decision was made.
 | K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | K5 External agents | handed off (partial: real release recordings, effective `--bare` detection and statusline ingestion open); Claude cross-family review running | [lanes/K5](lanes/K5.md) |
-| B1 Bench base | ready (lane B1, Codex, next free slot); host provisioned | [lanes/B1](lanes/B1.md) |
-| X1 Repo map and FTS | in progress (lane X1, Codex) | [lanes/X1](lanes/X1.md) |
+| B1 Bench base | in progress (lane B1, Codex); host provisioned | [lanes/B1](lanes/B1.md) |
+| X1 Repo map and FTS | handed off; Claude cross-family review (with Linux validation) running | [lanes/X1](lanes/X1.md) |
 | R2 Relay executor | handed off; Claude cross-family review running | [lanes/R2](lanes/R2.md) |
 | F1 Federation base | review 1 fixes re-checked: H1–H3 closed; H4 partial and one new High (config ingest cost grows cubically, remotely triggerable); fix round 2 running in Codex | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

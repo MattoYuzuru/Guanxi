@@ -22,8 +22,8 @@ integrator, the coordinating Claude session, merges lanes into `main`.
 | [K4](K4.md) | K4 native agent, tools, access modes, projects | GPT (Codex), xhigh | `lane/k4-native-agent` | 5189 / 4389 | merged ([evidence](../evidence/K4.md)); follow-up merged ([evidence](../evidence/K4-followup.md)) |
 | [R2](R2.md) | R2 relay executor v1 | GPT (Codex), xhigh | `lane/r2-relay-executor` | 5195 / 4395 | Claude review |
 | [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | Claude review |
-| [X1](X1.md) | X1 repository map and full-text index | GPT (Codex), xhigh | `lane/x1-repo-index` | 5197 / 4397 | running |
-| [B1](B1.md) | B1 bench base (Harbor, control arm, statistics, budget caps) | GPT (Codex), xhigh | `lane/b1-bench-base` | 5198 / 4398 | ready; starts when a Codex slot frees |
+| [X1](X1.md) | X1 repository map and full-text index | GPT (Codex), xhigh | `lane/x1-repo-index` | 5197 / 4397 | Claude review |
+| [B1](B1.md) | B1 bench base (Harbor, control arm, statistics, budget caps) | GPT (Codex), xhigh | `lane/b1-bench-base` | 5198 / 4398 | running |
 | [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
 
 Port 5185/4385 belongs to the localization-flake investigation. Merge order within DS1:
