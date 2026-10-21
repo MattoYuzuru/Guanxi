@@ -36,13 +36,12 @@ export {
   signKeySet,
   decisionChain,
   decisionDigest,
-  lifecycleTransition,
+  signedDecisions,
   verifyKeySetChange,
   verifyRecordApproval,
   verifyRecordRevocation,
   type ApprovalVerdict,
   type DecisionChain,
-  type LifecycleVersion,
   type KeySetVerdict,
   type RevocationVerdict,
   type SignedDecision,
@@ -56,3 +55,4 @@ export {
 } from './hash.ts'
 export { effectiveStatus, type CurrentHashes, type SignatureState } from './status.ts'
 export { uiPaths } from './paths.ts'
+export { recordProblems, verifyHistory, type HistoryEntry } from './history.ts'

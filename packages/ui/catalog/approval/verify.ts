@@ -72,7 +72,8 @@ export interface SignedDecision {
   previous: string | null
 }
 
-function signedDecisions(record: ReviewRecord, trustedKeys: readonly TrustedKey[]): SignedDecision[] {
+/** The record's decisions whose signatures verify under these keys (invalid ones are left out). */
+export function signedDecisions(record: ReviewRecord, trustedKeys: readonly TrustedKey[]): SignedDecision[] {
   const decisions: SignedDecision[] = []
   const { approval } = record
   if (approval) {
@@ -110,43 +111,6 @@ export function decisionChain(record: ReviewRecord, trustedKeys: readonly Truste
   if (!head) return { state: 'unchained' }
   const tail = head === a ? b : a
   return { state: 'chained', head, reaches: [head.digest, tail.digest, ...(tail.previous ? [tail.previous] : [])] }
-}
-
-export interface LifecycleVersion {
-  /** Where this version comes from, for messages: a commit, the base branch, the working tree. */
-  label: string
-  /** The parsed record, or null when the file is absent at this version. */
-  record: ReviewRecord | null
-  trustedKeys: readonly TrustedKey[]
-}
-
-/**
- * Lifecycle barriers survive every committed change (N1): a version may drop the owner's
- * current signed decision only for a newer signed decision that chains to it, and may drop a
- * deprecation only for a newer signed decision. An unsigned edit therefore cannot reset the
- * state an old approval would need to come back. Returns the problems (none when allowed).
- */
-export function lifecycleTransition(before: LifecycleVersion, after: LifecycleVersion): string[] {
-  if (!before.record) return []
-  const previous = decisionChain(before.record, before.trustedKeys)
-  const deprecation = before.record.deprecated ?? null
-  if (previous.state !== 'chained' && deprecation === null) return []
-  if (!after.record) {
-    return [`${after.label} removes the review record, which holds ${previous.state === 'chained' ? `the signed ${previous.head.kind} of ${previous.head.at}` : `the deprecation of ${deprecation!.at}`} (${before.label})`]
-  }
-  const problems: string[] = []
-  const next = decisionChain(after.record, after.trustedKeys)
-  if (previous.state === 'chained' && (next.state !== 'chained' || !next.reaches.includes(previous.head.digest))) {
-    problems.push(`${after.label} drops the signed ${previous.head.kind} of ${previous.head.at} (${before.label}) without a signed decision that chains to it`)
-  }
-  if (deprecation !== null && JSON.stringify(after.record.deprecated ?? null) !== JSON.stringify(deprecation)) {
-    const newer =
-      next.state === 'chained' &&
-      (previous.state !== 'chained' || next.head.digest !== previous.head.digest) &&
-      Date.parse(next.head.at) > Date.parse(deprecation.at)
-    if (!newer) problems.push(`${after.label} removes the deprecation of ${deprecation.at} (${before.label}) without a newer signed decision`)
-  }
-  return problems
 }
 
 export function signApprovalPayload(payload: ApprovalPayload, privateKey: KeyObject): string {

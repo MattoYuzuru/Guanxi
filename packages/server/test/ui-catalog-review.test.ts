@@ -347,22 +347,33 @@ describe('approving a component', () => {
       assert.equal(restored.status, 'fail')
       assert.match(
         restored.findings.map((finding) => finding.message).join('\n'),
-        /the working tree drops the signed revocation of .* \(main\) without a signed decision that chains to it/,
+        /the working tree: the signed approval of .* does not descend from the owner's current decision, the signed revocation of .* \(main\)/,
       )
     } finally {
       writeFileSync(path, onMain)
     }
-    // Approving again chains the new approval to the revocation, and G12 accepts it.
+    // Approving again chains the new approval to the revocation; repeated review cycles keep
+    // verifying over the whole committed history (GPT N9).
+    const committed = [approvedText, onMain]
     const again = await post(app(service), 'button', { decision: 'approve', comment: 'Fixed.', ...current(fx.uiRoot, 'button') })
     assert.equal(again.status, 200)
     const reapproved = readRecord(fx.uiRoot, 'button')
     assert.equal(reapproved.approval?.previous, decisionDigest('button', 'revocation', record.revocation!))
+    committed.push(readFileSync(path, 'utf8'))
+    for (const [decision, comment] of [['request_changes', 'Spacing again.'], ['approve', 'Good.'], ['request_changes', 'One more.'], ['approve', 'Done.']] as const) {
+      const step = await post(app(service), 'button', { decision, comment, ...current(fx.uiRoot, 'button') })
+      assert.equal(step.status, 200, decision)
+      committed.push(readFileSync(path, 'utf8'))
+    }
+    assert.equal(readRecord(fx.uiRoot, 'button').status, 'approved')
+    const versions = committed.slice(0, -1).map((text, index) => ({ label: `commit ${index + 1}`, json: JSON.parse(text) as unknown, trustedKeys: [fx.trusted] }))
     const accepted = await g12.run({
       repoRoot: fx.repoRoot,
       uiRoot: fx.uiRoot,
       usageScope: defaultUsageScope(fx.repoRoot),
       release: false,
-      base: { label: 'main', trustedKeys: { keys: [fx.trusted] }, records: { button: JSON.parse(onMain) } },
+      base: null,
+      history: { button: [versions] },
     })
     assert.equal(accepted.status, 'pass', accepted.findings.map((finding) => finding.message).join('\n'))
   })

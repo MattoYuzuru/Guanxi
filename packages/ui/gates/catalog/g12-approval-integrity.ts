@@ -23,17 +23,16 @@ import {
   componentSnapshotHashes,
   componentSourceHash,
   decisionDigest,
-  lifecycleTransition,
   loadTrustedKeys,
   parseReviewRecord,
   parseTrustedKeys,
+  recordProblems,
   revocationPayload,
   serialiseRecord,
   uiPaths,
+  verifyHistory,
   verifyKeySetChange,
-  verifyRecordApproval,
-  verifyRecordRevocation,
-  type LifecycleVersion,
+  type HistoryEntry,
   type ReviewRecord,
   type TrustedKey,
 } from '../../catalog/approval/index.ts'
@@ -87,7 +86,15 @@ function firstParentVersions(repoRoot: string, ref: string, id: string): History
 export function historyFromGit(repoRoot: string, baseCommit: string, ids: string[]): Record<string, HistoryVersion[][]> | { error: string } {
   try {
     if (git(repoRoot, 'rev-parse', '--is-shallow-repository') === 'true') return { error: 'the repository is shallow; run git fetch --unshallow' }
-    return Object.fromEntries(ids.map((id) => [id, [firstParentVersions(repoRoot, baseCommit, id), firstParentVersions(repoRoot, 'HEAD', id)]]))
+    // Every component that ever had a record, so a deleted folder is still checked (N8).
+    const all = new Set(ids)
+    for (const ref of [baseCommit, 'HEAD']) {
+      for (const path of git(repoRoot, 'log', '--first-parent', '--name-only', '--format=', ref, '--', 'packages/ui/src/components').split('\n')) {
+        const match = /^packages\/ui\/src\/components\/([^/]+)\/([^/]+)\.review\.json$/.exec(path)
+        if (match && match[1] === match[2]) all.add(match[1]!)
+      }
+    }
+    return Object.fromEntries([...all].sort().map((id) => [id, [firstParentVersions(repoRoot, baseCommit, id), firstParentVersions(repoRoot, 'HEAD', id)]]))
   } catch (cause) {
     return { error: `cannot read the record history: ${(cause as Error).message.split('\n')[0]}` }
   }
@@ -138,34 +145,16 @@ export function baseFromGit(repoRoot: string, ids: string[]): BaseSnapshot | { e
   return { label, trustedKeys, records, commit: base }
 }
 
-function asVersion(version: HistoryVersion): LifecycleVersion | 'unreadable' {
-  if (version.json === undefined) return { label: version.label, record: null, trustedKeys: version.trustedKeys }
-  if (version.json === 'unreadable') return 'unreadable'
+function toEntry(version: HistoryVersion): HistoryEntry {
+  if (version.json === undefined) return { label: version.label, state: 'absent' }
+  if (version.json === 'unreadable') return { label: version.label, state: 'unreadable' }
   const parsed = parseReviewRecord(version.json)
-  return parsed.ok ? { label: version.label, record: parsed.record, trustedKeys: version.trustedKeys } : 'unreadable'
+  return parsed.ok ? { label: version.label, state: 'record', record: parsed.record, trustedKeys: version.trustedKeys } : { label: version.label, state: 'unreadable' }
 }
 
-/**
- * Walks one sequence of committed versions, oldest first, and checks the working tree against
- * the lifecycle barrier they establish. The barrier is the last version holding a decision or a
- * deprecation that did not itself break the previous barrier: a commit that erased a decision
- * never resets it, so an old approval restored later still fails, while re-adding the erased
- * decision repairs the history. Absent and unreadable versions hold no state.
- */
-export function walkLifecycle(sequence: HistoryVersion[], current: LifecycleVersion | 'unreadable'): string[] {
-  let barrier: LifecycleVersion | null = null
-  for (const version of sequence) {
-    const next = asVersion(version)
-    if (next === 'unreadable' || next.record === null) continue
-    if (barrier && lifecycleTransition(barrier, next).length > 0) continue
-    const holds = (next.record.deprecated ?? null) !== null || next.record.approval !== null || (next.record.revocation ?? null) !== null
-    if (holds || barrier === null) barrier = next
-  }
-  if (!barrier) return []
-  if (current === 'unreadable') {
-    return lifecycleTransition(barrier, { label: 'the working tree', record: null, trustedKeys: [] }).map((problem) => `${problem} (the record is unreadable)`)
-  }
-  return lifecycleTransition(barrier, current)
+/** G12's history check for one component: committed sequences (oldest first) and the working tree. */
+export function historyProblems(sequences: HistoryVersion[][], current: HistoryEntry): string[] {
+  return verifyHistory(sequences.map((sequence) => [...sequence.map(toEntry), current]))
 }
 
 function pinnedKeyIds(): string[] | null {
@@ -225,39 +214,33 @@ export const g12: CatalogGate = {
       else history = fromGit
     }
 
-    for (const folder of inventory.folders) {
-      const file = `packages/ui/src/components/${folder.id}/${folder.id}.review.json`
-      let current: LifecycleVersion | 'unreadable' = { label: 'the working tree', record: null, trustedKeys: trusted }
-      if (folder.reviewJson !== null) {
-        const parsed = parseReviewRecord(folder.reviewJson, folder.id)
+    // Current folders plus every component history knows, so a deleted folder is checked too.
+    const ids = [...new Set([...inventory.folders.map((folder) => folder.id), ...Object.keys(history ?? {})])].sort()
+    for (const id of ids) {
+      const folder = inventory.folders.find((candidate) => candidate.id === id)
+      const file = `packages/ui/src/components/${id}/${id}.review.json`
+      let current: HistoryEntry = { label: 'the working tree', state: 'absent' }
+      if (folder && folder.reviewJson !== null) {
+        const parsed = parseReviewRecord(folder.reviewJson, id)
         if (!parsed.ok) {
           const json = folder.reviewJson as { status?: unknown; approval?: unknown }
           if (json?.status === 'approved' || (json?.approval ?? null) !== null) {
-            error('malformed record claims an approval', { component: folder.id, file })
+            error('malformed record claims an approval', { component: id, file })
           }
-          current = 'unreadable'
+          current = { label: 'the working tree', state: 'unreadable' }
         } else {
           const record = parsed.record
-          current = { label: 'the working tree', record, trustedKeys: trusted }
-          const verdict = verifyRecordApproval(record, trusted)
-          if (verdict.state === 'invalid') error(`approval is invalid: ${verdict.reason}`, { component: folder.id, file })
-          if (verifyRecordRevocation(record, trusted).state === 'invalid') {
-            error('revocation is invalid: bad_signature or untrusted_key', { component: folder.id, file })
-          }
+          current = { label: 'the working tree', state: 'record', record, trustedKeys: trusted }
+          for (const problem of recordProblems(record, trusted)) error(problem, { component: id, file })
           const signed = record.approval !== null || (record.revocation ?? null) !== null
-          if (signed && readFileSync(join(folder.dir, `${folder.id}.review.json`), 'utf8') !== serialiseRecord(record)) {
-            error('a signed record differs from what the node writes (hand edit or duplicate keys)', { component: folder.id, file })
-          }
-          // Reactivation removes the deprecation, which needs a newer signed decision (below).
-          if ((record.deprecated ?? null) !== null && record.status !== 'deprecated') {
-            error(`a deprecated record must keep status "deprecated" (found "${record.status}")`, { component: folder.id, file })
+          if (signed && readFileSync(join(folder.dir, `${id}.review.json`), 'utf8') !== serialiseRecord(record)) {
+            error('a signed record differs from what the node writes (hand edit or duplicate keys)', { component: id, file })
           }
         }
       }
-      const sequences: HistoryVersion[][] = [...(history?.[folder.id] ?? [])]
-      if (base) sequences.push([{ label: base.label, json: base.records[folder.id], trustedKeys: base.trustedKeys.keys }])
-      const problems = new Set(sequences.flatMap((sequence) => walkLifecycle(sequence, current)))
-      for (const problem of problems) error(problem, { component: folder.id, file })
+      const sequences: HistoryVersion[][] = [...(history?.[id] ?? [])]
+      if (base) sequences.push([{ label: base.label, json: base.records[id], trustedKeys: base.trustedKeys.keys }])
+      for (const problem of historyProblems(sequences, current)) error(problem, { component: id, file })
     }
     return result(this, findings)
   },
@@ -383,7 +366,7 @@ export const g12: CatalogGate = {
     {
       name: 'old-approval-restored',
       description: 'The owner requested changes (signed, on main); a branch restores the earlier approval',
-      expect: /the working tree drops the signed revocation of 2026-10-21T09:00:00.000Z \(main\) without a signed decision that chains to it/,
+      expect: /the working tree: the signed approval of 2026-10-20T12:00:00.000Z does not descend from the owner's current decision, the signed revocation of 2026-10-21T09:00:00.000Z \(main\)/,
       apply({ uiRoot, context }) {
         const key = createTestKey('owner test key')
         try {
@@ -415,7 +398,7 @@ export const g12: CatalogGate = {
     {
       name: 'revocation-erased-by-unsigned-intermediate',
       description: 'Main holds the owner\'s signed revocation; an unsigned change on main drops it; a branch restores the approval',
-      expect: /the working tree drops the signed revocation of 2026-10-21T09:00:00.000Z \(main~1\) without a signed decision that chains to it/,
+      expect: /main drops the signed revocation of 2026-10-21T09:00:00.000Z \(main~1\)/,
       apply({ uiRoot, context }) {
         const key = createTestKey('owner test key')
         try {

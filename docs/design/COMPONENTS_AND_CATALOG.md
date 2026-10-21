@@ -104,14 +104,18 @@ approval and a revocation in a record, exactly one names the other; that one is 
 owner's current decision (a revocation head revokes the approval).
 
 **What G12 enforces across history.** G12 walks every committed version of each record (the
-first-parent history of the base branch and of HEAD) and keeps a barrier: the owner's latest
-signed decision and any deprecation. The working tree must keep that decision or replace it with
-one that chains to it, and keep the deprecation unless a newer signed decision supersedes it.
-An unsigned commit that drops either never resets the barrier, so an old approval restored after
-it still fails; re-adding the dropped decision repairs it. Removing the record file counts as
-dropping. Unsigned changes to `status` (draft, review), `requests` and new deprecations stay
-allowed. Shallow clones fail closed. A decision deleted before it ever reached a committed
-version cannot be recovered.
+first-parent history of the base branch and of HEAD; components whose folder was deleted are
+found from history too) and validates each version like the working tree: signatures, status,
+and the chain between its decisions. Every signed decision must root in a `previous` of `null`
+through decisions some committed version held. A version keeps the owner's current decision
+(the ledger head) or replaces it with one that descends from it, so review cycles of any length
+verify and an older decision can never come back. A deprecation stays until a newer signed
+decision supersedes it, and removing the record or the component folder while it holds a
+decision or a deprecation fails. A break in any committed version fails G12 for good: restoring
+a later version does not repair history (recovery needs an owner-signed mechanism, DS2).
+Unsigned changes to `status` (draft, review), `requests` and new deprecations stay allowed.
+Shallow clones fail closed. A decision deleted before it ever reached a committed version cannot
+be recovered.
 
 ## 5. Gates
 

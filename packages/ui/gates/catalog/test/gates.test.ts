@@ -65,7 +65,7 @@ describe('catalog gates self-test', () => {
   it('G12 fails closed without a base, on a branch-bootstrapped key and on a restored approval', () => {
     assert.match(messages(find('G12', 'base-branch-unknown')), /cannot verify the trusted key set: no base branch/)
     assert.match(messages(find('G12', 'agent-key-bootstrapped-on-branch')), /first trusted key was added outside the base branch/)
-    assert.match(messages(find('G12', 'old-approval-restored')), /drops the signed revocation of .* \(main\) without a signed decision that chains to it/)
+    assert.match(messages(find('G12', 'old-approval-restored')), /does not descend from the owner's current decision, the signed revocation of .* \(main\)/)
     assert.match(messages(find('G12', 'approval-over-base-deprecation')), /removes the deprecation of .* \(main\) without a newer signed decision/)
     assert.match(messages(find('G12', 'approval-revoked-in-record')), /approval is invalid: revoked/)
     assert.match(messages(find('G12', 'key-version-reset')), /version_changed_without_rotation/)
