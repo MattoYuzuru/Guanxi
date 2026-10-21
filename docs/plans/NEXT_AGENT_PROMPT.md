@@ -1,4 +1,4 @@
-# Next agent prompt — finish review fixes and integrate one lane
+# Next agent prompt — run integration gates and merge one reviewed candidate
 
 **Status:** ready · **Updated:** 2026-10-21
 
@@ -12,19 +12,22 @@ HEAD, dirty state and the latest handoff first. Heavy checks share the `agent-de
 
 Current bounded recovery queue:
 
-1. **K4 follow-up 2:** `codex/k4f2-review-fixes` in `Guanxi-lanes/coord-k4f2` fixes the
-   independently reproduced handover-during-delete race. The old home must leave durable
-   deletion intent and R1 rows for the successor. Re-review the fix and its negative control,
-   then arrange the lane's cross-family review and integrator gates before merging.
-2. **DS2:** `codex/ds2-review-fixes` in `Guanxi-lanes/coord-ds2` contains current main and
-   fixes unsupported-platform reporting plus test coverage of the production access-control
-   and authentication-context builders. Re-review and run full gates. Keep real owner-present
-   hardware signing unverified until its explicit local integration check; do not approve a
-   component or run real key migration/bootstrap during ordinary tests.
-3. **X1:** `codex/x1-parent-read-boundary` in `Guanxi-lanes/coord-x1` is intended to close the server-side
-   unsandboxed fingerprint policy-read path. A post-read containment rejection is insufficient.
-   Require an actual read-denial regression and independent review, including Linux/Mac worker
-   boundaries in their authorized environments, before integration.
+1. **K4 follow-up 2:** `codex/k4f2-review-fixes` at `baeac3c` in
+   `Guanxi-lanes/coord-k4f2`. Independent review closed deletion, whole-maintenance-pass and
+   synchronous-transaction findings. The 38 targeted tests and server typecheck pass. Read
+   its appended K4F2 handoff, check any original cross-family/platform scope still open, run
+   the full integrator gates and merge only after they pass.
+2. **DS2:** `codex/ds2-review-fixes` at `785b814` in `Guanxi-lanes/coord-ds2`. Independent
+   review closed unsupported-platform and actual production-policy wiring findings. The 47
+   scoped tests, production/test Swift builds and server typecheck pass. Run full integrator
+   gates; keep actual owner-present hardware signing and installed-helper custody unverified.
+   Do not approve a component or create/migrate a real owner key in ordinary tests.
+3. **X1:** `codex/x1-parent-read-boundary` at `647c5d0` in `Guanxi-lanes/coord-x1`. The
+   fingerprint boundary repair and merge-conflict resolution are independently reviewed.
+   Published main is included; the combined indexing/kernel boot gate passes (60 pass,
+   1 Linux-only skip), all-workspace typecheck and licenses pass. Run the repaired indexing
+   envelope on Linux within the existing authorized runtime scope, then the required full
+   integrator gates. Preserve the original X1 residuals; no live model or broad host probing.
 4. **U1-a:** candidate `0523f9b` has local layout/mode behavior and a handoff. Review the
    whole candidate; record cross-node layout replication as absent. U1-b shell and U1-c
    zero-suppression migration remain separate unfinished slices.

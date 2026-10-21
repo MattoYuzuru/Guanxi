@@ -23,11 +23,11 @@ processes before assuming a worker is still running.
 | [K4](K4.md) | K4 native agent, tools, access modes, projects | GPT (Codex), xhigh | `lane/k4-native-agent` | 5189 / 4389 | merged ([evidence](../evidence/K4.md)); follow-up merged ([evidence](../evidence/K4-followup.md)) |
 | [R2](R2.md) | R2 relay executor v1 | GPT (Codex), xhigh | `lane/r2-relay-executor` | 5195 / 4395 | partial internal service merged ([evidence](../evidence/R2.md)) |
 | [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | partial implementation merged ([evidence](../evidence/K5.md)) |
-| [X1](X1.md) | X1 repository map and full-text index | GPT (Codex), xhigh | `lane/x1-repo-index` | 5197 / 4397 | original fixes handed off; GPT parent fingerprint boundary fix in `codex/x1-parent-read-boundary` |
+| [X1](X1.md) | X1 repository map and full-text index | GPT 6.1 Sol / high; independent GPT review | `codex/x1-parent-read-boundary` | 5197 / 4397 | repair reviewed; targeted integration gate passed; full gates/Linux pending |
 | [B1](B1.md) | B1 bench base (Harbor, control arm, statistics, budget caps) | GPT (Codex), xhigh | `lane/b1-bench-base` | 5198 / 4398 | partial fixture foundation handed off; real executor/billing/corpus unfinished |
-| [DS2](DS2.md) | DS2 approval signing helper (Secure Enclave P-256) | DeepSeek-V4.1-Flash (max), DeepSeek Harness | `lane/ds2-signing-helper` | none (no server) | handed off; DeepSeek review fixes in `codex/ds2-review-fixes`, then GPT re-review |
+| [DS2](DS2.md) | DS2 approval signing helper (Secure Enclave P-256) | DeepSeek Flash/max; independent GPT 6.1 Sol / high review | `codex/ds2-review-fixes` | none (no server) | repair reviewed; full gates/hardware validation pending |
 | [U1](U1.md) | U1-a workspace layout engine and modes (U1-b shell and U1-c migration follow) | GPT (Codex), xhigh | `lane/u1a-workspace` | 5199 / 4399 | U1-a handed off; independent review/integration and real replication remain |
-| K4 follow-up 2 | K4 residuals: R1 integration and native session retention | GPT (Codex), xhigh | `lane/k4-followup2` | 5189 / 4389 | handed off; DeepSeek home-fencing deletion fix in `codex/k4f2-review-fixes`, then GPT re-review |
+| K4 follow-up 2 | K4 residuals: R1 integration and native session retention | DeepSeek Flash/max; independent GPT 6.1 Sol / high review | `codex/k4f2-review-fixes` | 5189 / 4389 | repair reviewed; full integrator gates and remaining lane scope pending |
 | [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
 
 Port 5185/4385 belongs to the localization-flake investigation. Merge order within DS1:

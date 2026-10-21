@@ -169,6 +169,7 @@ export class ThreadStore {
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
          FROM threads t
          WHERE t.chat_lifecycle_state = 'active'
+           AND NOT EXISTS (SELECT 1 FROM native_sessions n WHERE n.thread_id=t.id)
          ORDER BY t.updated_at DESC`,
       )
       .all() as unknown as ThreadRow[]
@@ -181,6 +182,7 @@ export class ThreadStore {
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
          FROM threads t
          WHERE t.project_id IS NULL AND t.chat_lifecycle_state = 'active'
+           AND NOT EXISTS (SELECT 1 FROM native_sessions n WHERE n.thread_id=t.id)
          ORDER BY t.updated_at DESC, t.id`,
       )
       .all() as unknown as ThreadRow[]
@@ -193,6 +195,7 @@ export class ThreadStore {
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
          FROM threads t
          WHERE t.project_id = ? AND t.chat_lifecycle_state = 'active'
+           AND NOT EXISTS (SELECT 1 FROM native_sessions n WHERE n.thread_id=t.id)
          ORDER BY t.updated_at DESC, t.id`,
       )
       .all(projectId) as unknown as ThreadRow[]
@@ -203,7 +206,8 @@ export class ThreadStore {
     const row = this.db
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
-         FROM threads t WHERE t.id = ? AND t.chat_lifecycle_state = 'active'`,
+         FROM threads t WHERE t.id = ? AND t.chat_lifecycle_state = 'active'
+           AND NOT EXISTS (SELECT 1 FROM native_sessions n WHERE n.thread_id=t.id)`,
       )
       .get(id) as unknown as ThreadRow | undefined
     return row ? toThread(row) : null
@@ -213,7 +217,8 @@ export class ThreadStore {
     const row = this.db
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
-         FROM threads t WHERE t.id = ? AND t.chat_lifecycle_state = 'active'`,
+         FROM threads t WHERE t.id = ? AND t.chat_lifecycle_state = 'active'
+           AND NOT EXISTS (SELECT 1 FROM native_sessions n WHERE n.thread_id=t.id)`,
       )
       .get(id) as unknown as ThreadRow | undefined
     return row ? toThreadWithOwnership(row) : null
