@@ -198,6 +198,10 @@ export const ROUTES = {
 
   approval: (toolCallId: string) => `/api/approvals/${toolCallId}`,
 
+  uiCatalogReviewCapability: () => '/api/ui-catalog/review-capability',
+  uiCatalogComponentReview: (componentId: string) =>
+    `/api/ui-catalog/components/${encodeURIComponent(componentId)}/review`,
+
   settings: () => '/api/settings',
 } as const
 

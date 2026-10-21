@@ -1,6 +1,6 @@
 # Native agent (K4)
 
-**Status:** partial implementation; PID-namespace execution owners implemented; validation recorded in the [lane handoff](../../../../docs/plans/lanes/K4.handoff.md).
+**Status:** partial implementation; PID-namespace execution owners implemented; validation recorded in the [K4 evidence](../../../../docs/plans/evidence/K4.md).
 
 `guanxi.native-agent` provides the frozen `agent.native` facade. It requires K3's
 `connections.registry`, K2's `session.log` and `egress.scrubber`. API-key models use K3

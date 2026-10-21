@@ -1,0 +1,24 @@
+.gx-icon-button {
+  width: var(--control-height);
+  padding-inline: 0;
+}
+
+.gx-icon-button[data-size='sm'] {
+  width: var(--target-minimum);
+  min-height: var(--target-minimum);
+}
+
+.gx-icon-button-glyph {
+  display: inline-flex;
+}
+
+.gx-icon-button-glyph svg {
+  width: var(--icon-size-18);
+  height: var(--icon-size-18);
+}
+
+.gx-icon-button[aria-pressed='true'] {
+  border-color: var(--color-border-accent);
+  background-color: var(--color-background-tertiary);
+  color: var(--color-text-accent);
+}

@@ -19,6 +19,11 @@ import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv, portFromEnv, WEB_PORT_ENV, DEFAULT_WEB_PORT } from './config/listen-env.ts'
 import { defaultDbPath, openDb } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
+import { UiCatalogReviewService } from './ui-catalog/service.ts'
+import { keychainSigner } from './ui-catalog/signer.ts'
+import { findSourceCheckoutUiRoot } from './ui-catalog/source-checkout.ts'
+import { RELEASE_BUILD } from './release.ts'
+
 import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
 import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
@@ -27,6 +32,7 @@ import { connectionRoutes } from './connections/routes.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
 
+export { RELEASE_BUILD } from './release.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
 export { RecipeStore } from './store/recipes.ts'
@@ -105,6 +111,7 @@ export type {
 } from './store/jobs.ts'
 
 const APP_VERSION = '0.1.0'
+
 export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -154,6 +161,13 @@ export async function start(options: StartOptions = {}) {
     throw error
   }
 
+  // D-138: approvals are written only from a source checkout and never by a release build.
+  const uiCatalog = new UiCatalogReviewService({
+    uiRoot: RELEASE_BUILD ? null : findSourceCheckoutUiRoot(here),
+    release: RELEASE_BUILD,
+    signer: keychainSigner(),
+  })
+
   try {
     await kernel.node.plugin(connectionsPlugin, {
       databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
@@ -172,6 +186,7 @@ export async function start(options: StartOptions = {}) {
   const server = createApp(context, {
     host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
+    uiCatalog,
   })
 
   server.route('/api/connections', connectionRoutes(() => {

@@ -44,6 +44,16 @@ TLS, allowed roots).
    A **deny-write profile** for protected paths (tests, specs, CI config listed in a run's
    plan) is layered on top of either mode (ADR-0020). Remote clients have the same rights as
    the desktop (REQ-B3).
+   *Implementation (K4, 2026-10-21, implemented and locally validated):* a sandbox alone
+   does not own the processes a command leaves behind, so arbitrary shell runs behind an
+   `ExecutionOwner` that kills every descendant (setsid, nohup, double fork) when the command
+   ends, is cancelled or times out. On **Linux** it is sandbox-runtime's bubblewrap profile
+   plus `--unshare-pid --die-with-parent` and a seccomp filter. On **macOS** Seatbelt cannot
+   own descendants, so each arbitrary command runs in its own `--rm --init --network none`
+   Linux container (Colima), reaching the network only through the sandbox-runtime proxy.
+   **Windows** refuses arbitrary shell until a restricted-user backend exists. Uncertain
+   cleanup ends in `cleanup_unconfirmed` and a persistent root quarantine, never a second
+   writer. Evidence: [K4](../plans/evidence/K4.md).
 6. **Confirmations (D-118)**: neither mode prompts. A run stops for a person only through an
    `input_required` escalation or because an action is on the project's
    `requires_confirmation` list (default empty; for example cloud launches or publishing).

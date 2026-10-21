@@ -76,5 +76,15 @@
   ],
   "--color-fit-unknown": [
     "packages/web/**"
+  ],
+  "--anchor-width": [
+    "packages/ui/src/components/select/select.css"
+  ],
+  "--available-height": [
+    "packages/ui/src/components/menu/menu.css",
+    "packages/ui/src/components/select/select.css"
+  ],
+  "--available-width": [
+    "packages/ui/src/components/popover/popover.css"
   ]
 }

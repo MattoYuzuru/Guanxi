@@ -44,6 +44,13 @@ The compiled-theme browser assertion checks actual font, 8 px spacing and 21.9% 
 font utilities avoid self aliases, spacing uses the 4 px grid variable, and the app-tile ratio
 is converted to a CSS percentage.
 
+Interaction fills, the focus ring and layers follow FOUNDATIONS' 2026-10-20 addendum:
+`color.background.{hover,pressed}` are ramp steps 4 and 5, `color.background.ghost` is
+transparent, and `color.background.accent-{hover,pressed}` mix the accent 12% and 24% toward
+ink (light) or white (dark). High-contrast themes apply the same rule to their accent (step
+11). The contrast manifest checks text on both accent states. `focus.ring.{width,offset}` are
+2 px; `layer.*` holds the z-index scale (base 0 … tooltip 70) as unitless numbers.
+
 Root attributes: `data-theme=light|dark|light-hc|dark-hc|system`,
 `data-density=compact|comfortable`, `data-motion=full|reduced`, and
 `data-material=glass|tinted|solid`. An absent theme attribute uses Light or the legacy `.dark`

@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/src/components/orphan-thing/orphan-thing.tsx": "// G10 seed: a component folder that src/index.ts does not export.\nexport function OrphanThing() {\n  return null\n}\n"
+  },
+  "expectedError": "orphaned: the folder is not exported"
+}

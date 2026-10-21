@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "badge",
+  "status": "approved",
+  "approval": null,
+  "requests": []
+}

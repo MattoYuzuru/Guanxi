@@ -57,12 +57,13 @@ test('G2 is byte deterministic and rejects a manual edit to every generated file
     assert.equal((await checks.G2(edited)).ok, false, name)
   }
 })
-test('G3 checks all 18 declared pairs in all themes and every glass backdrop', async () => {
+test('G3 checks all 20 declared pairs in all themes and every glass backdrop', async () => {
   const report = await contrast(ctx)
   assert.equal(report.ok, true, JSON.stringify(report.errors))
-  assert.equal(report.measurements.length, 4 * (18 + 3 * 2 * 8 * 2))
-  const baseline = { light: [14.43, 4.72, 3.51, 5.12], dark: [14.61, 7.01, 4.09, 8.39] }
-  for (const [theme, values] of Object.entries(baseline)) assert.deepEqual(['text', 'muted', 'control-border', 'accent'].map(pair => report.measurements.find(m => m.theme === theme && m.pair === pair).ratio), values)
+  assert.equal(report.measurements.length, 4 * (20 + 3 * 2 * 8 * 2))
+  // FOUNDATIONS §1.1–1.3, including text on the accent hover and pressed fills (2026-10-20).
+  const baseline = { light: [14.43, 4.72, 3.51, 5.12, 6.28, 7.11], dark: [14.61, 7.01, 4.09, 8.39, 9.08, 9.9] }
+  for (const [theme, values] of Object.entries(baseline)) assert.deepEqual(['text', 'muted', 'control-border', 'accent', 'on-accent-hover', 'on-accent-pressed'].map(pair => report.measurements.find(m => m.theme === theme && m.pair === pair).ratio), values)
   for (const theme of ['light-hc', 'dark-hc']) assert.ok(report.measurements.filter(m => m.theme === theme).every(m => m.ratio >= 7))
   const missing = await mutateJSON('packages/ui/tokens/contrast-pairs.json', d => { d.pairs = d.pairs.filter(p => p.name !== 'warning') })
   assert.equal((await contrast(missing)).ok, false)

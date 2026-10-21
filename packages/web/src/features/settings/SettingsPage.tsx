@@ -20,6 +20,7 @@ import { parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 import { Glossary } from './Glossary.tsx'
+import { DeveloperSettings } from '../catalog/DeveloperSettings.tsx'
 import { ConnectionsSettings } from '../connections/ConnectionsPage.tsx'
 
 type Draft = Omit<Settings, 'webSearch'> & {
@@ -421,6 +422,9 @@ export function SettingsPage() {
       </div>
       <div className="mt-4">
         <Glossary />
+      </div>
+      <div className="mt-4">
+        <DeveloperSettings />
       </div>
     </div>
   )

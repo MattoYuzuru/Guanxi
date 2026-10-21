@@ -1,0 +1,84 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-error-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  padding: var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-danger);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+}
+
+.gx-error-state-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-8);
+}
+
+.gx-error-state-icon {
+  flex: none;
+  width: var(--icon-size-18);
+  height: var(--icon-size-18);
+  color: var(--color-text-danger);
+}
+
+.gx-error-state-title {
+  margin: 0;
+  font-size: var(--font-text-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-line-height-ui);
+}
+
+.gx-error-state-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.gx-error-state-source {
+  font-family: var(--font-family-mono);
+}
+
+.gx-error-state-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.gx-error-state-summary {
+  @apply w-fit;
+  min-height: var(--target-minimum);
+  border-radius: var(--border-radius-inline);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  line-height: var(--target-minimum);
+  cursor: pointer;
+}
+
+.gx-error-state-pre {
+  margin: 0;
+  padding: var(--spacing-8);
+  overflow-x: auto;
+  border-radius: var(--border-radius-inline);
+  background-color: var(--color-background-tertiary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-prose);
+  white-space: pre-wrap;
+}
+
+.gx-error-state-copy {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.gx-error-state-action {
+  display: flex;
+  gap: var(--spacing-8);
+}

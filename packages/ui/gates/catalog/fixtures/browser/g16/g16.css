@@ -1,0 +1,47 @@
+/* G16 seeded violation: a looping rotation that ignores reduced motion. Literal durations on
+   purpose: the motion tokens are 0 ms under reduced motion, which would hide the violation. */
+.gx-seeded-spinner {
+  display: inline-block;
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: gx-seeded-spin 1000ms linear infinite;
+}
+
+@keyframes gx-seeded-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* G16 seeded violation: one finite rotation on entry, no reduced-motion rule. */
+.gx-seeded-entry {
+  display: inline-block;
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  border: 2px solid currentColor;
+  animation: gx-seeded-spin 2000ms linear 1;
+}
+
+/* G16 seeded violation: the thumb slides on toggle whatever the motion setting. */
+.gx-seeded-toggle {
+  position: relative;
+  width: var(--spacing-40);
+  height: var(--spacing-20);
+}
+
+.gx-seeded-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--spacing-20);
+  height: var(--spacing-20);
+  background-color: currentColor;
+  transition: transform 2000ms linear;
+}
+
+.gx-seeded-toggle[aria-checked='true'] .gx-seeded-thumb {
+  transform: translateX(var(--spacing-20));
+}

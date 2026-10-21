@@ -676,6 +676,125 @@
             }
           }
         }
+      },
+      "accent-state": {
+        "light": {
+          "hover": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.4700514935,
+                0.0783243998,
+                178.278909451
+              ],
+              "hex": "#18695B"
+            }
+          },
+          "pressed": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.4420769312,
+                0.0723240912,
+                177.9611651372
+              ],
+              "hex": "#186053"
+            }
+          }
+        },
+        "dark": {
+          "hover": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.8054882835,
+                0.0759070094,
+                178.687715468
+              ],
+              "hex": "#88D0C0"
+            }
+          },
+          "pressed": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.8322727383,
+                0.0675515182,
+                178.0886993245
+              ],
+              "hex": "#98D7C8"
+            }
+          }
+        },
+        "light-hc": {
+          "hover": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.4022535181,
+                0.0153868556,
+                196.5558548512
+              ],
+              "hex": "#3F4B4B"
+            }
+          },
+          "pressed": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.3801219413,
+                0.0156529289,
+                202.7023697531
+              ],
+              "hex": "#394546"
+            }
+          }
+        },
+        "dark-hc": {
+          "hover": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.85964643,
+                0.0098908482,
+                189.0278258845
+              ],
+              "hex": "#CAD3D2"
+            }
+          },
+          "pressed": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.8788762506,
+                0.0087752537,
+                188.086539282
+              ],
+              "hex": "#D1D9D8"
+            }
+          }
+        }
+      },
+      "transparent": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "oklch",
+          "components": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 0,
+          "hex": "#000000"
+        }
       }
     }
   }

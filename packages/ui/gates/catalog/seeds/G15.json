@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/src/components/badge/badge-seeded-literal.tsx": "// G15 seed: literal user-facing text instead of a message key.\nexport function SeededLiteral() {\n  return <span>Save</span>\n}\n"
+  },
+  "expectedError": "literal user-facing text \"Save\""
+}

@@ -1,0 +1,11 @@
+/*
+ * What an app root sets for its subtree: the generated token layer defines variables only, so
+ * each regime frame sets the canvas, text colour and typography its stories inherit.
+ */
+[data-gx-regime] {
+  background-color: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+}
