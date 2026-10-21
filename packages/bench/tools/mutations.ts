@@ -16,6 +16,15 @@ const cases = [
   { id: 'report-private-source', file: 'src/report.ts', before: "publicAggregate ? 'Aggregate publication' : esc(plan.id)", after: "'Aggregate publication'", test: 'test/protocol.test.ts' },
   { id: 'report-mode', file: 'src/report.ts', before: '${esc(plan.mode)}', after: 'unknown', test: 'test/protocol.test.ts' },
   { id: 'report-candidate-version', file: 'src/report.ts', before: '${a.kind}@${a.version}', after: '${a.kind}@${a.id === "candidate" ? "removed" : a.version}', test: 'test/protocol.test.ts' },
+  { id: 'request-money', file: 'src/budget.ts', before: 'costMicrousd > trial.max_cost - used.cost', after: 'false', test: 'test/request-admission.test.ts' },
+  { id: 'request-tokens', file: 'src/budget.ts', before: 'tokens > trial.max_tokens - used.tokens', after: 'false', test: 'test/request-admission.test.ts' },
+  { id: 'request-steps', file: 'src/budget.ts', before: 'used.steps >= trial.max_steps', after: 'false', test: 'test/request-admission.test.ts' },
+  { id: 'request-crash-hold', file: 'src/budget.ts', before: "AND state='reserved'", after: "AND state='absent'", test: 'test/request-admission.test.ts' },
+  { id: 'request-unknown-halt', file: 'src/budget.ts', before: 'if (trial.halted)', after: 'if (false)', test: 'test/request-admission.test.ts' },
+  { id: 'request-model-binding', file: 'src/budget.ts', before: 'if (quote.provider !== run.provider || quote.model !== run.model)', after: 'if (false)', test: 'test/request-admission.test.ts' },
+  { id: 'request-digest-binding', file: 'src/request-admission.ts', before: 'quote.preparedSha256 !== digest', after: 'false', test: 'test/request-admission.test.ts' },
+  { id: 'request-output-binding', file: 'src/request-admission.ts', before: 'quote.outputTokenLimit !== outputTokenLimit', after: 'false', test: 'test/request-admission.test.ts' },
+  { id: 'request-before-dispatch', file: 'src/request-admission.ts', before: 'budget.admitRequest(identity, quote)', after: 'void 0', test: 'test/request-admission.test.ts' },
 ]
 for (const mutation of cases) {
   const dir = mkdtempSync(join(tmpdir(), 'b1-mutation-'))

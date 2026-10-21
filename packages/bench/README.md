@@ -145,6 +145,11 @@ K4’s current exec JSON record contains no token/cost usage; the adapter preser
 unknown, and unbilled scored records cannot be accepted. K3 connections remain the only credential owner: configs carry `secret://` references, never
 key values. Do not activate a paid executor by declaring an unbounded provider as bounded.
 
+The [request-admission foundation](REQUEST_ADMISSION.md) adds durable per-trial/request
+debits and a hook for K3's existing pre-dispatch prepared-request boundary. Its fixtures
+prove hold-before-dispatch and refusal for both arm identities. It supplies no actual
+provider wire meter, pricing adapter or arm bridge and does not enable paid execution.
+
 The R1 plugin renews its attempt while the external process is active and aborts on lease
 loss or unload. Rejected or unconfirmed cancellation ends the run as failed; it never claims
 confirmed remote cleanup from an SSH disconnect. There is no automatic inference restart. The managed process bounds stdout,
