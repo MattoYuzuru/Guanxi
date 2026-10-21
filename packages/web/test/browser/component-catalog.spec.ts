@@ -86,7 +86,7 @@ async function mockApi(page: Page, review: Partial<ReviewMock> = {}): Promise<Re
             record: {
               ...record,
               status: 'approved',
-              approval: { at: observedAt, ...current, comment: body['comment'], keyId: 'ed25519:test', signature: 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ==' },
+              approval: { at: observedAt, ...current, comment: body['comment'], keyId: 'ed25519:test', previous: null, signature: 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ==' },
             },
             current,
             signature: 'valid',

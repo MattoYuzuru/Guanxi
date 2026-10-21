@@ -1,14 +1,20 @@
 /**
- * Review record (`<id>.review.json`) format, D-138. Agents may write `draft` and `review`
- * records and change requests; only the node's approval route writes `approval`, signed with
- * the owner key. `stale` is derived from hashes and never stored.
+ * Review record (`<id>.review.json`) format, D-138; documented for the DS2 signing helper in
+ * docs/design/COMPONENTS_AND_CATALOG.md §4.1. Agents may write `draft` and `review` records,
+ * change requests and deprecations; only the owner signs decisions (`approval`, `revocation`).
+ * Each signed decision names the digest of the decision it supersedes (`previous`), so the
+ * decisions form a hash chain that an unsigned edit cannot shorten. `stale` is derived from
+ * hashes and never stored.
  */
+import { createHash } from 'node:crypto'
+import { canonicalJson } from './canonical.ts'
+
 export const REVIEW_STATUSES = ['draft', 'review', 'approved', 'deprecated'] as const
 export type StoredReviewStatus = (typeof REVIEW_STATUSES)[number]
 export type EffectiveReviewStatus = StoredReviewStatus | 'stale' | 'invalid'
 
-export const APPROVAL_SCHEMA = 'guanxi.ui-approval/1'
-export const REVOCATION_SCHEMA = 'guanxi.ui-revocation/1'
+export const APPROVAL_SCHEMA = 'guanxi.ui-approval/2'
+export const REVOCATION_SCHEMA = 'guanxi.ui-revocation/2'
 /** Base64 of a 64-byte Ed25519 signature: nothing else may ride along in the field. */
 export const SIGNATURE_PATTERN = /^[A-Za-z0-9+/]{86}==$/
 export const COMPONENT_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -20,16 +26,19 @@ export interface ReviewApproval {
   snapshotHashes: Record<string, string>
   comment: string
   keyId: string
+  /** Digest of the signed decision this one supersedes (`decisionDigest`), or null for the first. */
+  previous: string | null
   signature: string
 }
 
 /**
- * The owner's signed "request changes" on an approved record. G12 rejects any approval older
- * than the newest signed decision the base branch holds, so an old approval cannot be restored.
+ * The owner's signed "request changes" on an approved record. It chains to that approval, so
+ * restoring the approval later leaves a committed decision unchained, which G12 rejects.
  */
 export interface ReviewRevocation {
   at: string
   keyId: string
+  previous: string | null
   signature: string
 }
 
@@ -66,6 +75,7 @@ export interface ApprovalPayload {
   snapshotHashes: Record<string, string>
   comment: string
   keyId: string
+  previous: string | null
 }
 
 export interface RevocationPayload {
@@ -74,10 +84,18 @@ export interface RevocationPayload {
   decision: 'request_changes'
   at: string
   keyId: string
+  previous: string | null
 }
 
 export function revocationPayload(id: string, revocation: Omit<ReviewRevocation, 'signature'>): RevocationPayload {
-  return { schema: REVOCATION_SCHEMA, id, decision: 'request_changes', at: revocation.at, keyId: revocation.keyId }
+  return {
+    schema: REVOCATION_SCHEMA,
+    id,
+    decision: 'request_changes',
+    at: revocation.at,
+    keyId: revocation.keyId,
+    previous: revocation.previous,
+  }
 }
 
 export function approvalPayload(id: string, approval: Omit<ReviewApproval, 'signature'>): ApprovalPayload {
@@ -90,11 +108,30 @@ export function approvalPayload(id: string, approval: Omit<ReviewApproval, 'sign
     snapshotHashes: approval.snapshotHashes,
     comment: approval.comment,
     keyId: approval.keyId,
+    previous: approval.previous,
   }
+}
+
+export type DecisionKind = 'approval' | 'revocation'
+
+/**
+ * The chain link of a signed decision: sha256 over the canonical JSON of its signed payload
+ * plus its signature. The payload carries the schema and component id, so a link never matches
+ * another component's or another kind's decision.
+ */
+export function decisionDigest(id: string, kind: DecisionKind, decision: ReviewApproval | ReviewRevocation): string {
+  const { signature, ...signed } = decision
+  const payload =
+    kind === 'approval' ? approvalPayload(id, signed as Omit<ReviewApproval, 'signature'>) : revocationPayload(id, signed as Omit<ReviewRevocation, 'signature'>)
+  return `sha256:${createHash('sha256').update(canonicalJson({ ...payload, signature }), 'utf8').digest('hex')}`
 }
 
 function isRecordObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isPrevious(value: unknown): boolean {
+  return value === null || (typeof value === 'string' && HASH_PATTERN.test(value))
 }
 
 function isIsoTime(value: unknown): value is string {
@@ -102,8 +139,8 @@ function isIsoTime(value: unknown): value is string {
 }
 
 const RECORD_KEYS = new Set(['$schema', 'id', 'status', 'approval', 'revocation', 'deprecated', 'requests'])
-const APPROVAL_KEYS = new Set(['at', 'sourceHash', 'snapshotHashes', 'comment', 'keyId', 'signature'])
-const REVOCATION_KEYS = new Set(['at', 'keyId', 'signature'])
+const APPROVAL_KEYS = new Set(['at', 'sourceHash', 'snapshotHashes', 'comment', 'keyId', 'previous', 'signature'])
+const REVOCATION_KEYS = new Set(['at', 'keyId', 'previous', 'signature'])
 const REQUEST_KEYS = new Set(['id', 'at', 'text', 'state'])
 const DEPRECATION_KEYS = new Set(['at', 'replacement', 'note'])
 
@@ -143,6 +180,7 @@ export function parseReviewRecord(value: unknown, expectedId?: string): ParseRes
       }
       if (typeof approval['comment'] !== 'string') errors.push('approval.comment is not a string')
       if (typeof approval['keyId'] !== 'string' || approval['keyId'] === '') errors.push('approval.keyId is missing')
+      if (!isPrevious(approval['previous'])) errors.push('approval.previous is not null or sha256:<hex>')
       if (typeof approval['signature'] !== 'string' || !SIGNATURE_PATTERN.test(approval['signature'])) {
         errors.push('approval.signature is not a base64 Ed25519 signature')
       }
@@ -154,6 +192,7 @@ export function parseReviewRecord(value: unknown, expectedId?: string): ParseRes
       errors.push(...unknownKeys(revocation, REVOCATION_KEYS, 'revocation'))
       if (!isIsoTime(revocation['at'])) errors.push('revocation.at is not an ISO time')
       if (typeof revocation['keyId'] !== 'string' || revocation['keyId'] === '') errors.push('revocation.keyId is missing')
+      if (!isPrevious(revocation['previous'])) errors.push('revocation.previous is not null or sha256:<hex>')
       if (typeof revocation['signature'] !== 'string' || !SIGNATURE_PATTERN.test(revocation['signature'])) {
         errors.push('revocation.signature is not a base64 Ed25519 signature')
       }

@@ -1,10 +1,14 @@
 /** Approval record format, canonical signing bytes and key-set rotation (D-138). */
 import assert from 'node:assert/strict'
-import { generateKeyPairSync } from 'node:crypto'
+import { generateKeyPairSync, sign } from 'node:crypto'
 import { describe, it } from 'node:test'
 import {
   approvalPayload,
+  approvalSigningBytes,
   canonicalJson,
+  decisionDigest,
+  lifecycleTransition,
+  revocationPayload,
   exportPublicKey,
   parseReviewRecord,
   parseTrustedKeys,
@@ -27,7 +31,7 @@ function key(note: string) {
 const HASH = `sha256:${'a'.repeat(64)}`
 
 function approved(signer: ReturnType<typeof key>, overrides: Partial<NonNullable<ReviewRecord['approval']>> = {}): ReviewRecord {
-  const unsigned = { at: '2026-10-20T12:00:00.000Z', sourceHash: HASH, snapshotHashes: { 'default.light': HASH }, comment: 'ok', keyId: signer.trusted.keyId }
+  const unsigned = { at: '2026-10-20T12:00:00.000Z', sourceHash: HASH, snapshotHashes: { 'default.light': HASH }, comment: 'ok', keyId: signer.trusted.keyId, previous: null }
   return {
     id: 'button',
     status: 'approved',
@@ -42,6 +46,22 @@ describe('canonical JSON', () => {
     assert.throws(() => canonicalJson({ a: Number.NaN }))
   })
 })
+
+type Approved = ReviewRecord & { approval: NonNullable<ReviewRecord['approval']> }
+
+function signRevocation(signer: ReturnType<typeof key>, id: string, unsigned: Omit<NonNullable<ReviewRecord['revocation']>, 'signature'>): string {
+  return sign(null, approvalSigningBytes(revocationPayload(id, unsigned)), signer.privateKey).toString('base64')
+}
+
+function revocation(signer: ReturnType<typeof key>, record: Approved, at: string): NonNullable<ReviewRecord['revocation']> {
+  const unsigned = { at, keyId: signer.trusted.keyId, previous: decisionDigest(record.id, 'approval', record.approval) }
+  return { ...unsigned, signature: signRevocation(signer, record.id, unsigned) }
+}
+
+function approvedAfter(signer: ReturnType<typeof key>, previous: NonNullable<ReviewRecord['revocation']>, at = '2026-10-23T12:00:00.000Z'): Approved {
+  const unsigned = { at, sourceHash: HASH, snapshotHashes: { 'default.light': HASH }, comment: 'again', keyId: signer.trusted.keyId, previous: decisionDigest('button', 'revocation', previous) }
+  return { id: 'button', status: 'approved', approval: { ...unsigned, signature: signApprovalPayload(approvalPayload('button', unsigned), signer.privateKey) }, requests: [] }
+}
 
 describe('approval verification', () => {
   const owner = key('owner')
@@ -61,27 +81,18 @@ describe('approval verification', () => {
     assert.deepEqual(verifyRecordApproval(forged, [owner.trusted]), { state: 'invalid', reason: 'bad_signature' })
   })
 
-  it('treats an approval followed by a signed revocation in the same record as revoked (GPT H2)', async () => {
-    const { revocationPayload, approvalSigningBytes } = await import('../../../catalog/approval/index.ts')
-    const { sign } = await import('node:crypto')
-    const record = approved(owner)
-    const at = '2026-10-21T09:00:00.000Z'
-    const revocation = {
-      at,
-      keyId: owner.trusted.keyId,
-      signature: sign(null, approvalSigningBytes(revocationPayload('button', { at, keyId: owner.trusted.keyId })), owner.privateKey).toString('base64'),
-    }
-    const both = { ...record, revocation }
+  it('treats an approval followed by a signed revocation chained to it as revoked (GPT H2, N1)', () => {
+    const record = approved(owner) as Approved
+    const both = { ...record, revocation: revocation(owner, record, '2026-10-21T09:00:00.000Z') }
     assert.deepEqual(verifyRecordApproval(both, [owner.trusted]), { state: 'invalid', reason: 'revoked' })
     assert.equal(effectiveStatus(both, 'invalid', { sourceHash: HASH, snapshotHashes: { 'default.light': HASH } }), 'invalid')
-    // An approval newer than the revocation is the owner's latest decision and stays valid.
-    const earlier = '2026-10-19T09:00:00.000Z'
-    const older = {
-      at: earlier,
-      keyId: owner.trusted.keyId,
-      signature: sign(null, approvalSigningBytes(revocationPayload('button', { at: earlier, keyId: owner.trusted.keyId })), owner.privateKey).toString('base64'),
-    }
-    assert.equal(verifyRecordApproval({ ...record, revocation: older }, [owner.trusted]).state, 'valid')
+    // A revocation that names no decision cannot be ordered against the approval.
+    const loose = { ...both.revocation, previous: null }
+    const unchained = { ...record, revocation: { ...loose, signature: signRevocation(owner, 'button', loose) } }
+    assert.deepEqual(verifyRecordApproval(unchained, [owner.trusted]), { state: 'invalid', reason: 'unchained' })
+    // An approval chained after the revocation is the owner's current decision and stays valid.
+    const again = approvedAfter(owner, both.revocation)
+    assert.equal(verifyRecordApproval({ ...again, revocation: both.revocation }, [owner.trusted]).state, 'valid')
   })
 
   it('rejects approvals on records that are not approved and approved records without one', () => {
@@ -319,6 +330,88 @@ describe('component source hash covers what the component runs (GPT H3)', async 
       assert.throws(() => componentSourceHash(t.dir), /cannot resolve '\.\.\/\.\.\/lib\/missing-helper'/)
     } finally {
       t.dispose()
+    }
+  })
+})
+
+describe('lifecycle across committed versions (GPT N1)', () => {
+  const owner = key('owner')
+  const keys = [owner.trusted]
+  const at = (label: string, record: ReviewRecord | null) => ({ label, record, trustedKeys: keys })
+  const first = approved(owner) as Approved
+  const revoked: ReviewRecord = { ...first, status: 'review', approval: null, revocation: revocation(owner, first, '2026-10-21T09:00:00.000Z') }
+  const deprecated: ReviewRecord = { ...first, status: 'deprecated', deprecated: { at: '2026-10-22T09:00:00.000Z', replacement: null, note: 'old' } }
+
+  it('allows what the node and agents legitimately write', () => {
+    assert.deepEqual(lifecycleTransition(at('v1', first), at('v2', revoked)), [], 'a revocation chained to the approval')
+    const again = approvedAfter(owner, revoked.revocation!)
+    assert.deepEqual(lifecycleTransition(at('v2', revoked), at('v3', { ...again, revocation: revoked.revocation })), [], 'a new approval chained to the revocation')
+    assert.deepEqual(lifecycleTransition(at('v1', first), at('v2', deprecated)), [], 'an agent deprecates and keeps the approval')
+    assert.deepEqual(lifecycleTransition(at('v2', revoked), at('v3', { ...revoked, requests: [{ id: 'r1', at: '2026-10-21T10:00:00.000Z', text: 'x', state: 'open' }] })), [], 'unsigned request edits')
+    const reactivated = approvedAfter(owner, revoked.revocation!, '2026-10-23T12:00:00.000Z')
+    const deprecatedAfterRevoke: ReviewRecord = { ...revoked, status: 'deprecated', deprecated: { at: '2026-10-22T09:00:00.000Z', replacement: null, note: 'old' } }
+    assert.deepEqual(lifecycleTransition(at('v3', deprecatedAfterRevoke), at('v4', { ...reactivated, revocation: revoked.revocation })), [], 'a newer signed approval reactivates')
+  })
+
+  it('rejects an unsigned change that drops a deprecation, even without an approval in it', () => {
+    const erased: ReviewRecord = { ...first, status: 'review', approval: null, requests: [] }
+    assert.match(lifecycleTransition(at('main~1', deprecated), at('main', erased)).join('\n'), /main removes the deprecation of 2026-10-22T09:00:00.000Z \(main~1\) without a newer signed decision/)
+  })
+
+  it('rejects an unsigned change that drops a signed revocation, and the old approval after it', () => {
+    const erased: ReviewRecord = { ...revoked, revocation: null }
+    assert.match(lifecycleTransition(at('main~1', revoked), at('main', erased)).join('\n'), /main drops the signed revocation of 2026-10-21T09:00:00.000Z \(main~1\) without a signed decision that chains to it/)
+    assert.match(lifecycleTransition(at('main~1', revoked), at('branch', first)).join('\n'), /branch drops the signed revocation/)
+  })
+
+  it('rejects removing a record that holds a decision', () => {
+    assert.match(lifecycleTransition(at('main', revoked), at('the working tree', null)).join('\n'), /the working tree removes the review record, which holds the signed revocation of 2026-10-21T09:00:00.000Z \(main\)/)
+  })
+})
+
+describe('G12 walks the committed history of a record (GPT N1)', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { historyFromGit, walkLifecycle } = await import('../g12-approval-integrity.ts')
+  const { serialiseRecord } = await import('../../../catalog/approval/index.ts')
+  const owner = key('owner')
+  const first = approved(owner) as Approved
+  const revoked: ReviewRecord = { ...first, status: 'review', approval: null, revocation: revocation(owner, first, '2026-10-21T09:00:00.000Z') }
+
+  it('finds an unsigned commit that erased a signed revocation, and fails closed when shallow', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'guanxi-g12-history-'))
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
+    try {
+      git('init', '-q', '-b', 'main')
+      git('config', 'user.email', 'test@example.invalid')
+      git('config', 'user.name', 'test')
+      const dir = join(repo, 'packages/ui/src/components/button')
+      mkdirSync(dir, { recursive: true })
+      mkdirSync(join(repo, 'packages/ui/catalog'), { recursive: true })
+      writeFileSync(join(repo, 'packages/ui/catalog/approval-keys.json'), JSON.stringify({ version: 1, keys: [owner.trusted], rotation: null }))
+      const commit = (record: ReviewRecord, message: string) => {
+        writeFileSync(join(dir, 'button.review.json'), serialiseRecord(record))
+        git('add', '-A')
+        git('commit', '-q', '-m', message)
+      }
+      commit(first, 'approve')
+      commit(revoked, 'request changes')
+      commit({ ...revoked, revocation: null }, 'unsigned edit')
+      const history = historyFromGit(repo, git('rev-parse', 'HEAD'), ['button'])
+      assert.ok(!('error' in history))
+      const [onBase] = (history as Record<string, Parameters<typeof walkLifecycle>[0][]>)['button']!
+      assert.equal(onBase!.length, 3)
+      const problems = walkLifecycle(onBase!, { label: 'the working tree', record: first, trustedKeys: [owner.trusted] })
+      // The unsigned commit does not reset the barrier: the restored approval still fails.
+      assert.match(problems.join('\n'), /the working tree drops the signed revocation of 2026-10-21T09:00:00.000Z \(commit [0-9a-f]{7}\)/)
+      // Re-adding the erased revocation repairs the history.
+      assert.deepEqual(walkLifecycle(onBase!, { label: 'the working tree', record: revoked, trustedKeys: [owner.trusted] }), [])
+      writeFileSync(join(repo, '.git', 'shallow'), `${git('rev-parse', 'HEAD~1')}\n`)
+      assert.match((historyFromGit(repo, git('rev-parse', 'HEAD'), ['button']) as { error: string }).error, /shallow/)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
     }
   })
 })

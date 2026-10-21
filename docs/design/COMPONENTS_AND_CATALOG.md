@@ -72,6 +72,47 @@ draft ──(stories + docs complete)──► review ──(owner approves)─�
 | New use of a `deprecated` component | blocked | blocked |
 | Draft used only in the catalog | allowed | allowed |
 
+### 4.1 Review record format (stable; DS2 signs it)
+
+**Status:** implemented (lane DS1-b, 2026-10-21). The DS2 signing helper (D-184) signs exactly
+these payloads; a change to them is a new schema version.
+
+`packages/ui/src/components/<id>/<id>.review.json`, validated by `catalog/review.schema.json`
+and `parseReviewRecord` (unknown fields are rejected), written by the node in one serialisation
+(`serialiseRecord`; G12 rejects any other bytes for a signed record):
+
+| Field | Written by | Meaning |
+| --- | --- | --- |
+| `id`, `status` | agents, node | `draft`, `review`, `approved` (needs a valid approval at the chain head) or `deprecated` (needs `deprecated`) |
+| `approval` | owner (signed) | `{ at, sourceHash, snapshotHashes, comment, keyId, previous, signature }` |
+| `revocation` | owner (signed) | the owner's "request changes" on an approved record: `{ at, keyId, previous, signature }` |
+| `deprecated` | agents | `{ at, replacement, note }`; the approval stays, so the chain stays intact |
+| `requests` | agents, node | change requests `{ id, at, text, state: open \| resolved }` |
+
+Signed payloads (Ed25519 over canonical JSON: keys sorted by UTF-16 code unit, no whitespace,
+UTF-8):
+
+- approval: `{ schema: "guanxi.ui-approval/2", id, status: "approved", at, sourceHash,
+  snapshotHashes, comment, keyId, previous }`;
+- revocation: `{ schema: "guanxi.ui-revocation/2", id, decision: "request_changes", at, keyId,
+  previous }`.
+
+**Hash chain.** `previous` is the digest of the signed decision the new one supersedes, or
+`null` for the first: `sha256:` + hex SHA-256 of the canonical JSON of that decision's payload
+plus its `signature`. The node sets it to the record's current head when it signs. With both an
+approval and a revocation in a record, exactly one names the other; that one is the head, the
+owner's current decision (a revocation head revokes the approval).
+
+**What G12 enforces across history.** G12 walks every committed version of each record (the
+first-parent history of the base branch and of HEAD) and keeps a barrier: the owner's latest
+signed decision and any deprecation. The working tree must keep that decision or replace it with
+one that chains to it, and keep the deprecation unless a newer signed decision supersedes it.
+An unsigned commit that drops either never resets the barrier, so an old approval restored after
+it still fails; re-adding the dropped decision repairs it. Removing the record file counts as
+dropping. Unsigned changes to `status` (draft, review), `requests` and new deprecations stay
+allowed. Shallow clones fail closed. A decision deleted before it ever reached a committed
+version cannot be recovered.
+
 ## 5. Gates
 
 Every gate ships with a seeded violation that must make it fail; a self-test gate runs them all.

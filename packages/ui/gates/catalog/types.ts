@@ -4,7 +4,7 @@
  * ./run.ts. Each gate is a plain object, so the registry can import `catalogGates` from
  * ./registry.ts and run them next to G1–G7 (see docs/plans/lanes/DS1-b.handoff.md).
  */
-import type { TrustedKeyFile } from '../../catalog/approval/index.ts'
+import type { TrustedKey, TrustedKeyFile } from '../../catalog/approval/index.ts'
 import type { UsageScope } from '../../catalog/tooling/usage.ts'
 
 export type GateMode = 'fast' | 'browser'
@@ -14,6 +14,17 @@ export interface BaseSnapshot {
   trustedKeys: TrustedKeyFile
   /** Raw review records on the base branch, by component id. */
   records: Record<string, unknown>
+  /** The base commit, when read from git (G12 walks its history). */
+  commit?: string
+}
+
+/** One committed version of a review record, for G12's lifecycle walk (N1). */
+export interface HistoryVersion {
+  /** A commit, the base branch or a fixture step, for messages. */
+  label: string
+  /** The parsed JSON, `undefined` when the file is absent, or the string 'unreadable'. */
+  json: unknown
+  trustedKeys: TrustedKey[]
 }
 
 export interface GateFinding {
@@ -35,6 +46,11 @@ export interface GateContext {
    * skips the comparison (fixtures that test something else).
    */
   base?: BaseSnapshot | null
+  /**
+   * Committed versions of each record, oldest first, for G12's lifecycle walk. `undefined`
+   * reads git when `base` is read from git too; fixtures pass the sequence they test.
+   */
+  history?: Record<string, HistoryVersion[][]>
   /** Browser gates: restrict to these story keys (seeded fixtures use it). */
   stories?: string[]
   /** Browser gates: load the fixture stories into the harness. */

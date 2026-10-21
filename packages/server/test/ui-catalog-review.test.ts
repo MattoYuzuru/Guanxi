@@ -20,6 +20,7 @@ import {
 import {
   componentSnapshotHashes,
   componentSourceHash,
+  decisionDigest,
   exportPublicKey,
   parseReviewRecord,
   uiPaths,
@@ -296,6 +297,8 @@ describe('approving a component', () => {
     assert.equal(record.status, 'review')
     assert.equal(record.approval, null)
     assert.equal(record.revocation?.keyId, fx.trusted.keyId)
+    // N1: the revocation chains to the approval it supersedes.
+    assert.equal(record.revocation?.previous, decisionDigest('button', 'approval', JSON.parse(approvedText).approval))
     assert.equal(record.requests.length, 1)
     assert.equal(record.requests[0]?.state, 'open')
     assert.equal(record.requests[0]?.text, 'Comfortable density padding feels loose.')
@@ -314,10 +317,26 @@ describe('approving a component', () => {
         base: { label: 'main', trustedKeys: { keys: [fx.trusted] }, records: { button: JSON.parse(onMain) } },
       })
       assert.equal(restored.status, 'fail')
-      assert.match(restored.findings.map((finding) => finding.message).join('\n'), /does not follow the signed revocation/)
+      assert.match(
+        restored.findings.map((finding) => finding.message).join('\n'),
+        /the working tree drops the signed revocation of .* \(main\) without a signed decision that chains to it/,
+      )
     } finally {
       writeFileSync(path, onMain)
     }
+    // Approving again chains the new approval to the revocation, and G12 accepts it.
+    const again = await post(app(service), 'button', { decision: 'approve', comment: 'Fixed.', ...current(fx.uiRoot, 'button') })
+    assert.equal(again.status, 200)
+    const reapproved = readRecord(fx.uiRoot, 'button')
+    assert.equal(reapproved.approval?.previous, decisionDigest('button', 'revocation', record.revocation!))
+    const accepted = await g12.run({
+      repoRoot: fx.repoRoot,
+      uiRoot: fx.uiRoot,
+      usageScope: defaultUsageScope(fx.repoRoot),
+      release: false,
+      base: { label: 'main', trustedKeys: { keys: [fx.trusted] }, records: { button: JSON.parse(onMain) } },
+    })
+    assert.equal(accepted.status, 'pass', accepted.findings.map((finding) => finding.message).join('\n'))
   })
 
   it('serialises an approval and a change request racing on one component', async () => {

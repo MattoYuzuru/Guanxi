@@ -34,6 +34,9 @@ export const uiCatalogReviewCapabilityResponse = z
   .strict()
 export type UiCatalogReviewCapability = z.infer<typeof uiCatalogReviewCapabilityResponse>
 
+/** Digest of the signed decision a new one supersedes; the decisions form a hash chain. */
+const previous = hash.nullable()
+
 export const uiReviewApprovalSchema = z
   .object({
     at: isoTime,
@@ -41,13 +44,14 @@ export const uiReviewApprovalSchema = z
     snapshotHashes: z.record(hash),
     comment: z.string(),
     keyId: z.string().min(1),
+    previous,
     signature,
   })
   .strict()
 
-/** The owner's signed "request changes" on an approved record (replay protection). */
+/** The owner's signed "request changes" on an approved record, chained to that approval. */
 export const uiReviewRevocationSchema = z
-  .object({ at: isoTime, keyId: z.string().min(1), signature })
+  .object({ at: isoTime, keyId: z.string().min(1), previous, signature })
   .strict()
 
 export const uiReviewRequestSchema = z

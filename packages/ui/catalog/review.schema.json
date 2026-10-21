@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://guanxi.local/schemas/ui-review-record.json",
   "title": "Guanxi component review record (D-138)",
-  "description": "One per component folder. Agents write draft and review records and change requests; only the node's approval route writes `approval`, signed with the owner key. `stale` is derived from hashes and never stored.",
+  "description": "One per component folder (format: docs/design/COMPONENTS_AND_CATALOG.md §4.1). Agents write draft and review records, change requests and deprecations; only the owner signs decisions (`approval`, `revocation`). Each signed decision names the digest of the decision it supersedes (`previous`), forming a hash chain that G12 checks across the committed history. `stale` is derived from hashes and never stored.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "status", "approval", "requests"],
@@ -16,7 +16,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["at", "sourceHash", "snapshotHashes", "comment", "keyId", "signature"],
+          "required": ["at", "sourceHash", "snapshotHashes", "comment", "keyId", "previous", "signature"],
           "properties": {
             "at": { "type": "string", "format": "date-time" },
             "sourceHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
@@ -26,22 +26,24 @@
             },
             "comment": { "type": "string" },
             "keyId": { "type": "string", "minLength": 1 },
+            "previous": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }], "description": "Digest of the superseded signed decision (sha256 over the canonical signed payload plus signature), or null for the first decision" },
             "signature": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$", "description": "Base64 Ed25519 signature over the canonical approval payload" }
           }
         }
       ]
     },
     "revocation": {
-      "description": "The owner's signed request for changes on an approved record; no approval may be older than it.",
+      "description": "The owner's signed request for changes on an approved record; it chains to that approval.",
       "oneOf": [
         { "type": "null" },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["at", "keyId", "signature"],
+          "required": ["at", "keyId", "previous", "signature"],
           "properties": {
             "at": { "type": "string", "format": "date-time" },
             "keyId": { "type": "string", "minLength": 1 },
+            "previous": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }], "description": "Digest of the superseded signed decision (sha256 over the canonical signed payload plus signature), or null for the first decision" },
             "signature": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$" }
           }
         }

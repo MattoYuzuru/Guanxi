@@ -23,6 +23,8 @@ import {
   effectiveStatus,
   loadTrustedKeys,
   parseReviewRecord,
+  decisionChain,
+  decisionDigest,
   revocationPayload,
   sameSnapshotHashes,
   serialiseRecord,
@@ -151,9 +153,16 @@ export class UiCatalogReviewService {
     let next: ReviewRecord
 
     const trusted = this.trustedKeys()
+    // Each signed decision chains to the owner's current one (N1), so no later unsigned edit
+    // can drop it without G12 noticing.
+    const chain = decisionChain(record, trusted)
+    if (chain.state === 'unchained') {
+      throw new UiCatalogError('review_conflict', 'record_changed', 'The record holds signed decisions that do not chain')
+    }
+    const previous = chain.state === 'chained' ? chain.head.digest : null
     if (body.decision === 'approve') {
       const keyId = await this.trustedSignerKey(trusted)
-      const unsigned = { at, sourceHash, snapshotHashes, comment: body.comment.trim(), keyId }
+      const unsigned = { at, sourceHash, snapshotHashes, comment: body.comment.trim(), keyId, previous }
       const signed = await this.sign(approvalSigningBytes(approvalPayload(id, unsigned)), keyId)
       next = {
         ...record,
@@ -170,9 +179,9 @@ export class UiCatalogReviewService {
       // Requesting changes on an owner-approved record is itself signed, so an agent cannot
       // undo it later by restoring the old approval (G12 compares with the base branch).
       let revocation = record.revocation ?? null
-      if (verifyRecordApproval(record, trusted).state === 'valid') {
+      if (verifyRecordApproval(record, trusted).state === 'valid' && record.approval) {
         const keyId = await this.trustedSignerKey(trusted)
-        const unsigned = { at, keyId }
+        const unsigned = { at, keyId, previous: decisionDigest(id, 'approval', record.approval) }
         revocation = { ...unsigned, signature: (await this.sign(approvalSigningBytes(revocationPayload(id, unsigned)), keyId)).signature }
       }
       next = {

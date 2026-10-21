@@ -1,6 +1,6 @@
 {
   "files": {
-    "packages/ui/src/components/badge/badge.review.json": "{\n  \"$schema\": \"../../../catalog/review.schema.json\",\n  \"id\": \"badge\",\n  \"status\": \"approved\",\n  \"approval\": {\n    \"at\": \"2026-10-20T12:00:00.000Z\",\n    \"sourceHash\": \"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\n    \"snapshotHashes\": {},\n    \"comment\": \"Approved by the owner.\",\n    \"keyId\": \"ed25519:00000000000000000000000000000000\",\n    \"signature\": \"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw==\"\n  },\n  \"requests\": []\n}\n"
+    "packages/ui/src/components/badge/badge.review.json": "{\n  \"$schema\": \"../../../catalog/review.schema.json\",\n  \"id\": \"badge\",\n  \"status\": \"approved\",\n  \"approval\": {\n    \"at\": \"2026-10-20T12:00:00.000Z\",\n    \"sourceHash\": \"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\n    \"snapshotHashes\": {},\n    \"comment\": \"Approved by the owner.\",\n    \"keyId\": \"ed25519:00000000000000000000000000000000\",\n    \"previous\": null,\n    \"signature\": \"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw==\"\n  },\n  \"requests\": []\n}\n"
   },
   "expectedError": "approval is invalid: untrusted_key"
 }
