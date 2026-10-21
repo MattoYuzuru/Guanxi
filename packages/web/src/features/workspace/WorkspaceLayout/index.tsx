@@ -164,8 +164,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           else if (zone === 'popout') {
             const keyboard = (event: KeyboardEvent) => {
               if (event.defaultPrevented) return
-              if (event.key === 'F6') { event.preventDefault(); handle.cycleZone(event.shiftKey, id) }
-              if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') { event.preventDefault(); latest.current.onMoveRequested(id) }
+              const current = api.panels.find(candidate => candidate.api.getWindow() === event.currentTarget && candidate.group.activePanel === candidate)?.id
+              if (!current) return
+              if (event.key === 'F6') { event.preventDefault(); handle.cycleZone(event.shiftKey, current) }
+              if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') { event.preventDefault(); latest.current.onMoveRequested(current) }
             }
             success = await api.addPopoutGroup(panel, {
             popoutUrl: new URL('/workspace-popout.html', window.location.origin).href,
