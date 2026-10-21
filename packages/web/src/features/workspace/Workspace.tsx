@@ -217,7 +217,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     if (next !== mode && documents[next]) void activateDocument(documents[next]!)
   }
   function openMove(id?: string) {
-    if (phone || switching || saving) return
+    if (phone || operationBusy.current) return
     const next = id ?? engine.current?.activeBlock() ?? selected
     if (doc?.blocks[next] && !doc.hidden.includes(next)) { returnFocus.current = paneHosts.current.get(next)?.ownerDocument.activeElement as HTMLElement | null; setMoving(next) }
   }
@@ -335,7 +335,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     {saveError && <WorkspaceChrome kind="state" title={translate('workspaceLayout.saveError')} error action={{ label: translate('workspaceLayout.retry'), onClick: () => retryOperation.current() }} />}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>
     {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspaceLayout.popoutRestore')}</p>}
-    <div className="workspace-content" inert={switching || undefined}>
+    <div className="workspace-content" inert={saving || switching || undefined}>
       {visible.length === 0 ? (
         <WorkspaceChrome kind="state" title={translate('workspaceLayout.noVisibleBlocks')} action={{ label: translate('workspaceLayout.add'), onClick: () => { const id = Object.keys(doc.blocks)[0]; if (id) show(id) } }} />
       ) : phone ? <>
