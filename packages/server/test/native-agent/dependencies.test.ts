@@ -14,7 +14,7 @@ test('a degraded runtime dependency warning prevents initialization and command 
   const vendor = join(dir, 'vendor', 'seccomp', process.arch); await mkdir(vendor, { recursive: true })
   await writeFile(join(vendor, 'apply-seccomp'), '#!/bin/sh\nexit 0\n', { mode: 0o700 })
   await writeFile(runtime, `import {writeFile} from 'node:fs/promises'; export const getDefaultWritePaths=()=>[]; export const SandboxManager={isSupportedPlatform:()=>true,checkDependenciesAsync:async()=>({errors:[],warnings:['seccomp unavailable']}),initialize:async()=>writeFile(${JSON.stringify(marker)},'DISPATCHED'),reset:async()=>{}};`)
-  for (const name of ['sandbox-worker.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts', 'sandbox-protocol.ts']) {
+  for (const name of ['sandbox-worker.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'egress-ipc.ts', 'cleanup.ts', 'sandbox-protocol.ts']) {
     const source = (await readFile(new URL(`../../src/native-agent/${name}`, import.meta.url), 'utf8')).replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(pathToFileURL(runtime).href))
     await writeFile(join(dir, name), source)
   }

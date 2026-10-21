@@ -1,15 +1,17 @@
 import { z } from 'zod'
 export const accessModeSchema = z.enum(['read-only', 'full-access'])
 export type AccessMode = z.infer<typeof accessModeSchema>
-/** Loopback grants always name one TCP service, never every local port. */
-const domainSchema = z.string().regex(/^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::[0-9]{1,5})?$/).refine(value => {
+/** IP and localhost grants name one TCP service, never every local/LAN port. */
+const domainSchema = z.string().regex(/^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[0-9a-f:.]+\])(?::[0-9]{1,5})?$/).refine(value => {
   try {
     const url = new URL(`http://${value}`)
-    const loopback = url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname.startsWith('127.')
-    const explicitPort = value.includes(':') && Number(value.split(':')[1]) >= 1 && Number(value.split(':')[1]) <= 65535
-    return (!loopback || explicitPort) && (!value.includes(':') || explicitPort)
+    // WHATWG URL normalizes numeric IPv4 aliases (0, 0x0, octal, shortened).
+    const requiresPort = url.hostname.startsWith('[') || /^[0-9.]+$/.test(url.hostname) || url.hostname === 'localhost' || url.hostname.endsWith('.localhost')
+    const port = /(?:\]|[^:]):([0-9]+)$/.exec(value)?.[1]
+    const explicitPort = port !== undefined && Number(port) >= 1 && Number(port) <= 65535
+    return (!requiresPort || explicitPort) && (port === undefined || explicitPort)
   } catch { return false }
-}, 'Loopback entries require an explicit TCP port (1–65535)')
+}, 'IP literal and localhost entries require an explicit TCP port (1–65535)')
 export const nativeAgentInputSchema = z.object({
   projectId: z.string().min(1), connectionId: z.string().min(1), model: z.string().min(1),
   mode: accessModeSchema.default('read-only'), prompt: z.string().min(1),

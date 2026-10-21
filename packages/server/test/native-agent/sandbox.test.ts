@@ -3,6 +3,8 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath, link } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
+import { networkInterfaces } from 'node:os'
+import { nativeAgentInputSchema } from '@guanxi/contract'
 import { sandboxCommand as rawSandboxCommand, quote, type SandboxPolicy } from '../../src/native-agent/sandbox.ts'
 import { orientation } from '../../src/native-agent/orientation.ts'
 
@@ -86,12 +88,38 @@ test('orientation UTF-8 byte upper bound never exceeds 300, even with long/unico
     assert.match(text, /AGENTS.md/); assert.match(text, /budget/)
   }
 })
+test('IP service probes refuse port-less unspecified/LAN policies and reach only the named port', { timeout: 60000 }, async t => {
+  const { policy } = await fixture(t)
+  const reached: string[] = [], denied: string[] = []
+  const allowed = createServer((req, res) => { reached.push(req.url!); res.end('fixture') })
+  const other = createServer((req, res) => { denied.push(req.url!); res.end('ESCAPED') })
+  for (const server of [allowed, other]) {
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '0.0.0.0', resolve) })
+    t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  }
+  const port = (allowed.address() as { port: number }).port, otherPort = (other.address() as { port: number }).port
+  const lan = Object.values(networkInterfaces()).flat().find(entry => entry?.family === 'IPv4' && !entry.internal)?.address
+  assert.ok(lan, 'the LAN-IP probe needs a non-loopback IPv4 interface')
+  for (const mode of ['read-only', 'full-access'] as const) for (const host of ['0.0.0.0', lan]) {
+    const input = { projectId: 'p', connectionId: 'c', model: 'm', prompt: 'p', mode }
+    assert.throws(() => nativeAgentInputSchema.parse({ ...input, domains: [host] }), /explicit TCP port/, `${mode}: port-less ${host} refused before dispatch`)
+    const { domains } = nativeAgentInputSchema.parse({ ...input, domains: [`${host}:${port}`] })
+    const path = `/${mode}/${host}`
+    const curl = "curl --noproxy '' -s --max-time 3 -o /dev/null -w '%{http_code} '"
+    const result = await sandboxCommand({ ...policy, mode, domains }, `${curl} http://${host}:${port}${path}; ${curl} http://${host}:${otherPort}${path}`)
+    assert.equal(result.code, 0, result.stderr)
+    assert.equal(result.stdout, '200 403 ', `${mode}: ${host} must reach only its named port`)
+    assert.equal(reached.filter(value => value === path).length, 1, 'exactly one request reaches the granted service')
+    assert.deepEqual(denied, [], 'zero requests reach the unnamed service')
+  }
+  assert.equal(reached.length, 4)
+})
 test('editing a writable checkout cannot replace the next trusted sandbox launcher', { timeout: 30000 }, async t => {
   const { policy, root } = await fixture(t)
   await writeFile(join(root, 'protected'), 'original')
   const { copyFile } = await import('node:fs/promises')
   const { pathToFileURL } = await import('node:url')
-  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
+  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'egress-ipc.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(root, 'node_modules'))
   const { sandboxCommand: cloned } = await import(pathToFileURL(join(root, 'sandbox.ts')).href)
   const full = { ...policy, mode: 'full-access' as const, roots: [root] }
@@ -251,7 +279,7 @@ test('worker crash tears down every descendant before the next command settles',
   const { dir, policy } = await fixture(t)
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'launcher'); await mkdir(launcher)
-  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'egress-ipc.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox.ts', import.meta.url), 'utf8')
   const hook = `if (signal?.aborted) abort(); const crashTimer = setInterval(() => { if (existsSync(${JSON.stringify(join(policy.scratch, 'ready'))})) { clearInterval(crashTimer); child.kill('SIGKILL') } }, 10); child.once('exit', () => clearInterval(crashTimer))`
@@ -278,7 +306,7 @@ test('arbitrary execution cannot connect to a Unix socket exposed inside a selec
 async function fixtureLauncher(dir: string, transformWorker: (source: string) => string, transformSandbox: (source: string) => string = source => source) {
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'fixture-launcher'); await mkdir(launcher)
-  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'egress-ipc.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await writeFile(join(launcher, 'sandbox.ts'), transformSandbox(await readFile(join(launcher, 'sandbox.ts'), 'utf8')))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox-worker.ts', import.meta.url), 'utf8')
