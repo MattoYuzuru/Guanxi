@@ -286,3 +286,138 @@ times in the production binary, so the test-only probe is not compiled into prod
 - The original residuals (misleading reason from a process holding the blob and the owner's
   touch, ad-hoc identity changes, any local process asking for a canonical payload, deprecated
   access-list APIs) are unchanged.
+
+## Review-fix round 2 (2026-10-21) — actual policy arguments
+
+**Finding (P2 evidence, not an auth bypass).** The previous probe reported the policy descriptor
+and called `configureConfirmationContext` directly, so it did not prove the arguments the shared
+builder actually sent to the public API. Two independent source mutations still passed the old
+policy test:
+
+- **A:** `makeApprovalAccessControl` passed `[.privateKeyUsage]` instead of
+  `policy.accessFlags` to the real `SecAccessControlCreateWithFlags`, dropping actual
+  `userPresence` while the descriptor stayed correct;
+- **B:** `makeConfirmationContext` returned `LAContext()` and dropped the reason and zero-reuse
+  configuration.
+
+Both were reproduced before this fix on HEAD `7a245b1`: each mutation compiled into a temporary
+test build and the old `wires the production access-control and confirmation policy through the
+shared builders` test stayed green (1 test, 1 pass). The source was restored after each run.
+That confirms the hand-off's previous "tests prove production policy wiring" claim was too strong
+for those two mutations.
+
+### Correction
+
+- `makeApprovalAccessControl(create:)` now invokes an injectable `AccessControlFactory`. The
+  default is the real public `SecAccessControlCreateWithFlags`; the builder reads the shared
+  `approvalKeyAccessPolicy()` and passes `policy.accessibility` and `policy.accessFlags` through
+  that factory.
+- `makeConfirmationContext(reason:contextFactory:)` now invokes an injectable
+  `ConfirmationContextFactory`. The default is `productionConfirmationContext`, which returns a
+  fresh `LAContext`; the shared `configureConfirmationContext` applies the exact reason and the
+  explicit zero reuse.
+- The test-only `test-policy` probe passes local capturing closures through those shared builders.
+  It captures the protection class and flags actually sent to the real access-control API, calls
+  `makeConfirmationContext` twice with a factory that pre-seeds reuse `120`, and reports the two
+  returned instances, their reasons and their reuse values. It never loads a key, prompts, signs
+  or writes a keychain item.
+- Two scoped source-wiring assertions cover the production `#else` branches that the test build
+  compiles out: `operationInit` must call `makeApprovalAccessControl()` and `operationSign` must
+  call `makeConfirmationContext(reason:)`, with no direct API/constructor bypass. These are
+  wiring assertions, not a second copy of the intended values; the behavioral probe proves the
+  actual arguments.
+- The factories are function parameters passed by local code only. No request field selects them;
+  the probe remains inside `#if GUANXI_SIGNER_TESTING`, and the production hook test now also
+  asserts that `test-policy` is absent from the production binary and present in the test binary.
+
+### New tests and mutation controls
+
+**2 new tests:**
+
+- `keeps production init on the shared access-control builder`;
+- `keeps production sign on the shared confirmation-context builder`.
+
+The existing `wires the production access-control and confirmation policy through the shared
+builders` test was strengthened in place: it now asserts captured API arguments, two factory
+calls, two distinct factory instances, exact reasons and zero reuse.
+
+| Source mutation | Observed failure |
+| --- | --- |
+| **A:** actual access-control flags `policy.accessFlags` → `[.privateKeyUsage]` | behavior test: expected `userPresence: true`, actual `false` |
+| **B:** `makeConfirmationContext` body → bare `LAContext()` | behavior test: `contextFactoryCalls: 0`, `contextsAreFactoryResults: false`, empty reasons |
+| **C1:** production `init` callsite → direct `SecAccessControlCreateWithFlags(...)` | init wiring test: missing `let accessControl = try makeApprovalAccessControl()` |
+| **C2:** production `sign` callsite → `LAContext()` | sign wiring test: missing `let context = makeConfirmationContext(reason: reason)` |
+| **D:** explicit zero-reuse assignment removed | behavior test: reuse durations `120, 120` instead of `0, 0` |
+
+Each mutation was applied to `native/approval-signer/Sources/main.swift` and restored. A, B and
+D ran through the existing test build; C1 and C2 were read by the source-wiring assertions
+because the test build excludes the production branches. The final tree has no mutation left.
+
+### New / regression envelope
+
+- **New this round:** 2 tests.
+- **Scoped regression envelope:** 47 tests in 4 files — 45 tests from the previous round plus
+  the 2 new tests. The previous round's composition remains 2 new + 43 old; its 45 total is not
+  this round's new-test count.
+
+### Commands and final result lines
+
+Run from the repository root:
+
+```sh
+nice -n 10 node --test packages/server/test/ui-catalog-review.test.ts \
+  packages/server/test/ui-catalog-signer-install.test.ts \
+  packages/server/test/ui-catalog-signer-helper.test.ts \
+  packages/server/test/ui-catalog-signer-exit-gates.test.ts
+```
+
+```text
+ℹ tests 47
+ℹ suites 10
+ℹ pass 47
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+```
+
+```sh
+nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
+```
+
+Exit 0, no output.
+
+```sh
+nice -n 10 sh native/approval-signer/build.sh --test
+nice -n 10 sh native/approval-signer/build.sh
+nice -n 10 sh native/approval-signer/build.sh --check native/approval-signer/.build/approval-signer
+```
+
+All exit 0. The only stderr was codesign's `replacing existing signature` line; `swiftc`
+emitted no warnings. The production hook check passed, and the test asserts `test-policy` is
+absent from the production binary and present in the test binary.
+
+### Residuals and boundaries
+
+- **Policy wiring, not hardware confirmation.** The probe now proves the actual protection class
+  and flags passed to the public `SecAccessControlCreateWithFlags` API and the actual
+  `LAContext` instances returned by `makeConfirmationContext` with the exact reason and explicit
+  zero reuse. It still does not prove that the Secure Enclave enforces the access control, that
+  Touch ID or the password dialog appeared, or that hardware user presence was verified. No
+  production `init`/`sign` was called; no Secure Enclave key, real keychain item or real prompt
+  was created.
+- The production `init`/`sign` call-site checks are source-wiring assertions because those
+  `#else` branches are not compiled into the test build. They catch a bypass or removal of the
+  shared builder calls, not a changed runtime implementation inside the shared builders; the
+  latter is covered behaviorally through the injected factories.
+- Factory injection is a local Swift function-parameter seam. It is not reachable from the JSON
+  request, and the probe itself exists only under `GUANXI_SIGNER_TESTING`.
+- Full `npm test`, `npm run typecheck`, builds, browser gates, `lint:md` and license checks
+  remain the integrator's job; this sandbox ran only the scoped signer tests, package `tsc` and
+  the native helper builds.
+- The original residuals (misleading reason from a process holding the blob and the owner's
+  touch, ad-hoc identity changes, any local process asking for a canonical payload, deprecated
+  access-list APIs) are unchanged.
+
+**Commit:** `c2b9d32 fix(signer): capture the actual policy arguments in tests` for the source
+and test changes; this review-fix evidence is in the following docs commit.
