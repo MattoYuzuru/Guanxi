@@ -116,7 +116,7 @@ test('ordinary K3 calls retain their existing adapter transport behavior', async
   const s = f.service(), row = s.create(account, apiInput)
   await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
   await s.complete(account, row.id, { messages: [] }, { model: piModels('deepseek')[0]!.id, runId: 'ordinary', requestId: 'one' })
-  assert.equal(requests, 2); assert.equal(retries, undefined)
+  assert.equal(requests, 2); assert.equal(retries, 0)
 })
 
 test('single-attempt K3 refuses a wire without an injected HTTP boundary before preparation', async t => {

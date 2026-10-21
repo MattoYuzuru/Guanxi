@@ -1,5 +1,10 @@
 # DS1-c hand-off — lint ratchet and semantic colour migration
 
+**Integration update (2026-10-21):** merged into `main` as `a07d3d7`.
+The original author handoff and review-fix history are preserved below. Fresh integrated-main
+checks and remaining scope are recorded in the
+[coordination audit](coordination-2026-10-21.md); a merge does not close its named residuals.
+
 **Status:** Review 1 fixes implemented and locally validated; awaiting integrator re-check.
 **Date:** 2026-10-21. **Branch:** `lane/ds1-c-ratchet`. **Code:** `fdd0044` (final behaviour revision).
 Original base: `2ab9c41`; initial main `9c08e0e` merge: `0c770de`. Review 1 main

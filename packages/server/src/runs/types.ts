@@ -1,6 +1,21 @@
 import type { RunState } from '@guanxi/contract'
+import type { Db } from '../store/db.ts'
 
 export type { RunState }
+/** Reject a thenable at the type level where an operation must commit synchronously. */
+export type Synchronous<T> = T extends PromiseLike<unknown> ? never : T
+/** A host-owned metadata operation bound to the home generation that admitted it. */
+export interface HomeFence {
+  /** Throw unless the captured generation still owns the durable-runs home. */
+  assert(): void
+  /** Assert the captured generation inside the same SQLite transaction as `body`.
+   * The callback is synchronous: its SQL is rolled back on rejection, but external work
+   * it already scheduled cannot be undone. */
+  transaction<T>(operation: string, body: (db: Db) => Synchronous<T>): T
+}
+export interface HomeAuthority {
+  homeFence(): HomeFence
+}
 export const TERMINAL_RUN_STATES: ReadonlySet<RunState> = new Set(['completed', 'failed', 'canceled', 'rejected'])
 export type TerminalRunState = 'completed' | 'failed' | 'canceled' | 'rejected'
 export interface Run {
@@ -46,7 +61,7 @@ export interface Wake {
   suppressed_at: number | null
 }
 export type RunErrorCode = 'stale_lease' | 'writer_busy' | 'closed' | 'run_not_found' |
-  'invalid_transition' | 'egress_not_ready' | 'idempotency_conflict' | 'invalid_input' | 'no_always_on_home'
+  'budget_exhausted' | 'quota_exhausted' | 'report_budget_exhausted' | 'invalid_transition' | 'egress_not_ready' | 'idempotency_conflict' | 'invalid_input' | 'no_always_on_home'
 export class RunError extends Error {
   readonly code: RunErrorCode
   readonly status: number

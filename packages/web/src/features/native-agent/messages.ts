@@ -1,4 +1,13 @@
 export const nativeEnglish = {
+  'native.retention': 'Session retention',
+  'native.retentionDescription': 'Seven days uses your last activity and moves the session to Trash. Leaving a Session keeps it recoverable for 24 hours, then removes its trace and files. Keep retains it until you delete it.',
+  'native.retention.keep': 'Keep', 'native.retention.ttl': '7 days', 'native.retention.session': 'Session',
+  'native.retention.active': 'Retained', 'native.retention.trash': 'In Trash · choose Keep or 7 days to restore', 'native.retention.deleting': 'Deletion pending · cleanup will retry',
+  'native.leave': 'Leave session',
+
+  'native.input_required': 'Interrupted · your decision is required',
+  'native.delete': 'Delete session',
+  'native.deleteDescription': 'Permanently removes this session, its trace, scratch files, attachments and output artifacts. Stop the session first. Quarantined folders require runtime recovery.',
   'native.sessionError': 'This session failed. Open the trace for details, then send a prompt to continue.',
   'native.process_restarted': 'The node restarted during this session. Send a prompt to continue.',
   'native.cleanup_unconfirmed': 'The node could not confirm shell cleanup. Affected folders remain blocked until the runtime is checked.',
@@ -12,7 +21,7 @@ export const nativeEnglish = {
   'native.model': 'Model ID', 'native.prompt': 'What should the agent do?', 'native.mode': 'Access mode',
   'native.read-only': 'Read-only', 'native.full-access': 'Full access', 'native.start': 'Start session',
   'native.choose': 'Choose…', 'native.domains': 'Network allowlist (comma-separated hosts)', 'native.context': 'Local runtime context (tokens)',
-  'native.loading': 'Loading session choices…', 'native.error': 'The node could not load or start this session. Check Connections and retry.',
+  'native.loading': 'Loading session choices…', 'native.error': 'The node could not complete this session action. Check its state and connection, then retry.',
   'native.offline': 'This node is unreachable. Reconnect and retry.', 'native.retry': 'Retry',
   'native.empty': 'Create a project in Projects, then choose a model connection in Settings.', 'native.projects': 'Open Projects',
   'native.progress': 'Session progress', 'native.stop': 'Stop session', 'native.send': 'Queue prompt', 'native.remove': 'Remove queued prompt',
@@ -25,6 +34,15 @@ export const nativeEnglish = {
   'native.attachments': 'Project attachment IDs (comma-separated; upload in Attachments)', 'native.protected': 'Protected paths (one per line)',
 } as const
 export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
+  'native.retention': 'Хранение сессии',
+  'native.retentionDescription': 'Через семь дней после вашего последнего действия сессия попадёт в корзину. После выхода из режима «Сессия» её можно восстановить в течение 24 часов, затем трасса и файлы удалятся. «Хранить» сохраняет сессию до явного удаления.',
+  'native.retention.keep': 'Хранить', 'native.retention.ttl': '7 дней', 'native.retention.session': 'Сессия',
+  'native.retention.active': 'Сохранена', 'native.retention.trash': 'В корзине · выберите «Хранить» или «7 дней» для восстановления', 'native.retention.deleting': 'Ожидает удаления · очистка будет повторена',
+  'native.leave': 'Выйти из сессии',
+
+  'native.input_required': 'Прервано · требуется ваше решение',
+  'native.delete': 'Удалить сессию',
+  'native.deleteDescription': 'Безвозвратно удаляет сессию, трассу, временные файлы, вложения и выходные артефакты. Сначала остановите сессию. Для заблокированных папок нужно восстановить контейнерный движок.',
   'native.sessionError': 'Сессия завершилась с ошибкой. Откройте трассу для подробностей и отправьте запрос, чтобы продолжить.',
   'native.process_restarted': 'Узел перезапустился во время сессии. Отправьте запрос, чтобы продолжить.',
   'native.cleanup_unconfirmed': 'Узел не смог подтвердить остановку оболочки. Затронутые папки заблокированы до проверки контейнерного движка.',
@@ -38,7 +56,7 @@ export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
   'native.model': 'ID модели', 'native.prompt': 'Что должен сделать агент?', 'native.mode': 'Режим доступа',
   'native.read-only': 'Только чтение', 'native.full-access': 'Полный доступ', 'native.start': 'Начать сессию',
   'native.choose': 'Выберите…', 'native.domains': 'Разрешённые сетевые адреса (через запятую)', 'native.context': 'Контекст локальной модели (токены)',
-  'native.loading': 'Загружаются параметры сессии…', 'native.error': 'Узел не смог загрузить или запустить сессию. Проверьте подключения и повторите.',
+  'native.loading': 'Загружаются параметры сессии…', 'native.error': 'Узел не смог выполнить действие с сессией. Проверьте её состояние и подключение и повторите.',
   'native.offline': 'Узел недоступен. Восстановите соединение и повторите.', 'native.retry': 'Повторить',
   'native.empty': 'Создайте проект в разделе «Проекты» и выберите подключение модели в настройках.', 'native.projects': 'Открыть проекты',
   'native.progress': 'Ход сессии', 'native.stop': 'Остановить сессию', 'native.send': 'В очередь', 'native.remove': 'Убрать запрос из очереди',

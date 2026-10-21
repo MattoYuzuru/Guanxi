@@ -94,6 +94,26 @@ test('R1 follow-up: home append tolerates an unavailable isTransaction property'
   } finally { log.close(); f.close() }
 })
 
+test('R1 follow-up: a fenced home transaction rejects an async callback without committing', () => {
+  const f = runFixture()
+  try {
+    const run = f.store.create({ id: 'fence-async' })
+    const fence = f.store.homeFence()
+    const asyncBody = (db: typeof f.db) => {
+      db.prepare("UPDATE durable_runs SET state='canceled' WHERE id=?").run(run.id)
+      return Promise.resolve()
+    }
+    // @ts-expect-error the fenced transaction contract is synchronous
+    assert.throws(() => fence.transaction('fixture', asyncBody), { code: 'invalid_input' })
+    assert.equal(f.store.get(run.id).state, 'submitted', 'the synchronous SQL body rolled back')
+    // The same fence still commits a synchronous callback.
+    fence.transaction('fixture', (db) => {
+      db.prepare("UPDATE durable_runs SET state='canceled' WHERE id=?").run(run.id)
+    })
+    assert.equal(f.store.get(run.id).state, 'canceled')
+  } finally { f.close() }
+})
+
 test('R1 follow-up: scheduler passes fail globally after losing the durable home', () => {
   for (const operation of ['expiry', 'timers', 'reconcile', 'dispatch']) {
     const f = runFixture()

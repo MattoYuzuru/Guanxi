@@ -1,0 +1,382 @@
+# K4F2 — Native durable execution and retention
+
+**Status:** implemented · locally validated
+**Date:** 2026-10-21 · **Branch:** `lane/k4-followup2` · **Base:** `f01213d`
+
+## Outcome
+
+K4-R1-INTEGRATION and K4-RETENTION are implemented. Every typed or consumed queued native
+turn owns an R1 run attempt. Trace writes, model observations, cost accounting, quota stops
+and execution/report budgets use the fenced R1 API. Native appends supply `expectedSeq`
+from K2's current head, including interleaved lifecycle events. Inherited unfinished native
+runs require explicit input after restart; inference never automatically continues.
+ExecutionOwner, sandbox, egress, access modes and persistent quarantine remain in place.
+
+Native sessions have private Thread owners and canonical Keep / seven-day TTL / Session
+retention. TTL enters recoverable Trash; Session leave waits for active work, then starts
+24-hour recovery before cleanup. Explicit deletion removes scratch, copied attachments,
+output artifacts, R1 rows and Thread-owned K2 rows/FTS. A persisted deletion intent blocks
+continuation across partial cleanup and restart. Live writers and quarantined roots refuse
+deletion. Pre-admission private directories are reaped under the R1 home fence; quarantine
+records are never a cleanup target. Reasoning stays in K2's reasoning class and retention.
+
+The contract, server routes, web client, EN/RU actions and tests change together. The public
+surface adds DELETE session, PATCH retention and explicit POST leave; progress includes
+retention and `input_required`. Private native Thread owners are hidden from legacy Chat
+projections/admission so they cannot acquire an execution path outside R1/native policy.
+
+## Migration and integration
+
+The main node ledger was inspected in full: it ended at **31**. This lane appends **32**,
+`NATIVE_LIFECYCLE_MIGRATION`, adding `run_execution` and `native_sessions`, adopting old native
+sessions and protecting generic Thread deletion. It does not collide with F1's independent
+federation ledger 34 or R2's relay ledger 35. All shipped migrations 1–31 are pinned by digest;
+failed migration 32 rolls back and retries, adoption preserves event payloads/hashes and
+the latest recorded typed user-activity time. Reopening is idempotent. Back up stopped SQLite with WAL; rollback uses that backup, never
+rewritten migrations or dropping tables under a running node.
+
+Main was merged with merge commits `c90d361` (main `8557f91`) and `4e1c8a5` (main `e2fdd66`,
+F1). The latter had one import conflict in `runs/store.ts`; both native budget/event types and
+federated command imports were preserved. Merge `0cf18ad` incorporates main `80f7245`
+(DS1-c, R2, K5). It resolves three shared model/boot conflicts: R2 final-request validation and
+dispatch acknowledgment, native API response observation, actual Ollama dispatch after preflight,
+and all plugin registrations are preserved. Review fix `a737228` restores cancellation before
+R2 start acknowledgment and directly tests the synchronous-abort case. Main's node ledger
+still ends at 31. No rebase,
+push or merge into main was performed. Shared status files changed only through main merges.
+
+## Exit gates and mutations
+
+Assertions are in `packages/server/test/native-agent/` unless noted. Mutations ran one at a
+time, restored original bytes in `finally`, and each exited 1 with a direct assertion failure.
+The driver, TAP and JSON are outside Git under
+`~/.local/state/agent-dev/k4f2-20261021/` (`mutate.py`, `mutations.json`, `<id>.tap`).
+
+| Property | Direct assertion | Mutation killed |
+| --- | --- | --- |
+| Native turn is an R1 attempt; stale append/completion fenced | `lifecycle.test.ts`: one run/attempt per explicit turn; forged token cannot append or complete; head/state unchanged | `append-fence`, `complete-fence`: remove the corresponding R1 fence check |
+| Crash recovery has one writer, truthful state and no inference | `crash.test.ts`: SIGKILL at every native R1/K2 boundary; zero active attempts/execution leases, one home, second home refused, native progress agrees with committed attempt, both native model transports stay at zero; FK/FTS and contiguous replay; pre-admission orphan cleanup | `native-recovery`: remove native startup input-required transition; `lost-attempt`: remove startup loss, tested before execution expiry in the clean-handover assertion; `terminal-projection`: remove completed-state projection (boundary 171 reports interrupted and fails) |
+| Budget and quota stop through R1 | `lifecycle.test.ts`, `review.test.ts`: exact terminal state/reason and call counts; nonzero token/cache/cost totals; pending run/report calls abort; actual Google pi transport start/429 observations | `budget-stop`, `quota-stop`, `google-start`, `google-quota` |
+| Report-only execution | `lifecycle.test.ts`: wrapping-up shell effects exactly zero; one report call, then `report_budget_exhausted` | `report-tools`: remove report-only tool refusal |
+| Coordinated deletion removes bytes and metadata | `lifecycle.test.ts`: all three directories absent; Thread/session/writer/events/R1 rows zero; FK/FTS intact; REST response schema | `delete-bytes`: omit filesystem removal |
+| Deletion refuses running/writer-held sessions | `lifecycle.test.ts`: HTTP 409 while native runs and while a separate K2 writer holds it; no deletion intent/resources removed; `review.test.ts`: deposed home cannot delete | `active-refusal`: replace active refusal with success; stale append/completion mutations separately prove R1 fencing |
+| Quarantine stays intact | `lifecycle.test.ts`: deletion rejected; session remains; quarantine bytes identical across maintenance and reload | `quarantine`: remove both deletion quarantine checks |
+| Partial deletion recovers | `review.test.ts`: blocking output-parent file causes partial cleanup; intent persists and prompt refuses; repair/restart finishes cleanup | `retry-intent`: omit intent retry |
+| Reasoning exists only in local session log | `lifecycle.test.ts`: exactly one reasoning row, bounded expiry; absent from remote/export/progress, every provider request, other ledgers and resource files | `reasoning-context`: include thinking in provider context; `reasoning-class`: store it as a standard note |
+
+Additional review mutations: `canceled-dispatch` removes the abort check before R2 dispatch
+acknowledgment; `adoption-activity` removes the typed-origin filter in migration 32. Both fail
+their direct regression assertion.
+
+The first startup-loss mutation survived the crash test because expiry independently performed
+loss after the home grace. A new clean-handover test checks recovery before expiry; the same
+single-guard mutation then fails its explicit `attempt.state === lost` assertion. All 18 final
+mutation runs fail assertions; all guards are restored. Mutation-selected skips are not credited
+as regression passes.
+
+## Review and fixes
+
+Author implementation: `86bc742`. Fresh self-review and independent read-only reviewer
+`/root/k4f2_review` found/fixed:
+
+| Finding | Fix / evidence |
+| --- | --- |
+| Private owner exposed through legacy Chat | `46dedad`: lists/lookups/update and direct Chat Job admission refuse native owners, including Trash; route/store assertions |
+| Google lacks pi `onResponse`, and flattens 429 | `46dedad`: provider-chunk observation and structured error-code detection; actual pi transport with intercepted canned fetch; no provider retries |
+| Retention row stale across an earlier async cleanup | `46dedad`: fresh per-session eligibility; paused-cleanup/Keep regression |
+| Session grace/queue, partial cleanup and duration evidence gaps | `46dedad`: grace begins when idle, leave prevents queued execution, startup cleanup awaited; nonzero usage, timed aborts and partial cleanup assertions |
+| Native startup absent from crash harness | `46dedad`: actual NativeAgents construction/projection, zero calls to both model transports and orphan cleanup |
+| Home fencing for explicit deletion and recovery assertion strength | `ef5fd72`: home checked before mutation; deleted startup IDs discarded; clean handover and deposed-home tests |
+| G11 seeds assumed Button always draft | `0d58cde`: fixtures explicitly seed draft/no-approval; isolated seed usage prevents another product import masking aliases; production approval checks unchanged |
+| Catalog test mistook product primitives for lazy payloads | `d015589`: payload matcher covers route, catalog, story-kit, stories, docs and review records; permits product primitives and asserts both sets explicitly; all original lazy-loading assertions remain |
+| Local dispatch refusal left an abort race unhandled | `c575aa3`: observe rejected control promises before synchronous dispatch; existing R2 test proves the original error and no unhandled rejection; R2 schema assertions updated to 32 |
+| Main-merge synchronous cancellation lost before R2 callback | `a737228`: restore abort check and assert zero start callbacks after synchronous transport cancellation; `canceled-dispatch` mutation fails |
+| Adopted session TTL ignored recent recorded user activity | `5e2f8ba`: derive latest typed prompt time, excluding queued/model work; `adoption-activity` mutation fails |
+| Exact completed-state projection absent from crash assertion | `b08bf82`: assert each native projection equals its own R1 state; boundary 171 kills removed completed-state projection |
+| Older regression fixtures pinned current schema/review status | `a2f8145`: update current schema markers/assertions to 32, add the native Thread FK inventory, explicitly seed draft for signing tests; historical migration numbers/digests and production checks unchanged |
+
+Independent rechecks through `46dedad`, the F1 merge, `ef5fd72`, `0d58cde`, `a2f8145`, `b08bf82`, `0cf18ad`, `a737228`, `5e2f8ba`, `c575aa3` and `d015589`: **no remaining blocking finding**. Reviews were read-only source reviews, separate from author tests.
+
+## New / regression envelope
+
+**New:** 29 server tests (15 lifecycle, 12 review, one migration, one crash property), four web
+component cases and one mocked browser test: **34 new tests**. The crash property iterates
+172 SIGKILL boundaries; these are iterations, not 172 credited tests. Existing native, R1,
+K2, CLI, kernel, web and UI suites are regression envelopes, credited once only.
+
+Final runtime revision is `c575aa3`; `d015589` only corrects the browser catalog test oracle.
+The gate table below records the final merged positive envelope; earlier passing runs are not counted twice. The native crash property
+exhausts 172 SIGKILL boundaries, with exact R1 and client projection assertions. Required gate
+totals include the new cases: core 1231 passes / one opt-in keychain skip; kernel 106; web
+components 318 in 35 files; UI 70 Node tests and 17 Vitest tests; lint/gate regressions 89 and
+codemod regressions six. All pass; these totals are not added to the new-test count.
+
+## Linux validation
+
+Task-owned `~/Projects/guanxi-k4f2-validate`, cloned from a git bundle using `ssh fedora`, as
+`yuzuru`, with `nice -n 10`. Node 26.9.0 is unpacked inside the clone after official SHA-256
+verification; system Node is unchanged. Backend: bubblewrap 0.12.0. Fixtures use clone paths
+and its private `TMPDIR`, temporary listeners and synthetic transports/data; no live model or
+provider network. No workstation service, llama on 8080, VPN, relay or `guanxi-bench` user is
+operated on.
+
+Final revision **`c575aa3`**: **203 passes / six macOS-only exclusions / zero failures
+(209 total)**, 89.0 seconds. Envelope: every `native-agent/*.test.ts`, native contract,
+durable-runs, durable-run-review, durable-run-followup, durable-run-migration and every
+`relay/*.test.ts`. Metadata confirms the in-clone contract resolution and niceness 10.
+Evidence: `~/.local/state/agent-dev/k4f2-20261021/linux-complete/` (`native.tap`,
+`validation-metadata.txt`, `validation-exit-code`, `cleanup.log`). The clone and task bundle
+were removed after checking branch, exact revision and successful exit.
+
+## Commands and evidence
+
+`npm ci` ran first and `@guanxi/contract` resolves to this worktree's
+`packages/contract/src/index.ts`. Node 26.9.0; all local checks export
+`GUANXI_WEB_PORT=5189 GUANXI_API_PORT=4389 GUANXI_DATA_DIR="$PWD/.lane-data"`.
+
+Direct: typecheck, Markdown/link lint, licenses and `ui:check`. Heavy: npm test, mocked
+Chromium, UI browser gates and build, sequentially through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- <command>`.
+Targeted deterministic probes/mutations also ran directly under the task scope. No gate is
+credited without its exit result. The first full run exposed old migration-31 assertions,
+a missing native FK in the deletion inventory and signing fixtures assuming Button stayed
+draft; `a2f8145` fixes these without changing production guards. The merged run then exposed
+the R2 callback-abort integration and schema expectation fixed by `c575aa3`. The first
+Chromium run passed 65/66; `d015589` fixes the catalog test oracle without a production change,
+and the complete 66/66 rerun passes. Superseded queued
+checks were cancelled before lock acquisition; they are not test failures or passing evidence.
+
+Local direct checks after the current-main refresh: typecheck **pass**; Markdown/link lint **155 files, 601 links,
+zero problems**; licenses **658 packages, zero disallowed**; `ui:check` **pass**, including
+catalog seeded violations. Logs: `typecheck-complete.log`, `lint-md-merged.log`,
+`licenses-merged.log`, `ui-check-merged.log` in the task evidence directory above. Final
+handoff Markdown/link validation is in `lint-md-complete.log`.
+
+| Shared-lock gate | Result | Receipt under task evidence directory |
+| --- | --- | --- |
+| `npm test` | pass, exit 0 | `npm-test-final-merged-receipt.json` |
+| `npm run test:web:browser` | pass, 66/66 mocked Chromium | `web-browser-complete-receipt.json` |
+| `npm run ui:check:browser` | pass, exit 0 | `ui-browser-receipt.json` |
+| `npm run build` | pass, exit 0 | `build-receipt.json` |
+
+`agent-dev` reports actual command exit status and `source_changed=false`. Its automatic
+source reuse flag is false because the pre-existing `.claude/skills/guanxi-ui` symlink is
+outside its verifier's supported inventory; the logs are local execution evidence, not a
+reusable source certificate. Its report-pattern counter is zero because no report glob was
+requested; test evidence is in the runner output.
+
+## Shared edits, UI and residuals
+
+Shared edits: contract native schema/status/error variants; K3 model observations/quota error
+and Ollama dispatch callback; R1 fenced append/budget/recovery seams; K2 atomic owner setup;
+Thread/Job legacy isolation; append-only node migration and older test version/snapshot
+expectations; server boot/plugin wiring; EN/RU client actions; current implementation docs.
+This lane adds no dependency or third-party source. DS1-c, F1, R2 and K5 changes entered
+through main, including the independent federation and relay migration ledgers. No owner data or real keychain was used.
+
+UI: shared [Button](../../../packages/ui/src/components/button/button.docs.md) moves
+**draft → review**, with no approval/signature written. Catalog:
+`/settings/developer/components?component=button`. Manifest regenerated. Product use of a
+review component is the documented G11 development warning; release approval is still the
+owner's. New session-action stories and EN/RU deletion/component and mobile keyboard browser
+assertions exist. No new primitive, tokens, CSS or suppression growth.
+
+Limits: costs/tokens are caller observations; one in-flight call may exceed an observation
+cap, and unavailable monetary usage is never billed as zero. Cancellation/control observation
+is at a one-second interval; the ExecutionOwner still confirms effects cleanup. Native budgets
+are per run. Historical queue events did not record whether a person or a model queued them;
+adoption therefore derives activity from recorded typed prompts and falls back to creation.
+New sessions record actual user queue activity separately; model work never extends retention. No physical sleep, live-provider/billing, remote executor or production validation
+is claimed. Existing K4 egress encoding/body, input-artifact/conversion, HTTPS-positive,
+platform-distribution and broader UI evidence residuals remain in the canonical K4 evidence.
+This closes the two named residuals only and is not release approval.
+
+Next slice: integrator cross-family review and merge of this bounded lane. Preserve the
+remaining K4 residuals in the canonical evidence; no additional residual is silently closed.
+
+## Review fix — F1 home fencing during deletion
+
+Independent GPT review `codex-k4f2-20261021.md` finding **F1** was confirmed on the review
+branch `codex/k4f2-review-fixes` (start `e5e9d3d`, includes main `80f7245`). The old native
+deletion kept issuing destructive steps and committed R1/session row deletion after its
+admitting durable-runs home had been deposed during a filesystem await.
+
+**Reproduction before the fix.** The external driver, with imports adjusted to this clone,
+created and completed a synthetic native session, called `deleteSession` while the old home
+owned it, observed the committed deletion intent, closed the old `RunStore`, claimed and
+reconciled a successor, confirmed the successor saw the completed run, then awaited the
+original deletion. Unchanged production returned
+`{"outcome":"REPRODUCED","deletionCompletedAfterOldHomeClosed":true,"successorClaimedBeforeDeletionSettled":true,"removedSuccessorVisibleRun":true}`:
+the old operation returned success and removed the successor-visible `durable_runs` and
+session rows.
+
+**Fix.** `RunStore.homeFence()` (with `HomeFence`/`HomeAuthority` in `runs/types.ts`) captures
+the admitting home generation, `assert()`s that generation before later asynchronous phases,
+and `transaction()` rechecks it inside R1's existing `BEGIN IMMEDIATE` before the final
+synchronous mutation. `NativeSessions.remove` now commits its deletion intent and its final
+row deletion through that fence and asserts the same generation before each `rm`; a deposed
+home stops before later filesystem steps and cannot commit metadata, leaving the durable
+intent and R1/session rows for the successor. Explicit deletion and the maintenance retry
+share `remove`, so they share the fence. There is no nested heartbeat or `BEGIN`. The
+contract, REST routes and public APIs are unchanged; already-issued filesystem actions
+cannot be undone.
+
+**New regression tests (2)** in `packages/server/test/native-agent/review.test.ts`:
+`home handover during deletion stops later destructive steps and leaves the intent to the
+successor` (handover during the first `rm`) and `home handover before the final deletion
+transaction refuses the metadata commit` (existing synchronous `fault` store boundary after
+all `rm` calls). Both assert the old deletion refuses, the intent and successor-visible R1
+run remain, later filesystem steps did not run, the successor maintenance finishes the same
+intent once, and FK/FTS integrity holds.
+
+**Regression envelope (full files):** `review.test.ts` 14 passes (2 new); `lifecycle.test.ts`
+15 passes; server `tsc` exit 0. New count: **2 tests**.
+
+**Guard-removal mutation proof** (one at a time, restored in `finally`; restored
+`sessions.ts` sha256 `e05501a8a17d4a5c49e9af2e205f44b99cbc16534a9a8a4ba5352e91a88e81ab`):
+removing the per-step `home.assert()` fails test 1 with `ENOENT .../native-attachments/...`
+because a later `rm` ran; removing the final fenced transaction fails test 2 with
+`Missing expected rejection` because the deposed home committed the deletion.
+
+**Commands:**
+`nice -n 10 node --test packages/server/test/native-agent/review.test.ts` → 14 pass / 0 fail;
+`nice -n 10 node --test packages/server/test/native-agent/lifecycle.test.ts` → 15 pass / 0 fail;
+`nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json` → exit 0. `@guanxi/contract`
+resolved to this clone's `packages/contract/src/index.ts`; Node 26.9.0; no heavy gate was run
+in this bounded repair.
+
+**Residuals.** An `rm` already issued before home loss still completes (the race test observes
+the scratch directory removed); only later destructive steps and the metadata commit stop.
+Explicit DELETE reports the deposed refusal through the existing `deletion_failed` mapping
+(no wire change). Non-deletion TTL/Trash timestamp writes in the maintenance pass are
+unchanged; this fix fences its deletion retry, which shares `remove`. Full `npm test`, browser,
+build, Storybook, shared-lock gates and the independent Claude cross-family re-review remain
+with the root coordinator; no live model, sandbox, SSH, owner data or real workspace cleanup
+was used.
+
+Fix commit: the `fix(native-agent)` commit that includes this section (review branch only; no
+push, rebase or merge).
+
+## Review fix 2 — maintenance pass home authority
+
+Independent review on the same branch found one remaining stale-home seam: `NativeSessions.maintain`
+caught the `closed`/`stale_lease` refusal of an awaited `remove()`, continued the loop and wrote
+`trashed_at` for a later session without rechecking its admitting home. The reviewer's two-session
+driver (`reviews/k4f2-maintenance-handover.mjs`, imports pointed at this clone) returned
+`{"outcome":"REPRODUCED","oldHomeMutatedLaterSessionAfterHandover":true,"earlierDeletionRowsPreserved":true}`
+before the fix: the successor owned the durable-runs home, but the deposed pass timestamped the
+later TTL session.
+
+**Fix `56e7f3c`.** `maintain` captures one `HomeFence` for the whole pass. It asserts that generation
+at the start of every iteration and immediately after each awaited `remove()`. Both Trash transitions
+(leave grace start and TTL expiry) commit through `home.transaction('native_trash', ...)`, which
+rechecks the same generation inside R1's `BEGIN IMMEDIATE`. A lost home rejects the pass instead of
+being swallowed; ordinary `writer_busy`, quarantine and other recoverable per-session failures stay
+local and retry next pass. The `trashed_at IS NULL` predicates are unchanged; already-trashed rows no
+longer open a no-op transaction.
+
+**Regression tests (2 new in `packages/server/test/native-agent/review.test.ts`).**
+
+- `maintenance stops the whole pass when its home is deposed during a deletion`: the first removal
+  commits its durable intent, closes the old `RunStore`, and lets a successor claim and reconcile
+  before the first `rm`; the later session becomes TTL-eligible inside that handover. The old pass
+  rejects `closed`; the first intent, native/session/thread rows and completed R1 run remain; the
+  later `trashed_at` stays null. The successor deletes the first session and starts the later Trash
+  exactly once; FK check and FTS integrity pass; a second successor pass changes no timestamp.
+- `maintenance keeps a recoverable quarantine failure local to its session`: a quarantine record
+  refuses the first deletion, the later TTL session is still trashed, and the first intent retries
+  successfully after quarantine clears.
+
+**Mutation.** Removing the iteration and deletion-post-await assertions together with both fenced
+Trash transactions (the pre-fix authority behavior on this path) makes the handover test fail with
+`Missing expected rejection` (exit 1). Earlier partial mutations that left the fenced Trash
+transaction or one assertion in place survived because the remaining layers still refused; the
+combined removal is the credited kill, and the layering is intentional. Source was restored in
+`finally`; the final `sessions.ts` sha256 is
+`017140f6577f97c3aaa12856ae45779704987d9a345cf214dff1f9d6ccd18011`. The quarantine continuation
+test is the negative control against turning recoverable per-session failures into whole-pass
+failures.
+
+**Sync HomeFence API `93cc8ea` (separate seam).** `HomeFence.transaction` now rejects a callback
+returning a `Promise` inside the transaction with `RunError('invalid_input')`, matching `mutate()`,
+and its type uses `Synchronous<T>` so thenables fail `tsc`. The new
+`packages/server/test/durable-run-followup.test.ts` case writes a row, returns `Promise.resolve()`,
+observes `invalid_input` and `state='submitted'` (the synchronous SQL body rolled back), then proves
+the same fence commits a synchronous callback. It does not claim rollback of external work the
+callback already scheduled. Loosening the signature fails tsc with an unused `@ts-expect-error`;
+removing the runtime check fails the test. Final hashes:
+`store.ts d6265fe587c2bfeb35f8da76187cf59e737a11af10756294da09c63e4e3eae08`,
+`types.ts 4885fd0ad18b2d5c3811da56fa4108b93ecf0389e1c07d6eb52dd2460c18bad5`.
+
+**Commands (Node 26.9.0; `@guanxi/contract` resolves to this clone's
+`packages/contract/src/index.ts`).**
+
+- `nice -n 10 node --test packages/server/test/native-agent/review.test.ts` → 16 pass / 0 fail.
+- `nice -n 10 node --test packages/server/test/native-agent/lifecycle.test.ts` → 15 pass / 0 fail.
+- `nice -n 10 node --test packages/server/test/durable-run-followup.test.ts` → 7 pass / 0 fail.
+- `nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json` → exit 0.
+- Pre-fix repro: `nice -n 10 node /Users/yuzuru/Projects/Guanxi-lanes/reviews/k4f2-maintenance-handover.mjs`
+  → `REPRODUCED` with `oldHomeMutatedLaterSessionAfterHandover=true`.
+
+**Counts.** Second review: **38 total = 3 new + 35 regression envelope**. `review.test.ts` 16 passes
+(2 new; its 14 first-review tests are envelope), `lifecycle.test.ts` 15 passes, and
+`durable-run-followup.test.ts` 7 passes (1 new; 6 prior tests are envelope). The first review's
+29 total (2 new + 27 envelope) is unchanged and is not counted twice.
+
+**Residuals.** An `rm` already issued before home loss still completes, as in the first review fix.
+The Trash fence uses R1's transaction, so a not-ready egress scrubber makes the pass throw
+`egress_not_ready` and retry through `NativeAgents.maintain`'s catch rather than writing a raw
+timestamp; direct `maintain` callers see that throw. The handover regression uses a synchronous store
+fault and an in-process successor, not a second OS process. No heavy gate, browser, build, Storybook,
+live model, owner data, SSH or real workspace cleanup was used; no push, rebase, merge,
+`PHASE_STATUS` or `NEXT_AGENT_PROMPT` edit was made. Root GPT cross-family review is still pending.
+
+**Commits:** `56e7f3c` maintenance pass fence, `93cc8ea` HomeFence async rejection, then the handoff
+commit containing this section.
+
+## Coordinator final recheck (2026-10-21)
+
+A separate GPT 6.1 Sol / high reviewer closed the bounded deletion/maintenance/synchronous
+transaction repairs. Source commits are `3d814a0`, `56e7f3c` and `93cc8ea`; local report:
+`Guanxi-lanes/reviews/codex-k4f2-followup-20261021.md`.
+
+Independent checks at clean `5bf89d1` passed under the shared heavy lock:
+
+- native review + lifecycle + durable follow-up: 38 total, 38 pass, zero fail/skip;
+  `check-3z7sy2j4/result.json`;
+- server `tsc --noEmit`: exit 0; `check-kuzmo7jb/result.json`.
+
+Both receipts report `source_changed: false`; the inherited external skill symlink prevents
+portable source certification. The earlier `check-1zdlgiz0` ran while the coordinator merged
+documentation and is not credited as stable-source evidence.
+
+Across both repairs: **5 new / 33 regression envelope = 38 total**. Round 2's 3 new / 35
+previous tests includes round 1's two additions; they are not credited twice.
+Merge `5bf89d1` brings in published main `3f73ded` and changes only Markdown/Mermaid relative
+to checked source `9ebcafa`. The candidate remains unmerged into main pending full integrator
+gates and the original lane's remaining review/platform scope. An already-issued filesystem
+operation cannot be undone after authority loss; later destructive steps and final metadata
+commit are fenced. Existing quarantine and runtime recovery boundaries remain.
+
+## Full integrator gate (2026-10-22)
+
+At clean `73dd577` (published main `1067a04` incorporated), observed local gates passed:
+
+- workspace typecheck: `check-4zuvtbyo`;
+- full `npm test`: `check-g3yn0mm5`; core 1237 total (1236 pass / 1 opt-in skip), UI gate 89, codemod 6, kernel 106,
+  web 318, catalog 70 and UI 17 (see receipt log for passes and platform/opt-in skips);
+- mocked Chromium regression: 66/66, `check-u_eprgx5`;
+- UI catalog browser gate: `check-urlu1wo5`;
+- build: `check-9ohu32r2`.
+
+The follow-on Markdown gate `check-lvk_64bv` caught three formatting errors in this handoff.
+The sequence stopped there; license and source lint were not run by that failed sequence.
+This documentation-only correction precedes their next run. No executable source changed.
+All credited receipts have `source_changed: false`; the inherited external skill symlink means
+they are observed local evidence, not portable certified source receipts.
+
+The corrected handoff passes Markdown/link lint (`check-e0x17f69`), licenses
+(`check-m4yyyi2e`) and source lint (`check-3mm4m_zz`) at clean `4afe2c3`.
+Integrator merge `8006cd8` changes no executable bytes relative to the tested candidate.
+Retention/R1 integration is now merged; input-artifact integration, positive HTTPS evidence,
+expanded UI evidence and the remaining platform envelope are still separate work.

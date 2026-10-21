@@ -1,30 +1,42 @@
-# Next agent prompt — wave 3 (DS1-c, DS2, F1, R2, K5, X1, B1)
+# Next agent prompt — finish active work, then pursue MS1
 
-**Status:** ready · **Updated:** 2026-10-21 (K1, DS1-a, DS1-b, K2, K3, R1 with its follow-up,
-and K4 merged into `main`)
+**Status:** active continuation · **Updated:** 2026-10-22
 
-Work runs as parallel lanes. Start from [lanes/README](lanes/README.md), which lists every lane,
-its runner, branch and ports, and the rules every lane follows. Phone access remains planned
-for U4 under D-187 and ADR-0038; no relay is deployed.
+Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/README.md),
+[PHASE_STATUS](PHASE_STATUS.md) and the [continuation record](evidence/coordination-2026-10-22.md).
+The owner authorized autonomous completion of current in-progress work and MS1 where feasible.
+Do not reopen an old lane prompt from its stale running label. Inspect branch, HEAD, live
+worker and latest handoff. Root owns central status; workers use isolated branches/handoffs.
 
-Open lanes:
+K4 follow-up 2 is merged as `8006cd8` after full gates;
+[evidence](evidence/K4-followup-2.md) retains exact scope and receipts. Remaining K4 work is
+input-artifact integration, positive HTTPS evidence (candidate `8803855`, independent review
+pending), expanded UI evidence and the platform envelope.
 
-- **DS1-c — lint ratchet and codemod:** [lanes/DS1-c](lanes/DS1-c.md). Claude review 1:
-  merge after fixes (contrast regression, untested guards, mixed palette); fix round running.
-  DS2 and U1 open when it merges.
-- **R2 — relay executor v1:** [lanes/R2](lanes/R2.md). Claude review 1: merge
-  after fixes (token-vs-byte boundary, narrative truncation, whole-history seals); fixes queued.
-- **DS2 — approval signing helper:** [lanes/DS2](lanes/DS2.md), running in DeepSeek Harness.
-- **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), partial. Claude review 1:
-  merge after fixes (default autonomous tools in two adapters, bypassable token gate); fixes queued.
-- **X1 — repository map and full-text index:** [lanes/X1](lanes/X1.md), handed off;
-  Claude cross-family review running.
-- **F1 — federation base:** merged; see [evidence/F1](evidence/F1.md). F2 (remote attempts) is open.
+Current queue:
 
-K4 is merged with its follow-up, so R2, K5 and X1 are in review and B1 ([lanes/B1](lanes/B1.md)) runs on its
-provisioned benchmark host (D-194); F2 opens after F1, and DS2
-and U1 after DS1-c. See
-[PHASE_STATUS](PHASE_STATUS.md) and the [roadmap graph](roadmap.mmd).
+1. DS2 `codex/ds2-review-fixes` includes K4; full integrator gates are running in
+   `Guanxi-lanes/coord-ds2`. Finish that exact source before editing it. Real production
+   user-presence signing is unverified; never create an owner key in ordinary tests.
+2. X1 `codex/x1-parent-read-boundary` (`647c5d0`): perform repaired-source Linux evidence
+   inside an explicit integration envelope, then full gates. Preserve named X1 residuals.
+3. U1 `codex/u1-completion`: original local layout acceptance replayed, signed replication
+   implementation and catalog-manifest correction underway. Review pinned source before
+   integration. Shell and zero-suppression migration remain next.
+4. B1 `codex/b1-completion`: request-admission `d70d56a` plus independent-review repair
+   `3b9a140` is reviewed. Integrate the separate immutable staging utility only after GPT review;
+   continue corpus/images, the real K3 pricing/meter boundary and paired execution. No fixture
+   measurement activates ADR-0025 or authorizes an unbounded paid run.
+5. R3 `codex/ms1-r3` (`bf6a222`): independently reviewed ETA foundation, integration pending.
+   Judge/delegation and real replay/calibration/night evidence remain. F2 offer/reservation work
+   follows reviewed U1 minor1 with minor2 plus an explicit feature capability. Actual remote
+   dispatch is not implemented by a reservation receipt.
 
-Any session without a lane: pick the first `ready` lane in [PHASE_STATUS](PHASE_STATUS.md)
-that nobody runs, and follow its lane file.
+Use Node 26, each checkout's own dependencies/ports, and shared `agent-dev` resource `heavy`
+under `/Users/yuzuru/.local/state/agent-dev`; stop a gate sequence on failure. Source changes
+during a check invalidate that evidence. Keep new and regression counts separate.
+
+MS1 still requires K5/R3/F2/B3: real delegation to a 30B-class model on another node for at
+least six hours, zero lead tokens during hibernation, exactly one wake, all items/gates green
+in a clean checkout, and the B3 gate. Do not replace these observations with fixture passes.
+Prepare any owner-required action concretely while continuing independent work.

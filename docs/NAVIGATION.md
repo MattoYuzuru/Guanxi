@@ -15,7 +15,7 @@
 | Continue implementation | [PHASE_STATUS](plans/PHASE_STATUS.md) → [WORKFLOW](plans/WORKFLOW.md) → [ROADMAP](plans/ROADMAP.md) |
 | Hand off to the next agent | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) |
 | Run or join a parallel lane | [lanes](plans/lanes/README.md) |
-| Check owner choices still open (none on 2026-10-20) | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) |
+| Check owner choices still open | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) |
 | Change the code that exists today | [legacy docs](legacy/README.md) (Russian): DEVELOPMENT, TESTING, HLD, LLD, RUNTIME_LIFECYCLE |
 | Reuse third-party code | [ADR-0016](decisions/0016-licensing-and-third-party-reuse.md) → [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md) |
 
@@ -35,7 +35,7 @@
 | [PHASE_STATUS](plans/PHASE_STATUS.md) | implemented | mutable tracker with evidence |
 | [WORKFLOW](plans/WORKFLOW.md) | accepted | protocol for one slice |
 | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) | ready | bounded prompt for the next slice |
-| [lanes/](plans/lanes/README.md) | accepted | rules and prompts for parallel lanes (wave 1: K1, DS1-a, DS1-b, DS1-c) |
+| [lanes/](plans/lanes/README.md) | accepted | rules, current ownership and prompts for parallel lanes |
 | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) | accepted | open questions with recommended defaults (none open) and answered ones with their decisions |
 | [legacy/](legacy/README.md) | implemented (legacy) | Alamo-era docs describing the code in `packages/` today |
 
