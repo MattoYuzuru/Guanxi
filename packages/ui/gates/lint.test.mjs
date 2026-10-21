@@ -152,3 +152,20 @@ test('H1 G9 rejects muted inset text and placeholders without a suppression esca
     assert.ok(result.errors.some(e => e.includes('text-muted on bg-inset')), code)
   }
 })
+
+test('M1 npm-test gates reject added and grown suppressions through ctx.withFiles', async () => {
+  const ctx = await createContext(), ledger = await ctx.json(suppressionPath)
+  const file = 'packages/web/src/features/seeded/growth.tsx'
+  for (const count of [1, 2]) {
+    const data = { ...ledger, [file]: { 'guanxi/reuse-primitives': { count } } }
+    const seeded = await ctx.withFiles({
+      [file]: `const x = <>${'<button/>'.repeat(count)}</>`,
+      [suppressionPath]: JSON.stringify(data),
+    })
+    for (const gate of gates) {
+      const result = await gate.check(seeded)
+      assert.equal(result.ok, false, `${gate.id} must reject ledger growth ${count}`)
+      assert.ok(result.errors.some(e => e.includes('grew') && e.includes(file)), `${gate.id} must report grew, not merely a lint violation`)
+    }
+  }
+})
