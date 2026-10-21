@@ -17,6 +17,18 @@ async function waitFor(predicate: () => boolean, timeout = 20_000) {
     await new Promise(resolve => setTimeout(resolve, 20))
   }
 }
+function ftsShadow(db: DatabaseSync): Buffer {
+  const parts: Buffer[] = []
+  for (const table of ['fulltext_data', 'fulltext_idx']) {
+    for (const row of db.prepare(`SELECT * FROM ${table}`).all() as unknown as Record<string, unknown>[]) {
+      for (const value of Object.values(row)) {
+        if (value instanceof Uint8Array) parts.push(Buffer.from(value))
+        else if (typeof value === 'string') parts.push(Buffer.from(value))
+      }
+    }
+  }
+  return Buffer.concat(parts)
+}
 async function fixture(files = 200) {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'guanxi-x1-service-')))
   const root = join(dir, 'repo'), data = join(dir, 'data')
@@ -72,10 +84,11 @@ test('a newly registered value invalidates an unchanged fingerprint and purges s
     await waitFor(() => events.filter(event => event.type === 'publish').length === 2)
     const db = new DatabaseSync(service.database, { readOnly: true })
     try {
-      for (const table of ['contents', 'files', 'maps', 'fulltext', 'fulltext_data', 'fulltext_idx']) {
+      for (const table of ['contents', 'files', 'maps', 'fulltext']) {
         const rows = JSON.stringify(db.prepare(`SELECT * FROM ${table}`).all())
         assert.equal(rows.includes(value), false, table)
       }
+      assert.equal(ftsShadow(db).includes(Buffer.from(value)), false, 'fulltext shadow')
     } finally { db.close() }
   } finally { await service.close(); await f.governor.close(); await f.close() }
 })

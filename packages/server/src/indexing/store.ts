@@ -34,6 +34,9 @@ export class IndexStore {
         CREATE TABLE files (root_key TEXT NOT NULL REFERENCES roots(root_key) ON DELETE CASCADE, path TEXT NOT NULL, hash TEXT NOT NULL REFERENCES contents(hash), PRIMARY KEY(root_key, path)) STRICT;
         CREATE VIRTUAL TABLE fulltext USING fts5(hash UNINDEXED, text, tokenize='trigram case_sensitive 1');
         PRAGMA user_version = 1; COMMIT;`)
+      // Idempotent per open: deleted segment content is wiped instead of left
+      // readable in fulltext_data/fulltext_idx after a purge.
+      this.db.exec("INSERT INTO fulltext(fulltext, rank) VALUES('secure-delete', 1)")
     } else this.db.exec('PRAGMA query_only = ON')
   }
   root(key: string): RootRow | undefined { return this.db.prepare('SELECT commit_id, indexed_at, fingerprint FROM roots WHERE root_key = ?').get(key) as unknown as RootRow | undefined }

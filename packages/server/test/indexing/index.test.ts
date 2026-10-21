@@ -16,6 +16,19 @@ import { hasHeadroom } from '../../src/indexing/headroom.ts'
 import { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 
 const settings = { ...DEFAULT_INDEX_SETTINGS, ftsMinFiles: 1 }
+function ftsShadow(db: DatabaseSync): Buffer {
+  const parts: Buffer[] = []
+  // fulltext_data stores segment blocks; fulltext_idx stores segment terms.
+  for (const table of ['fulltext_data', 'fulltext_idx']) {
+    for (const row of db.prepare(`SELECT * FROM ${table}`).all() as unknown as Record<string, unknown>[]) {
+      for (const value of Object.values(row)) {
+        if (value instanceof Uint8Array) parts.push(Buffer.from(value))
+        else if (typeof value === 'string') parts.push(Buffer.from(value))
+      }
+    }
+  }
+  return Buffer.concat(parts)
+}
 async function fixture() {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'guanxi-x1-')))
   const root = join(dir, 'repo'), data = join(dir, 'data'), other = join(dir, 'other')
@@ -136,6 +149,9 @@ test('ignored files, nested negations, .env variants, symlinks, binary and regis
       assert.equal(rows.includes(secret), false, table)
       for (const forbidden of ['Needle forbidden', 'Needle outside', 'Needle ignored', 'Needle skip']) assert.equal(rows.includes(forbidden), false, `${table}: ${forbidden}`)
     }
+    const shadow = ftsShadow(db)
+    assert.equal(shadow.includes(Buffer.from(secret)), false, 'fulltext shadow: secret')
+    for (const forbidden of ['Needle forbidden', 'Needle outside', 'Needle ignored', 'Needle skip']) assert.equal(shadow.includes(Buffer.from(forbidden)), false, `fulltext shadow: ${forbidden}`)
     db.close()
     assert.deepEqual(await f.search(), ['nested/keep.skip:1:Needle keep', 'ok.ts:1:Needle allowed'])
   } finally { await f.close() }
@@ -318,8 +334,30 @@ test('late secret registration and new ignore rules purge unreferenced stored co
       assert.equal(rows.includes(value), false, table)
       assert.equal(rows.includes('forbidden-on-refresh'), false, table)
     }
+    const shadow = ftsShadow(db)
+    assert.equal(shadow.includes(Buffer.from(value)), false, 'fulltext shadow: secret')
+    assert.equal(shadow.includes(Buffer.from('forbidden-on-refresh')), false, 'fulltext shadow: purged file')
     assert.deepEqual(db.prepare('SELECT path FROM files').all().map(r => r.path), ['.gitignore'])
     db.close()
+  } finally { await f.close() }
+})
+
+test('purged secrets leave no trigrams in FTS5 shadow segments', async () => {
+  const f = await fixture()
+  try {
+    const secret = 'QZXQZXQZXQZXQZXQZX'
+    await writeFile(join(f.root, 'config.ts'), `const token = '${secret}'\n`)
+    await writeFile(join(f.root, 'other.ts'), 'export const harmless = 1\n')
+    await f.run('build')
+    f.scrubber.register('secret://late-shadow', secret)
+    await f.run('build')
+    const db = new DatabaseSync(f.database, { readOnly: true })
+    try {
+      assert.equal(JSON.stringify(db.prepare('SELECT * FROM fulltext').all()).includes(secret), false)
+      assert.equal(JSON.stringify(db.prepare('SELECT * FROM contents').all()).includes(secret), false)
+      const shadow = ftsShadow(db)
+      for (const needle of [secret, 'QZX', 'ZXQ', 'XQZ']) assert.equal(shadow.includes(Buffer.from(needle)), false, `fulltext shadow: ${needle}`)
+    } finally { db.close() }
   } finally { await f.close() }
 })
 
@@ -482,7 +520,8 @@ test('registration after content commit purges all worktree references even when
     }), /index_tree_changed/)
     const db = new DatabaseSync(f.database, { readOnly: true })
     assert.equal(db.prepare('SELECT count(*) n FROM files').get()!.n, 0)
-    for (const table of ['contents', 'maps', 'fulltext']) assert.equal(JSON.stringify(db.prepare(`SELECT * FROM ${table}`).all()).includes(value), false)
+    for (const table of ['contents', 'maps', 'fulltext']) assert.equal(JSON.stringify(db.prepare(`SELECT * FROM ${table}`).all()).includes(value), false, table)
+    assert.equal(ftsShadow(db).includes(Buffer.from(value)), false, 'fulltext shadow')
     db.close()
   } finally { await f.close() }
 })
