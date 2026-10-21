@@ -24,6 +24,7 @@ integrator, the coordinating Claude session, merges lanes into `main`.
 | [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | review 1 fixes queued |
 | [X1](X1.md) | X1 repository map and full-text index | GPT (Codex), xhigh | `lane/x1-repo-index` | 5197 / 4397 | Claude review |
 | [B1](B1.md) | B1 bench base (Harbor, control arm, statistics, budget caps) | GPT (Codex), xhigh | `lane/b1-bench-base` | 5198 / 4398 | running |
+| [DS2](DS2.md) | DS2 approval signing helper (Secure Enclave P-256) | DeepSeek-V4.1-Flash (max), DeepSeek Harness | `lane/ds2-signing-helper` | none (no server) | running |
 | [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
 
 Port 5185/4385 belongs to the localization-flake investigation. Merge order within DS1:
@@ -95,6 +96,24 @@ DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open afte
     - mark `proposed` work as implemented.
 11. **Blocked:** write the blocker and the recovery steps into your hand-off file, commit it on
     your branch, and stop.
+
+## DeepSeek lanes (owner, 2026-10-21)
+
+Up to three DeepSeek runs may work at the same time, next to at most three Codex runs. Each one
+uses DeepSeek-V4.1-Flash at max effort in DeepSeek Harness headless mode, with the integrator's
+overlay `Guanxi-lanes/infra/dsh-headless.patch.yml`. That overlay restores the saved key, keeps
+the `workspace-write` sandbox and rejects every approval request.
+
+- **Fitting tasks:** fully specified work. Review-fix rounds, where each finding already names a
+  file:line, a scenario and the smallest fix, suit it well. So does mechanical new work with a
+  design written by the integrator.
+- **Workspace:** a standalone `git clone` on the lane branch, not a worktree. The sandbox can
+  only write inside its working directory, and a worktree's git metadata lives outside it. The
+  integrator runs `npm ci` first.
+- **Inside the sandbox:** the run uses targeted `node --test` files under `nice -n 10` only. It
+  cannot take the `agent-dev` lock or run the full suites.
+- **Integrator duties:** fetch the branch, run the full gates through the shared lock, arrange
+  the Claude review and merge.
 
 ## Integrator checklist (per merge)
 

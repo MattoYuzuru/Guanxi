@@ -227,7 +227,7 @@ decision was made.
 | --- | --- | --- |
 | K1 Kernel | implemented, merged | see the K1 section above |
 | DS1 Design foundations | in progress (DS1-a and DS1-b merged; DS1-c running) | see the DS1 section above |
-| DS2 Approval signing helper | not started | after DS1 (D-184) |
+| DS2 Approval signing helper | in progress (lane DS2, DeepSeek; design: a Secure Enclave P-256 key that cannot be exported, verified on this Mac without an Apple Developer account) | [lanes/DS2](lanes/DS2.md) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
