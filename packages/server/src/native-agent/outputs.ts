@@ -33,7 +33,7 @@ export class NativeOutputs {
     const bytes = clean.length
     if (data.length && (data[0]! & 0xc0) === 0x80) throw new Error('path_denied')
     const text = new StringDecoder('utf8').write(data)
-      const nextOffset = offset + Buffer.byteLength(text)
-      return JSON.stringify({ artifact: id, offset, nextOffset, bytes, truncated: nextOffset < bytes, text: this.scrubber.scrub(text) })
+    const nextOffset = offset + Buffer.byteLength(text)
+    return JSON.stringify({ artifact: id, offset, nextOffset, bytes, truncated: nextOffset < bytes, text: this.scrubber.scrub(text) })
   }
 }

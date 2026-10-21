@@ -155,6 +155,7 @@ export class NativeAgents {
           if (event.data.result?.includes(reason)) shellUnavailable = reason
         }
       }
+      if (event.type === 'tool.result' && event.data.status === 'ok' && events.some(call => call.type === 'tool.call' && call.data.toolCallId === event.data.toolCallId && call.data.name === 'shell')) shellUnavailable = undefined
     }
     const consumed = new Set(events.filter(e => e.type === 'prompt').map(e => e.data.messageId))
     queue = queue.filter(item => !consumed.has(item.id))

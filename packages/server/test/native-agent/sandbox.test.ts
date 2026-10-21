@@ -200,3 +200,46 @@ test('macOS without a reachable runtime refuses arbitrary shell and retains fixe
     if (context === undefined) delete process.env.DOCKER_CONTEXT; else process.env.DOCKER_CONTEXT = context
   }
 })
+test('protected nested paths cannot be replaced by renaming their writable ancestors', { timeout: 30000 }, async t => {
+  const { policy, root } = await fixture(t)
+  const parent = join(root, 'parent'); await mkdir(parent)
+  await writeFile(join(parent, 'protected'), 'original')
+  const full = { ...policy, mode: 'full-access' as const, protectedPaths: [join(parent, 'protected')] }
+  const attempt = await sandboxCommand(full, `mv ${quote(parent)} ${quote(join(root, 'moved'))} && mkdir ${quote(parent)} && printf bad > ${quote(join(parent, 'protected'))}`)
+  assert.notEqual(attempt.code, 0)
+  assert.equal(await readFile(join(parent, 'protected'), 'utf8'), 'original')
+  await assert.rejects(readFile(join(root, 'moved', 'protected')), { code: 'ENOENT' })
+  assert.equal((await sandboxCommand(full, `printf safe > ${quote(join(parent, 'sibling'))}`)).code, 0)
+  assert.equal(await readFile(join(parent, 'sibling'), 'utf8'), 'safe')
+})
+test('macOS workload cannot access the trusted runner descriptors or memory and output is capped', { skip: process.platform !== 'darwin', timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  const script = `const fs=require('node:fs'); const pid=fs.readdirSync('/proc').filter(p=>/^\\d+$/.test(p)).find(p=>{try{return fs.readFileSync('/proc/'+p+'/cmdline','utf8').split('\\0')[1]==='/run/owner.cjs'}catch{return false}});if(!pid)throw Error('runner missing');for(const file of ['fd/1','mem']){try{fs.openSync('/proc/'+pid+'/'+file,'w');console.log('ESCAPED')}catch(e){if(!['EACCES','EPERM'].includes(e.code))throw e;console.log('blocked')}}`
+  const denied = await sandboxCommand(policy, `node -e ${quote(script)}`)
+  assert.equal(denied.code, 0); assert.equal(denied.stdout, 'blocked\nblocked\n')
+  const large = await sandboxCommand(policy, `node -e ${quote(`process.stdout.write('a'.repeat(100000))`)}`)
+  assert.equal(large.code, 0); assert.equal(large.truncated, true)
+  assert.equal(Buffer.byteLength(large.stdout) + Buffer.byteLength(large.stderr), 65536)
+})
+test('nested roots and ancestor pins never reopen a read-only protected directory', { timeout: 30000 }, async t => {
+  const { policy, root } = await fixture(t)
+  const parent = join(root, 'parent'), nested = join(parent, 'nested')
+  await mkdir(nested, { recursive: true }); await writeFile(join(nested, 'sentinel'), 'original')
+  const full = { ...policy, mode: 'full-access' as const, roots: [root, nested], protectedPaths: [parent, join(nested, 'sentinel')] }
+  const denied = await sandboxCommand(full, `printf good > ${quote(join(root, 'control'))}; printf bad > ${quote(join(nested, 'sentinel'))}; printf bad > ${quote(join(nested, 'new'))}`)
+  assert.notEqual(denied.code, 0)
+  assert.equal(await readFile(join(root, 'control'), 'utf8'), 'good')
+  assert.equal(await readFile(join(nested, 'sentinel'), 'utf8'), 'original')
+  await assert.rejects(readFile(join(nested, 'new')), { code: 'ENOENT' })
+})
+test('command output preserves split UTF-8 and bounds decoded invalid bytes', { timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  const unicode = await sandboxCommand(policy, `node -e ${quote(`const b=Buffer.from('界'.repeat(30000)); for(let i=0;i<b.length;i+=4096)process.stdout.write(b.subarray(i,i+4096))`)}`)
+  assert.equal(unicode.code, 0); assert.equal(unicode.truncated, true)
+  assert.ok(Buffer.byteLength(unicode.stdout) <= 65536)
+  assert.equal(unicode.stdout.includes('\ufffd'), false)
+  assert.equal(unicode.stdout, '界'.repeat(Math.floor(65536 / 3)))
+  const invalid = await sandboxCommand(policy, `node -e ${quote(`process.stdout.write(Buffer.alloc(50000,255))`)}`)
+  assert.equal(invalid.code, 0); assert.equal(invalid.truncated, true)
+  assert.ok(Buffer.byteLength(invalid.stdout) + Buffer.byteLength(invalid.stderr) <= 65536)
+})

@@ -1,7 +1,7 @@
 /** Trusted launcher only. This file is a separate build entry, never a tool. */
-import { realpathSync } from 'node:fs'
+import { realpathSync, accessSync, constants } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { SandboxManager, getDefaultWritePaths, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import type { SandboxPolicy } from './sandbox-protocol.ts'
 import { LinuxExecutionOwner, FixedExecutionOwner, ContainerExecutionOwner, type ExecutionOwner } from './execution-owner.ts'
@@ -21,6 +21,8 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
     const read = [...system, dirname(realpathSync(process.execPath)), policy.scratch, ...policy.roots, ...policy.attachments]
     const installedRuntime = fileURLToPath(import.meta.resolve('@anthropic-ai/sandbox-runtime'))
     const modules = installedRuntime.split('/node_modules/')[0] + '/node_modules'
+    const seccomp = join(dirname(installedRuntime), '..', 'vendor', 'seccomp', process.arch, 'apply-seccomp')
+    if (process.platform === 'linux') { accessSync(seccomp, constants.X_OK); read.push(seccomp) }
     const config: SandboxRuntimeConfig = {
       network: { allowedDomains: policy.domains, deniedDomains: [], strictAllowlist: true,
         allowUnixSockets: [], allowLocalBinding: false, allowAllUnixSockets: false,
@@ -34,8 +36,10 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
         denyWrite: [...getDefaultWritePaths().filter(path => !path.startsWith('/dev/')), ...system.filter(path => !['/dev', '/proc/self'].includes(path)), modules, dirname(realpathSync(process.execPath)), ...policy.roots.map(root => `${root}/node_modules`), ...policy.protectedPaths, ...policy.attachments].map(literal),
       },
       allowPty: false, enableWeakerNetworkIsolation: false, enableWeakerNestedSandbox: false,
+      ...(process.platform === 'linux' ? { seccomp: { applyPath: seccomp } } : {}),
     }
-    if ((await SandboxManager.checkDependenciesAsync()).errors.length) throw new Error('sandbox_dependencies')
+    const dependencies = await SandboxManager.checkDependenciesAsync()
+    if (dependencies.errors.length || dependencies.warnings.length) throw new Error('sandbox_dependencies')
     await SandboxManager.initialize(config, undefined, false)
     if (!SandboxManager.isSandboxingEnabled()) throw new Error('sandbox_unavailable')
     const quotePath = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"

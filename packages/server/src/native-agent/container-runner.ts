@@ -24,7 +24,7 @@ input.on('line', line => {
       const env = {PATH:'/usr/local/bin:/usr/bin:/bin',HOME:m.scratch,TMPDIR:m.scratch,LANG:'C.UTF-8',
         http_proxy:url,https_proxy:url,HTTP_PROXY:url,HTTPS_PROXY:url,ALL_PROXY:url,NO_PROXY:'',no_proxy:'',
         SSL_CERT_FILE:'/run/egress-ca.pem',CURL_CA_BUNDLE:'/run/egress-ca.pem',NODE_EXTRA_CA_CERTS:'/run/egress-ca.pem',OPENSSL_CONF:'/dev/null'};
-      const child = spawn('/usr/local/bin/guanxi-exec-guard',['/bin/sh','-c',m.command],{cwd:m.scratch,env,stdio:['ignore','pipe','pipe']});
+      const child = spawn('/usr/local/bin/guanxi-exec-guard',['/bin/sh','-c','cd "$HOME" || exit 125; '+m.command],{cwd:'/run',uid:m.uid,gid:m.gid,env,stdio:['ignore','pipe','pipe']});
       let bytes = 0, truncated = false;
       for(const channel of ['stdout','stderr']) child[channel].on('data',data=>{
         const remaining = Math.max(0,m.limit-bytes); bytes += data.length;

@@ -6,7 +6,7 @@ import { lstat, writeFile, copyFile, realpath } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { containerRunner } from './container-runner.ts'
-import { TOOL_OUTPUT_BYTES, type SandboxPolicy, type CommandResult } from './sandbox-protocol.ts'
+import { TOOL_OUTPUT_BYTES, commandOutput, type SandboxPolicy, type CommandResult } from './sandbox-protocol.ts'
 
 const exec = promisify(execFile)
 export const CONTAINER_IMAGE = 'guanxi-native-execution:k4-v1'
@@ -22,14 +22,15 @@ export class LinuxExecutionOwner implements ExecutionOwner {
   private stopped = false
   async stop() {
     this.stopped = true
-    if (this.child?.pid) { try { process.kill(-this.child.pid, 'SIGKILL') } catch { /* exited */ } }
+    if (this.child?.pid) { try { this.child.kill('SIGKILL') } catch { /* exited */ } }
   }
   async execute(command: string): Promise<CommandResult> {
     const wrapped = await SandboxManager.wrapWithSandbox(command, '/bin/sh')
     // Do not silently accept a weaker upstream profile (including host /proc).
     if (!wrapped.includes('--unshare-pid') || !wrapped.includes('--die-with-parent') || !/--proc\s+['"]?\/proc/.test(wrapped)) throw new Error('supervision_unavailable')
     if (this.stopped) throw new Error('sandbox_failed')
-    return collect(this.child = spawn('/bin/sh', ['-c', wrapped], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] }))
+    // Explicit exec makes bubblewrap's parent the worker on every POSIX shell.
+    return collect(this.child = spawn('/bin/sh', ['-c', `exec ${wrapped}`], { stdio: ['ignore', 'pipe', 'pipe'] }))
   }
 }
 
@@ -86,12 +87,14 @@ export class ContainerExecutionOwner implements ExecutionOwner {
     catch { throw new Error('container_runtime_unavailable') }
     if (!/^sha256:[a-f0-9]{64}$/.test(image)) throw new Error('container_runtime_unavailable')
     const runner = join(this.directory, 'container.cjs')
-    await writeFile(runner, containerRunner, { mode: 0o400, flag: 'wx' })
+    await writeFile(runner, containerRunner, { mode: 0o444, flag: 'wx' })
     const ca = join(this.directory, 'egress-ca.pem')
     await copyFile(SandboxManager.getMitmCA()!.trustBundlePath, ca)
+    const uid = process.getuid!(), gid = process.getgid!()
+    if (!uid) throw new Error('supervision_unavailable')
     const args = ['create', '--name', this.name, '--rm', '--init', '--interactive', '--network', 'none',
-      '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--log-driver', 'none',
-      '--user', `${process.getuid!()}:${process.getgid!()}`, '--workdir', policy.scratch]
+      '--read-only', '--cap-drop', 'ALL', '--cap-add', 'SETUID', '--cap-add', 'SETGID',
+      '--security-opt', 'no-new-privileges', '--log-driver', 'none', '--user', '0:0', '--workdir', '/run']
     const mounts = new Map<string, { source: string; readonly: boolean }>()
     const mount = (source: string, target: string, readonly: boolean) => {
       if (source.includes(',') || target.includes(',')) throw new Error('container_path_unsupported')
@@ -118,10 +121,15 @@ export class ContainerExecutionOwner implements ExecutionOwner {
       }
       // An absent deny path conservatively makes its nearest existing parent read-only.
       mount(cover, cover, true)
+      for (let ancestor = dirname(cover); writable.some(root => ancestor.startsWith(root + sep)); ancestor = dirname(ancestor)) {
+        // Pin every ancestor so a workload cannot rename it and recreate a denied name.
+        mount(ancestor, ancestor, false)
+      }
     }
     mount(runner, '/run/owner.cjs', true); mount(ca, '/run/egress-ca.pem', true)
     for (const [target, { source, readonly }] of [...mounts].sort(([a], [b]) => a.length - b.length)) {
-      args.push('--mount', `type=bind,source=${source},target=${target}${readonly ? ',readonly' : ''}`)
+      const inheritedReadonly = [...mounts].some(([ancestor, entry]) => entry.readonly && target.startsWith(ancestor + sep))
+      args.push('--mount', `type=bind,source=${source},target=${target}${readonly || inheritedReadonly ? ',readonly' : ''}`)
     }
     args.push('--entrypoint', '/usr/local/bin/node', image, '/run/owner.cjs')
     if (this.stopped) throw new Error('sandbox_failed')
@@ -134,7 +142,7 @@ export class ContainerExecutionOwner implements ExecutionOwner {
       const send = (value: unknown) => { if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(value) + '\n') }
       child.stdin.on('error', () => {})
       let result: CommandResult | undefined
-      let stdout = '', stderr = ''
+      const stdout: Buffer[] = [], stderr: Buffer[] = []
       const lines = createInterface({ input: child.stdout })
       lines.on('line', line => {
         const message = JSON.parse(line)
@@ -149,12 +157,12 @@ export class ContainerExecutionOwner implements ExecutionOwner {
         if (message.type === 'data') this.sockets.get(message.id)?.write(Buffer.from(message.data, 'base64'))
         if (message.type === 'end') this.sockets.get(message.id)?.end()
         if (message.type === 'output') {
-          const text = Buffer.from(message.data, 'base64').toString('utf8')
-          if (message.channel === 'stdout') stdout += text; else stderr += text
+          const data = Buffer.from(message.data, 'base64')
+          if (message.channel === 'stdout') stdout.push(data); else stderr.push(data)
         }
-        if (message.type === 'result') result = { code: message.code, stdout, stderr, truncated: message.truncated }
+        if (message.type === 'result') result = commandOutput(message.code, stdout, stderr, message.truncated)
       })
-      send({ type: 'start', command, scratch: policy.scratch, limit: TOOL_OUTPUT_BYTES, auth: `srt:${SandboxManager.getProxyAuthToken()}` })
+      send({ type: 'start', command, scratch: policy.scratch, uid, gid, limit: TOOL_OUTPUT_BYTES, auth: `srt:${SandboxManager.getProxyAuthToken()}` })
       await new Promise<void>((resolve, reject) => { child.once('error', reject); child.once('close', () => resolve()) })
       if (!result || this.stopped) throw new Error('sandbox_failed')
       return result
@@ -163,15 +171,15 @@ export class ContainerExecutionOwner implements ExecutionOwner {
 }
 
 async function collect(child: ChildProcess): Promise<CommandResult> {
-  let stdout = '', stderr = '', bytes = 0, truncated = false
+  const stdout: Buffer[] = [], stderr: Buffer[] = []
+  let bytes = 0, truncated = false
   for (const channel of ['stdout', 'stderr'] as const) child[channel]!.on('data', (data: Buffer) => {
     const remaining = Math.max(0, TOOL_OUTPUT_BYTES - bytes)
-    const text = data.subarray(0, remaining).toString('utf8')
     bytes += data.length; truncated ||= data.length > remaining
-    if (channel === 'stdout') stdout += text; else stderr += text
+    if (channel === 'stdout') stdout.push(data.subarray(0, remaining)); else stderr.push(data.subarray(0, remaining))
   })
   return new Promise((resolve, reject) => {
     child.once('error', reject)
-    child.once('close', code => resolve({ code, stdout, stderr, truncated }))
+    child.once('close', code => resolve(commandOutput(code, stdout, stderr, truncated)))
   })
 }

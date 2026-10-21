@@ -38,4 +38,16 @@ test('all-tool output policy stores scrubbed content by hash, bounds escaped out
   assert.equal(pages.join(''), stored)
   await assert.rejects(new NativeOutputs(dir, 'two', scrubber).read(reference.artifact, 0), { code: 'ENOENT' })
   await assert.rejects(outputs.read('../escape', 0), /path_denied/)
+  const late = 'late-fixture-value'
+  const lateReference = JSON.parse(await outputs.bound('a'.repeat(8190) + late + 'b'.repeat(70_000)))
+  scrubber.register('secret://fixture/late', late)
+  const latePages: string[] = []
+  offset = 0
+  while (true) {
+    const page = JSON.parse(await outputs.read(lateReference.artifact, offset))
+    latePages.push(page.text); offset = page.nextOffset
+    if (!page.truncated) break
+  }
+  assert.equal(latePages.join(''), scrubber.scrub('a'.repeat(8190) + late + 'b'.repeat(70_000)))
+  assert.equal(latePages.join('').includes(late), false)
 })
