@@ -39,6 +39,12 @@ function literalValues(node, context, emit, seen = new Set()) {
   if (!node || seen.has(node)) return
   const next = new Set([...seen, node])
   if (node.type === 'ConditionalExpression') { literalValues(node.consequent, context, emit, next); literalValues(node.alternate, context, emit, next) }
+  else if (node.type === 'BinaryExpression' && node.operator === '+') {
+    const left = [], right = []
+    literalValues(node.left, context, value => left.push(value), next)
+    literalValues(node.right, context, value => right.push(value), next)
+    for (const a of left) for (const b of right) emit(a + b)
+  }
   else if (node.type === 'Literal' && ['string', 'number'].includes(typeof node.value)) emit(String(node.value))
   else if (node.type === 'UnaryExpression' && node.argument.type === 'Literal') emit(`${node.operator}${node.argument.value}`)
   else if (node.type === 'TemplateLiteral' && !node.expressions.length) emit(node.quasis[0].value.cooked)
@@ -69,8 +75,24 @@ function forbiddenImport(value, filename) {
   // These are public package exports, not component internals.
   if (/^@guanxi\/ui\/(?:catalog|approval|tokens|(?:tokens|theme|fonts)\.css)$/.test(value) || /^@guanxi\/ui\/brand\/[^.][\w./-]*$/.test(value) && !value.includes('..')) return false
   if (/^(?:@guanxi\/ui\/|@base-ui\/react(?:\/|$)|lucide-react(?:\/|$)|motion(?:\/|$))/.test(value)) return true
-  const target = value.startsWith('.') ? resolve(filename, '..', value) : value
+  const webRoot = filename.match(/^(.*\/packages\/web\/src)\//)?.[1]
+  const target = value.startsWith('.') ? resolve(filename, '..', value) : value.startsWith('@/') && webRoot ? resolve(webRoot, value.slice(2)) : value
+  if (/(?:^|\/)node_modules\/(?:@base-ui\/react|lucide-react|motion)(?:\/|$)/.test(target)) return true
   return /(?:^|\/)packages\/ui\/(?:src|catalog|generated|tokens)(?:\/|$)/.test(target) || /^@\/.*(?:ui\/src|ui\/components)/.test(target)
+}
+function moduleLoader(node, context) {
+  node = resolveBinding(node, context)
+  if (node?.type === 'Identifier') return node.name === 'require'
+  if (node?.type === 'MemberExpression') return keyOf(node.property) === 'resolve' && moduleLoader(node.object, context) || keyOf(node.property) === 'glob' && node.object.type === 'MetaProperty'
+  if (node?.type === 'CallExpression') {
+    const callee = resolveBinding(node.callee, context)
+    if (callee?.type !== 'Identifier') return false
+    for (let scope = context.sourceCode.getScope(callee); scope; scope = scope.upper) {
+      const def = scope.set.get(callee.name)?.defs[0]
+      if (def?.type === 'ImportBinding') return keyOf(def.node.imported) === 'createRequire' && /^(?:node:)?module$/.test(def.parent.source.value)
+    }
+  }
+  return false
 }
 export const rules = {
   'import-boundaries': rule('G8 import boundary: {{value}}; use @guanxi/ui public exports.', context => {
@@ -82,7 +104,11 @@ export const rules = {
       ImportExpression: n => check(n.source),
       TSImportType: n => check(n.argument?.literal ?? n.argument),
       TSExternalModuleReference: n => check(n.expression),
-      CallExpression(n) { if ((n.callee.name === 'require' || n.callee.property?.name === 'resolve' && n.callee.object?.name === 'require') && n.arguments[0]) check(n.arguments[0]) },
+      CallExpression(n) { if (moduleLoader(n.callee, context) && n.arguments[0]) {
+        const source = n.arguments[0]
+        if (source.type === 'ArrayExpression') source.elements.filter(Boolean).forEach(check)
+        else check(source)
+      } },
     }
   }),
   'reuse-primitives': rule('G9 raw {{value}}; reuse a @guanxi/ui primitive.', context => {

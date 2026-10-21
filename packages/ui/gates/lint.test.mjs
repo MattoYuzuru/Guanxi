@@ -228,3 +228,17 @@ test('L4 test-named production modules retain every G8/G9 rule', async () => {
     for (const name of ['import-boundaries', 'reuse-primitives', 'no-inline-colours', 'no-literal-styles', 'semantic-classes']) assert.ok(messages.some(m => m.ruleId === `guanxi/${name}`), `${file}: ${name}`)
   }
 })
+
+test('L2 G8 rejects static node_modules paths, alias traversal, concatenation and loader aliases', async () => {
+  for (const source of [
+    "import X from '../../../../../node_modules/@base-ui/react/button/index.js'",
+    "import X from '@/../../ui/catalog/registry'",
+    "const x = import('lucide' + '-react')",
+    "const r = require; const x = r('lucide-react')",
+    "const r = require; const x = r.resolve('motion/react')",
+    "import { createRequire as make } from 'node:module'; const x = make(import.meta.url)('lucide-react')",
+    "import { createRequire } from 'node:module'; const r = createRequire(import.meta.url); const x = r('lucide-react')",
+    "const x = import.meta.glob('/node_modules/lucide-react/dist/esm/icons/*.js')",
+    "const x = import.meta.glob(['./safe.ts', '/node_modules/@base-ui/react/*.js'])",
+  ]) assert.ok((await lint(source, 'packages/web/src/features/x/a.tsx')).some(m => m.ruleId === 'guanxi/import-boundaries'), source)
+})
