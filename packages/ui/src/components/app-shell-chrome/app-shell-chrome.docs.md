@@ -33,8 +33,9 @@ supplies all navigation, status and workspace content through controlled props.
 `AppShellChrome` renders a status strip, then a row containing the sidebar and `<main>`. `side`
 selects whether the sidebar precedes or follows the main element in the DOM; it is not a CSS
 reorder. `visibility` selects the expanded 18 rem sidebar, the 48 px rail or the hidden state.
-The sidebar header owns a menu with Move, Collapse/Expand and Hide actions. The status strip
-always owns the Palette action and, while the sidebar is hidden, the Show action.
+Both visible widths include the sidebar's 1 px glass border, so the glass edge never adds width
+outside the shell. The sidebar header owns a menu with Move, Collapse/Expand and Hide actions.
+The status strip always owns the Palette action and, while the sidebar is hidden, the Show action.
 
 The host owns the sidebar node in every visibility. This pattern supplies the rail geometry but
 does not invent rail cards, model state or status items; the host should render compact rail

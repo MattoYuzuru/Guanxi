@@ -66,6 +66,10 @@
   display: flex;
   flex: none;
   flex-direction: column;
+  /* The 1 px glass border belongs to the 18 rem expanded and 48 px rail widths. Without this
+     local border-box, the border adds 2 px outside those widths and overflows a narrow host.
+     Keep the reset scoped here; approved primitives keep their own box model. */
+  box-sizing: border-box;
   width: var(--layout-container-2xs);
   @apply max-w-full;
   min-width: 0;

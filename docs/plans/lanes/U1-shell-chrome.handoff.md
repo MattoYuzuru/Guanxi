@@ -143,3 +143,65 @@ pending root gate.
   belongs to the separate GPT design-review/u1-shell work, not this lane.
 - Full typecheck, UI gates, browser gate, build, snapshots and owner catalog review remain
   pending before this pattern can be considered for product use.
+
+## Review fix — P2 phone sidebar border width
+
+**Status:** fix and focused regression cases ready; actual Chromium/G14 green and the full root
+envelope remain pending. This section is appended evidence; it does not change the original
+slice's claims above.
+
+**Finding (root P2, confirmed).** Public `@guanxi/ui` does not guarantee a global `border-box`
+reset. At an actual 390 px host, the expanded `.gx-app-shell-sidebar` measured 392 px because its
+390 px content width sat inside a 1 px glass border on each side; the shell and main stayed at
+390 px. The root fixture is
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/app-shell-chrome-browser-review.mjs`; the pre-fix
+red receipts are `check-3r5r4gi6` and diagnostic `check-irc421g3` (sidebar 392, root/main 390).
+
+**Fix.** `box-sizing: border-box` is now scoped to `.gx-app-shell-sidebar`. The expanded 18 rem
+and rail 48 px widths therefore include the 1 px glass border instead of adding 2 px outside
+them. The shell frame is unchanged because it has no border or padding that would need the same
+box model. There is no global or descendant reset, so approved primitives keep their own box
+model. The 639 px container breakpoint, layout tokens, glass/opaque material split and DOM/focus
+order are unchanged.
+
+**New regression coverage.** Two Chromium cases were appended to
+`packages/ui/gates/catalog/browser/g14-axe.spec.ts`, one each for light and dark. They are guarded
+only when `gateStories()` contains `app-shell-chrome--phone`, open that story through the existing
+`openStory` helper at a 390 × 844 viewport, and set only the story's synthetic host wrapper width
+to the available phone width: `390 − 16 px left gutter − 16 px right reserve = 358 px`. After
+layout they assert a positive host width, the shell width, exact sidebar fit to the shell's left
+and right edges, sidebar and main inside the shell's right edge, and the phone-stacked column
+with sidebar before main. With the pre-fix content-box sidebar these assertions fail by the 2 px
+border overflow; no CSS-text, computed-style or jsdom assertion substitutes for the Chromium
+layout check. The existing axe loops and `ACCEPTED` exceptions were not changed.
+
+**Regression envelope.** The existing 6 Vitest cases in
+`packages/ui/test/app-shell-chrome.test.tsx` were run unchanged and pass. No Vitest implementation
+mirror was added for this CSS-only fix; actual browser geometry is the regression proof.
+
+| Command | Result |
+| --- | --- |
+| `nice -n 10 npx tsc --noEmit -p packages/ui/tsconfig.json` from the clone root, after adding the cases and after the fix | PASS, exit 0, no diagnostics. |
+| `nice -n 10 npx vitest run test/app-shell-chrome.test.tsx` from `packages/ui` | PASS: 6 passed / 6; 1 test file passed. |
+| `nice -n 10 npx stylelint packages/ui/src/components/app-shell-chrome/app-shell-chrome.css` from the clone root | PASS, exit 0. |
+| `nice -n 10 npx eslint packages/ui/gates/catalog/browser/g14-axe.spec.ts` from the clone root | PASS, exit 0. |
+| `nice -n 10 node catalog/scripts/build-manifest.ts` from `packages/ui` | Wrote the manifest. |
+| `nice -n 10 node catalog/scripts/build-manifest.ts --check` from `packages/ui` | `catalog/manifest.json is fresh`. |
+
+The new manifest source hash is
+`sha256:dd5af389b392d0096beff752de3a2ad64a63cd3fc62422035a730d8f485dfc92`. The review record is
+still `draft` with `approval: null`, `snapshotHashes` is still empty, and usage is still 0. No
+approval, signature, snapshot, status or product usage was fabricated.
+
+**Not run here / residual risk.** Actual Chromium G14 execution, the root fixture's post-fix run,
+G13 baselines, browser gates, build and the full gate envelope were not run inside this sandbox.
+The worker added and typechecked the two cases but did not execute a browser; the pre-fix red
+geometry comes from the root receipt above, and the fixed green must be re-run by the root from
+the final pin. The harness case uses a synthetic host wrapper at 358 px, not the full product
+viewport; the root's external actual-390 fixture supplies that coverage. The first pinned-Docker
+G13 baselines for this component must be generated from the fixed CSS. Host-provided sidebar
+content can still scroll inside its own area if it is wider than the sidebar; the shell border
+geometry no longer overflows. The component remains a draft with no product host usage approval.
+
+**Commit:** the `fix(ui)` commit that carries this section; no push, merge, rebase or status-file
+edit.
