@@ -140,10 +140,18 @@ export class AgentProcess {
   async close() {
     this.stop = true
     this.child.stdin.end()
-    if (this.aborting) { await this.aborting; await this.closed; return }
+    if (this.aborting) {
+      await this.aborting
+      await this.closed
+      // The adapter may exit on stdin EOF before the grace signal, leaving same-group children.
+      this.terminate('SIGKILL')
+      return
+    }
     this.terminate('SIGTERM')
     if (!await this.waitClosed(TERM_GRACE_MS)) this.terminate('SIGKILL')
     await this.closed
+    // SIGTERM targets the group too, but a descendant may ignore it while the adapter exits.
+    this.terminate('SIGKILL')
   }
 }
 

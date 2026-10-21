@@ -16,6 +16,13 @@ const replace = value => {
   const text = JSON.stringify(value).replaceAll('$SECRET_A', secret.slice(0, Math.floor(secret.length / 2))).replaceAll('$SECRET_B', secret.slice(Math.floor(secret.length / 2)))
   return JSON.parse(text)
 }
+// A same-process-group descendant with no pipes of its own. The adapter exits on stdin EOF,
+// so only a group signal can reach this child after the adapter process is gone.
+const orphan = () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+  writeFileSync(join(root, 'orphan.pid'), String(child.pid))
+  process.stdin.on('end', () => process.exit(0))
+}
 if (process.argv.slice(2).join(' ') === 'auth status') {
   if (config.scenario === 'auth-descendant') {
     const marker = join(root, 'auth-descendant-write')
@@ -97,6 +104,7 @@ lines.on('line', line => {
     if (frame.method === 'session/prompt') {
       if (model !== (config.expectedModel ?? (tape.adapter === 'opencode' ? 'openai/model-fixture' : 'model-fixture'))) process.exit(18)
       promptId = frame.id
+      if (config.scenario === 'orphan') { orphan(); return }
       if (config.scenario === 'hang') return
       if (config.scenario === 'crash') process.exit(19)
       for (const notification of tape.notifications) send(replace(notification))
@@ -128,6 +136,7 @@ lines.on('line', line => {
       reply(frame, { thread: { id: 'fixture-thread' } }); return
     }
     if (frame.method === 'turn/start') {
+      if (config.scenario === 'orphan') { orphan(); return }
       if (config.scenario === 'hang') return
       if (config.scenario === 'hang-after-start') { reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } }); return }
       if (config.scenario === 'crash') process.exit(22)

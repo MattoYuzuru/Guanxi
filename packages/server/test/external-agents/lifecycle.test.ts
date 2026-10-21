@@ -52,6 +52,35 @@ for (const adapter of ['copilot', 'codex'] as const) test(`${adapter}: cancellat
   assert.match(good.text, /fixture completed/)
 })
 
+test('abort and timeout kill same-group descendants after the adapter exits on stdin close', async t => {
+  const f = await fixture(t)
+  const binding = f.bindings[0]!
+  f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
+  for (const action of ['abort', 'timeout'] as const) {
+    if (action === 'timeout') await f.reload({ runDeadlineMs: 1200 })
+    await f.scenario('codex', { scenario: 'orphan' })
+    const controller = new AbortController()
+    const run = f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello',
+      ...(action === 'abort' ? { signal: controller.signal } : {}) })
+    const settled = run.then(value => ({ value }), error => ({ error }))
+    await until(async () => {
+      try { return (await f.trace('codex')).some(frame => frame.method === 'turn/start') &&
+        (await readFile(join(f.dir, 'codex', 'orphan.pid'), 'utf8')).length > 0 } catch { return false }
+    })
+    const pid = Number(await readFile(join(f.dir, 'codex', 'orphan.pid'), 'utf8'))
+    try {
+      if (action === 'abort') controller.abort()
+      const result = await settled
+      assert.ok('error' in result)
+      assert.equal('error' in result ? result.error.code : '', action === 'timeout' ? 'timeout' : 'cancelled')
+      // close() ends stdin, so the adapter exits by itself; its child must still be killed.
+      await until(() => { try { process.kill(pid, 0); return false } catch { return true } })
+      assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' })
+      assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
+    } finally { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
+  }
+})
+
 test('learned account concurrency rejects a third invocation before process launch and releases both permits on cancel', async t => {
   const f = await fixture(t)
   const binding = f.bindings[0]!
