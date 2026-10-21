@@ -28,7 +28,7 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
     const profile = `(version 1)(allow default)(deny network*)(deny file-read*)(deny file-write*)(allow file-read-metadata)(allow file-read* (literal "/"))(allow file-read* ${[...system, ...paths].map(p => `(subpath ${quote(p)})`).join(' ')})(allow file-read* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))(allow file-write* (subpath ${quote(databaseDir)}) (literal "/dev/null"))`
     command = '/usr/bin/sandbox-exec'; args = ['-p', profile, executable, entry]
   } else if (process.platform === 'linux') {
-    command = 'bwrap'
+    command = '/usr/bin/bwrap'
     args = ['--die-with-parent', '--unshare-all', '--new-session', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
     for (const path of [...new Set(['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths])].sort((a, b) => a.length - b.length)) {
       try { await realpath(path) } catch { continue }
@@ -37,7 +37,7 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
     args.push('--bind', databaseDir, databaseDir, '--chdir', cwd, executable, entry)
   } else throw new Error('index_sandbox_unavailable')
   return spawn(command, args, { detached: true, cwd,
-    env: { PATH: process.env.PATH ?? '', HOME: databaseDir, TMPDIR: databaseDir, LANG: 'en_US.UTF-8', OPENSSL_CONF: '/dev/null' },
+    env: { PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', HOME: databaseDir, TMPDIR: databaseDir, LANG: 'en_US.UTF-8', OPENSSL_CONF: '/dev/null' },
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
 }
 export async function stopIndexProcess(child: ChildProcess): Promise<void> {
