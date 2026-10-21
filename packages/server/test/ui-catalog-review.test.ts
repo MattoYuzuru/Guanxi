@@ -4,9 +4,8 @@
  * bound to the hashes the owner saw and rejected by G12 once edited.
  */
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { generateKeyPairSync, type KeyObject } from 'node:crypto'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import type { KeyObject } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -21,7 +20,6 @@ import {
   componentSnapshotHashes,
   componentSourceHash,
   decisionDigest,
-  exportPublicKey,
   parseReviewRecord,
   uiPaths,
   verifyRecordApproval,
@@ -32,7 +30,6 @@ import type { AppContext } from '../src/context.ts'
 import { UiCatalogReviewService } from '../src/ui-catalog/service.ts'
 import {
   keyObjectSigner,
-  keychainSigner,
   unavailableSigner,
   type ApprovalSigner,
 } from '../src/ui-catalog/signer.ts'
@@ -693,91 +690,4 @@ describe('release builds', () => {
     assert.equal(await bundle({ __GUANXI_RELEASE_BUILD__: 'true' }), true)
     assert.equal(await bundle({}), false)
   })
-})
-
-describe('keychain signer', () => {
-  function fakeSecurity(script: string): string {
-    const dir = mkdtempSync(join(tmpdir(), 'guanxi-fake-security-'))
-    cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
-    const path = join(dir, 'security')
-    writeFileSync(path, `#!/bin/sh\n${script}\n`)
-    chmodSync(path, 0o755)
-    return path
-  }
-
-  it('reads the key id from item metadata without asking for the secret', async () => {
-    const log = join(mkdtempSync(join(tmpdir(), 'guanxi-security-log-')), 'args')
-    const security = fakeSecurity(
-      `echo "$@" >> '${log}'\necho 'attributes:'\necho '    "icmt"<blob>="ed25519:0123456789abcdef0123456789abcdef"'`,
-    )
-    const status = await keychainSigner({ securityPath: security, platform: 'darwin' }).status()
-    assert.deepEqual(status, { state: 'available', keyId: 'ed25519:0123456789abcdef0123456789abcdef' })
-    const args = readFileSync(log, 'utf8')
-    assert.match(args, /find-generic-password -s guanxi.ui-approval -a owner-approval-key/)
-    assert.doesNotMatch(args, /-w/)
-  })
-
-  it('maps a missing item, a denied prompt and other platforms', async () => {
-    const missing = fakeSecurity('exit 44')
-    assert.deepEqual(await keychainSigner({ securityPath: missing, platform: 'darwin' }).status(), {
-      state: 'unavailable',
-      reason: 'signing_key_missing',
-    })
-    await assert.rejects(keychainSigner({ securityPath: missing, platform: 'darwin' }).sign(Buffer.from('x')), {
-      reason: 'signing_key_missing',
-    })
-    const denied = fakeSecurity('exit 51')
-    await assert.rejects(keychainSigner({ securityPath: denied, platform: 'darwin' }).sign(Buffer.from('x')), {
-      reason: 'signing_denied',
-    })
-    const unanswered = fakeSecurity('sleep 5')
-    await assert.rejects(
-      keychainSigner({ securityPath: unanswered, platform: 'darwin', promptTimeoutMs: 200 }).sign(Buffer.from('x')),
-      { reason: 'signing_timeout' },
-    )
-    assert.deepEqual(await keychainSigner({ platform: 'linux' }).status(), {
-      state: 'unavailable',
-      reason: 'platform_unsupported',
-    })
-  })
-
-  it('signs with the key the fake keychain returns and derives its id', async () => {
-    const pair = generateKeyPairSync('ed25519')
-    const der = pair.privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64')
-    const security = fakeSecurity(`echo '${der}'`)
-    const signed = await keychainSigner({ securityPath: security, platform: 'darwin' }).sign(Buffer.from('payload'))
-    assert.equal(signed.keyId, exportPublicKey(pair.publicKey).keyId)
-    assert.ok(signed.signature.length > 40)
-  })
-
-  // Opt-in: creates and deletes a throwaway keychain file; never touches the login keychain.
-  it(
-    'round-trips through a throwaway macOS keychain created by approval-key.ts',
-    { skip: process.platform !== 'darwin' || process.env['GUANXI_TEST_MACOS_KEYCHAIN'] !== '1' },
-    async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'guanxi-keychain-'))
-      const keychain = join(dir, 'approval-test.keychain-db')
-      const before = spawnSync('security', ['list-keychains', '-d', 'user'], { encoding: 'utf8' }).stdout
-      try {
-        assert.equal(spawnSync('security', ['create-keychain', '-p', 'throwaway', keychain]).status, 0)
-        assert.equal(spawnSync('security', ['unlock-keychain', '-p', 'throwaway', keychain]).status, 0)
-        const init = spawnSync(
-          process.execPath,
-          [join(realUiRoot, 'catalog', 'scripts', 'approval-key.ts'), 'init', '--keychain', keychain, '--service', 'guanxi.ui-approval', '--trust-security-tool'],
-          { encoding: 'utf8' },
-        )
-        assert.equal(init.status, 0, init.stderr)
-        const entry = JSON.parse(init.stdout.slice(init.stdout.indexOf('{'), init.stdout.lastIndexOf('}') + 1)) as TrustedKey
-        assert.doesNotMatch(init.stdout + init.stderr, /PRIVATE|BEGIN/)
-        const signer = keychainSigner({ keychain, platform: 'darwin' })
-        assert.deepEqual(await signer.status(), { state: 'available', keyId: entry.keyId })
-        const signed = await signer.sign(Buffer.from('payload'))
-        assert.equal(signed.keyId, entry.keyId)
-      } finally {
-        spawnSync('security', ['delete-keychain', keychain])
-        rmSync(dir, { recursive: true, force: true })
-        assert.equal(spawnSync('security', ['list-keychains', '-d', 'user'], { encoding: 'utf8' }).stdout, before)
-      }
-    },
-  )
 })

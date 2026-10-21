@@ -45,13 +45,19 @@ else
   exit 2
 fi
 
+# Build and sign a private temporary path, then rename atomically: two test files may ask for
+# the same test binary at the same time.
+TMP="$OUT.tmp.$$"
+trap 'rm -f "$TMP"' EXIT HUP INT TERM
 # shellcheck disable=SC2086 # FLAGS is empty or one exact -D flag.
-"$SWIFTC" -O -module-cache-path "$MC" $FLAGS "$DIR/Sources/main.swift" -o "$OUT"
-"$CODESIGN" -s - -f --identifier "$IDENTIFIER" "$OUT"
+"$SWIFTC" -O -module-cache-path "$MC" $FLAGS "$DIR/Sources/main.swift" -o "$TMP"
+"$CODESIGN" -s - -f --identifier "$IDENTIFIER" "$TMP"
 
 if [ "$CHECK" = "1" ]; then
-  if ! check_no_test_hooks "$OUT"; then
-    rm -f "$OUT"
+  if ! check_no_test_hooks "$TMP"; then
     exit 1
   fi
 fi
+
+mv -f "$TMP" "$OUT"
+trap - EXIT HUP INT TERM
