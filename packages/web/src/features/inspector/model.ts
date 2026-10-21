@@ -68,6 +68,16 @@ export function segmentRedactions(text: string): TextSegment[] {
 /** Short machine-value summary of an event for its timeline row. */
 export function eventDetail(event: SessionEvent): string | null {
   switch (event.type) {
+    case 'agent.policy':
+      return event.data.mode
+    case 'agent.state':
+      return translate(`native.${event.data.status}`)
+    case 'agent.plan':
+      return event.data.items.map(item => item.text).join('\n')
+    case 'agent.queue':
+      return event.data.items.map(item => item.text).join('\n')
+    case 'agent.note':
+      return event.data.text
     case 'prompt':
     case 'assistant.message':
       return event.data.text

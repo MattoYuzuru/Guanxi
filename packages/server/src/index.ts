@@ -20,6 +20,8 @@ import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
 import { ConnectionError } from './connections/errors.ts'
 import { connectionRoutes } from './connections/routes.ts'
+import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
+import { nativeAgentRoutes } from './native-agent/routes.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
@@ -152,6 +154,7 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
+    await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath) })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
@@ -171,6 +174,11 @@ export async function start(options: StartOptions = {}) {
     if (!service) throw new ConnectionError('egress_unavailable', 'Connections unavailable')
     return service
   }, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
+  server.route('/api/agent', nativeAgentRoutes(() => {
+    const service = kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)
+    if (!service) throw new Error('agent_unavailable')
+    return service
+  }, options.devOrigins ?? devOriginsFromEnv(process.env)))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>
@@ -217,6 +225,7 @@ export async function start(options: StartOptions = {}) {
         shutdownError = error
       }
       try {
+        await kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)?.shutdown()
         await context.chatExecution.shutdown()
       } catch (error) {
         shutdownError ??= error
