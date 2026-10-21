@@ -22,7 +22,7 @@ export async function installFetchLifecycle(page: Page, deferNetworkStart: boole
     window.__guanxiFetchReads = reads
     window.fetch = async (input, init) => {
       const path = new URL(input instanceof Request ? input.url : String(input), location.href).pathname
-      const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
+      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
       if (method !== 'GET' || !['/api/health', '/api/runtime', '/api/models'].includes(path)) {
         return nativeFetch(input, init)
       }

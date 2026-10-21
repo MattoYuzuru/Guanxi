@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { RUNTIME_IDLE_POLL_INTERVAL_MS } from '../../src/features/health/useRuntimePolling.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 import { fetchReads, installFetchLifecycle } from './fixtures/fetch-lifecycle.ts'
+
+// Advance after each committed locale transition; together these windows stay below
+// the legitimate idle poll while exposing short timer-driven refetches.
+const localeTimerWindowMs = RUNTIME_IDLE_POLL_INTERVAL_MS * 0.4
 
 function browserHealth(observedAt: string) {
   return {
@@ -61,18 +66,22 @@ for (const deferNetworkStart of [false, true]) {
     let settingsWrites = 0
     const settingsBodies: Array<Record<string, unknown>> = []
     const forbiddenEffects: string[] = []
+    const routeReads = { health: 0, runtime: 0, models: 0 }
 
     await page.route('**/api/**', async (route) => {
       const request = route.request()
       const url = new URL(request.url())
       const method = request.method()
       if (url.pathname === '/api/health' && method === 'GET') {
+        routeReads.health += 1
         return route.fulfill(json(health))
       }
       if (url.pathname === '/api/runtime' && method === 'GET') {
+        routeReads.runtime += 1
         return route.fulfill(json(runtimeBrowserSnapshot()))
       }
       if (url.pathname === '/api/models' && method === 'GET') {
+        routeReads.models += 1
         return route.fulfill(json({ models: [] }))
       }
       if (url.pathname === '/api/settings' && method === 'GET') {
@@ -114,6 +123,8 @@ for (const deferNetworkStart of [false, true]) {
         expect(reads.map((read) => read.abortedAtNetworkStart)).toEqual([true, false])
       }
     }
+    // Network cross-check: requests outside the tracked fetch (XHR, other realms) still count.
+    if (deferNetworkStart) expect(routeReads).toEqual({ health: 1, runtime: 1, models: 1 })
     await expect(page).toHaveTitle('Guanxi')
     await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
@@ -146,6 +157,7 @@ for (const deferNetworkStart of [false, true]) {
     await expect(page.getByRole('link', { name: 'Модели', exact: true })).toHaveCount(1)
     await expect(page.getByRole('status').filter({ hasText: 'Предпросмотр языка' })).toHaveCount(1)
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
+    await page.clock.runFor(localeTimerWindowMs)
 
     const localizedSearch = page.getByRole('textbox', { name: 'Поиск по глоссарию' })
     await localizedSearch.fill('Диктовка ПРОМПТА')
@@ -172,6 +184,7 @@ for (const deferNetworkStart of [false, true]) {
     await save.press('Enter')
     await expect.poll(() => settingsWrites).toBe(2)
     await expect(page.getByText('Настройки сохранены', { exact: true })).toHaveCount(1)
+    await page.clock.runFor(localeTimerWindowMs)
     expect(settingsBodies.map((body) => body.locale)).toEqual(['ru', 'ru'])
     expect(settingsBodies.every((body) => {
       const webSearch = body.webSearch
@@ -186,7 +199,10 @@ for (const deferNetworkStart of [false, true]) {
     expect(settingsReads).toBe(1)
     // Compare all identities, including cancelled attempts, so locale changes cannot
     // hide a refetch or remount behind a constant number of successful responses.
+    // Both committed transitions have had a timer window, totaling less than one idle poll.
     expect(await fetchReads(page)).toEqual(readsBeforeLocale)
+    if (deferNetworkStart) expect(routeReads).toEqual({ health: 1, runtime: 1, models: 1 })
+    else for (const count of Object.values(routeReads)) expect(count).toBeLessThanOrEqual(2)
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toHaveCount(1)
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
