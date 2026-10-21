@@ -63,6 +63,88 @@ function responseSse(content = 'ok') {
   return new Response(frames.map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
 }
 
+test('trusted single-attempt K3 call refuses an adapter second HTTP attempt before transport', async t => {
+  let requests = 0, retries: number | undefined
+  const f = await setup(t, { transport: async () => { requests++; return responseSse() },
+    pi: { async complete(_model, _context, options) {
+      retries = options.maxRetries
+      await options.fetch!('https://fixture.invalid/first')
+      await options.fetch!('https://fixture.invalid/fallback')
+      throw new Error('unreachable_fixture')
+    } } })
+  const s = f.service(), row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
+  await assert.rejects(s.complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'single', requestId: 'one', singleAttempt: true,
+  }), error => error instanceof ConnectionError && error.code === 'provider_failed')
+  assert.equal(retries, 0); assert.equal(requests, 1)
+})
+
+test('concurrent single-attempt calls have independent HTTP counters', async t => {
+  let requests = 0, active = 0, maximumActive = 0
+  const f = await setup(t, { transport: async () => { requests++; return responseSse() },
+    pi: { async complete(model, _context, options) {
+      active++; maximumActive = Math.max(maximumActive, active)
+      await new Promise<void>(resolve => setImmediate(resolve))
+      await options.fetch!('https://fixture.invalid/one')
+      active--
+      return { role: 'assistant', api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: 'text', text: 'fixture' }], timestamp: Date.now(), stopReason: 'stop',
+        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }
+    } } })
+  const s = f.service(), row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
+  const results = await Promise.all([0, 1].map(i => s.complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'concurrent', requestId: String(i), singleAttempt: true,
+  })))
+  assert.equal(results.length, 2); assert.equal(requests, 2); assert.equal(maximumActive, 2)
+})
+
+test('ordinary K3 calls retain their existing adapter transport behavior', async t => {
+  let requests = 0, retries: number | undefined
+  const f = await setup(t, { transport: async () => { requests++; return responseSse() },
+    pi: { async complete(model, _context, options) {
+      retries = options.maxRetries
+      await options.fetch!('https://fixture.invalid/first')
+      await options.fetch!('https://fixture.invalid/second')
+      return { role: 'assistant', api: model.api, provider: model.provider, model: model.id,
+        content: [], timestamp: Date.now(), stopReason: 'stop',
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }
+    } } })
+  const s = f.service(), row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
+  await s.complete(account, row.id, { messages: [] }, { model: piModels('deepseek')[0]!.id, runId: 'ordinary', requestId: 'one' })
+  assert.equal(requests, 2); assert.equal(retries, undefined)
+})
+
+test('single-attempt K3 refuses a wire without an injected HTTP boundary before preparation', async t => {
+  const f = await setup(t)
+  const s = f.service(), row = s.create(account, { ...apiInput, provider: 'google' })
+  let prepared = false
+  await assert.rejects(s.complete(account, row.id, { messages: [] }, {
+    model: piModels('google')[0]!.id, runId: 'unsupported', requestId: 'one', singleAttempt: true,
+    onPrepared: () => { prepared = true },
+  }), error => error instanceof ConnectionError && error.code === 'policy_denied')
+  assert.equal(prepared, false)
+})
+
+test('real pinned pi-ai transport performs one K3-visible HTTP attempt on a retryable failure', async t => {
+  let requests = 0
+  const f = await setup(t, { transport: async () => {
+    requests++
+    return new Response(JSON.stringify({ error: { message: 'fixture_unavailable', type: 'server_error' } }),
+      { status: 503, headers: { 'Content-Type': 'application/json', 'retry-after-ms': '1' } })
+  } })
+  const s = f.service(), row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
+  await assert.rejects(s.complete(account, row.id, { messages: [{ role: 'user', content: 'fixture', timestamp: Date.now() }] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'real-pi-single', requestId: 'one', singleAttempt: true,
+  }), error => error instanceof ConnectionError && error.code === 'provider_failed')
+  assert.equal(requests, 1)
+})
+
 test('K3 trace: a tool prints a generated vault secret; next real pi-ai request and artifact contain zero matches', async t => {
   const secret = fakeKey()
   const requests: { body: string; auth: string | null }[] = []
