@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { once } from 'node:events'
+import { Worker } from 'node:worker_threads'
 import { Budget } from '../src/budget.ts'
 import { checkedQuote, preparedRequestAdmission, preparedRequestSha256, type RequestQuote, type RequestUsage } from '../src/request-admission.ts'
 import { plan } from './helpers.ts'
@@ -129,6 +131,47 @@ test('run closure, deadline and UTC day boundary refuse new requests', () => {
     budget.settle('test')
     assert.throws(() => budget.admitRequest(identity('after-settle'), quote()), /request_run_not_open/)
   } finally { budget.close() }
+})
+
+test('a competing ledger writer cannot preserve an expired quote, run deadline or UTC budget day', async () => {
+  for (const reason of ['quote', 'deadline', 'day']) {
+    const directory = mkdtempSync(join(tmpdir(), 'b1-admission-lock-'))
+    const path = join(directory, 'budget.sqlite')
+    const phase = new Int32Array(new SharedArrayBuffer(4))
+    const expired = new Date(reason === 'quote' ? '2026-10-21T12:01:00Z'
+      : reason === 'deadline' ? '2026-10-21T12:02:00Z' : '2026-10-22T00:00:00Z')
+    const budget = new Budget(path, () => Atomics.load(phase, 0) === 2 ? expired : now)
+    let writer: Worker | undefined
+    try {
+      budget.reserve(experiment())
+      writer = new Worker(`
+        const { parentPort, workerData } = require('node:worker_threads');
+        const { DatabaseSync } = require('node:sqlite');
+        const db = new DatabaseSync(workerData.path);
+        const phase = new Int32Array(workerData.phase);
+        db.exec('BEGIN IMMEDIATE'); Atomics.store(phase, 0, 1);
+        parentPort.postMessage('locked');
+        setTimeout(() => {
+          Atomics.store(phase, 0, 2); db.exec('COMMIT'); db.close();
+        }, 100);
+      `, { eval: true, workerData: { path, phase: phase.buffer } })
+      await once(writer, 'message')
+      assert.equal(Atomics.load(phase, 0), 1, 'admission starts while the other writer owns the lock')
+      const q = reason === 'quote' ? quote() : quote({
+        meter: { ...quote().meter, validUntil: '2026-10-22T13:00:00Z' },
+        price: { ...quote().price, validUntil: '2026-10-22T13:00:00Z' }
+      })
+      let dispatched = false
+      assert.throws(() => { budget.admitRequest(identity(reason), q); dispatched = true },
+        reason === 'quote' ? /request_quote_not_current/ : /request_run_expired/)
+      assert.equal(Atomics.load(phase, 0), 2, 'lock release advanced the injected clock')
+      assert.equal(dispatched, false)
+      assert.equal(budget.requestRows().length, 0)
+    } finally {
+      if (writer) await writer.terminate()
+      budget.close(); rmSync(directory, { recursive: true, force: true })
+    }
+  }
 })
 
 test('a foreign trial or reused request ID cannot borrow another arm reservation', () => {

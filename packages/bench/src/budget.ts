@@ -58,12 +58,15 @@ export class Budget {
   }
   /** Consume the already-charged experiment envelope, never a second monthly charge.
    * Holds survive failure/restart; no request identifier may dispatch twice. */
-  admitRequest(identity: RequestIdentity, rawQuote: unknown, now = this.clock()): RequestReservation {
+  admitRequest(identity: RequestIdentity, rawQuote: unknown): RequestReservation {
     if (![identity.runId, identity.task, identity.arm, identity.requestId].every(value => typeof value === 'string' && value.length > 0) ||
       !Number.isSafeInteger(identity.seed) || identity.seed < 0) throw new Error('request_identity_invalid')
-    const { quote, tokens, costMicrousd } = checkedQuote(rawQuote, now)
     this.db.exec('BEGIN IMMEDIATE')
     try {
+      // A competing writer may hold the lock past quote/run expiry. Sample the
+      // injected clock only after admission owns the ledger transaction.
+      const now = this.clock()
+      const { quote, tokens, costMicrousd } = checkedQuote(rawQuote, now)
       const run = this.db.prepare(`SELECT r.provider,r.day,r.state,q.model,q.deadline_at FROM reservations r
         JOIN request_runs q ON q.run_id=r.id WHERE r.id=?`).get(identity.runId) as
         { provider: string; day: string; state: string; model: string; deadline_at: number } | undefined

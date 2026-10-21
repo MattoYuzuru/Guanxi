@@ -27,7 +27,9 @@ charging it a second time.
    refuse admission; there is no built-in price table or guessed zero-cost fallback.
 5. `Budget.admitRequest` commits a unique request's worst-case money/tokens/step debit in a
    SQLite `BEGIN IMMEDIATE` before the hook returns. The remaining trial cost, token and step
-   ceilings are checked independently. There is at most one unsettled request per trial.
+   ceilings are checked independently. Quote freshness, run deadline and UTC budget day use
+   one clock sample after acquiring the transaction, so another writer's lock wait cannot
+   preserve expired admission authority. There is at most one unsettled request per trial.
 6. After dispatch, `settle` records verified usage with source and observation time. A smaller
    observation does not refund the quote. Unknown usage or a bound breach keeps the hold and
    halts that trial; a breach also returns `request_bound_violated`. An unsettled crash hold
@@ -60,6 +62,8 @@ same account must share the same ledger as before; a second ledger is not a budg
 New fixtures exercise both arms' equal envelopes, independent money/token/step refusal,
 cross-handle crash holds, unknown/breached usage, replay, foreign identities, stale/unknown
 pricing/metering, output/digest mismatch, deadline/day/settled-run refusal and integer bounds.
+A separate SQLite writer holds admission across a clock boundary; quote, run-deadline and
+UTC-day expiry each assert zero request debit and zero dispatch after the lock is released.
 One real K3 fixture uses a throwaway in-memory wrapping key and fake transport: it proves
 scrubbing happens before the hook, the durable hold exists before transport and the refused
 next request never dispatches. It uses no live model, actual credential or network.
