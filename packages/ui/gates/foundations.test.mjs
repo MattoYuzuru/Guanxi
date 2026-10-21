@@ -13,6 +13,7 @@ import { designSystem, classStrings } from './scan.mjs'
 import { checks } from './checks.mjs'
 import postcss from 'postcss'
 import { __unstable__loadDesignSystem } from 'tailwindcss'
+import { resolveConfig } from 'vite'
 
 const ctx = await createContext()
 const document = await ctx.read('docs/design/FOUNDATIONS.md')
@@ -279,6 +280,16 @@ test('K1/DS1-c: actual web CSS imports the generated theme without a bridge or c
   }
   await assert.rejects(verify(source.replace("@import '@guanxi/ui/theme.css';", '')), { name: 'AssertionError' })
   for (const alias of ['--color-surface', '--color-accent', '--color-divider', '--color-secondary', '--color-foreground', '--color-inset', '--radius-control', '--radius-panel', '--text-15', '--text-12']) assert.doesNotMatch(source, new RegExp(`${alias}:`), alias)
+})
+test('DS1-c: actual Vite aliases preserve public UI stylesheet exports', async () => {
+  const config = await resolveConfig({ configFile: join(ctx.root, 'packages/web/vite.config.ts') }, 'serve')
+  const resolveImport = config.createResolver()
+  const importer = join(ctx.root, 'packages/web/src/index.css')
+  for (const id of ['@guanxi/ui/tokens.css', '@guanxi/ui/theme.css', '@guanxi/ui/fonts.css', '@guanxi/ui/catalog', '@guanxi/ui']) {
+    assert.equal(await resolveImport(id, importer), createRequire(import.meta.url).resolve(id), id)
+  }
+  const broken = await resolveConfig({ configFile: join(ctx.root, 'packages/web/vite.config.ts'), resolve: { alias: [{ find: '@guanxi/ui', replacement: join(ctx.root, 'packages/ui/src/index.ts') }] } }, 'serve')
+  assert.notEqual(await broken.createResolver()('@guanxi/ui/tokens.css', importer), createRequire(import.meta.url).resolve('@guanxi/ui/tokens.css'), 'the former broad alias must fail this regression assertion')
 })
 test('DS1-c review: the app preserves frozen legacy utilities without weakening the generated-only gate', async () => {
   const source = await ctx.read('packages/web/src/index.css')
