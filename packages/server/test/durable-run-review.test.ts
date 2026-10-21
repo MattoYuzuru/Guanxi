@@ -346,3 +346,24 @@ test('self-review: successful cancellation clears health for a failed timer that
     assert.deepEqual(f.store.failures(), [])
   } finally { f.close() }
 })
+
+test('self-review: forward-skew recovery observes late execution grants hidden below the home bound', () => {
+  for (const late of ['start', 'renew']) {
+    const f = runFixture()
+    let now = RUN_TIME + 86_400_000
+    const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => now })
+    try {
+      const run = f.store.create({ id: 'live' })
+      let attempt = late === 'renew' ? f.store.start(run.id) : null
+      assert.throws(() => next.heartbeat(), { code: 'writer_busy' })
+      f.setTime(RUN_TIME + 9_000) // No home renewal is due yet.
+      if (attempt) f.store.renew(attempt)
+      else attempt = f.store.start(run.id)
+      now += 61_000; f.setTime(RUN_TIME + 61_000)
+      assert.throws(() => next.heartbeat(), { code: 'writer_busy' }, late)
+      now += 61_000; f.setTime(RUN_TIME + 122_000)
+      next.heartbeat(); next.reconcile()
+      assert.equal(next.attempts('live')[0]!.state, 'lost')
+    } finally { next.close(); f.close() }
+  }
+})

@@ -40,7 +40,7 @@ export class RunStore {
   private readonly scrubber: EgressScrubber
   private readonly ownerId = randomUUID()
   private owner: Lease | null = null
-  private predecessor: { token: number; holder: string; observedBound: number; bound: number } | null = null
+  private predecessor: { token: number; holder: string; observedBound: number; activeExpiry: number; bound: number } | null = null
   private readonly ownerTtl: number
   private readonly maxTtl: number
   private readonly clock: () => number
@@ -105,8 +105,8 @@ export class RunStore {
         // Fix the cap on first observation, rather than moving it on every retry.
         // Wall-clock corrections in a predecessor cannot prevent boot indefinitely.
         if (this.predecessor?.token !== prior.token || this.predecessor.holder !== prior.holder ||
-          this.predecessor.observedBound !== persistedBound) {
-          this.predecessor = { token: prior.token, holder: prior.holder, observedBound: persistedBound,
+          this.predecessor.observedBound !== persistedBound || this.predecessor.activeExpiry !== activeExpiry) {
+          this.predecessor = { token: prior.token, holder: prior.holder, observedBound: persistedBound, activeExpiry,
             bound: Math.max(now + recoveryMaxTtl + EPSILON_MS,
               Math.min(persistedBound, now + this.ownerTtl + recoveryMaxTtl + EPSILON_MS)) }
         }

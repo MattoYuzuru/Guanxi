@@ -51,7 +51,7 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
   maximum attempt TTL + 1000ms), with an active-execution expiry floor. On first observation
   the successor caps this wait at its own `now + ownerTtl + recoveryMaxTtl + 1000ms`, so a
   predecessor clock ahead of the corrected clock cannot block recovery indefinitely. An
-  observed renewed bound restarts this cap. `recoveryMaxTtl` preserves the larger of the
+  observed renewed bound or changed active-execution expiry restarts this cap. `recoveryMaxTtl` preserves the larger of the
   predecessor's persisted relative maximum and the successor's new-grant limit; reducing
   the latter cannot shorten an inherited attempt's grace. An unclean predecessor also
   requires at least `recoveryMaxTtl + 1000ms` of successor-local monotonic time after first
