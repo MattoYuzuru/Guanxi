@@ -182,6 +182,8 @@ export const en = {
     'No owner approval key is in the keychain. Create one with the approval-key script.',
   'catalog.review.reason.signing_key_untrusted':
     'The keychain key is not in the committed trusted keys, so its approvals would fail G12.',
+  'catalog.review.reason.signer_helper_missing':
+    'The approval signing helper is not installed. Run node packages/server/scripts/install-approval-signer.ts.',
   'catalog.review.reason.unavailable': 'The node did not answer; showing the bundled records.',
   'catalog.review.comment': 'Comment',
   'catalog.review.commentHint': 'Optional for an approval; required when requesting changes.',
@@ -392,6 +394,8 @@ export const ru: UiMessages = {
     'В связке ключей нет ключа одобрения владельца. Создайте его скриптом approval-key.',
   'catalog.review.reason.signing_key_untrusted':
     'Ключа из связки нет среди доверенных ключей в репозитории, поэтому его одобрения не пройдут G12.',
+  'catalog.review.reason.signer_helper_missing':
+    'Помощник подписи одобрений не установлен. Запустите node packages/server/scripts/install-approval-signer.ts.',
   'catalog.review.reason.unavailable': 'Узел не ответил; показаны записи из сборки.',
   'catalog.review.comment': 'Комментарий',
   'catalog.review.commentHint': 'Для одобрения необязателен; при запросе изменений обязателен.',
