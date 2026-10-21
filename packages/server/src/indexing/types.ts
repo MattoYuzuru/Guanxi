@@ -24,4 +24,4 @@ export interface SearchHit { path: string; line: number; text: string }
 export interface SearchResult { hits: SearchHit[]; provenance: Provenance; engine: 'fts5+grep' | 'node-grep'; truncated: boolean }
 export interface MapResult { entries: { path: string; symbols: SymbolEntry[]; source: 'tree-sitter' | 'markdown' | 'file' | 'lsp' }[]; provenance: Provenance; truncated: boolean; tokenBound: number; tokenMeasure: 'utf8-bytes' }
 export interface IndexRequest { kind: 'build' | 'search' | 'map'; root: string; path?: string; text?: string; budget?: number; limit?: number }
-export interface IndexWorkerData { request: IndexRequest; database: string; settings: IndexSettings; grammarDisabled?: string[]; grammarDirectories?: Record<string, string>; crashPoint?: 'content' | 'manifest'; embeddings?: boolean }
+export interface IndexWorkerData { request: IndexRequest; database: string; settings: IndexSettings; grammarDisabled?: string[]; grammarDirectories?: Record<string, string>; crashPoint?: 'content' | 'manifest'; embeddings?: boolean; changeFingerprint?: string; secretDigest?: string; secrets?: readonly { ref: string; value: string }[] }

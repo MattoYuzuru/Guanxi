@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { linuxSandboxSpawn } from '../../src/indexing/process.ts'
+import { backgroundPriority, linuxSandboxSpawn } from '../../src/indexing/process.ts'
 
 test('linux sandbox passes the pinned root as inherited descriptor 4', () => {
   const root = '/fixture/repo'
@@ -24,4 +24,20 @@ test('linux sandbox passes the pinned root as inherited descriptor 4', () => {
   assert.equal(spawn.stdio[3], 'ipc')
   assert.equal(spawn.stdio[4], 21)
   assert.deepEqual(spawn.stdio.slice(0, 3), ['ignore', 'ignore', 'ignore'])
+})
+
+test('background priority wraps the sandbox and keeps its argument order', () => {
+  const sandbox = ['-p', '(version 1)', '/usr/bin/node', '/runtime/worker.js']
+  assert.deepEqual(backgroundPriority('/usr/bin/sandbox-exec', sandbox, 'darwin', false), {
+    command: '/usr/sbin/taskpolicy', args: ['-b', '/usr/bin/sandbox-exec', ...sandbox],
+  })
+  assert.deepEqual(backgroundPriority('/usr/bin/bwrap', sandbox, 'linux', true), {
+    command: '/usr/bin/nice', args: ['-n', '19', '/usr/bin/ionice', '-c3', '/usr/bin/bwrap', ...sandbox],
+  })
+  assert.deepEqual(backgroundPriority('/usr/bin/bwrap', sandbox, 'linux', false), {
+    command: '/usr/bin/nice', args: ['-n', '19', '/usr/bin/bwrap', ...sandbox],
+  })
+  // The wrapper runs the sandbox; the sandbox still runs the worker.
+  const wrapped = backgroundPriority('/usr/bin/bwrap', ['--die-with-parent', '/usr/bin/node', '/runtime/worker.js'], 'linux', false)
+  assert.ok(wrapped.args.indexOf('/usr/bin/bwrap') < wrapped.args.indexOf('/usr/bin/node'))
 })

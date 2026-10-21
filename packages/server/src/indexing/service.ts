@@ -1,13 +1,14 @@
 import type { ChildProcess } from 'node:child_process'
 import { indexProcess, stopIndexProcess, grammarDirectories } from './process.ts'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, realpath, mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdir, realpath, mkdtemp, writeFile, rm, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { ResourceGovernor } from '../runtime/resource-governor.ts'
 import { HeadroomMonitor, type HeadroomObservation } from './headroom.ts'
 import { DEFAULT_INDEX_SETTINGS, type IndexRequest, type IndexSettings, type IndexWorkerData, type MapResult, type Provenance, type SearchResult } from './types.ts'
-import { inside } from './snapshot.ts'
+import { hash, inside, projectFingerprint } from './snapshot.ts'
+import { IndexStore } from './store.ts'
 import { boundMap } from './engine.ts'
 
 const built = existsSync(new URL('./index-worker.js', import.meta.url))
@@ -25,7 +26,9 @@ export interface IndexServiceOptions {
   ephemeral?: boolean
   headroomPollMs?: number
   headroom?: () => Promise<HeadroomObservation>
+  onIndexEvent?: (event: IndexEvent) => void
 }
+export type IndexEvent = { type: 'build' | 'publish' | 'skip' | 'untrack'; root: string }
 export class ProjectIndex {
   readonly settings: IndexSettings
   readonly database: string
@@ -36,6 +39,7 @@ export class ProjectIndex {
   private readonly timer: ReturnType<typeof setInterval>
   private building = false
   private activeBuild?: AbortController
+  private activeRoot?: string
   private readonly captured: { name: string; bytes: string }[]
   private runtime?: Promise<string>
   private readonly pending = new Set<Promise<unknown>>()
@@ -54,11 +58,56 @@ export class ProjectIndex {
     this.timer = setInterval(() => { void this.tick() }, this.settings.pollMs)
     this.timer.unref()
   }
-  status() { return { build: this.lastBuild, headroom: this.lastHeadroom, embeddings: false as const, settings: { ...this.settings } } }
+  status() { return { build: this.lastBuild, headroom: this.lastHeadroom, embeddings: false as const, roots: this.tracked.size, settings: { ...this.settings } } }
   async track(root: string) {
     const canonical = await this.root(root)
     this.tracked.add(canonical)
     void this.tick()
+  }
+  /** Explicit removal is immediate; a deleted root is untracked by the next tick. */
+  async untrack(root: string): Promise<boolean> {
+    let canonical = root
+    try { canonical = await realpath(root) } catch { /* already gone */ }
+    const removed = this.tracked.delete(canonical)
+    if (removed) {
+      this.emit('untrack', canonical)
+      if (this.activeRoot === canonical) this.activeBuild?.abort()
+    }
+    return removed
+  }
+  private emit(type: IndexEvent['type'], root: string): void {
+    try { this.options.onIndexEvent?.({ type, root }) } catch { /* observers cannot break indexing */ }
+  }
+  private secretSnapshot(): readonly { ref: string; value: string }[] {
+    const snapshot = this.options.scrubber.snapshot
+    if (!snapshot) throw new Error('index_scrubber_unavailable')
+    return snapshot.call(this.options.scrubber).map(({ ref, value }) => ({ ref, value }))
+  }
+  private secretDigest(secrets: readonly { ref: string; value: string }[]): string {
+    return hash(JSON.stringify([...secrets].sort((a, b) => a.ref.localeCompare(b.ref))))
+  }
+  private fingerprint(root: string, commit: string | null, tree: string, digest: string): string {
+    return hash(JSON.stringify([root, commit, tree, digest]))
+  }
+  private publishedFingerprint(root: string): string | undefined {
+    try {
+      const store = new IndexStore(this.database)
+      try { return store.root(hash(root))?.fingerprint } finally { store.close() }
+    } catch { return undefined }
+  }
+  private publishedProvenance(root: string, commit: string | null): Provenance {
+    try {
+      const store = new IndexStore(this.database)
+      try {
+        const key = hash(root), row = store.root(key), indexed = store.indexed(key)
+        return { source: 'live-tree+content-cache', observedAt: new Date().toISOString(), commit, indexCommit: row?.commit_id ?? null,
+          indexAgeMs: row ? Math.max(0, Date.now() - Date.parse(row.indexed_at)) : null,
+          coverage: { eligible: indexed.size, indexed: indexed.size, skipped: 0, symbols: 0 }, freshness: 'verified-snapshot', embeddings: false }
+      } finally { store.close() }
+    } catch {
+      return { source: 'live-tree+content-cache', observedAt: new Date().toISOString(), commit, indexCommit: null, indexAgeMs: null,
+        coverage: { eligible: 0, indexed: 0, skipped: 0, symbols: 0 }, freshness: 'verified-snapshot', embeddings: false }
+    }
   }
   private async root(path: string): Promise<string> {
     this.abort.signal.throwIfAborted()
@@ -89,10 +138,18 @@ export class ProjectIndex {
       const result = await new Promise<unknown>((resolve, reject) => {
         const abort = () => { void stopIndexProcess(worker); reject(new Error('index_cancelled')) }
         combined.addEventListener('abort', abort, { once: true })
-        worker.on('message', (message: { kind: string; id: number; text: string; result: unknown }) => {
-          if (message.kind === 'check') worker.connected && worker.send({ id: message.id, allowed: this.safe(message.text) }, () => {})
-          else if (message.kind === 'result') resolve(message.result)
-          else reject(new Error('index_unavailable'))
+        worker.on('message', (message: { kind: string; id: number; code?: string; result: unknown }) => {
+          if (message.kind === 'check') {
+            // The worker scrubs; the parent only answers whether the registered
+            // snapshot it was given is still current. No secret text crosses IPC
+            // in either direction.
+            let allowed = true
+            if (extras.secretDigest) {
+              try { allowed = this.secretDigest(this.secretSnapshot()) === extras.secretDigest } catch { allowed = false }
+            }
+            if (worker.connected) worker.send({ id: message.id, allowed }, () => {})
+          } else if (message.kind === 'result') resolve(message.result)
+          else reject(new Error(message.code && /^index_[a-z_]+$/.test(message.code) ? message.code : 'index_unavailable'))
         })
         worker.once('error', () => reject(new Error('index_unavailable')))
         worker.once('close', code => { combined.removeEventListener('abort', abort); reject(new Error(code === 0 ? 'index_unavailable' : 'index_interrupted')) })
@@ -112,39 +169,88 @@ export class ProjectIndex {
     return directory
   }
   async build(root: string, signal?: AbortSignal): Promise<Provenance> {
+    const canonical = await this.root(root)
+    this.abort.signal.throwIfAborted()
+    if (!this.options.scrubber.isReady()) throw new Error('index_scrubber_unavailable')
+    let secrets = this.secretSnapshot()
+    let digest = this.secretDigest(secrets)
+    const tree = await projectFingerprint(canonical, this.settings, async path => this.safe(path))
+    signal?.throwIfAborted()
+    let changeFingerprint = this.fingerprint(canonical, tree.commit, tree.fingerprint, digest)
+    // An unchanged tree means no content scan, purge, publish or manifest
+    // rewrite. Registration state is part of the fingerprint because a newly
+    // registered value must still trigger a purge.
+    if (changeFingerprint === this.publishedFingerprint(canonical)) {
+      this.lastBuild = 'complete'
+      this.emit('skip', canonical)
+      return this.publishedProvenance(canonical, tree.commit)
+    }
     const control = new AbortController()
     const observation = this.lastHeadroom = await this.headroom()
     if (!observation.allowed) { this.lastBuild = 'deferred'; throw new Error('index_headroom') }
     const lease = this.options.governor.tryIdleLease(() => control.abort())
     if (!lease) { this.lastBuild = 'deferred'; throw new Error('index_governor_busy') }
     this.activeBuild = control
+    this.activeRoot = canonical
     const combined = AbortSignal.any([control.signal, this.abort.signal, ...(signal ? [signal] : [])])
     const monitor = setInterval(() => {
       void this.headroom().then(sample => { this.lastHeadroom = sample; if (!sample.allowed) control.abort() }, () => control.abort())
     }, this.options.headroomPollMs ?? 1000)
     monitor.unref()
     try {
-      const result = await this.invoke({ kind: 'build', root }, combined) as Provenance
-      this.lastBuild = 'complete'
-      return result
+      for (let attempt = 0; ; attempt++) {
+        try {
+          this.emit('build', canonical)
+          const result = await this.invoke({ kind: 'build', root: canonical }, combined, { changeFingerprint, secrets, secretDigest: digest }) as Provenance
+          this.lastBuild = 'complete'
+          this.emit('publish', canonical)
+          return result
+        } catch (error) {
+          // A registration that lands during the build invalidates the worker's
+          // snapshot. Restart so the new purge and content checks see it.
+          if (attempt < 2 && !combined.aborted && error instanceof Error && error.message === 'index_secret_changed') {
+            secrets = this.secretSnapshot()
+            digest = this.secretDigest(secrets)
+            changeFingerprint = this.fingerprint(canonical, tree.commit, tree.fingerprint, digest)
+            continue
+          }
+          throw error
+        }
+      }
     } catch (error) { this.lastBuild = 'interrupted'; throw error }
-    finally { clearInterval(monitor); if (this.activeBuild === control) this.activeBuild = undefined; lease.release() }
+    finally {
+      clearInterval(monitor)
+      if (this.activeBuild === control) this.activeBuild = undefined
+      if (this.activeRoot === canonical) this.activeRoot = undefined
+      lease.release()
+    }
   }
   private async tick() {
     if (this.building || this.abort.signal.aborted || !this.options.scrubber.isReady()) return
     this.building = true
-    try { for (const root of this.tracked) { try { await this.build(root) } catch { /* retry this root next tick */ } } }
-    finally { this.building = false }
+    try {
+      for (const root of [...this.tracked]) {
+        try {
+          const named = await lstat(root)
+          if (!named.isDirectory() && !named.isFile()) { await this.untrack(root); continue }
+          await this.build(root)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') await this.untrack(root)
+        }
+      }
+    } finally { this.building = false }
   }
   async search(root: string, text: string, path?: string, signal?: AbortSignal, limit = 200): Promise<SearchResult> {
     this.activeBuild?.abort()
-    const result = await this.invoke({ kind: 'search', root, text, path, limit }, signal) as SearchResult
+    const secrets = this.secretSnapshot()
+    const result = await this.invoke({ kind: 'search', root, text, path, limit }, signal, { secrets }) as SearchResult
     if (!this.options.ephemeral) await this.track(root)
     return result
   }
   async map(root: string, budget = 2048, path?: string, signal?: AbortSignal): Promise<MapResult> {
     this.activeBuild?.abort()
-    const result = await this.invoke({ kind: 'map', root, path, budget }, signal) as MapResult
+    const secrets = this.secretSnapshot()
+    const result = await this.invoke({ kind: 'map', root, path, budget }, signal, { secrets }) as MapResult
     if (!this.options.ephemeral) await this.track(root)
     return boundMap(result, budget)
   }

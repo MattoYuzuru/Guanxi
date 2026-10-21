@@ -1,6 +1,6 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { realpath, mkdir, stat, open, type FileHandle } from 'node:fs/promises'
-import { constants } from 'node:fs'
+import { constants, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 
@@ -28,6 +28,14 @@ export function linuxSandboxSpawn(paths: readonly string[], root: string, rootFd
   return { command: '/usr/bin/bwrap', args, stdio: ['ignore', 'ignore', 'ignore', 'ipc', rootFd] }
 }
 
+/** The priority wrapper stays outside the sandbox: it runs the sandbox, which
+ * runs the worker. `ionice` is optional because minimal hosts may lack util-linux. */
+export function backgroundPriority(command: string, args: readonly string[], platform = process.platform, hasIonice = existsSync('/usr/bin/ionice')): { command: string; args: string[] } {
+  if (platform === 'darwin') return { command: '/usr/sbin/taskpolicy', args: ['-b', command, ...args] }
+  if (platform === 'linux') return { command: '/usr/bin/nice', args: ['-n', '19', ...(hasIonice ? ['/usr/bin/ionice', '-c3'] : []), command, ...args] }
+  return { command, args: [...args] }
+}
+
 /** The scanner runs only trusted captured code; this OS boundary also protects
  * against hostile ancestor swaps that pathname checks alone cannot close. */
 export async function indexProcess(entry: string, root: string, dataDir: string): Promise<ChildProcess> {
@@ -53,6 +61,7 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
     const spec = linuxSandboxSpawn(existing, root, rootHandle.fd, databaseDir, cwd, executable, entry)
     command = spec.command; args = spec.args; stdio = spec.stdio
   } else throw new Error('index_sandbox_unavailable')
+  ;({ command, args } = backgroundPriority(command, args))
   let child: ChildProcess
   try {
     child = spawn(command, args, { detached: true, cwd,

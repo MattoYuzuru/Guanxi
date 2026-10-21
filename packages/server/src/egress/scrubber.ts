@@ -169,6 +169,12 @@ export class SecretScrubber implements EgressScrubber {
     return this.values.size
   }
 
+  /** A copy for a trusted child that scrubs over its own IPC channel. */
+  snapshot(): readonly { ref: SecretRef; value: string }[] {
+    this.assertOpen()
+    return [...this.values].map(([ref, value]) => ({ ref, value }))
+  }
+
   /** Called by the provider plugin's unload. Every later call throws `closed`. */
   close(): void {
     this.closed = true
@@ -188,6 +194,7 @@ export class SecretScrubber implements EgressScrubber {
       expect: (sourceId: string) => this.expect(sourceId),
       ready: (sourceId: string) => this.ready(sourceId),
       isReady: () => this.isReady(),
+      snapshot: () => this.snapshot(),
       pendingSources: () => this.pendingSources(),
       whenReady: (signal?: AbortSignal) => this.whenReady(signal),
     })

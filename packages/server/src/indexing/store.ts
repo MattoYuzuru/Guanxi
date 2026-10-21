@@ -68,10 +68,10 @@ export class IndexStore {
       } catch (error) { this.db.exec('ROLLBACK'); throw error }
     }
   }
-  publish(tree: TreeSnapshot, crash?: () => void) {
+  publish(tree: TreeSnapshot, crash?: () => void, changeFingerprint = tree.fingerprint) {
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      this.db.prepare('INSERT OR REPLACE INTO roots(root_key, commit_id, indexed_at, fingerprint) VALUES (?, ?, ?, ?)').run(tree.rootKey, tree.commit, tree.observedAt, tree.fingerprint)
+      this.db.prepare('INSERT OR REPLACE INTO roots(root_key, commit_id, indexed_at, fingerprint) VALUES (?, ?, ?, ?)').run(tree.rootKey, tree.commit, tree.observedAt, changeFingerprint)
       this.db.prepare('DELETE FROM files WHERE root_key = ?').run(tree.rootKey)
       const insert = this.db.prepare('INSERT INTO files(root_key, path, hash) VALUES (?, ?, ?)')
       tree.files.forEach(f => insert.run(tree.rootKey, f.path, f.hash))

@@ -81,7 +81,7 @@ export async function executeIndex(data: IndexWorkerData, allow: AllowContent, c
       // A changed tree is never published as current. Durable content remains reusable.
       const current = await snapshot(request.root, settings, allow)
       if (tree.fingerprint !== current.fingerprint || tree.commit !== current.commit) throw new Error('index_tree_changed')
-      store.publish(tree, data.crashPoint === 'manifest' ? () => process.exit(86) : undefined)
+      store.publish(tree, data.crashPoint === 'manifest' ? () => process.exit(86) : undefined, data.changeFingerprint)
       return provenance(tree, store)
     }
     try { store = new IndexStore(data.database) } catch { /* IX0 is available without a database */ }
