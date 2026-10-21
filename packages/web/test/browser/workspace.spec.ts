@@ -56,10 +56,12 @@ async function pick(page: Page, label: string, value: string, keyboard = false) 
     await page.keyboard.press('Enter')
     await page.getByRole('menuitem', { name: value, exact: true }).focus()
     await page.keyboard.press('Enter')
+    await expect(page.getByRole('menu')).toHaveCount(0)
     return
   }
   await page.getByRole('button', { name: label, exact: true }).click()
   await page.getByRole('menuitem', { name: value, exact: true }).click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
 }
 async function move(page: Page, block: string, zone: string, keyboard = false) {
   if (keyboard) await page.keyboard.press('Alt+Shift+m')

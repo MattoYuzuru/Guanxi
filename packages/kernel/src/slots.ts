@@ -1,5 +1,5 @@
 /**
- * Typed UI slots (ADR-0022 §3), K1 subset: `list` slots only.
+ * Typed UI slots (ADR-0022 §3): ordered `list` and keyed contribution slots.
  *
  * Semantics follow DeepSeek Harness's ui-slots model (declaring a slot claims it;
  * contributing to an undeclared slot fails at load; unloading removes every
