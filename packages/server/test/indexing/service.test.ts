@@ -152,3 +152,29 @@ test('untracking a queued root prevents an older tick from building or publishin
     assert.equal(service.status().roots, 1)
   } finally { await service.close(); await f.governor.close(); await f.close() }
 })
+
+test('untracking cancels an idle build already queued behind an explicit build', async () => {
+  const f = await fixture(1), events: IndexEvent[] = []
+  const other = join(f.dir, 'other')
+  await mkdir(other); await writeFile(join(other, 'b.ts'), 'export const other = 1')
+  let resume!: () => void, samples = 0
+  const headroom = new Promise<void>(resolve => { resume = resolve })
+  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+    settings: { pollMs: 60_000 }, onIndexEvent: event => events.push(event), headroom: async () => {
+      if (++samples === 1) await headroom
+      return green()
+    } })
+  let build: Promise<unknown> | undefined
+  try {
+    build = service.build(f.root)
+    await waitFor(() => samples === 1)
+    await service.track(other)
+    await waitFor(() => (Reflect.get(service, 'pending') as Set<Promise<unknown>>).size === 2)
+    assert.equal(await service.untrack(other), true)
+    resume(); await build
+    await waitFor(() => !Reflect.get(service, 'building'))
+    assert.equal(events.filter(event => event.root === other && (event.type === 'build' || event.type === 'publish')).length, 0)
+    const db = new DatabaseSync(service.database, { readOnly: true })
+    try { assert.equal(db.prepare('SELECT count(*) n FROM roots').get()!.n, 1) } finally { db.close() }
+  } finally { resume(); await build?.catch(() => {}); await service.close(); await f.governor.close(); await f.close() }
+})

@@ -34,7 +34,7 @@ export class ProjectIndex {
   readonly settings: IndexSettings
   readonly database: string
   private readonly options: IndexServiceOptions
-  private readonly tracked = new Set<string>()
+  private readonly tracked = new Map<string, AbortController>()
   private readonly workers = new Set<ChildProcess>()
   private readonly abort = new AbortController()
   private readonly timer: ReturnType<typeof setInterval>
@@ -63,15 +63,17 @@ export class ProjectIndex {
   status() { return { build: this.lastBuild, headroom: this.lastHeadroom, embeddings: false as const, roots: this.tracked.size, settings: { ...this.settings } } }
   async track(root: string) {
     const canonical = await this.root(root)
-    this.tracked.add(canonical)
+    if (!this.tracked.has(canonical)) this.tracked.set(canonical, new AbortController())
     void this.tick()
   }
   /** Explicit removal is immediate; a deleted root is untracked by the next tick. */
   async untrack(root: string): Promise<boolean> {
     let canonical = root
     try { canonical = await realpath(root) } catch { /* already gone */ }
+    const control = this.tracked.get(canonical)
     const removed = this.tracked.delete(canonical)
     if (removed) {
+      control?.abort()
       this.emit('untrack', canonical)
       if (this.activeRoot === canonical) this.activeBuild?.abort()
     }
@@ -261,12 +263,12 @@ export class ProjectIndex {
     if (this.building || this.abort.signal.aborted || !this.options.scrubber.isReady()) return
     this.building = true
     try {
-      for (const root of [...this.tracked]) {
-        if (!this.tracked.has(root)) continue
+      for (const [root, control] of [...this.tracked]) {
+        if (this.tracked.get(root) !== control) continue
         try {
           const named = await lstat(root)
           if (!named.isDirectory() && !named.isFile()) { await this.untrack(root); continue }
-          await this.build(root)
+          await this.build(root, control.signal)
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') await this.untrack(root)
         }
