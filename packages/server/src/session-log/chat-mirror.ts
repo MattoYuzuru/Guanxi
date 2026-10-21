@@ -19,7 +19,8 @@
  *   next Job event of that Job or at the next start, it catches the Job up from
  *   the Job store. Nothing secret-bearing is held, and a crash before readiness
  *   loses nothing (GPT review R2).
- * - Every mirrored event carries the Job event's time and an idempotency key
+ * - Every mirrored event carries its source time (the Job event's, or the
+ *   stored Chat input's for the prompt) and an idempotency key
  *   `job:<jobId>:<jobSequence>:<part>`, so a reconstruction is identical to
  *   the trace a ready mirror would have written, and running it twice adds
  *   nothing.
@@ -44,6 +45,8 @@ export interface JobEventMirror {
     threadId: string
     userMessageId: string
     input: ChatJobInputSnapshot
+    /** The stored input's `created_at`: the prompt's time on both the ready and the deferred path. */
+    createdAt: string
   }): void
   recordJobEvent(event: JobStreamEvent): void
   /** Called after the store's COMMIT. */
@@ -109,6 +112,7 @@ export class ChatSessionMirror implements JobEventMirror {
     threadId: string
     userMessageId: string
     input: ChatJobInputSnapshot
+    createdAt: string
   }): void {
     const source = this.sourceForThread(input.threadId)
     if (!source) return
@@ -116,7 +120,7 @@ export class ChatSessionMirror implements JobEventMirror {
       this.defer(input.jobId, source.thread_id)
       return
     }
-    this.writePrompt(source, input.jobId, input.userMessageId, input.input, new Date().toISOString())
+    this.writePrompt(source, input.jobId, input.userMessageId, input.input, input.createdAt)
   }
 
   recordJobEvent(event: JobStreamEvent): void {

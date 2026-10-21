@@ -503,7 +503,7 @@ export class JobStore {
           createdAt,
         )
 
-      this.sessionMirror?.recordChatCreated({ jobId: id, threadId, userMessageId, input: snapshot })
+      this.sessionMirror?.recordChatCreated({ jobId: id, threadId, userMessageId, input: snapshot, createdAt })
       this.insertEvent({
         id: randomUUID(),
         jobId: id,
