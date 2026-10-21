@@ -4,8 +4,9 @@
 
 Several agents, possibly from different model families and harnesses, work on independent
 roadmap stages at the same time on the owner's Mac (Apple M5 Pro, 15 cores, 24 GB). This file
-holds the rules every lane follows. Each lane has its own prompt file in this folder. The
-integrator, the coordinating Claude session, merges lanes into `main`.
+holds the rules every lane follows. Each lane has its own prompt file in this folder. The integrator merges lanes into `main`. The initial coordinating session was Claude Opus;
+the 2026-10-21 continuation is coordinated by Codex. Check the latest handoff and live
+processes before assuming a worker is still running.
 
 ## Lanes
 
@@ -14,19 +15,19 @@ integrator, the coordinating Claude session, merges lanes into `main`.
 | [K1](K1.md) | K1 kernel | Claude Opus session | session branch | 5181 / 4381 | merged ([evidence](../evidence/K1.md)) |
 | [DS1-a](DS1-a.md) | tokens, fonts, logo assets, gate runner, G1–G7 | GPT (Codex), xhigh | `lane/ds1-a-tokens` | 5182 / 4382 | merged ([evidence](../evidence/DS1-a.md)) |
 | [DS1-b](DS1-b.md) | `@guanxi/ui` primitives, stories, catalog, approvals, G10–G16 | Claude Opus session | session branch | 5183 / 4383 | merged ([evidence](../evidence/DS1-b.md)) |
-| [DS1-c](DS1-c.md) | ESLint and stylelint, G8–G9, suppression ratchet, codemod | GPT (Codex), run by the integrator (owner, 2026-10-20) | `lane/ds1-c-ratchet` | 5184 / 4384 | review 1 fixes done; scoped Claude re-check |
+| [DS1-c](DS1-c.md) | ESLint and stylelint, G8–G9, suppression ratchet, codemod | GPT (Codex), run by the integrator (owner, 2026-10-20) | `lane/ds1-c-ratchet` | 5184 / 4384 | merged ([evidence](../evidence/DS1-c.md)) |
 | [K2](K2.md) | K2 session log, inspector, egress scrubber core | Claude Opus session | session branch | 5186 / 4386 | merged ([evidence](../evidence/K2.md)) |
 | [K3](K3.md) | K3 connections, vault, pi-ai, probes | GPT (Codex), xhigh | `lane/k3-model-access` | 5187 / 4387 | merged ([evidence](../evidence/K3.md)) |
 | [R1](R1.md) | R1 durable runs, hibernation and wake | GPT (Codex), xhigh | `lane/r1-durable-runs` | 5188 / 4388 | merged ([evidence](../evidence/R1.md)); follow-up `lane/r1-followup` |
 | [F1](F1.md) | F1 federation base | GPT (Codex), xhigh | `lane/f1-federation` | 5194 / 4394 | merged ([evidence](../evidence/F1.md)) |
 | [K4](K4.md) | K4 native agent, tools, access modes, projects | GPT (Codex), xhigh | `lane/k4-native-agent` | 5189 / 4389 | merged ([evidence](../evidence/K4.md)); follow-up merged ([evidence](../evidence/K4-followup.md)) |
-| [R2](R2.md) | R2 relay executor v1 | GPT (Codex), xhigh | `lane/r2-relay-executor` | 5195 / 4395 | review 1 fixes running in DeepSeek |
-| [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | review 1 fixes running in DeepSeek |
-| [X1](X1.md) | X1 repository map and full-text index | GPT (Codex), xhigh | `lane/x1-repo-index` | 5197 / 4397 | review 1 fixes queued in DeepSeek |
-| [B1](B1.md) | B1 bench base (Harbor, control arm, statistics, budget caps) | GPT (Codex), xhigh | `lane/b1-bench-base` | 5198 / 4398 | running |
-| [DS2](DS2.md) | DS2 approval signing helper (Secure Enclave P-256) | DeepSeek-V4.1-Flash (max), DeepSeek Harness | `lane/ds2-signing-helper` | none (no server) | running |
-| [U1](U1.md) | U1-a workspace layout engine and modes (U1-b shell and U1-c migration follow) | GPT (Codex), xhigh | `lane/u1a-workspace` | 5199 / 4399 | running |
-| K4 follow-up 2 | K4 residuals: R1 integration and native session retention | GPT (Codex), xhigh | `lane/k4-followup2` | 5189 / 4389 | running |
+| [R2](R2.md) | R2 relay executor v1 | GPT (Codex), xhigh | `lane/r2-relay-executor` | 5195 / 4395 | partial internal service merged ([evidence](../evidence/R2.md)) |
+| [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | partial implementation merged ([evidence](../evidence/K5.md)) |
+| [X1](X1.md) | X1 repository map and full-text index | GPT (Codex), xhigh | `lane/x1-repo-index` | 5197 / 4397 | original fixes handed off; GPT parent fingerprint boundary fix in `codex/x1-parent-read-boundary` |
+| [B1](B1.md) | B1 bench base (Harbor, control arm, statistics, budget caps) | GPT (Codex), xhigh | `lane/b1-bench-base` | 5198 / 4398 | partial fixture foundation handed off; real executor/billing/corpus unfinished |
+| [DS2](DS2.md) | DS2 approval signing helper (Secure Enclave P-256) | DeepSeek-V4.1-Flash (max), DeepSeek Harness | `lane/ds2-signing-helper` | none (no server) | handed off; DeepSeek review fixes in `codex/ds2-review-fixes`, then GPT re-review |
+| [U1](U1.md) | U1-a workspace layout engine and modes (U1-b shell and U1-c migration follow) | GPT (Codex), xhigh | `lane/u1a-workspace` | 5199 / 4399 | U1-a handed off; independent review/integration and real replication remain |
+| K4 follow-up 2 | K4 residuals: R1 integration and native session retention | GPT (Codex), xhigh | `lane/k4-followup2` | 5189 / 4389 | handed off; DeepSeek home-fencing deletion fix in `codex/k4f2-review-fixes`, then GPT re-review |
 | [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
 
 Port 5185/4385 belongs to the localization-flake investigation. Merge order within DS1:
@@ -101,10 +102,20 @@ DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open afte
 
 ## DeepSeek lanes (owner, 2026-10-21)
 
-Up to three DeepSeek runs may work at the same time, next to at most three Codex runs. Each one
-uses DeepSeek-V4.1-Flash at max effort in DeepSeek Harness headless mode, with the integrator's
+Up to four DeepSeek runs may work at the same time (owner, 2026-10-21 continuation),
+next to at most three GPT 6.1 Sol / high reviewer or implementation agents. Each DeepSeek run
+uses the configured DeepSeek-V4.1-Flash release 1017 at max effort in DeepSeek Harness
+headless mode, with the integrator's
 overlay `Guanxi-lanes/infra/dsh-headless.patch.yml`. That overlay restores the saved key, keeps
-the `workspace-write` sandbox and rejects every approval request.
+the `workspace-write` sandbox and rejects every approval request. The configuration identifies the requested release;
+remote backend release identity is not independently attested.
+
+The local `infra/dsh-run.sh` and `dsh-queue.sh` now share four atomic `flock` slots through
+`infra/dsh-safe-run.py`. It preserves the child exit code and discards thinking/tool/raw-stderr
+streams before writing a private final-only JSONL. Stub verification covers exit propagation,
+stream exclusion, name collisions, concurrent slots and gate failure short-circuiting.
+The old launcher logs remain historical local files; do not inspect or export stored reasoning.
+`infra/lane-gates.sh` now stops at the first failed install/direct/heavy command.
 
 - **Fitting tasks:** fully specified work. Review-fix rounds, where each finding already names a
   file:line, a scenario and the smallest fix, suit it well. So does mechanical new work with a
@@ -120,7 +131,9 @@ the `workspace-write` sandbox and rejects every approval request.
   containers), because DeepSeek's own sandbox refuses them. X1's sandboxed-worker regressions
   slipped through that way. Such fixes go to Codex.
 - **Integrator duties:** fetch the branch, run the full gates through the shared lock, arrange
-  the Claude review and merge.
+  an independent GPT 6.1 Sol / high review after DeepSeek (owner, continuation), then merge
+  only after the required checks. Existing original-code cross-family review obligations stay
+  explicit in each handoff.
 
 ## Integrator checklist (per merge)
 
