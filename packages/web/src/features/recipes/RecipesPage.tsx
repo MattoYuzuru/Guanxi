@@ -121,7 +121,7 @@ export function RecipesPage() {
     <div className="mx-auto w-full min-w-0 max-w-5xl px-4 py-6 sm:px-5">
       <header>
         <h1 className="text-lg font-semibold tracking-tight">{translate('recipes.title')}</h1>
-        <p className="mt-1 max-w-2xl text-xs text-[var(--fg-muted)]">
+        <p className="mt-1 max-w-2xl text-xs text-secondary">
           {translate('recipes.description')}
         </p>
       </header>
@@ -136,7 +136,7 @@ export function RecipesPage() {
         {translate('recipes.scope.label')}
         <select
           value={selected}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2 text-xs text-[var(--fg)]"
+          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
           onChange={(event) => setScope(event.target.value === 'projectless'
             ? { scope: 'projectless' }
             : { scope: 'project', projectId: event.target.value })}
@@ -283,32 +283,32 @@ function RecipeScopePanel({
   return (
     <section className="mt-6 min-w-0" aria-labelledby="recipes-scope-title">
       <h2 id="recipes-scope-title" className="text-sm font-semibold">{scopeName}</h2>
-      <form className="mt-3 grid min-w-0 gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 sm:grid-cols-2" onSubmit={(event) => void create(event)}>
+      <form className="mt-3 grid min-w-0 gap-3 rounded-lg border border-divider bg-surface p-3 sm:grid-cols-2" onSubmit={(event) => void create(event)}>
         <label className="text-xs font-medium">
           {translate('recipes.name.label')}
-          <input value={name} onChange={(event) => setName(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] px-2" />
+          <input value={name} onChange={(event) => setName(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-control bg-canvas px-2" />
         </label>
         <label className="text-xs font-medium">
           {translate('recipes.operation.label')}
-          <select value={operation} onChange={(event) => setOperation(event.target.value as RecipeOperation)} className="mt-1 h-8 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] px-2">
+          <select value={operation} onChange={(event) => setOperation(event.target.value as RecipeOperation)} className="mt-1 h-8 w-full rounded-md border border-control bg-canvas px-2">
             {RECIPE_OPERATIONS.map((value) => <option key={value} value={value}>{translate(`recipes.operation.${value}`)}</option>)}
           </select>
         </label>
         <label className="text-xs font-medium sm:col-span-2">
           {translate('recipes.instructions.label')}
-          <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} rows={3} className="mt-1 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] p-2" />
+          <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} rows={3} className="mt-1 w-full rounded-md border border-control bg-canvas p-2" />
         </label>
         <label className="text-xs font-medium">
           {translate('recipes.model.label')}
-          <input value={modelReference} onChange={(event) => setModelReference(event.target.value)} placeholder={translate('recipes.model.none')} className="mt-1 h-8 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] px-2" />
+          <input value={modelReference} onChange={(event) => setModelReference(event.target.value)} placeholder={translate('recipes.model.none')} className="mt-1 h-8 w-full rounded-md border border-control bg-canvas px-2" />
         </label>
         <label className="text-xs font-medium">
           {translate('recipes.defaults.label')}
-          <textarea value={defaults} onChange={(event) => setDefaults(event.target.value)} rows={2} spellCheck={false} className="mt-1 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] p-2 font-mono" />
+          <textarea value={defaults} onChange={(event) => setDefaults(event.target.value)} rows={2} spellCheck={false} className="mt-1 w-full rounded-md border border-control bg-canvas p-2 font-mono" />
         </label>
         <div className="sm:col-span-2">
           <Button ref={createRef} type="submit" loading={creating}>{translate('recipes.create')}</Button>
-          {createError ? <p role="alert" className="mt-2 text-xs text-[var(--danger)]">{createError}</p> : null}
+          {createError ? <p role="alert" className="mt-2 text-xs text-danger">{createError}</p> : null}
         </div>
       </form>
 
@@ -317,7 +317,7 @@ function RecipeScopePanel({
       ) : loadError ? (
         <div className="mt-4" role="alert">
           <h3 ref={errorRef} tabIndex={-1} className="text-sm font-semibold outline-none">{translate('recipes.error.title')}</h3>
-          <p className="mt-1 break-words text-xs text-[var(--danger)]">{loadError}</p>
+          <p className="mt-1 break-words text-xs text-danger">{loadError}</p>
           <Button className="mt-2" size="sm" onClick={() => setReload((value) => value + 1)}>{translate('recipes.retry')}</Button>
         </div>
       ) : recipes?.length === 0 ? (
@@ -535,25 +535,25 @@ function RecipeCard({
 
   const configuration = recipe.currentRevision.configuration
   return (
-    <article className="recipe-card surface min-w-0 rounded-lg border border-[var(--border)] p-3">
+    <article className="recipe-card surface min-w-0 rounded-lg border border-divider p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="break-words text-sm font-semibold">{recipe.name}</h3>
-          <p className="mt-0.5 text-2xs text-[var(--fg-subtle)]">{recipe.id}</p>
+          <p className="mt-0.5 text-2xs text-muted">{recipe.id}</p>
         </div>
         <Badge tone="neutral">{translate('recipes.revision')} {recipe.currentRevision.revision}</Badge>
       </div>
       <dl className="mt-3 grid min-w-0 grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-        <dt className="text-[var(--fg-subtle)]">{translate('recipes.operation.label')}</dt><dd>{translate(`recipes.operation.${configuration.operation}`)}</dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('recipes.model.label')}</dt><dd className="break-words">{configuration.model.state === 'explicit' ? configuration.model.reference : translate('recipes.model.none')}</dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('recipes.retention')}</dt><dd>{translate(`recipes.retention.${configuration.retention.mode}`)}</dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('recipes.provenance')}</dt><dd className="break-all font-mono text-2xs">sha256:{recipe.currentRevision.canonical.sha256} · {recipe.currentRevision.canonical.byteSize} B</dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('recipes.updated')}</dt><dd><time dateTime={recipe.updatedAt}>{formatDateTime(recipe.updatedAt)}</time></dd>
+        <dt className="text-muted">{translate('recipes.operation.label')}</dt><dd>{translate(`recipes.operation.${configuration.operation}`)}</dd>
+        <dt className="text-muted">{translate('recipes.model.label')}</dt><dd className="break-words">{configuration.model.state === 'explicit' ? configuration.model.reference : translate('recipes.model.none')}</dd>
+        <dt className="text-muted">{translate('recipes.retention')}</dt><dd>{translate(`recipes.retention.${configuration.retention.mode}`)}</dd>
+        <dt className="text-muted">{translate('recipes.provenance')}</dt><dd className="break-all font-mono text-2xs">sha256:{recipe.currentRevision.canonical.sha256} · {recipe.currentRevision.canonical.byteSize} B</dd>
+        <dt className="text-muted">{translate('recipes.updated')}</dt><dd><time dateTime={recipe.updatedAt}>{formatDateTime(recipe.updatedAt)}</time></dd>
       </dl>
       <p className="mt-3 whitespace-pre-wrap break-words text-xs">{configuration.instructions || translate('recipes.instructions.empty')}</p>
 
       <form className="mt-3 flex min-w-0 flex-wrap items-end gap-2" onSubmit={(event) => void submitRename(event)}>
-        <label className="min-w-0 flex-1 text-2xs font-medium">{translate('recipes.rename.label')}<input value={rename} onChange={(event) => setRename(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] px-2 text-xs" /></label>
+        <label className="min-w-0 flex-1 text-2xs font-medium">{translate('recipes.rename.label')}<input value={rename} onChange={(event) => setRename(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-control bg-canvas px-2 text-xs" /></label>
         <Button size="sm" type="submit" loading={renaming}>{translate('recipes.rename')}</Button>
       </form>
 
@@ -562,18 +562,18 @@ function RecipeCard({
       </div>
       {editing ? (
         <form className="mt-3 grid gap-2" onSubmit={(event) => void revise(event)}>
-          <label className="text-xs font-medium">{translate('recipes.instructions.label')}<textarea rows={3} value={instructions} onChange={(event) => setInstructions(event.target.value)} className="mt-1 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] p-2" /></label>
-          <label className="text-xs font-medium">{translate('recipes.defaults.label')}<textarea rows={3} value={defaults} onChange={(event) => setDefaults(event.target.value)} spellCheck={false} className="mt-1 w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg)] p-2 font-mono" /></label>
+          <label className="text-xs font-medium">{translate('recipes.instructions.label')}<textarea rows={3} value={instructions} onChange={(event) => setInstructions(event.target.value)} className="mt-1 w-full rounded-md border border-control bg-canvas p-2" /></label>
+          <label className="text-xs font-medium">{translate('recipes.defaults.label')}<textarea rows={3} value={defaults} onChange={(event) => setDefaults(event.target.value)} spellCheck={false} className="mt-1 w-full rounded-md border border-control bg-canvas p-2 font-mono" /></label>
           <Button className="justify-self-start" size="sm" type="submit" loading={saving}>{translate('recipes.revise.confirm')}</Button>
         </form>
       ) : null}
       {error ? (
         <div ref={errorRef} tabIndex={-1} role="alert" className="mt-3 outline-none">
-          <p className="text-xs text-[var(--danger)]">{error}</p>
+          <p className="text-xs text-danger">{error}</p>
           {conflict ? <Button className="mt-2" size="sm" onClick={onReload}>{translate('recipes.conflict.reload')}</Button> : null}
         </div>
       ) : null}
-      <div className="mt-4 border-t border-[var(--border)] pt-3">
+      <div className="mt-4 border-t border-divider pt-3">
         <Button
           ref={snapshotActionRef}
           size="sm"
@@ -584,9 +584,9 @@ function RecipeCard({
           {translate('recipes.snapshot.open')}
         </Button>
         {confirmSnapshot ? (
-          <div className="mt-2 rounded-md border border-[var(--border-strong)] p-2">
+          <div className="mt-2 rounded-md border border-control p-2">
             <p className="text-xs">{translate('recipes.snapshot.confirmation')}</p>
-            <p className="mt-1 break-all text-2xs text-[var(--fg-subtle)]">
+            <p className="mt-1 break-all text-2xs text-muted">
               {recipe.id} · {translate('recipes.revision')} {recipe.currentRevision.revision}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -615,9 +615,9 @@ function RecipeCard({
             ref={snapshotErrorRef}
             tabIndex={-1}
             role="alert"
-            className="mt-2 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent)]"
+            className="mt-2 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus"
           >
-            <p className="break-words text-xs text-[var(--danger)]">{snapshotError}</p>
+            <p className="break-words text-xs text-danger">{snapshotError}</p>
             {snapshotKey ? (
               <Button className="mt-2" size="sm" onClick={() => void createSnapshot()}>
                 {translate('recipes.snapshot.retry')}
@@ -634,28 +634,28 @@ function RecipeCard({
           </div>
         ) : null}
         {snapshotProjection ? (
-          <section className="mt-3 rounded-md border border-[var(--border)] p-2" aria-label={translate('recipes.snapshot.result')}>
+          <section className="mt-3 rounded-md border border-divider p-2" aria-label={translate('recipes.snapshot.result')}>
             <h4
               ref={snapshotResultRef}
               tabIndex={-1}
-              className="text-xs font-semibold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent)]"
+              className="text-xs font-semibold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus"
             >
               {translate('recipes.snapshot.queued')}
             </h4>
             <dl className="mt-2 grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs">
-              <dt className="text-[var(--fg-subtle)]">{translate('recipes.snapshot.jobId')}</dt>
+              <dt className="text-muted">{translate('recipes.snapshot.jobId')}</dt>
               <dd className="break-all font-mono">{snapshotProjection.job.id}</dd>
-              <dt className="text-[var(--fg-subtle)]">{translate('recipes.revision')}</dt>
+              <dt className="text-muted">{translate('recipes.revision')}</dt>
               <dd>{snapshotProjection.snapshot.recipeRevision}</dd>
-              <dt className="text-[var(--fg-subtle)]">{translate('recipes.provenance')}</dt>
+              <dt className="text-muted">{translate('recipes.provenance')}</dt>
               <dd className="break-all font-mono">sha256:{snapshotProjection.snapshot.canonical.sha256}</dd>
-              <dt className="text-[var(--fg-subtle)]">{translate('recipes.snapshot.execution')}</dt>
+              <dt className="text-muted">{translate('recipes.snapshot.execution')}</dt>
               <dd>{translate('recipes.snapshot.notImplemented')}</dd>
             </dl>
           </section>
         ) : null}
       </div>
-      <p className="mt-3 text-2xs text-[var(--fg-subtle)]">{translate('recipes.noExecution')}</p>
+      <p className="mt-3 text-2xs text-muted">{translate('recipes.noExecution')}</p>
     </article>
   )
 }

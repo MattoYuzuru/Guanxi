@@ -7,7 +7,7 @@
 
 Many agents will build Guanxi UI in parallel. Without one source of visual truth and checks
 that fail, the UI drifts: the legacy web package already has a blue accent unrelated to the
-brand, 683 `bg-[var(--x)]` class uses, two CSS variables that are used but never defined
+brand, 683 `[var(--x)]` arbitrary-value class uses (133 backgrounds), two CSS variables that are used but never defined
 (`--warning`, `--focus`) and no lint setup. The owner wants a brand book, style guide, tokens, a
 UI kit, a live catalog with an approval loop inside the product, and deterministic checks.
 

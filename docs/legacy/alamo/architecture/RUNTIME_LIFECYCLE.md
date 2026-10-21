@@ -1305,3 +1305,17 @@ and scratch resources. Restart interrupts local executing attempts; pending wait
 requests remain durable. See [the R1 implementation](../../../../packages/server/src/runs/README.md)
 for the exact reconciliation table, lease takeover delay, migration/rollback and executor
 boundary. Multi-node fencing and live model execution are not validated by R1.
+
+## R2 internal relay executor (2026-10-21)
+
+The legacy Chat lifecycle above is unchanged. The internal `agent.relay` kernel service
+consumes R1 attempts, renews execution fences and records cycle/model/tool events in K2.
+K3 observes dispatch start before waiting for a response, allowing an R1 wake acknowledgment
+while inference is in flight. Explicit restart recovery retains ledger/evidence and clears
+the pending-call marker; it never resumes inference or tools automatically.
+
+Relay caps stop new work in `wrapping_up`; the ledger remains the deterministic report.
+Sealing atomically uploads the handoff, ledger snapshot and git bundle to the home database.
+All done evidence is invalidated on a new HEAD, and completion requires clean-checkout gates
+at the final HEAD. See [the R2 service](../../../../packages/server/src/relay/README.md) for
+runtime-meter admission, sandbox limits, probe transitions and fixture-only validation.

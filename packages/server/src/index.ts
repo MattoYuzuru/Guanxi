@@ -1,3 +1,4 @@
+import { relayPlugin } from './relay/plugin.ts'
 /**
  * Точка входа сервера.
  *
@@ -33,6 +34,8 @@ import type { IndexSettings } from './indexing/types.ts'
 import { projectIndexPlugin } from './indexing/plugin.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
+import { externalAgentPlugin } from './external-agents/plugin.ts'
+import type { ExternalPolicy } from './external-agents/types.ts'
 
 export { RELEASE_BUILD } from './release.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
@@ -128,6 +131,8 @@ export interface StartOptions {
   connectionsPolicy?: VaultPolicy
   indexSettings?: Partial<IndexSettings>
   federation?: Omit<FederationHostOptions, 'db'>
+  /** Trusted node-local installed CLIs; no executable paths or account identity arrive over HTTP. */
+  externalAgents?: ExternalPolicy
 }
 
 export async function start(options: StartOptions = {}) {
@@ -179,6 +184,8 @@ export async function start(options: StartOptions = {}) {
     })
     await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
+    await kernel.node.plugin(relayPlugin, { db })
+    if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)

@@ -208,7 +208,7 @@ export function ProjectPresentationPicker({
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-3" role="presentation">
+    <div className="fixed inset-0 z-50 flex items-center justify-center legacy-scrim p-3" role="presentation">
       <div
         ref={dialogRef}
         role="dialog"
@@ -224,7 +224,7 @@ export function ProjectPresentationPicker({
               <h2 id="project-presentation-title" className="break-words text-base font-semibold">
                 {fill(translate('projects.presentation.dialog'), { name: projectName })}
               </h2>
-              <p id="project-presentation-description" className="mt-1 text-xs text-[var(--fg-muted)]">
+              <p id="project-presentation-description" className="mt-1 text-xs text-secondary">
                 {translate('projects.presentation.description')}
               </p>
             </div>
@@ -269,7 +269,7 @@ export function ProjectPresentationPicker({
           </div>
 
           {pageIcons.length === 0 ? (
-            <p className="mt-4 rounded-md border border-dashed p-4 text-center text-xs text-[var(--fg-muted)]">
+            <p className="mt-4 rounded-md border border-dashed p-4 text-center text-xs text-secondary">
               {translate('projects.icon.empty')}
             </p>
           ) : (
@@ -327,7 +327,7 @@ export function ProjectPresentationPicker({
             >
               ←
             </Button>
-            <span className="text-2xs text-[var(--fg-muted)]" aria-live="polite">
+            <span className="text-2xs text-secondary" aria-live="polite">
               {fill(translate('projects.icon.page'), { page: currentPage + 1, pages: pageCount })}
             </span>
             <Button
@@ -366,13 +366,13 @@ export function ProjectPresentationPicker({
             </div>
           </div>
 
-          <p className="mt-3 text-2xs text-[var(--fg-muted)]" aria-live="polite">
+          <p className="mt-3 text-2xs text-secondary" aria-live="polite">
             {fill(translate('projects.presentation.selected'), { name: selectedName })}
           </p>
           {error && (
             <div className="mt-3" role="alert">
-              <p className="font-medium text-[var(--danger)]">{translate('projects.presentation.error')}</p>
-              <p className="break-words text-2xs text-[var(--fg-muted)]">{error}</p>
+              <p className="font-medium text-danger">{translate('projects.presentation.error')}</p>
+              <p className="break-words text-2xs text-secondary">{error}</p>
             </div>
           )}
           <div className="mt-4 flex justify-end gap-2">

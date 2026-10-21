@@ -152,10 +152,11 @@ describe('server boot through the kernel', () => {
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
         assert.ok(server.kernel.node.service('project.index'), 'the new index service is actually registered')
-        assert.equal(server.kernel.node.counters().fibers, 8, 'governor, Ollama, scrubber, session log, durable runs, connections, project index and native agent')
-        assert.equal(server.kernel.node.counters().services, 10, 'kernel slots, governor, Ollama, egress, session log, durable runs, readiness, registry, project index and native agent')
+        assert.equal(server.kernel.node.counters().fibers, 9, 'governor, Ollama, scrubber, session log, durable runs, connections, project index, native agent and relay')
+        assert.equal(server.kernel.node.counters().services, 11, 'kernel slots, governor, Ollama, egress, session log, durable runs, readiness, registry, project index, native agent and relay')
         assert.ok(server.kernel.node.service('connections.registry'))
         assert.ok(server.kernel.node.service('agent.native'))
+        assert.ok(server.kernel.node.service('agent.relay'))
         assert.ok(server.kernel.node.service('runs.durable'))
         assert.equal(server.kernel.node.service('connections.vault'), undefined)
         assert.ok(server.kernel.node.service('egress.scrubber'))

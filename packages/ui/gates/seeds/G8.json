@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/web/src/features/seeded/import-boundary.tsx": "import { Button } from '@base-ui/react/button'; export const Example = Button;\n"
+  },
+  "expectedError": "G8 import boundary"
+}

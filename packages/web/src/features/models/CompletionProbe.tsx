@@ -94,10 +94,10 @@ export function CompletionProbe({
 
   return (
     <div className="min-w-0 space-y-3" aria-label={translate('models.probe.label')}>
-      <p className="text-2xs text-[var(--fg-muted)]">
+      <p className="text-2xs text-secondary">
         {translate('models.probe.explanation')}
       </p>
-      <p className="text-2xs text-[var(--fg-subtle)]">
+      <p className="text-2xs text-muted">
         {translate('models.probe.boundary')}
       </p>
 
@@ -105,7 +105,7 @@ export function CompletionProbe({
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2 text-2xs"
+        className="rounded-md border border-divider bg-inset p-2 text-2xs"
       >
         {local.state === 'idle' ? (
           <ProbeState label={translate('models.probe.state.idle')} tone="outline" />
@@ -194,7 +194,7 @@ export function CompletionProbe({
           </>
         }
       >
-        <div id="completion-probe-confirmation" className="space-y-2 text-xs text-[var(--fg-muted)]">
+        <div id="completion-probe-confirmation" className="space-y-2 text-xs text-secondary">
           <p>{translate('models.probe.confirm.description')}</p>
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
             <dt>{translate('models.probe.confirm.model')}</dt>
@@ -218,12 +218,12 @@ function ProbeResult({ evidence }: { evidence: CompletionProbeEvidence }) {
     <>
       <ProbeState label={label} tone={tone} />
       <p className="mt-1">{probeReason(evidence)}</p>
-      <p className="mt-1 min-w-0 break-all font-mono text-[var(--fg-subtle)]">
+      <p className="mt-1 min-w-0 break-all font-mono text-muted">
         {evidence.basis.state === 'exact'
           ? `${translate('models.probe.identity.reference')}: ${evidence.basis.normalizedModelReference} · ${translate('models.probe.identity.digest')}: ${evidence.basis.artifactDigest} · ${translate('models.probe.identity.runtime')}: Ollama ${evidence.basis.runtimeVersion} · ${translate('models.probe.identity.context')}: ${formatContextLength(evidence.basis.contextLength)} · ${translate('models.probe.identity.definition')}: v${evidence.basis.probeDefinitionVersion}`
           : translate('models.probe.identity.unknown')}
       </p>
-      <p className="mt-1 text-[var(--fg-subtle)]">
+      <p className="mt-1 text-muted">
         {translate('models.probe.observed')} {formatDateTime(evidence.observedAt)} ·{' '}
         {translate('models.probe.confidence')} {probeConfidence(evidence.confidence)}
       </p>
