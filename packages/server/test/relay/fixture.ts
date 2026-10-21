@@ -30,7 +30,8 @@ export function fixture(options: { path?: string; fault?: (point: string) => voi
         if (options.narrativeFails) throw new Error('fixture unavailable')
         text = 'Continue the plan using its evidence.'
       } else if (prompt.startsWith('Answer these five')) {
-        text = options.probeFails ? '{}' : canonical(probes(relay.sealed(attempt)!.ledger))
+        const latest = f.db.prepare('SELECT ledger FROM relay_seals WHERE run_id=? ORDER BY cycle DESC LIMIT 1').get(run.id) as { ledger: string } | undefined
+        text = options.probeFails ? '{}' : canonical(probes(latest ? JSON.parse(latest.ledger) : relay.read(run.id)))
       } else text = options.actions ? await options.actions(prompt, ++workCalls) : canonical({ action: workCalls++ === 0 ? 'verify' : 'handoff', ...(workCalls === 1 ? { item: 'one' } : {}) })
       return { text, inputTokens: model.count(prompt), outputTokens: Math.min(200, opts.maxOutput), moneyMicros: 1, inputTruncated: false, outputLimited: false }
     },

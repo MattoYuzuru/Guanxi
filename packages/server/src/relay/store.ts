@@ -157,7 +157,9 @@ export class RelayStore {
     this.read(a.run_id)
     const lease = this.db.prepare('SELECT holder,epoch,token FROM leases WHERE key=?').get(`run:${a.run_id}/exec`)
     if (!lease || lease.holder !== a.id || lease.epoch !== a.epoch || lease.token !== a.token) return null
-    const r = this.db.prepare('SELECT * FROM relay_seals WHERE run_id=? AND attempt_id=? AND epoch=? AND token=? ORDER BY cycle DESC LIMIT 1').get(a.run_id, a.id, a.epoch, a.token)
+    // Every seal was fence-checked at upload; a newly admitted attempt still needs the
+    // run's latest handoff, not only seals written under its own token.
+    const r = this.db.prepare('SELECT * FROM relay_seals WHERE run_id=? ORDER BY cycle DESC LIMIT 1').get(a.run_id)
     if (!r) return null
     let handoff: Handoff
     try { handoff = JSON.parse(String(r.handoff)) } catch { handoff = null as unknown as Handoff }

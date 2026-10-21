@@ -171,3 +171,23 @@ test('an output-limited work reply is an invalid action and the run continues', 
     assert.equal(f.relay.read(f.run.id).items.one, 'done')
   } finally { f.close() }
 })
+test('a new attempt probes and carries the latest seal from the previous attempt', async () => {
+  let work = 0
+  const marker = 'dead-end-do-not-repeat'
+  const f = fixture({ actions: () => { work++; if (work === 2) f.executor.stop(); return canonical({ action: 'handoff' }) } })
+  try {
+    f.relay.note(f.attempt, 'dead_end', marker, ['one'], null)
+    await f.executor.run(f.attempt)
+    assert.ok(f.relay.sealed(f.attempt), 'the stopped attempt sealed before stopping')
+    assert.equal(f.store.get(f.run.id).state, 'input_required')
+    const next = f.store.decide(f.run.id)
+    f.relay.recover(next)
+    const before = f.prompts.length
+    const { RelayExecutor } = await import('../../src/relay/executor.ts')
+    const executor = new RelayExecutor(f.relay, f.model, f.workspace, f.executor.reserves, f.scrubber)
+    await executor.run(next)
+    const after = f.prompts.slice(before)
+    assert.ok(after.filter(p => p.startsWith('Answer these five')).length >= 1, 'probes ran')
+    assert.ok(after.find(p => p.startsWith('Execute'))?.includes(marker), 'dead-end note reached work')
+  } finally { f.close() }
+})
