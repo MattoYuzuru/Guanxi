@@ -1,3 +1,4 @@
+import { relayPlugin } from './relay/plugin.ts'
 /**
  * Точка входа сервера.
  *
@@ -170,6 +171,7 @@ export async function start(options: StartOptions = {}) {
       policy: options.connectionsPolicy,
     })
     await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
+    await kernel.node.plugin(relayPlugin, { db })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)

@@ -1,0 +1,41 @@
+import type { Connections } from '../connections/service.ts'
+import type { WindowObservation } from './types.ts'
+import { invariant } from './types.ts'
+
+export interface Reply { text: string; inputTokens: number; outputTokens: number; moneyMicros: number | null; truncated: boolean }
+/** Host adapter, never model-authored. W and token counts refer to the ACTUAL rendered
+ * request and loaded context, including template tokens. Missing observations fail closed. */
+export interface RuntimeMeter {
+  observe(signal?: AbortSignal): Promise<WindowObservation>
+  count(prompt: string): number
+  maxCostMicros?(input: number, output: number): number | null
+}
+export interface RelayModel extends RuntimeMeter {
+  call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; window: WindowObservation; signal?: AbortSignal }): Promise<Reply>
+}
+export class ConnectionRelayModel implements RelayModel {
+  readonly connections: Connections; readonly connectionId: string; readonly model: string; readonly meter: RuntimeMeter; readonly background: boolean
+  constructor(connections: Connections, connectionId: string, model: string, meter: RuntimeMeter, background = true) {
+    this.connections = connections; this.connectionId = connectionId; this.model = model; this.meter = meter; this.background = background
+  }
+  observe(signal?: AbortSignal) { return this.meter.observe(signal) }
+  count(prompt: string) { return this.meter.count(prompt) }
+  maxCostMicros(input: number, output: number) { return this.meter.maxCostMicros?.(input, output) ?? null }
+  async call(prompt: string, o: Parameters<RelayModel['call']>[1]): Promise<Reply> {
+    const connection = this.connections.snapshot('local').connections.find(c => c.id === this.connectionId)
+    invariant(connection, 'connection_not_found')
+    const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background }
+    if (connection.kind === 'local_runtime') {
+      const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false,
+        messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } }, call)
+      invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')
+      return { text: r.message?.content ?? '', inputTokens: r.prompt_eval_count!, outputTokens: r.eval_count!, moneyMicros: null,
+        truncated: r.prompt_eval_count! !== this.count(prompt) || r.done_reason === 'length' }
+    }
+    invariant(connection.kind === 'model_api', 'connection_not_supported')
+    const r = await this.connections.complete('local', this.connectionId, { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] },
+      { ...call, model: this.model, options: { maxTokens: o.maxOutput } })
+    return { text: r.content.filter(c => c.type === 'text').map(c => c.text).join('\n'), inputTokens: r.usage.input + r.usage.cacheRead + r.usage.cacheWrite,
+      outputTokens: r.usage.output, moneyMicros: Math.ceil(r.usage.cost.total * 1e6), truncated: r.stopReason === 'length' }
+  }
+}
