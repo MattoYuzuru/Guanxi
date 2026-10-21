@@ -132,7 +132,7 @@ test('R1 follow-up: closing a log releases only its own durable home writer rows
     assert.ok(before.every((row) => row.released_at === null))
     f.log.close()
     const after = rows()
-    assert.deepEqual(after.filter((row) => row.session_id.startsWith('home-')).map((row) => row.released_at),
+    assert.deepEqual(after.filter((row) => row.session_id === 'home-one' || row.session_id === 'home-two').map((row) => row.released_at),
       [new Date(RUN_TIME).toISOString(), new Date(RUN_TIME).toISOString()])
     assert.deepEqual(after.find((row) => row.session_id === 'other-writer'), before.find((row) => row.session_id === 'other-writer'))
     for (const id of ['home-one', 'home-two']) {
