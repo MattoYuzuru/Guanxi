@@ -14,8 +14,8 @@ Open lanes:
   DS2 and U1 open when it merges.
 - **R2 — relay executor v1:** [lanes/R2](lanes/R2.md), handed off; Claude
   cross-family review running.
-- **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), handed off (partial);
-  Claude cross-family review running.
+- **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), partial. Claude review 1:
+  merge after fixes (default autonomous tools in two adapters, bypassable token gate); fixes queued.
 - **X1 — repository map and full-text index:** [lanes/X1](lanes/X1.md), handed off;
   Claude cross-family review running.
 - **F1 — federation base:** [lanes/F1](lanes/F1.md). Claude review 1 returned "merge after
