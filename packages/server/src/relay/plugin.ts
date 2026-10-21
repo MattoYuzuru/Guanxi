@@ -5,7 +5,7 @@ import type { Connections } from '../connections/service.ts'
 import type { DurableRunsService } from '../runs/plugin.ts'
 import type { Attempt } from '../runs/types.ts'
 import type { EgressScrubber } from '../egress/types.ts'
-import type { Plan, Caps, Reserves } from './types.ts'
+import { DEFAULT_RELAY_LIMITS, type Plan, type Caps, type Reserves, type RelayLimits } from './types.ts'
 import type { RuntimeMeter } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
 import { ConnectionRelayModel } from './model.ts'
@@ -14,12 +14,13 @@ import { RelayStore } from './store.ts'
 import { invariant } from './types.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
+export interface RelayConfig { db: Db; limits?: Partial<RelayLimits> }
 export interface RelayInput {
-  connectionId: string; model: string; meter: RuntimeMeter; workspace: RelayWorkspace; reserves: Reserves
+  connectionId: string; model: string; meter: RuntimeMeter; workspace: RelayWorkspace; reserves: Reserves; limits?: Partial<RelayLimits>
 }
 /** T0 internal API. Workspace and runtime attestations are supplied by the execution host,
  * never parsed from model JSON or HTTP. Merely loading the plugin starts no inference. */
-export const relayPlugin = definePlugin<{ db: Db }>({
+export const relayPlugin = definePlugin<RelayConfig>({
   manifest: { id: 'guanxi.relay', engines: { guanxi: '^0.1.0' }, trust: 'T0', provides: [RELAY_SERVICE],
     requires: ['runs.durable', 'connections.registry', 'session.log', 'egress.scrubber'] },
   apply(ctx, config) {
@@ -34,7 +35,8 @@ export const relayPlugin = definePlugin<{ db: Db }>({
       read: (id: string) => store.read(id),
       async execute(a: Attempt, input: RelayInput) {
         invariant(!closed && !active.has(a.run_id), 'relay_busy')
-        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber)
+        const limits = { ...DEFAULT_RELAY_LIMITS, ...config.limits, ...input.limits }
+        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits)
         const promise = executor.run(a)
         active.set(a.run_id, { executor, promise })
         try { return await promise } finally { active.delete(a.run_id) }

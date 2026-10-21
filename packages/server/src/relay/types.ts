@@ -24,6 +24,8 @@ export type Caps = z.infer<typeof capsSchema>
 export const states = ['boot', 'orient', 'work', 'wind_down', 'handoff_write', 'handoff_validate', 'sealed', 'harness_fallback', 'finish', 'escalate'] as const
 export type CycleState = typeof states[number]
 export interface WindowObservation { tokens: number; source: string; observedAt: number; confidence: 'high'; framingTokens: number }
+export interface RelayLimits { gateTimeoutMs: number; goalBytes: number; pageBytes: number; invalidActions: number }
+export const DEFAULT_RELAY_LIMITS: RelayLimits = { gateTimeoutMs: 120_000, goalBytes: 512, pageBytes: 2048, invalidActions: 3 }
 export interface Reserves { turn: number; safety: number; handoff: number; tool: number; stepMedian: number; effective: number }
 export interface Thresholds { W: number; H: number; hard: number; soft: number; handoff: number }
 export type NoteKind = 'decision' | 'dead_end' | 'hypothesis' | 'open_issue' | 'lesson'

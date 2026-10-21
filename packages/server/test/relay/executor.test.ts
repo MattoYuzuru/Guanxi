@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { fixture, plan, window, reserves } from './fixture.ts'
 import { canonical, hash, render, selectNotes, validateHandoff, probes } from '../../src/relay/handoff.ts'
 import { thresholds } from '../../src/relay/budget.ts'
-import { RelayError } from '../../src/relay/types.ts'
+import { DEFAULT_RELAY_LIMITS, RelayError } from '../../src/relay/types.ts'
 
 test('verified task finishes with atomic ledger/hash/bundle seal and K2 trace', async () => {
   const f = fixture(); try {
@@ -251,5 +251,40 @@ test('tool errors become tool results, increment errors and do not stop the run'
     assert.ok(f.relay.read(f.run.id).errors >= 2)
     assert.ok(f.prompts.filter(p => p.startsWith('Execute')).some(p => p.includes('tool_denied') && p.includes('invalid_offset')))
     assert.equal(f.store.get(f.run.id).state, 'completed')
+  } finally { f.close() }
+})
+test('paging size, goal cut and gate timeout are explicit execution limits', async () => {
+  const paged = fixture({ limits: { pageBytes: 16 } })
+  try {
+    const access = paged.executor as unknown as { tool: (a: typeof paged.attempt, n: string, args: Record<string, unknown>, s: AbortSignal) => Promise<string> }
+    const page = JSON.parse(await access.tool(paged.attempt, 'work.query', { offset: 0 }, new AbortController().signal))
+    assert.ok(Buffer.byteLength(page.text) <= 16)
+    assert.equal(page.more, true)
+  } finally { paged.close() }
+  const goal = 'G'.repeat(2000)
+  let goalTurn = 0
+  const f = fixture({ limits: { goalBytes: 40 }, actions: () => canonical(++goalTurn === 1 ? { action: 'verify', item: 'one' } : { action: 'handoff' }) })
+  try {
+    f.relay.change(f.attempt, 'fixture_goal', l => { l.plan = { ...l.plan, goal } })
+    let timeout: number | undefined
+    f.workspace.verify = async (_p, item, _s, ms) => { timeout = ms; return { item, head: plan.base, ok: true, output: 'pass' } }
+    await f.executor.run(f.attempt)
+    const work = f.prompts.find(p => p.startsWith('Execute'))
+    assert.ok(work && !work.includes('G'.repeat(100)), 'goal was cut')
+    assert.ok(work!.includes('[use paging]'))
+    assert.equal(timeout, DEFAULT_RELAY_LIMITS.gateTimeoutMs)
+  } finally { f.close() }
+})
+test('the invalid-action limit counts invalid turns, not every turn', async () => {
+  let actions = 0, verifies = 0
+  const f = fixture({ caps: { cycles: 1 }, limits: { invalidActions: 2 }, actions: () => {
+    actions++
+    return actions <= 2 ? 'not json' : canonical({ action: 'verify', item: 'one' })
+  } })
+  try {
+    f.workspace.verify = async (_p, item) => { verifies++; return { item, head: plan.base, ok: true, output: 'pass' } }
+    await f.executor.run(f.attempt)
+    assert.equal(actions, 2)
+    assert.equal(verifies, 0)
   } finally { f.close() }
 })

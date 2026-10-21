@@ -5,7 +5,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import { RelayStore } from './store.ts'
 import type { RelayModel, Reply } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
-import { invariant, RelayError, type Ledger, type Handoff, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
+import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
 import { boundary, bounded, request, thresholds, upperTokens, wallDeadline, type Measure } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 
@@ -21,9 +21,9 @@ export class RelayExecutor {
   private turns: string[] = []
   private controller = new AbortController()
   private running = false
-  readonly store: RelayStore; readonly model: RelayModel; readonly workspace: RelayWorkspace; readonly reserves: Reserves; readonly scrubber: EgressScrubber
-  constructor(store: RelayStore, model: RelayModel, workspace: RelayWorkspace, reserves: Reserves, scrubber: EgressScrubber) {
-    this.store = store; this.model = model; this.workspace = workspace; this.reserves = reserves; this.scrubber = scrubber
+  readonly store: RelayStore; readonly model: RelayModel; readonly workspace: RelayWorkspace; readonly reserves: Reserves; readonly scrubber: EgressScrubber; readonly limits: RelayLimits
+  constructor(store: RelayStore, model: RelayModel, workspace: RelayWorkspace, reserves: Reserves, scrubber: EgressScrubber, limits: RelayLimits = DEFAULT_RELAY_LIMITS) {
+    this.store = store; this.model = model; this.workspace = workspace; this.reserves = reserves; this.scrubber = scrubber; this.limits = limits
   }
   stop() { this.controller.abort() }
   private caps(l: Ledger, nextCycle = false): string | null {
@@ -143,7 +143,7 @@ export class RelayExecutor {
     await this.workspace.validate(l.plan, l.head, l.files)
     if (Object.values(l.items).every(status => status === 'done')) {
       for (const item of l.plan.items) {
-        const evidence = await this.workspace.verify(l.plan, item.id, signal)
+        const evidence = await this.workspace.verify(l.plan, item.id, signal, this.limits.gateTimeoutMs)
         const after = await this.workspace.observe(l.plan.base, l.baseline.head)
         invariant(after.head === l.head && evidence.head === l.head, 'gate_head_changed')
         this.store.observe(a, { ...after, evidence })
@@ -193,7 +193,7 @@ export class RelayExecutor {
       const offset = Number(args.offset ?? 0)
       invariant(Number.isSafeInteger(offset) && offset >= 0, 'invalid_offset')
       invariant(offset <= text.length, 'invalid_offset')
-      const page = Buffer.from(text.slice(offset)).subarray(0, 2048).toString('utf8').replace(/\uFFFD$/u, '')
+      const page = Buffer.from(text.slice(offset)).subarray(0, this.limits.pageBytes).toString('utf8').replace(/\uFFFD$/u, '')
       return canonical({ text: page, nextOffset: offset + page.length, more: offset + page.length < text.length })
     }
     return this.workspace.tool(name, args, signal)
@@ -221,7 +221,7 @@ export class RelayExecutor {
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
-          const context = request(WORK, { head: [strip(l), bounded(l.plan.goal, 512), narrative], turns: this.turns }, measure, t.H)
+          const context = request(WORK, { head: [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
           const used = measure(context.text)
           if (context.dropped || context.cut) {
             this.dropped(a, l.cycle, context.dropped, context.cut)
@@ -232,11 +232,11 @@ export class RelayExecutor {
           if (reply.outputLimited) {
             this.store.change(a, 'invalid_action', s => { s.errors++ })
             this.turns.push('Your reply hit the output limit; return one short valid JSON action.')
-            if (++invalidActions >= 3) break
+            if (++invalidActions >= this.limits.invalidActions) break
             continue
           }
           const action = actionSchema.safeParse((() => { try { return JSON.parse(reply.text) } catch { return null } })())
-          if (!action.success) { this.store.change(a, 'invalid_action', s => { s.errors++ }); this.turns.push('Invalid action; return valid JSON.'); if (++invalidActions >= 3) break; continue }
+          if (!action.success) { this.store.change(a, 'invalid_action', s => { s.errors++ }); this.turns.push('Invalid action; return valid JSON.'); if (++invalidActions >= this.limits.invalidActions) break; continue }
           const x = action.data
           if (x.action === 'handoff' || x.action === 'finish') break
           let result = ''
@@ -248,7 +248,7 @@ export class RelayExecutor {
           }
           if (x.action === 'verify') {
             this.store.requestVerification(a, x.item)
-            const e = await this.workspace.verify(l.plan, x.item, signal)
+            const e = await this.workspace.verify(l.plan, x.item, signal, this.limits.gateTimeoutMs)
             const after = await this.workspace.observe(l.plan.base, l.baseline.head)
             invariant(after.head === e.head, 'gate_head_changed')
             this.store.observe(a, { ...after, evidence: e }); result = canonical(e)

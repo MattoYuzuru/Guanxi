@@ -6,7 +6,7 @@
 `guanxi.relay` provides `agent.relay`, loaded after K3 in the default server. Loading it
 starts no inference. A trusted execution host initializes an R1 attempt with an immutable
 plan and delegation caps, then supplies `RelayInput`: a K3 connection/model, a runtime
-meter, reserves and a workspace. There is no HTTP or UI entry point in this slice.
+meter, reserves, optional execution limits and a workspace. There is no HTTP or UI entry point in this slice.
 
 ## Runtime and context
 
@@ -19,9 +19,25 @@ Fixture meters are used in the tests; no live-model quality claim is made.
 
 `H = W - R_turn - S`, `T_hard = H - R_ho - R_tool` and the soft/boundary rules come from
 ADR-0020. Every call, including probes and the fresh writer, checks its scrubbed request
-against H, including a final check after K3 scrubs immediately before dispatch. Local Ollama also compares `prompt_eval_count` with the meter's count; mismatch
-or length termination is a protocol error, never a successful handoff. Output has the
-runtime/policy turn reserve. There is no fixed context or cycle ceiling.
+against H, including a final check after K3 scrubs immediately before dispatch. Local Ollama also compares `prompt_eval_count` with the meter's count; a mismatch or an input above H
+is a protocol error. Output-length termination is separate: a limited narrative degrades the
+handoff, a limited work reply is an invalid action, and any other purpose is a protocol error.
+Output has the runtime/policy turn reserve. There is no fixed context or cycle ceiling.
+
+### Execution limits
+
+These are named policy settings, not hidden constants. `relayPlugin({ db, limits })` supplies
+plugin defaults and `RelayInput.limits` overrides them for one execution; the built-in defaults
+are below. There is no fixed blob limit: bundle objects and gate blobs stream through
+`git cat-file --batch`. The remaining 32 MiB buffer is a guard for textual git metadata
+commands only.
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `gateTimeoutMs` | `120000` | Timeout for one acceptance command in the clean gate checkout. |
+| `goalBytes` | `512` | Upper bound on the plan goal injected into each work prompt. |
+| `pageBytes` | `2048` | Page size for `work.query` and `notes.search`. |
+| `invalidActions` | `3` | Invalid work turns before the cycle hands off. Valid tool, note, proposal, checkpoint and verify turns do not count. |
 
 The work strip is at most 300 UTF-8 bytes (a conservative token bound). `work.query` pages
 the full run ledger; `notes.search` pages matching typed notes. Tool results remain in K2
@@ -51,7 +67,8 @@ uses a ledger-built `degraded` narrative; verification evidence remains authorit
 fence inside the same `BEGIN IMMEDIATE` as extension SQL and K2 appends. A seal uploads
 JSON, Markdown, its SHA-256, the ledger snapshot and git bundle as one immutable row in the
 home database; it updates the live ledger to `sealed` in that transaction. A stale attempt
-cannot upload or become last sealed. Reads of last sealed are scoped to the current token.
+cannot upload or become last sealed. Reads of last sealed take the run's latest accepted
+seal, whichever admitted attempt wrote it; the current attempt still owns the fence.
 Explicit recovery under a newly admitted attempt uses the live ledger; it never replays a
 pending model/tool call automatically.
 
@@ -60,8 +77,9 @@ deterministic critical probes. Failure rebuilds a degraded handoff from the auth
 snapshot and retries once. A second failure emits a J2 request and moves to escalation/input
 required. R2 emits judge requests; R3 owns judge execution and verdict policy.
 
-Progress counts verified item/gate changes or a nonempty committed diff. Notes, proposals
-and verification requests are not progress. Two empty cycles request J2; three escalate.
+Progress counts a verified item becoming `done`, a gate becoming passing, or a nonempty
+committed diff. The first observation of a failing gate, notes, proposals and verification
+requests are not progress. Two empty cycles request J2; three escalate.
 Cycle, token, money, wall-time and J3 caps are normative. Calls reserve the full admissible input ceiling plus output reserve as their worst-case
 tokens and a host-supplied monetary bound before dispatch. Unknown price with a money cap
 refuses dispatch. Failed/crashed calls retain conservative reservations. Exhaustion enters

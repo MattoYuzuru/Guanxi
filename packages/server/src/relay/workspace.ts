@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 import { mkdtemp, readFile, rm, mkdir, lstat, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep, dirname } from 'node:path'
-import type { Plan, Evidence } from './types.ts'
+import { DEFAULT_RELAY_LIMITS, type Plan, type Evidence } from './types.ts'
 import { invariant, relativePath, RelayError } from './types.ts'
 import { sandboxCommand, quote, type SandboxPolicy } from '../native-agent/sandbox.ts'
 import { nativeTools, type NativeToolContext } from '../native-agent/tools.ts'
@@ -60,7 +60,7 @@ export interface WorkspaceObservation { head: string; files: string[]; diffstat:
 export interface RelayWorkspace {
   observe(base: string, baseline: string): Promise<WorkspaceObservation>
   bundle(base: string): Promise<Uint8Array>
-  verify(plan: Plan, item: string, signal?: AbortSignal): Promise<{ item: string; head: string; ok: boolean; output: string }>
+  verify(plan: Plan, item: string, signal?: AbortSignal, timeoutMs?: number): Promise<{ item: string; head: string; ok: boolean; output: string }>
   checkpoint(signal?: AbortSignal): Promise<void>
   tool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string>
   validate(plan: Plan, head: string, files: string[]): Promise<void>
@@ -194,7 +194,7 @@ export class GitRelayWorkspace implements RelayWorkspace {
     try { await this.git(['bundle', 'create', join(dir, 'attempt.bundle'), `${base}..HEAD`]); return await readFile(join(dir, 'attempt.bundle')) }
     finally { await rm(dir, { recursive: true, force: true }) }
   }
-  async verify(plan: Plan, itemId: string, signal?: AbortSignal): Promise<{ item: string; head: string; ok: boolean; output: string }> {
+  async verify(plan: Plan, itemId: string, signal?: AbortSignal, timeoutMs = DEFAULT_RELAY_LIMITS.gateTimeoutMs): Promise<{ item: string; head: string; ok: boolean; output: string }> {
     const item = plan.items.find(i => i.id === itemId)
     invariant(item, 'invalid_item')
     const before = await this.observe(plan.base, plan.base)
@@ -209,7 +209,7 @@ export class GitRelayWorkspace implements RelayWorkspace {
       for (const path of paths) await rm(join(checkout, path), { recursive: true, force: true })
       await this.materialize(plan.base, checkout, true)
       const policy: SandboxPolicy = { ...this.context.policy, roots: [checkout], scratch, protectedPaths: paths.map(p => join(checkout, p)), attachments: [], mode: 'read-only' }
-      const output = await (this.context.executeCommand ?? sandboxCommand)(policy, `cd ${quote(checkout)} && ${item.acceptance.map(quote).join(' ')}`, signal, 120_000, false, this.scrubber)
+      const output = await (this.context.executeCommand ?? sandboxCommand)(policy, `cd ${quote(checkout)} && ${item.acceptance.map(quote).join(' ')}`, signal, timeoutMs, false, this.scrubber)
       const after = await this.observe(plan.base, plan.base)
       invariant(after.head === before.head, 'head_changed')
       return { item: itemId, head: before.head, ok: output.code === 0 && !output.truncated, output: this.scrubber.scrub(JSON.stringify(output)) }
