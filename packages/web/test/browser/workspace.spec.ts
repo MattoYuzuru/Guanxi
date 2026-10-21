@@ -16,6 +16,7 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
     for (const doc of documents) if (!active.some(row => JSON.stringify(row.scope) === JSON.stringify(doc.scope))) active.push({ scope: doc.scope, layoutId: doc.id })
     const geometry = new Map<string, any>(Object.entries(extra.geometry ?? {}))
     ;(window as any).__LAYOUT_WRITES__ = []
+    ;(window as any).__GEOMETRY_WRITES__ = []
     window.fetch = async (input, init) => {
       const url = new URL(String(input), location.origin)
       if (url.pathname === '/api/layouts') {
@@ -37,7 +38,7 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
         return Response.json({ documents: documents.filter(doc => doc.scope.mode === mode), active: active.filter(row => row.scope.mode === mode) })
       }
       if (url.pathname === '/api/layouts/geometry') {
-        if (init?.method === 'PUT') { const body = JSON.parse(String(init.body)); geometry.set(body.layoutId, body.geometry); return Response.json({ geometry: body.geometry }) }
+        if (init?.method === 'PUT') { const body = JSON.parse(String(init.body)); (window as any).__GEOMETRY_WRITES__.push(body); geometry.set(body.layoutId, body.geometry); return Response.json({ geometry: body.geometry }) }
         return Response.json({ geometry: geometry.get(url.searchParams.get('layoutId') ?? '') ?? {} })
       }
       const response = await base(input, init)
@@ -56,7 +57,12 @@ async function pick(page: Page, label: string, value: string, keyboard = false) 
   if (keyboard) {
     await page.getByRole('button', { name: label, exact: true }).focus()
     await page.keyboard.press('Enter')
-    await page.getByRole('menuitem', { name: value, exact: true }).focus()
+    const items = page.getByRole('menuitem')
+    const index = (await items.allTextContents()).indexOf(value)
+    expect(index).toBeGreaterThanOrEqual(0)
+    await page.keyboard.press('Home')
+    for (let i = 0; i < index; i++) await page.keyboard.press('ArrowDown')
+    await expect(items.nth(index)).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('menu')).toHaveCount(0)
     return
@@ -387,4 +393,34 @@ test('reset preserves a saved layout clock and persists the default arrangement 
   const restored = await state(page)
   expect(restored.rev).toBe(8)
   expect(restored.engineState.groups.find(group => group.zone === 'bottom')!.blocks).toEqual(['guanxi.core/terminal'])
+})
+
+test('a float dragged near the right and bottom retains normalized bounds after save and mode return', async ({ page }) => {
+  await open(page)
+  await move(page, 'Terminal', 'Floating')
+  const floating = page.locator('.dv-resize-container:visible')
+  const header = floating.locator('.dv-tabs-and-actions-container')
+  const start = await header.boundingBox()
+  const root = await page.locator('.workspace-layout').boundingBox()
+  expect(start).not.toBeNull(); expect(root).not.toBeNull()
+  await page.mouse.move(start!.x + 40, start!.y + 10)
+  await page.mouse.down()
+  await page.mouse.move(root!.x + root!.width - 220, root!.y + root!.height - 100, { steps: 15 })
+  await page.mouse.up()
+  const bounds = await floating.boundingBox()
+  expect(bounds).not.toBeNull()
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  await expect(page.getByTestId('workspace-announcement')).toHaveText('Layout saved to the node.')
+  const saved = await page.evaluate(() => (window as any).__GEOMETRY_WRITES__[0].geometry as Record<string, { left: number; top: number; width: number; height: number }>)
+  expect(Object.keys(saved)).toHaveLength(1)
+  const box = Object.values(saved)[0]!
+  expect(Math.abs(box.left - (bounds!.x - root!.x))).toBeLessThan(2)
+  expect(Math.abs(box.top - (bounds!.y - root!.y))).toBeLessThan(2)
+  await pick(page, 'Experience mode', 'Visual')
+  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'visual')
+  await pick(page, 'Experience mode', 'Developer')
+  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'developer')
+  const restored = await floating.boundingBox()
+  expect(restored).not.toBeNull()
+  for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(restored![key] - bounds![key])).toBeLessThan(2)
 })

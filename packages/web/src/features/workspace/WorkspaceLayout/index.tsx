@@ -140,7 +140,11 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       const geometry: LayoutGeometry = {}
       for (const group of [...(raw.floatingGroups ?? []), ...(raw.popoutGroups ?? [])]) {
         const box = group.position
-        if (group.data && box && 'left' in box && 'top' in box && typeof box.left === 'number' && typeof box.top === 'number') geometry[group.data.id] = { left: box.left, top: box.top, width: box.width, height: box.height }
+        if (group.data && box) {
+          const left = 'left' in box && typeof box.left === 'number' ? box.left : 'right' in box && typeof box.right === 'number' ? api.width - box.right - box.width : undefined
+          const top = 'top' in box && typeof box.top === 'number' ? box.top : 'bottom' in box && typeof box.bottom === 'number' ? api.height - box.bottom - box.height : undefined
+          if (left !== undefined && top !== undefined) geometry[group.data.id] = { left, top, width: box.width, height: box.height }
+        }
       }
       const visible = new Set(groups.flatMap(group => group.blocks))
       return {
@@ -209,7 +213,12 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     subscriptions.current.forEach(item => item.dispose())
     subscriptions.current = []
     let dropZone: WorkspaceZone | undefined
-    subscriptions.current.push(api.onWillDrop(event => { dropZone = event.group ? zoneOf(event.group) : event.position === 'left' || event.position === 'right' || event.position === 'top' || event.position === 'bottom' ? event.position : 'center' }), api.onDidDrop(() => { dropZone = undefined }), api.onDidRemovePanel(panel => {
+    // U1-a's portable document has a center grid and single-group detached windows.
+    // Reject detached edge splits rather than accepting an arrangement it cannot restore.
+    const rejectDetachedSplit = (event: { group: DockviewGroupPanel | undefined; position: string; preventDefault: () => void }) => {
+      if (event.group && event.group.api.location.type !== 'grid' && event.position !== 'center') event.preventDefault()
+    }
+    subscriptions.current.push(api.onWillShowOverlay(rejectDetachedSplit), api.onWillDrop(event => { rejectDetachedSplit(event); dropZone = event.group ? zoneOf(event.group) : event.position === 'left' || event.position === 'right' || event.position === 'top' || event.position === 'bottom' ? event.position : 'center' }), api.onDidDrop(() => { dropZone = undefined }), api.onDidRemovePanel(panel => {
       queueMicrotask(() => {
         if (!alive.current || apiRef.current !== api || muted.current || api.getPanel(panel.id)) return
         latest.current.onHidden(panel.id)
