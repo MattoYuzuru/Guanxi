@@ -89,13 +89,15 @@ and `parseReviewRecord` (unknown fields are rejected), written by the node in on
 | `deprecated` | agents | `{ at, replacement, note }`; the approval stays, so the chain stays intact |
 | `requests` | agents, node | change requests `{ id, at, text, state: open \| resolved }` |
 
-Signed payloads (Ed25519 over canonical JSON: keys sorted by UTF-16 code unit, no whitespace,
-UTF-8):
+Signed payloads (ECDSA P-256 (SHA-256, IEEE P1363) over canonical JSON: keys sorted by UTF-16
+code unit, no whitespace, UTF-8; signatures are 64-byte r‖s values, base64 encoded):
 
-- approval: `{ schema: "guanxi.ui-approval/2", id, status: "approved", at, sourceHash,
+- approval: `{ schema: "guanxi.ui-approval/3", id, status: "approved", at, sourceHash,
   snapshotHashes, comment, keyId, previous }`;
-- revocation: `{ schema: "guanxi.ui-revocation/2", id, decision: "request_changes", at, keyId,
+- revocation: `{ schema: "guanxi.ui-revocation/3", id, decision: "request_changes", at, keyId,
   previous }`.
+
+The `/2` (Ed25519) schema was never used and is removed.
 
 **Hash chain.** `previous` is the digest of the signed decision the new one supersedes, or
 `null` for the first: `sha256:` + hex SHA-256 of the canonical JSON of that decision's payload

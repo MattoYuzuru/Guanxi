@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { createPrivateKey, generateKeyPairSync, type KeyObject } from 'node:crypto'
+import { generateKeyPairSync, type KeyObject } from 'node:crypto'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -39,6 +39,7 @@ import {
 import { findSourceCheckoutUiRoot } from '../src/ui-catalog/source-checkout.ts'
 import { g12 } from '../../ui/gates/catalog/g12-approval-integrity.ts'
 import { defaultUsageScope } from '../../ui/catalog/tooling/usage.ts'
+import { p256TestKey } from '../../ui/gates/catalog/lib/test-key.ts'
 
 const realUiRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'ui')
 const DEV_ORIGIN = 'http://127.0.0.1:5183'
@@ -58,15 +59,11 @@ after(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
 })
 
-/** A throwaway Ed25519 key written to, and read back from, its own temp directory. */
+/** A throwaway P-256 key written to, and read back from, its own temp directory. */
 function throwawayKey(): { keyDir: string; privateKey: KeyObject; trusted: TrustedKey } {
-  const keyDir = mkdtempSync(join(tmpdir(), 'guanxi-approval-key-'))
-  cleanups.push(() => rmSync(keyDir, { recursive: true, force: true }))
-  const pair = generateKeyPairSync('ed25519')
-  writeFileSync(join(keyDir, 'key.pem'), pair.privateKey.export({ format: 'pem', type: 'pkcs8' }), { mode: 0o600 })
-  const privateKey = createPrivateKey(readFileSync(join(keyDir, 'key.pem'), 'utf8'))
-  const { keyId, publicKey } = exportPublicKey(pair.publicKey)
-  return { keyDir, privateKey, trusted: { keyId, algorithm: 'ed25519', publicKey, addedAt: NOW.toISOString() } }
+  const key = p256TestKey()
+  cleanups.push(key.dispose)
+  return { keyDir: key.dir, privateKey: key.privateKey, trusted: { ...key.trusted, addedAt: NOW.toISOString() } }
 }
 
 /** A scratch checkout with two real component folders, trusted keys and one baseline. */
@@ -745,11 +742,11 @@ describe('keychain signer', () => {
   })
 
   it('signs with the key the fake keychain returns and derives its id', async () => {
-    const key = throwawayKey()
-    const der = key.privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64')
+    const pair = generateKeyPairSync('ed25519')
+    const der = pair.privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64')
     const security = fakeSecurity(`echo '${der}'`)
     const signed = await keychainSigner({ securityPath: security, platform: 'darwin' }).sign(Buffer.from('payload'))
-    assert.equal(signed.keyId, key.trusted.keyId)
+    assert.equal(signed.keyId, exportPublicKey(pair.publicKey).keyId)
     assert.ok(signed.signature.length > 40)
   })
 

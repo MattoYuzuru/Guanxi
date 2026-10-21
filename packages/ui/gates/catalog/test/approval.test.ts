@@ -1,30 +1,33 @@
 /** Approval record format, canonical signing bytes and key-set rotation (D-138). */
 import assert from 'node:assert/strict'
-import { generateKeyPairSync, sign } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { describe, it } from 'node:test'
 import {
   approvalPayload,
   approvalSigningBytes,
   canonicalJson,
+  componentSnapshotHashes,
+  componentSourceHash,
   decisionDigest,
   revocationPayload,
   exportPublicKey,
   parseReviewRecord,
   parseTrustedKeys,
+  serialiseRecord,
   signApprovalPayload,
   signKeySet,
+  uiPaths,
   verifyKeySetChange,
   verifyRecordApproval,
   type ReviewRecord,
   type TrustedKey,
 } from '../../../catalog/approval/index.ts'
 import { effectiveStatus } from '../../../catalog/approval/status.ts'
+import { p256TestKey } from '../lib/test-key.ts'
 
 function key(note: string) {
-  const pair = generateKeyPairSync('ed25519')
-  const { keyId, publicKey } = exportPublicKey(pair.publicKey)
-  const trusted: TrustedKey = { keyId, algorithm: 'ed25519', publicKey, addedAt: '2026-10-20T00:00:00.000Z', note }
-  return { ...pair, trusted }
+  const pair = p256TestKey(note)
+  return { privateKey: pair.privateKey, trusted: pair.trusted, dispose: pair.dispose }
 }
 
 const HASH = `sha256:${'a'.repeat(64)}`
@@ -49,7 +52,7 @@ describe('canonical JSON', () => {
 type Approved = ReviewRecord & { approval: NonNullable<ReviewRecord['approval']> }
 
 function signRevocation(signer: ReturnType<typeof key>, id: string, unsigned: Omit<NonNullable<ReviewRecord['revocation']>, 'signature'>): string {
-  return sign(null, approvalSigningBytes(revocationPayload(id, unsigned)), signer.privateKey).toString('base64')
+  return sign('sha256', approvalSigningBytes(revocationPayload(id, unsigned)), { key: signer.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64')
 }
 
 function revocation(signer: ReturnType<typeof key>, record: Approved, at: string): NonNullable<ReviewRecord['revocation']> {
@@ -68,6 +71,16 @@ describe('approval verification', () => {
 
   it('accepts a record signed by a trusted key', () => {
     assert.deepEqual(verifyRecordApproval(approved(owner), [owner.trusted]), { state: 'valid', keyId: owner.trusted.keyId })
+  })
+
+  it('verifies a P-256 approval and rejects one flipped signature byte', () => {
+    const record = approved(owner)
+    assert.deepEqual(verifyRecordApproval(record, [owner.trusted]), { state: 'valid', keyId: owner.trusted.keyId })
+    const signature = Buffer.from(record.approval!.signature, 'base64')
+    assert.equal(signature.length, 64)
+    signature[0] = (signature[0] ?? 0) ^ 1
+    const flipped = { ...record, approval: { ...record.approval!, signature: signature.toString('base64') } }
+    assert.deepEqual(verifyRecordApproval(flipped, [owner.trusted]), { state: 'invalid', reason: 'bad_signature' })
   })
 
   it('rejects a signature by a key that is not trusted, even if it is internally valid', () => {
@@ -135,6 +148,17 @@ describe('trusted key set', () => {
     assert.equal(parsed.ok, false)
   })
 
+  it('accepts only P-256 public keys', () => {
+    const { publicKey } = generateKeyPairSync('ed25519')
+    const der = publicKey.export({ format: 'der', type: 'spki' })
+    const keyId = `p256:${createHash('sha256').update(der).digest('hex').slice(0, 32)}`
+    const parsed = parseTrustedKeys({
+      keys: [{ keyId, algorithm: 'p256', publicKey: der.toString('base64'), addedAt: '2026-10-20T00:00:00.000Z' }],
+    })
+    assert.equal(parsed.ok, false)
+    assert.match(parsed.ok ? '' : parsed.errors.join('\n'), /keys\[0\] is not a P-256 key/)
+  })
+
   it('allows an unchanged set, flags a bootstrap and requires a rotation signed by a base key', () => {
     const baseFile = { version: 1, keys: [base.trusted] }
     assert.deepEqual(verifyKeySetChange({ version: 1, keys: [base.trusted] }, baseFile), { state: 'unchanged' })
@@ -196,6 +220,76 @@ describe('trusted key set', () => {
     assert.deepEqual(verifyKeySetChange({ version: 2, keys, rotation: oldRotation }, mainNow), {
       state: 'invalid',
       reason: 'stale_rotation_version',
+    })
+  })
+})
+
+describe('G12 accepts only P-256 approvals and schema /3', async () => {
+  const { createScratch } = await import('../lib/scratch.ts')
+  const { g12 } = await import('../g12-approval-integrity.ts')
+  const { defaultUsageScope } = await import('../../../catalog/tooling/usage.ts')
+  const { readFileSync, writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const repoRoot = join(import.meta.dirname, '..', '..', '..', '..', '..')
+
+  async function run(uiRoot: string, root: string) {
+    return g12.run({ repoRoot: root, uiRoot, usageScope: defaultUsageScope(root), release: false, base: null })
+  }
+
+  async function withScratch(check: (uiRoot: string, root: string) => Promise<void>): Promise<void> {
+    const scratch = createScratch(repoRoot)
+    try {
+      await check(scratch.uiRoot, scratch.repoRoot)
+    } finally {
+      scratch.dispose()
+    }
+  }
+
+  it('rejects an Ed25519 key in approval-keys.json', async () => {
+    await withScratch(async (uiRoot, root) => {
+      const { publicKey } = generateKeyPairSync('ed25519')
+      const der = publicKey.export({ format: 'der', type: 'spki' })
+      const keyId = `p256:${createHash('sha256').update(der).digest('hex').slice(0, 32)}`
+      writeFileSync(
+        uiPaths(uiRoot).trustedKeys,
+        `${JSON.stringify({ version: 1, keys: [{ keyId, algorithm: 'p256', publicKey: der.toString('base64'), addedAt: '2026-10-20T00:00:00.000Z' }], rotation: null }, null, 2)}\n`,
+      )
+      const result = await run(uiRoot, root)
+      assert.equal(result.status, 'fail')
+      assert.match(result.findings.map((finding) => finding.message).join('\n'), /keys\[0\] is not a P-256 key/)
+    })
+  })
+
+  it('rejects a payload still signed under the /2 (Ed25519) schema', async () => {
+    await withScratch(async (uiRoot, root) => {
+      const owner = p256TestKey('owner test key')
+      try {
+        writeFileSync(uiPaths(uiRoot).trustedKeys, `${JSON.stringify({ version: 1, keys: [owner.trusted], rotation: null }, null, 2)}\n`)
+        const paths = uiPaths(uiRoot)
+        const unsigned = {
+          at: '2026-10-20T12:00:00.000Z',
+          sourceHash: componentSourceHash(paths.componentDir('button')),
+          snapshotHashes: componentSnapshotHashes(paths.snapshots, 'button'),
+          comment: 'Signed under the removed schema.',
+          keyId: owner.trusted.keyId,
+          previous: null,
+        }
+        const payload = { ...approvalPayload('button', unsigned), schema: 'guanxi.ui-approval/2' }
+        const signature = sign('sha256', Buffer.from(canonicalJson(payload), 'utf8'), {
+          key: owner.privateKey,
+          dsaEncoding: 'ieee-p1363',
+        }).toString('base64')
+        const draft = JSON.parse(readFileSync(paths.reviewFile('button'), 'utf8')) as ReviewRecord
+        writeFileSync(
+          paths.reviewFile('button'),
+          serialiseRecord({ ...draft, status: 'approved', approval: { ...unsigned, signature } }),
+        )
+        const result = await run(uiRoot, root)
+        assert.equal(result.status, 'fail')
+        assert.match(result.findings.map((finding) => finding.message).join('\n'), /approval is invalid: bad_signature/)
+      } finally {
+        owner.dispose()
+      }
     })
   })
 })

@@ -55,7 +55,10 @@ export function keyObjectSigner(privateKey: KeyObject): ApprovalSigner {
   const { keyId } = exportPublicKey(createPublicKey(privateKey))
   return {
     status: async () => ({ state: 'available', keyId }),
-    sign: async (bytes) => ({ signature: sign(null, bytes, privateKey).toString('base64'), keyId }),
+    sign: async (bytes) => ({
+      signature: sign('sha256', bytes, { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64'),
+      keyId,
+    }),
   }
 }
 
