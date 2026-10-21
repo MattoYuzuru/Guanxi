@@ -28,8 +28,9 @@
     "ui:storybook": "npm run storybook --workspace @guanxi/ui",
     "benchmark:catalog": "node packages/server/scripts/catalog-pagination-benchmark.ts && npm run benchmark:catalog --workspace @guanxi/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#.claude/worktrees\" \"#docs/research/2026-10-19-landscape\" \"#docs/research/2026-10-20-design\" \"#docs/research/2026-10-21-fleet\" \"#.lane-data\"",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#.claude/worktrees\" \"#docs/research/2026-10-19-landscape\" \"#docs/research/2026-10-20-design\" \"#docs/research/2026-10-21-fleet\" \"#.lane-data\" && node scripts/check-doc-links.mjs",
     "check:licenses": "node scripts/check-licenses.mjs",
+    "check:links": "node scripts/check-doc-links.mjs",
     "tokens:build": "npm run tokens:build --workspace @guanxi/ui",
     "ui:check": "npm run ui:check --workspace @guanxi/ui",
     "test:bench": "npm test --workspace @guanxi/bench"

@@ -28,7 +28,7 @@
 | Документ                                                           | Статус            | Владеет                                     |
 | ------------------------------------------------------------------ | ----------------- | ------------------------------------------- |
 | [README](../README.md)                                             | implemented       | текущее пользовательское введение и запуск  |
-| [AGENTS](../AGENTS.md)                                             | implemented       | краткие правила работы агента               |
+| [AGENTS](../../../AGENTS.md)                                           | implemented       | краткие правила работы агента               |
 | [PRODUCT](PRODUCT.md)                                              | mixed             | vision, границы, требования и outcomes      |
 | [DOMAIN_MODEL](DOMAIN_MODEL.md)                                    | accepted target   | понятия, ownership и инварианты             |
 | [GLOSSARY](GLOSSARY.md)                                            | implemented       | user-facing English/Russian vocabulary      |

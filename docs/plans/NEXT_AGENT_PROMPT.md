@@ -1,4 +1,4 @@
-# Next agent prompt — wave 3 (DS1-c, F1, R2, K5, X1)
+# Next agent prompt — wave 3 (DS1-c, DS2, F1, R2, K5, X1, B1)
 
 **Status:** ready · **Updated:** 2026-10-21 (K1, DS1-a, DS1-b, K2, K3, R1 with its follow-up,
 and K4 merged into `main`)
@@ -12,10 +12,11 @@ Open lanes:
 - **DS1-c — lint ratchet and codemod:** [lanes/DS1-c](lanes/DS1-c.md). Claude review 1:
   merge after fixes (contrast regression, untested guards, mixed palette); fix round running.
   DS2 and U1 open when it merges.
-- **R2 — relay executor v1:** [lanes/R2](lanes/R2.md), handed off; Claude
-  cross-family review running.
-- **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), handed off (partial);
-  Claude cross-family review running.
+- **R2 — relay executor v1:** [lanes/R2](lanes/R2.md). Claude review 1: merge
+  after fixes (token-vs-byte boundary, narrative truncation, whole-history seals); fixes queued.
+- **DS2 — approval signing helper:** [lanes/DS2](lanes/DS2.md), running in DeepSeek Harness.
+- **K5 — external agents and role routing:** [lanes/K5](lanes/K5.md), partial. Claude review 1:
+  merge after fixes (default autonomous tools in two adapters, bypassable token gate); fixes queued.
 - **X1 — repository map and full-text index:** [lanes/X1](lanes/X1.md), handed off;
   Claude cross-family review running.
 - **F1 — federation base:** [lanes/F1](lanes/F1.md). Claude review 1 returned "merge after
