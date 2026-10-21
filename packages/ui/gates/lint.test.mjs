@@ -169,3 +169,29 @@ test('M1 npm-test gates reject added and grown suppressions through ctx.withFile
     }
   }
 })
+
+test('M2 gates reject seeded config ignores and each disabled feature/plugin rule', async t => {
+  const root = await mkdtemp(resolve(tmpdir(), 'guanxi-config-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.invalid' } })
+  git('init', '-q'); await writeFile(resolve(root, suppressionPath), '{}'); git('add', '.'); git('commit', '-qm', 'empty ledger')
+  const { pathToFileURL } = await import('node:url')
+  const base = pathToFileURL(resolve(repositoryRoot, 'eslint.config.mjs')).href
+  const rules = ['import-boundaries', 'reuse-primitives', 'no-inline-colours', 'no-literal-styles', 'semantic-classes']
+  for (const file of ['packages/web/src/features/seeded/config.tsx', 'plugins/seeded/src/config.tsx']) {
+    for (const guard of ['ignored', ...rules]) {
+      // Distinct config URLs avoid Node's module cache across seeded cases.
+      const configRoot = resolve(root, `case-${file.startsWith('plugins')}-${guard}`)
+      const { mkdir } = await import('node:fs/promises')
+      await mkdir(configRoot)
+      const override = guard === 'ignored' ? { ignores: [file] } : { files: [file], rules: { [`guanxi/${guard}`]: 'warn' } }
+      await writeFile(resolve(configRoot, 'eslint.config.mjs'), `import base from ${JSON.stringify(base)}; export default [...base, ${JSON.stringify(override)}]`)
+      const ctx = await createContext(configRoot, { [file]: 'const x = <div/>', [suppressionPath]: '{}' })
+      for (const gate of gates) {
+        const result = await gate.check(ctx)
+        assert.equal(result.ok, false, `${gate.id}: ${guard}`)
+        assert.ok(result.errors.some(e => e.includes('ESLint configuration') && e.includes(guard) && e.includes(file)), `${gate.id}: missing ${guard} configuration assertion`)
+      }
+    }
+  }
+})
