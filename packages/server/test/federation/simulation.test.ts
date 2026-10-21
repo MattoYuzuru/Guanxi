@@ -25,6 +25,7 @@ test('64 seeds per mode: convergence and remove-wins under skew, rollback, per-o
     assert.deepEqual(summary.countFailures, [])
     assert.equal(summary.unsafeGrantWins, 0)
     assert.equal(summary.hlcViolations, 0)
+    assert.ok(summary.clockDriftRejections > 0)
     assert.ok(summary.seedsWithSkewBeyondBound > 0)
     assert.ok(summary.rollbackRefusals > 0)
     if (mode !== 'pull') assert.ok(summary.deferred > 0)
