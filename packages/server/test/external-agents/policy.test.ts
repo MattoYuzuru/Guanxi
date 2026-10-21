@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile, symlink, mkdir, stat, rm } from 'node:fs/promises'
+import { readFile, symlink, mkdir, stat, rm, chmod } from 'node:fs/promises'
+import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { fixture, owner, nodeId } from './helpers.ts'
 import { resolveRole, rolesSchema, type Role, type RoleBinding } from '../../src/external-agents/types.ts'
@@ -143,4 +144,36 @@ test('node binding, private directories and readiness fail closed', async t => {
   f.kernel.scrubber.expect('test-pending')
   assert.throws(() => f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' }), /egress_unavailable/)
   f.kernel.scrubber.ready('test-pending')
+})
+
+test('setEditorAllowed refuses a non-owner and persists no grant', async t => {
+  const f = await fixture(t, ['gemini-cli'])
+  const binding = f.bindings[0]!
+  f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
+  assert.throws(() => f.service().setEditorAllowed(owner, 'editor', binding.connectionId, 'editor', true), /owner_required/)
+  const db = new DatabaseSync(join(f.dir, 'external-agents.sqlite'), { readOnly: true })
+  try { assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM editor_grants').get()!.n), 0) } finally { db.close() }
+  await assert.rejects(f.service().run({ ownerAccountId: owner, actorAccountId: 'editor', projectId: 'p', role: 'lead', prompt: 'hello' }),
+    /Connection cannot pay/)
+})
+
+test('Claude statusline ingestion is owner-only and records no quota fact for an editor', async t => {
+  const f = await fixture(t, ['claude-code'])
+  const binding = f.bindings[0]!
+  assert.throws(() => f.service().observeClaudeStatusline(owner, 'editor', binding.connectionId,
+    { rate_limits: { five_hour: { used_percentage: 50 } } }, new Date().toISOString()), /owner_required/)
+  const limits = f.service().limits(owner, binding.connectionId)
+  assert.equal(limits.reports.length, 0)
+  assert.equal(limits.windows.length, 0)
+})
+
+test('group- or world-accessible config directories are refused', async t => {
+  const f = await fixture(t)
+  const config = await f.config('codex')
+  f.service().setProjectRoles(owner, owner, 'p', { lead: f.bindings[0]! })
+  const run = () => f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' })
+  for (const mode of [0o750, 0o705]) {
+    await chmod(config.configDirectory, mode)
+    await assert.rejects(run(), /unsafe_config_directory/)
+  }
 })
