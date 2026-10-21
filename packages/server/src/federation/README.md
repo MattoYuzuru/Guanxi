@@ -151,7 +151,7 @@ caller observations, not resource admission, measured capacity or placement scor
 host sensors and placement; no host-pressure probe runs here.
 
 Peers negotiate protocol major/minor. Older-major clients can authenticate and read but every
-mutation endpoint rejects them with `contract_read_only`. A newer major is refused with
+authenticated peer mutation endpoint rejects them with `contract_read_only`. A newer major is refused with
 `contract_incompatible`. The outbound synchronizer also refuses to import writes from an
 older-major peer, and the channel negotiates before every outgoing command to prevent a write
 after an older-major read-only handshake. Version and audience are signed on every request,
@@ -179,5 +179,6 @@ partition never elects another home or admits an execution lease from a replica.
 
 `packages/server/test/federation/` contains the in-process deterministic scheduler and
 contract/route/store/kernel tests. The lane handoff maps exit gates to direct assertions and
-records the full regression envelope. These are simulations on local macOS with temporary
-SQLite databases, not validation on the owner's Linux nodes, a VPN or a live deployment.
+records the full regression envelope. The handoff records macOS and Fedora Linux fixture runs with pinned code and runtimes,
+using temporary SQLite databases. They do not validate a VPN, live fleet delivery, real
+provider execution or a deployed service.
