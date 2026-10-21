@@ -58,8 +58,8 @@ export class RunStore {
     const key = `${operation}:${runId}`
     try { body(); this.runFailures.delete(key) } catch (error) {
       const code = error instanceof Error && 'code' in error ? String(error.code) : 'storage_error'
-      if (['closed', 'writer_busy', 'egress_not_ready'].includes(code)) throw error
-      if (code === 'stale_lease') this.assertOwner()
+      if (['closed', 'egress_not_ready'].includes(code)) throw error
+      if (code === 'stale_lease' || code === 'writer_busy') this.assertOwner()
       this.runFailures.set(key, { runId, operation, code })
     }
   }

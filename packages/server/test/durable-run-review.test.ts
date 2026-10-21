@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { start } from '../src/index.ts'
+import { SessionLogError } from '../src/session-log/log.ts'
 import { RunStore } from '../src/runs/store.ts'
 import { bootServerKernel } from '../src/runtime/kernel.ts'
 import { runFixture, reconcileAllForTest, RUN_TIME } from './fixtures/durable-runs.ts'
@@ -264,4 +265,29 @@ test('self-review: takeover cap follows observed predecessor renewals without fe
     successor.heartbeat()
     assert.throws(() => f.store.create(), { code: 'stale_lease' })
   } finally { successor.close(); f.close() }
+})
+
+
+test('self-review: a session writer_busy failure is local to its run', () => {
+  for (const operation of ['timers', 'reconcile', 'dispatch']) {
+    let armed = false
+    const f = runFixture(':memory:', { logFault: (_, detail) => {
+      if (armed && detail.sessionId === 'alpha') throw new SessionLogError('writer_busy', 'fixture session writer')
+    } })
+    try {
+      for (const id of ['alpha', 'beta']) {
+        const a = f.store.start(f.store.create({ id }).id)
+        if (operation !== 'reconcile') {
+          const p = f.store.delegate(a, { key: 'child', deadline: RUN_TIME + 10 })
+          if (operation === 'dispatch') f.store.complete(f.store.start(p.child_id), 'completed')
+        }
+      }
+      armed = true; f.setTime(RUN_TIME + 20)
+      assert.doesNotThrow(() => operation === 'timers' ? f.store.tick() : operation === 'dispatch' ? f.store.dispatch(() => true) : reconcileAllForTest(f.store))
+      assert.equal(f.store.failures()[0]!.code, 'writer_busy')
+      if (operation === 'timers') assert.equal(f.store.wakes('beta').length, 1)
+      if (operation === 'reconcile') assert.equal(f.store.attempts('beta')[0]!.state, 'lost')
+      if (operation === 'dispatch') assert.ok(f.store.wakes('beta')[0]!.attempt_id)
+    } finally { f.close() }
+  }
 })
