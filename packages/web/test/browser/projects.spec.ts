@@ -2,22 +2,62 @@ import { expect, test, type Page } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 import { installFetchLifecycle } from './fixtures/fetch-lifecycle.ts'
 
+type ProjectFetchRead = {
+  id: number
+  aborted: boolean
+  abortedAtNetworkStart: boolean | null
+  state: 'pending' | 'fulfilled' | 'rejected'
+}
+
+declare global {
+  interface Window {
+    __guanxiProjectFetchReads?: ProjectFetchRead[]
+  }
+}
+
 /**
  * The shared fetch lifecycle fixture observes health/runtime/models. Delay the
  * project read by one microtask as well, so StrictMode cleanup can abort it
- * before Playwright intercepts the network in the forced schedule.
+ * before Playwright intercepts the network in the forced schedule. Record only
+ * the signal ordering and promise state for GET /api/projects; never a body.
  */
 async function deferProjectReadBeforeNetwork(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const nativeFetch = window.fetch.bind(window)
+    const reads: ProjectFetchRead[] = []
+    window.__guanxiProjectFetchReads = reads
     window.fetch = async (input, init) => {
       const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
       const path = new URL(input instanceof Request ? input.url : String(input), location.href).pathname
       if (method !== 'GET' || path !== '/api/projects') return nativeFetch(input, init)
-      await Promise.resolve()
-      return nativeFetch(input, init)
+      const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
+      const read: ProjectFetchRead = {
+        id: reads.length + 1,
+        aborted: signal?.aborted ?? false,
+        abortedAtNetworkStart: null,
+        state: 'pending',
+      }
+      reads.push(read)
+      const onAbort = () => { read.aborted = true }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      try {
+        await Promise.resolve()
+        read.abortedAtNetworkStart = signal?.aborted ?? false
+        const response = await nativeFetch(input, init)
+        read.state = 'fulfilled'
+        return response
+      } catch (error) {
+        read.state = 'rejected'
+        throw error
+      } finally {
+        signal?.removeEventListener('abort', onAbort)
+      }
     }
   })
+}
+
+async function projectFetchReads(page: Page): Promise<ProjectFetchRead[]> {
+  return page.evaluate(() => window.__guanxiProjectFetchReads ?? [])
 }
 
 for (const deferNetworkStart of [false, true]) {
@@ -136,6 +176,15 @@ for (const deferNetworkStart of [false, true]) {
     await expect(errorHeading).toBeFocused()
     const initialReadCount = projectReads
     expect(initialReadCount).toBeGreaterThanOrEqual(1)
+    if (deferNetworkStart) {
+      // Route counts cannot see an attempt Chromium drops. Record the signal on
+      // the actual fetch call, and assert at least one project read was already
+      // aborted before the network started. The focused committed error and
+      // initialReadCount >= 1 above prove a non-aborted read reached the route;
+      // no total StrictMode attempt count is assumed.
+      await expect.poll(async () => (await projectFetchReads(page))
+        .some((read) => read.abortedAtNetworkStart === true)).toBe(true)
+    }
 
     // Switch to the empty projection only after the error is committed and
     // focused, immediately before the explicit keyboard retry.
