@@ -137,6 +137,8 @@ export class SessionInputStore {
   private readonly hooks: SessionInputStoreHooks
   private readonly now: () => number
   private canonicalRoot: string | null = null
+  private rootDev: string | null = null
+  private rootIno: string | null = null
 
   constructor(options: SessionInputStoreOptions) {
     this.dataDir = options.dataDir
@@ -165,21 +167,46 @@ export class SessionInputStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw storageError(error)
     }
-    let state
+    let identity
     try {
-      state = await lstat(root)
+      identity = await directoryIdentity(root)
     } catch (error) {
       throw storageError(error)
     }
-    if (!state.isDirectory() || state.isSymbolicLink()) {
+    let canonicalDataDir: string
+    try {
+      canonicalDataDir = await realpath(this.dataDir)
+    } catch (error) {
+      throw storageError(error)
+    }
+    if (!inside(canonicalDataDir, identity.canonicalPath)) {
       throw new SessionInputError('unsafe_storage', 'Session input storage boundary is unsafe')
     }
-    const canonical = await realpath(root)
-    if (this.canonicalRoot !== null && this.canonicalRoot !== canonical) {
+    if (
+      this.canonicalRoot !== null
+      && (this.canonicalRoot !== identity.canonicalPath || this.rootDev !== identity.dev || this.rootIno !== identity.ino)
+    ) {
       throw new SessionInputError('unsafe_storage', 'Session input storage identity changed')
     }
-    this.canonicalRoot = canonical
-    return canonical
+    this.canonicalRoot = identity.canonicalPath
+    this.rootDev = identity.dev
+    this.rootIno = identity.ino
+    return identity.canonicalPath
+  }
+
+  private async assertRootStable(): Promise<void> {
+    if (this.canonicalRoot === null || this.rootDev === null || this.rootIno === null) {
+      throw new SessionInputError('unsafe_storage', 'Session input storage is unavailable')
+    }
+    let state
+    try {
+      state = await lstat(join(this.dataDir, 'session-artifacts'))
+    } catch {
+      throw new SessionInputError('unsafe_storage', 'Session input storage identity changed')
+    }
+    if (!state.isDirectory() || state.isSymbolicLink() || String(state.dev) !== this.rootDev || String(state.ino) !== this.rootIno) {
+      throw new SessionInputError('unsafe_storage', 'Session input storage identity changed')
+    }
   }
 
   private async sessionDirectory(sessionId: string, create: boolean): Promise<RelativeDirectoryIdentity & { path: string }> {
@@ -210,6 +237,7 @@ export class SessionInputStore {
     if (!inside(root, identity.canonicalPath)) {
       throw new SessionInputError('unsafe_storage', 'Session input storage boundary is unsafe')
     }
+    await this.assertRootStable()
     return { ...identity, path }
   }
 
@@ -235,6 +263,7 @@ export class SessionInputStore {
         content: bytes,
         byteSize: bytes.byteLength,
         digest,
+        root: { dev: this.rootDev!, ino: this.rootIno! },
         beforeSpawn: this.hooks.beforeHelperStart,
         ready: this.hooks.beforeWrite,
         signal: options.signal,
@@ -287,6 +316,7 @@ export class SessionInputStore {
         action: 'read',
         byteSize: reference.byteSize,
         digest,
+        root: { dev: this.rootDev!, ino: this.rootIno! },
         ready: this.hooks.beforeRead,
         signal: options.signal,
         timeoutMs: this.helperTimeoutMs,

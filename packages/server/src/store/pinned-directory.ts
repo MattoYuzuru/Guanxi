@@ -68,6 +68,11 @@ const closeQuietly = async () => { try { await file?.close() } catch {} file = n
 
 async function begin(command) {
   if (typeof command?.name !== 'string' || !/^[0-9a-f]{64}$/u.test(command.name)) throw new Error('invalid_name')
+  if (command.rootDev !== undefined || command.rootIno !== undefined) {
+    if (typeof command.rootDev !== 'string' || typeof command.rootIno !== 'string') throw new Error('invalid_root')
+    const parent = await stat('..')
+    if (String(parent.dev) !== command.rootDev || String(parent.ino) !== command.rootIno) throw new Error('root_mismatch')
+  }
   if (!Number.isSafeInteger(command.byteSize) || command.byteSize < 0) throw new Error('invalid_size')
   if (typeof command.digest !== 'string' || !/^[0-9a-f]{64}$/u.test(command.digest)) throw new Error('invalid_digest')
   if (command.action === 'write') {
@@ -191,7 +196,7 @@ try {
   if (temp !== null) await unlink(temp).catch(() => undefined)
   send({
     state: 'failed',
-    code: ['ELOOP', 'ENOTDIR', 'EISDIR'].includes(error?.code) ? 'unsafe' : 'invalid',
+    code: ['ELOOP', 'ENOTDIR', 'EISDIR'].includes(error?.code) || error?.message === 'root_mismatch' ? 'unsafe' : 'invalid',
   })
   process.exitCode = 1
 }
@@ -235,6 +240,8 @@ export interface RelativeDirectoryOperationInput {
   byteSize: number
   digest: string
   /** Called after the trusted identity is captured and before the helper starts. */
+  /** The trusted parent of `parent`; the helper checks its own `..` against it. */
+  root?: { dev: string; ino: string }
   beforeSpawn?(): void | Promise<void>
   /** Called after the helper handshake is validated and before any command byte. */
   ready?(): void | Promise<void>
@@ -302,9 +309,12 @@ export async function relativeDirectoryOperation(
       throw new PinnedDirectoryError('unsafe_storage', 'Storage identity changed')
     }
     await input.ready?.()
+    const rootFields = input.root === undefined
+      ? {}
+      : { rootDev: input.root.dev, rootIno: input.root.ino }
     const command = input.action === 'publish'
-      ? { action: 'publish', source: input.source, name: input.name, byteSize: input.byteSize, digest: input.digest }
-      : { action: input.action, name: input.name, byteSize: input.byteSize, digest: input.digest }
+      ? { action: 'publish', source: input.source, name: input.name, byteSize: input.byteSize, digest: input.digest, ...rootFields }
+      : { action: input.action, name: input.name, byteSize: input.byteSize, digest: input.digest, ...rootFields }
     await writeStdin(child, Buffer.from(`${JSON.stringify(command)}\n`, 'utf8'), input.signal)
     if (input.action === 'write') {
       const content = input.content!

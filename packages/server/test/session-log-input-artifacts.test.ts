@@ -379,6 +379,25 @@ describe('session input artifacts: pinned directory', () => {
     assert.deepEqual((await readdir(moved)).filter((name) => name.startsWith('.partial-')), [])
   })
 
+  it('detects an ancestor root swap before any byte and leaves the replacement empty', async (test) => {
+    const f = await fixture(test)
+    const first = await descriptor(f.store, f.sessionId, `${'g'.repeat(INPUT_INLINE_BYTES)}first`)
+    assert.ok(first.checksum)
+    const root = join(f.dataDir, 'session-artifacts')
+    const moved = `${root}-moved`
+    await rename(root, moved)
+    await mkdir(root)
+    const attackerSession = join(root, sessionIdHash(f.sessionId))
+    await mkdir(attackerSession)
+    const text = `${'h'.repeat(INPUT_INLINE_BYTES)}root-swap`
+    await assert.rejects(
+      f.store.write(f.sessionId, text, MEDIA_TEXT),
+      (error: unknown) => error instanceof SessionInputError && error.code === 'unsafe_storage',
+    )
+    assert.deepEqual(await readdir(attackerSession), [])
+    assert.deepEqual(await readdir(moved), [sessionIdHash(f.sessionId)])
+  })
+
   it('keeps the helper cwd pinned when the path is swapped after the handshake and fails closed', async (test) => {
     const attacker = join(tmpdir(), `guanxi-attacker-${randomBytes(8).toString('hex')}`)
     test.after(() => rm(attacker, { recursive: true, force: true }))
