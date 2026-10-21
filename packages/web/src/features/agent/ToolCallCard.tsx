@@ -52,7 +52,7 @@ export function ToolCallCard({
       className={cx(
         'overflow-hidden rounded-lg border',
         call.status === 'error' || call.status === 'denied'
-          ? 'border-[var(--danger)]/40'
+          ? 'border-danger/40'
           : 'border-divider',
       )}
     >
@@ -60,7 +60,7 @@ export function ToolCallCard({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 bg-inset px-2 py-1.5 text-left hover:bg-inset"
+        className="flex w-full items-center gap-2 bg-inset px-2 py-1.5 text-left hover:bg-surface"
       >
         <Chevron open={open} />
         {status.spinning && <Spinner size={10} />}
@@ -125,7 +125,7 @@ export function ToolCallCard({
 
           {call.error && (
             <Section title={translate('agent.tool.error')} copy={call.error}>
-              <pre className="max-h-40 overflow-auto rounded border border-[var(--danger)]/40 bg-[var(--danger)]/8 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-danger">
+              <pre className="max-h-40 overflow-auto rounded border border-danger/40 bg-danger/8 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-danger">
                 {call.error}
               </pre>
             </Section>

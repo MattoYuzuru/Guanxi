@@ -220,9 +220,9 @@ export function CatalogVariantInstall({
                   className={cx(
                     'min-h-11 min-w-0 flex-1 rounded border px-2 py-1 text-left font-mono text-2xs transition-colors sm:min-h-8',
                     selectedNow
-                      ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)]'
+                      ? 'border-accent bg-accent/10 text-accent'
                       : 'border-divider text-secondary hover:border-control',
-                    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]',
+                    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
                     'disabled:cursor-not-allowed disabled:opacity-45',
                   )}
                 >
@@ -358,7 +358,7 @@ export function CatalogVariantInstall({
         ) : null}
 
         {state.kind === 'error' || state.kind === 'cancelled' ? (
-          <div role="alert" className="rounded-md border border-[var(--danger)]/30 p-3">
+          <div role="alert" className="rounded-md border border-danger/30 p-3">
             <p className="font-medium">
               {state.kind === 'cancelled'
                 ? translate('models.catalogVariant.cancelled')

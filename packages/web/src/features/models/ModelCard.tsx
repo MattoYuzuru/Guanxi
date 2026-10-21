@@ -76,7 +76,7 @@ export const ModelCard = memo(function ModelCard({
           <Link
             to={paths.model(model.name)}
             onFocus={onFocusCard}
-            className="min-w-0 truncate font-mono text-[13px] font-semibold hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
+            className="min-w-0 truncate font-mono text-[13px] font-semibold hover:text-accent focus-visible:text-accent"
             title={model.name}
           >
             {model.name}
@@ -195,7 +195,7 @@ export const ModelCard = memo(function ModelCard({
 })
 
 function Dot() {
-  return <span className="text-[var(--border-strong)]">·</span>
+  return <span className="text-control">·</span>
 }
 
 /** Кнопка «Установить» в карточке каталога, когда скачивание ещё не начато. */

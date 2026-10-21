@@ -99,7 +99,7 @@ export function CatalogFilters({
   return (
     <div className="min-w-0">
       <details className="group rounded-lg border border-divider bg-surface">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus">
           <span>{translate('catalog.filters.open')}</span>
           <span aria-hidden="true" className="text-muted group-open:rotate-180">⌄</span>
         </summary>

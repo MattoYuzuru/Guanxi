@@ -141,7 +141,7 @@ export function OllamaUnavailable({
             href={ollama.installHint.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-2 inline-block text-2xs text-[var(--accent)] underline underline-offset-2"
+            className="mt-2 inline-block text-2xs text-accent underline underline-offset-2"
           >
             {translate('health.ollama.docs')}
           </a>

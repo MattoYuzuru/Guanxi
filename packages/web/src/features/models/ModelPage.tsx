@@ -60,7 +60,7 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
         </Callout>
         <Link
           to={paths.launcher()}
-          className="mt-3 inline-block text-xs text-[var(--accent)] underline underline-offset-2"
+          className="mt-3 inline-block text-xs text-accent underline underline-offset-2"
         >
           {translate('model.back')}
         </Link>
@@ -171,11 +171,11 @@ function ModelProfile({
           <h1 className="font-mono text-lg font-semibold tracking-tight">{model.name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-secondary">
             <span>{model.family}</span>
-            <span className="text-[var(--border-strong)]">·</span>
+            <span className="text-control">·</span>
             <span>{model.parameterSize}</span>
-            <span className="text-[var(--border-strong)]">·</span>
+            <span className="text-control">·</span>
             <span>{model.quantization}</span>
-            <span className="text-[var(--border-strong)]">·</span>
+            <span className="text-control">·</span>
             <span title={formatDateTime(model.modifiedAt)}>
               {translate('model.modified', { time: formatRelativeTime(model.modifiedAt) })}
             </span>

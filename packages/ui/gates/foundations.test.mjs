@@ -350,3 +350,34 @@ test('L1: the default resolver root works from a directory containing spaces', a
   assert.equal(copied.tokenRoot, await realpath(directory))
   assert.ok((await copied.resolveTokens()).tokens.font)
 })
+
+test('M4 web base surfaces, borders, focus and scrollbars use the semantic palette', async () => {
+  const css = postcss.parse(await ctx.read('packages/web/src/index.css'))
+  const expected = {
+    body: { background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' },
+    '*': { 'border-color': 'var(--color-border-primary)' },
+    ':focus-visible': { outline: 'var(--focus-ring-width) solid var(--color-ring-primary)' },
+    '::-webkit-scrollbar-thumb': { background: 'var(--color-border-control)' },
+    '::-webkit-scrollbar-thumb:hover': { background: 'var(--color-text-secondary)' },
+  }
+  for (const [selector, props] of Object.entries(expected)) {
+    const values = {}
+    css.walkRules(selector, rule => rule.walkDecls(d => { values[d.prop] = d.value }))
+    for (const [prop, value] of Object.entries(props)) assert.equal(values[prop], value, `${selector} ${prop}`)
+  }
+  const ui = await ctx.read('packages/web/src/components/ui.tsx')
+  assert.ok(ui.includes('focus:border-accent'), 'input focus must use semantic accent')
+  assert.ok(ui.includes("accent: 'bg-accent/10 text-accent border-accent/30'"), 'badge must use one accent palette')
+  const tool = await ctx.read('packages/web/src/features/agent/ToolCallCard.tsx')
+  assert.match(tool, /bg-inset[^"\n]+hover:bg-surface/, 'tool hover must differ from its inset rest state')
+})
+
+test('M4 additional accent and status utility mappings share generated role values', async () => {
+  for (const theme of ['light', 'dark', 'light-hc', 'dark-hc']) {
+    const map = Object.fromEntries(resolvedFlat((await resolveTokens({ theme })).tokens).map(t => [t.name, t.$value]))
+    for (const role of ['accent', 'danger', 'warning']) {
+      assert.deepEqual(map[`color.background.${role}`], map[`color.text.${role}`], `${theme} ${role} background/text`)
+      assert.deepEqual(map[`color.border.${role}`], map[`color.text.${role}`], `${theme} ${role} border/text`)
+    }
+  }
+})

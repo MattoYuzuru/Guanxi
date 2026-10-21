@@ -615,7 +615,7 @@ function RecipeCard({
             ref={snapshotErrorRef}
             tabIndex={-1}
             role="alert"
-            className="mt-2 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent)]"
+            className="mt-2 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus"
           >
             <p className="break-words text-xs text-danger">{snapshotError}</p>
             {snapshotKey ? (
@@ -638,7 +638,7 @@ function RecipeCard({
             <h4
               ref={snapshotResultRef}
               tabIndex={-1}
-              className="text-xs font-semibold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent)]"
+              className="text-xs font-semibold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus"
             >
               {translate('recipes.snapshot.queued')}
             </h4>

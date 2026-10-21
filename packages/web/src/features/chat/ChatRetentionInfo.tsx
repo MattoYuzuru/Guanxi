@@ -225,7 +225,7 @@ export function ChatRetentionInfo({
                       className={cx(
                         'flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs',
                         selected === mode
-                          ? 'border-[var(--accent)] bg-[var(--accent-subtle)]/55'
+                          ? 'border-accent bg-accent/5.5'
                           : 'border-divider',
                       )}
                     >
@@ -314,7 +314,7 @@ export function ChatRetentionInfo({
               {projection.policy.mode === 'session' && !projection.sessionLeave && !leaveResult ? (
                 confirmLeave ? (
                   <div
-                    className="rounded-md border border-[var(--warning)] p-3"
+                    className="rounded-md border border-warning p-3"
                     role="group"
                     aria-labelledby={`session-leave-confirm-${chatId}`}
                     onKeyDown={(event) => {

@@ -138,7 +138,7 @@ function SavedList({
             className={cx(
               'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
               workspace.id === currentId
-                ? 'border-[var(--accent)] bg-[var(--accent-subtle)]/50'
+                ? 'border-accent bg-accent/5'
                 : 'border-divider hover:bg-inset',
               !workspace.exists && 'opacity-55',
             )}

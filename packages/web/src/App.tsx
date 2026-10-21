@@ -100,7 +100,7 @@ export function App() {
               action={
                 <Link
                   to={paths.launcher()}
-                  className="text-xs text-[var(--accent)] underline underline-offset-2"
+                  className="text-xs text-accent underline underline-offset-2"
                 >
                   {translate('app.notFound.home')}
                 </Link>

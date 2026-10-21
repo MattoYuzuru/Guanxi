@@ -398,7 +398,7 @@ function ModeButton({
       className={cx(
         'min-w-0 rounded-lg border px-3 py-2 text-left',
         active
-          ? 'border-[var(--accent)] bg-[var(--accent-subtle)]/55'
+          ? 'border-accent bg-accent/5.5'
           : 'border-divider hover:bg-inset',
       )}
     >
@@ -490,7 +490,7 @@ function ThreadPage({
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" onClick={chat.reload}>{translate('projects.retry')}</Button>
-          {projectId && <Link to={paths.projects()} className="text-xs text-[var(--accent)] underline">{translate('projects.chats.back')}</Link>}
+          {projectId && <Link to={paths.projects()} className="text-xs text-accent underline">{translate('projects.chats.back')}</Link>}
         </div>
       </div>
     )
@@ -512,7 +512,7 @@ function ThreadPage({
             {chat.project && (
               <Link
                 to={paths.projects()}
-                className="mt-0.5 block max-w-full truncate text-2xs text-[var(--accent)] underline underline-offset-2"
+                className="mt-0.5 block max-w-full truncate text-2xs text-accent underline underline-offset-2"
               >
                 {translate('projects.chats.context', { name: chat.project.name })}
               </Link>
@@ -790,7 +790,7 @@ export function MessageView({ message }: { message: Message }) {
         className={cx(
           'min-w-0 max-w-[92%]',
           user
-            ? 'rounded-xl rounded-br-sm bg-[var(--accent-subtle)] px-3 py-2'
+            ? 'rounded-xl rounded-br-sm bg-accent/10 px-3 py-2'
             : 'w-full',
         )}
       >
@@ -1202,7 +1202,7 @@ function ThreadSidebar({
         </span>
         <Link
           to={projectId ? paths.projectChat(projectId) : paths.chat()}
-          className="rounded px-1.5 py-0.5 text-2xs text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
+          className="rounded px-1.5 py-0.5 text-2xs text-accent hover:bg-accent/10"
         >
           {translate('chat.history.new')}
         </Link>

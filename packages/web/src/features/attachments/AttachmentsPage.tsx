@@ -380,7 +380,7 @@ function AttachmentScopePanel({
       <div
         className={cx(
           'attachment-drop mt-4 rounded-lg border border-dashed p-4',
-          dropActive ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-control',
+          dropActive ? 'border-accent bg-accent/10' : 'border-control',
         )}
         onDragEnter={(event) => { event.preventDefault(); setDropActive(true) }}
         onDragOver={(event) => event.preventDefault()}

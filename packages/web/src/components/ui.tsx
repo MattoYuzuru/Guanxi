@@ -34,7 +34,7 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   ghost:
     'bg-transparent text-secondary border border-transparent hover:bg-inset hover:text-foreground',
   danger:
-    'bg-transparent text-danger border border-[var(--danger)]/40 hover:bg-[var(--danger)]/10',
+    'bg-transparent text-danger border border-danger/40 hover:bg-danger/10',
 }
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
@@ -113,7 +113,7 @@ export function Badge({
 }) {
   const tones: Record<string, string> = {
     neutral: 'bg-inset text-secondary border-divider',
-    accent: 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent)]/30',
+    accent: 'bg-accent/10 text-accent border-accent/30',
     green: 'bg-[var(--color-fit-green)]/12 text-[var(--color-fit-green)] border-[var(--color-fit-green)]/30',
     yellow:
       'bg-[var(--color-fit-yellow)]/12 text-[var(--color-fit-yellow)] border-[var(--color-fit-yellow)]/30',
@@ -197,7 +197,7 @@ export function Meter({
       />
       {marker !== undefined && marker > 0 && marker < 1 && (
         <div
-          className="absolute inset-y-0 w-px bg-[var(--fg-subtle)]/60"
+          className="absolute inset-y-0 w-px bg-muted/60"
           style={{ left: `${marker * 100}%` }}
         />
       )}
@@ -280,7 +280,7 @@ export function Field({
 
 const INPUT_CLASS =
   'min-w-0 max-w-full w-full rounded-md border border-control bg-inset px-2 py-1.5 text-xs ' +
-  'placeholder:text-secondary focus:border-[var(--accent)] ' +
+  'placeholder:text-secondary focus:border-accent ' +
   'disabled:opacity-50'
 
 export const Input = forwardRef<
@@ -384,7 +384,7 @@ export function StepSlider({
           const next = values[Number(event.target.value)]
           if (next !== undefined) onChange(next)
         }}
-        className="w-full accent-[var(--accent)]"
+        className="w-full accent-accent"
       />
       <div className="mt-0.5 flex justify-between text-2xs text-muted">
         <span>{format(values[0] ?? 0)}</span>
@@ -653,9 +653,9 @@ export function Callout({
 }) {
   const tones: Record<string, string> = {
     neutral: 'border-divider bg-inset',
-    info: 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]/50',
+    info: 'border-accent/30 bg-accent/5',
     warning: 'border-[var(--color-fit-yellow)]/40 bg-[var(--color-fit-yellow)]/8',
-    danger: 'border-[var(--danger)]/40 bg-[var(--danger)]/8',
+    danger: 'border-danger/40 bg-danger/8',
   }
 
   return (

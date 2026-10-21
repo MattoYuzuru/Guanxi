@@ -284,7 +284,7 @@ export function AddFromOllama({
         {state.kind === 'pulling' && <PullProgress progress={state.progress} target={state.preview.normalizedModelName} />}
 
         {(state.kind === 'error' || state.kind === 'cancelled') && (
-          <div role="alert" className="mt-3 rounded-md border border-[var(--danger)]/30 p-3">
+          <div role="alert" className="mt-3 rounded-md border border-danger/30 p-3">
             <p className="font-medium">
               {state.kind === 'cancelled'
                 ? translate('models.addOllama.cancelled')

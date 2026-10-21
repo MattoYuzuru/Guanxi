@@ -253,7 +253,7 @@ export function ModelCarousel({
                 'h-1.5 rounded-full transition-all duration-200',
                 index === selected
                   ? 'w-5 bg-accent'
-                  : 'w-1.5 bg-[var(--border-strong)] hover:bg-[var(--fg-subtle)]',
+                  : 'w-1.5 bg-control hover:bg-muted',
               )}
             />
           ))}

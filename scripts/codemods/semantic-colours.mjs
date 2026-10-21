@@ -4,12 +4,18 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-// Role mappings use FOUNDATIONS and the existing K1 sidebar migration. A missing
-// generated alias is deliberately not synthesized (notably fit and subtle accent).
+// Sources: K1 SidebarSlot + foundations.test.mjs establish divider/secondary/
+// foreground/inset. DS1-c maps the remaining legacy roles by their use in
+// web/src/index.css to FOUNDATIONS §§1.1–1.3; generated/theme.css supplies aliases.
+// Review 1's hand-off table records each pair and the visible palette change.
+// Additional accent/status roles share values in the generated tokens, asserted
+// below in the tests. Missing aliases (fit and subtle accent) are not synthesized.
 export const legacyRoles = {
-  bg: { '--bg': '--color-background-primary', '--bg-raised': '--color-background-secondary', '--bg-inset': '--color-background-tertiary', '--bg-subtle': '--color-background-tertiary', '--accent': '--color-background-accent' },
-  text: { '--fg': '--color-text-primary', '--fg-muted': '--color-text-secondary', '--fg-subtle': '--color-text-tertiary', '--accent-fg': '--color-text-on-accent', '--danger': '--color-text-danger', '--warning': '--color-text-warning' },
-  border: { '--border': '--color-border-primary', '--border-strong': '--color-border-control' },
+  bg: { '--bg': '--color-background-primary', '--bg-raised': '--color-background-secondary', '--bg-inset': '--color-background-tertiary', '--bg-subtle': '--color-background-tertiary', '--accent': '--color-background-accent', '--danger': '--color-text-danger', '--fg-subtle': '--color-text-tertiary', '--border-strong': '--color-border-control' },
+  text: { '--fg': '--color-text-primary', '--fg-muted': '--color-text-secondary', '--fg-subtle': '--color-text-tertiary', '--accent-fg': '--color-text-on-accent', '--danger': '--color-text-danger', '--warning': '--color-text-warning', '--accent': '--color-background-accent', '--border-strong': '--color-border-control' },
+  border: { '--border': '--color-border-primary', '--border-strong': '--color-border-control', '--accent': '--color-background-accent', '--danger': '--color-text-danger', '--warning': '--color-text-warning' },
+  outline: { '--accent': '--color-ring-primary', '--focus': '--color-ring-primary' },
+  accent: { '--accent': '--color-background-accent' },
   ring: { '--focus': '--color-ring-primary', '--accent': '--color-ring-primary' },
 }
 export function themeAliases(theme) {
@@ -23,7 +29,7 @@ export function rewrite(file, text, theme) {
       const start = node.getStart(ast), raw = text.slice(start, node.end)
       // Work on source spans to retain quotes, escapes, whitespace and template holes.
       const content = raw.slice(1, ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ? -2 : -1)
-      for (const match of content.matchAll(/(?<![^\s:!])(bg|text|border|ring)-\[var\((--[\w-]+)\)\](?=$|[\s/!])/g)) {
+      for (const match of content.matchAll(/(?<![^\s:!])(bg|text|border|ring|outline|accent|shadow)-\[var\((--[\w-]+)\)\](?=$|[\s/!])/g)) {
         const [value, prefix, variable] = match
         const alias = aliases.get(legacyRoles[prefix]?.[variable] ?? variable)
         const offset = start + 1 + match.index
