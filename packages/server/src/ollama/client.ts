@@ -252,6 +252,10 @@ export class OllamaClient {
         })
       : null
 
+    // Dispatch can synchronously abort and throw before Promise.race attaches handlers.
+    // Consume those control rejections while preserving the dispatch observer's own error.
+    void deadline.catch(() => undefined)
+    void externalAbort?.catch(() => undefined)
     try {
       return await Promise.race([
         operation(),
