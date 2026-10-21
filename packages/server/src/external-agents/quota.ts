@@ -1,7 +1,7 @@
 import type { QuotaWindow } from './types.ts'
 
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-const percent = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null
+const percent = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 const reset = (value: unknown) => {
   const ms = typeof value === 'number' ? value * 1000 : typeof value === 'string' ? Date.parse(value) : NaN
   return Number.isFinite(ms) && ms >= 0 && ms <= 8.64e15 ? new Date(ms).toISOString() : null

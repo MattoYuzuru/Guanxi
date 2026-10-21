@@ -95,7 +95,9 @@ continues to own local inference. No default model can select a different OpenCo
 provider. The CLI owns all contents; Guanxi checks directory/executable metadata only. The parent has
 no implementation that reads, copies or moves vendor token files. Vendor filesystem and
 terminal requests over ACP, permission requests, Codex token refresh requests and unknown
-server requests are denied. Stderr and thought notifications are discarded; JSON framing
+server requests are denied. ACP `agentInfo` is optional in v1: when it is absent the adapter
+version is recorded as unknown and the session proceeds; when it is present it must match the
+configured version exactly. Stderr and thought notifications are discarded; JSON framing
 errors carry only stable codes. Assistant chunks are aggregated and scrubbed before K2 writes
 one answer, including when a registered value spans chunks.
 
@@ -111,11 +113,13 @@ Calls have an explicit `runDeadlineMs` operator setting (default 300 seconds) an
 JSON-frame safety policy, configurable in `ExternalPolicy`. A run that reaches its deadline ends
 with the `timeout` error code, not `cancelled`, and the deadline is recorded in the run's events
 as a fact. `requestTimeoutMs` bounds sign-in and authentication probes. Neither is a model
-context/output limit. Cancellation, unload and timeout terminate the subprocess group and await
-child close before releasing this service's admission. Responses are node-owned kernel calls;
-no HTTP subscriber owns them. There is no automatic resume, durable inference continuation or
-retry. K2 holds the transcript; R1/R2 integration is a later consumer, not a second run state
-machine.
+context/output limit. On abort or timeout the client first sends ACP `session/cancel` or Codex
+`turn/interrupt` when the protocol is connected, waits up to 2 seconds for the child to close,
+sends SIGTERM, waits up to 3 seconds, then sends SIGKILL. Cancellation, unload and timeout
+await child close before releasing this service's admission. Responses are node-owned kernel
+calls; no HTTP subscriber owns them. There is no automatic resume, durable inference
+continuation or retry. K2 holds the transcript; R1/R2 integration is a later consumer, not a
+second run state machine.
 
 Claude `auth status` is invoked on the configured unmodified binary, with the isolated
 environment; only login/auth-method facts are retained. Explicit `claudeBare: true` refuses a
@@ -135,7 +139,9 @@ integration Claude quota remains unknown. Sources are the
 [official statusline](https://code.claude.com/docs/en/statusline) and
 [bare-mode/authentication docs](https://code.claude.com/docs/en/headless).
 
-Observations carry source, time and confidence. Account grouping is operator-supplied metadata,
+Observations carry source, time and confidence. Quota percentages above 100 are kept as
+reported (a vendor may overrun its window); they do not become unknown. Account grouping is
+operator-supplied metadata,
 not inferred vendor identity. Authenticated F1 code may call `observeQuota` after verifying
 owner/node; K5 exposes no unauthenticated ingress or mesh transport. Reports are pooled by
 owner, billing account, adapter, limit name and reset period. Same-period device percentages

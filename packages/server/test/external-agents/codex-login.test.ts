@@ -38,7 +38,7 @@ test('Codex login timeout and unload settle real fixture processes after auth UR
     await assert.rejects(f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' }), /account_busy/)
     if (action === 'abort') abort.abort()
     if (action === 'unload') await f.reload()
-    const result = await Promise.race([login, new Promise<string>(resolve => setTimeout(() => resolve('stalled'), 2000))])
+    const result = await Promise.race([login, new Promise<string>(resolve => setTimeout(() => resolve('stalled'), 10000))])
     assert.equal(result, 'cancelled')
     assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
   }

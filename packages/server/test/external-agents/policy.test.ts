@@ -195,3 +195,21 @@ test('subscription owner conflict is per adapter and node, and API-key adapters 
   // API-key adapters may serve multiple owners.
   await f.reload({ installations: [opencode, { ...opencode, ownerAccountId: 'other-owner', connectionId: randomUUID() }] })
 })
+
+test('quota above 100% stays known and fact times come from real observations', async t => {
+  const f = await fixture(t, ['codex'])
+  const install = f.installations[0]!
+  f.service().setProjectRoles(owner, owner, 'p', { lead: f.bindings[0]! })
+  const before = Date.now()
+  // The static declaration has no observation until the adapter handshake.
+  assert.equal(f.service().capabilities(owner)[0]!.declaration.observedAt, null)
+  await f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' })
+  const declaration = f.service().capabilities(owner)[0]!.declaration
+  assert.ok(declaration.observedAt)
+  assert.ok(Date.parse(declaration.observedAt!) >= before)
+  const quota = f.service().limits(owner, install.connectionId).windows.find(window => window.name === 'codex.primary')!
+  assert.equal(quota.used.value, 31)
+  assert.ok(Date.parse(quota.used.observedAt!) >= before)
+  assert.equal(claudeRateLimits({ rate_limits: { five_hour: { used_percentage: 125 } } })[0]!.usedPercent, 125)
+  assert.equal(codexRateLimits({ rateLimits: { primary: { usedPercent: 150 } } })[0]!.usedPercent, 150)
+})

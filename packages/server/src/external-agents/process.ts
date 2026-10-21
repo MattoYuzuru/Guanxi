@@ -6,6 +6,11 @@ import type { Stream } from '@agentclientprotocol/sdk'
 import type { EgressScrubber } from '../egress/types.ts'
 import { ExternalAgentError, type AgentInstallation } from './types.ts'
 
+/** Cancellation is protocol-first: ask the agent to stop its turn, then allow a bounded
+ * SIGTERM grace before forcing the process group. */
+const CANCEL_GRACE_MS = 2_000
+const TERM_GRACE_MS = 3_000
+
 export async function isolatedEnvironment(root: string, install: AgentInstallation) {
   const key = createHash('sha256').update(JSON.stringify([install.nodeId, install.ownerAccountId, install.connectionId])).digest('hex')
   const base = join(root, 'external-agent-config', key)
@@ -47,6 +52,8 @@ export class AgentProcess {
   readonly closed: Promise<void>
   private stop = false
   private readonly scrubber: EgressScrubber
+  private aborting: Promise<void> | null = null
+  private cancelHandler: (() => void | Promise<void>) | null = null
   constructor(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, cwd: string,
     scrubber: EgressScrubber, signal: AbortSignal, frameBytes: number) {
     this.scrubber = scrubber
@@ -92,7 +99,12 @@ export class AgentProcess {
       }
       resolve()
     }))
-    const abort = () => { fail() }
+    const abort = () => {
+      if (ended) return
+      ended = true
+      this.aborting = this.cancelAndTerminate()
+      controller.error(new ExternalAgentError('cancelled'))
+    }
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
     const writable = new WritableStream({ write: (value: unknown) => this.write(value) })
@@ -110,12 +122,28 @@ export class AgentProcess {
       else process.kill(-this.child.pid, signal)
     } catch { /* Process/group already exited. */ }
   }
+  /** ACP clients register `session/cancel`; Codex registers `turn/interrupt`. */
+  setCancelHandler(handler: (() => void | Promise<void>) | null) { this.cancelHandler = handler }
+  private waitClosed(ms: number) {
+    return new Promise<boolean>(resolve => {
+      const timer = setTimeout(() => resolve(false), ms)
+      void this.closed.then(() => { clearTimeout(timer); resolve(true) })
+    })
+  }
+  private async cancelAndTerminate() {
+    try { await this.cancelHandler?.() } catch { /* The bounded termination below still applies. */ }
+    if (await this.waitClosed(CANCEL_GRACE_MS)) return
+    this.terminate('SIGTERM')
+    if (await this.waitClosed(TERM_GRACE_MS)) return
+    this.terminate('SIGKILL')
+  }
   async close() {
     this.stop = true
     this.child.stdin.end()
+    if (this.aborting) { await this.aborting; await this.closed; return }
     this.terminate('SIGTERM')
-    const force = setTimeout(() => this.terminate('SIGKILL'), 100)
-    try { await this.closed } finally { clearTimeout(force); this.terminate('SIGKILL') }
+    if (!await this.waitClosed(TERM_GRACE_MS)) this.terminate('SIGKILL')
+    await this.closed
   }
 }
 

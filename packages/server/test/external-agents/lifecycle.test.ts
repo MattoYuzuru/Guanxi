@@ -18,7 +18,7 @@ for (const adapter of ['copilot', 'codex'] as const) test(`${adapter}: cancellat
   const binding = f.bindings[0]!
   f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
   for (const action of ['abort', 'unload', 'timeout'] as const) {
-    await f.scenario(adapter, { scenario: 'hang' })
+    await f.scenario(adapter, { scenario: adapter === 'codex' ? 'hang-after-start' : 'hang' })
     if (action === 'timeout') await f.reload({ runDeadlineMs: 1500 })
     const controller = new AbortController()
     const run = f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello', signal: controller.signal })
@@ -26,6 +26,8 @@ for (const adapter of ['copilot', 'codex'] as const) test(`${adapter}: cancellat
     await until(async () => {
       try { return (await f.trace(adapter)).some(frame => frame.method === (adapter === 'codex' ? 'turn/start' : 'session/prompt')) } catch { return false }
     })
+    // Give the client one poll interval to process a turn/start response before aborting.
+    await new Promise(resolve => setTimeout(resolve, 25))
     if (action === 'abort') controller.abort()
     if (action === 'unload') await f.reload()
     const result = await settled
@@ -40,7 +42,10 @@ for (const adapter of ['copilot', 'codex'] as const) test(`${adapter}: cancellat
     assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
     await f.reload()
     assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
-    assert.equal((await f.trace(adapter)).filter(frame => frame.method === (adapter === 'codex' ? 'turn/start' : 'session/prompt')).length, 1)
+    const trace = await f.trace(adapter)
+    assert.equal(trace.filter(frame => frame.method === (adapter === 'codex' ? 'turn/start' : 'session/prompt')).length, 1)
+    // Cancellation is protocol-first: session/cancel for ACP and turn/interrupt for Codex.
+    assert.equal(trace.filter(frame => frame.method === (adapter === 'codex' ? 'turn/interrupt' : 'session/cancel')).length, 1)
   }
   await f.scenario(adapter, {})
   const good = await f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' })
@@ -77,7 +82,7 @@ test('Claude status-probe abort kills its ordinary descendant and settles admiss
   await until(async () => { try { return (await readFile(join(f.dir, 'claude-code', 'auth-ready'), 'utf8')) === 'ready' } catch { return false } })
   const pids = JSON.parse(await readFile(join(f.dir, 'claude-code', 'auth-pids.json'), 'utf8'))
   controller.abort()
-  assert.equal(await Promise.race([settling, new Promise(resolve => setTimeout(() => resolve('stalled'), 2000))]), 'cancelled')
+  assert.equal(await Promise.race([settling, new Promise(resolve => setTimeout(() => resolve('stalled'), 10000))]), 'cancelled')
   const gone = (pid: number) => { try { process.kill(pid, 0); return false } catch { return true } }
   await until(() => gone(pids.parent) && gone(pids.descendant))
   assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)

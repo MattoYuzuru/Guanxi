@@ -94,6 +94,19 @@ for (const adapter of Object.keys(ADAPTERS) as AdapterId[]) test(`${adapter}: ex
   assert.equal((await f.trace(adapter)).filter(frame => ['session/prompt', 'turn/start'].includes(String(frame.method))).length, 0)
 })
 
+test('ACP without agentInfo keeps the session and records the adapter version as unknown', async t => {
+  const f = await fixture(t, ['copilot'])
+  const tape = structuredClone(f.tapes.get('copilot')!)
+  delete (tape.initialize as Record<string, unknown>).agentInfo
+  await f.scenario('copilot', { tape })
+  f.service().setProjectRoles(owner, owner, 'p', { lead: f.bindings[0]! })
+  const result = await f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' })
+  assert.match(result.text, /fixture completed/)
+  const fact = f.connections.store.get(owner, f.bindings[0]!.connectionId).facts.adapter_version!
+  assert.equal(fact.value, null)
+  assert.equal(fact.confidence, 'unknown')
+})
+
 test('ACP never approves a permission request', async t => {
   const f = await fixture(t, ['copilot'])
   await f.scenario('copilot', { scenario: 'permission' })

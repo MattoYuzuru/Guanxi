@@ -78,10 +78,11 @@ export class CodexClient extends JsonRpcClient {
       const turnId = object(started.turn).id
       if (typeof turnId !== 'string') throw new ExternalAgentError('protocol_failed')
       expectedTurn = turnId
+      this.process.setCancelHandler(() => { void this.request('turn/interrupt', { threadId, turnId }).catch(() => undefined) })
       for (const plan of plansByTurn.get(turnId) ?? []) onPlan(plan)
       const turn = completed.get(turnId) ?? await Promise.race([completion, this.process.closed.then(() => { throw new ExternalAgentError('agent_disconnected') })])
       if (turn.id !== turnId || turn.status !== 'completed') throw new ExternalAgentError('provider_failed')
       return { text: textByTurn.get(turnId) ?? '', stopReason: 'end_turn' }
-    } finally { off() }
+    } finally { this.process.setCancelHandler(null); off() }
   }
 }

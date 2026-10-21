@@ -18,8 +18,10 @@ export interface AcpEvents { update(value: SessionNotification): void }
 /** SDK wire types/constants, own quiet transport: SDK client errors can print raw thought frames. */
 export class AcpClient {
   private readonly client: JsonRpcClient
+  private readonly agent: AgentProcess
   private sessionId: string | null = null
   constructor(process: AgentProcess, events: AcpEvents) {
+    this.agent = process
     this.client = new JsonRpcClient(process, true)
     this.client.on((method, params) => {
       if (method !== 'session/update' || params.sessionId !== this.sessionId || this.sessionId === null) return
@@ -28,17 +30,20 @@ export class AcpClient {
       if (update.success) events.update({ sessionId: this.sessionId, update: update.data })
     })
   }
-  async initialize(adapter: AdapterId, version: string) {
+  async initialize(adapter: AdapterId, expectedVersion: string) {
     const result = object(await this.client.request('initialize', { protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: `${PRODUCT_FILE_PREFIX}_external`, version: '0.1.0' },
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } } satisfies InitializeRequest))
-    if (result.protocolVersion !== 1 || object(result.agentInfo).version !== version) throw new ExternalAgentError('adapter_version_mismatch')
+    // agentInfo is optional in ACP v1. Its absence leaves the version unknown, not mismatched.
+    const reported = object(result.agentInfo).version
+    const observedVersion = typeof reported === 'string' ? reported : null
+    if (result.protocolVersion !== 1 || (result.agentInfo != null && observedVersion !== expectedVersion)) throw new ExternalAgentError('adapter_version_mismatch')
     if (adapter === 'gemini-cli') {
       const methods = Array.isArray(result.authMethods) ? result.authMethods : []
       if (!methods.some(method => object(method).id === 'gemini-api-key')) throw new ExternalAgentError('api_key_auth_unavailable')
       await this.client.request('authenticate', { methodId: 'gemini-api-key' })
     }
-    return result
+    return { ...result, observedVersion }
   }
   async prompt(model: string, text: string, cwd: string): Promise<AgentOutput> {
     const session = object(await this.client.request('session/new', { cwd, mcpServers: [] } satisfies NewSessionRequest))
@@ -55,12 +60,13 @@ export class AcpClient {
     let textOutput = ''
     // Aggregate before scrub/event persistence, so a secret split over chunks cannot survive.
     this.sessionId = session.sessionId
+    this.agent.setCancelHandler(() => this.agent.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: session.sessionId } }))
     this.onText = chunk => { textOutput += chunk }
     try {
       const result = object(await this.client.request('session/prompt', { sessionId: session.sessionId, prompt: [{ type: 'text', text }] } satisfies PromptRequest))
       if (result.stopReason !== 'end_turn') throw new ExternalAgentError(result.stopReason === 'cancelled' ? 'cancelled' : 'provider_failed')
       return { text: textOutput, stopReason: result.stopReason }
-    } finally { this.onText = () => undefined; this.sessionId = null }
+    } finally { this.agent.setCancelHandler(null); this.onText = () => undefined; this.sessionId = null }
   }
   private onText: (text: string) => void = () => undefined
   text(notification: SessionNotification) {

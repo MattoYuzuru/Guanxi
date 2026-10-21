@@ -83,7 +83,7 @@ export const quotaObservationSchema = z.object({
   ownerAccountId: z.string().min(1), billingAccount: z.string().min(1), adapter: adapterIdSchema,
   nodeId: z.string().min(1), source: z.string().min(1), observedAt: z.string().datetime(),
   confidence: z.enum(['high', 'medium', 'low']),
-  windows: z.array(z.object({ name: z.string().min(1), usedPercent: z.number().finite().min(0).max(100).nullable(), resetsAt: z.string().datetime().nullable() }).strict()),
+  windows: z.array(z.object({ name: z.string().min(1), usedPercent: z.number().finite().min(0).nullable(), resetsAt: z.string().datetime().nullable() }).strict()),
 }).strict()
 export interface AgentOutput {
   text: string

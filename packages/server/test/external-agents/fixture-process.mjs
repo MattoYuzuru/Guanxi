@@ -129,6 +129,7 @@ lines.on('line', line => {
     }
     if (frame.method === 'turn/start') {
       if (config.scenario === 'hang') return
+      if (config.scenario === 'hang-after-start') { reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } }); return }
       if (config.scenario === 'crash') process.exit(22)
       if (config.scenario === 'after-start-response') {
         reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } })
@@ -138,6 +139,8 @@ lines.on('line', line => {
       for (const notification of tape.notifications) send(replace(notification))
       reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } }); return
     }
+    if (frame.method === 'session/cancel') return
+    if (frame.method === 'turn/interrupt') { reply(frame, {}); return }
     send({ id: frame.id, error: { code: -32601, message: 'Fixture method unavailable' } })
   } catch { process.exit(23) }
 })

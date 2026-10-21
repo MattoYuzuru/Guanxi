@@ -110,7 +110,8 @@ export class ExternalAgents {
     this.ready()
     return this.scrubber.scrub(this.policy.installations.filter(i => i.ownerAccountId === owner).map(i => ({
       connectionId: i.connectionId, nodeId: i.nodeId, adapter: i.adapter, version: i.version,
-      declaration: { value: ADAPTERS[i.adapter], source: ADAPTERS[i.adapter].source, observedAt: this.configuredAt, confidence: 'medium' },
+      declaration: { value: ADAPTERS[i.adapter], source: ADAPTERS[i.adapter].source,
+        observedAt: this.connections.store.get(i.ownerAccountId, i.connectionId).facts.adapter_version?.observedAt ?? null, confidence: 'medium' },
       concurrencyPolicy: { value: i.concurrency ?? 1, source: 'node_operator_policy', observedAt: this.configuredAt, confidence: 'high' },
     })))
   }
@@ -277,8 +278,8 @@ export class ExternalAgents {
                 // Thought chunks, raw tool output and unknown extensions are never copied to logs.
               },
             }); client = acp
-            await acp.initialize(install.adapter, install.version)
-            this.observe(install, 'adapter_version', install.version, 'initialize', 'high')
+            const initialized = await acp.initialize(install.adapter, install.version)
+            this.observe(install, 'adapter_version', initialized.observedVersion, 'initialize', initialized.observedVersion === null ? 'unknown' : 'high')
           }
           const output = client instanceof CodexClient
             ? await client.prompt(binding.model, prompt, config.cwd, binding.params.reasoning, plan => handle!.append({ type: 'agent.plan', data: { items: plan.map(item => ({ text: item.step,
