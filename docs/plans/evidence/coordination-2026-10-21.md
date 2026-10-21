@@ -128,3 +128,12 @@ Git with audited statuses and the progress table. The original Claude publicatio
 modified: the current tool surface has no equivalent of its original Artifact publisher.
 Canonical roadmap scope/dependencies remain in ROADMAP and `roadmap.mmd`; the HTML snapshot
 is a dated view, not a second requirements source.
+
+## Independent documentation verification
+
+A separate read-only GPT reviewer checked the complete documentation diff at `48153ac`,
+relative links, preserved handoff history, claimed scope and all five main gate receipts.
+It found no blocking issue and two wording findings: the lane introduction still named the
+old Claude coordinator, and the X1 next-task wording sounded completed. Both were corrected
+in a separate review-fix commit. The review does not attest future candidate changes or live
+hardware/provider behavior.

@@ -21,7 +21,7 @@ Current bounded recovery queue:
    and authentication-context builders. Re-review and run full gates. Keep real owner-present
    hardware signing unverified until its explicit local integration check; do not approve a
    component or run real key migration/bootstrap during ordinary tests.
-3. **X1:** `codex/x1-parent-read-boundary` in `Guanxi-lanes/coord-x1` closes the server-side
+3. **X1:** `codex/x1-parent-read-boundary` in `Guanxi-lanes/coord-x1` is intended to close the server-side
    unsandboxed fingerprint policy-read path. A post-read containment rejection is insufficient.
    Require an actual read-denial regression and independent review, including Linux/Mac worker
    boundaries in their authorized environments, before integration.

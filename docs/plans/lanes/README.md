@@ -4,8 +4,9 @@
 
 Several agents, possibly from different model families and harnesses, work on independent
 roadmap stages at the same time on the owner's Mac (Apple M5 Pro, 15 cores, 24 GB). This file
-holds the rules every lane follows. Each lane has its own prompt file in this folder. The
-integrator, the coordinating Claude session, merges lanes into `main`.
+holds the rules every lane follows. Each lane has its own prompt file in this folder. The integrator merges lanes into `main`. The initial coordinating session was Claude Opus;
+the 2026-10-21 continuation is coordinated by Codex. Check the latest handoff and live
+processes before assuming a worker is still running.
 
 ## Lanes
 
