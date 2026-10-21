@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 
 /** Reverse only migration 29 (K2 session log) so older fixtures can start from exact v28. */
 export function downgradeSessionLogToV28(db: DatabaseSync): void {
+  downgradeDurableRunsToV29(db)
   db.exec(`
     DROP INDEX idx_session_mirror_backlog_order;
     DROP TABLE session_mirror_backlog;
@@ -29,8 +30,27 @@ export function downgradeSessionLogToV28(db: DatabaseSync): void {
   `)
 }
 
-/** Tables migration 29 adds, FTS5 shadow tables included; pre-v29 snapshots exclude them. */
+/** Reverse only R1 in test databases; production migrations never run down. */
+export function downgradeDurableRunsToV29(db: DatabaseSync): void {
+  db.exec(`
+    DROP INDEX idx_session_mirror_backlog_thread;
+    DROP TABLE run_costs;
+    DROP TABLE run_resources;
+    DROP TABLE outbox;
+    DROP TABLE timers;
+    DROP TABLE promises;
+    DROP TABLE run_attempts;
+    DROP TABLE leases;
+    DROP TABLE durable_runs;
+    PRAGMA user_version = 29;
+  `)
+}
+export const DURABLE_RUN_TABLES = ['durable_runs', 'run_attempts', 'leases', 'promises', 'timers',
+  'outbox', 'run_resources', 'run_costs'] as const
+
+/** Tables added since v28; older snapshot fixtures exclude these, including FTS shadows. */
 export const SESSION_LOG_TABLES = [
+  ...DURABLE_RUN_TABLES,
   'sessions',
   'session_writers',
   'session_events',

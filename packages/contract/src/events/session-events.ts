@@ -59,7 +59,28 @@ export type SessionSpanKind = z.infer<typeof sessionSpanKindSchema>
 
 const id = z.string().min(1).max(200)
 
+export const runStateSchema = z.enum([
+  'submitted', 'working', 'waiting_children', 'input_required', 'wrapping_up',
+  'completed', 'failed', 'canceled', 'rejected', 'interrupted',
+])
+export type RunState = z.infer<typeof runStateSchema>
+export const RUN_A2A_STATE = {
+  submitted: 'submitted', working: 'working', waiting_children: 'working',
+  input_required: 'input-required', wrapping_up: 'working', completed: 'completed',
+  failed: 'failed', canceled: 'canceled', rejected: 'rejected', interrupted: 'failed',
+} as const satisfies Record<RunState, string>
+
 export const sessionEventDataSchemas = {
+  'run.lifecycle': z.object({
+    runId: id,
+    state: runStateSchema,
+    version: z.number().int().positive(),
+    action: z.enum(['created', 'attempt', 'model_started', 'delegated', 'resolved', 'wake',
+      'acknowledged', 'signal', 'wrapping_up', 'input_required', 'terminal', 'canceled',
+      'interrupted', 'resource', 'cost', 'yielded']),
+    relatedId: id.nullable(),
+    wakeSeq: z.number().int().nonnegative().nullable(),
+  }).strict(),
   'session.created': z.object({ kind: sessionKindSchema, threadId: id.nullable() }).strict(),
   'writer.acquired': z
     .object({
@@ -187,6 +208,7 @@ export const reasoningSessionEventSchema = z
 
 export const sessionEventSchema = z.union([
   standardEvent('session.created'),
+  standardEvent('run.lifecycle'),
   standardEvent('writer.acquired'),
   standardEvent('prompt'),
   standardEvent('assistant.started'),

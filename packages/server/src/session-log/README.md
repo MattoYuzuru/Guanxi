@@ -131,3 +131,15 @@ daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`
 - Remote audiences see gaps in `seq` where reasoning events are; they learn how many there were,
   not what they said.
 - Agent sessions (no Thread) cannot be deleted yet; they need their own retention.
+
+R1 node-home services use `appendFromHomeWithin` in their existing SQLite transaction. It
+appends through this log's current handle fence if present. Otherwise it acquires a node-home
+fence within that transaction, reserving no handle slot on commit or rollback. Closing the
+log releases all durable rows owned by its writer identity.
+The caller notifies only after commit. This additive path permits K4's
+`log.open(sessionId, { kind: 'agent' })` before or after R1 lifecycle events; a second handle
+still fails with `writer_busy`. The legacy mirror API and its exclusivity are unchanged.
+
+R1 migration 30 also adds `idx_session_mirror_backlog_thread` on
+`session_mirror_backlog(thread_id, job_id)` for K2 thread readiness/catch-up lookups. Migration
+29 and its schema bytes stay unchanged; this shared additive index changes no event contract.

@@ -445,6 +445,29 @@ export class SessionLog {
     return this.appendWithin(sessionId, epoch, input, options)
   }
 
+  /**
+   * Node-home service append in the caller's transaction. Reuses this log's open
+   * handle fence without replacing it; otherwise acquires a node-home fence
+   * without reserving a handle slot. No in-memory entry survives a rollback.
+   * The caller must notify the session only after commit.
+   */
+  appendFromHomeWithin<T extends SessionEventType>(
+    sessionId: string,
+    session: OpenSessionInput,
+    input: SessionEventInput<T>,
+    options: AppendOptions = {},
+  ): AppendResult {
+    this.assertOpen()
+    this.assertEgressReady()
+    if (!this.db.isTransaction) {
+      throw new SessionLogError('invalid_event', 'appendFromHomeWithin must run inside a transaction')
+    }
+    const held = this.writers.get(sessionId)
+    if (held) return this.appendWithin(sessionId, held.epoch, input, options)
+    const epoch = this.acquireWithin(sessionId, session)
+    return this.appendWithin(sessionId, epoch, input, options)
+  }
+
   /** @internal Handle append: its own transaction, no re-acquisition. */
   appendForHandle<T extends SessionEventType>(
     sessionId: string,
@@ -529,6 +552,9 @@ export class SessionLog {
       else this.releaseSystemWriter(sessionId, held.epoch)
     }
     this.writers.clear()
+    // Home appends reserve no handle slot; release their durable rows as well.
+    if (this.dbOpen()) this.db.prepare('UPDATE session_writers SET released_at=? WHERE writer_id=? AND released_at IS NULL')
+      .run(this.clock().toISOString(), this.writer.id)
     LIVE_WRITER_IDS.delete(this.writer.id)
     this.lifetime.abort(new SessionLogError('closed', 'The session log is closed'))
     this.closeSubscriptions()
