@@ -1,9 +1,40 @@
-# Lane DS1-b hand-off — components, catalog and approvals
+# DS1-b evidence — components, catalog and approvals
 
-**Status:** cross-family review passed; main merge checked; ready for integration · **Updated:** 2026-10-21 ·
+**Status:** implemented, independently verified, merged into `main` (`7de9e6c`) · **Updated:** 2026-10-21 ·
 **Branch:** `claude/lane-ds1-b-catalog-421657` (main `b4d240b` merged in `d5aeab6`; DS1-a integrated) · **Ports:** 5183 / 4383
 
-Everything in [DS1-b](DS1-b.md) is built. The three independent reviews ran, and their findings
+This file was the lane hand-off; the integrator moved it here at the merge.
+
+## Integrator merge (2026-10-21)
+
+Author Claude; GPT cross-family checks through round 5. Round 5 closed N8/N1 (approval replay
+through merged history) and left one High, N10/N2: scripts imported from the allowed
+`generated/` root escaped the approval hash and the computed-import guard. The lane fixed it in
+`8a2b29b`. The integrator verified it directly instead of opening another review round:
+
+- the reviewer's retained regressions (generated static hash change, computed import through
+  `generated/loader.cts` and an extensionless `.cjs`, and the round-4 findings) pass at
+  `510235e`, 6/6;
+- restoring the pre-fix `hash.ts` fails 5 tests (2 reviewer, 3 author) by assertion;
+- with the fix restored the catalog suite passes 70/70.
+
+Codex then merged `main` (`b4d240b`) into the lane (`d5aeab6`; fixture fix `bb51304` for the
+Host allowlist). The integrator merge with `main` at `0e151d1` (K4) conflicted only in
+`package-lock.json`. It was regenerated from main's lockfile; every package of both sides is
+present, and `@rollup/rollup-linux-x64-gnu` is kept.
+
+Integrator gates on `main` at `7de9e6c` (macOS, Node 26.9.0, `agent-dev` heavy lock):
+
+- typecheck, `lint:md`, `check:licenses` (521 packages, 0 not allowed) and `ui:check`;
+- `npm test`: UI gates 51, catalog 70, core 1007, kernel 106, web 314, UI 17;
+- browser gate 65/65 and `ui:check:browser`;
+- build.
+
+Residuals carried forward: key custody and the irreversible-history recovery belong to DS2;
+the malformed first historical record is named below; the G12 introductory comment still says
+"first-parent" although the walk now covers every merge parent.
+
+Everything in [DS1-b](../lanes/DS1-b.md) is built. The three independent reviews ran, and their findings
 are fixed in separate commits, except one inherent residual risk (key custody, below) that needs a
 signing helper outside the checkout. All results below are local and mocked: no live Ollama, no
 network, and no owner keychain (tests use throwaway keys generated in a temp directory).

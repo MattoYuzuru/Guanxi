@@ -1,10 +1,10 @@
 # Lane DS1-c — Lint rules, suppression ratchet and codemod
 
-**Status:** waiting (K1 and DS1-a are merged; starts after DS1-b merges) · **Updated:** 2026-10-20 ·
+**Status:** running (K1, DS1-a and DS1-b are merged) · **Updated:** 2026-10-21 ·
 **Runs in:** GPT (Codex), started by the integrator (owner, 2026-10-20) · **Branch:** `lane/ds1-c-ratchet` · **Ports:**
 `GUANXI_WEB_PORT=5184`, `GUANXI_API_PORT=4384`
 
-The integrator creates the worktree from the `main` that already contains K1 and DS1-a, then
+The integrator creates the worktree from the `main` that already contains K1, DS1-a and DS1-b, then
 gives this prompt. Paste everything below the line.
 
 ---

@@ -54,8 +54,10 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   names and canonical targets (including absent children beneath linked parents).
   Unresolved/dangling protected links refuse session creation. Sessions created by earlier
   development commits of this unmerged lane must be recreated; there is no deployed K4 policy migration.
-- Egress: exact host/optional-port allowlist, default empty. Loopback entries require an
-  explicit valid port. The node's actual API and configured web ports are reserved on every
+- Egress: exact host/optional-port allowlist, default empty. Every IP literal (IPv4/IPv6,
+  including numeric aliases and unspecified addresses) and localhost entry requires an
+  explicit valid port. The request filter rechecks that service port for both backends,
+  including old/internal policies with port-less IP grants. The node's actual API and configured web ports are reserved on every
   destination, including loopback, local interfaces and DNS aliases; checking the port before
   resolution also prevents a DNS re-resolution bypass. Continuation refreshes these reserved
   ports after restart. HTTPS is TLS-terminated using
@@ -64,7 +66,9 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   not followed by `fetch`; domain policy also applies to subsequent proxy requests. Each parsed
   request asks the trusted parent to compare its URL and headers with the live egress scrubber.
   Any change, absent/not-ready scrubber or IPC failure denies the request. Registered values
-  are never copied into worker policies. Request bodies are not inspected by this guard.
+  are never copied into worker policies. Only exactly registered forms are covered:
+  encoding, splitting across requests or headers, and case changes remain
+  **K4-EGRESS-ENCODINGS**. Request bodies are not inspected (**K4-EGRESS-BODIES**).
 - Upstream convenience write grants are explicitly denied. OS executable/library/config
   reads and stdio devices are necessary exceptions to project-only file access. Roots that
   overlap the node data directory are refused; use a separate data directory for a checkout

@@ -184,15 +184,15 @@ Residual risks:
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Native agent on pi-agent-core with tools, two access modes and projects; `ExecutionOwner` that owns every descendant (Linux bubblewrap with a PID namespace; macOS one `--network none` container per command on Colima; Windows refuses); egress through the sandbox-runtime proxy with node ports reserved and exact registered secret forms denied; bounded cleanup with a persistent root quarantine (ADR-0027) | partially implemented, independently verified, merged into `main` (`0e22a92`) | Full evidence and residuals: [evidence/K4](evidence/K4.md). Author GPT/Codex; Claude review 1 (merge after fixes: H1, H2, M1–M3, L4–L7), then a final Claude check with no High: 29 guard-removal probes fail as intended, 17 control-API spellings × 2 backends reach zero connections. Integrator gates on `main`: typecheck, `ui:check`, licenses 441/0, `npm test` (core 978, kernel 106, web 312), browser gate 52/52, build; Fedora core 972 + 6 macOS-only skips. Unfinished: retention, input artifacts, HTTPS positive path, UI evidence, platform envelope and R1 integration (named in the evidence). Final-check residuals R1, R3, R4 go to `lane/k4-followup`. |
+| Native agent on pi-agent-core with tools, two access modes and projects; `ExecutionOwner` that owns every descendant (Linux bubblewrap with a PID namespace; macOS one `--network none` container per command on Colima; Windows refuses); egress through the sandbox-runtime proxy with node ports reserved and exact registered secret forms denied; bounded cleanup with a persistent root quarantine (ADR-0027) | partially implemented, independently verified, merged into `main` (`0e22a92`) | Full evidence and residuals: [evidence/K4](evidence/K4.md). Author GPT/Codex; Claude review 1 (merge after fixes: H1, H2, M1–M3, L4–L7), then a final Claude check with no High: 29 guard-removal probes fail as intended, 17 control-API spellings × 2 backends reach zero connections. Integrator gates on `main`: typecheck, `ui:check`, licenses 441/0, `npm test` (core 978, kernel 106, web 312), browser gate 52/52, build; Fedora core 972 + 6 macOS-only skips. Unfinished: retention, input artifacts, HTTPS positive path, UI evidence, platform envelope and R1 integration (named in the evidence). Final-check residuals R1, R3 and R4 fixed by the follow-up, merged as `a2c2f90`; see [evidence/K4-followup](evidence/K4-followup.md). |
 
 ## DS1 — Design foundations
 
 | Item | Status | Evidence |
 | --- | --- | --- |
 | DS1-a: DTCG tokens, deterministic Style Dictionary build, self-hosted IBM Plex, legacy freeze ratchet, gates G1–G7 and the G17 self-test | implemented, independently verified, merged into `main` (`--no-ff`, as the ratchet requires) | Full evidence: [evidence/DS1-a](evidence/DS1-a.md). Token values are asserted against the FOUNDATIONS tables; the legacy UI's fonts and spacing are unchanged; all 32 Plex faces load from the same origin; the ratchet freezes 735 legacy keys with two owner-authorised corrections. Reviews: the lane's own reviewer, then three Claude cross-family rounds (19 + 9 findings closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (now including the UI gates; web 264), browser gate 48/48, build, lint:md, licenses (358/0). Follow-ups moved to DS1-c. |
-| DS1-b: `@guanxi/ui` components, catalog, approvals, G10–G16 | review closed; merging current `main` into the lane before the integrator merge | [lanes/DS1-b](lanes/DS1-b.md) |
-| DS1-c: lint ratchet and codemod | waiting for DS1-b | [lanes/DS1-c](lanes/DS1-c.md) |
+| DS1-b: `@guanxi/ui` components, catalog, signed approvals, G10–G16 | implemented, independently verified, merged into `main` (`7de9e6c`) | Full evidence and residuals: [evidence/DS1-b](evidence/DS1-b.md). Author Claude; GPT cross-family checks through round 5; the last High (generated-root scripts outside the approval hash) verified by the integrator with the reviewer's regressions and a fix-removal mutation. Integrator gates on `main`: typecheck, `ui:check`, licenses 521/0, `npm test` (UI gates 51, catalog 70, core 1007, kernel 106, web 314, UI 17), browser gate 65/65, `ui:check:browser`, build. Key custody moves to DS2. |
+| DS1-c: lint ratchet and codemod | in progress (lane DS1-c, Codex) | [lanes/DS1-c](lanes/DS1-c.md) |
 
 ## Repository presentation and documentation (2026-10-21)
 
@@ -224,12 +224,13 @@ decision was made.
 | Stage | Status | Notes |
 | --- | --- | --- |
 | K1 Kernel | implemented, merged | see the K1 section above |
-| DS1 Design foundations | in progress (DS1-a merged; DS1-b in review fixes; DS1-c after DS1-b) | see the DS1 section above |
+| DS1 Design foundations | in progress (DS1-a and DS1-b merged; DS1-c running) | see the DS1 section above |
 | DS2 Approval signing helper | not started | after DS1 (D-184) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
-| K4 Native agent | partially implemented, merged; follow-up `lane/k4-followup` running | see the K4 section above |
+| K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
+| R2 Relay executor | in progress (lane R2, Codex) | [lanes/R2](lanes/R2.md) |
 | F1 Federation base | in review fixes (Claude review 1: merge after fixes, 4 High) | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
