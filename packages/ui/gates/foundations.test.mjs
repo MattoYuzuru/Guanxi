@@ -367,7 +367,7 @@ test('M4 web base surfaces, borders, focus and scrollbars use the semantic palet
   }
   const ui = await ctx.read('packages/web/src/components/ui.tsx')
   assert.ok(ui.includes('focus:border-accent'), 'input focus must use semantic accent')
-  assert.ok(ui.includes("accent: 'bg-accent/10 text-accent border-accent/30'"), 'badge must use one accent palette')
+  assert.ok(ui.includes("accent: 'bg-accent/10 text-secondary border-accent/30'"), 'badge must use one accent palette')
   const tool = await ctx.read('packages/web/src/features/agent/ToolCallCard.tsx')
   assert.match(tool, /bg-inset[^"\n]+hover:bg-surface/, 'tool hover must differ from its inset rest state')
 })

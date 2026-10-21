@@ -278,7 +278,7 @@ function ProjectChats({ projectId }: { projectId: string }) {
         <h3 className="text-xs font-semibold">{translate('projects.chats.group')}</h3>
         <Link
           to={paths.projectChat(projectId)}
-          className="rounded-md border border-control px-2 py-1 text-2xs font-medium text-accent hover:bg-accent/10"
+          className="rounded-md border border-control px-2 py-1 text-2xs font-medium text-accent hover:bg-accent/10 hover:text-secondary"
         >
           {translate('projects.chats.new')}
         </Link>

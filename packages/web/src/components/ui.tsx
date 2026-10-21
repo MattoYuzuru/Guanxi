@@ -113,7 +113,7 @@ export function Badge({
 }) {
   const tones: Record<string, string> = {
     neutral: 'bg-inset text-secondary border-divider',
-    accent: 'bg-accent/10 text-accent border-accent/30',
+    accent: 'bg-accent/10 text-secondary border-accent/30',
     green: 'bg-[var(--color-fit-green)]/12 text-[var(--color-fit-green)] border-[var(--color-fit-green)]/30',
     yellow:
       'bg-[var(--color-fit-yellow)]/12 text-[var(--color-fit-yellow)] border-[var(--color-fit-yellow)]/30',

@@ -105,7 +105,7 @@ export function ContextPanel({
               +{formatDuration(context.estimatedRepefillMs)}
             </span>
           </div>
-          <p className="mt-1 text-2xs text-muted">
+          <p className="mt-1 text-2xs text-secondary">
             {translate('chat.checkpoint.cacheCost')}
           </p>
         </div>

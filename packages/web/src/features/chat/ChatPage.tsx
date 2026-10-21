@@ -1202,7 +1202,7 @@ function ThreadSidebar({
         </span>
         <Link
           to={projectId ? paths.projectChat(projectId) : paths.chat()}
-          className="rounded px-1.5 py-0.5 text-2xs text-accent hover:bg-accent/10"
+          className="rounded px-1.5 py-0.5 text-2xs text-accent hover:bg-accent/10 hover:text-secondary"
         >
           {translate('chat.history.new')}
         </Link>

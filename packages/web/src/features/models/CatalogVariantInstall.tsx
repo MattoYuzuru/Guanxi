@@ -220,7 +220,7 @@ export function CatalogVariantInstall({
                   className={cx(
                     'min-h-11 min-w-0 flex-1 rounded border px-2 py-1 text-left font-mono text-2xs transition-colors sm:min-h-8',
                     selectedNow
-                      ? 'border-accent bg-accent/10 text-accent'
+                      ? 'border-accent bg-accent/10 text-secondary'
                       : 'border-divider text-secondary hover:border-control',
                     'focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
                     'disabled:cursor-not-allowed disabled:opacity-45',
