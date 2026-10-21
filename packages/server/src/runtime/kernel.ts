@@ -22,7 +22,7 @@ export const LEGACY_SERVER_PROFILE: ProfileLayer = Object.freeze({
   insert: [
     { id: 'resource-governor', plugin: resourceGovernorPlugin.manifest.id },
     { id: 'ollama', plugin: ollamaAdapterPlugin.manifest.id },
-    { id: 'egress-scrubber', plugin: egressScrubberPlugin.manifest.id },
+    { id: 'egress-scrubber', plugin: egressScrubberPlugin.manifest.id, config: { expectedSources: ['vault'] } },
   ],
 })
 

@@ -15,7 +15,7 @@
     "build": "npm run build --workspace @guanxi/web && npm run build --workspace @guanxi/server && npm run build --workspace guanxi",
     "link:cli": "npm run build && npm link --workspace guanxi",
     "test": "npm run ui:check && npm run test:gates --workspace @guanxi/ui && npm run test:core && npm run test:kernel && npm run test:web",
-    "test:core": "node --test packages/server/test/**/*.test.ts packages/cli/test/**/*.test.ts",
+    "test:core": "node --test 'packages/server/test/**/*.test.ts' 'packages/cli/test/**/*.test.ts'",
     "test:kernel": "node --test 'packages/kernel/test/**/*.test.ts'",
     "kernel:empty-node": "node packages/kernel/bin/empty-node.ts",
     "test:web": "npm test --workspace @guanxi/web",

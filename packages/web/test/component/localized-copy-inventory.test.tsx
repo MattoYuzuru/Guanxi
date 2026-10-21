@@ -73,6 +73,22 @@ describe('localized Web copy inventory', () => {
     }
   })
 
+  it('follows aliased named and wildcard re-exports without allowing untranslated copy', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'guanxi-localized-copy-'))
+    try {
+      await writeFile(join(directory, 'copy.ts'), "export const helperCopy = 'Forwarded visible copy'\n")
+      await writeFile(join(directory, 'named.ts'), "export { helperCopy as renamedCopy } from './copy.ts'\n")
+      await writeFile(join(directory, 'bridge.ts'), "export * from './named.ts'\n")
+      await writeFile(join(directory, 'Fixture.tsx'), `
+        import { renamedCopy } from './bridge.ts'
+        export function Fixture() { return <button>{renamedCopy}</button> }
+      `)
+      expect(scanLocalizedWebCopy(directory)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'jsx-expression', value: 'Forwarded visible copy' }),
+      ]))
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
   it('keeps current user-facing TSX copy behind locale keys', () => {
     const sourceDirectory = resolve(import.meta.dirname, '../../src')
     expect(scanLocalizedWebCopy(sourceDirectory)).toEqual([])

@@ -4,6 +4,7 @@
  * plugin reclaims what it owns.
  */
 import assert from 'node:assert/strict'
+import { request as httpRequest } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -136,12 +137,40 @@ describe('server boot through the kernel', () => {
     try {
       const server = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
       try {
+        const health = (host: string, path = '/api/health') => new Promise<number>((resolve, reject) => {
+          const req = httpRequest({ hostname: '127.0.0.1', port: server.port, path,
+            headers: { Host: host } }, res => {
+            res.resume(); res.on('end', () => resolve(res.statusCode!))
+          })
+          req.on('error', reject); req.end()
+        })
+        assert.notEqual(server.port, 0)
+        assert.equal(await health(`127.0.0.1:${server.port}`), 200)
+        assert.equal(await health(`localhost:${server.port}`), 200)
+        assert.equal(await health(`evil.example:${server.port}`), 403)
         assert.equal(server.context.governor, server.kernel.governor)
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
-        assert.equal(server.kernel.node.counters().fibers, 5, 'governor, ollama, egress scrubber, session log and durable runs')
+        assert.equal(server.kernel.node.counters().fibers, 6, 'governor, Ollama, scrubber, session log, durable runs and connections')
+        assert.equal(server.kernel.node.counters().services, 8, 'kernel slots, governor, Ollama, egress, session log, durable runs, readiness and registry')
+        assert.ok(server.kernel.node.service('connections.registry'))
+        assert.equal(server.kernel.node.service('connections.vault'), undefined)
+        assert.ok(server.kernel.node.service('egress.scrubber'))
+        // Exercise index.ts's mounted resolver after its service disappears.
         assert.ok(server.kernel.sessionLog, 'the kernel loaded the session log')
         assert.equal(server.context.sessionLog, server.kernel.sessionLog, 'the context uses the kernel session log')
+        const sessions = await fetch(`${server.url}/api/sessions`)
+        assert.equal(sessions.status, 200, 'K2 routes remain mounted in the real listener')
+        assert.deepEqual(await sessions.json(), { sessions: [], withheld: 0, catchingUp: 0, catchUpFailed: 0 })
+        assert.equal(await health(`evil.example:${server.port}`, '/api/sessions'), 403, 'the Host boundary also protects K2 routes')
+        const modelsUrl = `${server.url}/api/connections/11111111-1111-4111-8111-111111111111/models`
+        const initial = await fetch(modelsUrl)
+        assert.equal(initial.status, 404)
+        assert.deepEqual(await initial.json(), { code: 'connection_not_found' })
+        await server.kernel.node.dispose()
+        const unavailable = await fetch(modelsUrl)
+        assert.equal(unavailable.status, 503)
+        assert.deepEqual(await unavailable.json(), { code: 'egress_unavailable' })
       } finally {
         await server.close()
       }
