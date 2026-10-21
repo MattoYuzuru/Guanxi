@@ -4,6 +4,7 @@ import { fixture, plan, window, reserves } from './fixture.ts'
 import { canonical, hash, render, selectNotes, validateHandoff, probes } from '../../src/relay/handoff.ts'
 import { thresholds } from '../../src/relay/budget.ts'
 import { DEFAULT_RELAY_LIMITS, RelayError } from '../../src/relay/types.ts'
+import { ConnectionRelayModel } from '../../src/relay/model.ts'
 
 test('verified task finishes with atomic ledger/hash/bundle seal and K2 trace', async () => {
   const f = fixture(); try {
@@ -286,5 +287,34 @@ test('the invalid-action limit counts invalid turns, not every turn', async () =
     await f.executor.run(f.attempt)
     assert.equal(actions, 2)
     assert.equal(verifies, 0)
+  } finally { f.close() }
+})
+test('a local runtime reports known zero cost and does not trip a generous money cap', async () => {
+  const f = fixture({ caps: { moneyMicros: 1_000_000_000 } })
+  try {
+    const meter = { observe: async () => window, count: (text: string) => Buffer.byteLength(text) + window.framingTokens, maxCostMicros: () => 0 }
+    let work = 0
+    const prompts: string[] = []
+    const connections = {
+      snapshot: () => ({ connections: [{ id: 'fixture-local', kind: 'local_runtime' }] }),
+      localChat: async (_scope: unknown, _id: unknown, request: { messages: { content: unknown }[] }) => {
+        const prompt = String(request.messages[0]!.content)
+        prompts.push(prompt)
+        let text: string
+        if (prompt.startsWith('Write a fresh')) text = 'Continue the plan using its evidence.'
+        else if (prompt.startsWith('Answer these five')) text = canonical(probes(f.relay.sealed(f.attempt)!.ledger))
+        else text = canonical(++work === 1 ? { action: 'verify', item: 'one' } : { action: 'handoff' })
+        return { message: { content: text }, prompt_eval_count: meter.count(prompt), eval_count: 1, done_reason: 'stop' }
+      },
+    }
+    const model = new ConnectionRelayModel(connections as never, 'fixture-local', 'fixture', meter)
+    const { RelayExecutor } = await import('../../src/relay/executor.ts')
+    const executor = new RelayExecutor(f.relay, model, f.workspace, reserves, f.scrubber)
+    await executor.run(f.attempt)
+    const l = f.relay.read(f.run.id)
+    assert.ok(prompts.length > 1)
+    assert.equal(l.moneyMicros, 0)
+    assert.equal(l.unknownCosts, 0)
+    assert.equal(f.store.get(f.run.id).state, 'completed')
   } finally { f.close() }
 })

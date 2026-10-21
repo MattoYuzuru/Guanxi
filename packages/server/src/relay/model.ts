@@ -41,7 +41,7 @@ export class ConnectionRelayModel implements RelayModel {
         messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } }, call)
       invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')
       const inputTokens = r.prompt_eval_count!
-      return { text: r.message?.content ?? '', inputTokens, outputTokens: r.eval_count!, moneyMicros: null,
+      return { text: r.message?.content ?? '', inputTokens, outputTokens: r.eval_count!, moneyMicros: 0,
         inputTruncated: inputTokens !== this.count(dispatchedPrompt), outputLimited: r.done_reason === 'length' }
     }
     invariant(connection.kind === 'model_api', 'connection_not_supported')
