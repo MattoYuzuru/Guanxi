@@ -137,3 +137,31 @@ It found no blocking issue and two wording findings: the lane introduction still
 old Claude coordinator, and the X1 next-task wording sounded completed. Both were corrected
 in a separate review-fix commit. The review does not attest future candidate changes or live
 hardware/provider behavior.
+
+## Final bounded repair outcomes
+
+The continuation finished the assigned repairs and independent rechecks. No DeepSeek worker
+remained active at handoff. It did not merge these candidates into main or declare their full
+stage scope complete. Original lane branches were retained alongside the repair candidates.
+
+| Candidate | Final local branch/head | Independent outcome and checks |
+| --- | --- | --- |
+| K4 follow-up 2 | `codex/k4f2-review-fixes` / `baeac3c` | Deletion, maintenance and sync-only transaction repairs reviewed; 38/38 targeted tests and server typecheck pass on `5bf89d1` (`check-3z7sy2j4`, `check-kuzmo7jb`). Across the repairs: 5 new / 33 envelope. |
+| DS2 | `codex/ds2-review-fixes` / `785b814` | Unsupported-platform and actual API/context-wiring repairs reviewed. 47 scoped tests pass (4 new / 43 envelope), production/test Swift build and server typecheck pass. Independent final selected tests and exact previous escaping mutations pass/fail as intended on `cfb5a04` (`check-rn6yf3uf`, `check-q06z47gl`). |
+| X1 | `codex/x1-parent-read-boundary` / `647c5d0` | Fingerprint worker/canonical-root/result handling repair reviewed; post-main-merge indexing + boot gate 61 total / 60 pass / 1 Linux-only skip (`check-uqv37uw5`), all-workspace typecheck, Markdown/links and licenses 672/0 pass. Repair adds 5 tests to the 49 indexing envelope; seven boot tests are additional regressions. |
+
+K4/DS2 include main `3f73ded` through documentation-only merges relative to their verified
+source. X1's prior merge base was `e2fdd66`, so its main sync also integrated R2/K5/DS1-c.
+The integrator regenerated the lock with npm, preserved both index/relay services in the boot
+assertions (9 fibers / 11 services), and independently reviewed that resolution. The repaired
+X1 source still needs its Linux envelope; earlier Linux receipts do not validate new code.
+
+All final cited receipts have exit 0 and unchanged source. Earlier K4 verification crossed a
+coordinator documentation merge (`check-1zdlgiz0`) and was repeated; that unstable-source
+receipt is not credited. One DS2 scratch check similarly crossed handoff edits and was
+repeated at clean source. Existing non-reusable symlink limitations remain.
+
+The next bounded slice is full integration verification of one reviewed candidate, followed
+by merge/status update. DS2 hardware owner-presence/custody, U1 replication, B1 real bounded
+execution and the other named wider-stage residuals remain open. No paid benchmark, live model,
+real key bootstrap, remote deployment or component approval was performed.

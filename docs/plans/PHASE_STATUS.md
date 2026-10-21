@@ -3,7 +3,8 @@
 **Status:** implemented tracker · **Updated:** 2026-10-21
 **Current stage:** wave 3 integration and residuals. K1–K3, R1, F1 and DS1-a/b/c are
 merged; K4, K5 and R2 have merged bounded implementations with named unfinished scope.
-DS2, K4 follow-up 2, X1 and U1-a need review/integration; B1 remains partial.
+DS2, K4 follow-up 2 and X1 have independently reviewed repair candidates awaiting full
+integration gates; U1-a needs review/integration. B1 remains partial.
 See the [coordination audit](evidence/coordination-2026-10-21.md) for pinned heads, progress
 estimates, active ownership and the distinction between a merge and a stage exit.
 
@@ -230,7 +231,7 @@ decision was made.
 | --- | --- | --- |
 | K1 Kernel | implemented, merged | see the K1 section above |
 | DS1 Design foundations | implemented, reviewed, all three parts merged | see the DS1 section above and the integrated-main audit below |
-| DS2 Approval signing helper | partial implementation handed off; GPT review fixes in `codex/ds2-review-fixes` (DeepSeek Flash/max) | [lanes/DS2](lanes/DS2.md); production user-presence/installed-helper path remains unverified. Hardware support discovery does not prove the full signing gate. |
+| DS2 Approval signing helper | partial candidate with reviewed fixes (`codex/ds2-review-fixes`, `785b814`); full gates/hardware validation pending | [lanes/DS2](lanes/DS2.md); production user-presence/installed-helper path remains unverified. Hardware support discovery does not prove the full signing gate. |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
@@ -238,7 +239,7 @@ decision was made.
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | K5 External agents | partial implementation merged (`80f7245`); review fixes included | [evidence/K5](evidence/K5.md); real release captures, effective implicit bare detection, automatic Claude quota producer and distributed admission remain open. |
 | B1 Bench base | partial fixture foundation handed off; no worker running at audit | [lanes/B1](lanes/B1.md); corpus staging, real bounded executor/billing gateway and five-seed model measurements remain open. |
-| X1 Repo map and FTS | original review fixes handed off; independent GPT re-review found an unsandboxed parent fingerprint read; fix in `codex/x1-parent-read-boundary` | [lanes/X1](lanes/X1.md); new deterministic ancestor-swap probe reads outside-root policy bytes before rejecting the tree. Candidate is not merged. |
+| X1 Repo map and FTS | repair reviewed in `codex/x1-parent-read-boundary` (`647c5d0`); current main incorporated, combined indexing/boot gate passed | [lanes/X1](lanes/X1.md); parent policy reads now use the sandbox worker. Full integration gates and repaired-source Linux checks remain; candidate is not merged. |
 | R2 Relay executor | internal single-node implementation merged (`726efc3`); review fixes included | [evidence/R2](evidence/R2.md); trusted live runtime meter/admission and independent semantic probe evidence remain open. No public start flow or live long-run claim. |
 | U1 Shell, layout, modes | U1-a handed off, awaiting independent review/integration; U1-b/c not started | [lanes/U1](lanes/U1.md); local persistence/conflict handling exists. Actual cross-node layout replication is absent and must not be inferred from in-memory merge tests. |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
@@ -250,3 +251,17 @@ See [evidence/coordination-2026-10-21](evidence/coordination-2026-10-21.md).
 The audit reconciles merged DS1-c/R2/K5 and completed worker handoffs, records fresh main
 regression gates, and keeps K4/K5/R2/B1/DS2/U1 residuals open. No unreviewed lane is
 closed by a percentage estimate.
+
+### Final continuation candidates
+
+- K4 follow-up 2: `codex/k4f2-review-fixes` at `baeac3c`, independent repair review closed;
+  5 new / 33 regression envelope = 38 targeted tests pass, server typecheck passes.
+- DS2: `codex/ds2-review-fixes` at `785b814`, independent repair review closed;
+  4 new / 43 regression envelope = 47 targeted tests pass; hardware signing remains unverified.
+- X1: `codex/x1-parent-read-boundary` at `647c5d0`, repair and integration-conflict review closed;
+  5 new / 49 indexing envelope, plus seven kernel boot tests = 61 total, 60 pass / 1 Linux-only
+  skip. All-workspace typecheck, links and licenses pass. Repaired-source Linux checks remain.
+
+All three candidates include published main `3f73ded`, have committed handoffs and remain
+unmerged into main. The full integrator gates are the next task, not evidence already earned
+by a targeted run. Detailed receipts and limits are in the [coordination audit](evidence/coordination-2026-10-21.md).
