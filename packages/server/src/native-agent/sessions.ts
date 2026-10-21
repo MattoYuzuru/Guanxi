@@ -77,7 +77,8 @@ export class NativeSessions {
   paths(id: string) {
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error('invalid_session_id')
     return [join(this.dataDir, 'scratch', id), join(this.dataDir, 'native-attachments', id),
-      join(this.dataDir, 'native-output', createHash('sha256').update(id).digest('hex'))]
+      join(this.dataDir, 'native-output', createHash('sha256').update(id).digest('hex')),
+      join(this.dataDir, 'session-artifacts', createHash('sha256').update(id).digest('hex'))]
   }
   async remove(id: string) {
     // Bind every later destructive step to the home generation that admitted this removal.

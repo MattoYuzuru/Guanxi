@@ -27,9 +27,9 @@ export function nativeAgentRoutes(service: () => NativeAgentService, devOrigins:
   app.delete('/:id', async c => c.json(deleteNativeSessionResponseSchema.parse(await service().deleteSession(c.req.param('id')))))
   app.get('/:id', c => c.json(service().progress(c.req.param('id'))))
   app.get('/:id/result', c => c.json(service().result(c.req.param('id'))))
-  app.post('/:id/prompts', async c => { service().prompt(c.req.param('id'), text.parse(await c.req.json()).text); return c.json({ ok: true }, 202) })
+  app.post('/:id/prompts', async c => { await service().prompt(c.req.param('id'), text.parse(await c.req.json()).text); return c.json({ ok: true }, 202) })
   app.post('/:id/stop', c => { service().stop(c.req.param('id')); return c.json({ ok: true }) })
-  app.post('/:id/queue', async c => { service().queue(c.req.param('id'), text.parse(await c.req.json()).text); return c.json({ ok: true }, 202) })
-  app.delete('/:id/queue/:item', c => { service().removeQueued(c.req.param('id'), c.req.param('item')); return c.json({ ok: true }) })
+  app.post('/:id/queue', async c => { await service().queue(c.req.param('id'), text.parse(await c.req.json()).text); return c.json({ ok: true }, 202) })
+  app.delete('/:id/queue/:item', async c => { await service().removeQueued(c.req.param('id'), c.req.param('item')); return c.json({ ok: true }) })
   return app
 }
