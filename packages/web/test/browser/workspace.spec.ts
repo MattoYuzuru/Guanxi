@@ -63,11 +63,12 @@ async function pick(page: Page, label: string, value: string, keyboard = false) 
 async function move(page: Page, block: string, zone: string, keyboard = false) {
   if (keyboard) await page.keyboard.press('Alt+Shift+m')
   else await page.getByRole('button', { name: 'Move block to…', exact: true }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Move block', exact: true })).toBeVisible()
   await pick(page, 'Block', block, keyboard)
   await pick(page, 'Destination', zone, keyboard)
-  await page.getByRole('dialog').getByRole('button', { name: 'Move block to…', exact: true }).focus()
+  await page.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Move block to…', exact: true }).focus()
   await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog', { name: 'Move block', exact: true })).toHaveCount(0)
 }
 async function state(page: Page) { return page.evaluate(() => (window as any).__GUANXI_WORKSPACE__.snapshot() as LayoutDocument) }
 
@@ -116,9 +117,9 @@ test('Terminal and Browser retain input and the same DOM node across move, float
     await detached.fill(`returned-${name}`)
     // Keyboard entry point in the popout opens its move dialog in the same document.
     await popup.keyboard.press('Alt+Shift+m')
-    await expect(popup.getByRole('dialog')).toBeVisible()
+    await expect(popup.getByRole('dialog', { name: 'Move block', exact: true })).toBeVisible()
     await pick(popup, 'Destination', 'Bottom')
-    await popup.getByRole('dialog').getByRole('button', { name: 'Move block to…', exact: true }).click()
+    await popup.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Move block to…', exact: true }).click()
     await expect(page.getByLabel(label!, { exact: true })).toHaveValue(`returned-${name}`)
     expect(await page.getByLabel(label!, { exact: true }).evaluate(node => (node as any).__retainedIdentity)).toBe('original')
   }
@@ -265,7 +266,7 @@ test('move cancellation and hiding return focus; existing tabs update with local
   const draft = page.getByLabel('Terminal input draft', { exact: true })
   await draft.focus()
   await page.keyboard.press('Alt+Shift+m')
-  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Move block', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(draft).toBeFocused()
   await page.locator('[data-block="guanxi.core/terminal"]').getByRole('button', { name: 'Move block to… Terminal', exact: true }).click()
