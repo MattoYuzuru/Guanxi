@@ -22,7 +22,12 @@ export const NATIVE_LIFECYCLE_MIGRATION = `
     last_user_activity_at,last_user_activity_source)
     SELECT s.id,'Agent session','agent',json_extract(e.payload,'$.model'),
       COALESCE(json_extract(e.payload,'$.contextTokens'),4096),0.7,'auto',s.created_at,s.created_at,
-      NULL,'ttl','default',s.created_at,s.created_at,'chat_created'
+      NULL,'ttl','default',s.created_at,
+      COALESCE((SELECT MAX(p.created_at) FROM session_events p WHERE p.session_id=s.id
+        AND p.type='prompt' AND json_extract(p.payload,'$.origin')='typed'),s.created_at),
+      CASE WHEN EXISTS(SELECT 1 FROM session_events p WHERE p.session_id=s.id
+        AND p.type='prompt' AND json_extract(p.payload,'$.origin')='typed')
+        THEN 'user_message' ELSE 'chat_created' END
     FROM sessions s JOIN session_events e ON e.session_id=s.id AND e.type='agent.policy'
     WHERE s.thread_id IS NULL;
   DROP TRIGGER sessions_identity_immutable;

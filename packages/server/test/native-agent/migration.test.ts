@@ -17,10 +17,16 @@ test('migration 32 adopts native sessions with an atomic Thread owner; failure r
   seed.exec('PRAGMA foreign_keys=ON')
   for (const sql of MIGRATIONS.slice(0,31)) seed.exec(sql)
   seed.exec('PRAGMA user_version=31')
-  const scrubber = new SecretScrubber(), log = new SessionLog({ db: seed, scrubber })
+  let now = new Date('2026-10-01T00:00:00.000Z')
+  const scrubber = new SecretScrubber(), log = new SessionLog({ db: seed, scrubber, clock: () => now })
   const handle = log.open('old-native', { kind: 'agent' })
   handle.append({ type: 'agent.policy', data: { projectId: 'fixture-project', connectionId: 'fixture-connection', model: 'fixture-model',
     retention: 'ttl', mode: 'read-only', roots: [], scratch: '/synthetic', attachments: [], domains: [], protectedPaths: [], attachmentIds: [] } as never })
+  now = new Date('2026-10-20T00:00:00.000Z')
+  handle.append({ type: 'prompt', data: { origin: 'typed', messageId: 'typed', text: 'fixture user input', attachmentCount: 0 } })
+  now = new Date('2026-10-21T00:00:00.000Z')
+  handle.append({ type: 'prompt', data: { origin: 'queued', messageId: 'queued', text: 'fixture continuation', attachmentCount: 0 } })
+  handle.append({ type: 'agent.note', data: { text: 'fixture model activity' } })
   handle.close(); log.close()
   const before = seed.prepare('SELECT seq,payload,payload_sha256 FROM session_events ORDER BY seq').all()
   seed.exec('CREATE TABLE native_sessions(collision TEXT)'); seed.close()
@@ -35,6 +41,9 @@ test('migration 32 adopts native sessions with an atomic Thread owner; failure r
     assert.deepEqual(db.prepare('SELECT seq,payload,payload_sha256 FROM session_events ORDER BY seq').all(), before)
     assert.equal(db.prepare('SELECT thread_id FROM sessions WHERE id=?').get('old-native')!.thread_id, 'old-native')
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM native_sessions').get()!.n, 1)
+    const owner = db.prepare('SELECT last_user_activity_at,last_user_activity_source FROM threads WHERE id=?').get('old-native')!
+    assert.equal(owner.last_user_activity_at, '2026-10-20T00:00:00.000Z', 'adoption preserves recent typed activity without extending it for model or queued work')
+    assert.equal(owner.last_user_activity_source, 'user_message')
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [])
     assert.equal(createHash('sha256').update(JSON.stringify(MIGRATIONS.slice(0,31))).digest('hex'), digest)
   } finally { db.close() }
