@@ -147,11 +147,22 @@ project role defaults, editor grants, latest node quota reports and concurrency 
 No shared migration or stable wire schema changes. Removing the plugin leaves both this
 sidecar and vendor directories intact; it never logs out a user or deletes vendor data.
 
-`node packages/server/scripts/check-vendor-credentials.ts` scans every production package for
-vendor-path content reads, bans all direct content-read APIs in K5 and refuses process-only
-Claude packages in manifests. It is a conservative regression check, not a whole-language
-security proof. Tests seed forbidden imports/reads/dependencies and demonstrate a runtime
-parent read trap with a child-only dummy credential positive control.
+`node packages/server/scripts/check-vendor-credentials.ts` scans every `.ts`, `.tsx`, `.js`,
+`.mjs`, `.cjs`, `.mts` and `.cts` file under `packages/*/src`, `packages/*/scripts` and
+`packages/kernel/bin`. It refuses vendor-path text in string and template literals; refuses
+content reads and `rename`/`link`/`symlink` moves of vendor paths; resolves `.call`/`.apply`/
+`.bind`, namespace destructuring and import aliases; and refuses `createRequire` in K5. In K5
+it refuses every `child_process` import except `spawn` in `process.ts`, and every execution API
+other than that `spawn`; in other packages a `child_process` execution is flagged when the
+module contains vendor-path text. Manifests still refuse process-only Claude packages. The
+runtime trap watches `<HOME>/.claude`, `.codex`, `.copilot`, `.gemini` and `.config` plus the
+`child_process` spawn/exec helpers while a fixture adapter runs.
+
+This is a conservative text-level regression gate, not a whole-language security proof. It
+cannot prove the absence of a path computed entirely at runtime with no vendor-path text in
+the module (for example `join(home, parts[0], parts[1])`), a vendor CLI's own internal file
+access, or dynamic code loaded from outside the scanned tree. Tests seed every rule and
+demonstrate a runtime parent read trap with a child-only dummy credential positive control.
 
 The six versioned recordings are documentation reconstructions, not real CLI captures. See
 [fixture provenance](../../test/external-agents/fixtures/README.md). No real vendor CLI, owner
