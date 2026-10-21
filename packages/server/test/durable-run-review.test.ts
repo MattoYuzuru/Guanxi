@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { start } from '../src/index.ts'
 import { RunStore } from '../src/runs/store.ts'
 import { bootServerKernel } from '../src/runtime/kernel.ts'
-import { runFixture, RUN_TIME } from './fixtures/durable-runs.ts'
+import { runFixture, reconcileAllForTest, RUN_TIME } from './fixtures/durable-runs.ts'
 
 // Adapted from the cross-family crash-boot and clockback probes.
 test('H1: immediate start after SIGKILL serves requests while R1 reports writer_busy', async (t) => {
@@ -82,7 +82,7 @@ test('M1: a refused run trace cannot block other timers, expired attempts, recon
       f.scrubber.register('secret://late', 'alpha-customer-7781')
       if (operation === 'tick-timers') f.setTime(RUN_TIME + 20)
       if (operation === 'tick-attempts') f.setTime(RUN_TIME + 61_000)
-      assert.doesNotThrow(() => operation === 'dispatch' ? f.store.dispatch(() => true) : operation === 'reconcile' ? f.store.reconcile() : f.store.tick(), operation)
+      assert.doesNotThrow(() => operation === 'dispatch' ? f.store.dispatch(() => true) : operation === 'reconcile' ? reconcileAllForTest(f.store) : f.store.tick(), operation)
       if (operation === 'tick-timers') assert.equal(f.store.wakes('beta').length, 1)
       else if (operation === 'dispatch') assert.ok(f.store.wakes('beta')[0]!.attempt_id)
       else assert.equal(f.store.attempts('beta')[0]!.state, 'lost')
@@ -192,5 +192,15 @@ test('L2: report admission rejects an expired but unreaped active attempt with a
     assert.equal(f.store.attempts(p.child_id).length, 1)
     f.store.tick()
     assert.equal(f.store.start(p.child_id).ordinal, 2)
+  } finally { f.close() }
+})
+
+test('L5: public reconciliation cannot discard attempts admitted by this activation', () => {
+  const f = runFixture()
+  try {
+    f.store.start(f.store.create({ id: 'live' }).id)
+    Reflect.apply(f.store.reconcile, f.store, [false]) // Legacy force flag is ignored.
+    assert.equal(f.store.get('live').state, 'working')
+    assert.equal(f.store.attempts('live')[0]!.state, 'delivered')
   } finally { f.close() }
 })

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { runFixture, RUN_TIME, RUN_DEADLINE } from './fixtures/durable-runs.ts'
+import { runFixture, reconcileAllForTest, RUN_TIME, RUN_DEADLINE } from './fixtures/durable-runs.ts'
 
 const worker = fileURLToPath(new URL('./fixtures/durable-run-crash-worker.ts', import.meta.url))
 for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal', 'input', 'yield', 'resleep', 'cancel']) {
@@ -28,7 +28,7 @@ for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal'
       // owner TTL + maximum attempt TTL + epsilon before claiming the execution home.
       const f = runFixture(path, { clock: () => RUN_TIME + 100_000 })
       try {
-        f.store.reconcile()
+        reconcileAllForTest(f.store)
         let promise = f.store.promises('lead')[0]
         if (!promise) {
           const retry = f.store.start('lead')
@@ -62,7 +62,7 @@ for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal'
               if (f.store.wakes('lead').some((w) => w.wake_seq > wake.wake_seq && w.acknowledged_at === null)) f.store.hibernate(delivery)
             }
           }
-          f.store.tick(); f.store.reconcile()
+          f.store.tick(); reconcileAllForTest(f.store)
           const wakes = ['signal', 'input', 'yield', 'resleep'].includes(stage) ? 2 : 1
           assert.equal(f.store.promises('lead').length, 1, `one delegation: ${index}`)
           assert.equal(f.store.promises('lead')[0]!.outcome, stage === 'deadline' ? 'deadline' : 'completed')

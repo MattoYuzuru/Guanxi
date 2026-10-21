@@ -16,3 +16,9 @@ export function runFixture(path = ':memory:', options: Partial<RunStoreOptions> 
   return { db, log, store, scrubber, setTime: (time: number) => { now = time },
     close: () => { store.close(); log.close(); db.close(); scrubber.close() } }
 }
+
+/** Explicit test-only crash simulation; production reconciliation is inherited-only. */
+export function reconcileAllForTest(store: RunStore): void {
+  const access = store as unknown as { reconcileAttempts(startupOnly: boolean): void }
+  access.reconcileAttempts(false)
+}

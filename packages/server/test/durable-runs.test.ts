@@ -7,7 +7,7 @@ import { RUN_A2A_STATE, runStateSchema } from '@guanxi/contract'
 import { RunError } from '../src/runs/types.ts'
 import { RunStore } from '../src/runs/store.ts'
 import { bootServerKernel, LEGACY_SERVER_PROFILE } from '../src/runtime/kernel.ts'
-import { runFixture, RUN_TIME, RUN_DEADLINE } from './fixtures/durable-runs.ts'
+import { runFixture, reconcileAllForTest, RUN_TIME, RUN_DEADLINE } from './fixtures/durable-runs.ts'
 
 function delegated(f: ReturnType<typeof runFixture>, options = {}) {
   const lead = f.store.create({ id: 'lead' })
@@ -38,7 +38,7 @@ test('deadline wakes a lead whose child never starts; wrap-up cancels after its 
   f.store.close()
   const store = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, alwaysOn: true, clock: () => RUN_DEADLINE })
   cleanup = () => store.close()
-  store.heartbeat(); store.reconcile(); store.tick()
+  store.heartbeat(); reconcileAllForTest(store); store.tick()
   assert.equal(store.promises('lead')[0]!.outcome, 'deadline')
   assert.equal(store.wakes('lead').length, 1)
   assert.equal(store.get(promise.child_id).state, 'wrapping_up')
@@ -66,7 +66,7 @@ test('expired completion is 409 stale_lease and produces zero resolutions or wak
   assert.equal(f.store.wakes('lead').length, 0)
   assert.equal(count(f, 'resolved'), 0)
   assert.equal(f.store.promises('lead')[0]!.outcome, null)
-  f.store.reconcile()
+  reconcileAllForTest(f.store)
   const replacement = f.store.start(promise.child_id)
   assert.ok(replacement.token > child.token)
   assert.throws(() => f.store.complete(child, 'completed'), code('stale_lease'))
@@ -125,7 +125,7 @@ test('retained worktree survives eight hours of hibernation with zero token or e
   const before = f.store.costs(lead.id)
   f.store.close()
   const store = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, alwaysOn: true, clock: () => RUN_TIME + 8 * 3_600_000 })
-  cleanup = () => store.close(); store.heartbeat(); store.reconcile()
+  cleanup = () => store.close(); store.heartbeat(); reconcileAllForTest(store)
   for (const key of store.reapResources()) { if (key === 'resource:worktree') rmSync(worktree, { recursive: true }) }
   assert.equal(existsSync(worktree), true)
   assert.equal(readFileSync(join(worktree, 'kept'), 'utf8'), 'fixture')
@@ -144,7 +144,7 @@ test('cancel hibernating lead cascades to children and grandchildren exactly onc
   const { promise } = delegated(f)
   const child = f.store.start(promise.child_id)
   const grandchild = f.store.delegate(child, { key: 'grandchild', deadline: RUN_DEADLINE })
-  f.store.cancel('lead'); f.store.cancel('lead'); f.store.tick(); f.store.reconcile()
+  f.store.cancel('lead'); f.store.cancel('lead'); f.store.tick(); reconcileAllForTest(f.store)
   for (const id of ['lead', promise.child_id, grandchild.child_id]) {
     assert.equal(f.store.get(id).state, 'canceled')
     assert.equal(f.store.get(id).cancel_count, 1)
@@ -174,7 +174,7 @@ test('restart table preserves wait/input/report, interrupts local work and redel
   const input = f.store.create({ id: 'input' }); const ia = f.store.start(input.id); f.store.inputRequired(ia)
   const report = f.store.create({ id: 'report' }); const ra = f.store.start(report.id); f.store.wrappingUp(ra)
   const working = f.store.create({ id: 'working' }); f.store.start(working.id)
-  f.store.reconcile()
+  reconcileAllForTest(f.store)
   assert.equal(f.store.get('lead').state, 'waiting_children')
   assert.equal(f.store.get('input').state, 'input_required')
   assert.equal(f.store.get('report').state, 'wrapping_up')
@@ -182,12 +182,12 @@ test('restart table preserves wait/input/report, interrupts local work and redel
   assert.equal(f.store.attempts('working')[0]!.state, 'lost')
   const child = f.store.start(promise.child_id); f.store.complete(child, 'completed')
   const delivered = f.store.deliver('lead', 1)!
-  f.store.reconcile()
+  reconcileAllForTest(f.store)
   const retried = f.store.deliver('lead', 1)!
   assert.notEqual(retried.id, delivered.id)
   assert.ok(retried.token > delivered.token)
   assert.throws(() => f.store.modelStarted(delivered), code('stale_lease'))
-  f.store.modelStarted(retried); f.store.reconcile()
+  f.store.modelStarted(retried); reconcileAllForTest(f.store)
   assert.equal(f.store.deliver('lead', 1), null)
   assert.equal(count(f, 'acknowledged'), 1)
 })
@@ -333,7 +333,7 @@ test('review R3: lowering successor TTL cannot shorten the predecessor home safe
     clock: () => RUN_TIME + 90_999, maxAttemptTtlMs: 1 }).heartbeat(), code('writer_busy'))
   next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
     clock: () => RUN_TIME + 91_001, maxAttemptTtlMs: 1 })
-  next.heartbeat(); next.reconcile()
+  next.heartbeat(); reconcileAllForTest(next)
   const newAttempt = next.start(run.id)
   assert.ok(newAttempt.token > oldAttempt.token)
   assert.throws(() => f.store.complete(oldAttempt, 'completed'), code('stale_lease'))

@@ -481,7 +481,8 @@ export class RunStore {
     return deliveries
   }
   /** ADR-0019 table, local only: no inference is started by this operation. */
-  reconcile(startupOnly = false): void {
+  reconcile(): void { this.reconcileAttempts(true) }
+  private reconcileAttempts(startupOnly: boolean): void {
     for (const attempt of this.rows<Attempt>("SELECT * FROM run_attempts WHERE state IN ('delivered','started')")) {
         // Readiness may open after this activation has admitted new work. Only
         // attempts inherited from its predecessor are lost during startup recovery.
