@@ -825,6 +825,10 @@ const english = {
     'Secret redaction is not ready: a secret source has not registered its values yet. The trace opens once it has.',
   'error.api.sessionWithheld':
     'This trace is hidden: its session id contains a value now registered as a secret.',
+  'error.api.sessionCatchingUp':
+    'This trace is still being restored from the saved chat history. Try again in a moment.',
+  'error.api.sessionCatchUpFailed':
+    'Restoring this trace from the saved chat history failed ({code}). It is retried automatically; the trace opens once it succeeds.',
   'error.api.conflict': 'The request conflicts with the current saved state. Refresh and try again.',
   'error.api.storage': 'The request could not be saved to local storage.',
   'error.api.validation': 'The request contains an invalid or unsupported value.',
@@ -1720,6 +1724,8 @@ const english = {
   'inspector.list.empty.action': 'Open chat',
   'inspector.list.events': 'Events: {count}',
   'inspector.list.withheld': 'Hidden because the session id contains a registered secret: {count}',
+  'inspector.list.catchingUp': 'Being restored from the saved chat history: {count}',
+  'inspector.list.catchUpFailed': 'Restoring failed and is retried automatically: {count}',
   'inspector.loading': 'Loading the trace',
   'inspector.retry': 'Retry',
   'inspector.untitled': 'Untitled session',
@@ -2640,6 +2646,10 @@ const russian: Messages = {
     'Скрытие секретов ещё не готово: один из источников секретов не передал свои значения. Трасса откроется, когда он это сделает.',
   'error.api.sessionWithheld':
     'Трасса скрыта: идентификатор сессии содержит значение, которое теперь зарегистрировано как секрет.',
+  'error.api.sessionCatchingUp':
+    'Трасса ещё восстанавливается из сохранённой истории чата. Повторите через несколько секунд.',
+  'error.api.sessionCatchUpFailed':
+    'Не удалось восстановить трассу из сохранённой истории чата ({code}). Повтор выполняется автоматически; трасса откроется после успешного восстановления.',
   'error.api.conflict': 'Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.',
   'error.api.storage': 'Не удалось сохранить запрос в локальное хранилище.',
   'error.api.validation': 'Запрос содержит недопустимое или неподдерживаемое значение.',
@@ -3534,6 +3544,8 @@ const russian: Messages = {
   'inspector.list.empty.action': 'Открыть чат',
   'inspector.list.events': 'Событий: {count}',
   'inspector.list.withheld': 'Скрыто, потому что идентификатор сессии содержит зарегистрированный секрет: {count}',
+  'inspector.list.catchingUp': 'Восстанавливаются из сохранённой истории чата: {count}',
+  'inspector.list.catchUpFailed': 'Восстановление не удалось, повтор выполняется автоматически: {count}',
   'inspector.loading': 'Загружаем трассу',
   'inspector.retry': 'Повторить',
   'inspector.untitled': 'Сессия без названия',

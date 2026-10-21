@@ -72,15 +72,35 @@ export type SessionLogErrorCode =
    * path without exposing it (GPT re-check N1). The message never names it.
    */
   | 'session_withheld'
+  /**
+   * Chat Jobs of this session were deferred while the scrubber was not ready
+   * and their trace is not reconstructed yet, so the stored log lacks its tail
+   * (GPT re-check N2). `catchUpFailure` names the last failed attempt's code.
+   */
+  | 'session_catching_up'
 
 export class SessionLogError extends Error {
   readonly code: SessionLogErrorCode
+  /** For `session_catching_up`: the code of the last failed catch-up (never content), or null while pending. */
+  readonly catchUpFailure: string | null
 
-  constructor(code: SessionLogErrorCode, message: string) {
+  constructor(code: SessionLogErrorCode, message: string, options: { catchUpFailure?: string | null } = {}) {
     super(message)
     this.name = 'SessionLogError'
     this.code = code
+    this.catchUpFailure = options.catchUpFailure ?? null
   }
+}
+
+/** The session list: returnable sessions, and how many are left out and why. */
+export interface SessionListResult {
+  sessions: SessionListItem[]
+  /** Sessions whose id holds a registered value (N1). */
+  withheld: number
+  /** Sessions whose deferred Chat history is still being reconstructed (N2). */
+  catchingUp: number
+  /** Of those, the sessions whose last catch-up attempt failed. */
+  catchUpFailed: number
 }
 
 export interface SessionWriterIdentity {
@@ -316,6 +336,8 @@ export class SessionLog {
   private subscriptionsClosed = false
   private readonly lifetime = new AbortController()
   private closing = false
+  /** The last catch-up failure per session with deferred Chat Jobs (codes only). */
+  private readonly catchUpFailures = new Map<string, string>()
 
   constructor(options: SessionLogOptions) {
     this.db = options.db
@@ -347,6 +369,21 @@ export class SessionLog {
    */
   whenEgressReady(): Promise<void> {
     return this.scrubber.whenReady(this.lifetime.signal)
+  }
+
+  /** Aborts when this log closes. */
+  get closedSignal(): AbortSignal {
+    return this.lifetime.signal
+  }
+
+  /**
+   * @internal The job store mirror reports a session's catch-up: the failed
+   * attempt's code, or null once it succeeded. Reads of a session with
+   * deferred Jobs refuse with `session_catching_up` and carry this code.
+   */
+  reportCatchUp(sessionId: string, failure: string | null): void {
+    if (failure === null) this.catchUpFailures.delete(sessionId)
+    else this.catchUpFailures.set(sessionId, failure)
   }
 
   private notReady(): SessionLogError {
@@ -522,7 +559,7 @@ export class SessionLog {
 
   session(sessionId: string): SessionListItem | null {
     this.assertEgressReady()
-    this.assertReturnable(sessionId)
+    this.assertReadable(sessionId)
     const row = this.db
       .prepare(`${LIST_ITEM_SELECT} WHERE s.id = ?`)
       .get(sessionId) as unknown as ListItemRow | undefined
@@ -530,24 +567,34 @@ export class SessionLog {
   }
 
   /**
-   * The most recent sessions. Sessions whose id holds a registered value are
-   * left out before the limit and only counted (`withheld`), so one such id
-   * never breaks the list (GPT re-check N1).
+   * The most recent sessions. Sessions whose id holds a registered value
+   * (N1) and sessions whose deferred Chat history is still being caught up
+   * (N2) are left out before the limit and only counted, so neither breaks the
+   * list nor shows a history that lacks its tail.
    */
-  list(limit = 50): { sessions: SessionListItem[]; withheld: number } {
+  list(limit = 50): SessionListResult {
     this.assertEgressReady()
     const withheld: string[] = []
     for (const row of this.db.prepare('SELECT id FROM sessions').iterate() as Iterable<{ id: string }>) {
       if (!this.returnable(row.id)) withheld.push(row.id)
     }
+    const catchingUp = (this.db.prepare('SELECT DISTINCT thread_id FROM session_mirror_backlog').all() as unknown as { thread_id: string }[])
+      .map((row) => row.thread_id)
+      .filter((sessionId) => this.returnable(sessionId))
     const rows = this.db
       .prepare(
         `${LIST_ITEM_SELECT}
          WHERE s.id NOT IN (SELECT value FROM json_each(?))
+           AND s.id NOT IN (SELECT thread_id FROM session_mirror_backlog)
          ORDER BY COALESCE(last_event_at, s.created_at) DESC, s.id LIMIT ?`,
       )
       .all(JSON.stringify(withheld), Math.min(Math.max(1, limit), 200)) as unknown as ListItemRow[]
-    return { sessions: rows.map((row) => this.toListItem(row)), withheld: withheld.length }
+    return {
+      sessions: rows.map((row) => this.toListItem(row)),
+      withheld: withheld.length,
+      catchingUp: catchingUp.length,
+      catchUpFailed: catchingUp.filter((sessionId) => this.catchUpFailures.has(sessionId)).length,
+    }
   }
 
   /**
@@ -584,7 +631,7 @@ export class SessionLog {
     options: { afterSeq?: number; limit?: number; audience: SessionAudience; types?: readonly SessionEventType[]; seqs?: readonly number[] },
   ): { events: SessionEvent[]; lastSeq: number; hasMore: boolean } {
     this.assertEgressReady()
-    this.assertReturnable(sessionId)
+    this.assertReadable(sessionId)
     const head = this.requireSession(sessionId)
     const afterSeq = options.afterSeq ?? 0
     const limit = Math.min(Math.max(1, options.limit ?? 200), MAX_PAGE)
@@ -632,7 +679,7 @@ export class SessionLog {
     },
   ): SessionSearchHit[] {
     this.assertEgressReady()
-    if (options.sessionId !== undefined) this.assertReturnable(options.sessionId)
+    if (options.sessionId !== undefined) this.assertReadable(options.sessionId)
     const query = literalFtsQuery(text)
     if (!query) return []
     const limit = Math.min(Math.max(1, options.limit ?? 25), 100)
@@ -647,6 +694,7 @@ export class SessionLog {
          JOIN session_events e ON e.row_id = session_events_fts.rowid
          WHERE session_events_fts MATCH ?
            ${options.sessionId ? 'AND e.session_id = ?' : ''}
+           AND e.session_id NOT IN (SELECT thread_id FROM session_mirror_backlog)
            ${options.audience === 'remote_agent' ? "AND e.class = 'standard'" : ''}
            AND (e.class = 'standard' OR e.expires_at > ?)
            ${options.afterSeq !== undefined ? 'AND e.seq > ?' : ''}
@@ -695,7 +743,7 @@ export class SessionLog {
   /** Per-type counts over every event (people see all of them). */
   counts(sessionId: string): { counts: Partial<Record<SessionEventType, number>>; purged: number; redactions: number } {
     this.assertEgressReady()
-    this.assertReturnable(sessionId)
+    this.assertReadable(sessionId)
     this.requireSession(sessionId)
     const rows = this.db
       .prepare(
@@ -719,7 +767,7 @@ export class SessionLog {
   /** Totals of every usage event and the latest context state. */
   tokenMeter(sessionId: string): SessionTokenMeter {
     this.assertEgressReady()
-    this.assertReturnable(sessionId)
+    this.assertReadable(sessionId)
     this.requireSession(sessionId)
     const totals = this.db
       .prepare(
@@ -753,7 +801,7 @@ export class SessionLog {
     signal: AbortSignal,
   ): AsyncGenerator<SessionEvent> {
     this.assertEgressReady()
-    this.assertReturnable(sessionId)
+    this.assertReadable(sessionId)
     this.requireSession(sessionId)
     const wake = new SubscriptionWake()
     const set = this.subscribers.get(sessionId) ?? new Set<SubscriptionWake>()
@@ -824,10 +872,22 @@ export class SessionLog {
     return this.scrubber.scrub(sessionId) === sessionId
   }
 
-  /** Every session-scoped read refuses a session whose id contains a registered value (N1). */
-  private assertReturnable(sessionId: string): void {
+  /**
+   * Every session-scoped read refuses a session whose id contains a registered
+   * value (N1), and a session whose deferred Chat Jobs are not caught up yet
+   * (N2): its stored log lacks its tail, so no reader sees it as complete.
+   */
+  private assertReadable(sessionId: string): void {
     if (!this.returnable(sessionId)) {
       throw new SessionLogError('session_withheld', 'The session id contains a registered secret')
+    }
+    if (this.db.prepare('SELECT 1 FROM session_mirror_backlog WHERE thread_id = ? LIMIT 1').get(sessionId) !== undefined) {
+      const catchUpFailure = this.catchUpFailures.get(sessionId) ?? null
+      throw new SessionLogError(
+        'session_catching_up',
+        catchUpFailure === null ? 'The session history is still being caught up' : `The session history catch-up failed (${catchUpFailure})`,
+        { catchUpFailure },
+      )
     }
   }
 

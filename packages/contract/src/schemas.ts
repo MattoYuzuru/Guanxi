@@ -3327,6 +3327,7 @@ export const apiErrorSchema = z.object({
     'egress_not_ready',
     'loopback_only',
     'session_withheld',
+    'session_catching_up',
     'path_outside_workspace',
     'tool_disabled',
     'validation_failed',

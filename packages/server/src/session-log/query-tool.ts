@@ -127,6 +127,10 @@ export function createSessionQueryTool(options: {
           // Content-free: neither the id nor the secret reference (GPT re-check N1).
           throw new ToolError('This session log is withheld because its id contains a registered secret')
         }
+        if (error instanceof SessionLogError && error.code === 'session_catching_up') {
+          // The stored log lacks the tail of deferred Chat Jobs (GPT re-check N2).
+          throw new ToolError('This session log is still being restored; try again later')
+        }
         throw error
       }
     },

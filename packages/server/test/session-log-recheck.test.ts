@@ -15,7 +15,7 @@ import {
 } from '@guanxi/contract'
 import { SecretScrubber } from '../src/egress/scrubber.ts'
 import { ChatSessionMirror } from '../src/session-log/chat-mirror.ts'
-import { SessionLog } from '../src/session-log/log.ts'
+import { SessionLog, SessionLogError } from '../src/session-log/log.ts'
 import { createSessionQueryTool, querySessionLog } from '../src/session-log/query-tool.ts'
 import { sessionLogRoutes } from '../src/session-log/routes.ts'
 import { openDb, type Db } from '../src/store/db.ts'
@@ -45,11 +45,12 @@ class SlowPromptMirror extends ChatSessionMirror {
   }
 }
 
-function setup(options: { ready: boolean; slow?: boolean; db?: Db }) {
+function setup(options: { ready: boolean; slow?: boolean; db?: Db; catchUpRetryMs?: number }) {
   const db = options.db ?? openDb(':memory:')
   const scrubber = new SecretScrubber({ expectedSources: options.ready ? [] : ['vault'] })
   const log = new SessionLog({ db, scrubber })
-  const mirror = options.slow ? new SlowPromptMirror({ log, db }) : new ChatSessionMirror({ log, db })
+  const mirrorOptions = { log, db, catchUpRetryMs: options.catchUpRetryMs }
+  const mirror = options.slow ? new SlowPromptMirror(mirrorOptions) : new ChatSessionMirror(mirrorOptions)
   const jobs = new JobStore(db, { sessionMirror: mirror })
   return { db, scrubber, log, mirror, jobs }
 }
@@ -211,5 +212,154 @@ describe('K2 re-check N1: an open stream when the value is registered', () => {
     assert.match(frame, /"code":"session_withheld"/)
     assert.equal(frame.includes(SECRET), false)
     assert.equal((await reader.read()).done, true, 'the stream ends after the error frame')
+  })
+})
+
+/** Prompt texts and the Job of every lifecycle event, in trace order. */
+function order(db: Db, threadId: string) {
+  const rows = db.prepare('SELECT type, job_id, payload FROM session_events WHERE session_id = ? ORDER BY seq').all(threadId) as { type: string; job_id: string | null; payload: string }[]
+  return {
+    prompts: rows.filter((row) => row.type === 'prompt').map((row) => (JSON.parse(row.payload) as { text: string }).text),
+    lifecycle: rows.filter((row) => row.type === 'job.lifecycle').map((row) => row.job_id),
+  }
+}
+
+function finish(jobs: JobStore, jobId: string): void {
+  jobs.terminalize({ jobId, expectedStatus: 'queued', status: 'cancelled', stopReason: 'user_requested' })
+}
+
+function readCode(run: () => unknown): { code: string; failure: string | null } {
+  try {
+    run()
+  } catch (error) {
+    assert.ok(error instanceof SessionLogError, String(error))
+    return { code: error.code, failure: error.catchUpFailure }
+  }
+  assert.fail('expected the read to refuse')
+}
+
+describe('K2 re-check N2: deferred history before anything newer, and visible until caught up', () => {
+  it('a turn created right after ready, before the background pass, lands after the deferred one', async () => {
+    const control = setup({ ready: true })
+    const controlThread = thread(control.db)
+    const firstControl = send(control.jobs, controlThread, 'first').job.id
+    finish(control.jobs, firstControl)
+    const secondControl = send(control.jobs, controlThread, 'second').job.id
+
+    const { db, scrubber, jobs, mirror } = setup({ ready: false })
+    const threadId = thread(db)
+    const first = send(jobs, threadId, 'first').job.id
+    finish(jobs, first)
+    scrubber.ready('vault')
+    // Synchronously, before the queued readiness callback runs.
+    const second = send(jobs, threadId, 'second').job.id
+    assert.deepEqual(order(db, threadId), { prompts: ['first', 'second'], lifecycle: [first, first, second] })
+    await tick()
+    assert.deepEqual(mirror.backlog(), [])
+    assert.deepEqual(order(db, threadId), { prompts: ['first', 'second'], lifecycle: [first, first, second] })
+    assert.deepEqual(order(control.db, controlThread), { prompts: ['first', 'second'], lifecycle: [firstControl, firstControl, secondControl] })
+  })
+
+  it('the background pass follows durable chat order, not the deferral time or the random Job id', async () => {
+    const { db, scrubber, jobs } = setup({ ready: false })
+    const threadId = thread(db)
+    const first = send(jobs, threadId, 'first').job.id
+    finish(jobs, first)
+    const second = send(jobs, threadId, 'second').job.id
+    // A clock step back (or one shared millisecond) must not reorder the turns.
+    db.prepare('UPDATE session_mirror_backlog SET deferred_at = ? WHERE job_id = ?').run('2000-01-01T00:00:00.000Z', second)
+    scrubber.ready('vault')
+    await tick()
+    assert.deepEqual(order(db, threadId), { prompts: ['first', 'second'], lifecycle: [first, first, second] })
+  })
+
+  it('a failed catch-up keeps the session explicitly catching up everywhere, and newer turns wait behind it', async () => {
+    const { db, scrubber, jobs, log, mirror } = setup({ ready: false })
+    const threadId = thread(db)
+    const created = send(jobs, threadId, 'calls a tool')
+    const jobId = created.job.id
+    jobs.transition({ jobId, expectedStatus: 'queued', status: 'reserving' })
+    jobs.transition({ jobId, expectedStatus: 'reserving', status: 'loading' })
+    jobs.appendEvent({
+      jobId,
+      expectedNextSequence: jobs.get(jobId)!.lastEventSequence + 1,
+      type: 'output',
+      output: {
+        privacyClassification: 'private_chat',
+        event: {
+          type: 'tool_call',
+          data: {
+            id: `call-${SECRET}`, name: 'lookup', arguments: {}, status: 'running', result: null, error: null,
+            durationMs: null, source: 'builtin', parsedFrom: 'native', diff: null,
+          },
+        },
+      },
+    })
+    // The tool call id now holds a registered value, so its trace is refused (identifier refusal).
+    scrubber.register(REF, SECRET)
+    scrubber.ready('vault')
+    await tick()
+    assert.deepEqual(mirror.backlog(), [jobId], 'the Job stays deferred')
+    assert.equal(mirror.lastCatchUpFailure, 'invalid_event')
+
+    for (const read of [
+      () => log.session(threadId),
+      () => log.read(threadId, { audience: 'person' }),
+      () => log.counts(threadId),
+      () => log.tokenMeter(threadId),
+      () => log.search('tool', { sessionId: threadId, audience: 'person' }),
+      () => querySessionLog(log, threadId, 'remote_agent', {}),
+    ]) {
+      assert.deepEqual(readCode(read), { code: 'session_catching_up', failure: 'invalid_event' })
+    }
+    assert.deepEqual(log.list(), { sessions: [], withheld: 0, catchingUp: 1, catchUpFailed: 1 })
+
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const listed = listSessionsResponse.parse(await (await app.request('/api/sessions', {}, LOOPBACK)).json())
+    assert.deepEqual(listed, { sessions: [], withheld: 0, catchingUp: 1, catchUpFailed: 1 }, 'never a plain empty list')
+    for (const suffix of ['', '/events', '/spans', '/export', '/stream']) {
+      const response = await app.request(`/api/sessions/${threadId}${suffix}`, {}, LOOPBACK)
+      assert.equal(response.status, 503, suffix)
+      const text = await response.text()
+      assert.deepEqual(apiErrorSchema.parse(JSON.parse(text)).details, { failure: 'invalid_event' }, suffix)
+      assert.equal(text.includes(SECRET), false)
+    }
+    const tool = createSessionQueryTool({ log, sessionId: threadId, audience: 'remote_agent' })
+    await assert.rejects(
+      tool.execute({}, { workspaceRoot: null, enableBash: false, signal: new AbortController().signal }),
+      /still being restored/,
+    )
+
+    // A newer turn neither fails its Job write nor lands before the failed one.
+    jobs.terminalize({ jobId, expectedStatus: 'loading', status: 'cancelled', stopReason: 'user_requested' })
+    const newer = send(jobs, threadId, 'newer').job.id
+    assert.deepEqual(mirror.backlog(), [jobId, newer])
+    assert.equal((db.prepare('SELECT COUNT(*) AS n FROM session_events WHERE session_id = ?').get(threadId) as { n: number }).n, 0)
+  })
+
+  it('a catch-up that failed while ready is retried, also through another readiness cycle', async () => {
+    const { db, scrubber, jobs, log, mirror } = setup({ ready: false, catchUpRetryMs: 5 })
+    const threadId = thread(db)
+    const jobId = send(jobs, threadId, 'busy writer').job.id
+    // Another live writer of this process holds the session while the scrubber becomes ready.
+    const other = new SessionLog({ db, scrubber: new SecretScrubber(), writer: { id: 'other-writer', pid: process.pid, host: 'test' } })
+    const handle = other.open(threadId, { kind: 'chat', threadId })
+    scrubber.ready('vault')
+    await tick()
+    assert.deepEqual(mirror.backlog(), [jobId])
+    assert.equal(mirror.lastCatchUpFailure, 'writer_busy')
+    assert.deepEqual(readCode(() => log.read(threadId, { audience: 'person' })), { code: 'session_catching_up', failure: 'writer_busy' })
+
+    handle.close()
+    scrubber.expect('env.shell')
+    scrubber.ready('env.shell')
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    assert.deepEqual(mirror.backlog(), [], 'the retry caught the Job up')
+    assert.equal(mirror.lastCatchUpFailure, null)
+    assert.deepEqual(order(db, threadId), { prompts: ['busy writer'], lifecycle: [jobId] })
+    assert.equal(log.read(threadId, { audience: 'person' }).events.at(-1)!.type, 'job.lifecycle')
+    other.close()
+    log.close()
   })
 })

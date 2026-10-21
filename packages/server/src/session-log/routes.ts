@@ -57,6 +57,12 @@ function invalid(context: Context, message: string): Response {
 }
 
 const WITHHELD_MESSAGE = 'This session is withheld: its id contains a registered secret'
+const CATCHING_UP_MESSAGE = 'This session history is still being restored from the Chat job store'
+
+/** Explicit catching-up state (GPT re-check N2): never an empty or partial success. */
+function catchingUp(error: SessionLogError): ApiError {
+  return { code: 'session_catching_up', message: CATCHING_UP_MESSAGE, details: { failure: error.catchUpFailure } }
+}
 
 function failure(context: Context, error: unknown, log?: SessionLog): Response {
   if (error instanceof SessionLogError && error.code === 'session_not_found') {
@@ -65,6 +71,9 @@ function failure(context: Context, error: unknown, log?: SessionLog): Response {
   if (error instanceof SessionLogError && error.code === 'session_withheld') {
     // Content-free: the id is never echoed back (GPT re-check N1).
     return context.json(apiError('session_withheld', WITHHELD_MESSAGE), 403)
+  }
+  if (error instanceof SessionLogError && error.code === 'session_catching_up') {
+    return context.json(catchingUp(error), 503)
   }
   if (error instanceof SessionLogError && error.code === 'egress_not_ready') {
     // Fail closed: nothing leaves the log until every declared secret source has registered.
@@ -266,10 +275,13 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
             }
             controller.enqueue(eventFrame(next.value))
           } catch (failed) {
-            // A value registered while the stream is open withholds the session from then on.
+            // A value registered while the stream is open withholds the session from then on;
+            // a Job deferred meanwhile makes its history incomplete until it is caught up.
             const error = failed instanceof SessionLogError && failed.code === 'session_withheld'
               ? apiError('session_withheld', WITHHELD_MESSAGE)
-              : apiError('storage_error', 'Session event subscription failed')
+              : failed instanceof SessionLogError && failed.code === 'session_catching_up'
+                ? catchingUp(failed)
+                : apiError('storage_error', 'Session event subscription failed')
             controller.enqueue(encoder.encode(`event: ${SSE_ERROR_EVENT_NAME}\ndata: ${JSON.stringify(error)}\n\n`))
             subscriber.abort()
             await iterator.return(undefined)

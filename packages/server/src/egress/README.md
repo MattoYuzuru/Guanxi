@@ -101,7 +101,7 @@ implements it as follows ([session-log README](../session-log/README.md)):
 
 | Path while not ready | Behaviour |
 | --- | --- |
-| Legacy Chat trace (job store mirror) | writes no trace; inside the Job transaction it records only the Job id in `session_mirror_backlog` (no payload). Once the scrubber is ready, at the Job's next event or at the next start, the trace is reconstructed from the durable Job store, scrubbed, in order and with the Job events' times. Nothing secret-bearing is queued, and a crash before readiness loses nothing |
+| Legacy Chat trace (job store mirror) | writes no trace; inside the Job transaction it records only the Job id in `session_mirror_backlog` (no payload). Once the scrubber is ready, at the session's next Job event or at the next start, the trace is reconstructed from the durable Job store, scrubbed, in durable chat order, before anything newer of that session, and with the source times. Until a session's backlog is empty its reads answer `session_catching_up` (HTTP 503, `details.failure` naming the last failed attempt's code) and the list counts it instead of listing it; a failed attempt is retried after a bounded growing delay. Nothing secret-bearing is queued, and a crash before readiness loses nothing |
 | `SessionHandle` open and append | fail closed with `egress_not_ready` |
 | Reads, inspector routes, export, query tool | fail closed: `egress_not_ready`, HTTP 503 with `details.pendingSources` |
 

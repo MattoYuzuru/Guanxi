@@ -48,6 +48,8 @@ function mockApi(options: {
   pageSize?: number
   hits?: SessionSearchHit[]
   withheld?: number
+  catchingUp?: number
+  catchUpFailed?: number
 } = {}) {
   const events = options.events ?? sessionTrace()
   const pageSize = options.pageSize ?? 500
@@ -58,6 +60,9 @@ function mockApi(options: {
     if (url.pathname === `/api/sessions/${SESSION_ID}`) {
       if (options.summaryStatus === 404) return json({ code: 'session_not_found', message: 'Session not found', details: null }, 404)
       if (options.summaryStatus === 500) return json({ code: 'storage_error', message: 'Session log read failed', details: null }, 500)
+      if (options.summaryStatus === 503) {
+        return json({ code: 'session_catching_up', message: 'This session history is still being restored from the Chat job store', details: { failure: 'writer_busy' } }, 503)
+      }
       if (options.summaryStatus === 403) {
         return json({ code: 'session_withheld', message: 'This session is withheld: its id contains a registered secret', details: null }, 403)
       }
@@ -86,7 +91,7 @@ function mockApi(options: {
       })
     }
     if (url.pathname === '/api/sessions/search') return json({ query: url.searchParams.get('q') ?? '', hits: options.hits ?? [] })
-    if (url.pathname === '/api/sessions') return json({ sessions: [], withheld: options.withheld ?? 0 })
+    if (url.pathname === '/api/sessions') return json({ sessions: [], withheld: options.withheld ?? 0, catchingUp: options.catchingUp ?? 0, catchUpFailed: options.catchUpFailed ?? 0 })
     return json({ code: 'internal_error', message: 'unexpected', details: null }, 500)
   }))
   return calls
@@ -247,6 +252,21 @@ describe('inspector page', () => {
     render(<InspectorPage sessionId={SESSION_ID} />)
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('This trace is hidden: its session id contains a value now registered as a secret.')
+  })
+
+  it('names sessions still being restored instead of claiming there are none, and explains a failed restore', async () => {
+    setActiveLocale('en')
+    mockApi({ catchingUp: 2, catchUpFailed: 1 })
+    const { unmount } = render(<InspectorPage sessionId={null} />)
+    expect(await screen.findByText('Being restored from the saved chat history: 2')).toBeTruthy()
+    expect(screen.getByText('Restoring failed and is retried automatically: 1')).toBeTruthy()
+    expect(screen.queryByText('No session has a trace yet')).toBeNull()
+    unmount()
+
+    mockApi({ summaryStatus: 503 })
+    render(<InspectorPage sessionId={SESSION_ID} />)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Restoring this trace from the saved chat history failed (writer_busy).')
   })
 
   it('follows the tab pattern: arrows, Home and End move selection and focus, both panels stay mounted', async () => {

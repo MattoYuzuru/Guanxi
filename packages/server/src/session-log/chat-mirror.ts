@@ -19,6 +19,12 @@
  *   next Job event of that Job or at the next start, it catches the Job up from
  *   the Job store. Nothing secret-bearing is held, and a crash before readiness
  *   loses nothing (GPT review R2).
+ * - A session's deferred Jobs are caught up in durable chat order (the user
+ *   message's sequence), and before anything newer of that session: a ready
+ *   write first drains them inside its own transaction, and if that fails it
+ *   defers too, so a newer turn never lands before an older one (GPT re-check
+ *   N2). Until the backlog of a session is empty its reads refuse with
+ *   `session_catching_up`, naming the last failure's code.
  * - Every mirrored event carries its source time (the Job event's, or the
  *   stored Chat input's for the prompt) and an idempotency key
  *   `job:<jobId>:<jobSequence>:<part>`, so a reconstruction is identical to
@@ -37,6 +43,14 @@ import type { Db } from '../store/db.ts'
 import { DEFAULT_REASONING_RETENTION_MS, type SessionEventInput, type SessionLog } from './log.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
+export const DEFAULT_CATCH_UP_RETRY_MS = 1_000
+export const MAX_CATCH_UP_RETRY_MS = 5 * 60 * 1_000
+
+/** An error's code when it is a plain identifier, so a failure report never carries content. */
+function failureCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' && /^[A-Za-z0-9_]{1,64}$/u.test(code) ? code : 'catch_up_failed'
+}
 
 /** The hook `JobStore` calls; every method runs inside the store's transaction. */
 export interface JobEventMirror {
@@ -53,6 +67,11 @@ export interface JobEventMirror {
   afterCommit(): void
   /** Called after the store's ROLLBACK. */
   afterRollback(): void
+}
+
+interface BacklogRow {
+  job_id: string
+  thread_id: string
 }
 
 interface ChatSource {
@@ -98,11 +117,26 @@ export class ChatSessionMirror implements JobEventMirror {
   private readonly pending = new Set<string>()
   private backlogScheduled = false
   private failure: string | null = null
+  private readonly retryBaseMs: number
+  private readonly retryMaxMs: number
+  private retryDelayMs: number
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
 
-  constructor(options: { log: SessionLog; db: Db; reasoningRetentionMs?: number }) {
+  constructor(options: {
+    log: SessionLog
+    db: Db
+    reasoningRetentionMs?: number
+    /** First delay before a failed catch-up is retried; it doubles up to `catchUpRetryMaxMs`. */
+    catchUpRetryMs?: number
+    catchUpRetryMaxMs?: number
+  }) {
     this.log = options.log
     this.db = options.db
     this.reasoningRetentionMs = options.reasoningRetentionMs ?? DEFAULT_REASONING_RETENTION_MS
+    this.retryBaseMs = options.catchUpRetryMs ?? DEFAULT_CATCH_UP_RETRY_MS
+    this.retryMaxMs = Math.max(this.retryBaseMs, options.catchUpRetryMaxMs ?? MAX_CATCH_UP_RETRY_MS)
+    this.retryDelayMs = this.retryBaseMs
+    this.log.closedSignal.addEventListener('abort', () => this.stopRetry(), { once: true })
     // Jobs deferred before a restart are caught up as soon as the scrubber is ready.
     this.scheduleBacklog()
   }
@@ -116,7 +150,8 @@ export class ChatSessionMirror implements JobEventMirror {
   }): void {
     const source = this.sourceForThread(input.threadId)
     if (!source) return
-    if (!this.log.egressReady) {
+    // Older deferred Jobs of this session go first; if they cannot, this turn waits behind them.
+    if (!this.log.egressReady || !this.drainWithin(source)) {
       this.defer(input.jobId, source.thread_id)
       return
     }
@@ -127,7 +162,7 @@ export class ChatSessionMirror implements JobEventMirror {
     if (isDelta(event)) return
     const source = this.sourceForJob(event.jobId)
     if (!source) return
-    if (!this.log.egressReady) {
+    if (!this.log.egressReady || !this.drainWithin(source)) {
       this.defer(event.jobId, source.thread_id)
       return
     }
@@ -147,35 +182,36 @@ export class ChatSessionMirror implements JobEventMirror {
 
   /**
    * The last catch-up failure (an error code, never content), or null. A
-   * failed Job stays in the backlog and is retried at its next Job event, the
-   * next readiness change or the next start, not in a loop.
+   * failed Job stays in the backlog, its session stays `session_catching_up`
+   * with this code, and it is retried at the session's next Job event, after a
+   * bounded growing delay (`catchUpRetryMs` doubling up to `catchUpRetryMaxMs`),
+   * at the next readiness transition and at the next start.
    */
   get lastCatchUpFailure(): string | null {
     return this.failure
   }
 
-  /** Jobs whose trace is still deferred, in order (ids only). */
+  /** Jobs whose trace is still deferred, per session in durable chat order (ids only). */
   backlog(): string[] {
-    return (this.db
-      .prepare('SELECT job_id FROM session_mirror_backlog ORDER BY deferred_at, job_id')
-      .all() as unknown as { job_id: string }[]).map((row) => row.job_id)
+    return this.backlogRows().map((row) => row.job_id)
   }
 
   /**
-   * Catches every deferred Job up, each in its own transaction. Stops at the
-   * first failure and keeps the rest for the next attempt (the Job's next event,
-   * the next readiness change or the next start). Returns the Jobs caught up.
+   * Catches every deferred Job up, each in its own transaction, per session in
+   * durable chat order. A failure stops that session only (nothing newer of
+   * it is mirrored before the failed Job) and is reported to its reads; other
+   * sessions continue. Returns the Jobs caught up.
    */
   catchUpBacklog(): number {
     if (this.log.isClosed || !this.log.egressReady) return 0
     let done = 0
-    for (const jobId of this.backlog()) {
+    const failed = new Set<string>()
+    for (const { job_id: jobId, thread_id: threadId } of this.backlogRows()) {
       if (!this.log.egressReady) break
+      if (failed.has(threadId)) continue
       try {
         this.db.exec('BEGIN IMMEDIATE')
-        const source = this.sourceForJob(jobId)
-        if (source) this.catchUpWithin(source, jobId)
-        else this.db.prepare('DELETE FROM session_mirror_backlog WHERE job_id = ?').run(jobId)
+        this.catchUpJobWithin(jobId)
         this.db.exec('COMMIT')
       } catch (error) {
         try {
@@ -184,31 +220,110 @@ export class ChatSessionMirror implements JobEventMirror {
           // The transaction may already be over.
         }
         this.afterRollback()
-        this.failure = (error as { code?: unknown }).code === undefined ? 'catch_up_failed' : String((error as { code: unknown }).code)
-        break
+        failed.add(threadId)
+        this.reportFailure(threadId, error)
+        continue
       }
       this.afterCommit()
-      this.failure = null
       done++
+      if (this.backlogRows(threadId).length === 0) this.log.reportCatchUp(threadId, null)
     }
+    if (failed.size === 0) this.failure = null
     return done
   }
 
   private scheduleBacklog(): void {
-    if (this.backlogScheduled) return
+    if (this.backlogScheduled || this.log.isClosed) return
     this.backlogScheduled = true
     this.log.whenEgressReady().then(
       () => {
         this.backlogScheduled = false
-        this.catchUpBacklog()
-        // A source declared between the ready transition and this callback
-        // closes the gate again (GPT review R4): wait for the next transition.
-        if (!this.log.isClosed && !this.log.egressReady && this.backlog().length > 0) this.scheduleBacklog()
+        this.runBacklogPass()
       },
       () => {
         this.backlogScheduled = false
       },
     )
+  }
+
+  private runBacklogPass(): void {
+    if (this.log.isClosed) return
+    this.catchUpBacklog()
+    if (this.log.isClosed) return
+    if (this.backlogRows().length === 0) {
+      this.retryDelayMs = this.retryBaseMs
+      return
+    }
+    // A source declared between the ready transition and this callback
+    // closes the gate again (GPT review R4): wait for the next transition.
+    if (!this.log.egressReady) this.scheduleBacklog()
+    // A failure while ready is retried after a bounded, growing delay (N2).
+    else this.scheduleRetry()
+  }
+
+  private scheduleRetry(): void {
+    if (this.retryTimer !== null || this.log.isClosed) return
+    const delay = this.retryDelayMs
+    this.retryDelayMs = Math.min(delay * 2, this.retryMaxMs)
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      this.scheduleBacklog()
+    }, delay)
+    this.retryTimer.unref?.()
+  }
+
+  private stopRetry(): void {
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+  }
+
+  private reportFailure(threadId: string, error: unknown): void {
+    this.failure = failureCode(error)
+    this.log.reportCatchUp(threadId, this.failure)
+  }
+
+  /** Deferred Jobs, of one session or all, per session in durable chat order (the user message's sequence). */
+  private backlogRows(threadId?: string): BacklogRow[] {
+    return this.db
+      .prepare(
+        `SELECT b.job_id, b.thread_id
+         FROM session_mirror_backlog b
+         LEFT JOIN chat_job_inputs i ON i.job_id = b.job_id
+         LEFT JOIN messages m ON m.id = i.user_message_id
+         ${threadId === undefined ? '' : 'WHERE b.thread_id = ?'}
+         ORDER BY b.thread_id, m.seq IS NULL, m.seq, i.created_at, b.deferred_at, b.job_id`,
+      )
+      .all(...(threadId === undefined ? [] : [threadId])) as unknown as BacklogRow[]
+  }
+
+  /**
+   * Inside the caller's transaction, before a ready write of this session:
+   * catches its deferred Jobs up, oldest first. On failure everything it
+   * appended is rolled back and false tells the caller to defer as well.
+   */
+  private drainWithin(source: ChatSource): boolean {
+    const rows = this.backlogRows(source.thread_id)
+    if (rows.length === 0) return true
+    this.db.exec('SAVEPOINT session_mirror_drain')
+    try {
+      for (const row of rows) this.catchUpJobWithin(row.job_id)
+      this.db.exec('RELEASE session_mirror_drain')
+    } catch (error) {
+      this.db.exec('ROLLBACK TO session_mirror_drain')
+      this.db.exec('RELEASE session_mirror_drain')
+      this.reportFailure(source.thread_id, error)
+      this.scheduleRetry()
+      return false
+    }
+    this.log.reportCatchUp(source.thread_id, null)
+    return true
+  }
+
+  /** Inside a transaction: one deferred Job, from the Job store. */
+  private catchUpJobWithin(jobId: string): void {
+    const source = this.sourceForJob(jobId)
+    if (source) this.catchUpWithin(source, jobId)
+    else this.db.prepare('DELETE FROM session_mirror_backlog WHERE job_id = ?').run(jobId)
   }
 
   /** Inside the Job transaction: remember that this Job's trace is to be reconstructed. */

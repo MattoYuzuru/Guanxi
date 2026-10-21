@@ -55,6 +55,10 @@ export const listSessionsResponse = z
     sessions: z.array(sessionListItemSchema),
     /** Sessions left out because their id contains a value registered as a secret after it was created. */
     withheld: z.number().int().nonnegative(),
+    /** Sessions left out until their deferred Chat history has been reconstructed. */
+    catchingUp: z.number().int().nonnegative(),
+    /** Of `catchingUp`, sessions whose last reconstruction attempt failed; it is retried. */
+    catchUpFailed: z.number().int().nonnegative(),
   })
   .strict()
 export type ListSessionsResponse = z.infer<typeof listSessionsResponse>

@@ -37,7 +37,7 @@ Event schemas are in `packages/contract/src/events/`.
 | Reasoning retention | reasoning events carry `expires_at` (7 days, or the parent Chat's sooner TTL; a caller may shorten it, never extend it); reads and search treat an expired event as purged; the plugin purges at start and every 10 minutes, then optimizes the FTS index; `secure_delete` zeroes freed pages; the event stays | `session-log.test.ts` (reasoning class), `session-log-review.test.ts` (no bytes left in the file) |
 | Events disappear only with their Thread | delete triggers on `sessions` and `session_events` | `session-log.test.ts` |
 | Reasoning never in plain logs | the module never writes to the console; the test captures stdout, stderr and console during a full turn | `session-log-chat.test.ts` |
-| Nothing written or read before every secret source registered (K3 review H3), and nothing lost meanwhile (GPT review R2) | while `egress.scrubber` is not ready the mirror records only the Job id in `session_mirror_backlog` inside the Job transaction; once ready (or at the Job's next event, or at the next start) it reconstructs the trace from `job_events` and `chat_job_inputs`, idempotently and with the Job events' times; handles, reads, routes, exports and the query tool fail closed with `egress_not_ready` | `session-log-readiness.test.ts` (including `SIGKILL` before ready) |
+| Nothing written or read before every secret source registered (K3 review H3), nothing lost meanwhile (GPT review R2), and no history shown before it is complete (GPT re-check N2) | while `egress.scrubber` is not ready the mirror records only the Job id in `session_mirror_backlog` inside the Job transaction; once ready (or at the session's next Job event, or at the next start) it reconstructs the trace from `job_events` and `chat_job_inputs`, idempotently, with the source times, per session in durable chat order (the user message's sequence) and before anything newer: a ready write first drains the session's backlog inside its own transaction and defers as well if that fails. Until a session's backlog is empty its reads refuse with `session_catching_up` (HTTP 503 with `details.failure`, a content-free tool error), the list counts it (`catchingUp`, `catchUpFailed`) instead of listing it, and search leaves it out; a failed attempt is retried after a bounded delay doubling from 1 s to 5 min. Handles, reads, routes, exports and the query tool fail closed with `egress_not_ready` | `session-log-readiness.test.ts` (including `SIGKILL` before ready), `session-log-recheck.test.ts` (N2, N3) |
 
 ## Writing
 
@@ -81,6 +81,9 @@ and the mirror works by catching up:
   lease table must not reuse `session_writers`.
 - **Trace failures block the Chat Job write.** The mirror runs inside the Job transaction, so a
   refused trace write (a live second writer, an identifier holding a secret) rolls the Job event back.
+  The exception is catching up older deferred Jobs before a ready write: that runs in a savepoint,
+  and on failure the newer Job is deferred behind them instead, so the Chat keeps working while
+  its session stays `session_catching_up`.
   This is deliberate: a Job event without its trace would break the trace's completeness and
   could hide an unscrubbed payload. Two servers on one data directory are unsupported; the
   second fails loudly instead of corrupting the first one's sessions.
