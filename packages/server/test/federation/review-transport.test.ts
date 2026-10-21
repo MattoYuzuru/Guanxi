@@ -30,3 +30,19 @@ test('device code storage is bounded and expired requests are purged before allo
     assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_devices').get()!.n, 1, 'expired rows were purged')
   } finally { home.close() }
 })
+
+test('GET telemetry returns only samples owned by the caller account', async () => {
+  const home = new SimNode(identity('home')); const owner = new SimNode(identity('owner-node')); const family = new SimNode(identity('family-node',{accountId:'family'}))
+  try {
+    for (const peer of [owner,family]) {
+      home.trust(peer); peer.trust(home)
+      assert.equal((await peer.request(home,'POST','/telemetry', {nodeId:peer.keys.identity.id,source:'test',observedAt:peer.time,confidence:'reported',memoryPressure:'unknown',cpuUtilization:null,ownerPresent:true})).status, 200)
+    }
+    for (const peer of [owner,family]) {
+      const response = await peer.request(home,'GET','/telemetry')
+      assert.equal(response.status, 200)
+      const {samples} = await response.json() as {samples:{nodeId:string}[]}
+      assert.deepEqual(samples.map((s)=>s.nodeId), [peer.keys.identity.id], 'other-account owner presence is private')
+    }
+  } finally { home.close(); owner.close(); family.close() }
+})

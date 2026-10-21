@@ -103,9 +103,11 @@ export class Federation {
     if (old && (JSON.parse(old.data as string) as Telemetry).observedAt >= sample.observedAt) return
     this.#options.db.prepare('INSERT INTO federation_telemetry VALUES (?,?) ON CONFLICT(node_id) DO UPDATE SET data=excluded.data').run(peer.id, canonical(sample))
   }
-  telemetry(): (Telemetry & { ageMs: number })[] {
+  telemetry(accountId = this.identity.accountId): (Telemetry & { ageMs: number })[] {
     this.clean(null)
-    return this.#options.db.prepare('SELECT data FROM federation_telemetry ORDER BY node_id').all().map((row) => {
+    return this.#options.db.prepare(`SELECT t.data FROM federation_telemetry t
+      JOIN federation_peers p ON p.id=t.node_id
+      WHERE json_extract(p.identity,'$.accountId')=? ORDER BY t.node_id`).all(accountId).map((row) => {
       const sample = telemetrySchema.parse(JSON.parse(row.data as string)); this.clean(sample)
       return { ...sample, ageMs: Math.max(0, this.now() - sample.observedAt) }
     })

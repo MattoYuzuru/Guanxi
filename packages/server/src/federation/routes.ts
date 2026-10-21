@@ -75,8 +75,7 @@ export function federationRoutes(resolve: () => Federation) {
   app.post('/telemetry', (c) => { c.get('federation').receiveTelemetry(c.get('peer'), c.get('body') as never); return c.json({ applied: true }) })
   app.get('/telemetry', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'telemetry')
-    if (peer.accountId !== f.identity.accountId) throw new FederationError('owner_mismatch', 403)
-    return c.json({ samples: f.telemetry() })
+    return c.json({ samples: f.telemetry(peer.accountId) })
   })
   return app
 }
