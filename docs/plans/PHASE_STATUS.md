@@ -3,8 +3,9 @@
 **Status:** implemented tracker · **Updated:** 2026-10-21
 **Current stage:** wave 3 integration and residuals. K1–K3, R1, F1 and DS1-a/b/c are
 merged; K4, K5 and R2 have merged bounded implementations with named unfinished scope.
-DS2, K4 follow-up 2 and X1 have independently reviewed repair candidates awaiting full
-integration gates; U1-a needs review/integration. B1 remains partial.
+K4 follow-up 2 is merged after full integrator gates. DS2 and X1 have independently reviewed
+repair candidates awaiting integration; U1 replication, B1 admission and R3 ETA have new
+bounded candidates. Their full stage gates remain open.
 See the [coordination audit](evidence/coordination-2026-10-21.md) for pinned heads, progress
 estimates, active ownership and the distinction between a merge and a stage exit.
 
@@ -235,7 +236,7 @@ decision was made.
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
-| K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
+| K4 Native agent | partially implemented; retention/R1 follow-up merged (`8006cd8`); input artifacts, HTTPS positive evidence, UI evidence and platform scope remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | K5 External agents | partial implementation merged (`80f7245`); review fixes included | [evidence/K5](evidence/K5.md); real release captures, effective implicit bare detection, automatic Claude quota producer and distributed admission remain open. |
 | B1 Bench base | partial fixture foundation handed off; no worker running at audit | [lanes/B1](lanes/B1.md); corpus staging, real bounded executor/billing gateway and five-seed model measurements remain open. |
@@ -243,6 +244,8 @@ decision was made.
 | R2 Relay executor | internal single-node implementation merged (`726efc3`); review fixes included | [evidence/R2](evidence/R2.md); trusted live runtime meter/admission and independent semantic probe evidence remain open. No public start flow or live long-run claim. |
 | U1 Shell, layout, modes | U1-a handed off, awaiting independent review/integration; U1-b/c not started | [lanes/U1](lanes/U1.md); local persistence/conflict handling exists. Actual cross-node layout replication is absent and must not be inferred from in-memory merge tests. |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
+| R3 Judge + ETA | ETA foundation independently reviewed (`codex/ms1-r3`, `bf6a222`); integration pending | 13 focused tests pass; full judge/delegation, real calibration/night-run exit gates remain open. |
+| F2 Remote attempts | implementation planning active after U1 contract-version review | Offer/reservation foundation is planned; no remote dispatch or live run is claimed. |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
 
 ## Integration coordination audit (2026-10-21)
@@ -254,14 +257,16 @@ closed by a percentage estimate.
 
 ### Final continuation candidates
 
-- K4 follow-up 2: `codex/k4f2-review-fixes` at `baeac3c`, independent repair review closed;
-  5 new / 33 regression envelope = 38 targeted tests pass, server typecheck passes.
+- K4 follow-up 2: merged as `8006cd8` after full integrator gates.
+  [Evidence](evidence/K4-followup-2.md) separates 5 new review repairs / 33 targeted envelope,
+  original feature evidence and full regression counts. Source lint, links and licenses pass.
 - DS2: `codex/ds2-review-fixes` at `785b814`, independent repair review closed;
   4 new / 43 regression envelope = 47 targeted tests pass; hardware signing remains unverified.
 - X1: `codex/x1-parent-read-boundary` at `647c5d0`, repair and integration-conflict review closed;
   5 new / 49 indexing envelope, plus seven kernel boot tests = 61 total, 60 pass / 1 Linux-only
   skip. All-workspace typecheck, links and licenses pass. Repaired-source Linux checks remain.
 
-All three candidates include published main `3f73ded`, have committed handoffs and remain
-unmerged into main. The full integrator gates are the next task, not evidence already earned
-by a targeted run. Detailed receipts and limits are in the [coordination audit](evidence/coordination-2026-10-21.md).
+K4 is integrated. DS2 and X1 remain candidates; their original targeted evidence does not
+stand in for full integration gates. Continuation work is tracked in
+[evidence/coordination-2026-10-22](evidence/coordination-2026-10-22.md); historical receipts and
+limits remain in the [previous audit](evidence/coordination-2026-10-21.md).
