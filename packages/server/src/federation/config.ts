@@ -59,6 +59,9 @@ export class SharedConfig {
   private vector(): Record<string, number> {
     const seen: Record<string, number> = Object.create(null)
     for (const { operation: op } of this.operations()) {
+      // Another account's administrator has no authority over our privilege
+      // history or local counters, even on a shared installation.
+      if (op.accountId !== this.local.accountId) continue
       // A signed dot n causally follows that origin's n-1, even when payloads
       // arrive out of order. Propagate its context as well as the observed dot;
       // otherwise a later write can become concurrent with an observed revoke.

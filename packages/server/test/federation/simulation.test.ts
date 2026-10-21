@@ -92,13 +92,14 @@ test('revoked-origin historical duplicates cannot wedge unrelated current-author
   } finally {a.close();b.close();c.close()}
 })
 
-test('non-admin forged transitive context cannot defeat a concurrent revoke or invent local counters', () => {
-  const a=new SimNode(identity('a'));const b=new SimNode(identity('b',{trust:'shared_device',admin:false}));const c=new SimNode(identity('c'))
+test('non-admin and foreign-account context cannot defeat a concurrent revoke or invent local counters', () => {
+  for(const policy of [{trust:'shared_device' as const,admin:false},{accountId:'other-account',admin:true}]) {
+  const a=new SimNode(identity('a'));const b=new SimNode(identity('b',policy));const c=new SimNode(identity('c'))
   try {
     for(const n of [a,b,c]) for(const peer of [a,b,c]) n.trust(peer)
     // B has its own legitimate metadata credential, but no signature from A
     // and no authority to attest another admin's privileged causal history.
-    const operation={origin:'b',counter:1,accountId:'owner',key:'metadata',clock:{wall:b.time,logical:0},context:{a:1,c:999},value:{kind:'setting' as const,value:true}}
+    const operation={origin:'b',counter:1,accountId:b.keys.identity.accountId,key:'metadata',clock:{wall:b.time,logical:0},context:{a:1,c:999},value:{kind:'setting' as const,value:true}}
     const forged={operation,signature:signValue(b.keys.privateKey,operation)}
     c.federation.config.ingest([forged])
     const grant=c.federation.config.create('editor',{kind:'grant',present:true})
@@ -110,6 +111,7 @@ test('non-admin forged transitive context cannot defeat a concurrent revoke or i
     for(const n of [a,c]) assert.equal((n.federation.config.state()['["owner","grant","editor"]'] as {present:boolean}).present,false)
     assert.equal(a.federation.config.stateHash(),c.federation.config.stateHash())
   } finally {a.close();b.close();c.close()}
+  }
 })
 
 test('trusted foreign claims cannot invent the local origin counter or mutate its clock', () => {
