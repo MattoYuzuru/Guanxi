@@ -16,16 +16,20 @@ Read the [vision](docs/vision/VISION.md) and the [requirements](docs/vision/REQU
   governor, sourced capability and fit evidence, a Hugging Face/Ollama catalog, logical
   projects, retention, attachments and English/Russian UI. Its documentation is in
   [`docs/legacy/`](docs/legacy/README.md).
-- **What comes next** is a re-foundation on an own plugin kernel (Cordis 4) with native and
-  external agents, a multi-machine fleet, relay executors for small local models, a benchmark
-  stage and a self-evolution loop. See the [target architecture](docs/architecture/TARGET_ARCHITECTURE.md)
-  and the [roadmap](docs/plans/ROADMAP.md). None of it is implemented yet.
+- **The re-foundation has started:** Guanxi's [own plugin kernel](docs/decisions/0037-own-plugin-kernel.md)
+  and the DS1-a design tokens and fonts are implemented, independently verified and merged.
+  Native and external agents, a multi-machine fleet, phone control, relay executors for small
+  local models, a benchmark stage and a self-evolution loop remain planned. See the
+  [target architecture](docs/architecture/TARGET_ARCHITECTURE.md),
+  [roadmap](docs/plans/ROADMAP.md) and [stage status](docs/plans/PHASE_STATUS.md).
 
 ## Current layout
 
 ```text
 packages/contract  Zod REST/SSE schemas
+packages/kernel    own plugin kernel and node host
 packages/server    Hono API, SQLite, Ollama adapter, agent/tools
+packages/ui        design tokens, fonts and UI foundations
 packages/web       React SPA
 packages/cli       foreground launcher (guanxi)
 ```

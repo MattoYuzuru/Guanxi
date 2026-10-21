@@ -1,6 +1,10 @@
 # Next agent prompt — wave 2 (K2 and K3)
 
-**Status:** ready · **Updated:** 2026-10-20 (K1 and DS1-a merged into `main`)
+**Status:** ready · **Updated:** 2026-10-21 (K1 and DS1-a merged into `main`)
+
+The repository presentation review did not advance implementation stages. Continue wave 2
+below. Phone access remains planned for U4 under D-187 and ADR-0038; no public website or relay
+was deployed by that review.
 
 Work now runs as parallel lanes. Start from [lanes/README](lanes/README.md), which lists every
 lane, its runner, branch and ports, and the rules every lane follows.

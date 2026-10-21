@@ -1,9 +1,8 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-20
-**Current stage:** S0 Re-foundation — committed 2026-10-20 (`a6fd314`..`be89bb9`); review
-fixes applied but not re-reviewed; next: wave 1 of [parallel lanes](lanes/README.md) (K1, DS1-a,
-DS1-b; DS1-c after K1 and DS1-a merge)
+**Status:** implemented tracker · **Updated:** 2026-10-21
+**Current stage:** wave 2 of [parallel lanes](lanes/README.md): K1 and DS1-a are merged;
+K2 and K3 are ready. DS1-b is in review fixes; DS1-c waits for DS1-b.
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
@@ -170,6 +169,17 @@ Residual risks:
 | DS1-c: lint ratchet and codemod | waiting for DS1-b | [lanes/DS1-c](lanes/DS1-c.md) |
 
 ## Next stages
+
+Repository presentation review (2026-10-21): GitHub About now has an English early-alpha
+description and ten topics. Website temporarily links to the README status because the
+configured domain failed DNS resolution in the local check; public DNS availability was not
+independently established. Releases remain visible; Deployments and empty Packages are hidden
+from the home page. This does not hide infrastructure or change deployment access.
+
+Documentation reconciliation: README now records the merged own kernel and DS1-a; the
+navigation includes ADR-0037/0038; VISION reflects D-193's uncapped fleet; the architecture and
+client ADR distinguish the planned phone relay from execution. No deployment or new hosting
+decision was made. Validation evidence is recorded after the independent review below.
 
 | Stage | Status | Notes |
 | --- | --- | --- |
