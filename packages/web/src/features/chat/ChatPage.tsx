@@ -5,6 +5,8 @@
  * useChat перечитывает сохранённую историю целиком.
  */
 import {
+  createContext,
+  useContext,
   useCallback,
   useEffect,
   useMemo,
@@ -67,22 +69,26 @@ import {
   type ChatSendIntent,
 } from './ResourceConflictDecision.tsx'
 
+const WorkspaceChatContext = createContext(false)
+
 export function ChatPage({
   threadId,
   projectId = null,
   health,
+  workspace = false,
 }: {
   threadId: string | null
   projectId?: string | null
   health: Health
+  workspace?: boolean
 }) {
-  if (!threadId) return <NewThreadPage projectId={projectId} />
-  return <ThreadPage threadId={threadId} projectId={projectId} health={health} />
+  return <WorkspaceChatContext.Provider value={workspace}>{threadId ? <ThreadPage threadId={threadId} projectId={projectId} health={health} /> : <NewThreadPage projectId={projectId} />}</WorkspaceChatContext.Provider>
 }
 
 /* ───────────────────────────── Новый тред ─────────────────────────────── */
 
 function NewThreadPage({ projectId }: { projectId: string | null }) {
+  const inWorkspace = useContext(WorkspaceChatContext)
   const navigate = useNavigate()
   const query = useMemo(() => new URLSearchParams(window.location.search), [])
   const settings = useAsync((signal) => api.getSettings(signal), [])
@@ -188,7 +194,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
             },
           })
       navigate(
-        projectId ? paths.projectChat(projectId, thread.id) : paths.chat(thread.id),
+        inWorkspace ? paths.workspace(thread.id, projectId) : projectId ? paths.projectChat(projectId, thread.id) : paths.chat(thread.id),
         { replace: true },
       )
     } catch (error) {
@@ -421,6 +427,7 @@ function ThreadPage({
   projectId: string | null
   health: Health
 }) {
+  const inWorkspace = useContext(WorkspaceChatContext)
   const chat = useChat(threadId, projectId)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const loadErrorHeadingRef = useRef<HTMLHeadingElement>(null)
@@ -541,7 +548,7 @@ function ThreadPage({
               {translate('inspector.openTrace')}
             </Link>
             <Link
-              to={projectId ? paths.projectChat(projectId) : paths.chat()}
+              to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()}
               className="flex h-6 items-center rounded-[5px] border border-[var(--border-strong)] px-2 text-2xs font-medium hover:bg-[var(--bg-subtle)]"
             >
               {translate('chat.new')}
@@ -1183,6 +1190,7 @@ function ThreadSidebar({
   currentId: string | null
   projectId: string | null
 }) {
+  const inWorkspace = useContext(WorkspaceChatContext)
   const threads = useAsync(
     async (signal) => {
       const result = projectId
@@ -1201,7 +1209,7 @@ function ThreadSidebar({
           {projectId ? translate('projects.chats.group') : translate('projects.chats.projectless')}
         </span>
         <Link
-          to={projectId ? paths.projectChat(projectId) : paths.chat()}
+          to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()}
           className="rounded px-1.5 py-0.5 text-2xs text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
         >
           {translate('chat.history.new')}
@@ -1223,7 +1231,7 @@ function ThreadSidebar({
           {threads.data?.threads.map((thread) => (
             <Link
               key={thread.id}
-              to={projectId ? paths.projectChat(projectId, thread.id) : paths.chat(thread.id)}
+              to={inWorkspace ? paths.workspace(thread.id, projectId) : projectId ? paths.projectChat(projectId, thread.id) : paths.chat(thread.id)}
               aria-current={thread.id === currentId ? 'page' : undefined}
               className={cx(
                 'block rounded-md px-2 py-1.5',

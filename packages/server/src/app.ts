@@ -6,6 +6,7 @@
  * без правок в роутах. Это один из трёх инвариантов, ради которых фронт не
  * работает с файловой системой напрямую.
  */
+import { layoutsRoutes } from './layouts/routes.ts'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { hostAllowlist, type HostAllowlistOptions } from './http/host-allowlist.ts'
@@ -95,6 +96,7 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
     })
   })
 
+  server.route('/api/layouts', layoutsRoutes(app.db, options.devOrigins))
   server.route('/api/models', modelsRoutes(app))
   server.route('/api/feature-flags', featureFlagsRoutes(app))
   server.route('/api/runtime', runtimeRoutes(app))

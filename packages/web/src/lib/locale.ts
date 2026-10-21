@@ -1,7 +1,9 @@
+import { workspaceEnglish, workspaceRussian } from '../features/workspace/messages.ts'
 import { connectionEnglish, connectionRussian } from '../features/connections/messages.ts'
 import { nativeEnglish, nativeRussian } from '../features/native-agent/messages.ts'
 
 const english = {
+  ...workspaceEnglish,
   ...nativeEnglish,
   ...connectionEnglish,
   'format.bytes.byte': 'B',
@@ -1840,6 +1842,7 @@ type Messages = Record<LocaleKey, string>
 const russian: Messages = {
   ...connectionRussian,
   ...nativeRussian,
+  ...workspaceRussian,
   'format.bytes.byte': 'Б',
   'format.bytes.kibibyte': 'КБ',
   'format.bytes.mebibyte': 'МБ',

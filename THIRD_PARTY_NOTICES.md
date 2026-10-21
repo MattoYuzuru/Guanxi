@@ -32,3 +32,9 @@ Rules:
 - Keep the original copyright header in copied files and add a
   `Modified by Guanxi contributors` line when the file is changed.
 - `npm run check:licenses` checks installed dependencies against the same list.
+
+## Dockview (U1-a)
+
+- `dockview-core` and `dockview-react` 8.6.1, MIT, copyright Dockview contributors.
+- Source: <https://github.com/dockview/dockview>. Installed npm dependencies; no source copied.
+- Used only through the WorkspaceLayout adapter. The proprietary enterprise package is denied.

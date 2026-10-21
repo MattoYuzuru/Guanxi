@@ -17,6 +17,8 @@
     "@guanxi/kernel": "*",
     "@guanxi/ui": "*",
     "diff": "^9.0.0",
+    "dockview-core": "8.6.1",
+    "dockview-react": "8.6.1",
     "dompurify": "^3.2.4",
     "embla-carousel-react": "^8.5.2",
     "highlight.js": "^11.11.1",
@@ -28,8 +30,8 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@tailwindcss/vite": "^4.0.0",
     "@playwright/test": "^1.62.1",
+    "@tailwindcss/vite": "^4.0.0",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",

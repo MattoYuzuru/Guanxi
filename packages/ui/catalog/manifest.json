@@ -2127,6 +2127,77 @@
         "files": []
       },
       "since": "0.1.0"
+    },
+    {
+      "id": "workspace-chrome",
+      "title": "WorkspaceChrome",
+      "level": "pattern",
+      "folder": "src/components/workspace-chrome",
+      "exports": [
+        "WorkspaceChrome",
+        "WorkspaceChromeProps"
+      ],
+      "componentExports": [
+        "WorkspaceChrome"
+      ],
+      "states": [
+        "default",
+        "empty",
+        "placeholder",
+        "error",
+        "phone"
+      ],
+      "stories": [
+        "default",
+        "empty",
+        "placeholder",
+        "error",
+        "phone"
+      ],
+      "props": {
+        "WorkspaceChrome": [
+          {
+            "name": "children",
+            "type": "ReactNode",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "kind",
+            "type": "\"state\" | \"toolbar\" | \"pane\" | \"mover\" | \"phone\"",
+            "required": true,
+            "description": ""
+          }
+        ]
+      },
+      "cssVariables": [
+        "--border-width-regular",
+        "--color-background-primary",
+        "--color-background-secondary",
+        "--color-border-primary",
+        "--color-ring-primary",
+        "--color-text-primary",
+        "--focus-ring-offset",
+        "--focus-ring-width",
+        "--font-text-size",
+        "--font-weight-heading",
+        "--panel-padding",
+        "--spacing-12",
+        "--spacing-4",
+        "--spacing-8"
+      ],
+      "sourceHash": "sha256:1d84eaf689a33cecfd9ad9d987092d2ff204bf3993a55ba45715a1d425c56dd9",
+      "snapshotHashes": {},
+      "storedStatus": "review",
+      "signature": "absent",
+      "status": "review",
+      "usage": {
+        "count": 1,
+        "files": [
+          "packages/web/src/features/workspace/Workspace.tsx"
+        ]
+      },
+      "since": "0.1.0"
     }
   ]
 }

@@ -14,17 +14,20 @@ import {
   type PluginHandle,
 } from '@guanxi/kernel'
 import { plugin as projectsShortcut } from './plugins/projects-shortcut.ts'
+import { WORKSPACE_BLOCK_SLOT } from '@guanxi/kernel'
+import { workspaceBlocksPlugin } from '../features/workspace/blocks.ts'
 import { SIDEBAR_SLOT } from './slots.ts'
 
 const shell = definePlugin({
   manifest: {
     id: 'guanxi.web-shell',
     engines: { guanxi: '^0.1.0' },
-    contributes: { slotDeclarations: [SIDEBAR_SLOT] },
+    contributes: { slotDeclarations: [SIDEBAR_SLOT, WORKSPACE_BLOCK_SLOT] },
     trust: 'T0',
   },
   apply(ctx) {
     declareSlot(ctx, SIDEBAR_SLOT)
+    declareSlot(ctx, WORKSPACE_BLOCK_SLOT, 'keyed')
   },
 })
 
@@ -78,7 +81,7 @@ export function replaceWebPlugin(plugin: GuanxiPlugin<any>): Promise<void> {
   })
 }
 
-const builtIns: Record<string, GuanxiPlugin<any>> = { [projectsShortcut.manifest.id]: projectsShortcut }
+const builtIns: Record<string, GuanxiPlugin<any>> = { [workspaceBlocksPlugin.manifest.id]: workspaceBlocksPlugin, [projectsShortcut.manifest.id]: projectsShortcut }
 
 export const webKernelReady: Promise<void> = serial(async () => {
   await load(shell)

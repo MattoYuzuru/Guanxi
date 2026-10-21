@@ -1,0 +1,11 @@
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+.workspace { display: flex; flex-direction: column; @apply w-full; @apply h-full; min-height: 0; min-width: 0; background: var(--color-background-primary); color: var(--color-text-primary); font-size: var(--font-text-size); }
+.workspace-content { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+.workspace-content > [role='tabpanel'] { min-width: 0; }
+.workspace-retained-pane { @apply w-full; @apply h-full; }
+.workspace-dock-lanes { padding: var(--spacing-8); background: var(--color-background-secondary); border-bottom: var(--border-width-regular) solid var(--color-border-primary); color: var(--color-text-secondary); }
+@media (max-width: 639px) {
+  .workspace { height: auto; @apply min-h-full; }
+  .workspace-content { overflow: visible; }
+  .workspace-content > [role='tabpanel']:not([hidden]) { display: block; }
+}

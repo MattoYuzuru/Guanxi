@@ -206,7 +206,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const seed = openDb(path)
-    assert.equal(version(seed), 31)
+    assert.equal(version(seed), 32)
     const chat = createChat(seed, 'Legacy final answer')
     new ThreadStore(seed).addMessage({
       threadId: chat.id,
@@ -264,7 +264,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     rolledBack.close()
 
     const retried = openDb(path)
-    assert.equal(version(retried), 31)
+    assert.equal(version(retried), 32)
     assert.equal(count(retried, 'messages'), 2)
     assert.equal(count(retried, 'chat_lifecycle_audit'), 2)
     assert.equal(count(retried, 'chat_deletion_audit'), 0)
@@ -274,7 +274,7 @@ describe('P3-I Session Chat metadata hard deletion', () => {
     ])), v19Payload)
     retried.close()
     const reopened = openDb(path)
-    assert.equal(version(reopened), 31)
+    assert.equal(version(reopened), 32)
     assert.equal(count(reopened, 'chat_deletion_audit'), 0)
     assert.equal(allTablesPayload(reopened, new Set([
       'chat_deletion_audit', 'quick_runs', 'recipes', 'recipe_revisions',

@@ -121,3 +121,16 @@ describe('list slots', () => {
     assert.deepEqual(labels(kernel), ['v2'])
   })
 })
+
+it('keyed workspace blocks have unique owner-qualified identities and revert on unload', async () => {
+  const kernel = createKernel()
+  await kernel.plugin(testPlugin({ id: 'test.shell', contributes: { slotDeclarations: ['workspace.block'] } }, ctx => declareSlot(ctx, 'workspace.block', 'keyed')))
+  const handle = await kernel.plugin(testPlugin({ id: 'test.blocks', contributes: { slots: ['workspace.block'] } }, ctx => {
+    contribute(ctx, 'workspace.block', { id: 'terminal', value: { id: 'test.blocks/terminal', keepAlive: true } })
+  }))
+  assert.equal(Object.keys(kernel.slots.keyed('workspace.block')).length, 1)
+  assert.equal(kernel.slots.keyed<{ keepAlive: boolean }>('workspace.block')['test.blocks/terminal']?.value.keepAlive, true)
+  await handle.dispose()
+  assert.equal(Object.keys(kernel.slots.keyed('workspace.block')).length, 0)
+  await kernel.dispose()
+})

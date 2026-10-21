@@ -130,7 +130,9 @@ A node's plugin tree is a list of ordered layers. Each layer has `insert` rows a
 
 ## Slots
 
-`list` slots only, for now (ADR-0022 §3):
+`list` and `keyed` slots (ADR-0022 §3). Both enforce unique owner-qualified keys;
+`SlotRegistry#keyed()` projects keyed entries by identity. U1-a declares `workspace.block`
+as keyed and exports the host-neutral `BlockContribution` contract (opaque component refs):
 
 - **Ownership:** declaring a slot claims it. Contributions to an undeclared slot fail.
 - **Lifecycle:** a declaration is a `slot:<name>` service that contributors need, so contributors

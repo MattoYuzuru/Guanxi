@@ -3341,6 +3341,7 @@ export const apiErrorSchema = z.object({
     'component_not_found',
     'approvals_read_only',
     'review_conflict',
+    'layout_conflict',
     'approval_signer_unavailable',
   ]),
   message: z.string(),

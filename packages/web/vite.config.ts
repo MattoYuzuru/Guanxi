@@ -62,6 +62,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     rollupOptions: {
+      input: { main: fileURLToPath(new URL('./index.html', import.meta.url)), popout: fileURLToPath(new URL('./workspace-popout.html', import.meta.url)) },
       output: {
         manualChunks: {
           markdown: ['marked', 'dompurify', 'highlight.js'],
