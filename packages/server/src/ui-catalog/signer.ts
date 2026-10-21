@@ -90,6 +90,8 @@ export interface HelperSignerOptions {
   installCommand?: string
   /** Test seam: the helper reads its test key and fake authenticator from the environment. */
   env?: NodeJS.ProcessEnv
+  /** Test seam: simulates the host platform so the unsupported guard runs on macOS too. */
+  platform?: NodeJS.Platform
 }
 
 interface HelperResponse {
@@ -195,11 +197,15 @@ export function helperSigner(options: HelperSignerOptions): ApprovalSigner {
   const account = options.account ?? KEYCHAIN_ACCOUNT
   const timeoutMs = options.timeoutMs ?? 120_000
   const installCommand = options.installCommand ?? INSTALL_COMMAND
+  const platform = options.platform ?? process.platform
   const request = (body: Record<string, unknown>) =>
     invoke({ helperPath: options.helperPath, timeoutMs, installCommand, request: body, env: options.env })
 
   return {
     async status() {
+      // The helper is a macOS Secure Enclave binary; another host must report the platform
+      // boundary instead of trying to execute it and calling a missing file an install problem.
+      if (platform !== 'darwin') return { state: 'unavailable', reason: 'platform_unsupported' }
       try {
         const response = await request({ op: 'status', service, account })
         if (response.state === 'missing') return { state: 'unavailable', reason: 'signing_key_missing' }
@@ -218,6 +224,9 @@ export function helperSigner(options: HelperSignerOptions): ApprovalSigner {
     },
 
     async sign(bytes) {
+      // Refuse before the helper is invoked: on another host this is a platform boundary,
+      // not a missing installation or a failed authentication.
+      if (platform !== 'darwin') throw new SignerError('platform_unsupported', 'Approval signing needs macOS with a Secure Enclave')
       const response = await request({ op: 'sign', service, account, payload: bytes.toString('utf8') })
       if (typeof response.keyId !== 'string' || typeof response.signature !== 'string') {
         throw new SignerError('signing_key_invalid', 'The approval signer helper returned no signature')

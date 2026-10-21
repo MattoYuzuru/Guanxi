@@ -13,7 +13,7 @@ import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract'
 import { APPROVAL_SCHEMA, canonicalJson } from '@guanxi/ui/approval'
-import { approvalSignerPath, helperSigner } from '../src/ui-catalog/signer.ts'
+import { SignerError, approvalSignerPath, helperSigner } from '../src/ui-catalog/signer.ts'
 import { p256TestKey } from '../../ui/gates/catalog/lib/test-key.ts'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -178,5 +178,50 @@ describe('installed approval signer', { skip }, () => {
     })
     assert.equal(shown.status, 0, shown.stderr)
     assert.match(shown.stdout, new RegExp(fx.key.trusted.keyId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  })
+})
+
+describe('approval signer platform guard', () => {
+  it('reports platform_unsupported on a Linux injection without spawning the helper', async () => {
+    const dir = temporary('guanxi-signer-platform-')
+    const marker = join(dir, 'spawned')
+    const helper = join(dir, 'helper')
+    writeFileSync(
+      helper,
+      '#!/bin/sh\ncat >/dev/null\nprintf spawned > "$SIGNER_TEST_SPAWN_MARKER"\nprintf \'%s\\n\' \'{"ok":true,"state":"missing"}\'\n',
+      { mode: 0o755 },
+    )
+    const missing = join(dir, 'missing-helper')
+    const missingSigner = helperSigner({
+      helperPath: missing,
+      service: SERVICE,
+      account: ACCOUNT,
+      timeoutMs: 1_000,
+      platform: 'linux',
+    })
+    const platformError = (error: unknown) => {
+      assert.ok(error instanceof SignerError)
+      assert.equal(error.reason, 'platform_unsupported')
+      assert.doesNotMatch(error.message, /install-approval-signer/)
+      return true
+    }
+
+    // The missing-helper case is the one that used to report signer_helper_missing and an
+    // install command on Linux.
+    assert.deepEqual(await missingSigner.status(), { state: 'unavailable', reason: 'platform_unsupported' })
+    await assert.rejects(missingSigner.sign(Buffer.from('{"a":1}')), platformError)
+
+    const signer = helperSigner({
+      helperPath: helper,
+      service: SERVICE,
+      account: ACCOUNT,
+      timeoutMs: 1_000,
+      platform: 'linux',
+      env: { ...process.env, SIGNER_TEST_SPAWN_MARKER: marker },
+    })
+    assert.deepEqual(await signer.status(), { state: 'unavailable', reason: 'platform_unsupported' })
+    assert.equal(existsSync(marker), false, 'status must not spawn the helper')
+    await assert.rejects(signer.sign(Buffer.from('{"a":1}')), platformError)
+    assert.equal(existsSync(marker), false, 'sign must not spawn the helper')
   })
 })
