@@ -246,3 +246,36 @@ test('L2 G8 rejects static node_modules paths, alias traversal, concatenation an
 test('L3 exported class maps reject every current palette and black/white utilities', async () => {
   for (const cls of ['bg-mauve-500', 'text-olive-400', 'border-mist-100', 'ring-taupe-700', 'bg-white', 'text-black/80']) assert.ok((await lint(`export const tones = { selected: '${cls}' }`)).some(m => m.ruleId === 'guanxi/semantic-classes'), cls)
 })
+
+test('L5 standalone SVG paint attributes fail without a style attribute', async () => {
+  for (const paint of ['fill', 'stroke', 'stop-color', 'flood-color', 'lighting-color']) assert.ok((await lint(`<svg><path ${paint}="#f00"/></svg>`, 'packages/web/src/seeded.svg')).some(m => m.ruleId === 'guanxi/svg-styles'), paint)
+})
+test('L5 custom colour properties fail independently of ordinary style colours', async () => {
+  for (const name of ['--color', '--paint-colour', '--bg', '--fg-tone', '--badge-bg']) assert.ok((await lint(`const x = <div style={{ '${name}': value }}/>`)).some(m => m.ruleId === 'guanxi/no-inline-colours'), name)
+})
+test('L5 require.resolve and brand traversal fail their import boundary', async () => {
+  for (const source of ["const x = require.resolve('lucide-react')", "import x from '@guanxi/ui/brand/logo/../../src/index.ts'"]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/import-boundaries'), source)
+})
+test('L5 native suppression ledger accepts only legacy web source paths', async () => {
+  const { validateSuppressions } = await import('./lint/suppressions.mjs')
+  for (const file of ['plugins/demo/src/a.tsx', 'packages/ui/src/a.tsx', 'packages/server/src/a.ts', 'packages/web/test/a.tsx', '../packages/web/src/a.tsx']) assert.ok(validateSuppressions({ [file]: { 'guanxi/reuse-primitives': { count: 1 } } }).some(e => e.includes('Invalid legacy suppression path')), file)
+})
+test('L5 plugin discovery checks disk sources absent from ctx.files', async t => {
+  const root = await mkdtemp(resolve(tmpdir(), 'guanxi-plugin-discovery-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const { mkdir } = await import('node:fs/promises')
+  const { pathToFileURL } = await import('node:url')
+  const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.invalid' } })
+  git('init', '-q'); await writeFile(resolve(root, suppressionPath), '{}'); git('add', '.'); git('commit', '-qm', 'empty ledger')
+  await writeFile(resolve(root, 'eslint.config.mjs'), `export { default } from ${JSON.stringify(pathToFileURL(resolve(repositoryRoot, 'eslint.config.mjs')).href)}`)
+  await mkdir(resolve(root, 'plugins/demo/ui'), { recursive: true })
+  const file = 'plugins/demo/ui/probe.tsx'
+  await writeFile(resolve(root, file), "import X from 'lucide-react'; const x = <button/>")
+  const ctx = await createContext(root)
+  assert.ok(!ctx.files.includes(file), 'fixture must exercise discovery, not an overlay')
+  for (const gate of gates) {
+    const result = await gate.check(ctx)
+    assert.equal(result.ok, false, `${gate.id} must discover the disk plugin`)
+    assert.ok(result.errors.some(e => e.includes(file)), gate.id)
+  }
+})
