@@ -22,7 +22,7 @@ export function Glossary({ entries = glossaryEntries }: { entries?: readonly Glo
       <h2 id="settings-glossary-title" className="text-xs font-semibold">
         {translate('settings.glossary.title')}
       </h2>
-      <p className="mt-1 text-xs text-[var(--fg-muted)]">
+      <p className="mt-1 text-xs text-secondary">
         {translate('settings.glossary.description', { product: PRODUCT_NAME })}
       </p>
       <label className="mt-3 block text-xs font-medium" htmlFor="settings-glossary-search">
@@ -36,12 +36,12 @@ export function Glossary({ entries = glossaryEntries }: { entries?: readonly Glo
         placeholder={translate('settings.glossary.search.placeholder')}
         aria-controls="settings-glossary-results"
       />
-      <p className="mt-1 text-2xs text-[var(--fg-muted)]" role="status" aria-live="polite">
+      <p className="mt-1 text-2xs text-secondary" role="status" aria-live="polite">
         {translate('settings.glossary.matches', { count: matches.length })}
       </p>
       <div id="settings-glossary-results" className="mt-2 space-y-2">
         {matches.length === 0 ? (
-          <p className="rounded-lg border border-[var(--border)] p-3 text-xs text-[var(--fg-muted)]">
+          <p className="rounded-lg border border-divider p-3 text-xs text-secondary">
             {translate(entries.length === 0 && query.trim() === ''
               ? 'settings.glossary.emptyCatalog'
               : 'settings.glossary.empty')}
@@ -49,9 +49,9 @@ export function Glossary({ entries = glossaryEntries }: { entries?: readonly Glo
         ) : matches.map((entry) => {
           const copy = entry[locale]
           return (
-            <article key={entry.key} className="rounded-lg border border-[var(--border)] p-3">
+            <article key={entry.key} className="rounded-lg border border-divider p-3">
               <h3 className="text-xs font-semibold">{copy.term}</h3>
-              <p className="mt-1 text-xs text-[var(--fg-muted)]">{copy.definition}</p>
+              <p className="mt-1 text-xs text-secondary">{copy.definition}</p>
               <p className="mt-2 text-xs">
                 <span className="font-medium">{translate('settings.glossary.example')}</span>{' '}
                 {copy.example}

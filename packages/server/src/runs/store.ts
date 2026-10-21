@@ -275,6 +275,21 @@ export class RunStore {
     this.setState(runId, this.get(runId).state === 'wrapping_up' ? 'wrapping_up' : 'working', 'attempt', id)
     return this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', id)!
   }
+  /** Trusted in-process executor extension. Never expose callbacks over the wire.
+   * The home and execution fence, extension rows and K2 trace share one transaction. */
+  mutate<T>(attempt: Attempt, body: (db: Db, emit: (event: import('../session-log/log.ts').SessionEventInput) => void) => T): T {
+    return this.tx('executor', () => {
+      this.fenced(attempt)
+      const result = body(this.db, event => {
+        const run = this.get(attempt.run_id)
+        this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, event)
+        this.changedSessions.add(run.session_id)
+        this.point('trace')
+      })
+      if (result instanceof Promise) throw new RunError('invalid_input')
+      return result
+    })
+  }
   /** Explicit retry only. Unsafe steps are never replayed by reconciliation. */
   start(runId: string): Attempt {
     return this.tx('start', () => {

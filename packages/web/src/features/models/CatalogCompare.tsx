@@ -93,7 +93,7 @@ export function CatalogCompare({
           </>
         }
       >
-        <p id="catalog-compare-description" className="mb-3 text-xs text-[var(--fg-muted)]">
+        <p id="catalog-compare-description" className="mb-3 text-xs text-secondary">
           {translate('catalog.compare.description')}
         </p>
         <div className="grid min-w-0 gap-3 md:grid-cols-2" aria-label={translate('catalog.compare.region')}>
@@ -101,7 +101,7 @@ export function CatalogCompare({
             <CompareColumn key={row.variant.normalizedName} row={row} onRemove={remove} />
           ))}
         </div>
-        <p className="mt-3 text-2xs text-[var(--fg-subtle)]">
+        <p className="mt-3 text-2xs text-muted">
           {translate('catalog.compare.boundary')}
         </p>
       </Modal>
@@ -118,9 +118,9 @@ function CompareColumn({
 }) {
   const variant = row.variant
   return (
-    <section className="min-w-0 rounded-lg border border-[var(--border)] bg-[var(--bg-inset)] p-3" aria-label={variant.normalizedName}>
+    <section className="min-w-0 rounded-lg border border-divider bg-inset p-3" aria-label={variant.normalizedName}>
       <h3 className="break-all font-mono text-xs font-semibold">{variant.normalizedName}</h3>
-      <p className="mt-1 text-2xs text-[var(--fg-muted)]">
+      <p className="mt-1 text-2xs text-secondary">
         {translate('catalog.compare.tag')}: <span className="font-mono">{variant.tag}</span>
       </p>
       <Fact label={translate('catalog.compare.claimedSize')} value={variant.sizeBytes === null ? unknown() : formatBytes(variant.sizeBytes)} />
@@ -147,8 +147,8 @@ function CompareColumn({
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <p className="mt-2 min-w-0 text-2xs">
-      <span className="block font-medium text-[var(--fg-muted)]">{label}</span>
-      <span className="block break-words text-[var(--fg)]">{value}</span>
+      <span className="block font-medium text-secondary">{label}</span>
+      <span className="block break-words text-foreground">{value}</span>
     </p>
   )
 }

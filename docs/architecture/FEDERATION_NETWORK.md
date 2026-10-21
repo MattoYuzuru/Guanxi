@@ -67,4 +67,4 @@ recovery are F2. Host pressure collection, residency/headroom accounting and pla
 F3. The phone relay/pairing is U4. No live-network or cross-host test is claimed here.
 
 See the [implemented API and storage guide](../../packages/server/src/federation/README.md)
-and [F1 handoff](../plans/lanes/F1.handoff.md) for scope, local assertions and remaining risks.
+and [F1 handoff](../plans/evidence/F1.md) for scope, local assertions and remaining risks.

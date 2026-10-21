@@ -14,7 +14,7 @@
     "dev:web": "npm run dev --workspace @guanxi/web",
     "build": "npm run build --workspace @guanxi/web && npm run build --workspace @guanxi/server && npm run build --workspace guanxi",
     "link:cli": "npm run build && npm link --workspace guanxi",
-    "test": "npm run ui:check && npm run test:gates --workspace @guanxi/ui && npm run test:core && npm run test:kernel && npm run test:web && npm run test:ui && npm run test:bench",
+    "test": "npm run ui:check && npm run test:codemods && npm run test:gates --workspace @guanxi/ui && npm run test:core && npm run test:kernel && npm run test:web && npm run test:ui && npm run test:bench",
     "test:core": "node --test 'packages/server/test/**/*.test.ts' 'packages/cli/test/**/*.test.ts'",
     "test:kernel": "node --test 'packages/kernel/test/**/*.test.ts'",
     "kernel:empty-node": "node packages/kernel/bin/empty-node.ts",
@@ -33,13 +33,22 @@
     "check:links": "node scripts/check-doc-links.mjs",
     "tokens:build": "npm run tokens:build --workspace @guanxi/ui",
     "ui:check": "npm run ui:check --workspace @guanxi/ui",
-    "test:bench": "npm test --workspace @guanxi/bench"
+    "test:bench": "npm test --workspace @guanxi/bench",
+    "lint": "npm run lint:js && npm run lint:css && npm run lint:suppressions",
+    "lint:js": "eslint .",
+    "lint:css": "stylelint \"packages/*/src/**/*.css\" \"plugins/**/*.css\" --allow-empty-input",
+    "lint:suppressions": "node packages/ui/gates/lint/suppressions.mjs",
+    "codemod:semantic": "node scripts/codemods/semantic-colours.mjs",
+    "test:codemods": "node --test scripts/codemods/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@typescript-eslint/parser": "8.72.0",
     "esbuild": "^0.25.12",
+    "eslint": "10.13.0",
     "guanxi": "*",
     "markdownlint-cli2": "0.18.1",
+    "stylelint": "17.16.0",
     "typescript": "^5.7.2"
   }
 }

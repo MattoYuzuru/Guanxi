@@ -66,7 +66,7 @@ export const ModelCard = memo(function ModelCard({
     <article
       className={cx(
         'surface flex h-full w-[300px] flex-col rounded-xl p-3 shadow-[var(--shadow-card)]',
-        'transition-colors duration-150 hover:border-[var(--border-strong)]',
+        'transition-colors duration-150 hover:border-control',
       )}
       aria-label={model.name}
     >
@@ -76,7 +76,7 @@ export const ModelCard = memo(function ModelCard({
           <Link
             to={paths.model(model.name)}
             onFocus={onFocusCard}
-            className="min-w-0 truncate font-mono text-[13px] font-semibold hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
+            className="min-w-0 truncate font-mono text-[13px] font-semibold hover:text-accent focus-visible:text-accent"
             title={model.name}
           >
             {model.name}
@@ -88,7 +88,7 @@ export const ModelCard = memo(function ModelCard({
           )}
         </div>
 
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-[var(--fg-subtle)]">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted">
           {local ? (
             <>
               <span title={translate('model.family')}>{local.family}</span>
@@ -175,14 +175,14 @@ export const ModelCard = memo(function ModelCard({
             <Link
               to={paths.model(model.name)}
               onFocus={onFocusCard}
-              className="flex h-8 flex-1 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 text-xs font-medium hover:bg-[var(--bg-subtle)]"
+              className="flex h-8 flex-1 items-center justify-center rounded-md border border-control bg-surface px-3 text-xs font-medium hover:bg-inset"
             >
               {translate('model.profile')}
             </Link>
             <Link
               to={`${paths.chat()}?model=${encodeURIComponent(model.name)}${selectedContextLength === undefined ? '' : `&numCtx=${selectedContextLength}`}`}
               onFocus={onFocusCard}
-              className="flex h-8 flex-1 items-center justify-center rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:brightness-110"
+              className="flex h-8 flex-1 items-center justify-center rounded-md bg-accent px-3 text-xs font-medium text-accent-foreground hover:brightness-110"
             >
               {translate('model.startChat')}
             </Link>
@@ -195,7 +195,7 @@ export const ModelCard = memo(function ModelCard({
 })
 
 function Dot() {
-  return <span className="text-[var(--border-strong)]">·</span>
+  return <span className="text-control">·</span>
 }
 
 /** Кнопка «Установить» в карточке каталога, когда скачивание ещё не начато. */

@@ -102,3 +102,18 @@ Lane 4 §§2, 5, 6, 8 ([research](../research/README.md)), including Anthropic "
 harnesses for long-running agents", Factory compression evaluation, ACE (ICLR 2026),
 OpenHands condensers and StuckDetector, SWE-PRM, METR time horizons, Evidence-Based
 Scheduling; S0 review findings CR-4, H-4, H-8, M-12, M-13, L-12.
+
+## Implementation boundary (R2, 2026-10-21)
+
+The internal single-node `agent.relay` service implements the cycle/ledger/handoff protocol
+in [server/relay](../../packages/server/src/relay/README.md). Handoffs carry a hash/reference
+to the complete immutable ledger snapshot stored with the fenced seal, plus a bounded strip,
+notes and narrative. This keeps context independent of accumulated evidence size. Seals are
+atomic uploads of JSON, Markdown, the snapshot and git bundle to the R1 home database.
+
+Runtime admission requires an execution-host observation of the actual loaded window and
+rendered-request token count; K3 has no universal meter yet. The tests use fixture meters and
+K3 fixture transports, without live models. Judge requests are emitted for R3; judge execution,
+ETA, delegation policy, cross-node transport and B3 quality/non-inferiority remain proposed.
+Linked/gitlink repository trees are refused by the current clean-checkout implementation.
+See the [R2 hand-off](../plans/lanes/R2.handoff.md) for assertions, mutations and exact scope.

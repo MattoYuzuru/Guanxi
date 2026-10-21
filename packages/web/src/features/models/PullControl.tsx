@@ -95,7 +95,7 @@ export function PullControl({
   if (error) {
     return (
       <div>
-        <p className="mb-1.5 line-clamp-2 text-2xs text-[var(--danger)]" title={error}>
+        <p className="mb-1.5 line-clamp-2 text-2xs text-danger" title={error}>
           {error}
         </p>
         <div className="flex gap-1.5">
@@ -132,7 +132,7 @@ export function PullControl({
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="truncate text-2xs text-[var(--fg-muted)]" title={progress?.status}>
+        <span className="truncate text-2xs text-secondary" title={progress?.status}>
           {progress?.status ?? translate('model.pull.connecting')}
         </span>
         <span className="shrink-0 font-mono text-2xs tabular-nums">
@@ -141,12 +141,12 @@ export function PullControl({
       </div>
 
       {indeterminate ? (
-        <div className="sheen h-1 w-full rounded-full bg-[var(--bg-inset)]" />
+        <div className="sheen h-1 w-full rounded-full bg-inset" />
       ) : (
         <Meter value={percent / 100} height={4} label={translate('model.pull.aria', { name })} />
       )}
 
-      <div className="mt-1 flex items-center justify-between gap-2 text-2xs text-[var(--fg-subtle)]">
+      <div className="mt-1 flex items-center justify-between gap-2 text-2xs text-muted">
         <span className="truncate font-mono tabular-nums">
           {progress?.completedBytes !== null && progress?.completedBytes !== undefined
             ? `${formatBytes(progress.completedBytes)}${
@@ -162,7 +162,7 @@ export function PullControl({
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span
           className={cx(
-            'font-mono text-2xs tabular-nums text-[var(--fg-subtle)]',
+            'font-mono text-2xs tabular-nums text-muted',
             indeterminate && 'anim-pulse-soft',
           )}
         >

@@ -46,7 +46,7 @@ export function QuickRunsPage() {
     <div className="mx-auto w-full min-w-0 max-w-5xl px-4 py-6 sm:px-5">
       <header>
         <h1 className="text-lg font-semibold tracking-tight">{translate('quickRuns.title')}</h1>
-        <p className="mt-1 max-w-2xl text-xs text-[var(--fg-muted)]">
+        <p className="mt-1 max-w-2xl text-xs text-secondary">
           {translate('quickRuns.description')}
         </p>
       </header>
@@ -61,7 +61,7 @@ export function QuickRunsPage() {
         {translate('quickRuns.scope.label')}
         <select
           value={selectedScope}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2 text-xs text-[var(--fg)]"
+          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
           onChange={(event) => {
             const value = event.target.value
             setScope(value === 'projectless'
@@ -76,7 +76,7 @@ export function QuickRunsPage() {
         </select>
       </label>
       {projects.loading ? (
-        <p role="status" className="mt-1 text-2xs text-[var(--fg-subtle)]">
+        <p role="status" className="mt-1 text-2xs text-muted">
           {translate('quickRuns.projects.loading')}
         </p>
       ) : null}
@@ -259,7 +259,7 @@ function QuickRunScopePanel({
         <h2 ref={errorHeadingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
           {translate('quickRuns.error.title')}
         </h2>
-        <p className="mt-1 break-words text-xs text-[var(--fg-muted)]">{loadError}</p>
+        <p className="mt-1 break-words text-xs text-secondary">{loadError}</p>
         <Button className="mt-3" onClick={() => setReload((value) => value + 1)}>
           {translate('quickRuns.retry')}
         </Button>
@@ -272,7 +272,7 @@ function QuickRunScopePanel({
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 id="quick-runs-scope-title" className="break-words text-sm font-semibold">{scopeName}</h2>
-          <p className="text-2xs text-[var(--fg-subtle)]">
+          <p className="text-2xs text-muted">
             {translate('quickRuns.count').replace('{count}', String(quickRuns.length))}
           </p>
         </div>
@@ -284,7 +284,7 @@ function QuickRunScopePanel({
           {translate('quickRuns.operation.label')}
           <select
             value={operation}
-            className="mt-1 h-8 w-full min-w-0 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2 text-xs text-[var(--fg)]"
+            className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
             onChange={(event) => setOperation(event.target.value as QuickRunOperation)}
           >
             {QUICK_RUN_OPERATIONS.map((value) => (
@@ -298,9 +298,9 @@ function QuickRunScopePanel({
           {translate('quickRuns.create')}
         </Button>
       </form>
-      <p className="mt-1 text-2xs text-[var(--fg-subtle)]">{translate('quickRuns.create.hint')}</p>
+      <p className="mt-1 text-2xs text-muted">{translate('quickRuns.create.hint')}</p>
       {createError ? (
-        <p role="alert" className="mt-2 break-words text-xs text-[var(--danger)]">{createError}</p>
+        <p role="alert" className="mt-2 break-words text-xs text-danger">{createError}</p>
       ) : null}
 
       {quickRuns.length === 0 ? (
@@ -314,27 +314,27 @@ function QuickRunScopePanel({
             const actionError = actionErrors[quickRun.id]
             return (
               <li key={quickRun.id}>
-                <article className="quick-run-card surface min-w-0 rounded-lg border border-[var(--border)] p-3">
+                <article className="quick-run-card surface min-w-0 rounded-lg border border-divider p-3">
                   <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <h3 className="break-words text-xs font-semibold">
                         {translate(`quickRuns.operation.${quickRun.operation}`)}
                       </h3>
-                      <p className="mt-1 break-all font-mono text-2xs text-[var(--fg-subtle)]">{quickRun.id}</p>
+                      <p className="mt-1 break-all font-mono text-2xs text-muted">{quickRun.id}</p>
                     </div>
                     <Badge tone="neutral">{translate('quickRuns.execution.notImplemented')}</Badge>
                   </div>
 
                   <dl className="mt-3 grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-2xs">
-                    <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.created')}</dt>
+                    <dt className="text-muted">{translate('quickRuns.created')}</dt>
                     <dd className="min-w-0 break-words"><time dateTime={quickRun.createdAt}>{formatDateTime(quickRun.createdAt)}</time></dd>
-                    <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.source')}</dt>
+                    <dt className="text-muted">{translate('quickRuns.retention.source')}</dt>
                     <dd>{translate(`quickRuns.retention.source.${quickRun.retention.policySource}`)}</dd>
-                    <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.expiry')}</dt>
+                    <dt className="text-muted">{translate('quickRuns.retention.expiry')}</dt>
                     <dd>{translate('quickRuns.retention.notImplemented')}</dd>
-                    <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.cleanup')}</dt>
+                    <dt className="text-muted">{translate('quickRuns.retention.cleanup')}</dt>
                     <dd>{translate('quickRuns.retention.notImplemented')}</dd>
-                    <dt className="text-[var(--fg-subtle)]">{translate('quickRuns.retention.session')}</dt>
+                    <dt className="text-muted">{translate('quickRuns.retention.session')}</dt>
                     <dd>{translate('quickRuns.retention.notImplemented')}</dd>
                   </dl>
 
@@ -366,7 +366,7 @@ function QuickRunScopePanel({
                       role="alert"
                       className="mt-3 outline-none"
                     >
-                      <p className="break-words text-2xs text-[var(--danger)]">{actionError}</p>
+                      <p className="break-words text-2xs text-danger">{actionError}</p>
                       <Button
                         className="mt-1"
                         size="sm"
