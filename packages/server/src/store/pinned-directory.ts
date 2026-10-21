@@ -72,7 +72,7 @@ async function begin(command) {
   if (typeof command.digest !== 'string' || !/^[0-9a-f]{64}$/u.test(command.digest)) throw new Error('invalid_digest')
   if (command.action === 'write') {
     temp = '.partial-' + randomUUID()
-    file = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
+    file = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o400)
   } else if (command.action === 'publish') {
     if (typeof command.source !== 'string' || command.source.length === 0) throw new Error('invalid_source')
   } else if (command.action !== 'read') {

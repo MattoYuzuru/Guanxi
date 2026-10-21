@@ -257,6 +257,13 @@ export const SESSION_INPUT_ARTIFACTS_MIGRATION = `
   CREATE INDEX IF NOT EXISTS idx_session_input_artifacts_session
     ON session_input_artifacts(session_id);
 
+  -- A pre-existing table with an incompatible shape fails and rolls back this
+  -- migration instead of being silently adopted.
+  CREATE TABLE migration_33_shape_guard AS
+    SELECT artifact_id, session_id, checksum, byte_size, media_type, created_at
+    FROM session_input_artifacts WHERE 0;
+  DROP TABLE migration_33_shape_guard;
+
   DROP TRIGGER IF EXISTS session_events_policy_insert;
   CREATE TRIGGER session_events_policy_insert
     BEFORE INSERT ON session_events

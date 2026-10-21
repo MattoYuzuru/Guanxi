@@ -5,7 +5,8 @@
  */
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, truncate, utimes, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, truncate, utimes, writeFile } from 'node:fs/promises'
+import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -141,6 +142,34 @@ describe('session input artifacts: migration 33', () => {
       assert.match(sql, /json_type/u)
     } finally {
       db.close()
+    }
+  })
+
+  it('rolls back migration 33 on an incompatible pre-existing table without leaving a guard', async (test) => {
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-migration-33-'))
+    test.after(() => rm(root, { recursive: true, force: true }))
+    const path = join(root, 'guanxi.db')
+    const db = openDb(path)
+    db.exec(`
+      DROP TABLE session_input_artifacts;
+      CREATE TABLE session_input_artifacts (session_id TEXT);
+      PRAGMA user_version = 32;
+    `)
+    db.close()
+    assert.throws(() => openDb(path), /Миграция 33/u)
+    const raw = new DatabaseSync(path)
+    try {
+      assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
+      assert.deepEqual(
+        (raw.prepare('PRAGMA table_info(session_input_artifacts)').all() as { name: string }[]).map((column) => column.name),
+        ['session_id'],
+      )
+      assert.equal(
+        (raw.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'migration_33_shape_guard'").get() as { n: number }).n,
+        0,
+      )
+    } finally {
+      raw.close()
     }
   })
 
@@ -297,6 +326,18 @@ describe('session input artifacts: writer and crash safety', () => {
     assert.deepEqual(Buffer.from(await f.store.read(f.sessionId, event.data.artifact)), Buffer.from(text))
   })
 
+  it('rolls back the input metadata row with a refused event insert and keeps the published blob', async (test) => {
+    const f = await fixture(test)
+    const text = `${'a'.repeat(INPUT_INLINE_BYTES)}atomic`
+    const ref = await descriptor(f.store, f.sessionId, text)
+    const dir = f.store.directoryFor(f.sessionId)
+    f.db.exec(`CREATE TRIGGER fixture_refuse_v2 BEFORE INSERT ON session_events
+      WHEN NEW.event_version = 2 BEGIN SELECT RAISE(ABORT, 'fixture refused v2'); END;`)
+    assert.throws(() => appendV2(f.handle, promptV2(ref)), /fixture refused v2/u)
+    assert.equal((f.db.prepare('SELECT COUNT(*) AS n FROM session_input_artifacts').get() as { n: number }).n, 0)
+    assert.deepEqual(await readdir(dir), [ref.checksum.slice(7)])
+  })
+
   it('rejects a v2 append that supplies no artifact descriptor without writing a row', async (test) => {
     const f = await fixture(test)
     const before = (f.db.prepare('SELECT COUNT(*) AS n FROM session_input_artifacts').get() as { n: number }).n
@@ -378,6 +419,8 @@ describe('session input artifacts: pinned directory', () => {
     if (event.type !== 'prompt' || event.version !== 2) throw new Error('unreachable')
     const dir = f.store.directoryFor(f.sessionId)
     const path = join(dir, ref.checksum.slice(7))
+    assert.equal((await stat(path)).mode & 0o777, 0o400)
+    await chmod(path, 0o600)
     await truncate(path, 10)
     await assert.rejects(
       f.store.read(f.sessionId, event.data.artifact),
@@ -414,6 +457,8 @@ describe('session input artifacts: orphan reaping', () => {
     await writeFile(join(stored, '.partial-stale'), 'temp')
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
     await utimes(join(stored, '.partial-stale'), old, old)
+    // The fixture's own writer must be released before stale temps are eligible.
+    f.handle.close()
     let homeChecks = 0
     const result = await f.store.reap({
       isLive: (id) => id === 'live-session',

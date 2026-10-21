@@ -382,6 +382,9 @@ export class SessionInputStore {
         }
         const sessionId = hashToId.get(name) ?? null
         if (sessionId !== null && options.isLive(sessionId)) continue
+        if (sessionId !== null && this.db.prepare(
+          'SELECT 1 FROM session_writers WHERE session_id = ? AND released_at IS NULL',
+        ).get(sessionId) !== undefined) continue
         try {
           const target = join(root, name)
           const state = await lstat(target)
