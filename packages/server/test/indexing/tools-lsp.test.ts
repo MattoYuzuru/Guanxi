@@ -48,6 +48,26 @@ test('native search and repo.map tools use immutable roots, provenance, exact co
   } finally { await index.close(); await f.close() }
 })
 
+test('index failures surface their stable error code to the model', async () => {
+  const f = await fixture()
+  try {
+    const index = {
+      track: async () => {},
+      search: async () => { throw new Error('index_sandbox_unavailable') },
+      map: async () => { throw new Error('index_budget_too_small') },
+      status: () => ({}),
+    } as unknown as ProjectIndex
+    const tools = nativeTools({ policy: f.policy, log: null, handle: { sessionId: 'fixture' }, scrubber: f.scrubber, index, queue() {} } as unknown as NativeToolContext)
+    const map = await tools.find(t => t.name === 'repo_map')!.execute('fixture', { path: '.', budget: '10' })
+    assert.equal(map.isError, true)
+    assert.equal((map.content[0] as { text: string }).text, 'index_budget_too_small')
+    assert.deepEqual(map.details, { code: 'index_budget_too_small' })
+    const search = await tools.find(t => t.name === 'search')!.execute('fixture', { path: '.', text: 'Orbit' })
+    assert.equal(search.isError, true)
+    assert.equal((search.content[0] as { text: string }).text, 'index_sandbox_unavailable')
+  } finally { await f.close() }
+})
+
 test('IX0 search remains available with the index plugin absent and without an OS grep binary', async () => {
   const f = await fixture()
   try {

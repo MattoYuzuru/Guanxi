@@ -135,9 +135,12 @@ test('ignored files, nested negations, .env variants, symlinks, binary and regis
     await writeFile(join(f.root, 'ignored', 'no.ts'), 'Needle ignored')
     await writeFile(join(f.root, 'value.ts'), `const a = '${secret}'`)
     await writeFile(join(f.root, `${secret}.ts`), 'Needle secret path')
-    for (const path of ['.env', '.env.local', '.env.example', 'file.skip']) await writeFile(join(f.root, path), 'Needle forbidden')
+    for (const path of ['.ENV', '.Env.local', '.env.example', 'file.skip']) await writeFile(join(f.root, path), 'Needle forbidden')
+    await mkdir(join(f.root, '.git', 'info'), { recursive: true })
+    await writeFile(join(f.root, '.git', 'info', 'exclude'), 'excluded.ts\n')
+    await writeFile(join(f.root, 'excluded.ts'), 'Needle excluded')
     // Tracked files are still excluded by policy, regardless of git ls-files.
-    f.git('add', '-f', '.env', 'file.skip')
+    f.git('add', '-f', '.ENV', 'file.skip')
     await writeFile(join(f.root, 'binary'), Buffer.from([1, 0, 2]))
     await writeFile(join(f.root, 'ok.ts'), 'Needle allowed')
     await writeFile(join(f.data, 'outside'), 'Needle outside')
@@ -148,13 +151,28 @@ test('ignored files, nested negations, .env variants, symlinks, binary and regis
     for (const table of ['contents', 'files', 'maps', 'fulltext']) {
       const rows = JSON.stringify(db.prepare(`SELECT * FROM ${table}`).all())
       assert.equal(rows.includes(secret), false, table)
-      for (const forbidden of ['Needle forbidden', 'Needle outside', 'Needle ignored', 'Needle skip']) assert.equal(rows.includes(forbidden), false, `${table}: ${forbidden}`)
+      for (const forbidden of ['Needle forbidden', 'Needle outside', 'Needle ignored', 'Needle skip', 'Needle excluded']) assert.equal(rows.includes(forbidden), false, `${table}: ${forbidden}`)
     }
     const shadow = ftsShadow(db)
     assert.equal(shadow.includes(Buffer.from(secret)), false, 'fulltext shadow: secret')
-    for (const forbidden of ['Needle forbidden', 'Needle outside', 'Needle ignored', 'Needle skip']) assert.equal(shadow.includes(Buffer.from(forbidden)), false, `fulltext shadow: ${forbidden}`)
+    for (const forbidden of ['Needle forbidden', 'Needle outside', 'Needle ignored', 'Needle skip', 'Needle excluded']) assert.equal(shadow.includes(Buffer.from(forbidden)), false, `fulltext shadow: ${forbidden}`)
     db.close()
     assert.deepEqual(await f.search(), ['nested/keep.skip:1:Needle keep', 'ok.ts:1:Needle allowed'])
+  } finally { await f.close() }
+})
+
+test('parent gitignore rules do not apply inside a submodule', async () => {
+  const f = await fixture()
+  try {
+    await writeFile(join(f.root, '.gitignore'), '*.log.ts\n')
+    await mkdir(join(f.root, 'vendor', 'sub'), { recursive: true })
+    await writeFile(join(f.root, 'vendor', 'sub', '.git'), 'gitdir: ../../../.git/modules/sub\n')
+    await writeFile(join(f.root, 'vendor', 'sub', 'build.log.ts'), 'export const Needle = 1\n')
+    await f.run('build')
+    const db = new DatabaseSync(f.database, { readOnly: true })
+    assert.deepEqual(db.prepare('SELECT path FROM files ORDER BY path').all().map(r => r.path), ['.gitignore', 'vendor/sub/build.log.ts'])
+    db.close()
+    assert.deepEqual(await f.search(), ['vendor/sub/build.log.ts:1:export const Needle = 1'])
   } finally { await f.close() }
 })
 
