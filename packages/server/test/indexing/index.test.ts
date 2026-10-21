@@ -214,6 +214,22 @@ test('a package.json ancestor of the data directory cannot break the worker', as
   } finally { await service.close(); await governor.close(); await f.close() }
 })
 
+test('a symlinked data directory grants the worker its canonical runtime and sidecar', async () => {
+  const f = await fixture(), governor = new ResourceGovernor()
+  const alias = join(f.dir, 'data-alias')
+  await symlink(f.data, alias)
+  const service = new ProjectIndex({ dataDir: alias, governor, scrubber: f.scrubber,
+    ephemeral: true, settings: { pollMs: 60_000 }, headroom: green })
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
+    assert.equal((await service.search(f.root, 'Needle')).hits.length, 1)
+    await service.build(f.root)
+    assert.equal((await service.map(f.root)).provenance.coverage.indexed, 1)
+    await service.close()
+    assert.equal((await readdir(f.data)).some(name => name.startsWith('index-runtime-')), false)
+  } finally { await service.close(); await governor.close(); await f.close() }
+})
+
 test('tree-sitter covers the required languages and degrades when a grammar is missing', async () => {
   const examples = [
     ['typescript', 'export function Orbit() {}'], ['tsx', 'export function Orbit() { return <div/> }'],

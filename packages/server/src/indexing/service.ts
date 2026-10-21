@@ -137,7 +137,8 @@ export class ProjectIndex {
     this.runtime ??= this.prepareRuntime()
     const runtime = await this.runtime
     this.checkCancellation(signal)
-    const worker = await indexProcess(join(runtime, this.captured[0]!.name), root, this.options.dataDir)
+    const dataDir = await realpath(this.options.dataDir)
+    const worker = await indexProcess(join(runtime, this.captured[0]!.name), root, dataDir)
     this.workers.add(worker)
     const combined = AbortSignal.any([this.abort.signal, ...(signal ? [signal] : [])])
     try {
@@ -160,7 +161,7 @@ export class ProjectIndex {
         worker.once('error', () => reject(new Error('index_unavailable')))
         worker.once('close', code => { combined.removeEventListener('abort', abort); reject(new Error(code === 0 ? 'index_unavailable' : 'index_interrupted')) })
         if (combined.aborted) abort()
-        else worker.send({ data: { ...extras, request: { ...request, root }, database: this.database, settings: this.settings, grammarDirectories } satisfies IndexWorkerData }, error => { if (error) reject(new Error('index_unavailable')) })
+        else worker.send({ data: { ...extras, request: { ...request, root }, database: join(dataDir, 'knowledge-index', 'index.sqlite'), settings: this.settings, grammarDirectories } satisfies IndexWorkerData }, error => { if (error) reject(new Error('index_unavailable')) })
       })
       if (!this.options.scrubber.isReady()) throw new Error('index_scrubber_unavailable')
       return this.options.scrubber.scrub(result)
@@ -172,7 +173,7 @@ export class ProjectIndex {
     // runtime. An ancestor checkout package.json is unreadable there.
     await writeFile(join(directory, 'package.json'), '{"type":"module"}\n', { mode: 0o400, flag: 'wx' })
     await Promise.all(this.captured.map(source => writeFile(join(directory, source.name), source.bytes, { mode: 0o400, flag: 'wx' })))
-    return directory
+    return realpath(directory)
   }
   async build(root: string, signal?: AbortSignal): Promise<Provenance> {
     this.checkCancellation(signal)
