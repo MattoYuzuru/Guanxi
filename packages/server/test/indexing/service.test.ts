@@ -107,3 +107,24 @@ test('overlapping builds share one writer and release the idle lease', async () 
     lease.release()
   } finally { await service.close(); await f.governor.close(); await f.close() }
 })
+
+test('reopening an unchanged root with a lower FTS threshold rebuilds its postings', async () => {
+  const f = await fixture(1), events: IndexEvent[] = []
+  const first = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+    settings: { pollMs: 60_000, ftsMinFiles: 2 }, headroom: green })
+  let second: ProjectIndex | undefined
+  try {
+    await first.build(f.root)
+    await first.close()
+    const before = new DatabaseSync(first.database, { readOnly: true })
+    assert.equal(before.prepare('SELECT count(*) n FROM fulltext').get()!.n, 0)
+    before.close()
+    second = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+      settings: { pollMs: 60_000, ftsMinFiles: 1 }, headroom: green, onIndexEvent: event => events.push(event) })
+    await second.build(f.root)
+    assert.equal(events.filter(event => event.type === 'publish').length, 1)
+    const after = new DatabaseSync(second.database, { readOnly: true })
+    assert.equal(after.prepare('SELECT count(*) n FROM fulltext').get()!.n, 1)
+    after.close()
+  } finally { await first.close(); await second?.close(); await f.governor.close(); await f.close() }
+})

@@ -10,6 +10,7 @@ import { DEFAULT_INDEX_SETTINGS, type IndexRequest, type IndexSettings, type Ind
 import { hash, inside, projectFingerprint } from './snapshot.ts'
 import { IndexStore } from './store.ts'
 import { boundMap } from './engine.ts'
+import { PARSER_VERSION } from './parser.ts'
 
 const built = existsSync(new URL('./index-worker.js', import.meta.url))
 const names = built ? ['index-worker.js'] : ['worker.ts', 'engine.ts', 'snapshot.ts', 'store.ts', 'parser.ts', 'types.ts']
@@ -88,7 +89,7 @@ export class ProjectIndex {
     return hash(JSON.stringify([...secrets].sort((a, b) => a.ref.localeCompare(b.ref))))
   }
   private fingerprint(root: string, commit: string | null, tree: string, digest: string): string {
-    return hash(JSON.stringify([root, commit, tree, digest]))
+    return hash(JSON.stringify([root, commit, tree, digest, PARSER_VERSION, this.settings.ftsMinFiles, this.settings.maxFileBytes]))
   }
   private publishedFingerprint(root: string): string | undefined {
     try {
