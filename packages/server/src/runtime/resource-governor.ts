@@ -425,12 +425,13 @@ export class ResourceGovernor {
   }
 
   close(): Promise<void> {
-    if (this.closePromise) return Promise.all([this.closePromise, this.idleOwner?.released]).then(() => undefined)
+    if (this.closePromise) return this.closePromise
     this.accepting = false
     this.idleOwner?.abort()
-    this.closePromise = new Promise<void>((resolve) => {
+    const acceleratorClosed = new Promise<void>((resolve) => {
       this.resolveClose = resolve
     })
+    this.closePromise = Promise.all([acceleratorClosed, this.idleOwner?.released]).then(() => undefined)
 
     for (const record of [...this.queue]) {
       const abortOwner = record.abortOwner
@@ -445,7 +446,7 @@ export class ResourceGovernor {
     }
     this.activeLease?.ticket.abortOwner?.()
     this.finishCloseIfIdle()
-    return Promise.all([this.closePromise, this.idleOwner?.released]).then(() => undefined)
+    return this.closePromise
   }
 
   private admitNext(): void {
