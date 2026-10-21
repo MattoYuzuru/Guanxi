@@ -1,5 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { analyze, htmlReport } from '../src/report.ts'
 import { selectCorpus } from '../src/corpus.ts'
 import { schedule, validatePlan, validateRecordedPlan, validateResults } from '../src/protocol.ts'
@@ -84,4 +88,20 @@ test('Guanxi exec adapter validates the exact K4 stdout schema without treating 
 
 test('stock host executor refuses unsupported experiments before spawning SSH', async () => {
   await assert.rejects(harborExecutor({ ssh: 'must-not-be-contacted', root: '/home/guanxi-bench/b1' }).run(plan()), /host_fixture_envelope_required/)
+})
+
+test('CLI renders an archived A/B receipt while launch still refuses the stale corpus', async () => {
+  const tasks = Array.from({ length: 80 }, (_, i) => ({ ...plan().tasks[0]!, id: `archived-${i}`, suite: i < 50 ? 'swe-rebench' : 'verified', published: '2020-01-01' }))
+  const recorded = validateRecordedPlan({ ...plan(), mode: 'ab', tasks })
+  assert.throws(() => validatePlan(recorded, new Date('2026-11-22T00:00:00Z')), /stale_ab_corpus/)
+  const trials = validateResults(recorded, await fixtureExecutor().run(recorded))
+  const dir = mkdtempSync(join(tmpdir(), 'b1-archive-'))
+  try {
+    const input = join(dir, 'receipt.json')
+    writeFileSync(input, JSON.stringify({ plan: recorded, trials }))
+    const output = execFileSync(process.execPath, [new URL('../src/cli.ts', import.meta.url).pathname, 'analyze', input], { encoding: 'utf8', env: { PATH: process.env.PATH, GUANXI_DATA_DIR: join(dir, 'private') } })
+    const receipt = JSON.parse(output)
+    assert.equal(receipt.status, 'reported')
+    assert.match(readFileSync(receipt.report, 'utf8'), /Benchmark measurement/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
