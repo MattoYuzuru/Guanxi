@@ -11,7 +11,13 @@ export class NativeProjectRoots {
     this.host = host
     this.db = new DatabaseSync(path)
     chmodSync(path, 0o600)
-    this.db.exec('CREATE TABLE IF NOT EXISTS project_roots (project_id TEXT PRIMARY KEY, workspace_ids TEXT NOT NULL, updated_at TEXT NOT NULL) STRICT')
+    const version = Number((this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
+    if (version > 1) { this.db.close(); throw new Error('native_projects_schema_unsupported') }
+    if (version === 0) {
+      try {
+        this.db.exec('BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS project_roots (project_id TEXT PRIMARY KEY, workspace_ids TEXT NOT NULL, updated_at TEXT NOT NULL) STRICT; PRAGMA user_version = 1; COMMIT')
+      } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
+    }
   }
   list() {
     return this.host.projects.list().map(project => {
