@@ -460,7 +460,7 @@ describe('session log: search', () => {
 describe('session log: migration 29 is append-only', () => {
   it('leaves migrations 1-28 byte-identical to the K1 base (4588ce6)', () => {
     const digest = createHash('sha256').update(JSON.stringify(MIGRATIONS.slice(0, 28))).digest('hex')
-    assert.equal(MIGRATIONS.length, 32)
+    assert.equal(MIGRATIONS.length, 33)
     assert.equal(digest, 'd561955e4784a2d97b96c6f772b4f91993114a557d452d8f8f87283bac28da82')
   })
 
@@ -493,7 +493,7 @@ describe('session log: migration 29 is append-only', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
+    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
     assert.equal(snapshot(upgraded), v28, 'every earlier table is unchanged')
     assert.equal((upgraded.prepare('SELECT COUNT(*) AS n FROM session_events').get() as { n: number }).n, 0)
     upgraded.close()

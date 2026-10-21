@@ -23,14 +23,25 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import {
+  INPUT_EXCERPT_BYTES,
+  SESSION_EVENT_MAX_VERSION,
   SESSION_EVENT_VERSION,
+  SESSION_EVENT_VERSION_2,
+  promptV2DataSchema,
   sessionEventClassOf,
   sessionEventDataSchemas,
+  sessionEventDataV2Schemas,
   sessionEventSchema,
+  sessionEventTypeSupportsV2,
+  sessionInputArtifactInputSchema,
+  toolCallV2DataSchema,
   type SessionAudience,
   type SessionEvent,
   type SessionEventData,
+  type SessionEventDataV2,
   type SessionEventType,
+  type SessionEventV2Type,
+  type SessionInputArtifactInput,
   type SessionKind,
   type SessionListItem,
   type SessionSearchHit,
@@ -78,6 +89,7 @@ export type SessionLogErrorCode =
    * (GPT re-check N2). `catchUpFailure` names the last failed attempt's code.
    */
   | 'session_catching_up'
+  | 'session_event_version_unsupported'
 
 export class SessionLogError extends Error {
   readonly code: SessionLogErrorCode
@@ -122,9 +134,17 @@ export interface SessionLogOptions {
   fault?: (point: SessionAppendPoint, detail: { sessionId: string; type: SessionEventType }) => void
 }
 
+/**
+ * Append-time data: v1 shapes for every type, plus the stripped v2 shape for
+ * the two input-bearing types. The full input bytes never travel inside this
+ * object; {@link AppendOptions.inputArtifact} describes them.
+ */
+export type SessionAppendData<T extends SessionEventType> =
+  T extends SessionEventV2Type ? SessionEventData<T> | SessionEventDataV2<T> : SessionEventData<T>
+
 export interface SessionEventInput<T extends SessionEventType = SessionEventType> {
   type: T
-  data: SessionEventData<T>
+  data: SessionAppendData<T>
   spanId?: string | null
   parentSpanId?: string | null
   jobId?: string | null
@@ -144,6 +164,26 @@ export interface AppendOptions {
   idempotencyKey?: string
   /** The `seq` this event must get; a stored identical event at it is returned. */
   expectedSeq?: number
+  /** Defaults to 1. Version 2 is accepted only for prompt/tool.call with an artifact. */
+  eventVersion?: 1 | 2
+  /** The scrubbed full-input descriptor; the log resolves its owned artifact id. */
+  inputArtifact?: SessionInputArtifactInput
+}
+
+/** A max-version read met an event it cannot parse; nothing is yielded or advanced. */
+export class SessionEventVersionError extends Error {
+  readonly code = 'session_event_version_unsupported' as const
+  readonly seq: number
+  readonly supported: number
+  readonly required: number
+
+  constructor(seq: number, supported: number, required: number) {
+    super('The next session event needs a newer envelope version')
+    this.name = 'SessionEventVersionError'
+    this.seq = seq
+    this.supported = supported
+    this.required = required
+  }
 }
 
 export interface AppendResult {
@@ -245,12 +285,17 @@ export function searchTextOf(type: SessionEventType, data: unknown): string | nu
 
 function rawSearchTextOf(type: SessionEventType, data: unknown): string | null {
   const value = data as Record<string, unknown>
+  const artifact = value['artifact'] as { excerpt?: unknown } | undefined
+  const excerpt = artifact !== undefined && typeof artifact.excerpt === 'string' ? artifact.excerpt : null
   switch (type) {
     case 'prompt':
+      if (typeof value['text'] === 'string' && value['text'].length > 0) return value['text']
+      return excerpt !== null && excerpt.length > 0 ? excerpt : null
     case 'assistant.message':
     case 'reasoning':
       return typeof value['text'] === 'string' && value['text'].length > 0 ? value['text'] : null
     case 'tool.call':
+      if (excerpt !== null) return `${String(value['name'])} ${excerpt}`
       return `${String(value['name'])} ${JSON.stringify(value['arguments'])}`
     case 'tool.result':
       return [value['result'], value['error']].filter((part) => typeof part === 'string').join('\n') || null
@@ -657,7 +702,8 @@ export class SessionLog {
     let title: string | null = null
     if (row.first_prompt !== null) {
       try {
-        const text = (JSON.parse(row.first_prompt) as { text?: unknown }).text
+        const payload = JSON.parse(row.first_prompt) as { text?: unknown; artifact?: { excerpt?: unknown } }
+        const text = typeof payload.text === 'string' ? payload.text : payload.artifact?.excerpt
         if (typeof text === 'string') title = titleOf(this.scrubber.scrub(text))
       } catch {
         title = null
@@ -675,11 +721,22 @@ export class SessionLog {
     }
   }
 
-  /** A page after `afterSeq`, filtered for the audience and scrubbed again. */
+  /**
+   * A page after `afterSeq`, filtered for the audience and scrubbed again.
+   * With `maxVersion`, a v2 event inside the page is reported as
+   * `unsupportedSeq` and excluded; the caller must not advance past it.
+   */
   read(
     sessionId: string,
-    options: { afterSeq?: number; limit?: number; audience: SessionAudience; types?: readonly SessionEventType[]; seqs?: readonly number[] },
-  ): { events: SessionEvent[]; lastSeq: number; hasMore: boolean } {
+    options: {
+      afterSeq?: number
+      limit?: number
+      audience: SessionAudience
+      types?: readonly SessionEventType[]
+      seqs?: readonly number[]
+      maxVersion?: number
+    },
+  ): { events: SessionEvent[]; lastSeq: number; hasMore: boolean; unsupportedSeq: number | null } {
     this.assertEgressReady()
     this.assertReadable(sessionId)
     const head = this.requireSession(sessionId)
@@ -697,11 +754,21 @@ export class SessionLog {
          ORDER BY seq LIMIT ?`,
       )
       .all(sessionId, afterSeq, ...types, ...seqs, limit + 1) as unknown as EventRow[]
-    const page = rows.slice(0, limit)
+    let page = rows.slice(0, limit)
+    let unsupportedSeq: number | null = null
+    const maxVersion = options.maxVersion ?? SESSION_EVENT_MAX_VERSION
+    if (maxVersion < SESSION_EVENT_MAX_VERSION) {
+      const boundary = page.findIndex((row) => row.event_version > maxVersion)
+      if (boundary >= 0) {
+        unsupportedSeq = page[boundary]!.seq
+        page = page.slice(0, boundary)
+      }
+    }
     return {
       events: page.map((row) => this.toEvent(row)),
       lastSeq: head.last_seq,
-      hasMore: rows.length > limit,
+      hasMore: rows.length > limit || page.length < rows.length,
+      unsupportedSeq,
     }
   }
 
@@ -853,6 +920,7 @@ export class SessionLog {
     afterSeq: number,
     audience: SessionAudience,
     signal: AbortSignal,
+    maxVersion = SESSION_EVENT_MAX_VERSION,
   ): AsyncGenerator<SessionEvent> {
     this.assertEgressReady()
     this.assertReadable(sessionId)
@@ -865,11 +933,7 @@ export class SessionLog {
     try {
       while (!signal.aborted && !this.closing && !this.subscriptionsClosed) {
         const observed = wake.version
-        const page = this.read(sessionId, { afterSeq: cursor, limit: 200, audience })
-        if (page.events.length === 0) {
-          await wake.waitForChange(observed, signal)
-          continue
-        }
+        const page = this.read(sessionId, { afterSeq: cursor, limit: 200, audience, maxVersion })
         for (const event of page.events) {
           if (signal.aborted) return
           // The page was read before this frame was asked for: check the
@@ -877,6 +941,17 @@ export class SessionLog {
           const current = this.outward(sessionId, event)
           cursor = event.seq
           yield current
+        }
+        if (page.unsupportedSeq !== null) {
+          throw new SessionEventVersionError(page.unsupportedSeq, maxVersion, SESSION_EVENT_VERSION_2)
+        }
+        if (page.events.length === 0) {
+          await wake.waitForChange(observed, signal)
+          continue
+        }
+        if (!page.hasMore) {
+          await wake.waitForChange(observed, signal)
+          continue
         }
       }
     } finally {
@@ -1085,17 +1160,44 @@ export class SessionLog {
     return !this.isProcessAlive(row.pid)
   }
 
-  /** Inside a transaction: the append itself. */
+  /** Inside a transaction: the append itself, v1 inline or v2 with resolved metadata. */
   private appendWithin<T extends SessionEventType>(
     sessionId: string,
     epoch: number,
     input: SessionEventInput<T>,
     options: AppendOptions,
   ): AppendResult {
-    const schema = sessionEventDataSchemas[input.type]
-    if (!schema) throw new SessionLogError('invalid_event', `Unknown session event type ${String(input.type)}`)
-    const parsed = schema.safeParse(input.data)
-    if (!parsed.success) throw new SessionLogError('invalid_event', `Invalid ${input.type} event data`)
+    const requestedVersion = options.eventVersion ?? SESSION_EVENT_VERSION
+    if (requestedVersion !== SESSION_EVENT_VERSION && requestedVersion !== SESSION_EVENT_VERSION_2) {
+      throw new SessionLogError('invalid_event', 'Unknown session event envelope version')
+    }
+    if (requestedVersion === SESSION_EVENT_VERSION_2) {
+      if (!sessionEventTypeSupportsV2(input.type) || options.inputArtifact === undefined) {
+        throw new SessionLogError('invalid_event', 'Only an input-bearing event may use version 2')
+      }
+    } else if (options.inputArtifact !== undefined) {
+      throw new SessionLogError('invalid_event', 'A version 1 event cannot carry an input artifact')
+    }
+
+    let data: Record<string, unknown>
+    let artifactInput: SessionInputArtifactInput | null = null
+    if (requestedVersion === SESSION_EVENT_VERSION_2) {
+      const type = input.type as SessionEventV2Type
+      const parsed = sessionEventDataV2Schemas[type].safeParse(input.data)
+      if (!parsed.success) throw new SessionLogError('invalid_event', `Invalid ${input.type} event data`)
+      data = this.scrubber.scrub(parsed.data) as Record<string, unknown>
+      const descriptor = sessionInputArtifactInputSchema.safeParse(
+        this.scrubber.scrub(options.inputArtifact),
+      )
+      if (!descriptor.success) throw new SessionLogError('invalid_event', 'Invalid input artifact descriptor')
+      artifactInput = descriptor.data
+    } else {
+      const schema = sessionEventDataSchemas[input.type]
+      if (!schema) throw new SessionLogError('invalid_event', `Unknown session event type ${String(input.type)}`)
+      const parsed = schema.safeParse(input.data)
+      if (!parsed.success) throw new SessionLogError('invalid_event', `Invalid ${input.type} event data`)
+      data = this.scrubber.scrub(parsed.data) as Record<string, unknown>
+    }
 
     // Identifiers are stored and returned verbatim, so they must not hold a registered value.
     this.assertIdentifiersClean({
@@ -1105,16 +1207,6 @@ export class SessionLog {
       jobId: input.jobId ?? null,
       idempotencyKey: options.idempotencyKey ?? null,
     })
-    const data = this.scrubber.scrub(parsed.data) as SessionEventData<T>
-    const payload = JSON.stringify(data)
-    // Fields are scrubbed one by one; refuse a payload whose serialisation re-forms a value.
-    if (this.scrubber.scrub(payload) !== payload) {
-      throw new SessionLogError('invalid_event', `The ${input.type} payload would re-form a registered secret`)
-    }
-    const payloadSha256 = sha256(payload)
-    const redactions = Math.max(0, countMarkers(payload) - countMarkers(JSON.stringify(parsed.data)))
-    const joined = searchTextOf(input.type, data)
-    const searchText = joined === null ? null : this.scrubber.scrub(joined)
 
     const writer = this.db
       .prepare('SELECT writer_id, epoch, released_at FROM session_writers WHERE session_id = ?')
@@ -1124,6 +1216,43 @@ export class SessionLog {
     }
     this.renewWithin(sessionId, epoch)
     this.fault?.('writer_checked', { sessionId, type: input.type })
+
+    if (artifactInput !== null) {
+      const excerpt = this.scrubber.scrub(artifactInput.excerpt)
+      const excerptBytes = new TextEncoder().encode(excerpt).byteLength
+      if (excerptBytes > INPUT_EXCERPT_BYTES) {
+        throw new SessionLogError('invalid_event', 'The input excerpt exceeds its published bound')
+      }
+      const artifactId = this.resolveInputArtifactWithin(sessionId, artifactInput)
+      data = {
+        ...data,
+        artifact: {
+          artifactId,
+          checksum: artifactInput.checksum,
+          byteSize: artifactInput.byteSize,
+          mediaType: artifactInput.mediaType,
+          excerpt,
+          excerptBytes,
+        },
+      }
+      const full = input.type === 'prompt' ? promptV2DataSchema : toolCallV2DataSchema
+      if (!full.safeParse(data).success) {
+        throw new SessionLogError('invalid_event', `Invalid ${input.type} input artifact reference`)
+      }
+    }
+
+    const payload = JSON.stringify(data)
+    // Fields are scrubbed one by one; refuse a payload whose serialisation re-forms a value.
+    if (this.scrubber.scrub(payload) !== payload) {
+      throw new SessionLogError('invalid_event', `The ${input.type} payload would re-form a registered secret`)
+    }
+    const payloadSha256 = sha256(payload)
+    const original = requestedVersion === SESSION_EVENT_VERSION_2
+      ? JSON.stringify({ data: input.data, artifact: options.inputArtifact })
+      : JSON.stringify(input.data)
+    const redactions = Math.max(0, countMarkers(payload) - countMarkers(original))
+    const joined = searchTextOf(input.type, data)
+    const searchText = joined === null ? null : this.scrubber.scrub(joined)
 
     if (options.idempotencyKey !== undefined) {
       const existing = this.db
@@ -1169,7 +1298,7 @@ export class SessionLog {
       session_id: sessionId,
       seq: head + 1,
       id: randomUUID(),
-      event_version: SESSION_EVENT_VERSION,
+      event_version: requestedVersion,
       type: input.type,
       class: eventClass,
       span_id: input.spanId ?? null,
@@ -1206,6 +1335,31 @@ export class SessionLog {
     return { event, duplicate: false }
   }
 
+  /**
+   * Inside the append transaction: reuse a `(session_id, checksum)` row or
+   * insert it. The event and this row commit or roll back together.
+   */
+  private resolveInputArtifactWithin(sessionId: string, input: SessionInputArtifactInput): string {
+    const existing = this.db.prepare(
+      `SELECT artifact_id, byte_size, media_type FROM session_input_artifacts
+       WHERE session_id = ? AND checksum = ?`,
+    ).get(sessionId, input.checksum) as
+      | { artifact_id: string; byte_size: number; media_type: string }
+      | undefined
+    if (existing) {
+      if (existing.byte_size !== input.byteSize || existing.media_type !== input.mediaType) {
+        throw new SessionLogError('invalid_event', 'Stored input artifact metadata does not match')
+      }
+      return existing.artifact_id
+    }
+    const id = randomUUID()
+    this.db.prepare(
+      `INSERT INTO session_input_artifacts (artifact_id, session_id, checksum, byte_size, media_type, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(id, sessionId, input.checksum, input.byteSize, input.mediaType, this.clock().toISOString())
+    return id
+  }
+
   private toEvent(row: EventRow, options: { rescrub?: boolean } = {}): SessionEvent {
     // The generated event id must stay a UUID, so it cannot be redacted: an event
     // whose id holds a value registered later withholds the read (GPT final check N6).
@@ -1223,7 +1377,27 @@ export class SessionLog {
       } catch {
         throw new SessionLogError('stored_data_invalid', `Session event #${row.seq} is not valid JSON`)
       }
-      if (options.rescrub !== false) data = this.scrubber.scrub(data)
+      if (options.rescrub !== false) {
+        data = this.scrubber.scrub(data)
+        // A secret registered after the write can change the bounded excerpt.
+        // Recompute its length for this projection without mutating the stored
+        // payload; the excerpt stays within its published byte bound.
+        const candidate = data as { artifact?: { excerpt?: unknown; excerptBytes?: unknown } }
+        if (candidate !== null && typeof candidate === 'object' && candidate.artifact !== undefined
+          && typeof candidate.artifact.excerpt === 'string') {
+          let excerpt = this.scrubber.scrub(candidate.artifact.excerpt)
+          if (Buffer.byteLength(excerpt, 'utf8') > INPUT_EXCERPT_BYTES) {
+            const bytes = Buffer.from(excerpt, 'utf8')
+            let end = INPUT_EXCERPT_BYTES
+            while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1
+            excerpt = bytes.subarray(0, end).toString('utf8')
+          }
+          data = {
+            ...candidate,
+            artifact: { ...candidate.artifact, excerpt, excerptBytes: Buffer.byteLength(excerpt, 'utf8') },
+          }
+        }
+      }
     }
     // A value registered after the write is hidden in identifiers too on the way out.
     const ids = options.rescrub === false

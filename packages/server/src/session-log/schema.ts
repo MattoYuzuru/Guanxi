@@ -230,3 +230,56 @@ export const SESSION_LOG_MIGRATION = `
         VALUES ('delete', OLD.row_id, OLD.search_text);
     END;
 `
+
+/**
+ * Migration 33 — session-owned input artifacts (K4 bounded input slice). Additive:
+ * it creates one table/index and replaces only the event-policy trigger.
+ *
+ * A v2 event is allowed only for `prompt`/`tool.call`, must carry an `artifact`
+ * object instead of inline `text`/`arguments`, and its referenced row must
+ * exist for the same session with the same checksum, size and media type. The
+ * metadata row is inserted in the same transaction as its event, so a crash
+ * leaves both or neither; a published blob without a row is an orphan.
+ */
+export const SESSION_INPUT_ARTIFACTS_MIGRATION = `
+  CREATE TABLE IF NOT EXISTS session_input_artifacts (
+    artifact_id TEXT PRIMARY KEY CHECK (length(artifact_id) BETWEEN 1 AND 200),
+    session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    checksum     TEXT NOT NULL CHECK (
+      length(checksum) = 71 AND substr(checksum, 1, 7) = 'sha256:'
+      AND substr(checksum, 8) NOT GLOB '*[^0-9a-f]*'
+    ),
+    byte_size    INTEGER NOT NULL CHECK (byte_size >= 0 AND byte_size <= 9007199254740991),
+    media_type   TEXT NOT NULL CHECK (media_type IN ('text/plain; charset=utf-8', 'application/json')),
+    created_at   TEXT NOT NULL,
+    UNIQUE (session_id, checksum)
+  );
+  CREATE INDEX IF NOT EXISTS idx_session_input_artifacts_session
+    ON session_input_artifacts(session_id);
+
+  DROP TRIGGER IF EXISTS session_events_policy_insert;
+  CREATE TRIGGER session_events_policy_insert
+    BEFORE INSERT ON session_events
+    WHEN NEW.event_version NOT IN (1,2)
+      OR NEW.payload IS NULL
+      OR NEW.purged_at IS NOT NULL
+      OR (NEW.class = 'reasoning') <> (NEW.type = 'reasoning')
+      OR (NEW.class = 'reasoning') <> (NEW.expires_at IS NOT NULL)
+      OR (NEW.event_version = 2 AND (
+        NEW.type NOT IN ('prompt','tool.call')
+        OR json_type(NEW.payload, '$.artifact') IS NOT 'object'
+        OR json_type(NEW.payload, '$.text') IS NOT NULL
+        OR json_type(NEW.payload, '$.arguments') IS NOT NULL
+        OR NOT EXISTS (
+          SELECT 1 FROM session_input_artifacts artifact
+          WHERE artifact.session_id = NEW.session_id
+            AND artifact.artifact_id = json_extract(NEW.payload, '$.artifact.artifactId')
+            AND artifact.checksum = json_extract(NEW.payload, '$.artifact.checksum')
+            AND artifact.byte_size = json_extract(NEW.payload, '$.artifact.byteSize')
+            AND artifact.media_type = json_extract(NEW.payload, '$.artifact.mediaType')
+        )
+      ))
+    BEGIN
+      SELECT RAISE(ABORT, 'A session event must carry its payload and match the event policy');
+    END;
+`

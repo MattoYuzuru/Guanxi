@@ -3,12 +3,13 @@
  * the token meter the inspector shows, and the transcript state replay tests
  * compare against the live state.
  */
-import type {
-  SessionEvent,
-  SessionEventType,
-  SessionSpan,
-  SessionSpanKind,
-  SessionTokenMeter,
+import {
+  promptTextOf,
+  type SessionEvent,
+  type SessionEventType,
+  type SessionSpan,
+  type SessionSpanKind,
+  type SessionTokenMeter,
 } from '@guanxi/contract'
 
 function spanKind(spanId: string): SessionSpanKind | null {
@@ -115,7 +116,7 @@ export function projectTranscript(events: readonly SessionEvent[]): SessionTrans
     state.lastSeq = Math.max(state.lastSeq, event.seq)
     switch (event.type) {
       case 'prompt':
-        state.prompts.push({ messageId: event.data.messageId, text: event.data.text })
+        state.prompts.push({ messageId: event.data.messageId, text: promptTextOf(event) })
         break
       case 'assistant.message':
         if (event.data.messageId) {
