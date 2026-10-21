@@ -112,3 +112,36 @@ for (const quota of [false,true]) test(`actual Google pi transport ${quota ? 'qu
   const attempt = f.runs.attempts(runId)[0]!
   assert.equal(attempt.first_model_at !== null, !quota)
 })
+
+test('clean home handover reconciles a native attempt before its execution lease expires', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const f = await fixture(t, async () => await new Promise(() => {}))
+  const { sessionId } = await f.agents().create(f.input)
+  while (f.requests.length === 0) await new Promise(r => setImmediate(r))
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  const attempt = f.runs.attempts(runId)[0]!
+  f.runs.close()
+  const successor = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber })
+  try {
+  successor.heartbeat(); successor.reconcile()
+  assert.equal(successor.attempts(runId)[0]!.state, 'lost')
+  assert.equal(successor.get(runId).state, 'input_required')
+  assert.throws(() => successor.complete(attempt, 'completed'), /stale_lease/)
+  assert.equal(f.requests.length, 1)
+  } finally { successor.close() }
+})
+
+test('a deposed native home cannot delete a settled session or its resources', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  f.runs.close()
+  const successor = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber })
+  try {
+    successor.heartbeat(); successor.reconcile()
+    await assert.rejects(f.agents().deleteSession(sessionId), /closed/)
+    assert.notEqual(f.log.session(sessionId), null)
+    await readdir(f.agents().sessions.paths(sessionId)[0]!)
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 0)
+  } finally { successor.close() }
+})

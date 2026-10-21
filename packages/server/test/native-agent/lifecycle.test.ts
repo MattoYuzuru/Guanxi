@@ -188,6 +188,7 @@ test('reasoning exists only in K2 reasoning rows, never other ledgers, artifacts
   const rows = f.db.prepare('SELECT type,payload,expires_at FROM session_events WHERE session_id=?').all(sessionId)
   assert.equal(rows.filter(row => String(row.payload).includes(marker)).length, 1)
   const reasoning = rows.find(row => row.type === 'reasoning')!
+  assert.ok(reasoning, 'native thinking must use the K2 reasoning class')
   assert.ok(Date.parse(String(reasoning.expires_at)) <= Date.parse(f.agents().sessions.expiry(sessionId)!))
   assert.equal(JSON.stringify(f.log.readAll(sessionId, 'remote_agent')).includes(marker), false)
   const { sessionLogRoutes } = await import('../../src/session-log/routes.ts')

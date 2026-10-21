@@ -233,15 +233,19 @@ export class NativeAgents {
     if (!active) throw new NativeAgentError('session_not_running')
     active.handle.append({ type: 'agent.queue', data: { items: this.progress(id).queue.filter(i => i.id !== item) } })
   }
-  leaveSession(id: string) { this.ready(); return this.sessions.leave(id) }
-  setRetention(id: string, mode: 'keep' | 'ttl' | 'session') { this.ready(); return this.sessions.setRetention(id, mode) }
+  leaveSession(id: string) { this.ready(); this.runs.heartbeat(); return this.sessions.leave(id) }
+  setRetention(id: string, mode: 'keep' | 'ttl' | 'session') { this.ready(); this.runs.heartbeat(); return this.sessions.setRetention(id, mode) }
   async deleteSession(id: string) {
     this.ready()
+    this.runs.heartbeat()
+    this.runs.reconcile()
     if (this.active.has(id)) throw new NativeAgentError('session_busy')
     try { await this.sessions.remove(id) } catch (error) { throw new NativeAgentError(error instanceof Error && ['session_busy','writer_busy','session_not_found','cleanup_unconfirmed'].includes('code' in error ? String(error.code) : error.message) ? ('code' in error ? String(error.code) : error.message) : 'deletion_failed') }
     return { sessionId: id, deleted: true as const }
   }
   prompt(id: string, text: string) {
+    this.ready()
+    this.runs.heartbeat()
     this.sessions.assertAvailable(id)
     if (this.active.has(id)) { this.queue(id, text); return }
     const events = this.events(id)

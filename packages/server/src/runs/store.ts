@@ -607,6 +607,7 @@ export class RunStore {
     this.reconcileAttempts(true)
     // A native turn never replays work or a report after restart. The user must decide.
     for (const id of this.startupNativeRuns) {
+      if (!this.row('SELECT 1 FROM durable_runs WHERE id=?', id)) { this.startupNativeRuns.delete(id); continue }
       this.isolate(id, 'reconcile', () => this.tx('native_reconcile', () => {
         const run = this.get(id)
         if (!TERMINAL_RUN_STATES.has(run.state) && run.state !== 'input_required') {
