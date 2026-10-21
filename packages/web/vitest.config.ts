@@ -6,12 +6,12 @@ const uiRoot = fileURLToPath(new URL('../ui', import.meta.url))
 
 export default defineConfig({
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@guanxi/contract': contractSrc,
-      '@guanxi/ui/catalog': `${uiRoot}/catalog/index.ts`,
-      '@guanxi/ui': `${uiRoot}/src/index.ts`,
-    },
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+      { find: '@guanxi/contract', replacement: contractSrc },
+      { find: /^@guanxi\/ui\/catalog$/, replacement: `${uiRoot}/catalog/index.ts` },
+      { find: /^@guanxi\/ui$/, replacement: `${uiRoot}/src/index.ts` },
+    ],
   },
   test: {
     environment: 'jsdom',

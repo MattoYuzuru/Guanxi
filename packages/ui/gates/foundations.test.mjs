@@ -381,3 +381,9 @@ test('M4 additional accent and status utility mappings share generated role valu
     }
   }
 })
+
+test('L8 Vitest resolves public UI styles through package exports', async () => {
+  const config = await resolveConfig({ root: join(ctx.root, 'packages/web'), configFile: join(ctx.root, 'packages/web/vitest.config.ts') }, 'serve')
+  const resolver = config.createResolver()
+  for (const [name, path] of [['@guanxi/ui', 'src/index.ts'], ['@guanxi/ui/catalog', 'catalog/index.ts'], ['@guanxi/ui/theme.css', 'generated/theme.css'], ['@guanxi/ui/tokens.css', 'generated/tokens.css']]) assert.equal(await resolver(name, join(ctx.root, 'packages/web/src/index.css')), join(ctx.root, 'packages/ui', path), name)
+})

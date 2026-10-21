@@ -115,6 +115,8 @@ test('suppression history rejects growth even after a later shrink and refuses s
   assert.throws(() => execFileSync(process.execPath, [resolve(repositoryRoot, 'packages/ui/gates/lint/suppressions.mjs')], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }), error => error.status === 1 && String(error.stdout).includes('suppression grew'))
   await commit(freeze(3)); await commit(freeze(1))
   assert.ok(auditSuppressions(root, freeze(1)).some(e => e.includes('grew')))
+  git('replace', '--graft', 'HEAD')
+  assert.ok(auditSuppressions(root, freeze(1)).some(e => e.includes('grew')), 'L8 Git replacement must not hide committed growth')
   git('clone', '-q', '--depth=1', `file://${root}`, resolve(root, 'shallow'))
   assert.ok(auditSuppressions(resolve(root, 'shallow'), freeze(1)).some(e => e.includes('shallow')))
 })

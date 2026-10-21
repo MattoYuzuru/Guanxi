@@ -20,7 +20,7 @@ export function growthErrors(before, after, where = '') {
 // Audit every actual parent edge. A removed/restored file or a grow-then-shrink commit
 // cannot reset the budget; merges must preserve the reductions of both parents.
 export function auditSuppressions(root, current) {
-  const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  const git = args => execFileSync('git', args, { cwd: root, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   if (git(['rev-parse', '--is-shallow-repository']) === 'true') return ['Cannot audit ESLint suppressions in a shallow repository; git fetch --unshallow first.']
   const errors = validateSuppressions(current), cache = new Map()
   function version(rev) {

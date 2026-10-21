@@ -141,3 +141,12 @@ test('H3/L2 self-review: the same correction cannot originate independently on t
   repo.git('checkout', '-q', 'first'); repo.git('merge', '--no-ff', '-m', 'Merge introductions', 'second')
   assert.ok(auditRatchet(repo.root, after, policy).some(e => e.includes('introduced more than once')))
 })
+
+test('L8 legacy audit ignores Git replacement grafts that hide growth', async t => {
+  const key = 'G5|packages/web/src/a.tsx|bg-red-500'
+  const repo = await repository(t, { [key]: 1 })
+  await repo.save(ledgerPath, { [key]: 2 }); repo.commit('Forbidden growth')
+  await repo.save(ledgerPath, { [key]: 1 }); repo.commit('Shrink again')
+  repo.git('replace', '--graft', 'HEAD')
+  assert.ok(auditRatchet(repo.root, { [key]: 1 }, { corrections: [] }).some(e => e.includes('grew')), 'Git replacement must not hide a historical increase')
+})

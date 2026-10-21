@@ -198,7 +198,8 @@ packages/web/src/features/settings/SettingsPage.tsx
 
 Shared edits outside the strict owned list: root `package.json`/generated `package-lock.json`
 for pinned tools and test commands; the existing foundation test and shrinking DS1-a ledger;
-`packages/ui/tokens/README.md` for bridge reconciliation; `packages/web/vite.config.ts` for
+`packages/ui/tokens/README.md` for bridge reconciliation; `packages/ui/gates/README.md`
+for the lint/gate usage contract; `packages/web/vite.config.ts` for
 public stylesheet resolution; and the existing `local-fonts.spec.ts` fixture/normalization.
 `index.css` is the explicitly requested bridge follow-up. The one manual history class
 correction is within the already migrated source. No `packages/ui/src` file changed.
