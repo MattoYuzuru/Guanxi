@@ -68,8 +68,8 @@ export class NativeAgents {
     const dataRoot = await realpath(this.dataDir)
     if (roots.some(root => inside(root, dataRoot) || inside(dataRoot, root))) throw new NativeAgentError('root_overlaps_node_data')
     const sessionId = randomUUID()
-    const scratch = join(resolve(this.dataDir), 'scratch', sessionId)
-    const attachmentDir = join(resolve(this.dataDir), 'native-attachments', sessionId)
+    const scratch = join(dataRoot, 'scratch', sessionId)
+    const attachmentDir = join(dataRoot, 'native-attachments', sessionId)
     await mkdir(scratch, { recursive: true, mode: 0o700 })
     await mkdir(attachmentDir, { recursive: true, mode: 0o700 })
     let handle: SessionHandle | undefined

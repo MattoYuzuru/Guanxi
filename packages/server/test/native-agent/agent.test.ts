@@ -55,7 +55,7 @@ async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: n
   t.after(async () => { await agents.close(); await kernel.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) })
   return { dir, data, connections, agents: () => agents, log, scrubber, secret, requests, projects, workspaces,
     input: { projectId: project.id, connectionId: connection.id, model: model.id, prompt: 'fixture prompt' },
-    async restart() { await agents.close(); agents = new NativeAgents(host, log, connections, scrubber, data) } }
+    async restart(dataDirectory = data) { await agents.close(); agents = new NativeAgents(host, log, connections, scrubber, dataDirectory) } }
 }
 test('native pi loop uses K3 and K2; tool-printed secrets scrub before next request, reasoning stays in its class', { timeout: 30000 }, async t => {
   let secret = '', root = ''
@@ -241,6 +241,19 @@ test('protected dangling links and absent children beneath dangling parents fail
     await assert.rejects(f.agents().create({ ...f.input, mode: 'full-access', protectedPaths: [path] }), /protected_path_invalid/)
   }
   assert.equal(f.requests.length, 0, 'no inference starts with an unresolved protected target')
+})
+test('zero-root scratch protections accept an ordinary missing file through a linked data directory', async t => {
+  const f = await fixture(t)
+  const alias = join(f.dir, 'data-alias'); await symlink(f.data, alias)
+  await f.restart(alias)
+  for (const mode of ['read-only', 'full-access'] as const) {
+    const { sessionId } = await f.agents().create({ ...f.input, mode, protectedPaths: ['future'] })
+    assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+    const policy = f.log.readAll(sessionId, 'person').find(event => event.type === 'agent.policy')!
+    if (policy.type !== 'agent.policy') throw new Error('missing policy')
+    assert.equal(policy.data.scratch.startsWith(f.data + '/'), true)
+    assert.ok(policy.data.protectedPaths.includes(join(policy.data.scratch, 'future')))
+  }
 })
 test('shutdown during attachment staging prevents a late model dispatch', { timeout: 30000 }, async t => {
   let release!: () => void
