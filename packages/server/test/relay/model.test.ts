@@ -28,3 +28,10 @@ test('local prompt_eval_count mismatch maps to inputTruncated, not outputLimited
   assert.equal(reply.inputTruncated, true)
   assert.equal(reply.outputLimited, false)
 })
+
+test('a local Ollama :cloud model reports unknown cost instead of zero', async () => {
+  const model = new ConnectionRelayModel(local({ message: { content: '{}' }, prompt_eval_count: 100, eval_count: 1, done_reason: 'stop' }),
+    'fixture', 'llama3:cloud', { observe: async () => window, count: () => 100 })
+  const reply = await model.call('prompt', options)
+  assert.equal(reply.moneyMicros, null)
+})

@@ -39,6 +39,13 @@ commands only.
 | `pageBytes` | `2048` | Page size for `work.query` and `notes.search`. |
 | `invalidActions` | `3` | Invalid work turns before the cycle hands off. Valid tool, note, proposal, checkpoint and verify turns do not count. |
 
+Local runtime calls are treated as zero cost: the adapter reports `moneyMicros: 0` because
+the host meter quotes local compute rather than an observed bill. This is an assertion shared
+with the host, not an observation. A loopback proxy in front of a paid API, or another billed
+route hidden behind a local-runtime connection, would therefore count as free. An Ollama model
+whose name ends with `:cloud` is reported as unknown (`moneyMicros: null`) instead; the host
+must represent other paid routes as `model_api` or supply a priced meter.
+
 The work strip is at most 300 UTF-8 bytes (a conservative token bound). `work.query` pages
 the full run ledger; `notes.search` pages matching typed notes. Tool results remain in K2
 and K4 output artifacts where applicable. Context turns stay in the current cycle until
