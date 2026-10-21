@@ -17,12 +17,37 @@ function provenance(tree: TreeSnapshot, store?: IndexStore): Provenance {
 export function boundMap(result: MapResult, budget: number): MapResult {
   if (!Number.isSafeInteger(budget) || budget <= 0) throw new Error('index_budget_invalid')
   result.tokenBound = budget
-  while (Buffer.byteLength(JSON.stringify(result), 'utf8') > budget) {
-    if (!result.entries.length) throw new Error('index_budget_too_small')
-    const last = result.entries.at(-1)!
-    if (last.symbols.length) last.symbols.pop()
-    else result.entries.pop()
-    result.truncated = true
+  if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= budget) return result
+  result.truncated = true
+  const entries = result.entries
+  const fits = () => Buffer.byteLength(JSON.stringify(result), 'utf8') <= budget
+  result.entries = []
+  if (!fits()) throw new Error('index_budget_too_small')
+  // Prefix search avoids repeatedly serializing a large repository once for
+  // every discarded symbol/file.
+  let low = 0, high = entries.length
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    result.entries = entries.slice(0, mid)
+    if (fits()) low = mid
+    else high = mid - 1
+  }
+  result.entries = entries.slice(0, low)
+  const next = entries[low]
+  if (next) {
+    const partial = { ...next, symbols: [] as typeof next.symbols }
+    result.entries.push(partial)
+    if (!fits()) result.entries.pop()
+    else {
+      let count = 0, end = next.symbols.length
+      while (count < end) {
+        const mid = Math.ceil((count + end) / 2)
+        partial.symbols = next.symbols.slice(0, mid)
+        if (fits()) count = mid
+        else end = mid - 1
+      }
+      partial.symbols = next.symbols.slice(0, count)
+    }
   }
   // This is a bound of the entire envelope, including provenance and the bound itself.
   if (Buffer.byteLength(JSON.stringify(result), 'utf8') > budget) throw new Error('index_budget_exceeded')
