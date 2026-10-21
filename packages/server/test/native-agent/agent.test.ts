@@ -231,6 +231,17 @@ test('protected file/directory links and absent children deny writes through can
   await assert.rejects(readFile(join(root, 'future/new')))
   assert.equal(await readFile(join(root, 'allowed'), 'utf8'), 'worked')
 })
+test('protected dangling links and absent children beneath dangling parents fail creation closed', async t => {
+  const f = await fixture(t)
+  const root = join(f.dir, 'dangling-root'); await mkdir(root)
+  await symlink(join(root, 'future-file'), join(root, 'file-link'))
+  await symlink(join(root, 'future-directory'), join(root, 'parent-link'))
+  f.agents().setRoots(f.input.projectId, [f.workspaces.create(root).id])
+  for (const path of ['file-link', 'parent-link/new']) {
+    await assert.rejects(f.agents().create({ ...f.input, mode: 'full-access', protectedPaths: [path] }), /protected_path_invalid/)
+  }
+  assert.equal(f.requests.length, 0, 'no inference starts with an unresolved protected target')
+})
 test('shutdown during attachment staging prevents a late model dispatch', { timeout: 30000 }, async t => {
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })

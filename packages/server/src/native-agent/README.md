@@ -37,6 +37,8 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
 - Full access: scratch and all project roots writable, attachments immutable. Zero roots
   means scratch only. Protected paths deny writes in both modes, retaining both lexical
   names and canonical targets (including absent children beneath linked parents).
+  Unresolved/dangling protected links refuse session creation. Sessions created by earlier
+  development commits of this unmerged lane must be recreated; there is no deployed K4 policy migration.
 - Egress: exact host/optional-port allowlist, default empty. HTTPS is TLS-terminated using
   an ephemeral worker CA; Read-only allows GET/HEAD/OPTIONS. Opaque CONNECT/SOCKS tunnels,
   direct sockets, Unix sockets and local binding are denied in both modes. Redirects are

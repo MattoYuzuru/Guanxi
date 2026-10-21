@@ -1,8 +1,8 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { randomUUID } from 'node:crypto'
-import { mkdir, realpath, stat, writeFile, rm, open } from 'node:fs/promises'
-import { resolve, join, sep } from 'node:path'
+import { mkdir, realpath, stat, lstat, writeFile, rm, open } from 'node:fs/promises'
+import { resolve, join, sep, dirname } from 'node:path'
 import { nativeAgentInputSchema, agentExecResultSchema, type NativeAgentInput, type AgentProgress, type AgentExecResult, type SessionEvent } from '@guanxi/contract'
 import type { AppContext } from '../context.ts'
 import type { SessionHandle, SessionLog } from '../session-log/log.ts'
@@ -22,6 +22,22 @@ export class NativeAgentError extends Error {
 interface Active { policy: SandboxPolicy; handle: SessionHandle; abort: AbortController; settled: Promise<void> }
 export type NativeHost = Pick<AppContext, 'projects' | 'workspaces' | 'artifactTransfers'>
 const inside = (root: string, path: string) => path === root || path.startsWith(root + sep)
+async function rejectUnresolvedLinks(path: string): Promise<void> {
+  for (let current = path; ; current = dirname(current)) {
+    let link = false
+    try {
+      link = (await lstat(current)).isSymbolicLink()
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new NativeAgentError('protected_path_invalid')
+    }
+    if (link) {
+      // An absent future path is valid. An existing dangling link is not:
+      // its future target cannot be protected by the nearest-parent fallback.
+      try { await realpath(current) } catch { throw new NativeAgentError('protected_path_invalid') }
+    }
+    if (dirname(current) === current) return
+  }
+}
 export class NativeAgents {
   private active = new Map<string, Active>()
   private closed = false
@@ -70,9 +86,10 @@ export class NativeAgents {
       }
       // Canonical paths and literal sandbox entries prevent glob/symlink interpretation.
       const allowed = [...roots, await realpath(scratch)]
-      const protectedPaths = [...new Set(input.protectedPaths.flatMap(path => {
+      const protectedPaths = [...new Set((await Promise.all(input.protectedPaths.map(async path => {
         const lexical = resolve(roots[0] ?? scratch, path)
         if (!allowed.some(root => inside(root, lexical))) throw new NativeAgentError('protected_path_invalid')
+        await rejectUnresolvedLinks(lexical)
         for (const root of allowed) {
           try {
             // Keep the name and its canonical target, including absent children
@@ -81,7 +98,7 @@ export class NativeAgents {
           } catch { /* the target may belong to another allowed root */ }
         }
         throw new NativeAgentError('protected_path_invalid')
-      }))]
+      }))).flat())]
       const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
       this.ready()
       this.ensureRoots(policy, sessionId)
