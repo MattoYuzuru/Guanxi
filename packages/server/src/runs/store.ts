@@ -257,7 +257,7 @@ export class RunStore {
   private fenced(attempt: Attempt): Attempt {
     const stored = this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', attempt.id)
     const lease = this.row<Lease>('SELECT * FROM leases WHERE key=?', `run:${attempt.run_id}/exec`)
-    if (!stored || stored.run_id !== attempt.run_id || stored.epoch !== attempt.epoch || stored.token !== attempt.token ||
+    if (this.startupAttempts.has(attempt.id) || !stored || stored.run_id !== attempt.run_id || stored.epoch !== attempt.epoch || stored.token !== attempt.token ||
       !['delivered', 'started'].includes(stored.state) || !lease || lease.holder !== attempt.id ||
       lease.epoch !== attempt.epoch || lease.token !== attempt.token || lease.released || lease.expires_at <= this.leaseNow()) {
       throw new RunError('stale_lease')
@@ -473,7 +473,11 @@ export class RunStore {
       if (!wake || wake.acknowledged_at !== null || wake.suppressed_at !== null || TERMINAL_RUN_STATES.has(this.get(runId).state)) return null
       if (wake.attempt_id) {
         const attempt = this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', wake.attempt_id)!
-        if (['delivered', 'started'].includes(attempt.state)) { this.fenced(attempt); return attempt }
+        if (['delivered', 'started'].includes(attempt.state)) {
+          if (this.startupAttempts.has(attempt.id)) return null
+          this.fenced(attempt)
+          return attempt
+        }
       }
       const active = this.attempts(runId).some((a) => ['delivered', 'started'].includes(a.state))
       if (active) return null // Later wake stays durable until the current handler yields.
