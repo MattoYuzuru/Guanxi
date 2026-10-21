@@ -48,3 +48,25 @@ recorded complete session required by K5.
 Finish DS2's full gates, then merge reviewed candidates one at a time and rerun affected
 integration checks. Keep the MS1 six-hour remote run, B3 slope/probe gate and real ETA
 calibration explicitly unearned until measured. No paid/model run starts from fixture evidence.
+
+## Review corrections and runtime scope
+
+Independent review of central-doc commit `c09e2be` found one stale B1 matrix row and minor
+tracker/lanetable lag. The correction names reviewed request admission and active gateway,
+distinguishes U1's candidate from current main, and records K4's completed bounded merge.
+No source/gate claim changes.
+
+Root's independent staging review reproduced a content-integrity bug in `2c1b678`: an internal
+symlink plus `..` caused kernel-resolved listing and lexical joined reads to use different
+directories. DeepSeek fixed it separately in `0d1ff50`, refusing dot components before any
+traversal; the new deterministic test fails before/removing the guard. Independent recheck
+is pending; do not integrate the original source alone.
+
+R3's pure deterministic signal evaluator `5919d0b` is separately reviewed, with 10 new tests
+passing independently (`check-nbaqmlfj`). It has no relay-loop integration or real collector
+and makes no empirical quality claim.
+
+The Fedora SSH route returned connection refused. The owner explicitly selected **local-only
+continuation** on 2026-10-22. No more SSH/remote-host operations are authorized by this
+continuation. Mac/Colima fixture work continues; real Fedora/Linux-host checks, live remote
+MS1 and benchmark runs remain deferred. No service, VPN, relay or resident model was changed.
