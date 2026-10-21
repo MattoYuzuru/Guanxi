@@ -231,5 +231,6 @@ decision was made.
 | K3 Model access | implemented, merged | see the K3 section above |
 | K4 Native agent | partially implemented, merged with its follow-up; retention, input artifacts, HTTPS positive path, UI evidence and R1 integration remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
+| R2 Relay executor | in progress (lane R2, Codex) | [lanes/R2](lanes/R2.md) |
 | F1 Federation base | in review fixes (Claude review 1: merge after fixes, 4 High) | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
