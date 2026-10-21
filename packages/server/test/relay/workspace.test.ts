@@ -4,20 +4,22 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GitRelayWorkspace, protectedName } from '../../src/relay/workspace.ts'
-import { fixture, plan } from './fixture.ts'
+import { fixture, plan, reserves } from './fixture.ts'
+import { canonical } from '../../src/relay/handoff.ts'
+import { RelayExecutor } from '../../src/relay/executor.ts'
 import type { NativeToolContext } from '../../src/native-agent/tools.ts'
 import { promisify } from 'node:util'
 import { execFile } from 'node:child_process'
 const exec = promisify(execFile)
 async function git(root: string, args: string[]) { return (await exec('/usr/bin/git', ['-c','core.hooksPath=/dev/null',...args], { cwd: root })).stdout.trim() }
-async function setup() {
+async function setup(options: Parameters<typeof fixture>[0] = {}) {
   const root = await mkdtemp(join(tmpdir(), 'guanxi-r2-workspace-')), repo = join(root, 'repo'), scratch = join(root, 'scratch')
   await mkdir(repo); await mkdir(scratch); await mkdir(join(repo, 'tests')); await mkdir(join(repo, 'src'))
   await writeFile(join(repo, 'tests', 'accept.txt'), 'planner acceptance')
   await writeFile(join(repo, 'src', 'a.txt'), 'base')
   await git(repo, ['init']); await git(repo, ['add','.']); await git(repo,['-c','user.name=Fixture','-c','user.email=fixture@localhost','commit','-m','fixture'])
   const p = { ...plan, base: await git(repo, ['rev-parse','HEAD']) }
-  const f = fixture(), handle = f.log.open(f.run.session_id, { kind: 'agent' })
+  const f = fixture(options), handle = f.log.open(f.run.session_id, { kind: 'agent' })
   const context: NativeToolContext = { policy: { mode: 'full-access', roots: [repo], scratch, attachments: [], protectedPaths: [], domains: [], runtimeBase: root }, log: f.log, handle, scrubber: f.scrubber, queue: () => {} }
   return { root, repo, p, f, context, close: async () => { handle.close(); f.close(); await rm(root, { recursive:true, force:true }) } }
 }
@@ -37,6 +39,34 @@ test('git checkpoint and seal validation reject protected test/spec/CI edits and
     assert.ok(observation.nonemptyCommit); assert.deepEqual(observation.files,['src/a.txt'])
     await w.validate(s.p,observation.head,observation.files)
     const bundle = await w.bundle(s.p.base); assert.ok(Buffer.byteLength(bundle)>0)
+  } finally { await s.close() }
+})
+test('a cycle before the first checkpoint seals an empty bundle and the next committed cycle seals', async () => {
+  const s = await setup({ caps: { cycles: 2 }, actions: () => canonical({ action: 'handoff' }) })
+  try {
+    const w = await GitRelayWorkspace.create(s.repo, s.p, s.context)
+    s.f.relay.change(s.f.attempt, 'probe_plan', l => { l.plan = s.p; l.head = s.p.base; l.baseline = { ...l.baseline, head: s.p.base } })
+    const sealCount = () => Number(s.f.db.prepare('SELECT COUNT(*) n FROM relay_seals').get()!.n)
+    const call = s.f.model.call.bind(s.f.model)
+    let work = 0
+    s.f.model.call = async (prompt, options) => {
+      if (prompt.startsWith('Execute') && ++work === 2) {
+        assert.equal(sealCount(), 1, 'the first cycle sealed exactly once')
+        await writeFile(join(s.repo, 'src', 'b.txt'), 'checkpoint')
+        await w.checkpoint()
+      }
+      return call(prompt, options)
+    }
+    await new RelayExecutor(s.f.relay, s.f.model, w, reserves, s.f.scrubber).run(s.f.attempt)
+    assert.equal(sealCount(), 2)
+    assert.notEqual(s.f.store.get(s.f.run.id).state, 'input_required')
+    assert.equal(s.f.store.get(s.f.run.id).state, 'wrapping_up')
+    const rows = s.f.db.prepare('SELECT cycle,bundle FROM relay_seals ORDER BY cycle').all() as { cycle: number; bundle: Uint8Array }[]
+    assert.equal(rows[0]!.bundle.length, 0, 'no commits means an empty bundle')
+    assert.ok(rows[1]!.bundle.length > 0, 'a real checkpoint produces a bundle')
+    const events = s.f.log.readAll(s.f.run.session_id, 'person')
+    assert.equal(events.some(e => e.type === 'error'), false)
+    assert.equal(events.some(e => e.type === 'agent.note' && e.data.text.includes('"relay":"probe_degraded"')), false)
   } finally { await s.close() }
 })
 test('gates see only the committed clean tree with planner protected paths and scrubbed output', async () => {

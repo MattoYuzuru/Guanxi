@@ -179,6 +179,10 @@ export class GitRelayWorkspace implements RelayWorkspace {
     await this.git(['update-ref', 'HEAD', commit, head])
   }
   async bundle(base: string): Promise<Uint8Array> {
+    // No checkpoint commit yet: HEAD == base and git refuses an empty range. The empty
+    // bundle is the authoritative "no changes since base" artifact, not a failure.
+    const changes = (await this.git(['rev-list', `${base}..HEAD`])).trim()
+    if (!changes) return new Uint8Array(0)
     // A compressed git bundle cannot be scrubbed in place. Refuse it if ANY object in
     // THIS attempt contains a registered value; never persist unsanitized output.
     const rows = (await this.git(['rev-list', '--objects', `${base}..HEAD`])).trim().split('\n').filter(Boolean)
