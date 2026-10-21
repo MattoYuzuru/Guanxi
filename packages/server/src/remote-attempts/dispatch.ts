@@ -25,7 +25,7 @@ export interface DispatchPolicy {
 }
 interface HomeRow { id: string; offer: string; job: string; attempt: string; grant: string | null }
 interface Holder { grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
-  timer?: ReturnType<typeof setTimeout>; renewTimer?: ReturnType<typeof setTimeout>; refresh?: Promise<void>; task?: Promise<void> }
+  timer?: ReturnType<typeof setTimeout>; renewTimer?: ReturnType<typeof setTimeout>; refresh?: Promise<void> }
 const ZERO = '0'.repeat(64)
 
 /** Optional local inference protocol; all methods are host-owned, wire identity is checked by F1. */
@@ -33,6 +33,7 @@ export class AttemptDispatch {
   private authority: HomeFence | undefined
   private closed = false
   private readonly active = new Map<string, Holder>()
+  private readonly tasks = new Map<string, Promise<void>>()
   private readonly flushing = new Map<string, Promise<void>>()
   private readonly mono: () => number
   private highWater = 0
@@ -181,12 +182,23 @@ export class AttemptDispatch {
     h.timer = setTimeout(() => { try { this.guard(h); this.arm(h) } catch { this.lose(h) } }, Math.max(1, Math.min(remaining, 2_147_483_647)))
     h.timer.unref()
   }
+  private async untilAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+    let remove = () => {}
+    const canceled = new Promise<never>((_resolve, reject) => {
+      const abort = () => reject(new FederationError('dispatch_canceled'))
+      signal.addEventListener('abort', abort, { once: true })
+      remove = () => signal.removeEventListener('abort', abort)
+      if (signal.aborted) abort()
+    })
+    // Promise.race observes late success/rejection even when cancellation wins.
+    try { return await Promise.race([pending, canceled]) } finally { remove() }
+  }
   private refresh(h: Holder, validate: () => void): Promise<void> {
     if (h.refresh) return h.refresh
     const task = (async () => {
       this.guard(h); validate()
       const sent = this.time(), wallSent = this.clock()
-      const renewed = await this.policy.channel(h.grant.grant.offer.homeNodeId).renewDispatch(this.ref(h.grant))
+      const renewed = await this.untilAbort(this.policy.channel(h.grant.grant.offer.homeNodeId).renewDispatch(this.ref(h.grant)), h.controller.signal)
       this.guard(h); validate()
       if (renewed.id !== h.grant.grant.id || renewed.ttlMs > this.policy.ttlMs) throw new FederationError('dispatch_renewal')
       const deadline = sent + renewed.ttlMs - this.policy.safetyMs, wallDeadline = Math.min(h.grant.grant.job.deadline, wallSent + renewed.ttlMs - this.policy.safetyMs)
@@ -222,10 +234,14 @@ export class AttemptDispatch {
       validate(); this.db.prepare("INSERT INTO remote_dispatch_holders VALUES (?,?,'accepted')").run(g.id, canonical(signed))
     })
     this.active.set(g.id, h); this.arm(h)
-    try { await this.refresh(h, validate); this.guard(h); validate() }
+    const admission = this.refresh(h, validate)
+    this.tasks.set(g.id, admission)
+    try { await admission; this.guard(h); validate() }
     catch (error) { this.lose(h); throw error }
-    h.task = this.work(h, validate)
-    void h.task.catch(() => undefined)
+    finally { if (this.tasks.get(g.id) === admission) this.tasks.delete(g.id) }
+    const task = this.work(h, validate)
+    this.tasks.set(g.id, task)
+    void task.finally(() => { if (this.tasks.get(g.id) === task) this.tasks.delete(g.id) }).catch(() => undefined)
     return this.state(g.id)
   }
   private emit(h: Holder, event: DispatchEvent['event']): void {
@@ -297,7 +313,7 @@ export class AttemptDispatch {
     if (h) this.lose(h, 'canceled')
     return this.state(id)
   }
-  async settled(id: string): Promise<void> { await this.active.get(id)?.task }
+  async settled(id: string): Promise<void> { await this.tasks.get(id)?.catch(() => undefined) }
   close(): void {
     if (this.closed) return
     for (const h of this.active.values()) { try { this.lose(h) } catch { h.controller.abort() } }

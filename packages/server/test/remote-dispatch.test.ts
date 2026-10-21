@@ -369,3 +369,63 @@ test('failed additive dispatch DDL rolls back ledger37 and new tables while leav
   assert.equal(f.home.db.prepare('SELECT version FROM remote_dispatch_migrations').get()!.version, 37)
   assert.equal(f.home.runs.attempts(f.run.id).length, 0)
 })
+
+test('cancel during initial renewal settles admission before a late response, without dispatch or resurrection', async t => {
+  const f = await fixture(t), p = await f.prepare(), entered = deferred(), gate = deferred()
+  f.interceptRenew(async () => { entered.resolve(); await gate.promise })
+  const pending = f.outgoing.dispatch(p.grant)
+  await entered.promise
+  const settled = f.target.federation.attemptDispatch!.settled(p.offer.id)
+  await f.outgoing.dispatchState(p.ref, true)
+  await assert.rejects(pending); await settled
+  assert.equal(f.tg.snapshot().activeLease, null); assert.equal(f.posts, 0)
+  assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'canceled')
+  gate.resolve(); await new Promise(r => setTimeout(r, 5))
+  assert.equal(f.posts, 0); assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'canceled')
+})
+
+test('cancel releases the K3 permit while post-preflight renewal remains blocked and late rejection is observed', async t => {
+  const f = await fixture(t), p = await f.prepare(), entered = deferred(), gate = deferred()
+  let count = 0
+  f.interceptRenew(async () => { if (++count === 2) { entered.resolve(); await gate.promise; throw new Error('fixture late rejection') } })
+  await f.outgoing.dispatch(p.grant); await entered.promise
+  const captured = f.target.federation.attemptDispatch!.settled(p.offer.id)
+  assert.ok(f.tg.snapshot().activeLease)
+  await f.outgoing.dispatchState(p.ref, true)
+  await f.target.federation.attemptDispatch!.settled(p.offer.id); await captured
+  assert.equal(f.posts, 0); assert.equal(f.tg.snapshot().activeLease, null)
+  assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'canceled')
+  gate.resolve(); await new Promise(r => setTimeout(r, 5))
+  assert.equal(f.posts, 0); assert.equal(f.tg.snapshot().activeLease, null)
+})
+
+test('R1 rejects accidental async renewal/start/terminal receipt callbacks and rolls their writes back', async t => {
+  const f = await fixture(t), a = f.home.runs.start(f.run.id)
+  f.home.db.exec('CREATE TABLE callback_trace(value TEXT)')
+  const callback = async (db: typeof f.home.db) => { db.prepare('INSERT INTO callback_trace VALUES (?)').run('uncommitted'); await Promise.resolve() }
+  const expiry = f.home.db.prepare('SELECT expires_at FROM leases WHERE key=?').get(`run:${f.run.id}/exec`)!.expires_at
+  // @ts-expect-error Async validation is forbidden; runtime defense also protects JavaScript callers.
+  assert.throws(() => f.home.runs.renew(a, 100, callback), /invalid_input/)
+  // @ts-expect-error Receipt callbacks must commit synchronously with the lifecycle update.
+  assert.throws(() => f.home.runs.modelStarted(a, callback), /invalid_input/)
+  // @ts-expect-error Receipt callbacks must commit synchronously with the terminal update.
+  assert.throws(() => f.home.runs.complete(a, 'completed', callback), /invalid_input/)
+  assert.equal(f.home.db.prepare('SELECT COUNT(*) n FROM callback_trace').get()!.n, 0)
+  assert.equal(f.home.db.prepare('SELECT expires_at FROM leases WHERE key=?').get(`run:${f.run.id}/exec`)!.expires_at, expiry)
+  assert.equal(f.home.runs.attempts(f.run.id)[0]!.first_model_at, null)
+  assert.equal(f.home.runs.get(f.run.id).state, 'working')
+})
+
+test('holder expiry releases K3 while authorization renewal is indefinitely pending', async t => {
+  const f = await fixture(t), entered = deferred(), gate = deferred()
+  f.hp.ttlMs = 300; f.hp.safetyMs = 10; f.tp.ttlMs = 300; f.tp.safetyMs = 10
+  const p = await f.prepare(); let count = 0
+  f.interceptRenew(async () => { if (++count === 2) { entered.resolve(); await gate.promise } })
+  await f.outgoing.dispatch(p.grant); await entered.promise
+  f.target.time += 4000
+  await waitFor(() => f.tg.snapshot().activeLease === null)
+  await f.target.federation.attemptDispatch!.settled(p.offer.id)
+  assert.equal(f.posts, 0); assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'lost')
+  gate.resolve(); await new Promise(r => setTimeout(r, 5))
+  assert.equal(f.posts, 0); assert.equal(f.tg.snapshot().activeLease, null)
+})
