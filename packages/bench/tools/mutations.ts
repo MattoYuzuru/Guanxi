@@ -12,6 +12,7 @@ const cases = [
   { id: 'host-output-bound', file: 'python/guanxi_bench/environment.py', before: 'if total > OUTPUT_LIMIT:', after: 'if False:', test: 'test/python.test.ts' },
   { id: 'budget-before-dispatch', file: 'src/runner.ts', before: 'budget.reserve(plan)', after: '// reservation removed', test: 'test/budget.test.ts' },
   { id: 'host-user', file: 'python/guanxi_bench/environment.py', before: "if os.getuid() != 1001 or pwd.getpwuid(os.getuid()).pw_name != 'guanxi-bench':", after: 'if False:', test: 'test/python.test.ts' },
+  { id: 'lease-loss-abort', file: 'src/plugin.ts', before: 'home.renew(attempt)', after: 'void 0', test: 'test/plugin.test.ts' },
 ]
 for (const mutation of cases) {
   const dir = mkdtempSync(join(tmpdir(), 'b1-mutation-'))

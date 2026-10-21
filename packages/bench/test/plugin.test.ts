@@ -31,3 +31,31 @@ test('unloading aborts active external work and waits for settlement before rele
   assert.equal(stopped, true)
   assert.deepEqual(h.outcomes, ['failed'])
 })
+
+test('lease loss aborts before disposal and never restarts or renews again', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  const kernel = createKernel({ onLog() {} })
+  const outcomes: string[] = []
+  let renewals = 0; let launches = 0; let stopped = false
+  const store = { create: () => ({ id: 'run-lease' }), start: () => ({}),
+    renew() { renewals++; throw new Error('stale_attempt') },
+    complete(_attempt: unknown, outcome: string) { outcomes.push(outcome) } }
+  await kernel.plugin(definePlugin({ manifest: { id: 'test.bench-host', engines: { guanxi: '^0.1.0' }, trust: 'T0', provides: ['runs.durable', 'egress.scrubber'] }, apply(ctx) { provide(ctx, 'runs.durable', { store }); provide(ctx, 'egress.scrubber', { isReady: () => true }) } }))
+  await kernel.plugin(createBenchPlugin({ ledger: ':memory:', executor: {
+    run(_plan, signal) { launches++; return new Promise((_resolve, reject) => signal!.addEventListener('abort', () => { stopped = true; reject(new Error('lease_lost')) }, { once: true })) },
+  } }))
+  const job = kernel.service<any>('bench.runner').run(plan())
+  const rejection = assert.rejects(job.done, /bench_failed/)
+  try {
+    t.mock.timers.tick(1000)
+    assert.equal(stopped, true, 'lease loss must abort the executor before plugin disposal')
+    await rejection
+    assert.equal(renewals, 1)
+    assert.equal(launches, 1)
+    assert.deepEqual(outcomes, ['failed'])
+    t.mock.timers.tick(10_000)
+    assert.equal(renewals, 1, 'terminal jobs stop renewing')
+    assert.equal(launches, 1, 'lease loss never restarts inference')
+    assert.deepEqual(outcomes, ['failed'], 'terminal outcome is recorded once')
+  } finally { await kernel.dispose(); await rejection }
+})
