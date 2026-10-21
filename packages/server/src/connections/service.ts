@@ -153,7 +153,7 @@ export class Connections {
               },
             }),
           })
-          try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); void pending.catch(() => undefined); throw error }
+          try { signal.throwIfAborted(); call.onStarted?.() } catch (error) { dispatchAbort.abort(); void pending.catch(() => undefined); throw error }
           const result = await pending
           if (model.api === 'google-generative-ai' && result.stopReason === 'error') {
             // The SDK serializes its API error JSON into ApiError.message; pi-ai

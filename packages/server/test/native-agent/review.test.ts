@@ -145,3 +145,20 @@ test('a deposed native home cannot delete a settled session or its resources', a
     assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 0)
   } finally { successor.close() }
 })
+
+
+test('synchronous API cancellation cannot acknowledge dispatch or leak a pending rejection', async t => {
+  const f = await fixture(t)
+  const controller = new AbortController()
+  let started = 0
+  Reflect.set(f.connections, 'pi', { complete: async () => {
+    controller.abort()
+    throw new Error('fixture dispatch canceled')
+  } })
+  await assert.rejects(f.connections.complete('local', f.input.connectionId, { messages: [] }, {
+    model: f.input.model, runId: 'fixture', requestId: 'fixture-cancel', signal: controller.signal,
+    onStarted: () => { started++ },
+  }))
+  assert.equal(started, 0, 'cancellation wins before dispatch acknowledgment')
+  await new Promise(r => setImmediate(r))
+})
