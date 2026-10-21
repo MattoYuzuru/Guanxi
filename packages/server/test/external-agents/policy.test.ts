@@ -71,12 +71,12 @@ test('account reports aggregate same reset window conservatively across nodes, i
   const reset = new Date(now + 3600_000).toISOString()
   f.service().observeClaudeStatusline(owner, owner, binding.connectionId, { rate_limits: { five_hour: { used_percentage: 25, resets_at: reset }, seven_day: null } }, observedAt)
   f.service().observeQuota(owner, binding.connectionId, { ownerAccountId: owner, billingAccount: 'claude-code-account', adapter: 'claude-code',
-    nodeId: 'another-owner-node', source: 'claude:statusline.rate_limits', observedAt, confidence: 'medium',
+    nodeId: 'zz-another-owner-node', source: 'claude:statusline.rate_limits', observedAt, confidence: 'medium',
     windows: [{ name: 'five_hour', usedPercent: 60, resetsAt: reset }] }, now)
   await f.reload()
   const result = f.service().limits(owner, binding.connectionId, now)
   assert.equal(result.windows.find(w => w.name === 'five_hour')?.used.value, 60)
-  assert.deepEqual(result.windows.find(w => w.name === 'five_hour')?.nodes.sort(), ['another-owner-node', nodeId].sort())
+  assert.deepEqual(result.windows.find(w => w.name === 'five_hour')?.nodes.sort(), ['zz-another-owner-node', nodeId].sort())
   assert.equal(result.windows.find(w => w.name === 'seven_day')?.used.value, null)
   assert.equal(result.windows.find(w => w.name === 'seven_day')?.used.confidence, 'unknown')
   assert.equal(result.windows.find(w => w.name === 'five_hour')?.used.source, 'claude:statusline.rate_limits')
@@ -93,6 +93,23 @@ test('account reports aggregate same reset window conservatively across nodes, i
   f.service().observeQuota(owner, binding.connectionId, latest, Date.parse('2026-10-21T12:00:02Z'))
   f.service().observeQuota(owner, binding.connectionId, older, Date.parse('2026-10-21T12:00:02Z'))
   assert.equal(f.service().limits(owner, binding.connectionId, Date.parse('2026-10-21T12:00:02Z')).windows.find(w => w.name === 'newer')?.used.value, 90)
+  f.service().observeQuota(owner, binding.connectionId, { ...older, nodeId: 'zz-precision-peer', observedAt: latest.observedAt,
+    windows: [{ name: 'newer', usedPercent: 95, resetsAt: '2026-10-22T12:00:00Z' }] }, Date.parse('2026-10-21T12:00:02Z'))
+  const equivalent = f.service().limits(owner, binding.connectionId, Date.parse('2026-10-21T12:00:02Z')).windows.filter(w => w.name === 'newer')
+  assert.equal(equivalent.length, 1)
+  assert.equal(equivalent[0]!.used.value, 95)
+  assert.equal(equivalent[0]!.resetsAt, '2026-10-22T12:00:00.000Z')
+  assert.deepEqual(equivalent[0]!.nodes.sort(), ['precision-fixture', 'zz-precision-peer'])
+})
+
+test('external local-runtime routes refuse before spawn rather than bypassing K3 host/context/governor', async t => {
+  const f = await fixture(t, ['opencode'])
+  const row = f.connections.create(owner, { name: 'Native local only', kind: 'local_runtime', provider: 'ollama', auth: 'none' })
+  const install = { ...f.installations[0]!, connectionId: row.id }
+  await f.reload({ installations: [install] })
+  f.service().setProjectRoles(owner, owner, 'p', { lead: { ...f.bindings[0]!, connectionId: row.id, model: 'ollama/fixture' } })
+  await assert.rejects(f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' }), /external_api_key_required/)
+  await assert.rejects(readFile(join(f.dir, 'opencode', 'trace.json')), { code: 'ENOENT' })
 })
 
 test('concurrency learning is account-scoped, persists, and a rejection tightens explicit operator policy', async t => {

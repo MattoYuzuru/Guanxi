@@ -12,8 +12,8 @@ export class CodexClient extends JsonRpcClient {
   async initialize(version: string) {
     const init = object(await this.request('initialize', { clientInfo: { name: `${PRODUCT_FILE_PREFIX}_external`, version: '0.1.0' }, capabilities: { experimentalApi: false } }))
     const reported = typeof init.userAgent === 'string' ? init.userAgent : ''
-    const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    if (!new RegExp(`(^|[^0-9.])${escaped}($|[^0-9.])`).test(reported)) throw new ExternalAgentError('adapter_version_mismatch')
+    const reportedVersion = reported.split(/\s/, 1)[0]?.split('/').at(-1)
+    if (reportedVersion !== version) throw new ExternalAgentError('adapter_version_mismatch')
     await this.process.write({ method: 'initialized' })
   }
   async account() {
