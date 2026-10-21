@@ -6,8 +6,9 @@ ADR-0006 (catalog sources), ADR-0012 (estimated admission verdicts).
 
 ## Context
 
-The owner's fleet mixes Apple Silicon (32 GB and 256 GB), a Windows PC with a 12 GB GPU and a
-Linux VPS, plus optional per-minute cloud GPUs. Every modality (text, image, video, STT, TTS,
+The owner's fleet (D-185) is a MacBook M5 Pro 24 GB, a Fedora laptop that stays on, a Windows PC
+with a 12 GB RTX 3060, and a small VPS used as a relay, plus optional per-minute cloud GPUs.
+ADR-0038 adds the compute-provider protocol, host-pressure placement and residency leases. Every modality (text, image, video, STT, TTS,
 classifiers) should run where it fits (REQ-A4, REQ-B4, REQ-G1–G6).
 
 Lane 3: no existing node agent covers this mix (GPUStack v2 Linux-only; LocalAI distributed
@@ -43,7 +44,7 @@ never be exposed).
 5. **Placement** (ADR-0018): hard filters (modality, model installed or installable, policy,
    OS/arch/backend, data locality, fit ≥ FIT3 when GPU fit is required) then a score (fit
    confidence, expected start, throughput history, affinity memory such as "tests run faster
-   on Mac Studio", cost, waking a sleeping host). Active agent attempts are not preempted.
+   on the Fedora laptop", cost, waking a sleeping host). Active agent attempts are not preempted.
 6. **Telemetry**: per-OS samplers with provenance; Apple GPU counters are treated as fragile
    (private APIs) and fall back to `unknown`.
 7. **Cloud rental**: provider adapters (RunPod REST v2, Vast, Modal; optionally SkyPilot as an

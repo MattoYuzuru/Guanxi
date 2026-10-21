@@ -29,10 +29,10 @@ Mapping: D-141–D-170 answer Q-201–Q-230 in order; D-171–D-182 answer Q-233
 | D-147 | Q-207 | Installing a model on a node is a **durable node-owned run with resumable download** (stages F2, W1). This replaces the legacy rule that pulls are connection-owned for the target design; the legacy code keeps connection-owned pulls until those stages land. |
 | D-148 | Q-208 | Guanxi keeps the Macs and the Windows PC awake with a **power assertion while they hold or grant active leases or have pending timers**. Wake-on-LAN is opt-in per node. |
 | D-149 | Q-209 | Cloud rental budget is **$0 until the owner sets** monthly and per-launch caps. The first adapter is RunPod (v2 API); Vast, Modal and SkyPilot only if a later need appears. |
-| D-162 | Q-222 | Computer-use tiers 3–4 run **only on the Mac Mini and Mac Studio**, never on the main MacBook, and never use the live browser profile. |
+| D-162 (amended by D-185, ADR-0038 §9) | Q-222 | Computer-use tiers 3–4 run **only on the Mac Mini and Mac Studio**, never on the main MacBook, and never use the live browser profile. |
 | D-163 | Q-223 | The Windows PC is assumed to run **Windows Pro**; WSL2 is acceptable for vLLM/SGLang and benchmark containers. |
-| D-164 | Q-224 | No Thunderbolt 5 pooling of Mac Studio and Mac Mini now; revisit when a model larger than 256 GB is needed. |
-| D-170 | Q-230 | The **Mac Mini is the default always-on home** for long lead sessions and phone access, so private data stays at home; the VPS is a relay. |
+| D-164 (obsolete, D-185) | Q-224 | No Thunderbolt 5 pooling of Mac Studio and Mac Mini now; revisit when a model larger than 256 GB is needed. |
+| D-170 (superseded by D-186) | Q-230 | The **Mac Mini is the default always-on home** for long lead sessions and phone access, so private data stays at home; the VPS is a relay. |
 
 ## Benchmarks
 
@@ -50,7 +50,7 @@ Mapping: D-141–D-170 answer Q-201–Q-230 in order; D-171–D-182 answer Q-233
 
 | ID | Question | Decision |
 | --- | --- | --- |
-| D-154 | Q-214 | When an editor prompts in someone else's shared session, the **session owner's connections and budget pay only if the owner allowed it** for that share; otherwise the editor's own connections pay. |
+| D-154 (amended by D-190) | Q-214 | When an editor prompts in someone else's shared session, the **session owner's connections and budget pay only if the owner allowed it** for that share; otherwise the editor's own connections pay. |
 | D-155 | Q-215 | An admin can **never read other users' sessions** in the UI, including in a family setup; there is no admin override. |
 | D-156 | Q-216 | Whether to hold an Apple Developer account and run a native push relay is decided **after the PWA** ships (U5). |
 | D-157 | Q-217 | Audio is kept **7 days**; the owner records the STT eval set (about 100 phrases, 20 minutes); the glossary is **not sent to cloud STT vendors** by default (per-connection consent, ADR-0028). Inflected English terms in Russian speech are written as the canonical Latin-script term with the Russian ending after a hyphen (`PR-а`, `worktree-ах`); V1 may revise this from the eval set with the owner's review. |
