@@ -2,15 +2,18 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, cp, rm, realpath, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createContext } from './context.mjs'
 import { resolveTokens, resolvedFlat } from '../tokens/resolve.mjs'
 import { generate } from '../tokens/build.mjs'
-import { designSystem } from './scan.mjs'
+import { designSystem, classStrings } from './scan.mjs'
+import { checks } from './checks.mjs'
 import postcss from 'postcss'
 import { __unstable__loadDesignSystem } from 'tailwindcss'
+import { resolveConfig } from 'vite'
 
 const ctx = await createContext()
 const document = await ctx.read('docs/design/FOUNDATIONS.md')
@@ -227,7 +230,7 @@ test('M4: cleared Tailwind defaults disappear; semantic replacements compile', a
   assert.match(theme, /--default-font-family: var\(--font-family-sans\)/)
   assert.match(theme, /--default-mono-font-family: var\(--font-family-mono\)/)
 })
-test('K1: actual web CSS compiles every sidebar semantic role; missing bridge aliases fail', async () => {
+test('K1/DS1-c: actual web CSS imports the generated theme without a bridge or copied aliases', async () => {
   const file = 'packages/web/src/index.css'
   const source = await ctx.read(file)
   const sidebar = await ctx.read('packages/web/src/kernel/SidebarSlot.tsx')
@@ -239,12 +242,23 @@ test('K1: actual web CSS compiles every sidebar semantic role; missing bridge al
     ['rounded-control', 'border-radius', '--radius-control', '--border-radius-control'],
     ['text-12', 'font-size', '--text-12', '--font-size-12'],
   ]
-  async function verify(css) {
+  const theme = await ctx.read('packages/ui/generated/theme.css')
+  function noBridge(css) {
+    const generatedNames = new Set(['--color-surface', '--color-accent', '--color-divider', '--color-secondary', '--color-foreground', '--color-inset', '--radius-control', '--radius-panel', '--text-15', '--text-12'])
+    const ast = postcss.parse(css)
+    ast.walkAtRules('theme', rule => assert.notEqual(rule.params, 'inline', 'local inline bridge must not return'))
+    ast.walkDecls(decl => assert.ok(!generatedNames.has(decl.prop), `copied theme alias: ${decl.prop}`))
+    assert.match(css, /@import ['"]@guanxi\/ui\/theme\.css['"]/)
+    assert.match(css, /@import ['"]@guanxi\/ui\/tokens\.css['"]/)
+    assert.doesNotMatch(css, /ui\/generated\//)
+  }
+  async function verify(css, generated = theme) {
+    noBridge(css)
     const system = await __unstable__loadDesignSystem(css, {
       base: join(ctx.root, 'packages/web/src'),
       async loadStylesheet(id, base) {
-        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : resolve(base, id)
-        return { path, base: dirname(path), content: await readFile(path, 'utf8') }
+        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : id.startsWith('@guanxi/ui/') || id.startsWith('tailwindcss/') ? createRequire(import.meta.url).resolve(id) : resolve(base, id)
+        return { path, base: dirname(path), content: id === '@guanxi/ui/theme.css' ? generated : await readFile(path, 'utf8') }
       },
     })
     for (const [cls, property, , token] of expected) {
@@ -259,9 +273,48 @@ test('K1: actual web CSS compiles every sidebar semantic role; missing bridge al
   await verify(source)
   for (const [, , alias, token] of expected) {
     const declaration = `${alias}: var(${token});`
-    assert.ok(source.includes(declaration))
-    await assert.rejects(verify(source.replace(declaration, '')), { name: 'AssertionError' }, alias)
+    assert.ok(theme.includes(declaration))
+    await assert.rejects(verify(source, theme.replace(declaration, '')), { name: 'AssertionError' }, alias)
+    assert.throws(() => noBridge(source + `\n@theme inline { ${declaration} }`), { name: 'AssertionError' }, alias)
+    assert.throws(() => noBridge(source + `\n@theme { ${declaration} }`), { name: 'AssertionError' }, alias)
   }
+  await assert.rejects(verify(source.replace("@import '@guanxi/ui/theme.css';", '')), { name: 'AssertionError' })
+  for (const alias of ['--color-surface', '--color-accent', '--color-divider', '--color-secondary', '--color-foreground', '--color-inset', '--radius-control', '--radius-panel', '--text-15', '--text-12']) assert.doesNotMatch(source, new RegExp(`${alias}:`), alias)
+})
+test('DS1-c: actual Vite aliases preserve public UI stylesheet exports', async () => {
+  const config = await resolveConfig({ configFile: join(ctx.root, 'packages/web/vite.config.ts') }, 'serve')
+  const resolveImport = config.createResolver()
+  const importer = join(ctx.root, 'packages/web/src/index.css')
+  for (const id of ['@guanxi/ui/tokens.css', '@guanxi/ui/theme.css', '@guanxi/ui/fonts.css', '@guanxi/ui/catalog', '@guanxi/ui']) {
+    assert.equal(await resolveImport(id, importer), createRequire(import.meta.url).resolve(id), id)
+  }
+  const broken = await resolveConfig({ configFile: join(ctx.root, 'packages/web/vite.config.ts'), resolve: { alias: [{ find: '@guanxi/ui', replacement: join(ctx.root, 'packages/ui/src/index.ts') }] } }, 'serve')
+  assert.notEqual(await broken.createResolver()('@guanxi/ui/tokens.css', importer), createRequire(import.meta.url).resolve('@guanxi/ui/tokens.css'), 'the former broad alias must fail this regression assertion')
+})
+test('DS1-c review: the app preserves frozen legacy utilities without weakening the generated-only gate', async () => {
+  const source = await ctx.read('packages/web/src/index.css')
+  const base = execFileSync('git', ['show', '2ab9c41:packages/web/src/index.css'], { cwd: ctx.root, encoding: 'utf8' })
+  async function load(css) {
+    return __unstable__loadDesignSystem(css, {
+      base: join(ctx.root, 'packages/web/src'),
+      async loadStylesheet(id, directory) {
+        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : id.startsWith('@guanxi/ui/') || id.startsWith('tailwindcss/') ? createRequire(import.meta.url).resolve(id) : resolve(directory, id)
+        return { path, base: dirname(path), content: await readFile(path, 'utf8') }
+      },
+    })
+  }
+  const before = await load(base), after = await load(source)
+  const retained = ['text-xs', 'text-sm', 'text-lg', 'font-medium', 'font-semibold', 'rounded-md', 'rounded-lg', 'backdrop-blur-md', 'shadow-sm', 'tracking-tight', 'leading-relaxed']
+  assert.deepEqual(after.candidatesToCss(retained), before.candidatesToCss(retained), 'legacy typography/radius/material utilities must retain their CSS')
+  const classes = new Set()
+  for (const file of ctx.files.filter(f => /^packages\/web\/src\/.+\.[jt]sx?$/.test(f))) for (const { value } of classStrings(file, await ctx.read(file))) classes.add(value)
+  for (const cls of classes) if (before.candidatesToCss([cls])[0]) assert.ok(after.candidatesToCss([cls])[0], `retained utility disappeared: ${cls}`)
+  for (const [cls, token] of [['text-13', '--font-size-13'], ['text-14', '--font-size-14'], ['text-18', '--font-size-18'], ['font-label', '--font-weight-label'], ['bg-success', '--color-text-success'], ['bg-muted', '--color-text-tertiary'], ['max-w-md', '--layout-container-md'], ['bg-surface', '--color-background-secondary'], ['text-12', '--font-size-12'], ['rounded-control', '--border-radius-control']]) assert.ok(after.candidatesToCss([cls])[0].includes(`var(${token})`), cls)
+  assert.equal(after.resolveThemeValue('--spacing'), 'var(--grid-unit)')
+  assert.equal(after.resolveThemeValue('--default-font-family'), 'var(--font-family-sans)')
+  const invalid = await checks.G5(await ctx.withFiles({ 'packages/web/src/features/seeded/legacy.tsx': '<div className="text-xs rounded-md bg-red-500"/>' }))
+  assert.equal(invalid.ok, false)
+  for (const value of ['text-xs', 'rounded-md', 'bg-red-500']) assert.ok(invalid.errors.some(error => error.includes(value)), value)
 })
 test('M2/N2: FOUNDATIONS rejects missing, extra and incorrect container widths', async () => {
   const file = 'packages/ui/tokens/base.tokens.json'
@@ -296,4 +349,72 @@ test('L1: the default resolver root works from a directory containing spaces', a
   const copied = await import(pathToFileURL(join(directory, 'resolve.mjs')).href)
   assert.equal(copied.tokenRoot, await realpath(directory))
   assert.ok((await copied.resolveTokens()).tokens.font)
+})
+
+test('M4 web base surfaces, borders, focus and scrollbars use the semantic palette', async () => {
+  const css = postcss.parse(await ctx.read('packages/web/src/index.css'))
+  const expected = {
+    body: { background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' },
+    '*': { 'border-color': 'var(--color-border-primary)' },
+    ':focus-visible': { outline: 'var(--focus-ring-width) solid var(--color-ring-primary)' },
+    '::-webkit-scrollbar-thumb': { background: 'var(--color-border-control)' },
+    '::-webkit-scrollbar-thumb:hover': { background: 'var(--color-text-secondary)' },
+  }
+  for (const [selector, props] of Object.entries(expected)) {
+    const values = {}
+    css.walkRules(selector, rule => rule.walkDecls(d => { values[d.prop] = d.value }))
+    for (const [prop, value] of Object.entries(props)) assert.equal(values[prop], value, `${selector} ${prop}`)
+  }
+  const ui = await ctx.read('packages/web/src/components/ui.tsx')
+  assert.ok(ui.includes('focus:border-accent'), 'input focus must use semantic accent')
+  assert.ok(ui.includes("accent: 'bg-accent/10 text-secondary border-accent/30'"), 'badge must use one accent palette')
+  const tool = await ctx.read('packages/web/src/features/agent/ToolCallCard.tsx')
+  assert.match(tool, /bg-inset[^"\n]+hover:bg-surface/, 'tool hover must differ from its inset rest state')
+})
+
+test('M4 additional accent and status utility mappings share generated role values', async () => {
+  for (const theme of ['light', 'dark', 'light-hc', 'dark-hc']) {
+    const map = Object.fromEntries(resolvedFlat((await resolveTokens({ theme })).tokens).map(t => [t.name, t.$value]))
+    for (const role of ['accent', 'danger', 'warning']) {
+      assert.deepEqual(map[`color.background.${role}`], map[`color.text.${role}`], `${theme} ${role} background/text`)
+      assert.deepEqual(map[`color.border.${role}`], map[`color.text.${role}`], `${theme} ${role} border/text`)
+    }
+  }
+})
+
+test('L8 Vitest resolves public UI styles through package exports', async () => {
+  const config = await resolveConfig({ root: join(ctx.root, 'packages/web'), configFile: join(ctx.root, 'packages/web/vitest.config.ts') }, 'serve')
+  const resolver = config.createResolver()
+  for (const [name, path] of [['@guanxi/ui', 'src/index.ts'], ['@guanxi/ui/catalog', 'catalog/index.ts'], ['@guanxi/ui/theme.css', 'generated/theme.css'], ['@guanxi/ui/tokens.css', 'generated/tokens.css']]) assert.equal(await resolver(name, join(ctx.root, 'packages/web/src/index.css')), join(ctx.root, 'packages/ui', path), name)
+})
+
+test('self-review: retained legacy aliases cannot paint a second palette', async () => {
+  const css = postcss.parse(await ctx.read('packages/web/src/index.css'))
+  const roles = {
+    bg: 'background-primary', 'bg-subtle': 'background-tertiary', 'bg-raised': 'background-secondary', 'bg-inset': 'background-tertiary',
+    border: 'border-primary', 'border-strong': 'border-control', fg: 'text-primary', 'fg-muted': 'text-secondary', 'fg-subtle': 'text-secondary',
+    accent: 'background-accent', 'accent-fg': 'text-on-accent', danger: 'text-danger',
+  }
+  for (const [legacy, semantic] of Object.entries(roles)) {
+    const values = []
+    css.walkDecls(`--${legacy}`, d => values.push(d.value))
+    assert.equal(values.length, 2, `${legacy} must retain both theme aliases`)
+    assert.deepEqual(values, Array(2).fill(`var(--color-${semantic})`), `${legacy} must resolve to the semantic palette in both themes`)
+  }
+})
+
+test('self-review: legacy modal scrims and switch thumb use semantic colour roles', async () => {
+  const ui = await ctx.read('packages/web/src/components/ui.tsx')
+  const picker = await ctx.read('packages/web/src/features/projects/ProjectPresentationPicker.tsx')
+  for (const text of [ui, picker]) {
+    assert.doesNotMatch(text, /bg-(?:black|white)(?:\b|\/)/)
+    assert.ok(text.includes('legacy-scrim'), 'both modal shells must use the ink scrim')
+  }
+  assert.ok(ui.includes("checked ? 'bg-accent-foreground' : 'bg-foreground'"), 'thumb must contrast with the active track role')
+  const backgrounds = []
+  postcss.parse(await ctx.read('packages/web/src/index.css')).walkRules('.legacy-scrim::before', rule => rule.walkDecls('background-color', d => backgrounds.push(d.value)))
+  assert.deepEqual(backgrounds, ['var(--scrim-color)'])
+  const css = await ctx.read('packages/web/src/index.css')
+  assert.match(css, /opacity: var\(--scrim-opacity\)/)
+  assert.match(css, /\.legacy-scrim > \*\s*\{\s*position: relative;\s*z-index: var\(--layer-dialog\)/)
 })

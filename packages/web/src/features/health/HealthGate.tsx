@@ -18,7 +18,7 @@ export function ollamaHealthState(health: Health): 'reachable' | 'unavailable' |
 export function HealthLoading() {
   return (
     <div className="flex min-h-dvh items-center justify-center">
-      <div className="flex items-center gap-2 text-xs text-[var(--fg-muted)]">
+      <div className="flex items-center gap-2 text-xs text-secondary">
         <Spinner size={14} />
         {translate('health.loading')}
       </div>
@@ -38,7 +38,7 @@ export function HealthUnreachable({ error, onRetry }: { error: unknown; onRetry:
       </Callout>
 
       <div className="mt-3">
-        <p className="mb-1.5 text-xs text-[var(--fg-muted)]">{translate('health.server.startHint')}</p>
+        <p className="mb-1.5 text-xs text-secondary">{translate('health.server.startHint')}</p>
         <CommandBlock command="npx guanxi" />
       </div>
 
@@ -124,7 +124,7 @@ export function OllamaUnavailable({
           : translate('health.ollama.notRunningHint')
       }
     >
-      <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-2.5">
+      <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-divider bg-inset p-2.5">
         <Stat label={translate('health.ollama.address')} value={ollama.host} />
         <Stat label={translate('health.ollama.version')} value={ollama.version ?? translate('health.ollama.unknown')} />
         <Stat label={translate('health.ollama.installed')} value={ollama.installed ? translate('common.yes') : translate('common.no')} />
@@ -133,7 +133,7 @@ export function OllamaUnavailable({
 
       {ollama.installHint ? (
         <div>
-          <p className="mb-1.5 text-xs text-[var(--fg-muted)]">
+          <p className="mb-1.5 text-xs text-secondary">
             {notInstalled ? translate('health.ollama.install') : translate('health.ollama.start')}
           </p>
           <CommandBlock command={ollama.installHint.command} />
@@ -141,7 +141,7 @@ export function OllamaUnavailable({
             href={ollama.installHint.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-2 inline-block text-2xs text-[var(--accent)] underline underline-offset-2"
+            className="mt-2 inline-block text-2xs text-accent underline underline-offset-2"
           >
             {translate('health.ollama.docs')}
           </a>
@@ -153,7 +153,7 @@ export function OllamaUnavailable({
       )}
 
       <div className="mt-4 flex items-center justify-between gap-3">
-        <span className="text-2xs text-[var(--fg-subtle)]">
+        <span className="text-2xs text-muted">
           {hardware.acceleratorName ?? hardware.accelerator} ·{' '}
           {translate('health.hardware.available', { bytes: formatBytes(hardware.usableMemoryBytes) })}
         </span>
@@ -167,7 +167,7 @@ export function OllamaUnavailable({
 
 function CommandBlock({ command }: { command: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-inset)] py-1.5 pr-1.5 pl-2.5">
+    <div className="flex items-center justify-between gap-2 rounded-md border border-divider bg-inset py-1.5 pr-1.5 pl-2.5">
       <code className="truncate font-mono text-xs select-all">{command}</code>
       <CopyButton text={command} />
     </div>
@@ -187,7 +187,7 @@ function Centered({
     <div className="flex min-h-dvh items-center justify-center p-5">
       <div className="surface w-full max-w-lg rounded-xl p-5 shadow-[var(--shadow-card)]">
         <h1 className="text-base font-semibold">{title}</h1>
-        {description && <p className="mt-1 mb-4 text-xs text-[var(--fg-muted)]">{description}</p>}
+        {description && <p className="mt-1 mb-4 text-xs text-secondary">{description}</p>}
         {children}
       </div>
     </div>

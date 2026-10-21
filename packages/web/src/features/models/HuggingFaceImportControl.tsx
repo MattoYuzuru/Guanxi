@@ -203,9 +203,9 @@ export function HuggingFaceImportControl({
 
   const terminal = state.kind !== 'idle' && state.kind !== 'running'
   return (
-    <div className="mt-3 min-w-0 border-t border-[var(--border)] pt-3">
+    <div className="mt-3 min-w-0 border-t border-divider pt-3">
       <p className="text-2xs font-semibold">{translate('hf.import.title')}</p>
-      <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-1 text-2xs text-muted">
         {translate('hf.import.description')}
       </p>
 
@@ -228,7 +228,7 @@ export function HuggingFaceImportControl({
             className="mt-1 min-h-11 w-full min-w-0 sm:min-h-0"
             aria-describedby={`hf-import-hint-${artifact.artifact.id}`}
           />
-          <p id={`hf-import-hint-${artifact.artifact.id}`} className="mt-1 text-2xs text-[var(--fg-subtle)]">
+          <p id={`hf-import-hint-${artifact.artifact.id}`} className="mt-1 text-2xs text-muted">
             {translate('hf.import.target.hint')}
           </p>
         </div>
@@ -246,7 +246,7 @@ export function HuggingFaceImportControl({
           {translate('hf.import.action')}
         </Button>
       ) : state.kind === 'running' ? (
-        <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2">
+        <div className="mt-2 rounded-md border border-divider bg-inset p-2">
           <p role="status" aria-live="polite" aria-atomic="true" className="text-2xs font-medium">
             {translate(PHASE_KEYS[state.phase])}
           </p>
@@ -298,7 +298,7 @@ export function HuggingFaceImportControl({
           </>
         }
       >
-        <div id={`hf-import-confirm-${artifact.artifact.id}`} className="space-y-2 text-xs text-[var(--fg-muted)]">
+        <div id={`hf-import-confirm-${artifact.artifact.id}`} className="space-y-2 text-xs text-secondary">
           <p>{translate('hf.import.confirm.description')}</p>
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
             <dt>{translate('hf.import.confirm.artifact')}</dt>
@@ -339,13 +339,13 @@ function ImportTerminal({
       role={success || warning ? 'status' : 'alert'}
       aria-live="polite"
       aria-atomic="true"
-      className="mt-2 min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      className="mt-2 min-w-0 rounded-md border border-divider bg-inset p-2 outline-none focus-visible:ring-2 focus-visible:ring-focus"
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={success ? 'green' : warning ? 'yellow' : 'outline'}>{title}</Badge>
       </div>
       {state.kind === 'completed' ? (
-        <div className="mt-2 min-w-0 text-2xs text-[var(--fg-subtle)]">
+        <div className="mt-2 min-w-0 text-2xs text-secondary">
           <p>{translate('hf.import.installed')}</p>
           <p className="mt-1 min-w-0 break-all font-mono">
             {state.provenance.installation.normalizedModelReference} · {state.provenance.installation.digest}
@@ -385,7 +385,7 @@ function ImportTerminal({
 
 function ProbeObservation({ probe }: { probe: CompletionProbeEvidence }) {
   return (
-    <div className="mt-2 text-2xs text-[var(--fg-subtle)]">
+    <div className="mt-2 text-2xs text-muted">
       <p>{translate('hf.import.probeEvidence')}</p>
       <p className="mt-1">
         {translate(`models.probe.state.${probe.status}` as LocaleKey)} ·{' '}
@@ -398,7 +398,7 @@ function ProbeObservation({ probe }: { probe: CompletionProbeEvidence }) {
 
 function TargetObservation({ target }: { target: HuggingFaceImportTargetObservation }) {
   return (
-    <p className="mt-1 min-w-0 break-all font-mono text-2xs text-[var(--fg-subtle)]">
+    <p className="mt-1 min-w-0 break-all font-mono text-2xs text-muted">
       {target.state === 'exact'
         ? `${target.normalizedModelReference} · ${target.digest}`
         : translate(`hf.import.target.${target.state}` as LocaleKey)}

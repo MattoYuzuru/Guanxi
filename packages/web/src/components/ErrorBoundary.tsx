@@ -78,10 +78,10 @@ function ErrorFallback({
     <div
       className={
         root
-          ? 'flex min-h-dvh items-center justify-center bg-[var(--bg)] p-4 text-[var(--fg)]'
+          ? 'flex min-h-dvh items-center justify-center bg-canvas p-4 text-foreground'
           : runtime
-            ? 'border-b border-[var(--border)] bg-[var(--bg-subtle)] p-2 text-[var(--fg)]'
-            : 'flex min-h-[calc(100dvh-44px)] items-start justify-center bg-[var(--bg)] p-4 text-[var(--fg)] sm:p-6'
+            ? 'border-b border-divider bg-inset p-2 text-foreground'
+            : 'flex min-h-[calc(100dvh-44px)] items-start justify-center bg-canvas p-4 text-foreground sm:p-6'
       }
     >
       <section
@@ -93,7 +93,7 @@ function ErrorFallback({
             : 'surface w-full max-w-2xl rounded-xl p-4 shadow-[var(--shadow-card)] sm:p-5'
         }
       >
-        <p className="mb-1 font-mono text-2xs tracking-wide text-[var(--danger)] uppercase">
+        <p className="mb-1 font-mono text-2xs tracking-wide text-danger uppercase">
           {diagnostic.correlationId}
         </p>
         <h1
@@ -104,12 +104,12 @@ function ErrorFallback({
         >
           {title}
         </h1>
-        <p className="mt-1 max-w-prose text-xs text-[var(--fg-muted)]">{summary}</p>
+        <p className="mt-1 max-w-prose text-xs text-secondary">{summary}</p>
 
         <div className={runtime ? 'mt-2 flex flex-wrap gap-2' : 'mt-4 flex flex-wrap gap-2'}>
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded-md border border-transparent bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:brightness-110"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-transparent bg-accent px-3 text-xs font-medium text-accent-foreground hover:brightness-110"
             onClick={() => window.location.reload()}
           >
             {translate('error.reload')}
@@ -117,24 +117,24 @@ function ErrorFallback({
           {!root && !runtime && (
             <a
               href="/chat"
-              className="inline-flex h-8 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 text-xs font-medium hover:bg-[var(--bg-subtle)]"
+              className="inline-flex h-8 items-center justify-center rounded-md border border-control bg-surface px-3 text-xs font-medium hover:bg-inset"
             >
               {translate('error.chats')}
             </a>
           )}
           <a
             href="/"
-            className="inline-flex h-8 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 text-xs font-medium hover:bg-[var(--bg-subtle)]"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-control bg-surface px-3 text-xs font-medium hover:bg-inset"
           >
             {translate('error.home')}
           </a>
         </div>
 
-        <details className="mt-4 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)]">
+        <details className="mt-4 rounded-md border border-divider bg-inset">
           <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
             {translate('error.diagnostics')}
           </summary>
-          <dl className="grid gap-x-3 gap-y-2 border-t border-[var(--border)] px-3 py-3 text-2xs sm:grid-cols-[max-content_minmax(0,1fr)]">
+          <dl className="grid gap-x-3 gap-y-2 border-t border-divider px-3 py-3 text-2xs sm:grid-cols-[max-content_minmax(0,1fr)]">
             <DiagnosticRow
               label={translate('error.correlation')}
               value={diagnostic.correlationId}
@@ -168,12 +168,12 @@ function DiagnosticRow({
 }) {
   return (
     <>
-      <dt className="font-medium text-[var(--fg-muted)]">{label}</dt>
+      <dt className="font-medium text-secondary">{label}</dt>
       <dd
         className={
           multiline
-            ? 'max-h-40 min-w-0 overflow-auto whitespace-pre-wrap break-words font-mono text-[var(--fg)]'
-            : 'min-w-0 break-all font-mono text-[var(--fg)]'
+            ? 'max-h-40 min-w-0 overflow-auto whitespace-pre-wrap break-words font-mono text-foreground'
+            : 'min-w-0 break-all font-mono text-foreground'
         }
       >
         {value}

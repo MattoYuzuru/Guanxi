@@ -118,27 +118,27 @@ export function ChatTrashList({
     <section
       ref={sectionRef}
       aria-label={translate('chat.trash.title')}
-      className="chat-trash-region mt-3 min-w-0 border-t border-[var(--border)] pt-3"
+      className="chat-trash-region mt-3 min-w-0 border-t border-divider pt-3"
     >
       <h3 ref={headingRef} tabIndex={-1} className="text-xs font-semibold outline-none">
         {translate('chat.trash.title')}
       </h3>
-      <p className="mt-1 break-words text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-1 break-words text-2xs text-muted">
         {translate('chat.trash.hardDeletion')}
       </p>
       {trash.loading && !trash.data ? (
-        <p role="status" className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p role="status" className="mt-2 text-2xs text-muted">
           {translate('chat.trash.loading')}
         </p>
       ) : null}
       {trash.refreshing ? (
-        <p role="status" className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p role="status" className="mt-2 text-2xs text-muted">
           {translate('chat.trash.refreshingDeletion')}
         </p>
       ) : null}
       {trash.error ? (
         <div ref={listErrorRef} tabIndex={-1} className="mt-2 outline-none" role="alert">
-          <p className="break-words text-2xs text-[var(--danger)]">
+          <p className="break-words text-2xs text-danger">
             {translate('chat.trash.loadError')}: {errorMessage(trash.error)}
           </p>
           <Button className="mt-1" size="sm" onClick={trash.reload}>
@@ -159,7 +159,7 @@ export function ChatTrashList({
         </div>
       ) : null}
       {!trash.loading && !trash.error && chats.length === 0 ? (
-        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p className="mt-2 text-2xs text-muted">
           {translate('chat.trash.empty')}
         </p>
       ) : null}
@@ -168,28 +168,28 @@ export function ChatTrashList({
           {chats.map((chat) => (
             <li
               key={chat.chatId}
-              className="chat-trash-item min-w-0 rounded-md border border-[var(--border)] p-2 text-2xs"
+              className="chat-trash-item min-w-0 rounded-md border border-divider p-2 text-2xs"
             >
               <strong className="block min-w-0 break-words text-xs">{chat.title}</strong>
-              <span className="mt-1 block break-words text-[var(--fg-subtle)]">
+              <span className="mt-1 block break-words text-muted">
                 {translate(`chat.trash.reason.${chat.reason}`)} ·{' '}
                 <time dateTime={chat.tombstonedAt}>{formatDateTime(chat.tombstonedAt)}</time>
               </span>
-              <span className="block break-words text-[var(--fg-subtle)]">
+              <span className="block break-words text-muted">
                 {translate('chat.trash.activity')}:{' '}
                 <time dateTime={chat.activityBasis.at}>{formatDateTime(chat.activityBasis.at)}</time>
                 {' · '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
               </span>
               {chat.reason === 'session_left' ? (
                 <>
-                  <span className="block break-words text-[var(--fg-subtle)]">
+                  <span className="block break-words text-muted">
                     {translate('chat.trash.recoveryDeadline')}:{' '}
                     <time dateTime={chat.recovery.deadline}>
                       {formatDateTime(chat.recovery.deadline)}
                     </time>
                     {' · '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
                   </span>
-                  <span className="block break-words text-[var(--fg-subtle)]">
+                  <span className="block break-words text-muted">
                     {translate(`chat.trash.deletion.${chat.hardDeletion.state}`)}
                     {' · '}{translate('chat.trash.noBlobGc')}
                   </span>
@@ -224,7 +224,7 @@ export function ChatTrashList({
           <h4 className="text-2xs font-semibold">{translate('chat.trash.deleted.title')}</h4>
           <ol className="mt-1 min-w-0 space-y-1">
             {(trash.data?.deletions ?? []).map((deletion) => (
-              <li key={deletion.chatId} className="min-w-0 break-words text-2xs text-[var(--fg-subtle)]">
+              <li key={deletion.chatId} className="min-w-0 break-words text-2xs text-muted">
                 {translate('chat.trash.deleted.item')} ·{' '}
                 <time dateTime={deletion.deletedAt}>{formatDateTime(deletion.deletedAt)}</time>
                 {' · '}{translate('chat.trash.noBlobGc')}
@@ -234,12 +234,12 @@ export function ChatTrashList({
         </div>
       ) : null}
       {trash.data?.hasMore ? (
-        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p className="mt-2 text-2xs text-muted">
           {translate('chat.trash.bounded')}
         </p>
       ) : null}
       {trash.data?.deletionsHaveMore ? (
-        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p className="mt-2 text-2xs text-muted">
           {translate('chat.trash.deleted.bounded')}
         </p>
       ) : null}

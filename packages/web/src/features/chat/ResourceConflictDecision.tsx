@@ -347,15 +347,15 @@ export function ResourceConflictDialog({
         </div>
       }
     >
-      <p id={descriptionId} className="text-xs text-[var(--fg-muted)]">
+      <p id={descriptionId} className="text-xs text-secondary">
         {translate('chat.conflict.description')}
       </p>
-      <p className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-2 text-2xs text-[var(--fg-muted)]">
+      <p className="mt-2 rounded-md border border-divider bg-inset p-2 text-2xs text-secondary">
         {translate('chat.conflict.policy')}
       </p>
 
       {decision.sampleState !== 'fresh' ? (
-        <p className="mt-2 text-2xs text-[var(--danger)]" role="status">
+        <p className="mt-2 text-2xs text-danger" role="status">
           {decision.sampleState === 'stale'
             ? translate('chat.conflict.sample.stale')
             : translate('chat.conflict.sample.updated')}
@@ -367,7 +367,7 @@ export function ResourceConflictDialog({
           {translate('chat.conflict.active')}
         </h3>
         {active ? (
-          <dl className="mt-1 grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs text-[var(--fg-muted)]">
+          <dl className="mt-1 grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs text-secondary">
             <Fact label={translate('runtime.operation')} value={operationLabel(active.operation)} />
             <Fact label={translate('runtime.priority')} value={priorityLabel(active.priority)} />
             <Fact label={translate('runtime.model')} value={active.model.name} mono />
@@ -376,7 +376,7 @@ export function ResourceConflictDialog({
             <Fact label={translate('runtime.acquired')} value={formatDateTime(active.acquiredAt)} />
           </dl>
         ) : (
-          <p className="mt-1 text-2xs text-[var(--fg-muted)]">
+          <p className="mt-1 text-2xs text-secondary">
             {translate('chat.conflict.active.changed')}
           </p>
         )}
@@ -392,13 +392,13 @@ export function ResourceConflictDialog({
         {queued.length > 0 ? (
           <ol className="mt-1 space-y-1.5">
             {queued.map((waiter, index) => (
-              <li key={waiter.ticketId} className="min-w-0 border-l-2 border-[var(--border-strong)] pl-2 text-2xs">
+              <li key={waiter.ticketId} className="min-w-0 border-l-2 border-control pl-2 text-2xs">
                 <p className="font-medium">
                   {translate('runtime.queue.position').replace('{position}', String(index + 1))}{' '}
                   · {operationLabel(waiter.operation)}
                 </p>
-                <p className="break-words font-mono text-[var(--fg-muted)]">{waiter.model.name}</p>
-                <p className="text-[var(--fg-muted)]">
+                <p className="break-words font-mono text-secondary">{waiter.model.name}</p>
+                <p className="text-secondary">
                   {ownerLabel(waiter.owner)} · {translate('runtime.context')}:{' '}
                   {formatContextLength(waiter.requestedContext)}
                 </p>
@@ -406,29 +406,29 @@ export function ResourceConflictDialog({
             ))}
           </ol>
         ) : (
-          <p className="mt-1 text-2xs text-[var(--fg-muted)]">
+          <p className="mt-1 text-2xs text-secondary">
             {translate('chat.conflict.queue.empty')}
           </p>
         )}
       </section>
 
       {stopReason ? (
-        <p className="mt-3 text-2xs text-[var(--fg-muted)]" role="status">
+        <p className="mt-3 text-2xs text-secondary" role="status">
           {stopReason}
         </p>
       ) : null}
       {actionLabel(decision.action) ? (
-        <p className="mt-3 flex items-center gap-2 text-2xs text-[var(--fg-muted)]" role="status" aria-live="polite">
+        <p className="mt-3 flex items-center gap-2 text-2xs text-secondary" role="status" aria-live="polite">
           <Spinner size={12} />
           {actionLabel(decision.action)}
         </p>
       ) : null}
       {decision.error ? (
         <div className="mt-3" role="alert">
-          <p className="text-xs font-semibold text-[var(--danger)]">
+          <p className="text-xs font-semibold text-danger">
             {translate('chat.conflict.error.title')}
           </p>
-          <p className="text-2xs text-[var(--fg-muted)]">{errorLabel(decision.error)}</p>
+          <p className="text-2xs text-secondary">{errorLabel(decision.error)}</p>
         </div>
       ) : null}
     </Modal>
