@@ -32,7 +32,7 @@ test('real signed channel pulls config/session/run projections and drains a dura
     home.federation.config.create('project',{kind:'project',name:'Project',archived:false})
     const channel=new FederationChannel({local:peer.keys.identity,privateKey:peer.keys.privateKey,peer:home.keys.identity,
       transport:async(req)=>home.app.request(req),clock:()=>peer.time})
-    assert.deepEqual(await channel.synchronize(peer.federation,['session','run']),{readOnly:false})
+    assert.deepEqual(await channel.synchronize(peer.federation,['session','run']),{readOnly:false,accepted:1,duplicates:0,deferred:0,skipped:0,reasons:{}})
     assert.equal(peer.federation.config.stateHash(),home.federation.config.stateHash())
     assert.equal(peer.federation.replicas.read('run').length,1)
     assert.equal(peer.federation.replicas.read('session').length,3)
@@ -56,7 +56,7 @@ test('outbound older-major negotiation imports zero data and sends zero mutation
         if(new URL(request.url).pathname.endsWith('/handshake')) return Response.json({version:{major:0,minor:9},negotiated:{major:0,minor:0},readOnly:false})
         throw new Error('older peer must not be queried for operations, replicas or mutation')
       }})
-    assert.deepEqual(await channel.synchronize(peer.federation,['session','run']),{readOnly:true})
+    assert.deepEqual(await channel.synchronize(peer.federation,['session','run']),{readOnly:true,accepted:0,duplicates:0,deferred:0,skipped:0,reasons:{}})
     await assert.rejects(()=>channel.command({id:'stop',runId:'run',sessionId:'session',homeNodeId:'home',stateVersion:1,expiresAt:peer.time+5000,action:{kind:'stop'}}),/contract_read_only/)
     assert.deepEqual(requests,['GET /api/federation/handshake','GET /api/federation/handshake'])
     assert.equal(peer.federation.config.operations().length,0)
@@ -111,7 +111,7 @@ test('unsigned handshake can force a read-only downgrade; request signatures do 
       if (new URL(request.url).pathname.endsWith('/handshake')) return Response.json({...await response.json() as object,readOnly:true})
       return response
     }})
-    assert.deepEqual(await channel.synchronize(peer.federation), {readOnly:true}, 'altered unsigned response can force read-only')
+    assert.deepEqual(await channel.synchronize(peer.federation), {readOnly:true,accepted:0,duplicates:0,deferred:0,skipped:0,reasons:{}}, 'altered unsigned response can force read-only')
     assert.equal(peer.federation.config.operations().length, 0)
   } finally { home.close(); peer.close() }
 })

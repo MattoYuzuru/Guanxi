@@ -79,9 +79,8 @@ test('legacy sparse rows and attested contexts cannot inflate a newly authored v
   } finally { a.close(); c.close() }
 })
 
-// P4/P4b retain strict H1 admission: a revoke depending on forbidden history
-// requires explicit reauthoring. Independent operations must still synchronize.
-for (const mode of ['revoked', 'unknown'] as const) test(`${mode === 'revoked' ? 'P4' : 'P4b'}: inadmissible author cannot wedge independent sync; impossible dependencies need reauthoring`, async () => {
+// P4/P4b: missing history from ineligible origins cannot poison honest revokes.
+for (const mode of ['revoked', 'unknown'] as const) test(`${mode === 'revoked' ? 'P4' : 'P4b'}: inadmissible author cannot wedge independent or dependent honest sync`, async () => {
   const a = new SimNode(identity('a')); const b = new SimNode(identity('b'))
   const x = new SimNode(identity('x', {trust:'cloud_ephemeral',admin:false,scopes:['config']}))
   const independent = new SimNode(identity('independent'))
@@ -99,11 +98,11 @@ for (const mode of ['revoked', 'unknown'] as const) test(`${mode === 'revoked' ?
     const report = await response.json() as {accepted:number;skipped:number;deferred:number;reasons:Record<string,number>}
     assert.equal(report.skipped, 1, 'inadmissible author is counted')
     assert.equal(report.reasons.unauthenticated, 1)
-    assert.equal(report.accepted, 1, 'independent author commits')
-    assert.equal(report.deferred, 1, 'dependent revoke remains unadmitted under H1')
-    assert.equal(present(b), true)
+    assert.equal(report.accepted, 2, 'independent metadata and honest revoke commit')
+    assert.equal(report.deferred, 0, 'ineligible context cannot poison the honest revoke')
+    assert.equal(present(b), false)
     assert.ok(b.federation.config.operations().some((op) => op.operation.origin === 'independent'))
-    // Retry through the shipped channel succeeds; it cannot bypass H1 or undo local recovery.
+    // Retry through the shipped channel remains idempotent.
     const { FederationChannel } = await import('../../src/federation/channel.ts')
     const channel = new FederationChannel({local:b.keys.identity,privateKey:b.keys.privateKey,peer:a.keys.identity,clock:()=>b.time,transport:async(req)=>a.app.request(req)})
     await assert.doesNotReject(() => channel.synchronize(b.federation))

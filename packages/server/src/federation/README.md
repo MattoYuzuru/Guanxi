@@ -78,7 +78,9 @@ node id and explicit approval. No vendor OAuth tokens are read, copied or transf
 context and HLC. Receive order, retries and forwarding cannot change the signed author.
 Vectors cover only the unbroken run of actually stored operations per origin; signed contexts
 never fill gaps. Ingest defers an operation if any claimed context (including the local origin)
-is absent. Ingest reads account-specific stored counters once and updates contiguous prefixes incrementally.
+is absent for an origin eligible to author that operation kind for the account. Revoked,
+unpinned, unscoped, wrong-account and (for identity/grant/membership writes) non-admin origins
+are excluded from this dependency check; ignoring their context never advances a stored prefix. Ingest reads account-specific stored counters once and updates contiguous prefixes incrementally.
 A ready queue registers each missing dot once; each operation is prepared once and reaches
 signature verification at most once after its cheap context check succeeds. Work is linear in
 stored counters plus input bytes/context entries (apart from indexed SQLite lookups). It never
@@ -101,18 +103,17 @@ This is shared metadata, not a replacement of K3's local secret/dispatch policie
 multi-account authentication UI. Connection metadata retains its owner; subscription
 connections cannot be assigned to another account (D-190). Exact already-accepted duplicates remain valid after author revocation, so historical
 entries cannot wedge subsequent synchronization. Each operation commits independently. Unknown/revoked authors, missing config/admin scope,
-invalid author signatures and future clock drift are skipped and counted; independent admissible
+invalid author signatures, withheld content and future clock drift are skipped and counted; independent admissible
 operations still commit. Context gaps are counted as deferred and retried within the batch;
 `operation_conflict` stays fatal and stops the batch (already committed operations remain).
-New revoked-author operations are never admitted. A new receiver lacking that history cannot safely infer pre-revocation admission
-from an author's timestamp; bootstrap then requires operator-reviewed rebaseline or reauthoring
-by a current admin. In particular, an H1-deferred operation depending on an author this
-receiver will never admit stays deferred, including revokes. It cannot authorize a grant or
-advance a vector. A current admin on a receiver with admissible history must reauthor the
-intended change (a local revoke can take effect immediately), or an operator must review a
-rebaseline. Retrying alone cannot repair an impossible dependency; skipping its context would
-reintroduce H1. Subsequent operations on that origin also wait for its contiguous prefix.
-Automatic historical admission certificates/frontiers are not implemented.
+New revoked-author operations are never admitted. Missing history from an admissible origin
+still defers the operation, preserving the unseen-revoke boundary (P5). Deferral can spread to
+all later writes from every node that stored that history, not only the original author. This
+includes content-withheld or bad-signature gaps from otherwise eligible authors; retries need
+the missing admissible history, current-admin reauthoring from a receiver without the gap, or
+an operator-reviewed rebaseline. No implicit prefix or historical admission certificate is created.
+`synchronize()` returns `accepted`, `duplicates`, `deferred`, `skipped` and content-free `reasons`
+alongside `readOnly`; callers can observe unresolved stalls and skips on every pull.
 The local peer credential registry
 is host-approved authority, separate from shared user display metadata and grant projections.
 

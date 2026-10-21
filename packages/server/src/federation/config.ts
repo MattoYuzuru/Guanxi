@@ -83,8 +83,28 @@ export class SharedConfig {
     }
     return histories
   }
-  private missing(signed: SignedConfigOperation, stored: Record<string, number>): [string, number][] {
-    return Object.entries(signed.operation.context).filter(([origin, counter]) => counter > counterAt(stored, origin))
+  private missing(signed: SignedConfigOperation, stored: Record<string, number>,
+    eligible = new Map<string, boolean>()): [string, number][] {
+    const op = signed.operation
+    const admin = ['grant', 'membership', 'identity'].includes(op.value.kind)
+    return Object.entries(op.context).filter(([origin, counter]) => {
+      if (counter <= counterAt(stored, origin)) return false
+      const key = canonical([op.accountId, admin, origin])
+      let allowed = eligible.get(key)
+      if (allowed === undefined) {
+        try {
+          const peer = this.peer(origin)
+          allowed = peer.accountId === op.accountId && peer.scopes.includes('config') && (!admin || peer.admin)
+        } catch (error) {
+          if (!(error instanceof FederationError) || error.code !== 'unauthenticated') throw error
+          allowed = false
+        }
+        eligible.set(key, allowed)
+      }
+      // Ineligible origins cannot author a relevant unseen revoke here. Their
+      // missing history must not poison otherwise admissible fleet operations.
+      return allowed
+    })
   }
   create(key: string, value: ConfigOperation['value']): SignedConfigOperation {
     this.clean(null)
@@ -111,6 +131,7 @@ export class SharedConfig {
     this.clean(null)
     const result = { accepted: 0, duplicates: 0, deferred: 0, skipped: 0, reasons: {} as Record<string, number> }
     const histories = this.histories()
+    const eligible = new Map<string, boolean>()
     type Entry = PreparedOperation & { remaining: number }
     // Register every missing dot once. Prefix advancement wakes each dependency
     // once, and only fully ready operations reach signature verification/SQLite.
@@ -120,7 +141,7 @@ export class SharedConfig {
     const dot = (account: string, origin: string, counter: number) => canonical([account, origin, counter])
     const skipped = (error: unknown) => {
       if (!(error instanceof FederationError) ||
-        !['unauthenticated', 'forbidden', 'admin_required', 'clock_drift'].includes(error.code)) throw error
+        !['unauthenticated', 'forbidden', 'admin_required', 'clock_drift', 'content_withheld'].includes(error.code)) throw error
       result.skipped++; result.reasons[error.code] = (result.reasons[error.code] ?? 0) + 1
     }
     for (const input of operations) {
@@ -130,7 +151,7 @@ export class SharedConfig {
       const op = prepared.signed.operation
       let history = histories.get(op.accountId)
       if (!history) { history = { vector: Object.create(null), sparse: new Map() }; histories.set(op.accountId, history) }
-      const missing = this.missing(prepared.signed, history.vector)
+      const missing = this.missing(prepared.signed, history.vector, eligible)
       const entry: Entry = { ...prepared, remaining: missing.length }
       result.deferred++
       for (const [origin, counter] of missing) {

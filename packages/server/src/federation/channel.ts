@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { FEDERATION_VERSION, federationVersionSchema, replicaEntrySchema, signedConfigOperationSchema,
   type FederationAuth, type NodeIdentity, type RoutedCommand } from '@guanxi/contract/federation'
 import { canonical, FederationError, requestProof, signValue } from './crypto.ts'
+import type { SharedConfig } from './config.ts'
 import type { Federation } from './service.ts'
 
 const handshakeSchema = z.object({ version: federationVersionSchema, negotiated: federationVersionSchema, readOnly: z.boolean() }).strict()
@@ -43,17 +44,18 @@ export class FederationChannel {
     return { readOnly: handshake.version.major < FEDERATION_VERSION.major || handshake.readOnly }
   }
   /** Anti-entropy pull; each peer is independent, and retries are idempotent. */
-  async synchronize(local: Federation, streamIds: readonly string[] = []): Promise<{ readOnly: boolean }> {
+  async synchronize(local: Federation, streamIds: readonly string[] = []): Promise<{ readOnly: boolean } & ReturnType<SharedConfig['ingest']>> {
     // Verify the host's pin before accepting any remote data.
     const peer = local.peer(this.#options.peer.id)
     if (canonical(peer) !== canonical(this.#options.peer)) throw new FederationError('identity_conflict')
     const { readOnly } = await this.negotiate()
     // An older peer is a reader: it may pull our state, but cannot author imports into us.
-    if (readOnly) return { readOnly: true }
+    const config = { accepted: 0, duplicates: 0, deferred: 0, skipped: 0, reasons: {} as Record<string, number> }
+    if (readOnly) return { readOnly: true, ...config }
     if (peer.scopes.includes('config')) {
       const result = z.object({operations:z.array(signedConfigOperationSchema)}).strict().parse(await this.request('GET','/config'))
       if (result.operations.some((op)=>op.operation.accountId!==local.identity.accountId)) throw new FederationError('owner_mismatch',403)
-      local.config.ingest(result.operations)
+      Object.assign(config, local.config.ingest(result.operations))
     }
     for (const stream of streamIds) {
       if (local.replicas.binding(stream).homeNodeId !== peer.id) continue
@@ -64,7 +66,7 @@ export class FederationChannel {
         if (!(error instanceof FederationError) || error.code !== 'not_home') throw error
       }
     }
-    return { readOnly: false }
+    return { readOnly: false, ...config }
   }
   async command(command: RoutedCommand): Promise<string> {
     if (command.homeNodeId!==this.#options.peer.id) throw new FederationError('not_home')
