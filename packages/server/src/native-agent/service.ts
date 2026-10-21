@@ -144,18 +144,24 @@ export class NativeAgents {
     if (policy.type !== 'agent.policy') throw new NativeAgentError('session_not_found')
     let status: AgentProgress['status'] = 'interrupted', error: string | null = null
     let plan: AgentProgress['plan'] = [], queue: AgentProgress['queue'] = [], summary = ''
+    let shellUnavailable: AgentProgress['shellUnavailable']
     for (const event of events) {
       if (event.type === 'agent.state') { status = event.data.status; error = event.data.error }
       if (event.type === 'agent.plan') plan = event.data.items
       if (event.type === 'agent.queue') queue = event.data.items
       if (event.type === 'assistant.message') summary = event.data.text
+      if (event.type === 'tool.result' && event.data.status === 'error') {
+        for (const reason of ['container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied'] as const) {
+          if (event.data.result?.includes(reason)) shellUnavailable = reason
+        }
+      }
     }
     const consumed = new Set(events.filter(e => e.type === 'prompt').map(e => e.data.messageId))
     queue = queue.filter(item => !consumed.has(item.id))
     if (status === 'running' && !this.active.has(id)) { status = 'interrupted'; error = 'process_restarted' }
     return this.scrubber.scrub({ sessionId: id, projectId: policy.data.projectId, connectionId: policy.data.connectionId,
       model: policy.data.model, mode: policy.data.mode, status, plan, queue, summary, error,
-      observedAt: events.at(-1)!.createdAt, source: 'session.log', confidence: 'high' })
+      observedAt: events.at(-1)!.createdAt, source: 'session.log', confidence: 'high', ...(shellUnavailable ? { shellUnavailable } : {}) })
   }
   result(id: string): AgentExecResult {
     const progress = this.progress(id)

@@ -1,5 +1,8 @@
 export const nativeEnglish = {
-  'native.shellLimited': 'File writes are available inside project folders. Shell commands are limited until process supervision is available.', 'native.story.result': 'Fixture result', 'native.folders': 'Project folders', 'native.saveFolders': 'Save folders', 'native.note': 'Note', 'native.title': 'New agent session', 'native.nav': 'Agent', 'native.project': 'Project', 'native.connection': 'Connection',
+  'native.container_runtime_unavailable': 'Shell execution is disabled: the local container runtime or execution image is unavailable. Start Colima or Docker Desktop and provision the node execution image.',
+  'native.container_path_unsupported': 'Shell execution is disabled for a folder containing a comma. Choose another project folder.',
+  'native.container_home_root_denied': 'Shell execution cannot mount your whole home folder. Choose specific project folders.',
+  'native.shellLimited': 'Shell commands follow the access mode. On macOS they require a local Linux container runtime.', 'native.story.result': 'Fixture result', 'native.folders': 'Project folders', 'native.saveFolders': 'Save folders', 'native.note': 'Note', 'native.title': 'New agent session', 'native.nav': 'Agent', 'native.project': 'Project', 'native.connection': 'Connection',
   'native.model': 'Model ID', 'native.prompt': 'What should the agent do?', 'native.mode': 'Access mode',
   'native.read-only': 'Read-only', 'native.full-access': 'Full access', 'native.start': 'Start session',
   'native.choose': 'Choose…', 'native.domains': 'Network allowlist (comma-separated hosts)', 'native.context': 'Local runtime context (tokens)',
@@ -16,7 +19,10 @@ export const nativeEnglish = {
   'native.attachments': 'Project attachment IDs (comma-separated; upload in Attachments)', 'native.protected': 'Protected paths (one per line)',
 } as const
 export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
-  'native.shellLimited': 'Запись файлов доступна в папках проекта. Команды оболочки ограничены до появления контроля дочерних процессов.', 'native.story.result': 'Пример результата', 'native.folders': 'Папки проекта', 'native.saveFolders': 'Сохранить папки', 'native.note': 'Заметка', 'native.title': 'Новая сессия агента', 'native.nav': 'Агент', 'native.project': 'Проект', 'native.connection': 'Подключение',
+  'native.container_runtime_unavailable': 'Оболочка отключена: локальный контейнерный движок или образ выполнения недоступен. Запустите Colima или Docker Desktop и установите образ выполнения узла.',
+  'native.container_path_unsupported': 'Оболочка отключена для папки с запятой в пути. Выберите другую папку проекта.',
+  'native.container_home_root_denied': 'Нельзя подключить домашнюю папку целиком. Выберите отдельные папки проекта.',
+  'native.shellLimited': 'Команды оболочки работают в выбранном режиме доступа. На macOS для них нужен локальный контейнер Linux.', 'native.story.result': 'Пример результата', 'native.folders': 'Папки проекта', 'native.saveFolders': 'Сохранить папки', 'native.note': 'Заметка', 'native.title': 'Новая сессия агента', 'native.nav': 'Агент', 'native.project': 'Проект', 'native.connection': 'Подключение',
   'native.model': 'ID модели', 'native.prompt': 'Что должен сделать агент?', 'native.mode': 'Режим доступа',
   'native.read-only': 'Только чтение', 'native.full-access': 'Полный доступ', 'native.start': 'Начать сессию',
   'native.choose': 'Выберите…', 'native.domains': 'Разрешённые сетевые адреса (через запятую)', 'native.context': 'Контекст локальной модели (токены)',

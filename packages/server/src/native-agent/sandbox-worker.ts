@@ -1,13 +1,16 @@
 /** Trusted launcher only. This file is a separate build entry, never a tool. */
-import { spawn } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { SandboxManager, getDefaultWritePaths, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { TOOL_OUTPUT_BYTES, type SandboxPolicy, type CommandResult } from './sandbox-protocol.ts'
+import type { SandboxPolicy } from './sandbox-protocol.ts'
+import { LinuxExecutionOwner, FixedExecutionOwner, ContainerExecutionOwner, type ExecutionOwner } from './execution-owner.ts'
 
-process.once('disconnect', () => { try { process.kill(-process.pid, 'SIGKILL') } catch { process.exit(1) } })
-process.once('message', async ({ policy, command }: { policy: SandboxPolicy; command: string }) => {
+let owner: ExecutionOwner | undefined
+let stopped = false
+process.on('message', (message: { stop?: boolean }) => { if (message.stop) { stopped = true; void owner?.stop() } })
+process.once('disconnect', () => { stopped = true; void owner?.stop().finally(() => process.exit(1)) })
+process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerName, directory }: { policy: SandboxPolicy; command: string; fixed: boolean; dockerEndpoint: string; ownerName: string; directory: string }) => {
   try {
     // Windows requires machine-wide provisioning; refuse until Guanxi validates that profile.
     if (!['darwin', 'linux'].includes(process.platform) || !SandboxManager.isSupportedPlatform()) throw new Error('unsupported_sandbox')
@@ -28,7 +31,7 @@ process.once('message', async ({ policy, command }: { policy: SandboxPolicy; com
       filesystem: { denyRead: ['/', ...(policy.hiddenPaths ?? [])].map(literal), allowRead: read.map(literal),
         allowWrite: [policy.scratch, ...(policy.mode === 'full-access' ? policy.roots : [])].map(literal),
         // Cancel upstream convenience grants. Stdio devices are the only exceptions.
-        denyWrite: [...getDefaultWritePaths().filter(path => !path.startsWith('/dev/')), ...system.filter(path => !['/dev', '/proc/self'].includes(path)), modules, dirname(realpathSync(process.execPath)), ...policy.protectedPaths, ...policy.attachments].map(literal),
+        denyWrite: [...getDefaultWritePaths().filter(path => !path.startsWith('/dev/')), ...system.filter(path => !['/dev', '/proc/self'].includes(path)), modules, dirname(realpathSync(process.execPath)), ...policy.roots.map(root => `${root}/node_modules`), ...policy.protectedPaths, ...policy.attachments].map(literal),
       },
       allowPty: false, enableWeakerNetworkIsolation: false, enableWeakerNestedSandbox: false,
     }
@@ -36,28 +39,14 @@ process.once('message', async ({ policy, command }: { policy: SandboxPolicy; com
     await SandboxManager.initialize(config, undefined, false)
     if (!SandboxManager.isSandboxingEnabled()) throw new Error('sandbox_unavailable')
     const quotePath = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
-    const wrapped = await SandboxManager.wrapWithSandbox(`export HOME=${quotePath(policy.scratch)} TMPDIR=${quotePath(policy.scratch)}; ${command}`, '/bin/sh')
-    const result = await new Promise<CommandResult>((resolve, reject) => {
-      const child = spawn('/bin/sh', ['-c', wrapped], { cwd: policy.scratch,
-        env: { ...process.env, OPENSSL_CONF: '/dev/null', PAGER: 'cat', GIT_PAGER: 'cat', TERM: 'dumb', TMPDIR: policy.scratch }, stdio: ['ignore', 'pipe', 'pipe'] })
-      let stdout = '', stderr = '', bytes = 0, truncated = false
-      const append = (channel: 'stdout' | 'stderr', data: Buffer) => {
-        const remaining = Math.max(0, TOOL_OUTPUT_BYTES - bytes)
-        const text = data.subarray(0, remaining).toString('utf8')
-        bytes += data.length
-        truncated ||= data.length > remaining
-        if (channel === 'stdout') stdout += text
-        else stderr += text
-      }
-      child.stdout.on('data', data => append('stdout', data))
-      child.stderr.on('data', data => append('stderr', data))
-      child.once('error', reject)
-      child.once('close', code => resolve({ code, stdout, stderr, truncated }))
-    })
+    owner = process.platform === 'linux' ? new LinuxExecutionOwner() : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner(policy, dockerEndpoint, ownerName, directory)
+    if (stopped) throw new Error('sandbox_failed')
+    const result = await owner.execute(`export HOME=${quotePath(policy.scratch)} TMPDIR=${quotePath(policy.scratch)}; ${command}`)
     await SandboxManager.reset()
     process.send?.({ result }, () => process.exit(0))
-  } catch {
+  } catch (error) {
+    await owner?.stop()
     await SandboxManager.reset().catch(() => undefined)
-    process.send?.({ error: true }, () => process.exit(1))
+    process.send?.({ error: error instanceof Error && ['container_runtime_unavailable', 'container_path_unsupported', 'supervision_unavailable'].includes(error.message) ? error.message : 'sandbox_failed' }, () => process.exit(1))
   }
 })

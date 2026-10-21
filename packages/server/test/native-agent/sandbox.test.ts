@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath, link } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { sandboxCommand, quote, type SandboxPolicy } from '../../src/native-agent/sandbox.ts'
 import { orientation } from '../../src/native-agent/orientation.ts'
 
 async function fixture(t: { after(fn: () => unknown): void }) {
-  const dir = await realpath(await mkdtemp(join(tmpdir(), 'k4-sandbox-')))
+  // Colima shares the checkout; its default VM does not share macOS /private/tmp.
+  await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
+  const dir = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'k4-sandbox-')))
   const scratch = join(dir, 'scratch'), root = join(dir, 'root'), other = join(dir, 'outside')
   await Promise.all([scratch, root, other].map(p => mkdir(p)))
   t.after(() => rm(dir, { recursive: true, force: true }))
-  const policy: SandboxPolicy = { mode: 'read-only', scratch, roots: [root], attachments: [], protectedPaths: [join(root, 'protected')], domains: [] }
+  const policy: SandboxPolicy = { mode: 'read-only', scratch, runtimeBase: dir, roots: [root], attachments: [], protectedPaths: [join(root, 'protected')], domains: [] }
   return { dir, root, other, policy }
 }
 test('Read-only OS profile allows scratch and denies root/outside/protected writes and symlink escape', { timeout: 30000 }, async t => {
@@ -65,7 +66,7 @@ test('method proxy permits GET/HEAD/OPTIONS, blocks POST/PUT/DELETE, opaque tunn
   const tlsPost = await sandboxCommand(policy, `curl --noproxy '' -k -s --max-time 3 -X POST -o /dev/null -w '%{http_code}' https://127.0.0.1:${port}/`)
   assert.equal(tlsPost.stdout, '403', tlsPost.stderr)
   assert.equal(methods.length, 3)
-  const raw = await sandboxCommand(policy, `${quote(process.execPath)} -e ${quote(`const net=require('node:net');const s=net.connect(${port},'127.0.0.1');s.on('error',()=>{console.log('blocked')});s.on('connect',()=>{console.log('ESCAPED');s.end()});setTimeout(()=>s.destroy(),1000)`)} `)
+  const raw = await sandboxCommand(policy, `node -e ${quote(`const net=require('node:net');const s=net.connect(${port},'127.0.0.1');s.on('error',()=>{console.log('blocked')});s.on('connect',()=>{console.log('ESCAPED');s.end()});setTimeout(()=>s.destroy(),1000)`)} `)
   assert.equal(raw.stdout.trim(), 'blocked')
   const tunnel = await sandboxCommand(policy, `curl --noproxy '' --max-time 3 -s --max-time 3 --proxytunnel -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/`)
   assert.notEqual(tunnel.code, 0)
@@ -83,9 +84,10 @@ test('orientation UTF-8 byte upper bound never exceeds 300, even with long/unico
 })
 test('editing a writable checkout cannot replace the next trusted sandbox launcher', { timeout: 30000 }, async t => {
   const { policy, root } = await fixture(t)
+  await writeFile(join(root, 'protected'), 'original')
   const { copyFile } = await import('node:fs/promises')
   const { pathToFileURL } = await import('node:url')
-  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
+  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(root, 'node_modules'))
   const { sandboxCommand: cloned } = await import(pathToFileURL(join(root, 'sandbox.ts')).href)
   const full = { ...policy, mode: 'full-access' as const, roots: [root] }
@@ -95,6 +97,7 @@ test('editing a writable checkout cannot replace the next trusted sandbox launch
   assert.equal(await readFile(join(root, 'sandbox-worker.ts'), 'utf8'), poison)
   const next = await cloned(full, 'printf safe')
   assert.equal(next.stdout, 'safe')
+  assert.equal(await readFile(join(root, 'protected'), 'utf8'), 'original')
 })
 
 test('Full access refuses pre-existing hardlinks that could mutate files outside roots', { timeout: 30000 }, async t => {
@@ -113,4 +116,87 @@ test('long session scratch paths support actual writes, reads and scratch-local 
   const result = await sandboxCommand({ ...policy, scratch }, 'printf worked > "$TMPDIR/value"; /bin/cat "$TMPDIR/value"')
   assert.equal(result.code, 0); assert.equal(result.stdout, 'worked')
   assert.equal(await readFile(join(scratch, 'value'), 'utf8'), 'worked')
+})
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+async function started(path: string) {
+  const until = Date.now() + 15_000
+  while (true) {
+    try { if ((await readFile(path, 'utf8')).trim() === 'ready') return } catch { /* not started */ }
+    assert.ok(Date.now() < until, 'sandbox workload must actually start')
+    await pause(10)
+  }
+}
+function descendants(scratch: string, wait: boolean) {
+  const launch = ['setsid', 'nohup', 'double'].map(kind => {
+    const body = `printf ready > ${quote(join(scratch, kind + '-ready'))}; sleep 1; printf LEAK > ${quote(join(scratch, kind + '-late'))}`
+    const child = `sh -c ${quote(body)} >/dev/null 2>&1`
+    return kind === 'double' ? `((${child} &) >/dev/null 2>&1 &)\n` : `${kind} ${child} &\n`
+  }).join('')
+  return launch + ['setsid', 'nohup', 'double'].map(kind => `while [ ! -f ${quote(join(scratch, kind + '-ready'))} ]; do sleep 0.01; done;`).join('\n') +
+    `printf ready > ${quote(join(scratch, 'ready'))}; ${wait ? 'sleep 30' : 'printf returned'}`
+}
+async function noLateWrites(scratch: string) {
+  await pause(1200)
+  for (const kind of ['setsid', 'nohup', 'double']) {
+    assert.equal(await readFile(join(scratch, kind + '-ready'), 'utf8'), 'ready', `${kind} must have started`)
+    await assert.rejects(readFile(join(scratch, kind + '-late')), { code: 'ENOENT' }, `${kind} survived namespace teardown`)
+  }
+}
+test('completion kills setsid, nohup and double-forked descendants before a second writer is admitted', { timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  const result = await sandboxCommand(policy, descendants(policy.scratch, false))
+  assert.equal(result.code, 0); assert.equal(result.stdout, 'returned')
+  const second = await sandboxCommand(policy, `printf second > ${quote(join(policy.scratch, 'second'))}`)
+  assert.equal(second.code, 0); assert.equal(await readFile(join(policy.scratch, 'second'), 'utf8'), 'second')
+  await noLateWrites(policy.scratch)
+})
+test('cancellation kills every detached descendant before settlement', { timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  const abort = new AbortController()
+  const running = sandboxCommand(policy, descendants(policy.scratch, true), abort.signal)
+  const rejected = assert.rejects(running, /sandbox_failed/)
+  await started(join(policy.scratch, 'ready')); abort.abort()
+  await rejected
+  await noLateWrites(policy.scratch)
+})
+test('timeout kills every detached descendant before settlement', { timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  // The timeout must occur after the children start, before their attempted write.
+  const command = descendants(policy.scratch, true).replaceAll('sleep 1;', 'sleep 4;')
+  const rejected = assert.rejects(sandboxCommand(policy, command, undefined, 2500), /sandbox_failed/)
+  await started(join(policy.scratch, 'ready')); await rejected
+  await pause(4200)
+  await noLateWrites(policy.scratch)
+})
+test('Unix sockets and local binding are denied inside arbitrary execution', { timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  const script = `const net=require('node:net'); for(const address of [${JSON.stringify(join(policy.scratch, 'socket'))}, {host:'127.0.0.1',port:0}]) { const s=net.createServer(); s.on('error',()=>console.log('blocked')); s.listen(address,()=>{console.log('ESCAPED');s.close()}) }`
+  const result = await sandboxCommand(policy, `node -e ${quote(script)}`)
+  assert.equal(result.code, 0); assert.equal(result.stdout, 'blocked\nblocked\n')
+})
+
+test('Full access cannot overwrite a dependency tree but can write an unprotected sibling', { timeout: 30000 }, async t => {
+  const { policy, root } = await fixture(t)
+  await writeFile(join(root, 'protected'), 'original')
+  await mkdir(join(root, 'node_modules'))
+  await writeFile(join(root, 'node_modules', 'sentinel'), 'dependency')
+  const result = await sandboxCommand({ ...policy, mode: 'full-access' }, `printf safe > ${quote(join(root, 'control'))}; printf bad > ${quote(join(root, 'node_modules', 'sentinel'))}`)
+  assert.notEqual(result.code, 0)
+  assert.equal(await readFile(join(root, 'control'), 'utf8'), 'safe')
+  assert.equal(await readFile(join(root, 'node_modules', 'sentinel'), 'utf8'), 'dependency')
+})
+test('macOS without a reachable runtime refuses arbitrary shell and retains fixed commands', { skip: process.platform !== 'darwin' }, async t => {
+  const { policy } = await fixture(t)
+  const host = process.env.DOCKER_HOST, context = process.env.DOCKER_CONTEXT
+  try {
+    delete process.env.DOCKER_CONTEXT
+    process.env.DOCKER_HOST = 'unix:///nonexistent-guanxi-fixture.sock'
+    await assert.rejects(sandboxCommand(policy, 'printf MUST_NOT_RUN'), /container_runtime_unavailable/)
+    const fixed = await sandboxCommand(policy, '/bin/pwd', undefined, 5000, true)
+    assert.equal(fixed.code, 0); assert.equal(fixed.stdout.trim(), policy.scratch)
+  } finally {
+    if (host === undefined) delete process.env.DOCKER_HOST; else process.env.DOCKER_HOST = host
+    if (context === undefined) delete process.env.DOCKER_CONTEXT; else process.env.DOCKER_CONTEXT = context
+  }
 })

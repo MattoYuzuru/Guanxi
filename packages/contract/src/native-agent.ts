@@ -24,5 +24,6 @@ export const agentProgressSchema = z.object({
   plan: z.array(z.object({ text: z.string(), status: z.enum(['pending', 'active', 'verification_requested']) })),
   queue: z.array(z.object({ id: z.string(), text: z.string() })),
   summary: z.string(), error: z.string().nullable(), observedAt: z.string(), source: z.literal('session.log'), confidence: z.literal('high'),
+  shellUnavailable: z.enum(['container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied']).optional(),
 }).strict()
 export type AgentProgress = z.infer<typeof agentProgressSchema>

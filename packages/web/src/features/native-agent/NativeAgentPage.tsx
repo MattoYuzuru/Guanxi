@@ -14,6 +14,7 @@ export function NativeProgress({ progress, stop, remove }: { progress: AgentProg
     <p role="status" aria-live="polite">{t(`native.${progress.status}`)}</p>
     <p className="text-muted text-12">{t('native.source', { time: new Date(progress.observedAt).toLocaleString(getActiveLocale()) })}</p>
     <p>{t(`native.${progress.mode}`)}</p>
+    {progress.shellUnavailable && <p role="alert">{t(`native.${progress.shellUnavailable}`)}</p>}
     {progress.status === 'running' && <Button onClick={stop}>{t('native.stop')}</Button>}
     <h3>{t('native.plan')}</h3>
     {progress.plan.length === 0 ? <p className="text-muted">{t('native.noPlan')}</p> : <ol>{progress.plan.map((item, index) => <li key={index}>{item.text} · {t(`native.${item.status}`)}</li>)}</ol>}
@@ -84,7 +85,7 @@ export function NativeAgentPage({ sessionId }: { sessionId: string | null }) {
         <Field label={t('native.connection')}><Select ariaLabel={t('native.connection')} value={connectionId} onChange={setConnection} options={[{ value: '', label: t('native.choose') }, ...connections.map(c => ({ value: c.id, label: c.name }))]} /></Field>
         <Field label={t('native.model')}><Input aria-label={t('native.model')} value={model} onChange={e => setModel(e.target.value)} required /></Field>
         <Field label={t('native.mode')}><Select ariaLabel={t('native.mode')} value={mode} onChange={v => setMode(v as AccessMode)} options={[{ value: 'read-only', label: t('native.read-only') }, { value: 'full-access', label: t('native.full-access') }]} /></Field>
-        {mode === 'full-access' && <p role="status" className="text-warning">{t('native.shellLimited')}</p>}
+        <p className="text-muted">{t('native.shellLimited')}</p>
         <Field label={t('native.domains')}><Input aria-label={t('native.domains')} value={domains} onChange={e => setDomains(e.target.value)} /></Field>
         {connections.find(c => c.id === connectionId)?.kind === 'local_runtime' && <Field label={t('native.context')}><Input aria-label={t('native.context')} type="number" min={1} value={context} onChange={e => setContext(e.target.value)} required /></Field>}
         <Field label={t('native.attachments')}><Input aria-label={t('native.attachments')} value={attachments} onChange={e => setAttachments(e.target.value)} /></Field>

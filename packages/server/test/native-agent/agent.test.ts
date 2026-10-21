@@ -3,7 +3,6 @@ import { randomBytes } from 'node:crypto'
 import { test } from 'node:test'
 import { mkdtemp, mkdir, rm, writeFile, realpath, symlink, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import { createKernel } from '@guanxi/kernel'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
@@ -23,7 +22,8 @@ import { NativeAgents } from '../../src/native-agent/service.ts'
 import { emptyUsage } from '../../src/native-agent/model.ts'
 
 async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: number, context: string, signal?: AbortSignal) => Promise<AssistantMessage['content']>, localFetch?: typeof fetch) {
-  const dir = await realpath(await mkdtemp(join(tmpdir(), 'k4-agent-')))
+  await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
+  const dir = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'k4-agent-')))
   const data = join(dir, 'data'); await mkdir(data)
   const db = openDb(join(data, 'test.sqlite'))
   const kernel = createKernel()
@@ -164,18 +164,18 @@ test('native HTTP routes enforce peer/origin/JSON boundaries and reach the share
   assert.equal((await app.request(`/${sessionId}/result`, undefined, peer)).status, 200)
   assert.equal(f.requests.length, 1)
 })
-test('arbitrary shell execution fails closed in both modes pending descendant supervision', { timeout: 30000 }, async t => {
+test('arbitrary shell execution uses an execution owner in both modes', { timeout: 30000 }, async t => {
   const { nativeTools } = await import('../../src/native-agent/tools.ts')
   const f = await fixture(t)
   for (const mode of ['read-only', 'full-access'] as const) {
     const scratch = join(f.dir, mode); await mkdir(scratch)
     const handle = f.log.open(`test-${mode}`, { kind: 'agent' })
     try {
-      const tools = nativeTools({ policy: { mode, scratch, roots: [], attachments: [], protectedPaths: [], domains: [] }, log: f.log, handle, scrubber: f.scrubber, queue() {} })
+      const tools = nativeTools({ policy: { mode, scratch, runtimeBase: f.data, roots: [], attachments: [], protectedPaths: [], domains: [] }, log: f.log, handle, scrubber: f.scrubber, queue() {} })
       const shell = tools.find(tool => tool.name === 'shell')!
-      const result = await shell.execute('blocked', { command: `${process.execPath} -e 'process.exit(0)'` })
-      assert.equal(result.isError, true)
-      assert.deepEqual(result.content, [{ type: 'text', text: 'supervision_unavailable' }])
+      const result = await shell.execute('owned', { command: `node -e 'console.log("owned")'` })
+      assert.notEqual(result.isError, true)
+      assert.equal(result.content[0]?.type === 'text' && JSON.parse(result.content[0].text).stdout, 'owned\n')
     } finally { handle.close() }
   }
 })
@@ -269,4 +269,74 @@ test('shutdown during attachment staging prevents a late model dispatch', { time
   release()
   await assert.rejects(creating, /agent_unavailable/)
   assert.equal(f.requests.length, 0)
+})
+
+test('overlapping roots exclude a second native writer until unload kills detached descendants', { timeout: 30000 }, async t => {
+  let root = ''
+  const f = await fixture(t, async call => call === 1 ? [{ type: 'toolCall', id: 'owned', name: 'shell', arguments: {
+    command: ['setsid', 'nohup', 'double'].map(kind => {
+      const child = `sh -c 'printf ready > ${root}/${kind}-ready; sleep 2; printf LEAK > ${root}/${kind}-late' >/dev/null 2>&1`
+      return kind === 'double' ? `((${child} &) >/dev/null 2>&1 &)` : `${kind} ${child} &`
+    }).join('\n') + `\nsleep 30`,
+  } }] : [{ type: 'text', text: 'second writer' }])
+  root = join(f.dir, 'shared'); await mkdir(join(root, 'nested'), { recursive: true })
+  const whole = f.workspaces.create(root), nested = f.workspaces.create(join(root, 'nested'))
+  f.agents().setRoots(f.input.projectId, [whole.id])
+  const { sessionId } = await f.agents().create({ ...f.input, mode: 'full-access' })
+  const until = Date.now() + 15_000
+  for (const kind of ['setsid', 'nohup', 'double']) while (true) {
+    try { assert.equal(await readFile(join(root, kind + '-ready'), 'utf8'), 'ready'); break } catch {
+      assert.ok(Date.now() < until, `${kind} must actually start`); await new Promise(r => setTimeout(r, 10))
+    }
+  }
+  for (const ids of [[whole.id], [nested.id]]) {
+    f.agents().setRoots(f.input.projectId, ids)
+    await assert.rejects(f.agents().create({ ...f.input, mode: 'full-access' }), /root_busy/)
+  }
+  assert.equal(f.requests.length, 1)
+  await f.agents().close()
+  await f.restart()
+  assert.equal(f.agents().progress(sessionId).status, 'cancelled')
+  const second = await f.agents().create({ ...f.input, mode: 'full-access' })
+  assert.equal((await f.agents().wait(second.sessionId)).status, 'completed')
+  await new Promise(r => setTimeout(r, 2200))
+  for (const kind of ['setsid', 'nohup', 'double']) await assert.rejects(readFile(join(root, kind + '-late')), { code: 'ENOENT' })
+  assert.equal(f.requests.length, 2)
+})
+
+test('a stored running session projects interrupted after restart and never dispatches automatically', async t => {
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input)
+  await f.agents().wait(sessionId)
+  const writer = f.log.open(sessionId, { kind: 'agent' })
+  writer.append({ type: 'agent.state', data: { status: 'running', error: null } }); writer.close()
+  await f.restart()
+  assert.equal(f.agents().progress(sessionId).status, 'interrupted')
+  assert.equal(f.agents().progress(sessionId).error, 'process_restarted')
+  await new Promise(r => setTimeout(r, 30))
+  assert.equal(f.requests.length, 1)
+  f.agents().prompt(sessionId, 'explicit continuation')
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+  assert.equal(f.requests.length, 2)
+})
+
+test('selected text and image attachments are staged immutable and image data is dispatched only to an image model', { timeout: 30000 }, async t => {
+  const f = await fixture(t)
+  const model = piModels('openai').find(model => model.input.includes('image'))!
+  const connection = f.connections.create('local', { name: 'Image fixture', provider: 'openai', kind: 'model_api', auth: 'api_key' })
+  f.connections.saveSecret('local', connection.id, f.secret)
+  f.agents().host.artifactTransfers.download = async id => ({ content: Buffer.from(id === 'image' ? 'fixture-image-bytes' : 'fixture text'),
+    attachment: { artifact: { mediaType: id === 'image' ? 'image/png' : 'text/plain' }, displayName: id } }) as unknown as Awaited<ReturnType<import('../../src/native-agent/service.ts').NativeHost['artifactTransfers']['download']>>
+  const selected = await f.agents().create({ ...f.input, model: model.id, connectionId: connection.id, attachmentIds: ['text', 'image'] })
+  assert.equal((await f.agents().wait(selected.sessionId)).status, 'completed')
+  assert.match(f.requests[0]!, /Zml4dHVyZS1pbWFnZS1ieXRlcw==/)
+  const policy = f.log.readAll(selected.sessionId, 'person').find(e => e.type === 'agent.policy')!
+  if (policy.type !== 'agent.policy') throw new Error('missing policy')
+  assert.equal(policy.data.attachments.length, 2)
+  assert.equal(await readFile(policy.data.attachments[0]!, 'utf8'), 'fixture text')
+  assert.equal(JSON.stringify(f.log.readAll(selected.sessionId, 'person')).includes('Zml4dHVyZS1pbWFnZS1ieXRlcw=='), false)
+  const local = f.connections.create('local', { kind: 'local_runtime', provider: 'ollama', auth: 'none', name: 'Text-only fixture' })
+  const denied = await f.agents().create({ ...f.input, connectionId: local.id, model: 'fixture-local', contextTokens: 4096, attachmentIds: ['image'] })
+  assert.equal((await f.agents().wait(denied.sessionId)).status, 'failed')
+  assert.equal(f.requests.length, 1, 'text-only model never receives an image')
 })

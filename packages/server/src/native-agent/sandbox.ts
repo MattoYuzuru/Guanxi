@@ -1,7 +1,9 @@
-import { fork } from 'node:child_process'
+import { execFile, fork } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, writeFile, rm, realpath, lstat, opendir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
+import { promisify } from 'node:util'
+import { randomUUID } from 'node:crypto'
 import { join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { SandboxPolicy, CommandResult } from './sandbox-protocol.ts'
@@ -14,11 +16,24 @@ const built = existsSync(builtWorker)
 const runtimeUrl = import.meta.resolve('@anthropic-ai/sandbox-runtime')
 const workerBytes = readFileSync(built ? builtWorker : new URL('./sandbox-worker.ts', import.meta.url), 'utf8')
   .replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl))
-const protocolBytes = built ? '' : readFileSync(new URL('./sandbox-protocol.ts', import.meta.url), 'utf8')
+const sources = built ? [] : ['sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts'].map(name => ({ name, bytes: readFileSync(new URL(name, import.meta.url), 'utf8').replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl)) }))
 
 /** A fresh worker owns the runtime singleton, proxies and child process group. */
-export async function sandboxCommand(policy: SandboxPolicy, command: string, signal?: AbortSignal, timeoutMs = 120_000): Promise<CommandResult> {
+export async function sandboxCommand(policy: SandboxPolicy, command: string, signal?: AbortSignal, timeoutMs = 120_000, fixed = false): Promise<CommandResult> {
   signal?.throwIfAborted()
+  if (!['linux', 'darwin'].includes(process.platform)) throw new Error('supervision_unavailable')
+  let dockerEndpoint = ''
+  if (process.platform === 'darwin' && !fixed) {
+    const home = homedir()
+    if (policy.roots.some(root => home === root || home.startsWith(root + sep))) throw new Error('container_home_root_denied')
+    try {
+      const exec = promisify(execFile)
+      const context = process.env.DOCKER_CONTEXT || (await exec('docker', ['context', 'show'], { timeout: 5000 })).stdout.trim()
+      dockerEndpoint = process.env.DOCKER_HOST && !process.env.DOCKER_CONTEXT ? process.env.DOCKER_HOST : (await exec('docker', ['context', 'inspect', context, '--format', '{{.Endpoints.docker.Host}}'], { timeout: 5000 })).stdout.trim()
+      if (!dockerEndpoint.startsWith('unix://')) throw new Error('remote_runtime_denied')
+      await exec('docker', ['--host', dockerEndpoint, 'info', '--format', '{{.OSType}}'], { timeout: 5000 })
+    } catch { throw new Error('container_runtime_unavailable') }
+  }
   // Path sandboxes cannot distinguish an inherited writable hardlink from its
   // other names outside the roots. Refuse such trees before granting writes.
   for (const root of [policy.scratch, ...(policy.mode === 'full-access' ? policy.roots : [])]) await rejectHardlinks(root, signal)
@@ -33,7 +48,20 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
   }
   const worker = pathToFileURL(join(directory, built ? 'sandbox-worker.mjs' : 'sandbox-worker.ts'))
   await writeFile(worker, workerBytes, { mode: 0o400, flag: 'wx' })
-  if (!built) await writeFile(join(directory, 'sandbox-protocol.ts'), protocolBytes, { mode: 0o400, flag: 'wx' })
+  for (const source of sources) await writeFile(join(directory, source.name), source.bytes, { mode: 0o400, flag: 'wx' })
+  const ownerName = `guanxi-exec-${randomUUID()}`
+  const confirmContainerGone = async () => {
+    if (!dockerEndpoint) return
+    const exec = promisify(execFile)
+    while (true) {
+      try { await exec('docker', ['--host', dockerEndpoint, 'rm', '--force', ownerName], { timeout: 15_000 }) } catch { /* May already have auto-removed. */ }
+      try {
+        const { stdout } = await exec('docker', ['--host', dockerEndpoint, 'ps', '-aq', '--filter', `name=^/${ownerName}$`], { timeout: 15_000 })
+        if (!stdout.trim()) return
+      } catch { /* An unavailable daemon is not proof of teardown. */ }
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
   return new Promise((resolve, reject) => {
     const child = fork(worker, [], { detached: true, execArgv: [], cwd: policy.scratch,
       env: { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
@@ -41,25 +69,27 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
       // Runtime diagnostics may include command contents. They never enter plain logs.
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
     let result: CommandResult | null = null
-    let failure = false
+    let failure: string | null = null
     const kill = () => { try { process.kill(-child.pid!, 'SIGKILL') } catch { /* already exited */ } }
-    const abort = () => { failure = true; kill() }
+    const abort = () => { failure = 'sandbox_failed'; if (child.connected) child.send({ stop: true }) }
     const timer = setTimeout(abort, timeoutMs)
     signal?.addEventListener('abort', abort, { once: true })
-    child.on('message', (message: { result?: CommandResult; error?: boolean }) => {
+    child.on('message', (message: { result?: CommandResult; error?: string }) => {
       if (message.result) result = message.result
-      if (message.error) failure = true
+      if (message.error) failure = message.error
     })
-    child.once('error', () => { failure = true; kill() })
+    child.once('error', () => { failure = 'sandbox_failed'; kill() })
     child.once('exit', async () => {
-      kill() // Kill remaining members of this group; detached descendants need a supervisor.
+      kill()
+      // Also covers a worker crash: killing a Docker CLI does not stop its container.
+      await confirmContainerGone()
       clearTimeout(timer)
       signal?.removeEventListener('abort', abort)
       await Promise.all([directory, networkDirectory].map(path => rm(path, { recursive: true, force: true }).catch(() => undefined)))
       if (!failure && result && !signal?.aborted) resolve(result)
-      else reject(new Error('sandbox_failed'))
+      else reject(new Error(failure ?? 'sandbox_failed'))
     })
-    child.send({ policy, command })
+    child.send({ policy, command, fixed, dockerEndpoint, ownerName, directory })
     if (signal?.aborted) abort()
   })
 }

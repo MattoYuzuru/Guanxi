@@ -5,6 +5,8 @@ import { querySessionLog } from '../session-log/query-tool.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { resolveInWorkspace } from '../tools/jail.ts'
 import { sandboxCommand, quote, type SandboxPolicy } from './sandbox.ts'
+import { dirname } from 'node:path'
+import { NativeOutputs } from './outputs.ts'
 
 export interface NativeToolContext {
   policy: SandboxPolicy
@@ -15,6 +17,7 @@ export interface NativeToolContext {
 }
 export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const { policy, handle, scrubber } = ctx
+  const outputs = new NativeOutputs(policy.runtimeBase ?? dirname(policy.scratch), handle.sessionId, scrubber)
   const path = (value: string, write = false) => {
     const roots = [...(!write || policy.mode === 'full-access' ? policy.roots : []), policy.scratch, ...(!write ? policy.attachments : [])]
     for (const root of roots) {
@@ -22,8 +25,8 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     }
     throw new Error('path_denied')
   }
-  const run = async (command: string, signal?: AbortSignal, accepted = [0]) => {
-    const result = await sandboxCommand(policy, command, signal)
+  const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true) => {
+    const result = await sandboxCommand(policy, command, signal, 120_000, fixed)
     const clean = scrubber.scrub(result)
     if (clean.code === null || !accepted.includes(clean.code)) throw new Error('tool_failed')
     return JSON.stringify(clean)
@@ -34,20 +37,21 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       try {
         // Whole results are scrubbed before the model, trace, or next tool sees them.
         const content = await execute(scrubber.scrub(raw as Record<string, string>), signal)
-        return { content: [{ type: 'text', text: scrubber.scrub(content) }], details: null }
+        return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['supervision_unavailable', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']
+        const safeCodes = ['supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']
         const code = error instanceof Error && safeCodes.includes(error.message) ? error.message : 'tool_denied_or_failed'
         return { content: [{ type: 'text', text: signal?.aborted ? 'cancelled' : code }], details: null, isError: true }
       }
     },
   })
   return [
+    tool('tool_output_read', 'Read a session output artifact by its returned ID and byte offset. Results are paged at 8 KiB; nextOffset resumes without a hidden content cap.', { artifact: Type.String(), offset: Type.String() }, async a => outputs.read(a.artifact!, Number(a.offset))),
     tool('project_info', 'Read immutable roots, scratch, network policy, attachments and instruction paths. No token budget is invented.', {}, async () => JSON.stringify({ ...policy, budgets: 'model/runtime limits; no additional cap', instructions: policy.roots.map(root => `${root}/AGENTS.md`) })),
     tool('file_read', 'Read a UTF-8 file in roots, scratch or attachments. Absolute paths select another root.', { path: Type.String() }, async (a, s) => run(`/bin/cat -- ${quote(path(a.path!))}`, s)),
     tool('file_write', 'Write UTF-8 content. Read-only writes only to scratch. Protected paths are always denied.', { path: Type.String(), content: Type.String() }, async (a, s) => run(`printf %s ${quote(a.content!)} > ${quote(path(a.path!, true))}`, s)),
-    tool('shell', 'Run pwd/ls/cat/head/tail/wc with plain arguments. Arbitrary execution is unavailable until descendant supervision exists, in both modes.', { command: Type.String() }, async (a, s) => {
-      if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) throw new Error('supervision_unavailable')
+    tool('shell', 'Run a shell command under the access policy and a PID-namespace execution owner. macOS requires the local container runtime and provisioned execution image; no host-shell fallback. Fixed pwd/ls/cat/head/tail/wc commands also work without that runtime.', { command: Type.String() }, async (a, s) => {
+      if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, [0], false)
       const [program, ...args] = a.command!.split(/ +/)
       const binaries: Record<string, string> = { pwd: '/bin/pwd', ls: '/bin/ls', cat: '/bin/cat', head: '/usr/bin/head', tail: '/usr/bin/tail', wc: '/usr/bin/wc' }
       return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s)
