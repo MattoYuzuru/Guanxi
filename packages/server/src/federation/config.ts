@@ -40,11 +40,10 @@ export class SharedConfig {
   private readonly peer: (id: string) => NodeIdentity
   private readonly now: () => number
   private readonly clean: (value: unknown) => void
-  private readonly canAttest: (origin: string) => boolean
   constructor(db: Db, local: NodeIdentity, privateKey: string, peer: (id: string) => NodeIdentity,
-    now: () => number, clean: (value: unknown) => void, canAttest: (origin: string) => boolean) {
+    now: () => number, clean: (value: unknown) => void) {
     this.db = db; this.local = local; this.#privateKey = privateKey; this.peer = peer
-    this.now = now; this.clean = clean; this.canAttest = canAttest
+    this.now = now; this.clean = clean
   }
 
   operations(): SignedConfigOperation[] {
@@ -62,16 +61,9 @@ export class SharedConfig {
       // Another account's administrator has no authority over our privilege
       // history or local counters, even on a shared installation.
       if (op.accountId !== this.local.accountId) continue
-      // A signed dot n causally follows that origin's n-1, even when payloads
-      // arrive out of order. Propagate its context as well as the observed dot;
-      // otherwise a later write can become concurrent with an observed revoke.
-      seen[op.origin] = Math.max(seen[op.origin] ?? 0, op.counter)
-      // Metadata writers cannot invent a privileged origin's unseen revoke
-      // and thereby authorize a later regrant. Only admins may attest that
-      // transitive observation; other origins contribute their signed dot.
-      if (this.canAttest(op.origin)) {
-        for (const [origin, counter] of Object.entries(op.context)) seen[origin] = Math.max(seen[origin] ?? 0, counter)
-      }
+      // Only the unbroken, actually stored prefix is evidence of observation.
+      // Neither a sparse dot nor an author's claimed context fills a gap.
+      if (op.counter === (seen[op.origin] ?? 0) + 1) seen[op.origin] = op.counter
     }
     return seen
   }
@@ -93,10 +85,24 @@ export class SharedConfig {
       this.db.exec('COMMIT'); return signed
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
-  ingest(operations: readonly SignedConfigOperation[]): void {
+  ingest(operations: readonly SignedConfigOperation[]): { deferred: number } {
     this.db.exec('BEGIN IMMEDIATE')
-    try { for (const op of operations) this.acceptWithin(op); this.db.exec('COMMIT') }
-    catch (error) { this.db.exec('ROLLBACK'); throw error }
+    try {
+      let pending = [...operations]
+      while (pending.length) {
+        const deferred: SignedConfigOperation[] = []
+        for (const op of pending) {
+          try { this.acceptWithin(op) }
+          catch (error) {
+            if (!(error instanceof FederationError) || error.code !== 'context_missing') throw error
+            deferred.push(op)
+          }
+        }
+        if (deferred.length === pending.length) { pending = deferred; break }
+        pending = deferred
+      }
+      this.db.exec('COMMIT'); return { deferred: pending.length }
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
   private acceptWithin(input: SignedConfigOperation): void {
     const signed = signedConfigOperationSchema.parse(input)
@@ -117,6 +123,10 @@ export class SharedConfig {
     if (counterAt(op.context, op.origin) !== op.counter - 1) throw new FederationError('invalid_context')
     if (!validSignature(author.publicKey, op, signed.signature)) throw new FederationError('unauthenticated', 401)
     if (op.clock.wall > this.now() + MAX_CLOCK_DRIFT_MS) throw new FederationError('clock_drift')
+    const stored = this.vector()
+    if (Object.entries(op.context).some(([origin, counter]) => counter > counterAt(stored, origin))) {
+      throw new FederationError('context_missing')
+    }
     this.setClock(mergeClock(this.clock(), op.clock, this.now()))
     this.db.prepare('INSERT INTO federation_operations VALUES (?,?,?)').run(op.origin, op.counter, canonical(signed))
   }

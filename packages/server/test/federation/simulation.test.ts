@@ -1,35 +1,34 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { signValue } from '../../src/federation/crypto.ts'
-import { SimNetwork, SimNode, identity } from './harness.ts'
+import { SimNode, identity } from './harness.ts'
+import { sweep } from './sweep.ts'
 
-// Reproducible schedules; keys are throwaway, and do not enter the projected state hash.
-test('64 seeds: shared replicas converge after partitions, skew, delayed/reordered duplicate operations', async () => {
-  for (let seed = 1; seed <= 64; seed++) {
-    const nodes = ['a', 'b', 'c'].map((id) => new SimNode(identity(id)))
-    try {
-      for (const a of nodes) for (const b of nodes) a.trust(b)
-      const net = new SimNetwork(seed)
-      nodes[0]!.time += 800; nodes[1]!.time -= 900
-      net.partition(nodes[0]!, nodes[1]!)
-      for (let i = 0; i < 40; i++) {
-        const source = nodes[Math.floor(net.random() * nodes.length)]!
-        const kind = i % 3 === 0 ? 'grant' : i % 3 === 1 ? 'membership' : 'setting'
-        const op = source.federation.config.create(`field-${i % 4}`, kind === 'setting' ? { kind, value: i } : { kind, present: net.random() > 0.5 })
-        for (const target of nodes.filter((n) => n !== source)) {
-          const deliver = async () => { const res = await source.request(target, 'POST', '/config', [op]); assert.equal(res.status, 200, `seed ${seed}: ${await res.text()}`) }
-          net.send(source, target, deliver)
-          if (net.random() < 0.3) net.send(source, target, deliver)
-        }
-        await net.step()
-        if (i === 20) net.heal()
+// The independent oracle records DIRECT stored knowledge at creation, never signed claims.
+test('64 seeds per mode: convergence and remove-wins under skew, rollback, per-op push and partial subsets', () => {
+  for (const mode of ['mixed', 'push', 'pull']) {
+    const summary = sweep(1, 64, mode, ({seed, created, knowledge, state}) => {
+      const dot = (op: typeof created[number]) => `${op.operation.origin}:${op.operation.counter}`
+      const groups = new Map<string, typeof created>()
+      for (const op of created) if (['grant','membership'].includes(op.operation.value.kind)) {
+        const key = JSON.stringify([op.operation.accountId, op.operation.value.kind, op.operation.key])
+        groups.set(key, [...(groups.get(key) ?? []), op])
       }
-      assert.ok(net.pending > 0)
-      await net.drain()
-      const hashes = nodes.map((n) => n.federation.config.stateHash())
-      assert.equal(new Set(hashes).size, 1, `seed ${seed}: ${hashes}`)
-      for (const node of nodes) assert.equal(node.federation.config.operations().length, 40)
-    } finally { nodes.forEach((node) => node.close()) }
+      for (const [key, all] of groups) {
+        const frontier = all.filter((x) => !all.some((y) => knowledge.get(dot(y))!.has(dot(x))))
+        const expected = frontier.length > 0 && frontier.every((x) => 'present' in x.operation.value && x.operation.value.present)
+        assert.equal(state[key]!.present, expected, `${mode} seed ${seed}: saw only what was stored: ${key}`)
+      }
+    })
+    assert.equal(summary.seeds, 64)
+    assert.deepEqual(summary.convergenceFailures, [])
+    assert.deepEqual(summary.countFailures, [])
+    assert.equal(summary.unsafeGrantWins, 0)
+    assert.equal(summary.hlcViolations, 0)
+    assert.ok(summary.seedsWithSkewBeyondBound > 0)
+    assert.ok(summary.rollbackRefusals > 0)
+    if (mode !== 'pull') assert.ok(summary.deferred > 0)
+    assert.deepEqual(summary.otherErrors, [])
   }
 })
 
@@ -49,27 +48,29 @@ test('concurrent revoke wins in both delivery orders; an observed regrant restor
   } finally { a.close(); b.close(); c.close() }
 })
 
-test('sparse and transitive observation of a revoke makes the next grant causally later', () => {
-  const [a,b,c]=['a','b','c'].map((id)=>new SimNode(identity(id))) as [SimNode,SimNode,SimNode]
+test('sparse and transitive claims wait for stored dependencies before a regrant', () => {
+  const [a,b,c] = ['a','b','c'].map((id) => new SimNode(identity(id))) as [SimNode,SimNode,SimNode]
   try {
-    for(const n of [a,b,c]) for(const peer of [a,b,c]) n.trust(peer)
-    const predecessor=a.federation.config.create('unrelated',{kind:'setting',value:true})
-    const revoke=a.federation.config.create('editor',{kind:'grant',present:false})
-    // B sees the revoke before its predecessor, then C sees only B's unrelated op.
-    b.federation.config.ingest([revoke])
-    const intermediate=b.federation.config.create('other',{kind:'setting',value:true})
+    for (const n of [a,b,c]) for (const peer of [a,b,c]) n.trust(peer)
+    const predecessor = a.federation.config.create('unrelated', {kind:'setting',value:true})
+    const revoke = a.federation.config.create('editor', {kind:'grant',present:false})
+    assert.equal(b.federation.config.ingest([revoke]).deferred, 1)
+    const intermediate = b.federation.config.create('other', {kind:'setting',value:true})
     c.federation.config.ingest([intermediate])
-    const grant=c.federation.config.create('editor',{kind:'grant',present:true})
-    assert.equal(intermediate.operation.context.a,2)
-    assert.equal(grant.operation.context.a,2)
-    assert.equal(grant.operation.context.b,1)
-    for(const n of [a,b,c]) n.federation.config.ingest([grant,intermediate,revoke,predecessor])
-    for(const n of [a,b,c]) assert.equal((n.federation.config.state()['["owner","grant","editor"]'] as {present:boolean}).present,true)
-    assert.equal(new Set([a,b,c].map((n)=>n.federation.config.stateHash())).size,1)
-    // Direct sparse observation also suffices, without the intermediate node.
-    const direct=b.federation.config.create('editor',{kind:'grant',present:true})
-    assert.equal(direct.operation.context.a,2)
-  } finally {a.close();b.close();c.close()}
+    const grant = c.federation.config.create('editor', {kind:'grant',present:true})
+    assert.equal(intermediate.operation.context.a, undefined)
+    assert.equal(grant.operation.context.a, undefined)
+    assert.equal(grant.operation.context.b, 1)
+    for (const n of [a,b,c]) n.federation.config.ingest([grant,intermediate,revoke,predecessor])
+    for (const n of [a,b,c]) assert.equal((n.federation.config.state()['["owner","grant","editor"]'] as {present:boolean}).present, false)
+    assert.equal(new Set([a,b,c].map((n) => n.federation.config.stateHash())).size, 1)
+    const direct = b.federation.config.create('editor', {kind:'grant',present:true})
+    assert.equal(direct.operation.context.a, 2)
+    for (const n of [a,b,c]) {
+      n.federation.config.ingest([direct])
+      assert.equal((n.federation.config.state()['["owner","grant","editor"]'] as {present:boolean}).present, true)
+    }
+  } finally { a.close(); b.close(); c.close() }
 })
 
 test('revoked-origin historical duplicates cannot wedge unrelated current-author synchronization', () => {
@@ -114,16 +115,17 @@ test('non-admin and foreign-account context cannot defeat a concurrent revoke or
   }
 })
 
-test('trusted foreign claims cannot invent the local origin counter or mutate its clock', () => {
-  const a=new SimNode(identity('a'));const c=new SimNode(identity('c'))
+test('trusted foreign claims are deferred without changing local history or clock', () => {
+  const a = new SimNode(identity('a')); const c = new SimNode(identity('c'))
   try {
-    a.trust(c);c.trust(a)
-    const operation={origin:'a',counter:1,accountId:'owner',key:'metadata',clock:{wall:a.time,logical:0},context:{c:999},value:{kind:'setting' as const,value:true}}
-    c.federation.config.ingest([{operation,signature:signValue(a.keys.privateKey,operation)}])
-    const clock=c.db.prepare('SELECT * FROM federation_clock').get()
-    assert.throws(()=>c.federation.config.create('local',{kind:'setting',value:true}),/local_history_missing/)
-    assert.equal(c.federation.config.operations().length,1)
-    assert.equal(c.db.prepare("SELECT COUNT(*) AS n FROM federation_operations WHERE origin='c'").get()!.n,0)
-    assert.deepEqual(c.db.prepare('SELECT * FROM federation_clock').get(),clock)
-  } finally {a.close();c.close()}
+    a.trust(c); c.trust(a)
+    const operation = {origin:'a',counter:1,accountId:'owner',key:'metadata',clock:{wall:a.time,logical:0},context:{c:999},value:{kind:'setting' as const,value:true}}
+    const clock = c.db.prepare('SELECT * FROM federation_clock').get()
+    assert.equal(c.federation.config.ingest([{operation,signature:signValue(a.keys.privateKey,operation)}]).deferred, 1)
+    assert.equal(c.federation.config.operations().length, 0)
+    assert.deepEqual(c.db.prepare('SELECT * FROM federation_clock').get(), clock)
+    const local = c.federation.config.create('local', {kind:'setting',value:true})
+    assert.equal(local.operation.counter, 1)
+    assert.equal(local.operation.context.c, 0)
+  } finally { a.close(); c.close() }
 })

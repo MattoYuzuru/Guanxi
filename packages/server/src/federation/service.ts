@@ -45,7 +45,7 @@ export class Federation {
     this.trust(this.identity)
     for (const peer of options.peers ?? []) this.trust(peer)
     this.config = new SharedConfig(options.db, this.identity, privateKey, (id) => this.peer(id), this.now,
-      (v) => this.clean(v), (id) => this.pinnedIdentity(id).admin)
+      (v) => this.clean(v))
     this.replicas = new Replicas(options.db, this.identity, privateKey, options.log, (id) => this.peer(id), (v) => this.clean(v))
     this.enrollment = new DeviceEnrollment(options.db, this.identity, this.now, (id) => this.trust(id), () => this.assertOpen())
   }
@@ -68,11 +68,6 @@ export class Federation {
     this.assertOpen()
     if (!this.identity.admin) throw new FederationError('admin_required', 403)
     this.#options.db.prepare('UPDATE federation_peers SET revoked=1 WHERE id=?').run(id)
-  }
-  private pinnedIdentity(id: string): NodeIdentity {
-    const row = this.#options.db.prepare('SELECT identity FROM federation_peers WHERE id=?').get(id)
-    if (!row) throw new FederationError('unauthenticated',401)
-    return nodeIdentitySchema.parse(JSON.parse(row.identity as string))
   }
   peer(id: string): NodeIdentity {
     this.assertOpen()
