@@ -296,7 +296,9 @@ test('legacy strict handshake readers receive no new capability field, including
       auth.signature = signValue(f.home.keys.privateKey, requestProof('GET', path, null, auth))
       const response = await f.target.app.request(path, { headers: { 'X-Guanxi-Node': JSON.stringify(auth) } })
       assert.equal(response.status, 200)
-      assert.equal(Object.hasOwn(await response.json(), 'capabilities'), false)
+      const body = await response.json()
+      assert.ok(body !== null && typeof body === 'object')
+      assert.equal(Object.hasOwn(body, 'capabilities'), false)
     }
   } finally { f.close() }
 })
