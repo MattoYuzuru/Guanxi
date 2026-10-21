@@ -2,7 +2,8 @@
 
 **Status:** implementation and focused tests ready; independent review and root gates pending ·
 **Date:** 2026-10-22 · **Branch:** `codex/u1-shell-chrome` · **Base:** `e5f8e0a`
-(reviewed U1) · **Commit:** `f72e17c`. No push, merge, rebase or status-file edits.
+(reviewed U1) · **Commits:** `f72e17c` feature, `165e546` pre-paint focus fix. No push, merge,
+rebase or status-file edits.
 
 ## Delivered
 
@@ -28,6 +29,9 @@ A new host-composed `AppShellChrome` pattern in
 - Nine catalog stories: `default`, `rail`, `hidden`, `right`, `phone`, `loading`, `error`,
   `offline`, `unknown`; docs, a `draft` review record and the generated catalog manifest entry.
   The rail story uses host-like compact icon content; the chrome itself invents no rail content.
+- Manifests and controls reuse the existing Button, IconButton and Menu public primitives. The
+  sidebar trigger uses the standard Lucide `PanelLeft` glyph through IconButton's tooltip/name
+  contract; no public Icon primitive existed and no new icon semantics were invented.
 - Focused Vitest coverage was written first and failed against the absent component before the
   scaffold. The implementation changed only after that red run.
 
@@ -62,6 +66,7 @@ scoped checks.
 | `nice -n 10 npx tsc --noEmit -p packages/ui/tsconfig.json` from the clone root | PASS, exit 0, no diagnostics. |
 | `nice -n 10 node catalog/scripts/build-manifest.ts` from `packages/ui` | Wrote `packages/ui/catalog/manifest.json`. |
 | `nice -n 10 node catalog/scripts/build-manifest.ts --check` | `catalog/manifest.json is fresh`. |
+| Same focused Vitest and typecheck after fix `165e546`; manifest regenerated and checked | PASS: 6 passed / 6, tsc exit 0, manifest fresh. |
 
 Not run in this lane: `npm test`, `npm run ui:check`, `npm run ui:check:browser`,
 `npm run test:web:browser`, `npm run build`, Storybook, browser/axe checks and snapshot
@@ -88,7 +93,7 @@ source, status, approval or snapshot change. The manifest is deterministic acros
 
 ## Ownership and shared edits
 
-Only these paths changed in `f72e17c`:
+Only these paths changed in `f72e17c` and `165e546`:
 
 - new `packages/ui/src/components/app-shell-chrome/`;
 - new `packages/ui/test/app-shell-chrome.test.tsx` (required by the existing Vitest `test/`
@@ -104,9 +109,22 @@ supply the EN/RU product strings.
 
 ## Independent review
 
-Pending. The root GPT reviewer should inspect `e5f8e0a..f72e17c` and append findings and
-separate fix commits here. This author cannot close its own review or approve the catalog
+Root review pending. The root GPT reviewer should inspect `e5f8e0a..165e546` and append findings
+and separate fix commits here. This author cannot close the root review or approve the catalog
 record. Historical U1-a/U1-completion claims were not edited.
+
+### Author self-review fix
+
+**Finding:** the hide/show focus hand-off used `useEffect`, which runs after paint. A focused
+hidden sidebar could therefore remain the active element for a painted frame before the Show
+control received focus, which is weaker than the "no focus stranded hidden" claim.
+
+**Fix:** `165e546` moves the same hand-off logic to `useLayoutEffect` and refreshes the generated
+manifest source hash. No copy, callback, layout or test assertion changed.
+
+**Verification:** the existing focus-return test still passes (6/6 focused Vitest), the UI
+typecheck is clean and the manifest is fresh. A real browser focus check remains part of the
+pending root gate.
 
 ## Residuals and next steps
 
