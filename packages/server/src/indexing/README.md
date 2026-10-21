@@ -60,7 +60,9 @@ not a measured localisation speedup or an O(1) freshness check. B1/X2 benchmarki
 Content writes commit individually. The manifest is published in a single transaction only
 after a second scan matches the content fingerprint and commit. Worker termination can leave
 reusable content, but cannot publish half a manifest. Restart/retry rebuilds the manifest;
-SQLite WAL and `synchronous=FULL` protect transaction recovery. Sidecar `user_version = 1`
+SQLite WAL and `synchronous=FULL` protect transaction recovery. Rebuilds purge newly registered
+secret values and discard unreferenced content after ignore/delete changes. Previously legitimate
+content may remain in SQLite WAL/free pages until SQLite reclaims them; forensic erasure is not claimed. Sidecar `user_version = 1`
 is independent of the main node migrations; future versions are refused. Removing the
 sidecar while the node is stopped rebuilds the index from roots and leaves projects intact.
 

@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm, rename, chmod, readdir, symlink, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -12,6 +12,7 @@ import { executeIndex, boundMap } from '../../src/indexing/engine.ts'
 import { symbols } from '../../src/indexing/parser.ts'
 import { DEFAULT_INDEX_SETTINGS, type IndexWorkerData, type MapResult, type SearchResult } from '../../src/indexing/types.ts'
 import { ProjectIndex } from '../../src/indexing/service.ts'
+import { hasHeadroom } from '../../src/indexing/headroom.ts'
 import { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 
 const settings = { ...DEFAULT_INDEX_SETTINGS, ftsMinFiles: 1 }
@@ -66,7 +67,11 @@ test('content and FTS rows are stored once across worktrees; incremental builds 
   try {
     await writeFile(join(f.root, 'a.ts'), 'export function sharedNeedle() {}')
     f.git('add', '.'); f.git('commit', '-m', 'base'); f.git('worktree', 'add', '-b', 'other', f.other)
-    await f.run('build'); await f.run('build', f.other); await f.run('build')
+    await f.run('build'); await f.run('build', f.other)
+    const guard = new DatabaseSync(f.database)
+    guard.exec("CREATE TRIGGER forbid_reparse BEFORE INSERT ON maps BEGIN SELECT RAISE(ABORT, 'cached_symbols_reparsed'); END")
+    guard.close()
+    await f.run('build')
     const db = new DatabaseSync(f.database, { readOnly: true })
     assert.equal(db.prepare('SELECT count(*) n FROM contents').get()!.n, 1)
     assert.equal(db.prepare('SELECT count(*) n FROM maps').get()!.n, 1)
@@ -194,17 +199,20 @@ test('complete repo.map JSON respects its stated token bound, including unicode,
 
 test('IX3 stays absent with the flag unset, false and true; no vector store or model dispatch exists', async () => {
   const f = await fixture()
+  const transport = mock.method(globalThis, 'fetch', async () => new Response('fixture'))
   try {
     await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
     for (const embeddings of [undefined, false, true]) {
       const result = await executeIndex({ ...f.request('build'), embeddings }, f.allow) as { embeddings: boolean }
       assert.equal(result.embeddings, false)
     }
+    assert.equal(transport.mock.callCount(), 0, 'no embedding transport is dispatched')
+    transport.mock.restore()
     const db = new DatabaseSync(f.database, { readOnly: true })
     assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '%embed%' OR name LIKE '%vector%'").all(), [])
     db.close()
     assert.deepEqual((await readdir(f.data)).filter(n => /embed|vector/.test(n)), [])
-  } finally { await f.close() }
+  } finally { transport.mock.restore(); await f.close() }
 })
 
 const green = async () => ({ observedAt: new Date().toISOString(), source: 'fixture', confidence: 'observed' as const, memoryAvailableFraction: 0.8, cpuBusyFraction: 0.1, thermal: 'nominal' as const, foreground: 'active' as const, allowed: true })
@@ -269,4 +277,136 @@ test('governor idle lease is preemptible, cannot overlap another idle writer, an
   next.release(); await close
   assert.equal(closed, true)
   assert.equal(aborted, 2)
+})
+
+
+test('late secret registration and new ignore rules purge unreferenced stored content on rebuild', async () => {
+  const f = await fixture()
+  try {
+    const value = `late-${randomUUID()}`
+    await writeFile(join(f.root, 'a.ts'), value)
+    await writeFile(join(f.root, 'b.ts'), 'forbidden-on-refresh')
+    await f.run('build')
+    f.scrubber.register('secret://late', value)
+    assert.deepEqual(await f.search(f.root, value), [])
+    await writeFile(join(f.root, '.gitignore'), 'b.ts\n')
+    await f.run('build')
+    const db = new DatabaseSync(f.database, { readOnly: true })
+    for (const table of ['files', 'contents', 'maps', 'fulltext']) {
+      const rows = JSON.stringify(db.prepare(`SELECT * FROM ${table}`).all())
+      assert.equal(rows.includes(value), false, table)
+      assert.equal(rows.includes('forbidden-on-refresh'), false, table)
+    }
+    assert.deepEqual(db.prepare('SELECT path FROM files').all().map(r => r.path), ['.gitignore'])
+    db.close()
+  } finally { await f.close() }
+})
+
+
+test('an in-flight worker cancellation releases the idle lease only after termination', async () => {
+  const f = await fixture(), governor = new ResourceGovernor(), control = new AbortController()
+  let checks = 0
+  const scrubber = f.scrubber.facade()
+  const service = new ProjectIndex({ dataDir: f.data, governor, settings: { pollMs: 60_000 }, headroom: green,
+    scrubber: { ...scrubber, scrub: value => { checks++; if (checks === 1) control.abort(); return scrubber.scrub(value) } } })
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
+    await assert.rejects(service.build(f.root, control.signal), /index_cancelled|index_interrupted/)
+    assert.ok(checks > 0, 'cancellation reached a live worker')
+    await service.build(f.root)
+    assert.equal(service.status().build, 'complete')
+  } finally { await service.close(); await governor.close(); await f.close() }
+})
+
+
+test('adaptive headroom permits active use, rejects pressure and reserves more for unknown observations', () => {
+  const sample = { memoryAvailableFraction: 0.4, cpuBusyFraction: 0.4, thermal: 'nominal' as const, foreground: 'active' as const }
+  assert.equal(hasHeadroom(sample), true, 'active foreground is not an idle-only rule')
+  assert.equal(hasHeadroom({ ...sample, memoryAvailableFraction: 0.1 }), false)
+  assert.equal(hasHeadroom({ ...sample, cpuBusyFraction: 0.8 }), false)
+  assert.equal(hasHeadroom({ ...sample, thermal: 'pressure' }), false)
+  assert.equal(hasHeadroom({ ...sample, foreground: 'idle', cpuBusyFraction: 0.8, memoryAvailableFraction: 0.1 }), true)
+  assert.equal(hasHeadroom({ ...sample, foreground: 'unknown', memoryAvailableFraction: 0.1 }), false)
+  assert.equal(hasHeadroom({ ...sample, foreground: 'idle', thermal: 'unknown', cpuBusyFraction: 0.8 }), false)
+})
+
+test('empty/uninitialized/malformed sidecars cannot disable IX0 or file-level maps', async () => {
+  const f = await fixture()
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1')
+    const empty = new DatabaseSync(f.database); empty.close()
+    assert.deepEqual(await f.search(), ['a.ts:1:export const Needle = 1'])
+    const map = await f.run('map') as MapResult
+    assert.equal(map.entries.length, 1); assert.equal(map.provenance.indexAgeMs, null)
+    const malformed = new DatabaseSync(f.database); malformed.exec('PRAGMA user_version = 1'); malformed.close()
+    assert.deepEqual(await f.search(), ['a.ts:1:export const Needle = 1'])
+  } finally { await f.close() }
+})
+
+test('a content-changing branch switch is visible before rebuild with current and indexed commits', async () => {
+  const f = await fixture()
+  try {
+    await writeFile(join(f.root, 'main.ts'), 'mainNeedle')
+    f.git('add', '.'); f.git('commit', '-m', 'main'); const main = f.git('rev-parse', 'HEAD')
+    f.git('checkout', '-b', 'changed')
+    await rm(join(f.root, 'main.ts')); await writeFile(join(f.root, 'other.ts'), 'otherNeedle')
+    f.git('add', '-A'); f.git('commit', '-m', 'changed'); const changed = f.git('rev-parse', 'HEAD')
+    f.git('checkout', 'main'); f.git('worktree', 'add', '-b', 'parallel', f.other)
+    await f.run('build'); await f.run('build', f.other)
+    f.git('checkout', 'changed')
+    const result = await f.run('search', f.root, { text: 'Needle' }) as SearchResult
+    assert.deepEqual(result.hits.map(h => [h.path, h.text]), [['other.ts', 'otherNeedle']])
+    assert.equal(result.provenance.commit, changed)
+    assert.equal(result.provenance.indexCommit, main)
+    assert.deepEqual(await f.search(f.other), ['main.ts:1:mainNeedle'])
+    assert.equal(result.provenance.coverage.indexed, 0)
+  } finally { await f.close() }
+})
+
+test('a parent swapped to an outside symlink between containment and open cannot supply indexed bytes', async () => {
+  const f = await fixture()
+  try {
+    const { readProjectFile } = await import('../../src/indexing/snapshot.ts')
+    await mkdir(join(f.root, 'nested')); await mkdir(join(f.data, 'outside'))
+    await writeFile(join(f.root, 'nested', 'a.ts'), 'allowed')
+    await writeFile(join(f.data, 'outside', 'a.ts'), 'outsideNeedle')
+    const content = await readProjectFile(f.root, 'nested/a.ts', settings.maxFileBytes, async () => {
+      await rename(join(f.root, 'nested'), join(f.root, 'old'))
+      await symlink(join(f.data, 'outside'), join(f.root, 'nested'))
+    })
+    assert.equal(content, null)
+    await f.run('build')
+    const db = new DatabaseSync(f.database, { readOnly: true })
+    assert.equal(JSON.stringify(db.prepare('SELECT * FROM contents').all()).includes('outsideNeedle'), false)
+    db.close()
+  } finally { await f.close() }
+})
+
+test('oversized ignore policy fails closed and does not turn exclusions into indexed files', async () => {
+  const f = await fixture()
+  try {
+    await writeFile(join(f.root, '.gitignore'), 'private.txt\n#' + 'padding'.repeat(30))
+    await writeFile(join(f.root, 'private.txt'), 'Needle')
+    await executeIndex({ ...f.request('build'), settings: { ...settings, maxFileBytes: 32 } }, f.allow)
+    const db = new DatabaseSync(f.database, { readOnly: true })
+    assert.equal(db.prepare('SELECT count(*) n FROM files').get()!.n, 0)
+    assert.equal(db.prepare('SELECT count(*) n FROM contents').get()!.n, 0)
+    db.close()
+  } finally { await f.close() }
+})
+
+test('close waits for invocations that have not created a worker and removes their captured runtime', async () => {
+  const f = await fixture(), governor = new ResourceGovernor()
+  const service = new ProjectIndex({ dataDir: f.data, governor, scrubber: f.scrubber, settings: { pollMs: 60_000 }, headroom: green })
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'Needle')
+    const query = service.search(f.root, 'Needle')
+    const outcome = query.then(() => 'completed', () => 'cancelled')
+    await service.close()
+    await outcome
+    await new Promise(r => setImmediate(r))
+    assert.equal((await readdir(f.data)).some(n => n.startsWith('index-runtime-')), false)
+    await assert.rejects(service.search(f.root, 'Needle'))
+    assert.equal(service.close(), service.close())
+  } finally { await service.close(); await governor.close(); await f.close() }
 })

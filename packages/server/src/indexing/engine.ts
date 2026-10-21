@@ -37,6 +37,7 @@ export async function executeIndex(data: IndexWorkerData, allow: AllowContent, c
   try {
     if (request.kind === 'build') {
       store = new IndexStore(data.database, true)
+      await store.purgeUnsafe(allow)
       const fts = tree.files.length >= settings.ftsMinFiles
       for (const file of tree.files) {
         await checkpoint()

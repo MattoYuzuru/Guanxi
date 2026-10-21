@@ -95,3 +95,18 @@ if(m.method==='textDocument/documentSymbol')send({id:m.id,result:[{name:initiali
     assert.equal(invalid, null)
   } finally { await f.close() }
 })
+
+test('an individual read-only attachment remains searchable without admitting its siblings', async () => {
+  const f = await fixture()
+  try {
+    const attachment = join(f.dir, 'one.attachment')
+    await writeFile(attachment, 'attachedNeedle')
+    await writeFile(join(f.dir, 'sibling.txt'), 'siblingNeedle')
+    const tools = nativeTools({ policy: { ...f.policy, roots: [], attachments: [attachment] }, log: null, handle: { sessionId: 'fixture' }, scrubber: f.scrubber, queue() {} } as unknown as NativeToolContext)
+    const result = await tools.find(t => t.name === 'search')!.execute('fixture', { path: attachment, text: 'Needle' })
+    assert.equal(result.isError, undefined)
+    assert.deepEqual(JSON.parse((result.content[0] as { text: string }).text).hits.map((h: { text: string }) => h.text), ['attachedNeedle'])
+    const denied = await tools.find(t => t.name === 'search')!.execute('fixture', { path: join(f.dir, 'sibling.txt'), text: 'Needle' })
+    assert.equal(denied.isError, true)
+  } finally { await f.close() }
+})

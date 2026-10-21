@@ -25,8 +25,11 @@ export class ProjectIndex {
   private readonly abort = new AbortController()
   private readonly timer: ReturnType<typeof setInterval>
   private building = false
+  private activeBuild?: AbortController
   private readonly captured: { name: string; bytes: string }[]
   private runtime?: Promise<string>
+  private readonly pending = new Set<Promise<unknown>>()
+  private closing?: Promise<void>
   private headroom: () => Promise<HeadroomObservation>
   private lastHeadroom: HeadroomObservation | null = null
   private lastBuild: 'never' | 'complete' | 'deferred' | 'interrupted' = 'never'
@@ -61,7 +64,13 @@ export class ProjectIndex {
   private safe(text: string): boolean {
     try { return this.options.scrubber.isReady() && this.options.scrubber.scrub(text) === text } catch { return false }
   }
-  private async invoke(request: IndexRequest, signal?: AbortSignal, extras: Partial<IndexWorkerData> = {}): Promise<unknown> {
+  private invoke(request: IndexRequest, signal?: AbortSignal, extras: Partial<IndexWorkerData> = {}): Promise<unknown> {
+    const task = this.invokeWorker(request, signal, extras)
+    this.pending.add(task)
+    void task.then(() => this.pending.delete(task), () => this.pending.delete(task))
+    return task
+  }
+  private async invokeWorker(request: IndexRequest, signal?: AbortSignal, extras: Partial<IndexWorkerData> = {}): Promise<unknown> {
     const root = await this.root(request.root)
     if (!this.options.scrubber.isReady()) throw new Error('index_scrubber_unavailable')
     signal?.throwIfAborted()
@@ -99,6 +108,7 @@ export class ProjectIndex {
     if (!observation.allowed) { this.lastBuild = 'deferred'; throw new Error('index_headroom') }
     const lease = this.options.governor.tryIdleLease(() => control.abort())
     if (!lease) { this.lastBuild = 'deferred'; throw new Error('index_governor_busy') }
+    this.activeBuild = control
     const combined = AbortSignal.any([control.signal, this.abort.signal, ...(signal ? [signal] : [])])
     const monitor = setInterval(() => {
       void this.headroom().then(sample => { this.lastHeadroom = sample; if (!sample.allowed) control.abort() }, () => control.abort())
@@ -109,7 +119,7 @@ export class ProjectIndex {
       this.lastBuild = 'complete'
       return result
     } catch (error) { this.lastBuild = 'interrupted'; throw error }
-    finally { clearInterval(monitor); lease.release() }
+    finally { clearInterval(monitor); if (this.activeBuild === control) this.activeBuild = undefined; lease.release() }
   }
   private async tick() {
     if (this.building || this.abort.signal.aborted || !this.options.scrubber.isReady()) return
@@ -118,18 +128,24 @@ export class ProjectIndex {
     finally { this.building = false }
   }
   async search(root: string, text: string, path?: string, signal?: AbortSignal, limit = 200): Promise<SearchResult> {
+    this.activeBuild?.abort()
     const result = await this.invoke({ kind: 'search', root, text, path, limit }, signal) as SearchResult
     await this.track(root)
     return result
   }
   async map(root: string, budget = 2048, path?: string, signal?: AbortSignal): Promise<MapResult> {
+    this.activeBuild?.abort()
     const result = await this.invoke({ kind: 'map', root, path, budget }, signal) as MapResult
     await this.track(root)
     return boundMap(result, budget)
   }
-  async close() {
+  close(): Promise<void> {
+    return this.closing ??= this.finishClose()
+  }
+  private async finishClose() {
     clearInterval(this.timer)
     this.abort.abort()
+    await Promise.allSettled([...this.pending])
     await Promise.all([...this.workers].map(w => w.terminate()))
     this.workers.clear()
     this.tracked.clear()

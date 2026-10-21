@@ -12,6 +12,10 @@ export interface HeadroomObservation {
   foreground: 'active' | 'idle' | 'unknown'
   allowed: boolean
 }
+export function hasHeadroom(sample: Pick<HeadroomObservation, 'memoryAvailableFraction' | 'cpuBusyFraction' | 'thermal' | 'foreground'>): boolean {
+  const conservative = sample.foreground !== 'idle' || sample.thermal === 'unknown'
+  return sample.thermal !== 'pressure' && sample.memoryAvailableFraction >= (conservative ? 0.15 : 0.08) && sample.cpuBusyFraction <= (conservative ? 0.65 : 0.85)
+}
 const command = (path: string, args: string[]) => new Promise<string>(resolve => execFile(path, args, { timeout: 1000, maxBuffer: 256 * 1024 }, (error, out) => resolve(error ? '' : out)))
 /** Bounded local observations only. No foreground app/window names are read. */
 export class HeadroomMonitor {
@@ -40,9 +44,8 @@ export class HeadroomMonitor {
         if (zones.length) thermal = (await Promise.all(zones.map(n => readFile(`/sys/class/thermal/${n}/temp`, 'utf8')))).some(t => Number(t) > 80_000) ? 'pressure' : 'nominal'
       } catch { /* unknown observations retain extra headroom */ }
     }
-    const conservative = foreground !== 'idle' || thermal === 'unknown'
     return { observedAt: new Date().toISOString(), source: `node:os+${platform() === 'darwin' ? 'memory_pressure/pmset/IOHID-idle' : 'procfs/sysfs'}`, confidence: thermal === 'unknown' || foreground === 'unknown' ? 'partial' : 'observed',
       memoryAvailableFraction: memory, cpuBusyFraction: cpu, thermal, foreground,
-      allowed: thermal !== 'pressure' && memory >= (conservative ? 0.15 : 0.08) && cpu <= (conservative ? 0.65 : 0.85) }
+      allowed: hasHeadroom({ thermal, foreground, memoryAvailableFraction: memory, cpuBusyFraction: cpu }) }
   }
 }
