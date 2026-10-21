@@ -14,6 +14,7 @@ export function NativeProgress({ progress, stop, remove }: { progress: AgentProg
     <p role="status" aria-live="polite">{t(`native.${progress.status}`)}</p>
     <p className="text-muted text-12">{t('native.source', { time: new Date(progress.observedAt).toLocaleString(getActiveLocale()) })}</p>
     <p>{t(`native.${progress.mode}`)}</p>
+    {progress.error && <p role="alert">{t(progress.error === 'cleanup_unconfirmed' ? 'native.cleanup_unconfirmed' : progress.error === 'process_restarted' ? 'native.process_restarted' : 'native.sessionError')}</p>}
     {progress.shellUnavailable && <p role="alert">{t(`native.${progress.shellUnavailable}`)}</p>}
     {progress.status === 'running' && <Button onClick={stop}>{t('native.stop')}</Button>}
     <h3>{t('native.plan')}</h3>
@@ -86,13 +87,14 @@ export function NativeAgentPage({ sessionId }: { sessionId: string | null }) {
         <Field label={t('native.model')}><Input aria-label={t('native.model')} value={model} onChange={e => setModel(e.target.value)} required /></Field>
         <Field label={t('native.mode')}><Select ariaLabel={t('native.mode')} value={mode} onChange={v => setMode(v as AccessMode)} options={[{ value: 'read-only', label: t('native.read-only') }, { value: 'full-access', label: t('native.full-access') }]} /></Field>
         <p className="text-muted">{t('native.shellLimited')}</p>
-        <Field label={t('native.domains')}><Input aria-label={t('native.domains')} value={domains} onChange={e => setDomains(e.target.value)} /></Field>
+        <Field label={t('native.domains')}><Input aria-label={t('native.domains')} aria-describedby="native-domains-hint" value={domains} onChange={e => setDomains(e.target.value)} /></Field>
+        <p id="native-domains-hint" className="text-muted">{t('native.domainsHint')}</p>
         {connections.find(c => c.id === connectionId)?.kind === 'local_runtime' && <Field label={t('native.context')}><Input aria-label={t('native.context')} type="number" min={1} value={context} onChange={e => setContext(e.target.value)} required /></Field>}
         <Field label={t('native.attachments')}><Input aria-label={t('native.attachments')} value={attachments} onChange={e => setAttachments(e.target.value)} /></Field>
         <Field label={t('native.protected')}><Textarea aria-label={t('native.protected')} value={protectedPaths} onChange={e => setProtected(e.target.value)} /></Field>
       </>}
       <Field label={t('native.prompt')}><Textarea aria-label={t('native.prompt')} value={prompt} onChange={e => setPrompt(e.target.value)} required /></Field>
-      <Button type="submit" disabled={busy || loading || error || (!sessionId && (!projectId || !connectionId || !model))}>{t(sessionId ? 'native.send' : 'native.start')}</Button>
+      <Button type="submit" disabled={busy || loading || error || (!!sessionId && !progress) || (!sessionId && (!projectId || !connectionId || !model))}>{t(sessionId ? progress?.status === 'running' ? 'native.send' : 'native.continue' : 'native.start')}</Button>
     </form>
   </div>
 }

@@ -1,4 +1,9 @@
 export const nativeEnglish = {
+  'native.sessionError': 'This session failed. Open the trace for details, then send a prompt to continue.',
+  'native.process_restarted': 'The node restarted during this session. Send a prompt to continue.',
+  'native.cleanup_unconfirmed': 'The node could not confirm shell cleanup. Affected folders remain blocked until the runtime is checked.',
+  'native.continue': 'Continue session',
+  'native.domainsHint': 'Loopback hosts require a port, for example localhost:3000. The node API and web ports are always blocked.',
   'native.container_runtime_unavailable': 'Shell execution is disabled: the local container runtime or execution image is unavailable. Start Colima or Docker Desktop and provision the node execution image.',
   'native.container_path_unsupported': 'Shell execution is disabled for a folder containing a comma. Choose another project folder.',
   'native.container_runtime_protected': 'Shell execution is disabled: a writable project folder contains the node container runtime executable. Choose specific project folders.',
@@ -20,6 +25,11 @@ export const nativeEnglish = {
   'native.attachments': 'Project attachment IDs (comma-separated; upload in Attachments)', 'native.protected': 'Protected paths (one per line)',
 } as const
 export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
+  'native.sessionError': 'Сессия завершилась с ошибкой. Откройте трассу для подробностей и отправьте запрос, чтобы продолжить.',
+  'native.process_restarted': 'Узел перезапустился во время сессии. Отправьте запрос, чтобы продолжить.',
+  'native.cleanup_unconfirmed': 'Узел не смог подтвердить остановку оболочки. Затронутые папки заблокированы до проверки контейнерного движка.',
+  'native.continue': 'Продолжить сессию',
+  'native.domainsHint': 'Для локального адреса нужен порт, например localhost:3000. Порты API и веб-интерфейса узла всегда заблокированы.',
   'native.container_runtime_unavailable': 'Оболочка отключена: локальный контейнерный движок или образ выполнения недоступен. Запустите Colima или Docker Desktop и установите образ выполнения узла.',
   'native.container_path_unsupported': 'Оболочка отключена для папки с запятой в пути. Выберите другую папку проекта.',
   'native.container_runtime_protected': 'Оболочка отключена: в доступной для записи папке проекта находится контейнерный движок узла. Выберите отдельные папки проекта.',

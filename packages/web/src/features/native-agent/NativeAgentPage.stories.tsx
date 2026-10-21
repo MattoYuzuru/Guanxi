@@ -11,3 +11,5 @@ export const Completed = { args: { progress: { ...progress, status: 'completed',
 export const Failed = { args: { progress: { ...progress, status: 'failed', error: 'agent_failed' } } }
 export const Cancelled = { args: { progress: { ...progress, status: 'cancelled' } } }
 export const Interrupted = { args: { progress: { ...progress, status: 'interrupted' } } }
+
+export const CleanupUnconfirmed = { args: { progress: { ...progress, status: 'failed', error: 'cleanup_unconfirmed' } } }
