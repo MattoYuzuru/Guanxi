@@ -42,6 +42,7 @@ import { defaultUsageScope } from '../../ui/catalog/tooling/usage.ts'
 
 const realUiRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'ui')
 const DEV_ORIGIN = 'http://127.0.0.1:5183'
+const API_ORIGIN = 'http://127.0.0.1:4383'
 const NOW = new Date('2026-10-20T12:00:00.000Z')
 
 interface Fixture {
@@ -99,7 +100,7 @@ function countingSigner(inner: ApprovalSigner): ApprovalSigner & { signs: number
 }
 
 function app(service: UiCatalogReviewService) {
-  return createApp({} as AppContext, { uiCatalog: service, devOrigins: [DEV_ORIGIN] })
+  return createApp({} as AppContext, { uiCatalog: service, port: 4383, devOrigins: [DEV_ORIGIN] })
 }
 
 function current(uiRoot: string, id: string) {
@@ -111,7 +112,7 @@ function current(uiRoot: string, id: string) {
 }
 
 function post(server: ReturnType<typeof app>, id: string, body: unknown, headers: Record<string, string> = {}) {
-  return server.request(`http://127.0.0.1:4383${ROUTES.uiCatalogComponentReview(id)}`, {
+  return server.request(`${API_ORIGIN}${ROUTES.uiCatalogComponentReview(id)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: DEV_ORIGIN, 'sec-fetch-site': 'same-origin', ...headers },
     body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -134,7 +135,7 @@ describe('catalog review capability', () => {
     const signer = keyObjectSigner(fx.privateKey)
     const capability = async (options: Partial<ConstructorParameters<typeof UiCatalogReviewService>[0]>) => {
       const service = new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer, now: () => NOW, ...options })
-      const response = await app(service).request(ROUTES.uiCatalogReviewCapability())
+      const response = await app(service).request(`${API_ORIGIN}${ROUTES.uiCatalogReviewCapability()}`)
       assert.equal(response.status, 200)
       return uiCatalogReviewCapabilityResponse.parse(await response.json())
     }
@@ -232,7 +233,7 @@ describe('approving a component', () => {
     const original = readFileSync(tsx, 'utf8')
     try {
       writeFileSync(tsx, `${original}\n// changed after approval\n`)
-      const body = uiComponentReviewResponse.parse(await (await app(service).request(ROUTES.uiCatalogComponentReview('button'))).json())
+      const body = uiComponentReviewResponse.parse(await (await app(service).request(`${API_ORIGIN}${ROUTES.uiCatalogComponentReview('button')}`)).json())
       assert.equal(body.signature, 'valid')
       assert.equal(body.status, 'stale')
     } finally {
@@ -246,7 +247,7 @@ describe('approving a component', () => {
       const original = readFileSync(path, 'utf8')
       try {
         writeFileSync(path, `${original}\n/* behaviour changed after approval */\n`)
-        const body = uiComponentReviewResponse.parse(await (await app(service).request(ROUTES.uiCatalogComponentReview('button'))).json())
+        const body = uiComponentReviewResponse.parse(await (await app(service).request(`${API_ORIGIN}${ROUTES.uiCatalogComponentReview('button')}`)).json())
         assert.equal(body.status, 'stale', shared)
       } finally {
         writeFileSync(path, original)
@@ -271,7 +272,7 @@ describe('approving a component', () => {
       for (const helper of Object.values(helpers)) {
         const before = readFileSync(helper, 'utf8')
         writeFileSync(helper, before.replace('= 1', '= 2'))
-        const body = uiComponentReviewResponse.parse(await (await app(service).request(ROUTES.uiCatalogComponentReview('badge'))).json())
+        const body = uiComponentReviewResponse.parse(await (await app(service).request(`${API_ORIGIN}${ROUTES.uiCatalogComponentReview('badge')}`)).json())
         assert.equal(body.status, 'stale', helper)
         writeFileSync(helper, before)
       }
@@ -467,7 +468,6 @@ describe('refusals', () => {
       [{ origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' }, 'cross_site_request'],
       [{ origin: 'http://localhost:3000', 'sec-fetch-site': 'same-site' }, 'cross_site_request'],
       [{ origin: 'https://evil.example', 'sec-fetch-site': 'same-origin' }, 'foreign_origin'],
-      [{ host: 'evil.example:4383' }, 'non_loopback_host'],
       [{ 'content-type': 'text/plain' }, 'json_required'],
     ]
     for (const [headers, reason] of cases) {
@@ -475,15 +475,29 @@ describe('refusals', () => {
       assert.equal(response.status, 403, reason)
       assert.equal(((await response.json()) as { details: { reason: string } }).details.reason, reason)
     }
+    // The global Host allowlist runs before the catalog-specific checks.
+    for (const host of ['evil.example:4383', '127.0.0.1:4384']) {
+      const response = await post(server, 'button', body, { host })
+      assert.equal(response.status, 403, host)
+      assert.deepEqual(await response.json(), { code: 'host_denied' })
+    }
+    // A configured non-loopback authority passes the global guard, but cannot write reviews.
+    const configured = createApp({} as AppContext, {
+      uiCatalog: new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer }),
+      host: 'node.example', port: 4383, devOrigins: [DEV_ORIGIN],
+    })
+    const nonLoopback = await post(configured, 'button', body, { host: 'node.example:4383' })
+    assert.equal(nonLoopback.status, 403)
+    assert.equal(((await nonLoopback.json()) as { details: { reason: string } }).details.reason, 'non_loopback_host')
     // With HOST=0.0.0.0 a LAN client can send Host: 127.0.0.1; the peer address still decides.
     const lan = await server.request(
-      `http://127.0.0.1:4383${ROUTES.uiCatalogComponentReview('button')}`,
+      `${API_ORIGIN}${ROUTES.uiCatalogComponentReview('button')}`,
       { method: 'POST', headers: { 'content-type': 'application/json', origin: DEV_ORIGIN }, body: JSON.stringify(body) },
       { incoming: { socket: { remoteAddress: '192.168.1.20' } } },
     )
     assert.equal(lan.status, 403)
     assert.equal(((await lan.json()) as { details: { reason: string } }).details.reason, 'non_loopback_peer')
-    const lanRead = await server.request(`http://127.0.0.1:4383${ROUTES.uiCatalogReviewCapability()}`, {}, {
+    const lanRead = await server.request(`${API_ORIGIN}${ROUTES.uiCatalogReviewCapability()}`, {}, {
       incoming: { socket: { remoteAddress: '10.0.0.7' } },
     })
     assert.equal(lanRead.status, 403)
@@ -509,7 +523,7 @@ describe('filesystem boundary (GPT M2)', () => {
     assert.equal(response.status, 404)
     assert.equal(((await response.json()) as { code: string }).code, 'component_not_found')
     assert.equal(existsSync(join(outside, 'escape.review.json')), false)
-    assert.equal((await server.request(ROUTES.uiCatalogComponentReview('escape'))).status, 404)
+    assert.equal((await server.request(`${API_ORIGIN}${ROUTES.uiCatalogComponentReview('escape')}`)).status, 404)
   })
 
   it('refuses a review record that is a symlink', async () => {
@@ -653,7 +667,7 @@ describe('failure behaviour', () => {
       sign: () => Promise.reject(new Error('unreachable')),
     }
     const response = await app(new UiCatalogReviewService({ uiRoot: fx.uiRoot, release: false, signer: broken })).request(
-      ROUTES.uiCatalogReviewCapability(),
+      `${API_ORIGIN}${ROUTES.uiCatalogReviewCapability()}`,
     )
     assert.equal(response.status, 200)
     assert.equal(uiCatalogReviewCapabilityResponse.parse(await response.json()).reason, 'signing_key_missing')

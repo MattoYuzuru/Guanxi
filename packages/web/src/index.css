@@ -9,7 +9,6 @@
 @theme inline {
   --color-surface: var(--color-background-secondary);
   --color-accent: var(--color-background-accent);
-  --radius-panel: var(--border-radius-panel);
   --color-divider: var(--color-border-primary);
   --color-secondary: var(--color-text-secondary);
   --color-foreground: var(--color-text-primary);
