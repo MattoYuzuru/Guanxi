@@ -13,6 +13,7 @@ import { orientation } from './orientation.ts'
 import { nativeTools } from './tools.ts'
 import { NativeProjectRoots } from './projects.ts'
 import type { SandboxPolicy } from './sandbox.ts'
+import { resolveInWorkspace } from '../tools/jail.ts'
 
 export class NativeAgentError extends Error {
   readonly code: string
@@ -68,8 +69,19 @@ export class NativeAgents {
         attachmentMetadata.push({ path: target, mediaType: attachment.attachment.artifact.mediaType, displayName: attachment.attachment.displayName })
       }
       // Canonical paths and literal sandbox entries prevent glob/symlink interpretation.
-      const protectedPaths = input.protectedPaths.map(path => resolve(roots[0] ?? scratch, path))
-      if (protectedPaths.some(path => !roots.some(root => inside(root, path)) && !inside(scratch, path))) throw new NativeAgentError('protected_path_invalid')
+      const allowed = [...roots, await realpath(scratch)]
+      const protectedPaths = [...new Set(input.protectedPaths.flatMap(path => {
+        const lexical = resolve(roots[0] ?? scratch, path)
+        if (!allowed.some(root => inside(root, lexical))) throw new NativeAgentError('protected_path_invalid')
+        for (const root of allowed) {
+          try {
+            // Keep the name and its canonical target, including absent children
+            // beneath an existing linked parent. The OS profile compares real paths.
+            return [lexical, resolveInWorkspace(root, lexical)]
+          } catch { /* the target may belong to another allowed root */ }
+        }
+        throw new NativeAgentError('protected_path_invalid')
+      }))]
       const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
       this.ready()
       this.ensureRoots(policy, sessionId)

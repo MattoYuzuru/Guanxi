@@ -35,7 +35,8 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   allowlist applies in Full access until supervision exists. The OS boundary also applies
   when a command is launched directly by a trusted tool implementation.
 - Full access: scratch and all project roots writable, attachments immutable. Zero roots
-  means scratch only. Protected paths deny writes in both modes.
+  means scratch only. Protected paths deny writes in both modes, retaining both lexical
+  names and canonical targets (including absent children beneath linked parents).
 - Egress: exact host/optional-port allowlist, default empty. HTTPS is TLS-terminated using
   an ephemeral worker CA; Read-only allows GET/HEAD/OPTIONS. Opaque CONNECT/SOCKS tunnels,
   direct sockets, Unix sockets and local binding are denied in both modes. Redirects are
@@ -78,7 +79,8 @@ session-bound `session_log_query`. Search uses the OS tool locally; connected se
 are not executed by this slice. Attachments reuse the existing scoped transfer policy, copy
 selected project artifacts into read-only session storage, and expose text through file reads.
 Images are sent only when the selected model declares image input. Other binary formats need
-an installed converter available through the sandbox; no format or modality is silently claimed.
+conversion, which is currently unavailable until an explicit converter adapter or general
+command supervision exists; no format or modality is silently claimed.
 
 Command stdout/stderr are bounded to 64 KiB per invocation with an explicit `truncated` flag.
 State/query tool results are currently inline and unbounded; the all-tool artifact/output

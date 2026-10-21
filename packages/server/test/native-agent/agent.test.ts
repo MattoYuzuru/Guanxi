@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { test } from 'node:test'
-import { mkdtemp, mkdir, rm, writeFile, realpath } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, realpath, symlink, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createKernel } from '@guanxi/kernel'
@@ -201,6 +201,35 @@ test('fetch treats an at-prefixed body as literal text rather than a file upload
     assert.equal(body, `@${file}`)
     assert.equal(body.includes('must-not-upload-file-contents'), false)
   } finally { handle.close() }
+})
+test('protected file/directory links and absent children deny writes through canonical names', { timeout: 30000 }, async t => {
+  let root = ''
+  const f = await fixture(t, async call => call === 1 ? [
+    ...['file', 'directory/existing', 'future/new'].map((path, index) => ({ type: 'toolCall' as const, id: `deny-${index}`, name: 'file_write', arguments: { path: join(root, path), content: 'changed' } })),
+    { type: 'toolCall', id: 'control', name: 'file_write', arguments: { path: join(root, 'allowed'), content: 'worked' } },
+  ] : [{ type: 'text', text: 'finished' }])
+  root = join(f.dir, 'protected-root'); await mkdir(root)
+  await mkdir(join(root, 'directory')); await mkdir(join(root, 'future'))
+  await writeFile(join(root, 'file'), 'original'); await writeFile(join(root, 'directory/existing'), 'original')
+  await symlink(join(root, 'file'), join(root, 'file-link'))
+  await symlink(join(root, 'directory'), join(root, 'directory-link'))
+  await symlink(join(root, 'future'), join(root, 'parent-link'))
+  f.agents().setRoots(f.input.projectId, [f.workspaces.create(root).id])
+  const { sessionId } = await f.agents().create({ ...f.input, mode: 'full-access', protectedPaths: ['file-link', 'directory-link', 'parent-link/new'] })
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+  const events = f.log.readAll(sessionId, 'person')
+  const policy = events.find(event => event.type === 'agent.policy')!
+  assert.equal(policy.type, 'agent.policy')
+  if (policy.type !== 'agent.policy') throw new Error('missing policy')
+  for (const path of ['file-link', 'file', 'directory-link', 'directory', 'parent-link/new', 'future/new']) assert.ok(policy.data.protectedPaths.includes(join(root, path)))
+  for (let index = 0; index < 3; index++) {
+    const result = events.find(event => event.type === 'tool.result' && event.data.toolCallId === `deny-${index}`)
+    assert.equal(result?.type === 'tool.result' && result.data.status, 'error')
+  }
+  assert.equal(await readFile(join(root, 'file'), 'utf8'), 'original')
+  assert.equal(await readFile(join(root, 'directory/existing'), 'utf8'), 'original')
+  await assert.rejects(readFile(join(root, 'future/new')))
+  assert.equal(await readFile(join(root, 'allowed'), 'utf8'), 'worked')
 })
 test('shutdown during attachment staging prevents a late model dispatch', { timeout: 30000 }, async t => {
   let release!: () => void
