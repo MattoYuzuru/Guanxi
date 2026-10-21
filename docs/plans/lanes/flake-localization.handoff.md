@@ -1,172 +1,198 @@
 # Localization browser-gate flake hand-off
 
-**Status:** locally validated; independent code review completed · **Date:** 2026-10-21
+**Status:** locally validated; cross-family review fixes applied · **Date:** 2026-10-21
 **Branch:** `lane/fix-localization-flake` · **Base:** `bc4f44c`
+**Review-fix commit:** `76b3454` (on top of `ab7973f`)
 
-## Root cause
+## Root cause and observation boundaries
 
 The development entrypoint uses React StrictMode. `useAsync` (health/models) and
 `useRuntimePolling` (runtime) start a fetch during effect setup, synchronously abort its
-signal during cleanup, then start the replacement during effect replay. The first fetch
-invocation always exists, but Chromium may process the cancellation before its network
-request reaches Playwright route interception. Thus the route sees one or two GETs per
-endpoint depending on request-start, abort and interception ordering. A route counter is
-neither the number of fetch invocations nor the number of useful completed reads.
+signal during cleanup, then start the replacement during effect replay. Chromium may process
+that cancellation before the first request reaches Playwright route interception. Thus a
+correct initial mount can intercept one or two GETs per endpoint. The old requirement of two
+intercepted GETs could fail on correct cancellation; a route counter does not count all fetch
+invocations or only useful completed reads.
 
-The old test required two intercepted GETs for health, runtime and models, so correct
-cancellation could fail it. The product hooks do not need a change: both timing variants
-prove two fetch identities, one canceled/rejected attempt and one fulfilled live attempt
-per endpoint. This is the same class of transport-observation race as the earlier S0 Quick
-Run mock fix (`ebd061f`), rather than a duplicate live read or locale-triggered refetch.
+The test-only fixture records main-frame `window.fetch` identities, cancellation and
+settlement. Each endpoint must have exactly two initial attempts: one aborted/rejected and
+one fulfilled/non-aborted. Native request timing and a forced microtask before native fetch
+are exercised. The forced variant requires `[true, false]` for cancellation at network start.
+The complete ledger must remain unchanged through preview, failed save and successful save.
+Methods are normalized to uppercase so lowercase `get` is also tracked.
 
-## Changes and review
+Route counters independently observe intercepted health/runtime/models requests, including
+XHR and other execution contexts that reach page routing. The forced variant requires
+`{ health: 1, runtime: 1, models: 1 }` initially and at the no-refetch check. Native timing
+requires each final route count to be at most two, accommodating the legitimate initial
+aborted request when it is intercepted.
 
-- `0a6ad45` — `test(web): count locale reads by fetch lifecycle`.
-  A test-only init-script fixture records each fetch identity, signal cancellation and
-  settlement before network interception. The locale spec requires exactly one fulfilled,
-  non-aborted read per endpoint and exactly one rejected aborted StrictMode attempt. It
-  compares the entire identity ledger before/after preview, failed save and successful save;
-  even an extra canceled fetch fails. All existing save deduplication, failure/retry,
-  persistence/reload, glossary, focus, mobile, zoom, forced-colors and reduced-motion checks
-  remain. Both native timing and a forced microtask before native network start are covered.
-- `cb27d6b` — `test(web): isolate locale checks from periodic runtime polling`.
-  Fresh self-review found that a slow host could allow the Runtime Bar's legitimate 10-second
-  poll to alter the no-refetch ledger. Pause the Playwright clock on about:blank, before any
-  app timers exist, so that assertion measures locale-driven work. Keep the clock paused
-  through reload. Also record/assert `[true, false]` for signal cancellation at native fetch
-  invocation in the forced variant: the canceled request reaches native fetch already aborted,
-  and its replacement does not. No sleeps, request retries or weakened thresholds were added.
-- A separate read-only reviewer inspected `bc4f44c..0a6ad45` and then
-  `bc4f44c..cb27d6b`, including original assertions, cancellation/concurrency ordering,
-  frozen-polling scope and negative-control evidence. No correctness findings. The reviewer
-  did not write code or execute checks; the author owns execution.
+The clock is paused before app timers exist. After the preview is observably committed and
+again after save success, `runFor(RUNTIME_IDLE_POLL_INTERVAL_MS * 0.4)` advances four seconds.
+These separate windows expose short timer-driven reads while totaling eight seconds, below
+the legitimate ten-second idle poll. The clock remains controlled through reload.
+
+## Changes and independent review
+
+- `0a6ad45`: add fetch lifecycle observation and the forced timing variant.
+- `cb27d6b`: isolate the locale flow from the legitimate periodic runtime poll.
+- `ab7973f`: record the initial reproduction and historical stability evidence.
+- The owner's Claude cross-family review returned **merge after fixes**: F1 found missing
+  route-level duplicate coverage and case-sensitive methods; F2 found timer-driven reads
+  hidden by the paused clock; F3 found the hand-off overstated coverage. These are valid
+  limitations of the earlier rewrite; its original no-findings review did not catch them.
+- `76b3454`: restore the route counters and assertions, uppercase methods, and add both clock
+  windows. No production files, package dependencies or locale/UI assertions changed.
+- A separate read-only reviewer checked the two-file fix against `ab7973f`, including exact
+  assertions, timer placement, imported constant safety and cancellation ordering. No
+  blocking findings. A separate documentation review corrected idle-poll coverage and receipt
+  scope claims. The author executed the checks below. This documentation corrects F3 and
+  explicitly records the remaining limits.
 
 ## Environment and commands
 
-All checks target this Mac/worktree using Node 26.9.0 and mocked Chromium, with:
+All checks target this Mac with Node 26.9.0 and mocked Chromium:
 
 ```bash
 export GUANXI_WEB_PORT=5185 GUANXI_API_PORT=4385
 export GUANXI_DATA_DIR="$PWD/.lane-data"
+agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- npm run test:web:browser
 ```
 
-Every browser invocation used this shared-lock prefix, acquiring/releasing it separately
-for each full gate and stopping the stability series on any failure:
-
-```bash
-agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- <command>
-```
-
-`npm ci` was run in this worktree; `require.resolve('@guanxi/contract')` resolved to
-`/Users/yuzuru/Projects/Guanxi-lanes/flake/packages/contract/src/index.ts`.
-
-## Failing-before and controlled evidence
-
-| Check | Result | Receipt under `/Users/yuzuru/.local/state/agent-dev/` |
-| --- | --- | --- |
-| Unmodified spec, intended repetition through root npm wrapper | 2/2 pass; repeat/worker flags were consumed by nested npm, so excluded from repetition rate | `check-8d0bf5zl/result.json` |
-| Unmodified spec, corrected workspace command below | 1/11 completed affected cases failed (9.1% observed); 18 passes across both cases, 2 interrupted, 39 not run after first failure | `check-qvfjw0o7/result.json` |
-| Unmodified full browser gate | 48/48 pass, 0/1 failed full runs | `check-ieb3dt1o/result.json` |
-| Restore old absolute route assertion under forced timing, 3 repeats | 3/3 fail at old route-count assertion; first canceled requests never intercepted | `check-urih_s2t/result.json` |
-| Fixed first commit focused spec | 3/3 pass | `check-hhz92chn/result.json` |
-| Self-review followup focused spec, paused clock | 3/3 pass, including interactions/reload | `check-6sp9wbt8/result.json` |
-| Final fixed spec, 30 repeats and 3 workers | 90/90 pass: 30 native locale, 30 forced locale, 30 delayed-locale | `check-ttvmd0g0/result.json` |
-
-The natural failure occurred at old line 98: health intercepted twice, runtime and models
-once each instead of twice. This was a stopped batch, not an unbiased long-run flake-rate
-estimate. The old assertion negative control was a temporary test mutation, restored before
-the followup commit. Its traces/screenshots are retained outside Git at
-`/Users/yuzuru/.local/state/agent-dev/localization-flake-cb27d6b/old-count-negative-control/`.
-
-Correct repetition command (the final `--` is significant):
-
-```bash
-npm run test:browser --workspace @guanxi/web -- localization.spec.ts \
-  --repeat-each=30 --workers=3 --max-failures=1
-```
-
-Negative-control command:
-
-```bash
-npm run test:browser --workspace @guanxi/web -- localization.spec.ts \
-  --grep "abort before interception" --repeat-each=3
-```
+Every full gate acquires/releases the shared `heavy` lock separately. The runner stops on a
+nonzero gate; source edits and commits are excluded during the stability series. Worktree
+contract resolution points to this lane's `packages/contract/src/index.ts`. The scratch
+checkout received its own `npm ci` and resolved its own contract source.
 
 ## New / regression envelope
 
-- **New:** one forced abort-before-interception browser scenario, with direct ordering
-  assertions. One existing locale flow is strengthened by identity/cancellation assertions.
-- **Regression envelope:** all 48 existing browser cases, including the native locale flow.
-  The full current gate contains 49 tests; the older S0/AGENTS count of 40 is historical.
-- Workspace `npm run typecheck`: pass (`check-ta67zbmv/result.json`). Browser specs are outside
-  that tsconfig, so a separate strict TypeScript check of `localization.spec.ts` and imports
-  also passed (`check-zn2agu9r/result.json`).
-- `npm run lint:md`: pass (`check-auewyrl9/result.json`). An earlier attempt found only the
-  generated Playwright error-context Markdown retained under ignored `.lane-data`; those
-  task-owned artifacts were moved outside the checkout before the green run. No lint rule
-  or exclusion was changed.
-  Lint including this hand-off also passed (`check-u8tdo6bz/result.json`).
-- No production files or package dependencies changed. Core/unit tests, build, live Ollama,
-  GPU and network-provider tests are outside this test-only check scope.
+- **New in this review fix:** assertions in the two existing locale timing variants; no new
+  committed test cases. The earlier rewrite added one forced-timing scenario.
+- **Regression envelope:** the complete 49-case mocked browser gate, including native and
+  forced locale flows, delayed locale, runtime polling and the other browser specs.
+- Focused fixed localization spec: **3/3 pass** (`check-lrnkj1fm/result.json`).
+- Workspace `npm run typecheck`: pass (`check-dux42f_h/result.json`).
+- Browser specs are outside that tsconfig; a separate strict check of the spec and imports:
+  pass (`check-lfl59cff/result.json`).
+- `npm run lint:md`, including this final hand-off: pass; receipt indexed in
+  `localization-review-fixes/checks.json`.
+- Core/unit tests, build, live Ollama, GPU and network-provider validation were not run for
+  this test-only fix. The full browser gate is mocked, not a full product regression suite.
 
-## Consecutive full-gate receipts
+All short receipt paths below are relative to `/Users/yuzuru/.local/state/agent-dev/`.
 
-**25/25 consecutive full `npm run test:web:browser` gates passed at clean
-`cb27d6b6509eb34fea6eeddcad73bd3daf48445d`: 49/49 per run, 1,225 case executions,
-zero failures, skips or retries.** No source edit or commit occurred during the series.
-Each run separately acquired the shared `heavy` lock; other lanes ran between some gates.
-Receipt logs were checked for the full 49-pass result, and each receipt for exit 0,
-`source_changed: false`, clean before/after state and the same HEAD.
+## Mutation proof in a scratch checkout
 
-UTC interval: `2026-10-20T20:37:07.450914+00:00` to `2026-10-20T21:05:20.956861+00:00`
-(local Moscow dates 2026-10-20–21). Paths below are relative to
-`/Users/yuzuru/.local/state/agent-dev/`; each receipt names its redacted output log.
-The local machine-readable index is
-`/Users/yuzuru/.local/state/agent-dev/localization-flake-cb27d6b/stability.json`.
+The fixed tests were copied into a detached scratch worktree based on `ab7973f`. Only the
+scratch copy of `packages/web/src/lib/locale.ts` was mutated; lane product code was untouched.
+Each mutation was applied independently and restored. Diffs, runner scripts, traces and
+logs are retained outside Git at
+`/Users/yuzuru/.local/state/agent-dev/localization-review-fixes/`; `scratch-path.txt` names the
+checkout. `mutations.json` indexes the baseline and four mutations; `single-xhr.json`
+indexes the additional single-XHR control.
+
+The focused command uses `npm run test:browser --workspace @guanxi/web --
+localization.spec.ts --grep "locale preview"`, through the same shared-lock prefix and lane
+ports, with output artifacts outside the checkout. The single-XHR control selects only
+`--grep "abort before interception"`. The baseline runs the complete three-case locale spec.
+
+| Control | Observed result | Receipt |
+| --- | --- | --- |
+| Unmodified scratch baseline | 3/3 pass | `check-edkt2whr/result.json` |
+| One XHR GET `/api/runtime` on RU preview only | Forced variant fails final route count: runtime 2, expected 1 | `check-4gm7bwb9/result.json` |
+| XHR GET `/api/runtime` on preview and save | Both variants fail final route counts (native 4, forced 3) | `check-8mv_69y8/result.json` |
+| Lowercase `method: 'get'` fetch `/api/runtime`, immediately aborted on preview and save | Both variants fail ledger equality with extra aborted/rejected identities | `check-knomy1ka/result.json` |
+| One-second timer GET `/api/models` on preview only | Both variants fail ledger equality with an extra fulfilled model read | `check-sgo2wbd1/result.json` |
+| One-second timer GET `/api/models` on successful save only | Both variants fail ledger equality with an extra fulfilled model read | `check-0h_kahqg/result.json` |
+
+The first scratch baseline after `npm ci` failed before the mutation checks: Settings did not
+render, and its trace recorded an invalid hook call in Glossary. The network trace contains
+two React prebundle version URLs in the same navigation, consistent with a cold Vite
+optimizer transition. An unchanged second baseline passed 3/3; the initial failure and trace
+are retained as `initial-scratch-*` (`check-y21wlqrh/result.json`). It is excluded from both
+mutation detection counts and the lane's full-gate stability series; no product/test rule
+was changed to hide it.
+
+## Consecutive full-gate evidence after review fixes
+
+**25/25 consecutive full gates passed at clean
+`76b34542ee9f06946dcc3abdd3c11aeb5037f46f`: 49/49 per run, 1,225 case executions,
+zero failures, skips or retries.** Each receipt records exit 0, the same clean HEAD before
+and after, an unchanged fingerprint and `source_changed: false`.
+
+UTC interval: `2026-10-21T06:35:32.825411+00:00` to
+`2026-10-21T06:50:13.886769+00:00`. The local machine-readable index is
+`/Users/yuzuru/.local/state/agent-dev/localization-review-fixes/stability.json`.
 
 | Run | Passed | Receipt |
 | --- | --- | --- |
-| 1 | 49/49 | `check-wafadu8q/result.json` |
-| 2 | 49/49 | `check-pffowt0a/result.json` |
-| 3 | 49/49 | `check-0sg1jeb2/result.json` |
-| 4 | 49/49 | `check-rnyq7831/result.json` |
-| 5 | 49/49 | `check-1xhtvybz/result.json` |
-| 6 | 49/49 | `check-u4om0r68/result.json` |
-| 7 | 49/49 | `check-u6bpriqf/result.json` |
-| 8 | 49/49 | `check-2rn9lbrv/result.json` |
-| 9 | 49/49 | `check-8m6acs5f/result.json` |
-| 10 | 49/49 | `check-lqzgjwuo/result.json` |
-| 11 | 49/49 | `check-pau2_zxp/result.json` |
-| 12 | 49/49 | `check-8fdfx0pi/result.json` |
-| 13 | 49/49 | `check-fngqjply/result.json` |
-| 14 | 49/49 | `check-1lbfnh56/result.json` |
-| 15 | 49/49 | `check-ai5nae92/result.json` |
-| 16 | 49/49 | `check-74dirdj1/result.json` |
-| 17 | 49/49 | `check-4jpwcapt/result.json` |
-| 18 | 49/49 | `check-exwgak2f/result.json` |
-| 19 | 49/49 | `check-6twnvsb0/result.json` |
-| 20 | 49/49 | `check-3kxhhwoh/result.json` |
-| 21 | 49/49 | `check-im2ltr8r/result.json` |
-| 22 | 49/49 | `check-37h8m6lc/result.json` |
-| 23 | 49/49 | `check-ycuy1y10/result.json` |
-| 24 | 49/49 | `check-hn1xex_4/result.json` |
-| 25 | 49/49 | `check-mjw899lq/result.json` |
+| 1 | 49/49 | `check-iv58mcpp/result.json` |
+| 2 | 49/49 | `check-ch_gbm_q/result.json` |
+| 3 | 49/49 | `check-5544kkbe/result.json` |
+| 4 | 49/49 | `check-8fl6u3ez/result.json` |
+| 5 | 49/49 | `check-1mkrf17l/result.json` |
+| 6 | 49/49 | `check-khohh0da/result.json` |
+| 7 | 49/49 | `check-swkn4c_0/result.json` |
+| 8 | 49/49 | `check-l1t_nko2/result.json` |
+| 9 | 49/49 | `check-zve64r17/result.json` |
+| 10 | 49/49 | `check-9v8b9n9x/result.json` |
+| 11 | 49/49 | `check-j8zu0wic/result.json` |
+| 12 | 49/49 | `check-3reva8_9/result.json` |
+| 13 | 49/49 | `check-5zu7dslz/result.json` |
+| 14 | 49/49 | `check-vom68yxo/result.json` |
+| 15 | 49/49 | `check-spx7iskd/result.json` |
+| 16 | 49/49 | `check-vmpljli_/result.json` |
+| 17 | 49/49 | `check-_igozt_u/result.json` |
+| 18 | 49/49 | `check-k_nehhpa/result.json` |
+| 19 | 49/49 | `check-qz39oc2z/result.json` |
+| 20 | 49/49 | `check-fmf11xf3/result.json` |
+| 21 | 49/49 | `check-pmu7tdxw/result.json` |
+| 22 | 49/49 | `check-2a_4l82z/result.json` |
+| 23 | 49/49 | `check-mca9vo8e/result.json` |
+| 24 | 49/49 | `check-pqha34rq/result.json` |
+| 25 | 49/49 | `check-xnjngfl0/result.json` |
+
+The first gate passed 49/49. An external summary parser initially stopped because test titles
+contain the word "failed"; after inspection it was corrected to match result-summary lines.
+That successful gate is run 1 below. No failed gate was discarded or retried in the series.
+
+## Historical evidence before the review fixes
+
+These results explain the original flake investigation, but do not prove F1–F3 were fixed:
+
+| Check | Result | Receipt |
+| --- | --- | --- |
+| Old spec, corrected repeated workspace command | 1/11 completed affected cases failed; stopped at first failure | `check-qvfjw0o7/result.json` |
+| Restore old absolute route assertion under forced timing | 3/3 fail at the old count assertion | `check-urih_s2t/result.json` |
+| Pre-review fixed spec, 30 repeats, 3 workers | 90/90 pass | `check-ttvmd0g0/result.json` |
+| Full gate at `cb27d6b`, before F1/F2 were identified | 25/25 gates, 49/49 each | `localization-flake-cb27d6b/stability.json` |
+
+The natural failure saw health twice, runtime/models once rather than twice. This stopped
+batch is not an unbiased flake-rate estimate. The historical forced-count artifacts remain
+at `localization-flake-cb27d6b/old-count-negative-control/` outside Git.
 
 ## Residual risk, shared edits and next step
 
-This is mocked Chromium evidence on this Mac, not production or live-runtime validation.
-The forced schedule deliberately exercises abort before interception; the native variant
-keeps normal request-start timing. Periodic polling timing is outside this locale invariant;
-its existing Runtime Bar browser cases still run with native timers in every full gate.
+The identity ledger covers main-frame `window.fetch` calls to health/runtime/models. An extra
+canceled fetch through that wrapper in the observed interval changes the ledger; canceled
+XHR, worker or other-realm work that never reaches routing has no equivalent identity
+assertion. Route counters cross-check intercepted network reads, not every possible request
+attempt. Native timing has one count of slack if its initial aborted request is not
+intercepted; the forced variant's exact route counts close that gap for its exercised flow.
+No worker, service-worker, iframe or canceled-XHR mutation was separately exercised.
 
-The runner reports `source_changed: false`, clean tracked sources and the exact checked HEAD,
-but marks receipts `source_verifiable: false` / `reusable: false` because its source verifier
-does not support the pre-existing `.claude/skills/guanxi-ui` directory symlink. These receipts
-are execution evidence; they are not advertised as reusable whole-tree source certification.
-`agent-dev verify` on run 24 returned `failed_or_stale_evidence`, consistent with those
-non-reusable receipt flags. The worktree-local contract resolution was checked separately. No verifier or symlink was
-changed to make that limitation disappear.
+Timer observation is bounded to four seconds after each committed transition, eight seconds
+overall. Reads scheduled beyond those windows are outside this invariant. The Runtime Bar
+browser specs retain native timers but do not assert the ten-second idle cadence. Existing `component/runtime-polling.test.tsx` tests assert idle/visibility scheduling
+with fake timers; those component tests were not rerun for this fix. All evidence is local
+mocked Chromium evidence, not production validation.
 
-Shared edits: none beyond this lane's localization spec, its new browser fixture and this
-hand-off. `PHASE_STATUS.md` and `NEXT_AGENT_PROMPT.md` were not edited. No push or merge.
-Next: integrator review and integration; no implementation blocker remains.
+Lane stability receipts record unchanged fingerprints, clean tracked sources and the checked
+HEAD (mutation receipts intentionally have dirty sources), but
+`source_verifiable: false` / `reusable: false` remains because the runner does not support the
+pre-existing `.claude/skills/guanxi-ui` directory symlink. They are execution evidence, not
+reusable whole-tree source certification. Neither the verifier nor the symlink was changed.
+
+Shared edits: only this lane's localization spec, fetch fixture and hand-off.
+`PHASE_STATUS.md` and `NEXT_AGENT_PROMPT.md` remain integrator-owned under the lane rules.
+No push or merge. Next: integrator review of F1–F3 fixes and integration; no blocker remains.
