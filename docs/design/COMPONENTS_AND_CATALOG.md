@@ -198,6 +198,10 @@ lane hand-off for evidence.
   process can ask the node to sign (the prompt does not show which component). Never choose
   "Always Allow". The fix — a signing helper outside the checkout with a per-use user-presence
   check — is a follow-up; see the DS1-b hand-off.
-- G10–G16 run through `packages/ui/gates/catalog/run.ts` until DS1-a's runner lands:
-  `npm run ui:catalog:check` (G10, G11, G12, G15 literals) and `npm run ui:check:browser` (G13 in
-  the pinned Playwright image, G14, G15 clipping, G16). G15 has a static and a browser part.
+- G10–G16 are registered with DS1-a's runner (`packages/ui/gates/extensions/catalog.gate.ts`):
+  `npm run ui:check` runs them with G1–G7 and G17 (fast: G10, G11, G12, G15 literals), and
+  `npm run ui:check:browser` runs the browser ones and their G17 seeds (G13 in the pinned
+  Playwright image, G14 with G15 clipping, G16). The catalog runner
+  (`packages/ui/gates/catalog/run.ts`) stays for targeted work: `npm run ui:catalog:selftest`
+  runs every seed of every catalog gate (G17 runs one per gate), and `npm run ui:snapshots`
+  rewrites G13 baselines.

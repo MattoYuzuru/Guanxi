@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * Interim runner for the catalog gates until DS1-a's runner is on main.
+ * Catalog runner for targeted work. The canonical commands are DS1-a's runner
+ * (`npm run ui:check`, `npm run ui:check:browser`), which loads these gates through
+ * ../extensions/catalog.gate.ts and runs one seed each in G17; this runner runs every seed
+ * (`npm run ui:catalog:selftest`), selected stories, and G13 baseline updates.
  *
  *   node packages/ui/gates/catalog/run.ts [--mode fast|browser|all] [--only G10,G12]
  *        [--release] [--selftest] [--json] [--update-snapshots] [--stories key,key]

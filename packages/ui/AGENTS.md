@@ -48,9 +48,9 @@ commands prove a change.
 
 ```bash
 npm run ui:manifest          # regenerate catalog/manifest.json after any component change
-npm run ui:check             # DS1-a's runner: G1–G7, G10–G12, G15 and G17 (every seed fails)
-npm run ui:catalog:check     # G10, G11, G12, G15 (static); add --selftest to prove the seeds fail
-npm run ui:check:browser     # G13 (in Docker), G14, G15 clipping, G16
+npm run ui:check             # DS1-a's runner: G1–G7, G10–G12, G15 and G17 (one seed per gate)
+npm run ui:check:browser     # same runner, browser gates: G13 (in Docker), G14 with G15 clipping, G16, G17
+npm run ui:catalog:selftest  # catalog runner: every seed of every catalog gate, fast and browser
 npm run ui:snapshots         # rewrite G13 baselines in the pinned image
 npm run ui:storybook         # Storybook dev server on GUANXI_WEB_PORT
 npm test --workspace @guanxi/ui
@@ -65,7 +65,7 @@ as skipped (never as passed) where the pinned image is unavailable.
 1. `node .agents/skills/guanxi-ui/scripts/find-component.mjs "<need>"` — reuse or extend first.
 2. `node .agents/skills/guanxi-ui/scripts/new-component.mjs <id> --level pattern --states a,b`.
 3. Implement, write the docs (G10 rejects `TODO`), add message keys in `src/i18n/messages.ts`.
-4. `npm run ui:manifest`, `npm run ui:catalog:check`, `npm run ui:check:browser`, and new G13
+4. `npm run ui:manifest`, `npm run ui:check`, `npm run ui:check:browser`, and new G13
    baselines with `npm run ui:snapshots`.
 5. Hand off with the component as a new `draft` and its catalog link
    (`/settings/developer/components?component=<id>`).

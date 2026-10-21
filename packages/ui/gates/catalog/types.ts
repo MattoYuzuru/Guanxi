@@ -1,8 +1,7 @@
 /**
- * Minimal gate interface for lane DS1-b's catalog gates (G10–G16). DS1-a owns the shared gate
- * runner and registry under packages/ui/gates/; until it lands on main these gates run through
- * ./run.ts. Each gate is a plain object, so the registry can import `catalogGates` from
- * ./registry.ts and run them next to G1–G7 (see docs/plans/lanes/DS1-b.handoff.md).
+ * Gate interface for lane DS1-b's catalog gates (G10–G16). Each gate is a plain object: DS1-a's
+ * runner loads them through ../extensions/catalog.gate.ts, and ./run.ts runs every seed for
+ * targeted work.
  */
 import type { TrustedKey, TrustedKeyFile } from '../../catalog/approval/index.ts'
 import type { UsageScope } from '../../catalog/tooling/usage.ts'

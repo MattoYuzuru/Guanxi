@@ -105,5 +105,5 @@ if (!readFileSync(index, 'utf8').includes(line)) appendFileSync(index, line)
 console.log(`Scaffolded packages/ui/src/components/${id} (status draft). Next:
   1. implement it with semantic tokens and message keys; one story per state (${states.join(', ')});
   2. replace every TODO in ${id}.docs.md;
-  3. npm run ui:manifest, then npm run ui:catalog:check and npm run ui:check:browser;
+  3. npm run ui:manifest, then npm run ui:check and npm run ui:check:browser;
   4. list it in your hand-off as a new draft; never set "approved".`)
