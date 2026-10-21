@@ -215,7 +215,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
         <h1 ref={projectContextErrorRef} tabIndex={-1} className="text-base font-semibold outline-none">
           {translate('projects.chats.safeState')}
         </h1>
-        <p className="mt-2 break-words text-xs text-[var(--fg-muted)]">
+        <p className="mt-2 break-words text-xs text-secondary">
           {errorMessage(projectContext.error)}
         </p>
         <Button className="mt-3" onClick={projectContext.reload}>{translate('projects.retry')}</Button>
@@ -239,7 +239,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
             ? translate('projects.chats.newFor', { name: project.name })
             : translate('chat.create.title')}
         </h1>
-        <p className="mt-0.5 mb-4 text-xs text-[var(--fg-muted)]">
+        <p className="mt-0.5 mb-4 text-xs text-secondary">
           {projectId
             ? translate('projects.chats.newDescription')
             : translate('chat.create.description')}
@@ -293,10 +293,10 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
               />
             )}
             {models.error !== null && (
-              <p className="mt-1 text-2xs text-[var(--danger)]">{errorMessage(models.error)}</p>
+              <p className="mt-1 text-2xs text-danger">{errorMessage(models.error)}</p>
             )}
             {selectedModel && mode === 'chat' ? (
-              <p className="mt-1 text-2xs text-[var(--fg-subtle)]" role="status" aria-live="polite">
+              <p className="mt-1 text-2xs text-muted" role="status" aria-live="polite">
                 {prewarmLabel(prewarm)}
               </p>
             ) : null}
@@ -336,7 +336,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
                   })),
                 ]}
               />
-              <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+              <p className="mt-1 text-2xs text-muted">
                 {translate('chat.create.workspaceHint')}
               </p>
             </label>
@@ -405,12 +405,12 @@ function ModeButton({
       className={cx(
         'min-w-0 rounded-lg border px-3 py-2 text-left',
         active
-          ? 'border-[var(--accent)] bg-[var(--accent-subtle)]/55'
-          : 'border-[var(--border)] hover:bg-[var(--bg-subtle)]',
+          ? 'border-accent bg-accent/5.5'
+          : 'border-divider hover:bg-inset',
       )}
     >
       <span className="block text-xs font-semibold">{title}</span>
-      <span className="mt-0.5 block break-words text-2xs text-[var(--fg-muted)]">
+      <span className="mt-0.5 block break-words text-2xs text-secondary">
         {description}
       </span>
     </button>
@@ -493,12 +493,12 @@ function ThreadPage({
         <h1 ref={loadErrorHeadingRef} tabIndex={-1} className="text-base font-semibold outline-none">
           {projectId ? translate('projects.chats.safeState') : translate('chat.open.error')}
         </h1>
-        <p className="mt-2 break-words text-xs text-[var(--fg-muted)]">
+        <p className="mt-2 break-words text-xs text-secondary">
           {errorMessage(chat.loadError)}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" onClick={chat.reload}>{translate('projects.retry')}</Button>
-          {projectId && <Link to={paths.projects()} className="text-xs text-[var(--accent)] underline">{translate('projects.chats.back')}</Link>}
+          {projectId && <Link to={paths.projects()} className="text-xs text-accent underline">{translate('projects.chats.back')}</Link>}
         </div>
       </div>
     )
@@ -508,8 +508,8 @@ function ThreadPage({
     <div className={inWorkspace ? 'workspace-chat-content' : 'grid h-full min-h-0 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]'}>
       {!inWorkspace && <ThreadSidebar currentId={threadId} projectId={projectId} />}
 
-      <section className="flex min-h-0 min-w-0 flex-col border-l border-[var(--border)]">
-        <header className="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-1.5">
+      <section className="flex min-h-0 min-w-0 flex-col border-l border-divider">
+        <header className="flex min-h-11 items-center justify-between gap-3 border-b border-divider px-3 py-1.5">
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate text-xs font-semibold">{chat.thread.title}</h1>
@@ -520,12 +520,12 @@ function ThreadPage({
             {chat.project && (
               <Link
                 to={paths.projects()}
-                className="mt-0.5 block max-w-full truncate text-2xs text-[var(--accent)] underline underline-offset-2"
+                className="mt-0.5 block max-w-full truncate text-2xs text-accent underline underline-offset-2"
               >
                 {translate('projects.chats.context', { name: chat.project.name })}
               </Link>
             )}
-            <div className="mt-0.5 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
+            <div className="mt-0.5 flex items-center gap-2 text-2xs text-muted">
               <span className="truncate font-mono">{chat.thread.model}</span>
               <ContextChip context={chat.context} />
             </div>
@@ -550,7 +550,7 @@ function ThreadPage({
             </Link>
             <Link
               to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()}
-              className="flex h-6 items-center rounded-[5px] border border-[var(--border-strong)] px-2 text-2xs font-medium hover:bg-[var(--bg-subtle)]"
+              className="flex h-6 items-center rounded-[5px] border border-control px-2 text-2xs font-medium hover:bg-inset"
             >
               {translate('chat.new')}
             </Link>
@@ -567,13 +567,13 @@ function ThreadPage({
           streamError={chat.streamError?.message ?? null}
         />
 
-        <div className="border-t border-[var(--border)] bg-[var(--bg)] p-2.5">
+        <div className="border-t border-divider bg-canvas p-2.5">
           <div className="mb-2 xl:hidden">
-            <details className="rounded-md border border-[var(--border)]">
-              <summary className="cursor-pointer px-2 py-1 text-2xs font-medium text-[var(--fg-muted)]">
+            <details className="rounded-md border border-divider">
+              <summary className="cursor-pointer px-2 py-1 text-2xs font-medium text-secondary">
                 {translate('chat.contextAndSpeed')}
               </summary>
-              <div className="h-80 max-h-[45vh] overflow-hidden border-t border-[var(--border)]">
+              <div className="h-80 max-h-[45vh] overflow-hidden border-t border-divider">
                 <ContextPanel
                   context={chat.context}
                   usage={chat.usage}
@@ -601,7 +601,7 @@ function ThreadPage({
         </div>
       </section>
 
-      {!inWorkspace && <aside className="hidden min-h-0 border-l border-[var(--border)] xl:block">
+      {!inWorkspace && <aside className="hidden min-h-0 border-l border-divider xl:block">
         <ContextPanel
           context={chat.context}
           usage={chat.usage}
@@ -761,16 +761,16 @@ function ContextCheckpointMarker({
       ref={ref}
       tabIndex={-1}
       aria-label={translate('chat.checkpoint.title')}
-      className="rounded-lg border border-[var(--color-fit-yellow)]/45 bg-[var(--color-fit-yellow)]/8 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+      className="rounded-lg border border-[var(--color-fit-yellow)]/45 bg-[var(--color-fit-yellow)]/8 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-focus"
       data-context-checkpoint={checkpoint.id}
     >
       <div className="mb-1 flex flex-wrap items-center gap-1.5">
         <Badge tone="yellow">{translate('chat.checkpoint.title')}</Badge>
-        <span className="text-2xs text-[var(--fg-subtle)]">
+        <span className="text-2xs text-muted">
           {formatTime(checkpoint.createdAt)}
         </span>
       </div>
-      <p className="mb-2 text-2xs text-[var(--fg-muted)]">{evidence}</p>
+      <p className="mb-2 text-2xs text-secondary">{evidence}</p>
       <Markdown source={checkpoint.summary.content} />
     </article>
   )
@@ -779,12 +779,12 @@ function ContextCheckpointMarker({
 export function MessageView({ message }: { message: Message }) {
   if (message.role === 'system') {
     return (
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2">
+      <div className="rounded-lg border border-divider bg-inset px-3 py-2">
         <div className="mb-1 flex items-center gap-1.5">
           <Badge tone={message.isCompaction ? 'yellow' : 'neutral'}>
             {message.isCompaction ? translate('chat.message.summary') : translate('chat.message.system')}
           </Badge>
-          <span className="text-2xs text-[var(--fg-subtle)]">{formatTime(message.createdAt)}</span>
+          <span className="text-2xs text-secondary">{formatTime(message.createdAt)}</span>
         </div>
         <Markdown source={message.content} />
       </div>
@@ -799,11 +799,11 @@ export function MessageView({ message }: { message: Message }) {
         className={cx(
           'min-w-0 max-w-[92%]',
           user
-            ? 'rounded-xl rounded-br-sm bg-[var(--accent-subtle)] px-3 py-2'
+            ? 'rounded-xl rounded-br-sm bg-accent/10 px-3 py-2'
             : 'w-full',
         )}
       >
-        <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
+        <div className="mb-1 flex items-center gap-2 text-2xs text-secondary">
           <span>{user ? translate('chat.role.you') : message.role === 'assistant' ? PRODUCT_NAME : translate('chat.role.tool')}</span>
           <span>{formatTime(message.createdAt)}</span>
           {message.usage?.cacheHit && <Badge tone="green">{translate('chat.cache.badge')}</Badge>}
@@ -815,11 +815,11 @@ export function MessageView({ message }: { message: Message }) {
         </div>
 
         {message.thinking && (
-          <details className="mb-2 rounded border border-[var(--border)] bg-[var(--bg-subtle)]">
-            <summary className="cursor-pointer px-2 py-1 text-2xs text-[var(--fg-muted)]">
+          <details className="mb-2 rounded border border-divider bg-inset">
+            <summary className="cursor-pointer px-2 py-1 text-2xs text-secondary">
               {translate('chat.reasoning.model')}
             </summary>
-            <div className="border-t border-[var(--border)] px-2 py-1.5 text-xs whitespace-pre-wrap text-[var(--fg-muted)]">
+            <div className="border-t border-divider px-2 py-1.5 text-xs whitespace-pre-wrap text-secondary">
               {message.thinking}
             </div>
           </details>
@@ -863,7 +863,7 @@ function TurnOutcomeView({ message }: { message: Message }) {
     }
 
     return (
-      <p className="mt-1.5 text-2xs text-[var(--fg-subtle)]" role="status">
+      <p className="mt-1.5 text-2xs text-muted" role="status">
         {translate('chat.turn.status.completed')}
         {reason ? ` · ${translate('chat.turn.reason')}: ${reason}` : ''}
       </p>
@@ -1022,7 +1022,7 @@ export function StreamingMessage({
 
   return (
     <article className="anim-fade-up">
-      <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--fg-subtle)]">
+      <div className="mb-1 flex items-center gap-2 text-2xs text-muted">
         <span>{PRODUCT_NAME}</span>
         <span role="status" aria-live="polite" aria-atomic="true">
           <Badge tone={phase === 'awaiting_approval' ? 'yellow' : 'accent'}>
@@ -1034,11 +1034,11 @@ export function StreamingMessage({
       </div>
 
       {snapshot.thinking && (
-        <details open className="mb-2 rounded border border-[var(--border)] bg-[var(--bg-subtle)]">
-          <summary className="cursor-pointer px-2 py-1 text-2xs text-[var(--fg-muted)]">
+        <details open className="mb-2 rounded border border-divider bg-inset">
+          <summary className="cursor-pointer px-2 py-1 text-2xs text-secondary">
             {translate('chat.reasoning.model')}
           </summary>
-          <div className="border-t border-[var(--border)] px-2 py-1.5 text-xs whitespace-pre-wrap text-[var(--fg-muted)]">
+          <div className="border-t border-divider px-2 py-1.5 text-xs whitespace-pre-wrap text-secondary">
             {snapshot.thinking}
           </div>
         </details>
@@ -1047,11 +1047,11 @@ export function StreamingMessage({
       {snapshot.content ? (
         <Markdown source={snapshot.content} className={phase === 'generating' ? 'stream-caret' : ''} />
       ) : retainedAfterFailure ? (
-        <p className="text-xs text-[var(--fg-muted)]">
+        <p className="text-xs text-secondary">
           {translate('chat.turn.livePartial.noContent')}
         </p>
       ) : (
-        <p className="anim-pulse-soft text-xs text-[var(--fg-muted)]">
+        <p className="anim-pulse-soft text-xs text-secondary">
           {phase === 'prefill' ? translate('chat.stream.prefill') : translate('chat.stream.preparing')}
         </p>
       )}
@@ -1160,7 +1160,7 @@ function Composer({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden text-2xs text-[var(--fg-subtle)] sm:inline">
+          <span className="hidden text-2xs text-muted sm:inline">
             {translate('chat.composer.shortcut')}
           </span>
           {isStreaming ? (
@@ -1207,12 +1207,12 @@ function ThreadSidebar({
     <aside className="hidden min-h-0 overflow-y-auto p-2 md:block">
       <SidebarSlot />
       <div className="mb-2 flex items-center justify-between gap-2 px-1">
-        <span className="text-2xs font-semibold text-[var(--fg-muted)]">
+        <span className="text-2xs font-semibold text-secondary">
           {projectId ? translate('projects.chats.group') : translate('projects.chats.projectless')}
         </span>
         <Link
           to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()}
-          className="rounded px-1.5 py-0.5 text-2xs text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
+          className="rounded px-1.5 py-0.5 text-2xs text-accent hover:bg-accent/10 hover:text-secondary"
         >
           {translate('chat.history.new')}
         </Link>
@@ -1225,9 +1225,9 @@ function ThreadSidebar({
           <Skeleton className="h-10" />
         </div>
       ) : threads.error ? (
-        <p className="px-1 text-2xs text-[var(--danger)]">{errorMessage(threads.error)}</p>
+        <p className="px-1 text-2xs text-danger">{errorMessage(threads.error)}</p>
       ) : (threads.data?.threads.length ?? 0) === 0 ? (
-        <p className="px-1 py-3 text-2xs text-[var(--fg-subtle)]">{translate('chat.history.empty')}</p>
+        <p className="px-1 py-3 text-2xs text-muted">{translate('chat.history.empty')}</p>
       ) : (
         <nav aria-label={translate('chat.history.navigation')} className="space-y-0.5">
           {threads.data?.threads.map((thread) => (
@@ -1238,12 +1238,12 @@ function ThreadSidebar({
               className={cx(
                 'block rounded-md px-2 py-1.5',
                 thread.id === currentId
-                  ? 'bg-[var(--bg-inset)]'
-                  : 'hover:bg-[var(--bg-subtle)]',
+                  ? 'bg-inset'
+                  : 'hover:bg-inset',
               )}
             >
               <span className="block truncate text-xs font-medium">{thread.title}</span>
-              <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-[var(--fg-subtle)]">
+              <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-secondary">
                 <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : thread.model}</span>
                 <span className="shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
               </span>

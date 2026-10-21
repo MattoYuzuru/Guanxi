@@ -1,3 +1,4 @@
+import { relayPlugin } from './relay/plugin.ts'
 /**
  * Точка входа сервера.
  *
@@ -5,6 +6,10 @@
  * что-либо, что имеет к ней доступ, нельзя. Смена адреса — осознанное действие
  * через переменную окружения, а не значение по умолчанию.
  */
+import { federationRoutes } from './federation/routes.ts'
+import { FEDERATION_SERVICE, type FederationHostOptions } from './federation/plugin.ts'
+import type { Federation } from './federation/service.ts'
+import { FederationError } from './federation/crypto.ts'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,6 +32,8 @@ import { ConnectionError } from './connections/errors.ts'
 import { connectionRoutes } from './connections/routes.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
+import { externalAgentPlugin } from './external-agents/plugin.ts'
+import type { ExternalPolicy } from './external-agents/types.ts'
 
 export { RELEASE_BUILD } from './release.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
@@ -120,6 +127,9 @@ export interface StartOptions {
   webDir?: string
   devOrigins?: string[]
   connectionsPolicy?: VaultPolicy
+  federation?: Omit<FederationHostOptions, 'db'>
+  /** Trusted node-local installed CLIs; no executable paths or account identity arrive over HTTP. */
+  externalAgents?: ExternalPolicy
 }
 
 export async function start(options: StartOptions = {}) {
@@ -135,7 +145,7 @@ export async function start(options: StartOptions = {}) {
   const db = openDb(dbPath)
   let kernel: Awaited<ReturnType<typeof bootServerKernel>>
   try {
-    kernel = await bootServerKernel(undefined, { db })
+    kernel = await bootServerKernel(undefined, { db, federation: options.federation })
   } catch (error) {
     db.close()
     throw error
@@ -170,6 +180,8 @@ export async function start(options: StartOptions = {}) {
       policy: options.connectionsPolicy,
     })
     await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
+    await kernel.node.plugin(relayPlugin, { db })
+    if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
@@ -194,6 +206,12 @@ export async function start(options: StartOptions = {}) {
     if (!service) throw new Error('agent_unavailable')
     return service
   }, options.devOrigins ?? devOriginsFromEnv(process.env)))
+
+  if (options.federation) server.route('/api/federation', federationRoutes(() => {
+    const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
+    if (!service) throw new FederationError('federation_unavailable', 503)
+    return service
+  }))
 
   // Неизвестный API-путь не должен проваливаться в SPA и возвращать HTML.
   server.all('/api/*', (c) =>

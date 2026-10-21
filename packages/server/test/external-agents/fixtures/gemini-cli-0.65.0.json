@@ -1,0 +1,122 @@
+{
+  "adapter": "gemini-cli",
+  "version": "0.65.0",
+  "recordedAt": "2026-10-21T12:00:00.000Z",
+  "source": "https://geminicli.com/docs/cli/acp-mode/",
+  "provenance": "Independent reconstruction of documented wire sessions; version labels from public release metadata, not live CLI captures.",
+  "protocol": "acp-v1",
+  "initialize": {
+    "protocolVersion": 1,
+    "agentInfo": {
+      "name": "gemini-cli",
+      "version": "0.65.0"
+    },
+    "agentCapabilities": {},
+    "authMethods": [
+      {
+        "id": "gemini-api-key",
+        "name": "API key"
+      }
+    ]
+  },
+  "newSession": {
+    "sessionId": "fixture-session",
+    "configOptions": [
+      {
+        "id": "model",
+        "category": "model",
+        "name": "Model",
+        "type": "select",
+        "currentValue": "default",
+        "options": [
+          {
+            "value": "default",
+            "name": "Default"
+          },
+          {
+            "value": "model-fixture",
+            "name": "Fixture model"
+          }
+        ]
+      }
+    ]
+  },
+  "notifications": [
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "fixture-session",
+        "update": {
+          "sessionUpdate": "agent_thought_chunk",
+          "content": {
+            "type": "text",
+            "text": "PRIVATE_REASONING_FIXTURE"
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "fixture-session",
+        "update": {
+          "sessionUpdate": "plan",
+          "entries": [
+            {
+              "content": "Inspect fixture",
+              "priority": "medium",
+              "status": "completed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "fixture-session",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "$SECRET_A"
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "fixture-session",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "$SECRET_B"
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "fixture-session",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": " fixture completed"
+          }
+        }
+      }
+    }
+  ],
+  "promptResult": {
+    "stopReason": "end_turn"
+  }
+}

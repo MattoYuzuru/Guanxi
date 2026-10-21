@@ -1,0 +1,272 @@
+{
+  "mode": "write",
+  "bgBefore": 21,
+  "bgAfter": 15,
+  "replacements": 41,
+  "files": [
+    "packages/web/src/App.tsx",
+    "packages/web/src/components/ui.tsx",
+    "packages/web/src/features/agent/ToolCallCard.tsx",
+    "packages/web/src/features/agent/WorkspacePicker.tsx",
+    "packages/web/src/features/attachments/AttachmentsPage.tsx",
+    "packages/web/src/features/chat/ChatPage.tsx",
+    "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+    "packages/web/src/features/health/HealthGate.tsx",
+    "packages/web/src/features/models/AddFromOllama.tsx",
+    "packages/web/src/features/models/CatalogFilters.tsx",
+    "packages/web/src/features/models/CatalogVariantInstall.tsx",
+    "packages/web/src/features/models/ModelCard.tsx",
+    "packages/web/src/features/models/ModelCarousel.tsx",
+    "packages/web/src/features/models/ModelPage.tsx",
+    "packages/web/src/features/projects/ProjectsPage.tsx",
+    "packages/web/src/features/recipes/RecipesPage.tsx"
+  ],
+  "unresolved": [
+    {
+      "file": "packages/web/src/components/ErrorBoundary.tsx",
+      "line": 93,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 117,
+      "class": "bg-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 117,
+      "class": "text-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 117,
+      "class": "border-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 119,
+      "class": "bg-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 119,
+      "class": "text-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 119,
+      "class": "border-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 120,
+      "class": "bg-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 120,
+      "class": "text-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 120,
+      "class": "border-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 518,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 657,
+      "class": "border-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/components/ui.tsx",
+      "line": 657,
+      "class": "bg-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 64,
+      "class": "text-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 65,
+      "class": "text-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 259,
+      "class": "text-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 260,
+      "class": "text-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 282,
+      "class": "bg-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 283,
+      "class": "bg-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 316,
+      "class": "bg-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 317,
+      "class": "bg-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 322,
+      "class": "bg-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/DiffViewer.tsx",
+      "line": 323,
+      "class": "bg-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/ToolCallCard.tsx",
+      "line": 98,
+      "class": "border-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/ToolCallCard.tsx",
+      "line": 98,
+      "class": "bg-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/agent/ToolCallCard.tsx",
+      "line": 98,
+      "class": "text-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/chat/ChatPage.tsx",
+      "line": 755,
+      "class": "border-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/chat/ChatPage.tsx",
+      "line": 755,
+      "class": "bg-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/context/ContextPanel.tsx",
+      "line": 81,
+      "class": "text-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/context/ContextPanel.tsx",
+      "line": 101,
+      "class": "border-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/context/ContextPanel.tsx",
+      "line": 101,
+      "class": "bg-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/context/ContextPanel.tsx",
+      "line": 104,
+      "class": "text-[var(--color-fit-yellow)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/context/ContextPanel.tsx",
+      "line": 126,
+      "class": "border-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/context/ContextPanel.tsx",
+      "line": 126,
+      "class": "bg-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/context/ContextPanel.tsx",
+      "line": 126,
+      "class": "text-[var(--color-fit-red)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/health/HealthGate.tsx",
+      "line": 188,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/models/CatalogVariantInstall.tsx",
+      "line": 261,
+      "class": "text-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/models/ModelCard.tsx",
+      "line": 68,
+      "class": "shadow-[var(--shadow-card)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/models/PullControl.tsx",
+      "line": 115,
+      "class": "border-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/models/PullControl.tsx",
+      "line": 115,
+      "class": "bg-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    },
+    {
+      "file": "packages/web/src/features/models/PullControl.tsx",
+      "line": 115,
+      "class": "text-[var(--color-fit-green)]",
+      "reason": "No role-equivalent alias in generated/theme.css"
+    }
+  ]
+}

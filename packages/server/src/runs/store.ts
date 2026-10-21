@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { SQLInputValue } from 'node:sqlite'
 import type { SessionEventData } from '@guanxi/contract'
+import { routedCommandSchema, type RoutedCommand } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { SessionLog } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -13,7 +14,7 @@ export interface RunStoreOptions {
   db: Db
   log: SessionLog
   scrubber: EgressScrubber
-  /** Explicit host assertion; a laptop must hand over in F1 before enabling delegation. */
+  /** Explicit host assertion; a laptop must hand over in F2 before enabling delegation. */
   alwaysOn?: boolean
   /** Wall time for durable deadlines and observations, clamped against clock rollback. */
   clock?: () => number
@@ -274,6 +275,21 @@ export class RunStore {
     this.setState(runId, this.get(runId).state === 'wrapping_up' ? 'wrapping_up' : 'working', 'attempt', id)
     return this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', id)!
   }
+  /** Trusted in-process executor extension. Never expose callbacks over the wire.
+   * The home and execution fence, extension rows and K2 trace share one transaction. */
+  mutate<T>(attempt: Attempt, body: (db: Db, emit: (event: import('../session-log/log.ts').SessionEventInput) => void) => T): T {
+    return this.tx('executor', () => {
+      this.fenced(attempt)
+      const result = body(this.db, event => {
+        const run = this.get(attempt.run_id)
+        this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, event)
+        this.changedSessions.add(run.session_id)
+        this.point('trace')
+      })
+      if (result instanceof Promise) throw new RunError('invalid_input')
+      return result
+    })
+  }
   /** Explicit retry only. Unsafe steps are never replayed by reconciliation. */
   start(runId: string): Attempt {
     return this.tx('start', () => {
@@ -397,6 +413,37 @@ export class RunStore {
     }
   }
   cancel(runId: string): void { this.tx('cancel', () => this.terminal(runId, 'canceled')) }
+  /** F1: compare and apply at the home in the SAME transaction as the receipt.
+   * A queued prompt is durable input; this method never starts a model. */
+  applyFederatedCommand(input: RoutedCommand, previous: () => string | undefined,
+    record: (result: string) => void): string {
+    const command = routedCommandSchema.parse(input)
+    return this.tx('federation_command', () => {
+      const prior = previous()
+      if (prior !== undefined) return prior
+      const run = this.get(command.runId)
+      if (run.session_id !== command.sessionId) throw new RunError('invalid_input')
+      let result: string
+      if (command.expiresAt <= this.now()) result = 'expired'
+      else if (command.stateVersion !== run.version) result = 'stale_version'
+      else if (TERMINAL_RUN_STATES.has(run.state)) result = 'invalid_state'
+      else if (command.action.kind === 'stop') { this.terminal(run.id, 'canceled'); result = 'applied' }
+      else if (command.action.kind === 'decide') {
+        if (run.state !== 'input_required') result = 'invalid_state'
+        else { this.newAttempt(run.id, null); result = 'applied' }
+      } else {
+        // Prompt content is not an identifier. The contract and egress gate
+        // validate it without imposing the identifier helper's 200-char cap.
+        if (this.scrubber.scrub(command.action.text) !== command.action.text) throw new RunError('invalid_input')
+        this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, { type: 'prompt',
+          data: { origin: 'remote', messageId: command.id, text: command.action.text, attachmentCount: 0 } })
+        this.setState(run.id, run.state, 'signal', command.id)
+        result = 'applied'
+      }
+      record(result)
+      return result
+    })
+  }
   private detach(promise: PromiseRecord): void {
     this.write('UPDATE promises SET detached=1 WHERE id=?', promise.id)
     this.write("UPDATE timers SET state='canceled' WHERE promise_id=? AND state='pending'", promise.id)

@@ -160,7 +160,7 @@ export function SettingsPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-5">
       <h1 className="text-lg font-semibold tracking-tight">{translate('settings.title')}</h1>
-      <p className="mt-0.5 mb-4 text-xs text-[var(--fg-muted)]">
+      <p className="mt-0.5 mb-4 text-xs text-secondary">
         {translate('settings.description')}
       </p>
 
@@ -196,7 +196,7 @@ export function SettingsPage() {
         </div>
       )}
       {localeSource === 'pending' && (
-        <p className="mb-3 text-xs text-[var(--fg-muted)]" role="status">
+        <p className="mb-3 text-xs text-secondary" role="status">
           {translate('settings.locale.pending')}
         </p>
       )}
@@ -250,7 +250,7 @@ export function SettingsPage() {
               aria-describedby={defaultNumCtxInvalid ? 'settings-default-context-error' : undefined}
             />
             {defaultNumCtxInvalid ? (
-              <p id="settings-default-context-error" className="mt-1 text-2xs text-[var(--danger)]" role="alert">
+              <p id="settings-default-context-error" className="mt-1 text-2xs text-danger" role="alert">
                 {translate('context.validation.positiveSafeInteger')}
               </p>
             ) : null}

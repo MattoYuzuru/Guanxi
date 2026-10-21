@@ -12,16 +12,16 @@ const apiPort = apiPortFromEnv(process.env)
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
       // Контракт исполняется из исходников (внутри — импорты с .ts),
       // поэтому резолвим его напрямую и не даём Vite его пре-бандлить.
-      '@guanxi/contract': contractSrc,
+      { find: '@guanxi/contract', replacement: contractSrc },
       // @guanxi/ui is source too; only the lazily loaded catalog route imports it today.
-      '@guanxi/ui/fonts.css': `${uiRoot}/fonts/fonts.css`,
-      '@guanxi/ui/catalog': `${uiRoot}/catalog/index.ts`,
-      '@guanxi/ui': `${uiRoot}/src/index.ts`,
-    },
+      { find: /^@guanxi\/ui\/catalog$/, replacement: `${uiRoot}/catalog/index.ts` },
+      // Match the root only so public CSS/asset subpaths use package exports.
+      { find: /^@guanxi\/ui$/, replacement: `${uiRoot}/src/index.ts` },
+    ],
   },
   optimizeDeps: {
     exclude: ['@guanxi/contract', '@guanxi/ui'],
