@@ -79,7 +79,7 @@ export class Federation {
     this.assertOpen()
     const auth = federationAuthSchema.parse(input)
     const identity = this.peer(auth.nodeId)
-    if (Math.abs(auth.issuedAt - this.now()) > 60_000 || !validSignature(identity.publicKey, requestProof(method, path, body, auth), auth.signature)) throw new FederationError('unauthenticated', 401)
+    if (auth.audience !== this.identity.id || Math.abs(auth.issuedAt - this.now()) > 60_000 || !validSignature(identity.publicKey, requestProof(method, path, body, auth), auth.signature)) throw new FederationError('unauthenticated', 401)
     if (auth.version.major > FEDERATION_VERSION.major) throw new FederationError('contract_incompatible', 426)
     // Keep nonces for the full acceptance window including a future-skewed timestamp.
     this.#options.db.prepare('DELETE FROM federation_nonces WHERE expires_at<?').run(this.now())

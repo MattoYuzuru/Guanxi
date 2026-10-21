@@ -205,7 +205,7 @@ test('restart preserves nonce rejection, command receipts and prompt acceptance 
     home.trust(peer);peer.trust(home)
     const run=home.runs.create({id:'run',sessionId:'session'})
     home.federation.replicas.bind({streamId:run.id,kind:'run',sessionId:run.session_id,homeNodeId:'home',homeEpoch:1,ownerAccountId:'owner'})
-    const auth={nodeId:'peer',version:{major:1,minor:0},issuedAt:peer.time,nonce:'nonce',signature:''}
+    const auth={nodeId:'peer',audience:'home',version:{major:1,minor:0},issuedAt:peer.time,nonce:'nonce',signature:''}
     auth.signature=signValue(peer.keys.privateKey,requestProof('GET','/api/federation/handshake',null,auth))
     home.federation.authenticate('GET','/api/federation/handshake',null,auth)
     const first={id:'z-first',runId:run.id,sessionId:run.session_id,homeNodeId:'home',stateVersion:run.version,expiresAt:home.time+5000,action:{kind:'prompt' as const,text:'first'}}

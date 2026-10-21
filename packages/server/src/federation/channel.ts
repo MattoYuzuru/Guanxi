@@ -23,7 +23,7 @@ export class FederationChannel {
   private async request(method: string, path: string, body: unknown = null): Promise<unknown> {
     const options = this.#options
     const route = `/api/federation${path}`
-    const auth: FederationAuth = { nodeId: options.local.id, version: FEDERATION_VERSION,
+    const auth: FederationAuth = { nodeId: options.local.id, audience: options.peer.id, version: FEDERATION_VERSION,
       issuedAt: (options.clock ?? Date.now)(), nonce: randomUUID(), signature: '' }
     auth.signature = signValue(options.privateKey, requestProof(method, route, body, auth))
     const response = await options.transport(new Request(`https://federation.invalid${route}`, {
@@ -52,6 +52,7 @@ export class FederationChannel {
       local.config.ingest(result.operations)
     }
     for (const stream of streamIds) {
+      if (local.replicas.binding(stream).homeNodeId !== peer.id) continue
       const result=z.object({entries:z.array(replicaEntrySchema)}).strict().parse(await this.request('GET',`/replicas/${encodeURIComponent(stream)}`))
       local.replicas.ingest(peer,result.entries)
     }

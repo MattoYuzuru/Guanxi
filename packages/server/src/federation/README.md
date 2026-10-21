@@ -28,8 +28,8 @@ owner's Tailscale-first / Headscale alternative and fleet roles.
 
 `federationRoutes()` can also be mounted on an isolated node-only transport. Every peer route
 requires a signed `X-Guanxi-Node` proof over method, full path/query, canonical body hash,
-node id, protocol version, nonce and issue time. Authentication checks pinned public keys,
-revocation, a 60-second time window and durable nonce uniqueness before dispatch. Private
+node id, recipient audience, protocol version, nonce and issue time. Authentication checks pinned public keys,
+the local audience, revocation, a 60-second time window and durable nonce uniqueness before dispatch. Private
 network encryption or TLS protects responses; signatures do not encrypt payloads. The two
 device code/token endpoints are the only public bootstrap routes; neither approves a device.
 The request-body budget is 1 MiB (413); callers split large batches. It is a transport budget,
@@ -38,7 +38,7 @@ not a fleet-size or context cap.
 `FederationChannel` signs requests through an injected transport, so constructing it opens
 no network. The host maps its logical `https://federation.invalid` origin to one pinned peer
 over an authenticated private link, without redirects. `synchronize()` pulls config and
-explicitly selected streams; run it independently for each configured peer on reconnection
+explicitly selected streams whose local binding names that peer as home; run it independently for each configured peer on reconnection
 or the host's schedule. There is no hub, global queue, automatic network discovery or
 background network poller. `flush()` drains durable commands through `channel.command`.
 Transport failure leaves an item pending; expiration and stale-version responses finish it.

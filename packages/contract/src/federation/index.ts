@@ -67,7 +67,7 @@ export const deviceRequestSchema = z.object({ publicKey: z.string().min(1).max(2
 export const devicePollSchema = z.object({ device_code: z.string().min(1).max(200) }).strict()
 export const deviceAuthorizationSchema = z.object({ device_code: z.string(), user_code: z.string(),
   verification_uri: z.string(), expires_in: integer, interval: integer }).strict()
-export const federationAuthSchema = z.object({ nodeId: federationId, version: federationVersionSchema,
+export const federationAuthSchema = z.object({ nodeId: federationId, audience: federationId, version: federationVersionSchema,
   issuedAt: integer, nonce: federationId, signature: z.string().max(128) }).strict()
 export type FederationAuth = z.infer<typeof federationAuthSchema>
 export const federationSyncSchema = z.object({ operations: z.array(signedConfigOperationSchema), replicas: z.array(replicaEntrySchema) }).strict()

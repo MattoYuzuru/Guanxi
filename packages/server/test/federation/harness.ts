@@ -40,7 +40,7 @@ export class SimNode {
   trust(other: SimNode) { this.federation.trust(other.keys.identity) }
   async request(target: SimNode, method: string, path: string, body: unknown = null, major = 1) {
     const url = `/api/federation${path}`
-    const auth: FederationAuth = { nodeId: this.keys.identity.id, version: { major, minor: 0 }, issuedAt: this.time, nonce: randomUUID(), signature: '' }
+    const auth: FederationAuth = { nodeId: this.keys.identity.id, audience: target.keys.identity.id, version: { major, minor: 0 }, issuedAt: this.time, nonce: randomUUID(), signature: '' }
     auth.signature = signValue(this.keys.privateKey, requestProof(method, url, body, auth))
     return target.app.request(`http://node${url}`, { method, headers: { 'X-Guanxi-Node': JSON.stringify(auth), 'Content-Type': 'application/json' },
       ...(method !== 'GET' ? { body: JSON.stringify(body) } : {}) })

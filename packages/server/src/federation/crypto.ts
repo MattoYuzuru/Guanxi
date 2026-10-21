@@ -23,7 +23,7 @@ export class FederationError extends Error {
   readonly status: number
   constructor(code: string, status = 409) { super(code); this.name = 'FederationError'; this.code = code; this.status = status }
 }
-export function requestProof(method: string, path: string, body: unknown, auth: { nodeId: string; version: unknown; issuedAt: number; nonce: string }) {
-  return { domain: 'guanxi.federation.request.v1', method, path, bodyHash: hash(body), nodeId: auth.nodeId,
+export function requestProof(method: string, path: string, body: unknown, auth: { nodeId: string; audience: string; version: unknown; issuedAt: number; nonce: string }) {
+  return { domain: 'guanxi.federation.request.v1', method, path, bodyHash: hash(body), nodeId: auth.nodeId, audience: auth.audience,
     version: auth.version, issuedAt: auth.issuedAt, nonce: auth.nonce }
 }

@@ -96,7 +96,7 @@ test('requests refuse unknown, forged, replayed, expired, modified bodies and in
     assert.equal((await owner.app.request('http://node/api/federation/handshake')).status, 401)
     assert.equal((await stranger.request(owner, 'GET', '/handshake')).status, 401)
     const path = '/api/federation/handshake'
-    const auth = { nodeId: 'peer', version: { major: 1, minor: 0 }, issuedAt: peer.time, nonce: randomUUID(), signature: '' }
+    const auth = { nodeId: 'peer', audience: 'home', version: { major: 1, minor: 0 }, issuedAt: peer.time, nonce: randomUUID(), signature: '' }
     auth.signature = signValue(peer.keys.privateKey, requestProof('GET', path, null, auth))
     const headers = { 'X-Guanxi-Node': JSON.stringify(auth) }
     assert.equal((await owner.app.request('http://node'+path, { headers })).status, 200)
