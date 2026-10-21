@@ -87,8 +87,8 @@ function TabButton({
       className={cx(
         'rounded-md px-2 py-1 text-xs font-medium transition-colors',
         active
-          ? 'bg-[var(--bg-inset)] text-[var(--fg)]'
-          : 'text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]',
+          ? 'bg-inset text-foreground'
+          : 'text-secondary hover:bg-inset',
       )}
     >
       {children}
@@ -107,7 +107,7 @@ function SavedList({
 
   if (workspaces.loading) {
     return (
-      <div className="flex items-center gap-2 py-6 text-xs text-[var(--fg-muted)]">
+      <div className="flex items-center gap-2 py-6 text-xs text-secondary">
         <Spinner /> {translate('workspace.loading')}
       </div>
     )
@@ -139,14 +139,14 @@ function SavedList({
               'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
               workspace.id === currentId
                 ? 'border-[var(--accent)] bg-[var(--accent-subtle)]/50'
-                : 'border-[var(--border)] hover:bg-[var(--bg-subtle)]',
+                : 'border-divider hover:bg-inset',
               !workspace.exists && 'opacity-55',
             )}
           >
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs font-medium">{workspace.name}</span>
               <span
-                className="block truncate font-mono text-2xs text-[var(--fg-subtle)]"
+                className="block truncate font-mono text-2xs text-muted"
                 title={workspace.rootPath}
               >
                 {workspace.rootPath}
@@ -154,7 +154,7 @@ function SavedList({
             </span>
             {!workspace.exists && <Badge tone="red">{translate('workspace.missing')}</Badge>}
             {workspace.id === currentId && <Badge tone="accent">{translate('workspace.selected')}</Badge>}
-            <span className="shrink-0 text-2xs text-[var(--fg-subtle)]">
+            <span className="shrink-0 text-2xs text-muted">
               {formatRelativeTime(workspace.lastUsedAt ?? workspace.createdAt)}
             </span>
           </button>
@@ -197,7 +197,7 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
           {translate('workspace.up')}
         </Button>
         <code
-          className="min-w-0 flex-1 truncate rounded border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 font-mono text-2xs"
+          className="min-w-0 flex-1 truncate rounded border border-divider bg-inset px-2 py-1 font-mono text-2xs"
           title={listing.data?.path}
         >
           {listing.data?.path ?? '…'}
@@ -222,7 +222,7 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
       )}
 
       {listing.loading ? (
-        <div className="flex items-center gap-2 py-6 text-xs text-[var(--fg-muted)]">
+        <div className="flex items-center gap-2 py-6 text-xs text-secondary">
           <Spinner /> {translate('workspace.reading')}
         </div>
       ) : listing.error ? (
@@ -230,14 +230,14 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
           {errorMessage(listing.error)}
         </Callout>
       ) : (
-        <ul className="max-h-72 overflow-auto rounded-md border border-[var(--border)]">
+        <ul className="max-h-72 overflow-auto rounded-md border border-divider">
           {(listing.data?.entries ?? []).length === 0 && (
-            <li className="px-2 py-3 text-center text-2xs text-[var(--fg-subtle)]">
+            <li className="px-2 py-3 text-center text-2xs text-muted">
               {translate('workspace.directoryEmpty')}
             </li>
           )}
           {(listing.data?.entries ?? []).map((entry) => (
-            <li key={entry.path} className="border-b border-[var(--border)] last:border-0">
+            <li key={entry.path} className="border-b border-divider last:border-0">
               <button
                 type="button"
                 disabled={!entry.isDirectory}
@@ -246,7 +246,7 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
                 className={cx(
                   'flex w-full items-center gap-2 px-2 py-1 text-left',
                   entry.isDirectory
-                    ? 'hover:bg-[var(--bg-subtle)]'
+                    ? 'hover:bg-inset'
                     : 'cursor-default opacity-50',
                 )}
                 title={entry.isDirectory ? translate('workspace.entryHint') : entry.path}
@@ -266,7 +266,7 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
         </ul>
       )}
 
-      <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-2 text-2xs text-muted">
         {translate('workspace.browserHint')}
       </p>
     </div>

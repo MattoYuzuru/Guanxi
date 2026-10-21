@@ -158,7 +158,7 @@ function TopBar() {
   }[preference]
 
   return (
-    <header className="sticky top-0 z-30 flex h-11 w-full min-w-0 shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg)]/85 px-2 backdrop-blur-md sm:gap-4 sm:px-4">
+    <header className="sticky top-0 z-30 flex h-11 w-full min-w-0 shrink-0 items-center justify-between gap-2 border-b border-divider bg-canvas/85 px-2 backdrop-blur-md sm:gap-4 sm:px-4">
       <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-4">
         <Link to={paths.launcher()} className="shrink-0 text-xs font-semibold tracking-tight">
           {PRODUCT_NAME}
@@ -172,8 +172,8 @@ function TopBar() {
               className={cx(
                 'rounded-md px-1.5 py-1 text-xs font-medium transition-colors sm:px-2',
                 tab.active
-                  ? 'bg-[var(--bg-inset)] text-[var(--fg)]'
-                  : 'text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]',
+                  ? 'bg-inset text-foreground'
+                  : 'text-secondary hover:bg-inset hover:text-foreground',
               )}
             >
               {tab.label}

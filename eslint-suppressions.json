@@ -1,7 +1,7 @@
 {
   "packages/web/src/App.tsx": {
     "guanxi/semantic-classes": {
-      "count": 8
+      "count": 1
     }
   },
   "packages/web/src/components/ErrorBoundary.tsx": {
@@ -9,12 +9,12 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 26
+      "count": 3
     }
   },
   "packages/web/src/components/ui.tsx": {
     "guanxi/no-inline-colours": {
-      "count": 11
+      "count": 7
     },
     "guanxi/no-literal-styles": {
       "count": 7
@@ -23,7 +23,7 @@
       "count": 7
     },
     "guanxi/semantic-classes": {
-      "count": 69
+      "count": 33
     }
   },
   "packages/web/src/features/agent/ApprovalPrompt.tsx": {
@@ -31,7 +31,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 10
+      "count": 1
     }
   },
   "packages/web/src/features/agent/DiffViewer.tsx": {
@@ -39,7 +39,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 31
+      "count": 13
     }
   },
   "packages/web/src/features/agent/ToolCallCard.tsx": {
@@ -47,7 +47,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 18
+      "count": 6
     }
   },
   "packages/web/src/features/agent/WorkspacePicker.tsx": {
@@ -55,7 +55,7 @@
       "count": 3
     },
     "guanxi/semantic-classes": {
-      "count": 19
+      "count": 2
     }
   },
   "packages/web/src/features/attachments/AttachmentsPage.tsx": {
@@ -63,7 +63,7 @@
       "count": 2
     },
     "guanxi/semantic-classes": {
-      "count": 27
+      "count": 3
     }
   },
   "packages/web/src/features/catalog/CatalogRoute.tsx": {
@@ -81,12 +81,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 65
-    }
-  },
-  "packages/web/src/features/chat/ChatReasoningArtifacts.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 7
+      "count": 17
     }
   },
   "packages/web/src/features/chat/ChatRetentionInfo.tsx": {
@@ -94,17 +89,12 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 10
-    }
-  },
-  "packages/web/src/features/chat/ChatTrashList.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 14
+      "count": 4
     }
   },
   "packages/web/src/features/chat/ResourceConflictDecision.tsx": {
     "guanxi/semantic-classes": {
-      "count": 16
+      "count": 1
     }
   },
   "packages/web/src/features/context/ContextPanel.tsx": {
@@ -112,17 +102,17 @@
       "count": 11
     },
     "guanxi/semantic-classes": {
-      "count": 18
+      "count": 7
     }
   },
   "packages/web/src/features/health/HealthGate.tsx": {
     "guanxi/semantic-classes": {
-      "count": 11
+      "count": 2
     }
   },
   "packages/web/src/features/health/RuntimeStatus.tsx": {
     "guanxi/semantic-classes": {
-      "count": 45
+      "count": 6
     }
   },
   "packages/web/src/features/inspector/InspectorPage.tsx": {
@@ -132,22 +122,17 @@
   },
   "packages/web/src/features/launcher/LauncherPage.tsx": {
     "guanxi/semantic-classes": {
-      "count": 12
+      "count": 4
     }
   },
   "packages/web/src/features/models/AddFromOllama.tsx": {
     "guanxi/semantic-classes": {
-      "count": 17
+      "count": 1
     }
   },
   "packages/web/src/features/models/CapabilityOverrides.tsx": {
     "guanxi/semantic-classes": {
-      "count": 17
-    }
-  },
-  "packages/web/src/features/models/CatalogCompare.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 7
+      "count": 2
     }
   },
   "packages/web/src/features/models/CatalogFilters.tsx": {
@@ -155,7 +140,7 @@
       "count": 2
     },
     "guanxi/semantic-classes": {
-      "count": 13
+      "count": 1
     }
   },
   "packages/web/src/features/models/CatalogVariantInstall.tsx": {
@@ -163,40 +148,32 @@
       "count": 2
     },
     "guanxi/semantic-classes": {
-      "count": 39
+      "count": 6
     }
   },
   "packages/web/src/features/models/CompletionProbe.tsx": {
     "guanxi/semantic-classes": {
-      "count": 8
+      "count": 1
     }
   },
   "packages/web/src/features/models/FitIndicator.tsx": {
     "guanxi/no-inline-colours": {
       "count": 7
-    },
-    "guanxi/semantic-classes": {
-      "count": 6
-    }
-  },
-  "packages/web/src/features/models/HuggingFaceDiscovery.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 47
     }
   },
   "packages/web/src/features/models/HuggingFaceImportControl.tsx": {
     "guanxi/semantic-classes": {
-      "count": 13
+      "count": 1
     }
   },
   "packages/web/src/features/models/InstalledEvidence.tsx": {
     "guanxi/semantic-classes": {
-      "count": 12
+      "count": 1
     }
   },
   "packages/web/src/features/models/ModelCard.tsx": {
     "guanxi/semantic-classes": {
-      "count": 13
+      "count": 6
     }
   },
   "packages/web/src/features/models/ModelCarousel.tsx": {
@@ -204,17 +181,17 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 4
+      "count": 3
     }
   },
   "packages/web/src/features/models/ModelPage.tsx": {
     "guanxi/semantic-classes": {
-      "count": 23
+      "count": 6
     }
   },
   "packages/web/src/features/models/PullControl.tsx": {
     "guanxi/semantic-classes": {
-      "count": 8
+      "count": 3
     }
   },
   "packages/web/src/features/projects/ProjectIcon.tsx": {
@@ -233,7 +210,7 @@
       "count": 2
     },
     "guanxi/semantic-classes": {
-      "count": 7
+      "count": 1
     }
   },
   "packages/web/src/features/projects/ProjectsPage.tsx": {
@@ -241,7 +218,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 17
+      "count": 2
     }
   },
   "packages/web/src/features/quick-runs/QuickRunsPage.tsx": {
@@ -249,7 +226,7 @@
       "count": 2
     },
     "guanxi/semantic-classes": {
-      "count": 21
+      "count": 1
     }
   },
   "packages/web/src/features/recipes/RecipesPage.tsx": {
@@ -257,17 +234,7 @@
       "count": 9
     },
     "guanxi/semantic-classes": {
-      "count": 46
-    }
-  },
-  "packages/web/src/features/settings/Glossary.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 6
-    }
-  },
-  "packages/web/src/features/settings/SettingsPage.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 3
+      "count": 4
     }
   },
   "packages/web/src/index.css": {

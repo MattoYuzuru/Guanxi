@@ -20,7 +20,7 @@ export function InstalledEvidenceSummary({
         {freshnessState(freshness)}
       </Badge>
       <Badge tone="outline">{evidenceSources(evidence)}</Badge>
-      <span className="text-2xs text-[var(--fg-subtle)]">
+      <span className="text-2xs text-muted">
         {translate('models.evidence.observed')} {formatDateTime(evidence.observedAt)}
       </span>
     </div>
@@ -37,19 +37,19 @@ export function InstalledEvidenceDetails({
   return (
     <div className="space-y-3 text-2xs">
       <dl className="grid gap-x-3 gap-y-2 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)]">
-        <dt className="text-[var(--fg-subtle)]">{translate('models.evidence.reference')}</dt>
+        <dt className="text-muted">{translate('models.evidence.reference')}</dt>
         <dd className="min-w-0 break-all font-mono">
           {descriptor.reference.state === 'canonical'
             ? descriptor.reference.normalized
             : translate('models.evidence.unknown')}
         </dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('models.evidence.artifact')}</dt>
+        <dt className="text-muted">{translate('models.evidence.artifact')}</dt>
         <dd className="min-w-0 break-all font-mono">
           {descriptor.artifact.state === 'exact_digest'
             ? descriptor.artifact.digest
             : translate('models.evidence.unknown')}
         </dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('models.evidence.installation')}</dt>
+        <dt className="text-muted">{translate('models.evidence.installation')}</dt>
         <dd>
           {descriptor.installation.state === 'installed'
             ? translate('models.evidence.installed')
@@ -57,7 +57,7 @@ export function InstalledEvidenceDetails({
           · {evidenceSourceLabel(descriptor.installation.source)} ·{' '}
           {formatDateTime(descriptor.installation.observedAt)}
         </dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('models.evidence.capabilities')}</dt>
+        <dt className="text-muted">{translate('models.evidence.capabilities')}</dt>
         <dd className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-1">
             <Badge tone={evidenceTone(evidence)}>{evidenceState(evidence)}</Badge>
@@ -70,7 +70,7 @@ export function InstalledEvidenceDetails({
               {evidence.declarations.map((declaration) => (
                 <li
                   key={`${declaration.source}:${declaration.observedAt}`}
-                  className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2"
+                  className="rounded-md border border-divider bg-inset p-2"
                 >
                   <span className="font-medium">
                     {evidenceSourceLabel(declaration.source)}
@@ -84,7 +84,7 @@ export function InstalledEvidenceDetails({
                       <Badge key={capability} tone="accent">{capability}</Badge>
                     ))}
                   </div>
-                  <p className="mt-1 break-all text-[var(--fg-subtle)]">
+                  <p className="mt-1 break-all text-muted">
                     {declaration.basis.artifact.state === 'exact_digest'
                       ? declaration.basis.artifact.digest
                       : translate('models.evidence.identityUnknown')}{' '}
@@ -97,7 +97,7 @@ export function InstalledEvidenceDetails({
             </ul>
           )}
         </dd>
-        <dt className="text-[var(--fg-subtle)]">{translate('models.evidence.freshness')}</dt>
+        <dt className="text-muted">{translate('models.evidence.freshness')}</dt>
         <dd className="space-y-1">
           <div className="flex flex-wrap items-center gap-1">
             <Badge tone={freshnessTone(freshness)}>
@@ -107,7 +107,7 @@ export function InstalledEvidenceDetails({
           </div>
           <p>{freshnessExplanation(freshness)}</p>
           {freshness.observedAt ? (
-            <p className="text-[var(--fg-subtle)]">
+            <p className="text-muted">
               {translate('models.evidence.observed')} {formatDateTime(freshness.observedAt)}
               {'validatedAt' in freshness
                 ? ` · ${translate('models.evidence.validated')} ${formatDateTime(freshness.validatedAt)}`
@@ -116,7 +116,7 @@ export function InstalledEvidenceDetails({
           ) : null}
         </dd>
       </dl>
-      <p className="text-[var(--fg-subtle)]">
+      <p className="text-muted">
         {translate('models.evidence.declarationBoundary')}
       </p>
     </div>

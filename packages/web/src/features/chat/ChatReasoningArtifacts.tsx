@@ -122,7 +122,7 @@ export function ChatReasoningArtifacts({
   }
 
   return (
-    <section aria-labelledby="chat-reasoning-title" className="min-w-0 space-y-3 border-t border-[var(--border)] pt-4">
+    <section aria-labelledby="chat-reasoning-title" className="min-w-0 space-y-3 border-t border-divider pt-4">
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="chat-reasoning-title" className="text-sm font-semibold">
@@ -133,7 +133,7 @@ export function ChatReasoningArtifacts({
           </Button>
         </div>
         {data ? (
-          <p className="mt-1 break-words text-xs text-[var(--fg-muted)]">
+          <p className="mt-1 break-words text-xs text-secondary">
             {translate('chat.reasoning.cleanupActive')}
           </p>
         ) : null}
@@ -166,7 +166,7 @@ export function ChatReasoningArtifacts({
           <div>
             <h4 className="text-xs font-semibold">{translate('chat.reasoning.answers')}</h4>
             {data.generatedAnswers.length === 0 ? (
-              <p className="mt-1 text-xs text-[var(--fg-muted)]">{translate('chat.reasoning.answersEmpty')}</p>
+              <p className="mt-1 text-xs text-secondary">{translate('chat.reasoning.answersEmpty')}</p>
             ) : (
               <ul className="mt-2 space-y-1 text-xs">
                 {data.generatedAnswers.map((answer) => (
@@ -181,16 +181,16 @@ export function ChatReasoningArtifacts({
           <div>
             <h4 className="text-xs font-semibold">{translate('chat.reasoning.artifacts')}</h4>
             {data.artifacts.length === 0 ? (
-              <p className="mt-1 text-xs text-[var(--fg-muted)]">{translate('chat.reasoning.empty')}</p>
+              <p className="mt-1 text-xs text-secondary">{translate('chat.reasoning.empty')}</p>
             ) : (
               <ul className="mt-2 min-w-0 space-y-2">
                 {data.artifacts.map((artifact) => (
-                  <li key={artifact.id} className="min-w-0 rounded-lg border border-[var(--border)] p-3 text-xs">
+                  <li key={artifact.id} className="min-w-0 rounded-lg border border-divider p-3 text-xs">
                     <p className="break-words font-medium">
                       {translate('chat.reasoning.artifactLabel')} · {formatBytes(artifact.byteSize)}
                     </p>
-                    <p className="mt-1 break-all text-[var(--fg-muted)]">{artifact.checksum}</p>
-                    <p className="mt-1 break-words text-[var(--fg-muted)]">
+                    <p className="mt-1 break-all text-secondary">{artifact.checksum}</p>
+                    <p className="mt-1 break-words text-secondary">
                       {translate('chat.reasoning.expires')}:{' '}
                       <time dateTime={artifact.retention.effectiveExpiresAt}>
                         {formatDateTime(artifact.retention.effectiveExpiresAt)}

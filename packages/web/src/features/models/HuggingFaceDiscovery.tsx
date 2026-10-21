@@ -276,12 +276,12 @@ export function HuggingFaceDiscovery({
           <h2 id="hf-discovery-heading" className="text-sm font-semibold">
             {translate('hf.section.title')}
           </h2>
-          <p className="mt-0.5 text-2xs text-[var(--fg-muted)]">
+          <p className="mt-0.5 text-2xs text-secondary">
             {translate('hf.section.subtitle')}
           </p>
         </div>
         {listed ? (
-          <p className="text-2xs text-[var(--fg-subtle)]">
+          <p className="text-2xs text-muted">
             {translate('hf.results.count')}: {listed.repositories.length}
           </p>
         ) : null}
@@ -316,7 +316,7 @@ export function HuggingFaceDiscovery({
             : translate('hf.search.submit')}
         </Button>
       </form>
-      <p id="hf-search-hint" className="mt-1 text-2xs text-[var(--fg-subtle)]">
+      <p id="hf-search-hint" className="mt-1 text-2xs text-muted">
         {translate('hf.search.hint')}
       </p>
 
@@ -393,7 +393,7 @@ export function HuggingFaceDiscovery({
         all-dropped page is otherwise indistinguishable from "nothing matched".
       */}
       {droppedRows(state) > 0 ? (
-        <p className="mt-2 text-2xs text-[var(--warning)]" role="status">
+        <p className="mt-2 text-2xs text-warning" role="status">
           {translate('hf.results.dropped')}
         </p>
       ) : null}
@@ -409,13 +409,13 @@ export function HuggingFaceDiscovery({
           >
             {translate('hf.more')}
           </Button>
-          <p className="min-w-0 text-2xs text-[var(--fg-subtle)]">
+          <p className="min-w-0 text-2xs text-muted">
             {translate('hf.more.bounded')}
           </p>
         </div>
       ) : null}
 
-      <p className="mt-3 text-2xs text-[var(--fg-subtle)]">{translate('hf.boundary')}</p>
+      <p className="mt-3 text-2xs text-muted">{translate('hf.boundary')}</p>
     </section>
   )
 }
@@ -669,7 +669,7 @@ function HuggingFaceDownloadControl({
         >
           {translate('hf.download.action')}
         </Button>
-        <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+        <p className="mt-1 text-2xs text-muted">
           {translate('hf.download.boundary')}
         </p>
       </div>
@@ -681,7 +681,7 @@ function HuggingFaceDownloadControl({
       ? state.completedBytes / state.totalBytes
       : null
     return (
-      <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-2">
+      <div className="mt-2 rounded-md border border-divider bg-inset p-2">
         <p className="sr-only" role="status" aria-live="polite">
           {downloadAnnouncement(state)}
         </p>
@@ -695,13 +695,13 @@ function HuggingFaceDownloadControl({
         {state.phase === 'downloading' ? (
           <div className="mt-2">
             {ratio === null ? (
-              <p className="text-2xs text-[var(--fg-subtle)]">
+              <p className="text-2xs text-muted">
                 {formatBytes(state.completedBytes)} · {translate('hf.download.totalUnknown')}
               </p>
             ) : (
               <>
                 <Meter value={ratio} label={translate('hf.download.progress')} height={4} />
-                <p className="mt-1 font-mono text-2xs text-[var(--fg-subtle)]">
+                <p className="mt-1 font-mono text-2xs text-muted">
                   {formatBytes(state.completedBytes)} / {formatBytes(state.totalBytes!)}
                 </p>
               </>
@@ -733,11 +733,11 @@ function HuggingFaceDownloadControl({
       tabIndex={-1}
       role={state.kind === 'completed' || state.kind === 'cancelled' ? 'status' : 'alert'}
       aria-live="polite"
-      className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      className="mt-2 rounded-md border border-divider bg-inset p-2 outline-none focus-visible:ring-2 focus-visible:ring-focus"
     >
       <p className="text-2xs font-semibold">{title}</p>
       {state.kind === 'completed' ? (
-        <div className="mt-1 min-w-0 text-2xs text-[var(--fg-subtle)]">
+        <div className="mt-1 min-w-0 text-2xs text-muted">
           <p>
             {formatBytes(state.provenance.observedSizeBytes)} · {translate('hf.download.format')}{' '}
             v{state.provenance.format.version}
@@ -765,15 +765,15 @@ function HuggingFaceDownloadControl({
           />
         </div>
       ) : state.kind === 'refused' ? (
-        <p className="mt-1 text-2xs text-[var(--danger)]">
+        <p className="mt-1 text-2xs text-danger">
           {translate(DOWNLOAD_REFUSAL_KEYS[state.reason])}
         </p>
       ) : state.kind === 'failed' ? (
-        <p className="mt-1 text-2xs text-[var(--danger)]">
+        <p className="mt-1 text-2xs text-danger">
           {translate(DOWNLOAD_FAILURE_KEYS[state.reason])}
         </p>
       ) : null}
-      <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-1 text-2xs text-muted">
         {translate('hf.download.boundary')}
       </p>
       {state.kind !== 'completed' ? (
@@ -963,14 +963,14 @@ export function RepositoryCard({
   }
 
   return (
-    <article className="min-w-0 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-3">
+    <article className="min-w-0 rounded-lg border border-divider bg-inset p-3">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           {/* The exact case-sensitive Hub path, never the folded comparison key. */}
           <p className="min-w-0 break-all font-mono text-sm">
             {repository.identity.repositoryId}
           </p>
-          <p className="mt-0.5 text-2xs text-[var(--fg-subtle)]">
+          <p className="mt-0.5 text-2xs text-muted">
             {translate('hf.repository.source')}: {translate('hf.repository.source.value')}
             {' · '}
             {translate('hf.repository.observed')}: {formatDateTime(repository.observedAt)}
@@ -979,7 +979,7 @@ export function RepositoryCard({
         <Badge tone={badge.tone}>{badge.label}</Badge>
       </div>
 
-      <p className="mt-2 text-2xs text-[var(--fg-muted)]">
+      <p className="mt-2 text-2xs text-secondary">
         {verdict.state === 'supported'
           ? translate('hf.verdict.supported.detail')
           : verdict.state === 'unsupported'
@@ -992,7 +992,7 @@ export function RepositoryCard({
 
       <dl className="mt-2 grid min-w-0 grid-cols-1 gap-x-4 gap-y-1 text-2xs sm:grid-cols-2">
         <div className="min-w-0">
-          <dt className="text-[var(--fg-subtle)]">{translate('hf.repository.revision')}</dt>
+          <dt className="text-muted">{translate('hf.repository.revision')}</dt>
           <dd className="min-w-0 break-all font-mono">
             {revision.state === 'exact_commit'
               ? revision.commit
@@ -1002,22 +1002,22 @@ export function RepositoryCard({
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[var(--fg-subtle)]">{translate('hf.repository.gated')}</dt>
+          <dt className="text-muted">{translate('hf.repository.gated')}</dt>
           <dd className="min-w-0">{gatedLabel(repository)}</dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[var(--fg-subtle)]">{translate('hf.repository.license')}</dt>
+          <dt className="text-muted">{translate('hf.repository.license')}</dt>
           <dd className="min-w-0 break-words">
             {licenseLabel(repository)}
             {repository.license.state === 'declared' ? (
-              <span className="block text-[var(--fg-subtle)]">
+              <span className="block text-muted">
                 {translate('hf.repository.license.note')}
               </span>
             ) : null}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[var(--fg-subtle)]">{translate('hf.repository.files.total')}</dt>
+          <dt className="text-muted">{translate('hf.repository.files.total')}</dt>
           <dd className="min-w-0">
             {files.state === 'listed'
               ? files.totalFiles
@@ -1047,7 +1047,7 @@ export function RepositoryCard({
               >
                 <span className="min-w-0 break-all">
                   {file.path}
-                  <span className="ml-2 font-sans text-[var(--fg-subtle)]">
+                  <span className="ml-2 font-sans text-muted">
                     {file.sizeBytes === null
                       ? translate('hf.repository.files.size.unknown')
                       : formatBytes(file.sizeBytes)}
@@ -1058,24 +1058,24 @@ export function RepositoryCard({
             ))}
           </ul>
         ) : (
-          <p className="text-2xs text-[var(--fg-muted)]">
+          <p className="text-2xs text-secondary">
             {files.state === 'listed'
               ? translate('hf.repository.files.none')
               : translate('hf.repository.files.unknown')}
           </p>
         )}
         {files.state === 'listed' && files.truncated ? (
-          <p className="mt-1 text-2xs text-[var(--warning)]">
+          <p className="mt-1 text-2xs text-warning">
             {translate('hf.repository.files.truncated')}
           </p>
         ) : null}
         {files.state === 'listed' && files.malformedEntries > 0 ? (
-          <p className="mt-1 text-2xs text-[var(--warning)]">
+          <p className="mt-1 text-2xs text-warning">
             {translate('hf.repository.files.malformed')}
           </p>
         ) : null}
         {verdict.state === 'supported' && revision.state !== 'exact_commit' ? (
-          <p className="mt-1 text-2xs text-[var(--warning)]">
+          <p className="mt-1 text-2xs text-warning">
             {translate('hf.select.revisionUnavailable')}
           </p>
         ) : null}
@@ -1087,12 +1087,12 @@ export function RepositoryCard({
             {selectionAnnouncement(state)}
           </p>
           {state.kind === 'confirmed' ? (
-            <div className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2">
+            <div className="rounded-md border border-divider bg-inset p-2">
               <p className="text-2xs font-semibold">{translate('hf.select.heading')}</p>
               <p className="mt-1 min-w-0 break-all font-mono text-2xs">
                 {state.result.selection.filePath}
               </p>
-              <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+              <p className="mt-1 text-2xs text-muted">
                 {translate('hf.select.size')}:{' '}
                 {state.result.selection.sizeBytes === null
                   ? translate('hf.repository.files.size.unknown')
@@ -1106,17 +1106,17 @@ export function RepositoryCard({
                       {' · '}
                       {formatUtilization(state.result.fit.verdict.utilization)}
                     </p>
-                    <p className="mt-0.5 text-[var(--fg-subtle)]">
+                    <p className="mt-0.5 text-muted">
                       {formatBytes(state.result.fit.verdict.requiredBytes)} /{' '}
                       {formatBytes(state.result.fit.verdict.usableBytes)}
                       {' · '}
                       {translate('hf.select.fit.context')}{' '}
                       {formatContextLength(state.result.fit.contextLength)}
                     </p>
-                    <p className="mt-1 text-[var(--warning)]">
+                    <p className="mt-1 text-warning">
                       {translate('hf.select.fit.reportedSizeOnly')}
                     </p>
-                    <p className="mt-1 text-[var(--fg-subtle)]">
+                    <p className="mt-1 text-muted">
                       {translate('hf.select.fit.hardware')}:{' '}
                       {translate('hf.select.fit.hardware.source')}
                       {' · '}
@@ -1130,29 +1130,29 @@ export function RepositoryCard({
                     </p>
                   </div>
                 ) : (
-                  <p className="text-2xs text-[var(--warning)]">
+                  <p className="text-2xs text-warning">
                     {state.result.fit.reason === 'size_not_reported'
                       ? translate('hf.select.fit.unknown')
                       : translate('hf.select.fit.hardwareUnavailable')}
                   </p>
                 )}
               </div>
-              <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+              <p className="mt-2 text-2xs text-muted">
                 {translate('hf.repository.gated')}: {gatedLabel(state.result.repository)}
                 {' · '}
                 {translate('hf.repository.license')}: {licenseLabel(state.result.repository)}
               </p>
               {state.result.repository.license.state === 'declared' ? (
-                <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+                <p className="mt-1 text-2xs text-muted">
                   {translate('hf.repository.license.note')}
                 </p>
               ) : null}
-              <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+              <p className="mt-1 text-2xs text-muted">
                 {translate('hf.repository.gated.note')}
               </p>
-              <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-subtle)] p-2">
+              <div className="mt-2 rounded-md border border-divider bg-inset p-2">
                 <p className="text-2xs font-medium">{translate('hf.select.next')}</p>
-                <p className="mt-0.5 text-2xs text-[var(--fg-subtle)]">
+                <p className="mt-0.5 text-2xs text-muted">
                   {translate('hf.select.next.detail')}
                 </p>
               </div>
@@ -1198,12 +1198,12 @@ export function RepositoryCard({
       ) : null}
 
       {repository.gated.state === 'gated' ? (
-        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p className="mt-2 text-2xs text-muted">
           {translate('hf.repository.gated.note')}
         </p>
       ) : null}
 
-      <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-2 text-2xs text-muted">
         <span className="font-medium">{translate('hf.next')}: </span>
         {translate('hf.next.detail')}
       </p>

@@ -19,11 +19,11 @@ test.beforeAll(async () => {
   execFileSync(process.execPath, [resolve(webRoot, '../../node_modules/vite/bin/vite.js'), 'build', '--outDir', directory, '--emptyOutDir'], { cwd: webRoot, stdio: 'pipe' })
   baselineDirectory = await mkdtemp(resolve(tmpdir(), 'guanxi-ds1a-legacy-baseline-'))
   const baselineScript = resolve(directory, 'baseline-build.mjs')
-  // Build the identical legacy app with only the runtime-token import removed. No source
+  // Build the identical legacy app with the design-system CSS imports removed. No source
   // files are edited, and the reference uses the same locked Vite/Tailwind dependencies.
   await writeFile(baselineScript, `import { build } from ${JSON.stringify(pathToFileURL(resolve(webRoot, '../../node_modules/vite/dist/node/index.js')).href)};
 import { readFile } from 'node:fs/promises';
-await build({root:${JSON.stringify(webRoot)},configFile:${JSON.stringify(resolve(webRoot, 'vite.config.ts'))},logLevel:'error',plugins:[{name:'legacy-baseline',enforce:'pre',async load(id){if(id.split('?')[0]===${JSON.stringify(resolve(webRoot, 'src/index.css'))})return (await readFile(id,'utf8')).replace(${JSON.stringify("@import '../../ui/generated/tokens.css';")},'')}}],build:{outDir:${JSON.stringify(baselineDirectory)},emptyOutDir:true}});
+await build({root:${JSON.stringify(webRoot)},configFile:${JSON.stringify(resolve(webRoot, 'vite.config.ts'))},logLevel:'error',plugins:[{name:'legacy-baseline',enforce:'pre',async load(id){if(id.split('?')[0]===${JSON.stringify(resolve(webRoot, 'src/index.css'))}){const css=await readFile(id,'utf8');const imports=${JSON.stringify(["@import '@guanxi/ui/tokens.css';", "@import '@guanxi/ui/theme.css';"])};for(const selector of imports)if(!css.includes(selector))throw Error('Missing baseline import selector: '+selector);return imports.reduce((text,selector)=>text.replace(selector,''),css)}}}],build:{outDir:${JSON.stringify(baselineDirectory)},emptyOutDir:true}});
 `)
   execFileSync(process.execPath, [baselineScript], { cwd: webRoot, stdio: 'pipe' })
   const types: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.html': 'text/html', '.svg': 'image/svg+xml' }

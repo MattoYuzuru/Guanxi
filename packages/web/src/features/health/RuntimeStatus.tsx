@@ -50,7 +50,7 @@ export function RuntimeStatusView({
   return (
     <section
       aria-labelledby="runtime-status-title"
-      className="runtime-bar z-20 shrink-0 border-b border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 max-sm:order-last max-sm:border-t max-sm:border-b-0 max-sm:shadow-[0_-8px_24px_oklch(0_0_0/0.18)]"
+      className="runtime-bar z-20 shrink-0 border-b border-divider bg-inset px-3 py-2 max-sm:order-last max-sm:border-t max-sm:border-b-0 max-sm:shadow-[0_-8px_24px_oklch(0_0_0/0.18)]"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="min-w-0">
@@ -73,7 +73,7 @@ export function RuntimeStatusView({
 
       {loading ? (
         <div
-          className="mt-1 flex items-center gap-1.5 text-2xs text-[var(--fg-muted)]"
+          className="mt-1 flex items-center gap-1.5 text-2xs text-secondary"
           role="status"
           aria-live="polite"
         >
@@ -83,19 +83,19 @@ export function RuntimeStatusView({
       ) : null}
 
       {refreshing && data ? (
-        <p className="mt-1 text-2xs text-[var(--fg-muted)]" role="status" aria-live="polite">
+        <p className="mt-1 text-2xs text-secondary" role="status" aria-live="polite">
           {translate('runtime.refreshing')}
         </p>
       ) : null}
 
       {error ? (
-        <div className="mt-1 text-2xs text-[var(--danger)]" role="alert">
+        <div className="mt-1 text-2xs text-danger" role="alert">
           <p className="font-medium">
             {data
               ? translate('runtime.refresh.error.title')
               : translate('runtime.error.title')}
           </p>
-          <p className="text-[var(--fg-muted)]">
+          <p className="text-secondary">
             {data
               ? translate('runtime.refresh.error.summary')
               : translate('runtime.error.summary')}
@@ -105,7 +105,7 @@ export function RuntimeStatusView({
 
       {data ? (
         <details className="runtime-bar-details mt-1 max-sm:max-h-[min(70dvh,36rem)] max-sm:overflow-y-auto">
-          <summary className="min-h-11 cursor-pointer py-2 text-2xs font-medium text-[var(--fg-muted)] sm:min-h-0 sm:py-0.5">
+          <summary className="min-h-11 cursor-pointer py-2 text-2xs font-medium text-secondary sm:min-h-0 sm:py-0.5">
             {translate('runtime.details')}
           </summary>
           <div className="mt-2 grid min-w-0 gap-2 pb-1 lg:grid-cols-3">
@@ -113,7 +113,7 @@ export function RuntimeStatusView({
             <ModelsProjection snapshot={data} />
             <HostProjection host={data.host} />
           </div>
-          <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+          <p className="mt-1 text-2xs text-muted">
             {translate('runtime.sampled')} · {formatDateTime(data.observedAt)}
           </p>
         </details>
@@ -132,7 +132,7 @@ function CompactSummary({ snapshot }: { snapshot: RuntimeSnapshot }) {
         : translate('runtime.models.count').replace('{count}', String(snapshot.models.length))
 
   return (
-    <p className="truncate text-2xs text-[var(--fg-muted)]">
+    <p className="truncate text-2xs text-secondary">
       {active
         ? `${operationLabel(active.operation)} · ${active.model.name}`
         : translate('runtime.admission.idle')}
@@ -154,15 +154,15 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
   return (
     <section
       aria-labelledby="runtime-admission-title"
-      className="min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-2xs"
+      className="min-w-0 rounded-md border border-divider bg-canvas p-2 text-2xs"
     >
       <h3 id="runtime-admission-title" className="font-semibold">
         {translate('runtime.admission.title')}
       </h3>
-      <p className="mt-0.5 text-[var(--fg-subtle)]">
+      <p className="mt-0.5 text-muted">
         {translate('runtime.admission.scope')}
       </p>
-      <p className="mt-0.5 text-[var(--fg-subtle)]">
+      <p className="mt-0.5 text-muted">
         {translate('runtime.admission.permitPolicy')}
       </p>
       <p className="mt-1 font-medium">
@@ -174,7 +174,7 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
       {governor.activeLease ? (
         <div className="mt-2">
           <h4 className="font-medium">{translate('runtime.active.title')}</h4>
-          <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
+          <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
             <Fact label={translate('runtime.operation')} value={operationLabel(governor.activeLease.operation)} />
             <Fact label={translate('runtime.priority')} value={priorityLabel(governor.activeLease.priority)} />
             <Fact label={translate('runtime.model')} value={governor.activeLease.model.name} mono />
@@ -194,7 +194,7 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
           </dl>
         </div>
       ) : (
-        <p className="mt-2 text-[var(--fg-muted)]">{translate('runtime.active.none')}</p>
+        <p className="mt-2 text-secondary">{translate('runtime.active.none')}</p>
       )}
 
       <div className="mt-2">
@@ -202,22 +202,22 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
           {translate('runtime.queue.title')} ({governor.queued.length})
         </h4>
         {governor.queued.length === 0 ? (
-          <p className="mt-1 text-[var(--fg-muted)]">{translate('runtime.queue.empty')}</p>
+          <p className="mt-1 text-secondary">{translate('runtime.queue.empty')}</p>
         ) : (
           <ol className="mt-1 space-y-1">
             {governor.queued.map((waiter, index) => (
               <li
                 key={waiter.ticketId}
-                className="min-w-0 border-l-2 border-[var(--border-strong)] pl-2"
+                className="min-w-0 border-l-2 border-control pl-2"
               >
                 <p className="font-medium">
                   {translate('runtime.queue.position').replace('{position}', String(index + 1))}{' '}
                   · {operationLabel(waiter.operation)}
                 </p>
-                <p className="break-words font-mono text-[var(--fg-muted)]">
+                <p className="break-words font-mono text-secondary">
                   {waiter.model.name}
                 </p>
-                <p className="text-[var(--fg-muted)]">
+                <p className="text-secondary">
                   {ownerLabel(waiter.owner)} · {priorityLabel(waiter.priority)} · {translate('runtime.context')}:{' '}
                   {formatContextLength(waiter.requestedContext)} · {translate('runtime.wait')}:{' '}
                   {formatElapsed(waiter.enqueuedAt)}
@@ -239,17 +239,17 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
   return (
     <section
       aria-labelledby="runtime-models-title"
-      className="min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-2xs"
+      className="min-w-0 rounded-md border border-divider bg-canvas p-2 text-2xs"
     >
       <h3 id="runtime-models-title" className="font-semibold">
         {translate('runtime.models.title')}
       </h3>
-      <p className="mt-0.5 text-[var(--fg-subtle)]">
+      <p className="mt-0.5 text-muted">
         {sourceStateLabel(snapshot.source.state)} · {translate('runtime.source.ollama')}
       </p>
 
       {snapshot.models === null ? (
-        <p className="mt-2 font-medium text-[var(--danger)]">
+        <p className="mt-2 font-medium text-danger">
           {snapshot.source.state === 'incompatible'
             ? translate('runtime.models.incompatible')
             : translate('runtime.models.unavailable')}
@@ -257,7 +257,7 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
       ) : snapshot.models.length === 0 ? (
         <div className="mt-2">
           <p className="font-medium">{translate('runtime.empty.title')}</p>
-          <p className="text-[var(--fg-muted)]">{translate('runtime.empty.summary')}</p>
+          <p className="text-secondary">{translate('runtime.empty.summary')}</p>
         </div>
       ) : (
         <ul className="mt-2 space-y-2" aria-label={translate('runtime.models.title')}>
@@ -268,7 +268,7 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
       )}
 
       {activeNotObserved ? (
-        <p className="mt-2 font-medium text-[var(--danger)]">
+        <p className="mt-2 font-medium text-danger">
           {translate('runtime.active.notObserved')}
         </p>
       ) : null}
@@ -279,14 +279,14 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
 function RuntimeModelRow({ model }: { model: RuntimeModelObservation }) {
   const fit = model.currentFit
   return (
-    <li className="min-w-0 border-l-2 border-[var(--border-strong)] pl-2">
+    <li className="min-w-0 border-l-2 border-control pl-2">
       <p className="break-words font-mono font-medium">{model.name}</p>
-      <p className="text-[var(--fg-muted)]">
+      <p className="text-secondary">
         {model.ownerState === 'unknown'
           ? translate('runtime.owner.unknown.warning')
           : translate('runtime.owner.active.exact')}
       </p>
-      <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
+      <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
         <Fact label={translate('runtime.digest')} value={model.digest ?? translate('runtime.unknown')} mono />
         <Fact label={translate('runtime.context.observed')} value={model.contextLength === null ? translate('runtime.unknown') : formatContextLength(model.contextLength)} />
         <Fact label={translate('runtime.allocation.runtime')} value={allocationLabel(fit.runtimeAllocationBytes)} />
@@ -296,7 +296,7 @@ function RuntimeModelRow({ model }: { model: RuntimeModelObservation }) {
         <Fact label={translate('runtime.fit.requestedContext')} value={fit.requestedContext === null ? translate('runtime.unknown') : formatContextLength(fit.requestedContext)} />
         <Fact label={translate('runtime.fit.pressure')} value={pressureLabel(fit.pressureLevel)} />
       </dl>
-      <p className="mt-1 text-[var(--fg-subtle)]">
+      <p className="mt-1 text-muted">
         {translate('runtime.fit.noFutureGuarantee')}
       </p>
     </li>
@@ -308,22 +308,22 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
   return (
     <section
       aria-labelledby="runtime-host-title"
-      className="min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-2xs"
+      className="min-w-0 rounded-md border border-divider bg-canvas p-2 text-2xs"
     >
       <h3 id="runtime-host-title" className="font-semibold">
         {translate('runtime.host.title')}
       </h3>
       <p className="mt-0.5 font-medium">{hostStateLabel(host)}</p>
-      <p className="text-[var(--fg-subtle)]">
+      <p className="text-muted">
         {host.profile.platform}/{host.profile.arch} · {host.profile.accelerator}
       </p>
       {nvidia.state === 'unknown' || nvidia.state === 'unsupported' ? (
-        <p className="text-[var(--fg-subtle)]">
+        <p className="text-muted">
           {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)} ·{' '}
           {translate('runtime.host.devicesUnknown')}
         </p>
       ) : null}
-      <dl className="mt-2 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
+      <dl className="mt-2 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
         <MemoryFact label={translate('runtime.host.total')} fact={host.profile.totalMemoryBytes} />
         <MemoryFact label={translate('runtime.host.free')} fact={host.sample.freeMemoryBytes} />
         <MemoryFact label={translate('runtime.host.legacyEstimate')} fact={host.profile.legacyUsableMemoryBytes} />
@@ -337,7 +337,7 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
           <h4 id="runtime-nvidia-devices-title" className="font-semibold">
             {translate('runtime.nvidia.devices')}
           </h4>
-          <p className="text-[var(--fg-subtle)]">
+          <p className="text-muted">
             {nvidiaStateLabel(nvidia.state)}
             {nvidia.reason === null ? '' : ` · ${nvidiaReasonLabel(nvidia.reason)}`} ·{' '}
             {translate('runtime.nvidia.freeWarning')}
@@ -349,10 +349,10 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
             {nvidia.devices.map((device) => (
               <li
                 key={`${device.providerIndex}:${device.uuid ?? device.displayName}`}
-                className="min-w-0 border-l-2 border-[var(--border-strong)] pl-2"
+                className="min-w-0 border-l-2 border-control pl-2"
               >
                 <p className="break-words font-mono font-medium">{device.displayName}</p>
-                <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[var(--fg-muted)]">
+                <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
                   <Fact label={translate('runtime.nvidia.index')} value={String(device.providerIndex)} mono />
                   <Fact label={translate('runtime.nvidia.uuid')} value={redactNvidiaUuid(device.uuid)} mono />
                   <MemoryFact label={translate('runtime.nvidia.totalVram')} fact={device.totalVramBytes} />
@@ -366,12 +366,12 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
           </ul>
         </section>
       ) : nvidia.state === 'unavailable' ? (
-        <p className="mt-2 font-medium text-[var(--danger)]">
+        <p className="mt-2 font-medium text-danger">
           {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)}
         </p>
       ) : null}
       {host.missingFields.length > 0 ? (
-        <p className="mt-2 text-[var(--fg-subtle)]">
+        <p className="mt-2 text-muted">
           {translate('runtime.host.missing')}:{' '}
           {host.missingFields.map(hostFieldLabel).join(', ')}
         </p>

@@ -1,27 +1,8 @@
 @import 'tailwindcss';
-@import '../../ui/generated/tokens.css';
+@import '@guanxi/ui/tokens.css';
+@import '@guanxi/ui/theme.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
-
-/* SidebarSlot, Connections and Developer settings use these aliases from
-   ui/generated/theme.css. Keep this bridge until DS1-c imports that theme for the rest of the
-   legacy app. */
-@theme inline {
-  --color-surface: var(--color-background-secondary);
-  --color-accent: var(--color-background-accent);
-  --color-divider: var(--color-border-primary);
-  --color-secondary: var(--color-text-secondary);
-  --color-foreground: var(--color-text-primary);
-  --color-inset: var(--color-background-tertiary);
-  --radius-control: var(--border-radius-control);
-  --radius-panel: var(--border-radius-panel);
-  --text-15: var(--font-size-15);
-  --text-12: var(--font-size-12);
-}
-
-@utility font-heading {
-  font-weight: var(--font-weight-heading);
-}
 
 /*
   Плотная информационная вёрстка: базовый шрифт 13px, узкие отступы.

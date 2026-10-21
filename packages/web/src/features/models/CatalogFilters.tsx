@@ -98,12 +98,12 @@ export function CatalogFilters({
 
   return (
     <div className="min-w-0">
-      <details className="group rounded-lg border border-[var(--border)] bg-[var(--bg-raised)]">
+      <details className="group rounded-lg border border-divider bg-surface">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]">
           <span>{translate('catalog.filters.open')}</span>
-          <span aria-hidden="true" className="text-[var(--fg-subtle)] group-open:rotate-180">⌄</span>
+          <span aria-hidden="true" className="text-muted group-open:rotate-180">⌄</span>
         </summary>
-        <div className="grid min-w-0 gap-4 border-t border-[var(--border)] p-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid min-w-0 gap-4 border-t border-divider p-3 sm:grid-cols-2 lg:grid-cols-3">
           <CheckboxGroup
             legend={translate('catalog.filters.installation')}
             values={INSTALLATION_OPTIONS}
@@ -141,10 +141,10 @@ export function CatalogFilters({
             onToggle={(next) => onChange({ ...value, capability: next })}
           />
           <fieldset className="min-w-0 space-y-2">
-            <legend className="text-2xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">
+            <legend className="text-2xs font-semibold uppercase tracking-wide text-secondary">
               {translate('catalog.filters.claimedContext')}
             </legend>
-            <label className="block text-2xs text-[var(--fg-muted)]">
+            <label className="block text-2xs text-secondary">
               {translate('catalog.filters.minimum')}
               <Input
                 className="mt-1 w-full"
@@ -180,10 +180,10 @@ export function CatalogFilters({
             {contextError ? <ValidationError /> : null}
           </fieldset>
           <fieldset className="min-w-0 space-y-2">
-            <legend className="text-2xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">
+            <legend className="text-2xs font-semibold uppercase tracking-wide text-secondary">
               {translate('catalog.filters.claimedSize')}
             </legend>
-            <label className="block text-2xs text-[var(--fg-muted)]">
+            <label className="block text-2xs text-secondary">
               {translate('catalog.filters.maximumBytes')}
               <Input
                 className="mt-1 w-full"
@@ -224,7 +224,7 @@ export function CatalogFilters({
       {hasCatalogFilters(value) ? (
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5" aria-label={translate('catalog.filters.applied')}>
           {filterSummary(value).map((item) => (
-            <span key={item} className="max-w-full break-words rounded-full border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-2xs">
+            <span key={item} className="max-w-full break-words rounded-full border border-divider bg-inset px-2 py-1 text-2xs">
               {item}
             </span>
           ))}
@@ -247,7 +247,7 @@ function CheckboxGroup<T extends string>({
 }) {
   return (
     <fieldset className="min-w-0">
-      <legend className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">{legend}</legend>
+      <legend className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-secondary">{legend}</legend>
       <div className="grid grid-cols-2 gap-1.5">
         {values.map((option) => (
           <label key={option} className="flex min-h-8 items-center gap-2 text-2xs">
@@ -278,7 +278,7 @@ function UnknownToggle({ checked, onChange }: { checked: boolean; onChange: (val
 }
 
 function ValidationError() {
-  return <p role="alert" className="text-2xs text-[var(--danger)]">{translate('catalog.filters.invalidNumber')}</p>
+  return <p role="alert" className="text-2xs text-danger">{translate('catalog.filters.invalidNumber')}</p>
 }
 
 export function filterSummary(value: CatalogFilterState): string[] {

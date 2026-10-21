@@ -220,28 +220,28 @@ export function CapabilityOverrides({
 
   return (
     <div className="min-w-0 space-y-3" aria-label={translate('models.override.label')}>
-      <p className="text-2xs text-[var(--fg-muted)]">
+      <p className="text-2xs text-secondary">
         {translate('models.override.explanation')}
       </p>
-      <p className="text-2xs text-[var(--fg-subtle)]">
+      <p className="text-2xs text-muted">
         {translate('models.override.boundary')}
       </p>
 
       {identity === null ? (
-        <p className="text-2xs text-[var(--fg-subtle)]" role="note">
+        <p className="text-2xs text-muted" role="note">
           {translate('models.override.identity.unavailable')}
         </p>
       ) : (
         <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs">
-          <dt className="text-[var(--fg-subtle)]">
+          <dt className="text-muted">
             {translate('models.override.identity.reference')}
           </dt>
           <dd className="min-w-0 break-all font-mono">{identity.normalizedModelReference}</dd>
-          <dt className="text-[var(--fg-subtle)]">
+          <dt className="text-muted">
             {translate('models.override.identity.digest')}
           </dt>
           <dd className="min-w-0 break-all font-mono">{identity.artifactDigest}</dd>
-          <dt className="text-[var(--fg-subtle)]">
+          <dt className="text-muted">
             {translate('models.override.identity.runtime')}
           </dt>
           <dd className="min-w-0 break-all font-mono">{identity.runtimeVersion}</dd>
@@ -252,7 +252,7 @@ export function CapabilityOverrides({
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2 text-2xs"
+        className="rounded-md border border-divider bg-inset p-2 text-2xs"
       >
         {pending ? (
           <Badge tone="yellow">{translate('models.override.pending')}</Badge>
@@ -272,13 +272,13 @@ export function CapabilityOverrides({
           {overrides.map((override) => (
             <li
               key={override.capability}
-              className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2"
+              className="rounded-md border border-divider bg-inset p-2"
             >
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-1">
                   <Badge tone="accent">{override.capability}</Badge>
                   <Badge tone="outline">{translate('models.override.state')}</Badge>
-                  <span className="text-[var(--fg-subtle)]">
+                  <span className="text-muted">
                     {translate('models.override.source')}
                   </span>
                 </div>
@@ -305,11 +305,11 @@ export function CapabilityOverrides({
                   {translate('models.override.remove')}
                 </Button>
               </div>
-              <p className="mt-1 min-w-0 break-all text-[var(--fg-subtle)]">
+              <p className="mt-1 min-w-0 break-all text-muted">
                 {translate('models.override.created')} {formatDateTime(override.createdAt)} ·{' '}
                 {translate('models.override.updated')} {formatDateTime(override.updatedAt)}
               </p>
-              <p className="mt-1 min-w-0 break-all font-mono text-[var(--fg-subtle)]">
+              <p className="mt-1 min-w-0 break-all font-mono text-muted">
                 {override.normalizedModelReference} · {override.artifactDigest} · Ollama{' '}
                 {override.runtimeVersion}
               </p>
@@ -376,7 +376,7 @@ export function CapabilityOverrides({
             {translate('models.override.export.download')}
           </Button>
         </div>
-        <p className="text-2xs text-[var(--fg-subtle)]">
+        <p className="text-2xs text-muted">
           {translate('models.override.export.boundary')}
         </p>
       </div>
@@ -416,7 +416,7 @@ export function CapabilityOverrides({
       >
         <div
           id="capability-override-confirmation"
-          className="space-y-2 text-xs text-[var(--fg-muted)]"
+          className="space-y-2 text-xs text-secondary"
         >
           <p>
             {translate(

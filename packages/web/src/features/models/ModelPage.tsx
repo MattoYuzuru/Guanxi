@@ -160,7 +160,7 @@ function ModelProfile({
     <div className="mx-auto w-full max-w-6xl px-5 py-5">
       <Link
         to={paths.launcher()}
-        className="mb-3 inline-block text-2xs text-[var(--fg-muted)] hover:text-[var(--fg)]"
+        className="mb-3 inline-block text-2xs text-secondary hover:text-foreground"
       >
         {translate('model.all')}
       </Link>
@@ -169,7 +169,7 @@ function ModelProfile({
       <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="font-mono text-lg font-semibold tracking-tight">{model.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--fg-muted)]">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-secondary">
             <span>{model.family}</span>
             <span className="text-[var(--border-strong)]">·</span>
             <span>{model.parameterSize}</span>
@@ -237,7 +237,7 @@ function ModelProfile({
 
           {model.systemPrompt && (
             <Panel title={translate('model.systemPrompt')}>
-              <pre className="max-h-64 overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
+              <pre className="max-h-64 overflow-auto rounded-md border border-divider bg-inset p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                 {model.systemPrompt}
               </pre>
             </Panel>
@@ -246,7 +246,7 @@ function ModelProfile({
           {model.template && (
             <Panel title={translate('model.promptTemplate')}>
               <Disclosure summary={translate('model.promptTemplate.show')} defaultOpen={false}>
-                <pre className="max-h-80 overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
+                <pre className="max-h-80 overflow-auto rounded-md border border-divider bg-inset p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                   {model.template}
                 </pre>
               </Disclosure>
@@ -256,7 +256,7 @@ function ModelProfile({
           {model.license && (
             <Panel title={translate('model.license')}>
               <Disclosure summary={translate('model.license.show')}>
-                <pre className="max-h-80 overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
+                <pre className="max-h-80 overflow-auto rounded-md border border-divider bg-inset p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                   {model.license}
                 </pre>
               </Disclosure>
@@ -304,17 +304,17 @@ function ModelProfile({
                   {translate('context.custom.apply')}
                 </Button>
               </div>
-              <p id="model-custom-context-hint" className="mt-1 text-2xs text-[var(--fg-subtle)]">
+              <p id="model-custom-context-hint" className="mt-1 text-2xs text-muted">
                 {translate('context.custom.hint')}
               </p>
               {contextError ? (
-                <p className="mt-1 text-2xs text-[var(--danger)]" role="alert">
+                <p className="mt-1 text-2xs text-danger" role="alert">
                   {contextError}
                 </p>
               ) : null}
             </div>
 
-            <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+            <p className="mt-2 text-2xs text-muted">
               {model.contextLimit.state === 'declared' ? (
                 <>
                   {translate('context.limit.declared')}: {formatContextLength(model.contextLimit.value)} ·{' '}
@@ -420,22 +420,22 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 function ModelInfoTable({ info }: { info: ModelDetail['modelInfo'] }) {
   const entries = Object.entries(info)
   if (entries.length === 0) {
-    return <p className="text-2xs text-[var(--fg-subtle)]">{translate('model.parameters.empty')}</p>
+    return <p className="text-2xs text-muted">{translate('model.parameters.empty')}</p>
   }
 
   return (
-    <div className="max-h-80 overflow-auto rounded-md border border-[var(--border)]">
+    <div className="max-h-80 overflow-auto rounded-md border border-divider">
       <table className="w-full text-2xs">
         <tbody>
           {entries.map(([key, value], index) => (
             <tr
               key={key}
               className={cx(
-                'border-b border-[var(--border)] last:border-0',
-                index % 2 === 1 && 'bg-[var(--bg-subtle)]/50',
+                'border-b border-divider last:border-0',
+                index % 2 === 1 && 'bg-inset/50',
               )}
             >
-              <td className="px-2 py-1 font-mono text-[var(--fg-muted)]">{key}</td>
+              <td className="px-2 py-1 font-mono text-secondary">{key}</td>
               <td className="px-2 py-1 text-right font-mono tabular-nums break-all">
                 {value === null ? '—' : String(value)}
               </td>

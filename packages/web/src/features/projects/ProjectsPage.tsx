@@ -73,7 +73,7 @@ export function ProjectsPage() {
           <h1 ref={errorHeadingRef} tabIndex={-1} className="text-lg font-semibold outline-none">
             {translate('projects.error.title')}
           </h1>
-          <p className="mt-1 break-words text-xs text-[var(--fg-muted)]">
+          <p className="mt-1 break-words text-xs text-secondary">
             {errorMessage(projects.error)}
           </p>
           <Button className="mt-4" variant="primary" onClick={projects.reload}>
@@ -90,7 +90,7 @@ export function ProjectsPage() {
     <div className="mx-auto w-full min-w-0 max-w-5xl px-4 py-6 sm:px-5">
       <header>
         <h1 className="text-lg font-semibold tracking-tight">{translate('projects.title')}</h1>
-        <p className="mt-1 max-w-2xl text-xs text-[var(--fg-muted)]">
+        <p className="mt-1 max-w-2xl text-xs text-secondary">
           {translate('projects.description')}
         </p>
       </header>
@@ -116,11 +116,11 @@ export function ProjectsPage() {
           {translate('projects.create')}
         </Button>
       </form>
-      <p id="project-name-hint" className="mt-1 text-2xs text-[var(--fg-subtle)]">
+      <p id="project-name-hint" className="mt-1 text-2xs text-muted">
         {translate('projects.name.hint')}
       </p>
       {createError && (
-        <p id="project-create-error" role="alert" className="mt-2 text-xs text-[var(--danger)]">
+        <p id="project-create-error" role="alert" className="mt-2 text-xs text-danger">
           {createError}
         </p>
       )}
@@ -206,7 +206,7 @@ function ProjectCard({
   }
 
   return (
-    <article className="surface min-w-0 rounded-lg border border-[var(--border)] p-3">
+    <article className="surface min-w-0 rounded-lg border border-divider p-3">
       <div className="mb-3 flex min-w-0 items-center gap-2">
         <span
           className="project-color-chip flex size-10 shrink-0 items-center justify-center rounded-md border"
@@ -228,7 +228,7 @@ function ProjectCard({
         </Button>
       </div>
       <form onSubmit={rename} className="flex min-w-0 flex-col gap-2">
-        <label className="min-w-0 text-2xs text-[var(--fg-subtle)]">
+        <label className="min-w-0 text-2xs text-muted">
           {translate('projects.name.label')}
           <Input
             value={name}
@@ -239,7 +239,7 @@ function ProjectCard({
           />
         </label>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-2xs text-[var(--fg-subtle)]">
+          <span className="text-2xs text-muted">
             {project.filesystemBindings.length === 0
               ? translate('projects.binding.none')
               : translate('projects.binding.present').replace('{count}', String(project.filesystemBindings.length))}
@@ -253,7 +253,7 @@ function ProjectCard({
             {translate('projects.rename')}
           </Button>
         </div>
-        {error && <p role="alert" className="break-words text-2xs text-[var(--danger)]">{error}</p>}
+        {error && <p role="alert" className="break-words text-2xs text-danger">{error}</p>}
       </form>
       <ProjectChats projectId={project.id} />
       {pickerOpen && (
@@ -273,23 +273,23 @@ function ProjectChats({ projectId }: { projectId: string }) {
   const chats = useAsync((signal) => api.listProjectChats(projectId, signal), [projectId])
 
   return (
-    <section aria-label={translate('projects.chats.group')} className="mt-3 min-w-0 border-t border-[var(--border)] pt-3">
+    <section aria-label={translate('projects.chats.group')} className="mt-3 min-w-0 border-t border-divider pt-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold">{translate('projects.chats.group')}</h3>
         <Link
           to={paths.projectChat(projectId)}
-          className="rounded-md border border-[var(--border-strong)] px-2 py-1 text-2xs font-medium text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
+          className="rounded-md border border-control px-2 py-1 text-2xs font-medium text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
         >
           {translate('projects.chats.new')}
         </Link>
       </div>
       {chats.loading ? (
-        <p role="status" className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p role="status" className="mt-2 text-2xs text-muted">
           {translate('projects.chats.loading')}
         </p>
       ) : chats.error ? (
         <div className="mt-2" role="alert">
-          <p className="break-words text-2xs text-[var(--danger)]">
+          <p className="break-words text-2xs text-danger">
             {translate('projects.chats.error')}: {errorMessage(chats.error)}
           </p>
           <Button className="mt-1" size="sm" onClick={chats.reload}>
@@ -297,17 +297,17 @@ function ProjectChats({ projectId }: { projectId: string }) {
           </Button>
         </div>
       ) : (chats.data?.chats.length ?? 0) === 0 ? (
-        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">{translate('projects.chats.empty')}</p>
+        <p className="mt-2 text-2xs text-muted">{translate('projects.chats.empty')}</p>
       ) : (
         <ol className="mt-2 space-y-1">
           {chats.data?.chats.map((chat) => (
             <li key={chat.id}>
               <Link
                 to={paths.projectChat(projectId, chat.id)}
-                className="block min-w-0 rounded px-2 py-1 text-xs hover:bg-[var(--bg-subtle)]"
+                className="block min-w-0 rounded px-2 py-1 text-xs hover:bg-inset"
               >
                 <span className="block truncate font-medium">{chat.title}</span>
-                <span className="text-2xs text-[var(--fg-subtle)]">
+                <span className="text-2xs text-muted">
                   {translate('projects.chats.messageCount').replace('{count}', String(chat.messageCount))}
                 </span>
               </Link>

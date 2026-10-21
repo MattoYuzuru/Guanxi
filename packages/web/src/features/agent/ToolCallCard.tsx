@@ -53,14 +53,14 @@ export function ToolCallCard({
         'overflow-hidden rounded-lg border',
         call.status === 'error' || call.status === 'denied'
           ? 'border-[var(--danger)]/40'
-          : 'border-[var(--border)]',
+          : 'border-divider',
       )}
     >
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 bg-[var(--bg-subtle)] px-2 py-1.5 text-left hover:bg-[var(--bg-inset)]"
+        className="flex w-full items-center gap-2 bg-inset px-2 py-1.5 text-left hover:bg-inset"
       >
         <Chevron open={open} />
         {status.spinning && <Spinner size={10} />}
@@ -87,13 +87,13 @@ export function ToolCallCard({
           </Badge>
         )}
 
-        <span className="ml-auto shrink-0 font-mono text-2xs text-[var(--fg-subtle)] tabular-nums">
+        <span className="ml-auto shrink-0 font-mono text-2xs text-muted tabular-nums">
           {call.durationMs !== null ? formatDuration(call.durationMs) : ''}
         </span>
       </button>
 
       {open && (
-        <div className="space-y-2 border-t border-[var(--border)] p-2">
+        <div className="space-y-2 border-t border-divider p-2">
           {call.parsedFrom === 'content_json' && (
             <p className="rounded border border-[var(--color-fit-yellow)]/30 bg-[var(--color-fit-yellow)]/8 px-2 py-1 text-2xs text-[var(--color-fit-yellow)]">
               {translate(parsed.hint)}
@@ -101,14 +101,14 @@ export function ToolCallCard({
           )}
 
           <Section title={translate('agent.tool.arguments')} copy={argumentsText}>
-            <pre className="max-h-56 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-inset)] p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
+            <pre className="max-h-56 overflow-auto rounded border border-divider bg-inset p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
               {argumentsText}
             </pre>
           </Section>
 
           {call.diff && (
             <div>
-              <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
+              <div className="mb-1 text-2xs font-medium text-secondary">
                 {translate('agent.tool.changes')}
               </div>
               <DiffViewer diff={call.diff} maxHeight={320} />
@@ -117,7 +117,7 @@ export function ToolCallCard({
 
           {call.result !== null && call.result !== '' && (
             <Section title={translate('agent.tool.result')} copy={call.result}>
-              <pre className="max-h-56 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-inset)] p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
+              <pre className="max-h-56 overflow-auto rounded border border-divider bg-inset p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
                 {call.result}
               </pre>
             </Section>
@@ -125,7 +125,7 @@ export function ToolCallCard({
 
           {call.error && (
             <Section title={translate('agent.tool.error')} copy={call.error}>
-              <pre className="max-h-40 overflow-auto rounded border border-[var(--danger)]/40 bg-[var(--danger)]/8 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-[var(--danger)]">
+              <pre className="max-h-40 overflow-auto rounded border border-[var(--danger)]/40 bg-[var(--danger)]/8 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-danger">
                 {call.error}
               </pre>
             </Section>
@@ -148,7 +148,7 @@ function Section({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-2xs font-medium text-[var(--fg-muted)]">{title}</span>
+        <span className="text-2xs font-medium text-secondary">{title}</span>
         {copy && <CopyButton text={copy} />}
       </div>
       {children}

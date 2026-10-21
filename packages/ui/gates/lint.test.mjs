@@ -43,6 +43,7 @@ test('G9 rejects semantic and dynamic inline colours and bound style objects, pe
     'const x = <div style={external} />',
   ]) assert.ok((await lint(source)).some(m => m.ruleId === 'guanxi/no-inline-colours'), source)
   assert.deepEqual(await lint('const s = { width: width, transform: transform }; const x = <div style={s} />'), [])
+  assert.deepEqual(await lint('const x = <div style={{ borderWidth: width, backgroundPosition: position, backgroundSize: size }} />'), [])
 })
 test('N5 lexical fallback detects imported maps, arbitrary literals with any name and joined arrays', async () => {
   for (const source of [
@@ -93,10 +94,27 @@ test('suppression history rejects growth even after a later shrink and refuses s
   await commit(freeze(2))
   assert.deepEqual(auditSuppressions(root, freeze(1)), [])
   assert.ok(auditSuppressions(root, freeze(3)).some(e => e.includes('grew')))
+  await writeFile(resolve(root, suppressionPath), JSON.stringify({ ...freeze(2), 'packages/web/src/new.tsx': { 'guanxi/reuse-primitives': { count: 1 } } }))
+  assert.throws(() => execFileSync(process.execPath, [resolve(repositoryRoot, 'packages/ui/gates/lint/suppressions.mjs')], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }), error => error.status === 1 && String(error.stdout).includes('suppression grew'))
   await commit(freeze(3)); await commit(freeze(1))
   assert.ok(auditSuppressions(root, freeze(1)).some(e => e.includes('grew')))
   git('clone', '-q', '--depth=1', `file://${root}`, resolve(root, 'shallow'))
   assert.ok(auditSuppressions(resolve(root, 'shallow'), freeze(1)).some(e => e.includes('shallow')))
+})
+test('suppression removal/recreation and merge restoration cannot reopen a retired allowance', async t => {
+  const root = await mkdtemp(resolve(tmpdir(), 'guanxi-eslint-merge-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 'Gate Test', GIT_AUTHOR_EMAIL: 'gate@example.invalid', GIT_COMMITTER_NAME: 'Gate Test', GIT_COMMITTER_EMAIL: 'gate@example.invalid' } }).trim()
+  const freeze = count => ({ 'packages/web/src/a.tsx': { 'guanxi/reuse-primitives': { count } } })
+  const save = async data => { await writeFile(resolve(root, suppressionPath), JSON.stringify(data)); git('add', '.'); git('commit', '-qm', 'freeze') }
+  git('init', '-q', '--initial-branch=main'); await save(freeze(2))
+  git('checkout', '-qb', 'shrink'); await save(freeze(1))
+  git('checkout', '-q', 'main'); git('merge', '--no-ff', '--no-commit', 'shrink'); await save(freeze(2))
+  assert.ok(auditSuppressions(root, freeze(2)).some(e => e.includes('grew')))
+  git('rm', '-q', suppressionPath); git('commit', '-qm', 'delete freeze'); await save(freeze(3))
+  const errors = auditSuppressions(root, freeze(3))
+  assert.ok(errors.some(e => e.includes('removed')))
+  assert.ok(errors.some(e => e.includes('introduced more than once')))
 })
 test('G8 and G9 registered gates independently reject their own real overlaid seeds', async () => {
   const ctx = await createContext()

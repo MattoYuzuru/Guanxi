@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { cssFindings } from '../scan.mjs'
-import { colourProperty, cssName, cssDiagnostics, hasLiteralColour } from './colours.mjs'
+import { inlineColourProperty, cssName, cssDiagnostics, hasLiteralColour } from './colours.mjs'
 
 const rule = (message, create) => ({ meta: { type: 'problem', schema: [], messages: { violation: message } }, create })
 const unwrap = node => node && ['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'ParenthesizedExpression', 'JSXExpressionContainer'].includes(node.type) ? unwrap(node.expression) : node
@@ -66,7 +66,7 @@ export const rules = {
     JSXAttribute(node) {
       if (node.name.name !== 'style') return
       styleProperties(node.value, context, (prop, name) => {
-        if (name === null || colourProperty.test(name) || /^--.*(?:color|colour|background|foreground|(?:^|-)bg|(?:^|-)fg)/.test(name)) context.report({ node: prop, messageId: 'violation', data: { value: name ?? '(unresolved style object/key)' } })
+        if (name === null || inlineColourProperty.test(name) || /^(?:--.*(?:color|colour|background|foreground)|--(?:bg|fg)(?:-|$)|--.*-(?:bg|fg)(?:-|$))/.test(name)) context.report({ node: prop, messageId: 'violation', data: { value: name ?? '(unresolved style object/key)' } })
       })
     },
   })),

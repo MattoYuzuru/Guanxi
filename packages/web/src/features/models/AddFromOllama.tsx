@@ -232,7 +232,7 @@ export function AddFromOllama({
           ) : undefined
         }
       >
-        <p id="add-from-ollama-description" className="text-xs text-[var(--fg-muted)]">
+        <p id="add-from-ollama-description" className="text-xs text-secondary">
           {translate('models.addOllama.description')}
         </p>
 
@@ -252,10 +252,10 @@ export function AddFromOllama({
               className="w-full min-w-0"
               autoComplete="off"
             />
-            <p id="ollama-reference-hint" className="text-2xs text-[var(--fg-subtle)]">
+            <p id="ollama-reference-hint" className="text-2xs text-muted">
               {translate('models.addOllama.input.hint')}
             </p>
-            {state.kind === 'invalid' && <p role="alert" className="text-xs text-[var(--danger)]">{state.message}</p>}
+            {state.kind === 'invalid' && <p role="alert" className="text-xs text-danger">{state.message}</p>}
             <Button type="submit" variant="primary" loading={state.kind === 'validating'}>
               {state.kind === 'validating'
                 ? translate('models.addOllama.validating')
@@ -266,18 +266,18 @@ export function AddFromOllama({
 
         {state.kind === 'preview' && (
           <div className="mt-3 space-y-3" role="status" aria-live="polite">
-            <div className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-3">
-              <p className="text-2xs text-[var(--fg-subtle)]">{translate('models.addOllama.normalized')}</p>
+            <div className="rounded-md border border-divider bg-inset p-3">
+              <p className="text-2xs text-muted">{translate('models.addOllama.normalized')}</p>
               <p className="min-w-0 break-all font-mono text-sm">{state.preview.normalizedModelName}</p>
-              <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+              <p className="mt-2 text-2xs text-muted">
                 {state.preview.inputKind === 'official_page_url'
                   ? translate('models.addOllama.kind.url')
                   : translate('models.addOllama.kind.name')}
               </p>
             </div>
             {alreadyInstalled && <p>{translate('models.addOllama.alreadyInstalled')}</p>}
-            <p className="text-xs text-[var(--fg-muted)]">{translate('models.addOllama.confirm.warning')}</p>
-            <p className="text-2xs text-[var(--fg-subtle)]">{translate('models.addOllama.preview.boundary')}</p>
+            <p className="text-xs text-secondary">{translate('models.addOllama.confirm.warning')}</p>
+            <p className="text-2xs text-muted">{translate('models.addOllama.preview.boundary')}</p>
           </div>
         )}
 
@@ -290,23 +290,23 @@ export function AddFromOllama({
                 ? translate('models.addOllama.cancelled')
                 : translate('models.addOllama.failed')}
             </p>
-            <p className="mt-1 text-xs text-[var(--fg-muted)]">
+            <p className="mt-1 text-xs text-secondary">
               {state.kind === 'cancelled' ? translate('models.addOllama.cancelled.detail') : state.message}
             </p>
           </div>
         )}
 
         {state.kind === 'success' && (
-          <div role={state.refreshFailed || !state.installedConfirmed ? 'alert' : 'status'} className="mt-3 space-y-2 rounded-md border border-[var(--border)] p-3">
+          <div role={state.refreshFailed || !state.installedConfirmed ? 'alert' : 'status'} className="mt-3 space-y-2 rounded-md border border-divider p-3">
             <p className="font-medium">{translate('models.addOllama.success')}</p>
-            <p className="text-xs text-[var(--fg-muted)]">
+            <p className="text-xs text-secondary">
               {state.refreshFailed
                 ? translate('models.addOllama.refreshFailed')
                 : state.installedConfirmed
                   ? translate('models.addOllama.installedConfirmed')
                   : translate('models.addOllama.notInTags')}
             </p>
-            <p className="text-2xs text-[var(--fg-subtle)]">{translate('models.addOllama.success.boundary')}</p>
+            <p className="text-2xs text-muted">{translate('models.addOllama.success.boundary')}</p>
           </div>
         )}
       </Modal>
@@ -320,13 +320,13 @@ function PullProgress({ progress, target }: { progress: Progress | null; target:
     <div className="mt-3 space-y-2" role="status" aria-live="polite" aria-atomic="true">
       <p className="font-medium">{translate('models.addOllama.pulling')}</p>
       <p className="break-all font-mono text-xs">{target}</p>
-      <p className="text-xs text-[var(--fg-muted)]">{pullStatus(progress?.status)}</p>
+      <p className="text-xs text-secondary">{pullStatus(progress?.status)}</p>
       {percent === null ? (
-        <div className="sheen h-1 w-full rounded-full bg-[var(--bg-inset)]" aria-label={translate('models.addOllama.progress.indeterminate')} />
+        <div className="sheen h-1 w-full rounded-full bg-inset" aria-label={translate('models.addOllama.progress.indeterminate')} />
       ) : (
         <Meter value={percent / 100} label={translate('models.addOllama.progress')} />
       )}
-      <p className="font-mono text-2xs text-[var(--fg-subtle)]">
+      <p className="font-mono text-2xs text-muted">
         {percent === null ? translate('models.addOllama.progress.unknown') : formatPercent(percent, percent < 10 ? 1 : 0)}
         {progress?.completedBytes !== null && progress?.completedBytes !== undefined
           ? ` · ${formatBytes(progress.completedBytes)}`

@@ -53,9 +53,9 @@ export function DiffViewer({
   const unchanged = rows.length - added - removed
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[var(--border)]">
+    <div className="overflow-hidden rounded-lg border border-divider">
       {/* Шапка */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-inset px-2.5 py-1.5">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono text-2xs font-medium" title={diff.path}>
             {diff.path}
@@ -72,7 +72,7 @@ export function DiffViewer({
               {expanded ? translate('agent.diff.collapse') : translate('agent.diff.fullFile')}
             </Button>
           )}
-          <div className="flex overflow-hidden rounded border border-[var(--border-strong)]">
+          <div className="flex overflow-hidden rounded border border-control">
             <ModeButton active={mode === 'split'} onClick={() => setMode('split')}>
               {translate('agent.diff.split')}
             </ModeButton>
@@ -85,7 +85,7 @@ export function DiffViewer({
       </div>
 
       {rows.length === 0 ? (
-        <p className="px-2.5 py-3 text-2xs text-[var(--fg-subtle)]">
+        <p className="px-2.5 py-3 text-2xs text-muted">
           {translate('agent.diff.unchanged')}
         </p>
       ) : (
@@ -114,8 +114,8 @@ function ModeButton({
       className={cx(
         'px-1.5 py-0.5 text-2xs font-medium transition-colors',
         active
-          ? 'bg-[var(--accent)] text-[var(--accent-fg)]'
-          : 'bg-transparent text-[var(--fg-muted)] hover:bg-[var(--bg-raised)]',
+          ? 'bg-accent text-accent-foreground'
+          : 'bg-transparent text-secondary hover:bg-surface',
       )}
     >
       {children}
@@ -172,7 +172,7 @@ function SplitView({ rows }: { rows: VisibleRow[] }) {
               <td
                 className={cx(
                   'py-px pr-2 pl-1.5 align-top break-all whitespace-pre-wrap',
-                  pair.left ? cellClass(pair.left.kind) : 'bg-[var(--bg-inset)]/40',
+                  pair.left ? cellClass(pair.left.kind) : 'bg-inset/40',
                 )}
               >
                 {pair.left && <LineText row={pair.left} />}
@@ -180,8 +180,8 @@ function SplitView({ rows }: { rows: VisibleRow[] }) {
               <LineNumber value={pair.right?.afterNumber ?? null} />
               <td
                 className={cx(
-                  'border-l border-[var(--border)] py-px pr-2 pl-1.5 align-top break-all whitespace-pre-wrap',
-                  pair.right ? cellClass(pair.right.kind) : 'bg-[var(--bg-inset)]/40',
+                  'border-l border-divider py-px pr-2 pl-1.5 align-top break-all whitespace-pre-wrap',
+                  pair.right ? cellClass(pair.right.kind) : 'bg-inset/40',
                 )}
               >
                 {pair.right && <LineText row={pair.right} />}
@@ -244,7 +244,7 @@ function pairRows(rows: VisibleRow[]): Array<{ left: Row | null; right: Row | nu
 
 function LineNumber({ value }: { value: number | null }) {
   return (
-    <td className="w-9 border-r border-[var(--border)] bg-[var(--bg-subtle)]/60 px-1 py-px text-right align-top text-[var(--fg-subtle)] tabular-nums select-none">
+    <td className="w-9 border-r border-divider bg-inset/60 px-1 py-px text-right align-top text-muted tabular-nums select-none">
       {value ?? ''}
     </td>
   )
@@ -304,7 +304,7 @@ function SkipRow({ count, colSpan }: { count: number; colSpan: number }) {
     <tr>
       <td
         colSpan={colSpan}
-        className="border-y border-[var(--border)] bg-[var(--bg-inset)] px-2 py-0.5 text-center text-[var(--fg-subtle)] select-none"
+        className="border-y border-divider bg-inset px-2 py-0.5 text-center text-muted select-none"
       >
         · · · {translate(key, { count })} · · ·
       </td>

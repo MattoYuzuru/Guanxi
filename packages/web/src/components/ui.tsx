@@ -28,13 +28,13 @@ type ButtonSize = 'sm' | 'md'
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    'bg-[var(--accent)] text-[var(--accent-fg)] hover:brightness-110 active:brightness-95 border border-transparent',
+    'bg-accent text-accent-foreground hover:brightness-110 active:brightness-95 border border-transparent',
   secondary:
-    'bg-[var(--bg-raised)] text-[var(--fg)] border border-[var(--border-strong)] hover:bg-[var(--bg-subtle)]',
+    'bg-surface text-foreground border border-control hover:bg-inset',
   ghost:
-    'bg-transparent text-[var(--fg-muted)] border border-transparent hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]',
+    'bg-transparent text-secondary border border-transparent hover:bg-inset hover:text-foreground',
   danger:
-    'bg-transparent text-[var(--danger)] border border-[var(--danger)]/40 hover:bg-[var(--danger)]/10',
+    'bg-transparent text-danger border border-[var(--danger)]/40 hover:bg-[var(--danger)]/10',
 }
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
@@ -112,13 +112,13 @@ export function Badge({
   className?: string
 }) {
   const tones: Record<string, string> = {
-    neutral: 'bg-[var(--bg-inset)] text-[var(--fg-muted)] border-[var(--border)]',
+    neutral: 'bg-inset text-secondary border-divider',
     accent: 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent)]/30',
     green: 'bg-[var(--color-fit-green)]/12 text-[var(--color-fit-green)] border-[var(--color-fit-green)]/30',
     yellow:
       'bg-[var(--color-fit-yellow)]/12 text-[var(--color-fit-yellow)] border-[var(--color-fit-yellow)]/30',
     red: 'bg-[var(--color-fit-red)]/12 text-[var(--color-fit-red)] border-[var(--color-fit-red)]/30',
-    outline: 'bg-transparent text-[var(--fg-subtle)] border-[var(--border)]',
+    outline: 'bg-transparent text-muted border-divider',
   }
 
   return (
@@ -183,7 +183,7 @@ export function Meter({
 
   return (
     <div
-      className={cx('relative w-full overflow-hidden rounded-full bg-[var(--bg-inset)]', className)}
+      className={cx('relative w-full overflow-hidden rounded-full bg-inset', className)}
       style={{ height }}
       role="meter"
       aria-valuenow={Math.round(clamped * 100)}
@@ -228,7 +228,7 @@ export function Toggle({
         <label htmlFor={id} className="block cursor-pointer text-xs font-medium">
           {label}
         </label>
-        {hint && <p className="mt-0.5 text-2xs text-[var(--fg-subtle)]">{hint}</p>}
+        {hint && <p className="mt-0.5 text-2xs text-muted">{hint}</p>}
       </div>
       <button
         id={id}
@@ -241,8 +241,8 @@ export function Toggle({
           'relative mt-0.5 h-4 w-7 shrink-0 rounded-full border transition-colors duration-150',
           'disabled:opacity-45 disabled:pointer-events-none',
           checked
-            ? 'border-transparent bg-[var(--accent)]'
-            : 'border-[var(--border-strong)] bg-[var(--bg-inset)]',
+            ? 'border-transparent bg-accent'
+            : 'border-control bg-inset',
         )}
       >
         <span
@@ -273,14 +273,14 @@ export function Field({
         {label}
       </label>
       {children}
-      {hint && <p className="mt-1 text-2xs text-[var(--fg-subtle)]">{hint}</p>}
+      {hint && <p className="mt-1 text-2xs text-muted">{hint}</p>}
     </div>
   )
 }
 
 const INPUT_CLASS =
-  'min-w-0 max-w-full w-full rounded-md border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 py-1.5 text-xs ' +
-  'placeholder:text-[var(--fg-subtle)] focus:border-[var(--accent)] ' +
+  'min-w-0 max-w-full w-full rounded-md border border-control bg-inset px-2 py-1.5 text-xs ' +
+  'placeholder:text-muted focus:border-[var(--accent)] ' +
   'disabled:opacity-50'
 
 export const Input = forwardRef<
@@ -367,7 +367,7 @@ export function StepSlider({
     <div>
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium">{label}</span>
-        <span className="font-mono text-xs tabular-nums text-[var(--fg-muted)]">
+        <span className="font-mono text-xs tabular-nums text-secondary">
           {format(value)}
         </span>
       </div>
@@ -386,7 +386,7 @@ export function StepSlider({
         }}
         className="w-full accent-[var(--accent)]"
       />
-      <div className="mt-0.5 flex justify-between text-2xs text-[var(--fg-subtle)]">
+      <div className="mt-0.5 flex justify-between text-2xs text-muted">
         <span>{format(values[0] ?? 0)}</span>
         <span>{format(values[values.length - 1] ?? 0)}</span>
       </div>
@@ -519,7 +519,7 @@ export function Modal({
         style={{ maxWidth: width }}
       >
         {title && (
-          <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-2.5">
+          <div className="flex items-center justify-between gap-3 border-b border-divider px-4 py-2.5">
             <h2 id={headingId} className="text-sm font-semibold">
               {title}
             </h2>
@@ -538,7 +538,7 @@ export function Modal({
         )}
         <div className="min-h-0 min-w-0 overflow-y-auto px-4 py-3">{children}</div>
         {footer && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] px-4 py-2.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-divider px-4 py-2.5">
             {footer}
           </div>
         )}
@@ -580,7 +580,7 @@ export function Disclosure({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1.5 text-left text-2xs font-medium text-[var(--fg-muted)] hover:text-[var(--fg)]"
+        className="flex w-full items-center gap-1.5 text-left text-2xs font-medium text-secondary hover:text-foreground"
         style={tone ? { color: tone } : undefined}
       >
         <Chevron open={open} />
@@ -652,7 +652,7 @@ export function Callout({
   action?: ReactNode
 }) {
   const tones: Record<string, string> = {
-    neutral: 'border-[var(--border)] bg-[var(--bg-subtle)]',
+    neutral: 'border-divider bg-inset',
     info: 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]/50',
     warning: 'border-[var(--color-fit-yellow)]/40 bg-[var(--color-fit-yellow)]/8',
     danger: 'border-[var(--danger)]/40 bg-[var(--danger)]/8',
@@ -663,7 +663,7 @@ export function Callout({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {title && <div className="text-xs font-semibold">{title}</div>}
-          {children && <div className="mt-0.5 text-2xs text-[var(--fg-muted)]">{children}</div>}
+          {children && <div className="mt-0.5 text-2xs text-secondary">{children}</div>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </div>
@@ -684,7 +684,7 @@ export function EmptyState({
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
       <p className="text-sm font-medium">{title}</p>
       {description && (
-        <p className="max-w-md text-xs text-[var(--fg-subtle)]">{description}</p>
+        <p className="max-w-md text-xs text-muted">{description}</p>
       )}
       {action && <div className="mt-1.5">{action}</div>}
     </div>
@@ -694,7 +694,7 @@ export function EmptyState({
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div
-      className={cx('anim-pulse-soft rounded-md bg-[var(--bg-inset)]', className)}
+      className={cx('anim-pulse-soft rounded-md bg-inset', className)}
       aria-hidden
     />
   )
@@ -716,7 +716,7 @@ export function Stat({
 }) {
   return (
     <div className="min-w-0" title={hint}>
-      <div className="truncate text-2xs text-[var(--fg-subtle)]">{label}</div>
+      <div className="truncate text-2xs text-muted">{label}</div>
       <div
         className={cx('truncate text-xs font-medium', mono && 'font-mono tabular-nums')}
         style={tone ? { color: tone } : undefined}

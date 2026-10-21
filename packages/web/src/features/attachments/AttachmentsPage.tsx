@@ -48,7 +48,7 @@ export function AttachmentsPage() {
     <div className="mx-auto w-full min-w-0 max-w-5xl px-4 py-6 sm:px-5">
       <header>
         <h1 className="text-lg font-semibold tracking-tight">{translate('attachments.title')}</h1>
-        <p className="mt-1 max-w-2xl text-xs text-[var(--fg-muted)]">
+        <p className="mt-1 max-w-2xl text-xs text-secondary">
           {translate('attachments.description')}
         </p>
       </header>
@@ -65,7 +65,7 @@ export function AttachmentsPage() {
         {translate('attachments.scope.label')}
         <select
           value={selectedScope}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2 text-xs text-[var(--fg)]"
+          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
           onChange={(event) => {
             const value = event.target.value
             setScope(value === 'projectless'
@@ -80,7 +80,7 @@ export function AttachmentsPage() {
         </select>
       </label>
       {projects.loading ? (
-        <p role="status" className="mt-1 text-2xs text-[var(--fg-subtle)]">
+        <p role="status" className="mt-1 text-2xs text-muted">
           {translate('attachments.projects.loading')}
         </p>
       ) : null}
@@ -143,18 +143,18 @@ function PolicyProjection({
     )
   }
   return (
-    <section className="surface mt-4 rounded-lg border border-[var(--border)] p-3" aria-label={translate('attachments.policy.title')}>
+    <section className="surface mt-4 rounded-lg border border-divider p-3" aria-label={translate('attachments.policy.title')}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <h2 className="text-xs font-semibold">{translate('attachments.policy.title')}</h2>
         <Badge tone="outline">{formatBytes(policy.maxBytes)}</Badge>
       </div>
-      <p className="mt-1 break-words text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-1 break-words text-2xs text-muted">
         {translate('attachments.policy.detail')
           .replace('{source}', translate(`attachments.policy.source.${policy.source}`))
           .replace('{observedAt}', formatDateTime(policy.observedAt))
           .replace('{active}', String(policy.maxActiveTransfers))}
       </p>
-      <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-1 text-2xs text-muted">
         {translate('attachments.policy.notCapability')}
       </p>
     </section>
@@ -356,7 +356,7 @@ function AttachmentScopePanel({
         <h2 ref={listErrorRef} tabIndex={-1} className="text-sm font-semibold outline-none">
           {translate('attachments.error.title')}
         </h2>
-        <p className="mt-1 break-words text-xs text-[var(--fg-muted)]">{loadError}</p>
+        <p className="mt-1 break-words text-xs text-secondary">{loadError}</p>
         <Button className="mt-3" onClick={() => setReload((value) => value + 1)}>
           {translate('attachments.retry')}
         </Button>
@@ -370,7 +370,7 @@ function AttachmentScopePanel({
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 id="attachment-scope-title" className="break-words text-sm font-semibold">{scopeName}</h2>
-          <p className="text-2xs text-[var(--fg-subtle)]">
+          <p className="text-2xs text-muted">
             {translate('attachments.count').replace('{count}', String(attachments.length))}
           </p>
         </div>
@@ -380,7 +380,7 @@ function AttachmentScopePanel({
       <div
         className={cx(
           'attachment-drop mt-4 rounded-lg border border-dashed p-4',
-          dropActive ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-[var(--border-strong)]',
+          dropActive ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-control',
         )}
         onDragEnter={(event) => { event.preventDefault(); setDropActive(true) }}
         onDragOver={(event) => event.preventDefault()}
@@ -398,10 +398,10 @@ function AttachmentScopePanel({
             ref={fileInputRef}
             disabled={!enabled || uploading}
             onChange={onFile}
-            className="mt-2 block w-full min-w-0 text-xs file:mr-2 file:rounded-md file:border file:border-[var(--border-strong)] file:bg-[var(--bg-raised)] file:px-3 file:py-1.5 file:text-xs"
+            className="mt-2 block w-full min-w-0 text-xs file:mr-2 file:rounded-md file:border file:border-control file:bg-surface file:px-3 file:py-1.5 file:text-xs"
           />
         </label>
-        <p className="mt-2 text-2xs text-[var(--fg-subtle)]">
+        <p className="mt-2 text-2xs text-muted">
           {enabled
             ? translate('attachments.file.hint').replace('{maxBytes}', formatBytes(policy.maxBytes))
             : translate('attachments.policy.unavailable')}
@@ -441,7 +441,7 @@ function AttachmentScopePanel({
         ) : null}
         {uploadError ? (
           <div ref={uploadErrorRef} tabIndex={-1} role="alert" className="mt-3 outline-none">
-            <p className="break-words text-xs text-[var(--danger)]">{uploadError}</p>
+            <p className="break-words text-xs text-danger">{uploadError}</p>
           </div>
         ) : null}
       </div>
@@ -455,11 +455,11 @@ function AttachmentScopePanel({
         <ol aria-label={translate('attachments.list')} className="mt-4 space-y-3">
           {attachments.map((attachment) => (
             <li key={attachment.artifact.id}>
-              <article className="attachment-card surface min-w-0 rounded-lg border border-[var(--border)] p-3">
+              <article className="attachment-card surface min-w-0 rounded-lg border border-divider p-3">
                 <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="break-words text-xs font-semibold">{attachment.displayName}</h3>
-                    <p className="mt-1 break-all font-mono text-2xs text-[var(--fg-subtle)]">
+                    <p className="mt-1 break-all font-mono text-2xs text-muted">
                       {attachment.artifact.id}
                     </p>
                   </div>
@@ -473,16 +473,16 @@ function AttachmentScopePanel({
                   </Button>
                 </div>
                 <dl className="mt-3 grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-2xs">
-                  <dt className="text-[var(--fg-subtle)]">{translate('attachments.mediaType')}</dt>
+                  <dt className="text-muted">{translate('attachments.mediaType')}</dt>
                   <dd className="break-words">{attachment.artifact.mediaType}</dd>
-                  <dt className="text-[var(--fg-subtle)]">{translate('attachments.size')}</dt>
+                  <dt className="text-muted">{translate('attachments.size')}</dt>
                   <dd>{formatBytes(attachment.artifact.byteSize)}</dd>
-                  <dt className="text-[var(--fg-subtle)]">{translate('attachments.created')}</dt>
+                  <dt className="text-muted">{translate('attachments.created')}</dt>
                   <dd><time dateTime={attachment.artifact.createdAt}>{formatDateTime(attachment.artifact.createdAt)}</time></dd>
-                  <dt className="text-[var(--fg-subtle)]">{translate('attachments.checksum')}</dt>
+                  <dt className="text-muted">{translate('attachments.checksum')}</dt>
                   <dd className="break-all font-mono">{attachment.artifact.checksum}</dd>
                 </dl>
-                <p className="mt-3 text-2xs text-[var(--fg-muted)]">
+                <p className="mt-3 text-2xs text-secondary">
                   {translate('attachments.notInContext')}
                 </p>
                 {downloadErrors[attachment.artifact.id] ? (
@@ -495,7 +495,7 @@ function AttachmentScopePanel({
                     role="alert"
                     className="mt-2 outline-none"
                   >
-                    <p className="break-words text-2xs text-[var(--danger)]">
+                    <p className="break-words text-2xs text-danger">
                       {downloadErrors[attachment.artifact.id]}
                     </p>
                     <Button size="sm" className="mt-1" onClick={() => void download(attachment)}>
@@ -509,7 +509,7 @@ function AttachmentScopePanel({
         </ol>
       )}
       {truncated ? (
-        <p role="status" className="mt-3 text-2xs text-[var(--fg-subtle)]">
+        <p role="status" className="mt-3 text-2xs text-muted">
           {translate('attachments.truncated').replace('{limit}', String(ATTACHMENT_LIST_LIMIT))}
         </p>
       ) : null}

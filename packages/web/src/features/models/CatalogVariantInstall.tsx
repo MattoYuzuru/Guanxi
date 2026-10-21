@@ -197,7 +197,7 @@ export function CatalogVariantInstall({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <fieldset className="mb-2" disabled={active}>
-        <legend className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
+        <legend className="mb-1 text-2xs font-medium text-secondary">
           {translate('models.catalogVariant.choose')}
         </legend>
         <div className="space-y-1" role="group" aria-label={translate('models.catalogVariant.choose')}>
@@ -221,7 +221,7 @@ export function CatalogVariantInstall({
                     'min-h-11 min-w-0 flex-1 rounded border px-2 py-1 text-left font-mono text-2xs transition-colors sm:min-h-8',
                     selectedNow
                       ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)]'
-                      : 'border-[var(--border)] text-[var(--fg-subtle)] hover:border-[var(--border-strong)]',
+                      : 'border-divider text-muted hover:border-control',
                     'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]',
                     'disabled:cursor-not-allowed disabled:opacity-45',
                   )}
@@ -236,7 +236,7 @@ export function CatalogVariantInstall({
                     aria-pressed={compared}
                     aria-label={`${compared ? translate('catalog.compare.remove') : translate('catalog.compare.add')} ${variant.normalizedName ?? variant.tag}`}
                     onClick={() => onToggleCompare(variant)}
-                    className="min-h-11 shrink-0 rounded border border-[var(--border)] px-2 text-2xs hover:border-[var(--border-strong)] disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-8"
+                    className="min-h-11 shrink-0 rounded border border-divider px-2 text-2xs hover:border-control disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-8"
                   >
                     {compared ? '−' : '+'}
                   </button>
@@ -250,7 +250,7 @@ export function CatalogVariantInstall({
       {selected && selected.normalizedName !== null ? (
         <VariantFacts variant={selected as SelectedVariant} />
       ) : (
-        <p className="mb-2 flex-1 text-2xs text-[var(--fg-subtle)]" role="status">
+        <p className="mb-2 flex-1 text-2xs text-muted" role="status">
           {translate('models.catalogVariant.required')}
         </p>
       )}
@@ -265,13 +265,13 @@ export function CatalogVariantInstall({
             <div className="flex gap-1.5">
               <Link
                 to={paths.model(selected.normalizedName)}
-                className="flex h-8 flex-1 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 text-xs font-medium"
+                className="flex h-8 flex-1 items-center justify-center rounded-md border border-control bg-surface px-3 text-xs font-medium"
               >
                 {translate('models.catalogVariant.profile')}
               </Link>
               <Link
                 to={`${paths.chat()}?model=${encodeURIComponent(selected.normalizedName)}${selectedContextLength === undefined ? '' : `&numCtx=${selectedContextLength}`}`}
-                className="flex h-8 flex-1 items-center justify-center rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)]"
+                className="flex h-8 flex-1 items-center justify-center rounded-md bg-accent px-3 text-xs font-medium text-accent-foreground"
               >
                 {translate('models.catalogVariant.chat')}
               </Link>
@@ -343,11 +343,11 @@ export function CatalogVariantInstall({
       >
         {state.kind === 'confirming' && modalVariant ? (
           <div className="space-y-3">
-            <p id="catalog-variant-confirm-description" className="text-xs text-[var(--fg-muted)]">
+            <p id="catalog-variant-confirm-description" className="text-xs text-secondary">
               {translate('models.catalogVariant.confirm.warning')}
             </p>
             <VariantFacts variant={modalVariant} detailed />
-            <p className="text-2xs text-[var(--fg-subtle)]">
+            <p className="text-2xs text-muted">
               {translate('models.catalogVariant.mutable')}
             </p>
           </div>
@@ -364,7 +364,7 @@ export function CatalogVariantInstall({
                 ? translate('models.catalogVariant.cancelled')
                 : translate('models.catalogVariant.failed')}
             </p>
-            <p className="mt-1 text-xs text-[var(--fg-muted)]">
+            <p className="mt-1 text-xs text-secondary">
               {state.kind === 'cancelled'
                 ? translate('models.catalogVariant.cancelled.detail')
                 : state.message}
@@ -375,11 +375,11 @@ export function CatalogVariantInstall({
         {state.kind === 'success' ? (
           <div
             role={state.refresh === 'exact' ? 'status' : 'alert'}
-            className="space-y-2 rounded-md border border-[var(--border)] p-3"
+            className="space-y-2 rounded-md border border-divider p-3"
           >
             <p className="font-medium">{translate('models.catalogVariant.success')}</p>
             <p className="break-all font-mono text-xs">{state.variant.normalizedName}</p>
-            <p className="text-xs text-[var(--fg-muted)]">
+            <p className="text-xs text-secondary">
               {state.refresh === 'exact'
                 ? translate('models.catalogVariant.refresh.exact')
                 : state.refresh === 'missing'
@@ -388,12 +388,12 @@ export function CatalogVariantInstall({
             </p>
             {state.digest ? <p className="break-all font-mono text-2xs">{state.digest}</p> : null}
             {state.observedAt ? (
-              <p className="text-2xs text-[var(--fg-subtle)]">
+              <p className="text-2xs text-muted">
                 {translate('models.catalogVariant.installation.observed')}{' '}
                 {formatDateTime(state.observedAt)}
               </p>
             ) : null}
-            <p className="text-2xs text-[var(--fg-subtle)]">
+            <p className="text-2xs text-muted">
               {translate('models.catalogVariant.success.boundary')}
             </p>
           </div>
@@ -411,24 +411,24 @@ function VariantFacts({
   detailed?: boolean
 }) {
   return (
-    <div className="mb-2 space-y-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2">
+    <div className="mb-2 space-y-1.5 rounded-md border border-divider bg-inset p-2">
       <p className="break-all font-mono text-xs font-medium">{variant.normalizedName}</p>
-      <p className="text-2xs text-[var(--fg-muted)]">
+      <p className="text-2xs text-secondary">
         {translate('models.catalogVariant.claimedSize')}: {' '}
         {variant.sizeBytes === null ? translate('models.catalogVariant.unknown') : formatBytes(variant.sizeBytes)}
         {' · '}{translate('models.catalogVariant.parameters')}: {' '}
         {variant.parameterSize ?? translate('models.catalogVariant.unknown')}
       </p>
       {variant.contextLength !== null ? (
-        <p className="text-2xs text-[var(--fg-subtle)]">
+        <p className="text-2xs text-muted">
           {translate('models.catalogVariant.claimedContext')}: {formatContextLength(variant.contextLength)}
         </p>
       ) : null}
       <VariantFit variant={variant} />
-      <p className="text-2xs text-[var(--fg-subtle)]">
+      <p className="text-2xs text-muted">
         {sourceLabel(variant)} · {freshnessLabel(variant)}
       </p>
-      <p className="text-2xs text-[var(--fg-subtle)]">
+      <p className="text-2xs text-muted">
         {translate('models.catalogVariant.source.observed')}: {' '}
         {variant.sourceObservedAt
           ? formatDateTime(variant.sourceObservedAt)
@@ -440,7 +440,7 @@ function VariantFacts({
       </p>
       <VariantInstallation variant={variant} />
       {detailed ? (
-        <p className="text-2xs text-[var(--fg-subtle)]">
+        <p className="text-2xs text-muted">
           {translate('models.catalogVariant.claimBoundary')}
         </p>
       ) : null}
@@ -451,7 +451,7 @@ function VariantFacts({
 function VariantInstallation({ variant }: { variant: CatalogVariant }) {
   if (variant.installation.state === 'installed') {
     return (
-      <p className="text-2xs text-[var(--fg-subtle)]">
+      <p className="text-2xs text-muted">
         {translate('models.catalogVariant.installation.installed')}{' '}
         {formatDateTime(variant.installation.observedAt)}
       </p>
@@ -459,14 +459,14 @@ function VariantInstallation({ variant }: { variant: CatalogVariant }) {
   }
   if (variant.installation.state === 'not_installed') {
     return (
-      <p className="text-2xs text-[var(--fg-subtle)]">
+      <p className="text-2xs text-muted">
         {translate('models.catalogVariant.installation.notInstalled')}{' '}
         {formatDateTime(variant.installation.observedAt)}
       </p>
     )
   }
   return (
-    <p className="text-2xs text-[var(--fg-muted)]" role="status">
+    <p className="text-2xs text-secondary" role="status">
       {translate(`models.catalogVariant.installation.unknown.${variant.installation.reason}`)}
     </p>
   )
@@ -475,7 +475,7 @@ function VariantInstallation({ variant }: { variant: CatalogVariant }) {
 function VariantFit({ variant }: { variant: CatalogVariant }) {
   if (variant.fit.state === 'unknown') {
     return (
-      <p className="text-2xs text-[var(--fg-muted)]" role="status">
+      <p className="text-2xs text-secondary" role="status">
         {variant.fit.reason === 'size_unknown'
           ? translate('models.catalogVariant.fit.sizeUnknown')
           : translate('models.catalogVariant.fit.invalid')}
@@ -484,7 +484,7 @@ function VariantFit({ variant }: { variant: CatalogVariant }) {
   }
   const verdict = variant.fit.verdict
   return (
-    <p className="text-2xs text-[var(--fg-muted)]">
+    <p className="text-2xs text-secondary">
       {translate(`models.catalogVariant.fit.${verdict.level}`)} · {' '}
       {formatBytes(verdict.requiredBytes)} / {formatBytes(verdict.usableBytes)} · {' '}
       {formatContextLength(verdict.contextLength)} · {translate('models.catalogVariant.fit.claimed')}
@@ -498,16 +498,16 @@ function PullProgress({ variant, progress }: { variant: SelectedVariant; progres
     <div className="space-y-2" role="status" aria-live="polite" aria-atomic="true">
       <p className="font-medium">{translate('models.catalogVariant.pulling')}</p>
       <p className="break-all font-mono text-xs">{variant.normalizedName}</p>
-      <p className="text-xs text-[var(--fg-muted)]">{pullStatus(progress?.status)}</p>
+      <p className="text-xs text-secondary">{pullStatus(progress?.status)}</p>
       {percent === null ? (
         <div
-          className="sheen h-1 w-full rounded-full bg-[var(--bg-inset)]"
+          className="sheen h-1 w-full rounded-full bg-inset"
           aria-label={translate('models.catalogVariant.progress.indeterminate')}
         />
       ) : (
         <Meter value={percent / 100} label={translate('models.catalogVariant.progress')} />
       )}
-      <p className="font-mono text-2xs text-[var(--fg-subtle)]">
+      <p className="font-mono text-2xs text-muted">
         {percent === null
           ? translate('models.catalogVariant.progress.unknown')
           : formatPercent(percent, 1)}

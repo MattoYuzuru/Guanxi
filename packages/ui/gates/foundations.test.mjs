@@ -227,7 +227,7 @@ test('M4: cleared Tailwind defaults disappear; semantic replacements compile', a
   assert.match(theme, /--default-font-family: var\(--font-family-sans\)/)
   assert.match(theme, /--default-mono-font-family: var\(--font-family-mono\)/)
 })
-test('K1: actual web CSS compiles every sidebar semantic role; missing bridge aliases fail', async () => {
+test('K1/DS1-c: actual web CSS imports the generated theme without a bridge or copied aliases', async () => {
   const file = 'packages/web/src/index.css'
   const source = await ctx.read(file)
   const sidebar = await ctx.read('packages/web/src/kernel/SidebarSlot.tsx')
@@ -239,12 +239,23 @@ test('K1: actual web CSS compiles every sidebar semantic role; missing bridge al
     ['rounded-control', 'border-radius', '--radius-control', '--border-radius-control'],
     ['text-12', 'font-size', '--text-12', '--font-size-12'],
   ]
-  async function verify(css) {
+  const theme = await ctx.read('packages/ui/generated/theme.css')
+  function noBridge(css) {
+    const generatedNames = new Set(['--color-surface', '--color-accent', '--color-divider', '--color-secondary', '--color-foreground', '--color-inset', '--radius-control', '--radius-panel', '--text-15', '--text-12'])
+    const ast = postcss.parse(css)
+    ast.walkAtRules('theme', rule => assert.notEqual(rule.params, 'inline', 'local inline bridge must not return'))
+    ast.walkDecls(decl => assert.ok(!generatedNames.has(decl.prop), `copied theme alias: ${decl.prop}`))
+    assert.match(css, /@import ['"]@guanxi\/ui\/theme\.css['"]/)
+    assert.match(css, /@import ['"]@guanxi\/ui\/tokens\.css['"]/)
+    assert.doesNotMatch(css, /ui\/generated\//)
+  }
+  async function verify(css, generated = theme) {
+    noBridge(css)
     const system = await __unstable__loadDesignSystem(css, {
       base: join(ctx.root, 'packages/web/src'),
       async loadStylesheet(id, base) {
-        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : resolve(base, id)
-        return { path, base: dirname(path), content: await readFile(path, 'utf8') }
+        const path = id === 'tailwindcss' ? createRequire(import.meta.url).resolve('tailwindcss/index.css') : id.startsWith('@guanxi/ui/') ? createRequire(import.meta.url).resolve(id) : resolve(base, id)
+        return { path, base: dirname(path), content: id === '@guanxi/ui/theme.css' ? generated : await readFile(path, 'utf8') }
       },
     })
     for (const [cls, property, , token] of expected) {
@@ -259,9 +270,13 @@ test('K1: actual web CSS compiles every sidebar semantic role; missing bridge al
   await verify(source)
   for (const [, , alias, token] of expected) {
     const declaration = `${alias}: var(${token});`
-    assert.ok(source.includes(declaration))
-    await assert.rejects(verify(source.replace(declaration, '')), { name: 'AssertionError' }, alias)
+    assert.ok(theme.includes(declaration))
+    await assert.rejects(verify(source, theme.replace(declaration, '')), { name: 'AssertionError' }, alias)
+    assert.throws(() => noBridge(source + `\n@theme inline { ${declaration} }`), { name: 'AssertionError' }, alias)
+    assert.throws(() => noBridge(source + `\n@theme { ${declaration} }`), { name: 'AssertionError' }, alias)
   }
+  await assert.rejects(verify(source.replace("@import '@guanxi/ui/theme.css';", '')), { name: 'AssertionError' })
+  for (const alias of ['--color-surface', '--color-accent', '--color-divider', '--color-secondary', '--color-foreground', '--color-inset', '--radius-control', '--radius-panel', '--text-15', '--text-12']) assert.doesNotMatch(source, new RegExp(`${alias}:`), alias)
 })
 test('M2/N2: FOUNDATIONS rejects missing, extra and incorrect container widths', async () => {
   const file = 'packages/ui/tokens/base.tokens.json'

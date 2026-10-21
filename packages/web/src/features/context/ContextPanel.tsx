@@ -45,7 +45,7 @@ export function ContextPanel({
 
   if (!context) {
     return (
-      <div className="p-3 text-2xs text-[var(--fg-subtle)]">
+      <div className="p-3 text-2xs text-muted">
         {translate('context.unavailable')}
       </div>
     )
@@ -72,7 +72,7 @@ export function ContextPanel({
 
         <Meter value={fraction} tone={tone} height={7} label={translate('context.panel.fill')} />
 
-        <div className="mt-1.5 flex items-center justify-between font-mono text-2xs text-[var(--fg-subtle)] tabular-nums">
+        <div className="mt-1.5 flex items-center justify-between font-mono text-2xs text-muted tabular-nums">
           <span>{translate('context.used', { tokens: formatTokens(context.usedTokens) })}</span>
           <span>{translate('context.of', { tokens: formatTokens(context.allocatedTokens) })}</span>
         </div>
@@ -91,7 +91,7 @@ export function ContextPanel({
       {usage && <SpeedSection usage={usage} />}
 
       {/* Компакция */}
-      <section className="mt-auto border-t border-[var(--border)] pt-3">
+      <section className="mt-auto border-t border-divider pt-3">
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <h3 className="text-xs font-semibold">{translate('context.compact.title')}</h3>
           {!context.compactable && <Badge tone="neutral">{translate('context.compact.empty')}</Badge>}
@@ -100,19 +100,19 @@ export function ContextPanel({
         {/* Цена — до нажатия, а не после */}
         <div className="mb-2 rounded-md border border-[var(--color-fit-yellow)]/35 bg-[var(--color-fit-yellow)]/8 px-2 py-1.5">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-2xs text-[var(--fg-muted)]">{translate('context.compact.nextCost')}</span>
+            <span className="text-2xs text-secondary">{translate('context.compact.nextCost')}</span>
             <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-fit-yellow)]">
               +{formatDuration(context.estimatedRepefillMs)}
             </span>
           </div>
-          <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+          <p className="mt-1 text-2xs text-muted">
             {translate('chat.checkpoint.cacheCost')}
           </p>
         </div>
 
         {confirming ? (
           <div className="space-y-1.5">
-            <p className="text-2xs text-[var(--fg-muted)]">
+            <p className="text-2xs text-secondary">
               {translate('chat.checkpoint.confirm').replace(
                 '{duration}',
                 formatDuration(context.estimatedRepefillMs),
@@ -123,7 +123,7 @@ export function ContextPanel({
                 ref={compactErrorRef}
                 role="alert"
                 tabIndex={-1}
-                className="rounded-md border border-[var(--color-fit-red)]/50 bg-[var(--color-fit-red)]/8 px-2 py-1.5 text-2xs text-[var(--color-fit-red)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+                className="rounded-md border border-[var(--color-fit-red)]/50 bg-[var(--color-fit-red)]/8 px-2 py-1.5 text-2xs text-[var(--color-fit-red)] outline-none focus-visible:ring-2 focus-visible:ring-focus"
               >
                 <div className="font-semibold">{translate('chat.checkpoint.error')}</div>
                 <div className="mt-0.5 break-words">{compactError}</div>
@@ -215,7 +215,7 @@ function CacheIndicator({ context, usage }: { context: ContextState; usage: Usag
         label={translate('context.cache.share', { percent: formatPercent(cachedFraction * 100) })}
       />
 
-      <p className="mt-1.5 text-2xs text-[var(--fg-muted)]">
+      <p className="mt-1.5 text-2xs text-secondary">
         {hit
           ? translate('context.cache.hitDescription')
           : translate('context.cache.missDescription')}
@@ -239,7 +239,7 @@ function CacheIndicator({ context, usage }: { context: ContextState; usage: Usag
         />
       </div>
 
-      <p className="mt-1 text-2xs text-[var(--fg-subtle)]">
+      <p className="mt-1 text-2xs text-muted">
         {translate('context.cache.reference')}
         {actualPrefill !== null && (
           <>
@@ -270,7 +270,7 @@ function CacheBar({
   return (
     <div className={cx('flex items-center gap-2', !active && 'opacity-45')}>
       <span className="w-16 shrink-0 text-2xs">{label}</span>
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--bg-inset)]">
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-inset">
         <div
           className="h-full rounded-full"
           style={{ width: `${Math.max(2, (ms / maxMs) * 100)}%`, background: color }}
@@ -296,7 +296,7 @@ function SpeedSection({ usage }: { usage: Usage }) {
       <h3 className="mb-1.5 text-xs font-semibold">{translate('context.lastTurn.title')}</h3>
 
       {/* Prefill и генерация — разные вещи, и ждать приходится по-разному */}
-      <div className="mb-2 flex h-5 overflow-hidden rounded border border-[var(--border)]">
+      <div className="mb-2 flex h-5 overflow-hidden rounded border border-divider">
         <PhaseSegment
           label={translate('context.lastTurn.prefill')}
           ms={usage.promptEvalDurationMs}
