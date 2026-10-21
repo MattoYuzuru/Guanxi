@@ -387,3 +387,18 @@ test('L8 Vitest resolves public UI styles through package exports', async () => 
   const resolver = config.createResolver()
   for (const [name, path] of [['@guanxi/ui', 'src/index.ts'], ['@guanxi/ui/catalog', 'catalog/index.ts'], ['@guanxi/ui/theme.css', 'generated/theme.css'], ['@guanxi/ui/tokens.css', 'generated/tokens.css']]) assert.equal(await resolver(name, join(ctx.root, 'packages/web/src/index.css')), join(ctx.root, 'packages/ui', path), name)
 })
+
+test('self-review: retained legacy aliases cannot paint a second palette', async () => {
+  const css = postcss.parse(await ctx.read('packages/web/src/index.css'))
+  const roles = {
+    bg: 'background-primary', 'bg-subtle': 'background-tertiary', 'bg-raised': 'background-secondary', 'bg-inset': 'background-tertiary',
+    border: 'border-primary', 'border-strong': 'border-control', fg: 'text-primary', 'fg-muted': 'text-secondary', 'fg-subtle': 'text-secondary',
+    accent: 'background-accent', 'accent-fg': 'text-on-accent', danger: 'text-danger',
+  }
+  for (const [legacy, semantic] of Object.entries(roles)) {
+    const values = []
+    css.walkDecls(`--${legacy}`, d => values.push(d.value))
+    assert.equal(values.length, 2, `${legacy} must retain both theme aliases`)
+    assert.deepEqual(values, Array(2).fill(`var(--color-${semantic})`), `${legacy} must resolve to the semantic palette in both themes`)
+  }
+})
