@@ -87,7 +87,7 @@ test('editing a writable checkout cannot replace the next trusted sandbox launch
   await writeFile(join(root, 'protected'), 'original')
   const { copyFile } = await import('node:fs/promises')
   const { pathToFileURL } = await import('node:url')
-  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
+  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(root, 'node_modules'))
   const { sandboxCommand: cloned } = await import(pathToFileURL(join(root, 'sandbox.ts')).href)
   const full = { ...policy, mode: 'full-access' as const, roots: [root] }
@@ -247,7 +247,7 @@ test('worker crash tears down every descendant before the next command settles',
   const { dir, policy } = await fixture(t)
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'launcher'); await mkdir(launcher)
-  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox.ts', import.meta.url), 'utf8')
   const hook = `if (signal?.aborted) abort(); const crashTimer = setInterval(() => { if (existsSync(${JSON.stringify(join(policy.scratch, 'ready'))})) { clearInterval(crashTimer); child.kill('SIGKILL') } }, 10); child.once('exit', () => clearInterval(crashTimer))`
@@ -274,7 +274,7 @@ test('arbitrary execution cannot connect to a Unix socket exposed inside a selec
 async function fixtureLauncher(dir: string, transformWorker: (source: string) => string, transformSandbox: (source: string) => string = source => source) {
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'fixture-launcher'); await mkdir(launcher)
-  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await writeFile(join(launcher, 'sandbox.ts'), transformSandbox(await readFile(join(launcher, 'sandbox.ts'), 'utf8')))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox-worker.ts', import.meta.url), 'utf8')
@@ -372,4 +372,30 @@ test('even allowlisted loopback cannot reach API or web control-plane ports in e
     assert.equal(denied.stdout, '403 403 403 403 ')
     assert.deepEqual(seen, [])
   }
+})
+
+test('daemon loss during cancellation settles with cleanup_unconfirmed and retains a root quarantine', { skip: process.platform !== 'darwin', timeout: 20000 }, async t => {
+  const { dir, policy } = await fixture(t)
+  const fake = join(dir, 'docker'), marker = join(dir, 'started')
+  await writeFile(fake, `#!/bin/sh
+case "$3" in
+  context) printf 'unix:///fixture';;
+  info) printf linux;;
+  image) printf 'sha256:${'a'.repeat(64)}';;
+  create) exit 0;;
+  start) touch ${quote(marker)}; exec sleep 30;;
+  *) exec sleep 30;;
+esac
+`, { mode: 0o700 })
+  const launch = await fixtureLauncher(dir, s => s, s => s.replace('const dockerBinary = resolveDockerBinary()', `const dockerBinary = {path:${JSON.stringify(fake)},protectedPaths:[]}`))
+  const abort = new AbortController()
+  const running = launch({ ...policy, mode: 'full-access' }, 'sleep 30', abort.signal)
+  const rejected = assert.rejects(running, /cleanup_unconfirmed/)
+  while (true) { try { await readFile(marker); break } catch { await pause(10) } }
+  const began = Date.now(); abort.abort(); await rejected
+  assert.ok(Date.now() - began < 9000, 'stop must settle while the daemon stays unavailable')
+  const entries = await (await import('node:fs/promises')).readdir(join(dir, 'native-cleanup'))
+  assert.equal(entries.length, 1)
+  const { assertRootsClean } = await import('../../src/native-agent/cleanup.ts')
+  assert.throws(() => assertRootsClean(dir, policy.roots), /cleanup_unconfirmed/)
 })

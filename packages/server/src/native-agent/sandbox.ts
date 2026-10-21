@@ -1,11 +1,12 @@
 import { execFile, fork } from 'node:child_process'
 import { existsSync, readFileSync, accessSync, realpathSync, constants } from 'node:fs'
-import { mkdtemp, writeFile, rm, realpath, lstat, opendir } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, realpath, lstat, opendir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { promisify } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { join, sep, delimiter, isAbsolute } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { removeContainer, STOP_GRACE_MS } from './cleanup.ts'
 import type { SandboxPolicy, CommandResult } from './sandbox-protocol.ts'
 export { TOOL_OUTPUT_BYTES } from './sandbox-protocol.ts'
 export type { SandboxPolicy, CommandResult } from './sandbox-protocol.ts'
@@ -16,7 +17,7 @@ const built = existsSync(builtWorker)
 const runtimeUrl = import.meta.resolve('@anthropic-ai/sandbox-runtime')
 const workerBytes = readFileSync(built ? builtWorker : new URL('./sandbox-worker.ts', import.meta.url), 'utf8')
   .replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl))
-const sources = built ? [] : ['sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts'].map(name => ({ name, bytes: readFileSync(new URL(name, import.meta.url), 'utf8').replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl)) }))
+const sources = built ? [] : ['sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts', 'cleanup.ts'].map(name => ({ name, bytes: readFileSync(new URL(name, import.meta.url), 'utf8').replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl)) }))
 function resolveDockerBinary(): { path: string; protectedPaths: string[] } | null {
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
     if (!isAbsolute(directory)) continue
@@ -69,17 +70,10 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
   await writeFile(worker, workerBytes, { mode: 0o400, flag: 'wx' })
   for (const source of sources) await writeFile(join(directory, source.name), source.bytes, { mode: 0o400, flag: 'wx' })
   const ownerName = `guanxi-exec-${randomUUID()}`
-  const confirmContainerGone = async () => {
-    if (!dockerEndpoint) return
-    const exec = promisify(execFile)
-    while (true) {
-      try { await exec(dockerBinary!.path, ['--host', dockerEndpoint, 'rm', '--force', ownerName], { timeout: 15_000 }) } catch { /* May already have auto-removed. */ }
-      try {
-        const { stdout } = await exec(dockerBinary!.path, ['--host', dockerEndpoint, 'ps', '-aq', '--filter', `name=^/${ownerName}$`], { timeout: 15_000 })
-        if (!stdout.trim()) return
-      } catch { /* An unavailable daemon is not proof of teardown. */ }
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
+  const quarantine = join(policy.runtimeBase ?? directory, 'native-cleanup', ownerName + '.json')
+  if (dockerEndpoint) {
+    await mkdir(join(policy.runtimeBase ?? directory, 'native-cleanup'), { recursive: true, mode: 0o700 })
+    await writeFile(quarantine, JSON.stringify([policy.scratch, ...(policy.mode === 'full-access' ? policy.roots : [])]), { mode: 0o600, flag: 'wx' })
   }
   return new Promise((resolve, reject) => {
     const child = fork(worker, [], { detached: true, execArgv: [], cwd: policy.scratch,
@@ -90,7 +84,12 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
     let result: CommandResult | null = null
     let failure: string | null = null
     const kill = () => { try { process.kill(-child.pid!, 'SIGKILL') } catch { /* already exited */ } }
-    const abort = () => { failure = 'sandbox_failed'; if (child.connected) child.send({ stop: true }) }
+    let forceStop: ReturnType<typeof setTimeout> | undefined
+    const abort = () => {
+      failure = 'sandbox_failed'
+      if (child.connected) child.send({ stop: true }, () => {})
+      forceStop ??= setTimeout(kill, STOP_GRACE_MS)
+    }
     const timer = setTimeout(abort, timeoutMs)
     signal?.addEventListener('abort', abort, { once: true })
     child.on('message', (message: { result?: CommandResult; error?: string }) => {
@@ -101,8 +100,15 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
     child.once('exit', async () => {
       kill()
       // Also covers a worker crash: killing a Docker CLI does not stop its container.
-      await confirmContainerGone()
+      if (dockerEndpoint) {
+        try {
+          await removeContainer(dockerBinary!.path, dockerEndpoint, ownerName)
+          await rm(quarantine, { force: true })
+          if (failure === 'cleanup_unconfirmed') failure = 'sandbox_failed'
+        } catch { failure = 'cleanup_unconfirmed' }
+      }
       clearTimeout(timer)
+      clearTimeout(forceStop)
       signal?.removeEventListener('abort', abort)
       await Promise.all([directory, networkDirectory].map(path => rm(path, { recursive: true, force: true }).catch(() => undefined)))
       if (!failure && result && !signal?.aborted) resolve(result)

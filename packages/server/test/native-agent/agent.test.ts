@@ -371,3 +371,16 @@ test('oversized state tool results use a bounded artifact response and a session
     assert.equal(data.offset, 0); assert.ok(data.nextOffset > 0); assert.equal(data.truncated, true)
   } finally { handle.close() }
 })
+
+test('cleanup quarantine keeps roots blocked across service reload and explicit continuation', async t => {
+  const f = await fixture(t)
+  const root = join(f.dir, 'root'); await mkdir(root)
+  f.agents().setRoots(f.input.projectId, [f.workspaces.create(root).id])
+  const { sessionId } = await f.agents().create({ ...f.input, mode: 'full-access' })
+  await f.agents().wait(sessionId)
+  await mkdir(join(f.data, 'native-cleanup'))
+  await writeFile(join(f.data, 'native-cleanup', 'owner.json'), JSON.stringify([root]))
+  await f.restart()
+  await assert.rejects(f.agents().create({ ...f.input, mode: 'full-access' }), /cleanup_unconfirmed/)
+  assert.throws(() => f.agents().prompt(sessionId, 'continue'), /cleanup_unconfirmed/)
+})

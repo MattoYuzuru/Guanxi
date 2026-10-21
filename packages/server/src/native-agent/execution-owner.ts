@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline'
 import { lstat, writeFile, copyFile, realpath } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import { removeContainer, CLEANUP_TIMEOUT_MS } from './cleanup.ts'
 import { containerRunner } from './container-runner.ts'
 import { TOOL_OUTPUT_BYTES, commandOutput, type SandboxPolicy, type CommandResult } from './sandbox-protocol.ts'
 
@@ -66,24 +67,20 @@ export class ContainerExecutionOwner implements ExecutionOwner {
   private docker(args: string[]) { return exec(this.dockerPath, ['--host', this.endpoint, ...args], { timeout: 15_000, maxBuffer: 256 * 1024 }) }
   async stop() {
     this.stopped = true
-    // No settlement on an uncertain daemon response. Keep ownership while retrying.
     if (!this.created) return
-    await this.creation?.catch(() => undefined)
-    while (true) {
-      try {
-        await this.docker(['rm', '--force', this.name])
-        this.created = false
-        break
-      } catch {
-        try {
-          const { stdout } = await this.docker(['ps', '-aq', '--filter', `name=^/${this.name}$`])
-          if (!stdout.trim()) { this.created = false; break }
-        } catch { /* Runtime unavailable: retain ownership until it can confirm teardown. */ }
-        await new Promise(resolve => setTimeout(resolve, 500))
+    try {
+      // A pending create must settle before removal, but cannot hold unload forever.
+      if (this.creation) {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try { await Promise.race([this.creation.catch(() => undefined), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('cleanup_unconfirmed')), CLEANUP_TIMEOUT_MS) })]) }
+        finally { clearTimeout(timer) }
       }
+      await removeContainer(this.dockerPath, this.endpoint, this.name)
+      this.created = false
+    } finally {
+      for (const socket of this.sockets.values()) socket.destroy()
+      this.sockets.clear()
     }
-    for (const socket of this.sockets.values()) socket.destroy()
-    this.sockets.clear()
   }
   async execute(command: string): Promise<CommandResult> {
     const { policy } = this

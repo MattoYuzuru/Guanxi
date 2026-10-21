@@ -8,6 +8,7 @@ import type { AppContext } from '../context.ts'
 import type { SessionHandle, SessionLog } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { Connections } from '../connections/service.ts'
+import { assertRootsClean } from './cleanup.ts'
 import { selectedModel, connectionStream, emptyUsage } from './model.ts'
 import { orientation } from './orientation.ts'
 import { nativeTools } from './tools.ts'
@@ -116,6 +117,7 @@ export class NativeAgents {
     }
   }
   private ensureRoots(policy: SandboxPolicy, id: string) {
+    assertRootsClean(this.dataDir, [policy.scratch, ...policy.roots])
     if (policy.mode !== 'full-access') return
     for (const [otherId, active] of this.active) {
       if (otherId === id || active.policy.mode !== 'full-access') continue
@@ -235,6 +237,7 @@ export class NativeAgents {
       // Reasoning is stored only as K2 reasoning, never recycled into any provider request.
       convertToLlm: messages => messages.map(m => m.role === 'assistant' ? { ...m, content: m.content.filter(c => c.type !== 'thinking') } : m),
     })
+    let cleanupUnconfirmed = false
     const stop = () => agent.abort()
     signal.addEventListener('abort', stop, { once: true })
     agent.subscribe(event => {
@@ -249,6 +252,7 @@ export class NativeAgents {
           if (reasoning) handle.append({ type: 'reasoning', spanId: turnId, data: { messageId: turnId, step: step - 1, text: reasoning } })
         }
       }
+      if (event.type === 'tool_execution_end' && event.result.details?.code === 'cleanup_unconfirmed') { cleanupUnconfirmed = true; agent.abort() }
       if (event.type === 'tool_execution_end') handle.append({ type: 'tool.result', data: { toolCallId: event.toolCallId, status: event.isError ? 'error' : 'ok',
         result: JSON.stringify(event.result.content), error: event.isError ? 'tool_failed' : null, durationMs: Math.round(event.durationMs ?? 0) } })
     })
@@ -262,11 +266,12 @@ export class NativeAgents {
         next = queue[0]?.text
         if (next !== undefined) { promptId = queue[0]!.id; promptOrigin = 'queued' }
       }
+      if (cleanupUnconfirmed) throw new Error('cleanup_unconfirmed')
       signal.throwIfAborted()
       handle.append({ type: 'agent.state', data: { status: 'completed', error: null } })
       handle.append({ type: 'turn.done', data: { messageId: turnId, outcome: 'completed', stopReason: 'stop', steps: step } })
     } catch {
-      handle.append({ type: 'agent.state', data: { status: signal.aborted ? 'cancelled' : 'failed', error: signal.aborted ? null : 'agent_failed' } })
+      handle.append({ type: 'agent.state', data: { status: cleanupUnconfirmed ? 'failed' : signal.aborted ? 'cancelled' : 'failed', error: cleanupUnconfirmed ? 'cleanup_unconfirmed' : signal.aborted ? null : 'agent_failed' } })
       handle.append({ type: 'turn.done', data: { messageId: turnId, outcome: signal.aborted ? 'cancelled' : 'failed', stopReason: signal.aborted ? 'stopped_by_user' : 'agent_failed', steps: step } })
     } finally { signal.removeEventListener('abort', stop) }
   }

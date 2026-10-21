@@ -39,9 +39,9 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
         const content = await execute(scrubber.scrub(raw as Record<string, string>), signal)
         return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']
+        const safeCodes = ['cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']
         const code = error instanceof Error && safeCodes.includes(error.message) ? error.message : 'tool_denied_or_failed'
-        return { content: [{ type: 'text', text: signal?.aborted ? 'cancelled' : code }], details: null, isError: true }
+        return { content: [{ type: 'text', text: code === 'cleanup_unconfirmed' ? code : signal?.aborted ? 'cancelled' : code }], details: { code }, isError: true }
       }
     },
   })

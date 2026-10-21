@@ -11,8 +11,8 @@ import { LinuxExecutionOwner, FixedExecutionOwner, ContainerExecutionOwner, type
 
 let owner: ExecutionOwner | undefined
 let stopped = false
-process.on('message', (message: { stop?: boolean }) => { if (message.stop) { stopped = true; void owner?.stop() } })
-process.once('disconnect', () => { stopped = true; void owner?.stop().finally(() => process.exit(1)) })
+process.on('message', (message: { stop?: boolean }) => { if (message.stop) { stopped = true; void owner?.stop().catch(() => undefined) } })
+process.once('disconnect', () => { stopped = true; void owner?.stop().catch(() => undefined).finally(() => process.exit(1)) })
 process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerName, directory, dockerPath }: { policy: SandboxPolicy; command: string; fixed: boolean; dockerEndpoint: string; ownerName: string; directory: string; dockerPath: string }) => {
   try {
     // Windows requires machine-wide provisioning; refuse until Guanxi validates that profile.
@@ -64,8 +64,8 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
     await SandboxManager.reset()
     process.send?.({ result }, () => process.exit(0))
   } catch (error) {
-    await owner?.stop()
+    await owner?.stop().catch(() => undefined)
     await SandboxManager.reset().catch(() => undefined)
-    process.send?.({ error: error instanceof Error && ['container_runtime_unavailable', 'container_path_unsupported', 'supervision_unavailable'].includes(error.message) ? error.message : 'sandbox_failed' }, () => process.exit(1))
+    process.send?.({ error: error instanceof Error && ['container_runtime_unavailable', 'container_path_unsupported', 'supervision_unavailable', 'cleanup_unconfirmed'].includes(error.message) ? error.message : 'sandbox_failed' }, () => process.exit(1))
   }
 })
