@@ -30,9 +30,11 @@ test('port-zero server native policies deny the actually bound API and web ports
   const project = server.context.projects.create('Fixture')
   const agents = server.kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)!
   for (const mode of ['read-only', 'full-access'] as const) {
-    const { sessionId } = await agents.create({ projectId: project.id, connectionId: connection.id, model: 'fixture',
+    const creating = agents.create({ projectId: project.id, connectionId: connection.id, model: 'fixture',
       prompt: 'fixture', mode, contextTokens: 4096,
       domains: [`127.0.0.1:${server.port}`, `127.0.0.1:${webPort}`, '127.0.0.1:80'] })
+    await assert.doesNotReject(creating, 'an ephemeral listener must produce a valid native policy')
+    const { sessionId } = await creating
     assert.equal((await agents.wait(sessionId)).text, 'fixture answer')
     const event = server.kernel.sessionLog!.readAll(sessionId, 'person').find(event => event.type === 'agent.policy')!
     assert.equal(event.type, 'agent.policy')
