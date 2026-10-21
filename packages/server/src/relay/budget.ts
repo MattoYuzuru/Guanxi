@@ -37,3 +37,21 @@ export function request(prompt: string, parts: string[], window: WindowObservati
   invariant(upperTokens(result, window) <= limit, 'context_ceiling')
   return result
 }
+
+/** Recheck the authoritative wall clock instead of treating the JS timer's maximum
+ * representable delay as the delegation deadline. The returned cancel owns rearming. */
+export function wallDeadline(remaining: () => number, expire: () => void,
+  schedule: (fn: () => void, delay: number) => () => void = (fn, delay) => {
+    const timer = setTimeout(fn, delay)
+    return () => clearTimeout(timer)
+  }): () => void {
+  let closed = false, cancel = () => {}
+  const arm = () => {
+    if (closed) return
+    const left = remaining()
+    if (left <= 0) { closed = true; expire(); return }
+    cancel = schedule(arm, Math.min(left, 2 ** 31 - 1))
+  }
+  arm()
+  return () => { closed = true; cancel() }
+}

@@ -76,3 +76,22 @@ test('a refused local start observer consumes the aborted response rejection', a
     assert.equal(unhandled.length,0)
   } finally {controller.abort();process.removeListener('unhandledRejection',onUnhandled)}
 })
+test('an unreadable handoff body is a degraded critical probe failure with retained ledger progress', async () => {
+  let work=0, damaged=false
+  const f=fixture({actions:()=>canonical(++work===1?{action:'handoff'}:work===2?{action:'verify',item:'one'}:{action:'handoff'})})
+  try {
+    const read=f.relay.sealed.bind(f.relay)
+    f.relay.sealed=a=>{
+      if(!damaged&&f.db.prepare('SELECT cycle FROM relay_seals WHERE run_id=?').get(a.run_id)){
+        // Simulate damaged persisted artifact bytes, bypassing fixture-only immutability.
+        f.db.exec('DROP TRIGGER relay_seals_immutable')
+        f.db.prepare('UPDATE relay_seals SET handoff=? WHERE run_id=?').run('{truncated',a.run_id)
+        damaged=true
+      }
+      return read(a)
+    }
+    await f.executor.run(f.attempt)
+    assert.equal(f.store.get(f.run.id).state,'completed')
+    assert.ok(f.log.readAll(f.run.session_id,'person').some(e=>e.type==='agent.note'&&e.data.text.includes('"damaged":true')))
+  } finally {f.close()}
+})

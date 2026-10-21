@@ -6,7 +6,7 @@ import { RelayStore } from './store.ts'
 import type { RelayModel, Reply } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
 import { invariant, RelayError, type Ledger, type Handoff, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
-import { boundary, bounded, request, thresholds } from './budget.ts'
+import { boundary, bounded, request, thresholds, wallDeadline } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
@@ -50,6 +50,7 @@ export class RelayExecutor {
     const l = this.store.read(a.run_id), reason = this.caps(l)
     if (reason) { this.wrap(a, reason); throw new RelayError('cap_reached') }
     const quote = this.model.maxCostMicros?.(count, this.reserves.turn) ?? null
+    invariant(quote === null || Number.isSafeInteger(quote) && quote >= 0, 'cost_bound_invalid')
     if ((l.caps.tokens !== null && l.tokens + count + this.reserves.turn > l.caps.tokens) ||
       (l.caps.moneyMicros !== null && (quote === null || l.moneyMicros + quote > l.caps.moneyMicros))) {
       this.wrap(a, 'call_reserve'); throw new RelayError('cap_reached')
@@ -183,9 +184,9 @@ export class RelayExecutor {
   async run(a: Attempt, external?: AbortSignal): Promise<Ledger> {
     invariant(!this.running, 'executor_busy'); this.running = true
     const initial = this.store.read(a.run_id)
-    const remaining = initial.caps.wallMs === null ? null : Math.max(1, initial.startedAt + initial.caps.wallMs - this.store.clock())
     const wall = new AbortController()
-    const timer = remaining === null ? null : setTimeout(() => wall.abort(), Math.min(remaining, 2 ** 31 - 1))
+    const cancelDeadline = initial.caps.wallMs === null ? () => {} : wallDeadline(
+      () => initial.startedAt + initial.caps.wallMs! - this.store.clock(), () => wall.abort())
     const signal = AbortSignal.any([this.controller.signal, wall.signal, ...(external ? [external] : [])])
     const renewal = setInterval(() => { try { this.store.runs.renew(a) } catch { this.controller.abort() } }, 1_000)
     try {
@@ -253,6 +254,6 @@ export class RelayExecutor {
       this.store.emit(a, { type: 'error', data: { code: signal.aborted ? 'relay_stopped' : error instanceof RelayError ? error.code : 'relay_failed', message: 'Relay execution stopped; ledger retained.' } })
       this.store.runs.inputRequired(a)
       return this.store.read(a.run_id)
-    } finally { clearInterval(renewal); if (timer) clearTimeout(timer); this.running = false }
+    } finally { clearInterval(renewal); cancelDeadline(); this.running = false }
   }
 }

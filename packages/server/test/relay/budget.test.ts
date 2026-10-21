@@ -48,3 +48,23 @@ test('oversize counter refuses dispatch; prompt_eval_count truncation is a proto
     assert.ok(g.log.readAll(g.run.session_id, 'person').some(e => e.type === 'error' && e.data.code === 'truncation_protocol'))
   } finally { g.close() }
 })
+test('long wall caps rearm across timer limits and clock changes, and cancellation owns the timer', async () => {
+  const {wallDeadline}=await import('../../src/relay/budget.ts')
+  let now=0, expires=0, cancelled=0, delay=0, tick=()=>{}
+  const end=5_000_000_000
+  const stop=wallDeadline(()=>end-now,()=>{expires++},(fn,ms)=>{tick=fn;delay=ms;return()=>{cancelled++}})
+  assert.equal(delay,2**31-1)
+  now=delay;tick();assert.equal(expires,0);assert.equal(delay,2**31-1)
+  now=-1000;tick();assert.equal(expires,0);assert.equal(delay,2**31-1)
+  now=end;tick();assert.equal(expires,1)
+  stop();tick();assert.equal(expires,1);assert.equal(cancelled,1)
+})
+test('invalid monetary bounds refuse model dispatch rather than weakening a normative cap', async () => {
+  const f=fixture({caps:{moneyMicros:100}})
+  try {
+    f.model.maxCostMicros=()=>-1
+    await f.executor.run(f.attempt)
+    assert.equal(f.prompts.length,0)
+    assert.equal(f.store.get(f.run.id).state,'input_required')
+  } finally {f.close()}
+})

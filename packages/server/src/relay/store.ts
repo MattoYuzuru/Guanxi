@@ -159,7 +159,10 @@ export class RelayStore {
     if (!lease || lease.holder !== a.id || lease.epoch !== a.epoch || lease.token !== a.token) return null
     const r = this.db.prepare('SELECT * FROM relay_seals WHERE run_id=? AND attempt_id=? AND epoch=? AND token=? ORDER BY cycle DESC LIMIT 1').get(a.run_id, a.id, a.epoch, a.token)
     if (!r) return null
-    return { handoff: JSON.parse(String(r.handoff)), ledger: JSON.parse(String(r.ledger)), bundle: r.bundle as Uint8Array, artifactHash: String(r.artifact_hash) }
+    let handoff: Handoff
+    try { handoff = JSON.parse(String(r.handoff)) } catch { handoff = null as unknown as Handoff }
+    // Invalid artifact JSON is a failed integrity probe, not a failure to read the ledger.
+    return { handoff, ledger: JSON.parse(String(r.ledger)), bundle: r.bundle as Uint8Array, artifactHash: String(r.artifact_hash) }
   }
 }
 import { render as renderHandoff } from './handoff.ts'
