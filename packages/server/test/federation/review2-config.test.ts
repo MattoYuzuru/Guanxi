@@ -126,3 +126,24 @@ test('self-review: ready queue waits for every missing origin before admission',
     assert.equal(present(receiver), false)
   } finally { nodes.forEach((n) => n.close()) }
 })
+
+test('independent review: non-admin config origins remain metadata dependencies in either cache order', () => {
+  for (const reverse of [false, true]) {
+    const receiver = new SimNode(identity('receiver')); const writer = new SimNode(identity('writer'))
+    const admin = new SimNode(identity('admin')); const origin = new SimNode(identity('origin', { admin: false }))
+    const nodes = [receiver, writer, admin, origin]
+    try {
+      for (const n of nodes) for (const p of nodes) n.trust(p)
+      const dependency = origin.federation.config.create('source', { kind: 'setting', value: true })
+      for (const n of [writer, admin]) n.federation.config.ingest([dependency])
+      const metadata = writer.federation.config.create('theme', { kind: 'setting', value: 'dark' })
+      const privilege = admin.federation.config.create('editor', { kind: 'grant', present: false })
+      const result = receiver.federation.config.ingest(reverse ? [metadata, privilege] : [privilege, metadata])
+      assert.equal(result.accepted, 1, 'non-admin history is optional only for privileged operations')
+      assert.equal(result.deferred, 1, 'metadata still waits for its admissible non-admin origin')
+      assert.deepEqual(receiver.federation.config.operations().map((op) => op.operation.origin), ['admin'])
+      assert.equal(receiver.federation.config.ingest([metadata, dependency]).accepted, 2)
+      assert.equal(receiver.federation.config.operations().length, 3)
+    } finally { nodes.forEach((n) => n.close()) }
+  }
+})

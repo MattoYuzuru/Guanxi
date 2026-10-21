@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Worker } from 'node:worker_threads'
+import { Federation } from '../../src/federation/service.ts'
 import { SharedConfig } from '../../src/federation/config.ts'
 import { history } from './ingest-benchmark.ts'
 import { SimNode, identity } from './harness.ts'
@@ -93,4 +94,30 @@ test('self-review: ingest scans stored counters once and scrubs each input once'
     assert.equal(scans, 1, 'stored history is scanned once per ingest')
     assert.equal(scrubs, 32, 'only incoming signed payloads are scrubbed once')
   } finally { receiver.close(); author.close() }
+})
+
+test('independent review: default config request budget admits 256 and refuses 257', async () => {
+  const receiver = new SimNode(identity('receiver')); const author = new SimNode(identity('author'))
+  try {
+    receiver.trust(author)
+    const operations = history(author, 257)
+    const rejected = await author.request(receiver, 'POST', '/config', operations)
+    assert.equal(rejected.status, 413, 'documented default refuses 257 operations')
+    assert.equal(receiver.federation.config.operations().length, 0)
+    const accepted = await author.request(receiver, 'POST', '/config', operations.slice(0, 256))
+    assert.equal(accepted.status, 200, 'documented default admits 256 operations')
+    assert.equal((await accepted.json() as { accepted: number }).accepted, 256)
+  } finally { receiver.close(); author.close() }
+})
+
+test('independent review: host config budget must be a positive safe integer', () => {
+  const receiver = new SimNode(identity('receiver'))
+  try {
+    // Use the existing fixture database; constructor validation runs before any
+    // migration, so invalid host values have no storage side effects.
+    for (const configOpsPerRequest of [0, -1, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => new Federation({ ...receiver.keys, db: receiver.db, scrubber: receiver.scrubber,
+        log: receiver.log, runs: receiver.runs, configOpsPerRequest }), /invalid_config_budget/, 'invalid host work budgets fail closed')
+    }
+  } finally { receiver.close() }
 })
