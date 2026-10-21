@@ -270,3 +270,39 @@ test('arbitrary execution cannot connect to a Unix socket exposed inside a selec
   const denied = await sandboxCommand(policy, `node -e ${quote(command)}`)
   assert.equal(denied.code, 0); assert.equal(denied.stdout, 'blocked\n'); assert.equal(connections, 0)
 })
+
+async function fixtureLauncher(dir: string, transformWorker: (source: string) => string) {
+  const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
+  const launcher = join(dir, 'fixture-launcher'); await mkdir(launcher)
+  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
+  const source = await readFile(new URL('../../src/native-agent/sandbox-worker.ts', import.meta.url), 'utf8')
+  await writeFile(join(launcher, 'sandbox-worker.ts'), transformWorker(source))
+  return (await import(pathToFileURL(join(launcher, 'sandbox.ts')).href)).sandboxCommand as typeof sandboxCommand
+}
+test('trusted executable/dependency deny-write grants reach both execution backends', { timeout: 30000 }, async t => {
+  const { dir, root, policy } = await fixture(t)
+  const install = join(root, 'fixture-node-install'); await mkdir(install)
+  await writeFile(join(install, 'node'), 'fixture executable')
+  await writeFile(join(root, 'protected'), 'original')
+  const launch = await fixtureLauncher(dir, source => {
+    const expected = 'const trustedDeny = [modules, dirname(realpathSync(process.execPath))]'
+    assert.ok(source.includes(expected))
+    return source.replace(expected, `const trustedDeny = [${JSON.stringify(install)}]`)
+  })
+  const result = await launch({ ...policy, mode: 'full-access' }, `printf control > ${quote(join(root, 'control'))}; printf bad > ${quote(join(install, 'node'))}`)
+  assert.notEqual(result.code, 0)
+  assert.equal(await readFile(join(root, 'control'), 'utf8'), 'control')
+  assert.equal(await readFile(join(install, 'node'), 'utf8'), 'fixture executable')
+})
+test('the actual ephemeral CA key is unreadable while its public trust bundle is readable', { timeout: 30000 }, async t => {
+  const { dir, policy } = await fixture(t)
+  const launch = await fixtureLauncher(dir, source => {
+    const expected = "    owner = process.platform === 'linux'"
+    assert.ok(source.includes(expected))
+    // Test metadata/permissions only. Never open, print or log private key bytes.
+    return source.replace(expected, `    command = 'test -r ' + quotePath(process.platform === 'linux' ? SandboxManager.getMitmCA()!.trustBundlePath : '/run/egress-ca.pem') + ' && test ! -r ' + quotePath(SandboxManager.getMitmCA()!.keyPath) + ' && printf isolated'\n${expected}`)
+  })
+  const result = await launch(policy, 'fixture substituted after proxy initialization')
+  assert.equal(result.code, 0); assert.equal(result.stdout, 'isolated')
+})

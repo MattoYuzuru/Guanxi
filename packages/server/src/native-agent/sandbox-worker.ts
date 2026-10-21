@@ -23,6 +23,7 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
     const read = [...system, dirname(realpathSync(process.execPath)), policy.scratch, ...policy.roots, ...policy.attachments]
     const installedRuntime = fileURLToPath(import.meta.resolve('@anthropic-ai/sandbox-runtime'))
     const modules = installedRuntime.split('/node_modules/')[0] + '/node_modules'
+    const trustedDeny = [modules, dirname(realpathSync(process.execPath))]
     const seccomp = join(dirname(installedRuntime), '..', 'vendor', 'seccomp', process.arch, 'apply-seccomp')
     if (process.platform === 'linux') { accessSync(seccomp, constants.X_OK); read.push(seccomp) }
     const bindingFilter = join(directory ?? policy.scratch, 'network-bind.bpf')
@@ -40,7 +41,7 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
       filesystem: { denyRead: ['/', ...(policy.hiddenPaths ?? [])].map(literal), allowRead: read.map(literal),
         allowWrite: [policy.scratch, ...(policy.mode === 'full-access' ? policy.roots : [])].map(literal),
         // Cancel upstream convenience grants. Stdio devices are the only exceptions.
-        denyWrite: [...getDefaultWritePaths().filter(path => !path.startsWith('/dev/')), ...system.filter(path => !['/dev', '/proc/self'].includes(path)), modules, dirname(realpathSync(process.execPath)), ...policy.roots.map(root => `${root}/node_modules`), ...policy.protectedPaths, ...policy.attachments].map(literal),
+        denyWrite: [...getDefaultWritePaths().filter(path => !path.startsWith('/dev/')), ...system.filter(path => !['/dev', '/proc/self'].includes(path)), ...trustedDeny, ...policy.roots.map(root => `${root}/node_modules`), ...policy.protectedPaths, ...policy.attachments].map(literal),
       },
       allowPty: false, enableWeakerNetworkIsolation: false, enableWeakerNestedSandbox: false,
       ...(process.platform === 'linux' ? { seccomp: { applyPath: seccomp } } : {}),
@@ -55,7 +56,7 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
       SandboxManager.updateConfig({ ...config, filesystem: { ...config.filesystem, allowRead: [...read, ...networkReads].map(literal) } })
     }
     const quotePath = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
-    owner = process.platform === 'linux' ? new LinuxExecutionOwner(bindingFilter) : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner(policy, dockerEndpoint, ownerName, directory)
+    owner = process.platform === 'linux' ? new LinuxExecutionOwner(bindingFilter) : fixed ? new FixedExecutionOwner() : new ContainerExecutionOwner({ ...policy, protectedPaths: [...policy.protectedPaths, ...trustedDeny] }, dockerEndpoint, ownerName, directory)
     if (stopped) throw new Error('sandbox_failed')
     const result = await owner.execute(`export HOME=${quotePath(policy.scratch)} TMPDIR=${quotePath(policy.scratch)}; ${command}`)
     await SandboxManager.reset()
