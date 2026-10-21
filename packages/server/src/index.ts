@@ -12,7 +12,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
-import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/listen-env.ts'
+import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv, portFromEnv, WEB_PORT_ENV, DEFAULT_WEB_PORT } from './config/listen-env.ts'
 import { defaultDbPath, openDb } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
 import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
@@ -154,7 +154,7 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
-    await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath) })
+    await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: [port, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)

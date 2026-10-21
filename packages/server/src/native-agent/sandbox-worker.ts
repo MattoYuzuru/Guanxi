@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { SandboxManager, getDefaultWritePaths, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { filterNativeRequest } from './request-policy.ts'
 import { linuxBindingFilter, type SandboxPolicy } from './sandbox-protocol.ts'
 import { LinuxExecutionOwner, FixedExecutionOwner, ContainerExecutionOwner, type ExecutionOwner } from './execution-owner.ts'
 
@@ -37,7 +38,7 @@ process.once('message', async ({ policy, command, fixed, dockerEndpoint, ownerNa
         allowUnixSockets: [], allowLocalBinding: false, allowAllUnixSockets: false,
         // The HTTP parser observes HTTPS too. No raw CONNECT or SOCKS escape.
         tlsTerminate: {}, refuseOpaqueTunnels: true, requireHostMatch: true,
-        filterRequest: async request => ({ action: policy.mode === 'full-access' || ['GET', 'HEAD', 'OPTIONS'].includes(request.method) ? 'allow' : 'deny' }),
+        filterRequest: request => filterNativeRequest(request, policy),
       },
       filesystem: { denyRead: ['/', ...(policy.hiddenPaths ?? [])].map(literal), allowRead: read.map(literal),
         allowWrite: [policy.scratch, ...(policy.mode === 'full-access' ? policy.roots : [])].map(literal),

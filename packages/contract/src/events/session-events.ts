@@ -75,6 +75,7 @@ export const sessionEventDataSchemas = {
   'agent.policy': nativeAgentInputSchema.omit({ prompt: true }).extend({
     scratch: z.string(), roots: z.array(z.string()), attachments: z.array(z.string()),
     hiddenPaths: z.array(z.string()).optional(),
+    nodePorts: z.array(z.number().int().min(1).max(65535)).optional(),
     runtimeBase: z.string().optional(),
     attachmentMetadata: z.array(z.object({ path: z.string(), mediaType: z.string(), displayName: z.string() }).strict()).optional(),
   }).strict(),

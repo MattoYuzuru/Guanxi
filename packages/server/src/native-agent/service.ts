@@ -13,6 +13,7 @@ import { orientation } from './orientation.ts'
 import { nativeTools } from './tools.ts'
 import { NativeProjectRoots } from './projects.ts'
 import type { SandboxPolicy } from './sandbox.ts'
+import { apiPortFromEnv, portFromEnv, DEFAULT_WEB_PORT, WEB_PORT_ENV } from '../config/listen-env.ts'
 import { resolveInWorkspace } from '../tools/jail.ts'
 
 export class NativeAgentError extends Error {
@@ -47,7 +48,7 @@ export class NativeAgents {
   readonly connections: Connections
   readonly scrubber: EgressScrubber
   readonly dataDir: string
-  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string) {
+  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, readonly nodePorts = [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)]) {
     this.host = host; this.log = log; this.connections = connections; this.scrubber = scrubber; this.dataDir = dataDir
     this.projectRoots = new NativeProjectRoots(join(dataDir, 'native-projects.sqlite'), host)
   }
@@ -99,7 +100,7 @@ export class NativeAgents {
         }
         throw new NativeAgentError('protected_path_invalid')
       }))).flat())]
-      const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
+      const policy: SandboxPolicy = { mode: input.mode, roots: [...new Set(roots)], scratch: await realpath(scratch), attachments, protectedPaths, domains: input.domains, nodePorts: this.nodePorts, runtimeBase: dataRoot, attachmentMetadata, hiddenPaths: [await realpath(this.dataDir)] }
       this.ready()
       this.ensureRoots(policy, sessionId)
       handle = this.log.open(sessionId, { kind: 'agent' })
@@ -194,7 +195,7 @@ export class NativeAgents {
     const events = this.events(id)
     const event = events.find(e => e.type === 'agent.policy')!
     if (event.type !== 'agent.policy') throw new NativeAgentError('session_not_found')
-    const policy = event.data
+    const policy = { ...event.data, nodePorts: this.nodePorts }
     const input = nativeAgentInputSchema.parse({ projectId: policy.projectId, connectionId: policy.connectionId, model: policy.model,
       mode: policy.mode, domains: policy.domains, protectedPaths: policy.protectedPaths, attachmentIds: policy.attachmentIds,
       contextTokens: policy.contextTokens, prompt: text })

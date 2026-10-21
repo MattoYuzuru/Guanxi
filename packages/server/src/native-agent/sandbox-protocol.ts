@@ -8,6 +8,7 @@ export interface SandboxPolicy {
   attachments: string[]
   protectedPaths: string[]
   domains: string[]
+  nodePorts?: number[]
   runtimeBase?: string
   hiddenPaths?: string[]
   attachmentMetadata?: { path: string; mediaType: string; displayName: string }[]

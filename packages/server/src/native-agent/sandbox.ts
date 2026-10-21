@@ -16,7 +16,7 @@ const built = existsSync(builtWorker)
 const runtimeUrl = import.meta.resolve('@anthropic-ai/sandbox-runtime')
 const workerBytes = readFileSync(built ? builtWorker : new URL('./sandbox-worker.ts', import.meta.url), 'utf8')
   .replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl))
-const sources = built ? [] : ['sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts'].map(name => ({ name, bytes: readFileSync(new URL(name, import.meta.url), 'utf8').replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl)) }))
+const sources = built ? [] : ['sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts'].map(name => ({ name, bytes: readFileSync(new URL(name, import.meta.url), 'utf8').replace(/(['"])@anthropic-ai\/sandbox-runtime\1/g, JSON.stringify(runtimeUrl)) }))
 function resolveDockerBinary(): { path: string; protectedPaths: string[] } | null {
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
     if (!isAbsolute(directory)) continue

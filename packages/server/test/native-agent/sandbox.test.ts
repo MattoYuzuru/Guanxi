@@ -87,7 +87,7 @@ test('editing a writable checkout cannot replace the next trusted sandbox launch
   await writeFile(join(root, 'protected'), 'original')
   const { copyFile } = await import('node:fs/promises')
   const { pathToFileURL } = await import('node:url')
-  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
+  for (const file of ['sandbox.ts', 'sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(root, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(root, 'node_modules'))
   const { sandboxCommand: cloned } = await import(pathToFileURL(join(root, 'sandbox.ts')).href)
   const full = { ...policy, mode: 'full-access' as const, roots: [root] }
@@ -247,7 +247,7 @@ test('worker crash tears down every descendant before the next command settles',
   const { dir, policy } = await fixture(t)
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'launcher'); await mkdir(launcher)
-  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox-worker.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox.ts', import.meta.url), 'utf8')
   const hook = `if (signal?.aborted) abort(); const crashTimer = setInterval(() => { if (existsSync(${JSON.stringify(join(policy.scratch, 'ready'))})) { clearInterval(crashTimer); child.kill('SIGKILL') } }, 10); child.once('exit', () => clearInterval(crashTimer))`
@@ -274,7 +274,7 @@ test('arbitrary execution cannot connect to a Unix socket exposed inside a selec
 async function fixtureLauncher(dir: string, transformWorker: (source: string) => string, transformSandbox: (source: string) => string = source => source) {
   const { copyFile } = await import('node:fs/promises'), { pathToFileURL } = await import('node:url')
   const launcher = join(dir, 'fixture-launcher'); await mkdir(launcher)
-  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
+  for (const file of ['sandbox.ts', 'sandbox-protocol.ts', 'execution-owner.ts', 'container-runner.ts', 'request-policy.ts']) await copyFile(new URL(`../../src/native-agent/${file}`, import.meta.url), join(launcher, file))
   await writeFile(join(launcher, 'sandbox.ts'), transformSandbox(await readFile(join(launcher, 'sandbox.ts'), 'utf8')))
   await symlink(new URL('../../../../node_modules', import.meta.url).pathname, join(launcher, 'node_modules'))
   const source = await readFile(new URL('../../src/native-agent/sandbox-worker.ts', import.meta.url), 'utf8')
@@ -355,4 +355,21 @@ test('macOS workload has only lo and cannot reach a reachable non-loopback host 
   assert.equal(isolated.code, 0)
   assert.equal(isolated.stdout, 'lo\nblocked\n')
   assert.equal(connections, 1, 'the raw sandbox connection must never reach the fixture')
+})
+
+test('even allowlisted loopback cannot reach API or web control-plane ports in either mode', { timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  const seen: string[] = []
+  const servers = [createServer((req, res) => { seen.push(req.method!); res.end('ESCAPED') }), createServer((req, res) => { seen.push(req.method!); res.end('ESCAPED') })]
+  for (const server of servers) {
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  }
+  const ports = servers.map(server => (server.address() as { port: number }).port)
+  for (const mode of ['read-only', 'full-access'] as const) {
+    const denied = await sandboxCommand({ ...policy, mode, nodePorts: ports, domains: ports.flatMap(port => [`localhost:${port}`, `127.0.0.1:${port}`]) },
+      ports.flatMap(port => ['localhost', '127.0.0.1'].map(host => `curl --noproxy '' -s --max-time 3 -o /dev/null -w '%{http_code} ' http://${host}:${port}/api/agent`)).join('; '))
+    assert.equal(denied.stdout, '403 403 403 403 ')
+    assert.deepEqual(seen, [])
+  }
 })
