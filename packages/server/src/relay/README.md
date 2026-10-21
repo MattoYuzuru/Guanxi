@@ -33,7 +33,10 @@ oldest/newest sample time, policy and the serial/independent-ratio assumption. F
 `low` confidence and `unvalidated` calibration. The optional runtime-counter observation
 compares remaining tokens / observed throughput with the P80 duration: a fresh contradiction
 is explicit, a stale or future observation is marked stale, and an unavailable forecast is
-distinguished from agreement. This check does not silently rewrite the distribution.
+distinguished from agreement. The `minimumRemainingMs` / `below_runtime_floor` names describe
+a constant-observed-throughput heuristic: observed throughput is a baseline, not a proven
+maximum speed or guaranteed duration bound. This check does not silently rewrite the
+distribution.
 
 Projections use the existing R1-fenced transaction and scrubber, persist in the ledger and
 sealed snapshot, and survive store reconstruction. No migration, public API, UI, model call,
