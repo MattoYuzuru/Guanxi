@@ -1,8 +1,7 @@
 # Lane DS1-b hand-off — components, catalog and approvals
 
-**Status:** re-check fixes done, ready for GPT's last check · **Updated:** 2026-10-21 ·
-**Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `dfadc2e`, main `4b68731`; DS1-a
-integrated) · **Ports:** 5183 / 4383
+**Status:** final-check fixes done (N8–N12), ready for GPT's bounded check · **Updated:** 2026-10-21 ·
+**Branch:** `claude/lane-ds1-b-catalog-421657` (main merged at `1510c0e`; DS1-a integrated) · **Ports:** 5183 / 4383
 
 Everything in [DS1-b](DS1-b.md) is built. The three independent reviews ran, and their findings
 are fixed in separate commits, except one inherent residual risk (key custody, below) that needs a
@@ -52,7 +51,29 @@ race test); a record changed during the keychain prompt is not overwritten.
 
 ## Commands
 
-Final run after the re-check fixes, on the clean tree `e6a731f`, through
+Final run after the final-check fixes and a merge of main (`1510c0e`, which brings main's
+`localization.spec.ts` fix), on that clean tree, through
+`agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
+with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
+
+| Check | Result | Receipt |
+| --- | --- | --- |
+| `npm run typecheck` | exit 0 (all workspaces) | direct |
+| `npm test` | `ui:check` ok; gate tests 51/51; core 719 (718 pass, 1 skipped opt-in keychain); kernel 106/106; web 266/266; ui node 61/61; ui vitest 17/17 | `check-j4b9gn91` |
+| `npm run ui:check:browser` (G13, G14, G15-clipping, G16, G17) | ok | `check-3uj87x45` |
+| `npm run test:web:browser` | 62/62 | `check-blk9w0pj` |
+| `npm run build` | exit 0 | `check-95r29jyi` |
+| `npm run build-storybook --workspace @guanxi/ui` | exit 0 | `check-syp8pvnr` |
+| `run.ts --mode fast --selftest` | 28 cases ok | `check-nq7467st` |
+| `run.ts --mode browser --selftest` | 11 cases ok | `check-kh1wgfwa` |
+| `run.ts --mode browser --only G13`, 10 consecutive compares | 10/10 pass | `check-7v02exnw`, `check-tacb0nf3`, `check-iqf5i68v`, `check-ejx0grm_`, `check-fkvlzs00`, `check-9dspz64i`, `check-9xgcbkrh`, `check-jisa2xyu`, `check-jgxrliai`, `check-ltxxyqfu` |
+| `npm run lint:md`, `npm run check:licenses` | 0 errors; 439 packages, 0 not allowed | direct |
+
+Before the merge, one full browser run on `2e67ada` failed only the legacy
+`localization.spec.ts` read count (runtime 1 instead of 2; `check-354v4xa7`), the item main has
+since fixed; it was not retried on that tree.
+
+Previous run, after the re-check fixes, on the clean tree `e6a731f`, through
 `agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600`, one check per call,
 with `GUANXI_WEB_PORT=5183 GUANXI_API_PORT=4383 GUANXI_DATA_DIR="$PWD/.lane-data"`:
 
@@ -233,6 +254,42 @@ Design notes:
 
 Not in this round: the M5 legacy cache-bar contrast exception in the new-session flow is still
 the recorded exception, pending an owner decision or a fix in the legacy screen.
+
+### Final-check fixes
+
+GPT's final check of `fa3f594` (`ds1-b-review/REVIEW-GPT-3.md`): N3, N5, N7 closed; N1, N2, N4,
+N6 partial; five findings. Per the integrator's stopping rule, the next check covers only
+N8–N12 and the items still partial; new Medium or Low findings become residuals below.
+
+| Finding | Commit | Test that fails without the fix |
+| --- | --- | --- |
+| N8 (High) G12 does not validate the complete historical chain | `f4edc90` | `approval.test.ts` › "the decision ledger across committed versions": unsigned approval in history, malformed signature, unknown predecessor (committed and current), fork; "G12 reads the committed history from git" › whole component folder removed. Mutations: no historical record checks, no root check, ids from folders only — each fails its test |
+| N9 (Medium) valid review cycles eventually fail | `f4edc90` (same ledger) | "verifies a long review cycle, on one branch and across the base and the branch", the real-git branch cycle against main, and the server's five review cycles; with one-step descent they fail |
+| N10 (High) the resolver accepts unbound runtime imports | `f1ec739` | `approval.test.ts` › "refuses an import() of a missing module behind catch", "a require() … behind try", "a template specifier with a substitution", "a fully computed template specifier"; the previous hasher accepts all four |
+| N11 (Medium) a symlink at `packages/ui` redirects writes | `d2d7c44` | server › "refuses when packages/ui itself is a symlink out of the checkout" (approved outside with the old anchor); "… swapped during the keychain prompt" kept as a regression |
+| N12 (Medium) G17 passes with clipping removed | `2e67ada` | `extension.test.ts` (separate G14 and G15-clipping seeds); through `npm run ui:check:browser`, replacing the clipping checker fails G17 (`check-sasg2_97`) |
+
+N8 and N9 share one commit: both are the ledger in `catalog/approval/history.ts`, and transitive
+descent (N9) cannot be separated from the chain checks (N8) without breaking either. G12 now
+holds the stricter property: a break in any committed version fails for good, and restoring a
+later version no longer repairs it (§4.1 updated). The previous "re-adding repairs" semantics are
+withdrawn.
+
+Residuals named under the stopping rule (none blocks the merge):
+
+- **History recovery (DS2).** A broken committed version on main makes G12 fail for every later
+  change; there is no repair short of an owner-signed reset or checkpoint, which belongs to the
+  DS2 signing helper.
+- **History scope.** G12 walks the first-parent histories of the base and of HEAD; a decision
+  that only ever existed on a side branch merged elsewhere is outside the walk. Shallow clones
+  fail closed.
+- **Hash scope.** The closure is what esbuild binds from the component's scripts; code loaded by
+  a runtime `fetch`, a worker URL or another loader is outside it, and imports are refused only
+  in the forms N10 lists.
+- **G15-clipping id.** DS1-a's registry sorts ids numerically; `G15-clipping` keeps its
+  registration order because the comparator yields 0 for it (stable sort). Low.
+- **M5 (unchanged).** The legacy cache-bar contrast exception in the new-session flow stays
+  recorded until an owner decision or a fix in the legacy screen.
 
 ## Residual risk
 
