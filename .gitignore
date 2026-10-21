@@ -22,3 +22,6 @@ output/
 # Agent worktrees created by Claude Code sessions
 .claude/worktrees/
 .lane-data/
+
+# Native approval signer build output
+native/approval-signer/.build/

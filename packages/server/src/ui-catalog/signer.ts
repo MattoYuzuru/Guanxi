@@ -1,26 +1,41 @@
 /**
- * Owner approval signing (D-138). The private Ed25519 key lives in the owner's macOS keychain
- * as a generic password whose access list trusts no application, so every read shows a macOS
- * prompt the owner must allow. The node reads it only to sign one approval and never caches,
- * logs or returns it. Tests use a throwaway key from a temp directory, never the keychain.
+ * Owner approval signing through the installed Secure Enclave helper (D-184). The private
+ * P-256 key never reaches this process: the helper returns only its id, its public key and a
+ * signature, after the owner passes Touch ID or the password. The node never invokes a shell and
+ * caps both the helper's output and the time the owner has to answer.
  */
 import { execFile } from 'node:child_process'
-import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
-import { exportPublicKey } from '@guanxi/ui/approval'
+import { createPublicKey, sign, type KeyObject } from 'node:crypto'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract'
+import { KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, exportPublicKey } from '@guanxi/ui/approval'
 
-export const KEYCHAIN_SERVICE = 'guanxi.ui-approval'
-export const KEYCHAIN_ACCOUNT = 'owner-approval-key'
+export { KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE }
+export const INSTALL_COMMAND = 'node packages/server/scripts/install-approval-signer.ts'
 
-export type SignerUnavailableReason = 'platform_unsupported' | 'signing_key_missing'
+/** Where the installer puts the helper, under the owner's home directory. */
+export function approvalSignerPath(home = homedir()): string {
+  return join(
+    home,
+    'Library',
+    'Application Support',
+    PRODUCT_NAME,
+    'approval-signer',
+    `${PRODUCT_FILE_PREFIX}-approval-signer`,
+  )
+}
+
+export type SignerUnavailableReason = 'platform_unsupported' | 'signing_key_missing' | 'signer_helper_missing'
 
 export type SignerStatus =
-  | { state: 'available'; keyId: string }
+  | { state: 'available'; keyId: string; publicKey: string }
   | { state: 'unavailable'; reason: SignerUnavailableReason }
 
 export interface ApprovalSigner {
-  /** Reads only key metadata; never touches the secret and never prompts. */
+  /** Reads only key metadata through the helper; never touches the secret and never prompts. */
   status(): Promise<SignerStatus>
-  /** Signs bytes with the owner key; may show a keychain prompt. */
+  /** Signs bytes with the owner key; the helper asks for the owner's presence. */
   sign(bytes: Buffer): Promise<{ signature: string; keyId: string }>
 }
 
@@ -30,6 +45,9 @@ export type SignerErrorReason =
   | 'signing_timeout'
   | 'signing_key_invalid'
   | 'platform_unsupported'
+  | 'signer_helper_missing'
+  | 'payload_not_canonical'
+  | 'payload_schema'
 
 export class SignerError extends Error {
   readonly reason: SignerErrorReason
@@ -52,89 +70,169 @@ export function unavailableSigner(reason: SignerUnavailableReason): ApprovalSign
 
 /** Test and tooling signer over an in-memory key. Production never constructs it. */
 export function keyObjectSigner(privateKey: KeyObject): ApprovalSigner {
-  const { keyId } = exportPublicKey(createPublicKey(privateKey))
+  const { keyId, publicKey } = exportPublicKey(createPublicKey(privateKey))
   return {
-    status: async () => ({ state: 'available', keyId }),
-    sign: async (bytes) => ({ signature: sign(null, bytes, privateKey).toString('base64'), keyId }),
+    status: async () => ({ state: 'available', keyId, publicKey }),
+    sign: async (bytes) => ({
+      signature: sign('sha256', bytes, { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64'),
+      keyId,
+    }),
   }
 }
 
-interface ExecResult {
-  code: number
-  stdout: string
-  timedOut: boolean
+export interface HelperSignerOptions {
+  helperPath: string
+  service?: string
+  account?: string
+  /** How long the owner has to answer the helper's prompt. */
+  timeoutMs?: number
+  /** The command shown when the helper is not installed. */
+  installCommand?: string
+  /** Test seam: the helper reads its test key and fake authenticator from the environment. */
+  env?: NodeJS.ProcessEnv
+  /** Test seam: simulates the host platform so the unsupported guard runs on macOS too. */
+  platform?: NodeJS.Platform
 }
 
-function run(file: string, args: string[], timeoutMs: number): Promise<ExecResult> {
+interface HelperResponse {
+  ok?: unknown
+  state?: unknown
+  keyId?: unknown
+  publicKey?: unknown
+  signature?: unknown
+  code?: unknown
+  message?: unknown
+}
+
+function parseResponse(stdout: string): HelperResponse | null {
+  try {
+    const parsed = JSON.parse(stdout.trim()) as unknown
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as HelperResponse) : null
+  } catch {
+    return null
+  }
+}
+
+function mappedReason(code: string): SignerErrorReason {
+  switch (code) {
+    case 'signer_helper_missing':
+      return 'signer_helper_missing'
+    case 'signing_key_missing':
+      return 'signing_key_missing'
+    case 'signing_denied':
+      return 'signing_denied'
+    case 'platform_unsupported':
+      return 'platform_unsupported'
+    case 'payload_not_canonical':
+      return 'payload_not_canonical'
+    case 'payload_schema':
+    case 'payload_id':
+      return 'payload_schema'
+    default:
+      return 'signing_key_invalid'
+  }
+}
+
+function helperError(response: HelperResponse): SignerError {
+  const code = typeof response.code === 'string' ? response.code : 'unknown'
+  const message = typeof response.message === 'string' ? response.message : `The approval signer helper refused the request (${code})`
+  return new SignerError(mappedReason(code), message)
+}
+
+function invoke(
+  options: Required<Pick<HelperSignerOptions, 'helperPath' | 'timeoutMs' | 'installCommand'>> & {
+    request: Record<string, unknown>
+    env?: NodeJS.ProcessEnv
+  },
+): Promise<HelperResponse> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { timeout: timeoutMs, maxBuffer: 64 * 1024 }, (error, stdout) => {
-      if (error && typeof (error as NodeJS.ErrnoException).code === 'string') {
-        reject(error)
-        return
-      }
-      const code = error ? ((error as { code?: number }).code ?? 1) : 0
-      resolve({ code, stdout: String(stdout), timedOut: Boolean(error && (error as { killed?: boolean }).killed) })
-    })
+    const child = execFile(
+      options.helperPath,
+      [],
+      { timeout: options.timeoutMs, maxBuffer: 64 * 1024, encoding: 'utf8', env: options.env },
+      (error, stdout, stderr) => {
+        if (error) {
+          const code = (error as NodeJS.ErrnoException).code
+          if (code === 'ENOENT' || code === 'EACCES' || code === 'ENOTDIR') {
+            reject(new SignerError('signer_helper_missing', `The approval signer helper is not installed. Run: ${options.installCommand}`))
+            return
+          }
+          if (code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+            reject(new SignerError('signing_key_invalid', 'The approval signer helper wrote more than 64 KiB'))
+            return
+          }
+          if ((error as { killed?: boolean }).killed) {
+            reject(new SignerError('signing_timeout', 'Nobody answered the approval prompt in time'))
+            return
+          }
+          const response = parseResponse(stdout)
+          if (response && response.ok === false) {
+            reject(helperError(response))
+            return
+          }
+          reject(new SignerError('signing_key_invalid', `The approval signer helper failed (${stderr.trim() || error.message})`))
+          return
+        }
+        const response = parseResponse(stdout)
+        if (!response || typeof response.ok !== 'boolean') {
+          reject(new SignerError('signing_key_invalid', 'The approval signer helper returned no JSON object'))
+          return
+        }
+        if (response.ok === false) {
+          reject(helperError(response))
+          return
+        }
+        resolve(response)
+      },
+    )
+    // The helper may exit before reading its request (for example a missing binary or an early
+    // refusal); an EPIPE here must not become an unhandled stream error.
+    child.stdin?.on('error', () => undefined)
+    child.stdin?.end(JSON.stringify(options.request))
   })
 }
 
-export interface KeychainSignerOptions {
-  /** Path of the macOS `security` tool; tests point it at a fake. */
-  securityPath?: string
-  /** A specific keychain file; omitted means the user's default search list. */
-  keychain?: string
-  service?: string
-  account?: string
-  platform?: NodeJS.Platform
-  /** How long the owner has to answer the keychain prompt. */
-  promptTimeoutMs?: number
-}
-
-/** `security find-generic-password` exit status for "item not found". */
-const ITEM_NOT_FOUND = 44
-
-export function keychainSigner(options: KeychainSignerOptions = {}): ApprovalSigner {
-  const security = options.securityPath ?? '/usr/bin/security'
+export function helperSigner(options: HelperSignerOptions): ApprovalSigner {
   const service = options.service ?? KEYCHAIN_SERVICE
   const account = options.account ?? KEYCHAIN_ACCOUNT
+  const timeoutMs = options.timeoutMs ?? 120_000
+  const installCommand = options.installCommand ?? INSTALL_COMMAND
   const platform = options.platform ?? process.platform
-  const keychainArgs = options.keychain ? [options.keychain] : []
-  const lookup = ['find-generic-password', '-s', service, '-a', account]
+  const request = (body: Record<string, unknown>) =>
+    invoke({ helperPath: options.helperPath, timeoutMs, installCommand, request: body, env: options.env })
 
   return {
     async status() {
+      // The helper is a macOS Secure Enclave binary; another host must report the platform
+      // boundary instead of trying to execute it and calling a missing file an install problem.
       if (platform !== 'darwin') return { state: 'unavailable', reason: 'platform_unsupported' }
-      const result = await run(security, [...lookup, ...keychainArgs], 10_000)
-      if (result.code === ITEM_NOT_FOUND) return { state: 'unavailable', reason: 'signing_key_missing' }
-      if (result.code !== 0) return { state: 'unavailable', reason: 'signing_key_missing' }
-      // The key id is stored in the item's comment ("icmt"); it is public, the secret is not.
-      const match = /"icmt"<blob>="(ed25519:[0-9a-f]{32})"/.exec(result.stdout)
-      if (!match?.[1]) return { state: 'unavailable', reason: 'signing_key_missing' }
-      return { state: 'available', keyId: match[1] }
+      try {
+        const response = await request({ op: 'status', service, account })
+        if (response.state === 'missing') return { state: 'unavailable', reason: 'signing_key_missing' }
+        if (response.state !== 'available' || typeof response.keyId !== 'string' || typeof response.publicKey !== 'string') {
+          throw new SignerError('signing_key_invalid', 'The approval signer helper returned no usable key metadata')
+        }
+        return { state: 'available', keyId: response.keyId, publicKey: response.publicKey }
+      } catch (error) {
+        if (error instanceof SignerError) {
+          if (error.reason === 'signer_helper_missing') return { state: 'unavailable', reason: 'signer_helper_missing' }
+          if (error.reason === 'signing_key_missing') return { state: 'unavailable', reason: 'signing_key_missing' }
+          if (error.reason === 'platform_unsupported') return { state: 'unavailable', reason: 'platform_unsupported' }
+        }
+        throw error
+      }
     },
 
     async sign(bytes) {
-      if (platform !== 'darwin') throw new SignerError('platform_unsupported', 'Keychain signing needs macOS')
-      const result = await run(security, [...lookup, '-w', ...keychainArgs], options.promptTimeoutMs ?? 120_000)
-      if (result.code === ITEM_NOT_FOUND) throw new SignerError('signing_key_missing', 'No approval key in the keychain')
-      if (result.timedOut) throw new SignerError('signing_timeout', 'Nobody answered the keychain prompt in time')
-      if (result.code !== 0) throw new SignerError('signing_denied', 'The keychain did not release the approval key')
-      // The secret also lives in `result.stdout` until it is collected; the buffer is cleared
-      // so it is not kept longer than this call, which is the most Node allows.
-      const der = Buffer.from(result.stdout.trim(), 'base64')
-      let privateKey: KeyObject
-      try {
-        privateKey = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' })
-      } catch {
-        throw new SignerError('signing_key_invalid', 'The keychain item is not a PKCS#8 Ed25519 key')
-      } finally {
-        der.fill(0)
+      // Refuse before the helper is invoked: on another host this is a platform boundary,
+      // not a missing installation or a failed authentication.
+      if (platform !== 'darwin') throw new SignerError('platform_unsupported', 'Approval signing needs macOS with a Secure Enclave')
+      const response = await request({ op: 'sign', service, account, payload: bytes.toString('utf8') })
+      if (typeof response.keyId !== 'string' || typeof response.signature !== 'string') {
+        throw new SignerError('signing_key_invalid', 'The approval signer helper returned no signature')
       }
-      if (privateKey.asymmetricKeyType !== 'ed25519') {
-        throw new SignerError('signing_key_invalid', 'The keychain key is not Ed25519')
-      }
-      const { keyId } = exportPublicKey(createPublicKey(privateKey))
-      return { signature: sign(null, bytes, privateKey).toString('base64'), keyId }
+      // Return a fresh object: nothing else from the helper response leaves this function.
+      return { keyId: response.keyId, signature: response.signature }
     },
   }
 }
