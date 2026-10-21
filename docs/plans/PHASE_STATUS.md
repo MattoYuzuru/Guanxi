@@ -210,5 +210,5 @@ decision was made.
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | in review (lane K3, Codex): Review 1 and 2 fixes done; next the K2 scrubber integration step | [lanes/K3](lanes/K3.md) |
-| R1 Durable runs | ready (after K2) | [ROADMAP](ROADMAP.md) §R1 |
+| R1 Durable runs | in progress (lane R1, Codex) | [lanes/R1](lanes/R1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
