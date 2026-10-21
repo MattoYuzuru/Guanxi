@@ -367,9 +367,13 @@ export class SessionInputStore {
             const state = await lstat(quarantine)
             if (state.isSymbolicLink() || !state.isDirectory()) {
               await unlink(quarantine)
-            } else {
-              await rm(quarantine, { recursive: true, force: true })
+              removedDirectories += 1
+              continue
             }
+            // Remove only the identity captured immediately after the rename.
+            const after = await lstat(quarantine)
+            if (after.dev !== state.dev || after.ino !== state.ino) continue
+            await rm(quarantine, { recursive: true, force: true })
             removedDirectories += 1
           } catch {
             // A replaced quarantine stays for the next pass instead of being followed.
