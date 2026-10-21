@@ -459,7 +459,7 @@ export class SessionLog {
   ): AppendResult {
     this.assertOpen()
     this.assertEgressReady()
-    if (!this.db.isTransaction) {
+    if ((this.db as unknown as { isTransaction?: boolean }).isTransaction === false) {
       throw new SessionLogError('invalid_event', 'appendFromHomeWithin must run inside a transaction')
     }
     const held = this.writers.get(sessionId)

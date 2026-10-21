@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { RunStore } from '../src/runs/store.ts'
+import { SessionLog } from '../src/session-log/log.ts'
 import { bootServerKernel, LEGACY_SERVER_PROFILE } from '../src/runtime/kernel.ts'
 import { runFixture, RUN_TIME, RUN_DEADLINE } from './fixtures/durable-runs.ts'
 
@@ -62,4 +63,33 @@ test('R1 follow-up: inherited attempt credentials are fenced before reconciliati
     assert.equal(next.attempts('lead')[1]!.state, 'lost')
     assert.ok(next.deliver('lead', 1))
   } finally { next.close(); f.close() }
+})
+
+test('R1 follow-up: home append tolerates an unavailable isTransaction property', () => {
+  const f = runFixture()
+  // Native DatabaseSync accessors cannot be redefined. Bind every real operation
+  // to the database while exposing the pre-22.16 property shape to the log.
+  const compatDb = new Proxy({} as typeof f.db, { get: (_, key) => {
+    if (key === 'isTransaction') return undefined
+    const value = Reflect.get(f.db, key, f.db)
+    return typeof value === 'function' ? value.bind(f.db) : value
+  } })
+  const log = new SessionLog({ db: compatDb, scrubber: f.scrubber })
+  try {
+    assert.equal(compatDb.isTransaction, undefined, 'simulate Node versions before 22.16')
+    f.db.exec('BEGIN IMMEDIATE')
+    try {
+      log.appendFromHomeWithin('compat', { kind: 'agent' }, {
+        type: 'assistant.message', data: { messageId: null, step: null, text: 'committed home event' },
+      })
+      f.db.exec('COMMIT')
+    } catch (error) { f.db.exec('ROLLBACK'); throw error }
+    const messages = log.read('compat', { audience: 'person' }).events.filter((e) => e.type === 'assistant.message')
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0]!.data.text, 'committed home event')
+    assert.equal(f.db.isTransaction, false)
+    assert.throws(() => f.log.appendFromHomeWithin('outside', { kind: 'agent' }, {
+      type: 'assistant.message', data: { messageId: null, step: null, text: 'outside transaction' },
+    }), { code: 'invalid_event' })
+  } finally { log.close(); f.close() }
 })
