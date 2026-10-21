@@ -11,7 +11,8 @@ server. Harbor and mini-swe-agent run in a separately installed Python process, 
 node bundle. No shared wire contract, server route or migration changes.
 
 The continuation adds a [trial-bound K3 admission gateway](REQUEST_ADMISSION.md) and
-[task-content staging](STAGING.md). These have synthetic assertions and independent review;
+[task-content staging](STAGING.md), plus a [private channel protocol](PRIVATE_CHANNEL.md).
+These have synthetic assertions and independent review;
 they do not supply a real provider meter/price adapter, task image, public corpus or measured
 five-seed experiment. Stock real/paid execution still refuses.
 

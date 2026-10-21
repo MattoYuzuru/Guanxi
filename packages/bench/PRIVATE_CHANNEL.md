@@ -1,6 +1,6 @@
 # Private trial channel protocol foundation
 
-**Status:** implemented and locally fixture-validated; independent review pending. This is
+**Status:** implemented, independently reviewed and locally fixture-validated. This is
 a codec and state machine, not an executable stdio service, socket listener or task image.
 
 Frames contain a four-byte unsigned big-endian payload length followed by one UTF-8 JSON
