@@ -1,0 +1,484 @@
+/** R1's single-node execution home. No model/process is held by a sleeping run. */
+import { createHash, randomUUID } from 'node:crypto'
+import type { SQLInputValue } from 'node:sqlite'
+import type { SessionEventData } from '@guanxi/contract'
+import type { Db } from '../store/db.ts'
+import type { SessionLog } from '../session-log/log.ts'
+import type { EgressScrubber } from '../egress/types.ts'
+import { RunError, TERMINAL_RUN_STATES, type Attempt, type PromiseRecord, type Run, type RunState,
+  type TerminalRunState, type Wake } from './types.ts'
+
+interface Lease { key: string; epoch: number; token: number; holder: string; expires_at: number; released: number }
+export interface RunStoreOptions {
+  db: Db
+  log: SessionLog
+  scrubber: EgressScrubber
+  /** Explicit host assertion; a laptop must hand over in F1 before enabling delegation. */
+  alwaysOn?: boolean
+  clock?: () => number
+  ownerTtlMs?: number
+  maxAttemptTtlMs?: number
+  /** Every store statement and transaction boundary; tests also inject K2 append points. */
+  fault?: (operation: string, point: string) => void
+}
+export interface DelegateInput {
+  key: string
+  deadline: number
+  deadlinePolicy?: 'cancel_wrap_up' | 'detach'
+  cancelPolicy?: 'cancel' | 'detach'
+}
+type Action = SessionEventData<'run.lifecycle'>['action']
+const HOME_KEY = 'durable-runs/home'
+const EPSILON_MS = 1_000
+
+export class RunStore {
+  private readonly db: Db
+  private readonly log: SessionLog
+  private readonly scrubber: EgressScrubber
+  private readonly ownerId = randomUUID()
+  private readonly owner: Lease
+  private readonly ownerTtl: number
+  private readonly maxTtl: number
+  private readonly clock: () => number
+  private highWater = 0
+  private closed = false
+  private operation = ''
+  private readonly changedSessions = new Set<string>()
+  private readonly options: RunStoreOptions
+
+  constructor(options: RunStoreOptions) {
+    this.options = options
+    this.db = options.db
+    this.log = options.log
+    this.scrubber = options.scrubber
+    const wallReference = Date.now()
+    const monotonicReference = performance.now()
+    this.clock = options.clock ?? (() => Math.floor(wallReference + performance.now() - monotonicReference))
+    this.ownerTtl = options.ownerTtlMs ?? 30_000
+    this.maxTtl = options.maxAttemptTtlMs ?? 60_000
+    this.integer(this.ownerTtl, 1)
+    this.integer(this.maxTtl, 1)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const prior = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
+      // On an unclean restart wait out every possible old execution lease plus epsilon.
+      // No PID heuristic or plain restart epoch bump can create a second writer.
+      if (prior && !prior.released && this.now() < prior.expires_at + this.maxTtl + EPSILON_MS) {
+        throw new RunError('writer_busy')
+      }
+      const token = (prior?.token ?? 0) + 1
+      this.db.prepare(`INSERT INTO leases VALUES (?,1,?,?,?,0)
+        ON CONFLICT(key) DO UPDATE SET token=excluded.token,holder=excluded.holder,
+        expires_at=excluded.expires_at,released=0`).run(HOME_KEY, token, this.ownerId, this.now() + this.ownerTtl)
+      this.owner = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)!
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  private now(): number {
+    // Never extend a lease by rolling this process's clock back.
+    const time = this.clock()
+    this.integer(time, 0)
+    this.highWater = Math.max(this.highWater, time)
+    return this.highWater
+  }
+  private integer(value: number, min = 0): void {
+    if (!Number.isSafeInteger(value) || value < min) throw new RunError('invalid_input')
+  }
+  private clean(value: string): void {
+    if (this.closed) throw new RunError('closed')
+    if (typeof value !== 'string' || !value.length || value.length > 200 || this.scrubber.scrub(value) !== value) {
+      throw new RunError('invalid_input')
+    }
+  }
+  private row<T>(sql: string, ...args: SQLInputValue[]): T | undefined {
+    return this.db.prepare(sql).get(...args) as unknown as T | undefined
+  }
+  private rows<T>(sql: string, ...args: SQLInputValue[]): T[] {
+    return this.db.prepare(sql).all(...args).map((row) => ({ ...row })) as unknown as T[]
+  }
+  private write(sql: string, ...args: SQLInputValue[]): void {
+    if (JSON.stringify(this.scrubber.scrub(args)) !== JSON.stringify(args)) throw new RunError('invalid_input')
+    this.db.prepare(sql).run(...args)
+    this.point('statement')
+  }
+  private point(point: string): void { this.options.fault?.(this.operation, point) }
+  private assertOwner(): void {
+    if (this.closed) throw new RunError('closed')
+    const lease = this.row<Lease>('SELECT * FROM leases WHERE key = ?', HOME_KEY)
+    if (!lease || lease.holder !== this.ownerId || lease.token !== this.owner.token ||
+      lease.released || lease.expires_at <= this.now()) throw new RunError('stale_lease')
+  }
+  private tx<T>(operation: string, body: () => T, requiresReady = true): T {
+    if (this.closed) throw new RunError('closed')
+    this.operation = operation
+    this.changedSessions.clear()
+    this.point('before_begin')
+    this.db.exec('BEGIN IMMEDIATE')
+    let result: T
+    try {
+      this.point('begin')
+      this.assertOwner()
+      if (requiresReady && !this.scrubber.isReady()) throw new RunError('egress_not_ready')
+      this.write('UPDATE leases SET expires_at = ? WHERE key = ?', this.now() + this.ownerTtl, HOME_KEY)
+      result = body()
+      this.point('before_commit')
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      this.changedSessions.clear()
+      throw error
+    }
+    this.point('committed')
+    for (const sessionId of this.changedSessions) this.log.notify(sessionId)
+    this.changedSessions.clear()
+    return result
+  }
+  private event(run: Run, action: Action, relatedId: string | null = null, wakeSeq: number | null = null): void {
+    this.log.appendAsSystemWithin(run.session_id, { kind: 'agent' }, {
+      type: 'run.lifecycle', data: { runId: run.id, state: run.state, version: run.version, action, relatedId, wakeSeq },
+    })
+    this.changedSessions.add(run.session_id)
+    this.point('trace')
+  }
+  private setState(runId: string, state: RunState, action: Action, relatedId: string | null = null): Run {
+    this.write('UPDATE durable_runs SET state=?,version=version+1,updated_at=? WHERE id=?', state, this.now(), runId)
+    const run = this.get(runId)
+    this.event(run, action, relatedId)
+    return run
+  }
+  get(runId: string): Run {
+    if (this.closed) throw new RunError('closed')
+    const run = this.row<Run>('SELECT * FROM durable_runs WHERE id=?', runId)
+    if (!run) throw new RunError('run_not_found')
+    return run
+  }
+  attempts(runId: string): Attempt[] { return this.rows('SELECT * FROM run_attempts WHERE run_id=? ORDER BY ordinal', runId) }
+  promises(runId: string): PromiseRecord[] { return this.rows('SELECT * FROM promises WHERE parent_id=? ORDER BY id', runId) }
+  wakes(runId: string): Wake[] { return this.rows('SELECT * FROM outbox WHERE run_id=? ORDER BY wake_seq', runId) }
+
+  create(input: { id?: string; sessionId?: string } = {}): Run {
+    const id = input.id ?? randomUUID()
+    const sessionId = input.sessionId ?? id
+    this.clean(id); this.clean(sessionId)
+    return this.tx('create', () => {
+      const existing = this.row<Run>('SELECT * FROM durable_runs WHERE id=?', id)
+      if (existing) {
+        if (existing.session_id !== sessionId || existing.parent_id) throw new RunError('idempotency_conflict')
+        return existing
+      }
+      // K2 creates the session inside this same transaction before the run FK is inserted.
+      const run: Run = { id, session_id: sessionId, parent_id: null, state: 'submitted', version: 1,
+        wake_seq: 0, cancel_count: 0, created_at: this.now(), updated_at: this.now() }
+      this.event(run, 'created')
+      this.insertRun(run)
+      return run
+    })
+  }
+  private insertRun(run: Run): void {
+    this.write(`INSERT INTO durable_runs (id,session_id,parent_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)`,
+      run.id, run.session_id, run.parent_id, run.state, run.created_at, run.updated_at)
+  }
+  private grant(key: string, holder: string, ttl: number): Lease {
+    const old = this.row<Lease>('SELECT * FROM leases WHERE key=?', key)
+    if (old && !old.released && old.expires_at > this.now()) throw new RunError('stale_lease')
+    this.write(`INSERT INTO leases VALUES (?,1,?,?,?,0) ON CONFLICT(key) DO UPDATE SET
+      token=excluded.token,holder=excluded.holder,expires_at=excluded.expires_at,released=0`,
+    key, (old?.token ?? 0) + 1, holder, this.now() + ttl)
+    return this.row<Lease>('SELECT * FROM leases WHERE key=?', key)!
+  }
+  private release(runId: string): void {
+    this.write('UPDATE leases SET released=1 WHERE key=?', `run:${runId}/exec`)
+  }
+  private fenced(attempt: Attempt): Attempt {
+    const stored = this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', attempt.id)
+    const lease = this.row<Lease>('SELECT * FROM leases WHERE key=?', `run:${attempt.run_id}/exec`)
+    if (!stored || stored.run_id !== attempt.run_id || stored.epoch !== attempt.epoch || stored.token !== attempt.token ||
+      !['delivered', 'started'].includes(stored.state) || !lease || lease.holder !== attempt.id ||
+      lease.epoch !== attempt.epoch || lease.token !== attempt.token || lease.released || lease.expires_at <= this.now()) {
+      throw new RunError('stale_lease')
+    }
+    return stored
+  }
+  private newAttempt(runId: string, wakeSeq: number | null): Attempt {
+    const id = randomUUID()
+    const lease = this.grant(`run:${runId}/exec`, id, this.maxTtl)
+    const ordinal = (this.row<{ n: number }>('SELECT MAX(ordinal) AS n FROM run_attempts WHERE run_id=?', runId)?.n ?? 0) + 1
+    this.write(`INSERT INTO run_attempts (id,run_id,ordinal,wake_seq,state,epoch,token) VALUES (?,?,?,?,'delivered',?,?)`,
+      id, runId, ordinal, wakeSeq, lease.epoch, lease.token)
+    this.setState(runId, this.get(runId).state === 'wrapping_up' ? 'wrapping_up' : 'working', 'attempt', id)
+    return this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', id)!
+  }
+  /** Explicit retry only. Unsafe steps are never replayed by reconciliation. */
+  start(runId: string): Attempt {
+    return this.tx('start', () => {
+      const run = this.get(runId)
+      if (!['submitted', 'interrupted', 'wrapping_up'].includes(run.state)) throw new RunError('invalid_transition')
+      return this.newAttempt(runId, null)
+    })
+  }
+  renew(attempt: Attempt, ttl = this.maxTtl): void {
+    this.integer(ttl, 1)
+    if (ttl > this.maxTtl) throw new RunError('invalid_input')
+    this.tx('renew', () => {
+      this.fenced(attempt)
+      this.write('UPDATE leases SET expires_at=? WHERE key=?', this.now() + ttl, `run:${attempt.run_id}/exec`)
+    })
+  }
+  /** Called by an executor only after observing its first model call start. */
+  modelStarted(attempt: Attempt): void {
+    this.tx('model_started', () => {
+      const current = this.fenced(attempt)
+      if (current.first_model_at !== null) return
+      this.write("UPDATE run_attempts SET state='started',first_model_at=? WHERE id=?", this.now(), attempt.id)
+      this.event(this.get(attempt.run_id), 'model_started', attempt.id, current.wake_seq)
+      if (current.wake_seq !== null) {
+        this.write(`UPDATE outbox SET acknowledged_at=? WHERE run_id=? AND wake_seq=? AND acknowledged_at IS NULL
+          AND suppressed_at IS NULL AND attempt_id=?`, this.now(), attempt.run_id, current.wake_seq, attempt.id)
+        this.event(this.get(attempt.run_id), 'acknowledged', attempt.id, current.wake_seq)
+      }
+    })
+  }
+  delegate(attempt: Attempt, input: DelegateInput): PromiseRecord {
+    this.clean(input.key); this.integer(input.deadline)
+    const deadlinePolicy = input.deadlinePolicy ?? 'cancel_wrap_up'
+    const cancelPolicy = input.cancelPolicy ?? 'cancel'
+    if (!['cancel_wrap_up', 'detach'].includes(deadlinePolicy) || !['cancel', 'detach'].includes(cancelPolicy)) {
+      throw new RunError('invalid_input')
+    }
+    return this.tx('hibernate', () => {
+      const prior = this.row<PromiseRecord>('SELECT * FROM promises WHERE parent_id=? AND delegation_key=?', attempt.run_id, input.key)
+      if (prior) {
+        const timer = this.row<{ due_at: number }>('SELECT due_at FROM timers WHERE promise_id=?', prior.id)!
+        if (timer.due_at !== input.deadline || prior.deadline_policy !== deadlinePolicy || prior.cancel_policy !== cancelPolicy) {
+          throw new RunError('idempotency_conflict')
+        }
+        return prior
+      }
+      this.fenced(attempt)
+      if (!this.options.alwaysOn) throw new RunError('no_always_on_home')
+      const parent = this.get(attempt.run_id)
+      if (parent.state !== 'working') throw new RunError('invalid_transition')
+      const child: Run = { ...parent, id: randomUUID(), parent_id: parent.id, state: 'submitted', version: 1,
+        wake_seq: 0, cancel_count: 0, created_at: this.now(), updated_at: this.now() }
+      this.insertRun(child)
+      this.event(child, 'created')
+      const promiseId = randomUUID()
+      this.write(`INSERT INTO promises (id,parent_id,child_id,delegation_key,deadline_policy,cancel_policy) VALUES (?,?,?,?,?,?)`,
+        promiseId, parent.id, child.id, input.key, deadlinePolicy, cancelPolicy)
+      this.write("INSERT INTO timers VALUES (?,?,'pending')", promiseId, input.deadline)
+      this.sleepWithin(attempt)
+      this.setState(parent.id, 'waiting_children', 'delegated', child.id)
+      return this.row<PromiseRecord>('SELECT * FROM promises WHERE id=?', promiseId)!
+    })
+  }
+  private sleepWithin(attempt: Attempt): void {
+    this.write("UPDATE run_attempts SET state='sleeping' WHERE id=?", attempt.id)
+    this.release(attempt.run_id)
+  }
+  /** A lead woken by a signal may sleep again while its child is still pending. */
+  hibernate(attempt: Attempt): void {
+    this.tx('hibernate', () => {
+      this.fenced(attempt)
+      if (!this.promises(attempt.run_id).some((p) => p.outcome === null && !p.detached)) throw new RunError('invalid_transition')
+      this.sleepWithin(attempt)
+      this.setState(attempt.run_id, 'waiting_children', 'delegated')
+    })
+  }
+  private wake(runId: string, kind: Wake['kind'], source: string): void {
+    if (TERMINAL_RUN_STATES.has(this.get(runId).state)) return
+    if (this.row('SELECT 1 FROM outbox WHERE run_id=? AND kind=? AND source_key=?', runId, kind, source)) return
+    this.write('UPDATE durable_runs SET wake_seq=wake_seq+1 WHERE id=?', runId)
+    const run = this.get(runId)
+    this.write('INSERT INTO outbox (run_id,wake_seq,kind,source_key) VALUES (?,?,?,?)', runId, run.wake_seq, kind, source)
+    this.event(run, 'wake', source, run.wake_seq)
+  }
+  private resolve(promise: PromiseRecord, outcome: TerminalRunState | 'deadline'): boolean {
+    if (promise.outcome !== null || promise.detached) return false
+    this.write('UPDATE promises SET outcome=?,resolved_at=? WHERE id=? AND outcome IS NULL', outcome, this.now(), promise.id)
+    this.write("UPDATE timers SET state=? WHERE promise_id=? AND state='pending'", outcome === 'deadline' ? 'fired' : 'canceled', promise.id)
+    this.event(this.get(promise.parent_id), 'resolved', promise.id)
+    this.wake(promise.parent_id, 'resolution', promise.id)
+    return true
+  }
+  complete(attempt: Attempt, outcome: TerminalRunState): void {
+    if (!TERMINAL_RUN_STATES.has(outcome)) throw new RunError('invalid_input')
+    this.tx('complete', () => {
+      this.fenced(attempt)
+      const deadline = this.row<PromiseRecord>("SELECT * FROM promises WHERE child_id=? AND outcome='deadline' AND deadline_policy='cancel_wrap_up'", attempt.run_id)
+      this.terminal(attempt.run_id, deadline ? 'canceled' : outcome)
+    })
+  }
+  private terminal(runId: string, state: TerminalRunState): void {
+    const run = this.get(runId)
+    if (TERMINAL_RUN_STATES.has(run.state)) return
+    this.write("UPDATE run_attempts SET state=? WHERE run_id=? AND state IN ('delivered','started')",
+      state === 'canceled' ? 'canceled' : 'completed', runId)
+    this.release(runId)
+    if (state === 'canceled') this.write('UPDATE durable_runs SET cancel_count=1 WHERE id=?', runId)
+    this.setState(runId, state, state === 'canceled' ? 'canceled' : 'terminal')
+    this.write('UPDATE outbox SET suppressed_at=? WHERE run_id=? AND acknowledged_at IS NULL AND suppressed_at IS NULL', this.now(), runId)
+    const parentPromise = this.row<PromiseRecord>('SELECT * FROM promises WHERE child_id=?', runId)
+    if (parentPromise) this.resolve(parentPromise, state)
+    for (const child of this.promises(runId)) {
+      if (child.detached || TERMINAL_RUN_STATES.has(this.get(child.child_id).state)) continue
+      if (child.cancel_policy === 'detach') this.detach(child)
+      else this.terminal(child.child_id, 'canceled')
+    }
+  }
+  cancel(runId: string): void { this.tx('cancel', () => this.terminal(runId, 'canceled')) }
+  private detach(promise: PromiseRecord): void {
+    this.write('UPDATE promises SET detached=1 WHERE id=?', promise.id)
+    this.write("UPDATE timers SET state='canceled' WHERE promise_id=? AND state='pending'", promise.id)
+  }
+  signal(attempt: Attempt, key: string, kind: 'escalation' | 'quota' = 'escalation'): void {
+    this.clean(key)
+    if (!['escalation', 'quota'].includes(kind)) throw new RunError('invalid_input')
+    this.tx('signal', () => {
+      this.fenced(attempt)
+      const promise = this.row<PromiseRecord>('SELECT * FROM promises WHERE child_id=?', attempt.run_id)
+      if (!promise || promise.detached || promise.outcome !== null) return
+      const source = createHash('sha256').update(JSON.stringify([attempt.run_id, key])).digest('hex')
+      if (this.row('SELECT 1 FROM outbox WHERE run_id=? AND kind=? AND source_key=?', promise.parent_id, kind, source)) return
+      this.event(this.get(attempt.run_id), 'signal', key)
+      this.wake(promise.parent_id, kind, source)
+    })
+  }
+  inputRequired(attempt: Attempt): void {
+    this.tx('input_required', () => {
+      this.fenced(attempt)
+      this.sleepWithin(attempt)
+      this.setState(attempt.run_id, 'input_required', 'input_required')
+      const promise = this.row<PromiseRecord>('SELECT * FROM promises WHERE child_id=?', attempt.run_id)
+      if (promise && !promise.detached && promise.outcome === null) this.wake(promise.parent_id, 'escalation', attempt.id)
+    })
+  }
+  /** The caller supplied the required decision; never resume inference at restart. */
+  decide(runId: string): Attempt {
+    return this.tx('decide', () => {
+      if (this.get(runId).state !== 'input_required') throw new RunError('invalid_transition')
+      return this.newAttempt(runId, null)
+    })
+  }
+  wrappingUp(attempt: Attempt): void {
+    this.tx('wrapping_up', () => { this.fenced(attempt); this.setState(attempt.run_id, 'wrapping_up', 'wrapping_up') })
+  }
+  heartbeat(): void { this.tx('heartbeat', () => {}, false) }
+  private lose(attempt: Attempt): void {
+    this.write("UPDATE run_attempts SET state='lost' WHERE id=?", attempt.id)
+    this.release(attempt.run_id)
+    if (this.get(attempt.run_id).state === 'working') this.setState(attempt.run_id, 'interrupted', 'interrupted', attempt.id)
+  }
+  tick(): void {
+    this.tx('timers', () => {
+      for (const attempt of this.rows<Attempt>(`SELECT a.* FROM run_attempts a JOIN leases l
+        ON l.key='run:'||a.run_id||'/exec' WHERE a.state IN ('delivered','started') AND l.expires_at<=?`, this.now())) {
+        this.lose(attempt)
+      }
+      for (const timer of this.rows<{ promise_id: string }>("SELECT promise_id FROM timers WHERE state='pending' AND due_at<=? ORDER BY due_at,promise_id", this.now())) {
+        const promise = this.row<PromiseRecord>('SELECT * FROM promises WHERE id=?', timer.promise_id)!
+        if (!this.resolve(promise, 'deadline')) continue
+        if (promise.deadline_policy === 'detach') this.detach(promise)
+        else {
+          // Durable report request. The executor may finish its report under the existing
+          // fence, or an explicit report-only attempt can start after reconciliation.
+          if (!TERMINAL_RUN_STATES.has(this.get(promise.child_id).state)) {
+            this.setState(promise.child_id, 'wrapping_up', 'wrapping_up', promise.id)
+          }
+        }
+      }
+    })
+  }
+  /** Retry returns the same live delivery. An unacknowledged lost delivery gets a new attempt. */
+  deliver(runId: string, wakeSeq: number): Attempt | null {
+    this.integer(wakeSeq, 1)
+    return this.tx('wake', () => {
+      const wake = this.row<Wake>('SELECT * FROM outbox WHERE run_id=? AND wake_seq=?', runId, wakeSeq)
+      if (this.get(runId).state === 'input_required') return null
+      if (!wake || wake.acknowledged_at !== null || wake.suppressed_at !== null || TERMINAL_RUN_STATES.has(this.get(runId).state)) return null
+      if (wake.attempt_id) {
+        const attempt = this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', wake.attempt_id)!
+        if (['delivered', 'started'].includes(attempt.state)) { this.fenced(attempt); return attempt }
+      }
+      const active = this.attempts(runId).some((a) => ['delivered', 'started'].includes(a.state))
+      if (active) return null // Later wake stays durable until the current handler yields.
+      const attempt = this.newAttempt(runId, wakeSeq)
+      this.write('UPDATE outbox SET attempt_id=?,deliveries=deliveries+1 WHERE run_id=? AND wake_seq=?', attempt.id, runId, wakeSeq)
+      return attempt
+    })
+  }
+  /** The waker prepares durable deliveries; an executor attaches separately and acknowledges. */
+  dispatch(): Attempt[] {
+    const deliveries: Attempt[] = []
+    for (const wake of this.rows<Wake>('SELECT * FROM outbox WHERE acknowledged_at IS NULL AND suppressed_at IS NULL ORDER BY run_id,wake_seq')) {
+      const attempt = this.deliver(wake.run_id, wake.wake_seq)
+      if (attempt) deliveries.push(attempt)
+    }
+    return deliveries
+  }
+  /** ADR-0019 table, local only: no inference is started by this operation. */
+  reconcile(): void {
+    this.tx('reconcile', () => {
+      for (const attempt of this.rows<Attempt>("SELECT * FROM run_attempts WHERE state IN ('delivered','started')")) {
+        this.lose(attempt)
+        // waiting_children/input_required untouched; wrapping_up remains a report request.
+      }
+    })
+    this.tick()
+  }
+  retain(attempt: Attempt, input: { key: string; kind: 'worktree' | 'scratch'; retainUntil: number }): void {
+    this.clean(input.key); this.integer(input.retainUntil)
+    if (!['worktree', 'scratch'].includes(input.kind)) throw new RunError('invalid_input')
+    this.tx('retain', () => {
+      this.fenced(attempt)
+      const key = `resource:${input.key}`
+      if (this.row('SELECT 1 FROM run_resources WHERE key=?', key)) throw new RunError('idempotency_conflict')
+      this.grant(key, attempt.run_id, this.maxTtl)
+      this.write('INSERT INTO run_resources (key,run_id,kind,retain_until) VALUES (?,?,?,?)', key, attempt.run_id, input.kind, input.retainUntil)
+      this.event(this.get(attempt.run_id), 'resource')
+    })
+  }
+  /** Resource owners delete only these released resources, never nonterminal run resources. */
+  reapResources(): string[] {
+    return this.tx('reap', () => {
+      const keys: string[] = []
+      for (const resource of this.rows<{ key: string; run_id: string; retain_until: number }>('SELECT * FROM run_resources WHERE released_at IS NULL')) {
+        if (!TERMINAL_RUN_STATES.has(this.get(resource.run_id).state) || resource.retain_until > this.now()) continue
+        this.write('UPDATE run_resources SET released_at=? WHERE key=?', this.now(), resource.key)
+        this.write('UPDATE leases SET released=1 WHERE key=?', resource.key)
+        keys.push(resource.key)
+      }
+      return keys
+    })
+  }
+  recordCost(attempt: Attempt, input: { key: string; inputTokens: number; outputTokens: number;
+    costMicrounits: number | null; currency: 'USD' | 'EUR' | 'RUB' | 'unknown' }): void {
+    this.clean(input.key); this.integer(input.inputTokens); this.integer(input.outputTokens)
+    if (input.costMicrounits !== null) this.integer(input.costMicrounits)
+    if (!['USD', 'EUR', 'RUB', 'unknown'].includes(input.currency)) throw new RunError('invalid_input')
+    this.tx('cost', () => {
+      this.fenced(attempt)
+      const prior = this.row<{ attempt_id: string; input_tokens: number; output_tokens: number; cost_microunits: number | null; currency: string }>(
+        'SELECT * FROM run_costs WHERE run_id=? AND entry_key=?', attempt.run_id, input.key)
+      if (prior) {
+        if (prior.attempt_id !== attempt.id || prior.input_tokens !== input.inputTokens || prior.output_tokens !== input.outputTokens ||
+          prior.cost_microunits !== input.costMicrounits || prior.currency !== input.currency) throw new RunError('idempotency_conflict')
+        return
+      }
+      this.write('INSERT INTO run_costs VALUES (?,?,?,?,?,?,?,?)', attempt.run_id, input.key, attempt.id,
+        input.inputTokens, input.outputTokens, input.costMicrounits, input.currency, this.now())
+      this.event(this.get(attempt.run_id), 'cost', attempt.id)
+    })
+  }
+  costs(runId: string): { currency: string; inputTokens: number; outputTokens: number; costMicrounits: number | null }[] {
+    return this.rows(`SELECT currency,SUM(input_tokens) AS inputTokens,SUM(output_tokens) AS outputTokens,
+      CASE WHEN COUNT(cost_microunits)=COUNT(*) THEN SUM(cost_microunits) ELSE NULL END AS costMicrounits
+      FROM run_costs WHERE run_id=? GROUP BY currency`, runId)
+  }
+  close(): void {
+    if (this.closed) return
+    try {
+      this.db.prepare('UPDATE leases SET released=1 WHERE key=? AND holder=? AND token=?').run(HOME_KEY, this.ownerId, this.owner.token)
+    } finally { this.closed = true }
+  }
+}

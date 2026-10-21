@@ -7,6 +7,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { DURABLE_RUNS_MIGRATION } from '../runs/schema.ts'
 import { SESSION_LOG_MIGRATION } from '../session-log/schema.ts'
 
 export type Db = DatabaseSync
@@ -1492,6 +1493,8 @@ export const MIGRATIONS: readonly string[] = [
   `,
   // 29 — append-only session event log, writer epochs and FTS5 search (K2, ADR-0023).
   SESSION_LOG_MIGRATION,
+  // 30 — single-node durable runs, fenced attempts, promises and wake outbox (R1).
+  DURABLE_RUNS_MIGRATION,
 ]
 
 export function openDb(path: string): Db {

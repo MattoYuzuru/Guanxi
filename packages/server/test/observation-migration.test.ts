@@ -42,7 +42,7 @@ describe('SQLite exact observation-key migration 6', () => {
     const path = join(root, 'guanxi.db')
 
     const first = openDb(path)
-    assert.equal(version(first), 29)
+    assert.equal(version(first), 30)
     assert.equal(
       (
         first
@@ -57,7 +57,7 @@ describe('SQLite exact observation-key migration 6', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.equal(version(reopened), 29)
+    assert.equal(version(reopened), 30)
     assert.equal(
       (
         reopened
@@ -85,7 +85,7 @@ describe('SQLite exact observation-key migration 6', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.equal(version(upgraded), 29)
+    assert.equal(version(upgraded), 30)
     assert.deepEqual(
       {
         ...upgraded
@@ -142,7 +142,7 @@ describe('SQLite exact observation-key migration 6', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.equal(version(recovered), 29)
+    assert.equal(version(recovered), 30)
     recovered.close()
   })
 })

@@ -12,6 +12,7 @@ import {
   REDACTION_MARKER_OPEN,
   SEARCH_MATCH_CLOSE,
   SEARCH_MATCH_OPEN,
+  sessionEventSchema,
   type SessionEvent,
   type SessionSearchHit,
 } from '@guanxi/contract'
@@ -151,6 +152,26 @@ describe('inspector page', () => {
     expect(tokens.textContent).toMatch(/As of/)
     expect(screen.getByText('52 / 4,096 (1%)')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Export JSON without reasoning' }).getAttribute('href')).toBe(`/api/sessions/${SESSION_ID}/export`)
+  })
+
+  it('renders durable run events once across persisted/live overlap and reload', async () => {
+    setActiveLocale('en')
+    const base = sessionTrace()
+    const event = sessionEventSchema.parse({ ...base[0]!, id: '00000000-0000-4000-8000-000000000099',
+      seq: base.length + 1, type: 'run.lifecycle',
+      data: { runId: 'lead-r1', state: 'waiting_children', version: 3, action: 'delegated', relatedId: 'child-r1', wakeSeq: null } })
+    const events = [...base, event]
+    mockApi({ events, live: [event] })
+    const view = render(<InspectorPage sessionId={SESSION_ID} />)
+    const timeline = await screen.findByRole('list', { name: 'Session events in order' })
+    await waitFor(() => expect(within(timeline).getAllByRole('listitem')).toHaveLength(events.length))
+    expect(within(timeline).getAllByText('Durable run')).toHaveLength(1)
+    expect(within(timeline).getAllByText('lead-r1 · waiting_children · delegated')).toHaveLength(1)
+    view.unmount()
+    render(<InspectorPage sessionId={SESSION_ID} />)
+    const replay = await screen.findByRole('list', { name: 'Session events in order' })
+    await waitFor(() => expect(within(replay).getAllByRole('listitem')).toHaveLength(events.length))
+    expect(within(replay).getAllByText('lead-r1 · waiting_children · delegated')).toHaveLength(1)
   })
 
   it('keeps the live region to the state: streamed events change the timeline, not the announcement', async () => {

@@ -11,6 +11,8 @@ import { EGRESS_SCRUBBER_SERVICE, type EgressScrubber } from '../egress/types.ts
 import { OLLAMA_ADAPTER_SERVICE, ollamaAdapterPlugin, type OllamaAdapter } from '../ollama/plugin.ts'
 import type { SessionLog, SessionLogOptions } from '../session-log/log.ts'
 import { SESSION_LOG_PLUGIN_ID, SESSION_LOG_SERVICE, createSessionLogPlugin } from '../session-log/plugin.ts'
+import { createDurableRunsPlugin, DURABLE_RUNS_PLUGIN_ID, DURABLE_RUNS_SERVICE, type DurableRunsService } from '../runs/plugin.ts'
+import type { RunStoreOptions } from '../runs/store.ts'
 import type { Db } from '../store/db.ts'
 import { RESOURCE_GOVERNOR_SERVICE, resourceGovernorPlugin } from './governor-plugin.ts'
 import type { ResourceGovernor } from './resource-governor.ts'
@@ -37,11 +39,13 @@ export interface ServerKernel {
   readonly scrubber: EgressScrubber
   /** Present when the kernel was booted with the node database. */
   readonly sessionLog: SessionLog | null
+  readonly durableRuns: DurableRunsService | null
 }
 
 export interface ServerKernelOptions {
   /** The node database; with it the kernel also loads the session log. */
   db?: Db
+  runs?: Omit<RunStoreOptions, 'db' | 'log' | 'scrubber'> & { tickMs?: number }
   sessionLog?: Omit<SessionLogOptions, 'db' | 'scrubber'> & { purgeIntervalMs?: number }
 }
 
@@ -50,13 +54,15 @@ export async function bootServerKernel(
   options: ServerKernelOptions = {},
 ): Promise<ServerKernel> {
   const withLog = options.db !== undefined
-  const layers = withLog ? [...profile, SESSION_LOG_LAYER] : profile
+  const layers = withLog ? [...profile, SESSION_LOG_LAYER, { name: 'profile:durable-runs',
+    insert: [{ id: 'durable-runs', plugin: DURABLE_RUNS_PLUGIN_ID }] }] : profile
   const node = await bootNode({
     plugins: [
       resourceGovernorPlugin,
       ollamaAdapterPlugin,
       egressScrubberPlugin,
-      ...(withLog ? [createSessionLogPlugin({ ...options.sessionLog, db: options.db! })] : []),
+      ...(withLog ? [createSessionLogPlugin({ ...options.sessionLog, db: options.db! }),
+        createDurableRunsPlugin({ ...options.runs, db: options.db! })] : []),
     ],
     profile: layers,
     // The legacy context keeps the instances handed out below, so these rows
@@ -71,5 +77,6 @@ export async function bootServerKernel(
     await node.dispose()
     throw new Error('the server kernel profile did not provide its services')
   }
-  return { node, governor, ollama, scrubber, sessionLog }
+  const durableRuns = withLog ? node.service<DurableRunsService>(DURABLE_RUNS_SERVICE) ?? null : null
+  return { node, governor, ollama, scrubber, sessionLog, durableRuns }
 }

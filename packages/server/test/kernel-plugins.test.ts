@@ -139,7 +139,7 @@ describe('server boot through the kernel', () => {
         assert.equal(server.context.governor, server.kernel.governor)
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
-        assert.equal(server.kernel.node.counters().fibers, 4, 'governor, ollama, egress scrubber and session log')
+        assert.equal(server.kernel.node.counters().fibers, 5, 'governor, ollama, egress scrubber, session log and durable runs')
         assert.ok(server.kernel.sessionLog, 'the kernel loaded the session log')
         assert.equal(server.context.sessionLog, server.kernel.sessionLog, 'the context uses the kernel session log')
       } finally {
