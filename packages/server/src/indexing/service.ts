@@ -147,7 +147,7 @@ export class ProjectIndex {
           } else if (message.kind === 'build' && request.kind === 'build') this.emit('build', root)
           else if (message.kind === 'result') {
             receivedResult = true
-            try { await checkRoot(); resolve(message.result) } catch (error) { reject(error) }
+            try { await checkRoot(); this.checkCancellation(signal); resolve(message.result) } catch (error) { reject(error) }
           }
           else reject(new Error(message.code && /^index_[a-z_]+$/.test(message.code) ? message.code : 'index_unavailable'))
         })

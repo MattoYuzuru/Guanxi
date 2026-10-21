@@ -270,10 +270,11 @@ test('a query cannot replace its immutable root grant by recanonicalizing an out
   } finally { await service.close(); await f.governor.close(); await f.close() }
 })
 
-test('result validation settles correctly when worker close arrives during the final root check', async () => {
+for (const cancel of [false, true]) test(`result validation ${cancel ? 'cancels' : 'settles'} when worker close arrives during the final root check`, async () => {
   const f = await fixture(1)
   const fs = createRequire(import.meta.url)('node:fs/promises') as typeof import('node:fs/promises')
   const original = fs.lstat
+  const controller = new AbortController()
   let received = false, held = false, settled = false
   let worker: import('node:child_process').ChildProcess | undefined
   let release!: () => void
@@ -301,13 +302,15 @@ test('result validation settles correctly when worker close arrives during the f
     } } })
   let build: Promise<unknown> | undefined
   try {
-    build = service.build(f.root)
+    build = service.build(f.root, controller.signal)
     void build.then(() => { settled = true }, () => { settled = true })
     await waitFor(() => held)
     await new Promise(resolve => setImmediate(resolve))
     assert.equal(settled, false, 'a complete result must await validation rather than reject on close')
-    release(); await build
-    assert.equal(service.status().build, 'complete')
+    if (cancel) controller.abort()
+    release()
+    if (cancel) await assert.rejects(build, /index_cancelled/)
+    else { await build; assert.equal(service.status().build, 'complete') }
   } finally {
     release(); await build?.catch(() => {})
     trap.mock.restore(); syncBuiltinESMExports()
