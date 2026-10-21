@@ -1,7 +1,17 @@
-# DOCLINKS lane hand-off
+# Doc-link checker evidence
+
+**Status:** implemented, verified by the integrator, merged into `main` (`e16321f`) · **Updated:** 2026-10-21
 
 Lane: `lane/doc-link-check`. A dependency-free Markdown link and anchor checker, its tests,
-and one npm script entry. No other repository files were changed.
+and one npm script entry. No other repository files were changed. It was written by
+DeepSeek-V4.1-Flash (release 1017, max effort) in DeepSeek Harness headless mode. That was the
+first DeepSeek lane, and it took about 8 minutes from a fully specified prompt. The integrator
+committed the result, because the run's `workspace-write` sandbox cannot write the worktree's
+git metadata.
+
+At the merge, the integrator fixed the four links the checker reported on `main`. It also added
+the checker to `npm run lint:md`, so every lane's Markdown gate now fails on a broken relative
+link or anchor.
 
 ## What I built
 
