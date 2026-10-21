@@ -40,7 +40,7 @@ export class RunStore {
   private readonly scrubber: EgressScrubber
   private readonly ownerId = randomUUID()
   private owner: Lease | null = null
-  private predecessor: { token: number; holder: string; bound: number } | null = null
+  private predecessor: { token: number; holder: string; observedBound: number; bound: number } | null = null
   private readonly ownerTtl: number
   private readonly maxTtl: number
   private readonly clock: () => number
@@ -91,8 +91,9 @@ export class RunStore {
         const persistedBound = Math.max(prior.regrant_after, prior.expires_at + this.maxTtl + EPSILON_MS, activeExpiry + EPSILON_MS)
         // Fix the cap on first observation, rather than moving it on every retry.
         // Wall-clock corrections in a predecessor cannot prevent boot indefinitely.
-        if (this.predecessor?.token !== prior.token || this.predecessor.holder !== prior.holder) {
-          this.predecessor = { token: prior.token, holder: prior.holder,
+        if (this.predecessor?.token !== prior.token || this.predecessor.holder !== prior.holder ||
+          this.predecessor.observedBound !== persistedBound) {
+          this.predecessor = { token: prior.token, holder: prior.holder, observedBound: persistedBound,
             bound: Math.min(persistedBound, now + this.ownerTtl + this.maxTtl + EPSILON_MS) }
         }
         if (now < this.predecessor.bound) throw new RunError('writer_busy')

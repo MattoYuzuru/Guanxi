@@ -248,3 +248,20 @@ test('M4: a wake cannot bypass input_required before an explicit decision', () =
     assert.equal(f.store.wakes('lead')[1]!.deliveries, 0)
   } finally { f.close() }
 })
+
+test('self-review: takeover cap follows observed predecessor renewals without fencing a live home', () => {
+  const f = runFixture()
+  let now = RUN_TIME
+  const successor = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => now })
+  try {
+    assert.throws(() => successor.heartbeat(), { code: 'writer_busy' })
+    for (let elapsed = 10_000; elapsed <= 120_000; elapsed += 10_000) {
+      now = RUN_TIME + elapsed; f.setTime(now); f.store.heartbeat()
+      assert.throws(() => successor.heartbeat(), { code: 'writer_busy' })
+      assert.equal(f.store.create().state, 'submitted')
+    }
+    now += 91_000
+    successor.heartbeat()
+    assert.throws(() => f.store.create(), { code: 'stale_lease' })
+  } finally { successor.close(); f.close() }
+})
