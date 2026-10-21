@@ -643,3 +643,42 @@ describe('K2 final check N6: the generated event id', () => {
     assert.equal(frame.join('\n').includes(eventId), false)
   })
 })
+
+describe('K2 final check fixes, in-session review: emit-time properties with their own assertions', () => {
+  it('identifiers of a cached frame are scrubbed with a value registered after the first frame', async () => {
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open('agent-clean', { kind: 'agent' }).append({
+      type: 'prompt',
+      data: { origin: 'typed', messageId: 'm-1', text: 'ordinary', attachmentCount: 0 },
+      spanId: `span-${SECRET}`,
+      jobId: `job-${SECRET}`,
+    })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const stream = frames(await app.request('/api/sessions/agent-clean/stream?after=0', {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+    scrubber.register(REF, SECRET)
+    const rest = [(await stream.next())!, (await stream.next())!]
+    assert.equal(rest.join('\n').includes(SECRET), false)
+    const prompt = dataOf(rest[1]!) as { jobId?: string; spanId?: string }
+    assert.equal(prompt.jobId, 'job-\u27e6REDACTED secret://vault/planted\u27e7')
+    assert.equal(prompt.spanId, 'span-\u27e6REDACTED secret://vault/planted\u27e7')
+  })
+
+  it('a source declared after the first frame ends the stream with egress_not_ready and releases the subscriber', async () => {
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open('agent-clean', { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'ordinary', attachmentCount: 0 } })
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    const stream = frames(await app.request('/api/sessions/agent-clean/stream?after=0', {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+    scrubber.expect('env.shell')
+    const next = (await stream.next())!
+    assert.equal(dataOf(next).code, 'egress_not_ready')
+    assert.deepEqual(dataOf(next).details, { pendingSources: ['env.shell'] })
+    assert.equal(await stream.next(), null)
+    assert.equal(log.subscriberCount('agent-clean'), 0)
+  })
+})
