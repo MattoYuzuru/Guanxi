@@ -111,3 +111,17 @@ test('non-admin forged transitive context cannot defeat a concurrent revoke or i
     assert.equal(a.federation.config.stateHash(),c.federation.config.stateHash())
   } finally {a.close();b.close();c.close()}
 })
+
+test('trusted foreign claims cannot invent the local origin counter or mutate its clock', () => {
+  const a=new SimNode(identity('a'));const c=new SimNode(identity('c'))
+  try {
+    a.trust(c);c.trust(a)
+    const operation={origin:'a',counter:1,accountId:'owner',key:'metadata',clock:{wall:a.time,logical:0},context:{c:999},value:{kind:'setting' as const,value:true}}
+    c.federation.config.ingest([{operation,signature:signValue(a.keys.privateKey,operation)}])
+    const clock=c.db.prepare('SELECT * FROM federation_clock').get()
+    assert.throws(()=>c.federation.config.create('local',{kind:'setting',value:true}),/local_history_missing/)
+    assert.equal(c.federation.config.operations().length,1)
+    assert.equal(c.db.prepare("SELECT COUNT(*) AS n FROM federation_operations WHERE origin='c'").get()!.n,0)
+    assert.deepEqual(c.db.prepare('SELECT * FROM federation_clock').get(),clock)
+  } finally {a.close();c.close()}
+})
