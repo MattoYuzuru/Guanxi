@@ -140,10 +140,10 @@ test('admin-only identities/grants and signed origins prevent spoofing; clock dr
     const op = shared.federation.config.create('theme', { kind: 'setting', value: 'dark' })
     admin.federation.config.ingest([op])
     const forged = { operation: { ...op.operation, origin: 'admin', value: { kind: 'grant' as const, present: true } }, signature: op.signature }
-    assert.throws(() => admin.federation.config.ingest([forged]), /unauthenticated/)
+    assert.equal(admin.federation.config.ingest([forged]).reasons.unauthenticated, 1)
     shared.time += 60_001
     const future = shared.federation.config.create('future', { kind:'setting',value:true })
-    assert.throws(() => admin.federation.config.ingest([future]), /clock_drift/)
+    assert.equal(admin.federation.config.ingest([future]).reasons.clock_drift, 1)
     assert.equal(admin.federation.config.operations().length,1)
     assert.equal(nodeIdentitySchema.safeParse({ ...shared.keys.identity, admin:true }).success,false)
     assert.throws(() => admin.federation.config.create('connection',{ kind:'connection',ownerAccountId:'other',auth:'subscription',enabled:true,label:'subscription' }), /owner_mismatch/)

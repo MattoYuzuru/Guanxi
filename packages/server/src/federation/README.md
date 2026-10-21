@@ -87,10 +87,19 @@ values cause a content-free refusal rather than changing signed data.
 This is shared metadata, not a replacement of K3's local secret/dispatch policies or a new
 multi-account authentication UI. Connection metadata retains its owner; subscription
 connections cannot be assigned to another account (D-190). Exact already-accepted duplicates remain valid after author revocation, so historical
-entries cannot wedge subsequent synchronization. New or altered revoked-author operations
-are refused. A new receiver lacking that history cannot safely infer pre-revocation admission
+entries cannot wedge subsequent synchronization. Each operation commits independently. Unknown/revoked authors, missing config/admin scope,
+invalid author signatures and future clock drift are skipped and counted; independent admissible
+operations still commit. Context gaps are counted as deferred and retried within the batch;
+`operation_conflict` stays fatal and stops the batch (already committed operations remain).
+New revoked-author operations are never admitted. A new receiver lacking that history cannot safely infer pre-revocation admission
 from an author's timestamp; bootstrap then requires operator-reviewed rebaseline or reauthoring
-by a current admin. Automatic historical admission certificates/frontiers are not implemented.
+by a current admin. In particular, an H1-deferred operation depending on an author this
+receiver will never admit stays deferred, including revokes. It cannot authorize a grant or
+advance a vector. A current admin on a receiver with admissible history must reauthor the
+intended change (a local revoke can take effect immediately), or an operator must review a
+rebaseline. Retrying alone cannot repair an impossible dependency; skipping its context would
+reintroduce H1. Subsequent operations on that origin also wait for its contiguous prefix.
+Automatic historical admission certificates/frontiers are not implemented.
 The local peer credential registry
 is host-approved authority, separate from shared user display metadata and grant projections.
 

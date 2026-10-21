@@ -56,7 +56,7 @@ export function federationRoutes(resolve: () => Federation) {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'config', true)
     const ops = z.array(signedConfigOperationSchema).parse(c.get('body'))
     if (ops.some((op) => op.operation.accountId !== peer.accountId)) throw new FederationError('owner_mismatch', 403)
-    f.config.ingest(ops); return c.json({ applied: true })
+    return c.json({ applied: true, ...f.config.ingest(ops) })
   })
   app.get('/replicas/:stream', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'replicas')

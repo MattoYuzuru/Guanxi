@@ -78,3 +78,70 @@ test('legacy sparse rows and attested contexts cannot inflate a newly authored v
     assert.equal(next.operation.context.b, undefined, 'attested context is not stored history')
   } finally { a.close(); c.close() }
 })
+
+// P4/P4b retain strict H1 admission: a revoke depending on forbidden history
+// requires explicit reauthoring. Independent operations must still synchronize.
+for (const mode of ['revoked', 'unknown'] as const) test(`${mode === 'revoked' ? 'P4' : 'P4b'}: inadmissible author cannot wedge independent sync; impossible dependencies need reauthoring`, async () => {
+  const a = new SimNode(identity('a')); const b = new SimNode(identity('b'))
+  const x = new SimNode(identity('x', {trust:'cloud_ephemeral',admin:false,scopes:['config']}))
+  const independent = new SimNode(identity('independent'))
+  try {
+    a.trust(b); b.trust(a); a.trust(x); a.trust(independent); b.trust(independent)
+    if (mode === 'revoked') { b.trust(x); b.federation.revokePeer('x') }
+    const grant = a.federation.config.create('editor', {kind:'grant',present:true})
+    b.federation.config.ingest([grant])
+    a.federation.config.ingest([x.federation.config.create('project', {kind:'project',name:'x',archived:false})])
+    a.federation.config.create('editor', {kind:'grant',present:false})
+    const allowed = independent.federation.config.create('independent', {kind:'setting',value:true})
+    a.federation.config.ingest([allowed])
+    const response = await a.request(b, 'POST', '/config', a.federation.config.operations())
+    assert.equal(response.status, 200)
+    const report = await response.json() as {accepted:number;skipped:number;deferred:number;reasons:Record<string,number>}
+    assert.equal(report.skipped, 1, 'inadmissible author is counted')
+    assert.equal(report.reasons.unauthenticated, 1)
+    assert.equal(report.accepted, 1, 'independent author commits')
+    assert.equal(report.deferred, 1, 'dependent revoke remains unadmitted under H1')
+    assert.equal(present(b), true)
+    assert.ok(b.federation.config.operations().some((op) => op.operation.origin === 'independent'))
+    // Retry through the shipped channel succeeds; it cannot bypass H1 or undo local recovery.
+    const { FederationChannel } = await import('../../src/federation/channel.ts')
+    const channel = new FederationChannel({local:b.keys.identity,privateKey:b.keys.privateKey,peer:a.keys.identity,clock:()=>b.time,transport:async(req)=>a.app.request(req)})
+    await assert.doesNotReject(() => channel.synchronize(b.federation))
+    const recovery = b.federation.config.create('editor', {kind:'grant',present:false})
+    a.federation.config.ingest([recovery])
+    await channel.synchronize(b.federation)
+    assert.equal(present(a), false)
+    assert.equal(present(b), false, 'current-admin reauthoring restores the revoke without forbidden history')
+  } finally { a.close(); b.close(); x.close(); independent.close() }
+})
+
+test('batch commits independent ops around unknown, revoked, unscoped, non-admin and future authors', () => {
+  const receiver = new SimNode(identity('receiver'))
+  const nodes = [identity('unknown'),identity('revoked'),identity('unscoped',{scopes:[]}),identity('nonadmin',{admin:false}),identity('future'),identity('good')].map((keys)=>new SimNode(keys))
+  try {
+    const ops = nodes.map((n, index) => {
+      if (index !== 2) return n.federation.config.create('metadata', {kind:'setting',value:true})
+      const operation = {origin:n.keys.identity.id,counter:1,accountId:'owner',key:'metadata',clock:{wall:n.time,logical:0},context:{},value:{kind:'setting' as const,value:true}}
+      return {operation,signature:signValue(n.keys.privateKey,operation)}
+    })
+    for (const n of nodes.slice(1)) receiver.trust(n)
+    receiver.federation.revokePeer('revoked')
+    const signed = (index:number, change:Record<string,unknown>) => {
+      const operation = {...ops[index]!.operation,...change}
+      return {operation,signature:signValue(nodes[index]!.keys.privateKey,operation)}
+    }
+    const batch = [...ops]
+    batch[3] = signed(3,{value:{kind:'grant',present:true}})
+    batch[4] = signed(4,{clock:{wall:receiver.time+60_001,logical:0}})
+    let report: ReturnType<typeof receiver.federation.config.ingest> | undefined
+    assert.doesNotThrow(() => { report = receiver.federation.config.ingest(batch) })
+    assert.equal(report!.accepted, 1)
+    assert.equal(report!.skipped, 5)
+    assert.deepEqual(report!.reasons, {unauthenticated:2,forbidden:1,admin_required:1,clock_drift:1})
+    assert.deepEqual(receiver.federation.config.operations(), [ops[5]])
+    const valid = nodes[5]!.federation.config.create('next', {kind:'setting',value:'committed before conflict'})
+    const conflict = {...ops[5]!,signature:'altered'}
+    assert.throws(() => receiver.federation.config.ingest([valid,conflict]), /operation_conflict/, 'conflict remains fatal')
+    assert.equal(receiver.federation.config.operations().length, 2, 'an admitted op commits independently before a later conflict')
+  } finally { receiver.close(); nodes.forEach((n)=>n.close()) }
+})

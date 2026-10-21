@@ -88,7 +88,7 @@ test('revoked-origin historical duplicates cannot wedge unrelated current-author
     c.federation.config.ingest([historical,current])
     assert.equal(c.federation.config.operations().length,2)
     assert.throws(()=>c.federation.config.ingest([{...historical,operation:{...historical.operation,value:{kind:'setting',value:'altered'}}}]),/operation_conflict/)
-    assert.throws(()=>c.federation.config.ingest([unseen]),/unauthenticated/)
+    assert.equal(c.federation.config.ingest([unseen]).skipped, 1)
     assert.equal(c.federation.config.operations().length,2)
   } finally {a.close();b.close();c.close()}
 })

@@ -85,26 +85,34 @@ export class SharedConfig {
       this.db.exec('COMMIT'); return signed
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
-  ingest(operations: readonly SignedConfigOperation[]): { deferred: number } {
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      let pending = [...operations]
-      while (pending.length) {
-        const deferred: SignedConfigOperation[] = []
-        for (const op of pending) {
-          try { this.acceptWithin(op) }
-          catch (error) {
-            if (!(error instanceof FederationError) || error.code !== 'context_missing') throw error
-            deferred.push(op)
-          }
+  ingest(operations: readonly SignedConfigOperation[]) {
+    this.clean(null)
+    const result = { accepted: 0, duplicates: 0, deferred: 0, skipped: 0, reasons: {} as Record<string, number> }
+    let pending = [...operations]
+    while (pending.length) {
+      const deferred: SignedConfigOperation[] = []
+      for (const op of pending) {
+        // Each admitted op commits independently. Inadmissible authors and
+        // future timestamps cannot roll back independent work in the batch.
+        this.db.exec('BEGIN IMMEDIATE')
+        try {
+          const status = this.acceptWithin(op)
+          this.db.exec('COMMIT'); result[status]++
+        } catch (error) {
+          this.db.exec('ROLLBACK')
+          if (!(error instanceof FederationError)) throw error
+          if (error.code === 'context_missing') { deferred.push(op); continue }
+          if (!['unauthenticated', 'forbidden', 'admin_required', 'clock_drift'].includes(error.code)) throw error
+          result.skipped++; result.reasons[error.code] = (result.reasons[error.code] ?? 0) + 1
         }
-        if (deferred.length === pending.length) { pending = deferred; break }
-        pending = deferred
       }
-      this.db.exec('COMMIT'); return { deferred: pending.length }
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+      if (deferred.length === pending.length) { pending = deferred; break }
+      pending = deferred
+    }
+    result.deferred = pending.length
+    return result
   }
-  private acceptWithin(input: SignedConfigOperation): void {
+  private acceptWithin(input: SignedConfigOperation): 'accepted' | 'duplicates' {
     const signed = signedConfigOperationSchema.parse(input)
     const op = signed.operation
     this.clean(signed)
@@ -114,7 +122,7 @@ export class SharedConfig {
     const existing = this.db.prepare('SELECT data FROM federation_operations WHERE origin=? AND counter=?').get(op.origin, op.counter)
     if (existing) {
       if (canonical(JSON.parse(existing.data as string)) !== canonical(signed)) throw new FederationError('operation_conflict')
-      return
+      return 'duplicates'
     }
     const author = this.peer(op.origin)
     if (author.accountId !== op.accountId || !author.scopes.includes('config')) throw new FederationError('forbidden', 403)
@@ -129,5 +137,6 @@ export class SharedConfig {
     }
     this.setClock(mergeClock(this.clock(), op.clock, this.now()))
     this.db.prepare('INSERT INTO federation_operations VALUES (?,?,?)').run(op.origin, op.counter, canonical(signed))
+    return 'accepted'
   }
 }
