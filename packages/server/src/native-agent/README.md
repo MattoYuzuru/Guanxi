@@ -66,7 +66,9 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   not followed by `fetch`; domain policy also applies to subsequent proxy requests. Each parsed
   request asks the trusted parent to compare its URL and headers with the live egress scrubber.
   Any change, absent/not-ready scrubber or IPC failure denies the request. Registered values
-  are never copied into worker policies. Request bodies are not inspected by this guard.
+  are never copied into worker policies. Only exactly registered forms are covered:
+  encoding, splitting across requests or headers, and case changes remain
+  **K4-EGRESS-ENCODINGS**. Request bodies are not inspected (**K4-EGRESS-BODIES**).
 - Upstream convenience write grants are explicitly denied. OS executable/library/config
   reads and stdio devices are necessary exceptions to project-only file access. Roots that
   overlap the node data directory are refused; use a separate data directory for a checkout
