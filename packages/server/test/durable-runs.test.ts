@@ -196,8 +196,10 @@ test('single writer fails closed on takeover, no plain restart epoch bump', (t) 
   const f = runFixture(); let cleanup = () => {}; t.after(() => { cleanup(); f.close() })
   assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME }).heartbeat(), code('writer_busy'))
   assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME + 60_000 }).heartbeat(), code('writer_busy'))
-  const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => RUN_TIME + 91_001 })
-  next.heartbeat()
+  let nextTime = RUN_TIME
+  const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => nextTime })
+  assert.throws(() => next.heartbeat(), code('writer_busy'))
+  nextTime += 91_001; next.heartbeat()
   cleanup = () => next.close()
   assert.throws(() => f.store.create(), code('stale_lease'))
   assert.equal((f.db.prepare("SELECT epoch FROM leases WHERE key='durable-runs/home'").get() as { epoch: number }).epoch, 1)
@@ -334,9 +336,11 @@ test('review R3: lowering successor TTL cannot shorten the predecessor home safe
     clock: () => RUN_TIME + 31_002, maxAttemptTtlMs: 1 }).heartbeat(), code('writer_busy'))
   assert.throws(() => new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
     clock: () => RUN_TIME + 90_999, maxAttemptTtlMs: 1 }).heartbeat(), code('writer_busy'))
+  let nextTime = RUN_TIME
   next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber,
-    clock: () => RUN_TIME + 91_001, maxAttemptTtlMs: 1 })
-  next.heartbeat(); reconcileAllForTest(next)
+    clock: () => nextTime, maxAttemptTtlMs: 1 })
+  assert.throws(() => next!.heartbeat(), code('writer_busy'))
+  nextTime += 91_001; next.heartbeat(); reconcileAllForTest(next)
   const newAttempt = next.start(run.id)
   assert.ok(newAttempt.token > oldAttempt.token)
   assert.throws(() => f.store.complete(oldAttempt, 'completed'), code('stale_lease'))

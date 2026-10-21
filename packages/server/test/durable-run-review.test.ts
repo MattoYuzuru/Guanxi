@@ -299,3 +299,35 @@ test('L8: migration 30 supplies the documented K2 thread-backlog index', () => {
     assert.deepEqual(f.db.prepare('PRAGMA index_info(idx_session_mirror_backlog_thread)').all().map((r) => r.name), ['thread_id', 'job_id'])
   } finally { f.close() }
 })
+
+test('self-review: persistent shorter-TTL contender cannot shorten inherited execution grace', () => {
+  const f = runFixture()
+  let now = RUN_TIME
+  const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => now, maxAttemptTtlMs: 1 })
+  try {
+    f.store.start(f.store.create({ id: 'live' }).id)
+    assert.throws(() => next.heartbeat(), { code: 'writer_busy' })
+    for (const elapsed of [31_001, 60_000, 90_999]) {
+      now = RUN_TIME + elapsed
+      assert.throws(() => next.heartbeat(), { code: 'writer_busy' })
+    }
+    now = RUN_TIME + 91_000; next.heartbeat(); next.reconcile()
+    assert.equal(next.attempts('live')[0]!.state, 'lost')
+  } finally { next.close(); f.close() }
+})
+
+test('self-review: a forward wall correction cannot replace elapsed successor recovery grace', () => {
+  const f = runFixture()
+  let now = RUN_TIME + 86_400_000
+  const next = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber, clock: () => now })
+  try {
+    f.store.start(f.store.create({ id: 'live' }).id)
+    assert.throws(() => next.heartbeat(), { code: 'writer_busy' })
+    now += 60_999; f.setTime(RUN_TIME + 60_999)
+    assert.throws(() => next.heartbeat(), { code: 'writer_busy' })
+    now++; f.setTime(RUN_TIME + 61_000)
+    next.heartbeat(); next.reconcile()
+    assert.equal(next.attempts('live')[0]!.state, 'lost')
+    assert.throws(() => f.store.renew(f.store.attempts('live')[0]!), { code: 'stale_lease' })
+  } finally { next.close(); f.close() }
+})

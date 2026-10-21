@@ -88,13 +88,17 @@ export class RunStore {
       const now = this.leaseNow()
       const activeExpiry = this.row<{ expiry: number | null }>("SELECT MAX(expires_at) AS expiry FROM leases WHERE key LIKE 'run:%/exec' AND released=0")?.expiry ?? 0
       if (prior && !prior.released) {
-        const persistedBound = Math.max(prior.regrant_after, prior.expires_at + this.maxTtl + EPSILON_MS, activeExpiry + EPSILON_MS)
+        // Migration 31 persists the predecessor's configured maximum as this
+        // relative interval. A smaller successor limit only affects new grants.
+        const recoveryMaxTtl = Math.max(this.maxTtl, prior.regrant_after - prior.expires_at - EPSILON_MS)
+        const persistedBound = Math.max(prior.regrant_after, prior.expires_at + recoveryMaxTtl + EPSILON_MS, activeExpiry + EPSILON_MS)
         // Fix the cap on first observation, rather than moving it on every retry.
         // Wall-clock corrections in a predecessor cannot prevent boot indefinitely.
         if (this.predecessor?.token !== prior.token || this.predecessor.holder !== prior.holder ||
           this.predecessor.observedBound !== persistedBound) {
           this.predecessor = { token: prior.token, holder: prior.holder, observedBound: persistedBound,
-            bound: Math.min(persistedBound, now + this.ownerTtl + this.maxTtl + EPSILON_MS) }
+            bound: Math.max(now + recoveryMaxTtl + EPSILON_MS,
+              Math.min(persistedBound, now + this.ownerTtl + recoveryMaxTtl + EPSILON_MS)) }
         }
         if (now < this.predecessor.bound) throw new RunError('writer_busy')
       }

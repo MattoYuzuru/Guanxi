@@ -40,8 +40,12 @@ for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal'
       assert.equal(killed.signal, 'SIGKILL', `${index} ${points[index]}: ${killed.stderr}`)
       // The crashed owner is never presumed dead from a PID. Advance past its persisted
       // owner TTL + maximum attempt TTL + epsilon before claiming the execution home.
-      const f = runFixture(path, { clock: () => RUN_TIME + (stage === 'recovery' ? 200_000 : 100_000) })
+      let now = RUN_TIME
+      const f = runFixture(path, { deferClaim: true, clock: () => now })
       try {
+        assert.throws(() => f.store.heartbeat(), { code: 'writer_busy' })
+        now += stage === 'recovery' ? 200_000 : 100_000
+        f.store.heartbeat()
         const window = windows.find((w) => w.from <= index && index <= w.to)!
         assert.ok(window, `transaction window for ${index} ${points[index]}`)
         assert.deepEqual(runStateSnapshot(f.db), index === window.to ? window.after : window.before,

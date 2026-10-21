@@ -49,9 +49,14 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
   reads for due attempts/timers before taking a separate transaction for each item.
   An unclean takeover waits for the predecessor's persisted `regrant_after` (owner expiry +
   maximum attempt TTL + 1000ms), with an active-execution expiry floor. On first observation
-  the successor caps this wait at its own `now + ownerTtl + maxAttemptTtl + 1000ms`, so a
+  the successor caps this wait at its own `now + ownerTtl + recoveryMaxTtl + 1000ms`, so a
   predecessor clock ahead of the corrected clock cannot block recovery indefinitely. An
-  observed renewed bound restarts this cap; a live predecessor is never stolen from merely
+  observed renewed bound restarts this cap. `recoveryMaxTtl` preserves the larger of the
+  predecessor's persisted relative maximum and the successor's new-grant limit; reducing
+  the latter cannot shorten an inherited attempt's grace. An unclean predecessor also
+  requires at least `recoveryMaxTtl + 1000ms` of successor-local monotonic time after first
+  observation, so a forward wall correction cannot count as elapsed grace;
+   a live predecessor is never stolen from merely
   because an old observation aged. Defaults are 30 s owner TTL and 60 s execution TTL:
   recovery waits at most 91 s after the last observed bound change. The pump keeps serving
   with `writer_busy` meanwhile. A clean close releases the home. A plain restart does not

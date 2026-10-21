@@ -18,13 +18,19 @@ const fault = (label: string) => {
   if (points.length - 1 === Number(crashIndex)) process.kill(process.pid, 'SIGKILL')
   if (label.endsWith(':committed')) windows.push({ from, to: points.length - 1, before, after: runStateSnapshot(db) })
 }
-const now = stage === 'recovery' ? RUN_TIME + 100_000 : RUN_TIME
+let now = RUN_TIME
 const db = openDb(path)
 const scrubber = new SecretScrubber()
 const log = new SessionLog({ db, scrubber, clock: () => new Date(now),
   fault: (point) => fault(`log:${point}`) })
 const store = new RunStore({ db, log, scrubber, alwaysOn: true, clock: () => now,
   fault: (operation, point) => fault(`${operation}:${point}`) })
+if (stage === 'recovery') {
+  try { store.heartbeat() } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'writer_busy')) throw error
+  }
+  now += 100_000
+}
 store.heartbeat()
 if (stage === 'recovery') {
   armed = true
