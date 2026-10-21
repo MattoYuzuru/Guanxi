@@ -194,3 +194,73 @@ touched.
   radius, and `step-end` on the caret until a step timing token exists.
 
 At handoff the fix commits are `4d37ab6` and `6ddf6bd` on top of `08b8b70`.
+
+## Browser gate compatibility fix (2026-10-22)
+
+The root coordinator ran the full actual-Chromium browser gate at clean `dfe5a2e`; it failed
+6/86 with 80 passed. Receipt:
+`/Users/yuzuru/.local/state/agent-dev/check-6m67kodz/result.json`; log:
+`/Users/yuzuru/.local/state/agent-dev/check-6m67kodz/output.log`. All six failures were the same
+obsolete predicate, `Number.parseFloat(...transitionDuration).toBeCloseTo(0.00001, 8)`, with
+`Expected: 0.00001` and `Received: 0`. The accepted reduced-motion policy removes motion
+(`transition: none !important`), so Chromium computes `transitionDuration: 0s`; these six
+assertions establish no production bug and no production CSS was changed.
+
+Updated in `092930e` (one coherent test commit):
+
+| File | Case / observed focused control | Old line |
+| --- | --- | --- |
+| `packages/web/test/browser/attachments.spec.ts` | attachment flow; focused Download button | 232 |
+| `packages/web/test/browser/chat-trash.spec.ts` | Trash flow; focused "Обновить статус удаления" button | 209 |
+| `packages/web/test/browser/localization.spec.ts` | locale flow; focused persisted-language combobox; both schedules (`native timing`, `abort before interception`) | 234 |
+| `packages/web/test/browser/quick-runs.spec.ts` | Quick Run flow; focused "Сессия" button | 255 |
+| `packages/web/test/browser/recipes.spec.ts` | Recipe flow; focused snapshot-result heading | 270 |
+
+At each control the existing probe now also captures `transitionProperty` and
+`getAnimations({ subtree: true }).length`. The legacy 0.01 ms tolerance is replaced by three
+stronger assertions:
+
+- `transitionProperty` is exactly `none`;
+- every comma-separated `transitionDuration` component parsed with `Number.parseFloat` is
+  exactly `0`;
+- `relevantAnimationCount` is exactly `0`, where the count is
+  `getAnimations({ subtree: true }).length`: all relevant animations, not a
+  `playState === 'running'` filter. Zero over that superset implies zero running animations.
+
+Every forced-colour, outline, keyboard, scope, error/reload and other assertion is unchanged.
+Reduced-motion coverage is not deleted and the obsolete 0.01 ms allowance is not retained.
+
+### New tests / regression envelope
+
+**New:** 0. Six existing cases in the five files were updated; the localization source case runs
+under two schedules, which is why one source assertion produced two failures. No new test case
+is claimed.
+
+**Browser regression envelope:** 86 pending the root coordinator's actual-Chromium rerun
+(6 updated, 80 unchanged). This worker cannot run Playwright and does not claim a browser pass.
+
+### Commands (this round)
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `nice -n 10 npx eslint packages/web/test/browser/attachments.spec.ts packages/web/test/browser/chat-trash.spec.ts packages/web/test/browser/localization.spec.ts packages/web/test/browser/quick-runs.spec.ts packages/web/test/browser/recipes.spec.ts` | exit 0 |
+| `nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json` | exit 0 |
+
+`packages/web/tsconfig.json` includes `src`, `vite.config.ts`, `dev-ports.ts` and `test/unit`,
+not `test/browser`; the scoped tsc is a package regression check, and the root Chromium gate
+remains the authority for these specs.
+
+### Residuals (this round)
+
+- Root must rerun the 86-test actual-Chromium gate; no browser, visual or performance result is
+  claimed here.
+- No other legacy `<= 0.00001` duration assertion was changed or newly credited. The remaining
+  occurrences in `projects`, `project-presentation`, `runtime-bar`, `context-limits`,
+  `capability-override`, `model-evidence`, `catalog-*`, `add-from-ollama` and
+  `hugging-face-discovery` specs are outside this fix.
+- The prior residuals remain unchanged: the OS-only `workspace-layout` reduced-motion rule, 117
+  literal-CSS findings, the intentional 3→6 px inline focus radius and caret `step-end`.
+
+At this handoff the test fix is `092930e` on top of `dfe5a2e`; this handoff update is the next
+documentation commit. No push, merge or rebase was performed.
