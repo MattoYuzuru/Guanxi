@@ -68,6 +68,11 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   node boot requires restarting the node to capture it. Trusted Node/dependency/helper deny-write
   grants cover both backends, including roots nested inside a protected runtime directory.
   Colima must share the selected roots and node data directory; an unshared path fails closed.
+  The default Colima profile shares only the home directory and `/tmp/colima`: run container
+  fixtures from a checkout under home, not `/private/tmp`. The macOS network assertion checks
+  that `/sys/class/net` contains exactly `lo` and denies a raw connection to a non-loopback
+  fixture that an ordinary bridge-network container first proves reachable. Host-created Unix
+  sockets alone cannot prove this property across the Colima VM filesystem boundary.
   Commas in bind paths are refused. Absent protected paths conservatively make their nearest
   existing parent read-only. No runtime/image means arbitrary shell is disabled with a localized
   reason; fixed read commands remain available. Image provisioning is never done by a tool.

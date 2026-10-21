@@ -333,3 +333,26 @@ test('macOS refuses a writable root that could replace its pinned Docker CLI bef
   assert.equal(await readFile(cli, 'utf8'), original)
   await assert.rejects(readFile(marker), { code: 'ENOENT' })
 })
+
+
+test('macOS workload has only lo and cannot reach a reachable non-loopback host fixture', { skip: process.platform !== 'darwin', timeout: 30000 }, async t => {
+  const { policy } = await fixture(t)
+  const { networkInterfaces } = await import('node:os')
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const host = Object.values(networkInterfaces()).flat().find(address => address?.family === 'IPv4' && !address.internal)?.address
+  assert.ok(host, 'a non-loopback host address is required for this isolation assertion')
+  let connections = 0
+  const server = (await import('node:net')).createServer(socket => { connections++; socket.end() })
+  await new Promise<void>(resolve => server.listen(0, host, resolve))
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  const port = (server.address() as { port: number }).port
+  const probe = `const s=require('node:net').connect(${port},${JSON.stringify(host)});s.on('connect',()=>{console.log('connected');s.end()});s.on('error',()=>console.log('blocked'));s.setTimeout(1500,()=>{console.log('blocked');s.destroy()})`
+  // Prove the host fixture is reachable from an ordinary Colima container first.
+  const control = await promisify(execFile)('docker', ['run', '--rm', '--network', 'bridge', '--entrypoint', 'node', 'guanxi-native-execution:k4-v1', '-e', probe], { timeout: 10000 })
+  assert.equal(control.stdout, 'connected\n'); assert.equal(connections, 1)
+  const isolated = await sandboxCommand(policy, `node -e ${quote(`console.log(require('node:fs').readdirSync('/sys/class/net').sort().join(','));${probe}`)}`)
+  assert.equal(isolated.code, 0)
+  assert.equal(isolated.stdout, 'lo\nblocked\n')
+  assert.equal(connections, 1, 'the raw sandbox connection must never reach the fixture')
+})
