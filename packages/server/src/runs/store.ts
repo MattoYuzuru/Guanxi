@@ -41,6 +41,7 @@ export class RunStore {
   private readonly ownerTtl: number
   private readonly maxTtl: number
   private readonly clock: () => number
+  private renewAt = 0
   private highWater = 0
   private closed = false
   private operation = ''
@@ -99,6 +100,7 @@ export class RunStore {
       const inherited = this.rows<{ id: string }>("SELECT id FROM run_attempts WHERE state IN ('delivered','started')")
       this.db.exec('COMMIT')
       this.owner = owner
+      this.renewAt = now + this.ownerTtl / 3
       for (const attempt of inherited) this.startupAttempts.add(attempt.id)
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
@@ -145,12 +147,16 @@ export class RunStore {
     this.point('before_begin')
     this.db.exec('BEGIN IMMEDIATE')
     let result: T
+    let renewed = false
     try {
       this.point('begin')
       this.assertOwner()
       if (requiresReady && !this.scrubber.isReady()) throw new RunError('egress_not_ready')
-      this.write('UPDATE leases SET expires_at=?,regrant_after=? WHERE key=?', this.now() + this.ownerTtl,
-        this.now() + this.ownerTtl + this.maxTtl + EPSILON_MS, HOME_KEY)
+      if (this.now() >= this.renewAt) {
+        this.write('UPDATE leases SET expires_at=?,regrant_after=? WHERE key=?', this.now() + this.ownerTtl,
+          this.now() + this.ownerTtl + this.maxTtl + EPSILON_MS, HOME_KEY)
+        renewed = true
+      }
       result = body()
       this.point('before_commit')
       this.db.exec('COMMIT')
@@ -159,6 +165,7 @@ export class RunStore {
       this.changedSessions.clear()
       throw error
     }
+    if (renewed) this.renewAt = this.now() + this.ownerTtl / 3
     this.point('committed')
     this.log.notify(this.changedSessions)
     this.changedSessions.clear()
@@ -401,7 +408,8 @@ export class RunStore {
   heartbeat(): void {
     if (this.closed) throw new RunError('closed')
     if (!this.owner) this.claimHome()
-    else this.tx('heartbeat', () => {}, false)
+    else if (this.now() >= this.renewAt) this.tx('heartbeat', () => {}, false)
+    else this.assertOwner()
   }
   private lose(attempt: Attempt): void {
     this.write("UPDATE run_attempts SET state='lost' WHERE id=?", attempt.id)

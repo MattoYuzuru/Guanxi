@@ -139,3 +139,23 @@ test('M3: R1 lifecycle events and an agent handle share a session in either orde
     }
   } finally { f.close() }
 })
+
+test('M5: idle heartbeat/tick/dispatch take no write transaction until ownerTtl/3', () => {
+  const transactions: string[] = []
+  const f = runFixture(':memory:', { fault: (op, point) => { if (point === 'before_begin') transactions.push(op) } })
+  try {
+    const changes = () => Number((f.db.prepare('SELECT total_changes() AS n').get() as { n: number }).n)
+    const before = changes()
+    for (let ms = 0; ms < 10_000; ms += 100) {
+      f.setTime(RUN_TIME + ms); f.store.heartbeat(); f.store.tick(); f.store.dispatch()
+    }
+    assert.deepEqual(transactions, [])
+    assert.equal(changes(), before)
+    f.setTime(RUN_TIME + 10_000); f.store.heartbeat()
+    assert.deepEqual(transactions, ['heartbeat'])
+    assert.equal(changes(), before + 1)
+    f.setTime(RUN_TIME + 19_999); f.store.heartbeat(); f.store.tick()
+    assert.deepEqual(transactions, ['heartbeat'])
+    assert.equal(changes(), before + 1)
+  } finally { f.close() }
+})
