@@ -398,11 +398,11 @@ export class NativeAgents {
             const text = typeof message.content === 'string'
               ? message.content
               : message.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
-            return this.appendPrompt(created, id, text, promptOrigin, promptId, policy.attachments.length, signal).then(() => undefined)
+            return this.appendPrompt(created, id, text, promptOrigin, promptId, policy.attachments.length, signal, () => this.runs.checkExecution(attempt)).then(() => undefined)
           }
           if (message.role === 'assistant') {
             const messageStep = step++
-            return this.appendAssistant(created, id, message, turnId, messageStep, signal)
+            return this.appendAssistant(created, id, message, turnId, messageStep, signal, () => this.runs.checkExecution(attempt))
           }
         }
         if (event.type === 'tool_execution_end') {
@@ -464,12 +464,14 @@ export class NativeAgents {
     messageId: string,
     attachmentCount: number,
     signal: AbortSignal,
+    check: () => void,
   ): Promise<AppendResult> {
     const scrubbed = this.scrubber.scrub(text)
     if (isInlineInput(Buffer.byteLength(scrubbed, 'utf8'))) {
       return queue.append({ type: 'prompt', data: { origin, messageId, text: scrubbed, attachmentCount } })
     }
     return queue.enqueue(async () => {
+      check()
       const written = await this.writeInput(sessionId, scrubbed, 'prompt', signal)
       const mediaType = inputMediaTypeFor('prompt')
       return queue.appendNow({ type: 'prompt', data: { origin, messageId, attachmentCount } }, {
@@ -486,6 +488,7 @@ export class NativeAgents {
     turnId: string,
     messageStep: number,
     signal: AbortSignal,
+    check: () => void,
   ): Promise<void> {
     const toolCalls = message.content.flatMap(content => content.type === 'toolCall' ? [content] : [])
     for (const call of toolCalls) queue.expectToolCall(call.id)
@@ -494,7 +497,7 @@ export class NativeAgents {
     return queue.enqueue(async () => {
       queue.appendNow({ type: 'assistant.message', spanId: turnId, data: { messageId: turnId, step: messageStep, text } })
       for (const call of toolCalls) {
-        await this.appendToolCallWithin(queue, sessionId, call.id, call.name, call.arguments as Record<string, unknown>, signal)
+        await this.appendToolCallWithin(queue, sessionId, call.id, call.name, call.arguments as Record<string, unknown>, signal, check)
       }
       if (reasoning) {
         queue.appendNow({ type: 'reasoning', spanId: turnId, expiresAt: this.sessions.expiry(sessionId), data: { messageId: turnId, step: messageStep, text: reasoning } })
@@ -509,6 +512,7 @@ export class NativeAgents {
     name: string,
     argumentsValue: Record<string, unknown>,
     signal: AbortSignal,
+    check: () => void,
   ): Promise<void> {
     const scrubbed = this.scrubber.scrub(argumentsValue) as Record<string, unknown>
     const canonical = JSON.stringify(scrubbed)
@@ -516,6 +520,7 @@ export class NativeAgents {
     if (isInlineInput(Buffer.byteLength(canonical, 'utf8'))) {
       queue.appendNow({ type: 'tool.call', data: { ...base, arguments: scrubbed } })
     } else {
+      check()
       const written = await this.writeInput(sessionId, canonical, 'tool.call', signal)
       const mediaType = inputMediaTypeFor('tool.call')
       queue.appendNow({ type: 'tool.call', data: base }, {
@@ -530,7 +535,7 @@ export class NativeAgents {
     try {
       return await this.inputArtifacts.write(sessionId, text, inputMediaTypeFor(type), { signal })
     } catch (error) {
-      if (error instanceof SessionInputError && error.code === 'aborted') throw new NativeAgentError('input_artifact_storage_failed')
+      if (error instanceof SessionInputError && error.code === 'aborted') throw new NativeAgentError('aborted')
       throw new NativeAgentError('input_artifact_storage_failed')
     }
   }
