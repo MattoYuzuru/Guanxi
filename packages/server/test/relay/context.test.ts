@@ -24,10 +24,16 @@ test('byte-counted packing winds down on the same measure and keeps the latest t
   const run = toolRun(n => `MARK${n}:` + 'x'.repeat(2500))
   const f = fixture({ count: tokenCount, actions: run.actions })
   try {
-    let latest = ''
+    let latest = '', checked = 0
+    const tool = f.workspace.tool
+    f.workspace.tool = async (name, args, signal) => {
+      const result = 'RESULT:' + await tool(name, args, signal)
+      latest = result
+      return result
+    }
     const call = f.model.call
     f.model.call = async (prompt, options) => {
-      if (prompt.startsWith('Execute') && latest) assert.ok(prompt.includes(latest), `missing ${latest}`)
+      if (prompt.startsWith('Execute') && latest) { checked++; assert.ok(prompt.includes(latest), `missing ${latest}`) }
       const reply = await call(prompt, options)
       if (prompt.startsWith('Write a fresh')) latest = ''
       return reply
@@ -36,6 +42,7 @@ test('byte-counted packing winds down on the same measure and keeps the latest t
     assert.notEqual(l.state, 'work')
     assert.ok(notes(f).some(text => text.includes('"state":"wind_down"')), 'wind_down was emitted')
     assert.ok(f.prompts.filter(p => p.startsWith('Execute')).length > 1)
+    assert.ok(checked > 0, 'the latest tool result was checked')
     assert.ok(run.turn() <= 41)
   } finally { f.close() }
 })
@@ -46,11 +53,17 @@ test('exact tokenizer packing winds down and no dispatched prompt exceeds H', as
   try {
     const t = thresholds(window, reserves)
     const measure = (text: string) => f.model.count(f.scrubber.scrub(text)) + window.framingTokens
-    let latest = ''
+    let latest = '', checked = 0
+    const tool = f.workspace.tool
+    f.workspace.tool = async (name, args, signal) => {
+      const result = 'RESULT:' + await tool(name, args, signal)
+      latest = result
+      return result
+    }
     const call = f.model.call
     f.model.call = async (prompt, options) => {
       assert.ok(measure(prompt) <= t.H, `dispatch ${measure(prompt)} > ${t.H}`)
-      if (prompt.startsWith('Execute') && latest) assert.ok(prompt.includes(latest), `missing ${latest}`)
+      if (prompt.startsWith('Execute') && latest) { checked++; assert.ok(prompt.includes(latest), `missing ${latest}`) }
       const reply = await call(prompt, options)
       if (prompt.startsWith('Write a fresh')) latest = ''
       return reply
@@ -59,6 +72,7 @@ test('exact tokenizer packing winds down and no dispatched prompt exceeds H', as
     assert.notEqual(l.state, 'work')
     assert.ok(notes(f).some(text => text.includes('"state":"wind_down"')), 'wind_down was emitted')
     assert.ok(f.prompts.filter(p => p.startsWith('Execute')).length > 1)
+    assert.ok(checked > 0, 'the latest tool result was checked')
     assert.ok(run.turn() <= 41)
   } finally { f.close() }
 })
