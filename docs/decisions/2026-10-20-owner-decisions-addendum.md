@@ -39,7 +39,7 @@ Mapping: D-141–D-170 answer Q-201–Q-230 in order; D-171–D-182 answer Q-233
 | ID | Question | Decision |
 | --- | --- | --- |
 | D-150 | Q-210 | API budget for benchmarks: **$200 per month** (biweekly full A/B on DeepSeek Flash, smokes, free nightly local runs). |
-| D-151 | Q-211 | Untrusted benchmark containers run on the **Windows PC under WSL2 Docker**; the VPS is not a default benchmark host. |
+| D-151 | Q-211 | Untrusted benchmark containers run on the **Windows PC under WSL2 Docker**; the VPS is not a default benchmark host. *Amended by D-194 (2026-10-21): the Fedora PC in rootless Podman under a dedicated user.* |
 | D-152 | Q-212 | The private benchmark uses **Guanxi plus one or two owner repositories**, named by the owner when B2 starts; never-published repositories are preferred as the holdout. |
 | D-153 | Q-213 | The owner labels **50 trials at the start and about 20 per month** for judge calibration. |
 | D-165 | Q-225 | Subscriptions (Claude Code, Codex) run automated benchmarks **only on a 30-task subset once a week**; everything else uses API keys or local models. |
