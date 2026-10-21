@@ -179,3 +179,18 @@ test('L1: wall-clock suspend wakes timers while execution fences use monotonic e
     assert.deepEqual(f.store.reapResources(), ['resource:wall-retention'])
   } finally { f.close() }
 })
+
+test('L2: report admission rejects an expired but unreaped active attempt with a domain error', () => {
+  const f = runFixture()
+  try {
+    const a = f.store.start(f.store.create({ id: 'lead' }).id)
+    const p = f.store.delegate(a, { key: 'child', deadline: RUN_TIME + 10 })
+    f.store.start(p.child_id)
+    f.setTime(RUN_TIME + 10); f.store.tick()
+    f.setTime(RUN_TIME + 61_000); f.store.heartbeat()
+    assert.throws(() => f.store.start(p.child_id), { code: 'invalid_transition' })
+    assert.equal(f.store.attempts(p.child_id).length, 1)
+    f.store.tick()
+    assert.equal(f.store.start(p.child_id).ordinal, 2)
+  } finally { f.close() }
+})

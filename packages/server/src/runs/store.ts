@@ -250,6 +250,7 @@ export class RunStore {
     return stored
   }
   private newAttempt(runId: string, wakeSeq: number | null): Attempt {
+    if (this.attempts(runId).some((a) => ['delivered', 'started'].includes(a.state))) throw new RunError('invalid_transition')
     const id = randomUUID()
     const lease = this.grant(`run:${runId}/exec`, id, this.maxTtl)
     const ordinal = (this.row<{ n: number }>('SELECT MAX(ordinal) AS n FROM run_attempts WHERE run_id=?', runId)?.n ?? 0) + 1
