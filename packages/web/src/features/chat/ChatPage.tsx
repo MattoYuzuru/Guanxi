@@ -256,6 +256,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
           </div>
         )}
 
+        {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspace.dockLanes')}>{translate('workspace.lanesEmpty')}</aside>}
         <form onSubmit={create} className="w-full min-w-0 max-w-xl space-y-4">
           {!projectId && <fieldset>
             <legend className="mb-1.5 text-xs font-medium">{translate('chat.create.mode')}</legend>
@@ -584,6 +585,7 @@ function ThreadPage({
             </details>
           </div>
 
+          {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspace.dockLanes')}>{translate('workspace.lanesEmpty')}</aside>}
           <Composer
             inputRef={composerRef}
             disabled={!health.ollama.running}

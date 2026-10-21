@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { builtInLayout } from '../../../src/features/workspace/defaults.ts'
 import type { LayoutDocument } from '@guanxi/contract'
-import { installChatApiFixture } from './fixtures/chat-api.ts'
+import { installChatApiFixture, chatFixtureThreadId } from './fixtures/chat-api.ts'
 import { PRODUCT_FILE_PREFIX } from '@guanxi/contract'
 
 async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: { documents?: LayoutDocument[]; geometry?: Record<string, unknown>; winner?: LayoutDocument } = {}) {
@@ -332,4 +332,16 @@ test('loaded plugin panes become exact placeholders on unload and are ignored in
   await page.evaluate(async () => { const fixture = await import('/test/browser/fixtures/workspace-plugin.tsx'); await fixture.load() })
   await expect(page.getByText('Plugin pane fixture', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Plugin blocks are disabled in safe mode.', { exact: true })).toHaveCount(1)
+})
+
+
+test('the existing session chat remains the centre block with dock lanes immediately above its composer', async ({ page }) => {
+  await setup(page)
+  await page.goto(`/workspace/${chatFixtureThreadId('completed')}`)
+  const chat = page.locator('[data-block="guanxi.core/chat"]')
+  await expect(chat).toBeVisible()
+  const lanes = chat.getByRole('complementary', { name: 'Session dock lanes', exact: true })
+  await expect(lanes).toHaveCount(1)
+  await expect(lanes).toHaveText('No goal, work ledger, prompt queue or steering is attached to this chat.')
+  expect(await lanes.evaluate(node => Boolean(node.nextElementSibling?.querySelector('textarea')))).toBe(true)
 })

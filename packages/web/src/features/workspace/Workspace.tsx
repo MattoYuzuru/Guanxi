@@ -311,7 +311,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     const unavailable = !contribution || !contribution.modes.includes(mode) || (safeMode && !builtIn) || (!builtIn && !Renderer)
     if (unavailable) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)} description={translate(safeMode ? 'workspace.safePlaceholder' : 'workspace.placeholder')} />
     if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspace.move')} hideLabel={translate('workspace.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
-    return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? <><aside className="workspace-dock-lanes" aria-label={translate('workspace.dockLanes')}>{translate('workspace.lanesEmpty')}</aside>{children}</> : null}</BuiltInPane>
+    return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? children : null}</BuiltInPane>
   }
   return <UiLocaleProvider locale={locale}><div className="workspace" data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
     if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
