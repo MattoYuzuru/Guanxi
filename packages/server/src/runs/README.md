@@ -27,6 +27,9 @@ Startup recovery snapshots inherited attempts when the home is claimed, before a
 work. Public `reconcile()` can only lose those inherited attempts; a force-all variant is
 private and accessed solely by the crash-simulation test adapter. If vault readiness
 is delayed, reconciliation cannot mark newly admitted attempts as lost when readiness opens.
+Until reconciliation loses an inherited attempt, `deliver` withholds it and mutations using
+its credentials fail with `stale_lease`. The next executor claim can then obtain a fresh
+attempt; acknowledging it cannot be undone by a later startup reconciliation pass.
 
 The default server boots this plugin but does **not** assert `alwaysOn`. Delegation fails with
 `no_always_on_home` until the host explicitly supplies `runs.alwaysOn: true`. No power assertion

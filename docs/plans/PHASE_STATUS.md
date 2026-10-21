@@ -224,6 +224,6 @@ decision was made.
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
 | K4 Native agent | in progress (lane K4, Codex) | [lanes/K4](lanes/K4.md) |
-| R1 Durable runs | implemented, merged; follow-up lane for residuals | see the R1 section above |
+| R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | F1 Federation base | in progress (lane F1, Codex) | [lanes/F1](lanes/F1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
