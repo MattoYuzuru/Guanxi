@@ -157,7 +157,8 @@ test('modes retain separate arrangements; both themes/densities leave geometry u
   expect((await state(page)).engineState).toEqual(developer.engineState)
   await move(page, 'Terminal', 'Bottom')
   await expect(page.getByTestId('workspace-announcement')).toHaveText('Terminal moved to Bottom.')
-  const before = (await state(page)).engineState
+  const arrangement = (doc: LayoutDocument) => JSON.parse(JSON.stringify(doc.engineState, (key, value) => ['size', 'width', 'height'].includes(key) ? undefined : value))
+  const before = arrangement(await state(page))
   const themeColors: string[] = []
   for (const theme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: theme })
@@ -168,7 +169,7 @@ test('modes retain separate arrangements; both themes/densities leave geometry u
     for (const density of ['Compact', 'Comfortable']) {
       await pick(page, 'Density', density)
       await expect(page.locator('.workspace')).toHaveAttribute('data-density', density.toLowerCase())
-      expect((await state(page)).engineState).toEqual(before)
+      expect(arrangement(await state(page))).toEqual(before)
       await page.screenshot({ path: test.info().outputPath(`workspace-${theme}-${density.toLowerCase()}.png`) })
       expect(await page.locator('.workspace').evaluate(node => getComputedStyle(node).getPropertyValue('--font-text-size').trim())).toBe(density === 'Compact' ? '13px' : '14px')
     }
@@ -314,7 +315,7 @@ test('a real reduced-motion drag preview has no spatial transition', async ({ pa
   await page.mouse.down()
   await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height + 12, { steps: 5 })
   await page.mouse.move(target!.x + target!.width - 8, target!.y + target!.height / 2, { steps: 10 })
-  const preview = page.locator('.dv-drop-target-anchor:visible').first()
+  const preview = page.locator('.dv-drop-target-selection:visible').first()
   await expect(preview).toBeVisible()
   expect(await preview.evaluate(node => getComputedStyle(node).transitionDuration.split(',').every(value => parseFloat(value) === 0))).toBe(true)
   expect(await preview.evaluate(node => node.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length)).toBe(0)

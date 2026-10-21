@@ -12,7 +12,7 @@ export interface WorkspaceLayoutHandle {
   show: (id: string, zone: WorkspaceZone) => void
   snapshot: () => { engineState: LayoutDocument['engineState']; hidden: string[]; geometry: LayoutGeometry }
   focus: (id: string) => void
-  cycleZone: (backward: boolean) => void
+  cycleZone: (backward: boolean, fromId?: string) => void
   activeBlock: () => string | undefined
   diagnostics: () => { groups: { id: string; zone: WorkspaceZone; locked: boolean }[]; blocks: number }
 }
@@ -136,7 +136,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     }
     const snapshot: WorkspaceLayoutHandle['snapshot'] = () => {
       const raw = api.toJSON()
-      const groups = api.groups.filter(group => group.panels.length).map(group => ({ id: group.id, zone: zoneOf(group), blocks: group.panels.map(panel => panel.id), active: group.activePanel?.id }))
+      const groups = api.groups.filter(group => group.panels.length).map(group => ({ id: group.id, zone: zoneOf(group), blocks: group.panels.map(panel => panel.id), active: group.activePanel?.id })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
       const geometry: LayoutGeometry = {}
       for (const group of [...(raw.floatingGroups ?? []), ...(raw.popoutGroups ?? [])]) {
         const box = group.position
@@ -164,7 +164,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           else if (zone === 'popout') {
             const keyboard = (event: KeyboardEvent) => {
               if (event.defaultPrevented) return
-              if (event.key === 'F6') { event.preventDefault(); handle.cycleZone(event.shiftKey) }
+              if (event.key === 'F6') { event.preventDefault(); handle.cycleZone(event.shiftKey, id) }
               if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') { event.preventDefault(); latest.current.onMoveRequested(id) }
             }
             success = await api.addPopoutGroup(panel, {
@@ -196,9 +196,14 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       snapshot,
       focus(id) { api.getPanel(id)?.api.setActive(); api.getPanel(id)?.api.getWindow().focus(); latest.current.hosts.get(id)?.querySelector<HTMLElement>('[data-block]')?.focus() },
       activeBlock: () => api.activePanel?.id,
-      cycleZone(backward) {
+      cycleZone(backward, fromId) {
         const ordered: WorkspaceZone[] = ['left', 'top', 'center', 'right', 'bottom', 'floating', 'popout']
-        const active = api.activePanel ? zoneOf(api.activePanel.group) : undefined
+        const focusedId = fromId ?? api.panels.find(panel => {
+          const host = latest.current.hosts.get(panel.id)
+          return host?.contains(host.ownerDocument.activeElement) && host.ownerDocument.hasFocus()
+        })?.id
+        const focusedPanel = focusedId ? api.getPanel(focusedId) : api.activePanel
+        const active = focusedPanel ? zoneOf(focusedPanel.group) : undefined
         const available = ordered.filter(zone => api.groups.some(g => zoneOf(g) === zone && g.panels.length))
         const index = active ? available.indexOf(active) : -1
         const next = available[(index + (backward ? -1 : 1) + available.length) % available.length]

@@ -54,3 +54,7 @@
 @media (prefers-reduced-motion: reduce) {
   .workspace-layout *, .dv-drop-target-container, .dv-drop-target-container * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Keep vendor layers inside the workspace; modal and menu layers must stay operable. */
+.workspace-layout { position: relative; isolation: isolate; z-index: var(--layer-base); }
+.gx-dockview .dv-split-view-container .dv-sash-container .dv-sash { z-index: var(--layer-docked); }
