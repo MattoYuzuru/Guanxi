@@ -3,7 +3,8 @@
 **Status:** implemented; targeted local validation complete; root independent review and
 integration gates pending.
 **Date:** 2026-10-22 · **Branch:** `codex/r3-watchdog` · **Base:** `5919d0b`.
-**Production:** `7556d43`. **Checkout:** `/Users/yuzuru/Projects/Guanxi-lanes/coord-r3-watchdog`.
+**Production:** `7556d43`; **self-review fix:** `1d7eb37`.
+**Checkout:** `/Users/yuzuru/Projects/Guanxi-lanes/coord-r3-watchdog`.
 **Predecessor:** [`R3.handoff.md`](R3.handoff.md) records the reviewed ETA slice at `bf6a222`;
 this follow-up leaves its historical claims and `relay/eta.ts` untouched.
 
@@ -18,8 +19,9 @@ night-wake or six-hour gates passed.
 
 The implementation was test-first: the current executor ignored an eighth constructor argument
 (probe: zero collector calls, zero judge notes, normal finish), and the new test file failed on
-the missing module before production code changed. Production, tests and the README are one
-commit; this handoff is a separate documentation commit.
+the missing module before production code changed. Production, tests and the README are the
+`feat` commit; `1d7eb37` is a small self-review fix; this handoff is a separate documentation
+commit.
 
 ## Contract and boundaries
 
@@ -35,7 +37,7 @@ commit; this handoff is a separate documentation commit.
 - `cycle_start` samples immediately after `store.begin` and the ETA update, before orient or any
   model call. `pre_seal` samples after the serial final gate/count-progress work and the ETA
   update, before the fresh narrative and handoff construction.
-- The collector receives a `structuredClone` ledger, a frozen attempt identity and the actual
+- The collector receives a `structuredClone` ledger, a detached attempt identity and the actual
   run `AbortSignal`. It cannot mutate the authoritative ledger or the frozen policy. The note
   uses the captured ledger cycle, not a mutable copy field.
 - Before the await, the executor uses R1's existing fenced extension transaction as the
@@ -109,6 +111,11 @@ Residuals:
 
 ## Review fixes
 
-Root independent review is pending. No review-fix commit has been made yet. Append findings,
+Self-review before hand-off: the collector attempt identity is deliberately mutable because it
+is a detached snapshot; the task contract declares only the ledger as `Readonly`. `1d7eb37`
+removes the extra freeze and has the fixture mutate its attempt copy, proving the authoritative
+attempt is not used for publication. The targeted suite remains 31/31 and `tsc` remains clean.
+
+Root independent review is pending. No root review-fix commit has been made yet. Append findings,
 their separate fix commits and the re-run command results here; do not rewrite the historical
 sections above.
