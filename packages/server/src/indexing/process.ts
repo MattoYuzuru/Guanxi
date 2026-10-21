@@ -14,6 +14,20 @@ const gitMetadata = (root: string) => new Promise<string[]>(resolve => execFile(
   env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0' }, timeout: 3000,
 }, (error, stdout) => resolve(error ? [] : stdout.trim().split('\n'))))
 
+export interface SandboxSpawn { command: string; args: string[]; stdio: ('ignore' | 'ipc' | number)[] }
+
+/** bwrap cannot open another process's /proc/<pid>/fd in its unprivileged
+ * namespace, so the pinned root is inherited as descriptor 4. IPC stays at 3. */
+export function linuxSandboxSpawn(paths: readonly string[], root: string, rootFd: number, databaseDir: string, cwd: string, executable: string, entry: string): SandboxSpawn {
+  const args = ['--die-with-parent', '--unshare-all', '--new-session', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
+  for (const path of [...new Set(['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths, root])].sort((a, b) => a.length - b.length)) {
+    if (path === root) args.push('--ro-bind-fd', '4', root)
+    else args.push('--ro-bind', path, path)
+  }
+  args.push('--bind', databaseDir, databaseDir, '--chdir', cwd, executable, entry)
+  return { command: '/usr/bin/bwrap', args, stdio: ['ignore', 'ignore', 'ignore', 'ipc', rootFd] }
+}
+
 /** The scanner runs only trusted captured code; this OS boundary also protects
  * against hostile ancestor swaps that pathname checks alone cannot close. */
 export async function indexProcess(entry: string, root: string, dataDir: string): Promise<ChildProcess> {
@@ -24,6 +38,7 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
   const metadata = await gitMetadata(cwd)
   const paths = [...new Set([root, dirname(entry), databaseDir, dirname(executable), ...dependencies, ...metadata])]
   let command: string, args: string[]
+  let stdio: ('ignore' | 'ipc' | number)[] = ['ignore', 'ignore', 'ignore', 'ipc']
   let rootHandle: FileHandle | undefined
   if (process.platform === 'darwin') {
     const system = ['/System', '/usr', '/bin', '/sbin', '/Library/Apple', '/Library/Developer', '/private/etc', '/opt/homebrew/Cellar', '/opt/homebrew/opt']
@@ -33,17 +48,17 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
     rootHandle = await open(root, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try { if (await realpath(`/proc/self/fd/${rootHandle.fd}`) !== root) throw new Error('index_root_changed') }
     catch (error) { await rootHandle.close(); throw error }
-    command = '/usr/bin/bwrap'
-    args = ['--die-with-parent', '--unshare-all', '--new-session', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
-    for (const path of [...new Set(['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths])].sort((a, b) => a.length - b.length)) {
-      try { await realpath(path) } catch { continue }
-      args.push('--ro-bind', path === root ? `/proc/${process.pid}/fd/${rootHandle.fd}` : path, path)
-    }
-    args.push('--bind', databaseDir, databaseDir, '--chdir', cwd, executable, entry)
+    const existing: string[] = []
+    for (const path of paths) { try { await realpath(path); existing.push(path) } catch { /* absent system path */ } }
+    const spec = linuxSandboxSpawn(existing, root, rootHandle.fd, databaseDir, cwd, executable, entry)
+    command = spec.command; args = spec.args; stdio = spec.stdio
   } else throw new Error('index_sandbox_unavailable')
-  const child = spawn(command, args, { detached: true, cwd,
-    env: { PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', HOME: databaseDir, TMPDIR: databaseDir, LANG: 'en_US.UTF-8', OPENSSL_CONF: '/dev/null' },
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+  let child: ChildProcess
+  try {
+    child = spawn(command, args, { detached: true, cwd,
+      env: { PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', HOME: databaseDir, TMPDIR: databaseDir, LANG: 'en_US.UTF-8', OPENSSL_CONF: '/dev/null' },
+      stdio })
+  } catch (error) { await rootHandle?.close().catch(() => undefined); throw error }
   child.once('close', () => { void rootHandle?.close().catch(() => undefined) })
   return child
 }
