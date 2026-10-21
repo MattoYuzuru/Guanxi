@@ -605,3 +605,41 @@ describe('K2 final check N5: an open stream checks and scrubs each frame when it
     log.close()
   })
 })
+
+describe('K2 final check N6: the generated event id', () => {
+  it('an event id registered later leaves by no outward path: reads, routes, the tool and an open stream refuse', async () => {
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    log.open('agent-clean', { kind: 'agent' }).append({ type: 'prompt', data: { origin: 'typed', messageId: 'm-1', text: 'ordinary', attachmentCount: 0 } })
+    const eventId = log.read('agent-clean', { audience: 'person' }).events.find((event) => event.type === 'prompt')!.id
+    const app = new Hono()
+    app.route('/api/sessions', sessionLogRoutes(() => log))
+    // A stream that read its first page before the value is registered.
+    const stream = frames(await app.request('/api/sessions/agent-clean/stream?after=0', {}, LOOPBACK))
+    assert.equal(dataOf((await stream.next())!).type, 'session.created')
+
+    scrubber.register(REF, eventId)
+
+    assert.throws(() => log.read('agent-clean', { audience: 'person' }), { code: 'session_withheld' })
+    assert.throws(() => querySessionLog(log, 'agent-clean', 'remote_agent', {}), { code: 'session_withheld' })
+    const tool = createSessionQueryTool({ log, sessionId: 'agent-clean', audience: 'remote_agent' })
+    await assert.rejects(
+      tool.execute({}, { workspaceRoot: null, enableBash: false, signal: new AbortController().signal }),
+      (error: Error) => !error.message.includes(eventId) && /withheld/.test(error.message),
+    )
+    for (const suffix of ['/events', '/spans', '/export']) {
+      const response = await app.request(`/api/sessions/agent-clean${suffix}`, {}, LOOPBACK)
+      const text = await response.text()
+      assert.equal(response.status, 403, suffix)
+      assert.equal(apiErrorSchema.parse(JSON.parse(text)).code, 'session_withheld')
+      assert.equal(text.includes(eventId), false, suffix)
+    }
+    const summary = await app.request('/api/sessions/agent-clean', {}, LOOPBACK)
+    assert.equal((await summary.text()).includes(eventId), false, 'the summary carries no event id')
+
+    const frame = [(await stream.next())!, (await stream.next())!]
+    assert.equal(dataOf(frame[0]!).type, 'writer.acquired', 'an event with another id still streams')
+    assert.equal(dataOf(frame[1]!).code, 'session_withheld', 'the cached prompt is refused at emit time')
+    assert.equal(frame.join('\n').includes(eventId), false)
+  })
+})

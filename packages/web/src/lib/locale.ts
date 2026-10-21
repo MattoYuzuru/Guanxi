@@ -824,7 +824,7 @@ const english = {
   'error.api.egressNotReady':
     'Secret redaction is not ready: a secret source has not registered its values yet. The trace opens once it has.',
   'error.api.sessionWithheld':
-    'This trace is hidden: its session id contains a value now registered as a secret.',
+    'This trace is hidden: one of its identifiers contains a value now registered as a secret.',
   'error.api.sessionCatchingUp':
     'This trace is still being restored from the saved chat history. Try again in a moment.',
   'error.api.sessionCatchUpFailed':
@@ -2645,7 +2645,7 @@ const russian: Messages = {
   'error.api.egressNotReady':
     'Скрытие секретов ещё не готово: один из источников секретов не передал свои значения. Трасса откроется, когда он это сделает.',
   'error.api.sessionWithheld':
-    'Трасса скрыта: идентификатор сессии содержит значение, которое теперь зарегистрировано как секрет.',
+    'Трасса скрыта: один из её идентификаторов содержит значение, которое теперь зарегистрировано как секрет.',
   'error.api.sessionCatchingUp':
     'Трасса ещё восстанавливается из сохранённой истории чата. Повторите через несколько секунд.',
   'error.api.sessionCatchUpFailed':

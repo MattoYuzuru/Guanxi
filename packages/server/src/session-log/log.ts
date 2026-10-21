@@ -560,6 +560,7 @@ export class SessionLog {
   outward(sessionId: string, event: SessionEvent): SessionEvent {
     this.assertEgressReady()
     this.assertReadable(sessionId)
+    this.assertEventIdReturnable(event.id)
     const ids = this.scrubber.scrub({
       sessionId: event.sessionId,
       spanId: event.spanId,
@@ -897,6 +898,13 @@ export class SessionLog {
     return row
   }
 
+  /** Refuses, content-free, an event whose generated id holds a registered value (N6). */
+  private assertEventIdReturnable(eventId: string): void {
+    if (this.scrubber.scrub(eventId) !== eventId) {
+      throw new SessionLogError('session_withheld', 'An event id of the session contains a registered secret')
+    }
+  }
+
   /** A session row, or Chat Jobs deferred for that session. */
   private knownSession(sessionId: string): boolean {
     return this.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(sessionId) !== undefined ||
@@ -1173,18 +1181,21 @@ export class SessionLog {
   }
 
   private toEvent(row: EventRow, options: { rescrub?: boolean } = {}): SessionEvent {
+    // The generated event id must stay a UUID, so it cannot be redacted: an event
+    // whose id holds a value registered later withholds the read (GPT final check N6).
+    if (options.rescrub !== false) this.assertEventIdReturnable(row.id)
     let data: unknown = null
     // Retention is enforced on read as well: expired reasoning is gone before the purge runs.
     const expired = row.class === 'reasoning' && row.purged_at === null && row.expires_at !== null &&
       Date.parse(row.expires_at) <= this.clock().getTime()
     if (row.payload !== null && !expired) {
       if (sha256(row.payload) !== row.payload_sha256) {
-        throw new SessionLogError('stored_data_invalid', `Session event ${row.id} failed its checksum`)
+        throw new SessionLogError('stored_data_invalid', `Session event #${row.seq} failed its checksum`)
       }
       try {
         data = JSON.parse(row.payload) as unknown
       } catch {
-        throw new SessionLogError('stored_data_invalid', `Session event ${row.id} is not valid JSON`)
+        throw new SessionLogError('stored_data_invalid', `Session event #${row.seq} is not valid JSON`)
       }
       if (options.rescrub !== false) data = this.scrubber.scrub(data)
     }
@@ -1213,7 +1224,7 @@ export class SessionLog {
     }
     const parsed = sessionEventSchema.safeParse(candidate)
     if (!parsed.success) {
-      throw new SessionLogError('stored_data_invalid', `Session event ${row.id} contains invalid stored data`)
+      throw new SessionLogError('stored_data_invalid', `Session event #${row.seq} contains invalid stored data`)
     }
     return parsed.data
   }

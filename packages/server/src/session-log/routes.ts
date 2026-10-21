@@ -56,7 +56,7 @@ function invalid(context: Context, message: string): Response {
   return context.json(apiError('validation_failed', message), 400)
 }
 
-const WITHHELD_MESSAGE = 'This session is withheld: its id contains a registered secret'
+const WITHHELD_MESSAGE = 'This session is withheld: one of its identifiers contains a registered secret'
 const CATCHING_UP_MESSAGE = 'This session history is still being restored from the Chat job store'
 
 /** Explicit catching-up state (GPT re-check N2): never an empty or partial success. */

@@ -64,7 +64,7 @@ function mockApi(options: {
         return json({ code: 'session_catching_up', message: 'This session history is still being restored from the Chat job store', details: { failure: 'writer_busy' } }, 503)
       }
       if (options.summaryStatus === 403) {
-        return json({ code: 'session_withheld', message: 'This session is withheld: its id contains a registered secret', details: null }, 403)
+        return json({ code: 'session_withheld', message: 'This session is withheld: one of its identifiers contains a registered secret', details: null }, 403)
       }
       return json(sessionSummary(events))
     }
@@ -251,7 +251,7 @@ describe('inspector page', () => {
     mockApi({ summaryStatus: 403 })
     render(<InspectorPage sessionId={SESSION_ID} />)
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toContain('This trace is hidden: its session id contains a value now registered as a secret.')
+    expect(alert.textContent).toContain('This trace is hidden: one of its identifiers contains a value now registered as a secret.')
   })
 
   it('names sessions still being restored instead of claiming there are none, and explains a failed restore', async () => {
