@@ -105,6 +105,9 @@ export class ProjectIndex {
   }
   private async prepareRuntime(): Promise<string> {
     const directory = await mkdtemp(join(this.options.dataDir, 'index-runtime-'))
+    // A nearest package.json keeps Node's package lookup inside the sandboxed
+    // runtime. An ancestor checkout package.json is unreadable there.
+    await writeFile(join(directory, 'package.json'), '{"type":"module"}\n', { mode: 0o400, flag: 'wx' })
     await Promise.all(this.captured.map(source => writeFile(join(directory, source.name), source.bytes, { mode: 0o400, flag: 'wx' })))
     return directory
   }

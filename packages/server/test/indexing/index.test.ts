@@ -163,6 +163,21 @@ test('FTS threshold is a setting, short queries and unavailable DB use literal N
   } finally { await f.close() }
 })
 
+test('a package.json ancestor of the data directory cannot break the worker', async () => {
+  const f = await fixture(), governor = new ResourceGovernor()
+  // The lane layout puts the data directory inside a checkout with its own
+  // package.json. The worker runtime needs its own package scope so Node stops
+  // there instead of reading that ancestor, which the sandbox forbids.
+  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor, ephemeral: true })
+  try {
+    await writeFile(join(f.dir, 'package.json'), '{"name":"checkout","private":true}\n')
+    await writeFile(join(f.root, 'a.ts'), 'export const Needle = 1\n')
+    const result = await service.search(f.root, 'Needle')
+    assert.equal(result.hits.length, 1)
+    assert.equal(result.hits[0]!.path, 'a.ts')
+  } finally { await service.close(); await governor.close(); await f.close() }
+})
+
 test('tree-sitter covers the required languages and degrades when a grammar is missing', async () => {
   const examples = [
     ['typescript', 'export function Orbit() {}'], ['tsx', 'export function Orbit() { return <div/> }'],
