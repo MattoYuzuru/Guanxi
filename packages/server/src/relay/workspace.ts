@@ -1,5 +1,5 @@
 import { PRODUCT_NAME, PRODUCT_FILE_PREFIX } from '@guanxi/contract'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdtemp, readFile, rm, mkdir, lstat, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,11 +13,49 @@ import { byteHash } from './handoff.ts'
 const exec = promisify(execFile)
 const gitEnv = { PATH: '/usr/bin:/bin', HOME: tmpdir(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1' }
 const gitFlags = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'commit.gpgsign=false']
+/** One long-running cat-file process for a set of objects. Frames are `<oid> <type> <size>\n<content>\n`;
+ * blobs are streamed so no fixed maxBuffer applies to object contents. */
+async function* catObjects(root: string, ids: readonly string[], signal?: AbortSignal): AsyncGenerator<Buffer> {
+  if (!ids.length) return
+  const child = spawn('/usr/bin/git', [...gitFlags, 'cat-file', '--batch'], { cwd: root, env: gitEnv, stdio: ['pipe', 'pipe', 'pipe'] })
+  let stderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', chunk => { if (stderr.length < 4096) stderr += chunk })
+  child.stdin.on('error', () => {})
+  const closed = new Promise<number | null>((resolve, reject) => { child.on('error', reject); child.on('close', resolve) })
+  const abort = () => child.kill()
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    child.stdin.end(ids.join('\n') + '\n')
+    let pending = Buffer.alloc(0)
+    for await (const chunk of child.stdout as AsyncIterable<Buffer>) {
+      pending = pending.length ? Buffer.concat([pending, chunk]) : chunk
+      while (true) {
+        const newline = pending.indexOf(10)
+        if (newline < 0) break
+        const match = /^([a-f0-9]{40,64}) (blob|tree|commit|tag) (\d+)$/.exec(pending.subarray(0, newline).toString('utf8'))
+        invariant(match, 'git_object_invalid')
+        const size = Number(match[3])
+        invariant(Number.isSafeInteger(size) && size >= 0, 'git_object_invalid')
+        const end = newline + 1 + size
+        if (pending.length < end + 1) break
+        const content = pending.subarray(newline + 1, end)
+        pending = pending.subarray(end + 1)
+        yield content
+      }
+    }
+    const code = await closed
+    invariant(code === 0 && pending.length === 0, stderr ? `git_failed:${stderr}` : 'git_failed')
+  } finally {
+    signal?.removeEventListener('abort', abort)
+    child.kill()
+  }
+}
 const protectedName = (p: string) => p.split('/').some(s => ['test', 'tests', 'spec', 'specs', '.github'].includes(s)) || /\.(test|spec)\.[^/]+$/.test(p) || /(^|\/)(\.gitlab-ci\.yml|Jenkinsfile)$/.test(p)
 export interface WorkspaceObservation { head: string; files: string[]; diffstat: string; nonemptyCommit: boolean }
 export interface RelayWorkspace {
   observe(base: string, baseline: string): Promise<WorkspaceObservation>
-  bundle(): Promise<Uint8Array>
+  bundle(base: string): Promise<Uint8Array>
   verify(plan: Plan, item: string, signal?: AbortSignal): Promise<{ item: string; head: string; ok: boolean; output: string }>
   checkpoint(signal?: AbortSignal): Promise<void>
   tool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string>
@@ -27,6 +65,7 @@ export interface RelayWorkspace {
  * Arbitrary acceptance argv still runs inside K4's ExecutionOwner. */
 export class GitRelayWorkspace implements RelayWorkspace {
   readonly root: string; readonly plan: Plan; readonly context: NativeToolContext; readonly protectedPaths: string[]; readonly scrubber: EgressScrubber
+  private filterArgs: string[] = []
   private constructor(root: string, plan: Plan, context: NativeToolContext, protectedPaths: string[], scrubber: EgressScrubber) {
     this.root = root; this.plan = plan; this.context = context; this.protectedPaths = protectedPaths; this.scrubber = scrubber
   }
@@ -34,6 +73,7 @@ export class GitRelayWorkspace implements RelayWorkspace {
     root = await realpath(root)
     invariant(context.policy.mode === 'full-access' && context.policy.roots.length === 1 && await realpath(context.policy.roots[0]!) === root, 'relay_root_policy')
     const w = new GitRelayWorkspace(root, plan, context, [], context.scrubber)
+    w.filterArgs = await w.noFilterArgs()
     await w.tree(plan.base)
     const tracked = (await w.git(['ls-tree', '-r', '--name-only', plan.base])).trim().split('\n').filter(Boolean)
     w.protectedPaths.push(...new Set([...plan.protectedPaths, ...plan.items.flatMap(i => i.protectedPaths), ...tracked.filter(protectedName)]))
@@ -72,30 +112,31 @@ export class GitRelayWorkspace implements RelayWorkspace {
     })
     return rows
   }
+  /** Status may re-hash a stat-less index entry; neutralise every configured driver so
+   * no host clean/smudge/process filter runs outside K4. */
+  private async noFilterArgs(): Promise<string[]> {
+    let names: string[] = []
+    try {
+      const out = (await exec('/usr/bin/git', ['config', '--local', '--name-only', '--get-regexp', '^filter\\.'], { cwd: this.root, env: gitEnv })).stdout
+      names = out.split('\n').map(line => /^filter\.(.+)\.(?:clean|smudge|process|required)$/.exec(line)?.[1] ?? '').filter(Boolean)
+    } catch { /* no local filter drivers */ }
+    return [...new Set(names)].flatMap(name => ['-c', `filter.${name}.clean=cat`, '-c', `filter.${name}.smudge=cat`, '-c', `filter.${name}.process=`, '-c', `filter.${name}.required=false`])
+  }
   private async dirty(): Promise<boolean> {
-    if ((await this.git(['ls-files', '-z', '-o', '--exclude-standard'])).length) return true
-    if ((await this.git(['diff', '--cached', '--name-only', '-z', '--no-ext-diff', '--no-textconv'])).length) return true
-    for (const row of await this.tree('HEAD')) {
-      try {
-        const file = join(this.root, row.path), entry = await lstat(file)
-        if (!entry.isFile() || !((await realpath(file)).startsWith(this.root + sep))) return true
-        if ((entry.mode & 0o111 ? '100755' : '100644') !== row.mode) return true
-        if ((await this.git(['hash-object', '--no-filters', '--', row.path])).trim() !== row.object) return true
-      } catch { return true }
-    }
-    return false
+    return (await this.git([...this.filterArgs, 'status', '--porcelain=v2', '-z', '--untracked-files=all'])).length > 0
   }
   private async materialize(revision: string, target: string, protectedOnly = false): Promise<void> {
     // No archive attributes, tar interpretation or symlink traversal. Every parent is
     // created here in a private tree, and linked/gitlink entries fail before extraction.
-    for (const row of await this.tree(revision)) {
-      if (protectedOnly && !this.protected(row.path)) continue
-      const destination = join(target, row.path)
-      await mkdir(dirname(destination), { recursive: true, mode: 0o700 })
-      const { stdout } = await exec('/usr/bin/git', [...gitFlags, 'cat-file', 'blob', row.object],
-        { cwd: this.root, encoding: 'buffer', maxBuffer: 32 * 1024 * 1024, env: gitEnv })
-      await writeFile(destination, stdout, { mode: row.mode === '100755' ? 0o500 : 0o400, flag: 'wx' })
+    const rows = (await this.tree(revision)).filter(row => !protectedOnly || this.protected(row.path))
+    if (!rows.length) return
+    for (const row of rows) await mkdir(dirname(join(target, row.path)), { recursive: true, mode: 0o700 })
+    let index = 0
+    for await (const content of catObjects(this.root, rows.map(row => row.object))) {
+      const row = rows[index++]!
+      await writeFile(join(target, row.path), content, { mode: row.mode === '100755' ? 0o500 : 0o400, flag: 'wx' })
     }
+    invariant(index === rows.length, 'git_object_missing')
   }
   async checkpoint(signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted()
@@ -133,17 +174,20 @@ export class GitRelayWorkspace implements RelayWorkspace {
     const commit = (await this.git(['-c', `user.name=${PRODUCT_NAME} Relay`, '-c', 'user.email=relay@localhost', 'commit-tree', tree, '-p', head, '-m', 'chore: relay checkpoint'])).trim()
     await this.git(['update-ref', 'HEAD', commit, head])
   }
-  async bundle(): Promise<Uint8Array> {
-    // A compressed git bundle cannot be scrubbed in place. Refuse it if ANY reachable
-    // blob contains a registered value; never persist unsanitized verification output.
-    const objects = (await this.git(['rev-list', '--objects', 'HEAD'])).trim().split('\n')
-    for (const row of objects) {
-      const object = row.split(' ')[0]!
-      const value = await this.git(['cat-file', '-p', object])
+  async bundle(base: string): Promise<Uint8Array> {
+    // A compressed git bundle cannot be scrubbed in place. Refuse it if ANY object in
+    // THIS attempt contains a registered value; never persist unsanitized output.
+    const rows = (await this.git(['rev-list', '--objects', `${base}..HEAD`])).trim().split('\n').filter(Boolean)
+    const ids = rows.map(row => row.split(' ')[0]!)
+    let seen = 0
+    for await (const content of catObjects(this.root, ids)) {
+      seen++
+      const value = content.toString('utf8')
       invariant(this.scrubber.scrub(value) === value, 'bundle_secret')
     }
+    invariant(seen === ids.length, 'git_object_missing')
     const dir = await mkdtemp(join(tmpdir(), `${PRODUCT_FILE_PREFIX}-relay-bundle-`))
-    try { await this.git(['bundle', 'create', join(dir, 'attempt.bundle'), 'HEAD']); return await readFile(join(dir, 'attempt.bundle')) }
+    try { await this.git(['bundle', 'create', join(dir, 'attempt.bundle'), `${base}..HEAD`]); return await readFile(join(dir, 'attempt.bundle')) }
     finally { await rm(dir, { recursive: true, force: true }) }
   }
   async verify(plan: Plan, itemId: string, signal?: AbortSignal): Promise<{ item: string; head: string; ok: boolean; output: string }> {

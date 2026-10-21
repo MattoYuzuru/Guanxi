@@ -36,7 +36,7 @@ test('git checkpoint and seal validation reject protected test/spec/CI edits and
     const observation = await w.observe(s.p.base,s.p.base)
     assert.ok(observation.nonemptyCommit); assert.deepEqual(observation.files,['src/a.txt'])
     await w.validate(s.p,observation.head,observation.files)
-    const bundle = await w.bundle(); assert.ok(Buffer.byteLength(bundle)>0)
+    const bundle = await w.bundle(s.p.base); assert.ok(Buffer.byteLength(bundle)>0)
   } finally { await s.close() }
 })
 test('gates see only the committed clean tree with planner protected paths and scrubbed output', async () => {
@@ -62,7 +62,7 @@ test('bundle refuses a registered secret in reachable history before upload', as
     const w=await GitRelayWorkspace.create(s.repo,s.p,s.context)
     await writeFile(join(s.repo,'src','a.txt'),'synthetic-relay-secret'); await w.checkpoint()
     s.f.scrubber.register('secret://fixture/bundle','synthetic-relay-secret')
-    await assert.rejects(w.bundle(), /bundle_secret/)
+    await assert.rejects(w.bundle(s.p.base), /bundle_secret/)
   } finally { await s.close() }
 })
 test('linked base trees cannot escape clean gate preparation or delete an outside sentinel', async () => {
@@ -104,4 +104,35 @@ test('cleanup uncertainty from native tools is fatal before another checkpoint',
     await assert.rejects(w.tool('shell',{command:'echo unsafe'}),/cleanup_unconfirmed/)
     assert.equal(await git(s.repo,['rev-parse','HEAD']),s.p.base)
   } finally {await s.close()}
+})
+test('attempt bundle lists base as a prerequisite, stays small/fast and still refuses a new secret', async () => {
+  const s = await setup()
+  try {
+    const history = join(s.repo, 'history')
+    await mkdir(history)
+    await Promise.all(Array.from({ length: 5000 }, (_, i) => writeFile(join(history, `f${i}.txt`), `history ${i}`)))
+    await git(s.repo, ['add', '.'])
+    await git(s.repo, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'large history'])
+    await git(s.repo, ['rm', '-r', 'history'])
+    await git(s.repo, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'clean base'])
+    const base = await git(s.repo, ['rev-parse', 'HEAD'])
+    assert.ok(Number(await git(s.repo, ['rev-list', '--count', '--objects', base])) >= 5000)
+    const p = { ...s.p, base }
+    const w = await GitRelayWorkspace.create(s.repo, p, s.context)
+    await writeFile(join(s.repo, 'src', 'new.txt'), 'one new file')
+    await w.checkpoint()
+    const started = performance.now()
+    const bundle = await w.bundle(base)
+    const elapsed = performance.now() - started
+    const file = join(s.root, 'attempt.bundle')
+    await writeFile(file, bundle)
+    const verify = (await exec('/usr/bin/git', ['bundle', 'verify', file], { cwd: s.repo })).stdout
+    assert.ok(verify.includes(base), 'base is a prerequisite')
+    assert.ok(Buffer.byteLength(bundle) < 64 * 1024, `bundle is ${Buffer.byteLength(bundle)} bytes`)
+    assert.ok(elapsed < 5000, `sealing took ${Math.round(elapsed)} ms`)
+    await writeFile(join(s.repo, 'src', 'secret.txt'), 'synthetic-relay-secret')
+    await w.checkpoint()
+    s.f.scrubber.register('secret://fixture/new-bundle', 'synthetic-relay-secret')
+    await assert.rejects(w.bundle(base), /bundle_secret/)
+  } finally { await s.close() }
 })

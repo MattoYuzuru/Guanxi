@@ -164,7 +164,7 @@ export class RelayExecutor {
       degraded = true; narrative = 'Continue from the authoritative ledger and evidence; query work.query and notes.search.'
     }
     this.store.transition(a, 'handoff_validate')
-    const bundle = await this.workspace.bundle()
+    const bundle = await this.workspace.bundle(l.plan.base)
     const current = this.store.read(a.run_id)
     await this.workspace.validate(current.plan, current.head, current.files)
     for (let tries = 0; tries < 2; tries++) {
