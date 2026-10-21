@@ -9,6 +9,7 @@ export interface RootRow { commit_id: string | null; indexed_at: string; fingerp
 /** Independent, disposable schema; never claims a shared node migration number. */
 export class IndexStore {
   readonly db: DatabaseSync
+  private fulltextHashes?: Set<string>
   constructor(path: string, writable = false) {
     if (!writable && !existsSync(path)) throw new Error('index_not_built')
     this.db = new DatabaseSync(path, { readOnly: !writable })
@@ -45,8 +46,10 @@ export class IndexStore {
     try {
       this.db.prepare('INSERT OR IGNORE INTO contents(hash, text) VALUES (?, ?)').run(hash, text)
       this.db.prepare('INSERT OR REPLACE INTO maps(hash, language, parser, symbols, source) VALUES (?, ?, ?, ?, ?)').run(hash, language, PARSER_VERSION, JSON.stringify(map.entries), map.source)
-      if (fts && !this.db.prepare('SELECT 1 FROM fulltext WHERE hash = ?').get(hash)) this.db.prepare('INSERT INTO fulltext(hash, text) VALUES (?, ?)').run(hash, text)
+      const addFts = fts && !this.hasFts(hash)
+      if (addFts) this.db.prepare('INSERT INTO fulltext(hash, text) VALUES (?, ?)').run(hash, text)
       this.db.exec('COMMIT')
+      if (addFts) this.fulltextHashes?.add(hash)
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
   }
   async purgeUnsafe(allow: AllowContent): Promise<void> {
@@ -61,6 +64,7 @@ export class IndexStore {
         this.db.prepare('DELETE FROM fulltext WHERE hash = ?').run(row.hash)
         this.db.prepare('DELETE FROM contents WHERE hash = ?').run(row.hash)
         this.db.exec('COMMIT')
+        this.fulltextHashes?.delete(row.hash)
       } catch (error) { this.db.exec('ROLLBACK'); throw error }
     }
   }
@@ -71,6 +75,7 @@ export class IndexStore {
       this.db.prepare('DELETE FROM files WHERE root_key = ?').run(tree.rootKey)
       const insert = this.db.prepare('INSERT INTO files(root_key, path, hash) VALUES (?, ?, ?)')
       tree.files.forEach(f => insert.run(tree.rootKey, f.path, f.hash))
+      this.fulltextHashes = undefined
       crash?.()
       this.db.exec('DELETE FROM fulltext WHERE hash NOT IN (SELECT hash FROM files); DELETE FROM contents WHERE hash NOT IN (SELECT hash FROM files);')
       this.db.exec('COMMIT')
@@ -80,6 +85,11 @@ export class IndexStore {
   fts(text: string): Set<string> {
     return new Set((this.db.prepare('SELECT hash FROM fulltext WHERE fulltext MATCH ?').all(`"${text.replaceAll('"', '""')}"`) as { hash: string }[]).map(r => r.hash))
   }
-  hasFts(hash: string): boolean { return !!this.db.prepare('SELECT 1 FROM fulltext WHERE hash = ?').get(hash) }
+  hasFts(hash: string): boolean {
+    // UNINDEXED FTS columns have no ordinary B-tree lookup. Read coverage once
+    // per store/read snapshot, instead of scanning the virtual table per file.
+    this.fulltextHashes ??= new Set((this.db.prepare('SELECT hash FROM fulltext').all() as { hash: string }[]).map(row => row.hash))
+    return this.fulltextHashes.has(hash)
+  }
   close() { this.db.close() }
 }
