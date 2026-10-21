@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitRelayWorkspace } from '../../src/relay/workspace.ts'
+import { GitRelayWorkspace, protectedName } from '../../src/relay/workspace.ts'
 import { fixture, plan } from './fixture.ts'
 import type { NativeToolContext } from '../../src/native-agent/tools.ts'
 import { promisify } from 'node:util'
@@ -135,4 +135,39 @@ test('attempt bundle lists base as a prerequisite, stays small/fast and still re
     s.f.scrubber.register('secret://fixture/new-bundle', 'synthetic-relay-secret')
     await assert.rejects(w.bundle(base), /bundle_secret/)
   } finally { await s.close() }
+})
+test('default protected names cover common test, manifest and CI layouts', () => {
+  for (const path of ['src/__tests__/feature.js', 'pkg/foo_test.go', 'test_foo.py', 'pkg/foo_test.py', 'conftest.py',
+    'package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'jest.config.js', 'vitest.config.ts',
+    'playwright.config.ts', 'pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg', '.circleci/config.yml',
+    '.travis.yml', 'azure-pipelines.yml', '.buildkite/pipeline.yml', 'Makefile', 'src/a.test.ts', 'tests/x.py',
+    '.github/workflows/ci.yml', '.gitlab-ci.yml', 'Jenkinsfile']) assert.equal(protectedName(path), true, path)
+  for (const path of ['src/a.ts', 'README.md', 'src/components/Button.tsx', 'src/latest/readme.txt']) assert.equal(protectedName(path), false, path)
+})
+test('package and test-runner indirection cannot reach the clean gate checkout', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'guanxi-r2-protected-')), repo = join(root, 'repo'), scratch = join(root, 'scratch')
+  await mkdir(repo); await mkdir(scratch); await mkdir(join(repo, 'src', '__tests__'), { recursive: true })
+  const pkg = JSON.stringify({ scripts: { test: 'node --test src/__tests__' } })
+  await writeFile(join(repo, 'package.json'), pkg)
+  await writeFile(join(repo, 'src', '__tests__', 'feature.js'), "throw new Error('planner acceptance: not implemented')")
+  await git(repo, ['init']); await git(repo, ['add', '.']); await git(repo, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'fixture'])
+  const p = { ...plan, base: await git(repo, ['rev-parse', 'HEAD']), items: [{ ...plan.items[0]!, acceptance: ['npm', 'test'], protectedPaths: [] }], protectedPaths: [] }
+  const f = fixture(), handle = f.log.open(f.run.session_id, { kind: 'agent' })
+  const seen: Record<string, string> = {}
+  const context: NativeToolContext = { policy: { mode: 'full-access', roots: [repo], scratch, attachments: [], protectedPaths: [], domains: [], runtimeBase: root }, log: f.log, handle, scrubber: f.scrubber, queue: () => {},
+    executeCommand: async policy => { seen.pkg = await readFile(join(policy.roots[0]!, 'package.json'), 'utf8'); seen.test = await readFile(join(policy.roots[0]!, 'src', '__tests__', 'feature.js'), 'utf8'); return { code: 0, stdout: '', stderr: '', truncated: false } } }
+  try {
+    const w = await GitRelayWorkspace.create(repo, p, context)
+    assert.ok(w.protectedPaths.includes('package.json'))
+    assert.ok(w.protectedPaths.includes('src/__tests__/feature.js'))
+    await writeFile(join(repo, 'package.json'), JSON.stringify({ scripts: { test: 'exit 0' } }))
+    await assert.rejects(w.checkpoint(), /protected_path/)
+    await writeFile(join(repo, 'package.json'), pkg)
+    await writeFile(join(repo, 'src', '__tests__', 'feature.js'), '// emptied by executor')
+    await assert.rejects(w.checkpoint(), /protected_path/)
+    await writeFile(join(repo, 'src', '__tests__', 'feature.js'), "throw new Error('planner acceptance: not implemented')")
+    assert.equal((await w.verify(p, 'one')).ok, true)
+    assert.match(seen.pkg!, /node --test/)
+    assert.match(seen.test!, /not implemented/)
+  } finally { handle.close(); f.close(); await rm(root, { recursive: true, force: true }) }
 })

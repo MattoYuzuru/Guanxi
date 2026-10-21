@@ -51,7 +51,11 @@ async function* catObjects(root: string, ids: readonly string[], signal?: AbortS
     child.kill()
   }
 }
-const protectedName = (p: string) => p.split('/').some(s => ['test', 'tests', 'spec', 'specs', '.github'].includes(s)) || /\.(test|spec)\.[^/]+$/.test(p) || /(^|\/)(\.gitlab-ci\.yml|Jenkinsfile)$/.test(p)
+const protectedSegments = new Set(['test', 'tests', 'spec', 'specs', '__tests__', '.github', '.circleci', '.buildkite'])
+const protectedFiles = /(^|\/)(?:package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|jest\.config\.[^/]+|vitest\.config\.[^/]+|playwright\.config\.[^/]+|pytest\.ini|pyproject\.toml|tox\.ini|setup\.cfg|\.travis\.yml|azure-pipelines\.yml|Makefile|\.gitlab-ci\.yml|Jenkinsfile)$/
+const protectedTests = /(^|\/)(?:[^/]+_test\.go|test_[^/]+\.py|[^/]+_test\.py|conftest\.py)$/
+/** Planner tests, manifests and CI/runner indirection are harness-owned. */
+export const protectedName = (p: string) => p.split('/').some(s => protectedSegments.has(s)) || /\.(test|spec)\.[^/]+$/.test(p) || protectedFiles.test(p) || protectedTests.test(p)
 export interface WorkspaceObservation { head: string; files: string[]; diffstat: string; nonemptyCommit: boolean }
 export interface RelayWorkspace {
   observe(base: string, baseline: string): Promise<WorkspaceObservation>

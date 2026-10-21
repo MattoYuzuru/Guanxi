@@ -72,8 +72,13 @@ report; a later lead decides completion/cancellation.
 
 `GitRelayWorkspace` uses K4's tools and ExecutionOwner with Full access, a dedicated root,
 planner protected paths and harness-owned `.git`. Checkpoints use raw hash-object/update-index/commit-tree plumbing without filters,
-hooks or inherited credential environment. Dirty checks also hash raw bytes. Tests/specs/CI paths are additionally rejected
-at checkpoint and seal validation. A dirty checkout cannot seal or run a gate.
+hooks or inherited credential environment. Dirty checks use one filter-neutral `git status --porcelain=v2`; object reads are
+streamed through one `git cat-file --batch`. Tests/specs/CI paths are additionally rejected at checkpoint and seal validation;
+the default heuristic covers `test`/`tests`/`spec`/`specs`/`__tests__`, `*.test.*`/`*.spec.*`, `*_test.go`, `*_test.py`/
+`test_*.py`/`conftest.py`, manifests and lockfiles (`package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`),
+jest/vitest/playwright/pytest configuration, CircleCI/Travis/Azure/Buildkite/GitLab/Jenkins and `Makefile`. **The planner must
+list any other file the acceptance command depends on**; the default is a heuristic, not a proof of isolation. A dirty checkout
+cannot seal or run a gate.
 
 Gates materialize raw objects without archive attributes, `.git` or untracked files, restore planner-owned
 protected paths from the base revision and run acceptance argv in K4 Read-only mode.
