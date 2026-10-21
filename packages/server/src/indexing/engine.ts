@@ -18,6 +18,7 @@ export function boundMap(result: MapResult, budget: number): MapResult {
   if (!Number.isSafeInteger(budget) || budget <= 0) throw new Error('index_budget_invalid')
   result.tokenBound = budget
   if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= budget) return result
+  if (!result.entries.length) throw new Error('index_budget_too_small')
   result.truncated = true
   const entries = result.entries
   const fits = () => Buffer.byteLength(JSON.stringify(result), 'utf8') <= budget
@@ -33,6 +34,9 @@ export function boundMap(result: MapResult, budget: number): MapResult {
     else high = mid - 1
   }
   result.entries = entries.slice(0, low)
+  // The shorter spelling 'true' can save one byte by itself. A truncation
+  // flag must still correspond to omitted content at that exact boundary.
+  if (low === entries.length) result.entries.pop()
   const next = entries[low]
   if (next) {
     const partial = { ...next, symbols: [] as typeof next.symbols }

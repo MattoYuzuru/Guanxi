@@ -194,6 +194,12 @@ test('complete repo.map JSON respects its stated token bound, including unicode,
     await assert.rejects(f.run('map', f.root, { budget: 1 }), /index_budget_too_small/)
     const base = await f.run('map', f.root, { budget: 20_000 }) as MapResult
     assert.throws(() => boundMap(base, NaN), /budget_invalid/)
+    let edge = 3000
+    for (let i = 0; i < 4; i++) edge = Buffer.byteLength(JSON.stringify({ ...base, tokenBound: edge })) - 1
+    const edgeResult = boundMap(structuredClone(base), edge)
+    assert.equal(edgeResult.truncated, true)
+    const units = (m: MapResult) => m.entries.length + m.entries.reduce((n, e) => n + e.symbols.length, 0)
+    assert.ok(units(edgeResult) < units(base), 'truncated must omit content even at a one-byte metadata boundary')
   } finally { await f.close() }
 })
 
