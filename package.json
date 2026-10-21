@@ -30,6 +30,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#.claude/worktrees\" \"#docs/research/2026-10-19-landscape\" \"#docs/research/2026-10-20-design\" \"#docs/research/2026-10-21-fleet\"",
     "check:licenses": "node scripts/check-licenses.mjs",
+    "check:links": "node scripts/check-doc-links.mjs",
     "tokens:build": "npm run tokens:build --workspace @guanxi/ui",
     "ui:check": "npm run ui:check --workspace @guanxi/ui"
   },
