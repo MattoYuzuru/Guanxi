@@ -95,6 +95,25 @@ function authLines(path: string): string[] {
   return existsSync(path) ? readFileSync(path, 'utf8').split('\n').filter(Boolean) : []
 }
 
+/** The test build compiles the production branches out, so this scoped structural check proves
+ * that the remaining production call sites still use the behaviourally tested shared builders. */
+function functionBody(name: string): string {
+  const text = readFileSync(source, 'utf8')
+  const start = text.indexOf(`func ${name}(`)
+  assert.notEqual(start, -1, `missing Swift function ${name}`)
+  const end = text.indexOf('\nfunc ', start + 1)
+  return text.slice(start, end === -1 ? undefined : end)
+}
+
+function productionBranch(name: string): string {
+  const body = functionBody(name)
+  const start = body.indexOf('#else')
+  assert.notEqual(start, -1, `${name} has no production #else branch`)
+  const end = body.indexOf('#endif', start)
+  assert.notEqual(end, -1, `${name} production branch is unterminated`)
+  return body.slice(start, end)
+}
+
 function approval(keyId: string, id = 'button') {
   return {
     schema: 'guanxi.ui-approval/3',
@@ -198,19 +217,43 @@ describe('approval signer exit gates', { skip: swiftSkip }, () => {
   it('wires the production access-control and confirmation policy through the shared builders', () => {
     const fx = fixture()
     const payload = canonicalJson(approval(fx.key.trusted.keyId))
+    const reason = `approve the "button" component, source sha256:${'a'.repeat(64)}`
     const probe = run({ op: 'test-policy', service: SERVICE, account: ACCOUNT, payload }, fx.env)
     assert.equal(probe.status, 0, probe.stderr.toString())
     assert.equal(probe.json?.['signature'], undefined, 'the policy probe must not sign')
     assert.deepEqual(probe.json, {
       ok: true,
+      accessControlCalls: 1,
       accessControlCreated: true,
       accessibilityDeviceOnly: true,
       privateKeyUsage: true,
       userPresence: true,
-      confirmationReuseDuration: 0,
-      localizedReason: `approve the "button" component, source sha256:${'a'.repeat(64)}`,
+      contextFactoryCalls: 2,
+      contextsAreFreshInstances: true,
+      contextsAreFactoryResults: true,
+      confirmationReuseDurations: [0, 0],
+      localizedReasons: [reason, reason],
     })
     assert.equal(authLines(fx.authLog).length, 0, 'the policy probe must not prompt')
+  })
+
+  it('keeps production init on the shared access-control builder', () => {
+    const accessControlBuilder = functionBody('makeApprovalAccessControl')
+    assert.match(accessControlBuilder, /create:\s*AccessControlFactory\s*=\s*SecAccessControlCreateWithFlags/)
+
+    const initProduction = productionBranch('operationInit')
+    assert.match(initProduction, /let accessControl = try makeApprovalAccessControl\(\)/)
+    assert.doesNotMatch(initProduction, /SecAccessControlCreateWithFlags\s*\(/)
+  })
+
+  it('keeps production sign on the shared confirmation-context builder', () => {
+    const contextBuilder = functionBody('makeConfirmationContext')
+    assert.match(contextBuilder, /contextFactory:\s*ConfirmationContextFactory\s*=\s*productionConfirmationContext/)
+    assert.match(functionBody('productionConfirmationContext'), /LAContext\(\)/)
+
+    const signProduction = productionBranch('operationSign')
+    assert.match(signProduction, /let context = makeConfirmationContext\(reason: reason\)/)
+    assert.doesNotMatch(signProduction, /LAContext\s*\(/)
   })
 
   it('refuses non-canonical payloads, the removed /2 schema and invalid ids', () => {
@@ -317,6 +360,11 @@ describe('approval signer exit gates', { skip: swiftSkip }, () => {
     assert.notEqual(checkLeak.status, 0)
     assert.match(checkLeak.stderr, /contains test hooks \(SIGNER_TEST_\)/)
     assert.equal(spawnSync('strings', [leaked], { encoding: 'utf8' }).stdout.includes('SIGNER_TEST_'), true)
+
+    const productionStrings = spawnSync('strings', [productionBinary], { encoding: 'utf8' }).stdout
+    assert.equal(productionStrings.includes('test-policy'), false, 'production must not contain the test-only probe')
+    const testStrings = spawnSync('strings', [testBinary], { encoding: 'utf8' }).stdout
+    assert.equal(testStrings.includes('test-policy'), true, 'the test build must contain the probe')
   })
 
   it(

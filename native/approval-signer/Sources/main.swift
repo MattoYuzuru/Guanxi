@@ -204,21 +204,34 @@ func approvalKeyAccessPolicy() -> ApprovalKeyAccessPolicy {
     )
 }
 
-func makeApprovalAccessControl() throws -> SecAccessControl {
+/// The exact shape of the public Security API. The default is that public API; only local code
+/// can pass another factory, and tests use it to capture the arguments the shared builder
+/// actually sends. The factory is never read from a request field.
+typealias AccessControlFactory = (
+    CFAllocator?,
+    CFTypeRef,
+    SecAccessControlCreateFlags,
+    UnsafeMutablePointer<Unmanaged<CFError>?>?
+) -> SecAccessControl?
+
+func makeApprovalAccessControl(
+    create: AccessControlFactory = SecAccessControlCreateWithFlags
+) throws -> SecAccessControl {
     let policy = approvalKeyAccessPolicy()
-    guard let accessControl = SecAccessControlCreateWithFlags(
-        nil,
-        policy.accessibility,
-        policy.accessFlags,
-        nil
-    ) else {
+    guard let accessControl = create(nil, policy.accessibility, policy.accessFlags, nil) else {
         throw HelperFailure("keychain_access_unavailable", "Cannot create the Secure Enclave access control")
     }
     return accessControl
 }
 
+typealias ConfirmationContextFactory = () -> LAContext
+
+func productionConfirmationContext() -> LAContext {
+    LAContext()
+}
+
 /// Applies the confirmation policy to a context. Production passes a fresh `LAContext`; the
-/// test probe seeds a nonzero reuse value to prove that the explicit zero is applied.
+/// test probe injects a pre-seeded context to prove that the explicit zero is applied.
 func configureConfirmationContext(_ context: LAContext, reason: String) -> LAContext {
     let policy = approvalKeyAccessPolicy()
     context.localizedReason = reason
@@ -226,8 +239,11 @@ func configureConfirmationContext(_ context: LAContext, reason: String) -> LACon
     return context
 }
 
-func makeConfirmationContext(reason: String) -> LAContext {
-    configureConfirmationContext(LAContext(), reason: reason)
+func makeConfirmationContext(
+    reason: String,
+    contextFactory: ConfirmationContextFactory = productionConfirmationContext
+) -> LAContext {
+    configureConfirmationContext(contextFactory(), reason: reason)
 }
 
 /// The exact source-bound reason shown by the confirmation prompt. The production sign path
@@ -615,8 +631,10 @@ func operationSign(service: String, account: String, payload: String) {
 }
 
 #if GUANXI_SIGNER_TESTING
-/// Introspection only: calls the production access-control and confirmation-context builders
-/// with a seeded reuse value. It never loads a key, prompts, signs or writes a keychain item.
+/// Introspection only: passes capturing factories through the same production builders. It
+/// captures the exact arguments sent to the public access-control API and the contexts created
+/// by `makeConfirmationContext`; it never loads a key, prompts, signs or writes a keychain item.
+/// The factories are local closures, not request fields.
 func operationTestPolicyProbe(payload: String) {
     guard let object = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
           let schema = object["schema"] as? String,
@@ -624,20 +642,46 @@ func operationTestPolicyProbe(payload: String) {
           let reason = signingReason(schema: schema, id: id, sourceHash: object["sourceHash"] as? String) else {
         refuse("payload_schema", "The test policy probe needs an approval or revocation payload")
     }
+    var accessControlCalls = 0
+    var capturedProtection: CFTypeRef?
+    var capturedFlags: SecAccessControlCreateFlags?
+    let createAccessControl: AccessControlFactory = { allocator, protection, flags, error in
+        accessControlCalls += 1
+        capturedProtection = protection
+        capturedFlags = flags
+        return SecAccessControlCreateWithFlags(allocator, protection, flags, error)
+    }
+    var createdContexts: [LAContext] = []
+    let createContext: ConfirmationContextFactory = {
+        let context = LAContext()
+        // Seed a nonzero value so removing the explicit zero in the shared builder fails.
+        context.touchIDAuthenticationAllowableReuseDuration = 120
+        createdContexts.append(context)
+        return context
+    }
     do {
-        let policy = approvalKeyAccessPolicy()
-        _ = try makeApprovalAccessControl()
-        let seeded = LAContext()
-        seeded.touchIDAuthenticationAllowableReuseDuration = 120
-        let context = configureConfirmationContext(seeded, reason: reason)
+        _ = try makeApprovalAccessControl(create: createAccessControl)
+        let first = makeConfirmationContext(reason: reason, contextFactory: createContext)
+        let second = makeConfirmationContext(reason: reason, contextFactory: createContext)
+        guard let capturedProtection, let capturedFlags else {
+            refuse("policy_not_captured", "The access-control factory was not called")
+        }
         emit([
             "ok": true,
+            "accessControlCalls": accessControlCalls,
             "accessControlCreated": true,
-            "accessibilityDeviceOnly": CFEqual(policy.accessibility, kSecAttrAccessibleWhenUnlockedThisDeviceOnly),
-            "privateKeyUsage": policy.accessFlags.contains(.privateKeyUsage),
-            "userPresence": policy.accessFlags.contains(.userPresence),
-            "confirmationReuseDuration": context.touchIDAuthenticationAllowableReuseDuration,
-            "localizedReason": context.localizedReason,
+            "accessibilityDeviceOnly": CFEqual(capturedProtection, kSecAttrAccessibleWhenUnlockedThisDeviceOnly),
+            "privateKeyUsage": capturedFlags.contains(.privateKeyUsage),
+            "userPresence": capturedFlags.contains(.userPresence),
+            "contextFactoryCalls": createdContexts.count,
+            "contextsAreFreshInstances": first !== second,
+            "contextsAreFactoryResults": createdContexts.count == 2
+                && first === createdContexts[0] && second === createdContexts[1],
+            "confirmationReuseDurations": [
+                first.touchIDAuthenticationAllowableReuseDuration,
+                second.touchIDAuthenticationAllowableReuseDuration,
+            ],
+            "localizedReasons": [first.localizedReason, second.localizedReason],
         ])
         exit(0)
     } catch let failure as HelperFailure {
