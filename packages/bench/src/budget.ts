@@ -16,7 +16,7 @@ export class Budget {
       ) STRICT;`)
   }
   reserve(raw: Plan, now = this.clock()): void {
-    const p = validatePlan(raw)
+    const p = validatePlan(raw, now)
     const perArm = p.tasks.length * p.seeds.length * p.maxTrialMicrousd
     const dollars = perArm * p.arms.length
     const tokens = p.tasks.length * p.seeds.length * p.maxTrialTokens * p.arms.length

@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { analyze, htmlReport } from '../src/report.ts'
 import { selectCorpus } from '../src/corpus.ts'
-import { schedule, validatePlan, validateResults } from '../src/protocol.ts'
+import { schedule, validatePlan, validateRecordedPlan, validateResults } from '../src/protocol.ts'
 import { decodeAgentExec, fixtureExecutor, remoteCommand, harborExecutor } from '../src/runner.ts'
 import { plan } from './helpers.ts'
 
@@ -39,17 +39,25 @@ test('task/seed/model pairing is deterministic and arm order is counterbalanced'
   assert.throws(() => validatePlan({ ...p, apiKey: 'forbidden' }))
 })
 test('selects exactly 50 fresh SWE-rebench and 30 Verified metadata records with a reproducible digest', () => {
+  const now = new Date('2026-10-21T00:00:00Z')
+  const select = (raw: unknown[], window: { from: string; through: string }) => selectCorpus(raw, window, now)
   const candidates = Array.from({ length: 90 }, (_, i) => ({ ...plan().tasks[0]!, id: `task-${String(i).padStart(3, '0')}`, suite: i < 60 ? 'swe-rebench' : 'verified' }))
   const window = { from: '2026-10-01', through: '2026-10-21' }
-  const corpus = selectCorpus(candidates, window)
+  const corpus = select(candidates, window)
   assert.equal(corpus.tasks.filter(t => t.suite === 'swe-rebench').length, 50)
   assert.equal(corpus.tasks.filter(t => t.suite === 'verified').length, 30)
-  assert.equal(selectCorpus([...candidates].reverse(), window).sha256, corpus.sha256)
-  assert.throws(() => selectCorpus(candidates.slice(11), window), /50_fresh/)
-  assert.throws(() => selectCorpus(candidates.map(t => ({ ...t, published: '2020-01-01' })), window), /50_fresh/)
-  assert.throws(() => selectCorpus(candidates, { from: '2020-01-01', through: '2026-10-21' }), /too_wide/)
-  assert.throws(() => selectCorpus(candidates, { from: '2020-01-01', through: '2020-01-21' }), /too_wide/)
-  assert.throws(() => validatePlan({ ...plan(), mode: 'ab', tasks: corpus.tasks.map(t => ({ ...t, published: '2020-01-01' })) }), /stale_ab_corpus/)
+  assert.equal(select([...candidates].reverse(), window).sha256, corpus.sha256)
+  const oldPlan = { ...plan(), mode: 'ab', tasks: corpus.tasks.map(t => ({ ...t, published: '2020-01-01' })) }
+  assert.equal(validateRecordedPlan(oldPlan).tasks.length, 80)
+  assert.throws(() => select(candidates, { from: '2026-02-30', through: '2026-10-21' }), /invalid_fresh_window/)
+  const boundary = candidates.map(t => ({ ...t, published: '2026-09-20' }))
+  assert.equal(select(boundary, { from: '2026-09-01', through: '2026-09-20' }).tasks.length, 80)
+  assert.throws(() => select(boundary, { from: '2026-09-01', through: '2026-09-19' }), /too_wide/)
+  assert.throws(() => select(candidates.slice(11), window), /50_fresh/)
+  assert.throws(() => select(candidates.map(t => ({ ...t, published: '2020-01-01' })), window), /50_fresh/)
+  assert.throws(() => select(candidates, { from: '2020-01-01', through: '2026-10-21' }), /too_wide/)
+  assert.throws(() => select(candidates, { from: '2020-01-01', through: '2020-01-21' }), /too_wide/)
+  assert.throws(() => validatePlan({ ...plan(), mode: 'ab', tasks: corpus.tasks.map(t => ({ ...t, published: '2020-01-01' })) }, now), /stale_ab_corpus/)
 })
 test('standalone report contains separate infra columns, task flips and no scripts/network; public mode has no task IDs', async () => {
   const p = plan(); const rows = validateResults(p, await fixtureExecutor({ 'task-0:candidate:0': 'failed' }).run(p))

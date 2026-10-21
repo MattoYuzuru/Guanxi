@@ -1,7 +1,8 @@
 import { conclusion, holm, mcnemar, mean, noiseFloor, pairedBootstrap, type Pair } from './stats.ts'
 import { passHat } from './reducers.ts'
-import { validateResults, type Plan, type Trial } from './protocol.ts'
+import { validateRecordedPlan, validateResults, type Plan, type Trial } from './protocol.ts'
 export function analyze(plan: Plan, raw: unknown) {
+  plan = validateRecordedPlan(plan)
   const trials = validateResults(plan, raw)
   const control = plan.arms.find(a => a.kind === 'mini-swe-agent') ?? plan.arms[0]!
   const suites = [...new Set(plan.tasks.map(t => t.suite))]

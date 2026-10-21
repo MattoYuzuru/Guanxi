@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { Budget } from './budget.ts'
 import { selectCorpus } from './corpus.ts'
-import { validatePlan } from './protocol.ts'
+import { validatePlan, validateRecordedPlan } from './protocol.ts'
 import { htmlReport } from './report.ts'
 import { fixtureExecutor, harborExecutor, runBench } from './runner.ts'
 const read = async (path: string) => JSON.parse(await readFile(path, 'utf8'))
@@ -20,7 +20,7 @@ async function main(args: string[]) {
   }
   if (command === 'analyze' && path) {
     const input = await read(path)
-    const plan = validatePlan(input.plan)
+    const plan = validateRecordedPlan(input.plan)
     await writeFile(join(dir, `${plan.id}.html`), htmlReport(plan, input.trials, hostPath === 'public'), { mode: 0o600 })
     console.log(JSON.stringify({ status: 'reported', id: plan.id, report: join(dir, `${plan.id}.html`) }))
     return
