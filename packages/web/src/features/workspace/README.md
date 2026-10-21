@@ -1,6 +1,6 @@
 # Workspace layout (U1-a)
 
-**Status:** implemented; local verification pending · **Updated:** 2026-10-21
+**Status:** locally validated · **Updated:** 2026-10-21
 
 `/workspace/:threadId?` hosts the existing chat and composer as the centre block. An optional
 `project` query scopes its layouts. Legacy routes remain available for U1-c. `safe=1` suppresses
@@ -49,4 +49,5 @@ The 30-block engine restore budget is 2000 ms in deterministic local Chromium. B
 mock node/model APIs and never run models, shell commands or external pages. Node tests cover
 validation, resolution, replication, restart and the import/licence boundary. These do not
 prove live terminal processes, real embedded browser sessions, screen-reader output or Electron
-renderer behavior. See the lane handoff for executed results and remaining checks.
+renderer behavior. See [the lane handoff](../../../../../docs/plans/lanes/U1a.handoff.md) for executed results
+and residuals.

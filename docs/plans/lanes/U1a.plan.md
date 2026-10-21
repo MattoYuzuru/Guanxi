@@ -1,6 +1,6 @@
 # U1-a implementation plan
 
-**Status:** in progress · **Date:** 2026-10-21
+**Status:** locally validated · **Date:** 2026-10-21
 
 Implement ADR-0036's workspace adapter, keyed block contributions, node-owned layout
 documents, mode defaults, accessible moves and phone projection. U1-b shell/navigation,
@@ -44,3 +44,9 @@ DDL and ledger; unknown/future versions must fail closed without changing rows. 
 main migrations and `user_version` remain unchanged. Restore unrelated legacy migration tests
 to main. Re-run storage/regression gates and request an independent review of this correction.
 Rollback retains additive tables while the route is disabled; repair uses a forward fix.
+
+## Completion
+
+Implementation, independent review fixes, main integration and required gates are complete.
+See [U1a.handoff](U1a.handoff.md) for new/regression evidence, receipts, catalog review and
+residuals. The integrator owns the pending Claude cross-family review and merge.
