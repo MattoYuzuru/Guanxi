@@ -1,13 +1,14 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-21
+**Status:** implemented tracker · **Updated:** 2026-10-22
 **Current stage:** wave 3 integration and residuals. K1–K3, R1, F1 and DS1-a/b/c are
 merged; K4, K5 and R2 have merged bounded implementations with named unfinished scope.
 K4 follow-up 2 is merged after full integrator gates. DS2 and X1 have independently reviewed
 repair candidates awaiting integration; U1 replication, B1 admission and R3 ETA have new
 bounded candidates. Their full stage gates remain open.
-See the [coordination audit](evidence/coordination-2026-10-21.md) for pinned heads, progress
-estimates, active ownership and the distinction between a merge and a stage exit.
+See the [continuation record](evidence/coordination-2026-10-22.md) for current ownership and
+pinned candidates; the [previous audit](evidence/coordination-2026-10-21.md) retains the initial
+progress estimates. A merge is distinct from a whole stage exit.
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
@@ -239,10 +240,10 @@ decision was made.
 | K4 Native agent | partially implemented; retention/R1 follow-up merged (`8006cd8`); input artifacts, HTTPS positive evidence, UI evidence and platform scope remain | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | K5 External agents | partial implementation merged (`80f7245`); review fixes included | [evidence/K5](evidence/K5.md); real release captures, effective implicit bare detection, automatic Claude quota producer and distributed admission remain open. |
-| B1 Bench base | partial fixture foundation handed off; no worker running at audit | [lanes/B1](lanes/B1.md); corpus staging, real bounded executor/billing gateway and five-seed model measurements remain open. |
+| B1 Bench base | request-admission candidate independently reviewed (`codex/b1-completion`, source `3b9a140`, handoff `81d431f`); integration pending | [lanes/B1](lanes/B1.md); shared K3 gateway is active work, staging is in review. Real corpus/executor/billing evidence and five-seed measurements remain open. |
 | X1 Repo map and FTS | repair reviewed in `codex/x1-parent-read-boundary` (`647c5d0`); current main incorporated, combined indexing/boot gate passed | [lanes/X1](lanes/X1.md); parent policy reads now use the sandbox worker. Full integration gates and repaired-source Linux checks remain; candidate is not merged. |
 | R2 Relay executor | internal single-node implementation merged (`726efc3`); review fixes included | [evidence/R2](evidence/R2.md); trusted live runtime meter/admission and independent semantic probe evidence remain open. No public start flow or live long-run claim. |
-| U1 Shell, layout, modes | U1-a handed off, awaiting independent review/integration; U1-b/c not started | [lanes/U1](lanes/U1.md); local persistence/conflict handling exists. Actual cross-node layout replication is absent and must not be inferred from in-memory merge tests. |
+| U1 Shell, layout, modes | layout plus signed-replication candidate independently reviewed (`codex/u1-completion`, `e5f8e0a`); full integration gates pending; shell/CSS migration active | [lanes/U1](lanes/U1.md); current main has no U1 replication. Candidate uses real signed F1 operations; actual remote-node operation is unmeasured. |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
 | R3 Judge + ETA | ETA foundation independently reviewed (`codex/ms1-r3`, `bf6a222`); integration pending | 13 focused tests pass; full judge/delegation, real calibration/night-run exit gates remain open. |
 | F2 Remote attempts | implementation planning active after U1 contract-version review | Offer/reservation foundation is planned; no remote dispatch or live run is claimed. |
