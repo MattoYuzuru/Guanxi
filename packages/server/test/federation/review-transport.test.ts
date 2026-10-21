@@ -21,7 +21,16 @@ test('device code allocation requires JSON Content-Type before unauthenticated m
 test('device code storage is bounded and expired requests are purged before allocation', async () => {
   const home = new SimNode(identity('home')); const device = identity('device')
   try {
-    for (let i=0; i<MAX_DEVICE_CODES; i++) home.federation.enrollment.begin(device.identity.publicKey)
+    const codes = Array.from({length:MAX_DEVICE_CODES}, () => home.federation.enrollment.begin(device.identity.publicKey))
+    const {id,publicKey,...policy} = device.identity; void id; void publicKey
+    home.time += 5000
+    for (const [index,code] of codes.entries()) {
+      if (index % 4 === 1) home.federation.enrollment.deny(code.user_code)
+      if (index % 4 >= 2) home.federation.enrollment.approve(code.user_code,policy)
+      if (index % 4 === 3) home.federation.enrollment.poll(code.device_code)
+    }
+    assert.deepEqual(home.db.prepare('SELECT state,COUNT(*) AS n FROM federation_devices GROUP BY state ORDER BY state').all().map((row)=>({...row})),
+      ['approved','consumed','denied','pending'].map((state)=>({state,n:MAX_DEVICE_CODES/4})))
     const allocate = () => home.app.request('http://node/api/federation/device/code', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicKey:device.identity.publicKey})})
     assert.equal((await allocate()).status, 429, 'unexpired bootstrap storage is bounded')
     assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_devices').get()!.n, MAX_DEVICE_CODES)
