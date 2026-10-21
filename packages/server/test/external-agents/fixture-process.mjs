@@ -38,6 +38,7 @@ writeFileSync(join(root, 'environment.json'), JSON.stringify({
   hasGeminiKey: !!process.env.GEMINI_API_KEY,
   openCodeConfig: process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : null,
   gooseProvider: process.env.GOOSE_PROVIDER, gooseModel: process.env.GOOSE_MODEL, gooseDisableKeyring: process.env.GOOSE_DISABLE_KEYRING,
+  gooseMode: process.env.GOOSE_MODE,
 }))
 let initialized = false
 let authenticated = tape.adapter !== 'gemini-cli'
@@ -123,7 +124,7 @@ lines.on('line', line => {
       return
     }
     if (frame.method === 'thread/start') {
-      if (frame.params.sandbox !== 'read-only' || frame.params.approvalPolicy !== 'never') process.exit(21)
+      if (frame.params.sandbox !== 'read-only' || frame.params.approvalPolicy !== 'on-request') process.exit(21)
       reply(frame, { thread: { id: 'fixture-thread' } }); return
     }
     if (frame.method === 'turn/start') {

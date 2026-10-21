@@ -43,7 +43,9 @@ export class CodexClient extends JsonRpcClient {
     } finally { off() }
   }
   async prompt(model: string, text: string, cwd: string, reasoning?: string, onPlan: (plan: CodexPlan) => void = () => undefined): Promise<AgentOutput> {
-    const result = object(await this.request('thread/start', { model, cwd, approvalPolicy: 'never', sandbox: 'read-only' }))
+    // Ask instead of auto-approving host commands; this client refuses every approval RPC
+    // (rpc.ts), while the read-only sandbox still contains writes.
+    const result = object(await this.request('thread/start', { model, cwd, approvalPolicy: 'on-request', sandbox: 'read-only' }))
     const threadId = object(result.thread).id
     if (typeof threadId !== 'string') throw new ExternalAgentError('protocol_failed')
     const textByTurn = new Map<string, string>()

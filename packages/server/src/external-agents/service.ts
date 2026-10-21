@@ -11,8 +11,11 @@ import { ExternalStore } from './store.ts'
 import { ADAPTERS, API_ENV } from './profiles.ts'
 import { claudeRateLimits, codexRateLimits } from './quota.ts'
 import { ExternalAgentError, resolveRole, bindingSchema, rolesSchema, type ExternalPolicy, type AgentInstallation,
-  type Roles, type Role, type RoleBinding, type QuotaObservation } from './types.ts'
+  type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId } from './types.ts'
 
+/** API-key adapters that can run host tools. The deny configuration below is not a sandbox and
+ * its runtime enforcement is the vendor's; a non-owner prompt is refused before process launch. */
+const HOST_TOOL_ADAPTERS = new Set<AdapterId>(['opencode', 'goose'])
 const installationSchema = z.object({
   adapter: z.enum(['claude-code', 'copilot', 'gemini-cli', 'opencode', 'goose', 'codex']), connectionId: z.string().uuid(),
   ownerAccountId: z.string().min(1), nodeId: z.string().min(1), billingAccount: z.string().min(1),
@@ -164,12 +167,15 @@ export class ExternalAgents {
         if (!model.startsWith(`${row.provider}/`) || model === `${row.provider}/`) throw new ExternalAgentError('payment_model_mismatch')
         const variable = API_ENV[row.provider as keyof typeof API_ENV]
         env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ enabled_providers: [row.provider], model, small_model: model,
+          permission: { '*': 'deny' },
           provider: { [row.provider]: { options: { apiKey: `{env:${variable}}` } } } })
       }
       if (install.adapter === 'goose') {
         if (!['anthropic', 'openai', 'google', 'openrouter'].includes(row.provider) || model === 'default') throw new ExternalAgentError('payment_model_mismatch')
         env.GOOSE_PROVIDER = row.provider; env.GOOSE_MODEL = model
         env.GOOSE_DISABLE_KEYRING = '1'
+        // Chat mode does not run autonomous tools; approvals are never granted by this client.
+        env.GOOSE_MODE = 'chat'
         if (row.provider === 'google') { env.GOOGLE_API_KEY = key; delete env.GEMINI_API_KEY }
       }
     }
@@ -186,6 +192,7 @@ export class ExternalAgents {
     const resolved = this.resolve(input.ownerAccountId, input.projectId, input.role, input.sessionRoles)
     const binding = bindingSchema.parse(resolved.binding)
     const install = this.installation(input.ownerAccountId, binding.connectionId, binding.backend)
+    if (input.actorAccountId !== input.ownerAccountId && HOST_TOOL_ADAPTERS.has(install.adapter)) throw new ExternalAgentError('host_tools_owner_only')
     if (typeof input.prompt !== 'string' || !input.prompt.trim()) throw new ExternalAgentError('empty_prompt')
     if (binding.params.temperature !== undefined || binding.params.maxTokens !== undefined ||
       (install.adapter !== 'codex' && binding.params.reasoning !== undefined)) throw new ExternalAgentError('unsupported_parameter')
