@@ -16,12 +16,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.81",
+    "@earendil-works/pi-agent-core": "1.3.0",
     "@earendil-works/pi-ai": "1.3.0",
     "@guanxi/contract": "*",
     "@guanxi/kernel": "*",
     "@hono/node-server": "^2.0.12",
     "@napi-rs/keyring": "2.1.2",
     "hono": "^4.6.14",
+    "typebox": "1.3.27",
     "zod": "^3.24.1"
   }
 }

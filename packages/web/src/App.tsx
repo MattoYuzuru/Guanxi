@@ -24,6 +24,7 @@ import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
 import { InspectorPage } from './features/inspector/InspectorPage.tsx'
+import { NativeAgentPage } from './features/native-agent/NativeAgentPage.tsx'
 import { translate } from './lib/locale.ts'
 import { useLocale } from './lib/locale-context.tsx'
 import { PRODUCT_NAME } from './lib/brand.ts'
@@ -62,6 +63,7 @@ export function App() {
         </ErrorBoundary>
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           {route.name === 'launcher' && <LauncherPage health={data} />}
+          {route.name === 'agent' && <NativeAgentPage key={route.sessionId ?? 'new'} sessionId={route.sessionId} />}
           {route.name === 'model' && <ModelPage name={route.modelName} health={data} />}
           {route.name === 'chat' && (
             <ErrorBoundary
@@ -115,6 +117,7 @@ function TopBar() {
   useLocale()
 
   const tabs = [
+    { to: paths.agent(), label: translate('native.nav'), active: route.name === 'agent' },
     { to: paths.launcher(), label: translate('app.navigation.models'), active: route.name === 'launcher' || route.name === 'model' },
     { to: paths.chat(), label: translate('app.navigation.chat'), active: route.name === 'chat' },
     {

@@ -16,7 +16,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
-import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv } from './config/listen-env.ts'
+import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv, portFromEnv, WEB_PORT_ENV, DEFAULT_WEB_PORT } from './config/listen-env.ts'
 import { defaultDbPath, openDb } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
 import { connectionsPlugin, CONNECTIONS_SERVICE } from './connections/plugin.ts'
@@ -24,6 +24,8 @@ import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
 import { ConnectionError } from './connections/errors.ts'
 import { connectionRoutes } from './connections/routes.ts'
+import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
+import { nativeAgentRoutes } from './native-agent/routes.ts'
 
 export { JobStore, JobStoreError } from './store/jobs.ts'
 export { QuickRunStore } from './store/quick-runs.ts'
@@ -120,6 +122,7 @@ export interface StartOptions {
 
 export async function start(options: StartOptions = {}) {
   const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
+  let actualPort = port
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
 
@@ -157,6 +160,7 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
+    await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
@@ -165,7 +169,6 @@ export async function start(options: StartOptions = {}) {
     context.db.close()
     throw error
   }
-  let actualPort = port
   const server = createApp(context, {
     host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
@@ -176,6 +179,11 @@ export async function start(options: StartOptions = {}) {
     if (!service) throw new ConnectionError('egress_unavailable', 'Connections unavailable')
     return service
   }, 'local', options.devOrigins ?? devOriginsFromEnv(process.env)))
+  server.route('/api/agent', nativeAgentRoutes(() => {
+    const service = kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)
+    if (!service) throw new Error('agent_unavailable')
+    return service
+  }, options.devOrigins ?? devOriginsFromEnv(process.env)))
 
   if (options.federation) server.route('/api/federation', federationRoutes(() => {
     const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
@@ -228,6 +236,7 @@ export async function start(options: StartOptions = {}) {
         shutdownError = error
       }
       try {
+        await kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)?.shutdown()
         await context.chatExecution.shutdown()
       } catch (error) {
         shutdownError ??= error

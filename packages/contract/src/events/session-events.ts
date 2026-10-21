@@ -8,6 +8,7 @@
  * may read them; agents on remote providers never receive them (D-113).
  */
 import { z } from 'zod'
+import { nativeAgentInputSchema } from '../native-agent.ts'
 import {
   contextStateSchema,
   jobStateSchema,
@@ -71,6 +72,17 @@ export const RUN_A2A_STATE = {
 } as const satisfies Record<RunState, string>
 
 export const sessionEventDataSchemas = {
+  'agent.policy': nativeAgentInputSchema.omit({ prompt: true }).extend({
+    scratch: z.string(), roots: z.array(z.string()), attachments: z.array(z.string()),
+    hiddenPaths: z.array(z.string()).optional(),
+    nodePorts: z.array(z.number().int().min(1).max(65535)).optional(),
+    runtimeBase: z.string().optional(),
+    attachmentMetadata: z.array(z.object({ path: z.string(), mediaType: z.string(), displayName: z.string() }).strict()).optional(),
+  }).strict(),
+  'agent.state': z.object({ status: z.enum(['running', 'completed', 'failed', 'cancelled', 'interrupted']), error: z.string().nullable() }).strict(),
+  'agent.plan': z.object({ items: z.array(z.object({ text: z.string(), status: z.enum(['pending', 'active', 'verification_requested']) }).strict()) }).strict(),
+  'agent.queue': z.object({ items: z.array(z.object({ id: z.string(), text: z.string() }).strict()) }).strict(),
+  'agent.note': z.object({ text: z.string() }).strict(),
   'run.lifecycle': z.object({
     runId: id,
     state: runStateSchema,
@@ -207,6 +219,11 @@ export const reasoningSessionEventSchema = z
   })
 
 export const sessionEventSchema = z.union([
+  standardEvent('agent.policy'),
+  standardEvent('agent.state'),
+  standardEvent('agent.plan'),
+  standardEvent('agent.queue'),
+  standardEvent('agent.note'),
   standardEvent('session.created'),
   standardEvent('run.lifecycle'),
   standardEvent('writer.acquired'),

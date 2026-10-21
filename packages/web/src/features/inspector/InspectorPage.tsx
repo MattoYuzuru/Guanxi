@@ -50,6 +50,11 @@ import {
 const SEARCH_LIMIT = 50
 
 const TYPE_KEYS: Record<SessionEventType, LocaleKey> = {
+  'agent.policy': 'native.mode',
+  'agent.state': 'native.progress',
+  'agent.plan': 'native.plan',
+  'agent.queue': 'native.queue',
+  'agent.note': 'native.note',
   'session.created': 'inspector.type.sessionCreated',
   'writer.acquired': 'inspector.type.writerAcquired',
   prompt: 'inspector.type.prompt',
