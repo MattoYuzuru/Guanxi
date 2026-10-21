@@ -213,6 +213,15 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
     } catch { setSaveError(true) }
     finally { operationBusy.current = false; setSaving(false) }
   }
+  function reset() {
+    if (!doc || operationBusy.current) return
+    const next = { ...builtInLayout(query(mode)), id: doc.id, name: doc.name, scope: doc.scope, rev: doc.rev, updatedAt: doc.updatedAt, updatedBy: doc.updatedBy }
+    phoneSnapshot.current = undefined
+    geometryCache.current.delete(`${layoutScopeKey(doc.scope)}#${doc.id}`)
+    setGeometry({})
+    setDocuments(previous => ({ ...previous, [mode]: next }))
+    setGeneration(value => value + 1)
+  }
   function switchMode(next: ExperienceMode) {
     if (next !== mode && documents[next]) void activateDocument(documents[next]!)
   }
@@ -330,7 +339,7 @@ export function Workspace({ children, account = 'local', project, safeMode = fal
       { label: translate('workspaceLayout.save'), onClick: () => { void save() }, disabled: saving },
       { label: translate('workspaceLayout.saveAs'), onClick: () => { void save(true) }, disabled: saving },
       { label: translate('workspaceLayout.move'), onClick: () => openMove(), disabled: phone },
-      { label: translate('workspaceLayout.reset'), onClick: () => { const next = builtInLayout(query(mode)); setDocuments(previous => ({ ...previous, [mode]: next })); phoneSnapshot.current = undefined; setGeneration(value => value + 1) } },
+      { label: translate('workspaceLayout.reset'), onClick: reset },
     ]} />
     {saveError && <WorkspaceChrome kind="state" title={translate('workspaceLayout.saveError')} error action={{ label: translate('workspaceLayout.retry'), onClick: () => retryOperation.current() }} />}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>

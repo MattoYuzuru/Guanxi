@@ -10,8 +10,9 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
     localStorage.setItem(`${prefix}.layout-device`, 'device-a')
     localStorage.setItem(`${prefix}.theme`, 'system')
     const base = window.fetch.bind(window)
-    const documents: any[] = [...(initial ? [initial] : []), ...(extra.documents ?? [])]
-    const active: any[] = []
+    const stored = JSON.parse(sessionStorage.getItem('layout-api-fixture') ?? 'null')
+    const documents: any[] = stored?.documents ?? [...(initial ? [initial] : []), ...(extra.documents ?? [])]
+    const active: any[] = stored?.active ?? []
     for (const doc of documents) if (!active.some(row => JSON.stringify(row.scope) === JSON.stringify(doc.scope))) active.push({ scope: doc.scope, layoutId: doc.id })
     const geometry = new Map<string, any>(Object.entries(extra.geometry ?? {}))
     ;(window as any).__LAYOUT_WRITES__ = []
@@ -29,6 +30,7 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
           const old = active.findIndex(row => row.scope.mode === body.document.scope.mode)
           if (old >= 0) active.splice(old, 1)
           active.push({ scope: body.document.scope, layoutId: body.document.id })
+          sessionStorage.setItem('layout-api-fixture', JSON.stringify({ documents, active }))
           return Response.json({ document: body.document, recovered: [] })
         }
         const mode = url.searchParams.get('mode')
@@ -48,7 +50,7 @@ async function open(page: Page, initial?: LayoutDocument) {
   await setup(page, initial)
   await page.goto('/workspace')
   await expect(page.locator('.workspace')).toBeVisible()
-  await expect(page.locator('.dv-tab')).toHaveCount(Object.keys(initial?.blocks ?? builtInLayout({ account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' }).blocks).length)
+  await expect(page.locator('.dv-tab')).toHaveCount(Object.keys(initial?.blocks ?? builtInLayout({ account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' }).blocks).length - (initial?.hidden.length ?? 0))
 }
 async function pick(page: Page, label: string, value: string, keyboard = false) {
   if (keyboard) {
@@ -353,4 +355,26 @@ test('the existing session chat remains the centre block with dock lanes immedia
   await expect(lanes).toHaveCount(1)
   await expect(lanes).toHaveText('No goal, work ledger, prompt queue or steering is attached to this chat.')
   expect(await lanes.evaluate(node => Boolean(node.nextElementSibling?.querySelector('textarea')))).toBe(true)
+})
+
+test('reset preserves a saved layout clock and persists the default arrangement through reload', async ({ page }) => {
+  const initial = builtInLayout({ account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' })
+  initial.rev = 7
+  initial.hidden = ['guanxi.core/terminal']
+  initial.engineState.groups = initial.engineState.groups.filter(group => group.zone !== 'bottom')
+  await open(page, initial)
+  await expect(page.locator('.dv-tab')).toHaveCount(10)
+  await page.getByRole('button', { name: 'Reset layout', exact: true }).click()
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  await expect(page.getByTestId('workspace-announcement')).toHaveText('Layout saved to the node.')
+  const written = await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document as LayoutDocument)
+  expect(written.rev).toBe(8)
+  expect(written.id).toBe(initial.id)
+  expect(written.hidden).toEqual([])
+  await page.reload()
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  const restored = await state(page)
+  expect(restored.rev).toBe(8)
+  expect(restored.engineState.groups.find(group => group.zone === 'bottom')!.blocks).toEqual(['guanxi.core/terminal'])
 })
