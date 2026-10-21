@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { openDb, MIGRATIONS } from '../../src/store/db.ts'
 import { migrateFederation } from '../../src/federation/schema.ts'
-import { hash, signValue } from '../../src/federation/crypto.ts'
+import { hash, requestProof, signValue } from '../../src/federation/crypto.ts'
 import { replicaBody } from '../../src/federation/replicas.ts'
 import { SimNode, identity } from './harness.ts'
 import type { StreamBinding } from '@guanxi/contract/federation'
@@ -182,4 +182,47 @@ test('receipt failure rolls back stop, trace and receipt together', () => {
     assert.equal(home.federation.receiveCommand(peer.context(),command),'applied')
     assert.equal(home.runs.get(run.id).cancel_count,1)
   } finally {close()}
+})
+
+test('remote prompt accepts content beyond identifier length without a hidden model limit', () => {
+  const {home,peer,close}=setup()
+  try {
+    const run=home.runs.create({id:'run',sessionId:'session'})
+    home.federation.replicas.bind({streamId:run.id,kind:'run',sessionId:run.session_id,homeNodeId:'home',homeEpoch:1,ownerAccountId:'owner'})
+    const text='A detailed prompt. '.repeat(1000)
+    const command={id:'long-prompt',runId:run.id,sessionId:run.session_id,homeNodeId:'home',stateVersion:run.version,expiresAt:home.time+5000,action:{kind:'prompt' as const,text}}
+    assert.ok(text.length>200)
+    assert.equal(home.federation.receiveCommand(peer.context(),command),'applied')
+    assert.deepEqual(home.federation.pendingPrompts(run.id),[command])
+    assert.equal(home.log.readAll(run.session_id,'person').filter((event)=>event.type==='prompt'&&event.data.text===text).length,1)
+  } finally {close()}
+})
+
+test('restart preserves nonce rejection, command receipts and prompt acceptance order', () => {
+  const dir=mkdtempSync(join(tmpdir(),'guanxi-f1-receipts-'));const path=join(dir,'node.sqlite');const keys=identity('home')
+  const peer=new SimNode(identity('peer'));let home=new SimNode(keys,path)
+  try {
+    home.trust(peer);peer.trust(home)
+    const run=home.runs.create({id:'run',sessionId:'session'})
+    home.federation.replicas.bind({streamId:run.id,kind:'run',sessionId:run.session_id,homeNodeId:'home',homeEpoch:1,ownerAccountId:'owner'})
+    const auth={nodeId:'peer',version:{major:1,minor:0},issuedAt:peer.time,nonce:'nonce',signature:''}
+    auth.signature=signValue(peer.keys.privateKey,requestProof('GET','/api/federation/handshake',null,auth))
+    home.federation.authenticate('GET','/api/federation/handshake',null,auth)
+    const first={id:'z-first',runId:run.id,sessionId:run.session_id,homeNodeId:'home',stateVersion:run.version,expiresAt:home.time+5000,action:{kind:'prompt' as const,text:'first'}}
+    assert.equal(home.federation.receiveCommand(peer.context(),first),'applied')
+    const second={...first,id:'a-second',stateVersion:home.runs.get(run.id).version,action:{kind:'prompt' as const,text:'second'}}
+    assert.equal(home.federation.receiveCommand(peer.context(),second),'applied')
+    assert.deepEqual(home.federation.pendingPrompts(run.id),[first,second])
+    const version=home.runs.get(run.id).version
+    home.close();home=new SimNode(keys,path)
+    assert.throws(()=>home.federation.authenticate('GET','/api/federation/handshake',null,auth),/request_replayed/)
+    assert.equal(home.federation.receiveCommand(peer.context(),first),'applied')
+    assert.equal(home.federation.receiveCommand(peer.context(),second),'applied')
+    assert.equal(home.runs.get(run.id).version,version)
+    assert.equal(home.runs.attempts(run.id).length,0)
+    assert.deepEqual(home.federation.pendingPrompts(run.id),[first,second])
+    assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_command_receipts').get()!.n,2)
+    const prompts=home.log.readAll(run.session_id,'person').filter((e)=>e.type==='prompt')
+    assert.deepEqual(prompts.map((e)=>e.data.text),['first','second'])
+  } finally {home.close();peer.close();rmSync(dir,{recursive:true,force:true})}
 })

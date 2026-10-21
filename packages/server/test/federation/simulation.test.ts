@@ -47,3 +47,46 @@ test('concurrent revoke wins in both delivery orders; an observed regrant restor
     assert.equal(new Set([a,b,c].map((n) => n.federation.config.stateHash())).size, 1)
   } finally { a.close(); b.close(); c.close() }
 })
+
+test('sparse and transitive observation of a revoke makes the next grant causally later', () => {
+  const [a,b,c]=['a','b','c'].map((id)=>new SimNode(identity(id))) as [SimNode,SimNode,SimNode]
+  try {
+    for(const n of [a,b,c]) for(const peer of [a,b,c]) n.trust(peer)
+    const predecessor=a.federation.config.create('unrelated',{kind:'setting',value:true})
+    const revoke=a.federation.config.create('editor',{kind:'grant',present:false})
+    // B sees the revoke before its predecessor, then C sees only B's unrelated op.
+    b.federation.config.ingest([revoke])
+    const intermediate=b.federation.config.create('other',{kind:'setting',value:true})
+    c.federation.config.ingest([intermediate])
+    const grant=c.federation.config.create('editor',{kind:'grant',present:true})
+    assert.equal(intermediate.operation.context.a,2)
+    assert.equal(grant.operation.context.a,2)
+    assert.equal(grant.operation.context.b,1)
+    for(const n of [a,b,c]) n.federation.config.ingest([grant,intermediate,revoke,predecessor])
+    for(const n of [a,b,c]) assert.equal((n.federation.config.state()['["owner","grant","editor"]'] as {present:boolean}).present,true)
+    assert.equal(new Set([a,b,c].map((n)=>n.federation.config.stateHash())).size,1)
+    // Direct sparse observation also suffices, without the intermediate node.
+    const direct=b.federation.config.create('editor',{kind:'grant',present:true})
+    assert.equal(direct.operation.context.a,2)
+  } finally {a.close();b.close();c.close()}
+})
+
+test('revoked-origin historical duplicates cannot wedge unrelated current-author synchronization', () => {
+  const [a,b,c]=['a','b','c'].map((id)=>new SimNode(identity(id))) as [SimNode,SimNode,SimNode]
+  try {
+    for(const n of [a,b,c]) for(const peer of [a,b,c]) n.trust(peer)
+    const historical=a.federation.config.create('old',{kind:'setting',value:'accepted'})
+    b.federation.config.ingest([historical]);c.federation.config.ingest([historical])
+    const unseen=a.federation.config.create('unseen',{kind:'setting',value:'not admitted'})
+    b.federation.revokePeer('a');c.federation.revokePeer('a')
+    const current=b.federation.config.create('new',{kind:'setting',value:'current'})
+    c.federation.config.ingest(b.federation.config.operations())
+    assert.equal(c.federation.config.stateHash(),b.federation.config.stateHash())
+    assert.equal(c.federation.config.operations().length,2)
+    c.federation.config.ingest([historical,current])
+    assert.equal(c.federation.config.operations().length,2)
+    assert.throws(()=>c.federation.config.ingest([{...historical,operation:{...historical.operation,value:{kind:'setting',value:'altered'}}}]),/operation_conflict/)
+    assert.throws(()=>c.federation.config.ingest([unseen]),/unauthenticated/)
+    assert.equal(c.federation.config.operations().length,2)
+  } finally {a.close();b.close();c.close()}
+})

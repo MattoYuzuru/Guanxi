@@ -417,7 +417,9 @@ export class RunStore {
         if (run.state !== 'input_required') result = 'invalid_state'
         else { this.newAttempt(run.id, null); result = 'applied' }
       } else {
-        this.clean(command.action.text)
+        // Prompt content is not an identifier. The contract and egress gate
+        // validate it without imposing the identifier helper's 200-char cap.
+        if (this.scrubber.scrub(command.action.text) !== command.action.text) throw new RunError('invalid_input')
         this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, { type: 'prompt',
           data: { origin: 'remote', messageId: command.id, text: command.action.text, attachmentCount: 0 } })
         this.setState(run.id, run.state, 'signal', command.id)

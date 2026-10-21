@@ -44,3 +44,23 @@ test('real signed channel pulls config/session/run projections and drains a dura
     assert.equal(peer.runs.attempts(run.id).length,0)
   } finally {home.close();peer.close()}
 })
+
+test('outbound older-major negotiation imports zero data and sends zero mutation requests', async () => {
+  const home=new SimNode(identity('home'));const peer=new SimNode(identity('peer'))
+  try {
+    home.trust(peer);peer.trust(home)
+    const requests:string[]=[]
+    const channel=new FederationChannel({local:peer.keys.identity,privateKey:peer.keys.privateKey,peer:home.keys.identity,clock:()=>peer.time,
+      transport:async(request)=>{
+        requests.push(`${request.method} ${new URL(request.url).pathname}`)
+        if(new URL(request.url).pathname.endsWith('/handshake')) return Response.json({version:{major:0,minor:9},negotiated:{major:0,minor:0},readOnly:false})
+        throw new Error('older peer must not be queried for operations, replicas or mutation')
+      }})
+    assert.deepEqual(await channel.synchronize(peer.federation,['session','run']),{readOnly:true})
+    await assert.rejects(()=>channel.command({id:'stop',runId:'run',sessionId:'session',homeNodeId:'home',stateVersion:1,expiresAt:peer.time+5000,action:{kind:'stop'}}),/contract_read_only/)
+    assert.deepEqual(requests,['GET /api/federation/handshake','GET /api/federation/handshake'])
+    assert.equal(peer.federation.config.operations().length,0)
+    assert.equal(peer.db.prepare('SELECT COUNT(*) AS n FROM federation_replicas').get()!.n,0)
+    assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_command_receipts').get()!.n,0)
+  } finally {home.close();peer.close()}
+})

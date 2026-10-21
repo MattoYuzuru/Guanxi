@@ -4,6 +4,9 @@ import type { Db } from '../store/db.ts'
 import { canonical, FederationError, hash, signValue, validSignature } from './crypto.ts'
 
 export const MAX_CLOCK_DRIFT_MS = 60_000
+function counterAt(vector: Record<string, number>, origin: string): number {
+  return Object.hasOwn(vector, origin) ? vector[origin]! : 0
+}
 export function mergeClock(local: Hlc, remote: Hlc, now: number): Hlc {
   if (remote.wall > now + MAX_CLOCK_DRIFT_MS) throw new FederationError('clock_drift')
   const wall = Math.max(now, local.wall, remote.wall)
@@ -22,7 +25,7 @@ export function configState(ops: readonly SignedConfigOperation[]) {
     const kind = all[0]!.value.kind
     if (kind === 'grant' || kind === 'membership') {
       // Maximal causal frontier. A remove wins over every concurrent add, regardless of HLC.
-      const frontier = all.filter((a) => !all.some((b) => (b.context[a.origin] ?? 0) >= a.counter))
+      const frontier = all.filter((a) => !all.some((b) => counterAt(b.context, a.origin) >= a.counter))
       return [key, { kind, present: frontier.length > 0 && frontier.every((op) => 'present' in op.value && op.value.present) }]
     }
     const sorted = [...all].sort((a, b) => a.clock.wall - b.clock.wall || a.clock.logical - b.clock.logical ||
@@ -51,7 +54,11 @@ export class SharedConfig {
   private vector(): Record<string, number> {
     const seen: Record<string, number> = Object.create(null)
     for (const { operation: op } of this.operations()) {
-      if (op.counter === (seen[op.origin] ?? 0) + 1) seen[op.origin] = op.counter
+      // A signed dot n causally follows that origin's n-1, even when payloads
+      // arrive out of order. Propagate its context as well as the observed dot;
+      // otherwise a later write can become concurrent with an observed revoke.
+      seen[op.origin] = Math.max(seen[op.origin] ?? 0, op.counter)
+      for (const [origin, counter] of Object.entries(op.context)) seen[origin] = Math.max(seen[origin] ?? 0, counter)
     }
     return seen
   }
@@ -77,19 +84,22 @@ export class SharedConfig {
   private acceptWithin(input: SignedConfigOperation): void {
     const signed = signedConfigOperationSchema.parse(input)
     const op = signed.operation
-    const author = this.peer(op.origin)
     this.clean(signed)
-    if (author.accountId !== op.accountId || !author.scopes.includes('config')) throw new FederationError('forbidden', 403)
-    if (['grant', 'membership', 'identity'].includes(op.value.kind) && !author.admin) throw new FederationError('admin_required', 403)
-    if (op.value.kind === 'connection' && op.value.ownerAccountId !== op.accountId) throw new FederationError('owner_mismatch', 403)
-    if ((op.context[op.origin] ?? 0) !== op.counter - 1) throw new FederationError('invalid_context')
-    if (!validSignature(author.publicKey, op, signed.signature)) throw new FederationError('unauthenticated', 401)
-    if (op.clock.wall > this.now() + MAX_CLOCK_DRIFT_MS) throw new FederationError('clock_drift')
+    // Stored acceptance survives credential revocation. Otherwise every full
+    // anti-entropy batch containing a revoked author's history would be wedged.
+    // New or changed dots still require CURRENT author admission below.
     const existing = this.db.prepare('SELECT data FROM federation_operations WHERE origin=? AND counter=?').get(op.origin, op.counter)
     if (existing) {
       if (canonical(JSON.parse(existing.data as string)) !== canonical(signed)) throw new FederationError('operation_conflict')
       return
     }
+    const author = this.peer(op.origin)
+    if (author.accountId !== op.accountId || !author.scopes.includes('config')) throw new FederationError('forbidden', 403)
+    if (['grant', 'membership', 'identity'].includes(op.value.kind) && !author.admin) throw new FederationError('admin_required', 403)
+    if (op.value.kind === 'connection' && op.value.ownerAccountId !== op.accountId) throw new FederationError('owner_mismatch', 403)
+    if (counterAt(op.context, op.origin) !== op.counter - 1) throw new FederationError('invalid_context')
+    if (!validSignature(author.publicKey, op, signed.signature)) throw new FederationError('unauthenticated', 401)
+    if (op.clock.wall > this.now() + MAX_CLOCK_DRIFT_MS) throw new FederationError('clock_drift')
     this.setClock(mergeClock(this.clock(), op.clock, this.now()))
     this.db.prepare('INSERT INTO federation_operations VALUES (?,?,?)').run(op.origin, op.counter, canonical(signed))
   }

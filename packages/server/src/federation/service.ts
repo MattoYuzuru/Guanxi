@@ -151,7 +151,7 @@ export class Federation {
   }
   pendingPrompts(runId: string): RoutedCommand[] {
     this.clean(null)
-    return this.#options.db.prepare('SELECT command FROM federation_prompts WHERE run_id=? AND consumed=0 ORDER BY node_id,command_id').all(runId)
+    return this.#options.db.prepare("SELECT command FROM federation_prompts WHERE run_id=? AND consumed=0 ORDER BY json_extract(command,'$.stateVersion')").all(runId)
       .map((r) => { const command = routedCommandSchema.parse(JSON.parse(r.command as string)); this.clean(command); return command })
   }
   acknowledgePrompt(nodeId: string, commandId: string): void {

@@ -66,7 +66,7 @@ node id and explicit approval. No vendor OAuth tokens are read, copied or transf
 
 `SharedConfig.create()` persists signed operations with an origin counter, version-vector
 context and HLC. Receive order, retries and forwarding cannot change the signed author.
-Missing counters do not advance the receiver's causal prefix. Operations more than 60 seconds
+Signed dots and their transitive contexts advance causal high-water marks even when earlier payloads are delayed. Operations more than 60 seconds
 in the future are rejected before persistence; local writes also refuse after a clock rollback
 beyond the bound. Wall/logical state and origin counters survive restart.
 
@@ -80,7 +80,12 @@ values cause a content-free refusal rather than changing signed data.
 
 This is shared metadata, not a replacement of K3's local secret/dispatch policies or a new
 multi-account authentication UI. Connection metadata retains its owner; subscription
-connections cannot be assigned to another account (D-190). The local peer credential registry
+connections cannot be assigned to another account (D-190). Exact already-accepted duplicates remain valid after author revocation, so historical
+entries cannot wedge subsequent synchronization. New or altered revoked-author operations
+are refused. A new receiver lacking that history cannot safely infer pre-revocation admission
+from an author's timestamp; bootstrap then requires operator-reviewed rebaseline or reauthoring
+by a current admin. Automatic historical admission certificates/frontiers are not implemented.
+The local peer credential registry
 is host-approved authority, separate from shared user display metadata and grant projections.
 
 ## Logs, single writers and commands
@@ -115,7 +120,7 @@ home-fenced transaction as the effect, trace, durable prompt input and receipt. 
 retry id/payload conflicts; an exact retry returns its receipt. Stop cannot cancel a later
 version. Decide only admits an `input_required` run. Prompt appends a K2 prompt, advances the
 version and queues durable input without starting inference. The executor consumes
-`pendingPrompts()` and acknowledges with `acknowledgePrompt()`; wiring that input into the
+`pendingPrompts()` in accepted run-version order and acknowledges with `acknowledgePrompt()`; wiring that input into the
 native agent belongs to K4 integration. This API does not claim exactly-once model execution.
 Remote execution offers, direct executor cancellation, lease transfer and failover remain F2.
 
@@ -130,7 +135,8 @@ host sensors and placement; no host-pressure probe runs here.
 Peers negotiate protocol major/minor. Older-major clients can authenticate and read but every
 mutation endpoint rejects them with `contract_read_only`. A newer major is refused with
 `contract_incompatible`. The outbound synchronizer also refuses to import writes from an
-older-major peer. Version is signed on every request, preventing an intermediary downgrade.
+older-major peer, and the channel negotiates before every outgoing command to prevent a write
+after an older-major read-only handshake. Version is signed on every request, preventing an intermediary downgrade.
 
 ## Storage, upgrade and recovery
 

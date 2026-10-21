@@ -20,7 +20,7 @@ export interface ChannelOptions {
 export class FederationChannel {
   #options: ChannelOptions
   constructor(options: ChannelOptions) { this.#options = options }
-  async request(method: string, path: string, body: unknown = null): Promise<unknown> {
+  private async request(method: string, path: string, body: unknown = null): Promise<unknown> {
     const options = this.#options
     const route = `/api/federation${path}`
     const auth: FederationAuth = { nodeId: options.local.id, version: FEDERATION_VERSION,
@@ -33,14 +33,17 @@ export class FederationChannel {
     if (!response.ok) throw new FederationError('peer_refused', response.status)
     return response.json()
   }
+  private async negotiate(): Promise<{ readOnly: boolean }> {
+    const handshake = handshakeSchema.parse(await this.request('GET','/handshake'))
+    if (handshake.version.major > FEDERATION_VERSION.major) throw new FederationError('contract_incompatible',426)
+    return { readOnly: handshake.version.major < FEDERATION_VERSION.major || handshake.readOnly }
+  }
   /** Anti-entropy pull; each peer is independent, and retries are idempotent. */
   async synchronize(local: Federation, streamIds: readonly string[] = []): Promise<{ readOnly: boolean }> {
     // Verify the host's pin before accepting any remote data.
     const peer = local.peer(this.#options.peer.id)
     if (canonical(peer) !== canonical(this.#options.peer)) throw new FederationError('identity_conflict')
-    const handshake = handshakeSchema.parse(await this.request('GET','/handshake'))
-    if (handshake.version.major > FEDERATION_VERSION.major) throw new FederationError('contract_incompatible',426)
-    const readOnly = handshake.version.major < FEDERATION_VERSION.major || handshake.readOnly
+    const { readOnly } = await this.negotiate()
     // An older peer is a reader: it may pull our state, but cannot author imports into us.
     if (readOnly) return { readOnly: true }
     if (peer.scopes.includes('config')) {
@@ -56,6 +59,7 @@ export class FederationChannel {
   }
   async command(command: RoutedCommand): Promise<string> {
     if (command.homeNodeId!==this.#options.peer.id) throw new FederationError('not_home')
+    if ((await this.negotiate()).readOnly) throw new FederationError('contract_read_only',403)
     return resultSchema.parse(await this.request('POST','/commands',command)).result
   }
 }
