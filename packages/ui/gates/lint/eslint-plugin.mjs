@@ -149,7 +149,7 @@ export const rules = {
   // arrays joined at their use site. Runtime-built fragments remain outside static lint.
   'semantic-classes': rule('G5 non-semantic class {{value}}.', context => {
     const inspect = (node, text) => {
-      for (const match of text.matchAll(/(?:^|\s)((?:[^\s]+:)?!?(?:[\w-]+-\[[^\s]+\]|[\w-]+-\(--[\w-]+\)|(?:bg|text|border|ring|fill|stroke)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone)-\d+)(?:\/[^\s]+)?!?)(?=\s|$)/g)) context.report({ node, messageId: 'violation', data: { value: match[1] } })
+      for (const match of text.matchAll(/(?:^|\s)((?:[^\s]+:)?!?(?:[\w-]+-\[[^\s]+\]|[\w-]+-\(--[\w-]+\)|(?:bg|text|border|ring|fill|stroke)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|mauve|olive|mist|taupe)-\d+|(?:bg|text|border|ring|fill|stroke)-(?:black|white))(?:\/[^\s]+)?!?)(?=\s|$)/g)) context.report({ node, messageId: 'violation', data: { value: match[1] } })
     }
     return { Literal(n) { if (typeof n.value === 'string') inspect(n, n.value) }, TemplateElement(n) { inspect(n, n.value.cooked ?? n.value.raw) } }
   }),

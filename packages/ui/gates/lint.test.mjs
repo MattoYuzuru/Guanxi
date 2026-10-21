@@ -242,3 +242,7 @@ test('L2 G8 rejects static node_modules paths, alias traversal, concatenation an
     "const x = import.meta.glob(['./safe.ts', '/node_modules/@base-ui/react/*.js'])",
   ]) assert.ok((await lint(source, 'packages/web/src/features/x/a.tsx')).some(m => m.ruleId === 'guanxi/import-boundaries'), source)
 })
+
+test('L3 exported class maps reject every current palette and black/white utilities', async () => {
+  for (const cls of ['bg-mauve-500', 'text-olive-400', 'border-mist-100', 'ring-taupe-700', 'bg-white', 'text-black/80']) assert.ok((await lint(`export const tones = { selected: '${cls}' }`)).some(m => m.ruleId === 'guanxi/semantic-classes'), cls)
+})
