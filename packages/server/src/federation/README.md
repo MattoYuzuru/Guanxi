@@ -59,7 +59,9 @@ package has no enrollment screen or CLI. Hosts must present the user code and ac
 key for review rather than automatically approving a requested trust class. A cloud or
 shared device cannot be admin-capable. Peers must be pinned by each receiving host (or
 approved locally); enrollment on one node is not authority to enroll itself on another.
-`revokePeer()` takes effect even for a held authenticated context. Re-enrollment uses a new
+`revokePeer()` is host-local and needs no admin capability: any host may remove its own trust.
+It takes effect even for a held authenticated context. Each node must revoke separately until
+admin-signed revocations replicate (ADR-0018 §4); that replication is not implemented in F1. Re-enrollment uses a new
 node id and explicit approval. No vendor OAuth tokens are read, copied or transferred.
 
 ## Shared configuration

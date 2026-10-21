@@ -41,3 +41,17 @@ test('channel only requests streams pinned to its peer home', async () => {
     assert.deepEqual(paths, ['/api/federation/handshake','/api/federation/config'], 'no stream proof is sent to a non-home peer')
   } finally { owner.close(); home.close(); cloud.close() }
 })
+
+test('P3 non-admin home revokes a peer locally and stops serving replicas', async () => {
+  const home = new SimNode(identity('home', {admin:false})); const laptop = new SimNode(identity('laptop', {admin:false}))
+  try {
+    home.trust(laptop); laptop.trust(home)
+    const writer = home.log.open('session', {kind:'agent'}); writer.close()
+    home.federation.replicas.bind({kind:'session',streamId:'session',sessionId:'session',homeNodeId:'home',homeEpoch:1,ownerAccountId:'owner'})
+    const before = await laptop.request(home, 'GET', '/replicas/session')
+    assert.equal(before.status, 200)
+    assert.ok((await before.json() as {entries:unknown[]}).entries.length > 0)
+    assert.doesNotThrow(() => home.federation.revokePeer('laptop'), 'host-local removal needs no admin')
+    assert.equal((await laptop.request(home, 'GET', '/replicas/session')).status, 401)
+  } finally { home.close(); laptop.close() }
+})

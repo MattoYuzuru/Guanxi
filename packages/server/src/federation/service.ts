@@ -66,7 +66,6 @@ export class Federation {
   }
   revokePeer(id: string): void {
     this.assertOpen()
-    if (!this.identity.admin) throw new FederationError('admin_required', 403)
     this.#options.db.prepare('UPDATE federation_peers SET revoked=1 WHERE id=?').run(id)
   }
   peer(id: string): NodeIdentity {
