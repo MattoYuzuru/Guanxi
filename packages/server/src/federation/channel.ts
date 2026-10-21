@@ -2,12 +2,13 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { FEDERATION_VERSION, federationVersionSchema, replicaEntrySchema, signedConfigOperationSchema,
-  type FederationAuth, type NodeIdentity, type RoutedCommand } from '@guanxi/contract/federation'
+  ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptReceiptSchema,
+  type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand } from '@guanxi/contract/federation'
 import { canonical, FederationError, requestProof, signValue } from './crypto.ts'
 import type { SharedConfig } from './config.ts'
 import type { Federation } from './service.ts'
 
-const handshakeSchema = z.object({ version: federationVersionSchema, negotiated: federationVersionSchema, readOnly: z.boolean() }).strict()
+const handshakeSchema = z.object({ version: federationVersionSchema, negotiated: federationVersionSchema, readOnly: z.boolean(), capabilities: z.array(z.string()).optional() }).strict()
 const resultSchema = z.object({ result: z.enum(['applied','stale_version','expired','invalid_state']) }).strict()
 export interface ChannelOptions {
   local: NodeIdentity
@@ -38,10 +39,11 @@ export class FederationChannel {
     }
     return response.json()
   }
-  private async negotiate(): Promise<{ readOnly: boolean }> {
+  private async negotiate(): Promise<{ readOnly: boolean; minor: number; capabilities: string[] }> {
     const handshake = handshakeSchema.parse(await this.request('GET','/handshake'))
     if (handshake.version.major > FEDERATION_VERSION.major) throw new FederationError('contract_incompatible',426)
-    return { readOnly: handshake.version.major < FEDERATION_VERSION.major || handshake.readOnly }
+    return { readOnly: handshake.version.major < FEDERATION_VERSION.major || handshake.readOnly,
+      minor: handshake.version.minor, capabilities: handshake.capabilities ?? [] }
   }
   /** Anti-entropy pull; each peer is independent, and retries are idempotent. */
   async synchronize(local: Federation, streamIds: readonly string[] = []): Promise<{ readOnly: boolean } & ReturnType<SharedConfig['ingest']>> {
@@ -72,5 +74,26 @@ export class FederationChannel {
     if (command.homeNodeId!==this.#options.peer.id) throw new FederationError('not_home')
     if ((await this.negotiate()).readOnly) throw new FederationError('contract_read_only',403)
     return resultSchema.parse(await this.request('POST','/commands',command)).result
+  }
+  private async attemptReady(executorNodeId: string): Promise<void> {
+    if (executorNodeId !== this.#options.peer.id) throw new FederationError('wrong_executor')
+    const negotiated = await this.negotiate()
+    if (negotiated.readOnly) throw new FederationError('contract_read_only', 403)
+    if (negotiated.minor < ATTEMPT_RESERVATIONS_MINOR || !negotiated.capabilities.includes(ATTEMPT_RESERVATIONS_CAPABILITY)) throw new FederationError('contract_feature_unavailable', 426)
+  }
+  async offer(offer: RemoteAttemptOffer) {
+    if (offer.homeNodeId !== this.#options.local.id) throw new FederationError('not_home')
+    await this.attemptReady(offer.executorNodeId)
+    const receipt = remoteAttemptReceiptSchema.parse(await this.request('POST', '/attempts/offers', offer))
+    if (receipt.offerId !== offer.id || receipt.runId !== offer.runId || receipt.homeNodeId !== offer.homeNodeId ||
+      receipt.executorNodeId !== offer.executorNodeId || canonical(receipt.fence) !== canonical(offer.fence)) throw new FederationError('offer_receipt_mismatch')
+    return receipt
+  }
+  async cancelOffer(input: RemoteAttemptCancel) {
+    if (input.homeNodeId !== this.#options.local.id) throw new FederationError('not_home')
+    await this.attemptReady(input.executorNodeId)
+    const receipt = remoteAttemptReceiptSchema.parse(await this.request('POST', '/attempts/cancel', input))
+    if (receipt.offerId !== input.offerId || receipt.homeNodeId !== input.homeNodeId || receipt.executorNodeId !== input.executorNodeId) throw new FederationError('offer_receipt_mismatch')
+    return receipt
   }
 }

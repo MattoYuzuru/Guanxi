@@ -163,7 +163,10 @@ version. Decide only admits an `input_required` run. Prompt appends a K2 prompt,
 version and queues durable input without starting inference. The executor consumes
 `pendingPrompts()` in accepted run-version order and acknowledges with `acknowledgePrompt()`; wiring that input into the
 native agent belongs to K4 integration. This API does not claim exactly-once model execution.
-Remote execution offers, direct executor cancellation, lease transfer and failover remain F2.
+Optional owned-node offer reservations are implemented in
+[remote-attempts](../remote-attempts/README.md). Their receipts explicitly authorize no
+execution. Actual remote dispatch, holder fencing, direct executor cancellation, lease
+transfer and failover remain F2.
 
 ## Telemetry and compatibility
 

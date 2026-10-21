@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z, ZodError } from 'zod'
-import { devicePollSchema, deviceRequestSchema, FEDERATION_VERSION, LAYOUT_CONFIG_MINOR, replicaEntrySchema,
+import { devicePollSchema, deviceRequestSchema, FEDERATION_VERSION, LAYOUT_CONFIG_MINOR, ATTEMPT_RESERVATIONS_MINOR, replicaEntrySchema,
   signedConfigOperationSchema, federationAuthSchema } from '@guanxi/contract/federation'
 import { FederationError } from './crypto.ts'
 import type { Federation, PeerContext } from './service.ts'
@@ -51,7 +51,9 @@ export function federationRoutes(resolve: () => Federation) {
   })
   app.post('/device/code', (c) => c.json(c.get('federation').enrollment.begin(deviceRequestSchema.parse(c.get('body')).publicKey)))
   app.post('/device/token', (c) => c.json(c.get('federation').enrollment.poll(devicePollSchema.parse(c.get('body')).device_code)))
-  app.get('/handshake', (c) => c.json({ version: FEDERATION_VERSION, negotiated: c.get('peer').version, readOnly: c.get('peer').readOnly }))
+  app.get('/handshake', (c) => c.json({ version: FEDERATION_VERSION, negotiated: c.get('peer').version, readOnly: c.get('peer').readOnly,
+    ...(c.get('peer').version.major === FEDERATION_VERSION.major && c.get('peer').version.minor >= ATTEMPT_RESERVATIONS_MINOR
+      ? { capabilities: c.get('federation').capabilities() } : {}) }))
   app.get('/config', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'config')
     const operations = f.config.operations().filter((op) => op.operation.accountId === peer.accountId)
@@ -81,6 +83,8 @@ export function federationRoutes(resolve: () => Federation) {
     f.replicas.ingest(peer, z.array(replicaEntrySchema).parse(c.get('body'))); return c.json({ applied: true })
   })
   app.post('/commands', (c) => c.json({ result: c.get('federation').receiveCommand(c.get('peer'), c.get('body') as never) }))
+  app.post('/attempts/offers', async (c) => c.json(await c.get('federation').receiveAttemptOffer(c.get('peer'), c.get('body') as never)))
+  app.post('/attempts/cancel', (c) => c.json(c.get('federation').cancelAttemptOffer(c.get('peer'), c.get('body') as never)))
   app.post('/telemetry', (c) => { c.get('federation').receiveTelemetry(c.get('peer'), c.get('body') as never); return c.json({ applied: true }) })
   app.get('/telemetry', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'telemetry')

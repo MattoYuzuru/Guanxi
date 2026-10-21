@@ -1,5 +1,6 @@
 import { federationAuthSchema, FEDERATION_VERSION, nodeIdentitySchema, routedCommandSchema, telemetrySchema,
-  type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
+  ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptOfferSchema, remoteAttemptCancelSchema,
+  type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog } from '../session-log/log.ts'
@@ -10,6 +11,9 @@ import { DeviceEnrollment } from './enrollment.ts'
 import { Replicas } from './replicas.ts'
 import { migrateFederation } from './schema.ts'
 import { ReplicatedLayouts } from '../layouts/replication.ts'
+import { AttemptOffers, type OfferPolicy } from '../remote-attempts/offers.ts'
+import type { ResourceGovernor } from '../runtime/resource-governor.ts'
+import type { Attempt } from '../runs/types.ts'
 
 export interface FederationOptions {
   db: Db
@@ -23,6 +27,7 @@ export interface FederationOptions {
   /** Maximum operations per POST /config; default 256. Split larger batches. */
   configOpsPerRequest?: number
   clock?: () => number
+  attempts?: OfferPolicy & { governor: ResourceGovernor }
 }
 export interface PeerContext { identity: NodeIdentity; readOnly: boolean; version: { major: number; minor: number } }
 export class Federation {
@@ -32,6 +37,7 @@ export class Federation {
   readonly replicas: Replicas
   readonly enrollment: DeviceEnrollment
   readonly identity: NodeIdentity
+  readonly attemptOffers: AttemptOffers | null
   #options: FederationOptions
   private readonly now: () => number
   private closed = false
@@ -56,6 +62,9 @@ export class Federation {
     this.layouts = new ReplicatedLayouts(options.db, this.identity.accountId, this.config, () => this.clean(null))
     this.replicas = new Replicas(options.db, this.identity, privateKey, options.log, (id) => this.peer(id), (v) => this.clean(v))
     this.enrollment = new DeviceEnrollment(options.db, this.identity, this.now, (id) => this.trust(id), () => this.assertOpen())
+    if (options.attempts && this.identity.trust !== 'owner_device') throw new FederationError('owner_device_required', 403)
+    this.attemptOffers = options.attempts ? new AttemptOffers(options.db, options.runs, this.identity.id,
+      options.attempts.governor, options.attempts, this.now) : null
   }
   private assertOpen() { if (this.closed) throw new FederationError('closed', 503) }
   private clean(value: unknown): void {
@@ -170,5 +179,38 @@ export class Federation {
     this.assertOpen()
     this.#options.db.prepare('UPDATE federation_prompts SET consumed=1 WHERE node_id=? AND command_id=?').run(nodeId, commandId)
   }
-  close(): void { this.closed = true }
+  capabilities(): string[] { this.assertOpen(); return this.attemptOffers ? [ATTEMPT_RESERVATIONS_CAPABILITY] : [] }
+  private offers(): AttemptOffers {
+    this.clean(null)
+    if (!this.attemptOffers) throw new FederationError('contract_feature_unavailable', 426)
+    return this.attemptOffers
+  }
+  createAttemptOffer(a: Attempt, input: Parameters<AttemptOffers['create']>[1]): RemoteAttemptOffer {
+    const offers = this.offers(), target = this.peer(input.executorNodeId)
+    this.clean(input)
+    if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId) throw new FederationError('owner_mismatch', 403)
+    return offers.create(a, input)
+  }
+  private validateAttemptOffer(context: PeerContext, offer: RemoteAttemptOffer): void {
+    const peer = this.authorize(context, 'attempts', true)
+    if (context.version.minor < ATTEMPT_RESERVATIONS_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    this.clean(offer)
+    if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || offer.homeNodeId !== peer.id || offer.executorNodeId !== this.identity.id)
+      throw new FederationError('owner_mismatch', 403)
+    const binding = this.replicas.binding(offer.runId)
+    if (binding.kind !== 'run' || binding.sessionId !== offer.sessionId || binding.ownerAccountId !== peer.accountId ||
+      binding.homeNodeId !== peer.id || binding.homeEpoch !== offer.fence.epoch) throw new FederationError('not_home')
+  }
+  async receiveAttemptOffer(context: PeerContext, input: RemoteAttemptOffer) {
+    const offers = this.offers(), offer = remoteAttemptOfferSchema.parse(input)
+    this.validateAttemptOffer(context, offer)
+    return offers.receive(offer, () => this.validateAttemptOffer(context, offer))
+  }
+  cancelAttemptOffer(context: PeerContext, raw: RemoteAttemptCancel) {
+    const offers = this.offers(), input = remoteAttemptCancelSchema.parse(raw), peer = this.authorize(context, 'attempts', true)
+    if (context.version.minor < ATTEMPT_RESERVATIONS_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    if (input.homeNodeId !== peer.id || input.executorNodeId !== this.identity.id || peer.accountId !== this.identity.accountId) throw new FederationError('owner_mismatch', 403)
+    return offers.cancel(peer.id, input.offerId)
+  }
+  close(): void { if (this.closed) return; this.attemptOffers?.close(); this.closed = true }
 }
