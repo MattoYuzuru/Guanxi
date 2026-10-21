@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { builtInLayout } from '../../../src/features/workspace/defaults.ts'
+import { builtInLayout } from '../../src/features/workspace/defaults.ts'
 import type { LayoutDocument } from '@guanxi/contract'
 import { installChatApiFixture, chatFixtureThreadId } from './fixtures/chat-api.ts'
 import { PRODUCT_FILE_PREFIX } from '@guanxi/contract'
