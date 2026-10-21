@@ -83,3 +83,25 @@ test('H4: context eligibility covers pins, revocation, config scope, account and
     } finally { receiver.close(); author.close(); origin.close() }
   }
 })
+
+test('P4e residual: revoked-author equivocation remains fatal without rewriting signed history', async () => {
+  const nodes = ['a', 'b', 'x', 'y'].map((id) => new SimNode(identity(id)))
+  const [a, b, x, y] = nodes as [SimNode, SimNode, SimNode, SimNode]
+  try {
+    for (const n of nodes) for (const p of nodes) n.trust(p)
+    const conflicting = (value: string) => {
+      const operation = { origin: 'x', accountId: 'owner', counter: 1, key: 'theme', clock: { wall: x.time, logical: 0 },
+        context: { x: 0 }, value: { kind: 'setting' as const, value } }
+      return { operation, signature: signValue(x.keys.privateKey, operation) }
+    }
+    a.federation.config.ingest([conflicting('A')]); b.federation.config.ingest([conflicting('B')])
+    a.federation.revokePeer('x'); b.federation.revokePeer('x')
+    a.federation.config.ingest([y.federation.config.create('editor', { kind: 'grant', present: false })])
+    await assert.rejects(() => pull(a, b).synchronize(b.federation), /operation_conflict/, 'equivocation requires operator-reviewed rebaseline')
+    assert.equal(present(b), undefined, 'later honest operations in this pull remain blocked')
+    // Recovery for this independent revoke can use a clean packet; the conflicting
+    // history itself still needs reviewed rebaseline, not an automatic overwrite.
+    b.federation.config.ingest(y.federation.config.operations())
+    assert.equal(present(b), false, 'targeted clean catch-up admits independent work')
+  } finally { nodes.forEach((n) => n.close()) }
+})

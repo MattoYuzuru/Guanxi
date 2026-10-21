@@ -114,6 +114,18 @@ the missing admissible history, current-admin reauthoring from a receiver withou
 an operator-reviewed rebaseline. No implicit prefix or historical admission certificate is created.
 `synchronize()` returns `accepted`, `duplicates`, `deferred`, `skipped` and content-free `reasons`
 alongside `readOnly`; callers can observe unresolved stalls and skips on every pull.
+**F1-H-EQUIVOCATION (P4e, retained):** two honest receivers can hold different, validly signed
+payloads for the same origin/counter. Their subsequent full-log pulls fail with
+`operation_conflict` at that dot even after the author is revoked; later entries in that batch
+are blocked, while earlier independent commits survive. Revocation prevents new writes but
+cannot reconcile already accepted divergent signed history. Automatic conflict selection is
+outside F1 because it would change immutable history and privilege causality. Quarantine the
+author on all affected nodes, compare the signed variants, and perform an operator-reviewed
+rebaseline from a verified canonical history on affected replicas. Independently authored clean
+packets or current-admin reauthoring can restore unrelated urgent changes while that review
+is pending; they do not repair the conflicting dot. Keep conflicting evidence in protected
+local storage, subject to existing secret/log policy.
+
 The local peer credential registry
 is host-approved authority, separate from shared user display metadata and grant projections.
 
