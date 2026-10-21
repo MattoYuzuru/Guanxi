@@ -145,3 +145,20 @@ test('batch commits independent ops around unknown, revoked, unscoped, non-admin
     assert.equal(receiver.federation.config.operations().length, 2, 'an admitted op commits independently before a later conflict')
   } finally { receiver.close(); nodes.forEach((n)=>n.close()) }
 })
+
+test('self-review: foreign-account stored prefixes admit their own successors without entering the local vector', async () => {
+  const home = new SimNode(identity('home')); const family = new SimNode(identity('family-node',{accountId:'family'}))
+  try {
+    home.trust(family); family.trust(home)
+    const first = family.federation.config.create('theme',{kind:'setting',value:'first'})
+    const second = family.federation.config.create('theme',{kind:'setting',value:'second'})
+    const response = await family.request(home,'POST','/config',[second,first])
+    assert.equal(response.status, 200)
+    const report = await response.json() as {accepted:number;deferred:number}
+    assert.equal(report.accepted, 2, 'context admission uses the operation account stored prefix')
+    assert.equal(report.deferred, 0)
+    assert.equal((home.federation.config.state()['["family","setting","theme"]'] as {value:string}).value, 'second')
+    const own = home.federation.config.create('own',{kind:'setting',value:true})
+    assert.equal(own.operation.context['family-node'], undefined, 'foreign history cannot enter local privilege context')
+  } finally { home.close(); family.close() }
+})

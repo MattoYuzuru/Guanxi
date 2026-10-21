@@ -55,12 +55,12 @@ export class SharedConfig {
   stateHash() { return hash(this.state()) }
   private clock(): Hlc { return this.db.prepare('SELECT wall,logical FROM federation_clock WHERE id=1').get() as unknown as Hlc }
   private setClock(clock: Hlc) { this.db.prepare('UPDATE federation_clock SET wall=?,logical=? WHERE id=1').run(clock.wall, clock.logical) }
-  private vector(): Record<string, number> {
+  private vector(accountId = this.local.accountId): Record<string, number> {
     const seen: Record<string, number> = Object.create(null)
     for (const { operation: op } of this.operations()) {
       // Another account's administrator has no authority over our privilege
       // history or local counters, even on a shared installation.
-      if (op.accountId !== this.local.accountId) continue
+      if (op.accountId !== accountId) continue
       // Only the unbroken, actually stored prefix is evidence of observation.
       // Neither a sparse dot nor an author's claimed context fills a gap.
       if (op.counter === (seen[op.origin] ?? 0) + 1) seen[op.origin] = op.counter
@@ -131,7 +131,7 @@ export class SharedConfig {
     if (counterAt(op.context, op.origin) !== op.counter - 1) throw new FederationError('invalid_context')
     if (!validSignature(author.publicKey, op, signed.signature)) throw new FederationError('unauthenticated', 401)
     if (op.clock.wall > this.now() + MAX_CLOCK_DRIFT_MS) throw new FederationError('clock_drift')
-    const stored = this.vector()
+    const stored = this.vector(op.accountId)
     if (Object.entries(op.context).some(([origin, counter]) => counter > counterAt(stored, origin))) {
       throw new FederationError('context_missing')
     }
