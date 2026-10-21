@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { remoteAttemptOfferSchema, remoteAttemptReceiptSchema, type RemoteAttemptOffer, type RemoteAttemptReceipt } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { RunStore } from '../runs/store.ts'
-import type { Attempt, HomeFence } from '../runs/types.ts'
+import type { Attempt, HomeFence, Synchronous } from '../runs/types.ts'
 import type { ResourceGovernor, ResourceLease } from '../runtime/resource-governor.ts'
 import { canonical, hash, FederationError } from '../federation/crypto.ts'
 
@@ -50,6 +50,7 @@ export class AttemptOffers {
     })
     this.authority = authority
   }
+  ensureReady(): void { this.ready() }
   private ready(): void { if (this.closed) throw new FederationError('closed', 503); this.initialize(); this.authority!.assert() }
   private time(): number {
     const now = this.leaseClock()
@@ -194,6 +195,21 @@ export class AttemptOffers {
     if (!row) throw new FederationError('offer_not_found', 404)
     if (['queued', 'reserved'].includes(this.decode(row).status)) this.setStatus(home, id, 'canceled')
     return this.read(home, id)
+  }
+  /** Consume exactly one live reservation atomically with new dispatch metadata. */
+  consume<T>(home: string, id: string, reservationId: string, body: () => Synchronous<T>): T {
+    this.ready(); this.reap()
+    const result = this.authority!.transaction('offers.consume', () => {
+      const row = this.row(home, id)
+      if (!row) throw new FederationError('offer_not_found', 404)
+      const receipt = this.decode(row), active = this.active.get(this.key(home, id))
+      if (!active?.lease || receipt.status !== 'reserved' || receipt.reservation?.id !== reservationId ||
+        this.time() >= active.deadline || this.clock() >= active.wallDeadline) throw new FederationError('reservation_lost')
+      this.write(row, { ...receipt, status: 'fenced' })
+      return body()
+    })
+    this.release(home, id)
+    return result
   }
   reap(): void {
     this.ready()

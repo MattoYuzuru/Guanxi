@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { sessionEventSchema } from '../events/session-events.ts'
 import { layoutClockSchema, layoutDocumentSchema } from '../layouts.ts'
 
-export const FEDERATION_VERSION = { major: 1, minor: 2 } as const
+export const FEDERATION_VERSION = { major: 1, minor: 3 } as const
 export const ATTEMPT_RESERVATIONS_MINOR = 2
 export const ATTEMPT_RESERVATIONS_CAPABILITY = 'attempt-reservations-v1'
 export const LAYOUT_CONFIG_MINOR = 1
@@ -96,3 +96,36 @@ export const federationAuthSchema = z.object({ nodeId: federationId, audience: f
   issuedAt: integer, nonce: federationId, signature: z.string().max(128) }).strict()
 export type FederationAuth = z.infer<typeof federationAuthSchema>
 export const federationSyncSchema = z.object({ operations: z.array(signedConfigOperationSchema), replicas: z.array(replicaEntrySchema) }).strict()
+
+export const ATTEMPT_DISPATCH_MINOR = 3
+export const ATTEMPT_DISPATCH_CAPABILITY = 'local-inference-dispatch-v1'
+export const localInferenceJobSchema = z.object({
+  kind: z.literal('local_inference'), model: z.string().trim().min(1), context: integer.positive(),
+  outputTokens: integer.positive(), deadline: integer,
+  messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() }).strict()).min(1),
+}).strict()
+export type LocalInferenceJob = z.infer<typeof localInferenceJobSchema>
+export const dispatchGrantSchema = z.object({
+  id: federationId, offer: remoteAttemptOfferSchema, reservationId: federationId,
+  job: localInferenceJobSchema, jobHash: z.string().regex(/^[a-f0-9]{64}$/), dispatchAuthorized: z.literal(true),
+}).strict()
+export type DispatchGrant = z.infer<typeof dispatchGrantSchema>
+export const signedDispatchGrantSchema = z.object({ grant: dispatchGrantSchema, signature: z.string().max(128) }).strict()
+export type SignedDispatchGrant = z.infer<typeof signedDispatchGrantSchema>
+export const dispatchRefSchema = z.object({ id: federationId, homeNodeId: federationId, executorNodeId: federationId }).strict()
+export type DispatchRef = z.infer<typeof dispatchRefSchema>
+export const dispatchRenewalSchema = z.object({ id: federationId, ttlMs: integer.positive() }).strict()
+export const dispatchStateSchema = z.object({ id: federationId, status: z.enum(['accepted', 'running', 'completed', 'failed', 'canceled', 'lost']) }).strict()
+export type DispatchState = z.infer<typeof dispatchStateSchema>
+export const dispatchEventSchema = z.object({
+  ref: dispatchRefSchema, seq: integer.positive(), previousHash: z.string().regex(/^[a-f0-9]{64}$/),
+  observedAt: integer,
+  event: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('started') }).strict(),
+    z.object({ kind: z.literal('terminal'), outcome: z.enum(['completed','failed','canceled']), content: z.string(),
+      inputTokens: integer.nullable(), outputTokens: integer.nullable(), source: z.literal('ollama:/api/chat') }).strict(),
+  ]),
+}).strict()
+export type DispatchEvent = z.infer<typeof dispatchEventSchema>
+export const signedDispatchEventSchema = z.object({ entry: dispatchEventSchema, hash: z.string().regex(/^[a-f0-9]{64}$/), signature: z.string().max(128) }).strict()
+export type SignedDispatchEvent = z.infer<typeof signedDispatchEventSchema>
