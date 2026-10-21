@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile, realpath } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, realpath, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fixture, owner } from './helpers.ts'
 import { ADAPTERS } from '../../src/external-agents/profiles.ts'
 import { ExternalAgentError, type AdapterId } from '../../src/external-agents/types.ts'
@@ -62,6 +62,15 @@ for (const adapter of Object.keys(ADAPTERS) as AdapterId[]) test(`${adapter}: ve
     assert.equal(facts.windows.find(w => w.name === 'codex.primary')?.used.value, 31)
     assert.equal(facts.windows.find(w => w.name === 'codex.secondary')?.used.value, null)
   }
+})
+
+test('API-key per-invocation config directories are removed after the process closes', async t => {
+  const f = await fixture(t, ['opencode'])
+  const binding = f.bindings[0]!
+  f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
+  await f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello' })
+  const home = (await f.environment('opencode')).HOME
+  await assert.rejects(stat(dirname(home)), { code: 'ENOENT' })
 })
 
 test('API agent invocations cannot reuse earlier vendor config or select a different payment provider', async t => {

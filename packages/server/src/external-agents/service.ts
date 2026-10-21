@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 import { z } from 'zod'
 import type { Connection, ConnectionFact } from '@guanxi/contract'
 import type { Connections } from '../connections/service.ts'
@@ -222,11 +223,12 @@ export class ExternalAgents {
         let handle: SessionHandle | undefined
         let process: AgentProcess | undefined
         let client: AcpClient | CodexClient | undefined
+        let config: Awaited<ReturnType<typeof isolatedEnvironment>> | undefined
         const sessionId = randomUUID(); const messageId = randomUUID()
         try {
           const executable = await canonicalExecutable(install.executable)
           // API agents never reuse a vendor login/config from an earlier invocation.
-          const config = await isolatedEnvironment(this.root, row.auth === 'api_key' ? { ...install, connectionId: `${install.connectionId}:${randomUUID()}` } : install)
+          config = await isolatedEnvironment(this.root, row.auth === 'api_key' ? { ...install, connectionId: `${install.connectionId}:${randomUUID()}` } : install)
           this.payment(install, row, key, config.env, binding.model)
           if (install.adapter === 'claude-code') {
             if (!install.claudeExecutable) throw new ExternalAgentError('claude_binary_required')
@@ -300,7 +302,11 @@ export class ExternalAgents {
           throw new ExternalAgentError(code)
         } finally {
           try { if (client) await client.close(); else await process?.close() }
-          finally { handle?.close(); const count = (this.active.get(group) ?? 1) - 1; if (count) this.active.set(group, count); else this.active.delete(group) }
+          finally {
+            // API-key directories are throwaway; subscription config directories persist for sign-in.
+            if (config && row.auth === 'api_key') await rm(config.configDirectory, { recursive: true, force: true }).catch(() => undefined)
+            handle?.close(); const count = (this.active.get(group) ?? 1) - 1; if (count) this.active.set(group, count); else this.active.delete(group)
+          }
         }
       })
   }
