@@ -26,6 +26,7 @@ export async function symbols(text: string, language: string, disabled: readonly
     return { entries, source: 'markdown' }
   }
   if (language === 'file' || disabled.includes(language)) return { entries: [], source: 'file' }
+  let grammar: Language
   try {
     initialized ??= Parser.init()
     await initialized
@@ -34,9 +35,16 @@ export async function symbols(text: string, language: string, disabled: readonly
       const base = directories[language] ?? dirname(require.resolve(`${pkg}/package.json`))
       languages.set(language, await Language.load(join(base, `tree-sitter-${language}.wasm`)))
     }
-    const grammar = languages.get(language)
-    if (!grammar) return { entries: [], source: 'file' }
-    const parser = new Parser()
+    const loaded = languages.get(language)
+    if (!loaded) return { entries: [], source: 'file' }
+    grammar = loaded
+  } catch {
+    // An absent/incompatible grammar never disables repository navigation.
+    languages.set(language, null)
+    return { entries: [], source: 'file' }
+  }
+  const parser = new Parser()
+  try {
     parser.setLanguage(grammar)
     const tree = parser.parse(text)
     try {
@@ -49,13 +57,18 @@ export async function symbols(text: string, language: string, disabled: readonly
           if (!name && ['lexical_declaration', 'variable_declaration'].includes(node.type)) name = node.namedChildren[0]?.childForFieldName('name') ?? null
           if (name) entries.push({ name: name.text, kind: node.type, line: node.startPosition.row + 1 })
         }
-        stack.push(...node.namedChildren.filter((n): n is Node => n !== null).reverse())
+        // A generated array literal can have ~100k children; spreading them
+        // into push() throws RangeError and must not poison the language.
+        const children = node.namedChildren
+        for (let index = children.length - 1; index >= 0; index--) {
+          const child = children[index]
+          if (child) stack.push(child)
+        }
       }
       return { entries, source: 'tree-sitter' }
-    } finally { tree?.delete(); parser.delete() }
+    } finally { tree?.delete() }
   } catch {
-    // An absent/incompatible grammar never disables repository navigation.
-    languages.set(language, null)
+    // A parse failure belongs to this file; other files of the language stay available.
     return { entries: [], source: 'file' }
-  }
+  } finally { parser.delete() }
 }

@@ -71,10 +71,13 @@ export async function executeIndex(data: IndexWorkerData, allow: AllowContent, c
       for (const file of tree.files) {
         await checkpoint()
         const cached = store.map(file.hash, file.language)
-        const map = cached ?? await parse(file.text, file.language, data.grammarDisabled, data.grammarDirectories)
+        // A previous parser failure is not a permanent property of the
+        // language. Re-parse while the language is still parsable.
+        const reparsed = cached?.source === 'file' && file.language !== 'file'
+        const map = cached && !reparsed ? cached : await parse(file.text, file.language, data.grammarDisabled, data.grammarDirectories)
         // Readiness and registered values are rechecked immediately before each write.
         if (!(await allow(file.text)) || !(await allow(file.path))) throw new Error('index_secret_changed')
-        if (!cached || cached.source === 'file' && file.language !== 'file' || fts && !store.hasFts(file.hash)) store.put(file.hash, file.text, file.language, map, fts)
+        if (!cached || reparsed || fts && !store.hasFts(file.hash)) store.put(file.hash, file.text, file.language, map, fts)
         if (data.crashPoint === 'content') process.exit(86)
       }
       await checkpoint()
@@ -93,7 +96,10 @@ export async function executeIndex(data: IndexWorkerData, allow: AllowContent, c
     if (request.kind === 'map') {
       const entries: MapResult['entries'] = []
       for (const file of files) {
-        const map = store?.map(file.hash, file.language)
+        const cached = store?.map(file.hash, file.language)
+        const map = cached?.source === 'file' && file.language !== 'file'
+          ? await parse(file.text, file.language, data.grammarDisabled, data.grammarDirectories)
+          : cached
         if (map && map.source !== 'file') source.coverage.symbols++
         entries.push({ path: file.path, symbols: map?.entries ?? [], source: map?.source ?? 'file' })
       }

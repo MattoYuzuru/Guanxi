@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { Worker } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
+import { Parser } from 'web-tree-sitter'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { executeIndex, boundMap } from '../../src/indexing/engine.ts'
 import { symbols } from '../../src/indexing/parser.ts'
@@ -208,6 +209,54 @@ test('tree-sitter covers the required languages and degrades when a grammar is m
   assert.deepEqual(await symbols('class Orbit {}', 'java', ['java']), { entries: [], source: 'file' })
   const headings = await symbols('# Orbit\n```ts\n# Hidden\n```\nSecond\n---\n', 'markdown')
   assert.deepEqual(headings.entries.map(s => s.name), ['Orbit', 'Second'])
+})
+
+test('a cached file-level fallback is re-parsed once the language is available', async () => {
+  const f = await fixture()
+  try {
+    await writeFile(join(f.root, 'a.ts'), 'export function Orbit() {}\n')
+    await executeIndex({ ...f.request('build'), grammarDisabled: ['typescript'] }, f.allow)
+    const parse = mock.fn(symbols)
+    await executeIndex(f.request('build'), f.allow, undefined, parse)
+    assert.equal(parse.mock.callCount(), 1)
+    await executeIndex(f.request('build'), f.allow, undefined, parse)
+    assert.equal(parse.mock.callCount(), 1)
+    const map = await f.run('map', f.root, { budget: 4000 }) as MapResult
+    assert.equal(map.entries[0]!.source, 'tree-sitter')
+    assert.ok(map.entries[0]!.symbols.some(symbol => symbol.name === 'Orbit'))
+  } finally { await f.close() }
+})
+
+test('one large file does not disable a language for every other file', async () => {
+  const f = await fixture()
+  try {
+    const big = 'export const table = [' + Array.from({ length: 400_000 }, () => '0').join(',') + ']\n'
+    await writeFile(join(f.root, 'a-data.ts'), big)
+    await writeFile(join(f.root, 'z.ts'), 'export function Orbit() {}\n')
+    await f.run('build'); await f.run('build')
+    const map = await f.run('map', f.root, { budget: 8000 }) as MapResult
+    const bigEntry = map.entries.find(entry => entry.path === 'a-data.ts')!
+    assert.equal(bigEntry.source, 'tree-sitter')
+    assert.ok(bigEntry.symbols.some(symbol => symbol.name === 'table'))
+    const z = map.entries.find(entry => entry.path === 'z.ts')!
+    assert.equal(z.source, 'tree-sitter')
+    assert.ok(z.symbols.some(symbol => symbol.name === 'Orbit'))
+  } finally { await f.close() }
+})
+
+test('one parse exception is contained to its own file', async () => {
+  const original = Parser.prototype.parse
+  let fail = true
+  const parse = mock.method(Parser.prototype, 'parse', function (this: Parser, text: string) {
+    if (fail) { fail = false; throw new Error('fixture_parse_failure') }
+    return original.call(this, text)
+  })
+  try {
+    assert.deepEqual(await symbols('export function First() {}', 'typescript'), { entries: [], source: 'file' })
+    const second = await symbols('export function Second() {}', 'typescript')
+    assert.equal(second.source, 'tree-sitter')
+    assert.ok(second.entries.some(entry => entry.name === 'Second'))
+  } finally { parse.mock.restore() }
 })
 
 test('complete repo.map JSON respects its stated token bound, including unicode, metadata and empty output', async () => {
