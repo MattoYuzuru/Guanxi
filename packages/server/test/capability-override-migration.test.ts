@@ -167,7 +167,7 @@ describe('SQLite capability override migration 9', () => {
     assert.throws(() => openDb(path), /Миграция 9 не применилась/u)
     const repair = new DatabaseSync(path)
     assert.equal(count(repair, 'model_capability_user_overrides'), 1)
-    repair.exec('PRAGMA user_version = 31')
+    repair.exec('PRAGMA user_version = 32')
     repair.close()
 
     const reopened = openDb(path)
