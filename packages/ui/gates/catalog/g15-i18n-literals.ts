@@ -55,22 +55,44 @@ export function literalTextFindings(repoRoot: string, uiRoot: string): GateFindi
       const { line } = source.getLineAndCharacterOfPosition(node.getStart())
       findings.push({ severity: 'error', file: `${rel}:${line + 1}`, message: `literal user-facing text ${what}` })
     }
-    // String constants in the file, so `const label = 'Save'` then `{label}` is caught too.
-    const constants = new Map<string, string>()
-    const collect = (node: ts.Node) => {
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-        const text = staticText(node.initializer)
-        if (text !== null) constants.set(node.name.text, text)
+    /**
+     * The constant an identifier names, resolved by scope (N5): the nearest enclosing block,
+     * function body or file that declares it, so `const label = 'Save'` then `{label}` or
+     * `${label}` is caught, and a parameter or inner declaration of the same name shadows it.
+     */
+    const resolving = new Set<ts.Node>()
+    const constantOf = (identifier: ts.Identifier): string | null => {
+      for (let scope: ts.Node | undefined = identifier.parent; scope; scope = scope.parent) {
+        if (ts.isFunctionLike(scope) && scope.parameters.some((parameter) => ts.isIdentifier(parameter.name) && parameter.name.text === identifier.text)) return null
+        const statements = ts.isSourceFile(scope) || ts.isBlock(scope) || ts.isModuleBlock(scope) || ts.isCaseClause(scope) || ts.isDefaultClause(scope) ? scope.statements : null
+        if (!statements) continue
+        for (const statement of statements) {
+          if (!ts.isVariableStatement(statement)) continue
+          for (const declaration of statement.declarationList.declarations) {
+            if (!ts.isIdentifier(declaration.name) || declaration.name.text !== identifier.text) continue
+            if (!declaration.initializer || resolving.has(declaration)) return null
+            resolving.add(declaration)
+            try {
+              return staticText(declaration.initializer)
+            } finally {
+              resolving.delete(declaration)
+            }
+          }
+        }
       }
-      ts.forEachChild(node, collect)
+      return null
     }
     /** Text an expression always or possibly renders; calls (t(), msg(), machine()) are not literals. */
     const staticText = (node: ts.Node | undefined): string | null => {
       if (!node) return null
       if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text
-      if (ts.isTemplateExpression(node)) return node.head.text + node.templateSpans.map((span) => span.literal.text).join('')
+      if (ts.isTemplateExpression(node)) {
+        // Substitutions count too: `${label}` renders the constant's text (N5).
+        const parts = [node.head.text, ...node.templateSpans.flatMap((span) => [staticText(span.expression) ?? '', span.literal.text])]
+        return parts.join('')
+      }
       if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return staticText(node.expression)
-      if (ts.isIdentifier(node)) return constants.get(node.text) ?? null
+      if (ts.isIdentifier(node)) return constantOf(node)
       if (ts.isConditionalExpression(node)) {
         const parts = [staticText(node.whenTrue), staticText(node.whenFalse)].filter((part) => part !== null)
         return parts.length > 0 ? parts.join(' / ') : null
@@ -84,7 +106,6 @@ export function literalTextFindings(repoRoot: string, uiRoot: string): GateFindi
       }
       return null
     }
-    collect(source)
     const literalText = (node: ts.Node | undefined): string | null => {
       if (!node) return null
       if (ts.isJsxExpression(node)) return staticText(node.expression)
@@ -130,6 +151,15 @@ export const g15: CatalogGate = {
       expect: /literal user-facing text .*"Untranslated save"/,
       apply({ repoRoot, context }) {
         overlay(join(fixtures, 'indirect-literal'), repoRoot)
+        return context
+      },
+    },
+    {
+      name: 'indirect-template',
+      description: 'A local constant reaches JSX only through a template substitution',
+      expect: /literal user-facing text .*"Untranslated template save"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'indirect-template'), repoRoot)
         return context
       },
     },
