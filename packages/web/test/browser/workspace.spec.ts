@@ -12,6 +12,7 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
     const base = window.fetch.bind(window)
     const stored = JSON.parse(sessionStorage.getItem('layout-api-fixture') ?? 'null')
     const documents: any[] = stored?.documents ?? [...(initial ? [initial] : []), ...(extra.documents ?? [])]
+    const scopeKey = (scope: any) => JSON.stringify([scope.account, scope.project ?? null, scope.mode, scope.deviceClass, scope.device ?? null])
     const active: any[] = stored?.active ?? []
     for (const doc of documents) if (!active.some(row => JSON.stringify(row.scope) === JSON.stringify(doc.scope))) active.push({ scope: doc.scope, layoutId: doc.id })
     const geometry = new Map<string, any>(Object.entries(extra.geometry ?? {}))
@@ -29,18 +30,19 @@ async function setup(page: Page, initial?: LayoutDocument, fail = false, extra: 
           const body = JSON.parse(String(init.body)); (window as any).__LAYOUT_WRITES__.push(body)
           if ((window as any).__HOLD_LAYOUT_SAVE__) await new Promise<void>(resolve => { (window as any).__RELEASE_LAYOUT_SAVE__ = () => { (window as any).__HOLD_LAYOUT_SAVE__ = false; resolve() } })
           if (extra.winner && (window as any).__LAYOUT_WRITES__.length === 1) return Response.json({ document: extra.winner, recovered: [{ ...body.document, id: 'recovered/fixture', name: 'Recovered layout' }] })
-          const index = documents.findIndex(doc => doc.id === body.document.id && doc.scope.mode === body.document.scope.mode)
+          const index = documents.findIndex(doc => doc.id === body.document.id && scopeKey(doc.scope) === scopeKey(body.document.scope))
           if (index >= 0) documents.splice(index, 1)
           documents.push(body.document)
-          const old = active.findIndex(row => row.scope.mode === body.document.scope.mode)
+          const old = active.findIndex(row => scopeKey(row.scope) === scopeKey(body.document.scope))
           if (old >= 0) active.splice(old, 1)
           active.push({ scope: body.document.scope, layoutId: body.document.id })
           sessionStorage.setItem('layout-api-fixture', JSON.stringify({ documents, active }))
           return Response.json({ document: body.document, recovered: [] })
         }
         const mode = url.searchParams.get('mode')
+        const matches = (scope: any) => scope.account === url.searchParams.get('account') && scope.mode === mode && scope.deviceClass === url.searchParams.get('deviceClass') && (!scope.project || scope.project === url.searchParams.get('project')) && (!scope.device || scope.device === url.searchParams.get('device'))
         ;(window as any).__LAYOUT_READS__.push(Object.fromEntries(url.searchParams))
-        return Response.json({ documents: documents.filter(doc => doc.scope.mode === mode), active: active.filter(row => row.scope.mode === mode) })
+        return Response.json({ documents: documents.filter(doc => matches(doc.scope)), active: active.filter(row => matches(row.scope)) })
       }
       if (url.pathname === '/api/layouts/geometry') {
         if (init?.method === 'PUT') { const body = JSON.parse(String(init.body)); (window as any).__GEOMETRY_WRITES__.push(body); geometry.set(body.layoutId, body.geometry); return Response.json({ geometry: body.geometry }) }
@@ -250,6 +252,55 @@ test('workspace discovers the node account before resolving and saving a layout'
   await page.getByRole('button', { name: 'Save layout', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(1)
   expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document.scope.account)).toBe('owner')
+})
+
+test('explicit save scopes preserve pane state, isolate modes and persist the scoped document and local geometry', async ({ page }) => {
+  await setup(page)
+  await page.goto('/workspace?project=project-a')
+  await expect(page.locator('.workspace')).toBeVisible()
+  await move(page, 'Terminal', 'Right')
+  await pick(page, 'Save scope', 'This project', true)
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(0)
+  const originalId = (await state(page)).id
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__GEOMETRY_WRITES__.length)).toBe(1)
+  const projectScope = { account: 'local', project: 'project-a', mode: 'developer', deviceClass: 'desktop' }
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document.scope)).toEqual(projectScope)
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].basedOn)).toBeUndefined()
+  expect(await page.evaluate(() => (window as any).__GEOMETRY_WRITES__[0].scope)).toEqual(projectScope)
+  expect((await state(page)).engineState.groups.find(group => group.zone === 'right')?.blocks).toContain('guanxi.core/terminal')
+  await pick(page, 'Save scope', 'This device')
+  await page.getByRole('button', { name: 'Save as new layout', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__GEOMETRY_WRITES__.length)).toBe(2)
+  const deviceScope = { account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' }
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[1].document.scope)).toEqual(deviceScope)
+  expect((await state(page)).id).not.toBe(originalId)
+  await pick(page, 'Experience mode', 'Visual')
+  expect((await state(page)).scope.mode).toBe('visual')
+  await pick(page, 'Experience mode', 'Developer')
+  expect((await state(page)).scope).toEqual(deviceScope)
+  await page.reload()
+  await expect(page.locator('.workspace')).toBeVisible()
+  expect((await state(page)).scope).toEqual(deviceScope)
+  expect((await state(page)).engineState.groups.find(group => group.zone === 'right')?.blocks).toContain('guanxi.core/terminal')
+  await pick(page, 'Save scope', 'Account default')
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__GEOMETRY_WRITES__.length)).toBe(1)
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document.scope)).toEqual({ account: 'local', mode: 'developer', deviceClass: 'desktop' })
+  await pick(page, 'Save scope', 'This project on this device')
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__GEOMETRY_WRITES__.length)).toBe(2)
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[1].document.scope)).toEqual({ ...projectScope, device: 'device-a' })
+  expect(await page.evaluate(() => (window as any).__GEOMETRY_WRITES__[1].scope)).toEqual({ ...projectScope, device: 'device-a' })
+})
+
+test('project save scopes are unavailable outside a project', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Save scope', exact: true }).click()
+  await expect(page.getByRole('menuitem')).toHaveCount(2)
+  await expect(page.getByRole('menuitem', { name: 'This project', exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(0)
 })
 
 

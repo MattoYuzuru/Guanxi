@@ -11,6 +11,7 @@ import { useLocale } from '../../lib/locale-context.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { builtInLayout } from './defaults.ts'
 import { MOVE_BLOCK_COMMAND } from './commands.ts'
+import { layoutSaveScope, layoutSaveScopes, layoutScopeForSave, type LayoutSaveScope } from './scopes.ts'
 import { paneRegistry } from './renderers.ts'
 import { blockNames, type BuiltInBlock } from './blocks.ts'
 import { WorkspaceLayout, type WorkspaceLayoutHandle } from './WorkspaceLayout/index.tsx'
@@ -65,6 +66,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const [announcementRevision, setAnnouncementRevision] = useState(0)
   const [announcement, setAnnouncement] = useState('')
   const [name, setName] = useState('')
+  const [saveScopes, setSaveScopes] = useState<Partial<Record<ExperienceMode, LayoutSaveScope>>>({})
   const [selected, setSelected] = useState('guanxi.core/chat')
   const [moving, setMoving] = useState<string | null>(null)
   const [destination, setDestination] = useState<WorkspaceZone>('right')
@@ -115,6 +117,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setNodeAccount(ownedAccount)
       setList({ documents: lists.flatMap(row => row.documents), active: lists.flatMap(row => row.active) })
       setDocuments(nextDocuments)
+      setSaveScopes({})
       geometryCache.current.set(`${layoutScopeKey(current.scope)}#${current.id}`, local.geometry)
       setGeometry(local.geometry)
       setName(current.name)
@@ -178,6 +181,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       phoneSnapshot.current = undefined
       setGeometry(local)
       setDocuments(previous => ({ ...previous, [next.scope.mode]: next }))
+      setSaveScopes(previous => ({ ...previous, [next.scope.mode]: layoutSaveScope(next.scope) }))
       setMode(next.scope.mode)
       setName(next.name)
       setSelected('guanxi.core/chat')
@@ -194,14 +198,16 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     try {
       const current = snapshot()
       const local = engine.current?.snapshot().geometry ?? geometry
-      const updated: LayoutDocument = { ...current, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
-      const result = await api.saveLayout(updated, true, asNew ? undefined : layoutClock(current))
+      const scope = layoutScopeForSave(query(mode), saveScopes[mode] ?? layoutSaveScope(current.scope))
+      const updated: LayoutDocument = { ...current, scope, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
+      const sameScope = layoutScopeKey(current.scope) === layoutScopeKey(scope)
+      const result = await api.saveLayout(updated, true, asNew || !sameScope ? undefined : layoutClock(current))
       const won = compareLayouts(result.document, updated) === 0
       const scopeKey = layoutScopeKey(result.document.scope)
       setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === updated.id && layoutScopeKey(row.scope) === scopeKey)), result.document, ...result.recovered], active: [...previous.active.filter(row => layoutScopeKey(row.scope) !== scopeKey), { scope: result.document.scope, layoutId: result.document.id }] }))
       if (won) {
         // Keep edits made while the request was in flight, but advance their base clock.
-        setDocuments(previous => ({ ...previous, [updated.scope.mode]: { ...previous[updated.scope.mode]!, id: result.document.id, name: result.document.name, rev: result.document.rev, updatedAt: result.document.updatedAt, updatedBy: result.document.updatedBy } }))
+        setDocuments(previous => ({ ...previous, [updated.scope.mode]: { ...previous[updated.scope.mode]!, scope: result.document.scope, id: result.document.id, name: result.document.name, rev: result.document.rev, updatedAt: result.document.updatedAt, updatedBy: result.document.updatedBy } }))
         geometryCache.current.set(`${scopeKey}#${result.document.id}`, local)
         await api.saveLayoutGeometry(result.document.scope, device, result.document.id, local)
       } else {
@@ -335,6 +341,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     <WorkspaceChrome kind="toolbar" label={translate('workspaceLayout.title')} busy={saving || switching} fields={[
       { label: translate('workspaceLayout.mode'), value: mode, choices: (['developer', 'visual'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => { void switchMode(next as ExperienceMode) } },
       { label: translate('workspaceLayout.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
+      { label: translate('workspaceLayout.saveScope'), value: saveScopes[mode] ?? layoutSaveScope(doc.scope), choices: layoutSaveScopes(query(mode)).map(id => ({ id, label: translate(`workspaceLayout.scope.${id}`) })), onChange: next => setSaveScopes(previous => ({ ...previous, [mode]: next as LayoutSaveScope })) },
       { label: translate('workspaceLayout.layout'), value: `${layoutScopeKey(doc.scope)}#${doc.id}`, choices: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: row.name === 'Recovered layout' ? translate('workspaceLayout.recoveredName') : row.name })), onChange: id => {
         const next = list.documents.find(row => `${layoutScopeKey(row.scope)}#${row.id}` === id && row.scope.mode === mode)
         if (next) void activateDocument(next, true)
