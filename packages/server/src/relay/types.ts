@@ -35,7 +35,7 @@ export interface Ledger {
   head: string; files: string[]; diffstat: string; evidence: Evidence[];
   noProgress: number; tokens: number; moneyMicros: number; unknownCosts: number; j3: number;
   errors: number; proposals: string[]; eta: null;
-  baseline: { statuses: string; gates: string; head: string }; pendingCall: string | null;
+  baseline: { statuses: string; gates: string; head: string; done?: string[]; passed?: string[] }; pendingCall: string | null;
 }
 export interface Handoff {
   format: 'guanxi.handoff/v1'; runId: string; cycle: number; attemptId: string; epoch: number; token: number;

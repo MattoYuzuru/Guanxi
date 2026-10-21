@@ -209,3 +209,18 @@ test('an escalated relay recovers under a newly admitted attempt', async () => {
     assert.equal(f.log.readAll(f.run.session_id, 'person').some(e => e.type === 'error' && e.data.code === 'cycle_transition'), false)
   } finally { f.close() }
 })
+test('a first failing gate observation and notes do not count as progress', async () => {
+  let turn = 0
+  const f = fixture({ actions: () => { const k = ++turn % 3; return canonical(k === 1 ? { action: 'note', kind: 'hypothesis', text: 'still thinking', items: [], expiresAt: null } : k === 2 ? { action: 'verify', item: 'one' } : { action: 'handoff' }) } })
+  try {
+    f.workspace.verify = async (_p, item) => ({ item, head: plan.base, ok: false, output: 'gate failed' })
+    const trace: number[] = []
+    const count = f.relay.countProgress.bind(f.relay)
+    f.relay.countProgress = (a, c) => { const result = count(a, c); trace.push(f.relay.read(f.run.id).noProgress); return result }
+    await f.executor.run(f.attempt)
+    assert.deepEqual(trace, [1, 2, 3])
+    assert.equal(f.relay.read(f.run.id).cycle, 3)
+    assert.equal(f.relay.read(f.run.id).state, 'escalate')
+    assert.equal(f.store.get(f.run.id).state, 'input_required')
+  } finally { f.close() }
+})

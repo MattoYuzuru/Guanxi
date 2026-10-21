@@ -23,7 +23,12 @@ CREATE TRIGGER relay_notes_no_delete BEFORE DELETE ON relay_notes BEGIN SELECT R
 CREATE TRIGGER relay_seals_immutable BEFORE UPDATE ON relay_seals BEGIN SELECT RAISE(ABORT,'append only'); END;
 CREATE TRIGGER relay_seals_no_delete BEFORE DELETE ON relay_seals BEGIN SELECT RAISE(ABORT,'append only'); END;
 `
-export const progressState = (l: Ledger) => ({ statuses: hash(Object.fromEntries(Object.entries(l.items).map(([k, v]) => [k, v === 'done']))), gates: hash(Object.fromEntries(l.evidence.filter(e => e.head === l.head).map(e => [e.item, e.ok]))) })
+export const progressState = (l: Ledger) => {
+  const done = Object.entries(l.items).filter(([, status]) => status === 'done').map(([id]) => id).sort()
+  const gates = Object.fromEntries(l.evidence.filter(e => e.head === l.head).map(e => [e.item, e.ok]))
+  return { statuses: hash(Object.fromEntries(Object.entries(l.items).map(([k, v]) => [k, v === 'done']))),
+    gates: hash(gates), done, passed: Object.entries(gates).filter(([, ok]) => ok).map(([id]) => id).sort() }
+}
 const transitions: Record<CycleState, readonly CycleState[]> = {
   boot: ['orient'], orient: ['work', 'escalate'], work: ['wind_down', 'handoff_write', 'finish', 'escalate'],
   wind_down: ['handoff_write'], handoff_write: ['handoff_validate', 'harness_fallback'],
@@ -128,9 +133,12 @@ export class RelayStore {
   }
   countProgress(a: Attempt, nonemptyCommit: boolean): boolean {
     return this.change(a, 'progress', l => {
-      // Agent requests and notes are not status evidence. Only harness-verified done changes count.
-      const done = (s: Record<string, string>) => Object.fromEntries(Object.entries(s).map(([k,v]) => [k, v === 'done']))
-      const progressed = hash(done(l.items)) !== l.baseline.statuses || progressState(l).gates !== l.baseline.gates || (l.head !== l.baseline.head && nonemptyCommit)
+      // Agent requests and notes are not status evidence. Only a transition toward done
+      // or a passing gate counts; the first observation of a failing gate does not.
+      const now = progressState(l)
+      const done = now.done.some(id => !(l.baseline.done ?? []).includes(id))
+      const gate = now.passed.some(id => !(l.baseline.passed ?? []).includes(id))
+      const progressed = done || gate || (l.head !== l.baseline.head && nonemptyCommit)
       l.noProgress = progressed ? 0 : l.noProgress + 1
       return progressed
     })
