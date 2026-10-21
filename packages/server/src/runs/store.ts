@@ -7,7 +7,7 @@ import type { Db } from '../store/db.ts'
 import type { SessionLog, SessionEventInput, AppendOptions, AppendResult } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { RunError, TERMINAL_RUN_STATES, type Attempt, type HomeAuthority, type HomeFence, type PromiseRecord, type Run, type RunState,
-  type TerminalRunState, type Wake } from './types.ts'
+  type Synchronous, type TerminalRunState, type Wake } from './types.ts'
 
 interface Lease { key: string; epoch: number; token: number; holder: string; expires_at: number; released: number; regrant_after: number }
 export interface RunStoreOptions {
@@ -572,7 +572,13 @@ export class RunStore implements HomeAuthority {
     }
     return {
       assert,
-      transaction: (operation, body) => this.tx(operation, () => { assert(); return body(this.db) }),
+      transaction: <T>(operation: string, body: (db: Db) => Synchronous<T>): T => this.tx(operation, () => {
+        assert()
+        const result = body(this.db) as T
+        // Mirror mutate(): a callback that hands back a Promise would commit before await.
+        if (result instanceof Promise) throw new RunError('invalid_input')
+        return result
+      }),
     }
   }
   private lose(attempt: Attempt): void {
