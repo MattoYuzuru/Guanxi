@@ -98,6 +98,9 @@ test('home stale fences cannot create durable intent and home intent is idempote
   const f = pair()
   try {
     const offer = f.create(); assert.deepEqual(f.create(), offer)
+    assert.throws(() => f.home.federation.createAttemptOffer(f.attempt, { id: offer.id, executorNodeId: 'target',
+      expiresAt: offer.expiresAt, resource: { ...offer.resource, model: 'different-model' } }), /offer_conflict/)
+    assert.deepEqual(JSON.parse(String(f.home.db.prepare('SELECT payload FROM remote_home_offers').get()!.payload)), offer)
     assert.throws(() => f.create('too-long', f.home.time + 60001), /offer_expiry/)
     assert.equal(f.home.db.prepare('SELECT COUNT(*) n FROM remote_home_offers').get()!.n, 1)
     f.home.runs.cancel(f.run.id)
@@ -175,6 +178,11 @@ test('restart preserves intent and invalidates a persisted accepted receipt with
     local.federation.replicas.bind({ streamId: 'run', kind: 'run', sessionId: 'session', ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
     const receipt = await local.federation.receiveAttemptOffer(f.context, f.create())
     assert.equal(receipt.status, 'reserved')
+    local.federation.close()
+    // A crashed process loses its permit without a shutdown write. Restore that exact
+    // accepted payload after stopping the fixture's feature, before closing its database.
+    local.db.prepare('UPDATE remote_target_offers SET receipt=?').run(JSON.stringify(receipt))
+    assert.equal(JSON.parse(String(local.db.prepare('SELECT receipt FROM remote_target_offers').get()!.receipt)).status, 'reserved')
     local.close()
     local = new SimNode(targetKeys, path, { attempts: { governor: g, maxReservationMs: 5000 } })
     assert.equal(local.federation.attemptOffers!.read('home', 'offer').status, 'restart_lost')
@@ -253,6 +261,11 @@ test('the host reservation policy bounds the target TTL and an actual timer rele
     await new Promise(resolve => setTimeout(resolve, 30))
     assert.equal(f.tg.snapshot().activeLease, null, 'the timer releases without a receipt read or polling')
     assert.equal(f.target.federation.attemptOffers!.read('home', 'timer').status, 'expired')
+    const wallOnly = f.create('wall-only')
+    await f.target.federation.receiveAttemptOffer(f.context, wallOnly)
+    f.target.time += 5001
+    assert.equal(f.target.federation.attemptOffers!.read('home', wallOnly.id).status, 'expired')
+    assert.equal(f.tg.snapshot().activeLease, null, 'wall time expires a permit even when the injected monotonic clock has not advanced')
   } finally { f.close() }
 })
 
