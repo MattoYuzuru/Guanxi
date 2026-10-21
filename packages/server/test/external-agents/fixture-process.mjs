@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
+import { spawn } from 'node:child_process'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const config = JSON.parse(readFileSync(join(root, 'scenario.json'), 'utf8'))
@@ -16,6 +17,13 @@ const replace = value => {
   return JSON.parse(text)
 }
 if (process.argv.slice(2).join(' ') === 'auth status') {
+  if (config.scenario === 'auth-descendant') {
+    const marker = join(root, 'auth-descendant-write')
+    const descendant = spawn(process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(join(root, 'auth-ready'))},'ready');setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(marker)},'unexpected'),1000);setInterval(()=>{},1000)`], { stdio: ['ignore', 'inherit', 'inherit'] })
+    writeFileSync(join(root, 'auth-pids.json'), JSON.stringify({ parent: process.pid, descendant: descendant.pid }))
+    setInterval(() => {}, 1000)
+    await new Promise(() => {})
+  }
   send(config.claudeAuth ?? { loggedIn: true, authMethod: 'claude.ai' })
   process.exit(0)
 }
@@ -28,11 +36,14 @@ writeFileSync(join(root, 'environment.json'), JSON.stringify({
   names: Object.keys(process.env), vendorRead, HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CLAUDE_CODE_EXECUTABLE: process.env.CLAUDE_CODE_EXECUTABLE,
   hasGeminiKey: !!process.env.GEMINI_API_KEY,
+  openCodeConfig: process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : null,
+  gooseProvider: process.env.GOOSE_PROVIDER, gooseModel: process.env.GOOSE_MODEL, gooseDisableKeyring: process.env.GOOSE_DISABLE_KEYRING,
 }))
 let initialized = false
 let authenticated = tape.adapter !== 'gemini-cli'
 let model = 'default'
 let promptId
+let denials = 0
 const reply = (frame, result) => send({ ...(tape.protocol === 'acp-v1' ? { jsonrpc: '2.0' } : {}), id: frame.id, result })
 const promptDone = () => reply({ id: promptId }, tape.promptResult)
 const lines = createInterface({ input: process.stdin })
@@ -41,6 +52,11 @@ lines.on('line', line => {
     const frame = JSON.parse(line)
     record(frame)
     if (!frame.method) {
+      if (typeof frame.id === 'string' && frame.id.startsWith('fixture-denial-')) {
+        if (frame.error?.code !== -32601 || frame.result !== undefined) process.exit(24)
+        denials--
+        if (!denials) promptDone()
+      }
       if (frame.id === 'fixture-permission') {
         if (frame.result?.outcome?.outcome !== 'cancelled') process.exit(12)
         promptDone()
@@ -52,6 +68,8 @@ lines.on('line', line => {
       if (tape.protocol === 'codex-app-server' && frame.params.capabilities.experimentalApi !== false) process.exit(14)
       initialized = true
       if (config.scenario === 'malformed') { process.stdout.write(`PRIVATE_REASONING_FIXTURE ${secret}\n`); return }
+      if (config.scenario === 'invalid-object') { send({ privateReasoning: 'PRIVATE_REASONING_FIXTURE' }); return }
+      if (config.scenario === 'unknown-response') send({ jsonrpc: '2.0', id: 'PRIVATE_REASONING_FIXTURE', result: {} })
       if (config.scenario === 'oversize') { process.stdout.write(JSON.stringify({ x: 'x'.repeat(16384) }) + '\n'); return }
       const init = structuredClone(tape.initialize)
       if (config.scenario === 'wrong-version') {
@@ -78,11 +96,18 @@ lines.on('line', line => {
       reply(frame, { configOptions }); return
     }
     if (frame.method === 'session/prompt') {
-      if (model !== (config.expectedModel ?? 'model-fixture')) process.exit(18)
+      if (model !== (config.expectedModel ?? (tape.adapter === 'opencode' ? 'openai/model-fixture' : 'model-fixture'))) process.exit(18)
       promptId = frame.id
       if (config.scenario === 'hang') return
       if (config.scenario === 'crash') process.exit(19)
       for (const notification of tape.notifications) send(replace(notification))
+      if (config.scenario === 'invalid-thought') send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'fixture-session', update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: { privateReasoning: 'PRIVATE_REASONING_FIXTURE' } } } } })
+      if (config.scenario === 'capability-requests') {
+        const methods = ['fs/read_text_file', 'fs/write_text_file', 'terminal/create', 'terminal/output', 'terminal/wait_for_exit', 'terminal/kill', 'terminal/release']
+        denials = methods.length
+        for (const [index, method] of methods.entries()) send({ jsonrpc: '2.0', id: `fixture-denial-${index}`, method, params: { sessionId: 'fixture-session', path: '/unavailable', content: 'no write', terminalId: 'no-terminal' } })
+        return
+      }
       if (config.scenario === 'permission') send({ jsonrpc: '2.0', id: 'fixture-permission', method: 'session/request_permission', params: {
         sessionId: 'fixture-session', toolCall: { toolCallId: 'fixture-tool', title: 'Denied shell', kind: 'execute', status: 'pending' },
         options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
@@ -95,6 +120,7 @@ lines.on('line', line => {
     if (frame.method === 'account/login/start') {
       if (frame.params.type !== 'chatgpt') process.exit(20)
       reply(frame, { type: 'chatgpt', loginId: 'fixture-login', authUrl: config.authUrl ?? 'https://auth.openai.com/authorize?fixture=true' })
+      if (config.scenario === 'login-hang') return
       send({ method: 'account/login/completed', params: { loginId: 'fixture-login', success: true, error: null } })
       return
     }

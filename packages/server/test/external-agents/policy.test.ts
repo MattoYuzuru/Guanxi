@@ -86,6 +86,13 @@ test('account reports aggregate same reset window conservatively across nodes, i
   assert.throws(() => f.service().observeQuota(owner, binding.connectionId, { ...result.reports[0]!, observedAt: new Date(now + 10000).toISOString() }, now), /future_observation/)
   assert.equal(claudeRateLimits({ rate_limits: { five_hour: { used_percentage: -1 } } })[0]!.usedPercent, null)
   assert.equal(codexRateLimits({ rateLimitsByLimitId: { first: { primary: { usedPercent: 5 } }, second: { primary: { usedPercent: 10 } } } }).length, 4)
+  const latest = { ...result.reports[0]!, observedAt: '2026-10-21T12:00:01.900Z', windows: [{ name: 'newer', usedPercent: 90, resetsAt: '2026-10-22T12:00:00Z' }] }
+  const older = { ...latest, observedAt: '2026-10-21T12:00:01Z', windows: [{ name: 'newer', usedPercent: 10, resetsAt: '2026-10-22T12:00:00.000Z' }] }
+  // Isolate this observation order from the actual wall clock used above.
+  latest.nodeId = 'precision-fixture'; older.nodeId = 'precision-fixture'
+  f.service().observeQuota(owner, binding.connectionId, latest, Date.parse('2026-10-21T12:00:02Z'))
+  f.service().observeQuota(owner, binding.connectionId, older, Date.parse('2026-10-21T12:00:02Z'))
+  assert.equal(f.service().limits(owner, binding.connectionId, Date.parse('2026-10-21T12:00:02Z')).windows.find(w => w.name === 'newer')?.used.value, 90)
 })
 
 test('concurrency learning is account-scoped, persists, and a rejection tightens explicit operator policy', async t => {

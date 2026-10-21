@@ -31,6 +31,20 @@
   },
   "notifications": [
     {
+      "method": "turn/plan/updated",
+      "params": {
+        "threadId": "fixture-thread",
+        "turnId": "fixture-turn",
+        "explanation": "not persisted",
+        "plan": [
+          {
+            "step": "Inspect fixture",
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
       "method": "item/reasoning/summaryTextDelta",
       "params": {
         "threadId": "fixture-thread",

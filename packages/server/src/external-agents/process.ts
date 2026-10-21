@@ -123,10 +123,16 @@ export class AgentProcess {
 export async function claudeAuthStatus(executable: string, env: NodeJS.ProcessEnv, cwd: string, signal: AbortSignal, maxBytes: number) {
   signal.throwIfAborted()
   return new Promise<{ loggedIn: boolean; authMethod: string | null }>((resolve, reject) => {
-    const child = spawn(executable, ['auth', 'status'], { env, cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(executable, ['auth', 'status'], { env, cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
     let data = Buffer.alloc(0)
     let invalid = false
-    const abort = () => { invalid = true; child.kill('SIGKILL') }
+    const terminate = () => {
+      try {
+        if (process.platform === 'win32') child.kill('SIGKILL')
+        else if (child.pid) process.kill(-child.pid, 'SIGKILL')
+      } catch { /* This status probe's process group already exited. */ }
+    }
+    const abort = () => { invalid = true; terminate() }
     child.stdout.on('data', (chunk: Buffer) => {
       if (data.length + chunk.length > maxBytes) { abort(); return }
       data = Buffer.concat([data, chunk])
@@ -135,6 +141,7 @@ export async function claudeAuthStatus(executable: string, env: NodeJS.ProcessEn
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
     child.on('error', () => { invalid = true })
+    child.once('exit', terminate)
     child.once('close', code => {
       signal.removeEventListener('abort', abort)
       try {

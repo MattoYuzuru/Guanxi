@@ -1,66 +1,78 @@
-import { ClientSideConnection, PROTOCOL_VERSION, type SessionNotification, type SessionConfigOption } from '@agentclientprotocol/sdk'
+import { PROTOCOL_VERSION, type InitializeRequest, type NewSessionRequest, type PromptRequest, type SessionNotification } from '@agentclientprotocol/sdk'
 import { PRODUCT_FILE_PREFIX } from '@guanxi/contract'
-import { AgentProcess } from './process.ts'
+import { z } from 'zod'
+import type { AgentProcess } from './process.ts'
+import { JsonRpcClient } from './rpc.ts'
+import { protocolObject as object } from './quota.ts'
 import { ExternalAgentError, type AdapterId, type AgentOutput } from './types.ts'
 
-export interface AcpEvents {
-  update(value: SessionNotification): void
-  extension(method: string, value: Record<string, unknown>): void
-}
+const textUpdate = z.object({ sessionUpdate: z.literal('agent_message_chunk'), content: z.object({ type: z.literal('text'), text: z.string() }) })
+const planUpdate = z.object({ sessionUpdate: z.literal('plan'), entries: z.array(z.object({ content: z.string(),
+  priority: z.enum(['high', 'medium', 'low']).default('medium'), status: z.enum(['pending', 'in_progress', 'completed']) })) })
+const toolUpdate = z.object({ sessionUpdate: z.literal('tool_call'), toolCallId: z.string(), title: z.string(),
+  kind: z.enum(['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode', 'other']).optional(),
+  status: z.enum(['pending', 'in_progress', 'completed', 'failed']).optional() })
+const selectedUpdate = z.union([textUpdate, planUpdate, toolUpdate])
+export interface AcpEvents { update(value: SessionNotification): void }
+
+/** SDK wire types/constants, own quiet transport: SDK client errors can print raw thought frames. */
 export class AcpClient {
-  private readonly process: AgentProcess
-  private readonly client: ClientSideConnection
-  private notificationError: Error | null = null
+  private readonly client: JsonRpcClient
+  private sessionId: string | null = null
   constructor(process: AgentProcess, events: AcpEvents) {
-    this.process = process
-    const guard = (fn: () => void) => { try { fn() } catch { this.notificationError = new ExternalAgentError('event_failed') } }
-    this.client = new ClientSideConnection(() => ({
-      requestPermission: () => ({ outcome: { outcome: 'cancelled' } }),
-      sessionUpdate: value => guard(() => events.update(value)),
-      extNotification: (method, value) => guard(() => events.extension(method, value)),
-      // Do not advertise fs/terminal. The SDK rejects those methods as unavailable.
-    }), process.stream)
+    this.client = new JsonRpcClient(process, true)
+    this.client.on((method, params) => {
+      if (method !== 'session/update' || params.sessionId !== this.sessionId || this.sessionId === null) return
+      // Thought chunks and unknown extensions never reach handlers, including malformed ones.
+      const update = selectedUpdate.safeParse(params.update)
+      if (update.success) events.update({ sessionId: this.sessionId, update: update.data })
+    })
   }
   async initialize(adapter: AdapterId, version: string) {
-    const result = await this.client.initialize({ protocolVersion: PROTOCOL_VERSION,
+    const result = object(await this.client.request('initialize', { protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: `${PRODUCT_FILE_PREFIX}_external`, version: '0.1.0' },
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } })
-    if (result.protocolVersion !== 1 || result.agentInfo?.version !== version) throw new ExternalAgentError('adapter_version_mismatch')
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } } satisfies InitializeRequest))
+    if (result.protocolVersion !== 1 || object(result.agentInfo).version !== version) throw new ExternalAgentError('adapter_version_mismatch')
     if (adapter === 'gemini-cli') {
-      const method = result.authMethods?.find(m => m.id === 'gemini-api-key')
-      if (!method) throw new ExternalAgentError('api_key_auth_unavailable')
-      await this.client.authenticate({ methodId: method.id })
+      const methods = Array.isArray(result.authMethods) ? result.authMethods : []
+      if (!methods.some(method => object(method).id === 'gemini-api-key')) throw new ExternalAgentError('api_key_auth_unavailable')
+      await this.client.request('authenticate', { methodId: 'gemini-api-key' })
     }
     return result
   }
   async prompt(model: string, text: string, cwd: string): Promise<AgentOutput> {
-    const session = await this.client.newSession({ cwd, mcpServers: [] })
-    const option = session.configOptions?.find(o => o.category === 'model' || o.id === 'model')
+    const session = object(await this.client.request('session/new', { cwd, mcpServers: [] } satisfies NewSessionRequest))
+    if (typeof session.sessionId !== 'string' || !session.sessionId) throw new ExternalAgentError('protocol_failed')
+    const options = Array.isArray(session.configOptions) ? session.configOptions.map(object) : []
+    const option = options.find(o => o.category === 'model' || o.id === 'model')
     if (model !== 'default') {
-      if (!option || option.type !== 'select' || !optionValues(option).includes(model)) throw new ExternalAgentError('model_unavailable')
+      if (!option || option.type !== 'select' || !optionValues(option.options).includes(model) || typeof option.id !== 'string') throw new ExternalAgentError('model_unavailable')
       if (option.currentValue !== model) {
-        const selected = await this.client.setSessionConfigOption({ sessionId: session.sessionId, configId: option.id, value: model })
-        if (!selected.configOptions.some(o => o.id === option.id && o.currentValue === model)) throw new ExternalAgentError('model_selection_failed')
+        const selected = object(await this.client.request('session/set_config_option', { sessionId: session.sessionId, configId: option.id, value: model }))
+        if (!Array.isArray(selected.configOptions) || !selected.configOptions.some(o => object(o).id === option.id && object(o).currentValue === model)) throw new ExternalAgentError('model_selection_failed')
       }
     }
     let textOutput = ''
     // Aggregate before scrub/event persistence, so a secret split over chunks cannot survive.
-    const previous = this.onText
-    this.onText = (id, chunk) => { if (id === session.sessionId) textOutput += chunk }
+    this.sessionId = session.sessionId
+    this.onText = chunk => { textOutput += chunk }
     try {
-      const result = await this.client.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text }] })
-      if (this.notificationError) throw this.notificationError
+      const result = object(await this.client.request('session/prompt', { sessionId: session.sessionId, prompt: [{ type: 'text', text }] } satisfies PromptRequest))
       if (result.stopReason !== 'end_turn') throw new ExternalAgentError(result.stopReason === 'cancelled' ? 'cancelled' : 'provider_failed')
       return { text: textOutput, stopReason: result.stopReason }
-    } finally { this.onText = previous }
+    } finally { this.onText = () => undefined; this.sessionId = null }
   }
-  onText: (sessionId: string, text: string) => void = () => undefined
+  private onText: (text: string) => void = () => undefined
   text(notification: SessionNotification) {
-    if (notification.update.sessionUpdate === 'agent_message_chunk' && notification.update.content.type === 'text') this.onText(notification.sessionId, notification.update.content.text)
+    if (notification.update.sessionUpdate === 'agent_message_chunk' && notification.update.content.type === 'text') this.onText(notification.update.content.text)
   }
-  async close() { await this.process.close(); await this.client.closed }
+  async close() { await this.client.close() }
 }
-function optionValues(option: SessionConfigOption): string[] {
-  if (option.type !== 'select') return []
-  return option.options.flatMap(o => 'value' in o ? [o.value] : o.options.map(child => child.value))
+function optionValues(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(option => {
+    const item = object(option)
+    if (typeof item.value === 'string') return [item.value]
+    return Array.isArray(item.options) ? item.options.flatMap(child => typeof object(child).value === 'string' ? [String(object(child).value)] : []) : []
+  })
 }

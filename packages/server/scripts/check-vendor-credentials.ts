@@ -26,6 +26,22 @@ export function vendorCredentialViolations(source: string, fileName: string): st
     ts.forEachChild(node, collect)
   }
   collect(file)
+  const aliases = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      const initializer = ts.isAwaitExpression(node.initializer) ? node.initializer.expression : node.initializer
+      if (ts.isCallExpression(initializer) && (initializer.expression.kind === ts.SyntaxKind.ImportKeyword || initializer.expression.getText(file) === 'require') &&
+        initializer.arguments.some(a => ts.isStringLiteralLike(a) && /^(?:node:)?fs(?:\/promises)?$/.test(a.text))) {
+        if (ts.isIdentifier(node.name)) namespaces.add(node.name.text)
+        if (ts.isObjectBindingPattern(node.name)) for (const element of node.name.elements) if (ts.isIdentifier(element.name)) imports.set(element.name.text, element.propertyName?.getText(file) ?? element.name.text)
+      }
+      if (ts.isIdentifier(node.name) && ts.isPropertyAccessExpression(initializer) && namespaces.has(initializer.expression.getText(file))) {
+        if (initializer.name.text === 'promises') namespaces.add(node.name.text)
+        else imports.set(node.name.text, initializer.name.text)
+      }
+    }
+    ts.forEachChild(node, aliases)
+  }
+  aliases(file)
   const restricted = /[/\\]src[/\\]external-agents[/\\]/.test(fileName)
   const inspect = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {

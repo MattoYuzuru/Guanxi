@@ -20,6 +20,8 @@ test('static gate scans all production packages, refuses seeded vendor reads/ali
     `const fs = await import('node:fs/promises'); fs.readFile('/anything')`,
   ]) assert.ok(vendorCredentialViolations(planted, source).length > 0)
   assert.ok(vendorCredentialViolations(`import { readFile } from 'node:fs/promises'; readFile('/tmp/.codex/auth.json')`, '/test/packages/server/src/elsewhere.ts').length > 0)
+  assert.ok(vendorCredentialViolations(`const fs = require('node:fs'); const load = fs.readFileSync; load('/tmp/.codex/auth.json')`, '/test/packages/server/src/elsewhere.ts').length > 0)
+  assert.ok(vendorCredentialViolations(`const { readFile: load } = await import('node:fs/promises'); load('/tmp/.claude/.credentials.json')`, '/test/packages/server/src/elsewhere.ts').length > 0)
   assert.deepEqual(vendorCredentialViolations(`import { lstat, mkdir } from 'node:fs/promises'; await lstat(process.env.CODEX_HOME); await mkdir('/tmp/config')`, source), [])
   const seededRoot = await mkdtemp(join(tmpdir(), 'guanxi-k5-static-'))
   t.after(() => rm(seededRoot, { recursive: true, force: true }))

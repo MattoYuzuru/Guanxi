@@ -52,10 +52,12 @@ export class ExternalStore {
   observe(input: QuotaObservation, now: number) {
     this.ready()
     const report = quotaObservationSchema.parse(this.scrubber.scrub(quotaObservationSchema.parse(input)))
+    report.observedAt = new Date(report.observedAt).toISOString()
+    report.windows = report.windows.map(window => ({ ...window, resetsAt: window.resetsAt ? new Date(window.resetsAt).toISOString() : null }))
     if (Date.parse(report.observedAt) > now) throw new ExternalAgentError('future_observation')
     const previous = this.db.prepare('SELECT data FROM quota_reports WHERE owner=? AND account=? AND adapter=? AND node=?')
       .get(report.ownerAccountId, report.billingAccount, report.adapter, report.nodeId)
-    if (previous && JSON.parse(String(previous.data)).observedAt > report.observedAt) return
+    if (previous && Date.parse(JSON.parse(String(previous.data)).observedAt) > Date.parse(report.observedAt)) return
     this.db.prepare('INSERT OR REPLACE INTO quota_reports VALUES(?,?,?,?,?)')
       .run(report.ownerAccountId, report.billingAccount, report.adapter, report.nodeId, JSON.stringify(report))
   }

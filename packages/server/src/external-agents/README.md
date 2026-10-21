@@ -9,7 +9,7 @@ This is a kernel-service slice. Existing HTTP/SSE schemas and native-agent execu
 unchanged. F1, R2 and DS1-c own their respective areas.
 
 - Add an isolated `agent.external` T0 service with five ACP v1 profiles and Codex app-server.
-  Reuse the exact Apache-2.0 ACP SDK 0.29.0 (verified from its upstream license and package).
+  Reuse wire types/constants from the exact Apache-2.0 ACP SDK 0.29.0 (verified from its upstream license and package); keep RPC framing/correlation quiet because SDK error paths log raw frames.
   Claude's SDK-dependent ACP bridge is an operator-installed separate process, never a dependency.
 - K3 authorizes every dispatch, binds CLI subscription connections to the originating account,
   and injects API keys only at process launch. Roles select session overrides before project
@@ -73,7 +73,7 @@ The originating human's account ID must be supplied by the trusted caller and pr
 through delegation. It must never be taken from a prompt/body. K3 refuses a different author
 on every `cli_login` connection regardless of sharing grants. API/local editor payment needs
 `setEditorAllowed`, an owner-only persisted grant. Gemini uses a Google API-key connection
-only. OpenCode/Goose use API-key or local-runtime payment connections; they do not route
+only. OpenCode/Goose use API-key payment connections; they do not route
 Claude/ChatGPT subscriptions through unofficial provider implementations.
 
 ## Isolation, lifecycle and evidence limits
@@ -81,7 +81,11 @@ Claude/ChatGPT subscriptions through unofficial provider implementations.
 All launch environments are allowlisted. HOME, XDG config/data/cache, temp and scratch cwd
 are private under `external-agent-config/<hash(node,owner,connection)>`. No vendor directory
 or credential is imported. Existing directory symlinks or group/other permissions refuse.
-The CLI owns all contents; Guanxi checks directory/executable metadata only. The parent has
+API agents receive a fresh directory set per invocation, with an explicit provider/model and
+API-key environment reference; Goose also disables keyring fallback. External local-runtime
+dispatch is refused until exact runtime/context and governor integration is implemented; K4
+continues to own local inference. No default model can select a different OpenCode payment
+provider. The CLI owns all contents; Guanxi checks directory/executable metadata only. The parent has
 no implementation that reads, copies or moves vendor token files. Vendor filesystem and
 terminal requests over ACP, permission requests, Codex token refresh requests and unknown
 server requests are denied. Stderr and thought notifications are discarded; JSON framing
@@ -129,7 +133,7 @@ use the conservative maximum, never a sum. Different reset periods stay separate
 values remain null; reports older than the configured 5-minute freshness policy do not supply
 current limit facts. The original reports remain visible as dated evidence.
 
-Local dispatches teach successful parallelism. Explicit classified concurrency observations
+Completed dispatches teach successful parallelism. Explicit classified concurrency observations
 teach rejection ceilings; generic 429/quota failures do not. Learning has low confidence and
 survives reload. Admission starts at the explained operator policy (default 1); a learned
 rejection tightens it. This is **per-process, per-account admission**, not a distributed lease

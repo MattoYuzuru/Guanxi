@@ -44,7 +44,7 @@ export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'],
     const install: AgentInstallation = { adapter, connectionId: row.id, ownerAccountId: owner, nodeId, billingAccount: `${adapter}-account`,
       executable, version: versions[adapter], ...(adapter === 'claude-code' ? { claudeExecutable: executable } : {}) }
     installations.push(install)
-    bindings.push({ backend: adapter, connectionId: row.id, model: 'model-fixture', params: {} })
+    bindings.push({ backend: adapter, connectionId: row.id, model: adapter === 'opencode' ? 'openai/model-fixture' : 'model-fixture', params: {} })
     await writeFile(join(binaryDir, 'scenario.json'), JSON.stringify({ tape, secret }))
   }
   let plugin = await kernel.node.plugin(externalAgentPlugin, { dataDir: dir, policy: { nodeId, installations, ...policy } })

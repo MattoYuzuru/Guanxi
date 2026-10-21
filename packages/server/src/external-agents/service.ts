@@ -41,6 +41,7 @@ export class ExternalAgents {
   private readonly abort = new AbortController()
   private readonly tasks = new Set<Promise<unknown>>()
   private readonly active = new Map<string, number>()
+  private readonly authenticating = new Set<string>()
   private closed = false
   private readonly configuredAt = new Date().toISOString()
   constructor(connections: Connections, log: SessionLog, scrubber: EgressScrubber, root: string, store: ExternalStore, policy: ExternalPolicy) {
@@ -156,8 +157,21 @@ export class ExternalAgents {
         const variable = API_ENV[row.provider as keyof typeof API_ENV]
         if (!variable) throw new ExternalAgentError('api_provider_unavailable')
         env[variable] = key
-      } else if (row.kind !== 'local_runtime' || row.provider !== 'ollama' || row.auth !== 'none') throw new ExternalAgentError('api_or_local_required')
-      if (install.adapter === 'goose') { env.GOOSE_PROVIDER = row.provider; env.GOOSE_MODEL = model }
+      } else throw new ExternalAgentError('external_api_key_required')
+      if (install.adapter === 'opencode') {
+        // The provider-qualified advertised model must agree with the K3 payment connection.
+        // Inline config is an official runtime override, not a vendor credential/settings edit.
+        if (!model.startsWith(`${row.provider}/`) || model === `${row.provider}/`) throw new ExternalAgentError('payment_model_mismatch')
+        const variable = API_ENV[row.provider as keyof typeof API_ENV]
+        env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ enabled_providers: [row.provider], model, small_model: model,
+          provider: { [row.provider]: { options: { apiKey: `{env:${variable}}` } } } })
+      }
+      if (install.adapter === 'goose') {
+        if (!['anthropic', 'openai', 'google', 'openrouter'].includes(row.provider) || model === 'default') throw new ExternalAgentError('payment_model_mismatch')
+        env.GOOSE_PROVIDER = row.provider; env.GOOSE_MODEL = model
+        env.GOOSE_DISABLE_KEYRING = '1'
+        if (row.provider === 'google') { env.GOOGLE_API_KEY = key; delete env.GEMINI_API_KEY }
+      }
     }
   }
   private track<T>(operation: () => Promise<T>) {
@@ -179,6 +193,7 @@ export class ExternalAgents {
     return this.connections.dispatchAgent(input.ownerAccountId, binding.connectionId, input.actorAccountId,
       this.store.editorAllowed(input.ownerAccountId, binding.connectionId, input.actorAccountId), { background: input.background, signal }, async (row, key, dispatchSignal) => {
         const group = this.group(install)
+        if (this.authenticating.has(group)) throw new ExternalAgentError('account_busy')
         const parallel = (this.active.get(group) ?? 0) + 1
         const learned = this.store.learning(input.ownerAccountId, install.billingAccount, install.adapter)
         const ceiling = learned.rejectedAt === null ? Infinity : Math.max(1, learned.rejectedAt - 1)
@@ -190,7 +205,8 @@ export class ExternalAgents {
         const sessionId = randomUUID(); const messageId = randomUUID()
         try {
           const executable = await canonicalExecutable(install.executable)
-          const config = await isolatedEnvironment(this.root, install)
+          // API agents never reuse a vendor login/config from an earlier invocation.
+          const config = await isolatedEnvironment(this.root, row.auth === 'api_key' ? { ...install, connectionId: `${install.connectionId}:${randomUUID()}` } : install)
           this.payment(install, row, key, config.env, binding.model)
           if (install.adapter === 'claude-code') {
             if (!install.claudeExecutable) throw new ExternalAgentError('claude_binary_required')
@@ -237,13 +253,14 @@ export class ExternalAgents {
                 if (update.sessionUpdate === 'tool_call') handle!.append({ type: 'tool.call', data: { toolCallId: update.toolCallId, name: update.kind ?? 'other',
                   arguments: {}, source: 'builtin', parsedFrom: 'native', diffPath: null } })
                 // Thought chunks, raw tool output and unknown extensions are never copied to logs.
-              }, extension: () => undefined,
+              },
             }); client = acp
             await acp.initialize(install.adapter, install.version)
             this.observe(install, 'adapter_version', install.version, 'initialize', 'high')
           }
           const output = client instanceof CodexClient
-            ? await client.prompt(binding.model, prompt, config.cwd, binding.params.reasoning)
+            ? await client.prompt(binding.model, prompt, config.cwd, binding.params.reasoning, plan => handle!.append({ type: 'agent.plan', data: { items: plan.map(item => ({ text: item.step,
+              status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
             : await client.prompt(binding.model, prompt, config.cwd)
           dispatchSignal.throwIfAborted()
           const safe = this.scrubber.scrub(output)
@@ -272,22 +289,23 @@ export class ExternalAgents {
       { signal: AbortSignal.any([this.abort.signal, ...(signal ? [signal] : []), AbortSignal.timeout(this.policy.requestTimeoutMs ?? 300_000)]) }, async (row, key, dispatchSignal) => {
         const group = this.group(install)
         if (this.active.get(group)) throw new ExternalAgentError('account_busy')
+        this.authenticating.add(group)
         this.active.set(group, 1)
         let client: CodexClient | undefined
         let process: AgentProcess | undefined
         try {
-        const executable = await canonicalExecutable(install.executable)
-        const config = await isolatedEnvironment(this.root, install)
-        this.payment(install, row, key, config.env, 'default')
-        process = new AgentProcess(executable, ADAPTERS.codex.args, config.env, config.cwd, this.scrubber, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
-        client = new CodexClient(process)
+          const executable = await canonicalExecutable(install.executable)
+          const config = await isolatedEnvironment(this.root, install)
+          this.payment(install, row, key, config.env, 'default')
+          process = new AgentProcess(executable, ADAPTERS.codex.args, config.env, config.cwd, this.scrubber, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
+          client = new CodexClient(process)
           await client.initialize(install.version)
           const result = await client.login(onAuthUrl, dispatchSignal)
           this.observe(install, 'subscription_login', true, 'account/read')
           this.observe(install, 'plan', result.plan, 'account/read')
           return result
         } catch (error) { throw new ExternalAgentError(dispatchSignal.aborted ? 'cancelled' : error instanceof ExternalAgentError ? error.code : 'login_failed') }
-        finally { try { if (client) await client.close(); else await process?.close() } finally { this.active.delete(group) } }
+        finally { try { if (client) await client.close(); else await process?.close() } finally { this.active.delete(group); this.authenticating.delete(group) } }
       }))
   }
   async close() { this.closed = true; this.abort.abort(); await Promise.allSettled([...this.tasks]) }

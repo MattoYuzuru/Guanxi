@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fixture, owner } from './helpers.ts'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
 async function until(check: () => Promise<boolean> | boolean) {
   const deadline = Date.now() + 5000
@@ -56,4 +58,23 @@ test('learned account concurrency rejects a third invocation before process laun
   const results = await settling
   assert.equal(results.filter(r => r.status === 'rejected').length, 2)
   assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
+})
+
+test('Claude status-probe abort kills its ordinary descendant and settles admission without raw output', async t => {
+  const f = await fixture(t, ['claude-code'])
+  const binding = f.bindings[0]!
+  f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
+  await f.scenario('claude-code', { scenario: 'auth-descendant' })
+  const controller = new AbortController()
+  const settling = f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'hello', signal: controller.signal })
+    .then(() => 'succeeded', error => error.code)
+  await until(async () => { try { return (await readFile(join(f.dir, 'claude-code', 'auth-ready'), 'utf8')) === 'ready' } catch { return false } })
+  const pids = JSON.parse(await readFile(join(f.dir, 'claude-code', 'auth-pids.json'), 'utf8'))
+  controller.abort()
+  assert.equal(await Promise.race([settling, new Promise(resolve => setTimeout(() => resolve('stalled'), 2000))]), 'cancelled')
+  const gone = (pid: number) => { try { process.kill(pid, 0); return false } catch { return true } }
+  await until(() => gone(pids.parent) && gone(pids.descendant))
+  assert.equal(f.service().limits(owner, binding.connectionId).activeOnThisNode, 0)
+  await new Promise(resolve => setTimeout(resolve, 1100))
+  await assert.rejects(readFile(join(f.dir, 'claude-code', 'auth-descendant-write')), { code: 'ENOENT' })
 })

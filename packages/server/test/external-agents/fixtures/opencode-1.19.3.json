@@ -29,7 +29,7 @@
             "name": "Default"
           },
           {
-            "value": "model-fixture",
+            "value": "openai/model-fixture",
             "name": "Fixture model"
           }
         ]
