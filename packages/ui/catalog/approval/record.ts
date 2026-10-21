@@ -6,8 +6,6 @@
  * decisions form a hash chain that an unsigned edit cannot shorten. `stale` is derived from
  * hashes and never stored.
  */
-import { createHash } from 'node:crypto'
-import { canonicalJson } from './canonical.ts'
 
 export const REVIEW_STATUSES = ['draft', 'review', 'approved', 'deprecated'] as const
 export type StoredReviewStatus = (typeof REVIEW_STATUSES)[number]
@@ -113,18 +111,6 @@ export function approvalPayload(id: string, approval: Omit<ReviewApproval, 'sign
 }
 
 export type DecisionKind = 'approval' | 'revocation'
-
-/**
- * The chain link of a signed decision: sha256 over the canonical JSON of its signed payload
- * plus its signature. The payload carries the schema and component id, so a link never matches
- * another component's or another kind's decision.
- */
-export function decisionDigest(id: string, kind: DecisionKind, decision: ReviewApproval | ReviewRevocation): string {
-  const { signature, ...signed } = decision
-  const payload =
-    kind === 'approval' ? approvalPayload(id, signed as Omit<ReviewApproval, 'signature'>) : revocationPayload(id, signed as Omit<ReviewRevocation, 'signature'>)
-  return `sha256:${createHash('sha256').update(canonicalJson({ ...payload, signature }), 'utf8').digest('hex')}`
-}
 
 function isRecordObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

@@ -1,16 +1,17 @@
 /**
  * Ed25519 signing and verification of approval records (D-138, gate G12).
  */
-import { sign, verify, type KeyObject } from 'node:crypto'
+import { createHash, sign, verify, type KeyObject } from 'node:crypto'
 import { canonicalJson } from './canonical.ts'
 import { keySetSigningBytes, publicKeyObject, type TrustedKey, type TrustedKeyFile } from './keys.ts'
 import {
   approvalPayload,
-  decisionDigest,
   revocationPayload,
   type ApprovalPayload,
   type DecisionKind,
+  type ReviewApproval,
   type ReviewRecord,
+  type ReviewRevocation,
   type RevocationPayload,
 } from './record.ts'
 
@@ -26,6 +27,18 @@ export type ApprovalVerdict =
   | { state: 'absent' }
   | { state: 'valid'; keyId: string }
   | { state: 'invalid'; reason: ApprovalInvalidReason }
+
+/**
+ * The chain link of a signed decision: sha256 over the canonical JSON of its signed payload
+ * plus its signature. The payload carries the schema and component id, so a link never matches
+ * another component's or another kind's decision.
+ */
+export function decisionDigest(id: string, kind: DecisionKind, decision: ReviewApproval | ReviewRevocation): string {
+  const { signature, ...signed } = decision
+  const payload =
+    kind === 'approval' ? approvalPayload(id, signed as Omit<ReviewApproval, 'signature'>) : revocationPayload(id, signed as Omit<ReviewRevocation, 'signature'>)
+  return `sha256:${createHash('sha256').update(canonicalJson({ ...payload, signature }), 'utf8').digest('hex')}`
+}
 
 export function approvalSigningBytes(payload: ApprovalPayload | RevocationPayload): Buffer {
   return Buffer.from(canonicalJson(payload), 'utf8')
