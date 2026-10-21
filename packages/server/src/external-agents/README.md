@@ -72,11 +72,13 @@ routing and relay execution are not implemented here.
 The originating human's account ID must be supplied by the trusted caller and preserved
 through delegation. It must never be taken from a prompt/body. K3 refuses a different author
 on every `cli_login` connection regardless of sharing grants. API/local editor payment needs
-`setEditorAllowed`, an owner-only persisted grant. Gemini uses a Google API-key connection
-only. OpenCode/Goose use API-key payment connections; they do not route
-Claude/ChatGPT subscriptions through unofficial provider implementations. OpenCode receives a
-deny-all `permission` block and Goose runs with `GOOSE_MODE=chat`; both refuse a non-owner
-actor with `host_tools_owner_only` before launch. Codex app-server threads use
+`setEditorAllowed`, an owner-only persisted grant. However, **every external adapter is
+owner-only for runs by a non-owner until a real sandbox exists**: Gemini CLI is API-key paid but
+runs host tools, so it refuses a non-owner actor with `host_tools_owner_only` before launch,
+like OpenCode and Goose. Gemini uses a Google API-key connection only. OpenCode/Goose use
+API-key payment connections; they do not route Claude/ChatGPT subscriptions through unofficial
+provider implementations. OpenCode receives a deny-all `permission` block and Goose runs with
+`GOOSE_MODE=chat`, but neither setting is a sandbox. Codex app-server threads use
 `approvalPolicy: on-request` (this client refuses every approval RPC) with the read-only
 sandbox. Claude Code, Copilot and Gemini CLI expose no comparable adapter-level deny/ask
 setting in this slice, so no tool-containment claim is made for them.

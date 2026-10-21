@@ -37,20 +37,37 @@ for (const adapter of ['claude-code', 'copilot', 'codex'] as const) test(`${adap
   assert.throws(() => f.service().setProjectRoles(owner, 'editor', 'p', { lead: binding }), /owner_required/)
 })
 
-test('API-key editor payment requires live owner consent; revocation and project roles persist over reload', async t => {
+test('API-key editor grant persists and revokes; Gemini still refuses an editor because every external adapter runs host tools', async t => {
   const f = await fixture(t, ['gemini-cli'])
   const binding = f.bindings[0]!
   f.service().setProjectRoles(owner, owner, 'p', { executor: binding })
   const run = () => f.service().run({ ownerAccountId: owner, actorAccountId: 'editor', projectId: 'p', role: 'executor', prompt: 'hello' })
-  await assert.rejects(run(), /Connection cannot pay/)
+  const grants = async () => {
+    const db = new DatabaseSync(join(f.dir, 'external-agents.sqlite'), { readOnly: true })
+    try { return Number(db.prepare('SELECT COUNT(*) AS n FROM editor_grants').get()!.n) } finally { db.close() }
+  }
+  let launches = 0
+  const dispatch = (allowed: boolean) => f.connections.dispatchAgent(owner, binding.connectionId, 'editor', allowed, {}, async () => {
+    launches++; return 'launched'
+  })
+  await assert.rejects(dispatch(false), /Connection cannot pay/)
+  assert.equal(launches, 0)
   f.service().setEditorAllowed(owner, owner, binding.connectionId, 'editor', true)
   await f.reload()
+  assert.equal(await grants(), 1)
   assert.equal(f.service().resolve(owner, 'p', 'executor').binding.connectionId, binding.connectionId)
-  const result = await run()
-  assert.match(result.text, /fixture completed/)
+  // The grant makes K3 payment valid, but Gemini CLI runs host tools: no external adapter is editor-safe.
+  await assert.rejects(run(), /host_tools_owner_only/)
+  await assert.rejects(readFile(join(f.dir, 'gemini-cli', 'trace.json')), { code: 'ENOENT' })
+  // Consuming the grant directly at K3 launches once; the refusal above is the external adapter boundary.
+  assert.equal(await dispatch(true), 'launched')
+  assert.equal(launches, 1)
   f.service().setEditorAllowed(owner, owner, binding.connectionId, 'editor', false)
   await f.reload()
-  await assert.rejects(run(), /Connection cannot pay/)
+  assert.equal(await grants(), 0)
+  await assert.rejects(dispatch(false), /Connection cannot pay/)
+  // The adapter boundary refuses before K3 payment either way; the grant row is the persisted state.
+  await assert.rejects(run(), /host_tools_owner_only/)
   const mode = (await stat(join(f.dir, 'external-agents.sqlite'))).mode & 0o777
   assert.equal(mode, 0o600)
 })
@@ -154,8 +171,6 @@ test('setEditorAllowed refuses a non-owner and persists no grant', async t => {
   assert.throws(() => f.service().setEditorAllowed(owner, 'editor', binding.connectionId, 'editor', true), /owner_required/)
   const db = new DatabaseSync(join(f.dir, 'external-agents.sqlite'), { readOnly: true })
   try { assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM editor_grants').get()!.n), 0) } finally { db.close() }
-  await assert.rejects(f.service().run({ ownerAccountId: owner, actorAccountId: 'editor', projectId: 'p', role: 'lead', prompt: 'hello' }),
-    /Connection cannot pay/)
 })
 
 test('Claude statusline ingestion is owner-only and records no quota fact for an editor', async t => {

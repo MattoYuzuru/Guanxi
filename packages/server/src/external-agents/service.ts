@@ -15,8 +15,10 @@ import { ExternalAgentError, resolveRole, bindingSchema, rolesSchema, type Exter
   type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId } from './types.ts'
 
 /** API-key adapters that can run host tools. The deny configuration below is not a sandbox and
- * its runtime enforcement is the vendor's; a non-owner prompt is refused before process launch. */
-const HOST_TOOL_ADAPTERS = new Set<AdapterId>(['opencode', 'goose'])
+ * its runtime enforcement is the vendor's; a non-owner prompt is refused before process launch.
+ * Subscription adapters are owner-only through K3 as well, so every external adapter is
+ * owner-only until a real sandbox exists. */
+const HOST_TOOL_ADAPTERS = new Set<AdapterId>(['gemini-cli', 'opencode', 'goose'])
 const installationSchema = z.object({
   adapter: z.enum(['claude-code', 'copilot', 'gemini-cli', 'opencode', 'goose', 'codex']), connectionId: z.string().uuid(),
   ownerAccountId: z.string().min(1), nodeId: z.string().min(1), billingAccount: z.string().min(1),

@@ -21,7 +21,7 @@ test('Goose: the fixture receives chat mode instead of autonomous tools', async 
   assert.equal(env.gooseMode, 'chat')
 })
 
-for (const adapter of ['opencode', 'goose'] as AdapterId[]) test(`${adapter}: a non-owner actor is refused even with an editor payment grant`, async t => {
+for (const adapter of ['opencode', 'goose', 'gemini-cli'] as AdapterId[]) test(`${adapter}: a non-owner actor is refused even with an editor payment grant`, async t => {
   const f = await fixture(t, [adapter])
   const binding = f.bindings[0]!
   f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
