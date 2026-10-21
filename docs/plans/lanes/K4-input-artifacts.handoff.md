@@ -19,7 +19,8 @@ full/browser/native gates pending. **Does not close `K4-INPUT-ARTIFACTS`.**
 | `8b85fe9` | self-review: minimal incompatible-trace copy (no internal code) |
 | `bc7596e` | self-review: queued appends overtaken by a failure cannot follow the terminal |
 | `297cf00` | self-review: artifact-root identity pinned across ancestor swaps |
-| this commit | handoff evidence update |
+| this commit | self-review: typed pre-open 406 on the live tail |
+| next commit | handoff evidence update |
 
 No source file from another lane, no `PHASE_STATUS`/`NEXT_AGENT_PROMPT`, package manifest/lock,
 approval record/token, user data or infrastructure was edited.
@@ -76,16 +77,16 @@ approval record/token, user data or infrastructure was edited.
 
 ## New / regression evidence
 
-**New tests: 42.**
+**New tests: 43.**
 - `packages/server/test/session-log-input-artifacts.test.ts` — 18.
 - `packages/server/test/session-log-version-negotiation.test.ts` — 6.
 - `packages/server/test/native-agent/input-artifacts.test.ts` — 12 (fake provider and injected
   command runner; no sandbox, container, network or live model).
-- `packages/web/test/component/inspector-input-artifacts.test.tsx` — 5.
+- `packages/web/test/component/inspector-input-artifacts.test.tsx` — 6.
 - `packages/web/test/component/sse-terminal.test.tsx` — 1 new typed-error case.
 
-**Regression envelope actually run: 83 server tests in 9 files (47 regression) and 32 web tests
-in 4 files (26 regression).**
+**Regression envelope actually run: 83 server tests in 9 files (47 regression) and 33 web tests
+in 4 files (27 regression).**
 
 ```bash
 nice -n 10 node --test \
@@ -108,7 +109,7 @@ cd packages/web && nice -n 10 npx vitest run \
   test/component/sse-terminal.test.tsx \
   test/component/inspector.test.tsx \
   test/component/localization.test.tsx
-# 4 files, 32 tests pass
+# 4 files, 33 tests pass
 ```
 
 Not run here (root owns them): full `npm test`, browser gate, build, Storybook/snapshots,
