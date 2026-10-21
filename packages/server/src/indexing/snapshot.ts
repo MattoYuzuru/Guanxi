@@ -169,6 +169,10 @@ export async function projectFingerprint(rootPath: string, settings: IndexSettin
   const lines: string[] = []
   await walkProject(root, settings, allow, async entry => { lines.push(`${entry.path}\0${entry.size}\0${entry.mtimeMs}`); return true })
   const commit = await commitAt(root)
+  // The walk tolerates individual files disappearing. Losing/replacing the
+  // root itself must not turn that partial walk into an admissible build.
+  const after = await lstat(root)
+  if (!after.isDirectory() || after.dev !== rootStat.dev || after.ino !== rootStat.ino || after.mtimeMs !== rootStat.mtimeMs) throw new Error('index_tree_changed')
   if (before !== commit) throw new Error('index_tree_changed')
   lines.sort()
   return { commit, fingerprint: hash(JSON.stringify([commit, lines])) }

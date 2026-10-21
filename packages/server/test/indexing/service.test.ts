@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, realpath, rename } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { renameSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { ProjectIndex, type IndexEvent } from '../../src/indexing/service.ts'
@@ -181,4 +182,22 @@ test('untracking cancels an idle build already queued behind an explicit build',
     const db = new DatabaseSync(service.database, { readOnly: true })
     try { assert.equal(db.prepare('SELECT count(*) n FROM roots').get()!.n, 1) } finally { db.close() }
   } finally { resume(); await build?.catch(() => {}); await service.close(); await f.governor.close(); await f.close() }
+})
+
+test('a root removed during the fingerprint never reaches idle admission', async () => {
+  const f = await fixture(1), events: IndexEvent[] = []
+  let moved = false, admissions = 0
+  const facade = f.scrubber.facade()
+  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, settings: { pollMs: 60_000 },
+    onIndexEvent: event => events.push(event), headroom: async () => { admissions++; return green() },
+    scrubber: { ...facade, scrub: value => {
+      if (!moved) { renameSync(f.root, join(f.dir, 'removed')); moved = true }
+      return facade.scrub(value)
+    } } })
+  try {
+    await assert.rejects(service.build(f.root), { code: 'ENOENT' })
+    assert.equal(moved, true)
+    assert.equal(admissions, 0)
+    assert.equal(events.filter(event => event.type === 'build' || event.type === 'publish').length, 0)
+  } finally { await service.close(); await f.governor.close(); await f.close() }
 })
