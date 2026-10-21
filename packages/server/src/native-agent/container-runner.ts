@@ -32,8 +32,12 @@ input.on('line', line => {
         if(remaining) send({type:'output',channel,data:data.subarray(0,remaining).toString('base64')});
       });
       child.once('error',()=>process.exit(125));
-      // Exit on the shell's exit, not pipe close: detached children may retain pipes.
-      child.once('exit',code=>{process.stdout.write(JSON.stringify({type:'result',code,truncated})+'\n',()=>process.exit(0))});
+      // Drain ordinary pipe tails through close. Detached children may retain pipes:
+      // bound the drain, explicitly mark truncation, then exit the namespace owner.
+      let code = null, drain;
+      const finish = () => {clearTimeout(drain);process.stdout.write(JSON.stringify({type:'result',code,truncated})+'\n',()=>process.exit(0))};
+      child.once('exit',value=>{code=value;drain=setTimeout(()=>{truncated=true;finish()},100)});
+      child.once('close',finish);
     });
   }
 });
