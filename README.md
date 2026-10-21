@@ -16,10 +16,12 @@ Read the [vision](docs/vision/VISION.md) and the [requirements](docs/vision/REQU
   governor, sourced capability and fit evidence, a Hugging Face/Ollama catalog, logical
   projects, retention, attachments and English/Russian UI. Its documentation is in
   [`docs/legacy/`](docs/legacy/README.md).
-- **The re-foundation has started:** Guanxi's [own plugin kernel](docs/decisions/0037-own-plugin-kernel.md)
-  and the DS1-a design tokens and fonts are implemented, independently verified and merged.
-  Native and external agents, a multi-machine fleet, phone control, relay executors for small
-  local models, a benchmark stage and a self-evolution loop remain planned. See the
+- **The re-foundation is progressing:** the own plugin kernel, session log, connection registry,
+  durable runs, bounded federation base and all three design-foundation parts are merged.
+  Native agents, external-agent adapters and the relay executor have merged partial/internal
+  implementations with named integration gaps. Approval signing, repository indexing, the new
+  shell and the benchmark foundation remain in separate review or partial lanes. Live fleet
+  execution, phone control and the self-evolution loop remain planned. See the
   [target architecture](docs/architecture/TARGET_ARCHITECTURE.md),
   [roadmap](docs/plans/ROADMAP.md) and [stage status](docs/plans/PHASE_STATUS.md).
 
