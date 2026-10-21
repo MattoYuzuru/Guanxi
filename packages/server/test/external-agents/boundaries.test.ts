@@ -148,6 +148,12 @@ test('rule 6: child_process imports and executions are confined to spawn in proc
   assert.deepEqual(vendorCredentialViolations("import { spawn } from 'node:child_process'; spawn('x')", processFile), [])
   assert.deepEqual(vendorCredentialViolations(
     "import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'; spawn('x')", processFile), [])
+  // The process.ts spawn exemption must not hide a vendor read through argv or shell expansion.
+  for (const seeded of [
+    "import { spawn } from 'node:child_process'; spawn('/bin/sh', ['-c', 'cat \"$HOME/.codex/auth.json\"'])",
+    "import { spawn } from 'node:child_process'; const home = process.env.HOME ?? ''; spawn('/bin/sh', ['-c', 'cat \"$0\"', join(home, '.codex', 'auth.json')])",
+    "import { spawn } from 'node:child_process'; const token = '/tmp/.claude/.credentials.json'; spawn('/bin/cat', [token])",
+  ]) assert.ok(vendorCredentialViolations(seeded, processFile).length > 0, seeded)
   assert.ok(vendorCredentialViolations("import { execFileSync, spawn } from 'node:child_process'; spawn('x')", processFile).length > 0)
   assert.ok(vendorCredentialViolations("import * as cp from 'node:child_process'; cp.spawn('x')", processFile).length > 0)
   assert.ok(vendorCredentialViolations(
@@ -173,7 +179,7 @@ test('rule 7: the scan covers every source/scripts directory, kernel/bin and all
   for (const file of files) assert.ok(violations.some(violation => violation.startsWith(file)), file)
 })
 
-test('runtime trap watches vendor paths under HOME and child_process helpers during an adapter run', async t => {
+test('runtime trap allows only configured adapter executables to spawn and watches vendor paths under HOME', async t => {
   const f = await fixture(t)
   const config = await f.config('codex')
   await writeFile(join(config.env.CODEX_HOME!, 'auth.json'), f.secret, { mode: 0o600 })
@@ -196,20 +202,33 @@ test('runtime trap watches vendor paths under HOME and child_process helpers dur
     const original = (module as any)[name].bind(module)
     t.mock.method(module as any, name, (...args: unknown[]) => { trapPath(args[0]); return original(...args) })
   }
-  for (const name of ['spawn', 'execFile', 'execFileSync', 'exec', 'execSync', 'spawnSync'] as const) {
+  // Every launcher must use an executable the adapter policy is configured to start. argv text
+  // is irrelevant: /bin/sh with a vendor path expanded by its shell is still a violation.
+  const canonical = (path: string) => { try { return fs.realpathSync(path) } catch { return resolve(path) } }
+  const allowed = new Set(f.installations.flatMap(install => [install.executable, install.claudeExecutable])
+    .filter((path): path is string => typeof path === 'string').map(canonical))
+  const trapExecutable = (name: string, args: unknown[]) => {
+    const executable = typeof args[0] === 'string' ? args[0] : ''
+    if (!executable || !allowed.has(canonical(executable))) {
+      attempts.push(`blocked-child-process:${name}:${executable || 'non-string'}`)
+      throw new Error('fixture_permission_denied')
+    }
+  }
+  for (const name of ['spawn', 'execFile', 'execFileSync', 'spawnSync'] as const) {
     const original = (childProcess as any)[name].bind(childProcess)
-    t.mock.method(childProcess as any, name, (...args: unknown[]) => {
-      const text = args.map(value => typeof value === 'string' ? value : Array.isArray(value) ? value.join(' ') : '').join(' ')
-      if (watched.some(directory => text.includes(directory))) {
-        attempts.push(`blocked-child-process:${name}`); throw new Error('fixture_permission_denied')
-      }
-      return original(...args)
+    t.mock.method(childProcess as any, name, (...args: unknown[]) => { trapExecutable(name, args); return original(...args) })
+  }
+  for (const name of ['exec', 'execSync'] as const) {
+    t.mock.method(childProcess as any, name, () => {
+      attempts.push(`blocked-child-process:${name}:shell`); throw new Error('fixture_permission_denied')
     })
   }
   syncBuiltinESMExports()
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports() })
   assert.throws(() => fs.readFileSync(tokenFile), /fixture_permission_denied/)
+  assert.throws(() => childProcess.spawn('/bin/sh', ['-c', 'cat "$HOME/.codex/auth.json"']), /fixture_permission_denied/)
   assert.throws(() => childProcess.execFileSync('/bin/cat', [tokenFile]), /fixture_permission_denied/)
+  assert.throws(() => childProcess.execSync('cat "$HOME/.codex/auth.json"'), /fixture_permission_denied/)
   attempts.length = 0
   const previousHome = process.env.HOME
   process.env.HOME = fakeHome

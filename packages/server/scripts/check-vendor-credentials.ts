@@ -124,7 +124,7 @@ export function vendorCredentialViolations(source: string, fileName: string): st
         const fsNamespace = [...namespaces].some(name => callee.text === name || callee.text.startsWith(`${name}.`) || callee.text.startsWith(`${name}[`))
         if (contentApis.has(callee.api) && (restricted || vendor) && (callee.direct || fsNamespace)) violations.push(`filesystem content access: ${callee.api}`)
         if (moveApis.has(callee.api) && (restricted || vendor) && (callee.direct || fsNamespace)) violations.push(`filesystem move access: ${callee.api}`)
-        if (executionApis.has(callee.api) && callee.child && (restricted || vendor) && !(processFile && callee.api === 'spawn')) {
+        if (executionApis.has(callee.api) && callee.child && (restricted || vendor) && !(processFile && callee.api === 'spawn' && !vendor)) {
           violations.push(`child_process execution: ${callee.api}`)
         }
         if (restricted && callee.api === 'createRequire') violations.push('createRequire')
