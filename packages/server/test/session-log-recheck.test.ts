@@ -363,3 +363,54 @@ describe('K2 re-check N2: deferred history before anything newer, and visible un
     log.close()
   })
 })
+
+/** A deferred turn whose tool call id holds SECRET, so once SECRET is registered its trace is refused. */
+function failingToolTurn(jobs: JobStore, threadId: string): string {
+  const jobId = send(jobs, threadId, 'calls a tool').job.id
+  jobs.transition({ jobId, expectedStatus: 'queued', status: 'reserving' })
+  jobs.transition({ jobId, expectedStatus: 'reserving', status: 'loading' })
+  jobs.appendEvent({
+    jobId,
+    expectedNextSequence: jobs.get(jobId)!.lastEventSequence + 1,
+    type: 'output',
+    output: {
+      privacyClassification: 'private_chat',
+      event: {
+        type: 'tool_call',
+        data: {
+          id: `call-${SECRET}`, name: 'lookup', arguments: {}, status: 'running', result: null, error: null,
+          durationMs: null, source: 'builtin', parsedFrom: 'native', diff: null,
+        },
+      },
+    },
+  })
+  return jobId
+}
+
+describe('K2 re-check fixes, in-session review', () => {
+  it('M1: later Job events of a failed session defer without rebuilding it, and no pass runs before the retry delay', async () => {
+    const db = openDb(':memory:')
+    const scrubber = new SecretScrubber({ expectedSources: ['vault'] })
+    let inserted = 0
+    const log = new SessionLog({ db, scrubber, fault: (point) => { if (point === 'event_inserted') inserted++ } })
+    const mirror = new ChatSessionMirror({ log, db, catchUpRetryMs: 60_000 })
+    const jobs = new JobStore(db, { sessionMirror: mirror })
+    const threadId = thread(db)
+    const failed = failingToolTurn(jobs, threadId)
+    scrubber.register(REF, SECRET)
+    scrubber.ready('vault')
+    await tick()
+    assert.equal(mirror.lastCatchUpFailure, 'invalid_event')
+
+    inserted = 0
+    jobs.terminalize({ jobId: failed, expectedStatus: 'loading', status: 'cancelled', stopReason: 'user_requested' })
+    const newer = send(jobs, threadId, 'newer').job.id
+    jobs.transition({ jobId: newer, expectedStatus: 'queued', status: 'reserving' })
+    jobs.transition({ jobId: newer, expectedStatus: 'reserving', status: 'loading' })
+    await tick()
+    await tick()
+    assert.equal(inserted, 0, 'no rebuild of the failed Job on the hot path or in an immediate pass')
+    assert.deepEqual(mirror.backlog(), [failed, newer], 'the newer turn waits behind it')
+    log.close()
+  })
+})

@@ -117,6 +117,8 @@ export class ChatSessionMirror implements JobEventMirror {
   private readonly pending = new Set<string>()
   private backlogScheduled = false
   private failure: string | null = null
+  /** Sessions whose last catch-up failed: only the retry timer, readiness and start retry them. */
+  private readonly failedSessions = new Set<string>()
   private readonly retryBaseMs: number
   private readonly retryMaxMs: number
   private retryDelayMs: number
@@ -183,9 +185,10 @@ export class ChatSessionMirror implements JobEventMirror {
   /**
    * The last catch-up failure (an error code, never content), or null. A
    * failed Job stays in the backlog, its session stays `session_catching_up`
-   * with this code, and it is retried at the session's next Job event, after a
-   * bounded growing delay (`catchUpRetryMs` doubling up to `catchUpRetryMaxMs`),
-   * at the next readiness transition and at the next start.
+   * with this code, and it is retried after a bounded growing delay
+   * (`catchUpRetryMs` doubling up to `catchUpRetryMaxMs`), at the next
+   * readiness transition and at the next start. Later Job events of that
+   * session defer behind it without rebuilding it again (review M1).
    */
   get lastCatchUpFailure(): string | null {
     return this.failure
@@ -226,7 +229,7 @@ export class ChatSessionMirror implements JobEventMirror {
       }
       this.afterCommit()
       done++
-      if (this.backlogRows(threadId).length === 0) this.log.reportCatchUp(threadId, null)
+      if (this.backlogRows(threadId).length === 0) this.clearFailure(threadId)
     }
     if (failed.size === 0) this.failure = null
     return done
@@ -279,7 +282,13 @@ export class ChatSessionMirror implements JobEventMirror {
 
   private reportFailure(threadId: string, error: unknown): void {
     this.failure = failureCode(error)
+    this.failedSessions.add(threadId)
     this.log.reportCatchUp(threadId, this.failure)
+  }
+
+  private clearFailure(threadId: string): void {
+    this.failedSessions.delete(threadId)
+    this.log.reportCatchUp(threadId, null)
   }
 
   /** Deferred Jobs, of one session or all, per session in durable chat order (the user message's sequence). */
@@ -299,11 +308,14 @@ export class ChatSessionMirror implements JobEventMirror {
   /**
    * Inside the caller's transaction, before a ready write of this session:
    * catches its deferred Jobs up, oldest first. On failure everything it
-   * appended is rolled back and false tells the caller to defer as well.
+   * appended is rolled back and false tells the caller to defer as well. A
+   * session that already failed is not rebuilt on the Job's hot path again;
+   * the bounded retry does that (review M1).
    */
   private drainWithin(source: ChatSource): boolean {
     const rows = this.backlogRows(source.thread_id)
     if (rows.length === 0) return true
+    if (this.failedSessions.has(source.thread_id)) return false
     this.db.exec('SAVEPOINT session_mirror_drain')
     try {
       for (const row of rows) this.catchUpJobWithin(row.job_id)
@@ -312,10 +324,9 @@ export class ChatSessionMirror implements JobEventMirror {
       this.db.exec('ROLLBACK TO session_mirror_drain')
       this.db.exec('RELEASE session_mirror_drain')
       this.reportFailure(source.thread_id, error)
-      this.scheduleRetry()
       return false
     }
-    this.log.reportCatchUp(source.thread_id, null)
+    this.clearFailure(source.thread_id)
     return true
   }
 
@@ -334,7 +345,10 @@ export class ChatSessionMirror implements JobEventMirror {
          VALUES (?, ?, ?) ON CONFLICT(job_id) DO NOTHING`,
       )
       .run(jobId, threadId, new Date().toISOString())
-    this.scheduleBacklog()
+    // While ready, a deferral follows a failed catch-up: retry on the bounded
+    // delay, not at once (review M1). Otherwise wait for readiness.
+    if (this.log.egressReady) this.scheduleRetry()
+    else this.scheduleBacklog()
   }
 
   /** Inside a transaction: mirror every Job event after the trace's cursor, from the Job store. */
