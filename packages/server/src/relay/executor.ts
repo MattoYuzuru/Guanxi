@@ -256,8 +256,16 @@ export class RelayExecutor {
           if (x.action === 'tool') {
             const id = randomUUID()
             this.store.emit(a, { type: 'tool.call', data: { toolCallId: id, name: x.name, arguments: x.args, source: 'builtin', parsedFrom: 'content_json', diffPath: null } })
-            result = this.scrubber.scrub(await this.tool(a, x.name, x.args, signal))
-            this.store.emit(a, { type: 'tool.result', data: { toolCallId: id, status: 'ok', result, error: null, durationMs: 0 } })
+            try {
+              result = this.scrubber.scrub(await this.tool(a, x.name, x.args, signal))
+              this.store.emit(a, { type: 'tool.result', data: { toolCallId: id, status: 'ok', result, error: null, durationMs: 0 } })
+            } catch (error) {
+              if (error instanceof RelayError && error.code === 'cleanup_unconfirmed') throw error
+              const text = this.scrubber.scrub(error instanceof Error ? error.message : 'tool_failed')
+              this.store.change(a, 'tool_error', s => { s.errors++ })
+              this.store.emit(a, { type: 'tool.result', data: { toolCallId: id, status: 'error', result: null, error: text, durationMs: 0 } })
+              result = text
+            }
           }
           this.turns.push(canonical(x), result)
           // Turn storage is bounded, tool artifacts and the ledger remain queryable.

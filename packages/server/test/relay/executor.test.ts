@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { fixture, plan, window, reserves } from './fixture.ts'
 import { canonical, hash, render, selectNotes, validateHandoff, probes } from '../../src/relay/handoff.ts'
 import { thresholds } from '../../src/relay/budget.ts'
+import { RelayError } from '../../src/relay/types.ts'
 
 test('verified task finishes with atomic ledger/hash/bundle seal and K2 trace', async () => {
   const f = fixture(); try {
@@ -222,5 +223,33 @@ test('a first failing gate observation and notes do not count as progress', asyn
     assert.equal(f.relay.read(f.run.id).cycle, 3)
     assert.equal(f.relay.read(f.run.id).state, 'escalate')
     assert.equal(f.store.get(f.run.id).state, 'input_required')
+  } finally { f.close() }
+})
+test('tool errors become tool results, increment errors and do not stop the run', async () => {
+  let work = 0
+  const f = fixture({ actions: () => canonical(++work === 1 ? { action: 'tool', name: 'read_file', args: { path: 'a' } }
+    : work === 2 ? { action: 'tool', name: 'work.query', args: { offset: -1 } }
+    : work === 3 ? { action: 'verify', item: 'one' } : { action: 'handoff' }) })
+  try {
+    const denied = f.workspace.tool.bind(f.workspace)
+    f.workspace.tool = async (name, args, signal) => {
+      if (name === 'read_file') throw new RelayError('tool_denied')
+      return denied(name, args, signal)
+    }
+    await f.executor.run(f.attempt)
+    const events = f.log.readAll(f.run.session_id, 'person')
+    const calls = events.filter(e => e.type === 'tool.call')
+    const results = events.filter(e => e.type === 'tool.result')
+    assert.equal(calls.length, 2)
+    assert.equal(results.length, calls.length, 'every tool.call has a tool.result')
+    for (const call of calls) {
+      const result = results.find(e => e.data.toolCallId === call.data.toolCallId)
+      assert.ok(result, `result for ${call.data.toolCallId}`)
+      assert.equal(result!.data.status, 'error')
+      assert.ok(result!.data.error)
+    }
+    assert.ok(f.relay.read(f.run.id).errors >= 2)
+    assert.ok(f.prompts.filter(p => p.startsWith('Execute')).some(p => p.includes('tool_denied') && p.includes('invalid_offset')))
+    assert.equal(f.store.get(f.run.id).state, 'completed')
   } finally { f.close() }
 })
