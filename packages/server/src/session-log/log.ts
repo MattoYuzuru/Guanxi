@@ -612,9 +612,13 @@ export class SessionLog {
     const query = literalFtsQuery(text)
     if (!query) return []
     const limit = Math.min(Math.max(1, options.limit ?? 25), 100)
-    const rows = this.db
+    // Every predicate is in SQL. The ranked query yields row ids only and is
+    // read lazily: a hit can still be dropped below (its terms matched only a
+    // value registered after the write), so candidates are taken one by one
+    // until `limit` hits survive or the matches run out (GPT re-check N4).
+    const candidates = this.db
       .prepare(
-        `SELECT e.session_id, e.seq, e.type, e.class, e.created_at, e.search_text
+        `SELECT e.row_id
          FROM session_events_fts
          JOIN session_events e ON e.row_id = session_events_fts.rowid
          WHERE session_events_fts MATCH ?
@@ -623,28 +627,29 @@ export class SessionLog {
            AND (e.class = 'standard' OR e.expires_at > ?)
            ${options.afterSeq !== undefined ? 'AND e.seq > ?' : ''}
            ${options.types && options.types.length > 0 ? `AND e.type IN (${options.types.map(() => '?').join(', ')})` : ''}
-         ORDER BY rank, e.session_id, e.seq
-         LIMIT ?`,
+         ORDER BY rank, e.session_id, e.seq`,
       )
-      .all(
+      .iterate(
         query,
         ...(options.sessionId ? [options.sessionId] : []),
         this.clock().toISOString(),
         ...(options.afterSeq !== undefined ? [options.afterSeq] : []),
         ...(options.types ?? []),
-        // Hits can be dropped below (a term matched only a now-redacted value), so read ahead.
-        Math.min(limit * 3, 300),
-      ) as unknown as {
-      session_id: string
-      seq: number
-      type: SessionEventType
-      class: 'standard' | 'reasoning'
-      created_at: string
-      search_text: string
-    }[]
+      ) as Iterable<{ row_id: number }>
+    const candidate = this.db.prepare(
+      'SELECT session_id, seq, type, class, created_at, search_text FROM session_events WHERE row_id = ?',
+    )
     const terms = searchTerms(text)
     const hits: SessionSearchHit[] = []
-    for (const row of rows) {
+    for (const { row_id: rowId } of candidates) {
+      const row = candidate.get(rowId) as unknown as {
+        session_id: string
+        seq: number
+        type: SessionEventType
+        class: 'standard' | 'reasoning'
+        created_at: string
+        search_text: string
+      }
       // The snippet comes from the whole indexed text, scrubbed with every value registered now.
       const snippet = buildSnippet(this.scrubber.scrub(row.search_text), terms)
       if (snippet === null) continue

@@ -4,14 +4,19 @@
  * Every secret here is a generated fake.
  */
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { describe, it } from 'node:test'
 import type { ChatJobInputSnapshot } from '@guanxi/contract'
 import { SecretScrubber } from '../src/egress/scrubber.ts'
 import { ChatSessionMirror } from '../src/session-log/chat-mirror.ts'
 import { SessionLog } from '../src/session-log/log.ts'
+import { querySessionLog } from '../src/session-log/query-tool.ts'
 import { openDb, type Db } from '../src/store/db.ts'
 import { JobStore } from '../src/store/jobs.ts'
 import { ThreadStore } from '../src/store/threads.ts'
+
+const SECRET = `fake-${randomBytes(16).toString('hex')}`
+const REF = 'secret://vault/planted' as const
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -87,5 +92,36 @@ describe('K2 re-check N3: one timestamp source for prompts', () => {
     const rebuilt = promptTimes(deferred.db, deferredJob)
     assert.equal(rebuilt.prompt, rebuilt.source, 'the reconstructed prompt has the same source time')
     assert.equal(rebuilt.lifecycle, rebuilt.queued)
+  })
+})
+
+describe('K2 re-check N4: no false-empty search after late redaction', () => {
+  it('pages ranked candidates until the limit is filled, past more than 3 × limit now-redacted hits', () => {
+    const needleSecret = `needle-${SECRET}`
+    const scrubber = new SecretScrubber()
+    const log = new SessionLog({ db: openDb(':memory:'), scrubber })
+    const handle = log.open('s-needle', { kind: 'agent' })
+    for (let index = 0; index < 20; index++) {
+      handle.append({ type: 'prompt', data: { origin: 'typed', messageId: `m-${index}`, text: `${needleSecret} ${needleSecret} ${needleSecret}`, attachmentCount: 0 } })
+    }
+    const visible = handle.append({
+      type: 'prompt',
+      data: {
+        origin: 'typed',
+        messageId: 'm-public',
+        text: 'a longer public note that mentions the needle only once among many other ordinary words',
+        attachmentCount: 0,
+      },
+    }).event.seq
+    assert.equal(visible, 23)
+    // The value is registered after the writes: every higher-ranked hit is now redacted.
+    scrubber.register(REF, needleSecret)
+
+    for (const limit of [1, 5, 6]) {
+      const result = querySessionLog(log, 's-needle', 'remote_agent', { text: 'needle', limit })
+      assert.deepEqual(result.events.map((event) => event.seq), [visible], `limit ${limit}`)
+      assert.deepEqual(log.search('needle', { sessionId: 's-needle', audience: 'person', limit }).map((hit) => hit.seq), [visible])
+    }
+    assert.equal(JSON.stringify(querySessionLog(log, 's-needle', 'remote_agent', { text: 'needle', limit: 5 })).includes(SECRET), false)
   })
 })
