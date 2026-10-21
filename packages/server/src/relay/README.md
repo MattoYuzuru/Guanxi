@@ -8,6 +8,41 @@ starts no inference. A trusted execution host initializes an R1 attempt with an 
 plan and delegation caps, then supplies `RelayInput`: a K3 connection/model, a runtime
 meter, reserves, optional execution limits and a workspace. There is no HTTP or UI entry point in this slice.
 
+## ETA projection (R3-a)
+
+The trusted host may additionally supply `RelayInput.eta`. It contains an exact
+model/host/repository cohort, per-item **remaining** duration estimates, completed historical
+estimate/actual observations with source and time, and an explicit sampling policy
+(`simulations`, unsigned 32-bit `seed`, `minSamples`, `maxAgeMs`). The service refuses a model
+that differs from the execution model. Configuration is copied at admission and sampled
+synchronously at cycle start and after final gate observations, before handoff construction.
+This avoids concurrent projection writes changing an in-flight seal hash. Fresh ledgers
+without this configuration retain `null`; recovery retains the last timestamped observation
+until the host supplies fresh configuration.
+
+The forecast bootstraps empirical estimate/actual ratios independently per unfinished item,
+then sums their durations in serial plan order and reports nearest-rank P50/P80 remaining
+milliseconds and finish timestamps. Verified `done` items contribute zero; dependency-blocked
+items still contribute. The host supplies remaining estimates; the estimator never subtracts
+run age or pretends to know when an item began. Recovery requires a fresh host configuration.
+Missing estimates or insufficient recent untainted history return `unknown`, null quantiles
+and a reason. A fully completed plan has zero remaining duration even without history.
+
+Every projection includes its observation time, cohort, sample/exclusion counts, source list,
+oldest/newest sample time, policy and the serial/independent-ratio assumption. Forecasts have
+`low` confidence and `unvalidated` calibration. The optional runtime-counter observation
+compares remaining tokens / observed throughput with the P80 duration: a fresh contradiction
+is explicit, a stale or future observation is marked stale, and an unavailable forecast is
+distinguished from agreement. This check does not silently rewrite the distribution.
+
+Projections use the existing R1-fenced transaction and scrubber, persist in the ledger and
+sealed snapshot, and survive store reconstruction. No migration, public API, UI, model call,
+judge, wake policy or routing change is added. The host still owns measurement collection and
+cohort identity; there is no automatic historical timing collector or calibrated live ETA.
+Fixture quantile assertions do **not** satisfy the R3/B3 gate requiring P80 coverage between
+0.7 and 0.9 across at least 20 real runs. Judge replay precision/recall, night wake rates,
+delegation policy and the six-hour MS1 envelope remain unfinished.
+
 ## Runtime and context
 
 The meter must observe the **actual loaded** context window (with source, observation time

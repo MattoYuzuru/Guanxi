@@ -57,10 +57,15 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
     const f=fixture()
     try {
       const workspace={...f.workspace,verify:async()=>({item:'one',head:plan.base,ok:true,output:secret})}
+      const eta={scope:{model:model.id,host:'fixture-host',repo:'fixture-repo'},estimates:[{item:'one',remainingMs:1000}],history:[],
+        policy:{simulations:1,seed:1,minSamples:1,maxAgeMs:1000}}
+      await assert.rejects(service.execute(a,{connectionId:c.id,model:model.id,meter:{observe:async()=>window,count:p=>Buffer.byteLength(p)+32},workspace,reserves,
+        eta:{...eta,scope:{...eta.scope,model:'wrong-model'}}}),/eta_model/)
+      assert.equal(requests.length,0,'mismatched ETA model is refused before dispatch')
       const output:string[]=[]; const old=process.stdout.write
       process.stdout.write=((chunk: unknown)=>{ output.push(String(chunk));return true }) as typeof old
       try {
-        const pending=service.execute(a,{connectionId:c.id,model:model.id,meter:{observe:async()=>window,count:p=>Buffer.byteLength(p)+32},workspace,reserves})
+        const pending=service.execute(a,{connectionId:c.id,model:model.id,meter:{observe:async()=>window,count:p=>Buffer.byteLength(p)+32},workspace,reserves,eta})
         await apiDispatch
         assert.notEqual(runs.attempts(run.id)[0]!.first_model_at,null,'real K3 API start is observed while its response is pending')
         releaseApi();await pending
@@ -68,6 +73,8 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
       finally {process.stdout.write=old}
       assert.equal(runs.get(run.id).state,'completed',JSON.stringify(kernel.service<SessionLog>('session.log')!.readAll(run.session_id,'person').filter(e=>e.type==='error')))
       assert.equal(requests.length,3)
+      assert.equal(service.read(run.id).eta!.status,'complete')
+      assert.equal(service.read(run.id).eta!.p80RemainingMs,0)
       assert.notEqual(runs.attempts(run.id)[0]!.first_model_at,null)
       const persisted=JSON.stringify(db.prepare('SELECT * FROM relay_runs').all())+JSON.stringify(db.prepare('SELECT handoff,ledger,markdown FROM relay_seals').all())
       const events=JSON.stringify(kernel.service<SessionLog>('session.log')!.readAll(run.session_id,'person'))

@@ -8,6 +8,7 @@ import type { RelayWorkspace } from './workspace.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
 import { boundary, bounded, request, thresholds, upperTokens, wallDeadline, type Measure } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
+import { etaInputSchema, type EtaInput } from './eta.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tool'), name: z.string(), args: z.record(z.unknown()) }).strict(),
@@ -21,9 +22,11 @@ export class RelayExecutor {
   private turns: string[] = []
   private controller = new AbortController()
   private running = false
+  private readonly eta?: EtaInput
   readonly store: RelayStore; readonly model: RelayModel; readonly workspace: RelayWorkspace; readonly reserves: Reserves; readonly scrubber: EgressScrubber; readonly limits: RelayLimits
-  constructor(store: RelayStore, model: RelayModel, workspace: RelayWorkspace, reserves: Reserves, scrubber: EgressScrubber, limits: RelayLimits = DEFAULT_RELAY_LIMITS) {
+  constructor(store: RelayStore, model: RelayModel, workspace: RelayWorkspace, reserves: Reserves, scrubber: EgressScrubber, limits: RelayLimits = DEFAULT_RELAY_LIMITS, eta?: EtaInput) {
     this.store = store; this.model = model; this.workspace = workspace; this.reserves = reserves; this.scrubber = scrubber; this.limits = limits
+    this.eta = eta ? etaInputSchema.parse(eta) : undefined
   }
   stop() { this.controller.abort() }
   private caps(l: Ledger, nextCycle = false): string | null {
@@ -154,6 +157,7 @@ export class RelayExecutor {
       }
     }
     this.store.countProgress(a, observation.nonemptyCommit)
+    if (this.eta) this.store.updateEta(a, this.eta)
     let narrative = '', degraded = false
     try {
       const ledger = this.store.read(a.run_id)
@@ -218,6 +222,7 @@ export class RelayExecutor {
         if (cap) { this.wrap(a, cap); return current }
         const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w)
         this.store.begin(a)
+        if (this.eta) this.store.updateEta(a, this.eta)
         const narrative = await this.orient(a, w, t, signal, measure)
         this.store.transition(a, 'work'); this.turns = []
         let invalidActions = 0
