@@ -26,16 +26,50 @@ export function bounded(text: string, bytes: number): string {
   result += '\n[use paging]'
   return result
 }
-export function request(prompt: string, parts: string[], window: WindowObservation, limit: number): string {
-  invariant(upperTokens(prompt, window) <= limit, 'context_ceiling')
-  let result = prompt
-  for (const part of parts) {
-    const remaining = limit - upperTokens(result, window) - 1
-    if (remaining <= 16) break
-    result += '\n' + bounded(part, remaining)
+/** `exact` means the meter is a real tokenizer rather than an upper byte bound. The
+ * request packer still works in bytes, so an exact measure converts a token budget to a
+ * conservative byte budget and rechecks every cut. */
+export type Measure = ((value: string) => number) & { readonly exact?: boolean }
+export interface RequestParts { head?: readonly string[]; turns?: readonly string[] }
+export interface RequestResult { text: string; dropped: number; cut: number }
+export function request(prompt: string, parts: RequestParts, measure: Measure, limit: number): RequestResult {
+  invariant(measure(prompt) <= limit, 'context_ceiling')
+  let fixed = prompt, cut = 0
+  const fit = (value: string, remaining: number): string => {
+    if (remaining <= 16) return ''
+    if (measure(value) <= remaining) return value
+    let bytes = measure.exact ? remaining * 4 : remaining
+    let result = bounded(value, bytes)
+    while (result && measure(result) > remaining) result = bounded(value, bytes = Math.floor(bytes / 2))
+    return result
   }
-  invariant(upperTokens(result, window) <= limit, 'context_ceiling')
-  return result
+  for (const part of parts.head ?? []) {
+    const remaining = limit - measure(fixed) - 1
+    const value = fit(part, remaining)
+    if (value !== part) cut++
+    fixed += '\n' + value
+  }
+  const turns = parts.turns ?? []
+  const accepted: { index: number; text: string }[] = []
+  let dropped = 0, packed = fixed
+  // The newest turns are the most valuable next context; older ones fall off first.
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const part = turns[index]!, candidate = packed + '\n' + part
+    if (measure(candidate) <= limit) { accepted.push({ index, text: part }); packed = candidate; continue }
+    if (index !== turns.length - 1) { dropped++; continue }
+    const remaining = limit - measure(packed) - 1
+    const value = fit(part, remaining)
+    if (!value) { dropped++; continue }
+    accepted.push({ index, text: value }); packed += '\n' + value; cut++
+  }
+  accepted.sort((a, b) => a.index - b.index)
+  const render = () => fixed + accepted.map(v => '\n' + v.text).join('')
+  let text = render()
+  // Reordering can move token boundaries; drop the oldest accepted turn if the final
+  // chronological rendering no longer fits.
+  while (measure(text) > limit && accepted.length) { accepted.shift(); dropped++; text = render() }
+  invariant(measure(text) <= limit, 'context_ceiling')
+  return { text, dropped, cut }
 }
 
 /** Recheck the authoritative wall clock instead of treating the JS timer's maximum

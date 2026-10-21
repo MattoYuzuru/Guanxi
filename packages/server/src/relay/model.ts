@@ -11,9 +11,13 @@ export interface RuntimeMeter {
   maxCostMicros?(input: number, output: number): number | null
 }
 export interface RelayModel extends RuntimeMeter {
+  /** True only for an adapter with a real tokenizer. Byte-bounded adapters leave this false
+   * so packing and the boundary share the same conservative measure. */
+  readonly countIsExact?: boolean
   call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; maxInput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void }): Promise<Reply>
 }
 export class ConnectionRelayModel implements RelayModel {
+  readonly countIsExact = false
   readonly connections: Connections; readonly connectionId: string; readonly model: string; readonly meter: RuntimeMeter; readonly background: boolean
   constructor(connections: Connections, connectionId: string, model: string, meter: RuntimeMeter, background = true) {
     this.connections = connections; this.connectionId = connectionId; this.model = model; this.meter = meter; this.background = background

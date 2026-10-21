@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { request, thresholds, boundary, upperTokens } from '../../src/relay/budget.ts'
+import { request, thresholds, boundary, upperTokens, type Measure } from '../../src/relay/budget.ts'
 import { fixture, reserves, window } from './fixture.ts'
 import { canonical } from '../../src/relay/handoff.ts'
 
@@ -24,13 +24,27 @@ test('randomized prompts, notes and tool outputs never exceed H in a rejecting f
       const w = { ...window, tokens: 8000 + random() % 100000 }
       const t = thresholds(w, { ...reserves, effective: w.tokens })
       const parts = [0,1,2].map(() => 'Ж'.repeat(random() % 300000))
-      const prompt = request('fixture prompt ' + 'x'.repeat(random() % 1000), parts, w, t.H)
+      const measure: Measure = Object.assign((value: string) => upperTokens(value, w), { exact: false })
+      const prompt = request('fixture prompt ' + 'x'.repeat(random() % 1000), { turns: parts }, measure, t.H).text
       assert.ok(upperTokens(prompt, w) <= t.H, `seed ${seed}`)
       const reply = await f.model.call(prompt, { runId: f.run.id, requestId: String(i), maxOutput: 100, maxInput: t.H, window: w })
       assert.ok(reply.inputTokens <= t.H)
     }
-    assert.throws(() => request('x'.repeat(20000), [], window, 1000), /context_ceiling/)
+    assert.throws(() => request('x'.repeat(20000), {}, Object.assign((value: string) => upperTokens(value, window), { exact: false }), 1000), /context_ceiling/)
   } finally { f.close() }
+})
+test('the exact-tokenizer measure never packs a request above H', () => {
+  let seed = 0x9e3779b9
+  const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0 }
+  for (let i = 0; i < 250; i++) {
+    const w = { ...window, tokens: 8000 + random() % 100000 }
+    const t = thresholds(w, { ...reserves, effective: w.tokens })
+    const measure: Measure = Object.assign((value: string) => Math.ceil(Buffer.byteLength(value) / 4) + w.framingTokens, { exact: true })
+    const head = 'head ' + 'y'.repeat(random() % 4000)
+    const turns = [0,1,2,3].map(() => 'Ж'.repeat(random() % 300000) + 'tail' + random())
+    const packed = request('fixture exact prompt ' + 'x'.repeat(random() % 1000), { head: [head], turns }, measure, t.H)
+    assert.ok(measure(packed.text) <= t.H, `seed ${seed}`)
+  }
 })
 test('oversize counter refuses dispatch; prompt_eval_count truncation is a protocol failure', async () => {
   const f = fixture(); try {

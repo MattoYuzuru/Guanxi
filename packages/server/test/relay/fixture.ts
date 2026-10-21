@@ -5,22 +5,24 @@ import { canonical, probes } from '../../src/relay/handoff.ts'
 import { thresholds } from '../../src/relay/budget.ts'
 import type { RelayModel, Reply } from '../../src/relay/model.ts'
 import type { RelayWorkspace } from '../../src/relay/workspace.ts'
-import type { Caps, Plan, WindowObservation } from '../../src/relay/types.ts'
+import type { Caps, Plan, Reserves, WindowObservation } from '../../src/relay/types.ts'
 export const window: WindowObservation = { tokens: 16000, framingTokens: 32, source: 'fixture:loaded-window', observedAt: 1800000000000, confidence: 'high' }
 export const reserves = { turn: 1000, safety: 200, handoff: 1500, tool: 1000, stepMedian: 1000, effective: 14000 }
 export const caps: Caps = { cycles: 10, tokens: 1000000, wallMs: 3600000, moneyMicros: null, j3: null }
 export const plan: Plan = { revision: 'r1', base: 'a'.repeat(40), goal: 'Implement the fixture task.', items: [{ id: 'one', title: 'fixture item', dependsOn: [], acceptance: ['true'], protectedPaths: ['tests'] }], protectedPaths: ['.github'] }
-export function fixture(options: { path?: string; fault?: (point: string) => void; runFault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; actions?: (prompt: string, calls: number) => string | Promise<string>; narrativeFails?: boolean; probeFails?: boolean; caps?: Partial<Caps> } = {}) {
+export function fixture(options: { path?: string; fault?: (point: string) => void; runFault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; actions?: (prompt: string, calls: number) => string | Promise<string>; narrativeFails?: boolean; probeFails?: boolean; caps?: Partial<Caps>; exact?: boolean; count?: (text: string) => number; reserves?: Partial<Reserves> } = {}) {
   const f = runFixture(options.path, { fault: options.runFault, logFault: options.logFault })
   const relay = new RelayStore(f.db, f.store, f.scrubber, () => 1800000000000, options.fault)
   const run = f.store.create(), attempt = f.store.start(run.id)
   relay.init(attempt, plan, { ...caps, ...options.caps })
   const prompts: string[] = []
   let workCalls = 0
+  const limits = { ...reserves, ...options.reserves }
+  const count = options.count ?? ((text: string) => Buffer.byteLength(text) + window.framingTokens)
   const model: RelayModel = {
-    observe: async () => window, count: text => Buffer.byteLength(text) + window.framingTokens, maxCostMicros: () => 10,
+    observe: async () => window, count, countIsExact: options.exact ?? false, maxCostMicros: () => 10,
     async call(prompt, opts): Promise<Reply> {
-      if (model.count(prompt) > thresholds(opts.window, { ...reserves, effective: opts.window.tokens }).H) throw new Error('FIXTURE OVERSIZE REQUEST')
+      if (model.count(prompt) > thresholds(opts.window, { ...limits, effective: opts.window.tokens }).H) throw new Error('FIXTURE OVERSIZE REQUEST')
       opts.onStarted?.()
       prompts.push(prompt)
       let text: string
@@ -41,6 +43,6 @@ export function fixture(options: { path?: string; fault?: (point: string) => voi
     verify: async (_p, item) => ({ item, head, ok: true, output: 'fixture pass' }),
     tool: async (_name, args) => String(args.output ?? 'fixture tool result'),
   }
-  const executor = new RelayExecutor(relay, model, workspace, reserves, f.scrubber)
+  const executor = new RelayExecutor(relay, model, workspace, limits, f.scrubber)
   return { ...f, relay, run, attempt, prompts, model, workspace, executor }
 }

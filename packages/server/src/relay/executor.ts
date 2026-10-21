@@ -6,7 +6,7 @@ import { RelayStore } from './store.ts'
 import type { RelayModel, Reply } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
 import { invariant, RelayError, type Ledger, type Handoff, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
-import { boundary, bounded, request, thresholds, wallDeadline } from './budget.ts'
+import { boundary, bounded, request, thresholds, upperTokens, wallDeadline, type Measure } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
@@ -38,6 +38,16 @@ export class RelayExecutor {
   private wrap(a: Attempt, reason: string): void {
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'cap', reason }) } })
     this.store.runs.wrappingUp(a)
+  }
+  /** One measure per cycle: packing, the boundary and dispatch evidence use the same unit. */
+  private measure(w: WindowObservation): Measure {
+    const exact = this.model.countIsExact === true
+    return Object.assign((value: string) => exact
+      ? this.model.count(this.scrubber.scrub(value)) + w.framingTokens
+      : upperTokens(value, w), { exact })
+  }
+  private dropped(a: Attempt, cycle: number, dropped: number, cut: number): void {
+    this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'context_dropped', dropped, cut, cycle }) } })
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal): Promise<Reply> {
     signal.throwIfAborted()
@@ -96,7 +106,7 @@ export class RelayExecutor {
     validateHandoff(h, l, bundle, max)
     return h
   }
-  private async orient(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal): Promise<string> {
+  private async orient(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure): Promise<string> {
     const sealed = this.store.sealed(a)
     if (!sealed) return ''
     let h = sealed.handoff
@@ -108,8 +118,8 @@ export class RelayExecutor {
         this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe_degraded', cycle: h.cycle }) } })
       }
       const expected = probes(sealed.ledger)
-      const prompt = request('Answer these five critical ledger probes as JSON: ledgerHash, head, revision, nextItem, nextStatus. All fields are required; do not execute work.',
-        [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })], w, t.H)
+      const { text: prompt } = request('Answer these five critical ledger probes as JSON: ledgerHash, head, revision, nextItem, nextStatus. All fields are required; do not execute work.',
+        { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
       let correct = false
       try { correct = !damaged && canonical(JSON.parse((await this.call(a, 'probe', prompt, w, t, signal)).text)) === canonical(expected) }
       catch (e) { if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed'].includes(e.code)) throw e }
@@ -121,7 +131,7 @@ export class RelayExecutor {
     this.store.runs.signal(a, `relay-probes-${this.store.read(a.run_id).cycle}`)
     throw new RelayError('probe_failed_twice')
   }
-  private async handoff(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal): Promise<void> {
+  private async handoff(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure): Promise<void> {
     this.store.transition(a, 'handoff_write')
     const observation = await this.workspace.observe(this.store.read(a.run_id).plan.base, this.store.read(a.run_id).baseline.head)
     this.store.observe(a, observation)
@@ -141,9 +151,10 @@ export class RelayExecutor {
     try {
       const ledger = this.store.read(a.run_id)
       const notes = selectNotes(this.store.notes(a.run_id), ledger, this.store.clock(), Math.floor(t.H / 8), 3)
-      const prompt = request('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
-        [canonical({ strip: strip(ledger), head: ledger.head, notes }), ...this.turns.slice(-3)], w, t.H)
-      narrative = (await this.call(a, 'narrative', prompt, w, t, signal)).text
+      const context = request('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
+        { head: [canonical({ strip: strip(ledger), head: ledger.head, notes })], turns: this.turns.slice(-3) }, measure, t.H)
+      if (context.dropped || context.cut) this.dropped(a, ledger.cycle, context.dropped, context.cut)
+      narrative = (await this.call(a, 'narrative', context.text, w, t, signal)).text
     } catch (e) {
       if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed'].includes(e.code)) throw e
       degraded = true; narrative = 'Continue from the authoritative ledger and evidence; query work.query and notes.search.'
@@ -198,17 +209,21 @@ export class RelayExecutor {
         const current = this.store.read(a.run_id)
         const cap = this.caps(current, true)
         if (cap) { this.wrap(a, cap); return current }
-        const w = await this.model.observe(signal), t = thresholds(w, this.reserves)
+        const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w)
         this.store.begin(a)
-        const narrative = await this.orient(a, w, t, signal)
+        const narrative = await this.orient(a, w, t, signal, measure)
         this.store.transition(a, 'work'); this.turns = []
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
-          const prompt = request(WORK, [strip(l), bounded(l.plan.goal, 512), narrative, ...this.turns], w, t.H)
-          const used = this.model.count(this.scrubber.scrub(prompt))
+          const context = request(WORK, { head: [strip(l), bounded(l.plan.goal, 512), narrative], turns: this.turns }, measure, t.H)
+          const used = measure(context.text)
+          if (context.dropped || context.cut) {
+            this.dropped(a, l.cycle, context.dropped, context.cut)
+            this.store.transition(a, 'wind_down'); break
+          }
           if (boundary(t, used, false, this.reserves.stepMedian) && this.turns.length) { this.store.transition(a, 'wind_down'); break }
-          const reply = await this.call(a, 'work', prompt, w, t, signal)
+          const reply = await this.call(a, 'work', context.text, w, t, signal)
           const action = actionSchema.safeParse((() => { try { return JSON.parse(reply.text) } catch { return null } })())
           if (!action.success) { this.store.change(a, 'invalid_action', s => { s.errors++ }); this.turns.push('Invalid action; return valid JSON.'); if (this.turns.length >= 3) break; continue }
           const x = action.data
@@ -238,7 +253,7 @@ export class RelayExecutor {
           this.turns = this.turns.map(v => bounded(v, Math.floor(t.hard / 4)))
           if (boundary(t, used, x.action === 'verify', this.reserves.stepMedian)) { this.store.transition(a, 'wind_down'); break }
         }
-        await this.handoff(a, w, t, signal)
+        await this.handoff(a, w, t, signal, measure)
         const l = this.store.read(a.run_id)
         if (l.noProgress >= 2) {
           this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'judge_requested', reason: 'no_progress', cycle: l.cycle }) } })
