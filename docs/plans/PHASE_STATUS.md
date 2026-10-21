@@ -217,6 +217,6 @@ decision was made.
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
-| K4 Native agent | ready (after K2 and K3) | [ROADMAP](ROADMAP.md) §K4 |
+| K4 Native agent | in progress (lane K4, Codex) | [lanes/K4](lanes/K4.md) |
 | R1 Durable runs | in progress (lane R1, Codex) | [lanes/R1](lanes/R1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
