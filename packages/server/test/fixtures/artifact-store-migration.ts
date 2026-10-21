@@ -1,7 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { downgradeSessionLogToV28 } from './session-log-migration.ts'
 
 /** Reverse only migration 28 so migration evidence can start from exact v27. */
 export function downgradeAttachmentNameHardeningToV27(db: DatabaseSync): void {
+  const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  if (version >= 29) downgradeSessionLogToV28(db)
   db.exec(`
     DROP TRIGGER artifact_attachments_safe_name_insert;
     PRAGMA user_version = 27;

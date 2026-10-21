@@ -34,6 +34,7 @@ import {
   type SafeJobMetadata,
 } from '@guanxi/contract'
 import { isCanonicalNonTerminalTransition } from '../jobs/lifecycle.ts'
+import type { JobEventMirror } from '../session-log/chat-mirror.ts'
 import type { Db } from './db.ts'
 import { canonicalRecipeConfiguration, RecipeStore } from './recipes.ts'
 import type { TerminalMessageUpdate } from './threads.ts'
@@ -366,9 +367,18 @@ function toJobEvent(row: JobEventRow): JobStreamEvent {
 export class JobStore {
   private readonly db: Db
   private readonly reasoningChecksum: (content: string) => string
+  private readonly sessionMirror: JobEventMirror | null
 
-  constructor(db: Db, options: { reasoningChecksum?: (content: string) => string } = {}) {
+  constructor(
+    db: Db,
+    options: {
+      reasoningChecksum?: (content: string) => string
+      /** Appends the session-log trace of Chat Jobs inside each Job transaction (K2). */
+      sessionMirror?: JobEventMirror
+    } = {},
+  ) {
     this.db = db
+    this.sessionMirror = options.sessionMirror ?? null
     this.reasoningChecksum = options.reasoningChecksum ?? ((content) =>
       `sha256:${createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')}`)
   }
@@ -493,6 +503,7 @@ export class JobStore {
           createdAt,
         )
 
+      this.sessionMirror?.recordChatCreated({ jobId: id, threadId, userMessageId, input: snapshot, createdAt })
       this.insertEvent({
         id: randomUUID(),
         jobId: id,
@@ -1293,21 +1304,26 @@ export class JobStore {
         parsed.output?.privacyClassification ?? null,
         parsed.createdAt,
       )
+    this.sessionMirror?.recordJobEvent(parsed)
   }
 
   private transaction<T>(operation: () => T): T {
     this.db.exec('BEGIN IMMEDIATE')
+    let result: T
     try {
-      const result = operation()
+      result = operation()
       this.db.exec('COMMIT')
-      return result
     } catch (error) {
       try {
         this.db.exec('ROLLBACK')
       } catch {
         // Preserve the original operation error if SQLite already ended the transaction.
       }
+      this.sessionMirror?.afterRollback()
       throw error
     }
+    // Session subscribers are woken only after the Job and its trace committed.
+    this.sessionMirror?.afterCommit()
+    return result
   }
 }

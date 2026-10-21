@@ -22,7 +22,7 @@
     "test:web:browser": "npm run test:browser --workspace @guanxi/web",
     "benchmark:catalog": "node packages/server/scripts/catalog-pagination-benchmark.ts && npm run benchmark:catalog --workspace @guanxi/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#.claude/worktrees\" \"#docs/research/2026-10-19-landscape\" \"#docs/research/2026-10-20-design\"",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#.claude/worktrees\" \"#docs/research/2026-10-19-landscape\" \"#docs/research/2026-10-20-design\" \"#docs/research/2026-10-21-fleet\"",
     "check:licenses": "node scripts/check-licenses.mjs",
     "tokens:build": "npm run tokens:build --workspace @guanxi/ui",
     "ui:check": "npm run ui:check --workspace @guanxi/ui"

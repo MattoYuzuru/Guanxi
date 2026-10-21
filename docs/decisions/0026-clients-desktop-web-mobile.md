@@ -4,6 +4,10 @@
 **Carries forward:** legacy ADR-0009 and ADR-0013 (user-level service, clients over an
 authenticated API).
 
+**Phone access update:** D-187 and [ADR-0038 §5](0038-compute-providers-fleet-placement-and-remote-control.md#5-remote-control-from-the-phone-d-187)
+extend the PWA design below with an owner-run end-to-end encrypted relay from U4. The relay
+forwards encrypted traffic; the always-on home owns sessions. This is planned, not implemented.
+
 ## Context
 
 Desktop on macOS first, then Fedora/other Linux and Windows; later iOS and Android (REQ-F4); a

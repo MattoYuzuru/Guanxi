@@ -1,7 +1,8 @@
 # Guanxi — vision
 
-**Status:** accepted direction · **Updated:** 2026-10-19
-**Owner decisions:** [2026-10-19](../decisions/2026-10-19-owner-decisions.md)
+**Status:** accepted direction · **Updated:** 2026-10-21
+**Owner decisions:** [2026-10-19](../decisions/2026-10-19-owner-decisions.md),
+[2026-10-21](../decisions/2026-10-21-owner-decisions.md)
 
 ## One sentence
 
@@ -51,8 +52,9 @@ for several subscriptions still juggle them by hand:
 
 ## Who it is for
 
-- **Primary:** a technically confident owner of several machines (for example a MacBook, a
-  Mac Mini, a Mac Studio, a Windows GPU PC and a Linux VPS) who pays for one or more
+- **Primary:** a technically confident owner of several machines (today's owner: a MacBook,
+  a dual-boot Fedora/Windows GPU PC that stays on, a Fedora laptop and a small VPS, D-185; others may run
+  anything from one laptop to geo-distributed servers) who pays for one or more
   subscriptions, holds a few API keys and runs local models.
 - **Secondary:** the owner's family or friends on the same installation, each with private
   sessions, their own connections and optional sharing.
@@ -85,8 +87,9 @@ for several subscriptions still juggle them by hand:
 - Not a hosted SaaS; there is no central Guanxi server.
 - Not a replacement for the vendors' own agents: Claude Code or Codex can be sub-agents inside
   Guanxi.
-- Not a cluster manager for data centres; the fleet model targets up to about ten personal
-  machines.
+- The first fleet target is about ten personal machines in one site. This is a validation
+  target, not a fleet-size cap; larger and multi-site fleets follow D-193 and
+  [ADR-0038 §8](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md#8-scale-d-193).
 
 ## Positioning against the closest projects
 
@@ -109,4 +112,5 @@ for several subscriptions still juggle them by hand:
 - Friction per 100 sessions falls release over release in the audit report (REQ-K6).
 - A new user downloads a local image model and generates a picture within ten minutes
   (REQ-G7).
-- The fleet design holds for about ten machines (REQ-B6).
+- The fleet design holds for the first target of about ten machines in one site (REQ-B6),
+  without imposing a size cap on larger fleets (D-193).

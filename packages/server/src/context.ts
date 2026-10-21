@@ -48,6 +48,9 @@ import { ChatRetentionStore } from './store/chat-retention.ts'
 import { WorkspaceStore } from './store/workspaces.ts'
 import { ReasoningArtifactStore } from './store/reasoning-artifacts.ts'
 import { ArtifactStore } from './store/artifacts.ts'
+import { SecretScrubber } from './egress/scrubber.ts'
+import { ChatSessionMirror } from './session-log/chat-mirror.ts'
+import { SessionLog } from './session-log/log.ts'
 import {
   ArtifactTransferService,
   type ArtifactTransferPolicyOptions,
@@ -66,6 +69,11 @@ export interface AppContext {
   artifactTransfers: ArtifactTransferService
   jobs: JobStore
   jobService: JobService
+  /**
+   * The session event log (K2); the Chat Job store appends its trace here.
+   * Optional only for hand-built test contexts; `createAppContext` always sets it.
+   */
+  sessionLog?: SessionLog
   chatExecution: ChatJobExecutionOwner
   threads: ThreadStore
   retention: ChatRetentionService
@@ -122,10 +130,15 @@ export interface CreateContextOptions {
   governor?: ResourceGovernor
   /** Kernel-provided Ollama adapter (K1); clients are constructed directly when absent. */
   ollama?: OllamaAdapter
+  /** An already opened node database (the server opens it before the kernel boots). */
+  db?: Db
+  /** Kernel-provided session log (K2); a private one with an empty scrubber is created when absent. */
+  sessionLog?: SessionLog
 }
 
 export async function createAppContext(options: CreateContextOptions): Promise<AppContext> {
-  const db = openDb(options.dbPath)
+  const ownsDb = options.db === undefined
+  const db = options.db ?? openDb(options.dbPath)
   let maintenance: RetentionMaintenanceOwner | null = null
   try {
     const hardware = await probeHardware()
@@ -175,7 +188,8 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       return modelService
     }
 
-    const jobs = new JobStore(db)
+    const sessionLog = options.sessionLog ?? new SessionLog({ db, scrubber: new SecretScrubber() })
+    const jobs = new JobStore(db, { sessionMirror: new ChatSessionMirror({ log: sessionLog, db }) })
     const threads = new ThreadStore(db)
     const retentionStore = new ChatRetentionStore(db, {
       clock: options.retentionMaintenance?.clock,
@@ -211,6 +225,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       }),
       jobs,
       jobService,
+      sessionLog,
       threads,
       retention: new ChatRetentionService(retentionStore),
       maintenance,
@@ -262,7 +277,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
     return context
   } catch (error) {
     await maintenance?.close().catch(() => undefined)
-    db.close()
+    if (ownsDb) db.close()
     throw error
   }
 }

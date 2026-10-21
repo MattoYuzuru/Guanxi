@@ -106,7 +106,7 @@ describe('server boot through the kernel', () => {
   it('boots the legacy profile and gives the application context its services', async () => {
     const kernel = await bootServerKernel()
     try {
-      assert.deepEqual(kernel.node.entries().map((entry) => entry.id), ['resource-governor', 'ollama'])
+      assert.deepEqual(kernel.node.entries().map((entry) => entry.id), ['resource-governor', 'ollama', 'egress-scrubber'])
       assert.equal(kernel.node.stateOf('resource-governor'), 'active')
       assert.equal(kernel.node.stateOf('ollama'), 'active')
       assert.equal(kernel.node.service(RESOURCE_GOVERNOR_SERVICE), kernel.governor)
@@ -129,7 +129,7 @@ describe('server boot through the kernel', () => {
     } finally {
       await kernel.node.dispose()
     }
-    assert.equal(LEGACY_SERVER_PROFILE.insert?.length, 2)
+    assert.equal(LEGACY_SERVER_PROFILE.insert?.length, 3)
   })
 
   it('start() wires context.governor and context.ollama() to the kernel services', async () => {
@@ -151,12 +151,14 @@ describe('server boot through the kernel', () => {
         assert.equal(server.context.governor, server.kernel.governor)
         const host = server.context.settings.get().ollamaHost
         assert.equal(server.context.ollama(), server.kernel.ollama.client(host.startsWith('http') ? host : `http://${host}`))
-        assert.equal(server.kernel.node.counters().fibers, 4, 'governor, Ollama, egress bridge and connections')
-        assert.equal(server.kernel.node.counters().services, 6, 'kernel slots, governor, Ollama, egress, readiness and registry')
+        assert.equal(server.kernel.node.counters().fibers, 5, 'governor, Ollama, scrubber, session log and connections')
+        assert.equal(server.kernel.node.counters().services, 7, 'kernel slots, governor, Ollama, egress, session log, readiness and registry')
         assert.ok(server.kernel.node.service('connections.registry'))
         assert.equal(server.kernel.node.service('connections.vault'), undefined)
         assert.ok(server.kernel.node.service('egress.scrubber'))
         // Exercise index.ts's mounted resolver after its service disappears.
+        assert.ok(server.kernel.sessionLog, 'the kernel loaded the session log')
+        assert.equal(server.context.sessionLog, server.kernel.sessionLog, 'the context uses the kernel session log')
         const modelsUrl = `${server.url}/api/connections/11111111-1111-4111-8111-111111111111/models`
         const initial = await fetch(modelsUrl)
         assert.equal(initial.status, 404)

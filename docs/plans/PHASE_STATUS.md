@@ -1,9 +1,8 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-20
-**Current stage:** S0 Re-foundation — committed 2026-10-20 (`a6fd314`..`be89bb9`); review
-fixes applied but not re-reviewed; next: wave 1 of [parallel lanes](lanes/README.md) (K1, DS1-a,
-DS1-b; DS1-c after K1 and DS1-a merge)
+**Status:** implemented tracker · **Updated:** 2026-10-21
+**Current stage:** wave 2 of [parallel lanes](lanes/README.md): K1 and DS1-a are merged;
+K2 and K3 are ready. DS1-b is in review fixes; DS1-c waits for DS1-b.
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
@@ -150,6 +149,10 @@ Residual risks:
 | --- | --- | --- |
 | Browser-gate flake fixes merged into `main` | implemented | merge `6518e57` of `claude/nostalgic-jackson-673c89` (25 consecutive 40/40 runs recorded above) |
 | Per-worktree ports and data | locally validated | `GUANXI_WEB_PORT`, `GUANXI_API_PORT` and `GUANXI_DATA_DIR`, with one strict parser per side (`packages/web/dev-ports.ts`, `packages/server/src/config/listen-env.ts`). Independent review (`sde-agent:implementation-reviewer`) found 1 High, 1 Medium and 3 Low issues; all are fixed in a separate commit. New: 24 parsing and default tests (12 server, 12 web); browser gate 40/40 with `GUANXI_WEB_PORT=5199` while a decoy HTTP server held `127.0.0.1:5173`; the gate pointed at the busy port exits 1 with "already used"; `GUANXI_WEB_PORT=abc` exits 1 naming the variable. Envelope: typecheck, `npm test` (681 node + 261 vitest), `npm run build`. The High finding was nested Claude worktrees without their own `node_modules` resolving main's packages; both lane worktrees got `npm ci`, and the lane rules now require it. |
+| Localization browser-gate flake | implemented, independently verified, merged (`4dd331c`) | Root cause: React StrictMode cleanup can abort a fetch before Playwright intercepts it. The spec now counts fetch lifecycles plus route-level reads and advances the paused clock past timer-driven reads. 25/25 consecutive full gates; Claude review mutations (XHR, lowercase method, timer reads) all fail as intended. Evidence: [evidence/flake-localization](evidence/flake-localization.md). |
+| Fleet, compute providers and remote control (design) | accepted direction (D-185–D-193), proposed design | [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md); three research lanes in [2026-10-21 fleet](../research/2026-10-21-fleet/); F3, F4, U4 and K5 rescoped, F5 added (51 roadmap nodes, 0 mismatches); REQ-A7, B3, B6–B10; the real fleet replaces the Mac Mini/Studio assumptions: MacBook M5 Pro 24 GB; the dual-boot PC (Ryzen 5 3600, 32 GB, RTX 3060 12 GB) running Fedora 44 as the always-on home (`ssh fedora`, inspected 2026-10-21: 427 GB free, the owner's workstation Qwen 27B holds 10.6 GB VRAM); a Fedora laptop (16 GB, RTX 2060) without SSH yet; `keykomi` VPS as relay. |
+| First Linux node (Fedora PC) | locally validated | 2026-10-21, `ssh fedora` (Fedora 44, Ryzen 5 3600, 32 GB, RTX 3060 12 GB, Node 22.23.1): `main` cloned from a bundle into `~/Projects/Guanxi`; `npm ci`, typecheck, `npm test` (UI gates 50, core 690, kernel 106, web), browser gate 49/49 and build pass after fixing the lockfile (`d973246`: the macOS-generated lock lacked `@rollup/rollup-linux-x64-gnu`, npm/cli#4828, so every Linux x64 `npm ci` broke Vite, vitest and the build). Loopback smoke: `127.0.0.1:4310` only, `/api/health` reports the RTX 3060 (CUDA) and Ollama as `unavailable` (not installed); stopped after the check. The owner's workstation (Qwen 27B on llama.cpp at `127.0.0.1:8080`, Hermes, VPN, `keykomi` SSH relay, Claude Remote Control) was left untouched; 427 GB are free, so nothing needs removing. Node 22 on this host also covers the K1 residual about older Node. |
+| Second Linux node (Fedora laptop) | locally validated | 2026-10-21, `ssh asus` on the LAN (ASUS TUF A15, Ryzen 7 4800H, 15 GB, RTX 2060 6 GB, Fedora 44, Node 22.23.1, in active use by the owner): `main` at `1243d3c` cloned from a bundle; with `nice -n 10`: `npm ci` (installs `@rollup/rollup-linux-x64-gnu` from the fixed lock), typecheck, `npm test` (UI gates 50, core 690, kernel 106, web), browser gate 49/49 and build pass. The first browser run failed loudly because another application holds port 5173 on `0.0.0.0` — the per-worktree port rule worked as designed; the rerun used `GUANXI_WEB_PORT=5185`. |
 | Lane rules and prompts | accepted (owner, 2026-10-20) | [lanes/](lanes/README.md): owned paths, ports, `agent-dev --resource heavy` lock, hand-off files instead of status files, merge order K1 → DS1-a → DS1-b → DS1-c |
 
 ## K1 — Kernel
@@ -157,6 +160,12 @@ Residual risks:
 | Item | Status | Evidence |
 | --- | --- | --- |
 | Own plugin kernel `@guanxi/kernel` (ADR-0037; Cordis rejected by D-183) | implemented, independently verified, merged into `main` | Full evidence and residuals: [evidence/K1](evidence/K1.md). Exit gate on the own kernel: 100 reload cycles with an identical census; total heap +2.17% after 50 warm-up cycles (≤ 5%); every unloaded governor, fiber and context collected; boot 37–40 ms, 81 MB idle RSS; real-HMR slot test. **119 new / 982 regression envelope.** Reviews: implementation, adversarial architecture, accessibility, then three GPT cross-family rounds (14 + 5 findings, all closed; final verdict merge). Integrator gates on `main` after the merge: typecheck, `npm test` (core + kernel, web 264), browser gate 41/41, build, lint:md, licenses (251/0). |
+
+## K2 — Session log, inspector, egress scrubber
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| One append-only single-writer event log per session; crash-safe append and replay; durable payload-free readiness backlog; `egress.scrubber` kernel service with readiness; loopback-only interim inspector and query tool (ADR-0023) | implemented, independently verified, merged into `main` | Full evidence: [evidence/K2](evidence/K2.md). In-session reviews (implementation, architecture, accessibility) plus four GPT cross-family rounds; the final scoped check closed every item with no new High (14/14 mutations caught). Integrator gates on `main` after the merge: typecheck, `ui:check`, `npm test` (web 275), browser gate 50/50, build, lint:md, licenses 358/0. Residuals named in the evidence; the `project-chat.test.tsx` focus flake seen during K2 runs is being fixed in its own lane. |
 
 ## DS1 — Design foundations
 
@@ -166,6 +175,31 @@ Residual risks:
 | DS1-b: `@guanxi/ui` components, catalog, approvals, G10–G16 | in review fixes | [lanes/DS1-b](lanes/DS1-b.md) |
 | DS1-c: lint ratchet and codemod | waiting for DS1-b | [lanes/DS1-c](lanes/DS1-c.md) |
 
+## Repository presentation and documentation (2026-10-21)
+
+Repository presentation review (2026-10-21): GitHub About now has an English early-alpha
+description and ten topics. Website temporarily links to the README status because the
+configured domain failed DNS resolution in the local check; public DNS availability was not
+independently established. Releases remain visible; Deployments and empty Packages are hidden
+from the home page. This does not hide infrastructure or change deployment access.
+
+Documentation reconciliation: README now records the merged own kernel and DS1-a; the
+navigation includes ADR-0037/0038; VISION reflects D-193's uncapped fleet; the architecture and
+client ADR distinguish the planned phone relay from execution. No deployment or new hosting
+decision was made.
+
+- **New:** 0 product tests; seven Markdown files reconciled in `977e945`.
+- **Regression envelope:** `npm run lint:md` passed (103 files, 0 errors);
+  `git diff --check` passed. Product tests and the browser regression gate were not rerun for
+  this documentation-only change.
+- **Independent verification:** a separate read-only reviewer inspected
+  `1243d3c..977e945` against ADR-0037/0038, D-186/187/193, existing K1/DS1-a evidence,
+  package sources and the lane table; new relative links and heading fragments resolve;
+  no actionable findings. GitHub metadata readback and UI visibility checks were the author's
+  direct observations, outside the reviewer's local scope.
+- **Residuals:** public website and phone relay remain undeployed by this task; existing
+  Russian legacy docs and raw research remain preserved, not translated by this slice.
+
 ## Next stages
 
 | Stage | Status | Notes |
@@ -174,5 +208,7 @@ Residual risks:
 | DS1 Design foundations | in progress (DS1-a merged; DS1-b in review fixes; DS1-c after DS1-b) | see the DS1 section above |
 | DS2 Approval signing helper | not started | after DS1 (D-184) |
 | NC1 Notification center | not started | after K3, R1 and U1 |
-| K2, K3 | ready (wave 2 lanes) | [lanes/K2](lanes/K2.md), [lanes/K3](lanes/K3.md); U1 after DS1 |
+| K2 Session log | implemented, merged | see the K2 section above |
+| K3 Model access | in review (lane K3, Codex): Review 1 and 2 fixes done; next the K2 scrubber integration step | [lanes/K3](lanes/K3.md) |
+| R1 Durable runs | in progress (lane R1, Codex) | [lanes/R1](lanes/R1.md) |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

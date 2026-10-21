@@ -13,3 +13,4 @@ export * from './artifacts.ts'
 
 export * from './connections/index.ts'
 export * from './brand.ts'
+export * from './events/index.ts'

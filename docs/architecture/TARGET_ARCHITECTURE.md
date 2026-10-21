@@ -1,11 +1,13 @@
 # Target architecture
 
 **Status:** proposed (direction accepted by owner decisions D-101–D-113; each part becomes
-`accepted` with its ADR) · **Updated:** 2026-10-19
+`accepted` with its ADR) · **Updated:** 2026-10-21
 
-This document describes where Guanxi is going. The code in `packages/` today is the Alamo-era
-implementation described in [`docs/legacy/alamo/`](../legacy/alamo/NAVIGATION.md); it is
-ported into this architecture step by step (see [Migration](#11-migration-from-the-legacy-code)).
+This document describes where Guanxi is going. The running application is still the Alamo-era
+implementation described in [`docs/legacy/alamo/`](../legacy/alamo/NAVIGATION.md). The own
+kernel and DS1-a design foundations are already merged; the remaining application is ported
+step by step (see [stage status](../plans/PHASE_STATUS.md) and
+[Migration](#11-migration-from-the-legacy-code)).
 
 ## 1. System at a glance
 
@@ -78,6 +80,11 @@ Diagram source: [`diagrams/target-system.mmd`](diagrams/target-system.mmd).
   scheduling preference, not a required hub (D-105).
 - **Single writer per node database.** Each node has one SQLite database written by one module
   in one process; other processes talk to it over the API.
+- **Phone transport is separate from execution.** U4 plans an owner-run, end-to-end encrypted
+  relay on the existing VPS, with outbound-only connections from nodes. It forwards UI, job
+  and event traffic; durable sessions belong to the always-on home, and model calls leave
+  directly from the execution machine. The owner's home is the Fedora PC (D-186), and the
+  VPS is relay-only (D-187). See [ADR-0038 §5](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md#5-remote-control-from-the-phone-d-187).
 
 ## 3. Kernel and plugins
 
