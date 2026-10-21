@@ -30,9 +30,10 @@ import {
   revocationPayload,
   serialiseRecord,
   uiPaths,
-  verifyHistory,
+  verifyHistoryGraphs,
   verifyKeySetChange,
   type HistoryEntry,
+  type HistoryNode,
   type ReviewRecord,
   type TrustedKey,
 } from '../../catalog/approval/index.ts'
@@ -60,10 +61,17 @@ function keysAt(repoRoot: string, commit: string): TrustedKey[] {
   }
 }
 
-/** Every first-parent commit of `ref` that changed the record, oldest first. */
-function firstParentVersions(repoRoot: string, ref: string, id: string): HistoryVersion[] {
-  const commits = git(repoRoot, 'log', '--first-parent', '--format=%H', ref, '--', recordPath(id)).split('\n').filter(Boolean).reverse()
-  return commits.map((commit) => {
+/**
+ * Every commit reachable from `ref` that changed the record, on every side of every merge, with
+ * its parents rewritten to the nearest such commits (full history, needless merges simplified),
+ * parents first (N8/N1).
+ */
+function historyGraph(repoRoot: string, ref: string, id: string): HistoryVersion[] {
+  const lines = git(repoRoot, 'rev-list', '--topo-order', '--reverse', '--parents', '--full-history', '--simplify-merges', ref, '--', recordPath(id))
+    .split('\n')
+    .filter(Boolean)
+  return lines.map((line) => {
+    const [commit, ...parents] = line.split(' ') as [string, ...string[]]
     let json: unknown
     try {
       const text = git(repoRoot, 'show', `${commit}:${recordPath(id)}`)
@@ -75,13 +83,14 @@ function firstParentVersions(repoRoot: string, ref: string, id: string): History
     } catch {
       json = undefined
     }
-    return { label: `commit ${commit.slice(0, 7)}`, json, trustedKeys: keysAt(repoRoot, commit) }
+    return { label: `commit ${commit.slice(0, 7)}`, json, trustedKeys: keysAt(repoRoot, commit), commit, parents }
   })
 }
 
 /**
- * The committed history G12 walks: the base branch's first-parent history and HEAD's. Shallow
- * clones fail closed, like DS1-a's ratchet: a missing commit could hide an erased decision.
+ * The committed history G12 walks: every commit reachable from HEAD that changed a record,
+ * across all parents of every merge (the base is an ancestor of HEAD). Shallow clones fail
+ * closed, like DS1-a's ratchet: a missing commit could hide an erased decision.
  */
 export function historyFromGit(repoRoot: string, baseCommit: string, ids: string[]): Record<string, HistoryVersion[][]> | { error: string } {
   try {
@@ -89,12 +98,12 @@ export function historyFromGit(repoRoot: string, baseCommit: string, ids: string
     // Every component that ever had a record, so a deleted folder is still checked (N8).
     const all = new Set(ids)
     for (const ref of [baseCommit, 'HEAD']) {
-      for (const path of git(repoRoot, 'log', '--first-parent', '--name-only', '--format=', ref, '--', 'packages/ui/src/components').split('\n')) {
+      for (const path of git(repoRoot, 'log', '--name-only', '--format=', ref, '--', 'packages/ui/src/components').split('\n')) {
         const match = /^packages\/ui\/src\/components\/([^/]+)\/([^/]+)\.review\.json$/.exec(path)
         if (match && match[1] === match[2]) all.add(match[1]!)
       }
     }
-    return Object.fromEntries([...all].sort().map((id) => [id, [firstParentVersions(repoRoot, baseCommit, id), firstParentVersions(repoRoot, 'HEAD', id)]]))
+    return Object.fromEntries([...all].sort().map((id) => [id, [historyGraph(repoRoot, 'HEAD', id)]]))
   } catch (cause) {
     return { error: `cannot read the record history: ${(cause as Error).message.split('\n')[0]}` }
   }
@@ -152,9 +161,26 @@ function toEntry(version: HistoryVersion): HistoryEntry {
   return parsed.ok ? { label: version.label, state: 'record', record: parsed.record, trustedKeys: version.trustedKeys } : { label: version.label, state: 'unreadable' }
 }
 
-/** G12's history check for one component: committed sequences (oldest first) and the working tree. */
-export function historyProblems(sequences: HistoryVersion[][], current: HistoryEntry): string[] {
-  return verifyHistory(sequences.map((sequence) => [...sequence.map(toEntry), current]))
+/**
+ * G12's history check for one component. A history read from git is a graph (versions carry
+ * commit and parents) and the working tree's parents are its leaves; a fixture history is a
+ * linear sequence, oldest first.
+ */
+export function historyProblems(histories: HistoryVersion[][], current: HistoryEntry): string[] {
+  const graphs = histories.map((versions): HistoryNode[] => {
+    const nodes = versions.map((version, index) => ({
+      id: version.commit ?? String(index),
+      parents: version.parents ?? (index === 0 ? [] : [String(index - 1)]),
+      entry: toEntry(version),
+    }))
+    const known = new Set(nodes.map((node) => node.id))
+    const referenced = new Set(nodes.flatMap((node) => node.parents))
+    const leaves = nodes.filter((node) => !referenced.has(node.id)).map((node) => node.id)
+    // Parents outside the walked set (a rewritten root) are simply absent from the graph.
+    for (const node of nodes) node.parents = node.parents.filter((parent) => known.has(parent))
+    return [...nodes, { id: 'the working tree', parents: leaves, entry: current }]
+  })
+  return verifyHistoryGraphs(graphs)
 }
 
 function pinnedKeyIds(): string[] | null {

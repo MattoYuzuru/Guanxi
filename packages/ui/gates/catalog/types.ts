@@ -24,6 +24,9 @@ export interface HistoryVersion {
   /** The parsed JSON, `undefined` when the file is absent, or the string 'unreadable'. */
   json: unknown
   trustedKeys: TrustedKey[]
+  /** Set when read from git: the commit and its parents in the record's history graph. */
+  commit?: string
+  parents?: string[]
 }
 
 export interface GateFinding {

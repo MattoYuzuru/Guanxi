@@ -479,6 +479,53 @@ describe('G12 reads the committed history from git (GPT N1, N8, N9)', async () =
     }
   })
 
+  it('sees decisions committed on a merged side branch: a replay there fails (GPT N8/N1)', () => {
+    const r = repository()
+    try {
+      r.commit(a1, 'approve on main')
+      r.git('checkout', '-q', '-b', 'candidate')
+      r.git('commit', '-q', '--allow-empty', '-m', 'unrelated work')
+      r.git('checkout', '-q', '-b', 'side')
+      r.commit(r1, 'owner requests changes')
+      r.commit(a1, 'restore the old approval')
+      r.git('checkout', '-q', 'candidate')
+      r.git('merge', '-q', '--no-ff', 'side', '-m', 'merge side')
+      const history = historyFromGit(r.repo, r.git('rev-parse', 'main'), ['button']) as Record<string, Parameters<typeof historyProblems>[0]>
+      const problems = historyProblems(history['button']!, { label: 'the working tree', state: 'record', record: a1, trustedKeys: [owner.trusted] })
+      assert.match(problems.join('\n'), /commit [0-9a-f]{7}: the signed approval of .* does not descend from the owner's current decision, the signed revocation of 2026-10-21T09:00:00.000Z/)
+      assert.match(problems.join('\n'), /the working tree: the signed approval of .* does not descend from the owner's current decision, the signed revocation/)
+    } finally {
+      r.dispose()
+    }
+  })
+
+  it('accepts a legitimate decision merged from a side branch, and fails sides whose decisions diverge (GPT N8/N1)', () => {
+    const r = repository()
+    try {
+      r.commit(a1, 'approve on main')
+      r.git('checkout', '-q', '-b', 'side')
+      r.commit(r1, 'owner requests changes')
+      r.commit(a2, 'owner approves again')
+      r.git('checkout', '-q', 'main')
+      r.git('merge', '-q', '--no-ff', 'side', '-m', 'merge side')
+      const merged = historyFromGit(r.repo, r.git('rev-parse', 'HEAD'), ['button']) as Record<string, Parameters<typeof historyProblems>[0]>
+      assert.deepEqual(historyProblems(merged['button']!, { label: 'the working tree', state: 'record', record: a2, trustedKeys: [owner.trusted] }), [])
+      // Two branches each add a different decision to A2; merging them cannot keep both heads.
+      r.git('checkout', '-q', '-b', 'left')
+      r.commit(r2, 'left: request changes')
+      r.git('checkout', '-q', 'main')
+      r.git('checkout', '-q', '-b', 'right')
+      const other: ReviewRecord = { ...a2, status: 'review', approval: null, revocation: revocation(owner, a2 as Approved, '2026-10-23T10:00:00.000Z') }
+      r.commit(other, 'right: request changes differently')
+      r.git('merge', '-q', '--no-ff', '-X', 'theirs', 'left', '-m', 'merge left into right')
+      const diverged = historyFromGit(r.repo, r.git('rev-parse', 'HEAD'), ['button']) as Record<string, Parameters<typeof historyProblems>[0]>
+      const now = JSON.parse(execFileSync('git', ['show', 'HEAD:packages/ui/src/components/button/button.review.json'], { cwd: r.repo, encoding: 'utf8' })) as ReviewRecord
+      assert.match(historyProblems(diverged['button']!, { label: 'the working tree', state: 'record', record: now, trustedKeys: [owner.trusted] }).join('\n'), /merges decision histories that diverge/)
+    } finally {
+      r.dispose()
+    }
+  })
+
   it('finds a whole component folder removed after a signed decision, and fails closed when shallow (N8)', () => {
     const r = repository()
     try {

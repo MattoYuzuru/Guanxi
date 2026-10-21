@@ -55,4 +55,4 @@ export {
 } from './hash.ts'
 export { effectiveStatus, type CurrentHashes, type SignatureState } from './status.ts'
 export { uiPaths } from './paths.ts'
-export { recordProblems, verifyHistory, type HistoryEntry } from './history.ts'
+export { recordProblems, verifyHistory, verifyHistoryGraphs, type HistoryEntry, type HistoryNode } from './history.ts'

@@ -103,10 +103,12 @@ plus its `signature`. The node sets it to the record's current head when it sign
 approval and a revocation in a record, exactly one names the other; that one is the head, the
 owner's current decision (a revocation head revokes the approval).
 
-**What G12 enforces across history.** G12 walks every committed version of each record (the
-first-parent history of the base branch and of HEAD; components whose folder was deleted are
-found from history too) and validates each version like the working tree: signatures, status,
-and the chain between its decisions. Every signed decision must root in a `previous` of `null`
+**What G12 enforces across history.** G12 walks every committed version of each record: every
+commit reachable from HEAD that changed it, on every side of every merge, as a graph with each
+version checked against the merged state of all its parents (components whose folder was deleted
+are found from history too). It validates each version like the working tree: signatures,
+status, and the chain between its decisions. A merge must keep or descend from every parent's
+current decision; parents whose decision histories diverge fail. Every signed decision must root in a `previous` of `null`
 through decisions some committed version held. A version keeps the owner's current decision
 (the ledger head) or replaces it with one that descends from it, so review cycles of any length
 verify and an older decision can never come back. A deprecation stays until a newer signed
