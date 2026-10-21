@@ -11,6 +11,7 @@ import {
   sessionEventSchema,
   sessionEventTypeSchema,
   sessionKindSchema,
+  runStateSchema,
   sessionSpanKindSchema,
 } from './session-events.ts'
 
@@ -62,6 +63,26 @@ export const listSessionsResponse = z
   })
   .strict()
 export type ListSessionsResponse = z.infer<typeof listSessionsResponse>
+
+/** Additive paged metadata route; the original strict list response is unchanged. */
+export const sessionPageCursorSchema = z.object({ createdAt: z.string().datetime(), sessionId }).strict()
+export type SessionPageCursor = z.infer<typeof sessionPageCursorSchema>
+export const sessionPageQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().min(1).max(1000).regex(/^[A-Za-z0-9_-]+$/).optional(),
+}).strict()
+export const sessionExecutionSchema = z.object({
+  state: runStateSchema,
+  attemptState: z.enum(['delivered', 'started', 'sleeping', 'completed', 'lost', 'canceled']).nullable(),
+  source: z.literal('run-home'), observedAt: z.string().datetime(), confidence: z.literal('observed'),
+}).strict()
+export const sessionPageItemSchema = sessionListItemSchema.extend({ execution: sessionExecutionSchema.nullable() }).strict()
+export type SessionPageItem = z.infer<typeof sessionPageItemSchema>
+export const sessionPageResponse = z.object({
+  sessions: z.array(sessionPageItemSchema), nextCursor: z.string().nullable(),
+  omitted: z.object({ withheld: z.boolean(), catchingUp: z.boolean() }).strict(),
+}).strict()
+export type SessionPageResponse = z.infer<typeof sessionPageResponse>
 
 export const sessionSummarySchema = sessionListItemSchema
   .extend({
@@ -195,6 +216,7 @@ export type SessionQueryToolResult = z.infer<typeof sessionQueryToolResultSchema
 
 export const SESSION_ROUTES = {
   sessions: () => '/api/sessions',
+  page: () => '/api/sessions/list/page',
   search: () => '/api/sessions/search',
   session: (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}`,
   events: (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/events`,

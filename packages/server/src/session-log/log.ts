@@ -27,12 +27,16 @@ import {
   sessionEventClassOf,
   sessionEventDataSchemas,
   sessionEventSchema,
+  sessionExecutionSchema,
   type SessionAudience,
   type SessionEvent,
   type SessionEventData,
   type SessionEventType,
   type SessionKind,
   type SessionListItem,
+  type SessionPageCursor,
+  type SessionPageItem,
+  type SessionPageResponse,
   type SessionSearchHit,
   type SessionTokenMeter,
   type SessionWriterReason,
@@ -645,6 +649,31 @@ export class SessionLog {
       catchingUp: catchingUp.length,
       catchUpFailed: catchingUp.filter((sessionId) => this.catchUpFailures.has(sessionId)).length,
     }
+  }
+
+  /** Stable creation-order pages. No raw event or reasoning payload crosses this boundary. */
+  page(limit: number, cursor?: SessionPageCursor): SessionPageResponse {
+    this.assertEgressReady()
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new RangeError('Invalid session page size')
+    const sessions: SessionPageItem[] = [], omitted = { withheld: false, catchingUp: false }
+    const hasRuns = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durable_runs'").get())
+    const rows = this.db.prepare(`${LIST_ITEM_SELECT}
+      ${cursor ? 'WHERE (s.created_at < ? OR (s.created_at = ? AND s.id < ?))' : ''}
+      ORDER BY s.created_at DESC,s.id DESC`).iterate(...(cursor ? [cursor.createdAt, cursor.createdAt, cursor.sessionId] : [])) as unknown as Iterable<ListItemRow>
+    let more = false
+    for (const row of rows) {
+      if (!this.returnable(row.id)) { omitted.withheld = true; continue }
+      if (this.db.prepare('SELECT 1 FROM session_mirror_backlog WHERE thread_id=?').get(row.id)) { omitted.catchingUp = true; continue }
+      if (sessions.length === limit) { more = true; break }
+      const run = hasRuns ? this.db.prepare(`SELECT r.state,r.updated_at,
+        (SELECT a.state FROM run_attempts a WHERE a.run_id=r.id ORDER BY a.ordinal DESC LIMIT 1) AS attempt_state
+        FROM durable_runs r WHERE r.session_id=? AND r.parent_id IS NULL ORDER BY r.updated_at DESC,r.id DESC LIMIT 1`).get(row.id) : undefined
+      const execution = run ? sessionExecutionSchema.safeParse({ state: run.state, attemptState: run.attempt_state ?? null,
+        source: 'run-home', observedAt: new Date(Number(run.updated_at)).toISOString(), confidence: 'observed' }) : undefined
+      sessions.push({ ...this.toListItem(row), execution: execution?.success ? execution.data : null })
+    }
+    const last = sessions.at(-1)
+    return { sessions, omitted, nextCursor: more && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt, sessionId: last.sessionId })).toString('base64url') : null }
   }
 
   /**
