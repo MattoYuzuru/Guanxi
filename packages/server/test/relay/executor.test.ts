@@ -191,3 +191,21 @@ test('a new attempt probes and carries the latest seal from the previous attempt
     assert.ok(after.find(p => p.startsWith('Execute'))?.includes(marker), 'dead-end note reached work')
   } finally { f.close() }
 })
+test('an escalated relay recovers under a newly admitted attempt', async () => {
+  let turn = 0
+  const f = fixture({ actions: () => canonical(++turn % 2 ? { action: 'note', kind: 'decision', text: 'memo', items: ['one'], expiresAt: null } : { action: 'handoff' }) })
+  try {
+    await f.executor.run(f.attempt)
+    assert.equal(f.relay.read(f.run.id).state, 'escalate')
+    assert.equal(f.store.get(f.run.id).state, 'input_required')
+    const next = f.store.decide(f.run.id)
+    f.relay.recover(next)
+    assert.equal(f.relay.read(f.run.id).state, 'boot')
+    const before = f.prompts.length
+    const { RelayExecutor } = await import('../../src/relay/executor.ts')
+    const executor = new RelayExecutor(f.relay, f.model, f.workspace, f.executor.reserves, f.scrubber)
+    await executor.run(next)
+    assert.ok(f.prompts.length > before, 'recovered run makes model calls')
+    assert.equal(f.log.readAll(f.run.session_id, 'person').some(e => e.type === 'error' && e.data.code === 'cycle_transition'), false)
+  } finally { f.close() }
+})

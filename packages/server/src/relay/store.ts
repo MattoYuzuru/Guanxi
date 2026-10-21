@@ -28,7 +28,7 @@ const transitions: Record<CycleState, readonly CycleState[]> = {
   boot: ['orient'], orient: ['work', 'escalate'], work: ['wind_down', 'handoff_write', 'finish', 'escalate'],
   wind_down: ['handoff_write'], handoff_write: ['handoff_validate', 'harness_fallback'],
   handoff_validate: ['sealed', 'handoff_write', 'harness_fallback'], harness_fallback: ['handoff_validate', 'escalate'],
-  sealed: ['boot', 'finish', 'escalate'], finish: [], escalate: [],
+  sealed: ['boot', 'finish', 'escalate'], finish: [], escalate: ['boot'],
 }
 export class RelayStore {
   readonly db: Db; readonly runs: RunStore; readonly scrubber: EgressScrubber
@@ -87,7 +87,8 @@ export class RelayStore {
   /** Explicit recovery only, after R1 admitted a NEW fence. Never resumes a pending model call. */
   recover(a: Attempt): void {
     this.change(a, 'recovered', l => {
-      invariant(l.state !== 'finish' && l.state !== 'escalate', 'cycle_transition')
+      // A lead decision admits a new attempt; escalation is recoverable, finish is not.
+      invariant(l.state !== 'finish', 'cycle_transition')
       l.pendingCall = null; l.state = 'boot'
     })
   }
