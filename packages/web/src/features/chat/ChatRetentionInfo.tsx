@@ -193,7 +193,7 @@ export function ChatRetentionInfo({
         width={520}
       >
         <div className="min-w-0 space-y-4">
-          <p className="break-words text-xs text-[var(--fg-muted)]">{chatTitle}</p>
+          <p className="break-words text-xs text-secondary">{chatTitle}</p>
           {loading && !projection ? (
             <div role="status" aria-label={translate('chat.retention.loading')} className="space-y-2">
               <Skeleton className="h-8 w-full" />
@@ -225,8 +225,8 @@ export function ChatRetentionInfo({
                       className={cx(
                         'flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs',
                         selected === mode
-                          ? 'border-[var(--accent)] bg-[var(--accent-subtle)]/55'
-                          : 'border-[var(--border)]',
+                          ? 'border-accent bg-accent/5.5'
+                          : 'border-divider',
                       )}
                     >
                       <input
@@ -243,9 +243,9 @@ export function ChatRetentionInfo({
               </fieldset>
 
               <dl className="grid min-w-0 grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-                <dt className="text-[var(--fg-subtle)]">{translate('chat.retention.current')}</dt>
+                <dt className="text-muted">{translate('chat.retention.current')}</dt>
                 <dd className="min-w-0 break-words">{translate(`chat.retention.mode.${projection.policy.mode}`)}</dd>
-                <dt className="text-[var(--fg-subtle)]">{translate('chat.retention.activity')}</dt>
+                <dt className="text-muted">{translate('chat.retention.activity')}</dt>
                 <dd className="min-w-0 break-words">
                   <time dateTime={projection.lastUserActivity.at}>
                     {formatDateTime(projection.lastUserActivity.at)}
@@ -253,7 +253,7 @@ export function ChatRetentionInfo({
                   {' · '}
                   {translate(`chat.retention.activity.${projection.lastUserActivity.source}`)}
                 </dd>
-                <dt className="text-[var(--fg-subtle)]">{translate('chat.retention.expiry')}</dt>
+                <dt className="text-muted">{translate('chat.retention.expiry')}</dt>
                 <dd className="min-w-0 break-words">
                   {projection.expiresAt ? (
                     <time dateTime={projection.expiresAt}>{formatDateTime(projection.expiresAt)}</time>
@@ -314,7 +314,7 @@ export function ChatRetentionInfo({
               {projection.policy.mode === 'session' && !projection.sessionLeave && !leaveResult ? (
                 confirmLeave ? (
                   <div
-                    className="rounded-md border border-[var(--warning)] p-3"
+                    className="rounded-md border border-warning p-3"
                     role="group"
                     aria-labelledby={`session-leave-confirm-${chatId}`}
                     onKeyDown={(event) => {
@@ -328,7 +328,7 @@ export function ChatRetentionInfo({
                     <p id={`session-leave-confirm-${chatId}`} className="text-xs font-semibold">
                       {translate('chat.retention.leave.confirmTitle')}
                     </p>
-                    <p className="mt-1 text-xs text-[var(--fg-muted)]">
+                    <p className="mt-1 text-xs text-secondary">
                       {translate('chat.retention.leave.confirmDescription')}
                     </p>
                     <div className="mt-2 flex flex-wrap justify-end gap-2">

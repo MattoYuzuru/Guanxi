@@ -244,7 +244,7 @@ export function LauncherPage({ health }: { health: Health }) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold tracking-tight">{translate('launcher.title')}</h1>
-            <p className="mt-0.5 text-xs text-[var(--fg-muted)]">
+            <p className="mt-0.5 text-xs text-secondary">
               {translate('launcher.fitBasis')}
             </p>
           </div>
@@ -276,7 +276,7 @@ export function LauncherPage({ health }: { health: Health }) {
 
             <div className="min-w-0">
               <label className="flex items-center gap-1.5">
-                <span className="text-2xs text-[var(--fg-subtle)]">
+                <span className="text-2xs text-muted">
                   {translate('launcher.context.short')}
                 </span>
                 <Input
@@ -318,11 +318,11 @@ export function LauncherPage({ health }: { health: Health }) {
                   ))}
                 </datalist>
               </label>
-              <p id="launcher-context-hint" className="mt-1 max-w-64 text-2xs text-[var(--fg-subtle)]">
+              <p id="launcher-context-hint" className="mt-1 max-w-64 text-2xs text-muted">
                 {translate('launcher.context.hint')}
               </p>
               {contextError ? (
-                <p className="mt-1 max-w-64 text-2xs text-[var(--danger)]" role="alert">
+                <p className="mt-1 max-w-64 text-2xs text-danger" role="alert">
                   {contextError}
                 </p>
               ) : null}
@@ -421,7 +421,7 @@ export function LauncherPage({ health }: { health: Health }) {
         />
 
         {compareNotice ? (
-          <p className="mt-2 text-2xs text-[var(--warning)]" role="status">
+          <p className="mt-2 text-2xs text-warning" role="status">
             {compareNotice}
           </p>
         ) : null}
@@ -645,7 +645,7 @@ export function CatalogPager({
         {translate('catalog.pagination.next')}
       </Button>
       {pullActive ? (
-        <p id={descriptionId} className="basis-full text-center text-2xs text-[var(--warning)]" role="status">
+        <p id={descriptionId} className="basis-full text-center text-2xs text-warning" role="status">
           {translate('catalog.pagination.pullBlocked')}
         </p>
       ) : null}
@@ -745,11 +745,11 @@ function SectionHeader({
       <div className="flex min-w-0 items-baseline gap-2">
         <h2 className="text-sm font-semibold">{title}</h2>
         {count !== undefined && (
-          <span className="text-2xs text-[var(--fg-subtle)]">
+          <span className="text-2xs text-muted">
             {localizedModelCount(count)}
           </span>
         )}
-        {refreshing && <span className="anim-pulse-soft text-2xs text-[var(--fg-subtle)]">…</span>}
+        {refreshing && <span className="anim-pulse-soft text-2xs text-muted">…</span>}
       </div>
       {action}
     </div>

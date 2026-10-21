@@ -27,14 +27,17 @@ Import `tokens.css` for runtime variables; import `theme.css` after Tailwind's t
 semantic utilities. The theme removes the default palette and supplies `bg-canvas`,
 `bg-surface`, `text-foreground`, `text-muted`, `border-control`, semantic radii, size and
 spacing utilities, and `duration-fast` / `delay-fast` / `ease-standard` families. Raw
-primitive colours have no theme utilities. The legacy app imports the runtime variables
-for its `--warning` and `--focus` compatibility mappings. Its CSS also bridges the six
-generated theme aliases used by K1's `SidebarSlot` (divider, secondary, foreground, inset,
-control radius and 12 px type); DS1-c replaces this bridge with the theme import during the
-legacy utility migration.
+primitive colours have no theme utilities. The web app imports both public stylesheets,
+`@guanxi/ui/tokens.css` and `@guanxi/ui/theme.css`. DS1-c removed the temporary local bridge,
+including all ten aliases present at its baseline. Legacy runtime colours and font overrides
+remain migration debt; `--warning` and `--focus` retain their compatibility mappings.
+The web app then imports Tailwind's default-priority theme for frozen legacy utilities that
+U1 has not migrated yet. It restores missing type/radius/material classes without overriding
+explicit generated tokens. G5 still compiles against the generated-only theme and rejects
+new uses of those defaults. The UI package has no such compatibility import.
 Runtime font variables are `--font-family-sans` and `--font-family-mono`; runtime CSS does not
 declare bare `--spacing` or Tailwind's font-family names. Only the theme layer maps those
-names. A production-build comparison with the token import removed asserts unchanged legacy
+names. A production-build comparison with the design-system CSS imports removed asserts unchanged legacy
 body/mono fonts and spacing. The theme also resets shadow, blur, tracking, leading, font-weight
 and default-transition namespaces, then maps supported semantic replacements and defaults.
 Container widths from FOUNDATIONS §3 live at `layout.container.*`; the theme resets

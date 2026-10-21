@@ -18,7 +18,7 @@ integrator, the coordinating Claude session, merges lanes into `main`.
 | [K2](K2.md) | K2 session log, inspector, egress scrubber core | Claude Opus session | session branch | 5186 / 4386 | merged ([evidence](../evidence/K2.md)) |
 | [K3](K3.md) | K3 connections, vault, pi-ai, probes | GPT (Codex), xhigh | `lane/k3-model-access` | 5187 / 4387 | merged ([evidence](../evidence/K3.md)) |
 | [R1](R1.md) | R1 durable runs, hibernation and wake | GPT (Codex), xhigh | `lane/r1-durable-runs` | 5188 / 4388 | merged ([evidence](../evidence/R1.md)); follow-up `lane/r1-followup` |
-| [F1](F1.md) | F1 federation base | GPT (Codex), xhigh | `lane/f1-federation` | 5194 / 4394 | review 2 fixes done; final scoped Claude re-check |
+| [F1](F1.md) | F1 federation base | GPT (Codex), xhigh | `lane/f1-federation` | 5194 / 4394 | merged ([evidence](../evidence/F1.md)) |
 | [K4](K4.md) | K4 native agent, tools, access modes, projects | GPT (Codex), xhigh | `lane/k4-native-agent` | 5189 / 4389 | merged ([evidence](../evidence/K4.md)); follow-up merged ([evidence](../evidence/K4-followup.md)) |
 | [R2](R2.md) | R2 relay executor v1 | GPT (Codex), xhigh | `lane/r2-relay-executor` | 5195 / 4395 | review 1 fixes running in DeepSeek |
 | [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | review 1 fixes running in DeepSeek |
@@ -112,8 +112,13 @@ the `workspace-write` sandbox and rejects every approval request.
 - **Workspace:** a standalone `git clone` on the lane branch, not a worktree. The sandbox can
   only write inside its working directory, and a worktree's git metadata lives outside it. The
   integrator runs `npm ci` first.
-- **Inside the sandbox:** the run uses targeted `node --test` files under `nice -n 10` only. It
-  cannot take the `agent-dev` lock or run the full suites.
+- **Inside the sandbox:** the run uses targeted `node --test` files plus
+  `npx tsc --noEmit -p <package>` under `nice -n 10` only. Node's type stripping does not
+  typecheck, and one DeepSeek fix round shipped a type error that only `tsc` caught. It cannot
+  take the `agent-dev` lock or run the full suites.
+- **Not for DeepSeek:** code whose tests start a nested sandbox (`sandbox-exec`, `bwrap`,
+  containers), because DeepSeek's own sandbox refuses them. X1's sandboxed-worker regressions
+  slipped through that way. Such fixes go to Codex.
 - **Integrator duties:** fetch the branch, run the full gates through the shared lock, arrange
   the Claude review and merge.
 

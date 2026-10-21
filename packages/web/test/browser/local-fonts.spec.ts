@@ -19,11 +19,11 @@ test.beforeAll(async () => {
   execFileSync(process.execPath, [resolve(webRoot, '../../node_modules/vite/bin/vite.js'), 'build', '--outDir', directory, '--emptyOutDir'], { cwd: webRoot, stdio: 'pipe' })
   baselineDirectory = await mkdtemp(resolve(tmpdir(), 'guanxi-ds1a-legacy-baseline-'))
   const baselineScript = resolve(directory, 'baseline-build.mjs')
-  // Build the identical legacy app with only the runtime-token import removed. No source
+  // Build the identical legacy app with the design-system CSS imports removed. No source
   // files are edited, and the reference uses the same locked Vite/Tailwind dependencies.
   await writeFile(baselineScript, `import { build } from ${JSON.stringify(pathToFileURL(resolve(webRoot, '../../node_modules/vite/dist/node/index.js')).href)};
 import { readFile } from 'node:fs/promises';
-await build({root:${JSON.stringify(webRoot)},configFile:${JSON.stringify(resolve(webRoot, 'vite.config.ts'))},logLevel:'error',plugins:[{name:'legacy-baseline',enforce:'pre',async load(id){if(id.split('?')[0]===${JSON.stringify(resolve(webRoot, 'src/index.css'))})return (await readFile(id,'utf8')).replace(${JSON.stringify("@import '../../ui/generated/tokens.css';")},'')}}],build:{outDir:${JSON.stringify(baselineDirectory)},emptyOutDir:true}});
+await build({root:${JSON.stringify(webRoot)},configFile:${JSON.stringify(resolve(webRoot, 'vite.config.ts'))},logLevel:'error',plugins:[{name:'legacy-baseline',enforce:'pre',async load(id){if(id.split('?')[0]===${JSON.stringify(resolve(webRoot, 'src/index.css'))}){const css=await readFile(id,'utf8');const imports=${JSON.stringify(["@import '@guanxi/ui/tokens.css';", "@import '@guanxi/ui/theme.css';"])};for(const selector of imports)if(!css.includes(selector))throw Error('Missing baseline import selector: '+selector);return imports.reduce((text,selector)=>text.replace(selector,''),css)}}}],build:{outDir:${JSON.stringify(baselineDirectory)},emptyOutDir:true}});
 `)
   execFileSync(process.execPath, [baselineScript], { cwd: webRoot, stdio: 'pipe' })
   const types: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.html': 'text/html', '.svg': 'image/svg+xml' }
@@ -127,9 +127,11 @@ test('H2: importing runtime tokens preserves legacy computed fonts and spacing',
   const inspect = (target: typeof page) => target.evaluate(() => {
     const sample = document.createElement('div')
     sample.className = 'font-mono p-2 gap-3'
+    // Compare resolved lengths: the generated grid token is 4px, Tailwind's is .25rem.
+    sample.style.marginTop = 'var(--spacing)'
     document.body.append(sample)
     const css = getComputedStyle(sample)
-    const result = { body: getComputedStyle(document.body).fontFamily, mono: css.fontFamily, padding: css.padding, gap: css.gap, spacing: getComputedStyle(document.documentElement).getPropertyValue('--spacing').trim() }
+    const result = { body: getComputedStyle(document.body).fontFamily, mono: css.fontFamily, padding: css.padding, gap: css.gap, spacing: css.marginTop }
     sample.remove()
     return result
   })
@@ -138,6 +140,7 @@ test('H2: importing runtime tokens preserves legacy computed fonts and spacing',
   expect(expected.mono).toContain('SF Mono')
   expect(expected.padding).toBe('8px')
   expect(expected.gap).toBe('12px')
+  expect(expected.spacing).toBe('4px')
   expect(await inspect(page)).toEqual(expected)
   await baseline.close()
 })

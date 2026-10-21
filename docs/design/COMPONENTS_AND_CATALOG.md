@@ -150,7 +150,7 @@ emit JSON for agents.
 
 Existing violations in the legacy web package are frozen with ESLint bulk suppressions; the
 suppression file may only shrink, and U1 cannot exit while colour rules have suppressions. A
-codemod rewrites the 683 `bg-[var(--x)]` uses to semantic utilities.
+codemod rewrites the 683 `[var(--x)]` arbitrary-value uses (133 backgrounds) to semantic utilities.
 
 ## 6. Building UI as an agent
 

@@ -104,7 +104,7 @@ export function FitIndicator({
         label={translate('fit.aria', { summary: fit.summary })}
       />
 
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-[var(--fg-subtle)]">
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-muted">
         <span className="truncate">
           {translate('fit.summary', {
             required: formatBytes(fit.requiredBytes),
@@ -123,7 +123,7 @@ export function FitIndicator({
         summary={translate('fit.breakdown')}
         tone={undefined}
       >
-        <div className="rounded-md border border-[var(--border)] bg-[var(--bg-inset)] p-2">
+        <div className="rounded-md border border-divider bg-inset p-2">
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
             <Stat
               label={translate('fit.weight')}
@@ -155,8 +155,8 @@ export function FitIndicator({
           )}
 
           {fit.measured && (
-            <div className="mt-2 border-t border-[var(--border)] pt-2">
-              <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
+            <div className="mt-2 border-t border-divider pt-2">
+              <div className="mb-1 text-2xs font-medium text-secondary">
                 {translate('fit.measurement.title')}
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
@@ -169,7 +169,7 @@ export function FitIndicator({
             </div>
           )}
 
-          <p className="mt-2 text-2xs text-[var(--fg-subtle)]">{translate(basis.hint)}</p>
+          <p className="mt-2 text-2xs text-secondary">{translate(basis.hint)}</p>
         </div>
       </Disclosure>
     </div>

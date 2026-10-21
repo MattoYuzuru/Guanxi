@@ -94,13 +94,13 @@ export function ApprovalPrompt({
       {/* Отсчёт */}
       <div className="mb-3">
         <div className="mb-1 flex items-center justify-between gap-2">
-          <span className="text-2xs text-[var(--fg-muted)]">
+          <span className="text-2xs text-secondary">
             {translate('agent.approval.timeout')}
           </span>
           <span
             className={cx(
               'font-mono text-xs font-semibold tabular-nums',
-              urgent ? 'text-[var(--danger)]' : 'text-[var(--fg-muted)]',
+              urgent ? 'text-danger' : 'text-secondary',
             )}
             role="timer"
             aria-live="off"
@@ -108,7 +108,7 @@ export function ApprovalPrompt({
             {formatDuration(seconds * 1000)}
           </span>
         </div>
-        <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-inset)]">
+        <div className="h-1 w-full overflow-hidden rounded-full bg-inset">
           <div
             className="h-full rounded-full transition-[width] duration-200 ease-linear"
             style={{
@@ -122,23 +122,23 @@ export function ApprovalPrompt({
       {/* Дифф — то, ради чего это окно вообще существует */}
       {call.diff ? (
         <div className="mb-3">
-          <p className="mb-1.5 text-2xs text-[var(--fg-muted)]">
+          <p className="mb-1.5 text-2xs text-secondary">
             {translate('agent.approval.writePath', { path: call.diff.path })}
           </p>
           <DiffViewer diff={call.diff} maxHeight={380} />
         </div>
       ) : (
-        <p className="mb-3 text-2xs text-[var(--fg-muted)]">
+        <p className="mb-3 text-2xs text-secondary">
           {translate('agent.approval.nonFile')}
         </p>
       )}
 
       {/* Аргументы */}
       <div>
-        <div className="mb-1 text-2xs font-medium text-[var(--fg-muted)]">
+        <div className="mb-1 text-2xs font-medium text-secondary">
           {translate('agent.approval.arguments')}
         </div>
-        <pre className="max-h-40 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-inset)] p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
+        <pre className="max-h-40 overflow-auto rounded border border-divider bg-inset p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
           {formatArguments(call.arguments)}
         </pre>
       </div>

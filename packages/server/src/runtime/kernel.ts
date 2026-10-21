@@ -13,6 +13,8 @@ import type { SessionLog, SessionLogOptions } from '../session-log/log.ts'
 import { SESSION_LOG_PLUGIN_ID, SESSION_LOG_SERVICE, createSessionLogPlugin } from '../session-log/plugin.ts'
 import { createDurableRunsPlugin, DURABLE_RUNS_PLUGIN_ID, DURABLE_RUNS_SERVICE, type DurableRunsService } from '../runs/plugin.ts'
 import type { RunStoreOptions } from '../runs/store.ts'
+import { createFederationPlugin, FEDERATION_PLUGIN_ID, FEDERATION_SERVICE, type FederationHostOptions } from '../federation/plugin.ts'
+import type { Federation } from '../federation/service.ts'
 import type { Db } from '../store/db.ts'
 import { RESOURCE_GOVERNOR_SERVICE, resourceGovernorPlugin } from './governor-plugin.ts'
 import type { ResourceGovernor } from './resource-governor.ts'
@@ -39,12 +41,14 @@ export interface ServerKernel {
   readonly scrubber: EgressScrubber
   /** Present when the kernel was booted with the node database. */
   readonly sessionLog: SessionLog | null
+  readonly federation: Federation | null
   readonly durableRuns: DurableRunsService | null
 }
 
 export interface ServerKernelOptions {
   /** The node database; with it the kernel also loads the session log. */
   db?: Db
+  federation?: Omit<FederationHostOptions, 'db'>
   runs?: Omit<RunStoreOptions, 'db' | 'log' | 'scrubber'> & { tickMs?: number }
   sessionLog?: Omit<SessionLogOptions, 'db' | 'scrubber'> & { purgeIntervalMs?: number }
 }
@@ -54,8 +58,10 @@ export async function bootServerKernel(
   options: ServerKernelOptions = {},
 ): Promise<ServerKernel> {
   const withLog = options.db !== undefined
+  if (options.federation && !withLog) throw new Error('federation requires the node database')
   const layers = withLog ? [...profile, SESSION_LOG_LAYER, { name: 'profile:durable-runs',
     insert: [{ id: 'durable-runs', plugin: DURABLE_RUNS_PLUGIN_ID }] }] : profile
+  if (options.federation) (layers as ProfileLayer[]).push({ name: 'profile:federation', insert: [{ id: 'federation', plugin: FEDERATION_PLUGIN_ID }] })
   const node = await bootNode({
     plugins: [
       resourceGovernorPlugin,
@@ -63,6 +69,7 @@ export async function bootServerKernel(
       egressScrubberPlugin,
       ...(withLog ? [createSessionLogPlugin({ ...options.sessionLog, db: options.db! }),
         createDurableRunsPlugin({ ...options.runs, db: options.db! })] : []),
+      ...(options.federation ? [createFederationPlugin({ ...options.federation, db: options.db! })] : []),
     ],
     profile: layers,
     // The legacy context keeps the instances handed out below, so these rows
@@ -78,5 +85,6 @@ export async function bootServerKernel(
     throw new Error('the server kernel profile did not provide its services')
   }
   const durableRuns = withLog ? node.service<DurableRunsService>(DURABLE_RUNS_SERVICE) ?? null : null
-  return { node, governor, ollama, scrubber, sessionLog, durableRuns }
+  return { node, governor, ollama, scrubber, sessionLog, durableRuns,
+    federation: options.federation ? node.service<Federation>(FEDERATION_SERVICE) ?? null : null }
 }

@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/web/src/features/seeded/raw-control.tsx": "export const Example = () => <button style={{ color: 'red' }}>seed</button>;\n"
+  },
+  "expectedError": "G9 raw button"
+}
