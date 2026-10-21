@@ -55,6 +55,17 @@ export class ExternalAgents {
       !Number.isSafeInteger(policy.quotaMaxAgeMs ?? 300_000) || (policy.quotaMaxAgeMs ?? 1) < 1) throw new ExternalAgentError('invalid_policy')
     const installations = policy.installations.map(i => Object.freeze(installationSchema.parse(i)))
     if (new Set(installations.map(i => `${i.ownerAccountId}/${i.connectionId}`)).size !== installations.length) throw new ExternalAgentError('duplicate_installation')
+    // OS credential stores (for example the macOS login keychain) may not be isolated by HOME
+    // or vendor config variables, so one subscription adapter is bound to one owner per node.
+    const owners = new Map<string, Set<string>>()
+    for (const install of installations) {
+      if (ADAPTERS[install.adapter].payment !== 'subscription') continue
+      const key = `${install.nodeId}/${install.adapter}`
+      const set = owners.get(key) ?? new Set<string>()
+      set.add(install.ownerAccountId)
+      owners.set(key, set)
+      if (set.size > 1) throw new ExternalAgentError('adapter_owner_conflict')
+    }
     this.policy = Object.freeze({ ...policy, installations: Object.freeze(installations) })
   }
   private ready() {

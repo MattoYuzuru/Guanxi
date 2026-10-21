@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile, symlink, mkdir, stat, rm, chmod } from 'node:fs/promises'
@@ -176,4 +177,21 @@ test('group- or world-accessible config directories are refused', async t => {
     await chmod(config.configDirectory, mode)
     await assert.rejects(run(), /unsafe_config_directory/)
   }
+})
+
+test('a second owner cannot configure one subscription adapter on the same node', async t => {
+  const f = await fixture(t, ['codex'])
+  const codex = f.installations[0]!
+  await assert.rejects(f.reload({ installations: [codex, { ...codex, ownerAccountId: 'other-owner', connectionId: randomUUID() }] }),
+    /adapter_owner_conflict/)
+})
+
+test('subscription owner conflict is per adapter and node, and API-key adapters are unaffected', async t => {
+  const f = await fixture(t, ['codex', 'opencode'])
+  const codex = f.installations.find(installation => installation.adapter === 'codex')!
+  const opencode = f.installations.find(installation => installation.adapter === 'opencode')!
+  // One owner may have more than one connection for the same adapter.
+  await f.reload({ installations: [codex, { ...codex, connectionId: randomUUID() }] })
+  // API-key adapters may serve multiple owners.
+  await f.reload({ installations: [opencode, { ...opencode, ownerAccountId: 'other-owner', connectionId: randomUUID() }] })
 })

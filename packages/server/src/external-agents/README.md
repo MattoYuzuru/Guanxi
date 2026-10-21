@@ -76,6 +76,13 @@ on every `cli_login` connection regardless of sharing grants. API/local editor p
 only. OpenCode/Goose use API-key payment connections; they do not route
 Claude/ChatGPT subscriptions through unofficial provider implementations.
 
+A subscription adapter is limited to one owner per node and adapter;
+`adapter_owner_conflict` refuses a second owner at configuration time. OS credential stores such
+as the macOS login keychain may not be namespaceable by `HOME`, `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME` or `COPILOT_HOME`, so a second owner could share or overwrite the first login.
+API-key adapters are not affected: they receive per-invocation config directories and API-key
+environment references.
+
 ## Isolation, lifecycle and evidence limits
 
 All launch environments are allowlisted. HOME, XDG config/data/cache, temp and scratch cwd
