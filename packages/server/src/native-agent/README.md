@@ -12,8 +12,10 @@ The session snapshots its connection, model, access mode, roots, protected paths
 allowlist at creation. Later project-root edits affect new sessions. Native root overrides
 reuse registered Workspaces and live in the private `native-projects.sqlite` sidecar, schema
 v1 (`PRAGMA user_version = 1`, `project_roots`); missing overrides use the legacy Project
-bindings. An empty override means zero roots. No shared node migration is changed, so R1 can own its migrations. Removing
-the sidecar restores legacy bindings for new sessions; existing session policies remain intact.
+bindings. An empty override means zero roots. Root overrides do not change the shared node
+schema. Native session lifecycle and R1 execution budgets use append-only node migration 32
+(see below). Removing the sidecar restores legacy bindings for new sessions; existing session
+policies remain intact.
 
 Launcher bytes are captured at node boot and copied to a private directory outside writable
 roots for each invocation. Editing a working checkout cannot replace the next launcher; the
