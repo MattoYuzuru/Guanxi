@@ -72,6 +72,53 @@ draft ──(stories + docs complete)──► review ──(owner approves)─�
 | New use of a `deprecated` component | blocked | blocked |
 | Draft used only in the catalog | allowed | allowed |
 
+### 4.1 Review record format (stable; DS2 signs it)
+
+**Status:** implemented (lane DS1-b, 2026-10-21). The DS2 signing helper (D-184) signs exactly
+these payloads; a change to them is a new schema version.
+
+`packages/ui/src/components/<id>/<id>.review.json`, validated by `catalog/review.schema.json`
+and `parseReviewRecord` (unknown fields are rejected), written by the node in one serialisation
+(`serialiseRecord`; G12 rejects any other bytes for a signed record):
+
+| Field | Written by | Meaning |
+| --- | --- | --- |
+| `id`, `status` | agents, node | `draft`, `review`, `approved` (needs a valid approval at the chain head) or `deprecated` (needs `deprecated`) |
+| `approval` | owner (signed) | `{ at, sourceHash, snapshotHashes, comment, keyId, previous, signature }` |
+| `revocation` | owner (signed) | the owner's "request changes" on an approved record: `{ at, keyId, previous, signature }` |
+| `deprecated` | agents | `{ at, replacement, note }`; the approval stays, so the chain stays intact |
+| `requests` | agents, node | change requests `{ id, at, text, state: open \| resolved }` |
+
+Signed payloads (Ed25519 over canonical JSON: keys sorted by UTF-16 code unit, no whitespace,
+UTF-8):
+
+- approval: `{ schema: "guanxi.ui-approval/2", id, status: "approved", at, sourceHash,
+  snapshotHashes, comment, keyId, previous }`;
+- revocation: `{ schema: "guanxi.ui-revocation/2", id, decision: "request_changes", at, keyId,
+  previous }`.
+
+**Hash chain.** `previous` is the digest of the signed decision the new one supersedes, or
+`null` for the first: `sha256:` + hex SHA-256 of the canonical JSON of that decision's payload
+plus its `signature`. The node sets it to the record's current head when it signs. With both an
+approval and a revocation in a record, exactly one names the other; that one is the head, the
+owner's current decision (a revocation head revokes the approval).
+
+**What G12 enforces across history.** G12 walks every committed version of each record: every
+commit reachable from HEAD that changed it, on every side of every merge, as a graph with each
+version checked against the merged state of all its parents (components whose folder was deleted
+are found from history too). It validates each version like the working tree: signatures,
+status, and the chain between its decisions. A merge must keep or descend from every parent's
+current decision; parents whose decision histories diverge fail. Every signed decision must root in a `previous` of `null`
+through decisions some committed version held. A version keeps the owner's current decision
+(the ledger head) or replaces it with one that descends from it, so review cycles of any length
+verify and an older decision can never come back. A deprecation stays until a newer signed
+decision supersedes it, and removing the record or the component folder while it holds a
+decision or a deprecation fails. A break in any committed version fails G12 for good: restoring
+a later version does not repair history (recovery needs an owner-signed mechanism, DS2).
+Unsigned changes to `status` (draft, review), `requests` and new deprecations stay allowed.
+Shallow clones fail closed. A decision deleted before it ever reached a committed version cannot
+be recovered.
+
 ## 5. Gates
 
 Every gate ships with a seeded violation that must make it fail; a self-test gate runs them all.
@@ -130,3 +177,37 @@ Load the [`guanxi-ui` skill](../../.agents/skills/guanxi-ui/SKILL.md). In short:
 - [ ] Plugin UI uses only `@guanxi/ui` and semantic tokens; iframe plugins take their colours
       from the MCP Apps variables.
 - [ ] Every number shown has a source and an age; unknown values render as unknown.
+
+## 8. Implementation status (lane DS1-b, 2026-10-20)
+
+Built on the DS1-b lane branch; see [`packages/ui/AGENTS.md`](../../packages/ui/AGENTS.md) and the
+lane hand-off for evidence.
+
+- `@guanxi/ui` has 14 primitives (shadcn/ui on Base UI, adapted) and 4 patterns (StatusPill,
+  ProvenanceLabel, EmptyState, ErrorState), all `draft`. They style through DS1-a's generated
+  tokens (`packages/ui/generated/tokens.css`); values no token expresses come from Tailwind
+  utilities through `@apply`, so G1–G7 pass on the components. The spinner and the running pulse
+  stay still until the generated theme offers a loop animation (G6 rejects keyframe names).
+- The in-app catalog is at Settings → Developer → Components (`/settings/developer/components`),
+  code-split and shown only with Developer mode on. Links keep the component and regime in the
+  query (`?component=button&theme=dark-hc&density=comfortable&glass=solid`).
+- Approvals (§4) go through the node, not a Vite middleware: `GET/POST
+  /api/ui-catalog/components/<id>/review` writes `<id>.review.json` only from a source checkout and
+  never in a release build. The approval is an Ed25519 signature inside the record, made with the
+  owner key read from the macOS keychain per approval (D-138); Git commit signing is not used.
+  Public keys are in `packages/ui/catalog/approval-keys.json`; the owner creates the key with
+  `node packages/ui/catalog/scripts/approval-key.ts init`.
+- **What the signature does and does not prove.** It proves that whoever produced it held the
+  owner key, which only leaves the keychain after a macOS prompt that trusts no application. It
+  does not stop a coding agent that edits the node's own code (or starts it with extra
+  `NODE_OPTIONS`) from capturing the key the next time the owner allows the prompt, and any local
+  process can ask the node to sign (the prompt does not show which component). Never choose
+  "Always Allow". The fix — a signing helper outside the checkout with a per-use user-presence
+  check — is a follow-up; see the DS1-b hand-off.
+- G10–G16 are registered with DS1-a's runner (`packages/ui/gates/extensions/catalog.gate.ts`):
+  `npm run ui:check` runs them with G1–G7 and G17 (fast: G10, G11, G12, G15 literals), and
+  `npm run ui:check:browser` runs the browser ones and their G17 seeds (G13 in the pinned
+  Playwright image, G14, G15-clipping, G16). The catalog runner
+  (`packages/ui/gates/catalog/run.ts`) stays for targeted work: `npm run ui:catalog:selftest`
+  runs every seed of every catalog gate (G17 runs one per gate), and `npm run ui:snapshots`
+  rewrites G13 baselines.

@@ -1,0 +1,78 @@
+@reference '../../styles/tailwind-reference.css';
+
+/* Elevation 3: strong glass over an ink scrim at 32%; the scrim is never blurred. */
+.gx-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-scrim);
+  background-color: var(--scrim-color);
+  @apply transition-opacity;
+  transition-duration: var(--motion-fade-slow);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-dialog-backdrop {
+  opacity: var(--scrim-opacity);
+}
+
+.gx-dialog-backdrop[data-starting-style],
+.gx-dialog-backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.gx-dialog {
+  /* Centred by auto margins inside a 16 px gutter, so no translate is needed to place it. */
+  @apply fixed inset-x-4 inset-y-0 m-auto h-fit max-w-md;
+  z-index: var(--layer-dialog);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  box-sizing: border-box;
+  padding: var(--spacing-20);
+  border-radius: var(--border-radius-glass);
+  outline: none;
+  @apply transition;
+  transition-duration: var(--motion-fade-slow);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+.gx-dialog[data-starting-style],
+.gx-dialog[data-ending-style] {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-md));
+}
+
+.gx-dialog[data-ending-style] {
+  transition-duration: var(--motion-fade-medium);
+  transition-timing-function: var(--motion-easing-exit);
+}
+
+.gx-dialog-close {
+  position: absolute;
+  top: var(--spacing-12);
+  right: var(--spacing-12);
+}
+
+.gx-dialog-title {
+  margin: 0;
+  padding-right: var(--spacing-32);
+  font-size: var(--font-heading-4-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-heading-4-line-height);
+  text-wrap: balance;
+}
+
+.gx-dialog-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-prose);
+}
+
+.gx-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
+  margin-top: var(--spacing-12);
+}

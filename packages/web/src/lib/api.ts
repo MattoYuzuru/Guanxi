@@ -9,6 +9,8 @@ import {
   ROUTES,
   apiErrorSchema,
   approvalResponse,
+  uiCatalogReviewCapabilityResponse,
+  uiComponentReviewResponse,
   browseResponse,
   chatStreamEventSchema,
   compactThreadResponse,
@@ -73,6 +75,7 @@ import {
   PROJECT_CHAT_OWNERSHIP_VERSION,
   type ApiError,
   type ApprovalBody,
+  type UiComponentReviewBody,
   type ChatStreamEvent,
   type CompletionProbeBody,
   type CompactThreadBody,
@@ -201,6 +204,10 @@ const API_ERROR_KEYS = {
   runtime_protocol: 'error.api.protocol',
   upstream_error: 'error.api.upstream',
   internal_error: 'error.api.internal',
+  component_not_found: 'error.api.notFound',
+  approvals_read_only: 'error.api.notAllowed',
+  review_conflict: 'error.api.conflict',
+  approval_signer_unavailable: 'error.api.unavailable',
 } satisfies Record<ApiError['code'], LocaleKey>
 
 /* ─────────────────────────────── Транспорт ────────────────────────────── */
@@ -784,6 +791,21 @@ export const api = {
 
   updateSettings: (body: UpdateSettingsBody, signal?: AbortSignal) =>
     request(ROUTES.settings(), getSettingsResponse, { method: 'PUT', body, signal }),
+
+  /* Component catalog review (D-138) */
+
+  uiCatalogReviewCapability: (signal?: AbortSignal) =>
+    request(ROUTES.uiCatalogReviewCapability(), uiCatalogReviewCapabilityResponse, { signal }),
+
+  uiCatalogComponentReview: (componentId: string, signal?: AbortSignal) =>
+    request(ROUTES.uiCatalogComponentReview(componentId), uiComponentReviewResponse, { signal }),
+
+  submitUiCatalogReview: (componentId: string, body: UiComponentReviewBody, signal?: AbortSignal) =>
+    request(ROUTES.uiCatalogComponentReview(componentId), uiComponentReviewResponse, {
+      method: 'POST',
+      body,
+      signal,
+    }),
 }
 
 /* ──────────────────────────────── Стримы ──────────────────────────────── */

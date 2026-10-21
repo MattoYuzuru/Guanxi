@@ -19,6 +19,7 @@ import { LauncherPage } from './features/launcher/LauncherPage.tsx'
 import { ModelPage } from './features/models/ModelPage.tsx'
 import { ChatPage } from './features/chat/ChatPage.tsx'
 import { SettingsPage } from './features/settings/SettingsPage.tsx'
+import { DeveloperCatalogPage } from './features/catalog/DeveloperCatalogPage.tsx'
 import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
 import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { RecipesPage } from './features/recipes/RecipesPage.tsx'
@@ -89,6 +90,7 @@ export function App() {
           {route.name === 'recipes' && <RecipesPage />}
           {route.name === 'attachments' && <AttachmentsPage />}
           {route.name === 'settings' && <SettingsPage />}
+          {route.name === 'developerComponents' && <DeveloperCatalogPage />}
           {route.name === 'projects' && <ProjectsPage />}
           {route.name === 'inspector' && <InspectorPage sessionId={route.sessionId} />}
           {route.name === 'notFound' && (
@@ -140,7 +142,11 @@ function TopBar() {
       label: translate('projects.navigation'),
       active: route.name === 'projects' || route.name === 'projectChat',
     },
-    { to: paths.settings(), label: translate('app.navigation.settings'), active: route.name === 'settings' },
+    {
+      to: paths.settings(),
+      label: translate('app.navigation.settings'),
+      active: route.name === 'settings' || route.name === 'developerComponents',
+    },
     { to: paths.inspector(), label: translate('inspector.navigation'), active: route.name === 'inspector' },
   ]
 

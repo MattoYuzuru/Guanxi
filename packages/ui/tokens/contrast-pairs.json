@@ -149,6 +149,26 @@
       "foreground": "data.8",
       "background": "color.background.primary",
       "minimum": 3
+    },
+    {
+      "name": "on-accent-hover",
+      "foreground": "color.text.on-accent",
+      "background": "color.background.accent-hover",
+      "minimum": 4.5,
+      "measured": {
+        "light": 6.28,
+        "dark": 9.08
+      }
+    },
+    {
+      "name": "on-accent-pressed",
+      "foreground": "color.text.on-accent",
+      "background": "color.background.accent-pressed",
+      "minimum": 4.5,
+      "measured": {
+        "light": 7.11,
+        "dark": 9.9
+      }
     }
   ]
 }

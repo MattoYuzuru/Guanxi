@@ -4,7 +4,12 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
+    ".": "./src/index.ts",
+    "./catalog": "./catalog/index.ts",
+    "./approval": "./catalog/approval/index.ts",
     "./tokens.css": "./generated/tokens.css",
     "./theme.css": "./generated/theme.css",
     "./tokens": "./generated/tokens.ts",
@@ -14,15 +19,47 @@
   "scripts": {
     "tokens:build": "node tokens/build.mjs",
     "ui:check": "node gates/run.mjs",
+    "ui:check:browser": "node gates/run.mjs --browser",
     "test:gates": "node --test gates/*.test.mjs",
-    "typecheck": "tsc --noEmit --skipLibCheck --target es2023 --module nodenext generated/tokens.ts generated/mcp-apps-variables.ts"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit --skipLibCheck --target es2023 --module nodenext generated/tokens.ts generated/mcp-apps-variables.ts",
+    "test": "node --test 'gates/catalog/test/**/*.test.ts' && vitest run",
+    "manifest": "node catalog/scripts/build-manifest.ts",
+    "catalog:selftest": "node gates/catalog/run.ts --mode all --selftest",
+    "snapshots": "node gates/catalog/run.ts --mode browser --only G13 --update-snapshots",
+    "harness:build": "vite build --config catalog/harness/vite.config.ts",
+    "storybook": "storybook dev --port ${GUANXI_WEB_PORT:-6006} --no-open",
+    "build-storybook": "storybook build -o dist/storybook --quiet"
+  },
+  "dependencies": {
+    "@base-ui/react": "1.8.0",
+    "lucide-react": "^1.27.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "style-dictionary": "5.7.0",
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "^1.62.1",
+    "@storybook/addon-a11y": "10.6.1",
+    "@storybook/react-vite": "10.6.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
     "colorjs.io": "0.7.1",
-    "tailwindcss": "4.3.3",
+    "esbuild": "^0.25.12",
+    "jsdom": "^30.0.1",
     "postcss": "8.5.8",
     "postcss-value-parser": "4.2.0",
-    "typescript": "5.9.3"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "storybook": "10.6.1",
+    "style-dictionary": "5.7.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "^6.0.7",
+    "vitest": "^4.1.10"
   }
 }

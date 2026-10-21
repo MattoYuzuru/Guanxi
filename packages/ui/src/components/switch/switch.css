@@ -1,0 +1,75 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  @apply w-8;
+  height: var(--icon-size-18);
+  padding: var(--spacing-2);
+  border: var(--border-width-regular) solid var(--color-border-control);
+  @apply rounded-full;
+  background-color: var(--color-background-tertiary);
+  cursor: inherit;
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-switch::after {
+  content: '';
+  position: absolute;
+  @apply -inset-1;
+}
+
+.gx-switch-thumb {
+  display: block;
+  width: var(--spacing-12);
+  height: var(--spacing-12);
+  @apply rounded-full;
+  background-color: var(--color-text-secondary);
+  @apply transition;
+  /* Spatial: the reduced-motion token is 0 ms, so the thumb jumps instead of sliding. */
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-switch:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-switch:not([data-disabled]) {
+  background-color: var(--color-background-hover);
+}
+
+.gx-switch[data-checked] {
+  border-color: var(--color-border-accent);
+  background-color: var(--color-background-accent);
+}
+
+.gx-switch[data-checked] .gx-switch-thumb {
+  background-color: var(--color-text-on-accent);
+  /* 32 px track − 2 × 2 px padding − 2 × 1 px border − 12 px thumb. */
+  @apply translate-x-3.5;
+}
+
+.gx-switch[data-disabled] {
+  border-color: var(--color-border-primary);
+  background-color: var(--color-background-disabled);
+}
+
+.gx-switch[data-disabled] .gx-switch-thumb {
+  background-color: var(--color-text-disabled);
+}
+
+@media (forced-colors: active) {
+  .gx-switch {
+    border-color: ButtonText;
+  }
+
+  .gx-switch-thumb {
+    background-color: ButtonText;
+  }
+
+  .gx-switch[data-checked] .gx-switch-thumb {
+    background-color: Highlight;
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/gates/catalog/fixtures/browser/selected.json": "{\"stories\":[\"button--default\"],\"seed\":\"g13\"}"
+  },
+  "expectedError": "G13 button--default light"
+}

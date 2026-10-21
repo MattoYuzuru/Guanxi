@@ -1,0 +1,26 @@
+.gx-provenance {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-4);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.gx-provenance-source {
+  font-family: var(--font-family-mono);
+}
+
+.gx-provenance[data-state='aged'] time {
+  color: var(--color-text-warning);
+}
+
+.gx-provenance[data-state='unknown'] {
+  color: var(--color-text-secondary);
+}
+
+.gx-provenance-confidence {
+  font-style: italic;
+}

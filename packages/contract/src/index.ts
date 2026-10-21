@@ -10,6 +10,7 @@ export * from './recipe-job-snapshots.ts'
 export * from './reasoning-artifacts.ts'
 export * from './context-checkpoints.ts'
 export * from './artifacts.ts'
+export * from './ui-catalog.ts'
 
 export * from './connections/index.ts'
 export * from './brand.ts'

@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "badge",
+  "status": "approved",
+  "approval": {
+    "at": "2026-10-20T12:00:00.000Z",
+    "sourceHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "snapshotHashes": {},
+    "comment": "Approved by the owner.",
+    "keyId": "ed25519:00000000000000000000000000000000",
+    "previous": null,
+    "signature": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw=="
+  },
+  "requests": []
+}

@@ -1,0 +1,69 @@
+/*
+ * Shared building blocks for @guanxi/ui components. Semantic tokens only (FOUNDATIONS);
+ * no literal colours, spacing, sizes or durations.
+ *
+ * Catalog-only hook: [data-gx-force~='hover' | 'focus-visible' | 'active'] on an ancestor
+ * renders a pointer or focus state statically, so every declared state has a story and a
+ * visual baseline. Product code never sets it.
+ */
+
+@reference './tailwind-reference.css';
+
+.gx-sr-only {
+  @apply sr-only;
+}
+
+/* Focus ring (FOUNDATIONS §3): visible in every theme and in forced colours. */
+.gx-focusable:focus-visible,
+[data-gx-force~='focus-visible'] .gx-focusable {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Glass material: only for floating layers (FOUNDATIONS §4). */
+.gx-glass {
+  position: relative;
+  background-color: var(--material-background);
+  backdrop-filter: var(--material-backdrop);
+  border: var(--border-width-regular) solid var(--material-border);
+  border-top-color: var(--material-edge);
+  border-bottom-color: var(--material-seam);
+  box-shadow: var(--elevation-2-shadow);
+  color: var(--material-text);
+}
+
+/* Strong glass is elevation 3 (dialogs, sheets): the element carries data-elevation="3", and
+   the generated material layer resolves the denser fill and stronger blur for it. */
+
+/* Enter and exit for Base UI popups ([data-starting-style] / [data-ending-style]). */
+.gx-pop {
+  @apply transition;
+  transition-duration: var(--motion-fade-medium);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+.gx-pop[data-starting-style],
+.gx-pop[data-ending-style] {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+}
+
+.gx-pop[data-ending-style] {
+  transition-duration: var(--motion-fade-fast);
+  transition-timing-function: var(--motion-easing-exit);
+}
+
+/* Spinner glyph. It stays still in every motion setting: DS1-a's token layer has no loop
+   animation yet (DS1-b hand-off), and FOUNDATIONS §5 already makes looping indicators a static
+   glyph with text under reduced motion, so the visible text always carries the state. */
+.gx-spinner {
+  @apply inline-block size-4 flex-none rounded-full border-2;
+  border-color: currentColor;
+  border-right-color: transparent;
+}
+
+@media (forced-colors: active) {
+  .gx-glass {
+    border-color: CanvasText;
+  }
+}

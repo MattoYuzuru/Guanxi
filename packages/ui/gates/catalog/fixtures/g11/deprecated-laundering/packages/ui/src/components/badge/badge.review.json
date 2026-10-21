@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "badge",
+  "status": "deprecated",
+  "approval": null,
+  "deprecated": {
+    "at": "2026-10-20T12:00:00.000Z",
+    "replacement": null,
+    "note": "Agent-written: never approved, now 'deprecated' to dodge the draft rule."
+  },
+  "requests": []
+}

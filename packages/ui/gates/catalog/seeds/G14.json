@@ -1,0 +1,6 @@
+{
+  "files": {
+    "packages/ui/gates/catalog/fixtures/browser/selected.json": "{\"stories\":[\"g14--unnamed-icon-button\"],\"fixtures\":true}"
+  },
+  "expectedError": "button-name"
+}

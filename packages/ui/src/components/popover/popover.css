@@ -1,0 +1,30 @@
+.gx-popover-positioner {
+  /* Base UI sets this inline on the positioner; the default keeps it defined. */
+  --available-width: none;
+  z-index: var(--layer-popover);
+}
+
+.gx-popover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  width: var(--layout-container-xs);
+  max-width: var(--available-width);
+  padding: var(--spacing-12);
+  border-radius: var(--border-radius-panel);
+  outline: none;
+}
+
+.gx-popover-title {
+  margin: 0;
+  font-size: var(--font-heading-5-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-heading-5-line-height);
+}
+
+.gx-popover-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+}
