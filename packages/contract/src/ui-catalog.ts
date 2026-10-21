@@ -19,6 +19,7 @@ export const uiCatalogReadOnlyReasonSchema = z.enum([
   'platform_unsupported',
   'signing_key_missing',
   'signing_key_untrusted',
+  'signer_helper_missing',
 ])
 export type UiCatalogReadOnlyReason = z.infer<typeof uiCatalogReadOnlyReasonSchema>
 

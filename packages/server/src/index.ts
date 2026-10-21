@@ -21,7 +21,7 @@ import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv, portFromEnv, WEB_POR
 import { defaultDbPath, openDb } from './store/db.ts'
 import { bootServerKernel } from './runtime/kernel.ts'
 import { UiCatalogReviewService } from './ui-catalog/service.ts'
-import { keychainSigner } from './ui-catalog/signer.ts'
+import { approvalSignerPath, helperSigner } from './ui-catalog/signer.ts'
 import { findSourceCheckoutUiRoot } from './ui-catalog/source-checkout.ts'
 import { RELEASE_BUILD } from './release.ts'
 
@@ -170,7 +170,7 @@ export async function start(options: StartOptions = {}) {
   const uiCatalog = new UiCatalogReviewService({
     uiRoot: RELEASE_BUILD ? null : findSourceCheckoutUiRoot(here),
     release: RELEASE_BUILD,
-    signer: keychainSigner(),
+    signer: helperSigner({ helperPath: approvalSignerPath() }),
   })
 
   try {
@@ -179,7 +179,7 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
-    await kernel.node.plugin(nativeAgentPlugin, { host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
+    await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
     await kernel.node.plugin(relayPlugin, { db })
     if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
   } catch (error) {

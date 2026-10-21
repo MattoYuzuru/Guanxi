@@ -256,12 +256,14 @@
         "with-icon-light-hc": "sha256:990ff25565d7ccd98f075424f5cb07735d693570172392050b2ae9e8824e14bc",
         "with-icon-light": "sha256:129523b37bc080be89d6289917da380d56b113fee43b12dcabfbe96661e6bf76"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/native-agent/NativeAgentPage.tsx"
+        ]
       },
       "since": "0.1.0"
     },

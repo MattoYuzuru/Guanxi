@@ -33,6 +33,9 @@ export function downgradeSessionLogToV28(db: DatabaseSync): void {
 /** Reverse only R1 in test databases; production migrations never run down. */
 export function downgradeDurableRunsToV29(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER IF EXISTS native_thread_delete_guard;
+    DROP TABLE IF EXISTS native_sessions;
+    DROP TABLE IF EXISTS run_execution;
     DROP INDEX idx_session_mirror_backlog_thread;
     DROP TABLE run_costs;
     DROP TABLE run_resources;
@@ -51,6 +54,7 @@ export const DURABLE_RUN_TABLES = ['durable_runs', 'run_attempts', 'leases', 'pr
 /** Tables added since v28; older snapshot fixtures exclude these, including FTS shadows. */
 export const SESSION_LOG_TABLES = [
   ...DURABLE_RUN_TABLES,
+  'native_sessions', 'run_execution',
   'sessions',
   'session_writers',
   'session_events',

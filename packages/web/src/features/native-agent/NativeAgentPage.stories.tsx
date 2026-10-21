@@ -1,5 +1,5 @@
 import { translate } from '../../lib/locale.ts'
-import { NativeProgress } from './NativeAgentPage.tsx'
+import { NativeProgress, NativeSessionActions } from './NativeAgentPage.tsx'
 import type { AgentProgress } from '@guanxi/contract'
 const progress: AgentProgress = { sessionId: 'fixture-session', projectId: 'fixture-project', connectionId: 'fixture-connection', model: 'fixture-model', mode: 'read-only',
   status: 'running', plan: [{ text: 'Inspect project', status: 'active' }], queue: [{ id: 'next', text: 'Check the result' }], summary: '', error: null,
@@ -13,3 +13,7 @@ export const Cancelled = { args: { progress: { ...progress, status: 'cancelled' 
 export const Interrupted = { args: { progress: { ...progress, status: 'interrupted' } } }
 
 export const CleanupUnconfirmed = { args: { progress: { ...progress, status: 'failed', error: 'cleanup_unconfirmed' } } }
+
+export const SessionActions = { render: () => <NativeSessionActions progress={{ ...progress, status: 'completed', retention: { mode: 'ttl', state: 'active', expiresAt: null, recoveryDeadline: null } }} busy={false} remove={() => {}} retain={() => {}} leave={() => {}} /> }
+export const DeletingSession = { render: () => <NativeSessionActions progress={{ ...progress, status: 'completed' }} busy remove={() => {}} retain={() => {}} leave={() => {}} /> }
+export const InputRequired = { args: { progress: { ...progress, status: 'input_required', error: 'process_restarted' } } }

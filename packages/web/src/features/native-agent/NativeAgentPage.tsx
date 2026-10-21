@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { AgentProgress, Connection, Project, Workspace, AccessMode } from '@guanxi/contract'
-import { Button, Field, Input, Select, Textarea } from '../../components/ui.tsx'
+import { Button } from '@guanxi/ui'
+import { Field, Input, Select, Textarea } from '../../components/ui.tsx'
 import { api } from '../../lib/api.ts'
 import { Link, paths, navigate } from '../../lib/router.tsx'
 import { translate as t, getActiveLocale } from '../../lib/locale.ts'
@@ -23,6 +24,24 @@ export function NativeProgress({ progress, stop, remove }: { progress: AgentProg
     {progress.queue.length === 0 ? <p className="text-muted">{t('native.noQueue')}</p> : <ul>{progress.queue.map(item => <li key={item.id}>{item.text}<Button aria-label={t('native.remove')} onClick={() => remove(item.id)}>{t('native.remove')}</Button></li>)}</ul>}
     <h3>{t('native.summary')}</h3><p className="whitespace-pre-wrap break-words">{progress.summary || t('native.noSummary')}</p>
     <Link to={paths.inspector(progress.sessionId)} className="text-accent underline">{t('native.trace')}</Link>
+  </section>
+}
+export function NativeSessionActions({ progress, busy, remove, retain, leave }: {
+  progress: AgentProgress; busy: boolean; remove(): void; retain(mode: 'keep' | 'ttl' | 'session'): void; leave(): void
+}) {
+  return <section aria-label={t('native.retention')} className="flex flex-col gap-2">
+    {progress.retention && <>
+      <p>{t(`native.retention.${progress.retention.state}`)}</p>
+      <p className="text-muted">{t('native.retentionDescription')}</p>
+      <div className="flex flex-wrap gap-2" role="group" aria-label={t('native.retention')}>
+        {(['keep', 'ttl', 'session'] as const).map(mode => <Button key={mode} disabled={busy || progress.retention?.state === 'deleting'}
+          aria-pressed={progress.retention?.mode === mode && progress.retention.state === 'active'} onClick={() => retain(mode)}>{t(`native.retention.${mode}`)}</Button>)}
+      </div>
+      {progress.retention.mode === 'session' && progress.retention.state === 'active' && <Button disabled={busy} onClick={leave}>{t('native.leave')}</Button>}
+    </>}
+    <p id="native-delete-description" className="text-muted">{t('native.deleteDescription')}</p>
+    <Button variant="danger" aria-describedby="native-delete-description" loading={busy}
+      disabled={progress.status === 'running' || progress.error === 'cleanup_unconfirmed'} onClick={remove}>{t('native.delete')}</Button>
   </section>
 }
 export function NativeAgentPage({ sessionId }: { sessionId: string | null }) {
@@ -61,7 +80,7 @@ export function NativeAgentPage({ sessionId }: { sessionId: string | null }) {
     event.preventDefault()
     void mutate(async () => {
       if (sessionId) await nativeApi.prompt(sessionId, prompt)
-      else { const created = await nativeApi.create({ projectId, connectionId, model, mode, prompt,
+      else { const created = await nativeApi.create({ projectId, connectionId, model, mode, prompt, retention: 'ttl',
         domains: domains.split(',').map(s => s.trim()).filter(Boolean), attachmentIds: attachments.split(',').map(s => s.trim()).filter(Boolean),
         protectedPaths: protectedPaths.split('\n').filter(Boolean), ...(context ? { contextTokens: Number(context) } : {}) })
         navigate(paths.agent(created.sessionId)) }
@@ -75,6 +94,10 @@ export function NativeAgentPage({ sessionId }: { sessionId: string | null }) {
     {error && <div role="alert"><p>{t(navigator.onLine ? 'native.error' : 'native.offline')}</p><Button onClick={() => setRevision(r => r + 1)}>{t('native.retry')}</Button></div>}
     {!loading && (projects.length === 0 || connections.length === 0) && <p>{t('native.empty')} <Link to={paths.projects()} className="text-accent underline">{t('native.projects')}</Link></p>}
     {progress && <NativeProgress progress={progress} stop={() => void mutate(() => nativeApi.stop(progress.sessionId))} remove={id => void mutate(() => nativeApi.remove(progress.sessionId, id))} />}
+    {progress && <NativeSessionActions progress={progress} busy={busy}
+      remove={() => void mutate(async () => { await nativeApi.deleteSession(progress.sessionId); navigate(paths.agent()) })}
+      retain={mode => void mutate(() => nativeApi.setRetention(progress.sessionId, mode))}
+      leave={() => void mutate(() => nativeApi.leaveSession(progress.sessionId))} />}
     <form onSubmit={submit} className="flex min-w-0 flex-col gap-3">
       {!sessionId && <>
         <Field label={t('native.project')}><Select ariaLabel={t('native.project')} value={projectId} onChange={id => { setProject(id); setRoots(projects.find(p => p.id === id)?.filesystemBindings.map(b => b.workspaceId) ?? []) }} options={[{ value: '', label: t('native.choose') }, ...projects.map(p => ({ value: p.id, label: p.name }))]} /></Field>

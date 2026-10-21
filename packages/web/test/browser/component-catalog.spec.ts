@@ -86,7 +86,7 @@ async function mockApi(page: Page, review: Partial<ReviewMock> = {}): Promise<Re
             record: {
               ...record,
               status: 'approved',
-              approval: { at: observedAt, ...current, comment: body['comment'], keyId: 'ed25519:test', previous: null, signature: 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ==' },
+              approval: { at: observedAt, ...current, comment: body['comment'], keyId: 'p256:test', previous: null, signature: 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ==' },
             },
             current,
             signature: 'valid',
@@ -107,9 +107,18 @@ async function enableDeveloperMode(page: Page): Promise<void> {
   await page.addInitScript(() => localStorage.setItem('guanxi.developerMode', 'on'))
 }
 
-const catalogModule = /CatalogRoute\.tsx|\/packages\/ui\/(catalog|src)\//
+// Product primitives load independently of Developer mode; catalog payloads remain lazy.
+const catalogModule = /CatalogRoute\.tsx|\/packages\/ui\/catalog\/|\/packages\/ui\/src\/story-kit\/|\/packages\/ui\/src\/components\/[^/]+\/[^/]+\.(?:stories\.tsx|docs\.md|review\.json)/
 
 test('the catalog is hidden and never requested until Developer mode is on', async ({ page }) => {
+  for (const path of [
+    '/src/features/catalog/CatalogRoute.tsx', '/packages/ui/catalog/index.ts',
+    '/packages/ui/src/story-kit/index.tsx', '/packages/ui/src/components/button/button.stories.tsx',
+    '/packages/ui/src/components/button/button.docs.md?raw', '/packages/ui/src/components/button/button.review.json?import',
+  ]) expect(catalogModule.test(path), path).toBe(true)
+  for (const path of ['/packages/ui/src/index.ts', '/packages/ui/src/components/button/button.tsx']) {
+    expect(catalogModule.test(path), path).toBe(false)
+  }
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await mockApi(page)
   const requested: string[] = []
@@ -333,7 +342,7 @@ test('switching the theme recolours a sandboxed T2 plugin through MCP Apps varia
 test('approving sends the hashes the node showed; a read-only node offers no review actions', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await enableDeveloperMode(page)
-  const review = await mockApi(page, { capability: { writable: true, reason: null, keyId: 'ed25519:test', observedAt } })
+  const review = await mockApi(page, { capability: { writable: true, reason: null, keyId: 'p256:test', observedAt } })
   await page.goto('/settings/developer/components?component=button')
   await page.getByRole('tab', { name: 'Review' }).click()
   await page.getByLabel('Comment').fill('Reads well in every theme.')
