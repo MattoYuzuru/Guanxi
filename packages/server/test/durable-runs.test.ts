@@ -299,3 +299,25 @@ test('review R1: committed run transitions wake an already-waiting K2 subscriber
     clearTimeout(timeout); controller.abort(); await iterator.return(undefined)
   }
 })
+
+test('review R2: a completion arriving during the escalation handler stays deliverable and cannot be suppressed by success', (t) => {
+  const f = runFixture(); t.after(f.close)
+  const { promise } = delegated(f)
+  const child = f.store.start(promise.child_id)
+  f.store.signal(child, 'escalation')
+  const first = f.store.deliver('lead', 1)!
+  f.store.modelStarted(first)
+  f.store.complete(child, 'completed')
+  assert.equal(f.store.deliver('lead', 2), null, 'one handler holds the execution slot')
+  assert.throws(() => f.store.complete(first, 'completed'), code('invalid_transition'), 'success must not discard an unacknowledged wake')
+  f.store.hibernate(first)
+  assert.equal(f.store.get('lead').state, 'submitted', 'no pending promise, but another wake is runnable')
+  const second = f.store.deliver('lead', 2)!
+  f.store.modelStarted(second)
+  f.store.complete(second, 'completed')
+  assert.equal(f.store.wakes('lead').length, 2)
+  assert.equal(f.store.wakes('lead').filter((w) => w.acknowledged_at !== null).length, 2)
+  assert.equal(f.store.wakes('lead').filter((w) => w.suppressed_at !== null).length, 0)
+  assert.equal(count(f, 'resolved'), 1)
+  assert.equal(count(f, 'acknowledged'), 2)
+})

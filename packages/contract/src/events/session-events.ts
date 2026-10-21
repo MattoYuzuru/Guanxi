@@ -77,7 +77,7 @@ export const sessionEventDataSchemas = {
     version: z.number().int().positive(),
     action: z.enum(['created', 'attempt', 'model_started', 'delegated', 'resolved', 'wake',
       'acknowledged', 'signal', 'wrapping_up', 'input_required', 'terminal', 'canceled',
-      'interrupted', 'resource', 'cost']),
+      'interrupted', 'resource', 'cost', 'yielded']),
     relatedId: id.nullable(),
     wakeSeq: z.number().int().nonnegative().nullable(),
   }).strict(),

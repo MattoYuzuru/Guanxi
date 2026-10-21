@@ -280,9 +280,11 @@ export class RunStore {
   hibernate(attempt: Attempt): void {
     this.tx('hibernate', () => {
       this.fenced(attempt)
-      if (!this.promises(attempt.run_id).some((p) => p.outcome === null && !p.detached)) throw new RunError('invalid_transition')
+      const pendingPromise = this.promises(attempt.run_id).some((p) => p.outcome === null && !p.detached)
+      const pendingWake = this.wakes(attempt.run_id).some((w) => w.acknowledged_at === null && w.suppressed_at === null)
+      if (!pendingPromise && !pendingWake) throw new RunError('invalid_transition')
       this.sleepWithin(attempt)
-      this.setState(attempt.run_id, 'waiting_children', 'delegated')
+      this.setState(attempt.run_id, pendingPromise ? 'waiting_children' : 'submitted', 'yielded')
     })
   }
   private wake(runId: string, kind: Wake['kind'], source: string): void {
@@ -305,6 +307,9 @@ export class RunStore {
     if (!TERMINAL_RUN_STATES.has(outcome)) throw new RunError('invalid_input')
     this.tx('complete', () => {
       this.fenced(attempt)
+      if (outcome !== 'canceled' && this.wakes(attempt.run_id).some((w) => w.acknowledged_at === null && w.suppressed_at === null)) {
+        throw new RunError('invalid_transition')
+      }
       const deadline = this.row<PromiseRecord>("SELECT * FROM promises WHERE child_id=? AND outcome='deadline' AND deadline_policy='cancel_wrap_up'", attempt.run_id)
       this.terminal(attempt.run_id, deadline ? 'canceled' : outcome)
     })

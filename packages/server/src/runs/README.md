@@ -49,7 +49,9 @@ has a contract schema and renders in the existing inspector timeline (English/Ru
   promise once and creates one outbox wake. A fenced escalation/quota signal wakes the lead
   without resolution. The outbox deduplicates by source. Wake sequence and delivery attempt
   are separate; later wakes wait while a handler is active. The plugin periodically prepares
-  pending deliveries; an executor still owns model calls and acknowledgment.
+  pending deliveries; an executor still owns model calls and acknowledgment. A handler can
+  yield for queued wakes even after its last promise resolves; normal completion refuses to
+  discard an unacknowledged wake. Explicit cancellation may suppress pending wakes.
 - Default deadline policy requests `wrapping_up`; a report-only attempt finishes as `canceled`.
   It does not automatically replay the child's work. `detach` leaves the child running and
   prevents its later completion from waking the parent. Cancellation follows each edge's
