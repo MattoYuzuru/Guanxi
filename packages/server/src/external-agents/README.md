@@ -176,10 +176,12 @@ sidecar and vendor directories intact; it never logs out a user or deletes vendo
 content reads and `rename`/`link`/`symlink` moves of vendor paths; resolves `.call`/`.apply`/
 `.bind`, namespace destructuring and import aliases; and refuses `createRequire` in K5. In K5
 it refuses every `child_process` import except `spawn` in `process.ts`, and every execution API
-other than that `spawn`; in other packages a `child_process` execution is flagged when the
-module contains vendor-path text. Manifests still refuse process-only Claude packages. The
-runtime trap watches `<HOME>/.claude`, `.codex`, `.copilot`, `.gemini` and `.config` plus the
-`child_process` spawn/exec helpers while a fixture adapter runs.
+other than an untainted `spawn` in `process.ts`; a vendor-path literal anywhere in that module
+makes its `spawn` a violation too. In other packages a `child_process` execution is flagged when
+the module contains vendor-path text. Manifests still refuse process-only Claude packages. The
+runtime trap watches `<HOME>/.claude`, `.codex`, `.copilot`, `.gemini` and `.config`, and allows
+`spawn`/`execFile` only for the executables the adapter policy is configured to launch: any
+other executable, including `/bin/sh`, is refused.
 
 This is a conservative text-level regression gate, not a whole-language security proof. It
 cannot prove the absence of a path computed entirely at runtime with no vendor-path text in
