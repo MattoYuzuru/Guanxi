@@ -148,11 +148,16 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Scope:** ACP client adapters (Claude Code with the user's binary, Copilot, Gemini CLI,
   OpenCode, Goose); Codex app-server adapter; "Sign in with ChatGPT" provider; per-adapter
   capability declaration; role resolution (session → project); isolated vendor config dirs;
-  quota facts from the agents (Claude Code `rate_limits`, Codex `account/rateLimits`).
+  quota facts from the agents (Claude Code `rate_limits`, Codex `account/rateLimits`);
+  subscription agents on any node, each signed in on that node with the unmodified CLI;
+  owner-bound subscription connections (D-190); account-wide limit aggregation and learned
+  concurrency per account.
 - **Reuse:** ACP v1 SDK, Codex app-server protocol, Copilot SDK (MIT).
 - **Exit gate:** recorded-session tests per adapter version; role precedence golden tests; the
-  Claude Code `--bare`/subscription state is detected and reported.
-- **Owner answers:** D-142 (Q-202), D-143 (Q-203), D-144 (Q-204).
+  Claude Code `--bare`/subscription state is detected and reported; a second account's prompt
+  that would reach a subscription connection is refused; no Guanxi code reads a vendor token
+  file (static check plus test).
+- **Owner answers:** D-142 (Q-202), D-143 (Q-203), D-144 (Q-204), D-190.
 - **Estimate:** 3–4 sessions.
 
 ## Durable runs and relay
@@ -258,22 +263,57 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 - **Depends on:** F2.
 - **Scope:** typed leases for port ranges, Docker namespaces/compose projects, databases,
   worktrees, heavy slots; reaper by label; `exec.test` run kind with git mirrors and worktrees;
-  affinity memory; fleet dashboard.
+  affinity memory; fleet dashboard. Per [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md)
+  §§2–4: host-pressure signals on three operating systems (PSI; macOS memory pressure, thermal
+  state and idle time; a Windows user-session helper); adaptive interactive headroom on the
+  machine the owner is using (D-189); residency leases for loaded models (D-191); offers with
+  short reservations and late binding; job-size estimates from history; worktree snapshots
+  moved as bundles into attempt refs; fenced shared caches; Playwright sharding and
+  `run-server` across nodes.
 - **Exit gate:** 1,000 randomized allocations never give two worktrees overlapping ports,
-  compose names or databases; the reaper removes only its own labels.
-- **Owner answers:** D-163 (Q-223).
+  compose names or databases; the reaper removes only its own labels; a placement simulation
+  never exceeds a node's allocatable capacity, never evicts a resident model for a test, and
+  keeps the interactive headroom under synthetic owner load; an attempt's cache write is
+  invisible to other attempts before acceptance and an overwrite is refused.
+- **Owner answers:** D-163 (Q-223), D-185, D-186, D-189, D-191.
 - **Estimate:** 3–5 sessions.
 
-### F4 — Cloud rental with budget ledger
+### F4 — Compute-provider protocol and cloud budget
 
-- **Goal:** pay-per-minute machines only within approved money (REQ-B4).
+- **Goal:** one protocol for every compute source; paid machines only within approved money
+  (REQ-B4, REQ-B7).
 - **Depends on:** F3, K3.
-- **Scope:** provider adapters (RunPod REST v2, Vast, Modal; optional SkyPilot); reservation
-  before launch; monthly and per-launch caps; dead-man switch; `cloud_ephemeral` enrollment
-  with per-attempt secret grants only.
-- **Exit gate:** a launch without a reservation fails; the dead-man switch stops an instance
-  when its owner node disappears; the cloud node holds 0 vault records.
-- **Owner answers:** D-149 (Q-209).
+- **Scope:** the provider protocol of ADR-0038 §1 (capabilities, offers with provenance,
+  reserve, launch with TTL, exec, put/get, artifacts, logs, network policy, teardown, list,
+  usage) and a conformance suite; the **owned-node provider** and self-hosted sandbox backends
+  for untrusted code (gVisor or Incus on Linux, Lima on macOS, a WSL2 distribution on Windows)
+  first (D-188); then paid adapters (E2B first; Modal, RunPod REST v2, Vast later) behind the
+  budget ledger: reservation before launch, monthly and per-launch caps, provider TTL,
+  dead-man switch, tag reaping, `cloud_ephemeral` enrollment with per-attempt secret grants
+  only.
+- **Exit gate:** the conformance suite passes against the owned-node provider; untrusted code
+  in a self-hosted sandbox cannot reach the host filesystem or the network outside its policy;
+  a paid launch without a reservation fails; the dead-man switch stops an instance when its
+  owner node disappears; the cloud node holds 0 vault records.
+- **Owner answers:** D-149 (Q-209), D-188.
+- **Estimate:** 3–4 sessions.
+
+### F5 — Training runs and assisted provider sign-up
+
+- **Goal:** train or fine-tune models on owned GPUs or on a service with the user's key, and
+  let an agent help the user sign up for a provider safely (REQ-B9, D-192).
+- **Depends on:** F4, C1, K3.
+- **Scope:** a `train` run kind through the provider protocol (upload dataset, start, poll,
+  download weights or adapter) with adapters for an owned GPU node (Axolotl or Unsloth core)
+  and one service (Together or HF Jobs); keys only on the controller node; the assisted
+  sign-up flow in the agent browser where the user completes CAPTCHA, email, 2FA, payment and
+  terms, and the key enters the vault through OAuth, a device flow or a Guanxi-owned field.
+- **Exit gate:** a small LoRA trains end to end on the PC's RTX 3060 from fixture data and its
+  adapter returns with a checksum; the sign-up flow stops for the user at each of CAPTCHA,
+  payment and terms (assertions); the key never appears in the transcript, events or model
+  requests.
+- **Owner answers:** D-192.
+- **Estimate:** 2–3 sessions.
 - **Estimate:** 2–3 sessions.
 
 ## Bench
@@ -406,10 +446,14 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 - **Depends on:** U3, F1.
 - **Scope:** live session and sub-agent view, prompt, stop, queue, voice upload, Web Push
-  (VAPID) for notification-center events with their actions, offline read cache and outbox.
+  (VAPID) for notification-center events with their actions, offline read cache and outbox;
+  Guanxi's own end-to-end encrypted relay from the start (D-187, ADR-0038 §5) on `keykomi`
+  behind Caddy, with QR pairing and outbound-only node connections; a phone prompt becomes a
+  durable run at the always-on home (the Fedora PC, D-186).
 - **Exit gate:** SSE resume by offset never duplicates events (count assertion); push arrives
-  on run completion on iOS and Android test devices.
-- **Owner answers:** D-168 (Q-228), D-170 (Q-230).
+  on run completion on iOS and Android test devices; the relay stores and logs no plaintext;
+  pairing rejects replayed or forged handshakes.
+- **Owner answers:** D-168 (Q-228), D-186, D-187 (D-170 superseded).
 - **Estimate:** 3–4 sessions.
 
 ### U5 — Native mobile
@@ -639,14 +683,14 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 | --- | --- | --- |
 | **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; the run lasts ≥ 6 hours; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Lead billing per D-142 (Q-202). |
 | **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1, DS2 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
-| **MS3 Fleet and media** | F4, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
+| **MS3 Fleet and media** | F4, F5, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
 | **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |
 | **MS5 Everywhere** | U5, U6, C3, P2 | Native phone apps, Linux and Windows desktops, the full computer-use ladder and untrusted plugins all pass their stage gates. |
 | **Guanxi 1.0** | MS1–MS5 | The vision in [VISION](../vision/VISION.md). |
 
 ## Effort
 
-Sum of stage estimates: 124–190 full agent sessions including independent reviews; the
+Sum of stage estimates: 127–194 full agent sessions including independent reviews; the
 ancestors of MS1 sum to 37–54. This is a complexity range, not a schedule.
 
 ## Cross-stage rules

@@ -24,6 +24,7 @@ testable requirement. Columns:
 | A4 | Use local inference on any owned machine for every modality. | Must | K3 (local), F2 (remote) | [ADR-0031](../decisions/0031-compute-fabric-node-agent-and-runtimes.md) |
 | A5 | One connection registry that agents can read safely: references to secrets, health, balance, limits, capabilities; secret values never reach a model context, a log, a trace or a remote node outside the owner's devices. Auditors never see secret values either (D-141). | Must | K3 | ADR-0017 |
 | A6 | Connections and secrets belong to an account; each user has their own. | Must | U3 | [ADR-0027](../decisions/0027-accounts-sharing-and-access-modes.md) |
+| A7 | Subscription agents run on any of the owner's machines, each signed in there with the unmodified vendor CLI; Guanxi never reads, moves or stores vendor tokens; a subscription connection is usable only by its owner, never by another account; limits are aggregated account-wide (D-190). | Must | K5 | [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md) §6 |
 
 ## B. Machines and resources (fleet)
 
@@ -31,10 +32,14 @@ testable requirement. Columns:
 | --- | --- | --- | --- | --- |
 | B1 | The same Guanxi build runs on every machine (macOS, Linux, Windows); a machine's role is configuration, not a different product. | Must | F1 (roles), U6 (installers) | [ADR-0018](../decisions/0018-federation-ownership-and-leases.md) |
 | B2 | Data replicates between the owner's machines without a mandatory central server (multi-master, D-105). Sessions, runs, attempts and hardware leases have exactly one writer; shared configuration merges by defined rules (D-116). | Must | F1 | ADR-0018 |
-| B3 | A remote client (phone) can watch a live session and its sub-agents, send a prompt, stop work and dictate by voice, with the same rights as on the desktop. | Must | U4 | [ADR-0026](../decisions/0026-clients-desktop-web-mobile.md) |
+| B3 | A remote client (phone) can watch a live session and its sub-agents, send a prompt, stop work and dictate by voice, with the same rights as on the desktop, through Guanxi's own end-to-end encrypted relay; a phone prompt runs at the always-on home and may be delegated to any machine (D-186, D-187). | Must | U4 | [ADR-0026](../decisions/0026-clients-desktop-web-mobile.md), [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md) §5 |
 | B4 | Each machine publishes periodic metrics (CPU, RAM, GPU/VRAM, disk, network, ports, containers, running builds and sessions) with provenance; work is placed on a machine with room; optional pay-per-minute cloud machines are used only within an approved budget. | Must (metrics, placement), Should (cloud) | F1, F3, F4 | ADR-0031 |
 | B5 | Agents can run tests and builds on another, stronger or idle machine, and remember that preference. | Should | F3 | ADR-0031 |
-| B6 | The fleet design is sized for up to about ten machines per installation. | Should | F2 | ADR-0018 |
+| B6 | The fleet design has no size cap: about ten machines in one site is the first target, and sites plus sampling-based placement extend it to large or geo-distributed fleets (D-193). | Should | F2, F3 | ADR-0018, [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md) §§2, 8 |
+| B7 | One compute-provider protocol covers owned machines (free, resource accounting only), self-hosted sandboxes, paid per-minute providers and training services; owned machines come first (D-188). | Must (owned), Could (paid) | F4 | [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md) §1 |
+| B8 | The machine the owner is using stays fully usable: placement keeps an adaptive interactive headroom from memory pressure, CPU, thermal state and foreground activity, prefers other machines for heavy work and moves work away when the headroom shrinks (D-189). | Must | F3 | [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md) §2 |
+| B9 | Train or fine-tune models on owned GPUs or on a service with the user's key; an agent may help sign up for a provider while the user completes CAPTCHA, payment and terms (D-192). | Could | F5 | [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md) §7 |
+| B10 | Fully local mode: models run whole on one machine by default; a loaded model holds a residency lease that builds and tests never evict; splitting one model across machines is experimental (D-191). | Should | F3, W2 | [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md) §4 |
 
 ## C. Agents and orchestration
 

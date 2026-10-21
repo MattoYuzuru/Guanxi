@@ -13,7 +13,7 @@ Verified on 2026-10-19 (lane 1 §7):
 
 | Vendor | Subscription route allowed in third-party apps |
 | --- | --- |
-| Anthropic | Only the user's own unmodified `claude` binary (ACP or `-p`). OAuth tokens from Free/Pro/Max may not be used in other products, including through the Agent SDK. Since 2026-04-04 such traffic may be billed as extra usage (secondary source). |
+| Anthropic | Only the user's own unmodified `claude` binary (ACP or `-p`), signed in on that machine. Guanxi may not offer claude.ai login, handle the user's credentials, route other people's requests through a consumer subscription (explicit in the Usage Policy from 2026-11-12) or imitate Claude Code. The 2026-10-07 Help Center says the Agent SDK, `claude -p` and third-party apps draw subscription limits; the billing classification changed several times in 2026 and is shown as data (D-142, D-190; [2026-10-21 lane 1](../research/2026-10-21-fleet/01-remote-control-and-subscriptions.md)). |
 | OpenAI | "Sign in with ChatGPT" for open-source and local apps (Responses API, preview), and the Codex app-server. Hosted computer use, image generation and Code Interpreter are not available in that mode. |
 | Google | Consumer plans moved to a closed CLI; reusing Gemini CLI OAuth is forbidden. API key only. |
 | GitHub | Copilot SDK (MIT) and `copilot --acp`. |

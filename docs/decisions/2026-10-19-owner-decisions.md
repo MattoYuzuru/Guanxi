@@ -37,7 +37,8 @@ in [`research/`](../research/README.md).
 
 - D-104 was chosen after the session established (lane 1, verified 2026-10-19) that Anthropic
   forbids using Claude Free/Pro/Max OAuth tokens in any other product, including through the
-  Agent SDK, while OpenAI publishes "Sign in with ChatGPT" for open-source and local apps.
+  Agent SDK (refined on 2026-10-21: the user's own unmodified binary driven by a harness is
+  allowed; handling credentials and routing other people's requests are not, D-190), while OpenAI publishes "Sign in with ChatGPT" for open-source and local apps.
   Sharing one subscription with other people is forbidden by every vendor checked.
 - D-105 was chosen against the research lanes' hub-and-spoke recommendation. ADR-0018 shows
   how multi-master stays correct for jobs, stops and leases without consensus: the owner of a

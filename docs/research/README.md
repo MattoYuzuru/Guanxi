@@ -60,6 +60,29 @@ Alamo docs into `docs/legacy/alamo/`.
    up to 40× token difference; a 50-task × 5-run suite detects only about a 10-point change.
    Efficiency metrics must be part of every gate.
 
+## 2026-10-21 fleet lanes
+
+Three lanes ([fleet research](2026-10-21-fleet/)) answered the owner's phone-to-fleet scenario:
+
+1. **Remote control.** Claude Code Remote Control and Codex Remote cover phone control of one
+   vendor's agent through that vendor's servers, without end-to-end encryption. Paseo
+   (Apache-2.0) is the closest open design to Guanxi.
+2. **Subscriptions.** Anthropic allows the user's own unmodified `claude` on his own machines,
+   even when a harness drives it, but forbids handling credentials, routing other people's
+   requests (explicit from 2026-11-12) and imitating the client. OpenAI allows local
+   open-source use of `codex app-server` and offers Sign in with ChatGPT. Limits are per
+   account. Concurrency caps are unpublished; HTTP 429 has been reported from about 3–6
+   parallel sessions.
+3. **Sandboxes.** E2B is the only sandbox whose hosted API also runs self-hosted under
+   Apache-2.0. Daytona's open source is archived (AGPL). Vercel Sandbox has the strongest
+   egress control and credential brokering.
+4. **Owned machines.** SkyPilot and dstack cannot manage macOS or Windows hosts, so Guanxi's own
+   node agent stays. No tool places work by measured host load across a user's machines.
+5. **Distributed inference.** Splitting one model across a Mac and a CUDA box is experimental
+   (llama.cpp RPC, Parallax). Whole-model placement plus residency leases is the default.
+
+Decisions: D-185–D-193 and [ADR-0038](../decisions/0038-compute-providers-fleet-placement-and-remote-control.md).
+
 ## Reuse register
 
 What Guanxi plans to take, from where, and how. "Copy" means vendoring code with attribution
@@ -68,7 +91,7 @@ program the user installs, talked to over a protocol; "Pattern" means design onl
 
 | Area | Source | License | Mode | What exactly |
 | --- | --- | --- | --- | --- |
-| Plugin kernel | Cordis 4 (`cordis`; DSH's hardened copy only as vendored source, D-108) | MIT | Depend (exact pin, vendor if needed) | Context, services, `inject`, revertible effects, loader, HMR |
+| Plugin kernel | Cordis 4 design only; rejected as a dependency by D-183 (own kernel, ADR-0037) | MIT | Pattern | Context, services, `inject`, revertible effects, loader, HMR |
 | Plugin distribution | DeepSeek Harness | MIT | Copy | Profiles/bundles/patch layers, plugin manager (install, rollback, engine checks), typed UI slots, theme rules |
 | Session log and trace | DeepSeek Harness | MIT | Copy + adapt | `SessionHandle` contract (single writer, crash recovery, torn-tail safety), session inspector ideas |
 | LLM layer | `pi-ai`, `pi-agent-core` (badlogic/pi-mono) | MIT | Depend | Multi-provider streaming, tool calling, model catalog; Anthropic OAuth module disabled |
@@ -92,6 +115,11 @@ program the user installs, talked to over a protocol; "Pattern" means design onl
 | Computer use | Playwright MCP, Chrome DevTools MCP, Lume, Cua Driver | Apache-2.0 / MIT | Process / depend | Browser tier, VM tier, accessibility tier |
 | Evals | Harbor, Inspect AI, promptfoo, mini-swe-agent | Apache-2.0 / MIT | Depend / process | Task format and runner, statistics, prompt unit tests, minimal baseline |
 | Redaction | secretlint, gitleaks | MIT | Depend / process | Secret scrubbing before audits |
+| Phone relay | Paseo (daemon per host, `paseo-relay`), Remodex (handshake), Happy (relay) | Apache-2.0 / Apache-2.0 (no branding) / MIT | Copy (with provenance check for pre-relicense Paseo files) / pattern | End-to-end encrypted relay, QR pairing, outbound-only node connections (ADR-0038 §5) |
+| Sandboxes | E2B SDK and E2B Embed; gVisor, Incus, Lima, Apple `container`, Colima | Apache-2.0 / MIT | Depend / process | First paid adapter and self-hosted backends for untrusted code (ADR-0038 §1) |
+| Fleet placement | HTCondor (desktop policy, partitionable slots, WoL), Sparrow (sampling, late binding), Nix machine specs, Google Autopilot (decayed percentiles) | Apache-2.0 / papers / LGPL (pattern only) | Pattern | Presence-aware headroom, late-binding offers, job-size estimates (ADR-0038 §2) |
+| Build and test transfer | Playwright `--shard`, blob reports, `merge-reports`, `run-server`; Turborepo and Nx cache specs; git bundles | Apache-2.0 / MIT | Depend / pattern | Cross-node test sharding, fenced shared caches, worktree transfer (ADR-0038 §3) |
+| Local distributed inference | llama.cpp RPC, Parallax | MIT / Apache-2.0 | Process (experimental flag) | Splitting one model across machines (ADR-0038 §4) |
 
 ## Rejected or restricted
 

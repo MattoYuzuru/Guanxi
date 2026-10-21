@@ -82,9 +82,10 @@ Lane 6 findings:
     at 2026-10-19 DeepSeek prices: smoke ≈ $6, full A/B (600 trials) ≈ $70 on Flash or
     $120–265 on V4-Pro. With a biweekly full A/B on Flash, about 20 smokes and free nightly
     local runs, the monthly spend is about $170–200; the budget (D-150) is $200.
-12. **Placement**: amd64 task images on the Windows PC (WSL2 Docker) or the Linux VPS; local
-    model inference and the local judge on the Mac Studio; own TypeScript repositories may
-    run natively on arm64.
+12. **Placement**: amd64 task images on the Fedora PC (native Docker; WSL2 Docker when it runs
+    Windows) or the Fedora laptop (native Docker); local model inference and the local judge on the PC's RTX 3060 or
+    the MacBook when it has headroom (D-185, D-189); own TypeScript repositories may run
+    natively on arm64. The VPS is a relay only.
 
 ## Consequences
 

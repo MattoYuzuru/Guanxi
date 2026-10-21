@@ -17,7 +17,8 @@ flowchart LR
     F1[F1 Federation base<br/>nodes, replication]
     F2[F2 Remote attempts<br/>fenced leases]
     F3[F3 Resource leases<br/>remote tests, dashboard]
-    F4[F4 Cloud rental<br/>budget ledger]
+    F4[F4 Provider protocol<br/>cloud budget]
+    F5[F5 Training runs<br/>assisted sign-up]
   end
   subgraph Bench["Bench"]
     B1[B1 Bench base<br/>Harbor, control arm]
@@ -120,7 +121,8 @@ flowchart LR
 
   K5 & R3 & F2 & B3 --> MS1
   U2 & U3 & P1 & V1 & X1 & C1 & C4 & K5 & WG1 & WG2 & NC1 & DS2 --> MS2
-  F4 & W3 & C2 & U4 --> MS3
+  F4 & K3 & C1 --> F5
+  F4 & F5 & W3 & C2 & U4 --> MS3
   E4 & E5 & V2 & X2 --> MS4
   U5 & U6 & C3 & P2 --> MS5
   MS1 & MS2 & MS3 & MS4 & MS5 --> G10

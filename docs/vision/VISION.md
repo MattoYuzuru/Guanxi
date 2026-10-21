@@ -51,8 +51,9 @@ for several subscriptions still juggle them by hand:
 
 ## Who it is for
 
-- **Primary:** a technically confident owner of several machines (for example a MacBook, a
-  Mac Mini, a Mac Studio, a Windows GPU PC and a Linux VPS) who pays for one or more
+- **Primary:** a technically confident owner of several machines (today's owner: a MacBook,
+  a dual-boot Fedora/Windows GPU PC that stays on, a Fedora laptop and a small VPS, D-185; others may run
+  anything from one laptop to geo-distributed servers) who pays for one or more
   subscriptions, holds a few API keys and runs local models.
 - **Secondary:** the owner's family or friends on the same installation, each with private
   sessions, their own connections and optional sharing.
