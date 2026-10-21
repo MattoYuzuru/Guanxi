@@ -233,7 +233,9 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         if (active) handle.focus(active)
       })
     }), api.onDidMovePanel(event => {
+      if (muted.current) dropZone = undefined
       groupZones.set(event.to.id, dropZone ?? groupZones.get(event.to.id) ?? groupZones.get(event.from.id) ?? 'center')
+      dropZone = undefined
       const zone = zoneOf(event.to)
       event.to.api.locked = zone !== 'center' && zone !== 'floating' && zone !== 'popout'
       if (!muted.current) latest.current.onMove(event.panel.id, zone)

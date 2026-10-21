@@ -13,7 +13,7 @@ type Base = { children?: ReactNode }
 export type WorkspaceChromeProps = Base & (
   | { kind: 'pane'; id: string; title: string; moveLabel: string; hideLabel: string; onMove: () => void; onHide: () => void; canMove?: boolean; description?: string; draft?: { label: string; value: string; onChange: (value: string) => void } }
   | { kind: 'toolbar'; busy?: boolean; label: string; fields: { label: string; value: string; choices: Choice[]; onChange: (id: string) => void }[]; name: { label: string; value: string; onChange: (name: string) => void }; actions: { label: string; onClick: () => void; disabled?: boolean }[] }
-  | { kind: 'mover'; open: boolean; title: string; description: string; blockLabel: string; zoneLabel: string; cancelLabel: string; moveLabel: string; blocks: Choice[]; zones: Choice[]; block: string; zone: string; onBlock: (id: string) => void; onZone: (id: string) => void; onClose: () => void; onMove: () => void }
+  | { kind: 'mover'; modal?: boolean; open: boolean; title: string; description: string; blockLabel: string; zoneLabel: string; cancelLabel: string; moveLabel: string; blocks: Choice[]; zones: Choice[]; block: string; zone: string; onBlock: (id: string) => void; onZone: (id: string) => void; onClose: () => void; onMove: () => void }
   | { kind: 'phone'; label: string; blocks: Choice[]; selected: string; onSelect: (id: string) => void }
   | { kind: 'state'; title: string; action?: { label: string; onClick: () => void }; error?: boolean }
 )
@@ -35,8 +35,8 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
     <label className="gx-workspace-field"><span>{props.name.label}</span><Input disabled={props.busy} value={props.name.value} onChange={event => props.name.onChange(event.target.value)} /></label>
     {props.actions.map(action => <Button key={action.label} variant="secondary" onClick={action.onClick} disabled={action.disabled || props.busy}>{action.label}</Button>)}
   </div>
-  if (props.kind === 'mover') return <Dialog open={props.open} onOpenChange={open => { if (!open) props.onClose() }}>
-    <DialogContent ref={setDialogContainer}><PortalContainerProvider container={dialogContainer}><DialogTitle>{props.title}</DialogTitle><DialogDescription>{props.description}</DialogDescription>
+  if (props.kind === 'mover') return <Dialog open={props.open} modal={props.modal} onOpenChange={open => { if (!open) props.onClose() }}>
+    <DialogContent ref={setDialogContainer} initialFocus={props.modal === false ? false : undefined} finalFocus={props.modal === false ? false : undefined}><PortalContainerProvider container={dialogContainer}><DialogTitle>{props.title}</DialogTitle><DialogDescription>{props.description}</DialogDescription>
       <div className="gx-workspace-mover"><ChoiceMenu label={props.blockLabel} value={props.block} choices={props.blocks} onChange={props.onBlock} /><ChoiceMenu label={props.zoneLabel} value={props.zone} choices={props.zones} onChange={props.onZone} />
         <Button onClick={props.onMove} disabled={!props.block}>{props.moveLabel}</Button><Button variant="secondary" onClick={props.onClose}>{props.cancelLabel}</Button></div>
     </PortalContainerProvider></DialogContent>

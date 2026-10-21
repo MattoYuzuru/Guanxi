@@ -14,7 +14,6 @@ import { MOVE_BLOCK_COMMAND } from './commands.ts'
 import { paneRegistry } from './renderers.ts'
 import { blockNames, type BuiltInBlock } from './blocks.ts'
 import { WorkspaceLayout, type WorkspaceLayoutHandle } from './WorkspaceLayout/index.tsx'
-import '@guanxi/ui/fonts.css'
 import './workspace.css'
 
 const zoneOrder: WorkspaceZone[] = ['left', 'right', 'top', 'bottom', 'center', 'floating', 'popout']

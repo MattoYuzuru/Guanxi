@@ -57,9 +57,10 @@ test('a plugin sidebar entry appears, hot-updates in place and disappears on unl
   await expect(shortcuts).toHaveCount(0)
   // The focused link is gone; focus moved to the next control, not the page body.
   await expect(page.getByRole('link', { name: '+ Новый' })).toBeFocused()
+  // The eleven core workspace blocks remain; the unloaded sidebar plugin contributes none.
   expect(
     await page.evaluate(() => (globalThis as unknown as { __GUANXI_KERNEL__: KernelHandle }).__GUANXI_KERNEL__.counters().slotEntries),
-  ).toBe(0)
+  ).toBe(11)
   await expect(page.getByRole('link', { name: '+ Новый' })).toBeVisible()
 
   await page.evaluate((id) => (globalThis as unknown as { __GUANXI_KERNEL__: KernelHandle }).__GUANXI_KERNEL__.reload(id), PLUGIN_ID)
