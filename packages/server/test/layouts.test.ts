@@ -10,6 +10,7 @@ import { ROUTES, layoutListResponse, compareLayouts, layoutClock, layoutDocument
 import { openDb, MIGRATIONS } from '../src/store/db.ts'
 import { LayoutStore } from '../src/layouts/store.ts'
 import { layoutsRoutes } from '../src/layouts/routes.ts'
+import { LAYOUT_SCHEMA_V1 } from '../src/layouts/schema.ts'
 import { builtInLayout } from '../../web/src/features/workspace/defaults.ts'
 
 const golden = JSON.parse(readFileSync(new URL('./fixtures/layout-resolution.golden.json', import.meta.url), 'utf8'))
@@ -155,14 +156,35 @@ test('component migration rolls back, retries once and rejects future versions w
   const db = openDb(':memory:')
   const mainVersion = db.prepare('PRAGMA user_version').get()!.user_version
   const mainMigrations = JSON.stringify(MIGRATIONS)
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('synthetic-layout-migration-setting', 'preserve-me')
   const settings = db.prepare('SELECT * FROM settings').all()
+  assert.equal(settings.length, 1)
   try {
     db.exec('CREATE TABLE layout_active (collision TEXT)')
     assert.throws(() => new LayoutStore(db), /already exists/)
     for (const name of ['layout_migrations', 'layout_documents']) assert.equal(db.prepare('SELECT name FROM sqlite_master WHERE name=?').get(name), undefined)
     assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, mainVersion)
+    assert.deepEqual(db.prepare('SELECT * FROM settings').all(), settings)
     db.exec('DROP TABLE layout_active')
-    const store = new LayoutStore(db)
+    let interleaved = false
+    // A competing initializer commits after the first existence check, before our lock.
+    const contender = new Proxy(db, {
+      get(target, property) {
+        if (property === 'exec') return (sql: string) => {
+          if (sql === 'BEGIN IMMEDIATE' && !interleaved) {
+            interleaved = true
+            target.exec('BEGIN IMMEDIATE')
+            target.exec(LAYOUT_SCHEMA_V1)
+            target.exec('COMMIT')
+          }
+          return target.exec(sql)
+        }
+        const value = Reflect.get(target, property, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    const store = new LayoutStore(contender)
+    assert.equal(interleaved, true)
     store.save(fixture(), true)
     new LayoutStore(db)
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM layout_migrations').get()!.n, 1)
@@ -174,6 +196,8 @@ test('component migration rolls back, retries once and rejects future versions w
     assert.throws(() => new LayoutStore(db), /Unsupported layout storage version/)
     assert.equal(db.prepare('SELECT version FROM layout_migrations').get()!.version, 2)
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM layout_documents').get()!.n, 1)
+    assert.deepEqual(db.prepare('SELECT * FROM settings').all(), settings)
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, mainVersion)
   } finally { db.close() }
 })
 
