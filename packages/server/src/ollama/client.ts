@@ -613,12 +613,12 @@ export class OllamaClient {
     )
   }
 
-  async chat(request: OllamaChatRequest, signal?: AbortSignal): Promise<OllamaChatChunk> {
+  async chat(request: OllamaChatRequest, signal?: AbortSignal, onStarted?: () => void): Promise<OllamaChatChunk> {
     // A non-stream Ollama response can withhold HTTP headers while loading the
     // model. A bounded version preflight establishes connect separately; the
     // model request that follows owns the load deadline.
     await this.version(signal)
-    return this.request<OllamaChatChunk>('/api/chat', {
+    const response = this.request<OllamaChatChunk>('/api/chat', {
       method: 'POST',
       body: JSON.stringify({ ...request, stream: false }),
       ...(signal ? { signal } : {}),
@@ -629,6 +629,8 @@ export class OllamaClient {
         timeoutMs: this.loadTimeoutMs,
       },
     })
+    onStarted?.()
+    return response
   }
 
   /**

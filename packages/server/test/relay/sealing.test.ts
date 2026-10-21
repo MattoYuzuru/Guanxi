@@ -69,14 +69,14 @@ test('corrupted handoff is caught by orient probes and rebuilt degraded before w
 test('SIGKILL across seal upload, pointer, K2 append and commit preserves exact pre/post boundary', () => {
   const root = mkdtempSync(join(tmpdir(), 'guanxi-r2-crash-'))
   try {
-    for (const point of ['seal_uploaded', 'seal_pointer', 'seal_trace', 'seal_committed', 'k2_inserted']) {
+    for (const point of ['seal_uploaded', 'seal_pointer', 'seal_trace', 'seal_committed', 'run:before_begin', 'run:begin', 'run:trace', 'run:before_commit', 'run:committed', 'k2:writer_checked', 'k2:event_inserted']) {
       const path = join(root, point + '.db')
       const result = spawnSync(process.execPath, ['packages/server/test/relay/seal-child.ts', path, point], { cwd: process.cwd(), encoding: 'utf8' })
       assert.equal(result.signal, 'SIGKILL', `${point}: ${result.stderr}`)
       const f = runFixture(path, { deferClaim: true })
       try {
         const rows = f.db.prepare('SELECT ledger,handoff FROM relay_seals').all()
-        const committed = point === 'seal_committed'
+        const committed = ['seal_committed','run:committed'].includes(point)
         assert.equal(rows.length, Number(committed), point)
         const l = JSON.parse(String(f.db.prepare('SELECT snapshot FROM relay_runs').get()!.snapshot))
         assert.equal(l.state, committed ? 'sealed' : 'handoff_validate', point)
@@ -88,4 +88,24 @@ test('SIGKILL across seal upload, pointer, K2 append and commit preserves exact 
       } finally { f.close() }
     }
   } finally { rmSync(root, { recursive: true, force: true }) }
+})
+test('explicit restart recovery preserves observed ledger progress and notes without resuming inference', () => {
+  const root=mkdtempSync(join(tmpdir(),'guanxi-r2-restart-')), path=join(root,'node.sqlite')
+  try {
+    const f=fixture({path}), id=f.run.id
+    f.relay.begin(f.attempt);f.relay.transition(f.attempt,'work')
+    f.relay.observe(f.attempt,{head:plan.base,files:[],diffstat:'',evidence:{item:'one',ok:true,output:'retained'}})
+    f.relay.note(f.attempt,'decision','retained note',['one'],null)
+    f.close()
+    const g=runFixture(path)
+    try {
+      g.store.reconcile();const next=g.store.start(id), relay=new RelayStore(g.db,g.store,g.scrubber)
+      relay.recover(next)
+      assert.equal(relay.read(id).items.one,'done')
+      assert.equal(relay.read(id).evidence[0]!.output,'retained')
+      assert.equal(relay.notes(id)[0]!.text,'retained note')
+      assert.equal(g.store.attempts(id).at(-1)!.first_model_at,null)
+      assert.equal(relay.sealed(next),null)
+    } finally {g.close()}
+  } finally {rmSync(root,{recursive:true,force:true})}
 })

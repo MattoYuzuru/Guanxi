@@ -24,8 +24,15 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
   const root=await mkdtemp(join(tmpdir(),'guanxi-r2-k3-')), db=openDb(join(root,'node.sqlite')), kernel=createKernel()
   const wrappingKey=randomBytes(32)
   const secret='fixture_relay_'+randomBytes(12).toString('hex'), thinking='fixture-hidden-thinking', requests:string[]=[]
+  let releaseApi!:()=>void, apiStarted!:()=>void, releaseLocal!:()=>void, localStarted!:()=>void
+  const apiResponse=new Promise<void>(r=>{releaseApi=r}), apiDispatch=new Promise<void>(r=>{apiStarted=r})
+  const localResponse=new Promise<void>(r=>{releaseLocal=r}), localDispatch=new Promise<void>(r=>{localStarted=r})
   try {
-    await kernel.plugin(resourceGovernorPlugin); await kernel.plugin(ollamaAdapterPlugin,{ fetch:async()=>{throw new Error('network forbidden')} })
+    await kernel.plugin(resourceGovernorPlugin); await kernel.plugin(ollamaAdapterPlugin,{ fetch:async url=>{
+      if(new URL(String(url)).pathname==='/api/version')return Response.json({version:'fixture'})
+      localStarted(); await localResponse
+      return new Response(JSON.stringify({model:'fixture',created_at:new Date().toISOString(),message:{role:'assistant',content:'fixture'},done:true,prompt_eval_count:10,eval_count:1}),{status:200,headers:{'Content-Type':'application/json'}})
+    } })
     await kernel.plugin(egressScrubberPlugin,{expectedSources:['vault']}); await kernel.plugin(createSessionLogPlugin({db}))
     await kernel.plugin(createDurableRunsPlugin({db}))
     const model=piModels('deepseek')[0]!
@@ -33,6 +40,7 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
     await kernel.plugin(connectionsPlugin,{databasePath:join(root,'connections.sqlite'),localHost:()=> '127.0.0.1:11434',policy:{ownerDevice:true,nodeKeyOptIn:true},keychain:async()=>({key:()=>wrappingKey}),
       pi:{async complete(_m,context){
         const serialized=JSON.stringify(context); requests.push(serialized)
+        if(requests.length===1){apiStarted();await apiResponse}
         const usage=emptyUsage(); usage.input=100; usage.output=100
         const narrative=serialized.includes('Write a fresh')
         const text=narrative ? 'Resume '+secret : canonical(++turn===1?{action:'verify',item:'one'}:{action:'handoff'})
@@ -50,7 +58,12 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
       const workspace={...f.workspace,verify:async()=>({item:'one',head:plan.base,ok:true,output:secret})}
       const output:string[]=[]; const old=process.stdout.write
       process.stdout.write=((chunk: unknown)=>{ output.push(String(chunk));return true }) as typeof old
-      try { await service.execute(a,{connectionId:c.id,model:model.id,meter:{observe:async()=>window,count:p=>Buffer.byteLength(p)+32},workspace,reserves}) }
+      try {
+        const pending=service.execute(a,{connectionId:c.id,model:model.id,meter:{observe:async()=>window,count:p=>Buffer.byteLength(p)+32},workspace,reserves})
+        await apiDispatch
+        assert.notEqual(runs.attempts(run.id)[0]!.first_model_at,null,'real K3 API start is observed while its response is pending')
+        releaseApi();await pending
+      }
       finally {process.stdout.write=old}
       assert.equal(runs.get(run.id).state,'completed',JSON.stringify(kernel.service<SessionLog>('session.log')!.readAll(run.session_id,'person').filter(e=>e.type==='error')))
       assert.equal(requests.length,3)
@@ -60,10 +73,22 @@ test('kernel relay uses real K3 and scrubber for every model call; secrets/reaso
       for(const text of [...requests,persisted,events,...output]) {assert.equal(text.includes(secret),false);assert.equal(text.includes(thinking),false)}
       assert.equal(db.prepare('SELECT COUNT(*) n FROM run_costs').get()!.n,3)
     } finally {f.close()}
+    const governor=kernel.service<import('../../src/runtime/resource-governor.ts').ResourceGovernor>('governor')!
+    const blocker=governor.enqueue({owner:{kind:'operation',operationId:'relay-fixture-blocker'},operation:'chat',model:{provider:'ollama',name:'fixture'},requestedContext:16000,priority:'normal',enqueuedAt:new Date().toISOString()})
+    const lease=await governor.acquire(blocker)
+    const local=connections.create('local',{name:'Local fixture',kind:'local_runtime',provider:'ollama',auth:'none'})
+    let localStarts=0
+    const pendingLocal=connections.localChat('local',local.id,{model:'fixture',stream:false,messages:[{role:'user',content:'fixture'}],options:{num_ctx:16000}},
+      {runId:'local-fixture',requestId:'local-fixture',onStarted:()=>{localStarts++}})
+    await new Promise<void>(r=>setImmediate(r))
+    assert.equal(localStarts,0,'queued local inference is not acknowledged')
+    lease.release();await localDispatch
+    assert.equal(localStarts,1,'real K3 local start is observed before response resolution')
+    releaseLocal();await pendingLocal
     await kernel.dispose()
     assert.equal(kernel.service('agent.relay'),undefined)
     assert.equal(kernel.service('runs.durable'),undefined)
-  } finally {await kernel.dispose();db.close();await rm(root,{recursive:true,force:true})}
+  } finally {releaseApi?.();releaseLocal?.();await kernel.dispose();db.close();await rm(root,{recursive:true,force:true})}
 })
 test('no hidden cycle limit with observed commits; boundaries retain exact hashes over 25 cycles', async () => {
   let turns=0, checkpoint=0

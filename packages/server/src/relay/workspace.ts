@@ -98,7 +98,17 @@ export class GitRelayWorkspace implements RelayWorkspace {
   }
   async checkpoint(signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted()
-    const files = [...new Set((await this.git(['ls-files', '-z', '-m', '-o', '-d', '--exclude-standard'])).split('\0').filter(Boolean))]
+    const files = (await this.git(['ls-files', '-z', '-o', '--exclude-standard'])).split('\0').filter(Boolean)
+    for (const row of await this.tree('HEAD')) {
+      try {
+        const entry = await lstat(join(this.root, row.path))
+        const object = entry.isFile() ? (await this.git(['hash-object', '--no-filters', '--', row.path])).trim() : ''
+        if (object !== row.object || (entry.mode & 0o111 ? '100755' : '100644') !== row.mode) files.push(row.path)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        files.push(row.path)
+      }
+    }
     const staged = (await this.git(['diff', '--cached', '--name-only', '-z', '--no-ext-diff', '--no-textconv'])).split('\0').filter(Boolean)
     invariant(staged.length === 0, 'index_not_owned')
     invariant(files.every(p => !this.protected(p)), 'protected_path')

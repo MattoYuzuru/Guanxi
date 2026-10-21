@@ -172,8 +172,9 @@ export class Connections {
       try {
         const current = this.store.get(accountId, id)
         if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
-        const dispatched = this.ollama.client(host.href).chat(this.scrubber.scrub(request), signal)
-        try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); void dispatched.catch(() => undefined); throw error }
+        const dispatched = this.ollama.client(host.href).chat(this.scrubber.scrub(request), signal, () => {
+          try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); throw error }
+        })
         const result = await dispatched
         signal.throwIfAborted()
         this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
