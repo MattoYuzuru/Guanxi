@@ -407,3 +407,31 @@ this finding; this handoff section is the follow-up docs commit on top of it. Th
 at the handoff commit; root review runs from
 `63aa885194676d43a42cc8e4f25f304d1e995626..HEAD`. No push, merge, rebase, PHASE_STATUS or
 NEXT_AGENT_PROMPT edit.
+
+## Coordinator verification and unsigned review readiness
+
+At clean `1a72ece3a9d09f07666318801aa09bdb5d3b3ee6`, the coordinator's fast UI gate
+`check-898mprbu` and full catalog browser gate `check-om39e4p4` passed. The pinned
+G13 producer `check-252crrn9` regenerated exactly four loading/offline images; the other
+14 AppShell images stayed byte-identical. The resulting four images and the four Input
+invalid-state theme images were inspected independently, alongside Dialog's four open-state
+themes. The producer intentionally changed tracked snapshots; its child success is generation
+evidence, not an unchanged-source certification.
+
+The separate GPT reviewer closed both AppShell findings at this pin: 24 AppShell runtime
+cases (6 component, 10 locale, 8 state), `check-7z2c4z7c`, and the two Input EN/RU cases,
+`check-luv5z2z6`, passed with clean unchanged source. Thus the combined focused envelope is
+26 cases across four files, not 26 AppShell-only cases. Outside reports are
+`reviews/codex-app-shell-chrome-20261022.md` and
+`reviews/codex-dialog-input-readiness-20261022.md` in the coordinator's sibling lane directory.
+
+Under catalog section 4, the coordinator moves AppShellChrome, Dialog and Input from unsigned
+`draft` to unsigned `review` and regenerates the manifest. All three keep `approval: null`
+and empty requests. This records complete stories/docs and independent readiness review; it
+does not record owner approval, mount the shell in the product or close U1/MS1. Product use
+of `review` components remains a documented warning and blocks a stage exit until the owner
+signs. The fast status/integrity gate must pass on the promoted pin before integration.
+
+All results above are local observations tied to the named clean HEAD. The external
+`.claude/skills/guanxi-ui` symlink prevents reusable source certification by agent-dev; the
+identical unsupported fingerprint is not treated as cross-checkout proof.

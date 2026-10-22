@@ -135,9 +135,9 @@
         "unknown-dark": "sha256:196fcf40ff451751f39f197cd4e354ff9be1edfa823343f65cb51f2cdf1df002",
         "unknown-light": "sha256:59b3970308b5536456ea7cec481878252d17e1d11ab7f9b735ab0cee7053394f"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -662,9 +662,9 @@
         "open-light-hc": "sha256:9f2907a0847bdc58cc1e128be5c21af141298c285590baeedbd5d60ad08cb8c1",
         "open-light": "sha256:655b24c2a60936a357c53c37ba96c27aac549e1d4135f52a08acbba091e9341e"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -1105,9 +1105,9 @@
         "read-only-light-hc": "sha256:90604b179e4961272e46cccdf393c958450017e9c84a8084e73bc985c0c069ce",
         "read-only-light": "sha256:97031f8cbe43f4cb6cf27657733e16825e939bf32cf5e2e21ef16184001cb6fb"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
