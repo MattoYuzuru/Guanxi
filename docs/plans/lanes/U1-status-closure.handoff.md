@@ -241,3 +241,12 @@ approval was changed, and U1 still waits for the separate readiness decision.
 - The new fixture is not a G17 seed; the direct G11 regression covers it in the 34-case scope.
 - Independent review of this repair is still pending. No full U1, MS1, main or approval claim is
   made; this lane does not merge or push.
+
+## Later note (integrator, 2026-10-23)
+
+The "until the owner's separate readiness decision" wording above is superseded. Under
+`docs/design/COMPONENTS_AND_CATALOG.md` an agent may record an unsigned `draft` → `review`
+transition once stories, docs and independent readiness evidence are complete; the root made
+those transitions in the U1 integration (`017b4906`, see `U1-integration.handoff.md`). This is
+**not** owner approval: every record keeps `approval: null` and no signature exists. Owner
+signatures still block release and stage exit.

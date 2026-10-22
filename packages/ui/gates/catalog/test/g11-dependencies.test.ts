@@ -72,7 +72,8 @@ describe('G11 transitive component lifecycle', () => {
     })
     const file = 'packages/web/src/features/shell/MountedShell.tsx'
     const drafts = result.findings.filter((finding) => finding.severity === 'error').map((finding) => finding.component)
-    assert.equal(result.status, drafts.length === 0 ? 'pass' : 'fail', JSON.stringify(result.findings))
+    assert.deepEqual(drafts, [], JSON.stringify(result.findings))
+    assert.equal(result.status, 'pass', JSON.stringify(result.findings))
     for (const id of ['app-shell-chrome', 'icon-button', 'menu', 'tooltip']) {
       assert.ok(
         result.findings.some((finding) => finding.file === file && finding.component === id),

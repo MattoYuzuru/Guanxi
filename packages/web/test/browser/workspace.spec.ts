@@ -233,6 +233,7 @@ test('390px phone has a priority-ordered stacked tab list, keyboard navigation a
   await expect(page.getByRole('menuitem', { name: 'Move block to…', exact: true })).toBeDisabled()
   await page.keyboard.press('Escape')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await page.evaluate(() => { const host = document.querySelector('[data-slot="shell-route-host"]'); return host === null || host.scrollWidth <= host.clientWidth + 1 })).toBe(true)
 })
 
 test('30 blocks restore within 2000ms; unknown/unloaded and safe-mode blocks are placeholders', async ({ page }) => {
@@ -320,6 +321,7 @@ for (const width of [390, 1600]) test(`workspace state loading reserves known ge
   const knownMinimum = await geometry.evaluate(node => { const style = getComputedStyle(node); return parseFloat(style.getPropertyValue('--control-height')) + parseFloat(style.getPropertyValue('--panel-padding')) * 2 })
   expect(toolbarBefore.height).toBeGreaterThanOrEqual(knownMinimum)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await page.evaluate(() => { const host = document.querySelector('[data-slot="shell-route-host"]'); return host === null || host.scrollWidth <= host.clientWidth + 1 })).toBe(true)
   expect(before!.height).toBeGreaterThan(100)
   await page.screenshot({ path: testInfo.outputPath(`loading-${width}.png`) })
   await page.evaluate(() => (window as any).__STATE_FAULT__.release())

@@ -91,6 +91,7 @@ test('Textarea actual vertical resizing preserves focus ring and horizontal boun
   expect(await field.evaluate(node => parseFloat(getComputedStyle(node).outlineWidth))).toBeGreaterThanOrEqual(2)
   await fits(field)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await page.evaluate(() => { const host = document.querySelector('[data-slot="shell-route-host"]'); return host === null || host.scrollWidth <= host.clientWidth + 1 })).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('textarea-resize.png') })
 })
 
@@ -187,6 +188,7 @@ for (const theme of ['light', 'dark', 'light-hc', 'dark-hc']) for (const density
       for (const node of [empty, empty.locator('p'), error, error.locator('pre'), error.locator('summary')]) await fits(node)
       for (const action of [empty.getByRole('button'), ...await error.locator('button,summary').all()]) await target(action)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      expect(await page.evaluate(() => { const host = document.querySelector('[data-slot="shell-route-host"]'); return host === null || host.scrollWidth <= host.clientWidth + 1 })).toBe(true)
       expect(await page.getByTestId('controlled').evaluate(node => getComputedStyle(node).fontSize)).toBe(density === 'compact' ? '13px' : '14px')
       for (const node of [empty, error]) expect(await node.evaluate(element => getComputedStyle(element).backdropFilter)).toBe('none')
       expect(await page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0)

@@ -374,6 +374,7 @@ for (const locale of ['en', 'ru'] as const) {
       }
     })
     expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewport)
+    expect(await page.evaluate(() => { const host = document.querySelector('[data-slot="shell-route-host"]'); return host === null || host.scrollWidth <= host.clientWidth + 1 })).toBe(true)
     expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
     expect(layout.sidebar.left).toBeGreaterThanOrEqual(0)
     expect(layout.sidebar.right).toBeLessThanOrEqual(layout.viewport)

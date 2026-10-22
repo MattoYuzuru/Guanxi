@@ -103,3 +103,12 @@ owner's signed approval (DS2, Secure Enclave) is required for each.
 The integrator merges this branch into `main` (no `package.json` change), reruns gates on `main`,
 and folds this file into `PHASE_STATUS.md` and `NEXT_AGENT_PROMPT.md`. The bisect clone was
 removed after use.
+
+## Independent review fixes (Opus, 2026-10-23)
+
+- P2: the phone-width `overflow-x-auto` route host hid overflow from document-width checks. The
+  host now carries `data-slot="shell-route-host"`, and every Workspace and shell-mount
+  document-width assertion is paired with `host.scrollWidth <= host.clientWidth + 1` (host absent
+  means no wrapper, so the document check alone applies). Legacy 200% text routes stay recorded debt.
+- P3: the G11 mounted-shell test now asserts `pass` and an empty draft list instead of deriving
+  the expectation from its own findings; the status-closure hand-off wording is corrected.
