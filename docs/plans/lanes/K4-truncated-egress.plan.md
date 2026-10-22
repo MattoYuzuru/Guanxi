@@ -23,3 +23,8 @@ Status: authorized bounded repair · Base: `622addc` · Local synthetic fixtures
 
 Independent author-separated GPT review follows the clean source pin. Root owns integration,
 new U1-page probe rerun and full gates; this repair does not close all K4 residual scope.
+
+Independent review follow-up: append-time markers may erase the byte comparison's original
+truncation proof. `c2ae12f` conservatively protects those ambiguous stored-marker boundaries;
+two short valid prompt/tool regressions and the unchanged outside probe cover the correction.
+The separate independent recheck closed at that pin; see the lane handoff for exact evidence.
