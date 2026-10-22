@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { RUN_A2A_STATE, runStateSchema } from '@guanxi/contract'
+import { RUN_A2A_STATE, runStateSchema, type SessionEvent } from '@guanxi/contract'
 import { RunError } from '../src/runs/types.ts'
 import { RunStore } from '../src/runs/store.ts'
 import { bootServerKernel, LEGACY_SERVER_PROFILE } from '../src/runtime/kernel.ts'
@@ -238,6 +238,17 @@ test('complete records a cost observation exactly once with the terminal transit
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM run_costs').get()!.n, 1)
   assert.equal(count(f, 'cost'), 1)
   assert.equal(count(f, 'terminal'), 1)
+  // The cost trace is emitted while the run is still working, before the terminal
+  // transition: moving insertCost after terminal() would otherwise stay invisible.
+  const lifecycle = f.log.read('lead', { audience: 'person' }).events
+    .filter((event): event is Extract<SessionEvent, { type: 'run.lifecycle' }> =>
+      event.type === 'run.lifecycle' && event.data.runId === run.id)
+  const costIndex = lifecycle.findIndex((event) => event.data.action === 'cost')
+  const terminalIndex = lifecycle.findIndex((event) => event.data.action === 'terminal')
+  assert.ok(costIndex >= 0, 'cost lifecycle event exists')
+  assert.ok(terminalIndex >= 0, 'terminal lifecycle event exists')
+  assert.ok(costIndex < terminalIndex, 'cost lifecycle event precedes the terminal action')
+  assert.equal(lifecycle[costIndex]!.data.state, 'working')
 })
 
 test('a throwing receipt callback rolls back completion and its cost observation', (t) => {
