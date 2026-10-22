@@ -40,6 +40,10 @@ outside controls must be rerun unchanged (SHA
 
 Every earlier reviewer check remains terminal. This round does not claim Q1/Q2, native v3
 consumption, progress2, a new HTTP 406 carrier, hydration, or a whole queue rollback floor.
+If the earlier eight-file repository command is rerun unchanged after this repair, its scope is
+64 cases (34 new/30 inherited); the handoff command below also adds `native-agent/agent.test.ts`
+and `native-agent/migration.test.ts`, which were not in that eight-file scope. Web new tests
+remain outside the repository command.
 
 ## Exact new
 
