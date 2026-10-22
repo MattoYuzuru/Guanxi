@@ -53,10 +53,13 @@ test('a plugin sidebar entry appears, hot-updates in place and disappears on unl
   await expect(link).toHaveAttribute('data-k1-node', 'original')
   await expect(link).toBeFocused()
 
+  await expect(page.getByRole('region', { name: 'Сессии' })).toContainText('Сессий пока нет.')
   await page.evaluate((id) => (globalThis as unknown as { __GUANXI_KERNEL__: KernelHandle }).__GUANXI_KERNEL__.unload(id), PLUGIN_ID)
   await expect(shortcuts).toHaveCount(0)
-  // The focused link is gone; focus moved to the next control, not the page body.
-  await expect(page.getByRole('link', { name: '+ Новый' })).toBeFocused()
+  // The focused link is gone; the host slot moved focus to the next control, not the page body.
+  await expect(page.getByRole('button', { name: 'Обновить сессии' })).toBeFocused()
+  // The chat page keeps its independent conversation list and remains reachable.
+  await expect(page.getByRole('link', { name: '+ Новый' })).toBeVisible()
   // The eleven core workspace blocks remain; the unloaded sidebar plugin contributes none.
   expect(
     await page.evaluate(() => (globalThis as unknown as { __GUANXI_KERNEL__: KernelHandle }).__GUANXI_KERNEL__.counters().slotEntries),

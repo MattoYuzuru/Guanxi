@@ -1,0 +1,114 @@
+# U1 mounted product shell — bounded implementation plan
+
+**Status:** root-authorized engineering slice · **Updated:** 2026-10-22
+**Base:** `f2ffcd0cc5b8733aebd8a93597606527d2d3415b`
+**Branch:** `codex/u1-shell-mount`; standalone clone, dependencies installed locally.
+
+## Outcome and accepted scope
+
+Mount the prepared shell on actual product routes, using public `AppShellChrome`, existing
+ShellSidebar, ShellStatus, ShellPalette and useShellController. ROADMAP U1, REQ-F3/F6/F7 and
+D-131 supply the target; no new architecture or owner approval is inferred. This finishes
+host composition only. Full new-session design, finished-unseen, ephemeral side chat,
+remaining literal CSS, signed approvals and U1/MS1 exits remain separate work.
+
+The current public components are unsigned `review`, not draft. Under
+COMPONENTS_AND_CATALOG section4 their ordinary product use is a handoff warning; stage/release
+exit remains blocked. Do not change any review record, signature, primitive source or catalog
+snapshot to mount this shell. No owner key or confirmation is needed for this reversible slice.
+
+## Boundaries and ownership
+
+- Own App.tsx, a small host under features/shell if useful, minimal ChatPage SidebarSlot
+  ownership changes, locale keys, and proportionate mounted tests. Preserve existing routes,
+  URL parameters, health Retry, runtime ownership and ErrorBoundaries.
+- Read the actual current interfaces rather than introducing parallel controllers. One
+  RuntimeProvider owns one polling loop; useRuntimeProjection supplies sampled facts.
+  Keep the workspace and developer catalog lazy. No server, wire or DB changes.
+- AppShellChrome already owns the main landmark. Avoid nested main landmarks. Moving,
+  collapsing or hiding navigation must preserve mounted route state. Exactly one host owns
+  SidebarSlot; ChatPage keeps its independent conversation list.
+- Four fixed navigation entries remain present. Other existing routes remain reachable via
+  the existing palette. Preserve accessible theme, language/settings and runtime Retry paths.
+  Do not retain a duplicate legacy TopBar merely to satisfy obsolete selectors.
+- Preferences retain existing keys/meaning. Corrupt or denied storage cannot prevent startup.
+  No new token, raw colour/duration, suppression allowance or hardcoded user-facing copy.
+
+## Observable acceptance
+
+1. Actual App routes mount the shell after health succeeds, including chat, workspace and a
+   non-chat route. Each core navigation action changes location exactly once. A contributed
+   sidebar entry occurs exactly once; route-owned content and subscriptions are not duplicated.
+2. Move/rail/hide/show keep route content and its in-flight state mounted. Stored geometry
+   survives reload; corrupt/denied storage degrades safely. Keyboard/palette can reveal hidden
+   navigation and restore focus. Ctrl/Meta+K has one effective handler and one executed action.
+3. Use the existing complete metadata-search behavior, late-response cancellation, explicit
+   destinations and refresh-before-pagination rules; preserve truthful loading/error/unknown
+   states. Runtime facts keep source/time/staleness; never infer quota, power or inbox values.
+4. Workspace commands use the attached document; unavailable/busy/phone/hidden commands keep
+   reasons. Changing mode preserves the other layout. No eager layout engine on unrelated routes.
+5. EN/RU at320px and desktop, reduced motion, focus trap/Escape return, no page horizontal
+   overflow, and no serious/critical axe finding after mounted transitions. Do not claim real
+   screen-reader speech from axe. Health failure and Retry remain usable before shell mount.
+
+New mounted assertions must target the real App route, not only the existing standalone palette
+fixture. Use explicit counts, request counts or stable content identity for uniqueness/remount
+claims. Strengthen obsolete navigation fixtures to exercise the replacement path; never delete,
+skip or loosen a behavioral assertion to get green. Do not add sleeps/retries to hide races.
+
+## Verification, compatibility and handoff
+
+Author writes focused mounted component and mocked browser tests, runs scoped web tsc and
+safe static checks only in the DSH sandbox. Root/reviewer own actual browser/component and full
+gates through workstation-dev. No nested sandbox/container/model/provider/SSH/owner data.
+Use Node26.9, lane ports5202/4402, GUANXI_DATA_DIR=$PWD/.lane-data. Shared heavy resource is
+`/Users/yuzuru/.local/state/agent-dev`, runtime owner root. Do not run shared checks directly
+or edit a checkout while its checks are queued/running.
+
+Independent Sol review checks actual mounted flows and discriminating assertions. Fix findings
+in separate commits. Root runs complete web browser, fast/catalog UI, types, build, lint and
+aggregate integration gates on stable pins. Author handoff separates new/envelope and unrun
+checks, exact commits, review-component warnings and residuals. Only the root updates PHASE
+and NEXT. No push or merge to main from this lane.
+
+No migration/dependency/license copy is needed. Rollback removes the host composition and
+keeps existing preferences readable. Shared source outside owned paths needs root review.
+
+## Root-authorized independent-review repair round
+
+At `6c8aa1f2` independent review passed 8 new component and 9 new browser cases, but the
+adapted legacy subset failed 7/18. Its outside report is codex-u1-product-shell-20261022.md.
+This round owns the incorrect new session-page fixtures and explicit intended-success
+assertions. Use the actual `/api/sessions/list/page` contract (SESSION_ROUTES.page); do not
+relax forbidden-effect, alert, request-count or lifecycle assertions. Demonstrate the old
+mock cannot pass the new empty/no-sidebar-error assertion, then fix separately.
+
+Root additionally authorizes one minimal shared production edit in
+`packages/web/src/features/context/ContextPanel.tsx`: remove CacheBar's inactive-text opacity
+debt using an existing semantic text token. Preserve inactive/active meaning, labels and
+duration. Strengthen flows-axe.spec.ts to zero serious/critical diagnostics for the complete
+new-session flow and remove the old two-node exception, retaining both seeded unnamed-button
+controls. Do not broaden the selector exception, hide content or update the viewport. Add
+proportional evidence that fails against the old text contrast. This closes the already
+documented U1-owned debt; no new token, allowance or approval is authorized.
+
+Transitive G11 enforcement and IconButton/Menu/Tooltip readiness are separate lanes. Do not
+edit their source/status/gate or promote them in this repair. Actual browsers remain root/
+reviewer-owned after author tsc/static checks. Fixes are separate commits; append exact new/
+envelope and unrun evidence to the handoff. No full U1 or main integration is claimed yet.
+
+## Root-authorized second review repair
+
+Independent `check-d4xbupdt` at `8e019f0c` passes all nine mounted cases and 17/18 adapted
+legacy cases. The remaining new-session test stops before its final axe scan because both
+responsive ContextPanels exist in the DOM. Filter cache-row locators by actual visibility,
+then assert exactly one visible active and one visible inactive row before the existing
+opacity/color assertions. Keep the whole-page zero-diagnostic scan and both seeded controls;
+do not use an arbitrary first match, hide content or change the viewport.
+
+Fast UI independently finds six unused App.tsx G5 allowances after the host replacement:
+backdrop-blur-md, font-medium, font-semibold, rounded-md, text-xs and tracking-tight.
+Root authorizes removing only these obsolete App.tsx entries from legacy-allowlist.json and
+their policy declaration if required by the existing ratchet. Preserve all other entries,
+budgets and gate semantics; this shrinks debt rather than adding an exemption. Validate the
+exact structural delta. Primitive readiness and transitive G11 remain separate ownership.

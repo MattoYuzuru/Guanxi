@@ -40,7 +40,7 @@ export function SidebarSlot({ slots = webKernel.slots }: { slots?: SlotRegistry 
   }, [entries])
 
   return (
-    <div ref={wrapper}>
+    <div ref={wrapper} data-slot="sidebar-slot">
       {entries.length > 0 && (
         <nav aria-label={translate('kernel.sidebar.navigation')} className="mb-2 border-b border-divider pb-2">
           <ul role="list" className="space-y-0.5">

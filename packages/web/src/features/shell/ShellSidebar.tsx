@@ -40,7 +40,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
     <nav aria-label={t('shell.navigation')}>
       <ul className="flex flex-col gap-1">
         {core.map(item => <li key={item.key}><Link to={item.to} aria-label={t(`shell.${item.key}`)}
-          aria-current={props.location === item.to ? 'page' : undefined}
+          aria-current={coreCurrent(item.key, props.location) ? 'page' : undefined}
           title={props.rail ? t(`shell.${item.key}`) : undefined}
           className="flex min-h-8 items-center justify-start rounded-control px-2 py-1 text-14 hover:bg-inset focus-visible:outline-focus">
           {props.rail ? <span aria-hidden="true">{t(`shell.${item.key}`).slice(0, 1)}</span> : t(`shell.${item.key}`)}
@@ -87,4 +87,13 @@ export function ShellSidebar(props: ShellSidebarProps) {
       </section>
     </div>
   </div>
+}
+
+/** Core destinations stay current on their nested legacy routes (models/:name, settings/developer). */
+function coreCurrent(key: 'new' | 'projects' | 'models' | 'settings', location: string): boolean {
+  const path = location.split('?')[0] ?? '/'
+  if (key === 'new') return path === '/agent' || path.startsWith('/agent/')
+  if (key === 'projects') return path === '/projects' || path.startsWith('/projects/')
+  if (key === 'models') return path === '/' || path.startsWith('/models/')
+  return path === '/settings' || path.startsWith('/settings/')
 }

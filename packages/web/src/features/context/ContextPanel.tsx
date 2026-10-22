@@ -268,7 +268,7 @@ function CacheBar({
   active: boolean
 }) {
   return (
-    <div className={cx('flex items-center gap-2', !active && 'opacity-45')}>
+    <div className={cx('flex items-center gap-2', !active && 'text-secondary')}>
       <span className="w-16 shrink-0 text-2xs">{label}</span>
       <div className="h-2 flex-1 overflow-hidden rounded-full bg-inset">
         <div

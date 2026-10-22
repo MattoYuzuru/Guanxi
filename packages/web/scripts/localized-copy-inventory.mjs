@@ -28,7 +28,6 @@ const LETTER = /\p{L}/u
 // These are exact protocol/provider identifiers or units, not natural-language
 // copy. Counts make every exception stale-checked instead of silently broad.
 const TECHNICAL_EXCEPTIONS = [
-  { file: 'App.tsx', value: 'Guanxi', count: 1, reason: 'central product brand' },
   { file: 'features/agent/ToolCallCard.tsx', value: 'mcp', count: 1, reason: 'protocol acronym badge' },
   { file: 'features/models/CompletionProbe.tsx', value: ':  · :  · : Ollama  · :  · : v', count: 1, reason: 'provider and evidence-version identifiers' },
   { file: 'features/models/HuggingFaceDiscovery.tsx', value: 'v', count: 1, reason: 'API version prefix' },

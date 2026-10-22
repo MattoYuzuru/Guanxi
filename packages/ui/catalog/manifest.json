@@ -139,8 +139,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/shell/MountedShell.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -402,9 +404,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 4,
+        "count": 5,
         "files": [
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/shell/MountedShell.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
           "packages/web/src/features/shell/ShellStatus.tsx"

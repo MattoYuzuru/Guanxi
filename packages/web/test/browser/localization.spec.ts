@@ -1,3 +1,4 @@
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test } from '@playwright/test'
 import { RUNTIME_IDLE_POLL_INTERVAL_MS } from '../../src/features/health/useRuntimePolling.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
@@ -79,6 +80,9 @@ for (const deferNetworkStart of [false, true]) {
       if (url.pathname === '/api/runtime' && method === 'GET') {
         routeReads.runtime += 1
         return route.fulfill(json(runtimeBrowserSnapshot()))
+      }
+      if (url.pathname === SESSION_ROUTES.page() && method === 'GET') {
+        return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
       }
       if (url.pathname === '/api/models' && method === 'GET') {
         routeReads.models += 1
@@ -269,6 +273,9 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
     if (url.pathname === '/api/runtime' && method === 'GET') {
       routeReads.runtime += 1
       return route.fulfill(json(runtimeBrowserSnapshot()))
+    }
+    if (url.pathname === SESSION_ROUTES.page() && method === 'GET') {
+      return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
     }
     if (url.pathname === '/api/settings' && method === 'GET') {
       settingsReads += 1
