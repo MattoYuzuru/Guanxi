@@ -211,3 +211,33 @@ uncooperative observer; late results are discarded after an R1 fence recheck. Th
 release model/tool work without cleanup acknowledgement. ETA remains uncalibrated, with stated
 provenance and scope. The full judge cascade, model grading, calibration/night wake and MS1
 remain open in separate work.
+
+## R3 full post-merge checks
+
+All eight commands pass at clean, unchanged main `af0ccab`: types `check-4ey26amr`, full
+`npm test` `check-dmeas875`, mocked Chromium 66/66 `check-_p9dlozt`, UI browser
+`check-yeby503g`, build `check-mh87ebrr`, Markdown `check-wmw2mggj`, licenses
+`check-w43ox514`, source lint `check-xn5wurrs`. The full npm scope is core 1292, kernel 106,
+web 318, UI gates 89, codemod 6, catalog 74, UI 17 and bench 82; zero skips. These are the
+integrated regression envelope, not additional new R3 cases or model-quality evidence.
+Receipts have the same external-skill attestation limitation recorded above.
+
+K4 input-artifact repair `afd7345` now has independent closure of the three original P2s and
+one additional open-database release-error regression. At `d0aec89`, 86 server plus the original
+three probes pass (`check-h2ps15uz`); at final `afd7345`, the original three plus release-error
+probe pass 4/4 (`check-zmvo10oh`). The narrow last fix propagates open-database failures and
+retains harmless already-closed database cleanup. Author selected counts are 47 new / 73
+inherited (120 total); broader native/full/browser gates remain required before integration.
+
+AppShellChrome plus Input invalid-story candidate `63aa885` passes full fast UI
+`check-bhzv9c6g` and UI browser `check-s6xtucch`. The pinned-image generator writes 18 new
+shell and four changed Input PNGs (`check-e0nqyzno`, child zero; source changed as expected for
+a generator, not a clean validation pass). All 18 shell images and four Input images were
+visually inspected. Separate review still requests localized nested shell story controls and
+truthful loading/offline fixtures; no status promotion or owner approval is credited yet.
+
+R3's next model adapter exposed a K3 transport ownership defect using a fake local POST:
+abort was observed, but the call and governor permit settled before the injected fetch.
+A separate client-only repair is active, coordinated with R2's dispatch-authorization seam.
+GET/version observation liveness and actual model-POST settlement must remain distinct.
+This fixture proves local client ownership, not backend inference cessation.
