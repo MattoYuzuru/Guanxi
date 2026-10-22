@@ -834,6 +834,8 @@ const english = {
     'This trace is still being restored from the saved chat history. Try again in a moment.',
   'error.api.sessionCatchUpFailed':
     'Restoring this trace from the saved chat history failed ({code}). It is retried automatically; the trace opens once it succeeds.',
+  'error.api.sessionEventVersionUnsupported':
+    'This trace needs a newer Guanxi client; the saved events are unchanged.',
   'error.api.conflict': 'The request conflicts with the current saved state. Refresh and try again.',
   'error.api.storage': 'The request could not be saved to local storage.',
   'error.api.validation': 'The request contains an invalid or unsupported value.',
@@ -1757,6 +1759,12 @@ const english = {
   'inspector.views': 'Trace views',
   'inspector.tab.timeline': 'Timeline',
   'inspector.tab.spans': 'Spans',
+  'inspector.input.bounded': 'Bounded input',
+  'inspector.input.boundedDetail': 'First {excerpt} of {total} are stored in this event. The full input stays in the local session store; it is not included in this event or export.',
+  'inspector.incompatible.title': 'This trace uses a newer event format',
+  'inspector.incompatible.description': 'Update Guanxi to continue. The saved trace is unchanged; this client does not advance past the unread event.',
+  'inspector.incompatible.details': 'Typed error: {code}',
+  'inspector.live.incompatible': 'Live updates stopped: the next event needs a newer trace format',
   'inspector.live.on': 'Live',
   'inspector.live.connecting': 'Connecting to the live log',
   'inspector.live.reconnecting': 'Reconnecting since {time}; events saved meanwhile will follow',
@@ -2670,6 +2678,8 @@ const russian: Messages = {
     'Трасса ещё восстанавливается из сохранённой истории чата. Повторите через несколько секунд.',
   'error.api.sessionCatchUpFailed':
     'Не удалось восстановить трассу из сохранённой истории чата ({code}). Повтор выполняется автоматически; трасса откроется после успешного восстановления.',
+  'error.api.sessionEventVersionUnsupported':
+    'Для этой трассировки нужен более новый клиент Guanxi; сохранённые события не изменены.',
   'error.api.conflict': 'Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.',
   'error.api.storage': 'Не удалось сохранить запрос в локальное хранилище.',
   'error.api.validation': 'Запрос содержит недопустимое или неподдерживаемое значение.',
@@ -3661,6 +3671,12 @@ const russian: Messages = {
   'inspector.search.status.searching': 'Ищем',
   'inspector.stat.asOf': 'На {time}.',
   'inspector.live.reconnect': 'Переподключиться',
+  'inspector.input.bounded': 'Ограниченный ввод',
+  'inspector.input.boundedDetail': 'В этом событии сохранены первые {excerpt} из {total}. Полный ввод остаётся в локальном хранилище сессии и не входит в это событие или экспорт.',
+  'inspector.incompatible.title': 'Эта трассировка использует более новый формат событий',
+  'inspector.incompatible.description': 'Обновите Guanxi, чтобы продолжить. Сохранённая трассировка не изменена; этот клиент не переходит через непрочитанное событие.',
+  'inspector.incompatible.details': 'Типизированная ошибка: {code}',
+  'inspector.live.incompatible': 'Обновление в реальном времени остановлено: следующему событию нужен более новый формат трассировки',
   'inspector.live.failed': 'Обновления не запустились; показаны события, загруженные в {time}',
   'inspector.detail.writer': 'Владелец записи {epoch}: {reason}',
   'inspector.writerReason.initial': 'первый для этой сессии',

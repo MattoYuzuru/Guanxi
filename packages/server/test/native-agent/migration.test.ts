@@ -37,7 +37,7 @@ test('migration 32 adopts native sessions with an atomic Thread owner; failure r
   repair.exec('DROP TABLE native_sessions'); repair.close()
   const db = openDb(path)
   try {
-    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 32)
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 33)
     assert.deepEqual(db.prepare('SELECT seq,payload,payload_sha256 FROM session_events ORDER BY seq').all(), before)
     assert.equal(db.prepare('SELECT thread_id FROM sessions WHERE id=?').get('old-native')!.thread_id, 'old-native')
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM native_sessions').get()!.n, 1)

@@ -2,6 +2,7 @@ export {
   DEFAULT_REASONING_RETENTION_MS,
   DEFAULT_WRITER_TTL_MS,
   SESSION_APPEND_POINTS,
+  SessionEventVersionError,
   SessionLog,
   SessionLogError,
   literalFtsQuery,
@@ -31,4 +32,21 @@ export {
   SESSION_LOG_SERVICE,
   createSessionLogPlugin,
 } from './plugin.ts'
-export { SESSION_LOG_MIGRATION } from './schema.ts'
+export { SESSION_LOG_MIGRATION, SESSION_INPUT_ARTIFACTS_MIGRATION } from './schema.ts'
+export {
+  SessionInputError,
+  SessionInputStore,
+  inputMediaTypeFor,
+  isInlineInput,
+  sessionInputDirectoryName,
+  utf8Excerpt,
+} from './input-artifacts.ts'
+export type {
+  SessionInputArtifactDescriptor,
+  SessionInputErrorCode,
+  SessionInputReapOptions,
+  SessionInputReapResult,
+  SessionInputStoreHooks,
+  SessionInputStoreOptions,
+  SessionInputWrite,
+} from './input-artifacts.ts'

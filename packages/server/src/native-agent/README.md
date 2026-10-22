@@ -142,12 +142,25 @@ private, session-scoped SHA-256 artifacts under `native-output/`, with an explic
 byte count, artifact ID and `tool_output_read` continuation. Pages contain at most 8 KiB of
 UTF-8 content so JSON escaping fits the result budget. Artifacts are scrubbed again before
 paging; neither artifacts nor launcher/CA files are writable roots. Artifact storage follows the native session's coordinated retention/deletion below.
-The canonical input-artifact policy remains unfinished. Tool arguments and large prompts still use K2's inline input path. Image bytes are
-inline in model requests; K2 stores policy references and attachment counts. Reading an output
-artifact currently scrubs it in memory before paging; bounded memory streaming is not
-claimed. Binary conversion remains a named residual. Images are referenced by policy, not
-stored as base64 in events. Reasoning stays in K2's retention class, outside model/CLI output
-and console logs.
+Native typed prompts and `tool.call` arguments above the published 16 KiB scrubbed UTF-8
+representation threshold are stored as session-owned SHA-256 input artifacts. The v2 event
+carries only a scrubbed excerpt of at most 8 KiB, a reference and the byte size; the full
+bytes never enter SQLite, FTS, titles, logs or exports. Replay resolves the reference through
+the pinned session store, verifies session/size/SHA-256 and re-scrubs the full bytes before
+the next model request. A secret registered after the write is therefore redacted on the next
+read and replay; the excerpt is never used as execution input. Image bytes are inline in
+model requests; K2 stores policy references and attachment counts. Reading an output artifact
+currently scrubs it in memory before paging; bounded memory streaming is not claimed. Binary
+conversion remains a named residual. Images are referenced by policy, not stored as base64 in
+events. Reasoning stays in K2's retention class, outside model/CLI output and console logs.
+
+Queued prompts keep their current representation: `agent.queue` stores the full queued text
+inline, even after consumption, and this slice adds no cap. Consuming a queued prompt may
+artifactize its own later `prompt` event, but the earlier queue event stays inline. That is a
+declared residual, not a claim that the whole K4-INPUT-ARTIFACTS issue is closed. A published
+input blob left by a failed append is an orphan until the whole session is deleted; no
+per-blob GC runs in this slice. The full input is buffered for replay and re-scrubbing; a
+bounded-memory streaming reader is not claimed.
 
 The orientation is checked against a conservative 300 UTF-8-byte upper bound, independent of
 path length/root count. Full paths, policies and instruction locations are obtained from
@@ -156,11 +169,18 @@ path length/root count. Full paths, policies and instruction locations are obtai
 ## Durable execution and retention (K4F2)
 
 Every native append during execution uses R1's atomic attempt/home fence and an explicit K2
-`expectedSeq`, read from the current session head so R1 lifecycle writes are included. Tools
-check the fence before dispatch and after completion; the existing ExecutionOwner still owns
-shell cleanup and quarantine. Native attempts renew once per second while pending. A stale
-attempt cannot append or complete. Model-start acknowledgment follows an API response observation
-or local `/api/chat` dispatch, after Ollama's version preflight.
+`expectedSeq`, read from the current session head so R1 lifecycle writes are included. One
+append queue per active attempt serializes service- and tool-owned trace writes; `seq` is
+computed when an operation executes, not when it is queued. `pi-agent-core` awaits listener
+promises, and the tool wrapper additionally awaits the exact `toolCallId` durable `tool.call`
+acknowledgment before any tool body effect; a missing or failed acknowledgment aborts the turn
+with zero tool bodies. A failed append is latched once and writes at most one content-free
+`error` plus terminal. Tools check the fence before dispatch and after completion; the existing
+ExecutionOwner still owns shell cleanup and quarantine. Native attempts renew once per second
+while pending. A stale attempt cannot append or complete. Model-start acknowledgment follows
+an API response observation or local `/api/chat` dispatch, after Ollama's version preflight.
+Stop enqueues its intervention before aborting and never waits for artifact I/O. Close seals
+and drains the queue before handles close.
 
 An optional immutable `budget` supplies model-call, observed-token, observed-USD-cost and wall-time
 caps. R1 stores the policy/counters, cost observations and terminal reason. A cap cancels with
@@ -175,7 +195,14 @@ cost blocks further calls when a money cap is configured. No ordinary call/token
 when a time cap or fence is lost; cleanup confirmation still governs root reuse.
 
 Migration **32** adds `run_execution` and `native_sessions`, adopts existing native sessions
-under a Thread owner, and leaves migrations 1–31 byte-identical. The private owning Thread is
+under a Thread owner, and leaves migrations 1–31 byte-identical. Migration **33** adds the
+session-owned `session_input_artifacts` table and replaces only the event-policy trigger; it
+leaves migrations 1–32 byte-identical and leaves independent F1/R2/F2 ledgers 34–37
+untouched. Rollback is a stopped, consistent pre-upgrade SQLite/WAL backup restore; an older
+binary does not understand v2 events and must not reuse a v2-bearing database. The supported
+read compatibility for older clients is the new server's explicit v1 negotiation: a max-1
+page, export or already-open stream refuses at the first unread v2 event with a content-free
+406 / `guanxi-error` without advancing the cursor. The private owning Thread is
 agent-mode/projectless to preserve the existing legacy Project→Chat ownership invariant; the
 immutable native policy retains the logical Project. These private owners are excluded from
 legacy Chat projections and admission, so that API cannot start inference on a native session. Owner, session, policy and registration
