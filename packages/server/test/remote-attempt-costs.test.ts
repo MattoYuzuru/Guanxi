@@ -120,6 +120,21 @@ test('a failing cost insert rolls back the terminal receipt, cost and completion
   assert.equal(costRows(f, f.runId).length, 1)
 })
 
+test('a receipt callback failing after usage leaves no cost and the run working', async t => {
+  const f = await fixture(t)
+  const started = f.sign(1, ZERO, { kind: 'started' })
+  f.deliver(started)
+  const terminal = f.sign(2, started.hash, usage(7, 3))
+  // The terminal carries usage, but the dispatch deadline has passed. The receipt
+  // callback rejects with dispatch_deadline inside complete(), after the cost is known.
+  // A cost written in an earlier transaction would survive the rollback.
+  f.home.time += 30_001
+  assert.throws(() => f.deliver(terminal), { code: 'dispatch_deadline' })
+  assert.equal(f.home.runs.get(f.runId).state, 'working')
+  assert.equal(f.home.db.prepare('SELECT COUNT(*) AS n FROM remote_dispatch_receipts WHERE id=? AND seq=2').get(f.offer.id)!.n, 0)
+  assert.equal(costRows(f, f.runId).length, 0)
+})
+
 test('canceled and failed terminals with usage follow the same cost rule', async t => {
   for (const outcome of ['canceled', 'failed'] as const) {
     const f = await fixture(t)
