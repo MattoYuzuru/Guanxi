@@ -562,3 +562,92 @@ At handoff the fix commit is `e6a3857` on top of `241e962`; this handoff update 
 documentation commit. No push, merge, rebase, package/lock change, approval/status edit,
 `PHASE_STATUS` or `NEXT_AGENT_PROMPT` edit was performed. Final clean pin: the HEAD
 documentation commit containing this section, with `git status --porcelain` empty.
+
+## Review-fix: finite animation iteration emission (2026-10-22)
+
+**Finding.** `validateAnimations` accepts every positive integer iteration count, but `themeCSS`
+appended only `infinite` and silently omitted finite values greater than one. An existing
+manifest entry changed to `iterations: 2` therefore generated an `--animate-*` value without the
+count. Source pin `402cf81` on `codex/u1c-css`; fix commit `e2cc072`.
+
+### Change (scoped)
+
+- `packages/ui/tokens/build.mjs`: for a validated finite count above one, append a space plus
+  `${animation.iterations}`. A count of `1` stays omitted exactly as before, and `infinite`
+  still emits a space plus `infinite`. The closed manifest schema, default of one, token names, ordering
+  and deterministic output keys are unchanged. No new token value, alias or default cap was
+  introduced.
+- `packages/ui/gates/gates.test.mjs`: one new generator case reads the real manifest through
+  `options.read`, changes only the existing `fade-up` entry to `iterations: 2`, generates twice
+  and asserts byte determinism, then requires the generated `--animate-fade-up` line to end
+  with exactly a space plus `2;`. The same case requires the canonical `fade-up` line to omit
+  `1` and the three `infinite` entries to keep a trailing space plus `infinite`. The existing refusal case gained `-1` and `1.5`;
+  zero, string `"2"` and boolean `true` were already covered.
+- No generated file, manifest, CSS, catalog, approval, status file or U1 candidate source was
+  edited. The 21 ledger retirements, the `outline-offset:2px` allowance decrement from 5 to 4,
+  and the 112 `packages/web/src/index.css` CSS suppressions are unchanged.
+
+### Red and green evidence
+
+Before the production edit, the focused file was 20 pass / 1 fail. The new case failed with:
+
+```text
+expected the accepted finite iteration count before the semicolon, got:
+  --animate-fade-up: guanxi-fade-up var(--motion-duration-moderate) var(--motion-easing-enter);
+```
+
+That is the reported omission: the accepted `2` never reached the generated value. After the
+one-line emitter fix the same file is 21 pass / 0 fail. The existing G2 case in that file passed,
+which compares `generate(ctx.tokenOptions)` with every checked-in generated file; canonical
+manifest values stayed `1`/`infinite`, so no generated output changed and no regeneration or
+manual generated edit was needed.
+
+### New tests / regression envelope
+
+**New:** 1 focused Node case in `packages/ui/gates/gates.test.mjs`; the existing validation case
+was extended with two refusal inputs but is not a new case.
+
+**Regression envelope executed:** 28 cases, 0 fail: 21 in `packages/ui/gates/gates.test.mjs` and
+7 in `packages/ui/gates/u1c-css.test.mjs`. No browser, build, Storybook, `ui:check` or full npm
+suite was run by this worker.
+
+### Commands (this round)
+
+All commands ran in this standalone clone under `nice -n 10`.
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `nice -n 10 node --test packages/ui/gates/gates.test.mjs` before the fix | 20 pass, 1 fail; exact missing finite-count suffix above |
+| `nice -n 10 node --test packages/ui/gates/gates.test.mjs` after the fix | 21 pass, 0 fail |
+| `nice -n 10 node --test packages/ui/gates/u1c-css.test.mjs` | 7 pass, 0 fail |
+| `nice -n 10 npx eslint packages/ui/tokens/build.mjs packages/ui/gates/gates.test.mjs` | exit 0 |
+| `node --check packages/ui/tokens/build.mjs && node --check packages/ui/gates/gates.test.mjs` | `syntax_ok` |
+| `nice -n 10 npx markdownlint-cli2 docs/plans/lanes/U1c-css.handoff.md` | one pre-existing MD024 duplicate `## New tests / regression envelope` heading, also present at `402cf81`; no new Markdown finding |
+| `git diff --check` | exit 0 |
+| `git show --stat --oneline e2cc072` | 2 files, 24 insertions, 1 deletion; only the owned test and generator |
+| `git status --porcelain` before this handoff commit | empty after `e2cc072` |
+
+### Residuals (this round)
+
+- The finite-count proof is at generated-theme text level. No Tailwind compile or browser run
+  used an overridden finite-count manifest; the canonical compiled utilities remain covered by
+  the existing foundation and browser gates, which this worker did not run.
+- `packages/ui/gates/u1c-css.test.mjs` still models only the canonical `1`/`infinite`
+  declarations. The new finite `> 1` behavior is covered in `gates.test.mjs`; the U1c file was
+  deliberately left untouched under the one-test-file scope.
+- Scoped Markdown lint still reports the pre-existing duplicate `## New tests / regression
+  envelope` heading at line 157. It is present at the source pin and was not rewritten, so the
+  historical sections stay intact; no new Markdown finding remains.
+- `ui:check` was not run: G10 catalog staleness and G12 missing base ref are the known
+  root-owned integration repairs. The 112 CSS suppressions and `u1ColourExitReady: false` remain
+  unchanged.
+- Root must independently review this fix and run the combined integration gates. No browser,
+  visual, performance, full-suite or `ui:check` result is claimed here.
+- No U1 candidate checkout, source, approval record, `PHASE_STATUS` or `NEXT_AGENT_PROMPT` was
+  edited.
+
+At handoff the fix commit is `e2cc072` on top of `402cf81`; this handoff update is the next
+documentation commit. No push, merge, rebase, package/lock change or generated-file edit was
+performed. Final clean pin: the HEAD documentation commit containing this section on
+`codex/u1c-css`, with `git status --porcelain` empty.
