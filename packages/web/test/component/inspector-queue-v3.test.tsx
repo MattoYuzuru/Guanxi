@@ -126,7 +126,7 @@ describe('inspector queue v3', () => {
     setActiveLocale('ru')
     mockFetch([...sessionTrace(), queueEvent()])
     render(<InspectorPage sessionId={SESSION_ID} />)
-    const timeline = await screen.findByRole('list', { name: 'Session events in order' })
+    const timeline = await screen.findByRole('list', { name: 'События сессии по порядку' })
     const queue = await within(timeline).findByRole('list', { name: 'Элементы очереди' })
     expect(within(queue).getAllByText('Встроено')).toHaveLength(1)
     expect(within(queue).getAllByText('Ограниченный ввод')).toHaveLength(1)
