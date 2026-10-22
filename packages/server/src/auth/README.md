@@ -59,8 +59,10 @@ resource projection and the grants for it; the policy trusts `ownerUserId`, ids,
 
 - **Private by default.** Only the resource owner and explicit unexpired grants count.
   Anonymous principals and share links without a link grant get nothing.
-- **Strongest relation wins.** Relation strength is `owner > editor > viewer`. A direct grant
-  and an inherited project grant are combined by taking the strongest relation.
+- **Strongest relation wins.** Relation strength is `owner > editor > viewer`. Ownership comes
+  only from `resource.ownerUserId`; a stored `owner` grant is capped at `editor` until ownership
+  transfer exists. A direct grant and an inherited project grant are combined by taking the
+  strongest relation.
 - **Expiry.** A grant with `expiresAt !== null && expiresAt <= now` is ignored. `null` never
   expires.
 - **Subjects.** A user grant matches `userId`; a group grant matches one of `groups`; a link
@@ -76,10 +78,11 @@ resource projection and the grants for it; the policy trusts `ownerUserId`, ids,
   `connectionKind: 'subscription'` is allowed only to `resource.ownerUserId`, regardless of
   grants. Non-owner use of any other connection requires a direct `editor` or `owner` grant on
   that connection; a project grant does not suffice.
-- **Prompt payer (D-154 as amended by D-190).** For the owner, `payer` is `owner`. For an
-  editor, `payer` is `owner` only when `share.ownerPaysForEditors === true` **and**
-  `share.ownerConnectionKind` is `api_key` or `local`; a `subscription` connection, a declined
-  share or a missing share policy yields `actor`.
+- **Prompt payer (D-154 as amended by D-190).** Only the real owner (`principal.userId ===
+  resource.ownerUserId`) gets `payer: 'owner'`. For everyone else, including a holder of a
+  capped `owner` grant, `payer` is `owner` only when `share.ownerPaysForEditors === true`
+  **and** `share.ownerConnectionKind` is `api_key` or `local`; a `subscription` connection, a
+  declined share or a missing share policy yields `actor`.
 - **Reasons.** `reason` is a stable low-cardinality string: `owner`, `editor`, `viewer`,
   `admin`, `anonymous`, `no_grant`, `insufficient_relation`, `action_not_applicable`,
   `admin_required`, `subscription_owner_only` or `connection_use_requires_grant`.

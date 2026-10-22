@@ -327,6 +327,7 @@ test('D-190: subscription connections are owner-only and connection.use needs a 
   assert.equal(editorUse.reason, 'subscription_owner_only')
   const subscriptionOwnerGrant = makeGrant(subscription, 'owner', 'user', 'user-other')
   assert.equal(can(user('user-other'), 'connection.use', subscription, [subscriptionOwnerGrant], NOW).allowed, false)
+  assert.equal(can(user('user-other'), 'connection.manage', subscription, [subscriptionOwnerGrant], NOW).allowed, false)
   assert.equal(can(user('user-admin', 'admin'), 'connection.use', subscription, [], NOW).allowed, false)
 
   const apiKeyEditor = makeGrant(apiKey, 'editor', 'user', 'user-editor')
@@ -334,12 +335,40 @@ test('D-190: subscription connections are owner-only and connection.use needs a 
   assert.equal(can(user('user-editor'), 'connection.manage', apiKey, [apiKeyEditor], NOW).allowed, false)
   const apiKeyOwnerGrant = makeGrant(apiKey, 'owner', 'user', 'user-other')
   assert.equal(can(user('user-other'), 'connection.use', apiKey, [apiKeyOwnerGrant], NOW).allowed, true)
+  assert.equal(can(user('user-other'), 'connection.manage', apiKey, [apiKeyOwnerGrant], NOW).allowed, false)
   const apiKeyViewer = makeGrant(apiKey, 'viewer', 'user', 'user-viewer')
   assert.equal(can(user('user-viewer'), 'connection.use', apiKey, [apiKeyViewer], NOW).allowed, false)
 
   const connectionWithParent: Resource = { ...apiKey, id: 'connection-child', parent: { type: 'project', id: 'project-1' } }
   const projectEditor = makeGrant(resources.project, 'editor', 'user', 'user-project-editor')
   assert.equal(can(user('user-project-editor'), 'connection.use', connectionWithParent, [projectEditor], NOW).allowed, false)
+})
+
+test('a granted owner relation is editor-level and only a real owner pays', () => {
+  const grantedOwner = user('user-granted-owner')
+  const subscriptionSession: Resource = {
+    type: 'session', id: 'session-owner-grant-subscription', ownerUserId: OWNER_ID,
+    share: { ownerPaysForEditors: true, ownerConnectionKind: 'subscription' },
+  }
+  const subscriptionGrant = makeGrant(subscriptionSession, 'owner', 'user', 'user-granted-owner')
+  const prompt = can(grantedOwner, 'session.prompt', subscriptionSession, [subscriptionGrant], NOW)
+  assert.equal(prompt.allowed, true)
+  assert.equal(prompt.reason, 'editor')
+  assert.equal(prompt.payer, 'actor')
+  assert.equal(can(grantedOwner, 'session.read', subscriptionSession, [subscriptionGrant], NOW).allowed, true)
+  assert.equal(can(grantedOwner, 'session.stop', subscriptionSession, [subscriptionGrant], NOW).allowed, true)
+  assert.equal(can(grantedOwner, 'session.share', subscriptionSession, [subscriptionGrant], NOW).allowed, false)
+  assert.equal(can(grantedOwner, 'session.delete', subscriptionSession, [subscriptionGrant], NOW).allowed, false)
+
+  const apiKeySession: Resource = {
+    ...subscriptionSession, id: 'session-owner-grant-api-key',
+    share: { ownerPaysForEditors: true, ownerConnectionKind: 'api_key' },
+  }
+  const apiKeyGrant = makeGrant(apiKeySession, 'owner', 'user', 'user-granted-owner')
+  const apiKeyPrompt = can(grantedOwner, 'session.prompt', apiKeySession, [apiKeyGrant], NOW)
+  assert.equal(apiKeyPrompt.allowed, true)
+  assert.equal(apiKeyPrompt.reason, 'editor')
+  assert.equal(apiKeyPrompt.payer, 'owner')
 })
 
 test('permission snapshot equals the authorization matrix for the same inputs', () => {

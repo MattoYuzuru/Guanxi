@@ -103,13 +103,14 @@ function grantReaches(grant: Grant, resource: Resource): boolean {
   return false
 }
 
-/** Strongest unexpired relation, including implicit ownership. */
+/** Strongest unexpired relation. Only `ownerUserId` confers ownership; grants cap at `editor`. */
 function effectiveRelation(principal: Principal, resource: Resource, grants: Grant[], now: number): Relation | null {
   let strength = 0
   if (principal.kind === 'user' && principal.userId === resource.ownerUserId) strength = RELATION_STRENGTH.owner
   for (const grant of grants) {
     if (expired(grant, now) || !subjectMatches(grant, principal) || !grantReaches(grant, resource)) continue
-    strength = Math.max(strength, RELATION_STRENGTH[grant.relation])
+    const granted = Math.min(RELATION_STRENGTH[grant.relation], RELATION_STRENGTH.editor)
+    strength = Math.max(strength, granted)
   }
   if (strength >= RELATION_STRENGTH.owner) return 'owner'
   if (strength >= RELATION_STRENGTH.editor) return 'editor'
@@ -132,9 +133,9 @@ function hasDirectConnectionGrant(principal: Principal, resource: Resource, gran
     !expired(grant, now) && subjectMatches(grant, principal))
 }
 
-/** D-154 as amended by D-190. */
-function promptPayer(relation: Relation, resource: Resource): Payer {
-  if (relation === 'owner') return 'owner'
+/** D-154 as amended by D-190. Only `ownerUserId` pays as the owner; a granted owner is an editor. */
+function promptPayer(principal: Principal, resource: Resource): Payer {
+  if (principal.kind === 'user' && principal.userId === resource.ownerUserId) return 'owner'
   const share = resource.share
   if (share?.ownerPaysForEditors === true && (share.ownerConnectionKind === 'api_key' || share.ownerConnectionKind === 'local')) {
     return 'owner'
@@ -171,7 +172,7 @@ export function can(principal: Principal, action: Action, resource: Resource, gr
   }
 
   if (!relationAllows(relation, action, resource)) return deny('insufficient_relation')
-  if (action === 'session.prompt') return allow(relation, promptPayer(relation, resource))
+  if (action === 'session.prompt') return allow(relation, promptPayer(principal, resource))
   return allow(relation)
 }
 
