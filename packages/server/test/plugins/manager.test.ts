@@ -549,6 +549,10 @@ test('semver range forms are checked and unsupported forms are rejected', async 
   const cases: readonly [string, string, boolean][] = [
     ['^0.1.0', '0.1.9', true],
     ['^0.1.0', '0.2.0', false],
+    ['^0.0.3', '0.0.3', true],
+    ['^0.0.3', '0.0.4', false],
+    ['^1.2.3', '1.9.9', true],
+    ['^1.2.3', '2.0.0', false],
     ['~0.1.0', '0.1.9', true],
     ['~0.1.0', '0.2.0', false],
     ['>=0.1.0 <0.2.0', '0.1.9', true],
