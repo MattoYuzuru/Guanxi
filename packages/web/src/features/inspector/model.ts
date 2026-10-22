@@ -3,12 +3,15 @@
  * the one a live subscriber built, so merging is by `seq` and idempotent.
  */
 import {
+  INPUT_EXCERPT_BYTES,
   REDACTION_MARKER_CLOSE,
+  REDACTION_MARKER_OPEN,
   REDACTION_MARKER_PREFIX,
   promptTextOf,
   toolCallArgumentsTextOf,
   type SessionEvent,
   type SessionEventType,
+  type SessionInputArtifactRef,
 } from '@guanxi/contract'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 
@@ -67,6 +70,74 @@ export function segmentRedactions(text: string): TextSegment[] {
   return segments
 }
 
+function utf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).byteLength
+}
+
+/**
+ * A marker-safe UTF-8 prefix for display. The inspector never needs the full
+ * executable value; a legacy inline item can be much larger than the published
+ * excerpt bound, so rows show a bounded preview and say so.
+ */
+export function boundedPreview(text: string, maxBytes = INPUT_EXCERPT_BYTES): string {
+  const bytes = new TextEncoder().encode(text)
+  if (bytes.byteLength <= maxBytes) return text
+  let end = maxBytes
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--
+  const clipped = new TextDecoder().decode(bytes.subarray(0, end))
+  // Only a real `⟦REDACTED …⟧` marker gets marker-safe backtracking. An
+  // ordinary decorative `⟦` is user text and must keep its maximal prefix.
+  const open = clipped.lastIndexOf(REDACTION_MARKER_OPEN)
+  if (open < 0 || clipped.indexOf(REDACTION_MARKER_CLOSE, open) >= 0) return clipped
+  if (!text.startsWith(REDACTION_MARKER_PREFIX, open)) return clipped
+  if (text.indexOf(REDACTION_MARKER_CLOSE, open + REDACTION_MARKER_PREFIX.length) < 0) return clipped
+  return clipped.slice(0, open)
+}
+
+export type QueueRenderItem =
+  | {
+      id: string
+      kind: 'inline'
+      text: string
+      shownBytes: number
+      totalBytes: number
+      artifact: null
+    }
+  | {
+      id: string
+      kind: 'artifact'
+      text: string
+      shownBytes: number
+      totalBytes: number
+      artifact: SessionInputArtifactRef
+    }
+
+/** One bounded display row per queue item, in snapshot order, including legacy v1 entries. */
+export function queueRenderItems(event: Extract<SessionEvent, { type: 'agent.queue' }>): QueueRenderItem[] {
+  return event.data.items.map((item) => {
+    if ('kind' in item && item.kind === 'artifact') {
+      const text = boundedPreview(item.artifact.excerpt)
+      return {
+        id: item.id,
+        kind: 'artifact' as const,
+        text,
+        shownBytes: utf8Bytes(text),
+        totalBytes: item.artifact.byteSize,
+        artifact: item.artifact,
+      }
+    }
+    const text = boundedPreview(item.text)
+    return {
+      id: item.id,
+      kind: 'inline' as const,
+      text,
+      shownBytes: utf8Bytes(text),
+      totalBytes: utf8Bytes(item.text),
+      artifact: null,
+    }
+  })
+}
+
 /** Short machine-value summary of an event for its timeline row. */
 export function eventDetail(event: SessionEvent): string | null {
   switch (event.type) {
@@ -77,7 +148,9 @@ export function eventDetail(event: SessionEvent): string | null {
     case 'agent.plan':
       return event.data.items.map(item => item.text).join('\n')
     case 'agent.queue':
-      return event.data.items.map(item => item.text).join('\n')
+      // Rendered per item by QueueBody; joining would hide item boundaries and
+      // could put an unbounded legacy tail into one paragraph.
+      return null
     case 'agent.note':
       return event.data.text
     case 'prompt':

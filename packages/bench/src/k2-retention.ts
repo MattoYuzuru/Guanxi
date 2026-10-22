@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { SessionEvent, SessionEventData } from '@guanxi/contract'
+import type { SessionEvent, SessionEventData, SessionEventType } from '@guanxi/contract'
 import type { Connections } from '../../server/src/connections/service.ts'
 import type { EgressScrubber } from '../../server/src/egress/types.ts'
 import type { Attempt } from '../../server/src/runs/types.ts'
@@ -493,7 +493,7 @@ export function createK2TrialRetention(input: {
     try { return session.readAll(binding.sessionId, 'person') } catch (error) { mapAppendError(error) }
   }
 
-  const append = (input: SessionEventInput, requestId: string, suffix: string, expectedSeq: number): AppendResult => {
+  const append = <T extends SessionEventType>(input: SessionEventInput<T>, requestId: string, suffix: string, expectedSeq: number): AppendResult => {
     try {
       return runs.append(attempt, input,
         { idempotencyKey: contentKey(binding, requestId, suffix), expectedSeq } satisfies AppendOptions & { expectedSeq: number })

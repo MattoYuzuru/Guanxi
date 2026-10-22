@@ -61,7 +61,7 @@ function incompatible(supported = 1): Response {
   return json({
     code: 'session_event_version_unsupported',
     message: 'The next event needs a newer trace format',
-    details: { seq: 41, supported, required: 2 },
+    details: { seq: 41, supported, required: 3 },
   }, 406)
 }
 
@@ -133,16 +133,16 @@ describe('inspector bounded input artifacts', () => {
     expect(document.body.textContent).not.toContain(FULL_TAIL)
     expect(document.body.textContent).not.toContain(ARTIFACT_ID)
     expect(screen.getByRole('link', { name: 'Export JSON without reasoning' }).getAttribute('href'))
-      .toBe(`/api/sessions/${SESSION_ID}/export?exportVersion=2`)
+      .toBe(`/api/sessions/${SESSION_ID}/export?exportVersion=3`)
   })
 
   it('serializes export negotiation with an encoded session id and no other query', () => {
     const href = inspectorApi.exportUrl('session/with space?and#hash')
     expect(href).toBe(
-      '/api/sessions/session%2Fwith%20space%3Fand%23hash/export?exportVersion=2',
+      '/api/sessions/session%2Fwith%20space%3Fand%23hash/export?exportVersion=3',
     )
     const url = new URL(href, 'http://localhost')
-    expect([...url.searchParams.entries()]).toEqual([['exportVersion', '2']])
+    expect([...url.searchParams.entries()]).toEqual([['exportVersion', '3']])
   })
 
   it('does not find text beyond the excerpt and reports no hits honestly', async () => {
@@ -160,7 +160,7 @@ describe('inspector bounded input artifacts', () => {
 
   it('preserves a typed incompatible state instead of a retry loop on the REST boundary', async () => {
     setActiveLocale('en')
-    const calls = mockFetch({ eventsStatus: () => incompatible(1) })
+    const calls = mockFetch({ eventsStatus: () => incompatible(2) })
     render(<InspectorPage sessionId={SESSION_ID} />)
     expect((await screen.findAllByText('This trace uses a newer event format')).length).toBeGreaterThan(0)
     expect(screen.getByText(/Update Guanxi to continue/)).toBeTruthy()
@@ -173,7 +173,7 @@ describe('inspector bounded input artifacts', () => {
     const error = apiErrorSchema.parse({
       code: 'session_event_version_unsupported',
       message: 'The next event needs a newer trace format',
-      details: { seq: 41, supported: 1, required: 2 },
+      details: { seq: 41, supported: 2, required: 3 },
     })
     const calls = mockFetch({
       liveFrames: `event: guanxi-error\ndata: ${JSON.stringify(error)}\n\n`,

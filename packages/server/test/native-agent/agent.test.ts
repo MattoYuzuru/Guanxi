@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile, realpath, symlink, readFile } from 'node
 import { join } from 'node:path'
 import { createKernel } from '@guanxi/kernel'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { promptTextOf } from '@guanxi/contract'
+import { promptTextOf, SESSION_EVENT_VERSION_3 } from '@guanxi/contract'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
 import { egressScrubberPlugin } from '../../src/egress/plugin.ts'
@@ -20,7 +20,7 @@ import { ProjectStore } from '../../src/store/projects.ts'
 import { ProjectService } from '../../src/projects/service.ts'
 import { WorkspaceStore } from '../../src/store/workspaces.ts'
 import { RunStore } from '../../src/runs/store.ts'
-import { NativeAgents } from '../../src/native-agent/service.ts'
+import { NativeAgents, NativeAgentError } from '../../src/native-agent/service.ts'
 import { emptyUsage } from '../../src/native-agent/model.ts'
 
 import { fixture } from './fixture.ts'
@@ -98,6 +98,25 @@ test('queued prompts are visible/removable, are consumed once, and cancel aborts
   while (f.requests.length < 3) await new Promise(r => setTimeout(r, 5))
   f.agents().stop(sessionId)
   assert.equal((await f.agents().wait(sessionId)).status, 'cancelled')
+})
+test('legacy progress refuses a newer v3 queue snapshot instead of returning older pending work', { timeout: 30000 }, async t => {
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input)
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+  const handle = f.log.open(sessionId, { kind: 'agent' })
+  t.after(() => { if (!handle.closed) handle.close() })
+  handle.append({ type: 'agent.queue', data: { items: [{ id: 'old-a', text: 'old A' }, { id: 'keep-b', text: 'keep B' }] } })
+  assert.deepEqual(f.agents().progress(sessionId).queue.map(item => item.id), ['old-a', 'keep-b'])
+  handle.append({
+    type: 'agent.queue',
+    data: { items: [{ id: 'keep-b', kind: 'inline', text: 'keep B' }] },
+  }, { eventVersion: SESSION_EVENT_VERSION_3 })
+  assert.throws(
+    () => f.agents().progress(sessionId),
+    error => error instanceof NativeAgentError && error.code === 'agent_unavailable',
+    'a newer valid snapshot must be refused, never replaced by the preceding v1 queue',
+  )
+  handle.close()
 })
 test('native local-runtime dispatch uses K3, explicit context and the same pi tool loop', { timeout: 30000 }, async t => {
   const requests: Record<string, unknown>[] = []

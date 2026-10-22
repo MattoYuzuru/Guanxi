@@ -12,9 +12,7 @@
 import { Hono, type Context } from 'hono'
 import { getConnInfo } from '@hono/node-server/conninfo'
 import {
-  SESSION_EVENT_VERSION_2,
   SESSION_EXPORT_VERSION,
-  SESSION_EXPORT_VERSION_2,
   SSE_ERROR_EVENT_NAME,
   SSE_EVENT_NAME,
   SSE_LAST_EVENT_ID_HEADER,
@@ -226,7 +224,11 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
         maxVersion: parsed.data.eventVersion,
       })
       if (page.unsupportedSeq !== null) {
-        throw new SessionEventVersionError(page.unsupportedSeq, parsed.data.eventVersion, SESSION_EVENT_VERSION_2)
+        throw new SessionEventVersionError(
+          page.unsupportedSeq,
+          parsed.data.eventVersion,
+          page.requiredVersion ?? parsed.data.eventVersion,
+        )
       }
       return context.json(
         sessionEventsResponse.parse({
@@ -264,12 +266,22 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
       const current = log()
       const all = current.readAll(sessionId, 'person')
       const events = all.filter((event) => event.class !== 'reasoning')
-      const v2 = all.find((event) => event.version === SESSION_EVENT_VERSION_2)
-      if (v2 !== undefined && parsed.data.exportVersion === SESSION_EXPORT_VERSION) {
-        throw new SessionEventVersionError(v2.seq, parsed.data.exportVersion, SESSION_EVENT_VERSION_2)
+      // The minimum body version is the highest envelope actually exported.
+      // Refuse a smaller requested maximum before serialising any partial body.
+      const requiredVersion = events.reduce(
+        (maximum, event) => Math.max(maximum, event.version),
+        SESSION_EXPORT_VERSION,
+      )
+      const incompatible = events.find((event) => event.version > parsed.data.exportVersion)
+      if (incompatible !== undefined) {
+        throw new SessionEventVersionError(
+          incompatible.seq,
+          parsed.data.exportVersion,
+          incompatible.version,
+        )
       }
       const body = sessionExportSchema.parse({
-        exportVersion: v2 === undefined ? SESSION_EXPORT_VERSION : SESSION_EXPORT_VERSION_2,
+        exportVersion: requiredVersion,
         sessionId,
         exportedAt: new Date().toISOString(),
         lastSeq: all.at(-1)?.seq ?? 0,
@@ -312,7 +324,11 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
         maxVersion: parsed.data.eventVersion,
       })
       if (first.unsupportedSeq !== null) {
-        throw new SessionEventVersionError(first.unsupportedSeq, parsed.data.eventVersion, SESSION_EVENT_VERSION_2)
+        throw new SessionEventVersionError(
+          first.unsupportedSeq,
+          parsed.data.eventVersion,
+          first.requiredVersion ?? parsed.data.eventVersion,
+        )
       }
     } catch (error) {
       return fail(context, error)

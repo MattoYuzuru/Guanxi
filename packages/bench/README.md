@@ -18,6 +18,24 @@ assertions and author-focused checks; independent review is pending for this sli
 not supply a real provider meter/price adapter, task image, public corpus, container boundary
 or measured five-seed experiment. Stock real/paid execution still refuses.
 
+## B3-a offline relay evidence validator
+
+**Status:** implemented as a pure parser and reducer; locally validated by fixtures only. It is
+not the B3 benchmark and evaluates no B3 exit criterion. Plan:
+[B3-a plan](../../docs/plans/lanes/B3-a.plan.md).
+
+`checkRelayMeasurement` / `validateRelayMeasurement` parse a recorded `guanxi.b3.measurement/v1`
+envelope strictly (unknown keys, versions and free text are refused; omitted trial, cycle or
+row slots are refused; explicit `missing` / `unknown` slots are kept). Failures use six fixed
+codes and never echo input. `reduceRelayMeasurement` returns descriptive counts per arm and
+cycle, `null` for any fraction with an unknown denominator, and marks the seven B3 criteria
+(slope CI, naive non-inferiority, critical probes, guarded repeats, truncation, ledger/handoff
+consistency, ETA P80) as `unevaluated`. The report always carries `gate: measurement_only`,
+`authenticity: not_verified_offline` and `realEvidenceCredit: 0`: a pure function cannot prove
+that a referenced seal or run exists, and a caller's `recorded_observation` label is not proof.
+There is no CLI, no IO and no clock. Real cohort, effective-length calibration, measurement on
+the D-194 node and gate evaluation remain unimplemented.
+
 ## Commands
 
 Run from the repository root, with the lane's web/API ports and private data directory:
