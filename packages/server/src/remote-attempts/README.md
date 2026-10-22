@@ -97,7 +97,8 @@ Target events form a durable outbox. The host retries `attemptDispatch.flush(id)
 failure/reconnection. Home receipts enforce sequence/hash/signature and exact duplicate replay;
 a terminal receipt and R1 completion commit atomically. Stale results cannot resolve a promise
 or wake its parent. Result receipts preserve usage provenance, but aggregation into R1's cost
-ledger remains a follow-up; no monetary price is invented for local inference.
+ledger remains a follow-up; no monetary price is invented for local inference. See
+[Costs](#costs).
 
 `/attempts/state` reports target state, not proof that the home accepted a terminal result.
 The home run and its durable receipts are authoritative for completion. A restarted target marks
@@ -117,3 +118,13 @@ The fixture path runs the production K3/Ollama adapter against injected fake tra
 in-memory node channels. It proves bounded local protocol behavior only. Toolful R2 remote
 sealing, detached execution, OS power assertions, restored-home epochs, fenced handover and real
 multi-host/six-hour MS1 evidence remain unfinished. Current owner scope is local Mac/Colima only.
+
+## Costs
+
+Terminal usage is not yet aggregated into R1's cost ledger. The receipt callback of
+`runs.complete()` runs before the fence ends, but `recordCost()` opens its own
+`BEGIN IMMEDIATE`; calling it there raises `cannot start a transaction within a transaction`,
+while calling it before or after completion is not atomic or fails the fence. F2-c is blocked
+on an R1 transaction-aware cost seam; see
+[F2-c.handoff.md](../../../../docs/plans/lanes/F2-c.handoff.md). Local inference keeps an
+unknown monetary cost; no price is invented.
