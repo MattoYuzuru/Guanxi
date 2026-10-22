@@ -678,3 +678,78 @@ test('bootSet skips and reports missing directories and changed integrity', asyn
     { id: DEFAULT_ID, reason: 'integrity_mismatch' },
   ])
 })
+
+test('rolls back a fresh install into a missing plugins directory at every fault point', async t => {
+  const base = await tempBase(t)
+  const source = await writePlugin(join(base, 'source'))
+  const missing: StateBytes = { plugins: null, lock: null }
+
+  for (const [index, point] of INSTALL_FAULT_POINTS.entries()) {
+    const pluginsDir = join(base, `fresh-${index}`)
+    const hooks: PluginManagerHooks = {
+      point: name => {
+        if (name === point) throw new Error(`fault:${point}`)
+      },
+    }
+    await assert.rejects(manager(pluginsDir, { hooks }).install(source), new RegExp(`fault:${point}`))
+    assert.deepEqual(await stateBytes(pluginsDir), missing, `state bytes after ${point}`)
+    assert.deepEqual(await topLevel(pluginsDir), [], `directory listing after ${point}`)
+    assert.equal(await exists(pluginsDir), false, `plugins directory after ${point}`)
+  }
+
+  const pluginsDir = join(base, 'happy')
+  const fired: string[] = []
+  const installed = await manager(pluginsDir, {
+    hooks: { point: name => { fired.push(name) } },
+  }).install(source)
+  assert.deepEqual(fired, INSTALL_FAULT_POINTS, 'a happy install fires every declared point once, in order')
+  assert.equal(await exists(installed.path), true)
+})
+
+test('same-version installs leave state untouched at every fault point', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const source = await writePlugin(join(base, 'source'))
+  const changed = await writePlugin(join(base, 'changed'), {
+    files: { 'index.js': 'export const version = "changed"\n' },
+  })
+  await manager(pluginsDir).install(source)
+  const before = await stateBytes(pluginsDir)
+  const beforeListing = await topLevel(pluginsDir)
+  const lastDecision = INSTALL_FAULT_POINTS.indexOf('install:expected-integrity')
+  assert.ok(lastDecision > 0)
+
+  for (const [index, point] of INSTALL_FAULT_POINTS.entries()) {
+    const hooks: PluginManagerHooks = {
+      point: name => {
+        if (name === point) throw new Error(`fault:${point}`)
+      },
+    }
+    if (index <= lastDecision) {
+      await assert.rejects(
+        manager(pluginsDir, { hooks }).install(source),
+        new RegExp(`fault:${point}`),
+        `identical reinstall at ${point}`,
+      )
+    } else {
+      const record = await manager(pluginsDir, { hooks }).install(source)
+      assert.equal(record.version, '1.0.0')
+    }
+    assert.deepEqual(await stateBytes(pluginsDir), before, `identical reinstall state after ${point}`)
+    assert.deepEqual(await topLevel(pluginsDir), beforeListing, `identical reinstall listing after ${point}`)
+
+    if (index <= lastDecision) {
+      await assert.rejects(
+        manager(pluginsDir, { hooks }).install(changed),
+        new RegExp(`fault:${point}`),
+        `changed reinstall at ${point}`,
+      )
+    } else {
+      await rejectsWithCode(manager(pluginsDir, { hooks }).install(changed), 'version_exists')
+    }
+    assert.deepEqual(await stateBytes(pluginsDir), before, `changed reinstall state after ${point}`)
+    assert.deepEqual(await topLevel(pluginsDir), beforeListing, `changed reinstall listing after ${point}`)
+  }
+
+  assert.deepEqual(manager(pluginsDir).bootSet(), [join(pluginsDir, 'guanxi.test-plugin@1.0.0')])
+})
