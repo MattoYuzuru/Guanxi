@@ -31,7 +31,7 @@ const contextAcc = () => ({ groupsObserved: 0, groupsUnknown: 0, expected: 0, ob
 const guardAcc = () => ({ groupsObserved: 0, groupsUnknown: 0, expected: 0, observed: 0, unknown: 0, guardedRepeats: 0, unguardedRepeats: 0, guardInactive: 0 })
 const integrityAcc = () => ({ observed: 0, unknown: 0, reportedMatch: 0, reportedMismatch: 0, reportedValidationPassed: 0, reportedValidationFailed: 0 })
 const cycleAcc = () => ({
-  trialsMissing: 0, observed: 0, unknown: 0, notReached: 0,
+  trialCyclesMissing: 0, observed: 0, unknown: 0, notReached: 0,
   items: itemAcc(), probes: probeAcc(), context: contextAcc(), guards: guardAcc(), integrity: integrityAcc(),
 })
 type CycleAcc = ReturnType<typeof cycleAcc>
@@ -117,7 +117,7 @@ function cycleOut(c: CycleAcc) {
   const itemsKnown = i.groupsUnknown === 0 && i.groupsObserved > 0; const probesKnown = p.groupsUnknown === 0 && p.groupsObserved > 0
   const contextKnown = x.groupsUnknown === 0 && x.groupsObserved > 0; const guardsKnown = g.groupsUnknown === 0 && g.groupsObserved > 0
   return {
-    cycles: { observed: c.observed, unknown: c.unknown, notReached: c.notReached, trialsMissing: c.trialsMissing },
+    cycles: { observed: c.observed, unknown: c.unknown, notReached: c.notReached, trialCyclesMissing: c.trialCyclesMissing },
     items: { ...i, denominatorKnown: itemsKnown, complete: itemsKnown && i.unknown === 0,
       passedOverExpected: itemsKnown ? frac(i.passed, i.expected) : null, knownOnlyPassed: itemsKnown ? frac(i.passed, i.passed + i.failed) : null },
     probes: {
@@ -159,7 +159,7 @@ export interface RelayMeasurementReport {
   coverage: { trials: { expected: number; observed: number; missing: number }; cycles: { expected: number; observed: number; unknown: number; notReached: number; missing: number }; evidence: { total: number; unreferenced: number } }
   arms: Array<{
     id: string; kind: RelayArmKind; availability: 'planned' | 'unsupported'
-    trials: { expected: number; observed: number; missing: number; tainted: number; outcomes: Record<Outcome, number> }
+    trials: { expected: number; observed: number; missing: number; tainted: number; attempts: number; multipleAttempts: number; outcomes: Record<Outcome, number> }
     cycles: RelayCycleReport[]
     totals: ReturnType<typeof cycleOut>
     eta: ReturnType<typeof etaAcc> & { coverageOverEligible: number | null; calibrated: false }
@@ -198,20 +198,21 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
     const acc = Array.from({ length: plan.horizon }, cycleAcc)
     const outcomes = zeroCounts(RELAY_OUTCOMES)
     const eta = etaAcc()
-    let observed = 0; let missing = 0; let expected = 0; let tainted = 0
+    let observed = 0; let missing = 0; let expected = 0; let tainted = 0; let attempts = 0; let multipleAttempts = 0
     if (arm.availability.state === 'planned') {
       for (const task of taskIds) for (const seed of seeds) {
         expected++
         const slot = slots.get(JSON.stringify([task, arm.id, seed]))!
         if (slot.state === 'missing') {
           missing++; outcomeOf.set(JSON.stringify([task, arm.id, seed]), 'missing')
-          acc.forEach(c => { c.trialsMissing++; unknownGroups(c) })
+          acc.forEach(c => { c.trialCyclesMissing++; unknownGroups(c) })
           cyc.expected += plan.horizon; cyc.missing += plan.horizon
           continue
         }
         const taint = trialTainted(slot)
         if (taint) tainted++
-        observed++; outcomes[slot.outcome]++; outcomeOf.set(JSON.stringify([task, arm.id, seed]), taint ? 'infra_tainted' : slot.outcome)
+        observed++; attempts += slot.attempts.length; if (slot.attempts.length > 1) multipleAttempts++
+        outcomes[slot.outcome]++; outcomeOf.set(JSON.stringify([task, arm.id, seed]), taint ? 'infra_tainted' : slot.outcome)
         slot.cycles.forEach((c, i) => {
           cyc.expected++
           const a = acc[i]!
@@ -227,7 +228,7 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
     acc.forEach(c => add(totals, c))
     armReports.push({
       id: arm.id, kind: arm.kind, availability: arm.availability.state,
-      trials: { expected, observed, missing, tainted, outcomes },
+      trials: { expected, observed, missing, tainted, attempts, multipleAttempts, outcomes },
       cycles: acc.map((c, i) => ({ ordinal: i + 1, ...cycleOut(c) })), totals: cycleOut(totals),
       eta: { ...eta, coverageOverEligible: frac(eta.covered, eta.eligible), calibrated: false },
     })

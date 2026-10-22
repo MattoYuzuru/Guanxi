@@ -331,8 +331,8 @@ test('hostile input yields a fixed schema_invalid and is bounded before parsing'
   const result = checkRelayMeasurement(getter)
   assert.deepEqual(result, { ok: false, issues: [{ code: 'schema_invalid', rule: 'unreadable', location: 'input' }] })
   assert.throws(() => validateRelayMeasurement(new Proxy({}, { get() { throw new Error('SECRET-PROXY-TEXT') } })), (e: unknown) => e instanceof RelayMeasurementError && !e.message.includes('SECRET'))
-  const huge = { ...build(), evidence: new Array(50_001).fill(null) }
-  const started = process.hrtime.bigint()
-  expectIssue(huge, 'schema_invalid', 'bounds')
-  assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 250, 'bounds are checked before every element is parsed')
+  // Deterministic bound: a poison element would throw if Zod walked the array. Only length is read.
+  const poison = new Proxy({}, { get() { throw new Error('SECRET-HUGE-TEXT') } })
+  const huge = { ...build(), evidence: new Array(50_001).fill(poison) }
+  assert.deepEqual(checkRelayMeasurement(huge), { ok: false, issues: [{ code: 'schema_invalid', rule: 'bounds', location: 'input' }] })
 })

@@ -39,6 +39,16 @@ test('valid fixture: exact hand counts, constants fixed, every criterion unevalu
   finiteNumbers(r)
 })
 
+test('attempt totals count attempts separately from trial items', () => {
+  const base = reduce(build())
+  assert.deepEqual([arm(base, 'arm-relay').trials.attempts, arm(base, 'arm-relay').trials.multipleAttempts], [4, 0])
+  const raw = build()
+  const t = trialOf(raw, 'task-a', 'arm-relay', 1)
+  t.attempts.push({ id: 'att-2', epoch: 2, receiptRef: addEvidence(raw, 'attempt_receipt', 'task-a', 'arm-relay', 1, 'att-2', null) })
+  const r = reduce(resign(raw))
+  assert.deepEqual([arm(r, 'arm-relay').trials.observed, arm(r, 'arm-relay').trials.attempts, arm(r, 'arm-relay').trials.multipleAttempts], [4, 5, 1])
+})
+
 test('a perfect-looking fixture and a recorded label never earn a verdict or credit', () => {
   const fixture = reduce(build()); const recorded = reduce(build({ origin: 'recorded_observation' }))
   assert.equal(recorded.declaredOrigin, 'recorded_observation')
@@ -212,7 +222,7 @@ test('paired comparison: any infra, missing, cancelled or unknown seed removes t
   const t = trialOf(missing, 'task-a', 'arm-relay', 1); for (const k of ['runId', 'outcome', 'attempts', 'startedAtMs', 'finishedAtMs', 'cycles', 'forecasts']) delete t[k]
   const m = reduce(resign(missing))
   assert.ok(m.pairedRelayVsNaive.state === 'descriptive' && m.pairedRelayVsNaive.excluded[0]!.reason === 'missing_slot' && m.pairedRelayVsNaive.includedTasks === 1)
-  assert.deepEqual([m.coverage.trials.missing, arm(m, 'arm-relay').trials.missing, arm(m, 'arm-relay').cycles[0]!.cycles.trialsMissing, arm(m, 'arm-relay').totals.items.denominatorKnown], [1, 1, 1, false])
+  assert.deepEqual([m.coverage.trials.missing, arm(m, 'arm-relay').trials.missing, arm(m, 'arm-relay').cycles[0]!.cycles.trialCyclesMissing, arm(m, 'arm-relay').totals.cycles.trialCyclesMissing, arm(m, 'arm-relay').totals.items.denominatorKnown], [1, 1, 1, 3, false])
   assert.ok(m.unresolved.includes('trials_missing'))
 
   const noNaive = build(); noNaive.plan.arms = noNaive.plan.arms.filter((a: Raw) => a.id !== 'arm-naive'); noNaive.trials = noNaive.trials.filter((t: Raw) => t.arm !== 'arm-naive'); noNaive.evidence = noNaive.evidence.filter((e: Raw) => e.arm !== 'arm-naive')
