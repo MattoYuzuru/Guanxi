@@ -120,7 +120,6 @@ delivered tree.
 Independent GPT recheck and root merge remain pending. The existing browser/workspace scope
 cases and all integrated gates remain root-owned.
 
-
 ### Coordinator delivery and independent closure
 
 The external-gitdir restriction above was a delivery limitation, not an unresolved code issue.

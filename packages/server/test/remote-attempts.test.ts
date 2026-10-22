@@ -187,7 +187,7 @@ test('restart preserves intent and invalidates a persisted accepted receipt with
     local = new SimNode(targetKeys, path, { attempts: { governor: g, maxReservationMs: 5000 } })
     assert.equal(local.federation.attemptOffers!.read('home', 'offer').status, 'restart_lost')
     assert.equal(local.runs.attempts('run').length, 0)
-    assert.equal(local.db.prepare('PRAGMA user_version').get()!.user_version, 32)
+    assert.equal(local.db.prepare('PRAGMA user_version').get()!.user_version, 33)
     assert.equal(local.db.prepare('SELECT version FROM federation_migrations').get()!.version, 34)
   } finally { local?.close(); void g.close(); f.close(); rmSync(directory, { recursive: true, force: true }) }
 })

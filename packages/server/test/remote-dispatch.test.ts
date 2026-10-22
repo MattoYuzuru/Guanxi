@@ -230,7 +230,7 @@ test('target process restart invalidates a persisted running holder and signed r
   assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'lost')
   assert.equal((await f.outgoing.dispatch(p.grant)).status, 'lost')
   assert.equal(f.posts, 1); assert.equal(f.tg.snapshot().activeLease, null)
-  assert.equal(f.target.db.prepare('PRAGMA user_version').get()!.user_version, 32)
+  assert.equal(f.target.db.prepare('PRAGMA user_version').get()!.user_version, 33)
   assert.equal(f.target.db.prepare('SELECT version FROM remote_attempt_migrations').get()!.version, 36)
 })
 
@@ -367,7 +367,7 @@ test('failed additive dispatch DDL rolls back ledger37 and new tables while leav
   assert.equal(f.home.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='remote_dispatch_migrations'").get()!.n, 0)
   assert.equal(f.home.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='remote_dispatch_holders'").get()!.n, 0)
   assert.equal(f.home.db.prepare('SELECT version FROM remote_attempt_migrations').get()!.version, 36)
-  assert.equal(f.home.db.prepare('PRAGMA user_version').get()!.user_version, 32)
+  assert.equal(f.home.db.prepare('PRAGMA user_version').get()!.user_version, 33)
   f.home.db.exec('DROP TABLE run_remote_bindings')
   assert.throws(() => f.home.federation.attemptDispatch!.state('missing'), /dispatch_not_found/)
   assert.equal(f.home.db.prepare('SELECT version FROM remote_dispatch_migrations').get()!.version, 37)
@@ -531,4 +531,39 @@ test('a delayed owner cancel for an expired grant cannot stop a newer attempt of
   await channel.cancelDispatch({ ...next.ref, expiresAt: controller.time + 1000 })
   await f.target.federation.attemptDispatch!.settled(next.offer.id)
   assert.equal(f.tg.snapshot().activeLease, null)
+})
+
+test('composed F2 cancellation retains K3 ownership until actual response-body cleanup acknowledges', async t => {
+  const cleanup = deferred(), entered = deferred()
+  let cancels = 0, dispatchedSignal: AbortSignal | undefined
+  const f = await fixture(t, { modelPost: async signal => {
+    dispatchedSignal = signal; entered.resolve()
+    return new Response(new ReadableStream<Uint8Array>({
+      pull() { return new Promise<void>(() => undefined) },
+      cancel() { cancels++; return cleanup.promise },
+    }))
+  } })
+  const p = await f.prepare()
+  let settled = false, lifetime: Promise<void> | undefined
+  try {
+    await f.outgoing.dispatch(p.grant)
+    await entered.promise
+    lifetime = f.target.federation.attemptDispatch!.settled(p.offer.id).then(() => { settled = true })
+    assert.ok(f.tg.snapshot().activeLease)
+    assert.equal(f.posts, 1); assert.equal(f.versions, 1)
+    const canceled = await f.outgoing.cancelDispatch({ ...p.ref, expiresAt: f.home.time + 1000 })
+    assert.equal(canceled.status, 'canceled')
+    await waitFor(() => cancels === 1)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(dispatchedSignal!.aborted, true)
+    assert.equal(settled, false, 'a cancel receipt does not acknowledge transport cleanup')
+    assert.ok(f.tg.snapshot().activeLease, 'the actual K3 permit stays held until body cleanup ACK')
+    assert.equal(f.posts, 1, 'cancel never retries inference')
+    cleanup.resolve()
+    await lifetime
+    assert.equal(settled, true)
+    assert.equal(f.tg.snapshot().activeLease, null)
+    assert.equal(cancels, 1)
+    assert.equal(f.target.federation.attemptDispatch!.state(p.offer.id).status, 'canceled')
+  } finally { cleanup.resolve(); await lifetime }
 })
