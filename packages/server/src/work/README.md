@@ -48,14 +48,17 @@ order. `orders` is the stable creation order parallel to `items`; rejected propo
 
 Rules, in precedence order:
 
-1. `done` only when (a) the latest `acceptance_result` passed in a clean checkout, its commit
-   also has a `commit_accepted` event (either order), and no later failing acceptance or
-   `reopen` exists; or (b) the latest human decision is `done`. An item with
+1. `done` only when (a) the latest `acceptance_result` is for the item's current
+   `acceptance` command (exact string), passed in a clean checkout, its commit also has a
+   `commit_accepted` event (either order), and no later failing acceptance or `reopen`
+   exists; or (b) the latest human decision is `done`. A result for another command is not
+   evidence for this revision: changing or removing `acceptance` in a later revision reopens
+   automatic proof, so old acceptance evidence no longer closes the item. An item with
    `acceptance === null` can only be completed by (b). A bare `verification_requested` stays
    `verification_requested`.
-2. `failed` when the latest acceptance failed after a claim, or the judge reported `fail`, and
-   no later passing evidence exists. A later passing acceptance or a judge `pass` clears the
-   failure; another claim does not.
+2. `failed` when the latest matching acceptance failed after a claim, or the judge reported
+   `fail`, and no later passing evidence exists. A later passing acceptance or a judge `pass`
+   clears the failure; another claim does not.
 3. `canceled` when the latest human decision is `cancel`. `reopen` is a barrier: it clears
    terminal status, the claim and prior acceptance, commit-acceptance and judge evidence,
    returning the item to the dependency-based state. After `cancel`, only `reopen` is accepted

@@ -36,10 +36,11 @@ function acceptance(
   passed: boolean,
   cleanCheckout = true,
   commit = 'commit-1',
+  command = 'node --test',
 ): EvidenceEvent {
   return {
     type: 'acceptance_result', itemId, at: AT, source: 'harness',
-    passed, cleanCheckout, commit, command: 'node --test',
+    passed, cleanCheckout, commit, command,
   }
 }
 function commitAccepted(itemId: string, commit = 'commit-1'): EvidenceEvent {
@@ -140,6 +141,33 @@ test('null acceptance can only be completed by a human decision', () => {
   const statuses = deriveStatuses(p, events)
   assert.equal(statuses.get('a')!.status, 'verification_requested')
   assert.notEqual(statuses.get('a')!.status, 'done')
+  assert.equal(deriveStatuses(p, [...events, human('a', 'done')]).get('a')!.status, 'done')
+})
+
+test('acceptance evidence only counts for the exact current acceptance command', () => {
+  const wrongPass = [claimed('a'), acceptance('a', true, true, 'commit-1', 'true'), commitAccepted('a', 'commit-1')]
+  let statuses = deriveStatuses(plan([item('a')]), wrongPass)
+  assert.notEqual(statuses.get('a')!.status, 'done')
+  assert.equal(statuses.get('a')!.status, 'in_progress')
+
+  const wrongFailure = [claimed('a'), acceptance('a', false, true, 'commit-1', 'true')]
+  statuses = deriveStatuses(plan([item('a')]), wrongFailure)
+  assert.notEqual(statuses.get('a')!.status, 'failed')
+  assert.equal(statuses.get('a')!.status, 'in_progress')
+
+  const matching = [claimed('a'), acceptance('a', true), commitAccepted('a')]
+  assert.equal(deriveStatuses(plan([item('a')], 1), matching).get('a')!.status, 'done')
+  const revised = deriveStatuses(plan([item('a', { acceptance: 'npm run strict-gate' })], 2), matching)
+  assert.notEqual(revised.get('a')!.status, 'done')
+  assert.equal(revised.get('a')!.status, 'in_progress')
+})
+
+test('removing the acceptance command in a later revision reopens automatic proof', () => {
+  const events = [claimed('a'), acceptance('a', true), commitAccepted('a')]
+  const p = plan([item('a', { acceptance: null })], 2)
+  const statuses = deriveStatuses(p, events)
+  assert.notEqual(statuses.get('a')!.status, 'done')
+  assert.equal(statuses.get('a')!.status, 'in_progress')
   assert.equal(deriveStatuses(p, [...events, human('a', 'done')]).get('a')!.status, 'done')
 })
 

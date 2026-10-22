@@ -49,7 +49,12 @@ function reset(state: Runtime): void {
   state.human = 'reopen'
 }
 
-function apply(state: Runtime, event: EvidenceEvent, index: number): void {
+function apply(
+  state: Runtime,
+  event: EvidenceEvent,
+  index: number,
+  acceptanceCommand: string | null,
+): void {
   // Cancel is terminal until a reopen; the append path enforces the same rule.
   if (state.human === 'cancel' && !(event.type === 'human_decision' && event.decision === 'reopen')) return
   switch (event.type) {
@@ -64,6 +69,9 @@ function apply(state: Runtime, event: EvidenceEvent, index: number): void {
       state.verification = true
       return
     case 'acceptance_result': {
+      // Evidence belongs to the current revision's acceptance command only. Changing or
+      // removing the command in a later revision therefore reopens automatic proof.
+      if (acceptanceCommand === null || event.command !== acceptanceCommand) return
       state.acceptance = { event, index }
       if (event.passed) {
         state.lastPassIndex = index
@@ -113,6 +121,7 @@ function baseStatus(state: Runtime, item: ItemSpec): { status: DerivedStatus; re
   }
   const acceptance = state.acceptance
   if (acceptance !== null && item.acceptance !== null
+    && acceptance.event.command === item.acceptance
     && acceptance.event.passed && acceptance.event.cleanCheckout
     && state.commits.has(acceptance.event.commit)) {
     return { status: 'done', reason: 'acceptance_passed_clean_commit' }
@@ -184,7 +193,7 @@ export function deriveStatuses(plan: PlanRevision, events: EvidenceEvent[]): Der
     for (let index = start; index < events.length; index++) {
       const event = events[index]!
       if (event.itemId !== entry.spec.id) continue
-      apply(state, event, index)
+      apply(state, event, index, entry.spec.acceptance)
     }
     states.set(entry.spec.id, state)
     base.set(entry.spec.id, baseStatus(state, entry.spec))
