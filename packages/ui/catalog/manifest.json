@@ -3,6 +3,148 @@
   "version": 1,
   "components": [
     {
+      "id": "app-shell-chrome",
+      "title": "AppShellChrome",
+      "level": "pattern",
+      "folder": "src/components/app-shell-chrome",
+      "exports": [
+        "AppShellChrome",
+        "AppShellChromeProps",
+        "AppShellLabels",
+        "AppShellSide",
+        "AppShellVisibility"
+      ],
+      "componentExports": [
+        "AppShellChrome"
+      ],
+      "states": [
+        "default",
+        "rail",
+        "hidden",
+        "right",
+        "phone",
+        "loading",
+        "error",
+        "offline",
+        "unknown"
+      ],
+      "stories": [
+        "default",
+        "rail",
+        "hidden",
+        "right",
+        "phone",
+        "loading",
+        "error",
+        "offline",
+        "unknown"
+      ],
+      "props": {
+        "AppShellChrome": [
+          {
+            "name": "children",
+            "type": "ReactNode",
+            "required": true,
+            "description": "Main, opaque reading surface. It stays mounted while the sidebar changes."
+          },
+          {
+            "name": "labels",
+            "type": "AppShellLabels",
+            "required": true,
+            "description": "Translated product strings supplied by the localized host."
+          },
+          {
+            "name": "onOpenPalette",
+            "type": "() => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "onSide",
+            "type": "(side: AppShellSide) => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "onVisibility",
+            "type": "(visibility: AppShellVisibility) => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "side",
+            "type": "AppShellSide",
+            "required": true,
+            "description": "Controlled side. It changes both the visual column order and the DOM/focus order."
+          },
+          {
+            "name": "sidebar",
+            "type": "ReactNode",
+            "required": true,
+            "description": "Host navigation. It should adapt itself to `visibility === 'rail'`; the chrome does not invent rail content."
+          },
+          {
+            "name": "sidebarLabel",
+            "type": "string",
+            "required": true,
+            "description": "Accessible name for the navigation region and its menu trigger."
+          },
+          {
+            "name": "status",
+            "type": "ReactNode",
+            "required": true,
+            "description": "Persistent status items. The chrome adds Show (while hidden) and Palette actions."
+          },
+          {
+            "name": "visibility",
+            "type": "AppShellVisibility",
+            "required": true,
+            "description": "Controlled visibility. The sidebar stays mounted when it is hidden."
+          }
+        ]
+      },
+      "cssVariables": [
+        "--color-background-primary",
+        "--color-text-primary",
+        "--font-family-sans",
+        "--font-line-height-ui",
+        "--font-text-size",
+        "--layout-container-2xs",
+        "--spacing-4",
+        "--spacing-48",
+        "--spacing-8"
+      ],
+      "sourceHash": "sha256:9386df7aa5402b89091016f3135ba3a41de4a30548d5509d09d15490d2a002d8",
+      "snapshotHashes": {
+        "default-dark": "sha256:ec62c0cf85a5ec5f0cba22074b014ca9318dc6c8e1fa60b3c18e818ea98a9303",
+        "default-light": "sha256:7f09f180a4b7b5159b9db12b97a1b570834699c96128cd2fd354184154197515",
+        "error-dark": "sha256:53689df636a405cc7f6cf519fd6749d7abfbac95e26d1558c4291ec44cda3b55",
+        "error-light": "sha256:913f5ddc4f4b3c834b43905e1410efed51a524b1eef1e1dee982d56a50a6b4a3",
+        "hidden-dark": "sha256:0bd75f1a62d6069a9cb8535f65ec3b2760a173627745097caf3586b4ef888b55",
+        "hidden-light": "sha256:f35708e09fd8bbd5cad7d26f8cf1799ba1d001d18234f1f610f69ed6a7d28aa5",
+        "loading-dark": "sha256:116434ce871bfde18d5ecd3b693ffe4ac4c3b30ca17d0a6703b942af2dfca2a9",
+        "loading-light": "sha256:b71d83f4b1bf334dd3ed9587504e327f58dfa2c7d258909c550dd8c01b981f0d",
+        "offline-dark": "sha256:84de1190141a468a1f7bdc1aae7b916ffaeb694389b09c338f08f9e8d6a3fd08",
+        "offline-light": "sha256:2a374d0426e2855fa41a26d45e927fef4c75634b81be892e5fd82f178cc543ce",
+        "phone-dark": "sha256:da6f93790f9738a168ce74bb05d98682a380512a23f680179cc72fbfd0598291",
+        "phone-light": "sha256:4db160486a7f301eea8fc55ca9bdfb22bf8f6c55f61782367605225f95e50963",
+        "rail-dark": "sha256:749242e935036c390d68382949580a4d959bd7780054757e2c22526ef4f98560",
+        "rail-light": "sha256:439eb25e778369651f7feec76de688a64a8aeb42a364baa0561137d44c496112",
+        "right-dark": "sha256:20e2a6a6744f55b5e33f0c0e11582601125b7325e885f4e61e1f5b7e66b21d8c",
+        "right-light": "sha256:16a36ab17a4aab81d6b4cdbe608ca08616e3f0581ee1c83bd80febc55eb0984e",
+        "unknown-dark": "sha256:196fcf40ff451751f39f197cd4e354ff9be1edfa823343f65cb51f2cdf1df002",
+        "unknown-light": "sha256:59b3970308b5536456ea7cec481878252d17e1d11ab7f9b735ab0cee7053394f"
+      },
+      "storedStatus": "review",
+      "signature": "absent",
+      "status": "review",
+      "usage": {
+        "count": 0,
+        "files": []
+      },
+      "since": "0.1.0"
+    },
+    {
       "id": "badge",
       "title": "Badge",
       "level": "primitive",
@@ -260,9 +402,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 1,
+        "count": 4,
         "files": [
-          "packages/web/src/features/native-agent/NativeAgentPage.tsx"
+          "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/shell/ShellPalette.tsx",
+          "packages/web/src/features/shell/ShellSidebar.tsx",
+          "packages/web/src/features/shell/ShellStatus.tsx"
         ]
       },
       "since": "0.1.0"
@@ -520,12 +665,14 @@
         "open-light-hc": "sha256:9f2907a0847bdc58cc1e128be5c21af141298c285590baeedbd5d60ad08cb8c1",
         "open-light": "sha256:655b24c2a60936a357c53c37ba96c27aac549e1d4135f52a08acbba091e9341e"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/shell/ShellPalette.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -778,7 +925,7 @@
           },
           {
             "name": "tooltipSide",
-            "type": "\"top\" | \"bottom\" | \"left\" | \"right\" | undefined",
+            "type": "\"left\" | \"right\" | \"top\" | \"bottom\" | undefined",
             "required": false,
             "description": ""
           },
@@ -932,7 +1079,7 @@
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:c8748066e2049497ce37168058cc98bfbd092113b6016dc96de4ebfba895a415",
+      "sourceHash": "sha256:fb863cd4fe253c1af13609450657d2e4897536978b4f191b25a6a74a8b2e207d",
       "snapshotHashes": {
         "default-dark-hc": "sha256:d85651eb977b02a457f0afe5bdf720e699faa4ee473cf815347530e4a15dce23",
         "default-dark": "sha256:11cdfc7a3f4022e3ccccf15001dcda9ad419a4d5b7270e34f2ac7b426a2eb49a",
@@ -954,21 +1101,23 @@
         "hover-dark": "sha256:fe4c70e007bfe303fe4e8de185745dd1e7c9c13e451ff165c4c3e92d33e16b11",
         "hover-light-hc": "sha256:0ab80ca0db2455ab70b723f93a5082f1111bac5ce7e119838ab49c16723ccbb5",
         "hover-light": "sha256:04c3d9619c3c5872df499906ebd9596a800d3b76a74d2d14b58708c048648503",
-        "invalid-dark-hc": "sha256:adb1bd7113f21eec6050e3014630703120deb5a43fd9b3de44ec363096be615a",
-        "invalid-dark": "sha256:ef9d5c54d4491ff537503c73c3511f85b69e7760457d1ee3f82d7067f2b6f56a",
-        "invalid-light-hc": "sha256:4937d3bed35e30bf3fa7b3d515901ea5167d606624d837cc7c566b4243ac335e",
-        "invalid-light": "sha256:90227a26e0b114f982e0f2dff9429ba49985e84b5b6d0aaeac185c6367ba1d38",
+        "invalid-dark-hc": "sha256:5c328f4ec50b754f6aac8b2883df23c5ab5e5357ba8d324ff4b070b12e1c4e7c",
+        "invalid-dark": "sha256:c1aa6545812e42c5328504ac61c5cdc60003a6441d5ead836725d95fe5f16a4f",
+        "invalid-light-hc": "sha256:e76d06ec865281dc7690385d918f02c2dfabdd14aab77a5ffc8cb1126643e1e5",
+        "invalid-light": "sha256:bc5bbee118084f155ee1a4ae5d6373df1e8094aa08072305d8bcfc80944dce58",
         "read-only-dark-hc": "sha256:61f9d815f1b6082c2cc3d8bcfa4b295c2110ccea957aeb60bf803334c591aa17",
         "read-only-dark": "sha256:6cd4707370f2582fd9517fcb05c21556d8cca68b9b9adec1c2df0478c87efbe1",
         "read-only-light-hc": "sha256:90604b179e4961272e46cccdf393c958450017e9c84a8084e73bc985c0c069ce",
         "read-only-light": "sha256:97031f8cbe43f4cb6cf27657733e16825e939bf32cf5e2e21ef16184001cb6fb"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/shell/ShellPalette.tsx"
+        ]
       },
       "since": "0.1.0"
     },
