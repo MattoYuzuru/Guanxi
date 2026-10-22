@@ -126,14 +126,28 @@ export class ExternalStore {
     return { windows: [...windows.values()], reports, stale: reports.length > fresh.length,
       known: [...windows.values()].some(w => w.used.value !== null) }
   }
+  /** One atomic statement preserves both extrema across writers: a success never clears a
+   * rejection and a rejection never clears a success. Observation time is monotonic so a late
+   * commit from an older observation cannot move the row's provenance backwards. */
   learn(owner: string, account: string, adapter: AdapterId, parallel: number, outcome: 'success' | 'concurrency_rejected', now: string) {
     this.ready()
-    const row = this.db.prepare('SELECT successful,rejected FROM concurrency WHERE owner=? AND account=? AND adapter=?').get(owner, account, adapter)
-    let successful = row?.successful == null ? null : Number(row.successful)
-    let rejected = row?.rejected == null ? null : Number(row.rejected)
-    if (outcome === 'success') successful = Math.max(successful ?? 0, parallel)
-    else rejected = Math.min(rejected ?? Infinity, parallel)
-    this.db.prepare('INSERT OR REPLACE INTO concurrency VALUES(?,?,?,?,?,?)').run(owner, account, adapter, successful, rejected, now)
+    const successful = outcome === 'success' ? parallel : null
+    const rejected = outcome === 'concurrency_rejected' ? parallel : null
+    this.db.prepare(`INSERT INTO concurrency(owner,account,adapter,successful,rejected,observed_at)
+      VALUES(?,?,?,?,?,?)
+      ON CONFLICT(owner,account,adapter) DO UPDATE SET
+        successful = CASE
+          WHEN excluded.successful IS NULL THEN concurrency.successful
+          WHEN concurrency.successful IS NULL THEN excluded.successful
+          ELSE MAX(concurrency.successful, excluded.successful)
+        END,
+        rejected = CASE
+          WHEN excluded.rejected IS NULL THEN concurrency.rejected
+          WHEN concurrency.rejected IS NULL THEN excluded.rejected
+          ELSE MIN(concurrency.rejected, excluded.rejected)
+        END,
+        observed_at = MAX(concurrency.observed_at, excluded.observed_at)`)
+      .run(owner, account, adapter, successful, rejected, now)
   }
   learning(owner: string, account: string, adapter: AdapterId) {
     this.ready()
