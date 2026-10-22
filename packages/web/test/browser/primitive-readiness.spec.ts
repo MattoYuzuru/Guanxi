@@ -64,6 +64,12 @@ test('uncontrolled Menu keyboard navigation focuses disabled commands but never 
   await expect(items.nth(3)).toBeFocused()
   await page.keyboard.press('r')
   await expect(items.nth(0)).toBeFocused()
+  // A fresh open clears the typeahead buffer before testing Space activation semantics.
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(items.nth(0)).toBeFocused()
   await page.keyboard.press('ArrowDown')
   await expect(items.nth(1)).toBeFocused()
   await page.keyboard.press('ArrowDown')
