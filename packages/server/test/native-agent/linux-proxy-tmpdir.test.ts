@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { test } from 'node:test'
+import { describe, test } from 'node:test'
 import { promisify } from 'node:util'
 
+describe('Linux native proxy paths', () => {
 test('Linux proxy startup tolerates a long parent TMPDIR and preserves command-local scratch', {
   skip: process.platform !== 'linux', timeout: 30_000,
 }, async t => {
@@ -30,4 +31,5 @@ test('Linux proxy startup tolerates a long parent TMPDIR and preserves command-l
   assert.equal(await readFile(join(scratch, 'value'), 'utf8'), 'proxy-ok')
   assert.deepEqual(await readdir(parent), [], 'owned parent contains no leaked proxy directory')
   assert.deepEqual((await readdir(directory)).sort(), ['long-private-parent-temporary-directory', 'scratch'], 'worker staging is cleaned before settlement')
+})
 })
