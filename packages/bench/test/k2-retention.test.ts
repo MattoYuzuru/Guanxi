@@ -202,6 +202,33 @@ test('a pre-fix raw-span row from this binding refuses a retry before any receip
   } finally { x.f.close() }
 })
 
+
+test('legacy raw-span reasoning, signature and tool rows are detected by same-binding key probes', async () => {
+  const requestId = 'request-legacy-kind'
+  const legacy = [
+    { type: 'reasoning' as const, suffix: 'reasoning:0',
+      data: { messageId: requestId, step: 0, text: 'legacy reasoning' } },
+    { type: 'reasoning' as const, suffix: 'reasoning-signature:0',
+      data: { messageId: requestId, step: 1, text: `${SIGNATURE_PREFIX}{"signature":"legacy"}` } },
+    { type: 'tool.call' as const, suffix: `tool:${createHash('sha256').update('tool-legacy').digest('hex')}`,
+      data: { toolCallId: 'tool-legacy', name: 'shell', arguments: {}, source: 'builtin' as const,
+        parsedFrom: 'native' as const, diffPath: null } },
+  ]
+  for (const old of legacy) {
+    const x = fixture()
+    try {
+      const head = x.f.log.session(x.binding.sessionId)!.lastSeq
+      x.f.store.append(x.attempt!, { type: old.type, data: old.data, spanId: requestId } as never,
+        { idempotencyKey: `bench:${x.binding.nonce}:${requestId}:${old.suffix}`, expectedSeq: head + 1 })
+      const before = rowCount(x.f)
+      await assert.rejects(x.sink.retainAndProject(requestId, result()),
+        { code: 'retention_idempotency_conflict' })
+      assert.equal(rowCount(x.f), before)
+      assert.equal(receiptEvents(x.f, x.binding).length, 0)
+    } finally { x.f.close() }
+  }
+})
+
 test('another binding is not rejected by a raw-span legacy row that carries a different nonce', async () => {
   const x = fixture()
   try {
