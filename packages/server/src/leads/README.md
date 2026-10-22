@@ -99,10 +99,12 @@ reports, including a turn the node itself lost to a crash, are unobserved.
 Shutting the service down mid-turn changes no run state: no fallback is started and no failure is recorded.
 The attempt is left to R1's restart reconciliation: the next start completes a persisted intent and redelivers
 an unacknowledged wake; an acknowledged turn becomes `interrupted` and needs `resume`. A person's `resume`
-abandons any delegation intent the lead had only begun to request. The pump reads only delegations that
+abandons any delegation intent the lead had only begun to request (never one R1 already committed); if it
+arrives before the first pump after a restart it wins the race against recovering that intent. The pump reads only delegations that
 still need it (an unfinished intent or child start of a live lead, a canceled child to stop, a child that lost
 its executor, with at most `childStartLimit` attempts before a first model call, and never beside a still-unwinding
-executor of this process).
+executor of this process; an executor handle that never settles keeps its child from being restarted, and the
+deadline still wakes the lead).
 
 A killed node can leave K5's admission holder for that account occupied (K5 keeps it until an audited break
 exists) and an orphaned detached agent group; neither is hidden by this service. Child executor stop is

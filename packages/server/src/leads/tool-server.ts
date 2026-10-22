@@ -70,6 +70,8 @@ export class LeadToolServer {
       server.once('error', failed)
       server.listen(this.wantedPort, '127.0.0.1', () => {
         server.off('error', failed)
+        // Accept-level errors after startup concern one connection; they must not take the node down.
+        server.on('error', () => undefined)
         this.port = (server.address() as AddressInfo).port
         this.server = server
         resolve(`http://127.0.0.1:${this.port}${ENDPOINT}`)

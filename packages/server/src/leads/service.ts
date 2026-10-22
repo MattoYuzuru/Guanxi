@@ -143,16 +143,19 @@ export class LeadService {
     leadInvariant(session && !this.live.has(runId), 'lead_not_found')
     const state = this.runs.get(runId).state
     leadInvariant(state === 'input_required' || state === 'interrupted', 'invalid_transition')
-    // A person's decision supersedes any delegation the lead had only begun to request.
-    this.abandonIntents(runId)
     const attempt = state === 'input_required' ? this.runs.decide(runId) : this.runs.start(runId)
+    // A person's decision supersedes any delegation the lead had only begun to request. Nothing awaits between
+    // the new attempt and this, so the pump cannot interleave.
+    this.abandonIntents(runId)
     return this.spawn(this.runTurn({ attempt, kind: 'decision', wakeSeq: null, prompt, resume: this.loadable(session),
       seededPrompt: `${this.seedPrefix(session)}\n\n${prompt}` }))
   }
   private agents() { return this.o.agents }
   /** An intent that did not become a delegation must never be completed later without the lead asking again. */
   private abandonIntents(runId: string): void {
-    const open = this.store.delegations(runId).filter(d => d.state === 'intent')
+    // An intent whose delegation R1 already committed is finished by recovery, never abandoned.
+    const committed = new Set(this.runs.promises(runId).map(p => p.delegation_key))
+    const open = this.store.delegations(runId).filter(d => d.state === 'intent' && !committed.has(d.key))
     if (!open.length) return
     this.runs.homeFence().transaction('lead.abandon', db => { for (const d of open) this.store.setDelegationState(db, runId, d.key, 'abandoned') })
   }
@@ -207,7 +210,8 @@ export class LeadService {
       this.failure = code(error)
       // An unexpected failure must not leave a live attempt and lease that nothing drives: ask a person.
       if (!['stale_lease', 'closed', 'writer_busy', 'run_not_found'].includes(code(error))) {
-        try { this.abandonIntents(runId); this.runs.inputRequired(attempt); this.notice({ kind: 'lead_failed', runId, wakeSeq: turn.wakeSeq, code: code(error) }) } catch { /* fenced out or finished */ }
+        try { this.runs.inputRequired(attempt); this.notice({ kind: 'lead_failed', runId, wakeSeq: turn.wakeSeq, code: code(error) }) } catch { /* fenced out or finished */ }
+        try { this.abandonIntents(runId) } catch { /* the intent stays; the person's resume abandons it */ }
       }
       return { runId, wakeSeq: turn.wakeSeq, outcome: 'failed', code: code(error) }
     }).finally(() => { this.live.delete(runId) })
@@ -340,11 +344,18 @@ export class LeadService {
     const cost = micro !== null && Number.isSafeInteger(micro) ? micro : null
     const currency = cost === null ? 'unknown' : usage.cost!.currency as 'USD' | 'EUR' | 'RUB'
     const key = `lead-turn:${attempt.ordinal}:${scope}:${usage.inputTokens}-${usage.outputTokens}-${cost ?? 'u'}-${currency}`
-    const previous = this.runs.costEntries(attempt.run_id)
-      .map(entry => ({ entry, parsed: /^lead-turn:(\d+):([0-9a-f]{16}):(\d+)-(\d+)-(\d+|u)-(USD|EUR|RUB|unknown)$/.exec(entry.key) }))
-      .filter(item => item.parsed && item.parsed[2] === scope && Number(item.parsed[1]) < attempt.ordinal)
-      .sort((a, b) => Number(b.parsed![1]) - Number(a.parsed![1]))[0]?.parsed
-    const base = previous ? { input: Number(previous[3]), output: Number(previous[4]), cost: previous[5] === 'u' || previous[6] !== currency ? 0 : Number(previous[5]) } : { input: 0, output: 0, cost: 0 }
+    const entries = this.runs.costEntries(attempt.run_id).filter(entry => entry.key.startsWith('lead-turn:'))
+    // One observation per attempt: a second, different one would be summed with the first.
+    if (entries.some(entry => entry.key.startsWith(`lead-turn:${attempt.ordinal}:`) && entry.key !== key)) throw new LeadError('usage_conflict')
+    const parsed = entries
+      .map(entry => /^lead-turn:(\d+):([0-9a-f]{16}):(\d+)-(\d+)-(\d+|u)-(USD|EUR|RUB|unknown)$/.exec(entry.key))
+      .filter((match): match is RegExpExecArray => match !== null && match[2] === scope && Number(match[1]) < attempt.ordinal)
+      .sort((x, y) => Number(y[1]) - Number(x[1]))
+    // Tokens follow the latest observation; money follows the latest KNOWN cost in the same currency, so a
+    // turn that reported no cost neither zeroes the baseline nor makes the next cost look new.
+    const tokens = parsed[0]
+    const money = parsed.find(match => match[5] !== 'u' && match[6] === currency)
+    const base = { input: tokens ? Number(tokens[3]) : 0, output: tokens ? Number(tokens[4]) : 0, cost: money ? Number(money[5]) : 0 }
     // A smaller number than the baseline means the agent's counter restarted.
     const delta = (now: number, before: number) => now >= before ? now - before : now
     this.runs.recordCost(attempt, { key, inputTokens: delta(usage.inputTokens, base.input), outputTokens: delta(usage.outputTokens, base.output),
@@ -363,7 +374,7 @@ export class LeadService {
   /** One start per delegation at a time, whether called by the finishing turn or by the pump. */
   private async ensureChild(runId: string, key: string): Promise<void> {
     const guardKey = `child:${runId}:${key}`
-    while (this.busy.has(guardKey)) await new Promise(resolve => setTimeout(resolve, 2))
+    while (this.busy.has(guardKey)) { if (this.closed) return; await new Promise(resolve => setTimeout(resolve, 2)) }
     this.busy.add(guardKey)
     try { await this.startChild(runId, key) } finally { this.busy.delete(guardKey) }
   }
