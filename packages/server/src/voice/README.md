@@ -29,9 +29,11 @@ array. `applyGlossary` is pure and returns offsets into the original string.
 
 ## Matching
 
-A candidate is a run of Unicode word tokens joined by single spaces. A candidate matches when
-its folded key equals a canonical or variant key; multi-word forms therefore match token
-sequences separated by single spaces. Longest matches win, then input order; matches never
+A candidate is a run of Unicode word tokens joined by single spaces. A run of N tokens can only
+match a form with exactly N whitespace-separated words, so a single-word form never matches
+across token boundaries. A candidate matches when its folded key equals a canonical or variant
+key; multi-word forms therefore match token sequences separated by single spaces. The run length
+is bounded by the longest form's word count. Longest matches win, then input order; matches never
 overlap. Matching is case-insensitive unless `caseSensitive` is set, and output always uses the
 canonical casing.
 
@@ -41,8 +43,12 @@ exception).
 
 For a Latin `language: 'en'` canonical with `inflect` not `false`, a Cyrillic candidate may lose
 one Russian ending and keep it after a hyphen (D-157): `пиара` becomes `PR-а`, `воркт триах`
-becomes `worktree-ах`. `inflect: false` and `caseSensitive: true` disable this. Stems shorter than
-two letters are rejected.
+becomes `worktree-ах`. Only spoken forms containing Cyrillic are inflection stems; the folded
+Latin canonical is never a stem, so common Russian words such as `про`, `при` and `пра` stay
+unchanged instead of becoming `PR-о`, `PR-и` and `PR-а`. Combining marks, including a stress
+mark, are ignored while matching the ending and the original ending slice keeps them in the
+output: `пиара́` becomes `PR-а́`. `inflect: false` and `caseSensitive: true` disable inflection.
+Stems shorter than two letters are rejected.
 
 Text inside backtick code spans and `https?://\S+` URLs is protected. All other characters,
 including spacing and newlines, are preserved byte-for-byte.
@@ -54,7 +60,9 @@ learning loop are later V1/V2 slices. An unclosed backtick does not create a pro
 Canonicals and variants must be word-token sequences: edge punctuation such as `C++` or `Hono!`
 is not absorbed into the matched span and is outside this module's contract. Cyrillic-mapped
 Latin is not re-fed through the Latin digraph rules, so mixed-script digraphs split across a
-script boundary are not bridged; use explicit variants.
+script boundary are not bridged; use explicit variants. The D-157 rule is a stem-plus-ending
+match against stored spoken forms, not a full feminine `-а` paradigm: `на Федоре` and
+`с Олламой` stay unchanged. `caseSensitive: true` also disables inflection.
 
 ## Store, service and voice marker (V1-b)
 
