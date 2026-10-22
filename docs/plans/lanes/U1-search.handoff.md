@@ -73,7 +73,7 @@ Separate independent recheck and integrated gates remain open.
 
 ## Localized-copy inventory review fix
 
-Root's combined `npm test` at `15b962f4188528786b6226af898425e5986c48ea` failed web 351/352
+Root's combined `npm test` at `985dfed` (including search source `15b962f`) failed web 351/352
 only in `test/component/localized-copy-inventory.test.tsx` (`check-5y575x_n`). A scoped replay
 against the unfixed source failed the guard `1 failed | 4 passed` with 16 diagnostics: the
 hardcoded `PRODUCT_NAME` at `ShellStatus.tsx:22`, eight session-status returns and three
@@ -119,3 +119,13 @@ delivered tree.
 
 Independent GPT recheck and root merge remain pending. The existing browser/workspace scope
 cases and all integrated gates remain root-owned.
+
+
+### Coordinator delivery and independent closure
+
+The external-gitdir restriction above was a delivery limitation, not an unresolved code issue.
+The coordinator recovered the exact delivered commit/tree after verifying that the dirty
+worktree and index matched it; no reset or unrelated-file deletion was used. Source `cf65d81`
+and docs `ff6768b` are now integrated. Independent scoped recheck `check-dyhk5z_i` passes
+42/42 with no remaining bounded finding. The failed full receipt `check-5y575x_n` belongs to
+combined `985dfed`, not the earlier isolated search source `15b962f`.

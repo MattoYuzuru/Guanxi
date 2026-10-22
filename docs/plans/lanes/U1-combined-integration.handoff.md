@@ -45,3 +45,40 @@ is proposed; durable NativeAgentPage creation must not be labelled ephemeral.
 Source stays frozen while checks run. The external guanxi-ui skill symlink prevents reusable
 source certification: results are local observations with explicit clean HEAD and real scope.
 Root owns main integration and central status.
+
+
+## Combined eight-gate result and final privacy follow-up
+
+Combined clean pin `0753630bbb72ff609b09177942837a57b0421316` integrates the independent
+inventory repair `ff6768b`, main documentation `a9b54e0` and initial K4 privacy `4818b92`.
+All eight root commands passed, source unchanged throughout:
+
+| Command | Receipt |
+| --- | --- |
+| typecheck | `check-lm2tek8f` |
+| npm test | `check-6uve_ot1` |
+| web browser | `check-p2rivokw` |
+| catalog browser | `check-axxx_5mx` |
+| build | `check-hew7hgat` |
+| Markdown/links | `check-azrpr3f7` |
+| licenses | `check-4_kop2c3` |
+| source lint | `check-z671wn2j` |
+
+These are regression envelopes: core 1383, kernel 107, web 353, UI gates 102, codemod 6,
+catalog 74, UI 43 and bench 82; zero failures/skips. Actual mocked Chromium is **96/96**.
+New tests retain each author's accounting; the coordinator adds zero. The exact original
+U1-page privacy probe also passes 2/2 at this pin (`check-lb2e__d0`). This does not validate
+later source commits or replace the full U1/MS1 exit.
+
+Independent K4 review then found append-time marker expansion can erase byte-comparison
+proof of truncation for a valid short descriptor. Separate `c2ae12f` fixes that ambiguity;
+final handoff `13bb0e2` is independently closed with 40/40 selected cases including the
+unchanged original reproduction (`check-p106mvgt`). The author broader scope is 19 new /
+148 prior repository cases plus three outside probes, 170/170 (`check-02wk2z86`).
+
+Merge `08817bf` brings only this separate privacy follow-up and its docs into the union.
+Production merged automatically; the sole conflict was the renamed K4 evidence document,
+resolved by retaining both current-main integration history and the full author follow-up.
+No generated manifest, component record or approval changed. Root must freeze this final
+union, repeat its original page probe/independent integration review and all eight commands,
+then check main after integration. The earlier eight green receipts are historical evidence.
