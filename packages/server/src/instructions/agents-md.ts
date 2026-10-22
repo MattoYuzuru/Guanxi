@@ -1,6 +1,6 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
-import { assertBudget } from './safe-read.ts'
+import { assertBudget, readFailureCode } from './safe-read.ts'
 
 interface Candidate {
   path: string
@@ -32,6 +32,7 @@ export async function loadInstructions(input: {
 }): Promise<{
   files: { path: string; bytes: number; included: boolean }[]
   text: string
+  unreadable: string[]
   overflow: null | { totalBytes: number; budgetBytes: number; omitted: string[] }
 }> {
   const budget = assertBudget(input.budgetBytes, 'instructions_budget_invalid')
@@ -103,13 +104,24 @@ export async function loadInstructions(input: {
   const outsidePaths = ordered.filter(candidate => candidate.outside).map(candidate => candidate.path)
 
   const parts: string[] = []
+  const unreadable: string[] = []
   for (const candidate of ordered) {
     if (!included.has(candidate)) continue
-    parts.push(`## ${candidate.path}\n${await readFile(candidate.real, 'utf8')}`)
+    try {
+      parts.push(`## ${candidate.path}\n${await readFile(candidate.real, 'utf8')}`)
+    } catch (error) {
+      if (readFailureCode(error) !== 'unreadable') throw error
+      included.delete(candidate)
+      unreadable.push(candidate.path)
+    }
   }
   let text = parts.join('\n\n')
   if (outsidePaths.length > 0) {
     const notice = `Skipped instruction files outside the project root: ${outsidePaths.join(', ')}.`
+    text = text ? `${text}\n\n${notice}` : notice
+  }
+  if (unreadable.length > 0) {
+    const notice = `Unreadable instruction files: ${unreadable.join(', ')}.`
     text = text ? `${text}\n\n${notice}` : notice
   }
   if (omittedPaths.length > 0) {
@@ -120,6 +132,7 @@ export async function loadInstructions(input: {
   return {
     files: ordered.map(candidate => ({ path: candidate.path, bytes: candidate.bytes, included: included.has(candidate) })),
     text,
+    unreadable,
     overflow: omittedPaths.length > 0
       ? { totalBytes, budgetBytes: budget, omitted: omittedPaths }
       : null,

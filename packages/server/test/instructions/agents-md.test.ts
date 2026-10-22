@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, mkdir, writeFile, rm, symlink, realpath } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { loadInstructions } from '../../src/instructions/agents-md.ts'
@@ -174,6 +174,24 @@ test('an empty instruction tree returns empty text and no overflow', async t => 
   const result = await loadInstructions({ projectRoot, cwd: join(projectRoot, 'sub'), budgetBytes: 0 })
   assert.deepEqual(result.files, [])
   assert.equal(result.text, '')
+  assert.equal(result.overflow, null)
+})
+
+test('an unreadable instruction file is skipped and reported', async t => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    t.skip('root can read chmod 000 files')
+    return
+  }
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const path = await writeAt(projectRoot, 'AGENTS.md', 'secret rules')
+  await chmod(path, 0o000)
+  t.after(() => chmod(path, 0o644).catch(() => undefined))
+
+  const result = await loadInstructions({ projectRoot, cwd: projectRoot, budgetBytes: 1000 })
+  assert.deepEqual(result.files, [{ path: 'AGENTS.md', bytes: 12, included: false }])
+  assert.deepEqual(result.unreadable, ['AGENTS.md'])
+  assert.equal(result.text, 'Unreadable instruction files: AGENTS.md.')
   assert.equal(result.overflow, null)
 })
 

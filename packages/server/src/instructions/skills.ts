@@ -406,7 +406,11 @@ export async function loadSkill(
   if (!boundary) return { id, error: 'outside_root' }
   if (!inside(boundary, dir) || !inside(boundary, file)) return { id, error: 'outside_root' }
   let head: FrontMatterFile | null
-  try { head = await readSkillHead(file, FRONT_MATTER_LIMIT) } catch { head = null }
+  try {
+    head = await readSkillHead(file, FRONT_MATTER_LIMIT)
+  } catch (error) {
+    return { id, error: readFailureCode(error) ?? 'not_found' }
+  }
   if (!head) return { id, error: 'not_found' }
   const bodyBytes = head.size - head.bodyOffset
   if (bodyBytes < 0) return { id, error: 'not_found' }

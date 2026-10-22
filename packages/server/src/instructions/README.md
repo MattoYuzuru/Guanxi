@@ -29,9 +29,10 @@ canonical `dir` and `bytes` (the `SKILL.md` file size from `stat`); the body is 
 Project skills shadow user skills with the same name (`shadowed`); duplicates inside one
 source keep the first sorted path (`duplicate`). Real paths outside the project root (for
 project skills) or outside a user directory (for user skills) are skipped (`outside_root`).
-A symlink that resolves inside the project root is allowed and de-duplicated by real path
-without a warning. `maxSkills` truncation emits `max_skills`; `maxDescriptionChars`
-truncates by code point and ends the summary with `…`.
+An unreadable `SKILL.md` is skipped with `unreadable`; a non-regular one with
+`not_regular_file`. A symlink that resolves inside the project root is allowed and
+de-duplicated by real path without a warning. `maxSkills` truncation emits `max_skills`;
+`maxDescriptionChars` truncates by code point and ends the summary with `…`.
 
 `skillContext(index, count, budget)` renders only `- name: description` lines sorted by
 name and returns `{ text, included, omitted }`. The final line reports omitted skills. If
@@ -41,7 +42,8 @@ budgets. A 50 KiB body cannot change the count because no body byte reaches this
 `loadSkill(index, id, { maxBodyBytes })` returns the byte-exact body after the closing `---`
 for a discovered id, `truncated: false`, and sorted relative sibling paths. Bodies over the
 limit return `too_large` (never a partial body); unknown ids return `not_found`; redirected
-paths outside the captured boundary return `outside_root`. File listing is recursive and
+paths outside the captured boundary return `outside_root`; unreadable files return
+`unreadable`. File listing is recursive and
 skips anything whose real path leaves the skill directory. Instruction files are opened
 read-only, non-blocking and without following symlinks; handles are `fstat`ed and non-regular
 files (FIFOs, devices) are refused with `not_regular_file`. A body larger than `maxBodyBytes`
@@ -59,8 +61,9 @@ Whole files are included from the nearest outward while their bytes fit; a file 
 cut. The first file that does not fit and every farther file are listed in
 `overflow.omitted`, and the text ends with the omitted paths, budget and total found bytes.
 Symlinked files resolving outside the project root are skipped and reported in `files` and
-the text; they are never read. `files` reports every candidate with its byte size and
-`included` flag.
+the text; they are never read. An unreadable file (EACCES) is skipped the same way, listed in
+`unreadable` and the text, without rejecting the call. `files` reports every candidate with
+its byte size and `included` flag.
 
 ## Checks
 

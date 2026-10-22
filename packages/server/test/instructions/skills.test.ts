@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, stat, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkills, skillContext, loadSkill, readSkillHead, parseSkillFrontMatter } from '../../src/instructions/skills.ts'
@@ -376,6 +376,27 @@ test('non-finite and negative budgets are rejected with TypeError', async t => {
     await assert.rejects(discoverSkills({ projectRoot, userSkillDirs: [], maxDescriptionChars: bad }), TypeError)
     assert.throws(() => skillContext(index, text => text.length, bad), TypeError)
   }
+})
+
+test('an unreadable SKILL.md reports unreadable and loadSkill refuses it', async t => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    t.skip('root can read chmod 000 files')
+    return
+  }
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const dir = await writeSkill(projectRoot, '.agents/skills/locked', 'name: locked\ndescription: locked', 'secret')
+  const file = join(dir, 'SKILL.md')
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  const id = summary(index, 'locked').id
+
+  await chmod(file, 0o000)
+  t.after(() => chmod(file, 0o644).catch(() => undefined))
+  assert.deepEqual(await loadSkill(index, id, { maxBodyBytes: 1024 }), { id, error: 'unreadable' })
+
+  const after = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  assert.deepEqual(after.skills, [])
+  assert.deepEqual(after.warnings, [{ path: file, code: 'unreadable' }])
 })
 
 test('loadSkill returns the exact body and lists only files inside the skill dir', async t => {
