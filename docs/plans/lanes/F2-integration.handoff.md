@@ -8,7 +8,7 @@ composition review and root full candidate gates pending. This does not close F2
 - Author checkout: `/Users/yuzuru/Projects/Guanxi-lanes/ms1-f2`.
 - Bundle branch: `codex/in-progress-integration`.
 - Preserved F2 branch: `codex/ms1-f2` at `b3b1077e`.
-- Last executable/test change: `85e039dc9c773aa1c0c03ba9858e1fcbec0adc1a`.
+- Last executable/test change: `e9611d3596c93fdc0a7412f73c9694936040217e`.
 - Root authorized the local merges and owns main, central status, final aggregate gates and
   any later push. Central documents enter only through reviewed parent ancestry; this
   integration authors no central status change.
@@ -25,8 +25,9 @@ composition review and root full candidate gates pending. This does not close F2
 | `b3b1077e` | `6503199c` | U1 Markdown `84c9f651` | No conflicts; formatting/evidence only |
 | `656d0635` | `b3b1077e` | X1/current main `d861b581` | Two additive seams below |
 | `bd0cef30` | `656d0635` | B1/current main `fb57323e` | No conflicts |
+| `a8eabb24` | `d640546a` | K5 durable admission `e4c7cf32` | No conflicts |
 
-The R3 and B1 objects were fetched from the explicitly authorized local standalone clones.
+The R3, B1 and K5 objects were fetched from the explicitly authorized local standalone clones.
 No rebases, resets, migration rewrites, deployments or remote Git operations occurred.
 
 ### Actual conflicts and compatibility changes
@@ -66,15 +67,19 @@ No rebases, resets, migration rewrites, deployments or remote Git operations occ
   Connections implementations equal reviewed `6a3e6441`.
 - Layouts and session-log source equal `aa878593`. Egress differs only by X1's additive
   snapshot method/type. Current-registry truncated-prefix privacy is retained.
-- B1 production source equals `fb57323e`; its only later delta is the test wrapper return.
+- B1 production source equals `fb57323e`; later changes only repair the trial-host test
+  wrapper and private-process test fixtures, with one cleanup regression below.
+- K5 external-agent production and test trees equal independently reviewed `e4c7cf32`.
+  Durable same-node account admission, cleanup acknowledgement and atomic learning are
+  retained without altering K3 launch authorization or adding recovery authority.
 - Global user_version 33 and independent ledgers 36 (offers), 37 (dispatch), 38 (judge),
   39 (trusted start) coexist without rewriting their applied SQL.
 
 ## New assertion and regression envelope
 
 **New: 1 integration test. Regression envelope: 304 tests.** The 305-test author command
-passed at clean `bd0cef30`, zero failures/skips, receipt `check-dhs16sga`. After its only
-subsequent executable delta (the one-line test wrapper), the affected trial-host test passed
+passed at clean `bd0cef30`, zero failures/skips, receipt `check-dhs16sga`. After the next
+executable delta (the one-line test wrapper), the affected trial-host test passed
 1/1, zero skips, at clean `85e039dc`, receipt `check-0bzgbnyi`. This rerun is not another new
 case. Existing facade/DDL cases are strengthened in place, not counted as new tests.
 
@@ -129,6 +134,87 @@ Each command ran with quiet pinned source. Receipts mark reuse unverifiable beca
 inherited `.claude/skills/guanxi-ui` symlink points outside the checkout. These are observed
 local results, not reusable source certificates. Full eight gates and browser checks have
 not been rerun by this author; root owns them after independent composition review.
+
+## Full candidate failure and bounded repair
+
+Root's actual `npm test` at clean `d640546a` failed with exit 1, receipt
+`check-z1rw6rql`; this is a failed aggregate gate, not superseded evidence of a pass.
+Core reported 1575 passed / 1 Linux-only skip; kernel 107, web 353 and UI 43 passed.
+Bench reported 118 passed / 17 failed out of 135, all in `private-process.test.ts`.
+The workspace script runs in `packages/bench`, but the test resolved its fixture,
+supervisor and launcher from the invocation CWD using repository-relative paths.
+Policy validation consequently failed before the intended assertions. Seven detached
+fixture groups had also started before a throwing record-construction call reached
+`try/finally`, keeping the bench Node process alive. Root identified their exact owned
+parent/groups and killed only those seven; all were gone before npm naturally exited 1.
+The prior full typecheck passed (`check-xoh7p92q`); root stopped the eight-gate sequence
+at npm test. Neither result is claimed as the final K5-composed candidate gate.
+
+Separate focused fix `cb520038` resolves every fixture/identity path via module URL
+and `fileURLToPath`, with one canonical bench directory independent of the npm caller.
+It registers an idempotent per-test cleanup immediately after a grouped fixture spawns,
+before awaiting setup or constructing records. Existing finalizers call the same cleanup.
+No production behavior, safety assertion or deadline was weakened.
+
+Independent composition review requested direct failure-path evidence. Separate review-fix
+`9e90e20a` extracts the same test-only helper and adds one subprocess regression. The child
+uses actual `node:test`, creates the owned group, records the exact supervisor/client PIDs
+and deliberately throws before caller `finally` or record construction. The parent asserts
+exit 1 with the intentional error, both PIDs absent, and group observation failing with
+ESRCH. Its own fallback kills only those report-owned fixtures on failure. The intentional
+failing child is not a second repository test credit.
+
+The first workspace run at `9e90e20a` failed 1/136 (`check-qyk8s80g`): the nested test runner
+inherited `NODE_TEST_CONTEXT` and Node skipped the child file. A bounded outside-checkout
+probe reproduced its recursive-run warning and exit 0; no fixture group was spawned.
+Separate correction `e9611d35` removes only that inherited runner marker from the child
+environment. Final runs below pass, with no process cleanup intervention.
+
+## K5 integration and final author checks
+
+The local-only K5 fetch/merge adds reviewed second parent
+`e4c7cf32183738887969a4fb91169a41385caf66`, with first parent
+`d640546ad58de835012f43cc42d3138eb6e99d78`, as merge `a8eabb24`.
+No conflict, manifest, dependency-lock, global-schema or migration resolution was needed.
+The external-agent production/test trees are byte-identical to the reviewed parent.
+Connections, native-agent, indexing and egress trees remain unchanged from `d640546a`.
+The upstream independent review records 105 local passing cases, including the unchanged
+write-boundary race probe and extra SQL/provenance case; that is inherited evidence, not
+105 new integration tests. See the K5 handoff and the external review at
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-k5-durable-admission-20261022.md`.
+
+**New in this continuation: 1 cleanup regression / 135 bench regression envelope.**
+The earlier 1 F2/K3 integration assertion above remains separately credited. The composed
+K5 source parent contributes 37 new repository cases (27 admission, 6 process cleanup,
+4 learning); the actual 103-case run below covers these plus 66 inherited cases.
+Repeated runs and overlapping root/workspace invocations are not added as new tests.
+
+All commands below ran locally with Node 26.9.0 through workstation-dev, shared
+`/Users/yuzuru/.local/state/agent-dev`, resource `heavy`, pinned quiet source, exit 0,
+no failures, skips or cancellations. No live CLI/vendor/model or owner workspace was used.
+
+| Command | Pin | Result | Receipt |
+| --- | --- | --- | --- |
+| `npm test --workspace @guanxi/bench` | `cb520038` | 135/135 | `check-kyqki3nw` |
+| `node --test packages/bench/test/private-process.test.ts` from root | `cb520038` | 18/18 | `check-ana50zqz` |
+| `node --test` K5 nine files listed below | `cb520038` | 103/103 | `check-dz7pv7th` |
+| `npx tsc --noEmit -p packages/bench/tsconfig.json` | `cb520038` | passed | `check-cg1zz3fz` |
+| `npx tsc --noEmit -p packages/server/tsconfig.json` | `cb520038` | passed | `check-jfmdsxkt` |
+| `npm test --workspace @guanxi/bench` | `e9611d35` | 136/136 | `check-nsurkdk0` |
+| `node --test packages/bench/test/private-process.test.ts` from root | `e9611d35` | 19/19 | `check-zynlo85q` |
+| `npx tsc --noEmit -p packages/bench/tsconfig.json` | `e9611d35` | passed | `check-qf_5gw3b` |
+
+The exact K5 file arguments, all under `packages/server/test/external-agents/`, were
+`admission.test.ts`, `process-cleanup.test.ts`, `learning.test.ts`, `lifecycle.test.ts`,
+`policy.test.ts`, `adapters.test.ts`, `codex-login.test.ts`, `boundaries.test.ts`, and
+`host-tools.test.ts`. After their pin only bench test/helper source changed; no K5/server
+check was redundantly rerun. Final docs are a later documentation-only commit. The inherited
+unsupported skill symlink still prevents reusable source certification; these are direct
+observed check results with unchanged source recorded, not reusable certificates.
+
+Root owns independent final composition review and the final aggregate eight gates.
+The K4 string-encoding follow-up is not included in this candidate; its separately confirmed
+decorative-bracket P2 is still tracked outside this merge. Full K5 and MS1 remain open.
 
 ## Compatibility, rollback and remaining work
 
