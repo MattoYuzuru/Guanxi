@@ -42,6 +42,9 @@ Fixed trusted commands retain the Seatbelt fast path on macOS without a containe
 unsandboxed fallback exists. Workers receive a small environment without inherited keys,
 agent credentials, startup scripts or debug flags. Proxy sockets and CA files use a short
 private directory outside writable roots; command HOME/TMPDIR remain scratch.
+The network directory uses `/tmp` on Linux and `/private/tmp` on macOS, independently of
+the parent's TMPDIR, so a valid long temporary path cannot overrun the runtime's Unix socket
+pathname capacity. Worker staging still follows its configured runtime base.
 The container runner drains stdout/stderr through stream close after shell exit, with a 100 ms
 deadline for inherited open pipes; reaching that deadline explicitly reports `truncated`.
 Runtime stdout/stderr never enter plain
