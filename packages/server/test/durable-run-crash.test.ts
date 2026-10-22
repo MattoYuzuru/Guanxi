@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { runStateSnapshot } from './fixtures/durable-run-state.ts'
+import { runStateSnapshot, CRASH_COMPLETE_COST } from './fixtures/durable-run-state.ts'
 import { runFixture, reconcileAllForTest, RUN_TIME, RUN_DEADLINE } from './fixtures/durable-runs.ts'
 
 const worker = fileURLToPath(new URL('./fixtures/durable-run-crash-worker.ts', import.meta.url))
@@ -50,6 +50,18 @@ for (const stage of ['hibernate', 'resolve', 'wake', 'ack', 'deadline', 'signal'
         assert.ok(window, `transaction window for ${index} ${points[index]}`)
         assert.deepEqual(runStateSnapshot(f.db), index === window.to ? window.after : window.before,
           `legal committed pre/post state at ${stage}:${index}:${points[index]}`)
+        if (stage === 'resolve') {
+          // run_costs is part of runStateSnapshot; assert the exact key too: no row
+          // before the completion commits, exactly one afterwards.
+          const completion = windows.find((entry) => points[entry.from] === 'complete:before_begin')
+          assert.ok(completion, 'completion transaction window')
+          const count = (f.db.prepare('SELECT COUNT(*) AS n FROM run_costs WHERE entry_key=?')
+            .get(CRASH_COMPLETE_COST.key) as { n: number }).n
+          if (index < completion.from) assert.equal(count, 0, `${index} ${points[index]}: cost absent before completion`)
+          else if (index <= completion.to) assert.equal(count, index === completion.to ? 1 : 0,
+            `${index} ${points[index]}: cost commits only with the completion transaction`)
+          else assert.equal(count, 1, `${index} ${points[index]}: committed cost survives later transactions`)
+        }
         reconcileAllForTest(f.store)
         let promise = f.store.promises('lead')[0]
         if (!promise) {

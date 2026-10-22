@@ -1,6 +1,6 @@
 # F2-c — remote attempt cost ledger handoff
 
-**Status:** completed · **Updated:** 2026-10-22 ·
+**Status:** completed · **Updated:** 2026-10-23 ·
 **Branch:** `codex/f2c-remote-cost-ledger` · **Base:** `a64d7d1b` (main)
 
 ## Result
@@ -51,6 +51,35 @@ Commands:
 
 **New:** 9. **Regression envelope:** 88 pre-existing cases in the command above, zero skips.
 `durable-run-crash.test.ts` was not run (it SIGKILLs child processes; the integrator runs it).
+
+## Independent review test gaps
+
+Three gaps from the independent review are closed with tests only; production code was not
+changed. Each gap is a separate commit on `codex/f2c-remote-cost-ledger`.
+
+1. **Cost-before-terminal order.** The `complete(..., cost)` case in `durable-runs.test.ts` now
+   reads the run's K2 `run.lifecycle` events and asserts the `cost` action precedes `terminal`
+   and that the `cost` event's state is `working`. Mutation check: moving `insertCost` after
+   `terminal()` made exactly this case red; restored.
+2. **F2 atomicity distinguishes one transaction from two.** `remote-attempt-costs.test.ts` now
+   delivers a terminal with usage after the dispatch deadline has passed, so the receipt
+   callback throws `dispatch_deadline` inside `complete()`. It asserts the run is still `working`,
+   the terminal receipt is absent and `run_costs` has 0 rows. Mutation check: recording the cost
+   in a separate earlier `recordCost` transaction made this case fail with 1 row; restored.
+3. **Crash coverage of `complete(..., cost)`.** The `resolve` crash stage now passes a cost to
+   `complete()`. The crash test keeps its full point enumeration and asserts the exact
+   `run_costs` key: 0 rows before the completion transaction commits and exactly 1 after,
+   including later transactions. `run_costs` is already part of `runStateSnapshot`; the explicit
+   count assertion covers the same before/after boundary. As instructed, this file was not run
+   locally (it SIGKILLs child processes); it typechecks and is left to the integrator.
+
+Verification for gaps 1–2:
+
+- `nice -n 10 node --test packages/server/test/durable-runs.test.ts packages/server/test/remote-attempt-costs.test.ts`
+  → tests 30, pass 30, fail 0, skipped 0.
+- `nice -n 10 npx tsc --noEmit -p packages/server` → exit 0.
+
+**New:** 2 cases plus 2 strengthened existing cases (cost event order and crash cost boundary).
 
 ## Residuals
 
