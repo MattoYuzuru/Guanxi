@@ -120,6 +120,9 @@ return field for cookie values, passwords or tokens. Every input is scanned recu
 - `touch(grantId, now, accountId, projectId, role)` — records `last_used_at` for an active grant
   in the same required scope; an unknown grant is `grant_not_found`, a grant in another scope is
   `context_foreign`, and revoked or expired grants return false.
+- `contextsToClose(now)` — returns the still-open contexts whose grant is revoked or expired at
+  `now`, in open order. Revocation records only `revoked_at`; the browser host calls this method
+  and closes the returned contexts within one lease TTL.
 
 ### Domain normalization
 
@@ -154,7 +157,7 @@ The two test files cover normalization and each origin rule, clean-link and mode
 the explicit Read-only form-submission block, full-mode writable checks, refused schemes,
 missing/unknown `via` and `mode`, unknown action kinds and other fail-closed paths, determinism,
 migration reopen and file modes, the agent-channel and wildcard refusals, project/role/account
-scoping, expiry, revocation context lists, context lifecycle including the required
+scoping, expiry, revocation context lists, `contextsToClose`, context lifecycle including the required
 account/project/role guard, secret-field rejection and `touch`.
 
 ## Residuals

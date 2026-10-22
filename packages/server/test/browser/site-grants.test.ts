@@ -175,6 +175,30 @@ test('a grant stores the exact host and never widens it to a parent domain', (t)
   )
 })
 
+test('contextsToClose returns open contexts on revoked or expired grants only', (t) => {
+  const f = fixture(t)
+  const live = create(f.store, { domain: 'live.example' })
+  const expiring = create(f.store, { domain: 'expiring.example', expiresAt: NOW + 10 })
+  const revoked = create(f.store, { domain: 'revoked.example' })
+  f.setNow(NOW + 1)
+  f.store.openContext('context-live', live.id, 'user-alice', 'project-1', 'editor')
+  f.setNow(NOW + 2)
+  f.store.openContext('context-expiring', expiring.id, 'user-alice', 'project-1', 'editor')
+  f.setNow(NOW + 3)
+  f.store.openContext('context-revoked', revoked.id, 'user-alice', 'project-1', 'editor')
+  f.setNow(NOW + 4)
+  f.store.openContext('context-closed', live.id, 'user-alice', 'project-1', 'editor')
+  assert.equal(f.store.closeContext('context-closed', NOW + 5), true)
+  f.store.revoke(alice, revoked.id, NOW + 5)
+
+  assert.deepEqual(f.store.contextsToClose(NOW + 9).map(context => context.contextId), ['context-revoked'])
+  assert.deepEqual(
+    f.store.contextsToClose(NOW + 10).map(context => context.contextId),
+    ['context-expiring', 'context-revoked'],
+  )
+  assert.deepEqual(f.store.contextsToClose(NOW + 10).map(context => context.closedAt), [null, null])
+})
+
 test('grant metadata comes from the principal and clock, never from forged input', (t) => {
   const f = fixture(t)
   const grant = f.store.grant(alice, {

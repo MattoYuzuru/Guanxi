@@ -326,6 +326,22 @@ export class SiteGrantStore {
   }
 
   /**
+   * Open contexts whose grant is revoked or expired at `now`, in open order. Revocation itself
+   * only records `revoked_at`; the browser host calls this method and closes the returned
+   * contexts within one lease TTL. Already-closed contexts and contexts of live grants are not
+   * returned.
+   */
+  contextsToClose(now: number): SiteContext[] {
+    const at = requireTimestamp(now, 'now')
+    const rows = this.db.prepare(`SELECT c.context_id, c.grant_id, c.opened_at, c.closed_at
+      FROM site_contexts c JOIN site_grants g ON g.id = c.grant_id
+      WHERE c.closed_at IS NULL
+        AND (g.revoked_at IS NOT NULL OR (g.expires_at IS NOT NULL AND g.expires_at <= ?))
+      ORDER BY c.opened_at, c.rowid`).all(at) as unknown as SiteContextRow[]
+    return rows.map(rowToContext)
+  }
+
+  /**
    * Open a context id against a grant in the caller's account/project/role scope. The lookup is
    * scoped by all three: an unknown grant is `grant_not_found`, while a grant that exists in
    * another scope is `context_foreign`. Revoked and expired grants are refused; a context id
