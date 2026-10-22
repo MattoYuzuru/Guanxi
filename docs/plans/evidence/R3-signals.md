@@ -5,7 +5,7 @@ integration gates pending.
 **Date:** 2026-10-22 · **Branch:** `codex/r3-watchdog` · **Base:** `5919d0b`.
 **Production:** `7556d43`; **self-review fix:** `1d7eb37`.
 **Checkout:** `/Users/yuzuru/Projects/Guanxi-lanes/coord-r3-watchdog`.
-**Predecessor:** [`R3.handoff.md`](R3.handoff.md) records the reviewed ETA slice at `bf6a222`;
+**Predecessor:** [`R3-eta.md`](R3-eta.md) records the reviewed ETA slice at `bf6a222`;
 this follow-up leaves its historical claims and `relay/eta.ts` untouched.
 
 ## Scope and plan

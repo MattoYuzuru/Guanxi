@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile, realpath, symlink, readFile } from 'node
 import { join } from 'node:path'
 import { createKernel } from '@guanxi/kernel'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
+import { promptTextOf } from '@guanxi/contract'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
 import { egressScrubberPlugin } from '../../src/egress/plugin.ts'
@@ -52,7 +53,7 @@ test('native pi loop uses K3 and K2; tool-printed secrets scrub before next requ
   assert.equal(JSON.stringify(result).includes(secret), false)
   await f.restart()
   assert.equal(f.agents().progress(sessionId).status, 'completed')
-  f.agents().prompt(sessionId, 'continue')
+  await f.agents().prompt(sessionId, 'continue')
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   assert.equal(f.requests.length, 3)
   assert.match(f.requests[2]!, /file_read/)
@@ -84,16 +85,16 @@ test('queued prompts are visible/removable, are consumed once, and cancel aborts
     return [{ type: 'text', text: `answer ${call}` }]
   })
   const { sessionId } = await f.agents().create(f.input)
-  f.agents().queue(sessionId, 'keep')
-  f.agents().queue(sessionId, 'remove')
+  await f.agents().queue(sessionId, 'keep')
+  await f.agents().queue(sessionId, 'remove')
   const queue = f.agents().progress(sessionId).queue
   assert.equal(queue.length, 2)
-  f.agents().removeQueued(sessionId, queue[1]!.id)
+  await f.agents().removeQueued(sessionId, queue[1]!.id)
   release()
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   assert.equal(f.requests.length, 2)
-  assert.equal(f.log.readAll(sessionId, 'person').filter(e => e.type === 'prompt' && e.data.text === 'keep').length, 1)
-  f.agents().prompt(sessionId, 'cancel me')
+  assert.equal(f.log.readAll(sessionId, 'person').filter(e => e.type === 'prompt' && promptTextOf(e) === 'keep').length, 1)
+  await f.agents().prompt(sessionId, 'cancel me')
   while (f.requests.length < 3) await new Promise(r => setTimeout(r, 5))
   f.agents().stop(sessionId)
   assert.equal((await f.agents().wait(sessionId)).status, 'cancelled')
@@ -282,7 +283,7 @@ test('a stored running session projects interrupted after restart and never disp
   assert.equal(f.agents().progress(sessionId).error, 'process_restarted')
   await new Promise(r => setTimeout(r, 30))
   assert.equal(f.requests.length, 1)
-  f.agents().prompt(sessionId, 'explicit continuation')
+  await f.agents().prompt(sessionId, 'explicit continuation')
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   assert.equal(f.requests.length, 2)
 })
@@ -349,7 +350,7 @@ test('cleanup quarantine keeps roots blocked across service reload and explicit 
   await writeFile(join(f.data, 'native-cleanup', 'owner.json'), JSON.stringify([root]))
   await f.restart()
   await assert.rejects(f.agents().create({ ...f.input, mode: 'full-access' }), /cleanup_unconfirmed/)
-  assert.throws(() => f.agents().prompt(sessionId, 'continue'), /cleanup_unconfirmed/)
+  await assert.rejects(f.agents().prompt(sessionId, 'continue'), /cleanup_unconfirmed/)
 })
 
 
@@ -381,7 +382,7 @@ test('policies capture the bound node ports and refresh them on continuation aft
   const event = f.log.readAll(sessionId, 'person').find(e => e.type === 'agent.policy')!
   assert.deepEqual(event.type === 'agent.policy' && event.data.nodePorts, [4389, 5189])
   await f.restart(); port = 4390
-  f.agents().prompt(sessionId, 'continue')
+  await f.agents().prompt(sessionId, 'continue')
   await f.agents().wait(sessionId)
   assert.deepEqual(event.type === 'agent.policy' && event.data.nodePorts, [4389, 5189], 'the stored policy remains immutable')
   assert.deepEqual(observed, [[4389, 5189], [4390, 5189]], 'continued tools must protect the currently bound ports')
@@ -403,7 +404,7 @@ test('unload records cleanup_unconfirmed consistently, blocks roots and never di
   f.agents().setRoots(f.input.projectId, [f.workspaces.create(root).id])
   const { sessionId } = await f.agents().create({ ...f.input, mode: 'full-access' })
   await started
-  f.agents().queue(sessionId, 'must not dispatch')
+  await f.agents().queue(sessionId, 'must not dispatch')
   const closeStarted = Date.now()
   await f.restart()
   assert.ok(Date.now() - closeStarted < 1000)

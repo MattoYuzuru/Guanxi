@@ -6,6 +6,10 @@ export interface Reply { text: string; inputTokens: number; outputTokens: number
 /** Host adapter, never model-authored. W and token counts refer to the ACTUAL rendered
  * request and loaded context, including template tokens. Missing observations fail closed. */
 export interface RuntimeMeter {
+  readonly countIsExact?: boolean
+  readonly localOnly?: boolean
+  authorizeDispatch?(signal?: AbortSignal): Promise<void>
+  validatePrepared?(request: import('../ollama/types.ts').OllamaChatRequest): void
   observe(signal?: AbortSignal): Promise<WindowObservation>
   count(prompt: string): number
   maxCostMicros?(input: number, output: number): number | null
@@ -17,7 +21,7 @@ export interface RelayModel extends RuntimeMeter {
   call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; maxInput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void }): Promise<Reply>
 }
 export class ConnectionRelayModel implements RelayModel {
-  readonly countIsExact = false
+  get countIsExact() { return this.meter.countIsExact === true }
   readonly connections: Connections; readonly connectionId: string; readonly model: string; readonly meter: RuntimeMeter; readonly background: boolean
   constructor(connections: Connections, connectionId: string, model: string, meter: RuntimeMeter, background = true) {
     this.connections = connections; this.connectionId = connectionId; this.model = model; this.meter = meter; this.background = background
@@ -28,16 +32,19 @@ export class ConnectionRelayModel implements RelayModel {
   async call(prompt: string, o: Parameters<RelayModel['call']>[1]): Promise<Reply> {
     const connection = this.connections.snapshot('local').connections.find(c => c.id === this.connectionId)
     invariant(connection, 'connection_not_found')
+    invariant(!this.meter.localOnly || connection.kind === 'local_runtime', 'relay_local_connection_required')
     let dispatchedPrompt = prompt
     const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background, onStarted: o.onStarted,
+      ...(this.meter.authorizeDispatch ? { authorizeDispatch: () => this.meter.authorizeDispatch!(o.signal) } : {}),
       onPrepared: (request: import('@earendil-works/pi-ai').Context | import('../ollama/types.ts').OllamaChatRequest) => {
         invariant(request.messages.length === 1 && request.messages[0]!.role === 'user' && typeof request.messages[0]!.content === 'string', 'request_shape')
         dispatchedPrompt = request.messages[0]!.content as string
         const tokens = this.count(dispatchedPrompt)
         invariant(Number.isSafeInteger(tokens) && tokens >= 0 && tokens <= o.maxInput, 'context_ceiling')
+        this.meter.validatePrepared?.(request as import('../ollama/types.ts').OllamaChatRequest)
       } }
     if (connection.kind === 'local_runtime') {
-      const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false,
+      const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false, ...(this.meter.localOnly ? { think: false } : {}),
         messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } }, call)
       invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')
       const inputTokens = r.prompt_eval_count!

@@ -177,7 +177,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     test.after(() => rm(root, { recursive: true, force: true }))
     const path = join(root, 'guanxi.db')
     const fresh = openDb(path)
-    assert.equal((fresh.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
+    assert.equal((fresh.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
     const { chat } = createChat(fresh)
     fresh.prepare(
       `INSERT INTO messages (
@@ -190,7 +190,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     fresh.close()
 
     const upgraded = openDb(path)
-    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
+    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
     assert.deepEqual(
       new ThreadStore(upgraded).messages(chat.id).map(({ content, thinking }) => ({ content, thinking })),
       [{ content: 'legacy-final', thinking: 'legacy thinking — literal' }],
@@ -198,7 +198,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     assert.equal((upgraded.prepare('SELECT COUNT(*) AS count FROM reasoning_artifacts').get() as { count: number }).count, 0)
     upgraded.close()
     const reopened = openDb(path)
-    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
+    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
     assert.equal((reopened.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'reasoning_artifacts'").get() as { count: number }).count, 1)
     downgradeToV15(reopened)
     reopened.exec('CREATE TABLE migration_sentinel (legacy_payload TEXT NOT NULL)')
@@ -214,7 +214,7 @@ describe('P3-F reasoning Artifact persistence', () => {
     afterFailure.exec('DROP INDEX idx_reasoning_artifacts_chat; DROP TABLE migration_sentinel')
     afterFailure.close()
     const retried = openDb(path)
-    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 32)
+    assert.equal((retried.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
     retried.close()
   })
 

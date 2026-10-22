@@ -247,6 +247,27 @@ export class RunStore implements HomeAuthority {
     this.write(`INSERT INTO durable_runs (id,session_id,parent_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)`,
       run.id, run.session_id, run.parent_id, run.state, run.created_at, run.updated_at)
   }
+  /** T0 start extension: session, run, first attempt and host metadata commit together.
+   * The host captures and rechecks its home generation inside the synchronous callback. */
+  createStarted<T>(input: { id: string; sessionId: string }, initialize: (attempt: Attempt, db: Db,
+    emit: (event: import('../session-log/log.ts').SessionEventInput) => void) => Synchronous<T>): T {
+    this.clean(input.id); this.clean(input.sessionId)
+    return this.tx('create_started', () => {
+      if (this.row('SELECT id FROM durable_runs WHERE id=?', input.id)) throw new RunError('idempotency_conflict')
+      const run: Run = { id: input.id, session_id: input.sessionId, parent_id: null, state: 'submitted', version: 1,
+        wake_seq: 0, cancel_count: 0, created_at: this.now(), updated_at: this.now() }
+      this.event(run, 'created'); this.insertRun(run)
+      const attempt = this.newAttempt(run.id, null)
+      const result = initialize(attempt, this.db, event => {
+        this.log.appendFromHomeWithin(run.session_id, { kind: 'agent' }, event); this.changedSessions.add(run.session_id)
+      })
+      if (result && typeof (result as { then?: unknown }).then === 'function') {
+        void Promise.resolve(result).catch(() => undefined)
+        throw new RunError('invalid_input')
+      }
+      return result
+    })
+  }
   private grant(key: string, holder: string, ttl: number): Lease {
     const old = this.row<Lease>('SELECT * FROM leases WHERE key=?', key)
     if (old && !old.released && old.expires_at > this.leaseNow()) throw new RunError('stale_lease')
