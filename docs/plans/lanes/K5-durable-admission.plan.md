@@ -1,6 +1,6 @@
 # K5 durable same-node account admission — implementation plan (planning only)
 
-**Status:** proposed; root review required before any source authorization · **Updated:** 2026-10-22
+**Status:** accepted bounded implementation plan; root review recorded below · **Updated:** 2026-10-22
 **Exact base pin:** `92cee721baa2425a8b154b84b5fe11546b65fbee` (`codex/k5-durable-admission`,
 clean). This is the merge of main `236a9669aa2d78903c898966f772c5f7bd3b78ac` with the reviewed
 native baseline `53b1e76a01f8834f15338f7175396c015444a756`; it is not `53b1e76` itself.
@@ -607,3 +607,33 @@ Claude cross-family review and full K5 closure remain separate open obligations.
 This document is committed as a docs-only plan on `codex/k5-durable-admission`. The root reviews
 the plan before authorizing source changes. The next action after approval is the red test phase,
 then the minimal `process.ts`/store/service implementation, then the independent GPT review.
+
+
+## Root review and bounded implementation authorization — 2026-10-22
+
+The root reviewed the complete plan against the current K3/K5 call sites at planning commit
+`361d4cb251858a544e57e91d8dd041dd727b576e`. Local implementation is authorized under the
+owner's continuing development mandate, with these clarifications:
+
+- The shared lifecycle edits listed above (`process.ts` and client cleanup propagation) are
+  authorized only for this cleanup-acknowledgment boundary. Preserve existing spawn flags,
+  authentication, protocol cancellation, environment isolation and transport behavior.
+- `activeOnThisNode` already includes owned login because that path inserts into `active`.
+  Preserve its exact instance-local count; add durable occupancy separately.
+- Preserve the existing K3 authorization snapshot/order. This slice does not claim a new
+  mid-flight grant-revocation guarantee or change `Connections.dispatchAgent`. Recheck the
+  abort signal after each asynchronous preflight step and immediately before every owned spawn.
+- `effective_bare` may be added as an unknown observation using the existing open facts record
+  and nullable observation time. No wire-contract expansion is needed. Never derive it from
+  configured bare, login success, version or help output.
+- A cleanup-verification deadline yields an unconfirmed outcome and retained occupancy. It is
+  never evidence that a process exited. Do not substitute `ps` state parsing for group `ESRCH`.
+  A throwing close callback must not prevent physical close observation from settling.
+- The v1 upgrade assertion preserves migration row 1 and appends row 2; it does not leave only
+  row 1. Schema/global-version/permission assertions must be explicit.
+- Record observed semantic red/green evidence without persisting prompts, secrets or reasoning.
+  Targeted DSH fixture tests are author evidence; real two-process/cleanup and project gates
+  remain root-coordinated checks at a clean frozen pin under the shared heavy lock.
+
+After the focused source/test commits, write a lane handoff and stop for independent review.
+Do not change central status, claim full K5/MS1 completion, merge other branches or push.
