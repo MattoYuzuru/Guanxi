@@ -58,3 +58,26 @@ A separate read-only reviewer found one P2 (prototype-chain fallback for `Object
 - Plugin/boot wiring, HTTP routes and `packages/contract` schemas for delivery settings.
 
 NC1 stays **in progress**; delivery adapters, settings persistence/UI and plugin wiring remain unfinished. `PHASE_STATUS.md` and `NEXT_AGENT_PROMPT.md` were not edited.
+
+## Independent review fixes
+
+A second independent review found no P1/P2 and three P3s. Each code fix is a separate commit
+with a failing-first regression test; the README update is a separate docs commit.
+
+- `7a3a0dec` — a deferred end could resolve into a DST gap or a skipped local day and land on a
+  transition instant that was quiet again. `nextQuietEnd` now keeps advancing (bounded to 8
+  advances, then throws) until the candidate is after `now` and outside quiet hours. Tests cover
+  Europe/London `02:00–01:30` across the 2026-03-29 gap and Pacific/Apia's skipped 2011-12-30;
+  each asserts the result is not quiet and equals an independent minute-scan's first non-quiet
+  instant.
+- `3c602d7d` — Node's `Intl` accepts the U+2212 spelling `−03:00` as a zone. Validation now
+  rejects offset-shaped input and `resolvedOptions().timeZone`; the unknown-zone test includes
+  the Unicode-minus form.
+- `451e496c` — `channelsByKind: { threshold: undefined }` was valid per the TypeScript type but
+  the validator rejected it. The validator now drops undefined values, so planning uses
+  `defaults`; the test covers both validation and planning.
+- README documents fall-back (a `00:30–01:30` window is quiet again during the repeated hour)
+  and the ≥23 h window behaviour.
+
+Final evidence: the notification suite runs 73 tests, all passing; `tsc --noEmit` exits 0;
+markdownlint reports 0 errors on the README and this hand-off.

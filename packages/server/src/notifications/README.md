@@ -172,6 +172,13 @@ the user's settings and `now`; there is no clock, timer, I/O or process state.
   `push` inside quiet hours are deferred to the next local end, computed from
   `Intl.DateTimeFormat` parts without a dependency. Across a DST overlap the next occurrence
   is chosen; a nonexistent wall time in a spring gap resolves to the first local time after it.
+  The resolved end is checked against quiet hours and advanced to the next local end while it
+  is still quiet, so a DST gap or skipped day cannot return a quiet `deliverAt`, including for
+  a window of 23 hours or more; the scan is bounded and throws if no non-quiet end is found.
+- Fall-back repeats a local hour. With a window such as `00:30–01:30`, a notification deferred
+  during the first `01:00–01:30` occurrence releases at `01:30` EDT, but the repeated
+  `01:00–01:30` EST hour is quiet again, so one deferred during the second occurrence releases
+  at `01:30` EST. Equal local wall times therefore do not imply equal quiet state.
 - `critical` bypasses quiet hours only when `criticalBypassesQuietHours` is true, and only for
   `os`/`push`; `in_app` stays `immediate`. Outside quiet hours a critical notification is also
   `immediate`, not `critical_bypass`.
@@ -179,9 +186,11 @@ the user's settings and `now`; there is no clock, timer, I/O or process state.
   `now`, so equal input returns an equal array. This module does not compose or alter
   `payload.ts`; OS payload content remains NC1-b's content-free `osPayload`.
 - `validateDeliverySettings(unknown)` throws `TypeError` with a path for a malformed object,
-  an invalid IANA zone, a non-`HH:MM` clock, an unknown channel or a non-boolean bypass.
-  `timeZone` and `defaults` are required; missing `channelsByKind`, `quietHours`, `mutedKinds`
-  and `criticalBypassesQuietHours` take `{}`, `null`, `[]` and `false`.
+  an invalid IANA zone (including `+03:00`, `-03:00` and the U+2212 `−03:00` spelling), a
+  non-`HH:MM` clock, an unknown channel or a non-boolean bypass. `timeZone` and `defaults` are
+  required; missing `channelsByKind`, `quietHours`, `mutedKinds` and
+  `criticalBypassesQuietHours` take `{}`, `null`, `[]` and `false`. An explicit `undefined`
+  value inside `channelsByKind` is dropped, so that kind uses `defaults`.
 
 ### NC1-c test evidence
 
@@ -189,7 +198,7 @@ the user's settings and `now`; there is no clock, timer, I/O or process state.
 nice -n 10 node --test packages/server/test/notifications/*.test.ts
 ```
 
-The command runs 70 tests: 22 new NC1-c delivery tests and the 48 existing NC1-a/b tests as
+The command runs 73 tests: 25 new NC1-c delivery tests and the 48 existing NC1-a/b tests as
 the regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the
 server source and test trees; markdownlint passes on this README and the NC1-c hand-off.
 
