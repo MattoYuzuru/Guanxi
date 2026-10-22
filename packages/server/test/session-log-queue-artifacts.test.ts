@@ -384,6 +384,26 @@ describe('session queue ledger 40', () => {
     }
   })
 
+  test('SessionLog construction refuses a future ledger even with the removed stale switch', () => {
+    const db = openDb(':memory:')
+    try {
+      db.exec(`CREATE TABLE ${SESSION_QUEUE_MIGRATIONS_TABLE} (version INTEGER PRIMARY KEY CHECK (version >= 1));
+        INSERT INTO ${SESSION_QUEUE_MIGRATIONS_TABLE} (version) VALUES (41);`)
+      const staleOptions = {
+        db,
+        scrubber: new SecretScrubber(),
+        installQueueSchema: false,
+      } as unknown as ConstructorParameters<typeof SessionLog>[0]
+      assert.throws(
+        () => new SessionLog(staleOptions),
+        (error: unknown) => error instanceof SessionQueueSchemaError && error.code === 'queue_schema_future',
+        'a stale JavaScript opt-out must not bypass mandatory ledger verification',
+      )
+    } finally {
+      db.close()
+    }
+  })
+
   test('serializes a held writer and a competing initializer to one committed ledger 40', { timeout: 30_000 }, async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'guanxi-queue-ledger-race-'))
     t.after(() => rm(root, { recursive: true, force: true }))
