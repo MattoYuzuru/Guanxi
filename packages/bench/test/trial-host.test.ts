@@ -47,9 +47,9 @@ test('production host factory separates experiment ledger from R1 run, fences re
     }
     const runIds: string[] = []
     const k3 = {
-      snapshot: () => ({ connections: [{ id: 'connection', kind: 'model_api', auth: 'api_key', provider: 'fixture' }] }) as
-        ReturnType<NonNullable<unknown> & (() => never)>,
-      async complete(_account: string, _connection: string, prepared: typeof context, call: {
+      snapshot: () => ({ connections: [{ id: 'connection', kind: 'model_api' as const,
+        auth: 'api_key' as const, provider: 'fixture' }] }),
+      async complete(_account: string, _connection: string, prepared: unknown, call: {
         runId: string; requestId: string; onPrepared?: (value: unknown) => void
       }) {
         runIds.push(call.runId)
