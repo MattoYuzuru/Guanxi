@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { RelayStartStatus } from '@guanxi/contract'
-import { relayStartsChildReporter, relayStartsChildStarter } from '../../src/leads/children.ts'
+import { relayStartsChildReporter, relayStartsChildStarter, type RelayStartsChildOptions } from '../../src/leads/children.ts'
 import type { ChildLaunch } from '../../src/leads/types.ts'
 import type { Attempt } from '../../src/runs/types.ts'
 import { brief } from './brief.ts'
@@ -10,85 +10,116 @@ const attempt = { id: 'a', run_id: 'child-1' } as Attempt
 const launch = (): ChildLaunch => ({ leadRunId: 'lead', childRunId: 'child-1', brief: brief(), attempt, previousAttempts: 0, ownerAccountId: 'o', actorAccountId: 'o', projectId: 'proj' })
 const status = (value: RelayStartStatus['status'], runId: string | null = 'relay-run'): RelayStartStatus => ({ key: 'child-1', runId, sessionId: null, status: value,
   error: null, source: 'run-home', observedAt: new Date(0).toISOString(), confidence: 'observed', runtime: null, runtimeAgeMs: null, meter: null, reserves: null })
+const coded = (code: string) => Object.assign(new Error(code), { code })
 
-/** Fake public relay start: `script` is the sequence `status()` walks through after `start()` returns the first entry. */
-function world(script: RelayStartStatus['status'][], extra: { statusError?: (n: number) => Error | null } = {}) {
+interface World { script: RelayStartStatus['status'][]; statusError?: (n: number) => Error | null; mirror?: () => string; startDelay?: number; startError?: Error; renewError?: () => Error | null }
+/** Fake public relay start: `script[0]` is what `start()` returns, then `status()` walks the rest. */
+function world(w: World, over: Partial<RelayStartsChildOptions> = {}) {
   const calls: string[] = []
   const inputs: unknown[] = []
   let polls = 0
   const starts = {
-    start: async (raw: unknown) => { calls.push('start'); inputs.push(raw); return status(script[0]!) },
-    status: () => { const error = extra.statusError?.(polls); polls++; calls.push('status'); if (error) throw error; return status(script[Math.min(polls, script.length - 1)]!) },
+    start: async (raw: unknown) => { calls.push('start'); inputs.push(raw); if (w.startDelay) await new Promise(resolve => setTimeout(resolve, w.startDelay)); if (w.startError) throw w.startError; return status(w.script[0]!) },
+    status: () => { const error = w.statusError?.(polls); polls++; calls.push('status'); if (polls > 400) throw new Error('runaway mirror: it never settled'); if (error) throw error; return status(w.script[Math.min(polls, w.script.length - 1)]!) },
     stop: async (key: string) => { calls.push(`stop:${key}`); return status('canceled') },
   }
   const runs = {
     complete: (_a: Attempt, outcome: string) => { calls.push(`complete:${outcome}`) },
-    signal: (_a: Attempt, key: string) => { calls.push(`signal:${key}`) },
-    renew: () => { calls.push('renew'); return { ttlMs: 1, expiresAt: 1 } },
+    renew: () => { calls.push('renew'); const error = w.renewError?.(); if (error) throw error; return { ttlMs: 1, expiresAt: 1 } },
     modelStarted: () => { calls.push('modelStarted') },
+    get: () => ({ state: w.mirror?.() ?? 'working' }),
   }
-  const starter = relayStartsChildStarter(starts as never, { consent: 'full-access', domains: ['example.test'], runs: runs as never, pollMs: 1, sleep: async () => undefined })
-  return { calls, inputs, starter, starts }
+  const starter = relayStartsChildStarter(starts as never, { consent: 'full-access', domains: ['example.test'], runs: runs as never, pollMs: 2, sleep: () => new Promise<void>(resolve => setImmediate(resolve)), ...over })
+  return { calls, inputs, starter, quiet: () => calls.filter(call => call !== 'status' && call !== 'renew') }
 }
 
 test('the mirror starts the relay run with the owner policy, never the lead\'s, and keyed by the child id', async () => {
-  const w = world(['preparing', 'running', 'completed'])
+  const w = world({ script: ['preparing', 'running', 'completed'] })
   await w.starter.start(launch()).done
   assert.deepEqual(w.inputs[0], { key: 'child-1', projectId: 'proj', connectionId: 'local-executor', model: 'qwen-fixture',
     consent: 'full-access', domains: ['example.test'], plan: brief().plan, caps: brief().caps })
-  assert.deepEqual(w.calls.filter(c => c !== 'status'), ['start', 'renew', 'modelStarted', 'renew', 'complete:completed'])
+  assert.deepEqual(w.quiet(), ['start', 'modelStarted', 'complete:completed'], 'work is recorded only once the run left preparation')
 })
 
-test('the mirror escalates once when the relay run needs input and completes with the run\'s outcome', async () => {
-  const w = world(['running', 'input_required', 'input_required', 'running', 'failed'])
-  await w.starter.start(launch()).done
-  assert.equal(w.calls.filter(c => c === 'signal:relay-input-required').length, 1)
-  assert.equal(w.calls.filter(c => c === 'modelStarted').length, 1)
-  assert.equal(w.calls.at(-1), 'complete:failed')
-  for (const [final, outcome] of [['canceled', 'canceled'], ['interrupted', 'failed']] as const) {
-    const other = world(['running', final])
-    await other.starter.start(launch()).done
-    assert.equal(other.calls.at(-1), `complete:${outcome}`, final)
+test('every settled relay status ends the mirror: finished runs complete it, everything else fails it exactly once', async () => {
+  const expected = { completed: 'completed', canceled: 'canceled', failed: 'failed', interrupted: 'failed', wrapping_up: 'failed', input_required: 'failed' } as const
+  for (const [final, outcome] of Object.entries(expected)) {
+    const w = world({ script: ['running', final as RelayStartStatus['status']] })
+    await w.starter.start(launch()).done
+    assert.equal(w.calls.filter(call => call.startsWith('complete:')).length, 1, final)
+    assert.equal(w.calls.at(-1), `complete:${outcome}`, final)
   }
+  // A cap or a wall limit leaves the relay row `wrapping_up` for good: waiting for more would hang the lead.
+  const capped = world({ script: ['running', 'running', 'wrapping_up'] })
+  await capped.starter.start(launch()).done
+  assert.equal(capped.calls.at(-1), 'complete:failed')
 })
 
-test('a lost or canceled mirror ends quietly, a vanished start fails it and a closed relay is waited out', async () => {
-  const canceled = relayStartsChildStarter({ start: async () => status('running'), status: () => status('running'), stop: async () => status('canceled') } as never,
-    { consent: 'full-access', runs: { complete: () => undefined, signal: () => undefined, modelStarted: () => undefined,
-      renew: () => { throw Object.assign(new Error('x'), { code: 'stale_lease' }) } } as never, pollMs: 1, sleep: async () => undefined })
-  await assert.doesNotReject(canceled.start(launch()).done)
-  const vanished = world(['running', 'running'], { statusError: () => Object.assign(new Error('x'), { code: 'relay_not_found' }) })
+test('the R1 deadline wrap-up of the mirror stops the relay run once and the mirror then ends as canceled', async () => {
+  let mirrorState = 'working'
+  const w = world({ script: ['running', 'running', 'running', 'canceled'], mirror: () => mirrorState }, {
+    sleep: async () => { mirrorState = 'wrapping_up'; await new Promise<void>(resolve => setImmediate(resolve)) } })
+  await w.starter.start(launch()).done
+  assert.equal(w.calls.filter(call => call === 'stop:child-1').length, 1, 'stopped once however long the wrap-up lasts')
+  assert.equal(w.calls.at(-1), 'complete:canceled')
+})
+
+test('a lost lease, a start stopped by cancel and a closing relay end the mirror quietly; a vanished or unreadable start fails it', async () => {
+  const handle = world({ script: ['running'], renewError: () => coded('stale_lease') })
+  await assert.doesNotReject(handle.starter.start(launch()).done)
+  assert.ok(!handle.calls.some(call => call.startsWith('complete:')), 'nothing is reported for a lost mirror')
+  const canceled = world({ script: ['running'], startError: coded('relay_stopped'), mirror: () => 'canceled' })
+  await assert.doesNotReject(canceled.starter.start(launch()).done)
+  const refused = world({ script: ['running'], startError: coded('relay_stopped'), mirror: () => 'working' })
+  await assert.rejects(refused.starter.start(launch()).done, { code: 'relay_stopped' }, 'a stop nobody asked for is a failure')
+  const closing = world({ script: ['running', 'running'], statusError: () => coded('relay_closed') })
+  await assert.doesNotReject(closing.starter.start(launch()).done)
+  assert.ok(!closing.calls.some(call => call.startsWith('complete:')))
+  const vanished = world({ script: ['running', 'running'], statusError: () => coded('relay_not_found') })
   await assert.rejects(vanished.starter.start(launch()).done, { code: 'relay_not_found' })
-  const closed = world(['running', 'running', 'completed'], { statusError: n => (n === 0 ? Object.assign(new Error('x'), { code: 'relay_closed' }) : null) })
-  await closed.starter.start(launch()).done
-  assert.equal(closed.calls.at(-1), 'complete:completed')
-  const refused = relayStartsChildStarter({ start: async () => { throw Object.assign(new Error('x'), { code: 'runtime_meter_unavailable' }) }, status: () => status('running'), stop: async () => status('canceled') } as never,
-    { consent: 'full-access', runs: {} as never, sleep: async () => undefined })
-  await assert.rejects(refused.start(launch()).done, { code: 'runtime_meter_unavailable' })
+  const flaky = world({ script: ['running', 'running', 'completed'], statusError: n => (n === 0 || n === 1 ? new Error('transient') : null) })
+  await flaky.starter.start(launch()).done
+  assert.equal(flaky.calls.at(-1), 'complete:completed')
+  const broken = world({ script: ['running', 'running'], statusError: () => new Error('unreadable') }, { maxStatusErrors: 2 })
+  await assert.rejects(broken.starter.start(launch()).done, /unreadable/)
+  const unavailable = world({ script: ['running'], startError: coded('runtime_meter_unavailable') })
+  await assert.rejects(unavailable.starter.start(launch()).done, { code: 'runtime_meter_unavailable' })
+})
+
+test('the mirror\'s lease is renewed while the relay run is still preparing', async () => {
+  const w = world({ script: ['running', 'completed'], startDelay: 60 })
+  await w.starter.start(launch()).done
+  const renewsBeforeStatus = w.calls.slice(0, w.calls.indexOf('status')).filter(call => call === 'renew').length
+  assert.ok(renewsBeforeStatus >= 3, `${renewsBeforeStatus} renewals during a 60 ms preparation at a 2 ms interval`)
+})
+
+test('an unsafe poll interval is refused when the adapter is built', () => {
+  for (const pollMs of [0, -1, 1.5, 30_001]) assert.throws(() => world({ script: ['running'] }, { pollMs }), { code: 'invalid_input' }, String(pollMs))
 })
 
 test('stopping a child that never reached the relay is not an error, any other failure is', async () => {
-  const absent = relayStartsChildStarter({ stop: async () => { throw Object.assign(new Error('x'), { code: 'relay_not_found' }) } } as never, { consent: 'full-access', runs: {} as never })
+  const absent = relayStartsChildStarter({ stop: async () => { throw coded('relay_not_found') } } as never, { consent: 'full-access', runs: {} as never })
   await assert.doesNotReject(absent.stop('child-1'))
-  const broken = relayStartsChildStarter({ stop: async () => { throw Object.assign(new Error('x'), { code: 'cleanup_unconfirmed' }) } } as never, { consent: 'full-access', runs: {} as never })
+  const broken = relayStartsChildStarter({ stop: async () => { throw coded('cleanup_unconfirmed') } } as never, { consent: 'full-access', runs: {} as never })
   await assert.rejects(broken.stop('child-1'), { code: 'cleanup_unconfirmed' })
-  const w = world(['running'])
+  const w = world({ script: ['running'] })
   await w.starter.stop('child-1')
   assert.equal(w.calls.at(-1), 'stop:child-1')
 })
 
-test('the reporter finds the relay run through the start key and reads only ledger facts for the current head', () => {
+test('the reporter finds the relay run through the start key, reads only ledger facts for the current head and names the relay status', () => {
   const ledger = { plan: { items: [{ id: 't1', title: 'One' }, { id: 't2', title: 'Two' }] }, items: { t1: 'done', t2: 'open' }, head: 'h2',
     evidence: [{ item: 't1', head: 'h1', ok: true, output: 'stale' }, { item: 't1', head: 'h2', ok: true, output: 'fresh' }], diffstat: 'ds',
     proposals: ['ask'], cycle: 5, tokens: 77, moneyMicros: 9, unknownCosts: 1 }
   const reporter = relayStartsChildReporter(
-    { status: key => { if (key === 'none') throw Object.assign(new Error('x'), { code: 'relay_not_found' }); return status('completed', key === 'preparing' ? null : 'relay-run') } },
+    { status: key => { if (key === 'none') throw coded('relay_not_found'); return status('wrapping_up', key === 'preparing' ? null : 'relay-run') } },
     { read: id => { assert.equal(id, 'relay-run'); return ledger as never } })
   const report = reporter.report('child-1')!
   assert.deepEqual(report.gates, [{ item: 't1', ok: true, head: 'h2', output: 'fresh' }])
   assert.deepEqual(report.items, [{ id: 't1', title: 'One', status: 'done' }, { id: 't2', title: 'Two', status: 'open' }])
   assert.deepEqual(report.metrics, { cycles: 5, tokens: 77, moneyMicros: null }, 'unknown costs make money unknown, not zero')
   assert.deepEqual(report.handoff, { ref: 'relay:relay-run', cycle: 5 })
+  assert.equal(report.narrative, 'relay run status: wrapping_up')
   assert.equal(reporter.report('none'), null)
   assert.equal(reporter.report('preparing'), null, 'a start without a run has no ledger yet')
 })

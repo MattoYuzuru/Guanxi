@@ -38,7 +38,9 @@ test('leads are opt-in, need the external-agent policy and carry the explicit al
 })
 
 test('leads can run delegated plans through this node\'s own public relay start, with owner-chosen consent', async t => {
-  const server = await boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, relay: { consent: 'full-access', domains: [] }, tickMs: 2_000_000_000 } })
+  await assert.rejects(boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, relay: { consent: 'full-access', domains: [] } } }), /leads\.relay requires validateExecutor/)
+  const server = await boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, relay: { consent: 'full-access', domains: [] },
+    validateExecutor: () => undefined, tickMs: 2_000_000_000 } })
   assert.ok(server.kernel.node.service<LeadHostService>(LEAD_SERVICE))
   assert.equal(server.context.db.prepare('SELECT version FROM lead_migrations').get()!.version, 41)
 })

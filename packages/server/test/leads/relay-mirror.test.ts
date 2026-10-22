@@ -48,7 +48,7 @@ async function mirrorFixture(t: Parameters<typeof leadFixture>[0], lead: Record<
 }
 const resumed = async (f: Awaited<ReturnType<typeof leadFixture>>) => (await f.events()).filter(e => e.event === 'prompt' && String(e.text).includes('guanxi.wake/v1'))
 
-test('a lead delegates through the public relay start: escalation, completion, two wakes and the relay ledger in the packet', async t => {
+test('a lead delegates through the public relay start and is woken once with the relay ledger when the run completes', async t => {
   const { f, relay, step } = await mirrorFixture(t)
   const { runId, first } = f.start()
   assert.equal((await first).outcome, 'hibernated')
@@ -60,25 +60,60 @@ test('a lead delegates through the public relay start: escalation, completion, t
   relay.state = 'running'
   await step()
   assert.notEqual(run.attempts(child)[0]!.first_model_at, null, 'the mirror records that work began')
-  relay.state = 'input_required'
-  await step()
-  f.lead().pump()
-  await f.lead().idle()
-  assert.equal(run.wakes(runId).length, 1)
-  assert.equal(run.wakes(runId)[0]!.kind, 'escalation')
-  assert.equal(run.get(runId).state, 'waiting_children', 'the lead yielded; the promise is still pending')
+  assert.equal(run.wakes(runId).length, 0, 'a running relay wakes nobody')
   relay.state = 'completed'
   await step()
   f.lead().pump()
   await f.lead().idle()
   assert.equal(run.get(runId).state, 'completed')
-  assert.deepEqual(run.wakes(runId).map(w => [w.kind, w.acknowledged_at !== null]), [['escalation', true], ['resolution', true]])
+  assert.deepEqual(run.wakes(runId).map(w => [w.kind, w.acknowledged_at !== null]), [['resolution', true]])
   assert.equal(run.promises(runId)[0]!.outcome, 'completed')
   const prompts = await resumed(f)
-  assert.equal(prompts.length, 2)
-  assert.match(String(prompts[1]!.text), /items:\n- t1 \[done\] Fix it/)
-  assert.match(String(prompts[1]!.text), /gates:\n- t1 ok=true @abc123 npm test green/)
-  assert.match(String(prompts[1]!.text), /handoff: relay:relay-run-1 cycle=2/)
+  assert.equal(prompts.length, 1)
+  assert.match(String(prompts[0]!.text), /items:\n- t1 \[done\] Fix it/)
+  assert.match(String(prompts[0]!.text), /gates:\n- t1 ok=true @abc123 npm test green/)
+  assert.match(String(prompts[0]!.text), /handoff: relay:relay-run-1 cycle=2/)
+  assert.match(String(prompts[0]!.text), /narrative: relay run status: completed/)
+})
+
+test('a relay run that stops at a cap or needs input settles for good: the lead is woken once with a failed outcome, not left to its deadline', async t => {
+  for (const state of ['wrapping_up', 'input_required'] as const) {
+    const { f, relay, step } = await mirrorFixture(t)
+    const { runId, first } = f.start()
+    await first
+    relay.state = 'running'
+    await step()
+    relay.state = state
+    await step()
+    f.lead().pump()
+    await f.lead().idle()
+    const run = f.runs()
+    assert.equal(run.promises(runId)[0]!.outcome, 'failed', state)
+    assert.equal(run.wakes(runId).length, 1, state)
+    assert.match(String((await resumed(f))[0]!.text), new RegExp(`narrative: relay run status: ${state}`))
+    assert.equal(run.get(runId).state, 'completed')
+  }
+})
+
+test('the lead\'s deadline stops the relay run and the mirror ends canceled; the lead hears once', async t => {
+  const { f, relay, step } = await mirrorFixture(t)
+  const { runId, first } = f.start()
+  await first
+  const child = f.runs().promises(runId)[0]!.child_id
+  relay.state = 'running'
+  await step()
+  f.advance(8 * HOUR + 1)
+  f.runs().tick()
+  await step()
+  assert.deepEqual(relay.stops, [child], 'cancel after wrap-up: the relay run is told to stop')
+  relay.state = 'canceled'
+  await step()
+  f.lead().pump()
+  await f.lead().idle()
+  const run = f.runs()
+  assert.equal(run.promises(runId)[0]!.outcome, 'deadline')
+  assert.equal(run.wakes(runId).length, 1)
+  assert.equal(run.get(runId).state, 'completed')
 })
 
 test('a failed relay run resolves the promise as failed and a restart-interrupted one is reported failed, never resumed', async t => {
@@ -122,6 +157,8 @@ test('after a lost mirror the child is attached to the SAME relay run again, nev
   f.advance(25 * HOUR)
   f.runs().tick()
   assert.equal(f.runs().get(child).state, 'interrupted')
+  // One poll lets the interval renewal notice the lost lease, the next lets the loop see it and end.
+  await step()
   await step()
   f.lead().pump()
   await f.lead().idle()
