@@ -7,6 +7,7 @@ import {
   SESSION_ROUTES,
   apiErrorSchema,
   listSessionsResponse,
+  sessionPageResponse,
   sessionEventSchema,
   sessionEventsResponse,
   sessionSearchResponse,
@@ -44,6 +45,9 @@ async function getJson<Schema extends ZodTypeAny>(
 }
 
 export const inspectorApi = {
+  page: (cursor?: string, signal?: AbortSignal) => getJson(
+    `${SESSION_ROUTES.page()}?${new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) })}`,
+    sessionPageResponse, signal),
   sessions: (signal?: AbortSignal) =>
     getJson(`${SESSION_ROUTES.sessions()}?limit=100`, listSessionsResponse, signal),
   summary: (sessionId: string, signal?: AbortSignal) =>

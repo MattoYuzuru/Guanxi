@@ -1,9 +1,11 @@
 import { workspaceEnglish, workspaceRussian } from '../features/workspace/messages.ts'
+import { shellEnglish, shellRussian } from '../features/shell/messages.ts'
 import { connectionEnglish, connectionRussian } from '../features/connections/messages.ts'
 import { nativeEnglish, nativeRussian } from '../features/native-agent/messages.ts'
 
 const english = {
   ...workspaceEnglish,
+  ...shellEnglish,
   ...nativeEnglish,
   ...connectionEnglish,
   'format.bytes.byte': 'B',
@@ -1851,6 +1853,7 @@ const russian: Messages = {
   ...connectionRussian,
   ...nativeRussian,
   ...workspaceRussian,
+  ...shellRussian,
   'format.bytes.byte': 'Б',
   'format.bytes.kibibyte': 'КБ',
   'format.bytes.mebibyte': 'МБ',

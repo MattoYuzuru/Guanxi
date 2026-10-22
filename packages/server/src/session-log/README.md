@@ -22,6 +22,22 @@ the web inspector and the agent query tool.
 
 Event schemas are in `packages/contract/src/events/`.
 
+## Paged metadata for navigation
+
+`GET /api/sessions/list/page` is an additive, loopback-only metadata endpoint; the existing
+`GET /api/sessions` response remains unchanged. Its cursor orders rows by creation time and
+session id, and each page skips withheld identifiers and incomplete mirrors before filling the
+requested size. It returns no event payloads or reasoning. Run state comes from the actual
+root run's `session_id` association, with its stored observation time; it is not a live-process
+or execution-authority claim.
+
+Navigation targets come from active native-session or legacy Thread records, including the
+Thread's actual Project. Missing, left, trashed, deletion-requested or newly withheld targets
+fall back to the session inspector. Session kind and the display-only scrubbed `threadId` do
+not authorize a chat destination. `session-list-page.test.ts` covers pagination, provenance,
+scrubbing, readiness and these navigation boundaries. The web shell consumes this metadata in
+a separate slice.
+
 ## Guarantees and where they are enforced
 
 | Property | Enforcement | Test |
