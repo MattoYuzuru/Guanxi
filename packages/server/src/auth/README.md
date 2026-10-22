@@ -151,14 +151,16 @@ hosts (`127.0.0.0/8`, `::1`, `localhost`) always pass. Every other host, includi
   (WebAuthn forbids IP addresses; `localhost`, trailing dots, bare integer/hex hosts, ports and
   spaces are also refused);
 - accounts enabled;
-- a non-empty `allowedRoots` list of absolute, duplicate-free paths;
+- a non-empty `allowedRoots` list of absolute, duplicate-free paths that are neither `/` nor
+  nested inside one another; on macOS and Windows, paths that differ only by case are
+  duplicates;
 - a configured node credential.
 
 Failure throws `RemoteBindError` with `code: 'remote_bind_forbidden'` and a `missing` array that
 lists every unmet requirement using stable codes: `tls_required`, `tls_hostname_required`,
 `tls_hostname_ip_forbidden`, `tls_hostname_invalid`, `accounts_required`,
-`allowed_roots_required`, `allowed_roots_must_be_absolute`, `allowed_roots_duplicate`,
-`node_credential_required`.
+`allowed_roots_required`, `allowed_roots_must_be_absolute`, `allowed_roots_must_not_be_root`,
+`allowed_roots_duplicate`, `allowed_roots_nested`, `node_credential_required`.
 
 ## Non-goals
 

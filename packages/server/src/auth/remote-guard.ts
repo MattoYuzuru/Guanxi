@@ -5,7 +5,7 @@
  * server boot yet. Loopback stays the default; any other bind must satisfy every requirement.
  */
 import { isIP } from 'node:net'
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 export interface RemoteBindConfig {
   host: string
@@ -24,7 +24,9 @@ export type RemoteBindRequirement =
   | 'accounts_required'
   | 'allowed_roots_required'
   | 'allowed_roots_must_be_absolute'
+  | 'allowed_roots_must_not_be_root'
   | 'allowed_roots_duplicate'
+  | 'allowed_roots_nested'
   | 'node_credential_required'
 
 /** A refused remote bind that lists every unmet requirement. */
@@ -61,6 +63,15 @@ function isCanonicalHostname(hostname: string): boolean {
   return !NUMERIC_LABEL.test(last) && !HEX_INTEGER_LABEL.test(last)
 }
 
+/** True when one normalized root is an ancestor of another. Equal paths are duplicates, not nested. */
+function hasNestedRoots(roots: string[]): boolean {
+  return roots.some((root, rootIndex) => roots.some((other, otherIndex) => {
+    if (rootIndex === otherIndex) return false
+    const path = relative(other, root)
+    return path !== '' && path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
+  }))
+}
+
 /** `127.0.0.0/8`, `::1` and `localhost` are loopback and always admitted. */
 function isLoopbackHost(host: string): boolean {
   const candidate = host.toLowerCase()
@@ -71,10 +82,11 @@ function isLoopbackHost(host: string): boolean {
 
 /**
  * Throw a `RemoteBindError` unless the bind is loopback or the full remote security profile is
- * present: usable TLS with a non-IP hostname, accounts, absolute unique allowed roots and a node
- * credential. Every unmet requirement is reported, not only the first.
+ * present: usable TLS with a canonical hostname, accounts, absolute unique non-nested allowed
+ * roots and a node credential. Every unmet requirement is reported, not only the first.
+ * `platform` is injectable for deterministic case-insensitive filesystem tests.
  */
-export function assertBindAllowed(config: RemoteBindConfig): void {
+export function assertBindAllowed(config: RemoteBindConfig, platform: NodeJS.Platform = process.platform): void {
   if (isLoopbackHost(config.host)) return
 
   const missing: RemoteBindRequirement[] = []
@@ -97,9 +109,16 @@ export function assertBindAllowed(config: RemoteBindConfig): void {
     if (config.allowedRoots.some(root => root.length === 0 || !isAbsolute(root))) {
       missing.push('allowed_roots_must_be_absolute')
     }
-    if (new Set(config.allowedRoots.map(root => resolve(root))).size !== config.allowedRoots.length) {
-      missing.push('allowed_roots_duplicate')
+    const caseInsensitive = platform === 'darwin' || platform === 'win32'
+    const resolved = config.allowedRoots.map(root => {
+      const path = resolve(root)
+      return caseInsensitive ? path.toLowerCase() : path
+    })
+    if (resolved.includes(caseInsensitive ? resolve('/').toLowerCase() : resolve('/'))) {
+      missing.push('allowed_roots_must_not_be_root')
     }
+    if (new Set(resolved).size !== resolved.length) missing.push('allowed_roots_duplicate')
+    if (hasNestedRoots(resolved)) missing.push('allowed_roots_nested')
   }
 
   if (!config.nodeCredentialConfigured) missing.push('node_credential_required')

@@ -19,8 +19,12 @@ function withoutProfile(host: string): RemoteBindConfig {
   return { ...valid, host, tls: null, accountsEnabled: false, allowedRoots: [], nodeCredentialConfigured: false }
 }
 
-function assertMissing(config: RemoteBindConfig, expected: RemoteBindRequirement[]): void {
-  assert.throws(() => assertBindAllowed(config), (error: unknown) => {
+function assertMissing(
+  config: RemoteBindConfig,
+  expected: RemoteBindRequirement[],
+  platform?: NodeJS.Platform,
+): void {
+  assert.throws(() => assertBindAllowed(config, platform), (error: unknown) => {
     assert.ok(error instanceof RemoteBindError)
     assert.equal(error.code, 'remote_bind_forbidden')
     assert.equal(error.host, config.host)
@@ -80,6 +84,21 @@ test('each missing requirement is reported with its stable code', () => {
     { name: 'accounts disabled', config: { ...valid, accountsEnabled: false }, expected: ['accounts_required'] },
     { name: 'no allowed roots', config: { ...valid, allowedRoots: [] }, expected: ['allowed_roots_required'] },
     {
+      name: 'filesystem root',
+      config: { ...valid, allowedRoots: ['/'] },
+      expected: ['allowed_roots_must_not_be_root'],
+    },
+    {
+      name: 'nested allowed root',
+      config: { ...valid, allowedRoots: ['/srv/guanxi', '/srv/guanxi/data'] },
+      expected: ['allowed_roots_nested'],
+    },
+    {
+      name: 'nested allowed root in reverse order',
+      config: { ...valid, allowedRoots: ['/srv/guanxi/data', '/srv/guanxi'] },
+      expected: ['allowed_roots_nested'],
+    },
+    {
       name: 'relative allowed root',
       config: { ...valid, allowedRoots: ['srv/guanxi'] },
       expected: ['allowed_roots_must_be_absolute'],
@@ -123,6 +142,35 @@ test('multiple violations are listed together rather than stopping at the first'
     'allowed_roots_duplicate',
     'node_credential_required',
   ])
+})
+
+test('allowed roots reject nesting and case-only duplicates on case-insensitive filesystems', () => {
+  const caseOnly: RemoteBindConfig = {
+    ...valid,
+    allowedRoots: ['/srv/guanxi', '/srv/Guanxi'],
+  }
+  for (const platform of ['darwin', 'win32'] as const) {
+    assertMissing(caseOnly, ['allowed_roots_duplicate'], platform)
+  }
+  assert.doesNotThrow(() => assertBindAllowed(caseOnly, 'linux'))
+
+  const nestedCaseOnly: RemoteBindConfig = {
+    ...valid,
+    allowedRoots: ['/srv/guanxi', '/srv/GUANXI/data'],
+  }
+  for (const platform of ['darwin', 'win32'] as const) {
+    assertMissing(nestedCaseOnly, ['allowed_roots_nested'], platform)
+  }
+  assert.doesNotThrow(() => assertBindAllowed(nestedCaseOnly, 'linux'))
+})
+
+test('allowed roots may share a string prefix without being nested', () => {
+  for (const allowedRoots of [
+    ['/srv/guanxi', '/srv/guanxi-other'],
+    ['/srv/guanxi', '/srv2/guanxi'],
+  ]) {
+    assert.doesNotThrow(() => assertBindAllowed({ ...valid, allowedRoots }, 'linux'), allowedRoots.join(','))
+  }
 })
 
 test('IP TLS hostnames are rejected explicitly', () => {
