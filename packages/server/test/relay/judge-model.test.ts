@@ -247,3 +247,90 @@ test('K3 governor-held late revocation refuses before transport and releases per
   const released = await f.governor.acquire(next)
   released.release()
 })
+
+test('an older cached window expires independently of fresh inventory before sample entry', async (t) => {
+  let posts = 0,
+    clock = now
+  const f = await setup(t, async () => {
+    posts++
+    throw new Error('zero dispatch expected')
+  })
+  const meter = {
+    ...f.meter,
+    observe: async () => ({ ...(await f.meter.observe()), observedAt: now - 900 })
+  }
+  const model = new ConnectionJudgeModel(
+    f.connections,
+    account,
+    meter,
+    f.scrubber,
+    async () => f.fact,
+    1000,
+    () => clock
+  )
+  const input = { accountId: account, role: f.role, signal: new AbortController().signal }
+  assert.equal(await model.admit(input), true)
+  clock += 200
+  await assert.rejects(
+    model.sample({
+      ...input,
+      runId: 'run',
+      requestId: 'old-window',
+      prompt: 'fixture',
+      check: () => {}
+    }),
+    /judge_window_unknown/
+  )
+  assert.equal(posts, 0)
+  assert.equal(f.governor.snapshot().activeLease, null)
+})
+test('queued governor window expiry refuses at final preparation while inventory remains fresh', async (t) => {
+  let posts = 0,
+    clock = now
+  const f = await setup(t, async () => {
+    posts++
+    throw new Error('zero dispatch expected')
+  })
+  const meter = {
+    ...f.meter,
+    observe: async () => ({ ...(await f.meter.observe()), observedAt: now - 900 })
+  }
+  const model = new ConnectionJudgeModel(
+    f.connections,
+    account,
+    meter,
+    f.scrubber,
+    async () => f.fact,
+    1000,
+    () => clock
+  )
+  const input = { accountId: account, role: f.role, signal: new AbortController().signal }
+  await model.admit(input)
+  const ticket = f.governor.enqueue({
+    owner: { kind: 'operation', operationId: 'old-window-block' },
+    operation: 'chat',
+    model: { provider: 'ollama', name: 'other' },
+    requestedContext: 16000,
+    priority: 'normal',
+    enqueuedAt: new Date(now).toISOString()
+  })
+  const lease = await f.governor.acquire(ticket),
+    entered = deferred()
+  const task = model.sample({
+    ...input,
+    runId: 'run',
+    requestId: 'queued-window',
+    prompt: 'fixture',
+    check: () => entered.resolve()
+  })
+  try {
+    await entered.promise
+    clock += 200
+    lease.release()
+    await assert.rejects(task)
+    assert.equal(posts, 0)
+    assert.equal(f.governor.snapshot().activeLease, null)
+  } finally {
+    lease.release()
+  }
+})

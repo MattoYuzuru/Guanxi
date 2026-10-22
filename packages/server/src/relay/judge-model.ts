@@ -16,7 +16,13 @@ export interface JudgeModel {
   admit(input: JudgeModelInput): Promise<boolean>
   /** Owns any started resource until this promise settles, including abort cleanup. */
   sample(
-    input: JudgeModelInput & { runId: string; requestId: string; prompt: string; check(): void; started?(): void }
+    input: JudgeModelInput & {
+      runId: string
+      requestId: string
+      prompt: string
+      check(): void
+      started?(): void
+    }
   ): Promise<string>
 }
 export interface InstalledJudgeAttestation {
@@ -92,6 +98,22 @@ export class ConnectionJudgeModel implements JudgeModel {
       'judge_local_unavailable'
     )
   }
+  private window(
+    input: JudgeModelInput,
+    window: Awaited<ReturnType<RuntimeMeter['observe']>>
+  ): void {
+    invariant(
+      window.tokens === input.role.windowTokens &&
+        window.source.trim() &&
+        window.confidence === 'high' &&
+        Number.isSafeInteger(window.observedAt) &&
+        window.observedAt >= 0 &&
+        Number.isSafeInteger(this.now()) &&
+        window.observedAt <= this.now() &&
+        this.now() - window.observedAt <= this.maxAgeMs,
+      'judge_window_unknown'
+    )
+  }
   async admit(input: JudgeModelInput): Promise<boolean> {
     input.signal.throwIfAborted()
     invariant(input.accountId === this.ownerAccountId, 'judge_account_denied')
@@ -99,14 +121,7 @@ export class ConnectionJudgeModel implements JudgeModel {
     if (!fact) return false
     this.fact(input, fact)
     const window = await observeUntilAbort(input.signal, () => this.meter.observe(input.signal))
-    invariant(
-      window.tokens === input.role.windowTokens &&
-        window.source.trim() &&
-        window.confidence === 'high' &&
-        window.observedAt <= this.now() &&
-        this.now() - window.observedAt <= this.maxAgeMs,
-      'judge_window_unknown'
-    )
+    this.window(input, window)
     input.signal.throwIfAborted()
     this.admitted.set(hash({ account: input.accountId, role: input.role }), {
       fact: { ...fact },
@@ -120,6 +135,7 @@ export class ConnectionJudgeModel implements JudgeModel {
     input.signal.throwIfAborted()
     input.check()
     this.fact(input, admission.fact)
+    this.window(input, admission.window)
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const prompt = this.scrubber.scrub(input.prompt)
     let dispatchedInput: number | undefined
@@ -157,6 +173,12 @@ export class ConnectionJudgeModel implements JudgeModel {
             Number.isSafeInteger(count) && count >= 0 && count <= input.role.maxInputTokens,
             'judge_context_ceiling'
           )
+          // Counter callbacks are T0 but may observe time/fence changes. The last
+          // synchronous check follows counting, immediately before K3 dispatch.
+          input.signal.throwIfAborted()
+          input.check()
+          this.fact(input, admission.fact)
+          this.window(input, admission.window)
           dispatchedInput = count
         },
         onStarted: () => {
