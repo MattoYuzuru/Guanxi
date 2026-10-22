@@ -3,13 +3,25 @@ import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, stat, lstat, writeFile, rm, open } from 'node:fs/promises'
 import { resolve, join, sep, dirname } from 'node:path'
-import { nativeAgentInputSchema, agentExecResultSchema, type NativeAgentInput, type AgentProgress, type AgentExecResult, type SessionEvent, nativeRunBudgetSchema } from '@guanxi/contract'
+import {
+  nativeAgentInputSchema,
+  agentExecResultSchema,
+  type NativeAgentInput,
+  type AgentProgress,
+  type AgentExecResult,
+  type SessionEvent,
+  type SessionInputArtifactRef,
+  type SessionEventDataV2,
+  nativeRunBudgetSchema,
+} from '@guanxi/contract'
 import { RunStore } from '../runs/store.ts'
 import type { Attempt } from '../runs/types.ts'
 import type { Db } from '../store/db.ts'
 import { NativeSessions } from './sessions.ts'
 import type { AppContext } from '../context.ts'
-import type { SessionHandle, SessionLog } from '../session-log/log.ts'
+import type { AppendOptions, AppendResult, SessionEventInput, SessionHandle, SessionLog } from '../session-log/log.ts'
+import { SessionInputError, SessionInputStore, inputMediaTypeFor, isInlineInput, utf8Excerpt } from '../session-log/input-artifacts.ts'
+import { NativeAppendQueue } from './append-queue.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { Connections } from '../connections/service.ts'
 import { assertRootsClean } from './cleanup.ts'
@@ -25,7 +37,7 @@ export class NativeAgentError extends Error {
   readonly code: string
   constructor(code: string) { super(code); this.code = code }
 }
-interface Active { policy: SandboxPolicy; handle: SessionHandle; abort: AbortController; settled: Promise<void>; attempt: Attempt }
+interface Active { policy: SandboxPolicy; handle: SessionHandle; abort: AbortController; settled: Promise<void>; attempt: Attempt; queue: NativeAppendQueue | null }
 export type NativeHost = Pick<AppContext, 'projects' | 'workspaces' | 'artifactTransfers'>
 const inside = (root: string, path: string) => path === root || path.startsWith(root + sep)
 async function rejectUnresolvedLinks(path: string): Promise<void> {
@@ -60,9 +72,11 @@ export class NativeAgents {
   private maintaining = false
   private maintenance: ReturnType<typeof setInterval>
   readonly runs: RunStore
+  readonly inputArtifacts: SessionInputStore
   private commandRunner: typeof sandboxCommand
-  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)], commandRunner = sandboxCommand, runtime: { db: Db; runs: RunStore }) {
+  constructor(host: NativeHost, log: SessionLog, connections: Connections, scrubber: EgressScrubber, dataDir: string, nodePorts = () => [apiPortFromEnv(process.env, 4310), portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)], commandRunner = sandboxCommand, runtime: { db: Db; runs: RunStore; inputArtifacts?: SessionInputStore }) {
     this.runs = runtime.runs
+    this.inputArtifacts = runtime.inputArtifacts ?? new SessionInputStore({ dataDir, db: runtime.db })
     this.sessions = new NativeSessions(runtime.db, log, dataDir, this.runs)
     this.maintenance = setInterval(() => { void this.maintain() }, 60000)
     this.maintenance.unref()
@@ -81,6 +95,14 @@ export class NativeAgents {
       this.runs.reconcile()
       await this.sessions.maintain(new Set(this.active.keys()))
       await this.sessions.reapOrphans(id => this.preparing.has(id) || this.active.has(id), () => this.runs.heartbeat())
+      await this.inputArtifacts.reap({
+        isLive: id => this.preparing.has(id) || this.active.has(id),
+        liveSessionIds: [...this.preparing, ...this.active.keys()],
+        assertHome: () => this.runs.heartbeat(),
+        // The final fresh membership check and rename share the R1 home
+        // generation and SQLite transaction that serializes session creation.
+        criticalSection: (operation, body) => this.runs.homeFence().transaction(operation, () => body()),
+      })
     }).catch(() => { /* Readiness/home contention or cleanup failures retry next pass. */ })
       .finally(() => { this.maintaining = false })
     return this.maintenanceTask
@@ -216,22 +238,35 @@ export class NativeAgents {
   stop(id: string) {
     const active = this.active.get(id)
     if (!active) { this.events(id); return }
-    try { active.handle.append({ type: 'intervention', data: { action: 'stop', reason: 'explicit_stop' } }) }
-    finally { active.abort.abort() }
+    // Enqueue before aborting, but never wait for artifact I/O or a commit here.
+    // The queue retains this intent so an earlier aborted artifact append cannot
+    // drop it from the failure path that writes the single terminal.
+    if (active.queue !== null) {
+      void active.queue.requestIntervention({ type: 'intervention', data: { action: 'stop', reason: 'explicit_stop' } }).catch(() => undefined)
+    }
+    active.abort.abort()
   }
-  queue(id: string, text: string, userActivity = true) {
+  async queue(id: string, text: string, userActivity = true) {
     this.ready()
     if (!text.trim()) throw new NativeAgentError('validation_failed')
     const active = this.active.get(id)
-    if (!active) throw new NativeAgentError('session_not_running')
+    if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
     if (userActivity) this.sessions.touch(id)
-    const queue = this.progress(id).queue
-    active.handle.append({ type: 'agent.queue', data: { items: [...queue, { id: randomUUID(), text }] } })
+    const pending = active.queue
+    // Read and append the projection inside the same FIFO operation: a snapshot
+    // taken before enqueue is stale as soon as a concurrent queue() or
+    // removeQueued() commits, and would silently overwrite its accepted items.
+    await pending.enqueue(() => {
+      pending.appendNow({ type: 'agent.queue', data: { items: [...this.progress(id).queue, { id: randomUUID(), text }] } })
+    })
   }
-  removeQueued(id: string, item: string) {
+  async removeQueued(id: string, item: string) {
     const active = this.active.get(id)
-    if (!active) throw new NativeAgentError('session_not_running')
-    active.handle.append({ type: 'agent.queue', data: { items: this.progress(id).queue.filter(i => i.id !== item) } })
+    if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
+    const pending = active.queue
+    await pending.enqueue(() => {
+      pending.appendNow({ type: 'agent.queue', data: { items: this.progress(id).queue.filter(i => i.id !== item) } })
+    })
   }
   leaveSession(id: string) { this.ready(); this.runs.heartbeat(); return this.sessions.leave(id) }
   setRetention(id: string, mode: 'keep' | 'ttl' | 'session') { this.ready(); this.runs.heartbeat(); return this.sessions.setRetention(id, mode) }
@@ -243,11 +278,11 @@ export class NativeAgents {
     try { await this.sessions.remove(id) } catch (error) { throw new NativeAgentError(error instanceof Error && ['session_busy','writer_busy','session_not_found','cleanup_unconfirmed'].includes('code' in error ? String(error.code) : error.message) ? ('code' in error ? String(error.code) : error.message) : 'deletion_failed') }
     return { sessionId: id, deleted: true as const }
   }
-  prompt(id: string, text: string) {
+  async prompt(id: string, text: string) {
     this.ready()
     this.runs.heartbeat()
     this.sessions.assertAvailable(id)
-    if (this.active.has(id)) { this.queue(id, text); return }
+    if (this.active.has(id)) { await this.queue(id, text); return }
     const events = this.events(id)
     const event = events.find(e => e.type === 'agent.policy')!
     if (event.type !== 'agent.policy') throw new NativeAgentError('session_not_found')
@@ -257,8 +292,15 @@ export class NativeAgents {
       contextTokens: policy.contextTokens, budget: policy.budget, retention: policy.retention, prompt: text })
     const model = selectedModel(this.connections, input)
     this.ensureRoots(policy, id)
-    const history = replay(events, model.api, model.provider, model.id)
-    this.launch(id, input, policy, this.log.open(id, { kind: 'agent' }), text, history)
+    const handle = this.log.open(id, { kind: 'agent' })
+    let history: AgentMessage[]
+    try {
+      history = await this.replay(id, events, model.api, model.provider, model.id)
+    } catch (error) {
+      handle.close()
+      throw error
+    }
+    this.launch(id, input, policy, handle, text, history)
   }
   private attempt(id: string, input: NativeAgentInput) {
     this.runs.heartbeat()
@@ -280,8 +322,7 @@ export class NativeAgents {
     let attempt: Attempt
     try { this.sessions.touch(id); attempt = this.attempt(id, input) } catch (error) { rawHandle.close(); throw error }
     const abort = new AbortController()
-    const active: Active = { policy, handle: this.fencedHandle(rawHandle, attempt), abort, attempt, settled: Promise.resolve() }
-    active.handle.append({ type: 'agent.state', data: { status: 'running', error: null } })
+    const active: Active = { policy, handle: this.fencedHandle(rawHandle, attempt), abort, attempt, settled: Promise.resolve(), queue: null }
     this.active.set(id, active)
     active.settled = (async () => {
       let next: string | undefined = prompt
@@ -292,7 +333,7 @@ export class NativeAgents {
           catch { abort.abort() }
         }, 1000)
         timer.unref()
-        try { await this.execute(id, input, policy, active.handle, next, history, abort.signal, active.attempt, queuedId) }
+        try { await this.execute(id, input, policy, active, next, history, queuedId) }
         finally { clearInterval(timer) }
         const state = this.runs.get(active.attempt.run_id).state
         if (abort.signal.aborted || state !== 'completed') break
@@ -300,7 +341,8 @@ export class NativeAgents {
         next = queue[0]?.text; queuedId = queue[0]?.id
         if (next !== undefined) {
           this.sessions.assertAvailable(id)
-          history = replay(this.events(id), selectedModel(this.connections, input).api, selectedModel(this.connections, input).provider, input.model)
+          const model = selectedModel(this.connections, input)
+          history = await this.replay(id, this.events(id), model.api, model.provider, model.id)
           active.attempt = this.attempt(id, input)
           active.handle = this.fencedHandle(rawHandle, active.attempt)
         }
@@ -309,79 +351,308 @@ export class NativeAgents {
       try { this.runs.complete(active.attempt, 'failed') } catch { /* A fenced owner cannot complete or append. */ }
     }).finally(() => { rawHandle.close(); this.active.delete(id) })
   }
-  private async execute(id: string, input: NativeAgentInput, policy: SandboxPolicy, handle: SessionHandle, prompt: string, history: AgentMessage[], signal: AbortSignal, attempt: Attempt, queuedId?: string) {
+
+  private async execute(id: string, input: NativeAgentInput, policy: SandboxPolicy, active: Active, prompt: string, history: AgentMessage[], queuedId?: string) {
+    const handle = active.handle
+    const abort = active.abort
+    const signal = abort.signal
+    const attempt = active.attempt
     let step = 0
     let promptId: string = queuedId ?? randomUUID()
     let promptOrigin: 'typed' | 'queued' = queuedId ? 'queued' : 'typed'
     const turnId = randomUUID()
-    const tools = nativeTools({ policy, log: this.log, handle, scrubber: this.scrubber, queue: text => this.queue(id, text, false), executeCommand: this.commandRunner, guard: () => { signal.throwIfAborted(); if (this.runs.checkExecution(attempt) === 'wrapping_up') throw new Error('report_only') } })
-    const model = selectedModel(this.connections, input)
-    const images: import('@earendil-works/pi-ai').ImageContent[] = []
-    for (const attachment of policy.attachmentMetadata ?? []) {
-      if (!attachment.mediaType.startsWith('image/')) continue
-      if (!model.input.includes('image')) throw new NativeAgentError('image_not_supported')
-      const file = await open(attachment.path, 'r')
-      try { images.push({ type: 'image', data: (await file.readFile()).toString('base64'), mimeType: attachment.mediaType }) } finally { await file.close() }
-    }
-    const agent = new Agent({ initialState: { model, systemPrompt: orientation(policy), tools,
-      ...(history.length ? { messages: [{ role: 'system', content: orientation(policy), toolsAdded: tools.map(({ name, description, parameters }) => ({ name, description, parameters })), timestamp: Date.now() }, ...history] } : {}) },
-      streamFn: connectionStream(this.connections, this.scrubber, input, attempt, this.runs), toolExecution: 'sequential',
-      // Reasoning is stored only as K2 reasoning, never recycled into any provider request.
-      convertToLlm: messages => messages.map(m => m.role === 'assistant' ? { ...m, content: m.content.filter(c => c.type !== 'thinking') } : m),
+    let queue: NativeAppendQueue | null = null
+    const created = new NativeAppendQueue({
+      append: (event, options) => handle.append(event, options),
+      abort: () => abort.abort(),
+      onFailure: async ({ code }) => {
+        if (queue === null) return
+        this.writeFailureTerminal(queue, turnId, () => step, signal, code)
+      },
+    })
+    queue = created
+    active.queue = created
+    const tools = nativeTools({
+      policy, log: this.log, handle, scrubber: this.scrubber,
+      queue: text => this.queue(id, text, false),
+      executeCommand: this.commandRunner,
+      append: (event, options) => created.append(event, options),
+      awaitToolCall: (toolCallId, toolSignal) => created.waitForToolCall(toolCallId, toolSignal),
+      abortTurn: () => {
+        if (created.failed === null) void created.fail('input_artifact_storage_failed')
+        abort.abort()
+      },
+      guard: () => { signal.throwIfAborted(); if (this.runs.checkExecution(attempt) === 'wrapping_up') throw new Error('report_only') },
     })
     let cleanupUnconfirmed = false
-    const stop = () => agent.abort()
+    let agent: Agent | null = null
+    const stop = () => agent?.abort()
     signal.addEventListener('abort', stop, { once: true })
-    agent.subscribe(event => {
-      if (event.type === 'message_end') {
-        const message = event.message
-        if (message.role === 'user') handle.append({ type: 'prompt', data: { origin: promptOrigin, messageId: promptId,
-          text: typeof message.content === 'string' ? message.content : message.content.filter(c => c.type === 'text').map(c => c.text).join('\n'), attachmentCount: policy.attachments.length } })
-        if (message.role === 'assistant') {
-          handle.append({ type: 'assistant.message', spanId: turnId, data: { messageId: turnId, step: step++, text: message.content.filter(c => c.type === 'text').map(c => c.text).join('\n') } })
-          for (const call of message.content.filter(c => c.type === 'toolCall')) handle.append({ type: 'tool.call', data: { toolCallId: call.id, name: call.name, arguments: call.arguments, source: 'builtin', parsedFrom: 'native', diffPath: null } })
-          const reasoning = message.content.filter(c => c.type === 'thinking').map(c => c.thinking).join('\n')
-          if (reasoning) handle.append({ type: 'reasoning', spanId: turnId, expiresAt: this.sessions.expiry(id), data: { messageId: turnId, step: step - 1, text: reasoning } })
-        }
-      }
-      if (event.type === 'tool_execution_end' && event.result.details?.code === 'cleanup_unconfirmed') { cleanupUnconfirmed = true; agent.abort() }
-      if (event.type === 'tool_execution_end') handle.append({ type: 'tool.result', data: { toolCallId: event.toolCallId, status: event.isError ? 'error' : 'ok',
-        result: JSON.stringify(event.result.content), error: event.isError ? event.result.details?.code ?? 'tool_failed' : null, durationMs: Math.round(event.durationMs ?? 0) } })
-    })
     try {
+      await created.append({ type: 'agent.state', data: { status: 'running', error: null } })
+      const model = selectedModel(this.connections, input)
+      const images: import('@earendil-works/pi-ai').ImageContent[] = []
+      for (const attachment of policy.attachmentMetadata ?? []) {
+        if (!attachment.mediaType.startsWith('image/')) continue
+        if (!model.input.includes('image')) throw new NativeAgentError('image_not_supported')
+        const file = await open(attachment.path, 'r')
+        try { images.push({ type: 'image', data: (await file.readFile()).toString('base64'), mimeType: attachment.mediaType }) } finally { await file.close() }
+      }
+      agent = new Agent({ initialState: { model, systemPrompt: orientation(policy), tools,
+        ...(history.length ? { messages: [{ role: 'system', content: orientation(policy), toolsAdded: tools.map(({ name, description, parameters }) => ({ name, description, parameters })), timestamp: Date.now() }, ...history] } : {}) },
+        streamFn: connectionStream(this.connections, this.scrubber, input, attempt, this.runs), toolExecution: 'sequential',
+        // Reasoning is stored only as K2 reasoning, never recycled into any provider request.
+        convertToLlm: messages => messages.map(m => m.role === 'assistant' ? { ...m, content: m.content.filter(c => c.type !== 'thinking') } : m),
+      })
+      agent.subscribe(event => {
+        if (event.type === 'message_end') {
+          const message = event.message
+          if (message.role === 'user') {
+            const text = typeof message.content === 'string'
+              ? message.content
+              : message.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
+            return this.appendPrompt(created, id, text, promptOrigin, promptId, policy.attachments.length, signal, () => this.runs.checkExecution(attempt)).then(() => undefined)
+          }
+          if (message.role === 'assistant') {
+            const messageStep = step++
+            return this.appendAssistant(created, id, message, turnId, messageStep, signal, () => this.runs.checkExecution(attempt))
+          }
+        }
+        if (event.type === 'tool_execution_end') {
+          if (event.result.details?.code === 'cleanup_unconfirmed') { cleanupUnconfirmed = true; agent?.abort() }
+          return created.append({
+            type: 'tool.result',
+            data: {
+              toolCallId: event.toolCallId,
+              status: event.isError ? 'error' : 'ok',
+              result: JSON.stringify(event.result.content),
+              error: event.isError ? event.result.details?.code ?? 'tool_failed' : null,
+              durationMs: Math.round(event.durationMs ?? 0),
+            },
+          }).then(() => undefined)
+        }
+        return undefined
+      })
       signal.throwIfAborted()
       await agent.prompt(this.runs.checkExecution(attempt) === 'wrapping_up' ? 'Wrap up and report only. Do not call tools.' : prompt, images)
       if (agent.state.errorMessage) throw new Error('model_failed')
       if (cleanupUnconfirmed) throw new Error('cleanup_unconfirmed')
       signal.throwIfAborted()
-      handle.append({ type: 'agent.state', data: { status: 'completed', error: null } })
-      handle.append({ type: 'turn.done', data: { messageId: turnId, outcome: 'completed', stopReason: 'stop', steps: step } })
+      await this.writeTerminal(created, turnId, step, 'completed', 'completed', 'stop')
       this.runs.complete(attempt, 'completed')
     } catch {
+      // A queue failure already wrote exactly one content-free error and terminal.
+      if (created.failed !== null) {
+        await created.drain()
+        try {
+          if (!['canceled', 'completed', 'failed'].includes(this.runs.get(attempt.run_id).state)) {
+            this.runs.complete(attempt, created.failed === 'aborted' ? 'canceled' : 'failed')
+          }
+        } catch { /* A fenced owner cannot complete. */ }
+        return
+      }
       // Budget/quota stops already committed their truthful R1 terminal event.
-      if (['canceled','completed','failed'].includes(this.runs.get(attempt.run_id).state)) return
-      handle.append({ type: 'agent.state', data: { status: cleanupUnconfirmed ? 'failed' : signal.aborted ? 'cancelled' : 'failed', error: cleanupUnconfirmed ? 'cleanup_unconfirmed' : signal.aborted ? null : 'agent_failed' } })
-      handle.append({ type: 'turn.done', data: { messageId: turnId, outcome: cleanupUnconfirmed ? 'failed' : signal.aborted ? 'cancelled' : 'failed', stopReason: cleanupUnconfirmed ? 'cleanup_unconfirmed' : signal.aborted ? 'stopped_by_user' : 'agent_failed', steps: step } })
-      this.runs.complete(attempt, cleanupUnconfirmed ? 'failed' : signal.aborted ? 'canceled' : 'failed')
-    } finally { signal.removeEventListener('abort', stop) }
+      if (['canceled', 'completed', 'failed'].includes(this.runs.get(attempt.run_id).state)) {
+        await created.drain()
+        return
+      }
+      const cancelled = signal.aborted && !cleanupUnconfirmed
+      await this.writeTerminal(created, turnId, step,
+        cleanupUnconfirmed ? 'failed' : cancelled ? 'cancelled' : 'failed',
+        cleanupUnconfirmed ? 'failed' : cancelled ? 'cancelled' : 'failed',
+        cleanupUnconfirmed ? 'cleanup_unconfirmed' : cancelled ? 'stopped_by_user' : 'agent_failed',
+        cleanupUnconfirmed ? 'cleanup_unconfirmed' : cancelled ? null : 'agent_failed')
+      this.runs.complete(attempt, cleanupUnconfirmed ? 'failed' : cancelled ? 'canceled' : 'failed')
+    } finally {
+      signal.removeEventListener('abort', stop)
+      if (active.queue === created) active.queue = null
+    }
   }
+
+  private appendPrompt(
+    queue: NativeAppendQueue,
+    sessionId: string,
+    text: string,
+    origin: 'typed' | 'queued',
+    messageId: string,
+    attachmentCount: number,
+    signal: AbortSignal,
+    check: () => void,
+  ): Promise<AppendResult> {
+    const scrubbed = this.scrubber.scrub(text)
+    if (isInlineInput(Buffer.byteLength(scrubbed, 'utf8'))) {
+      return queue.append({ type: 'prompt', data: { origin, messageId, text: scrubbed, attachmentCount } })
+    }
+    return queue.enqueue(async () => {
+      check()
+      const written = await this.writeInput(sessionId, scrubbed, 'prompt', signal)
+      const mediaType = inputMediaTypeFor('prompt')
+      return queue.appendNow({ type: 'prompt', data: { origin, messageId, attachmentCount } }, {
+        eventVersion: 2,
+        inputArtifact: { ...written, mediaType, excerpt: utf8Excerpt(scrubbed) },
+      })
+    })
+  }
+
+  private appendAssistant(
+    queue: NativeAppendQueue,
+    sessionId: string,
+    message: Extract<import('@earendil-works/pi-ai').AssistantMessage, { role: 'assistant' }>,
+    turnId: string,
+    messageStep: number,
+    signal: AbortSignal,
+    check: () => void,
+  ): Promise<void> {
+    const toolCalls = message.content.flatMap(content => content.type === 'toolCall' ? [content] : [])
+    for (const call of toolCalls) queue.expectToolCall(call.id)
+    const text = message.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
+    const reasoning = message.content.filter(c => c.type === 'thinking').map(c => c.thinking).join('\n')
+    return queue.enqueue(async () => {
+      queue.appendNow({ type: 'assistant.message', spanId: turnId, data: { messageId: turnId, step: messageStep, text } })
+      for (const call of toolCalls) {
+        await this.appendToolCallWithin(queue, sessionId, call.id, call.name, call.arguments as Record<string, unknown>, signal, check)
+      }
+      if (reasoning) {
+        queue.appendNow({ type: 'reasoning', spanId: turnId, expiresAt: this.sessions.expiry(sessionId), data: { messageId: turnId, step: messageStep, text: reasoning } })
+      }
+    })
+  }
+
+  private async appendToolCallWithin(
+    queue: NativeAppendQueue,
+    sessionId: string,
+    toolCallId: string,
+    name: string,
+    argumentsValue: Record<string, unknown>,
+    signal: AbortSignal,
+    check: () => void,
+  ): Promise<void> {
+    const scrubbed = this.scrubber.scrub(argumentsValue) as Record<string, unknown>
+    const canonical = JSON.stringify(scrubbed)
+    const base = { toolCallId, name, source: 'builtin' as const, parsedFrom: 'native' as const, diffPath: null }
+    if (isInlineInput(Buffer.byteLength(canonical, 'utf8'))) {
+      queue.appendNow({ type: 'tool.call', data: { ...base, arguments: scrubbed } })
+    } else {
+      check()
+      const written = await this.writeInput(sessionId, canonical, 'tool.call', signal)
+      const mediaType = inputMediaTypeFor('tool.call')
+      queue.appendNow({ type: 'tool.call', data: base }, {
+        eventVersion: 2,
+        inputArtifact: { ...written, mediaType, excerpt: utf8Excerpt(canonical) },
+      })
+    }
+    queue.acknowledgeToolCall(toolCallId)
+  }
+
+  private async writeInput(sessionId: string, text: string, type: 'prompt' | 'tool.call', signal: AbortSignal) {
+    try {
+      return await this.inputArtifacts.write(sessionId, text, inputMediaTypeFor(type), { signal })
+    } catch (error) {
+      if (error instanceof SessionInputError && error.code === 'aborted') throw new NativeAgentError('aborted')
+      throw new NativeAgentError('input_artifact_storage_failed')
+    }
+  }
+
+  private async writeTerminal(
+    queue: NativeAppendQueue,
+    turnId: string,
+    steps: number,
+    status: 'completed' | 'failed' | 'cancelled',
+    outcome: 'completed' | 'failed' | 'cancelled',
+    stopReason: string,
+    errorCode: string | null = null,
+  ): Promise<void> {
+    const state = queue.append({ type: 'agent.state', data: { status, error: errorCode } })
+    const done = queue.append({ type: 'turn.done', data: { messageId: turnId, outcome, stopReason, steps } })
+    queue.seal()
+    await Promise.all([state, done])
+    await queue.drain()
+  }
+
+  /** The queue's single failure path: at most one error and one terminal pair. */
+  private writeFailureTerminal(
+    queue: NativeAppendQueue,
+    turnId: string,
+    stepOf: () => number,
+    signal: AbortSignal,
+    code: string,
+  ): void {
+    const aborted = signal.aborted
+    const fenced = ['writer_fenced', 'closed', 'session_not_found'].includes(code)
+    const budget = ['budget_exhausted', 'report_budget_exhausted', 'quota_exhausted'].includes(code)
+    if (fenced || budget) return
+    if (!aborted) {
+      queue.appendNow({ type: 'error', data: { code: 'input_artifact_storage_failed', message: 'Session input artifact storage failed' } })
+    }
+    queue.appendNow({
+      type: 'agent.state',
+      data: { status: aborted ? 'cancelled' : 'failed', error: aborted ? null : 'input_artifact_storage_failed' },
+    })
+    queue.appendNow({
+      type: 'turn.done',
+      data: {
+        messageId: turnId,
+        outcome: aborted ? 'cancelled' : 'failed',
+        stopReason: aborted ? 'stopped_by_user' : 'input_artifact_storage_failed',
+        steps: stepOf(),
+      },
+    })
+  }
+
+  private async replay(
+    sessionId: string,
+    events: SessionEvent[],
+    api: AssistantMessage['api'],
+    provider: AssistantMessage['provider'],
+    model: string,
+  ): Promise<AgentMessage[]> {
+    const messages: AgentMessage[] = []
+    for (const event of events) {
+      const timestamp = Date.parse(event.createdAt)
+      if (event.type === 'prompt') {
+        const text = event.version === 1
+          ? event.data.text
+          : this.scrubber.scrub(await this.readInputText(sessionId, event.data.artifact))
+        messages.push({ role: 'user', content: text, timestamp })
+      }
+      if (event.type === 'assistant.message') messages.push({ role: 'assistant', content: [{ type: 'text', text: event.data.text }], api, provider, model, usage: emptyUsage(), stopReason: 'stop', timestamp })
+      if (event.type === 'tool.call') {
+        const last = messages.at(-1)
+        if (last?.role === 'assistant') {
+          const argumentsValue = event.version === 1
+            ? event.data.arguments
+            : this.parseInputArguments(await this.readInputText(sessionId, event.data.artifact))
+          last.content.push({ type: 'toolCall', id: event.data.toolCallId, name: event.data.name, arguments: argumentsValue as import('@earendil-works/pi-ai').JsonObject })
+          last.stopReason = 'toolUse'
+        }
+      }
+      if (event.type === 'tool.result') {
+        const call = events.find(e => e.type === 'tool.call' && e.data.toolCallId === event.data.toolCallId)
+        if (call?.type === 'tool.call') messages.push({ role: 'toolResult', toolCallId: event.data.toolCallId, toolName: call.data.name,
+          content: [{ type: 'text', text: event.data.result ?? event.data.error ?? '' }], isError: event.data.status === 'error', timestamp })
+      }
+    }
+    return messages
+  }
+
+  private async readInputText(sessionId: string, reference: SessionInputArtifactRef): Promise<string> {
+    try {
+      const bytes = await this.inputArtifacts.read(sessionId, reference)
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    } catch {
+      throw new NativeAgentError('input_artifact_unavailable')
+    }
+  }
+
+  private parseInputArguments(text: string): Record<string, unknown> {
+    try {
+      const parsed = JSON.parse(text) as unknown
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid')
+      return this.scrubber.scrub(parsed) as Record<string, unknown>
+    } catch {
+      throw new NativeAgentError('input_artifact_unavailable')
+    }
+  }
+
   async close() { if (this.closed) return; this.closed = true; clearInterval(this.maintenance); for (const active of this.active.values()) active.abort.abort(); await Promise.allSettled([...this.active.values()].map(a => a.settled)); await this.maintenanceTask; this.projectRoots.close() }
-}
-function replay(events: SessionEvent[], api: AssistantMessage['api'], provider: AssistantMessage['provider'], model: string): AgentMessage[] {
-  const messages: AgentMessage[] = []
-  for (const event of events) {
-    const timestamp = Date.parse(event.createdAt)
-    if (event.type === 'prompt') messages.push({ role: 'user', content: event.data.text, timestamp })
-    if (event.type === 'assistant.message') messages.push({ role: 'assistant', content: [{ type: 'text', text: event.data.text }], api, provider, model, usage: emptyUsage(), stopReason: 'stop', timestamp })
-    if (event.type === 'tool.call') {
-      const last = messages.at(-1)
-      if (last?.role === 'assistant') { last.content.push({ type: 'toolCall', id: event.data.toolCallId, name: event.data.name, arguments: event.data.arguments as import('@earendil-works/pi-ai').JsonObject }); last.stopReason = 'toolUse' }
-    }
-    if (event.type === 'tool.result') {
-      const call = events.find(e => e.type === 'tool.call' && e.data.toolCallId === event.data.toolCallId)
-      if (call?.type === 'tool.call') messages.push({ role: 'toolResult', toolCallId: event.data.toolCallId, toolName: call.data.name,
-        content: [{ type: 'text', text: event.data.result ?? event.data.error ?? '' }], isError: event.data.status === 'error', timestamp })
-    }
-  }
-  return messages
 }
