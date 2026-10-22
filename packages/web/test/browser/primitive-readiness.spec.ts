@@ -171,7 +171,11 @@ for (const composition of ['icon', 'dialog'] as const) {
     await tooltipFor(page, trigger, label)
     await page.mouse.move(310, 600)
     await expect(page.getByRole('tooltip')).toHaveCount(0)
-    await trigger.focus()
+    // Enter through the real keyboard path, not programmatic focus in pointer modality.
+    if (composition === 'dialog') await page.getByRole('dialog').focus()
+    else await page.getByTestId('menu-trigger').focus()
+    await page.keyboard.press('Tab')
+    await expect(trigger).toBeFocused()
     await tooltipFor(page, trigger, label)
     await page.keyboard.press('Escape')
     await expect(page.getByRole('tooltip')).toHaveCount(0)
