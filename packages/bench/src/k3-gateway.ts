@@ -22,6 +22,10 @@ export interface TrialGatewayConfig {
   provider: string
   model: string
   outputTokenLimit: number
+  /** Actual R1 durable run id. Old internal fixtures may omit it and use trial.runId. */
+  k3RunId?: string
+  /** Required by the new T0 host: synchronous R1 attempt fence before dispatch. */
+  attemptFence?: { assert(): void }
   trial: TrialIdentity
   billing: BillingAdapter
 }
@@ -41,9 +45,16 @@ export function createTrialGateway(config: TrialGatewayConfig) {
   const { budget, k3, accountId, connectionId, provider, model, outputTokenLimit } = config
   const trial = Object.freeze({ ...config.trial })
   const quote = config.billing.quote.bind(config.billing), usage = config.billing.usage.bind(config.billing)
-  if (![accountId, connectionId, provider, model, trial.runId, trial.task, trial.arm].every(value => typeof value === 'string' && value.length > 0) ||
-    !Number.isSafeInteger(trial.seed) || trial.seed < 0 || !Number.isSafeInteger(outputTokenLimit) || outputTokenLimit <= 0)
+  const k3RunId = config.k3RunId ?? trial.runId
+  const attemptFence = config.attemptFence
+  if (![accountId, connectionId, provider, model, trial.runId, trial.task, trial.arm, k3RunId].every(value => typeof value === 'string' && value.length > 0) ||
+    !Number.isSafeInteger(trial.seed) || trial.seed < 0 || !Number.isSafeInteger(outputTokenLimit) || outputTokenLimit <= 0 ||
+    (attemptFence !== undefined && (typeof attemptFence !== 'object' || attemptFence === null || typeof attemptFence.assert !== 'function')))
     throw new BenchGatewayError('gateway_config_invalid')
+  const fence = () => {
+    if (!attemptFence) return
+    try { attemptFence.assert() } catch { throw new BenchGatewayError('gateway_attempt_fenced') }
+  }
   return Object.freeze({
     async complete(context: Context, signal?: AbortSignal): Promise<{ requestId: string; result: Completion }> {
       if (signal?.aborted) throw new BenchGatewayError('gateway_cancelled')
@@ -57,6 +68,7 @@ export function createTrialGateway(config: TrialGatewayConfig) {
         throw new BenchGatewayError('gateway_connection_mismatch')
       }
       assertConnection()
+      fence()
       const requestId = randomUUID()
       const gate = preparedRequestAdmission(budget, { ...trial, requestId }, outputTokenLimit,
         (prepared, digest) => quote(prepared as Prepared, digest, outputTokenLimit))
@@ -67,12 +79,13 @@ export function createTrialGateway(config: TrialGatewayConfig) {
       let result: Completion
       try {
         result = await k3.complete(accountId, connectionId, context, {
-          model, runId: trial.runId, requestId, signal, singleAttempt: true,
+          model, runId: k3RunId, requestId, signal, singleAttempt: true,
           options: Object.freeze({ maxTokens: outputTokenLimit }),
           onPrepared(prepared) {
             try {
               signal?.throwIfAborted()
               assertConnection()
+              fence()
               gate.onPrepared(prepared)
               admitted = true
             } catch (error) {

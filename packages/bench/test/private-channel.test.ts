@@ -162,3 +162,36 @@ test('retention or oversized reply failure closes the channel without partial re
     assert.equal(frame.includes(Buffer.from('fixture-private')), false)
   }
 })
+
+test('an authoritative retainAndProject projection controls the frame and old pure retain hosts stay supported', async () => {
+  const f = fixture()
+  let retained = 0, projected = 0
+  f.host.retain = async () => { retained++ }
+  f.host.retainAndProject = async (requestId) => {
+    projected++
+    assert.equal(requestId, 'request-1')
+    return { text: 'projected public', toolCalls: [], stopReason: 'stop',
+      reasoning: 'must-not-cross-the-frame' } as never
+  }
+  const channel = new PrivateTrialChannel(f.host, policy)
+  const frame = await channel.handle(request())
+  const response = decode(frame)
+  assert.deepEqual(response.message, { text: 'projected public', toolCalls: [], stopReason: 'stop' })
+  assert.equal(response.requestId, 'request-1')
+  assert.equal(projected, 1); assert.equal(retained, 0)
+  assert.equal(frame.includes(Buffer.from('must-not-cross-the-frame')), false)
+  assert.equal(frame.includes(Buffer.from('fixture private reasoning')), false)
+  await channel.settled()
+})
+
+test('a failed authoritative projection closes the channel and emits no successful task frame', async () => {
+  const f = fixture()
+  f.host.retainAndProject = async () => { throw new Error('fixture-private-retention-code') }
+  const channel = new PrivateTrialChannel(f.host, policy)
+  const frame = decode(await channel.handle(request()))
+  assert.equal(frame.status, 'error')
+  assert.equal(frame.code, 'channel_failed')
+  assert.equal(frame.message, undefined)
+  assert.equal(JSON.stringify(frame).includes('fixture-private-retention-code'), false)
+  await channel.settled()
+})
