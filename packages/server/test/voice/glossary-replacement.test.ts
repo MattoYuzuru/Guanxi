@@ -166,6 +166,20 @@ describe('replacement offsets', () => {
   })
 })
 
+describe('overlap prevention', () => {
+  it('does not match a shorter entry inside an already replaced span', () => {
+    const noOverlap = compileGlossary([
+      { id: 'deepseek', canonical: 'DeepSeek', variants: ['дип сик'], language: 'en' },
+      { id: 'sik', canonical: 'Sick', variants: ['сик'], language: 'en' },
+    ])
+    const result = applyGlossary(noOverlap, 'дип сик')
+    assert.equal(result.text, 'DeepSeek')
+    assert.deepEqual(result.replacements, [
+      { start: 0, end: 7, original: 'дип сик', replacement: 'DeepSeek', entryId: 'deepseek' },
+    ])
+  })
+})
+
 describe('case-sensitive matching', () => {
   const caseSensitive = compileGlossary([
     {
