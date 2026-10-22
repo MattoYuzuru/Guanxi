@@ -224,7 +224,7 @@ test('stop enqueues the intervention before the terminal pair and no native even
   await f.agents().close()
 })
 
-test('stop during an input artifact write leaves no event after the terminal', { timeout: 30_000 }, async (t) => {
+test('stop during an input artifact write leaves exactly one intervention before exactly one terminal', { timeout: 30_000 }, async (t) => {
   const gate = deferred()
   const started = deferred()
   const f = await fixture(t, async (call) => call === 1
@@ -249,6 +249,10 @@ test('stop during an input artifact write leaves no event after the terminal', {
   const events = f.log.readAll(sessionId, 'person')
   const done = events.findIndex((event) => event.type === 'turn.done')
   assert.ok(done >= 0)
+  assert.equal(events.filter((event) => event.type === 'turn.done').length, 1)
+  assert.equal(events.filter((event) => event.type === 'intervention').length, 1)
+  const intervention = events.findIndex((event) => event.type === 'intervention')
+  assert.ok(intervention >= 0 && intervention < done)
   assert.deepEqual(events.slice(done + 1).map((event) => event.type), ['run.lifecycle'])
   assert.equal(events.some((event) => event.type === 'tool.call'), false)
   const state = events.filter((event) => event.type === 'agent.state').at(-1)

@@ -53,6 +53,9 @@ export class NativeAppendQueue {
   private sealed = false
   private failure: NativeTraceError | null = null
   private readonly acks = new Map<string, Ack>()
+  /** One explicit-stop intervention, retained across a queued failure. */
+  private stopIntent: SessionEventInput<'intervention'> | null = null
+  private stopInterventionCommitted = false
 
   constructor(options: NativeAppendQueueOptions) {
     this.options = options
@@ -93,6 +96,26 @@ export class NativeAppendQueue {
   /** Enqueue one append. */
   append<T extends SessionEventType>(input: SessionEventInput<T>, options?: AppendOptions): Promise<AppendResult> {
     return this.enqueue(() => this.options.append(input, options))
+  }
+
+  /**
+   * Enqueue the one explicit-stop intervention and retain its intent. If an
+   * earlier operation rejects first, {@link fail} writes this intent before the
+   * single failure terminal instead of letting the queued append be discarded.
+   */
+  requestIntervention(input: SessionEventInput<'intervention'>): Promise<void> {
+    if (this.stopIntent !== null || this.stopInterventionCommitted) return Promise.resolve()
+    if (this.failure !== null) return Promise.reject(this.failure)
+    if (this.sealed) return Promise.reject(new NativeTraceError('trace_sealed'))
+    this.stopIntent = input
+    return this.enqueue(() => {
+      if (this.stopIntent !== null) {
+        const pending = this.stopIntent
+        this.options.append(pending)
+        this.stopIntent = null
+        this.stopInterventionCommitted = true
+      }
+    })
   }
 
   /**
@@ -142,6 +165,7 @@ export class NativeAppendQueue {
   async fail(code: string): Promise<void> {
     if (this.failure !== null) return
     this.failure = new NativeTraceError(code)
+    this.flushStopIntent()
     for (const ack of this.acks.values()) ack.reject(this.failure)
     this.acks.clear()
     try {
@@ -150,6 +174,19 @@ export class NativeAppendQueue {
       // A fenced owner cannot append its terminal; the abort still runs.
     } finally {
       this.options.abort()
+    }
+  }
+
+  /** Carry a pending explicit stop through the failure path before its terminal. */
+  private flushStopIntent(): void {
+    if (this.stopIntent === null) return
+    const pending = this.stopIntent
+    this.stopIntent = null
+    try {
+      this.options.append(pending)
+      this.stopInterventionCommitted = true
+    } catch {
+      // A fenced owner cannot commit the intervention; the terminal attempt below fails too.
     }
   }
 

@@ -236,8 +236,10 @@ export class NativeAgents {
     const active = this.active.get(id)
     if (!active) { this.events(id); return }
     // Enqueue before aborting, but never wait for artifact I/O or a commit here.
+    // The queue retains this intent so an earlier aborted artifact append cannot
+    // drop it from the failure path that writes the single terminal.
     if (active.queue !== null) {
-      void active.queue.append({ type: 'intervention', data: { action: 'stop', reason: 'explicit_stop' } }).catch(() => undefined)
+      void active.queue.requestIntervention({ type: 'intervention', data: { action: 'stop', reason: 'explicit_stop' } }).catch(() => undefined)
     }
     active.abort.abort()
   }
