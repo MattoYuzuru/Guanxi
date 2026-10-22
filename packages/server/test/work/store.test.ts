@@ -188,6 +188,57 @@ test('evidence sources are namespaced and allowlisted by event type', () => {
   })
 })
 
+test('accepted proposals validate dependencies and cycles before append', () => {
+  withStore(store => {
+    store.addRevision({ projectId: 'p', author: 'user', items: [item('a')] })
+    const at = new Date(FIXED).toISOString()
+    const propose = (spec: ItemSpec) => store.appendEvent('p', {
+      type: 'proposed', itemId: spec.id, at, source: 'agent:planner', item: spec,
+    })
+    const accept = (itemId: string) => store.appendEvent('p', {
+      type: 'accepted', itemId, at, source: 'lead:owner',
+    })
+    const invalid = (itemId: string, pattern: RegExp) => assert.throws(() => accept(itemId), (error: unknown) => {
+      assert.ok(error instanceof WorkError)
+      assert.equal(error.code, 'invalid_proposal')
+      assert.match(error.message, pattern)
+      return true
+    })
+
+    propose(item('x', { dependsOn: ['y'] }))
+    propose(item('y', { dependsOn: ['x'] }))
+    propose(item('z', { dependsOn: ['z', 'ghost'] }))
+    propose(item('self', { dependsOn: ['self'] }))
+
+    invalid('x', /proposal x depends on missing item: y/)
+    invalid('y', /proposal y depends on missing item: x/)
+    invalid('z', /proposal z depends on missing item: ghost/)
+    let cycle: WorkError | null = null
+    try {
+      accept('self')
+    } catch (error) {
+      cycle = error as WorkError
+    }
+    assert.ok(cycle instanceof WorkError)
+    assert.equal(cycle.code, 'invalid_proposal')
+    assert.deepEqual(cycle.cycle, ['self', 'self'])
+    assert.match(cycle.message, /self -> self/)
+    assert.deepEqual(store.events('p', {}).map(event => event.type), [
+      'proposed', 'proposed', 'proposed', 'proposed',
+    ])
+
+    store.appendEvent('p', { type: 'human_decision', itemId: 'a', at, source: 'user:owner', decision: 'done' })
+    propose(item('d', { dependsOn: ['a'] }))
+    accept('d')
+    propose(item('e', { dependsOn: ['a', 'd'] }))
+    accept('e')
+    const statuses = deriveStatuses(store.latestRevision('p')!, store.events('p', {}))
+    assert.equal(statuses.get('d')!.status, 'ready')
+    assert.equal(statuses.get('e')!.status, 'blocked')
+    assert.deepEqual(statuses.warnings, [])
+  })
+})
+
 test('a canceled item accepts only reopen; reopen restores the dependency state', () => {
   withStore(store => {
     const plan = store.addRevision({ projectId: 'p', author: 'user', items: [item('a')] })

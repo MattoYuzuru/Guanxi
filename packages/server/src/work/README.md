@@ -76,6 +76,9 @@ Rules, in precedence order:
    `verification_requested`, `in_progress` when claimed and not released, else `ready`.
 5. A proposed item that is not in the plan is `proposed` until `accepted`; `rejected` removes
    it from the graph. Accepted proposals behave like plan items, including dependency gating.
+   At append time the store validates the proposal against plan items plus previously accepted
+   proposals and rejects a missing dependency or a cycle with `WorkError` code
+   `invalid_proposal`.
 
 Events for ids that were never planned or proposed are ignored and listed in
 `warnings`; derivation never throws for them. A duplicate proposal for an existing or already
@@ -98,7 +101,10 @@ proposed id is also reported as a warning and ignored.
   and INSERT OR REPLACE guards.
   `appendEvent(projectId, event)` validates shape and source, requires a revision, and rejects
   every event after `canceled` except `human_decision: reopen`. An event for an unknown item id
-  is allowed so derivation can report a warning.
+  is allowed so derivation can report a warning. An `accepted` event for a proposal uses the
+  same missing-dependency and cycle rules as `addRevision`, against plan items plus previously
+  accepted proposals; an invalid proposal is rejected with `WorkError` code `invalid_proposal`
+  and is not stored.
 - `events(projectId, { afterSeq?, limit? })` returns sequence order. No limit means all events;
   there is no hidden cap. `latestRevision(projectId)` returns `null` before the first revision.
 - `setMode(projectId, mode, reason)` records activation; `mode(projectId)` returns `off` by

@@ -106,6 +106,64 @@ function cyclePath(items: ItemSpec[]): string[] | null {
   return null
 }
 
+/** First proposal for an id. Duplicate proposals are ignored by derivation. */
+function proposalSpec(events: StoredEvidenceEvent[], itemId: string): ItemSpec | null {
+  for (const event of events) {
+    if (event.type === 'proposed' && event.itemId === itemId) return event.item
+  }
+  return null
+}
+
+/** Proposals whose latest accept/reject decision is `accepted`. */
+function acceptedProposalSpecs(events: StoredEvidenceEvent[]): ItemSpec[] {
+  const proposals = new Map<string, ItemSpec>()
+  const decisions = new Map<string, 'accepted' | 'rejected'>()
+  for (const event of events) {
+    if (event.type === 'proposed' && !proposals.has(event.itemId)) proposals.set(event.itemId, event.item)
+    if ((event.type === 'accepted' || event.type === 'rejected') && proposals.has(event.itemId)) {
+      decisions.set(event.itemId, event.type)
+    }
+  }
+  return [...proposals]
+    .filter(([id]) => decisions.get(id) === 'accepted')
+    .map(([, spec]) => spec)
+}
+
+/**
+ * D-172: an accepted proposal joins the dependency graph. Validate it against plan items and
+ * previously accepted proposals before the acceptance event is stored, using the same missing
+ * and cycle rules as `addRevision`.
+ */
+function validateProposalAcceptance(
+  plan: PlanRevision,
+  events: StoredEvidenceEvent[],
+  itemId: string,
+): void {
+  if (plan.items.some(item => item.id === itemId)) return
+  const proposal = proposalSpec(events, itemId)
+  if (proposal === null) return
+  const graph = new Map(plan.items.map(item => [item.id, item]))
+  for (const spec of acceptedProposalSpecs(events)) graph.set(spec.id, spec)
+  graph.set(proposal.id, proposal)
+  const items = [...graph.values()]
+  const ids = new Set(items.map(item => item.id))
+  const missing = proposal.dependsOn.filter(dependency => !ids.has(dependency))
+  if (missing.length > 0) {
+    throw new WorkError(
+      'invalid_proposal',
+      `proposal ${proposal.id} depends on missing item${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`,
+    )
+  }
+  const cycle = cyclePath(items)
+  if (cycle) {
+    throw new WorkError(
+      'invalid_proposal',
+      `proposal dependency cycle: ${cycle.join(' -> ')}`,
+      { cycle },
+    )
+  }
+}
+
 export class WorkStore {
   readonly db: DatabaseSync
   readonly clock: WorkClock
@@ -215,11 +273,13 @@ export class WorkStore {
     try {
       const plan = this.latestRevision(id)
       if (!plan) throw new WorkError('revision_not_found', `no plan revision for project ${id}`)
-      const current = deriveStatuses(plan, this.events(id, {}))
+      const events = this.events(id, {})
+      const current = deriveStatuses(plan, events)
       if (current.get(event.itemId)?.status === 'canceled'
         && !(event.type === 'human_decision' && event.decision === 'reopen')) {
         throw new WorkError('canceled', `item ${event.itemId} is canceled; only reopen is accepted`)
       }
+      if (event.type === 'accepted') validateProposalAcceptance(plan, events, event.itemId)
       const result = this.db.prepare(
         'INSERT INTO wg1_events(project_id, revision, item_id, type, at, payload) VALUES (?,?,?,?,?,?)',
       ).run(id, plan.revision, event.itemId, event.type, event.at, JSON.stringify(event))
