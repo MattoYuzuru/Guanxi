@@ -298,7 +298,7 @@ test('arbitrary execution cannot connect to a Unix socket exposed inside a selec
   const { createServer } = await import('node:net')
   let connections = 0
   const server = createServer(socket => { connections++; socket.end() })
-  const socketPath = join(root, 'fixture.sock')
+  const socketPath = join(root, 's.sock')
   await new Promise<void>(resolve => server.listen(socketPath, resolve))
   t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
   const command = `const s=require('node:net').connect(${JSON.stringify(socketPath)});s.on('connect',()=>{console.log('ESCAPED');s.end()});s.on('error',()=>console.log('blocked'))`
