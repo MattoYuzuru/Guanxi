@@ -19,7 +19,7 @@ export function ShellStatus({ breadcrumb, workspace, runtime, stale }: {
   const machine = runtime?.host.profile
   return <div className="flex min-w-0 flex-wrap items-center gap-2 text-12">
     <nav aria-label={t('shell.breadcrumb')} className="flex min-w-0 flex-wrap items-center gap-1">
-      <Link to={paths.launcher()} className="text-14 font-heading">{PRODUCT_NAME}</Link>
+      <Link to={paths.launcher()} className="text-14 font-heading">{t('shell.brand', { product: PRODUCT_NAME })}</Link>
       <span aria-hidden="true">/</span><span aria-current="page" className="break-words">{breadcrumb}</span>
     </nav>
     <div role="group" aria-label={t('workspaceLayout.mode')} className="flex flex-wrap gap-1"

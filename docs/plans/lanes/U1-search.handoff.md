@@ -70,3 +70,52 @@ old-head/old-tail options remain. The original external reviewer fixture also pa
 author recheck `check-3fmb_x2i`; this is not independent acceptance. Final web types
 `check-vngsagfk`, scoped ESLint `check-ce05b8nn` and Markdown/links `check-hk1lt7vk` pass.
 Separate independent recheck and integrated gates remain open.
+
+## Localized-copy inventory review fix
+
+Root's combined `npm test` at `15b962f4188528786b6226af898425e5986c48ea` failed web 351/352
+only in `test/component/localized-copy-inventory.test.tsx` (`check-5y575x_n`). A scoped replay
+against the unfixed source failed the guard `1 failed | 4 passed` with 16 diagnostics: the
+hardcoded `PRODUCT_NAME` at `ShellStatus.tsx:22`, eight session-status returns and three
+date-group returns in `sessionPresentation.ts`, and four save-scope returns in `scopes.ts`. The
+red log is `.lane-data/u1-search-inventory-red.log`.
+
+The fix commit localizes the brand and makes machine discriminants explicit typed references:
+
+- `ShellStatus.tsx` renders `t('shell.brand', { product: PRODUCT_NAME })`. `shell.brand` is
+  `'{product}'` in both English and Russian catalogs, so the actual label remains the central
+  `PRODUCT_NAME` and no second brand literal exists.
+- `sessionPresentation.ts` defines `SESSION_STATUS` and `SESSION_DATE_GROUP` as typed const
+  maps; `SessionStatus` and `SessionDateGroup` derive from their values. The exact values remain
+  `unknown`, `queued`, `running`, `waiting`, `sleeping`, `finished`, `error`, `stopped` and
+  `today`, `yesterday`, `earlier`. Visible labels remain `shell.status.*` and
+  `shell.sessions.*` locale lookups.
+- `workspace/scopes.ts` defines `LAYOUT_SAVE_SCOPE` with the unchanged values `account`,
+  `project`, `device`, `project-device`; `LayoutSaveScope` derives from it. Scope resolution,
+  routing and wire/storage meaning are unchanged.
+- `shell-status.test.tsx` adds one actual render assertion for the centralized brand through
+  both EN and RU locale lookup.
+
+**New / regression:** 1 new component test (EN/RU brand render) / 41 prior component cases in
+the regression envelope. The scoped component run passed **42/42** across inventory, shell
+status, sidebar, controller, palette, sessions and localization. The inventory guard was red
+before the fix and green after it. Web `tsc`, scoped ESLint on the five changed files and
+`git diff --check` passed. No scanner exception, suppressions, component record, snapshot or
+generated file changed. No browser, build, full `npm test`, Storybook, container or model
+operation ran in this fix.
+
+**Delivery constraint:** the worktree gitdir
+`/Users/yuzuru/Projects/Guanxi/.git/worktrees/u1-search` is outside this session's
+workspace-write sandbox, so its index lock and branch ref cannot be written here. The source
+fix is the sandbox-local commit `cf65d81cfff2c636024e5748d40b4a965da48071`; this documentation
+is a separate local commit. The corresponding patch series and bundle are under
+`.lane-data/u1-search-review-fix/`. Root should apply the patches or fetch the local
+repository, then update `codex/u1-search`; the shared worktree metadata still reports the base
+commit until that step. Because this worktree still shows the same edits as uncommitted
+changes, root must first return it to the base or use a clean checkout; verify there are no
+other changes before resetting. This is the only unresolved delivery action, not a test
+failure. The patch series was checked against a temporary base index and reproduces the
+delivered tree.
+
+Independent GPT recheck and root merge remain pending. The existing browser/workspace scope
+cases and all integrated gates remain root-owned.
