@@ -193,6 +193,7 @@ the user's settings and `now`; there is no clock, timer, I/O or process state.
   value inside `channelsByKind` is dropped, so that kind uses `defaults`.
 
 ### NC1-c test evidence
+
 ## NC1-d: vendor quota and balance fact producers
 
 **Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-d
