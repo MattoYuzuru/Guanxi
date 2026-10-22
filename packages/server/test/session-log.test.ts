@@ -260,6 +260,15 @@ describe('session log: single writer (D-116)', () => {
     assert.equal(open.n, 0)
     assert.equal(code(() => log.open('s-c', { kind: 'agent' })), 'closed')
   })
+
+  it('closes an open handle without throwing after the database is closed', () => {
+    const db = openDb(':memory:')
+    const log = logFor(db)
+    const handle = log.open('s-closed-db', { kind: 'agent' })
+    db.close()
+    assert.doesNotThrow(() => handle.close())
+    assert.doesNotThrow(() => log.close())
+  })
 })
 
 describe('session log: append-only schema', () => {
