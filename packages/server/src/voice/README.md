@@ -55,3 +55,49 @@ Canonicals and variants must be word-token sequences: edge punctuation such as `
 is not absorbed into the matched span and is outside this module's contract. Cyrillic-mapped
 Latin is not re-fed through the Latin digraph rules, so mixed-script digraphs split across a
 script boundary are not bridged; use explicit variants.
+
+## Store, service and voice marker (V1-b)
+
+**Status:** implemented (V1-b), locally validated. This appended section supersedes the
+V1-a-only statement under "Limits" that per-project storage and voice-origin markers are later
+slices.
+
+`store.ts` exports `GlossaryStore` over a separate `<dataDir>/voice.sqlite` sidecar with WAL,
+`foreign_keys=ON`, its own `v1_migrations` table and a frozen version 1. The schema holds
+`glossary_entries` and `glossary_revisions`. Every mutation runs in one `BEGIN IMMEDIATE`
+transaction that also appends exactly one revision row; validation failure rolls the whole
+mutation back. Revisions form a chain of create, update, deactivate, reactivate and revert.
+`revert` restores the previous revision's entry, and reverting a lone create deactivates the
+entry. `history` returns revisions in ascending order. `list` returns account entries plus,
+when `projectId` is supplied, that project's entries; inactive rows are excluded unless
+`includeInactive` is set.
+
+Validation compiles each stored entry on its own and every effective set a mutation could
+change: account-scope mutations check every known project, project-scope mutations check their
+project. An active project entry whose canonical term equals an account entry's canonical term
+(case-insensitive) hides the account entry from that project's effective set instead of
+colliding. Any other canonical or variant key collision throws and leaves the database
+unchanged. Entry-scoped methods reject a mismatched account with a typed
+`GlossaryStoreError`.
+
+`service.ts` exports `GlossaryService`. `effective` returns active project entries first
+(ordered by `created_at`, then `id`), then the active account entries the project does not
+override, each carrying its stored revision. `apply` returns the V1-a `ReplaceResult`.
+Compiled glossaries are cached per (account, project); a committed account-scope mutation
+invalidates the whole account cache and a project-scope mutation invalidates only that
+project.
+
+`marker.ts` exports `VoiceOrigin`, `validateVoiceOrigin`, `voiceBlock` and
+`glossaryRevisionHash`. Validation checks identity fields, sorted non-overlapping confidence
+spans inside `finalText.length`, finite confidence in [0, 1] and replacement slices equal to
+`finalText.slice(start, end)`. `voiceBlock` states that the prompt was dictated, names the
+backend, model, language and glossary revision, lists at most five replaced terms and at most
+five low-confidence (<0.6) quoted fragments, and truncates to `maxChars`. The final text is
+retained on the validated origin only as a non-enumerable in-process symbol, so it is never
+serialised. `glossaryRevisionHash` is SHA-256 over sorted `{id, revision}` JSON and is
+independent of input order.
+
+Limits: this slice does not add plugin wiring, an HTTP route, a contract type, a web glossary
+editor, an STT adapter, backend biasing mapping, the `voice.flag_term` tool or V2 candidate
+learning. The V1 exit gate still needs the owner's evaluation recordings and is not measurable
+here.
