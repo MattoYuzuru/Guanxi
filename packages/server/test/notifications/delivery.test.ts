@@ -455,7 +455,7 @@ test('validation fills safe defaults and preserves explicit settings', () => {
 })
 
 test('unknown IANA time zones are TypeErrors with a path', () => {
-  for (const timeZone of ['Mars/Olympus', 'Not/AZone', '', '+03:00']) {
+  for (const timeZone of ['Mars/Olympus', 'Not/AZone', '', '+03:00', '−03:00']) {
     assert.throws(
       () => validateDeliverySettings({ timeZone, defaults: ['in_app'] }),
       (error: unknown) => error instanceof TypeError && /deliverySettings\.timeZone/.test(error.message),

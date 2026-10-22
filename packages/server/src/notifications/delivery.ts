@@ -42,6 +42,7 @@ export interface DeliveryNotification {
 const CHANNELS: readonly Channel[] = ['in_app', 'os', 'push']
 const CHANNEL_SET: ReadonlySet<string> = new Set(CHANNELS)
 const CLOCK = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+const OFFSET_ZONE = /^[+\-−]/
 const MAX_QUIET_END_ATTEMPTS = 8
 
 interface ClockParts {
@@ -69,13 +70,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function validateTimeZone(value: unknown, path: string): string {
   if (typeof value !== 'string') invalid(path, 'expected an IANA time zone string')
-  // Node's Intl also accepts offset strings such as `+03:00`; the settings contract is IANA.
-  if (value.startsWith('+') || value.startsWith('-')) {
+  // Node's Intl also accepts offset strings such as `+03:00` or `−03:00`; the settings
+  // contract is IANA, so reject both the input spelling and any offset-shaped resolution.
+  let resolved: string
+  try {
+    resolved = new Intl.DateTimeFormat('en-US', { timeZone: value }).resolvedOptions().timeZone
+  } catch {
     invalid(path, `unknown IANA time zone ${JSON.stringify(value)}`)
   }
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value })
-  } catch {
+  if (OFFSET_ZONE.test(value) || OFFSET_ZONE.test(resolved)) {
     invalid(path, `unknown IANA time zone ${JSON.stringify(value)}`)
   }
   return value
