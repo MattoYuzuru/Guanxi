@@ -15,7 +15,10 @@ import { ProjectIndex, type IndexEvent } from '../../src/indexing/service.ts'
 import { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 
 const green = async () => ({ observedAt: new Date().toISOString(), source: 'fixture', confidence: 'observed' as const, memoryAvailableFraction: 0.8, cpuBusyFraction: 0.1, thermal: 'nominal' as const, foreground: 'active' as const, allowed: true })
-async function waitFor(predicate: () => boolean, timeout = 20_000) {
+// The index worker runs at background QoS (`taskpolicy -b` on macOS, `nice 19` on Linux), which the
+// OS throttles ~8x whenever foreground work exists, e.g. the rest of the parallel suite. This is
+// patience for a real build under that scheduling, not a latency assertion.
+async function waitFor(predicate: () => boolean, timeout = 60_000) {
   const deadline = Date.now() + timeout
   while (!predicate()) {
     if (Date.now() > deadline) throw new Error('fixture_timeout')

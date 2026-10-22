@@ -81,7 +81,8 @@ test('Linux sandbox worker runs at nice 19 and idle IO priority', { skip: proces
   } finally { await stopIndexProcess(child); await rm(directory, { recursive: true, force: true }) }
 })
 
-test('sandbox denies actual ignore-file reads after an ancestor swap; unsandboxed control reads the bytes', { timeout: 20_000 }, async () => {
+// Background-QoS worker: patience for real scheduling under the parallel suite, not a latency claim.
+test('sandbox denies actual ignore-file reads after an ancestor swap; unsandboxed control reads the bytes', { timeout: 60_000 }, async () => {
   const { readFile, rename, symlink } = await import('node:fs/promises')
   const { spawn } = await import('node:child_process')
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'guanxi-x1-read-race-')))
