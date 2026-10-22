@@ -740,9 +740,9 @@
         "default-dark": "sha256:7d16dedeae3f0eb4268c810aa33d0dc36486dc14d36e7c73bc77baf18e64b8e6",
         "default-light": "sha256:30d52edca319be48d193d21d28544b9f84a3c13b7e13a30bbd7251cbaeaba2cc"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -855,9 +855,9 @@
         "with-details-dark": "sha256:faf802b5915990d1474627778d8f83d80af4da9e93b6649cb8700fd0eda8cde7",
         "with-details-light": "sha256:4859cf761ae4bf5d72fae135552a016d2d4a63398b307a0e700f6660c4c8cb7c"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -1012,9 +1012,9 @@
         "tooltip-open-light-hc": "sha256:48a907880ac8a01fd9c073679f3c23c38bb707def18c22d07156bc85813dd94a",
         "tooltip-open-light": "sha256:48a907880ac8a01fd9c073679f3c23c38bb707def18c22d07156bc85813dd94a"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -1263,9 +1263,9 @@
         "open-light-hc": "sha256:e5f9c0e985de4bede773705e563e1f5b5799a5878e84ac56b21e8fe35090d0e2",
         "open-light": "sha256:ec7b933b4d97475ebacfecfb282c7662f61ec1a23a30d1bc530d70e160df2854"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -2047,9 +2047,9 @@
         "invalid-light-hc": "sha256:6b9b7b8b6c881c849168a9cc1def94d95774a1f28ed607cd63477a8ca293e61a",
         "invalid-light": "sha256:a5e6c3e9050c3dddc8ede19b16986ac672f90480368893c38711e5025794c34d"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -2279,9 +2279,9 @@
         "open-light-hc": "sha256:98a98eb929b4ffe0ca702b7392709cf4bd54bc09afb6b879d4de59bea0f5767d",
         "open-light": "sha256:f0815743a41f673102ae22f031459517948bb4c43bb9765d6f343a1e332d281e"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
