@@ -241,3 +241,76 @@ abort was observed, but the call and governor permit settled before the injected
 A separate client-only repair is active, coordinated with R2's dispatch-authorization seam.
 GET/version observation liveness and actual model-POST settlement must remain distinct.
 This fixture proves local client ownership, not backend inference cessation.
+
+## K4 input source integrated; current independent findings
+
+Reviewed input-artifact candidate `622addc` is merged locally as `53b1e76`.
+[Input evidence](K4-input-artifacts.md) separates **48 new / 73 earlier selected regression**
+cases, independent repair closures, full candidate results and remaining scope. Every individual
+post-merge command passed at clean unchanged `53b1e76`:
+
+| Command | Receipt | Observed scope |
+| --- | --- | --- |
+| typecheck | `check-_kgtij4a` | all workspaces |
+| npm test | `check-hwq5f4nu` | core 1332, kernel 106, web 326, UI gates 89, codemod 6, catalog 74, UI 17, bench 82; zero skips |
+| web browser | `check-wyu1wdam` | 66/66 mocked Chromium cases |
+| catalog browser | `check-upccqcug` | full UI browser gates |
+| build | `check-poy8_gke` | web/server/CLI |
+| Markdown/links | `check-ao6i4q85` | zero errors |
+| licenses | `check-dxj2h1g1` | 658 packages, zero disallowed |
+| source lint | `check-at_tq1xz` | JS/CSS/suppression ratchet |
+
+The outer coordinator script exited 127 **after** these eight child checks: the coordinator
+edited its running shell script to add a cooperative pause, and the shell resumed reading at
+the wrong file offset (`ep: command not found`). No product source or child check was
+interrupted. This is a coordinator error, not a successful wrapper result. The individual
+receipts above were inspected separately; future running coordinators stay immutable. The
+corrected script passes `bash -n`. The existing external skill symlink still prevents reusable
+source certification; these remain direct local observations.
+
+The later combined U1 review found a new inherited K4 P2: a long secret registered after an
+8 KiB excerpt was stored can leave its truncated prefix visible. External probe
+`check-821298cf` passes the ordinary v2 metadata case and fails the long-secret case. This
+does not undo the earlier findings' repair; it establishes another property that must be fixed
+before the input/privacy exit. A separate GPT author owns the shared synchronous truncated
+egress projection, with the finding's original reviewer reserved for independent verification.
+No owner content or credential was used in these fixtures.
+
+## Current local candidate boundary
+
+- U1 earlier union `387453b` passes all eight commands, including **87** Chromium cases.
+  Its CSS null-iterations finding is separately fixed (`7ca072e`, handoff `f83533b`) and
+  independently closed. The current union `985dfed` includes main K4, unsigned shell readiness,
+  reviewed search and that CSS fix: types pass (`check-lydnzcsx`), npm test stops at locale
+  inventory (`check-5y575x_n`, web 351/352). The internal discriminator/brand-copy repair is
+  isolated; no scanner exception or allowance growth is authorized. Product shell mounting,
+  genuine ephemeral side chat and the remaining 112 CSS suppressions remain open.
+- AppShellChrome, Dialog and Input move unsigned draft to review at `6b72e68` after independent
+  source/images/26 focused cases and full catalog browser checks. Fast status/integrity passes
+  `check-_3culzz9`. Approval stays null; no owner key, signature or stage exit is inferred.
+- R2 admission `c4dbaff` has independent closure. The first K3/R2 union reproduced a nonstream
+  reader-cancellation deadlock despite its stream repair. Separate source `3439a7f` / handoff
+  `19664d3` passes **26 new / 99 inherited = 125** author cases. Current union `d21661b`
+  incorporates that fix plus main K4 and awaits independent original-probe recheck/full gates.
+- R3 cascade source `9e62da8`, handoff `f0733b2`, closes stale runtime-window and missing judge
+  facts findings. Author relay scope is **29 new / 92 inherited**, plus the original window
+  probe; independent **29 repository + original probe** passes. K3/R2 integration and real
+  operational/quality gates remain.
+- B1 process/K2 review reproduced PID-reuse cleanup, empty completion fence and changed
+  stopReason idempotency P2s. Separate `65d96c1` and `ef51113` fixes at `96ebde6` pass **19 new /
+  115 inherited = 134** author cases. A documented legacy late-redacted tool-key edge is not
+  accepted as closure and is being repaired before the real-process independent recheck.
+- X1 optional Linux system mounts are repaired in `c7773d4`, handoff `7a471d0`, after the
+  exact-source Linux image exposed absent `/lib64`. New exact-source image
+  `sha256:a787e0776427fb1f42019448959c3ac0a9733ef1e977fcaf8dd780eb06c01b73`
+  passes **55 indexing + 7 boot**, zero skips (`check-subq06iv`): **1 new / 61 prior selected**
+  for this fix. Separate source/two-case review passes `check-awj5cow3`. This is bounded local
+  Colima Linux with explicit nested-bwrap permissions, not Fedora/rootless production proof.
+- K5's read-only local audit specifies durable same-node account admission next; a DSH plan
+  is active in `codex/k5-durable-admission`. Real vendor captures, automatic bridge producer
+  activation, effective implicit bare detection and distributed admission remain open.
+
+No push or remote execution occurred. The local HTML roadmap was refreshed and passes desktop
+and phone browser QA (`check-138h8k13`); its original Claude publication is unchanged. That
+snapshot predates this last merge and keeps explicit source/candidate dates. MS1's real
+second-node six-hour delegation/hibernation observations remain unearned in local-only scope.
