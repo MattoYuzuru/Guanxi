@@ -46,6 +46,53 @@ admission and retains additive history; no inference is resumed automatically.
 
 See the [slice plan](../../../../docs/plans/lanes/R2-trusted-start.plan.md) for the bounded scope.
 
+## Operational local runtime (R2-op)
+
+`StartOptions.operationalRelay` is an immutable, explicit boot option of the trusted host. It is
+not an HTTP setting and cannot be combined with `StartOptions.relay`. Without it, or when the
+binary or model file is absent on this node, the stock refusals above are unchanged.
+
+**Counter: a direct llama-server runtime, not an Ollama sidecar.** The server that is dispatched
+to is also the renderer and tokenizer. `/apply-template` renders the one-message `think:false`
+request (`enable_thinking:false`), `/tokenize` (`add_special`, `parse_special`) counts it, `/props`
+supplies the loaded per-slot `n_ctx`, and dispatch is `POST /completion` of exactly the counted
+string. An Ollama sidecar was rejected: Ollama renders with its Go template layer, not the GGUF
+Jinja, so equality cannot be shown for an unknown model; the installed llama-server has no
+vocab-only mode, so a sidecar means a second full model load; and a llama.cpp-only host has no
+Ollama store at all. Stock Ollama therefore still refuses `runtime_meter_unavailable`.
+
+Identity is `{alias, SHA-256 of the GGUF named by /props, llama-server/<build_info>, n_ctx}`; the
+digest is computed once and recomputed when path, size, mtime or inode change. The synchronous
+`count` that the executor needs is served by one worker thread doing the two HTTP calls while the
+calling thread blocks in `Atomics.wait` with a hard timeout (default 10 s); a timeout or any
+invalid reply is `runtime_count_invalid`, never an estimate. This blocks the server event loop
+for milliseconds per uncached count, so it suits one relay run at a time. Bind proves once per
+served identity that the template adds framing, echoes the message once and agrees with the
+bridge. Before each POST the transport re-renders, re-counts and compares with the executor's
+synchronous count (`runtime_counter_mismatch`), refuses a window overrun, re-runs the final fence
+check and issues the POST in the same synchronous stretch, and refuses a `truncated` reply. After
+the reply the executor's existing `prompt_eval_count` comparison (`truncation_protocol`) is the
+first real-dispatch cross-check; there is no fallback.
+
+Dispatch still goes through K3 `localChat` (`transport` option): scrubbing, unattended consent,
+the single governor permit (provider `ollama`, model name prefixed `llama-server:`; widening the
+governor vocabulary is open) and the usage receipt (`llama-server:/completion`) are unchanged.
+
+**Boot modes.** `spawn` runs the owner-supplied binary with a fixed argv (`--host 127.0.0.1 -np 1
+--jinja --no-context-shift --no-webui --alias`), an allow-listed environment and discarded
+output, loads in the background (loading means `runtime_meter_unavailable`), never restarts, and
+stops only the child it started on close. `attach` uses an existing loopback server and never
+signals it. The model reference must be a local one; no cloud name is accepted.
+
+**Owned checkout allocator.** `allocate` clones the project's committed history under
+`<data>/relay-checkouts/r-*` (a marked directory), detaches at `plan.base`, removes the remote and
+every ref, expires reflogs and repacks so no object newer than the base remains, and creates
+`runtime/` and `runtime/scratch/`. The source worktree, uncommitted changes and the source
+repository are only read. Files are never hardlinked (the K4 sandbox refuses writable hardlinks).
+`close()` deletes only a marked directory directly under the allowed root, keeps everything when a
+K4 quarantine exists, proves the removal and otherwise reports `cleanup_unconfirmed`, which an
+abort cannot hide. Crash leftovers are not reaped at boot (residual).
+
 ## ETA projection (R3-a)
 
 The trusted host may additionally supply `RelayInput.eta`. It contains an exact

@@ -120,3 +120,16 @@ live calibration evidence. Judge execution, delegation policy, automatic timing 
 cross-node transport and B3 quality/non-inferiority remain proposed.
 Linked/gitlink repository trees are refused by the current clean-checkout implementation.
 See the [R2 hand-off](../plans/evidence/R2.md) for assertions, mutations and exact scope.
+
+## Operational local runtime (R2-op, 2026-10-23)
+
+Stock Ollama still has no exact rendered-request counter and still refuses. An explicit boot
+option now supplies one for a **direct llama-server runtime** (ADR-0031 Tier 1): the dispatched
+server renders (`/apply-template`), tokenizes (`/tokenize`) and reports the loaded window
+(`/props`), and the counted string is the dispatched string. An Ollama-blob vocab sidecar was
+rejected because Ollama's Go template and the GGUF Jinja template cannot be proven equal, the
+installed llama-server has no vocab-only mode, and a llama.cpp-only host has no Ollama store.
+The same option supplies an owned, isolated checkout allocator. See the
+[relay README](../../packages/server/src/relay/README.md) and the
+[R2-op plan](../plans/lanes/R2-op.plan.md). The status stays `proposed`; no real-model or
+real-binary validation has been performed.
