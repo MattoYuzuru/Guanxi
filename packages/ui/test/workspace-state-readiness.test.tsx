@@ -15,6 +15,7 @@ for (const locale of ['en', 'ru'] as const) describe(`Textarea invalid (${locale
     const input = screen.getByRole('textbox', { name: locale === 'en' ? 'Prompt' : 'Запрос' })
     const error = screen.getByRole('alert')
     expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect((input as HTMLTextAreaElement).value).toBe('')
     expect(input.getAttribute('aria-describedby')).toBe(error.id)
     expect(error.id).toBeTruthy()
     expect(error.textContent).toBe(locale === 'en' ? 'Enter a description before continuing.' : 'Введите описание, прежде чем продолжить.')
