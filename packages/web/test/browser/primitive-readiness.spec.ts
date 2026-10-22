@@ -186,6 +186,33 @@ for (const composition of ['icon', 'dialog'] as const) {
   })
 }
 
+for (const association of ['default', 'controlled']) {
+  test(`Tooltip ${association} open preserves custom IDs, existing descriptions and the trigger name`, async ({ page }) => {
+    await page.goto(`${fixture}?association=${association}`)
+    const trigger = page.getByTestId('description-trigger')
+    const tooltip = page.getByRole('tooltip')
+    await expect(tooltip).toHaveCount(1)
+    await expect(tooltip).toHaveAttribute('id', 'custom-description')
+    await expect(trigger).toHaveAttribute('aria-describedby', 'existing-description custom-description')
+    await expect(trigger).toHaveAccessibleName('Context')
+    await trigger.focus()
+    await page.keyboard.press('Escape')
+    await expect(tooltip).toHaveCount(0)
+    await expect(trigger).toHaveAttribute('aria-describedby', 'existing-description')
+    await expect(trigger).toHaveAccessibleName('Context')
+    await expect(trigger).toBeFocused()
+  })
+}
+
+test('Tooltip consumer cancellation keeps a closed popup unassociated', async ({ page }) => {
+  await page.goto(`${fixture}?association=cancel`)
+  const trigger = page.getByTestId('description-trigger')
+  await trigger.hover()
+  await expect(page.getByTestId('open-changes')).not.toHaveText('0')
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await expect(trigger).toHaveAttribute('aria-describedby', 'existing-description')
+})
+
 test('forced colors preserves visible trigger focus, highlighted command contrast and Tooltip boundary', async ({ page }) => {
   await page.emulateMedia({ forcedColors: 'active' })
   await open(page)

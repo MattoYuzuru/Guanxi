@@ -1,6 +1,7 @@
 import {
   Button, Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger,
-  IconButton, Menu, MenuContent, MenuItem, MenuTrigger, UiLocaleProvider, useUiText,
+  IconButton, Menu, MenuContent, MenuItem, MenuTrigger, Tooltip, TooltipContent, TooltipTrigger,
+  UiLocaleProvider, useUiText,
   type UiLocale,
 } from '@guanxi/ui'
 import { useState } from 'react'
@@ -63,4 +64,29 @@ function Fixture() {
   </main>
 }
 
-createRoot(document.getElementById('root')!).render(<UiLocaleProvider locale={locale}><Fixture /></UiLocaleProvider>)
+function DescriptionFixture() {
+  const t = useUiText()
+  const [open, setOpen] = useState(true)
+  const [changes, setChanges] = useState(0)
+  const mode = params.get('association')
+  return <main className="p-4">
+    <h1>{t('story.menu.group')}</h1>
+    <p id="existing-description">{t('story.tooltip.content')}</p>
+    <Tooltip open={mode === 'controlled' ? open : undefined} defaultOpen={mode === 'default'}
+      onOpenChange={(next, details) => {
+        setChanges(n => n + 1)
+        if (mode === 'cancel' && next) details.cancel()
+        else setOpen(next)
+      }}>
+      <TooltipTrigger render={<Button />} aria-describedby="existing-description" data-testid="description-trigger">
+        {t('story.tooltip.trigger')}
+      </TooltipTrigger>
+      <TooltipContent id="custom-description">{t('story.tooltip.content')}</TooltipContent>
+    </Tooltip>
+    <output data-testid="open-changes">{changes}</output>
+  </main>
+}
+
+createRoot(document.getElementById('root')!).render(<UiLocaleProvider locale={locale}>
+  {params.has('association') ? <DescriptionFixture /> : <Fixture />}
+</UiLocaleProvider>)
