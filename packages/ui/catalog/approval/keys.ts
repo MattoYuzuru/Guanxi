@@ -1,6 +1,7 @@
 /**
  * Committed owner approval public keys (`packages/ui/catalog/approval-keys.json`). The private
- * key never enters the repository: it lives in the owner's macOS keychain (D-138).
+ * P-256 key never enters the repository and never leaves the Secure Enclave; only the signing
+ * helper can use it (D-184).
  */
 import { createHash, createPublicKey, type KeyObject } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -8,7 +9,7 @@ import { canonicalJson } from './canonical.ts'
 
 export interface TrustedKey {
   keyId: string
-  algorithm: 'ed25519'
+  algorithm: 'p256'
   /** Base64 of the DER-encoded SubjectPublicKeyInfo. */
   publicKey: string
   addedAt: string
@@ -32,7 +33,7 @@ export interface TrustedKeyFile {
 export const KEY_ROTATION_SCHEMA = 'guanxi.ui-approval-keys/1'
 
 export function keyIdForPublicKey(spkiDer: Uint8Array): string {
-  return `ed25519:${createHash('sha256').update(spkiDer).digest('hex').slice(0, 32)}`
+  return `p256:${createHash('sha256').update(spkiDer).digest('hex').slice(0, 32)}`
 }
 
 export function publicKeyObject(key: TrustedKey): KeyObject {
@@ -71,11 +72,13 @@ export function parseTrustedKeys(value: unknown): TrustedKeysResult {
       errors.push(`keys[${index}] is not an object`)
       continue
     }
-    if (key.algorithm !== 'ed25519') errors.push(`keys[${index}].algorithm must be ed25519`)
+    if (key.algorithm !== 'p256') errors.push(`keys[${index}].algorithm must be p256`)
     if (typeof key.addedAt !== 'string') errors.push(`keys[${index}].addedAt is missing`)
     try {
       const object = publicKeyObject(key as TrustedKey)
-      if (object.asymmetricKeyType !== 'ed25519') errors.push(`keys[${index}] is not an Ed25519 key`)
+      if (object.asymmetricKeyType !== 'ec' || object.asymmetricKeyDetails?.namedCurve !== 'prime256v1') {
+        errors.push(`keys[${index}] is not a P-256 key`)
+      }
       const { keyId } = exportPublicKey(object)
       if (key.keyId !== keyId) errors.push(`keys[${index}].keyId does not match its public key (${keyId})`)
     } catch {

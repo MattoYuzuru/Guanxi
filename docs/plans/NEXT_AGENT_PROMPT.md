@@ -1,47 +1,58 @@
-# Next agent prompt — run integration gates and merge one reviewed candidate
+# Next agent prompt — finish active work, then pursue MS1
 
-**Status:** ready · **Updated:** 2026-10-21
+**Status:** active continuation · **Updated:** 2026-10-22
 
-Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/README.md)
-and [PHASE_STATUS](PHASE_STATUS.md). The [coordination audit](evidence/coordination-2026-10-21.md)
-pins the inspected commits and separates implementation, verification and merge state.
+Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/README.md),
+[PHASE_STATUS](PHASE_STATUS.md) and the [continuation record](evidence/coordination-2026-10-22.md).
+The owner authorized autonomous completion of current in-progress work and MS1 where feasible.
+Do not reopen an old lane prompt from its stale running label. Inspect branch, HEAD, live
+worker and latest handoff. Root owns central status; workers use isolated branches/handoffs.
+The owner currently requires **local-only work**. Do not use SSH/Fedora or other remote hosts
+until the owner changes that scope. Existing local Colima is available for bounded fixtures;
+D-194 still excludes real benchmark execution on this Mac.
 
-Do not restart old prompts merely because a lane file says “running”. Check live processes,
-HEAD, dirty state and the latest handoff first. Heavy checks share the `agent-dev` resource
-`heavy`; runtime target is this Mac. Use Node 26 and each checkout's own dependencies/ports.
+K4 follow-up 2 is merged as `8006cd8` after full gates;
+[evidence](evidence/K4-followup-2.md) retains exact scope and receipts. Remaining K4 work is
+input-artifact integration, expanded UI evidence and the platform envelope. Positive HTTPS
+source `8803855` is reviewed, merged locally and included in the passing full core envelope.
 
-Current bounded recovery queue:
+Current queue:
 
-1. **K4 follow-up 2:** `codex/k4f2-review-fixes` at `baeac3c` in
-   `Guanxi-lanes/coord-k4f2`. Independent review closed deletion, whole-maintenance-pass and
-   synchronous-transaction findings. The 38 targeted tests and server typecheck pass. Read
-   its appended K4F2 handoff, check any original cross-family/platform scope still open, run
-   the full integrator gates and merge only after they pass.
-2. **DS2:** `codex/ds2-review-fixes` at `785b814` in `Guanxi-lanes/coord-ds2`. Independent
-   review closed unsupported-platform and actual production-policy wiring findings. The 47
-   scoped tests, production/test Swift builds and server typecheck pass. Run full integrator
-   gates; keep actual owner-present hardware signing and installed-helper custody unverified.
-   Do not approve a component or create/migrate a real owner key in ordinary tests.
-3. **X1:** `codex/x1-parent-read-boundary` at `647c5d0` in `Guanxi-lanes/coord-x1`. The
-   fingerprint boundary repair and merge-conflict resolution are independently reviewed.
-   Published main is included; the combined indexing/kernel boot gate passes (60 pass,
-   1 Linux-only skip), all-workspace typecheck and licenses pass. Run the repaired indexing
-   envelope on Linux within the existing authorized runtime scope, then the required full
-   integrator gates. Preserve the original X1 residuals; no live model or broad host probing.
-4. **U1-a:** candidate `0523f9b` has local layout/mode behavior and a handoff. Review the
-   whole candidate; record cross-node layout replication as absent. U1-b shell and U1-c
-   zero-suppression migration remain separate unfinished slices.
-5. **B1:** candidate `298a93a` is a partial fixture foundation. Next define and implement the
-   per-request K3 billing reservation boundary, immutable 50+30 corpus staging and actual
-   Guanxi task executor. No paid/model noise-floor run is authorized by the fixture handoff;
-   ADR-0025 is not yet an operational evolution gate.
+1. DS2 source merged locally as `03c655b`, and positive HTTPS test `8803855` is incorporated.
+   All eight post-merge gates pass at clean main `5e9bbfe`. [Evidence](evidence/DS2.md). Real production
+   user-presence signing is unverified; never create an owner key in ordinary tests.
+2. X1 `codex/x1-parent-read-boundary` (`647c5d0`): perform repaired-source Linux evidence
+   inside an explicit integration envelope, then full gates. Preserve named X1 residuals.
+3. U1 `codex/u1-completion`: local layout and signed replication are independently reviewed
+   at `e5f8e0a`, including separate review fixes; handoff `646bf3d`. Initial candidate gates pass;
+   candidate `a613f7a` now includes verified main `5e9bbfe` and is under integration gates. Shell and
+   partial CSS token migration are active in separate worktrees; zero-suppression exit remains.
+4. **Current boundary:** B1 source merged locally as `7366df8`; [candidate evidence](evidence/B1.md)
+   includes full affected gates and independent private stream review. Run full post-merge checks
+   before another executable merge. Continue process/peer/K2 binding, corpus/images and paired
+   execution. No fixture
+   measurement activates ADR-0025 or authorizes an unbounded paid run.
+5. R3 `codex/ms1-r3` (`bf6a222`): independently reviewed ETA foundation, integration pending.
+   Judge/delegation and real replay/calibration/night evidence remain. F2 offer/reservation work
+   follows reviewed U1 minor1 with minor2 plus an explicit feature capability. Actual remote
+   dispatch is not implemented by a reservation receipt.
 
-DS1-a/b/c and F1 are merged. K4/K5/R2 bounded implementations are merged with explicit
-residuals; do not reopen their original whole-lane prompts or claim full product readiness.
-R3 and F2 are available roadmap successors once their dependency contracts are satisfied.
-No phone relay has been deployed (U4, D-187, ADR-0038).
+Use Node 26, each checkout's own dependencies/ports, and shared `agent-dev` resource `heavy`
+under `/Users/yuzuru/.local/state/agent-dev`; stop a gate sequence on failure. Source changes
+during a check invalidate that evidence. Keep new and regression counts separate.
 
-Workers write lane handoffs, never the central status files. The integrator updates this
-prompt and PHASE_STATUS after each bounded outcome, retains separate review-fix commits,
-and publishes main only after its required gates pass. If a fix/gate remains unresolved,
-leave this prompt on that item with the exact blocker and recovery command.
+MS1 still requires K5/R3/F2/B3: real delegation to a 30B-class model on another node for at
+least six hours, zero lead tokens during hibernation, exactly one wake, all items/gates green
+in a clean checkout, and the B3 gate. Do not replace these observations with fixture passes.
+Prepare any owner-required action concretely while continuing independent work.
+
+Central-doc independent review found a stale B1 status row in `c09e2be`; the separate
+documentation correction names the reviewed request-admission source and active work.
+The R3 signal evaluator `5919d0b` is reviewed with 10 new independent passes but still needs
+review closure of its relay integration at `a8d5997`. Independent review found a pending
+collector can block stop/wall cancellation; a separate DeepSeek repair is active. Do not merge
+until its narrow independent recheck passes, and do not count this as the full judge stage.
+
+After U1, integrate reviewed F2 reservation candidate `5c66e27` with its separate independent
+evidence. F2-b renewable home grants and actual execution are unfinished; reserved receipts
+explicitly carry dispatchAuthorized:false. Keep the local-only runtime boundary.

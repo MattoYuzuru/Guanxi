@@ -27,7 +27,7 @@
             "comment": { "type": "string" },
             "keyId": { "type": "string", "minLength": 1 },
             "previous": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }], "description": "Digest of the superseded signed decision (sha256 over the canonical signed payload plus signature), or null for the first decision" },
-            "signature": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$", "description": "Base64 Ed25519 signature over the canonical approval payload" }
+            "signature": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$", "description": "Base64 ECDSA P-256 signature (SHA-256, IEEE P1363, 64 bytes) over the canonical approval payload" }
           }
         }
       ]

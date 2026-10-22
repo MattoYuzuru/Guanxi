@@ -11,9 +11,12 @@ export const REVIEW_STATUSES = ['draft', 'review', 'approved', 'deprecated'] as 
 export type StoredReviewStatus = (typeof REVIEW_STATUSES)[number]
 export type EffectiveReviewStatus = StoredReviewStatus | 'stale' | 'invalid'
 
-export const APPROVAL_SCHEMA = 'guanxi.ui-approval/2'
-export const REVOCATION_SCHEMA = 'guanxi.ui-revocation/2'
-/** Base64 of a 64-byte Ed25519 signature: nothing else may ride along in the field. */
+export const APPROVAL_SCHEMA = 'guanxi.ui-approval/3'
+export const REVOCATION_SCHEMA = 'guanxi.ui-revocation/3'
+/**
+ * Base64 of exactly 64 bytes: an ECDSA P-256 signature in IEEE P1363 form (r‖s). 64 bytes
+ * encode to 86 base64 characters plus "==", so nothing else may ride along in the field.
+ */
 export const SIGNATURE_PATTERN = /^[A-Za-z0-9+/]{86}==$/
 export const COMPONENT_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 export const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
@@ -168,7 +171,7 @@ export function parseReviewRecord(value: unknown, expectedId?: string): ParseRes
       if (typeof approval['keyId'] !== 'string' || approval['keyId'] === '') errors.push('approval.keyId is missing')
       if (!isPrevious(approval['previous'])) errors.push('approval.previous is not null or sha256:<hex>')
       if (typeof approval['signature'] !== 'string' || !SIGNATURE_PATTERN.test(approval['signature'])) {
-        errors.push('approval.signature is not a base64 Ed25519 signature')
+        errors.push('approval.signature is not a base64 P-256 signature')
       }
     }
   }
@@ -180,7 +183,7 @@ export function parseReviewRecord(value: unknown, expectedId?: string): ParseRes
       if (typeof revocation['keyId'] !== 'string' || revocation['keyId'] === '') errors.push('revocation.keyId is missing')
       if (!isPrevious(revocation['previous'])) errors.push('revocation.previous is not null or sha256:<hex>')
       if (typeof revocation['signature'] !== 'string' || !SIGNATURE_PATTERN.test(revocation['signature'])) {
-        errors.push('revocation.signature is not a base64 Ed25519 signature')
+        errors.push('revocation.signature is not a base64 P-256 signature')
       }
     }
   }
