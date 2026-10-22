@@ -163,8 +163,8 @@ for (const composition of ['icon', 'dialog'] as const) {
   test(`${composition} Tooltip opens on pointer and keyboard, has an accessible relation and dismisses without activation`, async ({ page }) => {
     await open(page)
     if (composition === 'dialog') await page.getByTestId('dialog-trigger').click()
-    const trigger = composition === 'icon' ? page.getByTestId('icon') : page.getByRole('button', { name: 'Close', exact: true })
-    const label = composition === 'icon' ? 'Open settings' : 'Close'
+    const trigger = composition === 'icon' ? page.getByTestId('icon') : page.getByRole('button', { name: 'Close dialog', exact: true })
+    const label = composition === 'icon' ? 'Open settings' : 'Close dialog'
     // Move keyboard focus away so the first opening is actually pointer driven.
     if (composition === 'dialog') await page.getByRole('dialog').focus()
     await trigger.hover()
