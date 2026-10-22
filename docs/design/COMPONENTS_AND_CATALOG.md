@@ -186,8 +186,11 @@ lane hand-off for evidence.
 - `@guanxi/ui` has 14 primitives (shadcn/ui on Base UI, adapted) and 4 patterns (StatusPill,
   ProvenanceLabel, EmptyState, ErrorState), all `draft`. They style through DS1-a's generated
   tokens (`packages/ui/generated/tokens.css`); values no token expresses come from Tailwind
-  utilities through `@apply`, so G1–G7 pass on the components. The spinner and the running pulse
-  stay still until the generated theme offers a loop animation (G6 rejects keyframe names).
+  utilities through `@apply`, so G1–G7 pass on the components. The spinner and the running
+  pulse in `@guanxi/ui` remain static in this slice. The generated `animate-*` theme utilities
+  are currently consumed by the legacy web compatibility classes, not by these catalog
+  components; reusing them in a component requires verifying keyframe ownership and
+  reduced-motion loop removal first. Catalog behavior and statuses are unchanged.
 - The in-app catalog is at Settings → Developer → Components (`/settings/developer/components`),
   code-split and shown only with Developer mode on. Links keep the component and regime in the
   query (`?component=button&theme=dark-hc&density=comfortable&glass=solid`).

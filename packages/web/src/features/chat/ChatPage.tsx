@@ -1021,7 +1021,7 @@ export function StreamingMessage({
   }, [snapshot.version, toolCalls.length, onChange])
 
   return (
-    <article className="anim-fade-up">
+    <article>
       <div className="mb-1 flex items-center gap-2 text-2xs text-muted">
         <span>{PRODUCT_NAME}</span>
         <span role="status" aria-live="polite" aria-atomic="true">

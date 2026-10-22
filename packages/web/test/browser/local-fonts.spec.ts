@@ -144,7 +144,7 @@ test('H2: built app applies IBM Plex typography, density type size and spacing',
 test('explicit reduced motion disables animations and explicit full overrides OS reduce', async ({ page }) => {
   await installChatApiFixture(page, 'completed')
   await page.goto(origin)
-  type Probe = { spinAnimation: string; caretAnimation: string; sheenAnimation: string; transitionProperty: string; animations: string[] }
+  type Probe = { spinAnimation: string; spinDuration: string; caretAnimation: string; caretBackground: string; sheenAnimation: string; sheenDuration: string; transitionProperty: string; animations: string[] }
   const observed = new Map<string, Probe>()
   for (const theme of ['light', 'dark'] as const) for (const os of ['no-preference', 'reduce'] as const) for (const motion of ['system', 'reduced', 'full'] as const) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: os })
@@ -169,10 +169,16 @@ test('explicit reduced motion disables animations and explicit full overrides OS
           const property = (animation as CSSTransition).transitionProperty
           return name ?? property ?? 'unknown'
         })
+        const caretStyle = getComputedStyle(caret, '::after')
+        const spinStyle = getComputedStyle(spin)
+        const sheenStyle = getComputedStyle(sheen, '::after')
         return {
-          spinAnimation: getComputedStyle(spin).animationName,
-          caretAnimation: getComputedStyle(caret, '::after').animationName,
-          sheenAnimation: getComputedStyle(sheen, '::after').animationName,
+          spinAnimation: spinStyle.animationName,
+          spinDuration: spinStyle.animationDuration,
+          caretAnimation: caretStyle.animationName,
+          caretBackground: caretStyle.backgroundColor,
+          sheenAnimation: sheenStyle.animationName,
+          sheenDuration: sheenStyle.animationDuration,
           transitionProperty: getComputedStyle(transition).transitionProperty,
           animations,
         }
@@ -182,18 +188,24 @@ test('explicit reduced motion disables animations and explicit full overrides OS
     }, { theme, motion })
     const label = `${theme}/os-${os}/motion-${motion}`
     observed.set(label, probe)
+    // The caret is a static accent block in every setting; only the caret's background
+    // provides the cue, and no cell may animate its pseudo-element.
+    expect(probe.caretAnimation, `${label}: stream caret must be static`).toBe('none')
+    expect(probe.caretBackground, `${label}: caret needs a non-transparent static cue`).not.toBe('transparent')
+    expect(probe.caretBackground, `${label}: caret needs a non-transparent static cue`).not.toBe('rgba(0, 0, 0, 0)')
     if (motion === 'reduced' || (motion === 'system' && os === 'reduce')) {
       expect(probe.spinAnimation, label).toBe('none')
-      expect(probe.caretAnimation, label).toBe('none')
       expect(probe.sheenAnimation, label).toBe('none')
       expect(probe.transitionProperty, label).toBe('none')
       expect(probe.animations, `${label}: getAnimations count must be 0, pseudo-elements included`).toEqual([])
     } else {
       expect(probe.spinAnimation, label).toBe('guanxi-spin')
-      expect(probe.caretAnimation, label).toBe('guanxi-caret')
+      expect(probe.spinDuration, label).toBe('1s')
       expect(probe.sheenAnimation, label).toBe('guanxi-sheen')
+      expect(probe.sheenDuration, label).toBe('1s')
       expect(probe.transitionProperty, label).toBe('opacity')
-      expect(probe.animations.length, label).toBeGreaterThanOrEqual(3)
+      expect(probe.animations, label).toEqual(expect.arrayContaining(['guanxi-spin', 'guanxi-sheen']))
+      expect(probe.animations.length, label).toBeGreaterThanOrEqual(2)
     }
   }
   // Positive control: without this, the reduced assertions could pass vacuously.
