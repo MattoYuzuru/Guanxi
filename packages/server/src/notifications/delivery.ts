@@ -135,12 +135,12 @@ export function validateDeliverySettings(value: unknown): DeliverySettings {
     if (!isRecord(value.channelsByKind)) {
       invalid('deliverySettings.channelsByKind', 'expected an object')
     }
-    channelsByKind = Object.fromEntries(
-      Object.entries(value.channelsByKind).map(([kind, channels]) => [
-        kind,
-        validateChannels(channels, `deliverySettings.channelsByKind.${kind}`),
-      ]),
-    )
+    for (const [kind, channels] of Object.entries(value.channelsByKind)) {
+      // An explicit `undefined` means "use defaults" and must not reach `validateChannels`.
+      if (channels !== undefined) {
+        channelsByKind[kind] = validateChannels(channels, `deliverySettings.channelsByKind.${kind}`)
+      }
+    }
   }
 
   let criticalBypassesQuietHours = false

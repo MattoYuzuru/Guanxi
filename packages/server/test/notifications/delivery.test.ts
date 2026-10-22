@@ -454,6 +454,23 @@ test('validation fills safe defaults and preserves explicit settings', () => {
   assert.deepEqual(equalBounds.quietHours, { start: '07:00', end: '07:00' })
 })
 
+test('an explicit undefined channelsByKind entry means defaults, not a validation failure', () => {
+  const partial: DeliverySettings = settings({
+    channelsByKind: { threshold: undefined },
+    defaults: ['in_app', 'os'],
+  })
+
+  const validated = validateDeliverySettings(partial)
+  assert.deepEqual(validated.channelsByKind, {})
+  assert.equal(Object.hasOwn(validated.channelsByKind, 'threshold'), false)
+  assert.deepEqual(validated.defaults, ['in_app', 'os'])
+
+  const now = at('2026-10-21T12:00:00.000Z')
+  const decisions = planDelivery(note({ kind: 'threshold' }), partial, now)
+  assert.deepEqual(channelsOf(decisions), ['in_app', 'os'])
+  assert.deepEqual(reasonsOf(decisions), ['immediate', 'immediate'])
+})
+
 test('unknown IANA time zones are TypeErrors with a path', () => {
   for (const timeZone of ['Mars/Olympus', 'Not/AZone', '', '+03:00', '−03:00']) {
     assert.throws(
