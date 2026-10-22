@@ -172,3 +172,96 @@ prompt/queue and `promptTextOf`, and the root should run the native envelope out
 
 No root review findings yet. Any later findings will be fixed in separate commits and appended
 here without rewriting this section.
+
+## Independent review fix (2026-10-22)
+
+Independent report `../../../../reviews/codex-k4-input-code-20261022.md` reviewed candidate
+`419a9972bfe956a9dc72e69a55990514198a81e0` and confirmed three P2 findings. This section appends
+the fixes and current evidence; the historical sections above are unchanged. The independent
+three-probe fixture
+`../../../../reviews/k4-input-review-probes-20261022.ts` now passes **3/3** against this
+worktree. `K4-INPUT-ARTIFACTS` remains open, and the queue-artifactization, old-server rollback
+and calibration claims remain open as recorded above.
+
+### Fix commits
+
+| Commit | Finding | Change and failing-first evidence |
+| --- | --- | --- |
+| `fd2936c` | P2 queue overwrite | `queue()` and `removeQueued()` now read the accepted projection and call the existing internal synchronous `appendNow()` inside the same `NativeAppendQueue.enqueue()` operation. There is no reentrant `append`, no snapshot before enqueue and no second FIFO. The new test concurrently queues two prompts and then queues a third while removing the first; it asserts exact IDs/order and every intermediate `agent.queue` snapshot. Before the fix the two concurrent calls resolved successfully but retained only `['second accepted']`. |
+| `87deb44` | P2 stop intent lost | `NativeAppendQueue.requestIntervention()` retains exactly one stop intent and `fail()` writes it through the direct append path before `onFailure()` writes the single terminal; a queued intervention that already committed marks the intent committed, so the failure path cannot duplicate it. `stop()` still requests the intervention and aborts synchronously, without waiting for artifact I/O. The existing blocked-write cancellation test is strengthened to assert exactly one `intervention` before exactly one `turn.done`, cancelled state and only R1 `run.lifecycle` after the terminal; no delay, pending-model stop test or count was weakened. Before the fix the blocked artifact write rejected first, the queued intervention was rejected by the failure guard, and the event count was `intervention = 0`. |
+| `f6be3ea` | P2 orphan reaper detaches live bytes | `SessionInputReapOptions.criticalSection()` runs the fresh membership check and the local `renameSync()` in one synchronous body. Production supplies `runs.homeFence().transaction(...)`, whose `BEGIN IMMEDIATE` is the same SQLite critical section that serializes session/reference commits; the fallback asserts home and runs the body with no await. The fresh check re-reads sessions, unreleased `session_writers`, `session_input_artifacts` and `liveSessionIds` immediately before the rename. A session row appearing after the rename still keeps the quarantine; there is no restore and no unlink of published bytes. The new test writes an orphan CAS entry, commits a live session plus a v2 reference from `assertHome` before the final fence, asserts `{removedDirectories:0, quarantinedKept:0}`, and successfully reads the canonical exact bytes; it also covers a live-only pre-admission id and a failing fence retaining the canonical directory. Before the fix the reaper renamed first, returned `quarantinedKept:1`, and the canonical read failed. |
+| `358ee23` | Probe teardown, not a reviewed P2 | The independent reaper probe registers `db.close()` before the handle close. `SessionLog.releaseHandle()` now skips a closed database and never throws from close, matching the existing system-writer close behavior. A focused test covers handle and log close after `db.close()`. Without this, the corrected reaper probe passed its assertions but failed in the teardown hook. |
+
+### Test arithmetic
+
+The previous handoff's web regression count was wrong; the corrected arithmetic at the reviewed
+candidate is:
+
+- new: **36 server + 7 web = 43**;
+- selected: **83 server + 33 web = 116**;
+- regression: **47 server + 26 web = 73** (not 27 web).
+
+This fix round adds **3 new server tests**: concurrent queue mutation in
+`native-agent/input-artifacts.test.ts`, the pre-rename reaper race in
+`session-log-input-artifacts.test.ts`, and close-after-database-close in the
+`session-log.test.ts` regression file. The blocked-write stop test is strengthened in place and
+does not add a new test count. Current honest arithmetic:
+
+- new: **39 server + 7 web = 46**;
+- current server selected: **86 tests, 86 pass, 0 fail, 0 skipped** (9 files);
+- server regression: **86 - 39 = 47**;
+- web selected envelope: **33 tests, 7 new / 26 regression**, unchanged from the independent
+  review at `419a997` and not rerun here because no web source or web test changed;
+- if that unchanged web envelope is combined, the selected total is **119**, with **73**
+  regression. The 86-server run is current; the 33-web number is the independent reviewer's
+  result, not a run performed in this fix round.
+
+### Commands and evidence
+
+```bash
+nice -n 10 node --test \
+  packages/server/test/session-log-input-artifacts.test.ts \
+  packages/server/test/session-log-version-negotiation.test.ts \
+  packages/server/test/session-log-routes.test.ts \
+  packages/server/test/session-log.test.ts \
+  packages/server/test/native-agent/input-artifacts.test.ts \
+  packages/server/test/artifacts.test.ts \
+  packages/server/test/migration.test.ts \
+  packages/server/test/durable-run-migration.test.ts \
+  packages/server/test/relay/schema.test.ts
+# tests 86 / suites 19 / pass 86 / fail 0 / cancelled 0 / skipped 0
+nice -n 10 node --test /Users/yuzuru/Projects/Guanxi-lanes/reviews/k4-input-review-probes-20261022.ts
+# tests 3 / pass 3 / fail 0
+# queue actual ["first accepted","second accepted"]
+# reap {"removedDirectories":0,"quarantinedKept":0,"removedTemps":0} readable true sessionPresent true
+# stop intervention 11 < terminal 13; only run.lifecycle follows turn.done
+nice -n 10 npx tsc --noEmit -p packages/contract/tsconfig.json
+nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
+# both clean, no output
+```
+
+The fail-first runs before each production change were: queue `['second accepted']` instead of
+both accepted prompts; stop `intervention` count `0` instead of `1`; reaper
+`quarantinedKept:1` with an unreadable canonical artifact instead of `0` and a successful exact
+read.
+
+### Residuals and not claimed
+
+- No web component, browser, build, Storybook, license, lint, `npm test`, native `agent.test.ts`
+  or `agent-dev` gate ran in this fix round. The root still owns the full/browser/native gates.
+- The reaper's final membership check and rename share one synchronous home-fenced SQLite write
+  transaction, so a session/reference that commits before the rename is observed and retained.
+  A row that appears only after the rename keeps quarantined bytes and is not restored; there is
+  still no per-blob GC and no unsafe rename-back path.
+- The stop guarantee is exactly one durable intervention before one terminal when the terminal
+  can be written. If the intervention append itself loses the writer/home fence, the terminal
+  append cannot commit either; no retry or duplicate is invented.
+- The close-after-database fix is probe-teardown robustness, not a fourth reviewed P2 or a
+  broader lifecycle guarantee.
+- Queue text remains inline in `agent.queue`; full queued-input artifactization, K4 closure,
+  old-server v2 compatibility and calibration remain unearned as recorded above.
+
+**Handoff pin:** the four fix commits are `fd2936c`, `87deb44`, `f6be3ea`, `358ee23`; this
+handoff is the final docs commit on `codex/k4-input-artifacts`. The exact `git rev-parse HEAD`
+and empty `git status --porcelain` are reported to the coordinator after this commit; no source
+edit follows it.
