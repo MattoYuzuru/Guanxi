@@ -161,6 +161,9 @@ export interface StartOptions {
 export async function start(options: StartOptions = {}) {
   if (options.leads && !options.externalAgents) throw new Error('leads require externalAgents')
   if (options.leads && !options.leads.child && !options.leads.relay) throw new Error('leads require a child executor')
+  // Plan acceptance commands written by a lead run as relay gates under the owner's consent: the owner's policy must name
+  // which executors a lead may use.
+  if (options.leads?.relay && !options.leads.validateExecutor) throw new Error('leads.relay requires validateExecutor')
   if (options.relay && options.operationalRelay) throw new RelayError('relay_policy_invalid')
   const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
   let actualPort = port
