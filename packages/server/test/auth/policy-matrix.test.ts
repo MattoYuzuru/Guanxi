@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { can, permissionSnapshot } from '../../src/auth/policy.ts'
+import { can, hasDirectConnectionGrant, permissionSnapshot } from '../../src/auth/policy.ts'
 import {
   ACTIONS,
   RESOURCE_TYPES,
@@ -342,6 +342,38 @@ test('D-190: subscription connections are owner-only and connection.use needs a 
   const connectionWithParent: Resource = { ...apiKey, id: 'connection-child', parent: { type: 'project', id: 'project-1' } }
   const projectEditor = makeGrant(resources.project, 'editor', 'user', 'user-project-editor')
   assert.equal(can(user('user-project-editor'), 'connection.use', connectionWithParent, [projectEditor], NOW).allowed, false)
+})
+
+test('grants are scoped to their resource type even when ids collide', () => {
+  const subject = 'user-cross-type'
+  const sessionOnCollision: Resource = { type: 'session', id: 'collision', ownerUserId: OWNER_ID }
+  const projectOnCollision: Resource = { type: 'project', id: 'collision', ownerUserId: OWNER_ID }
+  const connectionOnCollision: Resource = {
+    type: 'connection', id: 'collision', ownerUserId: OWNER_ID, connectionKind: 'api_key',
+  }
+  const sessionGrant = makeGrant(sessionOnCollision, 'editor', 'user', subject)
+
+  assert.equal(can(user(subject), 'project.read', projectOnCollision, [sessionGrant], NOW).allowed, false)
+  assert.equal(can(user(subject), 'project.write', projectOnCollision, [sessionGrant], NOW).allowed, false)
+  assert.equal(can(user(subject), 'connection.read', connectionOnCollision, [sessionGrant], NOW).allowed, false)
+  assert.equal(can(user(subject), 'connection.use', connectionOnCollision, [sessionGrant], NOW).allowed, false)
+  assert.equal(can(user(subject), 'connection.manage', connectionOnCollision, [sessionGrant], NOW).allowed, false)
+
+  const projectForConnectionId: Resource = {
+    type: 'project', id: 'connection-collision', ownerUserId: OWNER_ID,
+  }
+  const connectionCollision: Resource = {
+    type: 'connection', id: 'connection-collision', ownerUserId: OWNER_ID, connectionKind: 'api_key',
+  }
+  const projectGrant = makeGrant(projectForConnectionId, 'editor', 'user', subject)
+  assert.equal(can(user(subject), 'connection.read', connectionCollision, [projectGrant], NOW).allowed, false)
+  assert.equal(can(user(subject), 'connection.use', connectionCollision, [projectGrant], NOW).allowed, false)
+  assert.equal(can(user(subject), 'connection.manage', connectionCollision, [projectGrant], NOW).allowed, false)
+  assert.equal(hasDirectConnectionGrant(user(subject), connectionCollision, [projectGrant], NOW), false)
+  assert.equal(hasDirectConnectionGrant(user(subject), connectionCollision, [sessionGrant], NOW), false)
+
+  const directGrant = makeGrant(connectionCollision, 'editor', 'user', subject)
+  assert.equal(hasDirectConnectionGrant(user(subject), connectionCollision, [directGrant], NOW), true)
 })
 
 test('non-finite and fractional expiry values are treated as expired', () => {

@@ -128,8 +128,11 @@ function relationAllows(relation: Relation, action: Action, resource: Resource):
   return action === readAction || OWNER_EXTRA[resource.type].includes(action)
 }
 
-/** `connection.use` by a non-owner needs a grant made directly on that connection. */
-function hasDirectConnectionGrant(principal: Principal, resource: Resource, grants: Grant[], now: number): boolean {
+/**
+ * `connection.use` by a non-owner needs a grant made directly on that connection.
+ * @internal Exported so the cross-type id-confusion test can pin the type guard.
+ */
+export function hasDirectConnectionGrant(principal: Principal, resource: Resource, grants: Grant[], now: number): boolean {
   return grants.some(grant =>
     grant.resourceType === 'connection' && grant.resourceId === resource.id &&
     (grant.relation === 'editor' || grant.relation === 'owner') &&
