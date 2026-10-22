@@ -758,7 +758,7 @@ function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted:
         )
       )}
       {artifact !== null && (
-        <p className="text-12 text-muted">
+        <p className="text-12 text-secondary">
           <span className="font-label">{translate('inspector.input.bounded')}</span>{' '}
           {translate('inspector.input.boundedDetail', {
             excerpt: formatBytes(artifact.excerptBytes),
