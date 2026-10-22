@@ -16,6 +16,8 @@ import { modelsDevFacts } from './metadata.ts'
 
 export interface ModelCall {
   model: string; runId: string; requestId: string; background?: boolean
+  /** Trusted billing boundary: one K3-visible HTTP attempt, never a provider retry. */
+  singleAttempt?: true
   signal?: AbortSignal
   /** Trusted executor observation after dispatch starts; never supplied by HTTP/model input. */
   onStarted?: () => void
@@ -122,6 +124,11 @@ export class Connections {
       if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
       const model = piModels(connection.provider).find(item => item.id === call.model)
       if (!model) throw new ConnectionError('connection_not_found', 'Model not found in the provider catalog')
+      if (call.singleAttempt && !['anthropic-messages', 'openai-responses', 'openai-completions'].includes(model.api))
+        throw new ConnectionError('policy_denied', 'Single-attempt transport is unavailable for this wire protocol')
+      // Per logical call, including any adapter fallback. Never share this counter
+      // between concurrent requests, or trust SDK retry settings as the only guard.
+      let httpAttempts = 0
       const dispatchAbort = new AbortController()
       const signal = AbortSignal.any([this.lifetime, dispatchAbort.signal, ...(call.signal ? [call.signal] : [])])
       try {
@@ -147,6 +154,7 @@ export class Connections {
             // Redirects must not forward the credential to a different host.
             ...(model.api === 'google-generative-ai' ? {} : {
               fetch: async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (call.singleAttempt && ++httpAttempts > 1) throw new Error('single_attempt_exhausted')
                 const response = await this.transport(url, { ...init, redirect: 'error', signal })
                 quota ||= response.status === 429
                 return response

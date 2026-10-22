@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
-const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'dist', 'build'])
+const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'dist', 'build', '.lane-data'])
 const EXCLUDED_PATHS = [
   'docs/research/2026-10-19-landscape',
   'docs/research/2026-10-20-design',
