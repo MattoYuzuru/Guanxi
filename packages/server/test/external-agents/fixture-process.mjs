@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const config = JSON.parse(readFileSync(join(root, 'scenario.json'), 'utf8'))
+writeFileSync(join(root, 'adapter.pid'), String(process.pid))
 const tape = config.tape
 const trace = []
 const send = value => process.stdout.write(JSON.stringify(value) + '\n')

@@ -1,5 +1,5 @@
 /**
- * Typed UI slots (ADR-0022 §3), K1 subset: `list` slots only.
+ * Typed UI slots (ADR-0022 §3): ordered `list` and keyed contribution slots.
  *
  * Semantics follow DeepSeek Harness's ui-slots model (declaring a slot claims it;
  * contributing to an undeclared slot fails at load; unloading removes every
@@ -10,7 +10,7 @@
  */
 import { PluginContractError, SLOT_SERVICE_PREFIX, kernelOfContext, type PluginContext } from './core.ts'
 
-export type SlotKind = 'list'
+export type SlotKind = 'list' | 'keyed'
 
 export interface ListSlotEntry<T = unknown> {
   /** `<plugin id>/<entry id>`; unique within a slot. */
@@ -67,7 +67,7 @@ export class SlotRegistry {
     if (!manifest.contributes.slotDeclarations.includes(name)) {
       throw new PluginContractError(manifest.id, `slot "${name}" is not in contributes.slotDeclarations`)
     }
-    if (kind !== 'list') {
+    if (kind !== 'list' && kind !== 'keyed') {
       throw new PluginContractError(manifest.id, `slot kind "${String(kind)}" is not implemented in K1`)
     }
     const existing = this.declarations.get(name)
@@ -128,6 +128,12 @@ export class SlotRegistry {
         this.notify(slot)
       }
     }, `contribute(${JSON.stringify(slot)}, ${JSON.stringify(entry.id)})`)
+  }
+
+  /** Keyed slots share the lifecycle of list slots; keys are owner-qualified and unique. */
+  keyed<T = unknown>(slot: string): Readonly<Record<string, ListSlotEntry<T>>> {
+    if (this.declarations.get(slot)?.kind !== 'keyed') return Object.freeze({})
+    return Object.freeze(Object.fromEntries(this.list<T>(slot).map(entry => [entry.key, entry])))
   }
 
   isDeclared(slot: string): boolean {

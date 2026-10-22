@@ -1,4 +1,9 @@
-import { relayPlugin } from './relay/plugin.ts'
+import { relayPlugin, RELAY_SERVICE, type RelayService } from './relay/plugin.ts'
+import { relayStartRoutes } from './relay/routes.ts'
+import { RelayRuntimeSource, type RelayRuntimePolicy } from './relay/runtime.ts'
+import type { RelayStartHost } from './relay/start.ts'
+import { RelayError, type Reserves } from './relay/types.ts'
+import { realpath } from 'node:fs/promises'
 /**
  * Точка входа сервера.
  *
@@ -30,6 +35,8 @@ import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
 import { ConnectionError } from './connections/errors.ts'
 import { connectionRoutes } from './connections/routes.ts'
+import type { IndexSettings } from './indexing/types.ts'
+import { projectIndexPlugin } from './indexing/plugin.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
 import { externalAgentPlugin } from './external-agents/plugin.ts'
@@ -127,9 +134,12 @@ export interface StartOptions {
   webDir?: string
   devOrigins?: string[]
   connectionsPolicy?: VaultPolicy
+  indexSettings?: Partial<IndexSettings>
   federation?: Omit<FederationHostOptions, 'db'>
   /** Trusted node-local installed CLIs; no executable paths or account identity arrive over HTTP. */
   externalAgents?: ExternalPolicy
+  /** T0-only proved runtime counter and owned-checkout adapter; neither comes from HTTP. */
+  relay?: { runtime: RelayRuntimePolicy; reserves: Reserves; allocate?: RelayStartHost['allocate'] }
 }
 
 export async function start(options: StartOptions = {}) {
@@ -179,8 +189,26 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
+    await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
-    await kernel.node.plugin(relayPlugin, { db })
+    await kernel.node.plugin(relayPlugin, { db, startHost: {
+      ...(options.relay ? { reserves: options.relay.reserves, allocate: options.relay.allocate,
+        ...(options.relay.runtime.counter ? { runtime: new RelayRuntimeSource(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!,
+          () => context.models(), options.relay.runtime) } : {}) } : {}),
+      nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)],
+      project: async (id, signal) => {
+        signal.throwIfAborted()
+        const project = kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)!.projects().find(p => p.id === id)
+        if (!project) throw new RelayError('relay_project_unavailable')
+        const roots = await Promise.all(project.filesystemBindings.map(async binding => {
+          const workspace = context.workspaces.get(binding.workspaceId)
+          if (!workspace) throw new RelayError('relay_project_unavailable')
+          return realpath(workspace.rootPath)
+        }))
+        signal.throwIfAborted()
+        return { projectId: id, roots, source: 'native-project-roots+workspace-store', observedAt: Date.now() }
+      },
+    } })
     if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
@@ -194,6 +222,11 @@ export async function start(options: StartOptions = {}) {
     host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
     uiCatalog,
+    layouts: options.federation ? () => {
+      const federation = kernel.node.service<Federation>(FEDERATION_SERVICE)
+      if (!federation) throw new FederationError('federation_unavailable', 503)
+      return federation.layouts
+    } : undefined,
   })
 
   server.route('/api/connections', connectionRoutes(() => {
@@ -205,6 +238,11 @@ export async function start(options: StartOptions = {}) {
     const service = kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)
     if (!service) throw new Error('agent_unavailable')
     return service
+  }, options.devOrigins ?? devOriginsFromEnv(process.env)))
+  server.route('/api/relay', relayStartRoutes(() => {
+    const service = kernel.node.service<RelayService>(RELAY_SERVICE)
+    if (!service) throw new RelayError('relay_closed')
+    return service.publicStarts
   }, options.devOrigins ?? devOriginsFromEnv(process.env)))
 
   if (options.federation) server.route('/api/federation', federationRoutes(() => {

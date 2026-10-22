@@ -7,12 +7,14 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import { AcpClient } from './acp.ts'
 import { CodexClient } from './codex.ts'
-import { canonicalExecutable, isolatedEnvironment, AgentProcess, claudeAuthStatus } from './process.ts'
+import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus,
+  type ClaudeAuthProbe, type ProcessCleanup } from './process.ts'
 import { ExternalStore } from './store.ts'
 import { ADAPTERS, API_ENV } from './profiles.ts'
+import { admissionPolicyDigest } from './admission.ts'
 import { claudeRateLimits, codexRateLimits } from './quota.ts'
 import { ExternalAgentError, resolveRole, bindingSchema, rolesSchema, type ExternalPolicy, type AgentInstallation,
-  type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId } from './types.ts'
+  type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId, type AdmissionHolder, type AdmissionKind } from './types.ts'
 
 /** API-key adapters that can run host tools. The deny configuration below is not a sandbox and
  * its runtime enforcement is the vendor's; a non-owner prompt is refused before process launch.
@@ -25,6 +27,10 @@ const installationSchema = z.object({
   executable: z.string().min(1), version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/),
   claudeExecutable: z.string().optional(), claudeBare: z.boolean().optional(), concurrency: z.number().int().positive().optional(),
 }).strict()
+
+function combineCleanup(outcomes: readonly ProcessCleanup[]): ProcessCleanup {
+  return outcomes.find(outcome => !outcome.confirmed) ?? outcomes[0] ?? { confirmed: true, reason: 'no_child' }
+}
 
 export interface RolePrompt {
   ownerAccountId: string
@@ -47,7 +53,7 @@ export class ExternalAgents {
   private readonly abort = new AbortController()
   private readonly tasks = new Set<Promise<unknown>>()
   private readonly active = new Map<string, number>()
-  private readonly authenticating = new Set<string>()
+  private readonly instanceId = randomUUID()
   private closed = false
   private readonly configuredAt = new Date().toISOString()
   constructor(connections: Connections, log: SessionLog, scrubber: EgressScrubber, root: string, store: ExternalStore, policy: ExternalPolicy) {
@@ -75,6 +81,10 @@ export class ExternalAgents {
     if (this.closed) throw new ExternalAgentError('agent_unavailable')
     if (!this.scrubber.isReady()) throw new ExternalAgentError('egress_unavailable')
   }
+  private assertActive(signal: AbortSignal) {
+    signal.throwIfAborted()
+    this.ready()
+  }
   private installation(owner: string, connectionId: string, adapter?: string) {
     this.ready()
     const install = this.policy.installations.find(i => i.ownerAccountId === owner && i.connectionId === connectionId)
@@ -84,6 +94,42 @@ export class ExternalAgents {
   }
   private group(install: AgentInstallation) { return JSON.stringify([install.ownerAccountId, install.adapter, install.billingAccount]) }
   private assertOwner(owner: string, actor: string) { this.ready(); if (owner !== actor) throw new ExternalAgentError('owner_required') }
+  private acquire(install: AgentInstallation, kind: AdmissionKind) {
+    return this.store.acquire({
+      instanceId: this.instanceId, owner: install.ownerAccountId, adapter: install.adapter,
+      billingAccount: install.billingAccount, kind, policyDigest: admissionPolicyDigest(install),
+      ceiling: install.concurrency ?? 1,
+    })
+  }
+  private finishHolder(holder: AdmissionHolder, cleanup: ProcessCleanup) {
+    try {
+      if (cleanup.confirmed) this.store.release(holder)
+      else {
+        this.store.markCleanupUnconfirmed(holder, cleanup.reason)
+        return 'cleanup_unconfirmed'
+      }
+      return null
+    } catch { return 'admission_release_failed' }
+  }
+  private async closeOwned(owned: { client?: AcpClient | CodexClient; process?: AgentProcess; probe?: ClaudeAuthProbe; spawnAttempted: boolean }): Promise<ProcessCleanup> {
+    const outcomes: ProcessCleanup[] = []
+    if (owned.probe) {
+      try { outcomes.push(await owned.probe.close()) } catch { outcomes.push({ confirmed: false, reason: 'close_error' }) }
+    }
+    try {
+      if (owned.client) outcomes.push(await owned.client.close())
+      else if (owned.process) outcomes.push(await owned.process.close())
+    } catch { outcomes.push({ confirmed: false, reason: 'close_error' }) }
+    if (outcomes.length) return combineCleanup(outcomes)
+    return owned.spawnAttempted ? { confirmed: true, reason: 'spawn_failed' } : { confirmed: true, reason: 'no_child' }
+  }
+  private observeEffectiveBare(install: AgentInstallation) {
+    // No pseudo-observation time: neither a stored login, a config flag, help output nor this
+    // slice's launch proves whether the bridge/CLI actually ran without implicit bare mode.
+    this.connections.store.observe(install.ownerAccountId, install.connectionId, {
+      effective_bare: { value: null, source: 'not_observed', observedAt: null, confidence: 'unknown' },
+    })
+  }
   setProjectRoles(owner: string, actor: string, projectId: string, roles: Roles) {
     this.assertOwner(owner, actor)
     const parsed = rolesSchema.parse(roles)
@@ -118,7 +164,8 @@ export class ExternalAgents {
     })))
   }
   /** Paths/argv for the owner to sign in with the unmodified CLI on this node.
-   * These are configuration locations only; no file contents or inherited credentials. */
+   * These are configuration locations only; no file contents or inherited credentials.
+   * This owns no child and no durable holder: a manually started vendor CLI is outside the ledger. */
   prepareLogin(owner: string, actor: string, connectionId: string) {
     this.assertOwner(owner, actor)
     const install = this.installation(owner, connectionId)
@@ -134,7 +181,8 @@ export class ExternalAgents {
     const install = this.installation(owner, connectionId)
     return { ...this.store.limits(owner, install.billingAccount, install.adapter, now, this.policy.quotaMaxAgeMs ?? 300_000),
       concurrency: this.store.learning(owner, install.billingAccount, install.adapter),
-      activeOnThisNode: this.active.get(this.group(install)) ?? 0 }
+      activeOnThisNode: this.active.get(this.group(install)) ?? 0,
+      durableLocalOccupancy: this.store.occupancy(owner, install.adapter, install.billingAccount) }
   }
   /** T0 ingress for authenticated node reports. F1 must authenticate owner/node before calling.
    * This accepts quota facts only, never credentials, prompts or vendor configuration. */
@@ -216,45 +264,58 @@ export class ExternalAgents {
     const signal = AbortSignal.any([this.abort.signal, ...(input.signal ? [input.signal] : []), AbortSignal.timeout(runDeadlineMs)])
     return this.connections.dispatchAgent(input.ownerAccountId, binding.connectionId, input.actorAccountId,
       this.store.editorAllowed(input.ownerAccountId, binding.connectionId, input.actorAccountId), { background: input.background, signal }, async (row, key, dispatchSignal) => {
+        this.assertActive(dispatchSignal)
+        const granted = this.acquire(install, 'run')
+        const holder = granted.holder
         const group = this.group(install)
-        if (this.authenticating.has(group)) throw new ExternalAgentError('account_busy')
-        const parallel = (this.active.get(group) ?? 0) + 1
-        const learned = this.store.learning(input.ownerAccountId, install.billingAccount, install.adapter)
-        const ceiling = learned.rejectedAt === null ? Infinity : Math.max(1, learned.rejectedAt - 1)
-        if (parallel > Math.min(install.concurrency ?? 1, ceiling)) throw new ExternalAgentError('account_busy')
-        this.active.set(group, parallel)
+        this.active.set(group, (this.active.get(group) ?? 0) + 1)
         let handle: SessionHandle | undefined
         let process: AgentProcess | undefined
         let client: AcpClient | CodexClient | undefined
         let config: Awaited<ReturnType<typeof isolatedEnvironment>> | undefined
+        let probe: ClaudeAuthProbe | undefined
+        let probeCleanup: ProcessCleanup | undefined
+        let spawnAttempted = false
         const sessionId = randomUUID(); const messageId = randomUUID()
         try {
           const executable = await canonicalExecutable(install.executable)
+          this.assertActive(dispatchSignal)
           // API agents never reuse a vendor login/config from an earlier invocation.
           config = await isolatedEnvironment(this.root, row.auth === 'api_key' ? { ...install, connectionId: `${install.connectionId}:${randomUUID()}` } : install)
+          this.assertActive(dispatchSignal)
           this.payment(install, row, key, config.env, binding.model)
           if (install.adapter === 'claude-code') {
             if (!install.claudeExecutable) throw new ExternalAgentError('claude_binary_required')
             const claude = await canonicalExecutable(install.claudeExecutable)
+            this.assertActive(dispatchSignal)
             config.env.CLAUDE_CODE_EXECUTABLE = claude
+            this.observeEffectiveBare(install)
             this.observe(install, 'bare', install.claudeBare ?? null, 'node_launch_policy', 'high')
             if (install.claudeBare) {
               this.observe(install, 'billing', null, 'bare_does_not_read_subscription')
               throw new ExternalAgentError('bare_subscription_unavailable')
             }
-            const auth = await claudeAuthStatus(claude, config.env, config.cwd, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
-            this.observe(install, 'subscription_login', auth.loggedIn && auth.authMethod === 'claude.ai', 'claude_auth_status')
+            this.assertActive(dispatchSignal)
+            probe = startClaudeAuthStatus(claude, config.env, config.cwd, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
+            const auth = await probe.result
+            probeCleanup = await probe.close()
+            if (!probeCleanup.confirmed) throw new ExternalAgentError('cleanup_unconfirmed')
+            this.assertActive(dispatchSignal)
+            if (!auth.ok) throw new ExternalAgentError('auth_status_unavailable')
+            this.observe(install, 'subscription_login', auth.status.loggedIn && auth.status.authMethod === 'claude.ai', 'claude_auth_status')
             // Login is an observation, not proof of whether this request will be extra usage.
             this.observe(install, 'billing', null, 'billing_not_reported')
-            if (!auth.loggedIn || auth.authMethod !== 'claude.ai') throw new ExternalAgentError('claude_login_required')
+            if (!auth.status.loggedIn || auth.status.authMethod !== 'claude.ai') throw new ExternalAgentError('claude_login_required')
           }
-          dispatchSignal.throwIfAborted()
+          this.assertActive(dispatchSignal)
           handle = this.log.open(sessionId, { kind: 'agent' })
           handle.append({ type: 'agent.note', data: { text: JSON.stringify(this.scrubber.scrub({ role: input.role, source: resolved.source, binding,
             ownerAccountId: input.ownerAccountId, actorAccountId: input.actorAccountId, nodeId: install.nodeId, runDeadlineMs })) } })
           handle.append({ type: 'agent.state', data: { status: 'running', error: null } })
           const prompt = this.scrubber.scrub(input.prompt)
           handle.append({ type: 'prompt', data: { origin: input.actorAccountId === input.ownerAccountId ? 'typed' : 'remote', messageId, text: prompt, attachmentCount: 0 } })
+          this.assertActive(dispatchSignal)
+          spawnAttempted = true
           process = new AgentProcess(executable, ADAPTERS[install.adapter].args, config.env, config.cwd, this.scrubber, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
           if (install.adapter === 'codex') {
             const codex = new CodexClient(process); client = codex
@@ -292,24 +353,33 @@ export class ExternalAgents {
           handle.append({ type: 'assistant.message', data: { messageId, step: 0, text: safe.text } })
           handle.append({ type: 'turn.done', data: { messageId, outcome: 'completed', stopReason: safe.stopReason, steps: 1 } })
           handle.append({ type: 'agent.state', data: { status: 'completed', error: null } })
-          this.store.learn(input.ownerAccountId, install.billingAccount, install.adapter, parallel, 'success', new Date().toISOString())
+          this.store.learn(input.ownerAccountId, install.billingAccount, install.adapter, granted.admittedRuns, 'success', new Date().toISOString())
           return this.scrubber.scrub({ sessionId, ...safe })
         } catch (error) {
           const timedOut = dispatchSignal.aborted && (dispatchSignal.reason as { name?: string } | undefined)?.name === 'TimeoutError'
           const cancelled = dispatchSignal.aborted && !timedOut
-          const code = timedOut ? 'timeout' : cancelled ? 'cancelled' : error instanceof ExternalAgentError ? error.code : 'agent_failed'
+          const stable = error instanceof ExternalAgentError ? error.code : 'agent_failed'
+          const code = stable === 'cleanup_unconfirmed' || stable === 'admission_release_failed' ? stable
+            : timedOut ? 'timeout' : cancelled ? 'cancelled' : stable
           if (handle) {
             handle.append({ type: 'agent.state', data: { status: cancelled ? 'cancelled' : 'failed', error: code } })
             handle.append({ type: 'turn.done', data: { messageId, outcome: cancelled ? 'cancelled' : 'failed', stopReason: code, steps: 0 } })
           }
           throw new ExternalAgentError(code)
         } finally {
-          try { if (client) await client.close(); else await process?.close() }
-          finally {
+          let finalCode: string | null = null
+          try {
+            const cleanup = combineCleanup([probeCleanup, await this.closeOwned({ client, process, probe, spawnAttempted })].filter((outcome): outcome is ProcessCleanup => Boolean(outcome)))
+            finalCode = this.finishHolder(holder, cleanup)
+          } catch { finalCode = 'admission_release_failed' } finally {
             // API-key directories are throwaway; subscription config directories persist for sign-in.
             if (config && row.auth === 'api_key') await rm(config.configDirectory, { recursive: true, force: true }).catch(() => undefined)
-            handle?.close(); const count = (this.active.get(group) ?? 1) - 1; if (count) this.active.set(group, count); else this.active.delete(group)
+            handle?.close()
+            const count = (this.active.get(group) ?? 1) - 1
+            if (count > 0) this.active.set(group, count)
+            else this.active.delete(group)
           }
+          if (finalCode) throw new ExternalAgentError(finalCode)
         }
       })
   }
@@ -318,25 +388,47 @@ export class ExternalAgents {
     const install = this.installation(owner, connectionId, 'codex')
     return this.track(() => this.connections.dispatchAgent(owner, connectionId, actor, false,
       { signal: AbortSignal.any([this.abort.signal, ...(signal ? [signal] : []), AbortSignal.timeout(this.policy.requestTimeoutMs ?? 300_000)]) }, async (row, key, dispatchSignal) => {
+        this.assertActive(dispatchSignal)
+        const granted = this.acquire(install, 'login')
         const group = this.group(install)
-        if (this.active.get(group)) throw new ExternalAgentError('account_busy')
-        this.authenticating.add(group)
-        this.active.set(group, 1)
+        this.active.set(group, (this.active.get(group) ?? 0) + 1)
         let client: CodexClient | undefined
         let process: AgentProcess | undefined
+        let config: Awaited<ReturnType<typeof isolatedEnvironment>> | undefined
+        let spawnAttempted = false
         try {
           const executable = await canonicalExecutable(install.executable)
-          const config = await isolatedEnvironment(this.root, install)
+          this.assertActive(dispatchSignal)
+          config = await isolatedEnvironment(this.root, install)
+          this.assertActive(dispatchSignal)
           this.payment(install, row, key, config.env, 'default')
+          this.assertActive(dispatchSignal)
+          spawnAttempted = true
           process = new AgentProcess(executable, ADAPTERS.codex.args, config.env, config.cwd, this.scrubber, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
           client = new CodexClient(process)
           await client.initialize(install.version)
+          this.assertActive(dispatchSignal)
           const result = await client.login(onAuthUrl, dispatchSignal)
           this.observe(install, 'subscription_login', true, 'account/read')
           this.observe(install, 'plan', result.plan, 'account/read')
           return result
-        } catch (error) { throw new ExternalAgentError(dispatchSignal.aborted ? 'cancelled' : error instanceof ExternalAgentError ? error.code : 'login_failed') }
-        finally { try { if (client) await client.close(); else await process?.close() } finally { this.active.delete(group); this.authenticating.delete(group) } }
+        } catch (error) {
+          const stable = error instanceof ExternalAgentError ? error.code : 'login_failed'
+          const code = stable === 'cleanup_unconfirmed' || stable === 'admission_release_failed' ? stable
+            : dispatchSignal.aborted ? 'cancelled' : stable
+          throw new ExternalAgentError(code)
+        } finally {
+          let finalCode: string | null = null
+          try {
+            const cleanup = await this.closeOwned({ client, process, spawnAttempted })
+            finalCode = this.finishHolder(granted.holder, cleanup)
+          } catch { finalCode = 'admission_release_failed' } finally {
+            const count = (this.active.get(group) ?? 1) - 1
+            if (count > 0) this.active.set(group, count)
+            else this.active.delete(group)
+          }
+          if (finalCode) throw new ExternalAgentError(finalCode)
+        }
       }))
   }
   async close() { this.closed = true; this.abort.abort(); await Promise.allSettled([...this.tasks]) }

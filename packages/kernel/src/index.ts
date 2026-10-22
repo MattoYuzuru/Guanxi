@@ -54,3 +54,5 @@ export type { ProfileEntry, ProfileLayer, ProfilePatch, ResolvedEntry } from './
 
 export { createKernel } from './kernel.ts'
 export type { Kernel } from './kernel.ts'
+
+export { WORKSPACE_BLOCK_SLOT, type BlockContribution, type ComponentRef } from './workspace-block.ts'

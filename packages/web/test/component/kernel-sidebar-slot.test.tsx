@@ -68,13 +68,14 @@ describe('plugin sidebar slot', () => {
     expect(updated[0].getAttribute('href')).toBe('/projects?hot=2')
     expect(quickLinks()!.querySelector('li')!.getAttribute('data-plugin-revision')).toBe('hot-2')
     expect(firstRevision).not.toBe('hot-2')
-    expect(webKernel.counters().slotEntries).toBe(1)
+    // Eleven core workspace blocks coexist with this sidebar contribution.
+    expect(webKernel.counters().slotEntries).toBe(12)
 
     await act(() => unloadWebPlugin(ID))
     expect(quickLinks()).toBeNull()
     expect(screen.getAllByRole('link')).toHaveLength(1)
     expect(document.activeElement).toBe(screen.getByRole('link', { name: 'next control' }))
-    expect(webKernel.counters().slotEntries).toBe(0)
+    expect(webKernel.counters().slotEntries).toBe(11)
 
     await act(() => replaceWebPlugin(projectsShortcut))
     expect(within(quickLinks()!).getAllByRole('link')).toHaveLength(1)

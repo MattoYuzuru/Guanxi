@@ -11,6 +11,7 @@ const ALLOWED = new Set([
 ])
 // Packages whose metadata is missing or non-SPDX but whose license was checked by hand.
 const REVIEWED = new Map([])
+const DENIED_PACKAGES = new Set(['dockview-enterprise'])
 
 const root = process.cwd()
 const seen = new Map()
@@ -54,6 +55,7 @@ const counts = new Map()
 for (const [key, license] of seen) {
   const label = license ?? 'NONE'
   counts.set(label, (counts.get(label) ?? 0) + 1)
+  if (DENIED_PACKAGES.has(key.slice(0, key.lastIndexOf('@')))) { bad.push(`${key}: denied package`); continue }
   if (REVIEWED.has(key)) continue
   if (!license || !satisfies(license)) bad.push(`${key}: ${label}`)
 }

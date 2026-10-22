@@ -14,6 +14,7 @@ the web inspector and the agent query tool.
 | --- | --- |
 | [`schema.ts`](schema.ts) | Migration 29: `sessions`, `session_writers`, `session_events`, the FTS5 index and the triggers that enforce the log's shape |
 | [`log.ts`](log.ts) | `SessionLog` and `SessionHandle`: single writer, append, read, search, purge, subscribe |
+| [`input-encoding.ts`](input-encoding.ts) | Restartable ≤64 KiB UTF-8 chunk iterator, exact string hashing and bounded excerpt prefix encoding |
 | [`chat-mirror.ts`](chat-mirror.ts) | The legacy Chat Job store behind the log: `JobStore` appends the trace inside its own transactions |
 | [`projection.ts`](projection.ts) | Spans, token meter and transcript projections over events |
 | [`query-tool.ts`](query-tool.ts) | `session_log_query` tool and the audience rule |
@@ -21,6 +22,22 @@ the web inspector and the agent query tool.
 | [`plugin.ts`](plugin.ts) | The kernel plugin, bound by the host to the node database |
 
 Event schemas are in `packages/contract/src/events/`.
+
+## Paged metadata for navigation
+
+`GET /api/sessions/list/page` is an additive, loopback-only metadata endpoint; the existing
+`GET /api/sessions` response remains unchanged. Its cursor orders rows by creation time and
+session id, and each page skips withheld identifiers and incomplete mirrors before filling the
+requested size. It returns no event payloads or reasoning. Run state comes from the actual
+root run's `session_id` association, with its stored observation time; it is not a live-process
+or execution-authority claim.
+
+Navigation targets come from active native-session or legacy Thread records, including the
+Thread's actual Project. Missing, left, trashed, deletion-requested or newly withheld targets
+fall back to the session inspector. Session kind and the display-only scrubbed `threadId` do
+not authorize a chat destination. `session-list-page.test.ts` covers pagination, provenance,
+scrubbing, readiness and these navigation boundaries. The web shell consumes this metadata in
+a separate slice.
 
 ## Guarantees and where they are enforced
 
@@ -119,8 +136,10 @@ daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`
   `session-artifacts/<sha256(sessionId)>` CAS, while the event, FTS, title, search, REST,
   export and the query tool carry only a scrubbed excerpt of at most 8 KiB and a reference.
   The metadata row and event commit in one fenced transaction; a published blob without a row
-  is an orphan. Below the threshold v1 is byte-identical. Chat, K5, assistant output,
-  reasoning, tool results, images and model requests remain on their current paths.
+  is an orphan. Below the threshold v1 is byte-identical. String writes use bounded UTF-8 chunks;
+  reads, replay, base64 transport, scrubbing and byte-input snapshot copies remain whole-buffer.
+  Chat, K5, assistant output, reasoning, tool results, images and model requests remain on their
+  current paths.
 - Queued prompt text is **not** artifactized in this slice: `agent.queue` keeps the full text
   inline even after consumption. A consumed queued prompt may produce a v2 `prompt` event, but
   the earlier queue event remains inline. No input cap was added.
@@ -158,3 +177,43 @@ still fails with `writer_busy`. The legacy mirror API and its exclusivity are un
 R1 migration 30 also adds `idx_session_mirror_backlog_thread` on
 `session_mirror_backlog(thread_id, job_id)` for K2 thread readiness/catch-up lookups. Migration
 29 and its schema bytes stay unchanged; this shared additive index changes no event contract.
+
+## Bounded string input encoding
+
+`input-encoding.ts` creates a fresh async iterator for each pass. Every yielded chunk is at most
+64 KiB and owns an unpooled backing buffer; the iterator does not mutate a chunk after yielding
+it. `SessionInputStore.write()` hashes a string through one bounded pass and pulls a fresh
+transport iterator only after the pinned helper's identity handshake is validated. The first
+hash pass necessarily encodes chunks before that handshake, so this is not a claim of zero
+encoding before validation; the deferred part is the transport iterator. Byte inputs keep the
+existing snapshot copy.
+
+`utf8Excerpt()` scans only the requested UTF-8 prefix. It returns the original string when the
+whole value fits, preserving complete lone surrogates, and drops a partially included known
+redaction marker whole instead of splitting it; ordinary decorative or unmatched `⟦` text stays
+in the prefix. A zero bound is valid; a malformed or negative bound fails with a content-free
+`invalid_input` error. The requested bound is a representation request, not a total input limit.
+
+Reads, replay, base64 helper transport, scrubbing, provider history, byte-input copies and queue
+events remain whole-buffer. The 64 KiB value is a transport chunk, not a total input or process
+memory cap.
+
+## Current-registry v2 excerpt projection
+
+`excerpt.ts` protects prompt/tool-call input excerpts using the stored original byteSize,
+excerptBytes and UTF-8 length before any replacement. A known right-truncated excerpt uses
+the scrubber's private prefix capability, including a one-character boundary fragment.
+If an excerpt already contains a stored marker, append-time expansion may have erased byte
+proof of an earlier cut; its boundary is conservatively protected as ambiguous too. This
+can redact an otherwise ordinary matching suffix in that affected excerpt. List/summary titles derive from that protected excerpt before their title cut. Event reads,
+export and each outward SSE frame apply the same current-registry projection; an earlier
+read does not pin an obsolete redaction registry. Search may use FTS to nominate candidates,
+but rebuilds v2 searchable text from the safe event before matching surviving terms or
+cutting a snippet. Complete v1 messages retain their exact-match behavior.
+
+Projection recomputes excerptBytes, respects the existing 8-KiB UTF-8 bound and drops an
+expanding marker whole if it cannot fit. It never reads full artifacts or writes payloads,
+hashes, FTS rows, event IDs, versions or sequence numbers. With an older scrubber port missing
+the optional capability, only known-truncated or marker-ambiguous excerpts become empty; ordinary complete
+excerpts and other session metadata remain available. Stored forensic erasure and arbitrary
+unknown message cuts are not provided by this read-only projection.

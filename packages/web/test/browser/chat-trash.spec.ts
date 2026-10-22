@@ -195,7 +195,9 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   const adaptiveStyles = await deletionRefresh.evaluate((button) => {
     const buttonStyle = getComputedStyle(button)
     return {
+      transitionProperty: buttonStyle.transitionProperty,
       transitionDuration: buttonStyle.transitionDuration,
+      relevantAnimationCount: button.getAnimations({ subtree: true }).length,
       outlineWidth: buttonStyle.outlineWidth,
       outlineStyle: buttonStyle.outlineStyle,
     }
@@ -206,7 +208,9 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
       borderStyle: getComputedStyle(item).borderStyle,
       borderWidth: getComputedStyle(item).borderWidth,
     }))
-  expect(Number.parseFloat(adaptiveStyles.transitionDuration)).toBeCloseTo(0.00001, 8)
+  expect(adaptiveStyles.transitionProperty).toBe('none')
+  expect(adaptiveStyles.transitionDuration.split(',').every((value) => Number.parseFloat(value) === 0)).toBe(true)
+  expect(adaptiveStyles.relevantAnimationCount).toBe(0)
   expect(adaptiveStyles.outlineWidth).toBe('3px')
   expect(adaptiveStyles.outlineStyle).toBe('solid')
   expect(itemStyles.borderStyle).toBe('solid')

@@ -1,0 +1,60 @@
+@reference '../../../../../ui/src/styles/tailwind-reference.css';
+.workspace-layout, .workspace-pane-host { @apply w-full; @apply h-full; min-width: 0; min-height: 0; }
+.gx-dockview {
+  --dv-paneview-active-outline-color: var(--color-ring-primary);
+  --dv-tabs-container-scrollbar-color: var(--color-border-control);
+  --dv-icon-hover-background-color: var(--color-background-hover);
+  --dv-overlay-z-index: var(--layer-floating);
+  --dv-floating-border: var(--border-width-regular) solid var(--color-border-control);
+  --dv-floating-titlebar-height: var(--control-height);
+  --dv-floating-titlebar-background-color: var(--color-background-secondary);
+  --dv-floating-titlebar-border-bottom: var(--border-width-regular) solid var(--color-border-primary);
+  --dv-floating-group-border: var(--border-width-regular) solid var(--color-border-control);
+  --dv-drag-over-border: var(--border-width-regular) solid var(--color-ring-primary);
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--color-ring-primary);
+  --dv-active-sash-transition-duration: var(--motion-duration-fast);
+  --dv-active-sash-transition-delay: var(--motion-duration-instant);
+  --dv-spacing-padding: 0;
+  --dv-tab-border-radius: var(--border-radius-inline);
+  --dv-sash-border-radius: 0;
+  --dv-dropdown-border-radius: var(--border-radius-control);
+  --dv-tab-close-icon-size: var(--font-size-14);
+  --dv-floating-group-dragging-opacity: var(--material-solid-fill-opacity);
+  --dv-background-color: var(--color-background-primary);
+  --dv-group-view-background-color: var(--color-background-primary);
+  --dv-tabs-and-actions-container-background-color: var(--color-background-secondary);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--color-background-primary);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-background-secondary);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-background-primary);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-background-secondary);
+  --dv-activegroup-visiblepanel-tab-color: var(--color-text-primary);
+  --dv-activegroup-hiddenpanel-tab-color: var(--color-text-secondary);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--color-text-secondary);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--color-text-secondary);
+  --dv-tab-divider-color: var(--color-border-primary);
+  --dv-separator-border: var(--color-border-primary);
+  --dv-paneview-header-border-color: var(--color-border-primary);
+  --dv-tabs-and-actions-container-height: var(--control-height);
+  --dv-tabs-and-actions-container-font-size: var(--font-text-size);
+  --dv-tab-font-size: var(--font-text-size);
+  --dv-drag-over-background-color: var(--color-background-info);
+  --dv-drag-over-border-color: var(--color-ring-primary);
+  --dv-floating-box-shadow: var(--elevation-2-shadow);
+  --dv-tab-margin: 0;
+  --dv-border-radius: var(--border-radius-panel);
+  --dv-transition-duration: var(--motion-duration-medium);
+}
+.gx-dockview .dv-tab:focus-visible { outline: var(--focus-ring-width) solid var(--color-ring-primary); outline-offset: var(--focus-ring-offset); }
+.gx-dockview .dv-resize-container { --dv-overlay-z-index: var(--layer-floating); z-index: var(--layer-floating); }
+.dv-drop-target-container { z-index: var(--layer-floating); --dv-transition-duration: var(--motion-duration-fast); }
+.dv-drop-target { --dv-transition-duration: var(--motion-duration-fast); }
+.dv-drop-target-container .dv-drop-target-anchor { transition-timing-function: var(--motion-easing-standard); }
+.gx-dockview .dv-tab .dv-default-tab .dv-default-tab-action { @apply min-w-6 min-h-6; padding: var(--spacing-4); border-radius: var(--border-radius-inline); }
+@media (prefers-reduced-motion: reduce) {
+  .workspace-layout *, .dv-drop-target-container, .dv-drop-target-container * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* Keep vendor layers inside the workspace; modal and menu layers must stay operable. */
+.workspace-layout { position: relative; isolation: isolate; z-index: var(--layer-base); }
+.gx-dockview .dv-split-view-container .dv-sash-container .dv-sash { z-index: var(--layer-docked); }

@@ -4,6 +4,7 @@
  */
 import './styles/base.css'
 
+export * from './components/app-shell-chrome/index.ts'
 export * from './components/badge/index.ts'
 export * from './components/button/index.ts'
 export * from './components/checkbox/index.ts'
@@ -34,3 +35,4 @@ export {
   type UiTranslate,
 } from './i18n/context.tsx'
 export type { UiMessageKey } from './i18n/messages.ts'
+export * from './components/workspace-chrome/index.ts'

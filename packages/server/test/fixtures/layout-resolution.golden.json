@@ -1,0 +1,15 @@
+{
+  "resolution": ["device", "project", "account", "builtin"],
+  "developer": {
+    "center": ["chat", "changes"],
+    "left": ["artifacts", "browser", "subagents"],
+    "right": ["context", "plan", "processes", "environment", "files"],
+    "bottom": ["terminal"]
+  },
+  "visual": {
+    "center": ["chat", "artifacts", "browser"],
+    "left": ["context", "changes"],
+    "right": ["plan", "subagents"],
+    "bottom": ["processes", "environment", "files", "terminal"]
+  }
+}

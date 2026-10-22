@@ -20,6 +20,10 @@ import {
   SSE_LAST_EVENT_ID_HEADER,
   listSessionsQuery,
   listSessionsResponse,
+  sessionPageQuery,
+  sessionPageCursorSchema,
+  sessionPageResponse,
+  type SessionPageCursor,
   sessionEventSchema,
   sessionEventsQuery,
   sessionEventsResponse,
@@ -153,6 +157,19 @@ export function sessionLogRoutes(resolve: () => SessionLog | undefined): Hono {
     } catch (error) {
       return fail(context, error)
     }
+  })
+
+  routes.get('/list/page', (context) => {
+    const raw = query(context, ['limit', 'cursor'])
+    const parsed = raw ? sessionPageQuery.safeParse(raw) : null
+    if (!parsed?.success) return invalid(context, 'Invalid session page query')
+    let cursor: SessionPageCursor | undefined
+    if (parsed.data.cursor) {
+      try { cursor = sessionPageCursorSchema.parse(JSON.parse(Buffer.from(parsed.data.cursor, 'base64url').toString('utf8'))) }
+      catch { return invalid(context, 'Invalid session page cursor') }
+    }
+    try { return context.json(sessionPageResponse.parse(log().page(parsed.data.limit, cursor))) }
+    catch (error) { return fail(context, error) }
   })
 
   routes.get('/search', (context) => {

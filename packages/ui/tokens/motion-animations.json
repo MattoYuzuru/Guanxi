@@ -1,0 +1,32 @@
+{
+  "animations": [
+    {
+      "utility": "fade-up",
+      "keyframes": "guanxi-fade-up",
+      "duration": "motion.duration.moderate",
+      "easing": "motion.easing.enter",
+      "iterations": 1
+    },
+    {
+      "utility": "pulse-soft",
+      "keyframes": "guanxi-pulse-soft",
+      "duration": "motion.duration.loop",
+      "easing": "motion.easing.standard",
+      "iterations": "infinite"
+    },
+    {
+      "utility": "sheen",
+      "keyframes": "guanxi-sheen",
+      "duration": "motion.duration.loop",
+      "easing": "motion.easing.standard",
+      "iterations": "infinite"
+    },
+    {
+      "utility": "spinner",
+      "keyframes": "guanxi-spin",
+      "duration": "motion.duration.loop",
+      "easing": "motion.easing.linear",
+      "iterations": "infinite"
+    }
+  ]
+}

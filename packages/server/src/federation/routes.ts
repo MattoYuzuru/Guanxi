@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z, ZodError } from 'zod'
-import { devicePollSchema, deviceRequestSchema, FEDERATION_VERSION, replicaEntrySchema,
+import { devicePollSchema, deviceRequestSchema, FEDERATION_VERSION, LAYOUT_CONFIG_MINOR, ATTEMPT_RESERVATIONS_MINOR, replicaEntrySchema,
   signedConfigOperationSchema, federationAuthSchema } from '@guanxi/contract/federation'
 import { FederationError } from './crypto.ts'
 import type { Federation, PeerContext } from './service.ts'
@@ -51,16 +51,25 @@ export function federationRoutes(resolve: () => Federation) {
   })
   app.post('/device/code', (c) => c.json(c.get('federation').enrollment.begin(deviceRequestSchema.parse(c.get('body')).publicKey)))
   app.post('/device/token', (c) => c.json(c.get('federation').enrollment.poll(devicePollSchema.parse(c.get('body')).device_code)))
-  app.get('/handshake', (c) => c.json({ version: FEDERATION_VERSION, negotiated: c.get('peer').version, readOnly: c.get('peer').readOnly }))
+  app.get('/handshake', (c) => c.json({ version: FEDERATION_VERSION, negotiated: c.get('peer').version, readOnly: c.get('peer').readOnly,
+    ...(c.get('peer').version.major === FEDERATION_VERSION.major && c.get('peer').version.minor >= ATTEMPT_RESERVATIONS_MINOR
+      ? { capabilities: c.get('federation').capabilities() } : {}) }))
   app.get('/config', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'config')
-    return c.json({ operations: f.config.operations().filter((op) => op.operation.accountId === peer.accountId) })
+    const operations = f.config.operations().filter((op) => op.operation.accountId === peer.accountId)
+    if (c.get('peer').version.minor < LAYOUT_CONFIG_MINOR && operations.some(op => op.operation.value.kind === 'layout')) {
+      // Omitting a layout dot would also omit a causal dependency of later settings. Require
+      // an upgrade instead of exporting a truncated history that can never converge.
+      throw new FederationError('contract_feature_unavailable', 426)
+    }
+    return c.json({ operations })
   })
   app.post('/config', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'config', true)
     const body = c.get('body')
     if (Array.isArray(body) && body.length > f.configOpsPerRequest) throw new FederationError('config_batch_too_large', 413)
     const ops = z.array(signedConfigOperationSchema).parse(body)
+    if (c.get('peer').version.minor < LAYOUT_CONFIG_MINOR && ops.some(op => op.operation.value.kind === 'layout')) throw new FederationError('contract_feature_unavailable', 426)
     if (ops.some((op) => op.operation.accountId !== peer.accountId)) throw new FederationError('owner_mismatch', 403)
     return c.json({ applied: true, ...f.config.ingest(ops) })
   })
@@ -74,6 +83,13 @@ export function federationRoutes(resolve: () => Federation) {
     f.replicas.ingest(peer, z.array(replicaEntrySchema).parse(c.get('body'))); return c.json({ applied: true })
   })
   app.post('/commands', (c) => c.json({ result: c.get('federation').receiveCommand(c.get('peer'), c.get('body') as never) }))
+  app.post('/attempts/offers', async (c) => c.json(await c.get('federation').receiveAttemptOffer(c.get('peer'), c.get('body') as never)))
+  app.post('/attempts/cancel', (c) => c.json(c.get('federation').cancelAttemptOffer(c.get('peer'), c.get('body') as never)))
+  app.post('/attempts/dispatch', async c => c.json(await c.get('federation').receiveDispatch(c.get('peer'), c.get('body') as never)))
+  app.post('/attempts/renew', c => c.json(c.get('federation').renewDispatch(c.get('peer'), c.get('body') as never)))
+  app.post('/attempts/events', c => { c.get('federation').receiveDispatchEvent(c.get('peer'), c.get('body') as never); return c.json({ applied: true }) })
+  app.post('/attempts/state', c => c.json(c.get('federation').dispatchState(c.get('peer'), c.get('body') as never)))
+  app.post('/attempts/dispatch-cancel', c => c.json(c.get('federation').cancelDispatch(c.get('peer'), c.get('body') as never)))
   app.post('/telemetry', (c) => { c.get('federation').receiveTelemetry(c.get('peer'), c.get('body') as never); return c.json({ applied: true }) })
   app.get('/telemetry', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'telemetry')

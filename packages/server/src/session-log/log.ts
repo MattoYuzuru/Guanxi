@@ -35,6 +35,7 @@ import {
   sessionEventTypeSupportsV2,
   sessionInputArtifactInputSchema,
   toolCallV2DataSchema,
+  sessionExecutionSchema,
   type SessionAudience,
   type SessionEvent,
   type SessionEventData,
@@ -44,12 +45,17 @@ import {
   type SessionInputArtifactInput,
   type SessionKind,
   type SessionListItem,
+  type SessionPageCursor,
+  type SessionPageItem,
+  type SessionPageNavigation,
+  type SessionPageResponse,
   type SessionSearchHit,
   type SessionTokenMeter,
   type SessionWriterReason,
 } from '@guanxi/contract'
 import { REDACTION_MARKER_CLOSE, REDACTION_MARKER_PREFIX, type EgressScrubber } from '../egress/types.ts'
 import { buildSnippet, searchTerms } from './snippet.ts'
+import { projectInputExcerpt } from './excerpt.ts'
 import type { Db } from '../store/db.ts'
 
 export const DEFAULT_WRITER_TTL_MS = 30_000
@@ -692,6 +698,46 @@ export class SessionLog {
     }
   }
 
+  /** Stable creation-order pages. No raw event or reasoning payload crosses this boundary. */
+  page(limit: number, cursor?: SessionPageCursor): SessionPageResponse {
+    this.assertEgressReady()
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new RangeError('Invalid session page size')
+    const sessions: SessionPageItem[] = [], omitted = { withheld: false, catchingUp: false }
+    const hasRuns = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durable_runs'").get())
+    const hasNative = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_sessions'").get())
+    const rows = this.db.prepare(`${LIST_ITEM_SELECT}
+      ${cursor ? 'WHERE (s.created_at < ? OR (s.created_at = ? AND s.id < ?))' : ''}
+      ORDER BY s.created_at DESC,s.id DESC`).iterate(...(cursor ? [cursor.createdAt, cursor.createdAt, cursor.sessionId] : [])) as unknown as Iterable<ListItemRow>
+    let more = false
+    for (const row of rows) {
+      if (!this.returnable(row.id)) { omitted.withheld = true; continue }
+      if (this.db.prepare('SELECT 1 FROM session_mirror_backlog WHERE thread_id=?').get(row.id)) { omitted.catchingUp = true; continue }
+      if (sessions.length === limit) { more = true; break }
+      const run = hasRuns ? this.db.prepare(`SELECT r.state,r.updated_at,
+        (SELECT a.state FROM run_attempts a WHERE a.run_id=r.id ORDER BY a.ordinal DESC LIMIT 1) AS attempt_state
+        FROM durable_runs r WHERE r.session_id=? AND r.parent_id IS NULL ORDER BY r.updated_at DESC,r.id DESC LIMIT 1`).get(row.id) : undefined
+      const execution = run ? sessionExecutionSchema.safeParse({ state: run.state, attemptState: run.attempt_state ?? null,
+        source: 'run-home', observedAt: new Date(Number(run.updated_at)).toISOString(), confidence: 'observed' }) : undefined
+      sessions.push({ ...this.toListItem(row), execution: execution?.success ? execution.data : null,
+        navigation: this.navigation(row, hasNative) })
+    }
+    const last = sessions.at(-1)
+    return { sessions, omitted, nextCursor: more && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt, sessionId: last.sessionId })).toString('base64url') : null }
+  }
+
+  private navigation(row: ListItemRow, hasNative: boolean): SessionPageNavigation {
+    const trace = { kind: 'inspector' as const, sessionId: row.id }
+    const native = hasNative ? this.db.prepare('SELECT trashed_at,leave_at,deletion_requested FROM native_sessions WHERE session_id=?').get(row.id) : undefined
+    if (native) return native.trashed_at !== null || native.leave_at !== null || native.deletion_requested
+      ? trace : { kind: 'native', sessionId: row.id }
+    if (!row.thread_id || !this.returnable(row.thread_id)) return trace
+    const thread = this.db.prepare('SELECT project_id,chat_lifecycle_state FROM threads WHERE id=?').get(row.thread_id)
+    if (!thread || thread.chat_lifecycle_state !== 'active') return trace
+    const projectId = thread.project_id as string | null
+    if (projectId !== null && !this.returnable(projectId)) return trace
+    return { kind: 'chat', threadId: row.thread_id, projectId }
+  }
+
   /**
    * The title comes from the session's first prompt event, which was scrubbed
    * when it was stored, and is cut only after scrubbing. The legacy Thread
@@ -702,7 +748,7 @@ export class SessionLog {
     let title: string | null = null
     if (row.first_prompt !== null) {
       try {
-        const payload = JSON.parse(row.first_prompt) as { text?: unknown; artifact?: { excerpt?: unknown } }
+        const payload = projectInputExcerpt(JSON.parse(row.first_prompt), this.scrubber) as { text?: unknown; artifact?: { excerpt?: unknown } }
         const text = typeof payload.text === 'string' ? payload.text : payload.artifact?.excerpt
         if (typeof text === 'string') title = titleOf(this.scrubber.scrub(text))
       } catch {
@@ -830,24 +876,20 @@ export class SessionLog {
         ...(options.types ?? []),
       ) as Iterable<{ row_id: number }>
     const candidate = this.db.prepare(
-      'SELECT session_id, seq, type, class, created_at, search_text FROM session_events WHERE row_id = ?',
+      'SELECT * FROM session_events WHERE row_id = ?',
     )
     const terms = searchTerms(text)
     const hits: SessionSearchHit[] = []
     for (const { row_id: rowId } of candidates) {
-      const row = candidate.get(rowId) as unknown as {
-        session_id: string
-        seq: number
-        type: SessionEventType
-        class: 'standard' | 'reasoning'
-        created_at: string
-        search_text: string
-      }
-      // The snippet comes from the whole indexed text, scrubbed with every value registered now.
-      const snippet = buildSnippet(this.scrubber.scrub(row.search_text), terms)
-      if (snippet === null) continue
-      // A hit in a session whose id holds a registered value is never returned (N1).
+      const row = candidate.get(rowId) as unknown as EventRow & { type: SessionEventType; class: 'standard' | 'reasoning' }
+      // Omit withheld sessions before projecting their event identifiers (N1).
       if (!this.returnable(row.session_id)) continue
+      // FTS only nominates candidates. A late-registered value may cross the
+      // stored excerpt boundary, so rebuild v2 text BEFORE matching or clipping.
+      const projected = row.event_version === SESSION_EVENT_VERSION_2 ? this.toEvent(row) : null
+      const text = projected ? searchTextOf(projected.type, projected.data) : this.scrubber.scrub(row.search_text)
+      const snippet = text === null ? null : buildSnippet(text, terms)
+      if (snippet === null) continue
       hits.push({
         sessionId: row.session_id,
         seq: row.seq,
@@ -1377,26 +1419,10 @@ export class SessionLog {
       } catch {
         throw new SessionLogError('stored_data_invalid', `Session event #${row.seq} is not valid JSON`)
       }
-      if (options.rescrub !== false) {
+      if (row.event_version === SESSION_EVENT_VERSION_2) {
+        data = projectInputExcerpt(data, this.scrubber)
+      } else if (options.rescrub !== false) {
         data = this.scrubber.scrub(data)
-        // A secret registered after the write can change the bounded excerpt.
-        // Recompute its length for this projection without mutating the stored
-        // payload; the excerpt stays within its published byte bound.
-        const candidate = data as { artifact?: { excerpt?: unknown; excerptBytes?: unknown } }
-        if (candidate !== null && typeof candidate === 'object' && candidate.artifact !== undefined
-          && typeof candidate.artifact.excerpt === 'string') {
-          let excerpt = this.scrubber.scrub(candidate.artifact.excerpt)
-          if (Buffer.byteLength(excerpt, 'utf8') > INPUT_EXCERPT_BYTES) {
-            const bytes = Buffer.from(excerpt, 'utf8')
-            let end = INPUT_EXCERPT_BYTES
-            while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1
-            excerpt = bytes.subarray(0, end).toString('utf8')
-          }
-          data = {
-            ...candidate,
-            artifact: { ...candidate.artifact, excerpt, excerptBytes: Buffer.byteLength(excerpt, 'utf8') },
-          }
-        }
       }
     }
     // A value registered after the write is hidden in identifiers too on the way out.

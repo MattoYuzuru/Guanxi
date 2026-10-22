@@ -145,3 +145,21 @@ Delete the stub and the copied interface after merging `main`.
   caught, because neither chunk contains it. The session log therefore stores whole messages,
   not token deltas; a streaming consumer must scrub a boundary that holds the whole value.
 - Rule-based detection of unregistered secrets is not part of this core.
+
+## Known right-truncated prefixes
+
+The optional synchronous `scrubTruncatedPrefix(text)` capability uses the actual private raw,
+JSON-escaped and URI-encoded forms. Alongside complete matches it replaces every nonempty
+terminal proper prefix, including one character. Cached KMP failure links scan each form in
+linear time in the input length; overlap merging and marker semantics match exact scrubbing.
+Registration, rotation and unregister rebuild the private cache; no registry is exposed.
+This is a conservative operation for a known truncation boundary, not the meaning of ordinary
+`scrub`: ordinary text ending in an unrelated matching character remains ordinary text.
+Readiness and stale-facade closure rules are unchanged.
+
+Session-log v2 input excerpts establish original truncation from stored byte metadata before
+applying this capability. Stored markers can make that original boundary ambiguous after
+append-time expansion; the excerpt consumer conservatively protects that boundary too. A consumer of an older port without the capability must withhold
+the affected truncated text. It cannot pass that text through or reconstruct full artifacts
+to obtain the missing redaction guarantee. Arbitrarily interrupted messages without a known
+truncation boundary remain outside this additional guarantee.

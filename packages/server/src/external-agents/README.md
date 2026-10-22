@@ -1,6 +1,6 @@
 # External agents and role routing (K5)
 
-**Status:** kernel implementation; offline fixture validation · **Updated:** 2026-10-21
+**Status:** kernel implementation; durable same-node admission implemented and offline-fixture validated · **Updated:** 2026-10-22
 
 ## Implementation plan
 
@@ -17,6 +17,11 @@ unchanged. F1, R2 and DS1-c own their respective areas.
 - Persist project roles, dated quota observations and concurrency learning in a private K5
   SQLite sidecar with append-only migrations. Vendor configuration directories are private to
   node/owner/connection. Only the unmodified vendor CLI reads its login there.
+- Append sidecar migration v2 and admit through one `BEGIN IMMEDIATE` transaction over the
+  account group `(owner, adapter, billingAccount)`. Opaque holders are released only after the
+  owned process group is acknowledged empty; a crash or uncertain cleanup stays occupied.
+  `activeOnThisNode` remains instance-local and `durableLocalOccupancy` is its additive
+  diagnostic. This is same-node coordination, not a distributed lease or a vendor cap.
 - Project/role APIs are trusted kernel APIs. No caller-supplied identity is accepted over HTTP.
   Remote execution transport and authenticated peer reports belong to F1; every local adapter
   checks its configured node identity. Account grouping is explicit operator metadata.
@@ -54,12 +59,15 @@ separately user-installed ACP bridge, whose Agent SDK dependency stays outside G
 Neither proprietary package is a Guanxi dependency, bundle or copied source.
 
 `prepareLogin(owner, owner, connectionId)` returns only the local CLI argv and isolated
-configuration environment. Run that unmodified CLI on **each node** to sign in there; do not
-copy a login from another node. Codex also supports
+configuration environment. It owns no child and creates no admission row: a manually started
+vendor CLI is outside this ledger and cannot be blocked or counted. Run that unmodified CLI on
+**each node** to sign in there; do not copy a login from another node. Codex also supports
 `signInWithChatGPT(owner, owner, connectionId, onAuthUrl, signal)`: the official app-server
-owns the browser callback, credential persistence and refresh. The caller receives an auth
-URL transiently; it must not log it. Only ChatGPT Plus/Pro is admitted. Business, API-key mode
-on a subscription connection and externally supplied token mode are refused.
+owns the browser callback, credential persistence and refresh. This owned login takes a durable
+`login` holder, is exclusive with every run and login in the group, and releases only after its
+child/group cleanup is acknowledged. The caller receives an auth URL transiently; it must not
+log it. Only ChatGPT Plus/Pro is admitted. Business, API-key mode on a subscription connection
+and externally supplied token mode are refused.
 
 `setProjectRoles(owner, owner, projectId, roles)` persists manual defaults. `resolve` chooses
 an explicit session role first, then the project role; explicit null or an invalid override
@@ -120,20 +128,38 @@ Calls have an explicit `runDeadlineMs` operator setting (default 300 seconds) an
 JSON-frame safety policy, configurable in `ExternalPolicy`. A run that reaches its deadline ends
 with the `timeout` error code, not `cancelled`, and the deadline is recorded in the run's events
 as a fact. `requestTimeoutMs` bounds sign-in and authentication probes. Neither is a model
-context/output limit. On abort or timeout the client first sends ACP `session/cancel` or Codex
-`turn/interrupt` when the protocol is connected, waits up to 2 seconds for the child to close,
-sends SIGTERM, waits up to 3 seconds, then sends SIGKILL. Cancellation, unload and timeout
-await child close before releasing this service's admission. Responses are node-owned kernel
-calls; no HTTP subscriber owns them. There is no automatic resume, durable inference
-continuation or retry. K2 holds the transcript; R1/R2 integration is a later consumer, not a
-second run state machine.
+context/output limit, and a deadline is never an admission lease.
+
+On abort or timeout the client first sends ACP `session/cancel` or Codex `turn/interrupt` when
+the protocol is connected, waits up to 2 seconds for the child to close, sends SIGTERM, waits up
+to 3 seconds, then sends SIGKILL. The service then awaits one cached `ProcessCleanup`: the
+primary `close` event plus, on POSIX, an in-memory process-group `ESRCH` observation. The Claude
+`auth status` probe is a separate owned group; its result and cleanup settle before the primary
+child starts or the holder is released. A confirmed outcome deletes the exact holder. A timeout,
+permission error, close error or unsupported platform marks the same row `cleanup_unconfirmed`
+and retains it; the run surfaces `cleanup_unconfirmed` (or `admission_release_failed` if the SQL
+marking itself fails). The cleanup-verification deadline is not a reservation TTL and never
+creates a replacement. The close observation is settled even when a stream/close callback throws;
+a still-unknown group becomes `group_timeout`, not a confirmed release.
+
+Confirmed group cleanup is a POSIX process-group boundary for ordinary same-user descendants
+that stay in the group. A descendant that escaped with `setsid`/`setpgid`, or Windows process
+semantics, is outside that proof: Windows returns `unsupported_platform` and retains the holder.
+A Windows Job Object is a separate future design. No numeric PID/PGID is stored, read back from
+SQLite or accepted from a request; signals only target the in-memory child's group. Responses are
+node-owned kernel calls; no HTTP subscriber owns them.
+There is no automatic resume, durable inference continuation or retry. K2 holds the transcript;
+R1/R2 integration is a later consumer, not a second run state machine.
 
 Claude `auth status` is invoked on the configured unmodified binary, with the isolated
 environment; only login/auth-method facts are retained. Explicit `claudeBare: true` refuses a
-subscription launch and records why. Unspecified bare state remains unknown: probing the
-stored login cannot prove a bridge's implicit flags or a future CLI default. Unknown billing
-is not converted to subscription billing merely because a login exists. Anthropic API-key
-fallback uses K3's native API connection, selected explicitly; it is never an automatic spend.
+subscription launch and records why. The existing `bare` fact is launch-policy metadata only:
+omitted means null, not false. `effective_bare` is written explicitly as
+`{ value: null, source: 'not_observed', observedAt: null, confidence: 'unknown' }`; a stored
+login, successful `auth status`, `--help`, configured false or missing flag never promotes it.
+Only a future verified launch observation may write a known value. Unknown billing is not
+converted to subscription billing merely because a login exists. Anthropic API-key fallback
+uses K3's native API connection, selected explicitly; it is never an automatic spend.
 
 ## Limits and concurrency
 
@@ -159,16 +185,43 @@ current limit facts. The original reports remain visible as dated evidence.
 Completed dispatches teach successful parallelism. Explicit classified concurrency observations
 teach rejection ceilings; generic 429/quota failures do not. Learning has low confidence and
 survives reload. Admission starts at the explained operator policy (default 1); a learned
-rejection tightens it. This is **per-process, per-account admission**, not a distributed lease
-or a promise of available vendor concurrency across all machines. It does not account for
-concurrent web/desktop use except as reflected in vendor quota reports.
+rejection tightens it, and a success never raises it.
+
+Same-node admission is a durable sidecar transaction, not an instance map. The group is exactly
+`(ownerAccountId, adapter, billingAccount)`; connection ID, executable, version, process and
+time are not group members. `BEGIN IMMEDIATE` checks any row's policy digest, reads the learned
+rejection row, counts both `held` and `cleanup_unconfirmed` run rows against
+`min(operatorCeiling, learnedCeiling)`, and inserts one opaque holder. A held login excludes
+every run and every other login; any run excludes a login. A differing ceiling/policy digest
+while any row exists refuses `account_policy_conflict` with no insert; once the group is
+genuinely quiescent, a new policy acquires without a tombstone. SQLite busy/SQL failure rolls
+back as `admission_unavailable`; there is no memory fallback.
+
+`activeOnThisNode` remains the number of live tasks this instance owns, including an owned
+login, and is not the admission gate. `durableLocalOccupancy` adds
+`{ held, cleanupUnconfirmed, total }` counts for the account group and exposes no holder IDs,
+account strings, vendor data, errors or PIDs. This is **same-node account coordination**, not
+distributed admission and not a promise of available vendor concurrency. Other data
+directories, manual vendor clients and other nodes remain outside it.
 
 ## Storage, checks and rollback
 
-`external-agents.sqlite` has its own `k5_migrations` table (v1), private database/WAL/SHM files,
-project role defaults, editor grants, latest node quota reports and concurrency observations.
-No shared migration or stable wire schema changes. Removing the plugin leaves both this
-sidecar and vendor directories intact; it never logs out a user or deletes vendor data.
+`external-agents.sqlite` has its own append-only `k5_migrations` table, private database/WAL/SHM
+files, project role defaults, editor grants, latest node quota reports, concurrency observations
+and v2 admission holders. The v1 SQL, tables and row `1` are preserved; v2 appends the
+`k5_admission` table, its group index and row `2` in the same migration transaction. A fresh
+database creates v1 and v2 together, an existing v1 appends only v2, and reopening v2 is a
+no-op. The sidecar's `PRAGMA user_version` and the main `guanxi.db` migration slots are untouched.
+The admission row has no PID/PGID, argv, environment, credential, email, organization or expiry
+column; `created_at` is diagnostic only and never a predicate.
+
+On startup there is no holder sweep, wall-clock expiry, PID probe or inference retry. A crash or
+`cleanup_unconfirmed` row stays occupied across restart, so new work for that group is refused
+until a separately designed audited administrative break exists; this slice provides none.
+Removing the plugin leaves the sidecar and vendor directories intact and never logs out a user.
+An older K5 binary ignores v2 and would bypass admission: quiesce all K5 processes before
+rollback, do not run old and new K5 concurrently on one sidecar, and do not use a schema
+downgrade to clear unresolved holders.
 
 `node packages/server/scripts/check-vendor-credentials.ts` scans every `.ts`, `.tsx`, `.js`,
 `.mjs`, `.cjs`, `.mts` and `.cts` file under `packages/*/src`, `packages/*/scripts` and

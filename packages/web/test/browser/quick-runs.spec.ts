@@ -242,7 +242,9 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
     bodyWidth: document.body.scrollWidth,
     reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
     forcedColors: matchMedia('(forced-colors: active)').matches,
+    transitionProperty: getComputedStyle(document.activeElement!).transitionProperty,
     transitionDuration: getComputedStyle(document.activeElement!).transitionDuration,
+    relevantAnimationCount: document.activeElement!.getAnimations({ subtree: true }).length,
     outlineStyle: getComputedStyle(document.activeElement!).outlineStyle,
     outlineWidth: getComputedStyle(document.activeElement!).outlineWidth,
     cardBorderStyle: getComputedStyle(document.querySelector('.quick-run-card')!).borderStyle,
@@ -252,7 +254,9 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewport)
   expect(layout.reducedMotion).toBe(true)
   expect(layout.forcedColors).toBe(true)
-  expect(Number.parseFloat(layout.transitionDuration)).toBeCloseTo(0.00001, 8)
+  expect(layout.transitionProperty).toBe('none')
+  expect(layout.transitionDuration.split(',').every((value) => Number.parseFloat(value) === 0)).toBe(true)
+  expect(layout.relevantAnimationCount).toBe(0)
   expect(layout.outlineStyle).toBe('solid')
   expect(layout.outlineWidth).toBe('3px')
   expect(layout.cardBorderStyle).toBe('solid')

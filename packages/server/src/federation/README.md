@@ -163,7 +163,10 @@ version. Decide only admits an `input_required` run. Prompt appends a K2 prompt,
 version and queues durable input without starting inference. The executor consumes
 `pendingPrompts()` in accepted run-version order and acknowledges with `acknowledgePrompt()`; wiring that input into the
 native agent belongs to K4 integration. This API does not claim exactly-once model execution.
-Remote execution offers, direct executor cancellation, lease transfer and failover remain F2.
+Optional owned-node offer reservations are implemented in
+[remote-attempts](../remote-attempts/README.md). Their receipts explicitly authorize no
+execution. Actual remote dispatch, holder fencing, direct executor cancellation, lease
+transfer and failover remain F2.
 
 ## Telemetry and compatibility
 
@@ -182,6 +185,22 @@ so an intermediary cannot edit the sender's request version. Handshake responses
 an intermediary able to alter responses can force a read-only downgrade or denial of service.
 Response authenticity relies on the host-provided authenticated private transport or TLS;
 request signatures alone do not provide downgrade protection.
+
+### Portable workspace layouts (U1-a continuation)
+
+Protocol 1.1 adds the strict `layout` configuration value (`guanxi.layout/1`, activation and
+an optional base clock). Its key hashes the document scope and id, and the document's account
+must match the signed operation. F1 verifies the author and signature before applying layout,
+recovery and active-layout projection inside the same transaction as the operation and HLC.
+Local layout REST writes use that same path when F1 is configured. The layout ledger remains
+component-owned; no global migration or additional network transport is introduced.
+
+One document merges by `(rev, updatedAt, device)`, with a deduplicated `Recovered layout`
+loser. Named-layout activation uses the signed configuration order, so arrival order cannot
+change it. Float/popout geometry never enters the signed operation. A minor-0 peer requesting
+a history containing layout operations receives `426 contract_feature_unavailable`; filtering
+out those operations would strand later causal dependencies, so no partial history is returned.
+Hosts upgrade such peers before synchronizing layout-bearing configuration.
 
 ## Storage, upgrade and recovery
 
@@ -205,3 +224,12 @@ contract/route/store/kernel tests. The lane handoff maps exit gates to direct as
 records the full regression envelope. The handoff records macOS and Fedora Linux fixture runs with pinned code and runtimes,
 using temporary SQLite databases. They do not validate a VPN, live fleet delivery, real
 provider execution or a deployed service.
+
+### Optional local inference dispatch
+
+The [owned-node attempt protocol](../remote-attempts/README.md) documents optional F2-a
+reservations (minor2) and bounded text-only inference dispatch (minor3). Both features are off
+by default and need their distinct advertised capability. Dispatch adds a fresh executor-bound
+R1 attempt, signed grants/renewals, strict holder self-fencing and durable result ingestion; it
+uses K3's local-runtime governor/consent path. It does not implement toolful relay execution,
+detached mode, home handover or OS power assertions, and local fake-adapter tests are not MS1.

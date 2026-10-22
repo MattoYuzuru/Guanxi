@@ -41,6 +41,14 @@ export interface EgressScrubber {
    */
   scrub<T>(value: T): T
   /**
+   * For text known to end at a right-truncation boundary: redacts complete
+   * registered forms and every nonempty terminal proper prefix of a form.
+   * Uses the private registry; callers must never apply this assumption to
+   * ordinary complete text. Older implementations may omit the capability;
+   * consumers must then withhold the affected truncated projection.
+   */
+  scrubTruncatedPrefix?(text: string): string
+  /**
    * Declares a secret source (for example `vault`) whose values must be
    * registered before scrubbed output is complete. The scrubber is not ready
    * while any declared source is not. Idempotent; declaring a source that is
@@ -54,6 +62,13 @@ export interface EgressScrubber {
   ready(sourceId: string): void
   /** True when every declared source is ready (also when none is declared). */
   isReady(): boolean
+  /**
+   * A copy of the registered ref/value pairs for a trusted local consumer that
+   * must scrub inside a sandboxed child (the project index worker). The
+   * consumer passes it only over its private IPC channel, never in process
+   * arguments or environment. Optional for compatibility with read-only stubs.
+   */
+  snapshot?(): readonly { ref: SecretRef; value: string }[]
   /** Declared sources that are not ready yet, sorted; ids only, never values. */
   pendingSources(): readonly string[]
   /**

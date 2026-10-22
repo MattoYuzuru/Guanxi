@@ -24,6 +24,8 @@ import {
 interface Form {
   readonly text: string
   readonly bytes: Buffer
+  /** Private cached KMP failure links, rebuilt on registration/rotation. */
+  readonly prefix: Uint32Array
   /** Refs whose value has this form, in registration order. */
   readonly refs: SecretRef[]
 }
@@ -44,6 +46,16 @@ export function formsOf(value: string): string[] {
     // A lone surrogate has no URI form, so it cannot occur URI-encoded either.
   }
   return [...forms]
+}
+
+function prefixTable(text: string): Uint32Array {
+  const prefix = new Uint32Array(text.length)
+  for (let index = 1, matched = 0; index < text.length; index++) {
+    while (matched > 0 && text[index] !== text[matched]) matched = prefix[matched - 1]!
+    if (text[index] === text[matched]) matched++
+    prefix[index] = matched
+  }
+  return prefix
 }
 
 function markerInterior(ref: SecretRef): string {
@@ -169,6 +181,35 @@ export class SecretScrubber implements EgressScrubber {
     return this.values.size
   }
 
+  /** Complete matches plus a terminal proper prefix, in linear time per form. */
+  scrubTruncatedPrefix(text: string): string {
+    this.assertOpen()
+    if (typeof text !== 'string') throw new EgressScrubberError('unsupported_value', 'Expected truncated text')
+    const found: Occurrence[] = []
+    for (const form of this.forms) {
+      let matched = 0
+      for (let index = 0; index < text.length; index++) {
+        while (matched > 0 && text[index] !== form.text[matched]) matched = form.prefix[matched - 1]!
+        if (text[index] === form.text[matched]) matched++
+        if (matched === form.text.length) {
+          found.push({ start: index + 1 - matched, end: index + 1, ref: form.refs[0]! })
+          matched = form.prefix[matched - 1]!
+        }
+      }
+      // The longest suffix covers every shorter prefix of this same form.
+      // There is deliberately no minimum fragment, including a one-code-unit suffix.
+      if (matched > 0) found.push({ start: text.length - matched, end: text.length, ref: form.refs[0]! })
+    }
+    found.sort((a, b) => a.start - b.start || b.end - a.end)
+    return this.renderString(text, this.runs(found))
+  }
+
+  /** A copy for a trusted child that scrubs over its own IPC channel. */
+  snapshot(): readonly { ref: SecretRef; value: string }[] {
+    this.assertOpen()
+    return [...this.values].map(([ref, value]) => ({ ref, value }))
+  }
+
   /** Called by the provider plugin's unload. Every later call throws `closed`. */
   close(): void {
     this.closed = true
@@ -185,9 +226,11 @@ export class SecretScrubber implements EgressScrubber {
       register: (ref: SecretRef, value: string) => this.register(ref, value),
       unregister: (ref: SecretRef) => this.unregister(ref),
       scrub: <T>(value: T): T => this.scrub(value),
+      scrubTruncatedPrefix: (text: string) => this.scrubTruncatedPrefix(text),
       expect: (sourceId: string) => this.expect(sourceId),
       ready: (sourceId: string) => this.ready(sourceId),
       isReady: () => this.isReady(),
+      snapshot: () => this.snapshot(),
       pendingSources: () => this.pendingSources(),
       whenReady: (signal?: AbortSignal) => this.whenReady(signal),
     })
@@ -209,7 +252,7 @@ export class SecretScrubber implements EgressScrubber {
       for (const text of formsOf(value)) {
         const existing = byText.get(text)
         if (existing) existing.refs.push(ref)
-        else byText.set(text, { text, bytes: Buffer.from(text, 'utf8'), refs: [ref] })
+        else byText.set(text, { text, bytes: Buffer.from(text, 'utf8'), prefix: prefixTable(text), refs: [ref] })
       }
     }
     this.forms = [...byText.values()]
@@ -296,6 +339,10 @@ export class SecretScrubber implements EgressScrubber {
     const runs = this.runs(
       this.occurrences((form, from) => text.indexOf(form.text, from), (form) => form.text.length),
     )
+    return this.renderString(text, runs)
+  }
+
+  private renderString(text: string, runs: { start: number; end: number; refs: SecretRef[] }[]): string {
     if (runs.length === 0) return text
     let output = ''
     let cursor = 0

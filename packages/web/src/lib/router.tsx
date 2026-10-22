@@ -51,6 +51,7 @@ if (typeof window !== 'undefined') {
 /* ─────────────────────────────── Разбор пути ──────────────────────────── */
 
 export type Route =
+  | { name: 'workspace'; threadId: string | null; projectId?: string }
   | { name: 'agent'; sessionId: string | null }
   | { name: 'launcher' }
   | { name: 'model'; modelName: string }
@@ -73,6 +74,7 @@ export function parseRoute(pathWithSearch: string): Route {
 
   const first = segments[0] as string
   const rest = segments.slice(1)
+  if (first === 'workspace' && rest.length <= 1) return { name: 'workspace', threadId: rest[0] ?? null, projectId: new URLSearchParams(pathWithSearch.split('?')[1]).get('project') ?? undefined }
   if (first === 'agent' && rest.length <= 1) return { name: 'agent', sessionId: rest[0] ?? null }
 
   if (first === 'models' && rest.length > 0) {
@@ -109,6 +111,7 @@ export function parseRoute(pathWithSearch: string): Route {
 }
 
 export const paths = {
+  workspace: (id?: string | null, project?: string | null) => `/workspace${id ? `/${encodeURIComponent(id)}` : ''}${project ? `?project=${encodeURIComponent(project)}` : ''}`,
   agent: (id?: string | null) => id ? `/agent/${encodeURIComponent(id)}` : '/agent',
   launcher: () => '/',
   model: (name: string) => `/models/${encodeURIComponent(name)}`,

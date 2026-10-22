@@ -1,4 +1,4 @@
-import type { AgentProcess } from './process.ts'
+import { GROUP_ACK_MS, type AgentProcess, type ProcessCleanup } from './process.ts'
 import { ExternalAgentError } from './types.ts'
 import { protocolObject as object } from './quota.ts'
 
@@ -59,5 +59,12 @@ export class JsonRpcClient {
     })
   }
   on(listener: (method: string, params: Record<string, unknown>) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
-  async close() { await this.process.close(); await this.read }
+  async close(): Promise<ProcessCleanup> {
+    const cleanup = await this.process.close()
+    const read = await new Promise<boolean>(resolve => {
+      const timer = setTimeout(() => resolve(false), GROUP_ACK_MS)
+      this.read.then(() => { clearTimeout(timer); resolve(true) }, () => { clearTimeout(timer); resolve(false) })
+    })
+    return read ? cleanup : { confirmed: false, reason: 'close_error' }
+  }
 }

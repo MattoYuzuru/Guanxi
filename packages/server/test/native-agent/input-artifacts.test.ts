@@ -4,7 +4,7 @@
  * network is started.
  */
 import assert from 'node:assert/strict'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -79,6 +79,31 @@ test('artifactizes a typed oversized prompt and replays the full bytes, never th
   assert.equal(f.requests.length, 2)
   assert.equal(f.requests[1]!.includes(prompt), true, 'replay restores the full prompt bytes')
   assert.equal(f.requests[1]!.includes(tail), true)
+})
+
+test('replays a multi-chunk Unicode prompt with the exact bytes and checksum', { timeout: 30_000 }, async (t) => {
+  const prompt = `${'😀'.repeat(50_000)}${'é'.repeat(5_000)}${'ASCII'.repeat(1_000)}`
+  const oracle = Buffer.from(prompt, 'utf8')
+  assert.ok(oracle.byteLength > 3 * 64 * 1024, 'the fixture spans multiple transport chunks')
+  const f = await fixture(t, async () => [{ type: 'text', text: 'fixture answer' }])
+  const { sessionId } = await f.agents().create({ ...f.input, prompt })
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+  const event = promptEvent(f.log.readAll(sessionId, 'person'))
+  assert.equal(event.version, 2)
+  const artifact = artifactOf(event)
+  assert.ok(artifact)
+  assert.equal(artifact!.byteSize, oracle.byteLength)
+  assert.equal(artifact!.checksum, `sha256:${createHash('sha256').update(oracle).digest('hex')}`)
+  const bytes = await f.agents().inputArtifacts.read(sessionId, artifact!)
+  assert.deepEqual(Buffer.from(bytes), oracle)
+  assert.equal(f.requests.length, 1)
+  assert.equal(f.requests[0]!.includes(prompt), true, 'the model receives the full multi-chunk prompt')
+
+  await f.restart()
+  await f.agents().prompt(sessionId, 'continue')
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+  assert.equal(f.requests.length, 2)
+  assert.equal(f.requests[1]!.includes(prompt), true, 'replay restores the full multi-chunk prompt')
 })
 
 test('artifactizes oversized tool.call arguments after a durable ack and executes the full arguments once', { timeout: 30_000 }, async (t) => {

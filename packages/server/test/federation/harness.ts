@@ -27,7 +27,7 @@ export class SimNode {
   readonly runs: RunStore
   readonly federation: Federation
   readonly app: Hono
-  constructor(keys: ReturnType<typeof identity>, path = ':memory:', options: Pick<FederationOptions, 'configOpsPerRequest'> = {}) {
+  constructor(keys: ReturnType<typeof identity>, path = ':memory:', options: Pick<FederationOptions, 'configOpsPerRequest' | 'attempts' | 'dispatch'> = {}) {
     this.keys = keys
     this.db = openDb(path)
     this.scrubber = new SecretScrubber()

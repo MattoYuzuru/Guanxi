@@ -2,7 +2,7 @@ import StyleDictionary from 'style-dictionary'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { resolveTokens, permutations, tokenRoot } from './resolve.mjs'
+import { resolveTokens, permutations, tokenRoot, readJSON } from './resolve.mjs'
 import { validateTokens } from './validate.mjs'
 import { renderCSS } from './css.mjs'
 
@@ -19,6 +19,39 @@ export function cssValue(t) {
     default: return String(v)
   }
 }
+const safeIdentifier = /^[a-z][a-z0-9-]*$/
+const animationFields = new Set(['utility', 'keyframes', 'duration', 'easing', 'iterations'])
+// Theme utilities are complete canonical compositions, but the keyframe names stay in the
+// current web stylesheet. This is a compatibility layer, not a cross-host component API.
+function validateAnimations(manifest, flat) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw Error('Motion animations manifest must be an object with only an animations array')
+  const rootFields = Object.keys(manifest).filter(field => field !== 'animations')
+  if (rootFields.length) throw Error(`Motion animations manifest has unsupported field: ${rootFields.join(', ')}`)
+  if (!Array.isArray(manifest.animations) || manifest.animations.length === 0) throw Error('Motion animations manifest must contain a non-empty animations array')
+  const tokens = new Map(flat.map(token => [token.name, token]))
+  const utilities = new Set(), keyframes = new Set()
+  return manifest.animations.map((animation, index) => {
+    if (!animation || typeof animation !== 'object' || Array.isArray(animation)) throw Error(`Animation ${index + 1} must be an object`)
+    const extra = Object.keys(animation).filter(field => !animationFields.has(field))
+    if (extra.length) throw Error(`Animation ${index + 1} has unsupported field: ${extra.join(', ')}`)
+    for (const field of ['utility', 'keyframes', 'duration', 'easing']) {
+      if (typeof animation[field] !== 'string' || animation[field].length === 0) throw Error(`Animation ${index + 1} requires a non-empty string ${field}`)
+    }
+    if (!safeIdentifier.test(animation.utility)) throw Error(`Animation ${index + 1} has an unsafe utility name: ${animation.utility}`)
+    if (!safeIdentifier.test(animation.keyframes)) throw Error(`Animation ${index + 1} has an unsafe keyframe name: ${animation.keyframes}`)
+    if (utilities.has(animation.utility)) throw Error(`Duplicate animation utility: ${animation.utility}`)
+    if (keyframes.has(animation.keyframes)) throw Error(`Duplicate animation keyframes: ${animation.keyframes}`)
+    const duration = tokens.get(animation.duration)
+    if (!animation.duration.startsWith('motion.duration.') || duration?.$type !== 'duration') throw Error(`Animation ${animation.utility} duration must reference an existing motion.duration.* duration token: ${animation.duration}`)
+    const easing = tokens.get(animation.easing)
+    if (!animation.easing.startsWith('motion.easing.') || easing?.$type !== 'cubicBezier') throw Error(`Animation ${animation.utility} easing must reference an existing motion.easing.* cubic-bezier token: ${animation.easing}`)
+    const iterations = animation.iterations === undefined ? 1 : animation.iterations
+    if (iterations !== 'infinite' && !(Number.isInteger(iterations) && iterations > 0)) throw Error(`Animation ${animation.utility} iterations must be "infinite" or a positive integer: ${iterations}`)
+    utilities.add(animation.utility)
+    keyframes.add(animation.keyframes)
+    return { utility: animation.utility, keyframes: animation.keyframes, duration: animation.duration, easing: animation.easing, iterations }
+  }).sort((left, right) => left.utility < right.utility ? -1 : left.utility > right.utility ? 1 : 0)
+}
 const aliases = {
   canvas: 'color-background-primary', surface: 'color-background-secondary', inset: 'color-background-tertiary',
   foreground: 'color-text-primary', secondary: 'color-text-secondary', muted: 'color-text-tertiary',
@@ -26,7 +59,7 @@ const aliases = {
   control: 'color-border-control', divider: 'color-border-primary', focus: 'color-ring-primary',
   warning: 'color-text-warning', danger: 'color-text-danger', success: 'color-text-success', info: 'color-text-info',
 }
-function themeCSS(flat) {
+function themeCSS(flat, animations) {
   const namespaces = ['color', 'ease', 'animate', 'spacing', 'text', 'text-shadow', 'container', 'radius', 'font', 'font-weight', 'shadow', 'inset-shadow', 'drop-shadow', 'blur', 'tracking', 'leading', 'default-transition']
   const lines = namespaces.map(name => `  --${name}-*: initial;`)
   for (const [name, variable] of Object.entries(aliases)) lines.push(`  --color-${name}: var(--${variable});`)
@@ -35,6 +68,10 @@ function themeCSS(flat) {
   for (const t of flat.filter(t => t.name.startsWith('layout.container.'))) lines.push(`  --container-${t.path[2]}: var(${cssName(t)});`)
   for (const t of flat.filter(t => t.path[0] === 'border-radius')) lines.push(`  --radius-${t.path[1]}: ${t.$type === 'number' ? `calc(var(${cssName(t)}) * 100%)` : `var(${cssName(t)})`};`)
   for (const t of flat.filter(t => t.name.startsWith('motion.easing.'))) lines.push(`  --ease-${t.path[2]}: var(${cssName(t)});`)
+  for (const animation of animations) {
+    const iterations = animation.iterations === 'infinite' ? ' infinite' : animation.iterations > 1 ? ` ${animation.iterations}` : ''
+    lines.push(`  --animate-${animation.utility}: ${animation.keyframes} var(--${animation.duration.replaceAll('.', '-')}) var(--${animation.easing.replaceAll('.', '-')})${iterations};`)
+  }
   lines.push('  --shadow-popover: var(--elevation-2-shadow);', '  --blur-glass: var(--material-glass-blur);', '  --blur-tinted: var(--material-tinted-blur);', '  --leading-ui: var(--font-line-height-ui);', '  --leading-prose: var(--font-line-height-prose);')
   lines.push('  --font-sans: var(--font-family-sans);', '  --font-mono: var(--font-family-mono);')
   lines.push('  --default-font-family: var(--font-family-sans);', '  --default-mono-font-family: var(--font-family-mono);', '  --default-transition-duration: var(--motion-duration-moderate);', '  --default-transition-timing-function: var(--motion-easing-standard);')
@@ -66,6 +103,8 @@ export async function generate(options = {}) {
     contexts[Object.values(modes).join('/')] = JSON.parse(formatted[0].output).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
   }
   const defaults = contexts['light/compact/full']
+  const read = options.read ?? readJSON
+  const animations = validateAnimations(await read(resolve(options.root ?? tokenRoot, 'motion-animations.json')), defaults)
   function declarations(flat) {
     return flat.flatMap(t => t.$type === 'color' ? [`  ${cssName(t)}: ${t.$value.hex};`, `  ${cssName(t)}: ${cssValue(t)};`] : [`  ${cssName(t)}: ${cssValue(t)};`]).join('\n')
   }
@@ -79,7 +118,7 @@ export async function generate(options = {}) {
     + `export const tokens = ${JSON.stringify(values, null, 2)} as const\nexport type TokenName = keyof typeof tokens['light/compact/full']\nexport type TokenContext = keyof typeof tokens\nexport const cssVar = (name: TokenName): string => 'var(--' + name.replaceAll('.', '-') + ')'\n`
   const mcp = Object.fromEntries(['light', 'dark', 'light-hc', 'dark-hc'].map(theme => [theme, Object.fromEntries(contexts[`${theme}/compact/full`].filter(t => /^(color\.|font\.|border-radius\.|border-width\.)/.test(t.name)).map(t => [cssName(t), cssValue(t)]))]))
   const flatJSON = '{\n' + Object.entries(contexts).map(([key, tokens]) => `  ${JSON.stringify(key)}: [\n${tokens.map(token => '    ' + JSON.stringify(token)).join(',\n')}\n  ]`).join(',\n') + '\n}\n'
-  return { 'tokens.css': css, 'theme.css': themeCSS(defaults), 'tokens.ts': ts, 'mcp-apps-variables.ts': '// Generated by npm run tokens:build. Do not edit.\nexport const mcpAppsVariables = ' + JSON.stringify(mcp, null, 2) + ' as const\n', 'tokens.flat.json': flatJSON }
+  return { 'tokens.css': css, 'theme.css': themeCSS(defaults, animations), 'tokens.ts': ts, 'mcp-apps-variables.ts': '// Generated by npm run tokens:build. Do not edit.\nexport const mcpAppsVariables = ' + JSON.stringify(mcp, null, 2) + ' as const\n', 'tokens.flat.json': flatJSON }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

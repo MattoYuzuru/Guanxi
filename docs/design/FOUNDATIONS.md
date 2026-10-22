@@ -213,6 +213,17 @@ fades are capped at `fast`, looping indicators become a static glyph with text. 
 Motion library (MIT) may be added later only behind `@guanxi/ui/motion` for board drag and
 reorder.
 
+The generated theme utilities `animate-spinner`, `animate-pulse-soft`, `animate-fade-up` and
+`animate-sheen` compose the accepted `motion.duration.*` and `motion.easing.*` tokens from
+`packages/ui/tokens/motion-animations.json`. In this slice they are consumed by the current web
+compatibility classes (`.anim-spin`, `.anim-pulse-soft`, `.anim-fade-up`, `.sheen`); they are
+not a complete cross-host or public `@guanxi/ui` animation-component API. The package's Spinner
+and StatusPill remain static. Their keyframes currently live in `packages/web/src/index.css`;
+any future component or host reuse must verify keyframe ownership and reduced-motion loop
+removal before consuming the utilities. Streaming text and its caret never animate; the caret
+is a static accent block. The web reduced-motion branches remove animation entirely, because a
+zero duration alone would not stop an infinite loop.
+
 ## 6. Icons
 
 - **Lucide** (ISC), 24 px grid, rendered at 16 / 18 / 20 px with stroke 1.75 and

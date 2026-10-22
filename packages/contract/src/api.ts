@@ -119,6 +119,9 @@ import {
 /* ──────────────────────────────── Пути ───────────────────────────────────── */
 
 export const ROUTES = {
+  layouts: () => '/api/layouts',
+  layoutContext: () => '/api/layouts/context',
+  layoutGeometry: () => '/api/layouts/geometry',
   health: () => '/api/health',
   featureFlags: () => '/api/feature-flags',
 

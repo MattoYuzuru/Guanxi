@@ -1,9 +1,15 @@
 import { configOperationSchema, signedConfigOperationSchema, type ConfigOperation, type Hlc, type NodeIdentity,
   type SignedConfigOperation } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
+import { compareLayouts } from '@guanxi/contract'
+import { validateLayoutOperation } from '../layouts/operation.ts'
 import { canonical, FederationError, hash, signValue, validSignature } from './crypto.ts'
 
 export const MAX_CLOCK_DRIFT_MS = 60_000
+export function compareConfigOperations(a: Pick<ConfigOperation, 'clock' | 'origin' | 'counter'>, b: Pick<ConfigOperation, 'clock' | 'origin' | 'counter'>): number {
+  return a.clock.wall - b.clock.wall || a.clock.logical - b.clock.logical ||
+    (a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : 0) || a.counter - b.counter
+}
 function counterAt(vector: Record<string, number>, origin: string): number {
   return Object.hasOwn(vector, origin) ? vector[origin]! : 0
 }
@@ -28,8 +34,10 @@ export function configState(ops: readonly SignedConfigOperation[]) {
       const frontier = all.filter((a) => !all.some((b) => counterAt(b.context, a.origin) >= a.counter))
       return [key, { kind, present: frontier.length > 0 && frontier.every((op) => 'present' in op.value && op.value.present) }]
     }
-    const sorted = [...all].sort((a, b) => a.clock.wall - b.clock.wall || a.clock.logical - b.clock.logical ||
-      (a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : 0) || a.counter - b.counter)
+    const sorted = [...all].sort((a, b) =>
+      a.value.kind === 'layout' && b.value.kind === 'layout'
+        ? compareLayouts(a.value.document, b.value.document) || compareConfigOperations(a, b)
+        : compareConfigOperations(a, b))
     return [key, sorted.at(-1)!.value]
   }))
 }
@@ -56,10 +64,12 @@ export class SharedConfig {
   private readonly peer: (id: string) => NodeIdentity
   private readonly now: () => number
   private readonly clean: (value: unknown) => void
+  private readonly onAccepted: (operation: SignedConfigOperation) => void
   constructor(db: Db, local: NodeIdentity, privateKey: string, peer: (id: string) => NodeIdentity,
-    now: () => number, clean: (value: unknown) => void) {
+    now: () => number, clean: (value: unknown) => void,
+    onAccepted: (operation: SignedConfigOperation) => void = () => undefined) {
     this.db = db; this.local = local; this.#privateKey = privateKey; this.peer = peer
-    this.now = now; this.clean = clean
+    this.now = now; this.clean = clean; this.onAccepted = onAccepted
   }
 
   operations(): SignedConfigOperation[] {
@@ -192,6 +202,7 @@ export class SharedConfig {
   private prepare(input: SignedConfigOperation): PreparedOperation | undefined {
     const signed = signedConfigOperationSchema.parse(input)
     const op = signed.operation
+    validateLayoutOperation(op)
     this.clean(signed)
     // Stored acceptance survives credential revocation. Otherwise every full
     // anti-entropy batch containing a revoked author's history would be wedged.
@@ -210,6 +221,7 @@ export class SharedConfig {
     if (!validSignature(author.publicKey, op, signed.signature)) throw new FederationError('unauthenticated', 401)
     this.setClock(mergeClock(this.clock(), op.clock, this.now()))
     this.db.prepare('INSERT INTO federation_operations VALUES (?,?,?)').run(op.origin, op.counter, canonical(signed))
+    this.onAccepted(signed)
     return 'accepted'
   }
 }

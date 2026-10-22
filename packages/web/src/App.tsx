@@ -1,7 +1,7 @@
 /**
  * Корень приложения: проверка здоровья, шапка, разбор маршрута.
  */
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { api } from './lib/api.ts'
 import { useAsync } from './lib/useAsync.ts'
 import { Link, paths, useRoute } from './lib/router.tsx'
@@ -29,6 +29,8 @@ import { NativeAgentPage } from './features/native-agent/NativeAgentPage.tsx'
 import { translate } from './lib/locale.ts'
 import { useLocale } from './lib/locale-context.tsx'
 import { PRODUCT_NAME } from './lib/brand.ts'
+
+const Workspace = lazy(() => import('./features/workspace/Workspace.tsx').then(module => ({ default: module.Workspace })))
 
 export function App() {
   useLocale()
@@ -63,6 +65,7 @@ export function App() {
           <RuntimeStatus />
         </ErrorBoundary>
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          {route.name === 'workspace' && <Suspense fallback={<div role="status">{translate('workspaceLayout.loading')}</div>}><Workspace key={route.projectId ?? 'local'} project={route.projectId} safeMode={new URLSearchParams(window.location.search).get('safe') === '1'}><ChatPage threadId={route.threadId} projectId={route.projectId} health={data} workspace /></Workspace></Suspense>}
           {route.name === 'launcher' && <LauncherPage health={data} />}
           {route.name === 'agent' && <NativeAgentPage key={route.sessionId ?? 'new'} sessionId={route.sessionId} />}
           {route.name === 'model' && <ModelPage name={route.modelName} health={data} />}
@@ -119,6 +122,7 @@ function TopBar() {
   useLocale()
 
   const tabs = [
+    { to: paths.workspace(), label: translate('workspaceLayout.title'), active: route.name === 'workspace' },
     { to: paths.agent(), label: translate('native.nav'), active: route.name === 'agent' },
     { to: paths.launcher(), label: translate('app.navigation.models'), active: route.name === 'launcher' || route.name === 'model' },
     { to: paths.chat(), label: translate('app.navigation.chat'), active: route.name === 'chat' },

@@ -126,6 +126,12 @@ function codeOf(run: () => unknown): string | null {
   return null
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((settle) => { resolve = settle })
+  return { promise, resolve }
+}
+
 describe('session input artifacts: migration 33', () => {
   it('appends migration 33 with the artifact table and a strict v2 event policy', () => {
     assert.equal(MIGRATIONS.length, 33)
@@ -354,12 +360,13 @@ describe('session input artifacts: writer and crash safety', () => {
 })
 
 describe('session input artifacts: pinned directory', () => {
-  it('puts zero bytes and zero temp files into a directory swapped before the helper handshake', async (test) => {
+  it('puts zero transport chunks, bytes and temp files into a directory swapped before the helper handshake', async (test) => {
     const attacker = join(tmpdir(), `guanxi-attacker-${randomBytes(8).toString('hex')}`)
     test.after(() => rm(attacker, { recursive: true, force: true }))
     await mkdir(attacker)
     let sessionDir = ''
     let moved = ''
+    let transportChunks = 0
     const f = await fixture(test, {
       hooks: {
         beforeHelperStart: async () => {
@@ -368,6 +375,7 @@ describe('session input artifacts: pinned directory', () => {
           await rename(sessionDir, moved)
           await symlink(attacker, sessionDir)
         },
+        onTransportChunk: () => { transportChunks += 1 },
       },
     })
     const text = `${'q'.repeat(INPUT_INLINE_BYTES)}swapped-${randomBytes(8).toString('hex')}`
@@ -375,6 +383,7 @@ describe('session input artifacts: pinned directory', () => {
       f.store.write(f.sessionId, text, MEDIA_TEXT),
       (error: unknown) => error instanceof SessionInputError && error.code === 'unsafe_storage' && !error.message.includes(attacker),
     )
+    assert.equal(transportChunks, 0, 'a failed identity handshake consumes no transport chunk')
     assert.deepEqual(await readdir(attacker), [])
     assert.deepEqual((await readdir(moved)).filter((name) => name.startsWith('.partial-')), [])
   })
@@ -458,6 +467,110 @@ describe('session input artifacts: pinned directory', () => {
       f.store.read(f.sessionId, event.data.artifact),
       (error: unknown) => error instanceof SessionInputError && error.code === 'unsafe_storage',
     )
+  })
+})
+
+describe('session input artifacts: bounded string transport', () => {
+  it('defers transport chunks until the verified handshake and stores exact multi-chunk Unicode bytes', async (test) => {
+    const gate = deferred()
+    const handshake = deferred()
+    const observed: { chunk: Uint8Array; snapshot: Buffer; backing: ArrayBufferLike }[] = []
+    const f = await fixture(test, {
+      hooks: {
+        beforeWrite: async () => {
+          handshake.resolve()
+          await gate.promise
+        },
+        onTransportChunk: (chunk) => {
+          observed.push({ chunk, snapshot: Buffer.from(chunk), backing: chunk.buffer })
+        },
+      },
+    })
+    const text = `${'😀'.repeat(20_000)}${'a'.repeat(70_000)}`
+    const oracle = Buffer.from(text, 'utf8')
+    const writing = f.store.write(f.sessionId, text, MEDIA_TEXT)
+    await handshake.promise
+    assert.equal(observed.length, 0, 'the transport iterator is not pulled before the verified handshake')
+    const dir = f.store.directoryFor(f.sessionId)
+    assert.deepEqual(await readdir(dir), [], 'no transport byte or temporary file exists before the handshake')
+    gate.resolve()
+    const written = await writing
+    assert.equal(written.byteSize, oracle.byteLength)
+    assert.equal(written.checksum, `sha256:${createHash('sha256').update(oracle).digest('hex')}`)
+    assert.ok(observed.length > 1, 'the fixture spans multiple transport chunks')
+    assert.equal(
+      new Set(observed.map((entry) => entry.backing)).size,
+      observed.length,
+      'each chunk owns a distinct backing buffer',
+    )
+    let offset = 0
+    for (const entry of observed) {
+      assert.ok(entry.chunk.byteLength > 0 && entry.chunk.byteLength <= 64 * 1024, 'transport chunk bound')
+      assert.deepEqual(Buffer.from(entry.chunk), entry.snapshot, 'a later pull mutated an earlier chunk')
+      assert.deepEqual(entry.snapshot, oracle.subarray(offset, offset + entry.chunk.byteLength))
+      offset += entry.chunk.byteLength
+    }
+    assert.equal(offset, oracle.byteLength)
+    assert.deepEqual(await readFile(join(dir, written.checksum.slice(7))), oracle)
+  })
+
+  it('writes and reads an empty string with the exact empty digest and byte size', async (test) => {
+    const f = await fixture(test)
+    const written = await f.store.write(f.sessionId, '', MEDIA_TEXT)
+    assert.equal(written.byteSize, 0)
+    assert.equal(written.checksum, `sha256:${createHash('sha256').update(Buffer.alloc(0)).digest('hex')}`)
+    const dir = f.store.directoryFor(f.sessionId)
+    assert.deepEqual(await readFile(join(dir, written.checksum.slice(7))), Buffer.alloc(0))
+  })
+
+  it('aborts during transport without publishing a digest and settles before a later write', async (test) => {
+    const controller = new AbortController()
+    let transportChunks = 0
+    const f = await fixture(test, {
+      hooks: {
+        onTransportChunk: (chunk) => {
+          transportChunks += 1
+          assert.ok(chunk.byteLength <= 64 * 1024)
+          if (transportChunks === 2) controller.abort()
+        },
+      },
+    })
+    const text = 'a'.repeat(3 * 64 * 1024 + 1)
+    await assert.rejects(
+      f.store.write(f.sessionId, text, MEDIA_TEXT, { signal: controller.signal }),
+      (error: unknown) => error instanceof SessionInputError && error.code === 'aborted',
+    )
+    const settledChunks = transportChunks
+    assert.ok(settledChunks >= 1)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(transportChunks, settledChunks, 'no transport chunk is pulled after the abort')
+    const dir = f.store.directoryFor(f.sessionId)
+    const names = await readdir(dir)
+    assert.equal(names.some((name) => /^[0-9a-f]{64}$/u.test(name)), false, 'the aborted write publishes no digest')
+    const after = await f.store.write(f.sessionId, 'after abort', MEDIA_TEXT)
+    assert.deepEqual(await readFile(join(dir, after.checksum.slice(7))), Buffer.from('after abort'))
+  })
+
+  it('does not remove an already published digest when a later write fails before transport', async (test) => {
+    let writes = 0
+    const f = await fixture(test, {
+      hooks: {
+        beforeWrite: async () => {
+          writes += 1
+          if (writes === 2) throw new SessionInputError('storage_failure', 'injected later failure')
+        },
+      },
+    })
+    const text = `survivor-${'x'.repeat(2 * 64 * 1024)}`
+    const first = await f.store.write(f.sessionId, text, MEDIA_TEXT)
+    const dir = f.store.directoryFor(f.sessionId)
+    const path = join(dir, first.checksum.slice(7))
+    assert.deepEqual(await readFile(path), Buffer.from(text))
+    await assert.rejects(
+      f.store.write(f.sessionId, text, MEDIA_TEXT),
+      (error: unknown) => error instanceof SessionInputError && error.code === 'storage_failure',
+    )
+    assert.deepEqual(await readFile(path), Buffer.from(text), 'a failed later write leaves the published digest intact')
   })
 })
 

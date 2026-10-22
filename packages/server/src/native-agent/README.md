@@ -127,10 +127,10 @@ prompt creates its own R1 run/attempt. Startup reconciliation turns unfinished n
 `input_required`; no inference or report resumes automatically. A policy committed before run
 admission projects as interrupted. Terminal R1 state takes precedence over old native state events.
 
-Tools: `project_info`, `file_read`, `file_write`, `shell`, literal recursive `search`, `fetch`,
+Tools: `project_info`, `file_read`, `file_write`, `shell`, `repo.map` (wire alias `repo_map`), indexed literal `search`, `fetch`,
 `attachments`, `plan`, `queue`, `note.add` (provider-safe wire alias `note_add`) and the
-session-bound `session_log_query`. Search uses the OS tool locally; connected search providers
-are not executed by this slice. Attachments reuse the existing scoped transfer policy, copy
+session-bound `session_log_query`. Repository navigation uses the [X1 project index](../indexing/README.md), with Node grep fallback,
+content verification and index provenance. Connected search providers are not executed. Attachments reuse the existing scoped transfer policy, copy
 selected project artifacts into read-only session storage, and expose text through file reads.
 Images are sent only when the selected model declares image input. Other binary formats need
 conversion, which requires an explicit converter adapter and provisioned format tools; no

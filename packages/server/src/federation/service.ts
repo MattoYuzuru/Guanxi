@@ -1,5 +1,8 @@
 import { federationAuthSchema, FEDERATION_VERSION, nodeIdentitySchema, routedCommandSchema, telemetrySchema,
-  type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
+  ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, signedDispatchGrantSchema, signedDispatchEventSchema, dispatchRefSchema, dispatchCancelSchema,
+  type LocalInferenceJob, type RemoteAttemptReceipt, type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
+  ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptOfferSchema, remoteAttemptCancelSchema,
+  type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog } from '../session-log/log.ts'
@@ -9,6 +12,11 @@ import { canonical, FederationError, hash, publicKey, requestProof, signValue, v
 import { DeviceEnrollment } from './enrollment.ts'
 import { Replicas } from './replicas.ts'
 import { migrateFederation } from './schema.ts'
+import { ReplicatedLayouts } from '../layouts/replication.ts'
+import { AttemptOffers, type OfferPolicy } from '../remote-attempts/offers.ts'
+import { AttemptDispatch, type DispatchPolicy } from '../remote-attempts/dispatch.ts'
+import type { ResourceGovernor } from '../runtime/resource-governor.ts'
+import type { Attempt } from '../runs/types.ts'
 
 export interface FederationOptions {
   db: Db
@@ -22,14 +30,19 @@ export interface FederationOptions {
   /** Maximum operations per POST /config; default 256. Split larger batches. */
   configOpsPerRequest?: number
   clock?: () => number
+  attempts?: OfferPolicy & { governor: ResourceGovernor }
+  dispatch?: DispatchPolicy
 }
 export interface PeerContext { identity: NodeIdentity; readOnly: boolean; version: { major: number; minor: number } }
 export class Federation {
   readonly configOpsPerRequest: number
   readonly config: SharedConfig
+  readonly layouts: ReplicatedLayouts
   readonly replicas: Replicas
   readonly enrollment: DeviceEnrollment
   readonly identity: NodeIdentity
+  readonly attemptOffers: AttemptOffers | null
+  readonly attemptDispatch: AttemptDispatch | null
   #options: FederationOptions
   private readonly now: () => number
   private closed = false
@@ -50,9 +63,16 @@ export class Federation {
     this.trust(this.identity)
     for (const peer of options.peers ?? []) this.trust(peer)
     this.config = new SharedConfig(options.db, this.identity, privateKey, (id) => this.peer(id), this.now,
-      (v) => this.clean(v))
+      (v) => this.clean(v), operation => this.layouts.project(operation))
+    this.layouts = new ReplicatedLayouts(options.db, this.identity.accountId, this.config, () => this.clean(null))
     this.replicas = new Replicas(options.db, this.identity, privateKey, options.log, (id) => this.peer(id), (v) => this.clean(v))
     this.enrollment = new DeviceEnrollment(options.db, this.identity, this.now, (id) => this.trust(id), () => this.assertOpen())
+    if (options.attempts && this.identity.trust !== 'owner_device') throw new FederationError('owner_device_required', 403)
+    this.attemptOffers = options.attempts ? new AttemptOffers(options.db, options.runs, this.identity.id,
+      options.attempts.governor, options.attempts, this.now) : null
+    if (options.dispatch && !this.attemptOffers) throw new FederationError('attempts_required')
+    this.attemptDispatch = options.dispatch ? new AttemptDispatch(options.db, options.runs, this.attemptOffers!, this.identity.id,
+      this.identity.accountId, privateKey, options.dispatch, this.now) : null
   }
   private assertOpen() { if (this.closed) throw new FederationError('closed', 503) }
   private clean(value: unknown): void {
@@ -167,5 +187,100 @@ export class Federation {
     this.assertOpen()
     this.#options.db.prepare('UPDATE federation_prompts SET consumed=1 WHERE node_id=? AND command_id=?').run(nodeId, commandId)
   }
-  close(): void { this.closed = true }
+  capabilities(): string[] { this.assertOpen(); return [...(this.attemptOffers ? [ATTEMPT_RESERVATIONS_CAPABILITY] : []), ...(this.attemptDispatch ? [ATTEMPT_DISPATCH_CAPABILITY] : [])] }
+  private offers(): AttemptOffers {
+    this.clean(null)
+    if (!this.attemptOffers) throw new FederationError('contract_feature_unavailable', 426)
+    return this.attemptOffers
+  }
+  createAttemptOffer(a: Attempt, input: Parameters<AttemptOffers['create']>[1]): RemoteAttemptOffer {
+    const offers = this.offers(), target = this.peer(input.executorNodeId)
+    this.clean(input)
+    if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId) throw new FederationError('owner_mismatch', 403)
+    return offers.create(a, input)
+  }
+  private validateAttemptOffer(context: PeerContext, offer: RemoteAttemptOffer): void {
+    const peer = this.authorize(context, 'attempts', true)
+    if (context.version.minor < ATTEMPT_RESERVATIONS_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    this.clean(offer)
+    if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || offer.homeNodeId !== peer.id || offer.executorNodeId !== this.identity.id)
+      throw new FederationError('owner_mismatch', 403)
+    const binding = this.replicas.binding(offer.runId)
+    if (binding.kind !== 'run' || binding.sessionId !== offer.sessionId || binding.ownerAccountId !== peer.accountId ||
+      binding.homeNodeId !== peer.id || binding.homeEpoch !== offer.fence.epoch) throw new FederationError('not_home')
+  }
+  async receiveAttemptOffer(context: PeerContext, input: RemoteAttemptOffer) {
+    const offers = this.offers(), offer = remoteAttemptOfferSchema.parse(input)
+    this.validateAttemptOffer(context, offer)
+    return offers.receive(offer, () => this.validateAttemptOffer(context, offer))
+  }
+  cancelAttemptOffer(context: PeerContext, raw: RemoteAttemptCancel) {
+    const offers = this.offers(), input = remoteAttemptCancelSchema.parse(raw), peer = this.authorize(context, 'attempts', true)
+    if (context.version.minor < ATTEMPT_RESERVATIONS_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    if (input.homeNodeId !== peer.id || input.executorNodeId !== this.identity.id || peer.accountId !== this.identity.accountId) throw new FederationError('owner_mismatch', 403)
+    return offers.cancel(peer.id, input.offerId)
+  }
+  private dispatches(): AttemptDispatch {
+    this.clean(null)
+    if (!this.attemptDispatch) throw new FederationError('contract_feature_unavailable', 426)
+    return this.attemptDispatch
+  }
+  prepareDispatch(runId: string, executor: string, job: LocalInferenceJob, reservationMs: number): RemoteAttemptOffer {
+    const target = this.peer(executor)
+    this.clean(job)
+    if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId || !target.scopes.includes('attempts')) throw new FederationError('owner_mismatch', 403)
+    return this.dispatches().prepare(runId, executor, job, reservationMs)
+  }
+  grantDispatch(id: string, receipt: RemoteAttemptReceipt): SignedDispatchGrant {
+    this.clean(receipt)
+    const dispatch = this.dispatches(), target = this.peer(dispatch.homeExecutor(id))
+    if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId || !target.scopes.includes('attempts')) throw new FederationError('owner_mismatch', 403)
+    return dispatch.grant(id, receipt)
+  }
+  private validateDispatchPeer(context: PeerContext, ref: DispatchRef, incomingHome: boolean): NodeIdentity {
+    const peer = this.authorize(context, 'attempts', true)
+    if (context.version.major !== FEDERATION_VERSION.major || context.version.minor < ATTEMPT_DISPATCH_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    this.clean(ref)
+    if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId ||
+      (incomingHome ? ref.homeNodeId !== peer.id || ref.executorNodeId !== this.identity.id : ref.executorNodeId !== peer.id || ref.homeNodeId !== this.identity.id)) throw new FederationError('owner_mismatch', 403)
+    return peer
+  }
+  async receiveDispatch(context: PeerContext, raw: SignedDispatchGrant) {
+    const signed = signedDispatchGrantSchema.parse(raw), g = signed.grant
+    const validate = () => {
+      const peer = this.validateDispatchPeer(context, { id: g.id, homeNodeId: g.offer.homeNodeId, executorNodeId: g.offer.executorNodeId }, true)
+      this.validateAttemptOffer(context, g.offer); this.clean(signed)
+      if (!validSignature(peer.publicKey, g, signed.signature)) throw new FederationError('invalid_signature', 403)
+    }
+    validate()
+    return this.dispatches().receive(signed, validate)
+  }
+  renewDispatch(context: PeerContext, raw: DispatchRef) {
+    const ref = dispatchRefSchema.parse(raw), validate = () => { this.validateDispatchPeer(context, ref, false) }
+    validate(); return this.dispatches().renew(ref, validate)
+  }
+  receiveDispatchEvent(context: PeerContext, raw: SignedDispatchEvent): void {
+    const signed = signedDispatchEventSchema.parse(raw), validate = () => {
+      const peer = this.validateDispatchPeer(context, signed.entry.ref, false); this.clean(signed)
+      if (!validSignature(peer.publicKey, signed.entry, signed.signature)) throw new FederationError('invalid_signature', 403)
+    }
+    validate(); this.dispatches().ingest(signed, validate)
+  }
+  dispatchState(context: PeerContext, raw: DispatchRef) {
+    const ref = dispatchRefSchema.parse(raw), dispatch = this.dispatches()
+    this.validateDispatchPeer(context, ref, true)
+    if (canonical(dispatch.binding(ref.id)) !== canonical(ref)) throw new FederationError('dispatch_binding')
+    return dispatch.state(ref.id)
+  }
+  cancelDispatch(context: PeerContext, raw: DispatchCancel) {
+    const input = dispatchCancelSchema.parse(raw), peer = this.authorize(context, 'attempts', true), dispatch = this.dispatches()
+    if (context.version.major !== FEDERATION_VERSION.major || context.version.minor < ATTEMPT_DISPATCH_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    this.clean(input)
+    if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || input.executorNodeId !== this.identity.id) throw new FederationError('owner_mismatch', 403)
+    if (input.expiresAt <= this.now()) throw new FederationError('command_expired')
+    const ref = dispatchRefSchema.parse({ id: input.id, homeNodeId: input.homeNodeId, executorNodeId: input.executorNodeId })
+    if (canonical(dispatch.binding(input.id)) !== canonical(ref)) throw new FederationError('dispatch_binding')
+    return dispatch.cancel(input.id)
+  }
+  close(): void { if (this.closed) return; this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
 }
