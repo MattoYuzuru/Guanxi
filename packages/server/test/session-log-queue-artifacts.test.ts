@@ -452,6 +452,9 @@ describe('session queue ledger 40', () => {
     assert.equal(blocked.busy, true, 'the held write lock must refuse the competing BEGIN IMMEDIATE')
     assert.equal((await holder()).state, 'committed')
     assert.equal((await competitor()).state, 'constructed', 'the competitor re-reads the committed ledger after serialization')
+    // State messages precede connection closure. Settle both owned workers before
+    // opening the final observer so their teardown cannot race its reads.
+    await Promise.all(exits)
 
     const final = new DatabaseSync(path)
     try {
@@ -465,7 +468,6 @@ describe('session queue ledger 40', () => {
     } finally {
       final.close()
     }
-    await Promise.all(exits)
   })
 })
 
