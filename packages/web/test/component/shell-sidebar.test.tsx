@@ -8,7 +8,7 @@ const session = (sessionId: string, title: string, state: SessionPageItem['execu
   sessionId, title, kind: 'agent', threadId: null, createdAt: new Date().toISOString(), lastSeq: 1, lastEventAt: null,
   execution: state, navigation: { kind: 'inspector', sessionId },
 })
-const props = (): ShellSidebarProps => ({ rail: false, location: '/', sessions: [], pinned: [], loading: false,
+const props = (): ShellSidebarProps => ({ rail: false, location: '/', sessions: [], pinned: [], unseen: new Set<string>(), loading: false,
   loadingMore: false, error: false, omitted: false, observedAt: null, hasMore: false,
   onLoadMore: vi.fn(), onRefresh: vi.fn(), onPin: vi.fn() })
 
