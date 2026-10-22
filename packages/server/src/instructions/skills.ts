@@ -355,7 +355,7 @@ export async function discoverSkills(input: {
     }
     found.set(name, {
       summary: {
-        id: `${candidate.source.kind}:${name}`,
+        id: name,
         name,
         description: truncate(description, input.maxDescriptionChars),
         source: candidate.source.kind,

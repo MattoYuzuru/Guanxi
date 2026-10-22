@@ -53,13 +53,14 @@ test('discovers project and user skills from both project roots with summary-onl
   assert.deepEqual(index.skills.map(skill => skill.name).sort(), ['alpha', 'beta', 'gamma'])
   assert.deepEqual(index.warnings, [])
   const alpha = summary(index, 'alpha')
-  assert.equal(alpha.id, 'project:alpha')
+  assert.equal(alpha.id, 'alpha')
   assert.equal(alpha.source, 'project')
+  assert.equal(new Set(index.skills.map(skill => skill.id)).size, index.skills.length)
   assert.equal(alpha.description, 'Project alpha')
   assert.equal(alpha.dir, await realpath(join(projectRoot, '.agents/skills/alpha')))
   assert.equal(alpha.bytes, (await stat(join(alpha.dir, 'SKILL.md'))).size)
   assert.equal(summary(index, 'beta').description, 'Project beta')
-  assert.equal(summary(index, 'gamma').id, 'user:gamma')
+  assert.equal(summary(index, 'gamma').id, 'gamma')
   assert.equal(summary(index, 'gamma').source, 'user')
   assert.doesNotMatch(JSON.stringify(index), /BODY_MARKER/)
 })
@@ -456,7 +457,7 @@ test('loadSkill returns the exact body and lists only files inside the skill dir
   expected.sort()
   assert.deepEqual(loaded.files, expected)
   assert.ok(loaded.files.every(file => !file.startsWith('/') && !file.includes('..') && file !== 'SKILL.md'))
-  assert.deepEqual(await loadSkill(index, 'project:missing', { maxBodyBytes: 1024 }), { id: 'project:missing', error: 'not_found' })
+  assert.deepEqual(await loadSkill(index, 'missing', { maxBodyBytes: 1024 }), { id: 'missing', error: 'not_found' })
 })
 
 test('loadSkill caps the file listing at maxFiles and reports overflow', async t => {
@@ -490,7 +491,7 @@ test('a closing delimiter split across read chunks does not shift the body', asy
   await writeSkill(projectRoot, '.agents/skills/chunked', `name: chunked\ndescription: ${description}`, 'BODY\n')
   const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
   assert.equal(summary(index, 'chunked').description, description)
-  const loaded = await loadSkill(index, 'project:chunked', { maxBodyBytes: 1024 })
+  const loaded = await loadSkill(index, 'chunked', { maxBodyBytes: 1024 })
   assert.ok(!('error' in loaded))
   assert.equal(loaded.body, 'BODY\n')
 })
@@ -551,8 +552,8 @@ test('skillContext counts omitted skills even when the notice itself cannot fit'
   const secondLine = `- b: ${'b'.repeat(40)}`
   const index: SkillIndex = {
     skills: [
-      { id: 'project:a', name: 'a', description: 'a'.repeat(40), source: 'project', dir: '/tmp/a', bytes: 1 },
-      { id: 'project:b', name: 'b', description: 'b'.repeat(40), source: 'project', dir: '/tmp/b', bytes: 1 },
+      { id: 'a', name: 'a', description: 'a'.repeat(40), source: 'project', dir: '/tmp/a', bytes: 1 },
+      { id: 'b', name: 'b', description: 'b'.repeat(40), source: 'project', dir: '/tmp/b', bytes: 1 },
     ],
     warnings: [],
   }
@@ -583,7 +584,7 @@ test('skillContext stays inside the budget and reports omissions for 250 seeded 
     for (let index = 0; index < size; index++) {
       const name = `skill-${String(index).padStart(2, '0')}`
       const description = 'word '.repeat(1 + Math.floor(random() * 30)).trim()
-      skills.push({ id: `project:${name}`, name, description, source: 'project', dir: `/tmp/${name}`, bytes: description.length })
+      skills.push({ id: name, name, description, source: 'project', dir: `/tmp/${name}`, bytes: description.length })
     }
     for (let index = skills.length - 1; index > 0; index--) {
       const swap = Math.floor(random() * (index + 1))

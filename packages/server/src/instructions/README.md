@@ -27,8 +27,9 @@ continuation are unsupported: an indented line after a plain scalar is ignored. 
 empty `name`/`description`, or a `name` outside `^[a-z0-9][a-z0-9-]{0,63}$`, is skipped with
 `invalid_front_matter`.
 
-Each `SkillSummary` carries `id` (`<source>:<name>`), `name`, `description`, `source`,
-canonical `dir` and `bytes` (the `SKILL.md` file size from `stat`); the body is never parsed or returned.
+Each `SkillSummary` carries `id` (the skill `name`, unique after shadowing), `name`,
+`description`, `source` (`project` or `user`), canonical `dir` and `bytes` (the `SKILL.md`
+file size from `stat`); the body is never parsed or returned.
 Project skills shadow user skills with the same name (`shadowed`); duplicates inside one
 source keep the first sorted path (`duplicate`). Real paths outside the project root (for
 project skills) or outside a user directory (for user skills) are skipped (`outside_root`).
