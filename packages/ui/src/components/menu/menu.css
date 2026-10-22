@@ -66,6 +66,9 @@
 
 @media (forced-colors: active) {
   .gx-menu-item[data-highlighted] {
+    /* These system colors already honor the user's palette. Prevent a Canvas text
+       backplate from hiding HighlightText over the Highlight background. */
+    forced-color-adjust: none;
     background-color: Highlight;
     color: HighlightText;
   }

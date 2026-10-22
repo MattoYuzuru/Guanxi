@@ -1,0 +1,124 @@
+import {
+  Button, Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger,
+  IconButton, Menu, MenuContent, MenuItem, MenuTrigger, Tooltip, TooltipContent, TooltipTrigger,
+  UiLocaleProvider, useUiText,
+  type UiLocale,
+} from '@guanxi/ui'
+import { useRef, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import '../../../src/index.css'
+
+// The normal public components receive the same regime attributes as a catalog frame.
+// No app shell, API fixture, controlled-open popup or replacement interaction engine is used.
+const params = new URLSearchParams(location.search)
+const locale: UiLocale = params.get('locale') === 'ru' ? 'ru' : params.get('locale') === 'pseudo' ? 'pseudo' : 'en'
+const root = document.documentElement
+root.lang = locale === 'pseudo' ? 'en-XA' : locale
+root.dataset.theme = params.get('theme') ?? 'light'
+root.dataset.density = params.get('density') ?? 'compact'
+root.dataset.material = params.get('glass') ?? 'glass'
+root.dataset.motion = 'reduced'
+if (params.get('transparency') === 'reduced') root.dataset.reduceTransparency = ''
+
+function Fixture() {
+  const t = useUiText()
+  const [menuActions, setMenuActions] = useState(0)
+  const [disabledActions, setDisabledActions] = useState(0)
+  const [iconActions, setIconActions] = useState(0)
+  const [toggleActions, setToggleActions] = useState(0)
+  const [pressed, setPressed] = useState(true)
+  // A synthetic glyph keeps this fixture independent of any third-party icon import.
+  const glyph = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="6" /></svg>
+  return <main className="flex flex-col items-start gap-4 p-4">
+    <h1>{t('story.menu.group')}</h1>
+    <Menu modal={false}>
+      <MenuTrigger render={<Button variant="secondary" size="sm" />} data-testid="menu-trigger">
+        {t('story.menu.trigger')}
+      </MenuTrigger>
+      <MenuContent>
+        <MenuItem onClick={() => setMenuActions(n => n + 1)}>{t('story.menu.rename')}</MenuItem>
+        <MenuItem onClick={() => setMenuActions(n => n + 1)}>{t('story.menu.duplicate')}</MenuItem>
+        <MenuItem disabled onClick={() => setDisabledActions(n => n + 1)}>{t('story.menu.export')}</MenuItem>
+        <MenuItem variant="danger" onClick={() => setMenuActions(n => n + 1)}>{t('story.menu.delete')}</MenuItem>
+      </MenuContent>
+    </Menu>
+    <IconButton data-testid="icon" label={t('story.iconButton.settings')} icon={glyph}
+      size="sm" onClick={() => setIconActions(n => n + 1)} />
+    <IconButton data-testid="disabled-icon" label={t('story.menu.export')} icon={glyph}
+      size="sm" disabled onClick={() => setDisabledActions(n => n + 1)} />
+    <IconButton data-testid="toggle" label={t('story.iconButton.pin')} icon={glyph}
+      size="sm" pressed={pressed} onClick={() => { setToggleActions(n => n + 1); setPressed(value => !value) }} />
+    <Dialog>
+      <DialogTrigger render={<Button variant="secondary" size="sm" />} data-testid="dialog-trigger">
+        {t('story.dialog.trigger')}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogTitle>{t('story.dialog.infoTitle')}</DialogTitle>
+        <DialogDescription>{t('story.dialog.infoBody')}</DialogDescription>
+      </DialogContent>
+    </Dialog>
+    <output data-testid="menu-actions">{menuActions}</output>
+    <output data-testid="disabled-actions">{disabledActions}</output>
+    <output data-testid="icon-actions">{iconActions}</output>
+    <output data-testid="toggle-actions">{toggleActions}</output>
+  </main>
+}
+
+function DescriptionFixture() {
+  const t = useUiText()
+  const [open, setOpen] = useState(true)
+  const [changes, setChanges] = useState(0)
+  const mode = params.get('association')
+  return <main className="p-4">
+    <h1>{t('story.menu.group')}</h1>
+    <p id="existing-description">{t('story.tooltip.content')}</p>
+    <Tooltip open={mode === 'controlled' ? open : undefined} defaultOpen={mode === 'default'}
+      onOpenChange={(next, details) => {
+        setChanges(n => n + 1)
+        if (mode === 'cancel' && next) details.cancel()
+        else setOpen(next)
+      }}>
+      <TooltipTrigger render={<Button />} aria-describedby="existing-description" data-testid="description-trigger">
+        {t('story.tooltip.trigger')}
+      </TooltipTrigger>
+      <TooltipContent id="custom-description">{t('story.tooltip.content')}</TooltipContent>
+    </Tooltip>
+    <output data-testid="open-changes">{changes}</output>
+  </main>
+}
+
+function RenderDescriptionFixture() {
+  const t = useUiText()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [wrapperActions, setWrapperActions] = useState(0)
+  const [renderActions, setRenderActions] = useState(0)
+  const [refMatches, setRefMatches] = useState(false)
+  const renderDescription = 'render-existing-description shared-description'
+  return <main className="p-4">
+    {['existing-description', 'render-existing-description', 'shared-description'].map(id =>
+      <p key={id} id={id}>{t('story.tooltip.content')}</p>)}
+    <Tooltip defaultOpen>
+      <TooltipTrigger ref={triggerRef} aria-describedby="existing-description shared-description"
+        data-testid="render-description-trigger" onClick={event => {
+          setWrapperActions(n => n + 1)
+          setRefMatches(triggerRef.current === event.currentTarget)
+        }}
+        render={params.get('association') === 'render-function'
+          ? triggerProps => <Button {...triggerProps} aria-describedby={renderDescription}
+            onClick={event => { triggerProps.onClick?.(event); setRenderActions(n => n + 1) }} />
+          : <Button aria-describedby={renderDescription} onClick={() => setRenderActions(n => n + 1)}
+            ref={node => { if (node) node.dataset.renderRef = 'attached' }} />}>
+        {t('story.tooltip.trigger')}
+      </TooltipTrigger>
+      <TooltipContent id="custom-description">{t('story.tooltip.content')}</TooltipContent>
+    </Tooltip>
+    <output data-testid="wrapper-actions">{wrapperActions}</output>
+    <output data-testid="render-actions">{renderActions}</output>
+    <output data-testid="ref-matches">{String(refMatches)}</output>
+  </main>
+}
+
+createRoot(document.getElementById('root')!).render(<UiLocaleProvider locale={locale}>
+  {params.get('association')?.startsWith('render-') ? <RenderDescriptionFixture />
+    : params.has('association') ? <DescriptionFixture /> : <Fixture />}
+</UiLocaleProvider>)
