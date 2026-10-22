@@ -136,6 +136,8 @@ export interface TrackerWriteResult {
   skipped?: boolean
   /** Mutating HTTP requests actually attempted by this operation (labels: DELETEs + POST). */
   mutatingRequests?: number
+  /** Non-fatal policy note, for example an unavailable mapped Jira transition. */
+  warning?: string
 }
 
 export interface TrackerAdapter {
@@ -204,6 +206,8 @@ export interface SyncResult {
   writes: SyncWrite[]
   commentPosted: boolean
   deferred?: SyncDeferral
+  /** Non-fatal notes, for example a mapped transition that the workflow did not offer. */
+  warnings?: string[]
 }
 
 export type TrackerSyncErrorCode =

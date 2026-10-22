@@ -164,7 +164,9 @@ so marker checks work on both variants; the author is
 `accountId` (Cloud) or `name` (Data Center), and `self()` caches `GET /rest/api/*/myself`.
 `transitions` maps an outward state (`in_progress`, `blocked`, `done`) to a transition id or
 name; configure `blocked` once for both `blocked` and `failed`. The adapter resolves it from
-the issue's available transitions and sends only `{ transition: { id } }`.
+the issue's available transitions and sends only `{ transition: { id } }`. If the workflow no
+longer offers the mapped transition, the write becomes comment-only and
+`SyncResult.warnings` records `transition_not_found` instead of throwing on every sync.
 
 ## Tests and fixtures
 
@@ -176,7 +178,8 @@ a network. The suite covers:
 - one marker per coarse transition, idempotent retry after a crash, and retry after a deferred
   label write, plus a user-authored marker that does not suppress the status comment;
 - no request at all for non-coarse transitions;
-- GitHub label swap, Jira transition mapping and unmapped comment-only statuses;
+- GitHub label swap, Jira transition mapping, unmapped comment-only statuses and an
+  unavailable mapped transition that warns and stays comment-only;
 - exact 80/min, 500/h, 20-per-issue burst, `retry-after`, reset-header and bounded `5xx`
   backoff times, plus engine deferral;
 - conditional `304` polling for GitHub and Jira;

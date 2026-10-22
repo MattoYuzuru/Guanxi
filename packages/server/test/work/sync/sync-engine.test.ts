@@ -576,6 +576,38 @@ test('a read reporting remaining=0 defers the next write until reset', async () 
   assert.equal(fake.comments.length, 0)
 })
 
+test('an unavailable mapped Jira transition falls back to comment-only with a warning', async () => {
+  const fake = new FakeJira()
+  const adapter = new JiraAdapter({
+    http: request => fake.request(request),
+    authorize: headers => {
+      headers.authorization = `Bearer ${TOKEN}`
+    },
+    credential: 'secret://vault/jira/default',
+    baseUrl: 'https://jira.example.test',
+    apiVersion: 3,
+    transitions: { blocked: 'Not Offered By This Workflow' },
+  })
+  const engine = new TrackerSyncEngine({ adapter, now: () => START })
+
+  const result = await engine.sync(
+    link({ tracker: 'jira', externalKey: 'PROJ-12' }),
+    'failed',
+    { now: START },
+  )
+  assert.equal(result.outcome, 'synced')
+  assert.equal(result.commentPosted, true)
+  assert.equal(fake.comments.length, 1)
+  assert.deepEqual(fake.transitionPosts, [])
+  assert.equal(result.warnings?.length, 1)
+  assert.match(result.warnings![0]!, /transition_not_found/)
+  assert.match(result.warnings![0]!, /Not Offered By This Workflow/)
+
+  const again = await engine.sync(result.link, 'blocked', { now: START + 1 })
+  assert.deepEqual(again.writes, [])
+  assert.equal(fake.comments.length, 1)
+})
+
 test('conditional polling returns 304 without touching metadata', async () => {
   const fake = new FakeGitHub()
   const { engine } = githubEngine(fake)

@@ -420,10 +420,15 @@ export class JiraAdapter implements TrackerAdapter {
       }
     }
     if (transitionId === null || transitionId === '') {
-      throw new TrackerSyncError(
-        'transition_not_found',
-        `Jira does not offer the mapped transition for ${status}`,
-      )
+      // The workflow may change under a stable mapping. Comment-only is the documented
+      // fallback, never a permanent hard error on every sync.
+      return {
+        status: response.status,
+        headers: response.headers,
+        retryable: false,
+        skipped: true,
+        warning: `transition_not_found: Jira does not offer mapped transition "${mapped}" for ${status}`,
+      }
     }
     const applied = await this.send(
       'POST',

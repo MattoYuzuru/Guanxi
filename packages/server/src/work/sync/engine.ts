@@ -257,6 +257,7 @@ export class TrackerSyncEngine {
     }
 
     const writes: SyncWrite[] = []
+    const warnings: string[] = []
     const seq = (link.lastTransitionSeq ?? 0) + 1
     const marker = transitionMarker(link.itemId, target, seq)
     let pending = cloneLink(link)
@@ -400,6 +401,7 @@ export class TrackerSyncEngine {
         throw error
       }
 
+      if (result.warning !== undefined) warnings.push(result.warning)
       if (mapping === 'label') {
         const requests = result.mutatingRequests ?? (result.skipped === true ? 0 : 1)
         if (requests === 0) {
@@ -438,6 +440,7 @@ export class TrackerSyncEngine {
       link: cloneLink(finalLink),
       writes,
       commentPosted,
+      ...(warnings.length === 0 ? {} : { warnings }),
     }
   }
 
