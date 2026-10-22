@@ -31,6 +31,7 @@ const cases = [
   { id: 'gateway-single-attempt', file: 'src/k3-gateway.ts', before: 'singleAttempt: true', after: 'singleAttempt: undefined', test: 'test/k3-gateway.test.ts' },
   { id: 'b3a-critical-field-partial', file: 'src/relay-measurement.ts', before: 'b.expected > 0 && b.groupsWithoutOccasion === 0 &&', after: 'b.expected > 0 &&', test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-plan-digest', file: 'src/relay-protocol.ts', before: 'if (relayPlanDigest(plan) !== input.planSha256)', after: 'if (false)', test: 'test/relay-protocol.test.ts' },
+  { id: 'b3a-ref-attempt-binding', file: 'src/relay-protocol.ts', before: ' || e.attempt !== ctx.attempt', after: '', test: 'test/relay-protocol.test.ts' },
   { id: 'b3a-row-coverage', file: 'src/relay-protocol.ts', before: 'for (const m of manifest) if (!rows.has(m))', after: 'for (const m of manifest) if (false)', test: 'test/relay-protocol.test.ts' },
   { id: 'b3a-strict-envelope', file: 'src/relay-protocol.ts', before: 'trials: z.array(trialSlot).max(MAX_TRIALS),\n}).strict()', after: 'trials: z.array(trialSlot).max(MAX_TRIALS),\n})', test: 'test/relay-protocol.test.ts' },
   { id: 'b3a-first-attempt-split', file: 'src/relay-measurement.ts', before: "if (first.state === 'unknown') b.firstUnknown++; else if (first.result === 'correct') b.firstCorrect++", after: "if (last.state === 'unknown') b.firstUnknown++; else if (last.result === 'correct') b.firstCorrect++", test: 'test/relay-measurement.test.ts' },

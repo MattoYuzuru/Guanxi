@@ -6,7 +6,7 @@ import {
   RELAY_ERROR_CODES, RelayMeasurementError, checkRelayMeasurement, relayPlanDigest, validateRelayMeasurement, type RelayErrorCode,
 } from '../src/relay-protocol.ts'
 import { validatePlan, validateRecordedPlan, validateResults } from '../src/protocol.ts'
-import { BASE, SEEDS, TASKS, addRetry, build, resign, trialOf, type Raw } from './relay-fixtures.ts'
+import { BASE, SEEDS, TASKS, addEvidence, addRetry, build, resign, trialOf, type Raw } from './relay-fixtures.ts'
 import { plan as b1Plan } from './helpers.ts'
 
 function expectIssue(raw: unknown, code: RelayErrorCode, rule?: string): void {
@@ -110,6 +110,9 @@ test('swapped plan, stratum, acceptance and evidence bindings reject the whole i
   expectIssue(resign(wrongTrial), 'reference_mismatch', 'ref_binding')
   const wrongCycle = build(); wrongCycle.evidence.find((e: Raw) => e.id === relayCycle(wrongCycle).receiptRef).cycle = 2
   expectIssue(resign(wrongCycle), 'reference_mismatch', 'ref_binding')
+  const wrongAttempt = build()
+  relayCycle(wrongAttempt).receiptRef = addEvidence(wrongAttempt, 'cycle_receipt', 'task-a', 'arm-relay', 1, 'att-2', 1)
+  expectIssue(resign(wrongAttempt), 'reference_mismatch', 'ref_binding')
   const wrongKind = build(); wrongKind.evidence.find((e: Raw) => e.id === relayCycle(wrongKind).receiptRef).kind = 'seal_reference'
   expectIssue(resign(wrongKind), 'reference_mismatch', 'ref_kind')
   const unresolved = build(); relayCycle(unresolved).receiptRef = 'ev-missing'
