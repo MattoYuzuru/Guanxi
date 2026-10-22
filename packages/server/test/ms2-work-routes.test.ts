@@ -251,3 +251,13 @@ test('every library failure maps to a documented wire code', () => {
   assert.equal(workFailure(new WorkError('canceled', 'x')).code, 'item_canceled')
   assert.deepEqual(workFailure(new Error('x')), { code: 'internal_error', status: 500 })
 })
+
+test('the ledger fixes provenance itself, whatever a caller passes in', async (t) => {
+  const f = await withPlan(t)
+  const forged = { type: 'human_decision', itemId: 'a', decision: 'done', source: 'harness:acceptance', at: '1999-01-01T00:00:00.000Z' }
+  const stored = f.ledger()!.appendHumanEvent('local', 'p1', forged as never)
+  assert.equal(stored.source, 'user:local')
+  assert.equal(stored.at, new Date(T0).toISOString())
+  assert.throws(() => f.ledger()!.appendHumanEvent('local', 'p1', { type: 'judge_verdict', itemId: 'b', verdict: 'pass' } as never), { code: 'invalid_source' }, 'a non-human event cannot be written as a user')
+  assert.throws(() => f.ledger()!.appendHumanEvent('local', 'p1', { type: 'acceptance_result', itemId: 'b', passed: true, commit: 'c', cleanCheckout: true, command: 'x' } as never), { code: 'invalid_source' })
+})

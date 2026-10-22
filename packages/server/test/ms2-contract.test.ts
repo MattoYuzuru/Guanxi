@@ -133,7 +133,7 @@ test('every evidence event the library accepts parses on the wire; only the huma
     assert.doesNotThrow(() => workEvidenceEventSchema.parse({ ...(sample as object), seq: 3 }), type)
     assert.ok(!workEvidenceEventSchema.safeParse({ ...(sample as object), extra: 1 }).success, `${type} rejects unknown keys`)
     const writable = (WORK_WIRE_EVENT_TYPES as readonly string[]).includes(type)
-    const body = { type, itemId: 'a', ...(type === 'human_decision' ? { decision: 'done' } : {}) }
+    const { at: _at, source: _source, ...body } = sample as Record<string, unknown>
     assert.equal(appendWorkEventBodySchema.safeParse(body).success, writable, `${type} writable=${writable}`)
   }
   assert.deepEqual(sorted(WORK_WIRE_EVENT_TYPES), ['accepted', 'human_decision', 'rejected'])

@@ -372,3 +372,16 @@ test('forecast and exhausted rows from the rule engine round-trip the contract',
     assert.deepEqual(notificationSchema.parse(single.json), row)
   }
 })
+
+test('the inbox itself refuses the three library-only actions even when a host port exists', async (t) => {
+  const { ports, calls } = spyPorts()
+  const f = await withNotifications(t, ['conn-a'], { ports })
+  const id = f.ids[0]!
+  for (const [index, action] of (['add_prompt', 'choose_action', 'raise_budget'] as const).entries()) {
+    await assert.rejects(
+      f.inbox()!.execute('local', id, action, { prompt: 'p', choice: 'c' }, `key-direct-${index}-0001`),
+      { code: 'validation_failed' },
+    )
+  }
+  assert.deepEqual(calls, [])
+})
