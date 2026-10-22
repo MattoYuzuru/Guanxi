@@ -57,3 +57,24 @@ Write U1-status-closure.handoff.md with exact commits, new/envelope and red/gree
 actual expected draft errors, unrun checks and residuals. Root alone updates central status.
 Rollback removes only the additive enforcement repair; it cannot mark the blocked U1 mount
 ready. Unsigned review readiness and owner-signed stage acceptance remain separate.
+
+## Root-authorized independent-review repair
+
+Independent review at `a3160507` passes the repository 30-case scope but reproduces two
+fail-closed bypasses in outside controls (`check-_bw41_op`, two fail/two pass):
+
+- A named re-export follows the checker straight to the final value declaration and loses
+  an intermediate barrel's explicit runtime side-effect import. Traverse every runtime module
+  evaluation edge on the named route as well as the resolved declaration, preserving aliases,
+  cycles, deduplication and type-only exclusions. The A -> barrel -> B plus barrel -> C graph
+  must include all A/B/C and apply C's draft status to A's original product file.
+- A successfully resolved relative runtime import outside UI/src currently disappears.
+  Diagnose this unsupported local edge with the importer/specifier, rather than silently
+  treating it like an external package. Do not traverse arbitrary outside files or weaken
+  the established boundary. Type-only/non-code/external-package controls remain valid.
+
+Commit both semantic red cases before the minimal helper fix, rerun the identical scope,
+append exact handoff evidence, and leave actual G11 red for real draft components. Additional
+reachable textarea/empty-state at Workspace are separate readiness work, not exceptions.
+The immutable original probe has a hardcoded checkout and globally-three-ID assumption;
+do not modify it or distort correct repeated original-file findings to satisfy that assumption.
