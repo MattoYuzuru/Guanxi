@@ -3,6 +3,9 @@
 **Status:** proposed, not authorized, not implemented. This file is the only artifact of the
 current read-only audit. Do not edit product code or tests until the root coordinator approves
 the exact plan below.
+**Review-correction status (2026-10-22):** root reviewed this plan at `3bfb54c` and authorized
+the corrected bounded vertical slice below. Section 12 is authoritative where it conflicts
+with Sections 1–11; the earlier text stays as review history and is not an implementation claim.
 **Base:** `6da20584d3ee774c720f24b3c60bb0468325f29c` (`docs: record reviewed B1 merge and next
 integration checks`) on `codex/b1-trial-binding`.
 **Date:** 2026-10-22.
@@ -605,3 +608,133 @@ the clean-tree check are reported by the worker after the commit. No product cod
 or status file was edited. Root must independently review this plan before authorizing
 implementation; the author does not claim any code, test, operational, paid or real-benchmark
 evidence in this run.
+
+## 12. Root review corrections and resolved design choices (authoritative)
+
+The root reviewed the 607-line plan at `3bfb54c` and authorized a corrected bounded slice in
+`/Users/yuzuru/Projects/Guanxi-lanes/b1-trial-binding` on `codex/b1-trial-binding`. This section
+records the binding corrections before code. Where it contradicts Sections 1–11, this section
+wins; the earlier text remains for review history.
+
+### 12.1 No acknowledgement timeout escape
+
+Delete the `ackTimeoutMs` field and the `retentionConfirmed:false` early-return path from the
+slice. A resource-owning `run()`/active-binding promise remains pending and owned until the
+actual gateway completion **and** the actual K2 retention acknowledgement have settled, even if
+the external signal was aborted immediately and process-group shutdown was requested. No timer,
+ESRCH observation, child exit or channel terminal state may release the active-binding map, an
+R1 permit, a budget hold or trial ownership, or may claim that pending inference stopped.
+
+Timers may bound process startup, process shutdown, input and output delivery. They never
+establish settlement of pending inference or retention. If no acknowledgement ever arrives,
+the owning promise stays pending honestly. Tests must hold a controlled gate, assert the run is
+not settled while the gate is held, then release it. Both a late fulfilment and a late rejection
+are covered and must be consumed with zero unhandled rejections. A separate observer wake-up is
+unnecessary and is not added. No distributed or backend inference-cessation claim is made.
+
+### 12.2 Supervisor record removal belongs to the live parent or reaper only
+
+The supervisor must not remove the private process record. It cannot verify `ESRCH` for its own
+process group after it sends `SIGKILL` to that group because the signal kills the supervisor
+too. The supervisor writes and updates the record, terminates its group on lifetime EOF, and
+leaves the record in place. Only a live parent or the next reaper removes the record, and only
+after the supervisor close is observed (parent) or the recorded identity is validated, the
+group is signalled, and the group is actually `ESRCH` (reaper).
+
+On parent death the record stays persisted for the next reaper. A reaper never unlinks on a
+merely issued kill, a timeout, an unvalidated PID or an inability to validate identity; it
+returns `cleanup_unconfirmed` and preserves the record/quarantine. A crash between record
+removal and a kill therefore cannot leave an untracked process: removal is last. The test suite
+asserts that the record exists while the client and grandchild are alive and after a forced
+supervisor death, then exercises the reaper.
+
+Identity checks use exact tokenised argv for the expected supervisor or client invocation,
+plus the recorded PID/process-group relation, never a substring match. A process that does not
+match exactly is not signalled. Same-UID cleanup is a best-effort fixture-foundation mechanism,
+not a security boundary; the plan and docs must not claim container isolation or proof over a
+descendant that leaves the process group with `setsid`. An escaped test descendant is cleaned
+up by its explicitly owned PID, and the test never claims full descendant cleanup.
+
+### 12.3 File-descriptor direction
+
+The corrected layout is:
+
+| FD | Child side | Host side | Use |
+| --- | --- | --- | --- |
+| 3 | read | writable | host → child **public completion response** |
+| 4 | write | readable | child → host **completion request** |
+| 5 | read | writable | lifetime pipe |
+| 6 | write | readable | one bounded ready/start-error control line |
+
+The plan text and table that inverted request/response words are corrected here. The private
+full completion result, reasoning, signature, usage and provider/account/model/trial identifiers
+are never written to the child. Only strict public response frames are written on fd 3. A test
+runs an actual OS fixture for two sequential requests and asserts the full public response key
+set, stdout/stderr ignored, and no account/model/trial/provider reference in the child argv,
+environment or request frames. The nonce is host correlation only, not authentication; a new
+spawn receives a genuinely fresh anonymous FD capability.
+
+### 12.4 Red-first evidence and guard mutations
+
+A red run that fails only because a module or import is missing is recorded as a setup failure,
+not as behavioural proof. The new tests assert observable violated properties: no task-visible
+success frame before retention, exact event/payload counts, fixed codes, process-group `ESRCH`,
+record preservation/removal order, immutable binding copies and the active-binding map.
+
+Before acceptance, each production guard named below is exercised by a temporary no-guard
+mutation and the corresponding test must fail with an assertion: pre-dispatch attempt fence,
+sink scrub, attempt/run binding check, idempotency key/conflict, retention bounds, projection
+equality, `onTerminal` shutdown, child stdout/stderr suppression, group kill/ESRCH verification,
+reaper exact identity, active-map duplicate guard and budget in-flight/attempt refusal. Mutation
+copies are temporary and are not committed. Test counts are reported as explicit `new` and
+`regression envelope` numbers, never a single inflated headline.
+
+### 12.5 One final scrubbed public projection
+
+K3 already scrubs the completion, but the scrubber readiness/value registry can change before
+K2 retention and the task response. The current channel would retain a second-scrubbed result
+while projecting the original result. That is a correctness gap.
+
+The private channel gets an internal optional trusted `retainAndProject(requestId, result)`
+port. The existing pure fixture host API (`retain`) remains supported. The new production host
+factory requires `retainAndProject`; the K2 sink scrubs the full completion, validates every
+bound, durably appends the private events, derives the public projection from the stored
+assistant/tool events and returns exactly that projection. The channel writes that returned
+projection, so the task response and the K2-acknowledged public content are the same object
+shape and values. The caller's result is not mutated; reasoning, signatures, usage and request
+selectors are not returned.
+
+Tests register a fake value between gateway return and retention: no success task frame and no
+unscrubbed value in K2; the retained public event equals the frame; readiness withdrawal yields
+no successful task response. No private payload export is added.
+
+### 12.6 Resolved choices
+
+- **Signature format:** versioned private text envelope in the existing `reasoning` class
+  (`guanxi.bench.thinking-signature/v1\n` plus JSON). No wire-contract or schema migration.
+- **Audience/export:** actual `SessionLog` `remote_agent` reads and export assertions must omit
+  both reasoning and the signature envelope.
+- **Supervisor asset:** the original `src/private-supervisor.mjs` is an allowed trusted asset
+  for the source-run bench package. A missing asset fails closed; there is no direct-spawn
+  fallback. Its packaging/distribution limitation is documented as a residual.
+- **K3 identity:** `k3RunId` is optional on the existing gateway config for old internal
+  fixtures and defaults to the current `trial.runId`; the new host factory supplies the actual
+  R1 `runId` and keeps `experimentId` as the separate budget-ledger identity.
+- **Pre-dispatch fence:** `attemptFence.assert = () => runs.renew(attempt)` is the trusted T0
+  synchronous side effect. No new server method is added.
+- **Partial private trace:** per-event idempotent partial private traces are accepted only if no
+  task response is emitted until **all** appends acknowledge, and a same-key changed payload
+  refuses. Tests assert actual retry counts and sequence behaviour. There is no automatic
+  redispatch or retry.
+- **Tool provenance:** `toolSource` is fixed to coordinator-supplied `builtin` for this arm.
+  Unknown/MCP future arms are not invented, and tool IDs are never silently truncated.
+- **Process trust:** same-UID best-effort process-group cleanup is honest fixture foundation
+  only, not untrusted-container isolation or all-descendants proof.
+- **Private paths:** the binding directory is `0700`, records are `0600`, symlinks are refused,
+  record inspection is bounded and safe-rooted, and no arbitrary environment is spread to the
+  child. All scalar policy ceilings are explicit trusted-host values; there are no hidden
+  token/media caps and no secret in argv, environment or plain logs.
+- **Unchanged boundaries:** stock B1 paid execution stays OFF; the real budget hold,
+  single-attempt request and T0 account binding remain. The child cannot declare
+  `boundedBilling`, cleanup or peer facts. D-194 still prohibits real bench execution on this
+  Mac; no B1 quality claim is made.
