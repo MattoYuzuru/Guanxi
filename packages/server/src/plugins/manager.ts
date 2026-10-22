@@ -8,7 +8,7 @@
  * are never executed here; an explicit approval is only recorded in the lock.
  */
 import { randomBytes } from 'node:crypto'
-import { constants, readFileSync } from 'node:fs'
+import { constants, lstatSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import {
   lstat,
   mkdir,
@@ -31,6 +31,7 @@ import {
 } from '@guanxi/kernel'
 import {
   computeDirectoryIntegrity,
+  computeDirectoryIntegritySync,
   SourceIntegrityError,
 } from './integrity.ts'
 
@@ -52,12 +53,12 @@ export const INSTALL_FAULT_POINTS = [
   'install:copied',
   'install:staged-integrity',
   'install:metadata-planned',
+  'install:before-plugin-rename',
+  'install:plugin-renamed',
   'install:manifest-temp',
   'install:manifest-renamed',
   'install:lock-temp',
   'install:lock-renamed',
-  'install:before-plugin-rename',
-  'install:plugin-renamed',
   'install:before-previous-remove',
   'install:committed',
 ] as const
@@ -105,6 +106,7 @@ export type PluginManagerErrorCode =
   | 'invalid_state'
   | 'plugin_not_installed'
   | 'plugin_directory_exists'
+  | 'version_exists'
   | 'invalid_arguments'
 
 export interface PluginManagerErrorDetails {
@@ -125,6 +127,38 @@ export class PluginManagerError extends Error {
     this.code = code
     this.details = details
   }
+}
+
+/**
+ * Thrown by a fault-injection hook to model a process kill: the manager
+ * propagates it without running rollback so a test can build a fresh manager
+ * and exercise `recover()`.
+ */
+export class SimulatedCrash extends Error {
+  readonly simulatedCrash = true
+
+  constructor(point: string) {
+    super(`simulated crash at ${point}`)
+    this.name = 'SimulatedCrash'
+  }
+}
+
+export interface BootSkip {
+  readonly id: string
+  readonly directory: string
+  readonly reason: 'missing_directory' | 'integrity_mismatch'
+  readonly expectedIntegrity: string
+  /** Null when the directory is missing. */
+  readonly actualIntegrity: string | null
+}
+
+export interface RecoveryReport {
+  /** True when a `.staging` directory was removed. */
+  readonly removedStaging: boolean
+  /** Unreferenced `<id>@<version>` directory names, sorted. */
+  readonly removedDirectories: readonly string[]
+  /** Stale state temporary files removed from `pluginsDir`, sorted. */
+  readonly removedTemporaryFiles: readonly string[]
 }
 
 export interface PluginManagerOptions {
@@ -169,6 +203,8 @@ export interface InstallOptions {
 
 export interface BootSetOptions {
   readonly safeMode?: boolean
+  /** Reports an enabled entry whose directory is missing or fails its integrity check. */
+  readonly onSkip?: (skip: BootSkip) => void
 }
 
 interface InspectedPlugin extends InspectResult {
@@ -207,16 +243,25 @@ interface InstallRollbackContext {
   readonly stagingDir: string | null
   readonly target: string | null
   readonly targetCreated: boolean
-  readonly backupDir: string | null
-  readonly backupMoved: boolean
   readonly pluginsDirCreated: boolean
   readonly stagingRootCreated: boolean
 }
 
 const PLUGIN_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const PLUGIN_DIRECTORY_NAME = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+@[^@/\\]+$/
+const STATE_TEMPORARY_NAME = /^\.plugins(?:\.lock)?\.json\.[0-9a-f]+\.tmp$/
+const EMPTY_RECOVERY: RecoveryReport = {
+  removedStaging: false,
+  removedDirectories: [],
+  removedTemporaryFiles: [],
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSimulatedCrash(error: unknown): error is SimulatedCrash {
+  return error instanceof SimulatedCrash || (isRecord(error) && error['simulatedCrash'] === true)
 }
 
 function stringArray(value: unknown): string[] {
@@ -594,6 +639,7 @@ export class PluginManager {
   private readonly pluginsPath: string
   private readonly lockPath: string
   private tail: Promise<unknown> = Promise.resolve()
+  private recovered = false
 
   constructor(options: PluginManagerOptions) {
     if (!options || typeof options !== 'object') throw new TypeError('PluginManager needs options')
@@ -638,20 +684,62 @@ export class PluginManager {
 
   /** Installed plugins sorted by id, oldest lock state included. */
   list(): InstalledPlugin[] {
+    this.ensureRecovered()
     const state = this.readStateSync()
     return [...state.plugins.values()]
       .sort((left, right) => compareIds(left.id, right.id))
       .map(entry => this.publicEntry(entry, state.enabled.has(entry.id)))
   }
 
-  /** Absolute directories to load; safe mode loads none (ADR-0022 invariant). */
+  /**
+   * Absolute directories to load; safe mode loads none (ADR-0022 invariant).
+   * An enabled entry whose directory is missing or whose bytes no longer match
+   * the locked integrity is skipped and reported through `onSkip`.
+   */
   bootSet(options: BootSetOptions = {}): string[] {
     if (options.safeMode === true) return []
+    this.ensureRecovered()
     const state = this.readStateSync()
-    return [...state.plugins.values()]
-      .filter(entry => state.enabled.has(entry.id))
-      .sort((left, right) => compareIds(left.id, right.id))
-      .map(entry => join(this.pluginsDir, entry.directory))
+    const paths: string[] = []
+    for (const entry of [...state.plugins.values()]
+      .filter(candidate => state.enabled.has(candidate.id))
+      .sort((left, right) => compareIds(left.id, right.id))) {
+      const path = join(this.pluginsDir, entry.directory)
+      let stat: ReturnType<typeof lstatSync> | undefined
+      try {
+        stat = lstatSync(path)
+      } catch {
+        stat = undefined
+      }
+      if (stat === undefined || !stat.isDirectory()) {
+        options.onSkip?.({
+          id: entry.id,
+          directory: entry.directory,
+          reason: 'missing_directory',
+          expectedIntegrity: entry.integrity,
+          actualIntegrity: null,
+        })
+        continue
+      }
+      let actual: string | null = null
+      try {
+        actual = computeDirectoryIntegritySync(path)
+      } catch {
+        actual = null
+      }
+      if (actual === null || !sameIntegrity(entry.integrity, actual)) {
+        options.onSkip?.({
+          id: entry.id,
+          directory: entry.directory,
+          reason: 'integrity_mismatch',
+          expectedIntegrity: entry.integrity,
+          actualIntegrity: actual,
+        })
+        continue
+      }
+      paths.push(path)
+    }
+    return paths
   }
 
   private publicEntry(entry: LockedPlugin, enabled: boolean): InstalledPlugin {
@@ -668,6 +756,62 @@ export class PluginManager {
       buildScriptsApproved: entry.buildScriptsApproved,
       installedAt: entry.installedAt,
     }
+  }
+
+  /**
+   * Remove leftovers of an interrupted install: `.staging`, our own stale state
+   * temporary files, and every `<id>@<version>` directory that the lock does
+   * not reference. Returns what was removed. No-op when `pluginsDir` is absent.
+   */
+  recover(): RecoveryReport {
+    const report = this.recoverSync()
+    this.recovered = true
+    return report
+  }
+
+  private ensureRecovered(): void {
+    if (this.recovered) return
+    this.recover()
+  }
+
+  private recoverSync(): RecoveryReport {
+    let names: string[]
+    try {
+      names = readdirSync(this.pluginsDir)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return EMPTY_RECOVERY
+      throw new PluginManagerError('invalid_state', `${this.pluginsDir}: cannot scan for recovery (${String(error)})`)
+    }
+    const lock = this.readOptionalSync(this.lockPath)
+    const locked = lock === null ? new Map<string, LockedPlugin>() : parseLockFile(lock.toString('utf8'), this.lockPath)
+    const referenced = new Set([...locked.values()].map(entry => entry.directory))
+    const removedDirectories: string[] = []
+    const removedTemporaryFiles: string[] = []
+    let removedStaging = false
+
+    for (const name of names.sort(compareIds)) {
+      const path = join(this.pluginsDir, name)
+      if (name === '.staging') {
+        rmSync(path, { recursive: true, force: true })
+        removedStaging = true
+        continue
+      }
+      let stat: ReturnType<typeof lstatSync>
+      try {
+        stat = lstatSync(path)
+      } catch {
+        continue
+      }
+      if (stat.isFile() && STATE_TEMPORARY_NAME.test(name)) {
+        rmSync(path, { force: true })
+        removedTemporaryFiles.push(name)
+      } else if (stat.isDirectory() && PLUGIN_DIRECTORY_NAME.test(name) && !referenced.has(name)) {
+        rmSync(path, { recursive: true, force: true })
+        removedDirectories.push(name)
+      }
+    }
+    return { removedStaging, removedDirectories, removedTemporaryFiles }
   }
 
   private readOptionalSync(path: string): Buffer | null {
@@ -701,12 +845,11 @@ export class PluginManager {
   }
 
   private async installLocked(sourceDir: string, options: InstallOptions): Promise<InstalledPlugin> {
+    this.ensureRecovered()
     let snapshot: StateSnapshot | undefined
     let stagingDir: string | null = null
     let target: string | null = null
     let targetCreated = false
-    let backupDir: string | null = null
-    let backupMoved = false
     let pluginsDirCreated = false
     let stagingRootCreated = false
     const stagingRoot = join(this.pluginsDir, '.staging')
@@ -780,8 +923,19 @@ export class PluginManager {
       const targetPath = join(this.pluginsDir, directory)
       target = targetPath
       const previous = state.plugins.get(manifest.id)
-      const targetExists = await pathExists(targetPath)
-      if (targetExists && (!previous || previous.version !== version)) {
+
+      if (previous && previous.version === version) {
+        if (sameIntegrity(previous.integrity, inspected.integrity)) {
+          return this.publicEntry(previous, state.enabled.has(manifest.id))
+        }
+        throw new PluginManagerError(
+          'version_exists',
+          `plugin "${manifest.id}@${version}" is already installed with different content; install a new version to upgrade`,
+          { pluginId: manifest.id, expected: previous.integrity, actual: inspected.integrity },
+        )
+      }
+
+      if (await pathExists(targetPath)) {
         throw new PluginManagerError(
           'plugin_directory_exists',
           `plugin directory already exists for "${manifest.id}@${version}" but is not the locked version`,
@@ -838,13 +992,16 @@ export class PluginManager {
       await this.fault('install:staged-integrity')
       await this.fault('install:metadata-planned')
 
-      // Reinstalling the exact same version cannot rename onto a non-empty
-      // directory, so keep the old copy aside until the commit point.
-      if (targetExists && previous && previous.version === version) {
-        backupDir = join(stagingRoot, `previous-${randomBytes(12).toString('hex')}`)
-        await rename(targetPath, backupDir)
-        backupMoved = true
-      }
+      // Commit the directory first: a crash before the state write leaves only
+      // an unreferenced directory, never a lock entry with no directory.
+      await this.fault('install:before-plugin-rename')
+      const staging = stagingDir
+      if (staging === null) throw new Error('plugin staging directory disappeared')
+      await rename(staging, targetPath)
+      stagingDir = null
+      targetCreated = true
+      await syncDirectory(this.pluginsDir)
+      await this.fault('install:plugin-renamed')
 
       await this.writeAtomicWithFaults(
         this.pluginsPath,
@@ -858,36 +1015,23 @@ export class PluginManager {
         'install:lock-temp',
         'install:lock-renamed',
       )
-
-      await this.fault('install:before-plugin-rename')
-      const staging = stagingDir
-      if (staging === null) throw new Error('plugin staging directory disappeared')
-      await rename(staging, targetPath)
-      stagingDir = null
-      targetCreated = true
-      await this.fault('install:plugin-renamed')
       await this.fault('install:before-previous-remove')
       await this.fault('install:committed')
 
-      // The commit is final from here: a cleanup failure leaves the old
-      // directory behind but never makes a successful install look failed.
+      // The commit is final from here: cleanup failures leave an old or
+      // unreferenced directory behind, and `recover()` sweeps it later.
       if (previous && previous.version !== version) {
         await rm(join(this.pluginsDir, previous.directory), { recursive: true, force: true }).catch(() => undefined)
-      }
-      if (backupDir !== null) {
-        await rm(backupDir, { recursive: true, force: true }).catch(() => undefined)
-        backupDir = null
       }
       if (stagingRootCreated) await this.removeEmptyDirectory(stagingRoot)
       return this.publicEntry(nextEntry, enabled.has(manifest.id))
     } catch (error) {
+      if (isSimulatedCrash(error)) throw error
       await this.rollbackInstall({
         snapshot,
         stagingDir,
         target,
         targetCreated,
-        backupDir,
-        backupMoved,
         pluginsDirCreated,
         stagingRootCreated,
       })
@@ -1000,10 +1144,6 @@ export class PluginManager {
   private async rollbackInstall(context: InstallRollbackContext): Promise<void> {
     if (context.targetCreated && context.target !== null) {
       await rm(context.target, { recursive: true, force: true }).catch(() => undefined)
-    }
-    if (context.backupMoved && context.backupDir !== null && context.target !== null) {
-      await rm(context.target, { recursive: true, force: true }).catch(() => undefined)
-      await rename(context.backupDir, context.target).catch(() => undefined)
     }
     if (context.stagingDir !== null) {
       await rm(context.stagingDir, { recursive: true, force: true }).catch(() => undefined)

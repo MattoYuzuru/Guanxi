@@ -12,7 +12,17 @@
  * `/` separators on every platform.
  */
 import { createHash } from 'node:crypto'
-import { constants } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readSync,
+  realpathSync,
+  type Stats,
+} from 'node:fs'
 import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
@@ -169,4 +179,99 @@ export function integrityFromEntries(entries: readonly IntegrityEntry[]): string
 /** Compute the integrity string for a directory without writing anything. */
 export async function computeDirectoryIntegrity(sourceDir: string): Promise<string> {
   return integrityFromEntries(await listSourceFiles(sourceDir))
+}
+
+function readStatSync(path: string): Stats {
+  try {
+    return lstatSync(path)
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') {
+      throw new SourceIntegrityError('source_not_found', path, 'plugin source does not exist')
+    }
+    throw new SourceIntegrityError('source_unreadable', path, `cannot inspect the plugin source (${String(error)})`)
+  }
+}
+
+function hashFileSync(path: string): string {
+  let descriptor: number | undefined
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const stat = fstatSync(descriptor)
+    if (!stat.isFile()) {
+      throw new SourceIntegrityError('source_not_regular', path, 'only regular files can be installed')
+    }
+    const hash = createHash('sha256')
+    const buffer = Buffer.allocUnsafe(64 * 1024)
+    for (;;) {
+      const bytesRead = readSync(descriptor, buffer, 0, buffer.byteLength, null)
+      if (bytesRead === 0) break
+      hash.update(buffer.subarray(0, bytesRead))
+    }
+    return hash.digest('hex')
+  } catch (error) {
+    if (error instanceof SourceIntegrityError) throw error
+    if (errorCode(error) === 'ELOOP') {
+      throw new SourceIntegrityError('source_symlink', path, 'symbolic links are not allowed in a plugin source')
+    }
+    throw new SourceIntegrityError('source_unreadable', path, `cannot read the plugin source file (${String(error)})`)
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor)
+  }
+}
+
+/** Synchronous counterpart of `listSourceFiles` for boot-time checks. */
+export function listSourceFilesSync(sourceDir: string): IntegrityEntry[] {
+  const requested = resolve(sourceDir)
+  const rootStat = readStatSync(requested)
+  if (rootStat.isSymbolicLink()) {
+    throw new SourceIntegrityError('source_symlink', requested, 'the plugin source itself must not be a symbolic link')
+  }
+  if (!rootStat.isDirectory()) {
+    throw new SourceIntegrityError('source_not_directory', requested, 'the plugin source must be a directory')
+  }
+  const root = realpathSync(requested)
+  const entries: IntegrityEntry[] = []
+
+  const walk = (directory: string, relativeDirectory: string): void => {
+    let names: string[]
+    try {
+      names = readdirSync(directory)
+    } catch (error) {
+      throw new SourceIntegrityError('source_unreadable', directory, `cannot list the plugin source (${String(error)})`)
+    }
+    names.sort(comparePaths)
+    for (const name of names) {
+      const absolute = join(directory, name)
+      const path = relativeDirectory === '' ? name : `${relativeDirectory}/${name}`
+      const stat = readStatSync(absolute)
+      if (stat.isSymbolicLink()) {
+        throw new SourceIntegrityError('source_symlink', absolute, 'symbolic links are not allowed in a plugin source')
+      }
+      let real: string
+      try {
+        real = realpathSync(absolute)
+      } catch (error) {
+        throw new SourceIntegrityError('source_unreadable', absolute, `cannot resolve the plugin source entry (${String(error)})`)
+      }
+      if (!isInside(root, real)) {
+        throw new SourceIntegrityError('source_outside_root', absolute, 'the plugin source entry resolves outside the source directory')
+      }
+      if (stat.isDirectory()) {
+        walk(absolute, path)
+      } else if (stat.isFile()) {
+        entries.push({ path, sha256: hashFileSync(absolute) })
+      } else {
+        throw new SourceIntegrityError('source_not_regular', absolute, 'only regular files and directories can be installed')
+      }
+    }
+  }
+
+  walk(root, '')
+  entries.sort((left, right) => comparePaths(left.path, right.path))
+  return entries
+}
+
+/** Synchronous `computeDirectoryIntegrity` for `bootSet` integrity checks. */
+export function computeDirectoryIntegritySync(sourceDir: string): string {
+  return integrityFromEntries(listSourceFilesSync(sourceDir))
 }

@@ -26,9 +26,11 @@ import {
   PluginManager,
   PluginManagerError,
   SET_ENABLED_FAULT_POINTS,
+  SimulatedCrash,
   SourceIntegrityError,
   UNINSTALL_FAULT_POINTS,
   satisfiesGuanxiRange,
+  type BootSkip,
   type PluginManagerHooks,
   type PluginManagerOptions,
 } from '../../src/plugins/manager.ts'
@@ -141,6 +143,18 @@ async function stateBytes(pluginsDir: string): Promise<StateBytes> {
     plugins: await optionalRead(join(pluginsDir, 'plugins.json')),
     lock: await optionalRead(join(pluginsDir, 'plugins.lock.json')),
   }
+}
+
+interface LockedEntry {
+  readonly version: string
+  readonly integrity: string
+  readonly directory: string
+}
+
+async function lockEntries(pluginsDir: string): Promise<Record<string, LockedEntry>> {
+  const text = await readFile(join(pluginsDir, 'plugins.lock.json'), 'utf8')
+  const parsed = JSON.parse(text) as { plugins: Record<string, LockedEntry> }
+  return parsed.plugins
 }
 
 async function rejectsWithCode(run: Promise<unknown>, code: string): Promise<PluginManagerError> {
@@ -555,4 +569,112 @@ test('refuses a plugin without a safe package version before writing', async t =
   const pluginsDir = join(base, 'plugins')
   await rejectsWithCode(manager(pluginsDir).install(source), 'invalid_plugin_version')
   assert.equal(await exists(pluginsDir), false)
+})
+
+test('recover removes staging, stale temporary state, and unreferenced plugin directories', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const source = await writePlugin(join(base, 'source'))
+  const plugins = manager(pluginsDir)
+  const installed = await plugins.install(source)
+  const backup = join(pluginsDir, 'guanxi.test-plugin@9.9.9')
+  await mkdir(join(pluginsDir, '.staging', 'leftover'), { recursive: true })
+  await writeFile(join(pluginsDir, '.staging', 'leftover', 'junk.js'), 'junk\n')
+  await mkdir(backup, { recursive: true })
+  await writeFile(join(backup, 'junk.js'), 'junk\n')
+  await mkdir(join(pluginsDir, 'not-a-plugin'), { recursive: true })
+  await writeFile(join(pluginsDir, '.plugins.json.deadbeef.tmp'), 'stale\n')
+
+  const fresh = manager(pluginsDir)
+  const report = await fresh.recover()
+  assert.deepEqual(report.removedDirectories, ['guanxi.test-plugin@9.9.9'])
+  assert.equal(report.removedStaging, true)
+  assert.deepEqual(report.removedTemporaryFiles, ['.plugins.json.deadbeef.tmp'])
+  assert.equal(await exists(join(pluginsDir, '.staging')), false)
+  assert.equal(await exists(backup), false)
+  assert.equal(await exists(join(pluginsDir, 'not-a-plugin')), true, 'unrelated directories are kept')
+  assert.deepEqual(fresh.bootSet(), [installed.path])
+  assert.deepEqual(fresh.list().map(entry => entry.version), ['1.0.0'])
+})
+
+test('same-version reinstall is a no-op for identical integrity, refuses changed content', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const source = await writePlugin(join(base, 'source'))
+  const plugins = manager(pluginsDir)
+  const first = await plugins.install(source)
+  const before = await stateBytes(pluginsDir)
+  const beforeListing = await topLevel(pluginsDir)
+
+  const again = await plugins.install(source)
+  assert.equal(again.installedAt, first.installedAt, 'a no-op keeps the original install time')
+  assert.deepEqual(await stateBytes(pluginsDir), before)
+  assert.deepEqual(await topLevel(pluginsDir), beforeListing)
+
+  await writeFile(join(source, 'index.js'), 'export const version = "changed"\n')
+  await rejectsWithCode(plugins.install(source), 'version_exists')
+  assert.deepEqual(await stateBytes(pluginsDir), before)
+  assert.deepEqual(await topLevel(pluginsDir), beforeListing)
+  assert.equal(
+    await readFile(join(pluginsDir, 'guanxi.test-plugin@1.0.0', 'index.js'), 'utf8'),
+    "export const version = '1.0.0'\n",
+  )
+  assert.deepEqual(plugins.bootSet(), [first.path])
+})
+
+test('a crash at every install point recovers to a lockfile whose directories exist and boot', async t => {
+  const base = await tempBase(t)
+  const first = await writePlugin(join(base, 'v1'), { version: '1.0.0' })
+  const second = await writePlugin(join(base, 'v2'), { version: '2.0.0' })
+  const lockRenamed = INSTALL_FAULT_POINTS.indexOf('install:lock-renamed')
+  assert.ok(lockRenamed > 0)
+
+  for (const [index, point] of INSTALL_FAULT_POINTS.entries()) {
+    const pluginsDir = join(base, `crash-${index}`)
+    await manager(pluginsDir).install(first)
+    const crashing = manager(pluginsDir, {
+      hooks: { point: name => {
+        if (name === point) throw new SimulatedCrash(name)
+      } },
+    })
+    await assert.rejects(crashing.install(second), (error: unknown) => {
+      assert.ok(error instanceof SimulatedCrash, `crash at ${point}`)
+      return true
+    })
+
+    const fresh = manager(pluginsDir)
+    await fresh.recover()
+    const locked = await lockEntries(pluginsDir)
+    for (const [id, entry] of Object.entries(locked)) {
+      assert.equal(await exists(join(pluginsDir, entry.directory)), true, `${id} after crash at ${point}`)
+    }
+    const expectedVersion = index >= lockRenamed ? '2.0.0' : '1.0.0'
+    assert.deepEqual(fresh.bootSet(), [join(pluginsDir, `guanxi.test-plugin@${expectedVersion}`)], `boot after crash at ${point}`)
+    const versions = fresh.list().map(entry => entry.version)
+    assert.deepEqual(versions, [expectedVersion], `list after crash at ${point}`)
+    assert.equal(await exists(join(pluginsDir, '.staging')), false, `staging after crash at ${point}`)
+  }
+})
+
+test('bootSet skips and reports missing directories and changed integrity', async t => {
+  const base = await tempBase(t)
+  const source = await writePlugin(join(base, 'source'))
+
+  const missingDir = join(base, 'missing')
+  const missing = await manager(missingDir).install(source)
+  await rm(missing.path, { recursive: true, force: true })
+  const missingSkips: BootSkip[] = []
+  assert.deepEqual(manager(missingDir).bootSet({ onSkip: skip => missingSkips.push(skip) }), [])
+  assert.deepEqual(missingSkips.map(skip => ({ id: skip.id, reason: skip.reason })), [
+    { id: DEFAULT_ID, reason: 'missing_directory' },
+  ])
+
+  const changedDir = join(base, 'changed')
+  const changed = await manager(changedDir).install(source)
+  await writeFile(join(changed.path, 'index.js'), 'tampered\n')
+  const changedSkips: BootSkip[] = []
+  assert.deepEqual(manager(changedDir).bootSet({ onSkip: skip => changedSkips.push(skip) }), [])
+  assert.deepEqual(changedSkips.map(skip => ({ id: skip.id, reason: skip.reason })), [
+    { id: DEFAULT_ID, reason: 'integrity_mismatch' },
+  ])
 })
