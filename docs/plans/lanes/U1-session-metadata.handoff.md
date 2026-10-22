@@ -1,7 +1,7 @@
 # U1 session metadata continuation
 
-**Status:** foundation independently reviewed; navigation follow-up and focused checks complete;
-follow-up independent review/full gates pending.
+**Status:** foundation and navigation follow-up independently reviewed; integrated full gates
+and browser consumer acceptance remain pending.
 **Date:** 2026-10-22 · **Branch:** `codex/u1-shell`. Local Mac only, synthetic in-memory SQLite.
 
 The shell needs a paged session list and actual execution observations. The existing strict
@@ -56,4 +56,11 @@ The frontend route mapper consumes this discriminated target instead of inferrin
 Three new follow-up cases assert actual native/thread/project association, generic-agent trace
 fallback, late thread/project withholding, and retained/trash routing. Follow-up envelope:
 3 new + 37 prior = 40/40 pass, zero skips; cumulative metadata evidence is **7 new / 33 inherited**.
-All-workspace types pass. Separate follow-up review remains required before completion.
+All-workspace types pass. The separate follow-up review receipt below closes source review.
+
+## Separate navigation acceptance receipt
+
+Independent review accepted the six-file `4a7ce83..86f1019` follow-up with no bounded blocker.
+The reviewer ran 40/40 focused cases (`check-yn1rvjbt`) with those files unchanged; report:
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-u1-session-metadata-20261022.md`.
+This closes the separate metadata/navigation source review, not the browser consumer or U1-b.

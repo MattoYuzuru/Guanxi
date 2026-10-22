@@ -10,7 +10,8 @@ import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { builtInLayout } from './defaults.ts'
-import { MOVE_BLOCK_COMMAND } from './commands.ts'
+import { MOVE_BLOCK_COMMAND, REVEAL_BLOCK_COMMAND, WORKSPACE_MODE_COMMAND } from './commands.ts'
+import { clearWorkspaceShellState, publishWorkspaceShellState } from './shell-state.ts'
 import { layoutSaveScope, layoutSaveScopes, layoutScopeForSave, type LayoutSaveScope } from './scopes.ts'
 import { paneRegistry } from './renderers.ts'
 import { blockNames, type BuiltInBlock } from './blocks.ts'
@@ -67,6 +68,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const [announcement, setAnnouncement] = useState('')
   const [name, setName] = useState('')
   const [saveScopes, setSaveScopes] = useState<Partial<Record<ExperienceMode, LayoutSaveScope>>>({})
+  const [shellWriter] = useState(() => Symbol('workspace-shell'))
   const [selected, setSelected] = useState('guanxi.core/chat')
   const [moving, setMoving] = useState<string | null>(null)
   const [destination, setDestination] = useState<WorkspaceZone>('right')
@@ -78,6 +80,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const retryOperation = useRef<() => void>(() => undefined)
   const returnFocus = useRef<HTMLElement | null>(null)
   const paneHosts = useRef(new Map<string, HTMLDivElement>())
+  const pendingPaneFocus = useRef<{ id: string; epoch: number } | null>(null)
+  const focusEpoch = useRef(0)
   const latestDocument = useRef<LayoutDocument | undefined>(undefined)
   const phoneSnapshot = useRef<ReturnType<WorkspaceLayoutHandle['snapshot']> | undefined>(undefined)
   useSyncExternalStore(paneRegistry.subscribe, paneRegistry.snapshot)
@@ -161,6 +165,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   }
   async function activateDocument(candidate: LayoutDocument, persist = false) {
     if (operationBusy.current) return
+    pendingPaneFocus.current = null
+    focusEpoch.current++
     operationBusy.current = true
     const epoch = ++selectionEpoch.current
     setSwitching(true)
@@ -255,6 +261,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     finally { operationBusy.current = false; setSwitching(false) }
   }
   function hide(id: string) {
+    pendingPaneFocus.current = null
+    const epoch = ++focusEpoch.current
     if (phone && doc) {
       const groups = doc.engineState.groups.map(group => ({ ...group, blocks: group.blocks.filter(block => block !== id), active: group.active === id ? group.blocks.find(block => block !== id) : group.active })).filter(group => group.blocks.length)
       const next = layoutDocumentSchema.parse({ ...doc, hidden: [...new Set([...doc.hidden, id])], engineState: { ...doc.engineState, grid: undefined, groups } })
@@ -262,8 +270,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setDocuments(previous => ({ ...previous, [mode]: next }))
     }
     engine.current?.hide(id)
-    if (!phone) { remember(); requestAnimationFrame(() => { const id = engine.current?.activeBlock(); if (id) engine.current?.focus(id) }) }
-    else requestAnimationFrame(() => document.getElementById(`tab-${visible.find(block => block !== id) ?? ''}`)?.focus())
+    if (!phone) { remember(); requestAnimationFrame(() => { if (focusEpoch.current !== epoch) return; const id = engine.current?.activeBlock(); if (id) engine.current?.focus(id) }) }
+    else requestAnimationFrame(() => { if (focusEpoch.current === epoch) document.getElementById(`tab-${visible.find(block => block !== id) ?? ''}`)?.focus() })
     say(translate('workspaceLayout.hiddenAnnouncement', { block: title(id) }))
   }
   function addBlock(contributionId: string) {
@@ -294,17 +302,55 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     } else remember()
     say(translate('workspaceLayout.added', { block: title(id) }))
   }
+  function focusPendingPane(id: string) {
+    const intent = pendingPaneFocus.current
+    if (!intent || intent.id !== id) return
+    requestAnimationFrame(() => {
+      if (pendingPaneFocus.current !== intent || focusEpoch.current !== intent.epoch) return
+      const host = paneHosts.current.get(id)
+      const pane = host?.querySelector<HTMLElement>('[data-block]')
+      if (!host?.isConnected || !pane || host.closest<HTMLElement>('[role="tabpanel"]')?.hidden) return
+      pane.focus()
+      if (pane.ownerDocument.activeElement === pane) pendingPaneFocus.current = null
+    })
+  }
+
+  useEffect(() => () => clearWorkspaceShellState(shellWriter), [shellWriter])
+  useEffect(() => {
+    publishWorkspaceShellState(shellWriter, {
+      ready: !loading && !loadError && Boolean(doc), busy: saving || switching, phone,
+      mode: doc?.scope.mode ?? null,
+      blocks: doc ? Object.keys(doc.blocks).map(id => ({ id, label: title(id), hidden: doc.hidden.includes(id) })) : [],
+    })
+  }, [shellWriter, loading, loadError, saving, switching, phone, mode, doc, contributions, locale])
 
   useEffect(() => {
     const command = (event: Event) => openMove((event as CustomEvent<{ instanceId?: string }>).detail?.instanceId)
+    const reveal = (event: Event) => {
+      const id: unknown = (event as CustomEvent<{ instanceId?: unknown }>).detail?.instanceId
+      if (loading || loadError || operationBusy.current || !doc || typeof id !== 'string' || !Object.hasOwn(doc.blocks, id)) return
+      pendingPaneFocus.current = { id, epoch: ++focusEpoch.current }
+      if (doc.hidden.includes(id)) show(id)
+      else setSelected(id)
+      // An inactive Dockview tab may not have attached its retained host yet.
+      // Activate it before waiting for the next committed frame to focus its pane.
+      if (!phone) engine.current?.focus(id)
+      focusPendingPane(id)
+    }
+    const changeMode = (event: Event) => {
+      const next: unknown = (event as CustomEvent<{ mode?: unknown }>).detail?.mode
+      if (!loading && !loadError && (next === 'developer' || next === 'visual')) switchMode(next)
+    }
     const keyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
       if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') { event.preventDefault(); openMove() }
     }
     window.addEventListener(MOVE_BLOCK_COMMAND, command)
+    window.addEventListener(REVEAL_BLOCK_COMMAND, reveal)
+    window.addEventListener(WORKSPACE_MODE_COMMAND, changeMode)
     window.addEventListener('keydown', keyboard)
-    return () => { window.removeEventListener(MOVE_BLOCK_COMMAND, command); window.removeEventListener('keydown', keyboard) }
+    return () => { window.removeEventListener(MOVE_BLOCK_COMMAND, command); window.removeEventListener(REVEAL_BLOCK_COMMAND, reveal); window.removeEventListener(WORKSPACE_MODE_COMMAND, changeMode); window.removeEventListener('keydown', keyboard) }
   })
 
   useEffect(() => {
@@ -362,9 +408,9 @@ export function Workspace({ children, account, project, safeMode = false }: Work
         <WorkspaceChrome kind="state" title={translate('workspaceLayout.noVisibleBlocks')} action={{ label: translate('workspaceLayout.add'), onClick: () => { const id = Object.keys(doc.blocks)[0]; if (id) show(id) } }} />
       ) : phone ? <>
         <WorkspaceChrome kind="phone" label={translate('workspaceLayout.phone')} selected={selectedId} blocks={visible.map(id => ({ id, label: title(id) }))} onSelect={setSelected} />
-        {visible.map(id => <div key={id} id={`phone-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} hidden={id !== selectedId} ref={element => { if (element) element.append(paneHosts.current.get(id)!) }} />)}
+        {visible.map(id => <div key={id} id={`phone-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} hidden={id !== selectedId} ref={element => { const host = paneHosts.current.get(id); if (element && host) { if (host.parentElement !== element) element.append(host); focusPendingPane(id) } }} />)}
       </> : (
-        <WorkspaceLayout key={`${mode}:${generation}`} document={doc} geometry={geometry} hosts={paneHosts.current} title={title} handleRef={engine} onMoveRequested={openMove} hideLabel={translate('workspaceLayout.hide')} onHidden={id => say(translate('workspaceLayout.hiddenAnnouncement', { block: title(id) }))} onChange={capture} onMove={announceMove} onReady={elapsed => { restoreTime.current = elapsed }} />
+        <WorkspaceLayout key={`${mode}:${generation}`} document={doc} geometry={geometry} hosts={paneHosts.current} title={title} handleRef={engine} onMoveRequested={openMove} hideLabel={translate('workspaceLayout.hide')} onHidden={id => say(translate('workspaceLayout.hiddenAnnouncement', { block: title(id) }))} onChange={capture} onMove={announceMove} onReady={elapsed => { restoreTime.current = elapsed }} onPaneAttached={focusPendingPane} />
       )}
     </div>
     {moving !== null && <PortalContainerProvider container={paneHosts.current.get(moving)?.ownerDocument.body ?? null}><WorkspaceChrome kind="mover" open={moving !== null} title={translate('workspaceLayout.moveTitle')} description={translate('workspaceLayout.move')} blockLabel={translate('workspaceLayout.block')} zoneLabel={translate('workspaceLayout.destination')} cancelLabel={translate('workspaceLayout.cancel')} moveLabel={translate('workspaceLayout.move')} blocks={choices.filter(choice => visible.includes(choice.id))} zones={zoneOrder.map(id => ({ id, label: translate(`workspaceLayout.zone.${id}`) }))} block={moving ?? ''} zone={destination} onBlock={setMoving} onZone={id => setDestination(id as WorkspaceZone)} onClose={() => { const id = moving; setMoving(null); requestAnimationFrame(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); else if (id) engine.current?.focus(id) }) }} onMove={() => { void move() }} /></PortalContainerProvider>}

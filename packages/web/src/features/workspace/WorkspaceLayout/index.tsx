@@ -28,6 +28,7 @@ export interface WorkspaceLayoutProps {
   onChange: () => void
   onMove: (id: string, zone: WorkspaceZone) => void
   onReady?: (elapsed: number) => void
+  onPaneAttached?: (id: string) => void
 }
 function toTree(node: SerializedDockview['grid']['root']): LayoutTree {
   return node.type === 'leaf' ? { group: (node.data as { id: string }).id, size: node.size ?? 1 } : { children: (node.data as SerializedDockview['grid']['root'][]).map(toTree), size: node.size ?? 1 }
@@ -50,7 +51,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const components = useMemo(() => ({ host: function PaneHost({ api }: IDockviewPanelProps) {
     return <div className="workspace-pane-host" ref={element => {
       const host = latest.current.hosts.get(api.id)
-      if (element && host) element.append(host)
+      if (element && host) {
+        if (host.parentElement !== element) element.append(host)
+        latest.current.onPaneAttached?.(api.id)
+      }
     }} />
   } }), [])
 
