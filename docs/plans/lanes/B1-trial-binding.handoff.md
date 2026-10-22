@@ -463,9 +463,10 @@ not replace the reviewer's real process-table run.
 ### Unsupported checks and residuals
 
 - This DSH host cannot execute `/bin/ps`; the real `exact-live-supervisor` external probe, the
-  original six external process cases and the real parent-death probe were **not rerun here**.
-  Seam results are not real process-table proof. Independent review must rerun them outside the
-  sandbox at the new clean pin under the shared heavy lock.
+  original external process regressions (including the real parent-death case) and the other
+  real process-table checks were **not rerun here**. Seam results are not real process-table
+  proof. Independent review must rerun them outside the sandbox at the new clean pin under the
+  shared heavy lock.
 - The wider prior 138-case envelope was not run by this worker; only the private-process file
   and bench type/lint checks were.
 - Linux `ps` state grammar is from the primary
