@@ -237,7 +237,6 @@ documents. Residual limits include browser-emulated accessibility/preferences ra
 physical AT, unknown server mutation outcome after a lost response, and unknowable saved
 grid geometry before hydration. This proposal closes no U1/MS1/release/owner approval gate.
 
-
 ## Root authorization and execution contract
 
 Root accepts this engineering plan including truthful client observation-time semantics,
