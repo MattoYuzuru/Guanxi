@@ -212,9 +212,30 @@ check was redundantly rerun. Final docs are a later documentation-only commit. T
 unsupported skill symlink still prevents reusable source certification; these are direct
 observed check results with unchanged source recorded, not reusable certificates.
 
-Root owns independent final composition review and the final aggregate eight gates.
-The K4 string-encoding follow-up is not included in this candidate; its separately confirmed
-decorative-bracket P2 is still tracked outside this merge. Full K5 and MS1 remain open.
+Independent composition review closed at `6ce226cf`; its separate setup-failure check passed
+1/1 (`check-ktw6ahix`). Root owns the final aggregate eight gates. Full K5 and MS1 remain open.
+
+## Final K4 encoding composition
+
+Merge `30557ebb` adds independently reviewed K4 string encoding from
+`63f8b0168f852f52a418dee140d2478515906497` to `6ce226cf`, without conflicts or manual
+production resolutions. The private encoder, input store and affected tests are unchanged
+from that source parent. Existing native-agent service, index, egress, external-agent and
+bench fixture source is unchanged from the first parent.
+
+The original decorative-bracket P2 was reproduced independently, fixed separately in
+`f770c765` after red-first tests `d0f877d6`, and closed at `63f8b016`. Its final independent
+check passed 19/19 (`check-a8ev7dic`): 14 repository pure cases, three unchanged regression
+probes and two independent controls. Earlier helper/native coverage remains inherited
+evidence; repeated runs are not new tests. Cumulative encoding repository coverage is
+**19 new / 51 regression envelope**: 14 pure, four helper and one native case added.
+See [the encoding handoff](K4-string-encoding.handoff.md) and the outside review at
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-k4-string-encoding-20261022.md`.
+
+Only immutable string-to-UTF-8 encoding and excerpt projection are bounded here. Artifact
+reads/replay, scrubbed/base64 transport, provider history, byte-input snapshots and queue text
+still have whole-buffer paths; this is not an end-to-end bounded-memory claim. Final source
+composition review and the eight aggregate candidate gates remain pending on this new pin.
 
 ## Compatibility, rollback and remaining work
 
