@@ -13,6 +13,7 @@ import { PRODUCT_NAME } from '@guanxi/contract'
 import { JsonRpcConnection } from './jsonrpc.ts'
 import {
   DEFAULT_MCP_MAX_MESSAGE_BYTES,
+  DEFAULT_MCP_MAX_TOOL_PAGES,
   DEFAULT_MCP_REQUEST_TIMEOUT_MS,
   MCP_CLIENT_VERSION,
   MCP_PROTOCOL_VERSION,
@@ -20,8 +21,11 @@ import {
   type McpInitializeResult,
   type McpProcessExit,
   type McpProjectPolicy,
+  type McpRequestOptions,
   type McpServerConfig,
   type McpSpawn,
+  type McpTool,
+  type McpToolCallResult,
   type McpTransport,
   type McpTransportSpec,
 } from './types.ts'
@@ -34,6 +38,11 @@ const BASE_ENVIRONMENT: Readonly<Record<string, string>> = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function positiveInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError(`${name} must be a positive integer`)
+  return value
 }
 
 /** Validates the port contract before a spawn implementation sees it. */
@@ -111,6 +120,7 @@ export interface McpClientOptions {
   spawn?: McpSpawn
   requestTimeoutMs?: number
   maxMessageBytes?: number
+  maxToolPages?: number
   /** Protocol versions accepted in addition to the pinned version. */
   allowedProtocolVersions?: readonly string[]
 }
@@ -136,6 +146,30 @@ function parseInitializeResult(value: unknown): McpInitializeResult {
   return result
 }
 
+function parseToolPage(value: unknown): { tools: McpTool[]; nextCursor: string | undefined } {
+  if (!isRecord(value) || !Array.isArray(value.tools)) {
+    throw new McpError('mcp_protocol', 'MCP tools/list result has no tools array')
+  }
+  const tools: McpTool[] = []
+  for (const raw of value.tools) {
+    if (!isRecord(raw) || typeof raw.name !== 'string' || raw.name.length === 0) {
+      throw new McpError('mcp_protocol', 'MCP tools/list returned a tool without a name')
+    }
+    const tool: McpTool = { ...raw, name: raw.name }
+    if (typeof raw.description === 'string') tool.description = raw.description
+    else delete tool.description
+    tools.push(tool)
+  }
+  const cursor = value.nextCursor
+  if (cursor !== undefined && cursor !== null && typeof cursor !== 'string') {
+    throw new McpError('mcp_protocol', 'MCP tools/list returned a non-string cursor')
+  }
+  return {
+    tools,
+    nextCursor: typeof cursor === 'string' && cursor.length > 0 ? cursor : undefined,
+  }
+}
+
 /**
  * One MCP server connection. The client is single-use: a failed handshake
  * kills the transport and leaves subsequent calls with `mcp_closed`.
@@ -145,6 +179,7 @@ export class McpClient {
   private readonly spawnPort: McpSpawn
   private readonly requestTimeoutMs: number
   private readonly maxMessageBytes: number
+  private readonly maxToolPages: number
   private readonly allowedProtocolVersions: readonly string[]
 
   private transport: McpTransport | undefined
@@ -159,6 +194,7 @@ export class McpClient {
     this.spawnPort = options.spawn ?? spawnMcpProcess
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_MCP_REQUEST_TIMEOUT_MS
     this.maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MCP_MAX_MESSAGE_BYTES
+    this.maxToolPages = positiveInteger(options.maxToolPages ?? DEFAULT_MCP_MAX_TOOL_PAGES, 'maxToolPages')
     this.allowedProtocolVersions = options.allowedProtocolVersions ?? []
   }
 
@@ -180,6 +216,57 @@ export class McpClient {
     } finally {
       this.connecting = undefined
     }
+  }
+
+  /** Fetches every page of `tools/list`, bounded by `maxToolPages`. */
+  async listTools(): Promise<McpTool[]> {
+    await this.connect()
+    const rpc = this.requireRpc()
+    const tools: McpTool[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < this.maxToolPages; page++) {
+      const raw = await rpc.request('tools/list', cursor === undefined ? {} : { cursor })
+      const parsed = parseToolPage(raw)
+      tools.push(...parsed.tools)
+      if (parsed.nextCursor === undefined) return tools
+      cursor = parsed.nextCursor
+    }
+    throw new McpError(
+      'mcp_pagination_limit',
+      `MCP tools/list exceeded the ${this.maxToolPages}-page limit`,
+    )
+  }
+
+  /**
+   * Calls a tool with a JSON object of arguments. The result is returned
+   * untouched, including `isError`; interpreting it is the caller's job.
+   */
+  async callTool(
+    name: string,
+    args: Record<string, unknown> = {},
+    options: McpRequestOptions = {},
+  ): Promise<McpToolCallResult> {
+    if (typeof name !== 'string' || name.length === 0) {
+      throw new McpError('mcp_invalid_tool', 'MCP tool name must be a non-empty string')
+    }
+    if (!isRecord(args)) {
+      throw new McpError('mcp_invalid_arguments', 'MCP tool arguments must be a JSON object')
+    }
+    try {
+      JSON.stringify(args)
+    } catch {
+      throw new McpError('mcp_invalid_arguments', 'MCP tool arguments must be JSON-serializable')
+    }
+    await this.connect()
+    const raw = await this.requireRpc().request('tools/call', { name, arguments: args }, options)
+    if (!isRecord(raw)) throw new McpError('mcp_protocol', 'MCP tools/call result is not an object')
+    return raw
+  }
+
+  /** Fails closed when the connection was killed or never established. */
+  private requireRpc(): JsonRpcConnection {
+    if (this.rpc === undefined) throw new McpError('mcp_closed', 'MCP client is not connected')
+    return this.rpc
   }
 
   /** Kills the child and resolves only after the port's `exited` settles. */
@@ -279,7 +366,12 @@ export interface McpClientManagerOptions {
   spawn?: McpSpawn
   requestTimeoutMs?: number
   maxMessageBytes?: number
+  maxToolPages?: number
   allowedProtocolVersions?: readonly string[]
+}
+
+export interface McpServerTool extends McpTool {
+  serverId: string
 }
 
 /**
@@ -292,6 +384,7 @@ export class McpClientManager {
   private readonly spawnPort: McpSpawn
   private readonly requestTimeoutMs: number | undefined
   private readonly maxMessageBytes: number | undefined
+  private readonly maxToolPages: number | undefined
   private readonly allowedProtocolVersions: readonly string[] | undefined
   private readonly clients = new Map<string, McpClient>()
 
@@ -306,6 +399,7 @@ export class McpClientManager {
     this.spawnPort = options.spawn ?? spawnMcpProcess
     this.requestTimeoutMs = options.requestTimeoutMs
     this.maxMessageBytes = options.maxMessageBytes
+    this.maxToolPages = options.maxToolPages
     this.allowedProtocolVersions = options.allowedProtocolVersions
   }
 
@@ -324,6 +418,43 @@ export class McpClientManager {
     } finally {
       this.startTask = undefined
     }
+  }
+
+  async listTools(serverId: string): Promise<McpTool[]> {
+    await this.ensureStarted()
+    return this.clientFor(serverId).listTools()
+  }
+
+  /** Lists every enabled server's tools, tagging each with its server id. */
+  async listAllTools(): Promise<McpServerTool[]> {
+    await this.ensureStarted()
+    const tools: McpServerTool[] = []
+    for (const [serverId, client] of this.clients) {
+      for (const tool of await client.listTools()) tools.push({ ...tool, serverId })
+    }
+    return tools
+  }
+
+  async callTool(
+    serverId: string,
+    name: string,
+    args: Record<string, unknown> = {},
+    options: McpRequestOptions = {},
+  ): Promise<McpToolCallResult> {
+    await this.ensureStarted()
+    return this.clientFor(serverId).callTool(name, args, options)
+  }
+
+  private async ensureStarted(): Promise<void> {
+    if (!this.policyEnabled) throw new McpError('mcp_disabled', 'MCP is disabled by project policy')
+    if (this.closed) throw new McpError('mcp_closed', 'MCP manager is closed')
+    await this.start()
+  }
+
+  private clientFor(serverId: string): McpClient {
+    const client = this.clients.get(serverId)
+    if (client === undefined) throw new McpError('mcp_unknown_server', `Unknown MCP server: ${serverId}`)
+    return client
   }
 
   async close(): Promise<void> {
@@ -360,6 +491,7 @@ export class McpClientManager {
           spawn: this.spawnPort,
           requestTimeoutMs: this.requestTimeoutMs,
           maxMessageBytes: this.maxMessageBytes,
+          maxToolPages: this.maxToolPages,
           allowedProtocolVersions: this.allowedProtocolVersions,
         })
         this.clients.set(config.id, client)
