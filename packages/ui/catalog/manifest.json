@@ -114,7 +114,7 @@
         "--spacing-48",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:a56b2c93a6e07e3597f55b2d9e5796bcc04076490d93b07c5f88f3b2db57579c",
+      "sourceHash": "sha256:fd0b21662791c8b07216268c857d67cb24b0952c75a558b0dfac7d86fe25a217",
       "snapshotHashes": {
         "default-dark": "sha256:ec62c0cf85a5ec5f0cba22074b014ca9318dc6c8e1fa60b3c18e818ea98a9303",
         "default-light": "sha256:7f09f180a4b7b5159b9db12b97a1b570834699c96128cd2fd354184154197515",
@@ -810,6 +810,12 @@
             "description": "Machine name of the failing source (mono face)."
           },
           {
+            "name": "timeMeaning",
+            "type": "\"occurred\" | \"observed\" | undefined",
+            "required": false,
+            "description": "Whether this is the failure time or the time the client observed it."
+          },
+          {
             "name": "title",
             "type": "string",
             "required": true,
@@ -840,7 +846,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:4a29a56c04d59fb75f70446337b0b9dcbcfe2b4d7c5fa1f1eb18f946ad4f7688",
+      "sourceHash": "sha256:64a25f7ca23d17f985f2584fd4fa35ae1512bf0965ccbd594c9667d7fb6d0cb3",
       "snapshotHashes": {
         "default-dark": "sha256:814f74fdd1ffaa5c740c2e22c7af957433af3e823ba840bd3db7bc1415ef72fa",
         "default-light": "sha256:7820e852e2d5ec16b02307933d56d2a6b10bc5e9c09494643385f5cccc14f335",
@@ -2018,7 +2024,7 @@
         "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:4bb4cec76ab84426837af24e04f464b883f2ad6e965a12661942484fae5f39c0",
+      "sourceHash": "sha256:193be0cac0f8c099adae7cb0aaae3f28ebe3027e49f04f68d794016646adbc31",
       "snapshotHashes": {
         "default-dark-hc": "sha256:1aa05e6ec45331f8379d40da6b292dcf129846fd14e7e9976966277746084039",
         "default-dark": "sha256:8951269f6fa47914db7e22e6a96a3dcc63e22e568a4e03ca304691af1b1bd466",
@@ -2299,6 +2305,7 @@
         "empty",
         "placeholder",
         "error",
+        "loading",
         "phone",
         "draft",
         "toolbar",
@@ -2309,6 +2316,7 @@
         "empty",
         "placeholder",
         "error",
+        "loading",
         "phone",
         "draft",
         "toolbar",
@@ -2331,22 +2339,28 @@
         ]
       },
       "cssVariables": [
+        "--border-radius-control",
         "--border-width-regular",
         "--color-background-primary",
         "--color-background-secondary",
+        "--color-background-tertiary",
         "--color-border-primary",
         "--color-ring-primary",
         "--color-text-primary",
+        "--color-text-secondary",
+        "--control-height",
         "--focus-ring-offset",
         "--focus-ring-width",
+        "--font-line-height-prose",
         "--font-text-size",
         "--font-weight-heading",
         "--panel-padding",
         "--spacing-12",
         "--spacing-4",
+        "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:e4ed9b1ada75b8e7e691ef736baa5c212e65a69b19eec71d4889dda23158fbb9",
+      "sourceHash": "sha256:7c1f71e2cbd4e6274c022d4e6cb683b772ba20a9dae2110307a2b3958e67e1bb",
       "snapshotHashes": {
         "default-dark": "sha256:9205498c663e6974e68ca800005bab18f1a0fcd6791c45d8bb1720fc3969b6ad",
         "default-light": "sha256:39cb94954dcb0b9779adea629517723b030874e2d0121c75f7550b2157cd8462",
