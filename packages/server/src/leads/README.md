@@ -11,7 +11,9 @@ default server loads nothing, opens no listener and writes no ledger. It is not 
 
 ## Opt-in and boundary
 
-`leads` carries a `ChildStarter` (the executor of delegated work), an optional `ChildReporter`, and the
+`leads` carries either a `ChildStarter` (the executor of delegated work) or `relay: { consent, domains }`
+(delegated plans run through this node's public relay start, with Full-access consent and allowed domains chosen
+by the owner at boot, never by the lead), an optional `ChildReporter`, and the
 literal `alwaysOn: true`, the host's explicit assertion that this node stays awake while leads sleep
 (ADR-0019 decision 5). Nothing here proves or arranges power; without the assertion R1 refuses
 `no_always_on_home` and the tool answers the lead before anything is stopped. Codex app-server leads are
@@ -66,8 +68,20 @@ lead `interrupted` by a restart.
 results with clipped output, head, diffstat, handoff reference, child costs, open questions, drill-down ids)
 and never a trace. The budget is 4000 tokens counted as `ceil(utf8 bytes / 3)`, a conservative bound, not a
 model tokenizer. Reductions run in a fixed order and each is listed in `truncated`. Text is scrubbed before
-clipping and the finished packet is scrubbed and parsed again. `relayChildReporter` reads the relay ledger
-through `RelayService.read` only.
+clipping and the finished packet is scrubbed and parsed again. `relayStartsChildReporter` reads the relay
+ledger of the relay run started for a child through `RelayService.read` only.
+
+## Relay adapter
+
+`relayStartsChildStarter` uses only the public `RelayStarts` surface (`start`, `status`, `stop`). `RelayStarts.start`
+always creates its own root run, so it cannot adopt the child that R1 `delegate` created and promised; that child
+stays the lead's promise as a **mirror** and the adapter keeps it in step with the relay run: it renews the
+mirror's lease, records that work began once the relay run left preparation, raises one escalation when the relay
+run needs input, and completes the mirror with the relay run's outcome (`interrupted` counts as failed: the relay
+never resumes inference after a restart). The start key is the child id, so a re-attach after a restart reaches the
+same relay run instead of starting a second. Canceling the lead stops the relay run once. A start refused for lack
+of a runtime meter or workspace (`runtime_meter_unavailable`, `relay_workspace_unavailable`) fails the child and
+wakes the lead with `failed`; the plan's acceptance commands run as the relay's gates under the owner's consent.
 
 ## Cost and billing (D-142)
 
@@ -123,5 +137,5 @@ Removing the plugin keeps the tables. Rollback: stop the node, unload the plugin
 injected clocks (up to 24 h of simulated time), plus a `SIGKILL` worker that kills the process at every
 transaction boundary of delegation, resolution/wake/acknowledgement and cancel with a scripted agent.
 Fixture replay is local client validation; real Claude Code behaviour on `session/cancel`, `session/load`,
-usage reporting and billing is unverified. The relay-backed starter needs the R2-op checkout allocator and
-runtime meter for a real child; it is covered with a fake `RelayService` only.
+usage reporting and billing is unverified. The relay adapter is covered with a fake public relay start; a real
+child additionally needs the operational relay (`operationalRelay`) to admit the start.

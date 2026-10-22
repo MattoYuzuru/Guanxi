@@ -42,6 +42,9 @@ import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from
 import { nativeAgentRoutes } from './native-agent/routes.ts'
 import { externalAgentPlugin } from './external-agents/plugin.ts'
 import { createLeadPlugin, type LeadPluginConfig } from './leads/plugin.ts'
+import { relayStartsChildReporter, relayStartsChildStarter } from './leads/children.ts'
+import type { ChildStarter } from './leads/types.ts'
+import { DURABLE_RUNS_SERVICE, type DurableRunsService } from './runs/plugin.ts'
 import type { ExternalPolicy } from './external-agents/types.ts'
 
 export { RELEASE_BUILD } from './release.ts'
@@ -145,7 +148,11 @@ export interface StartOptions {
   /** Trusted opt-in for external-lead delegation and hibernation (LW). Needs `externalAgents` and a child
    * executor. `alwaysOn: true` is the host's explicit assertion that this node stays awake while leads
    * sleep (ADR-0019 decision 5); nothing here proves or arranges power. Not reachable over HTTP. */
-  leads?: Omit<LeadPluginConfig, 'db'> & { alwaysOn: true }
+  leads?: Omit<LeadPluginConfig, 'db' | 'child'> & { alwaysOn: true } & (
+    { child: ChildStarter; relay?: undefined } |
+    /** Delegated plans run through this node's public relay start; consent and domains are owner choices
+     * the lead can never make for itself. */
+    { child?: undefined; relay: { consent: 'full-access'; domains?: readonly string[]; pollMs?: number } })
   /** Explicit opt-in to the operational local relay (llama-server counter plus owned checkouts).
    * Mutually exclusive with `relay`; an absent binary or model keeps the stock refusals. */
   operationalRelay?: OperationalRelayOptions
@@ -153,6 +160,7 @@ export interface StartOptions {
 
 export async function start(options: StartOptions = {}) {
   if (options.leads && !options.externalAgents) throw new Error('leads require externalAgents')
+  if (options.leads && !options.leads.child && !options.leads.relay) throw new Error('leads require a child executor')
   if (options.relay && options.operationalRelay) throw new RelayError('relay_policy_invalid')
   const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
   let actualPort = port
@@ -225,8 +233,13 @@ export async function start(options: StartOptions = {}) {
     } })
     if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
     if (options.leads) {
-      const { alwaysOn: _assertion, ...lead } = options.leads
-      await kernel.node.plugin(createLeadPlugin({ ...lead, db }))
+      const { alwaysOn: _assertion, relay: relayPolicy, child, ...lead } = options.leads
+      const relayService = kernel.node.service<RelayService>(RELAY_SERVICE)
+      const runs = kernel.node.service<DurableRunsService>(DURABLE_RUNS_SERVICE)
+      if (relayPolicy && (!relayService || !runs)) throw new Error('leads.relay requires the relay service')
+      await kernel.node.plugin(createLeadPlugin({ ...lead, db,
+        child: child ?? relayStartsChildStarter(relayService!.publicStarts, { ...relayPolicy!, runs: runs!.store }),
+        ...(lead.reporter || !relayPolicy ? {} : { reporter: relayStartsChildReporter(relayService!.publicStarts, relayService!) }) }))
     }
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)

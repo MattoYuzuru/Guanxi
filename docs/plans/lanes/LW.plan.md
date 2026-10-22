@@ -30,9 +30,9 @@ cross-node leads (F2); a power assertion (`alwaysOn` stays a host assertion). `p
   `onDeadline`, `onCancel`) and `leadWakePacketSchema`. The host adds identity, roots and judges.
 - **Child starter** (`children.ts`): pluggable `ChildStarter.start(launch) -> ChildHandle{done, stop}`
   plus `ChildReporter`. The R1 child created by `delegate` receives its attempt from `runs.start`.
-  A relay-backed starter uses only `RelayService` (`init`, `execute`, `stop`, `read`), with a
-  host `prepare()` for workspace/meter. `RelayStarts.start` cannot adopt an existing R1 child
-  (it always creates a root run), so it is not used; no relay file is edited.
+  The relay adapter uses only the public `RelayStarts` surface (`start`, `status`, `stop`) keyed by the
+  child id: `RelayStarts.start` cannot adopt an existing R1 child (it always creates a root run), so the
+  child stays the lead's promise as a mirror kept in step with the relay run. No relay file is edited.
 - **Wake packet** (`packet.ts`, pure): structured fields only, whitelisted from the child report,
   never a trace. Outcome, item statuses, gate results (clipped output), diffstat, head, handoff
   reference, costs, open questions, drill-down ids. Budget 4000 tokens, counted conservatively as
