@@ -12,6 +12,11 @@ const FRONT_MATTER_LIMIT = 8 * 1024
 const READ_CHUNK = 512
 
 interface FrontMatterFile { text: string; bodyOffset: number; size: number }
+/** Front matter plus the byte count actually read, for bounded-read tests. */
+export interface SkillHead extends FrontMatterFile { bytesRead: number }
+/** Discovery read seam: production reads the filesystem; tests can observe bounds. */
+export type SkillHeadReader = (path: string, maxBytes: number) => Promise<SkillHead | null>
+
 interface ScanSource extends SkillSource { boundary: string; scan: string }
 interface Candidate { source: ScanSource; dir: string; file: string }
 
@@ -50,22 +55,26 @@ function findFrontMatter(buffer: Buffer, complete: boolean): { text: string; bod
   return null
 }
 
-/** Reads at most 8 KiB, stopping as soon as the closing delimiter is seen. */
-async function readFrontMatter(path: string): Promise<FrontMatterFile | null> {
+/**
+ * Reads at most `maxBytes`, stopping as soon as the closing delimiter is seen.
+ * The returned `bytesRead` lets tests prove discovery never asks for or reads
+ * a whole body.
+ */
+export async function readSkillHead(path: string, maxBytes: number): Promise<SkillHead | null> {
   const handle = await open(path, 'r')
   try {
     const info = await handle.stat()
     const chunks: Buffer[] = []
     let total = 0
-    while (total < FRONT_MATTER_LIMIT && total < info.size) {
-      const length = Math.min(READ_CHUNK, FRONT_MATTER_LIMIT - total, info.size - total)
+    while (total < maxBytes && total < info.size) {
+      const length = Math.min(READ_CHUNK, maxBytes - total, info.size - total)
       const chunk = Buffer.alloc(length)
       const { bytesRead } = await handle.read(chunk, 0, length, total)
       if (bytesRead === 0) break
       chunks.push(chunk.subarray(0, bytesRead))
       total += bytesRead
       const found = findFrontMatter(Buffer.concat(chunks), total >= info.size)
-      if (found) return { ...found, size: info.size }
+      if (found) return { ...found, size: info.size, bytesRead: total }
     }
     return null
   } finally {
@@ -240,8 +249,11 @@ export async function discoverSkills(input: {
   userSkillDirs: string[]
   maxSkills?: number
   maxDescriptionChars?: number
+  /** Test seam; defaults to the bounded filesystem reader. */
+  readHead?: SkillHeadReader
 }): Promise<SkillIndex> {
   const projectRoot = await realpath(input.projectRoot)
+  const readHead = input.readHead ?? readSkillHead
   const sources: ScanSource[] = [
     { kind: 'project', root: join(projectRoot, '.agents/skills'), boundary: projectRoot, scan: join(projectRoot, '.agents/skills') },
     { kind: 'project', root: join(projectRoot, '.claude/skills'), boundary: projectRoot, scan: join(projectRoot, '.claude/skills') },
@@ -300,7 +312,7 @@ export async function discoverSkills(input: {
     if (realFiles.has(candidate.file)) continue
     realFiles.add(candidate.file)
     let head: FrontMatterFile | null
-    try { head = await readFrontMatter(candidate.file) } catch { head = null }
+    try { head = await readHead(candidate.file, FRONT_MATTER_LIMIT) } catch { head = null }
     const values = head ? parseFrontMatter(head.text) : null
     const name = (values?.name ?? '').trim()
     const description = (values?.description ?? '').trim()
@@ -383,7 +395,7 @@ export async function loadSkill(
   if (!boundary) return { id, error: 'outside_root' }
   if (!inside(boundary, dir) || !inside(boundary, file)) return { id, error: 'outside_root' }
   let head: FrontMatterFile | null
-  try { head = await readFrontMatter(file) } catch { head = null }
+  try { head = await readSkillHead(file, FRONT_MATTER_LIMIT) } catch { head = null }
   if (!head) return { id, error: 'not_found' }
   const bodyBytes = head.size - head.bodyOffset
   if (bodyBytes < 0) return { id, error: 'not_found' }

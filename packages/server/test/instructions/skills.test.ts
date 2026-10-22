@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { discoverSkills, skillContext, loadSkill } from '../../src/instructions/skills.ts'
+import { discoverSkills, skillContext, loadSkill, readSkillHead } from '../../src/instructions/skills.ts'
 import type { SkillIndex, SkillSummary } from '../../src/instructions/skills.ts'
 import { estimateTokens } from '../../src/context/usage.ts'
 
@@ -197,6 +197,53 @@ test('a 50 KiB body never enters discovery or the context token count', async t 
   const hugeContext = skillContext(huge, estimateTokens, 10_000)
   assert.equal(hugeContext.text, emptyContext.text)
   assert.equal(estimateTokens(hugeContext.text), estimateTokens(emptyContext.text))
+})
+
+test('discovery reads at most 8 KiB per SKILL.md and stops at the closing delimiter', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const huge = await writeSkill(projectRoot, '.agents/skills/huge', 'name: huge\ndescription: huge', 'x'.repeat(50 * 1024))
+  await writeSkill(projectRoot, '.agents/skills/small', 'name: small\ndescription: small')
+  const hugeFile = join(huge, 'SKILL.md')
+  const hugeSize = (await stat(hugeFile)).size
+  const reads: { path: string; requested: number; bytes: number }[] = []
+
+  const index = await discoverSkills({
+    projectRoot,
+    userSkillDirs: [],
+    readHead: async (path, maxBytes) => {
+      assert.ok(maxBytes <= 8 * 1024, `reader asked for ${maxBytes} bytes`)
+      const head = await readSkillHead(path, maxBytes)
+      if (head) {
+        assert.ok(head.bytesRead <= maxBytes, `read ${head.bytesRead} > ${maxBytes}`)
+        reads.push({ path, requested: maxBytes, bytes: head.bytesRead })
+      }
+      return head
+    },
+  })
+
+  assert.deepEqual(index.skills.map(skill => skill.name), ['huge', 'small'])
+  assert.equal(reads.length, 2)
+  for (const read of reads) {
+    assert.ok(read.requested <= 8 * 1024)
+    assert.ok(read.bytes <= 8 * 1024)
+  }
+  const hugeRead = reads.find(read => read.path === hugeFile)
+  assert.ok(hugeRead)
+  assert.ok(hugeRead.bytes < hugeSize)
+})
+
+test('a SKILL.md over 8 KiB without a closing delimiter is invalid front matter', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const dir = join(projectRoot, '.agents/skills/open-front-matter')
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'SKILL.md'), `---\nname: open\ndescription: ${'x'.repeat(9 * 1024)}\n`)
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  assert.deepEqual(index.skills, [])
+  assert.deepEqual(index.warnings.map(warning => warning.code), ['invalid_front_matter'])
+  assert.equal(index.warnings[0]!.path, join(dir, 'SKILL.md'))
 })
 
 test('folded, literal, quoted and plain descriptions parse without a YAML dependency', async t => {
