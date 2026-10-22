@@ -38,7 +38,8 @@ closed and open.
 - Never the only place where information lives.
 - The trigger keeps its own accessible name; the tooltip repeats or adds to it.
 - An open popup has `role="tooltip"` and a stable ID referenced by its trigger's
-  `aria-describedby`. Existing description IDs remain; closing removes only this popup's ID.
+  `aria-describedby`. The wrapper removes its added reference on close and preserves
+  caller-provided description IDs.
 
 ## Content and i18n
 

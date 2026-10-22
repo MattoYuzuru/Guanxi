@@ -228,7 +228,7 @@ test('Tooltip consumer cancellation keeps a closed popup unassociated', async ({
   await expect(trigger).toHaveAttribute('aria-describedby', 'existing-description')
 })
 
-test('forced colors preserves visible trigger focus, highlighted command contrast and Tooltip boundary', async ({ page }) => {
+test('forced colors preserves visible trigger focus, highlighted command contrast and Tooltip boundary', async ({ page }, testInfo) => {
   await page.emulateMedia({ forcedColors: 'active' })
   await open(page)
   expect(await page.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
@@ -241,6 +241,7 @@ test('forced colors preserves visible trigger focus, highlighted command contras
   expect(ring.style).toBe('solid')
   expect(ring.width).toBeGreaterThanOrEqual(2)
   expect(contrast(ring.color, ring.background)).toBeGreaterThanOrEqual(3)
+  await page.screenshot({ path: testInfo.outputPath('forced-focus.png') })
   await page.keyboard.press('ArrowDown')
   const highlighted = page.getByRole('menuitem').first()
   await expect(highlighted).toBeFocused()
@@ -249,12 +250,16 @@ test('forced colors preserves visible trigger focus, highlighted command contras
   expect(colors.fg).not.toBe(colors.bg)
   expect(colors.bg).not.toBe('rgba(0, 0, 0, 0)')
   expect(contrast(colors.fg, colors.bg)).toBeGreaterThanOrEqual(4.5)
+  await settled(page)
+  await page.screenshot({ path: testInfo.outputPath('forced-menu.png') })
   await page.keyboard.press('Escape')
   await page.getByTestId('icon').focus()
   const tooltip = await tooltipFor(page, page.getByTestId('icon'), 'Open settings')
   const border = await tooltip.evaluate(node => ({ style: getComputedStyle(node).borderTopStyle, width: parseFloat(getComputedStyle(node).borderTopWidth) }))
   expect(border.style).toBe('solid')
   expect(border.width).toBeGreaterThanOrEqual(1)
+  await settled(page)
+  await page.screenshot({ path: testInfo.outputPath('forced-tooltip.png') })
 })
 
 for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfortable']) for (const glass of ['glass', 'tinted', 'solid']) {
@@ -301,7 +306,7 @@ for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfor
   })
 }
 
-test('reduced transparency makes open Menu opaque while retaining localized interaction', async ({ page }) => {
+test('reduced transparency makes open Menu opaque while retaining localized interaction', async ({ page }, testInfo) => {
   await open(page, { glass: 'glass', transparency: 'reduced', locale: 'ru' })
   await page.getByTestId('menu-trigger').click()
   const menu = page.getByRole('menu')
@@ -310,6 +315,8 @@ test('reduced transparency makes open Menu opaque while retaining localized inte
   expect(material.backdrop).toBe('none')
   // Actual resolved fill has no alpha channel, rather than merely an attribute on the host.
   expect(material.background).not.toMatch(/\/\s*0\.|rgba\([^)]*,\s*0\./)
+  await settled(page)
+  await page.screenshot({ path: testInfo.outputPath('reduced-transparency.png') })
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('menu-trigger')).toBeFocused()
 })

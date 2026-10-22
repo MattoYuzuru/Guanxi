@@ -28,7 +28,7 @@ function Fixture() {
   const [toggleActions, setToggleActions] = useState(0)
   const [pressed, setPressed] = useState(true)
   // A synthetic glyph keeps this fixture independent of any third-party icon import.
-  const glyph = <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" /></svg>
+  const glyph = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="6" /></svg>
   return <main className="flex flex-col items-start gap-4 p-4">
     <h1>{t('story.menu.group')}</h1>
     <Menu modal={false}>
