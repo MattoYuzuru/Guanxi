@@ -161,6 +161,7 @@ class FakeJira {
   issue: Record<string, unknown> = fixture('jira-issue-v3')
   readonly comments: Array<{ id: string; body: unknown; author?: string }> = []
   selfAccount = 'jira-bot'
+  selfResponse: HttpResponse | null = null
   readonly transitionPosts: string[] = []
   private nextCommentId = 20_000
 
@@ -179,6 +180,7 @@ class FakeJira {
     this.requests.push(structuredClone(request))
     const path = new URL(request.url).pathname
     if (request.method === 'GET' && path === '/rest/api/3/myself') {
+      if (this.selfResponse !== null) return this.selfResponse
       return json(200, { accountId: this.selfAccount })
     }
     if (request.method === 'GET' && /\/issue\/PROJ-12$/.test(path)) {
@@ -605,6 +607,36 @@ test('an unavailable mapped Jira transition falls back to comment-only with a wa
 
   const again = await engine.sync(result.link, 'blocked', { now: START + 1 })
   assert.deepEqual(again.writes, [])
+  assert.equal(fake.comments.length, 1)
+})
+
+test('a retryable Jira identity read defers under the issue key', async () => {
+  const fake = new FakeJira()
+  fake.comments.push({
+    id: '1',
+    author: 'jira-bot',
+    body: '<!-- guanxi:transition:wg2-a:blocked:1 -->',
+  })
+  fake.selfResponse = json(429, { message: 'rate limited' }, { 'retry-after': '5' })
+  const adapter = new JiraAdapter({
+    http: request => fake.request(request),
+    authorize: headers => {
+      headers.authorization = `Bearer ${TOKEN}`
+    },
+    credential: 'secret://vault/jira/default',
+    baseUrl: 'https://jira.example.test',
+    apiVersion: 3,
+  })
+  const engine = new TrackerSyncEngine({ adapter, now: () => START })
+
+  const result = await engine.sync(
+    link({ tracker: 'jira', externalKey: 'PROJ-12' }),
+    'blocked',
+    { now: START },
+  )
+  assert.equal(result.outcome, 'deferred')
+  assert.equal(result.deferred?.reason, 'retry_after')
+  assert.equal(result.deferred?.nextAllowedAt, START + 5_000)
   assert.equal(fake.comments.length, 1)
 })
 

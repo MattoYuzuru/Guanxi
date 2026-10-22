@@ -151,7 +151,7 @@ export interface TrackerAdapter {
   read(externalKey: string, conditional?: ConditionalRead): Promise<RemoteReadResult>
   listComments(externalKey: string): Promise<RemoteComment[]>
   /** The authenticated identity, cached after the first request. */
-  self(): Promise<string>
+  self(externalKey?: string): Promise<string>
   mutate(externalKey: string, mutation: TrackerMutation): Promise<TrackerWriteResult>
 }
 

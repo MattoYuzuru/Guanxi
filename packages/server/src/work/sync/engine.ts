@@ -287,7 +287,7 @@ export class TrackerSyncEngine {
     if (marked.length > 0) {
       let self: string
       try {
-        self = await this.adapter.self()
+        self = await this.adapter.self(link.externalKey)
       } catch (error) {
         if (error instanceof TrackerTransportError) {
           const observation = this.governor.observeTransportFailure({

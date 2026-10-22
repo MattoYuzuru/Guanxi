@@ -322,14 +322,14 @@ export class JiraAdapter implements TrackerAdapter {
     return comments
   }
 
-  async self(): Promise<string> {
+  async self(externalKey?: string): Promise<string> {
     if (this.selfIdentity !== null) return this.selfIdentity
     const response = await this.send(
       'GET',
       `${this.apiBase()}/myself`,
       undefined,
       { accept: 'application/json' },
-      'jira:self',
+      externalKey ?? 'jira:self',
     )
     if (response.status !== 200) {
       if (isRetryable(response)) {
