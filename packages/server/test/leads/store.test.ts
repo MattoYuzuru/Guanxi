@@ -103,12 +103,15 @@ test('the pump reads only delegations that still need it', () => {
       ['l7', 'canceled', 'child_started', 'canceled', 'to-stop', true],
       ['l8', 'waiting_children', 'child_started', 'interrupted', 'lost', true],
       ['l9', 'canceled', 'child_stop_requested', 'canceled', 'stopped', false],
+      ['l10', 'completed', 'child_started', 'interrupted', 'detached-lost', false],
+      ['l11', 'waiting_children', 'abandoned', null, 'abandoned-intent', false],
     ]
     for (const [lead, leadState, delegation, childState, key] of cases) {
       w.runs.create({ id: lead })
       state(lead, leadState)
       store.insertSession(w.db, session(lead))
       store.insertIntent(w.db, intent(lead, key!))
+      if (!childState && delegation !== 'intent') store.setDelegationState(w.db, lead, key!, delegation as never)
       if (childState) {
         w.runs.create({ id: `${lead}-child` })
         state(`${lead}-child`, childState)

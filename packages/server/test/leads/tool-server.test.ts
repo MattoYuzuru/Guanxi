@@ -105,3 +105,15 @@ test('the grant context reaches the handler and close() destroys held calls and 
   assert.equal(await pending, 'closed')
   await assert.rejects(server.url(), /lead_tools_closed/)
 })
+
+test('a listen failure is reported and a later attempt can still succeed', async t => {
+  const first = new LeadToolServer()
+  t.after(() => first.close())
+  await first.url()
+  const taken = first.address()!.port
+  const second = new LeadToolServer({ port: taken })
+  t.after(() => second.close())
+  await assert.rejects(second.url(), /EADDRINUSE/)
+  await first.close()
+  assert.match(await second.url(), new RegExp(`:${taken}/mcp$`), 'the failure was not cached')
+})

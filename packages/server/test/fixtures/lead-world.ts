@@ -25,7 +25,8 @@ export const readLog = (dir: string, name: string): Record<string, any>[] => {
 class ScriptedAgents {
   private readonly dir: string
   private readonly onTurn: () => void
-  constructor(dir: string, onTurn: () => void) { this.dir = dir; this.onTurn = onTurn }
+  private readonly silent: boolean
+  constructor(dir: string, onTurn: () => void, silent: boolean) { this.dir = dir; this.onTurn = onTurn; this.silent = silent }
   private log(event: string, extra: Record<string, unknown> = {}) {
     appendFileSync(join(this.dir, 'turns.jsonl'), JSON.stringify({ pid: process.pid, event, ...extra }) + '\n')
   }
@@ -39,7 +40,8 @@ class ScriptedAgents {
     const kind = wake ? 'wake' : delegate ? 'delegate' : 'continue'
     this.log('prompt', { kind, wakeSeq })
     this.onTurn()
-    lead.onActivity()
+    // A silent delegating lead calls the tool before emitting any update: the call itself is the acknowledgement.
+    if (!(this.silent && delegate)) lead.onActivity()
     // Cumulative for the one ACP session, counting every turn that ever started, even a killed one.
     const n = readLog(this.dir, 'turns.jsonl').filter(e => e.event === 'prompt').length
     const usage = { inputTokens: n * 1000, outputTokens: n * 200, cost: { amount: n * 0.5, currency: 'USD' } }
@@ -80,6 +82,7 @@ export interface WorldOptions {
   deferClaim?: boolean
   r1Fault?: (operation: string, point: string) => void
   fault?: (point: string) => void
+  silent?: boolean
 }
 export function leadWorld(options: WorldOptions) {
   const db = openDb(options.path)
@@ -91,7 +94,7 @@ export function leadWorld(options: WorldOptions) {
   const children = new ScriptedChildren(options.dir)
   const tools = new LeadToolServer()
   const turns = { started: 0 }
-  const agents = new ScriptedAgents(options.dir, () => { turns.started++ })
+  const agents = new ScriptedAgents(options.dir, () => { turns.started++ }, options.silent === true)
   const lead = new LeadService({ db, runs, agents: agents as never, scrubber, child: children, tools, clock: options.clock,
     renewMs: 2_000_000_000, cancelGraceMs: 500, retryMs: () => 0, ...(options.fault ? { fault: options.fault } : {}) })
   return { db, log, runs, lead, children, scrubber, tools, turns,

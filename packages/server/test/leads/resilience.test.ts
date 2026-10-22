@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { leadFixture, HOUR } from './helpers.ts'
+import { brief, leadFixture, HOUR } from './helpers.ts'
+import { RunError } from '../../src/runs/types.ts'
 
 type Fixture = Awaited<ReturnType<typeof leadFixture>>
 const resumedPrompts = async (f: Fixture, adapter: 'claude-code' | 'copilot' = 'claude-code') =>
@@ -306,4 +307,105 @@ test('a changed lead binding is never asked to load the old agent session, on a 
   assert.equal(copilot.filter(e => e.event === 'session_new').length, 1)
   assert.equal(f.db.prepare('SELECT resume_mode FROM lead_wakes WHERE run_id=?').get(runId)!.resume_mode, 'seeded')
   assert.match(String((await resumedPrompts(f, 'copilot'))[0]!.text), /Lead handoff:/)
+})
+
+test('the ledger follows the agent\'s cumulative counter through a reset and a currency change without over-billing', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [brief(), brief({ objective: 'two' }), brief({ objective: 'three' })], redelegate: true,
+    usageByTurn: [{ inputTokens: 1000, outputTokens: 300, amount: 0.5 }, { inputTokens: 300, outputTokens: 100, amount: 0.2 },
+      { inputTokens: 600, outputTokens: 200, amount: 0.4, currency: 'EUR' }, { inputTokens: 900, outputTokens: 250, amount: 0.9, currency: 'EUR' }] } })
+  const { runId, first } = f.start()
+  await first
+  for (let i = 0; i < 3; i++) {
+    f.children.complete(i)
+    f.lead().pump()
+    await f.lead().idle()
+  }
+  const run = f.runs()
+  assert.equal(run.get(runId).state, 'completed')
+  // 1000 | reset to 300 (the counter restarted, so 300 is new) | 600 (+300) | 900 (+300) = 2200 in, 650 out... per turn deltas below.
+  assert.deepEqual(run.costEntries(runId).map(e => [e.inputTokens, e.outputTokens, e.currency, e.costMicrounits]), [
+    [1000, 300, 'USD', 500_000], [300, 100, 'USD', 200_000], [300, 100, 'EUR', 400_000], [300, 50, 'EUR', 500_000]])
+  assert.deepEqual(run.costs(runId).sort((a, b) => a.currency.localeCompare(b.currency)), [
+    { currency: 'EUR', inputTokens: 600, outputTokens: 150, costMicrounits: 900_000 }, { currency: 'USD', inputTokens: 1300, outputTokens: 400, costMicrounits: 700_000 }])
+})
+
+test('a failing cost record is noted and never blocks the turn; the next turn catches the usage up', async t => {
+  const f = await leadFixture(t)
+  const run = f.runs()
+  const original = run.recordCost.bind(run)
+  let failing = true
+  t.mock.method(run, 'recordCost', (...args: Parameters<typeof original>) => { if (failing) throw new RunError('invalid_input'); return original(...args) })
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'hibernated')
+  assert.deepEqual(run.costEntries(runId), [])
+  const notes = () => f.kernel.sessionLog!.readAll(runId, 'person').filter(e => e.type === 'agent.note').map(e => String((e.data as { text: string }).text))
+  assert.ok(notes().some(text => text.includes('usage_failed')))
+  failing = false
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(run.get(runId).state, 'completed')
+  assert.deepEqual(run.costs(runId), [{ currency: 'USD', inputTokens: 2000, outputTokens: 400, costMicrounits: 1_000_000 }], 'nothing was lost, nothing billed twice')
+})
+
+test('an unexpected failure while settling a turn asks a person instead of stranding a live attempt', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [] } })
+  const run = f.runs()
+  t.mock.method(run, 'complete', () => { throw Object.assign(new Error('storage'), { code: 'storage_error' }) }, { times: 1 })
+  const { runId, first } = f.start()
+  const turn = await first
+  assert.equal(turn.outcome, 'failed')
+  assert.equal(run.get(runId).state, 'input_required')
+  assert.equal(run.attempts(runId).filter(a => ['delivered', 'started'].includes(a.state)).length, 0)
+  assert.deepEqual(f.notices.map(n => [n.kind, 'code' in n ? n.code : null]), [['lead_failed', 'storage_error']])
+})
+
+test('a delegation that fails before it commits is abandoned, never completed later behind the lead\'s back', async t => {
+  const f = await leadFixture(t)
+  const run = f.runs()
+  t.mock.method(run, 'delegate', () => { throw Object.assign(new Error('storage'), { code: 'storage_error' }) }, { times: 1 })
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'failed')
+  assert.equal(run.get(runId).state, 'input_required')
+  assert.equal(f.db.prepare('SELECT state FROM lead_delegations').get()!.state, 'abandoned')
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(run.promises(runId).length, 0)
+  assert.equal(f.children.launches.length, 0)
+  await f.scenario({ briefs: [] })
+  assert.equal((await f.lead().resume(runId, 'Try again without delegating')).outcome, 'completed')
+  assert.equal(run.promises(runId).length, 0, 'the abandoned brief was not resurrected')
+})
+
+test('an explicit resume abandons a delegation intent the lead had only begun to request', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [] } })
+  const run = f.runs()
+  // A lead that was interrupted right after its tool call: the intent is durable, the delegation never committed.
+  run.create({ id: 'lead-x' })
+  f.db.prepare('INSERT INTO lead_sessions (run_id,owner_account_id,actor_account_id,project_id,session_roles,binding_digest,task) VALUES (?,?,?,?,?,?,?)')
+    .run('lead-x', f.owner, f.owner, 'p', '{}', 'd', 't')
+  f.db.prepare("INSERT INTO lead_delegations (lead_run_id,key,brief,deadline,on_deadline,on_cancel,state) VALUES ('lead-x','k','{}',1,'wrap_up','cancel','intent')").run()
+  f.db.prepare("UPDATE durable_runs SET state='interrupted' WHERE id='lead-x'").run()
+  await f.lead().resume('lead-x', 'decide afresh')
+  assert.equal(f.db.prepare("SELECT state FROM lead_delegations WHERE lead_run_id='lead-x'").get()!.state, 'abandoned')
+  assert.equal(run.promises('lead-x').length, 0)
+})
+
+test('a failed acknowledgement is retried: the wake is not skipped and the lead is not acknowledged by luck', async t => {
+  const f = await leadFixture(t)
+  const { runId, first } = f.start()
+  await first
+  const run = f.runs()
+  const original = run.modelStarted.bind(run)
+  t.mock.method(run, 'modelStarted', (...args: Parameters<typeof original>) => { throw new RunError('writer_busy') }, { times: 1 })
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(run.wakes(runId)[0]!.acknowledged_at, null, 'a failed acknowledgement leaves the wake pending')
+  assert.notEqual(run.get(runId).state, 'completed')
+  f.advance(1_001)
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(run.get(runId).state, 'completed')
+  assert.equal(run.wakes(runId).filter(w => w.acknowledged_at !== null).length, 1)
 })

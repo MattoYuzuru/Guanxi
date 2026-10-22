@@ -286,12 +286,37 @@ test('a child that lost its executor after a model call is not replayed and the 
       assert.deepEqual(f.notices.map(n => n.kind), ['child_interrupted'], 'told once, however often the pump runs')
       assert.equal(f.runs().promises(runId)[0]!.outcome, null, 'the lead keeps waiting for its deadline')
     } else {
+      // Its executor handle has not settled, so it may still be unwinding: no second executor beside it.
+      assert.equal(f.children.launches.length, 1)
+      f.children.fail(0)
+      await new Promise(resolve => setTimeout(resolve, 20))
+      f.lead().pump()
+      await f.lead().idle()
       assert.equal(f.children.launches.length, 2)
       assert.equal(f.children.launches[1]!.previousAttempts, 1)
       assert.equal(f.runs().get(launch.childRunId).state, 'working')
-      assert.deepEqual(f.notices, [])
+      assert.deepEqual(f.notices.map(n => n.kind), ['child_start_failed'], 'only the first executor\'s failure is reported')
     }
   }
+})
+
+test('a child that keeps losing its executor before any model call is restarted a bounded number of times', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [brief({ deadlineMs: 400 * HOUR })] }, plugin: { childStartLimit: 3 } })
+  const { runId, first } = f.start()
+  await first
+  const child = f.children.launches[0]!.childRunId
+  for (let round = 1; round <= 5; round++) {
+    f.advance(25 * HOUR)
+    f.runs().tick()
+    f.children.fail(f.children.launches.length - 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    f.lead().pump()
+    await f.lead().idle()
+  }
+  assert.equal(f.children.launches.length, 3, 'three attempts, then the person is told')
+  assert.equal(f.runs().get(child).state, 'interrupted')
+  assert.ok(f.notices.some(n => n.kind === 'child_interrupted'))
+  assert.equal(f.runs().promises(runId)[0]!.outcome, null)
 })
 
 test('bookkeeping updates do not acknowledge a wake; the first model output does', async t => {

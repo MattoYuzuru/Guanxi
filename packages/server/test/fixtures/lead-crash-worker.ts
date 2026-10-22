@@ -1,7 +1,7 @@
 import { dirname } from 'node:path'
 import { leadWorld, OWNER, START } from './lead-world.ts'
 
-const [path, stage, crashIndex] = process.argv.slice(2) as [string, string, string]
+const [path, requestedStage, crashIndex] = process.argv.slice(2) as [string, string, string]
 const points: string[] = []
 let armed = false
 const fault = (label: string) => {
@@ -10,7 +10,9 @@ const fault = (label: string) => {
   if (points.length - 1 === Number(crashIndex)) process.kill(process.pid, 'SIGKILL')
 }
 let now = START
-const world = leadWorld({ path, dir: dirname(path), clock: () => now,
+const silent = requestedStage === 'delegate-silent'
+const stage = silent ? 'delegate' : requestedStage
+const world = leadWorld({ path, dir: dirname(path), clock: () => now, silent,
   // Transaction boundaries only: R1's own statement-level crash property is covered by durable-run-crash.
   r1Fault: (operation, point) => { if (['before_begin', 'before_commit', 'committed'].includes(point)) fault(`${operation}:${point}`) },
   fault })

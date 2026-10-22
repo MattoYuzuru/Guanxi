@@ -59,15 +59,19 @@ let leadFinish = null
 const sessionUpdate = (sessionId, update) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update } })
 const usageFile = sessionId => join(root, `usage-${sessionId}.json`)
 const leadUsage = sessionId => {
+  // `usageByTurn[n]` is the CUMULATIVE usage reported by the n-th prompt this agent ever received (any process).
+  const turn = leadEvents().filter(e => e.event === 'prompt').length - 1
+  const scripted = (lead.usageByTurn ?? [])[turn]
+  if (scripted) return { currency: 'USD', ...scripted }
   const base = existsSync(usageFile(sessionId)) ? JSON.parse(readFileSync(usageFile(sessionId), 'utf8')) : { inputTokens: 0, outputTokens: 0, amount: 0 }
   const per = lead.usagePerTurn ?? { inputTokens: 0, outputTokens: 0, amount: 0 }
-  const next = { inputTokens: base.inputTokens + per.inputTokens, outputTokens: base.outputTokens + per.outputTokens, amount: base.amount + (per.amount ?? 0) }
+  const next = { inputTokens: base.inputTokens + per.inputTokens, outputTokens: base.outputTokens + per.outputTokens, amount: base.amount + (per.amount ?? 0), currency: 'USD' }
   writeFileSync(usageFile(sessionId), JSON.stringify(next))
   return next
 }
 const reportUsage = sessionId => {
   const total = leadUsage(sessionId)
-  if (lead.usagePerTurn?.amount !== undefined) sessionUpdate(sessionId, { sessionUpdate: 'usage_update', used: 1, size: 100, cost: { amount: total.amount, currency: 'USD' } })
+  if (lead.usagePerTurn?.amount !== undefined || lead.usageByTurn) sessionUpdate(sessionId, { sessionUpdate: 'usage_update', used: 1, size: 100, cost: { amount: total.amount, currency: total.currency } })
   return lead.usageOmitted ? undefined : { totalTokens: total.inputTokens + total.outputTokens, inputTokens: total.inputTokens, outputTokens: total.outputTokens }
 }
 async function mcpCall(body, signal) {

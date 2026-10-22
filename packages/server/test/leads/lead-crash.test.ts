@@ -44,7 +44,8 @@ function integrity(db: Db): void {
 }
 const ledger = (w: World, runId: string) => JSON.stringify([w.runs.costs(runId), count(w.db, 'SELECT COUNT(*) AS n FROM run_costs WHERE run_id=?', runId)])
 
-for (const stage of ['delegate', 'wake', 'signal', 'cancel'] as const) {
+for (const stage of ['delegate', 'delegate-silent', 'wake', 'signal', 'cancel'] as const) {
+  const base = stage === 'delegate-silent' ? 'delegate' : stage
   test(`crash property: SIGKILL at every ${stage} boundary of the lead flow yields one delegation, one resolution, one acknowledged wake and one resumed turn`, async t => {
     const root = mkdtempSync(join(tmpdir(), `guanxi-lw-${stage}-`))
     t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -54,7 +55,7 @@ for (const stage of ['delegate', 'wake', 'signal', 'cancel'] as const) {
     assert.ok(points.length >= 8)
     const ackIdx = points.indexOf('model_started:committed')
     const intentIdx = points.indexOf('lead:delegate:intent_persisted')
-    if (stage === 'delegate') assert.ok(intentIdx > 0, 'the probe reaches the durable delegation intent')
+    if (base === 'delegate') assert.ok(intentIdx > 0, 'the probe reaches the durable delegation intent')
     if (stage === 'wake') assert.ok(ackIdx > 0, 'the probe reaches the acknowledgement')
     const crashClock = stage === 'wake' ? START + HOUR : START
     for (let index = 0; index < points.length; index++) {
@@ -86,7 +87,7 @@ for (const stage of ['delegate', 'wake', 'signal', 'cancel'] as const) {
         }
         const runId = lead.id
         // The lead's first turn is never re-prompted by recovery. A person retries explicitly.
-        if (stage === 'delegate' && w.runs.promises(runId).length === 0) {
+        if (base === 'delegate' && w.runs.promises(runId).length === 0) {
           // Once the intent committed, recovery completes the delegation itself: the lead decided already.
           assert.ok(index < intentIdx, `a committed intent must be completed by recovery without prompting the lead: ${label}`)
           assert.equal(w.runs.get(runId).state, 'interrupted', label)
@@ -115,7 +116,7 @@ for (const stage of ['delegate', 'wake', 'signal', 'cancel'] as const) {
         assert.equal(count(w.db, 'SELECT COUNT(*) AS n FROM durable_runs WHERE parent_id=?', runId), 1, 'exactly one child run')
         const promise = w.runs.promises(runId)[0]!
         const childId = promise.child_id
-        if (stage === 'delegate') {
+        if (base === 'delegate') {
           // Hibernated again, one live executor, and the lead's ledger is not touched while it sleeps.
           assert.equal(w.runs.get(runId).state, 'waiting_children', label)
           assert.equal(w.db.prepare("SELECT state FROM lead_delegations").get()!.state, 'child_started', label)
@@ -164,7 +165,7 @@ for (const stage of ['delegate', 'wake', 'signal', 'cancel'] as const) {
         // A turn killed before its acknowledgement is lost with its process and re-delivered: it may
         // START twice but COMPLETES once. After the acknowledgement it is never replayed automatically.
         for (let seq = 1; seq <= expectedWakes; seq++) assert.ok(started('wake', seq) >= 1 && started('wake', seq) <= 2 && completed('wake', seq) <= 1, `wake ${seq}: ${label}`)
-        if (stage === 'delegate' || (stage === 'wake' && index < ackIdx)) {
+        if (base === 'delegate' || (stage === 'wake' && index < ackIdx)) {
           assert.equal(completed('wake'), 1, `exactly one resumed lead turn completed: ${label}`)
           assert.equal(completed('continue'), 0, label)
         } else if (stage === 'wake') {
