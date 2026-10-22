@@ -18,6 +18,22 @@ async function fits(locator: Locator) {
     return box.left >= 0 && box.right <= innerWidth + 1 && node.scrollWidth <= node.clientWidth + 1
   })).toBe(true)
 }
+function contrast(foreground: string, background: string) {
+  const luminance = (value: string) => {
+    const channels = value.match(/^rgb\((\d+), (\d+), (\d+)\)$/)?.slice(1).map(Number)
+    if (!channels) throw new Error(`Expected an opaque resolved system color: ${value}`)
+    const linear = channels.map(channel => channel / 255 <= 0.04045 ? channel / 255 / 12.92 : ((channel / 255 + 0.055) / 1.055) ** 2.4)
+    return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722
+  }
+  const [low, high] = [luminance(foreground), luminance(background)].sort((a, b) => a - b)
+  return (high! + 0.05) / (low! + 0.05)
+}
+async function visibleRing(control: Locator, surface: Locator) {
+  const ring = await control.evaluate(node => { const style = getComputedStyle(node); return { width: parseFloat(style.outlineWidth), style: style.outlineStyle, color: style.outlineColor } })
+  expect(ring.width).toBeGreaterThanOrEqual(2)
+  expect(ring.style).toBe('solid')
+  expect(contrast(ring.color, await surface.evaluate(node => getComputedStyle(node).backgroundColor))).toBeGreaterThanOrEqual(3)
+}
 
 test('Textarea native multiline edits, row defaults, disabled and readonly boundaries remain intact', async ({ page }) => {
   await open(page)
@@ -139,11 +155,11 @@ test('Textarea and ErrorState focus remain visible in actual emulated forced col
   await page.keyboard.press('Tab')
   const textarea = page.getByTestId('controlled')
   await expect(textarea).toBeFocused()
-  expect(await textarea.evaluate(node => parseFloat(getComputedStyle(node).outlineWidth))).toBeGreaterThanOrEqual(2)
+  await visibleRing(textarea, textarea)
   await page.screenshot({ path: testInfo.outputPath('forced-textarea.png') })
   const summary = page.getByRole('alert').locator('summary')
   await summary.focus()
-  expect(await summary.evaluate(node => parseFloat(getComputedStyle(node).outlineWidth))).toBeGreaterThanOrEqual(2)
+  await visibleRing(summary, page.getByRole('alert'))
   await target(summary)
   await page.screenshot({ path: testInfo.outputPath('forced-error.png') })
 })
