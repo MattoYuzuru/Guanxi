@@ -8,6 +8,7 @@
  * after the final SIGKILL.
  */
 import { spawn } from 'node:child_process'
+import { createHash, randomBytes } from 'node:crypto'
 import { closeSync, createReadStream, openSync, writeSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -16,10 +17,15 @@ const launcherPath = fileURLToPath(new URL('./private-client-launcher.mjs', impo
 const [clientScript, recordPath, killGraceRaw, bindingTag, nonceHash] = process.argv.slice(2)
 const killGrace = Number(killGraceRaw)
 const pgid = process.pid
+// Fresh, non-identifying generation for this one client spawn. Only its hash is
+// durable; the token is visible in the client argv, grants nothing and is never
+// written to the record or a log.
+const clientToken = randomBytes(32).toString('base64url')
+const clientTokenHash = createHash('sha256').update(clientToken).digest('hex')
 let shutting = false
 let record = {
-  version: 1, bindingTag, nonceHash, supervisorPid: pgid, pgid,
-  clientPid: null, clientExitCode: null, clientScript, startedAt: Date.now(),
+  version: 2, bindingTag, nonceHash, supervisorPid: pgid, pgid,
+  clientPid: null, clientExitCode: null, clientTokenHash, clientScript, startedAt: Date.now(),
 }
 
 function writeRecord() {
@@ -57,7 +63,7 @@ try {
 
 let child
 try {
-  child = spawn(process.execPath, [launcherPath, clientScript], {
+  child = spawn(process.execPath, [launcherPath, clientScript, clientToken], {
     cwd: process.cwd(),
     env: { ...process.env },
     stdio: ['ignore', 'ignore', 'ignore', 3, 4, 'ignore', 'ignore'],
@@ -87,7 +93,7 @@ try { writeRecord() } catch {
 // the request write end close and could not observe EOF.
 try { closeSync(3) } catch { /* already closed */ }
 try { closeSync(4) } catch { /* already closed */ }
-control({ status: 'ready', supervisorPid: pgid, pgid, clientPid: child.pid })
+control({ status: 'ready', supervisorPid: pgid, pgid, clientPid: child.pid, clientTokenHash })
 
 try {
   const lifetime = createReadStream(null, { fd: 5, autoClose: false })

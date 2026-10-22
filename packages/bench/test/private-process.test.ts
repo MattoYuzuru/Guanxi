@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -112,6 +113,27 @@ function cleanup(root: string, pids: (number | null | undefined)[] = []): void {
   }
   rmSync(root, { recursive: true, force: true })
 }
+async function groupedHolder(root: string): Promise<{ supervisor: ReturnType<typeof spawn>; clientPid: number }> {
+  const groupFile = join(root, 'group.json')
+  const holderScript = `const {spawn}=require('node:child_process');` +
+    `const fs=require('node:fs');` +
+    `const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});` +
+    `fs.writeFileSync(process.argv[1],JSON.stringify({client:child.pid}));` +
+    `setInterval(()=>{},1000)`
+  const supervisor = spawn(process.execPath, ['-e', holderScript, groupFile], { detached: true, stdio: 'ignore' })
+  await waitFor(() => typeof supervisor.pid === 'number' && existsSync(groupFile))
+  return { supervisor, clientPid: readJson(groupFile).client as number }
+}
+function v2Record(x: ReturnType<typeof setup>, supervisorPid: number, clientPid: number, token: string): string {
+  const recordPath = privateProcessRecordPath(x.binding, x.policy)
+  writeFileSync(recordPath, JSON.stringify({
+    version: 2, bindingTag: trialBindingTag(x.binding), nonceHash: nonceHash(x.binding),
+    supervisorPid, pgid: supervisorPid, clientPid, clientExitCode: null,
+    clientTokenHash: createHash('sha256').update(token).digest('hex'),
+    clientScript: x.policy.clientScript, startedAt: Date.now(),
+  }), { mode: 0o600 })
+  return recordPath
+}
 
 test('actual OS fixture uses fds 3/4 for two sequential public completions with no private identity in argv, env or frames', { timeout: 20_000 }, async () => {
   const x = setup()
@@ -204,6 +226,14 @@ test('record exists while child and grandchild are alive; after forced superviso
     const recordPath = privateProcessRecordPath(x.binding, x.policy)
     await waitFor(() => existsSync(recordPath))
     record = readJson(recordPath)
+    assert.equal(record.version, 2)
+    assert.equal(record.pgid, record.supervisorPid)
+    assert.equal(record.clientTokenHash,
+      createHash('sha256').update(report.argv[3]).digest('hex'))
+    const recordText = readFileSync(recordPath, 'utf8')
+    assert.equal(recordText.includes(report.argv[3]), false, 'the durable record stores only the cleanup-token hash')
+    for (const sentinel of sentinels) assert.equal(recordText.includes(sentinel), false, sentinel)
+    assert.equal(recordText.includes(x.binding.nonce), false)
     assert.equal(alive(report.descendantPid), true)
     assert.equal(alive(record.clientPid), true)
     assert.equal(existsSync(recordPath), true)
@@ -212,10 +242,9 @@ test('record exists while child and grandchild are alive; after forced superviso
     assert.equal(alive(record.clientPid), true)
     assert.equal(alive(report.descendantPid), true)
     assert.equal(existsSync(recordPath), true, 'supervisor must not unlink its record on death')
-    const launcher = resolve('packages/bench/src/private-client-launcher.mjs')
     const removed = await reapPrivateProcessRecord(x.binding, x.policy, {
       observe: async pid => pid === record.clientPid
-        ? { pid, pgid: record.pgid, command: [process.execPath, launcher, x.policy.clientScript].join(' ') }
+        ? { pid, pgid: record.pgid, state: 'S', command: report.argv.slice(0, 4).join(' ') }
         : null,
     })
     assert.equal(removed, 'removed')
@@ -326,13 +355,13 @@ test('reaper refuses to kill or unlink a record whose live process identity does
     const pgid = holder.pid!
     writeFileSync(recordPath, JSON.stringify({
       version: 1, bindingTag: trialBindingTag(x.binding), nonceHash: nonceHash(x.binding),
-      supervisorPid: process.pid, pgid, clientPid: null, clientExitCode: null,
+      supervisorPid: holder.pid, pgid, clientPid: null, clientExitCode: null,
       clientScript: x.policy.clientScript, startedAt: Date.now(),
     }), { mode: 0o600 })
     const nearMiss = `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak ` +
       `${x.policy.clientScript} ${recordPath} 150 ${trialBindingTag(x.binding)} ${nonceHash(x.binding)}`
     const result = await reapPrivateProcessRecord(x.binding, x.policy, {
-      observe: async pid => pid === process.pid ? { pid, pgid, command: nearMiss } : null,
+      observe: async pid => pid === holder.pid ? { pid, pgid, state: 'S', command: nearMiss } : null,
     })
     assert.equal(result, 'cleanup_unconfirmed')
     assert.equal(existsSync(recordPath), true)
@@ -340,6 +369,208 @@ test('reaper refuses to kill or unlink a record whose live process identity does
   } finally {
     try { process.kill(holder.pid!, 'SIGKILL') } catch { /* already gone */ }
     await waitGone(holder.pid!).catch(() => undefined)
+    cleanup(x.root)
+  }
+})
+
+test('a live mismatched supervisor quarantines instead of falling through to a shared client identity', { timeout: 10_000 }, async () => {
+  const x = setup()
+  const recordPath = privateProcessRecordPath(x.binding, x.policy)
+  const groupFile = join(x.root, 'group.json')
+  const holderScript = `const {spawn}=require('node:child_process');` +
+    `const fs=require('node:fs');` +
+    `const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});` +
+    `fs.writeFileSync(process.argv[1],JSON.stringify({client:child.pid}));` +
+    `setInterval(()=>{},1000)`
+  const supervisor = spawn(process.execPath, ['-e', holderScript, groupFile], { detached: true, stdio: 'ignore' })
+  try {
+    await waitFor(() => typeof supervisor.pid === 'number' && existsSync(groupFile))
+    const clientPid = readJson(groupFile).client as number
+    const pgid = supervisor.pid!
+    writeFileSync(recordPath, JSON.stringify({
+      version: 1, bindingTag: trialBindingTag(x.binding), nonceHash: nonceHash(x.binding),
+      supervisorPid: supervisor.pid, pgid, clientPid, clientExitCode: null,
+      clientScript: x.policy.clientScript, startedAt: Date.now(),
+    }), { mode: 0o600 })
+    let clientObserved = false
+    const result = await reapPrivateProcessRecord(x.binding, x.policy, {
+      observe: async pid => {
+        if (pid === supervisor.pid) {
+          return { pid, pgid, state: 'S', command:
+            `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak ` +
+            `${x.policy.clientScript} ${recordPath} 150 ${trialBindingTag(x.binding)} ${nonceHash(x.binding)}` }
+        }
+        if (pid === clientPid) {
+          clientObserved = true
+          return { pid, pgid, state: 'S',
+            command: [process.execPath, resolve('packages/bench/src/private-client-launcher.mjs'), x.policy.clientScript].join(' ') }
+        }
+        return null
+      },
+    })
+    assert.equal(result, 'cleanup_unconfirmed')
+    assert.equal(clientObserved, false, 'no client fallback after a live mismatched supervisor')
+    assert.equal(existsSync(recordPath), true)
+    assert.equal(alive(supervisor.pid!), true)
+    assert.equal(alive(clientPid), true)
+  } finally {
+    try { process.kill(-supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    await waitGone(supervisor.pid!).catch(() => undefined)
+    cleanup(x.root)
+  }
+})
+
+
+
+test('a v2 live mismatched supervisor quarantines before any client-token fallback', { timeout: 10_000 }, async () => {
+  const x = setup()
+  const holder = await groupedHolder(x.root)
+  const token = randomBytes(32).toString('base64url')
+  const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
+  try {
+    let clientObserved = false
+    const result = await reapPrivateProcessRecord(x.binding, x.policy, {
+      observe: async pid => {
+        if (pid === holder.supervisor.pid) {
+          return { pid, pgid: holder.supervisor.pid!, state: 'S',
+            command: `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak` }
+        }
+        if (pid === holder.clientPid) clientObserved = true
+        return null
+      },
+    })
+    assert.equal(result, 'cleanup_unconfirmed')
+    assert.equal(clientObserved, false)
+    assert.equal(existsSync(recordPath), true)
+    assert.equal(alive(holder.supervisor.pid!), true)
+    assert.equal(alive(holder.clientPid), true)
+  } finally {
+    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+    await waitGone(holder.supervisor.pid!).catch(() => undefined)
+    await waitGone(holder.clientPid).catch(() => undefined)
+    cleanup(x.root)
+  }
+})
+
+test('v2 unknown supervisor observation preserves the record and never inspects the client', { timeout: 10_000 }, async () => {
+  const x = setup()
+  const holder = await groupedHolder(x.root)
+  const token = randomBytes(32).toString('base64url')
+  const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
+  try {
+    let clientObserved = false
+    const result = await reapPrivateProcessRecord(x.binding, x.policy, {
+      observe: async pid => {
+        if (pid === holder.supervisor.pid) return { status: 'unknown' }
+        if (pid === holder.clientPid) clientObserved = true
+        return null
+      },
+    })
+    assert.equal(result, 'cleanup_unconfirmed')
+    assert.equal(clientObserved, false)
+    assert.equal(existsSync(recordPath), true)
+    assert.equal(alive(holder.supervisor.pid!), true)
+    assert.equal(alive(holder.clientPid), true)
+  } finally {
+    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+    await waitGone(holder.supervisor.pid!).catch(() => undefined)
+    await waitGone(holder.clientPid).catch(() => undefined)
+    cleanup(x.root)
+  }
+})
+
+test('v2 observed-zombie supervisor falls through only to the exact recorded client generation', { timeout: 10_000 }, async () => {
+  const x = setup()
+  const holder = await groupedHolder(x.root)
+  const token = randomBytes(32).toString('base64url')
+  const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
+  try {
+    const result = await reapPrivateProcessRecord(x.binding, x.policy, {
+      observe: async pid => {
+        if (pid === holder.supervisor.pid) {
+          return { pid, pgid: holder.supervisor.pid!, state: 'Z',
+            command: `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak` }
+        }
+        if (pid === holder.clientPid) {
+          return { pid, pgid: holder.supervisor.pid!, state: 'S',
+            command: [process.execPath, resolve('packages/bench/src/private-client-launcher.mjs'),
+              x.policy.clientScript, token].join(' ') }
+        }
+        return null
+      },
+    })
+    assert.equal(result, 'removed')
+    assert.equal(existsSync(recordPath), false)
+    await waitGone(holder.supervisor.pid!)
+    await waitGone(holder.clientPid)
+  } finally {
+    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+    cleanup(x.root)
+  }
+})
+
+test('v2 observed-zombie supervisor with a wrong client token quarantines and does not signal', { timeout: 10_000 }, async () => {
+  const x = setup()
+  const holder = await groupedHolder(x.root)
+  const token = randomBytes(32).toString('base64url')
+  const wrong = randomBytes(32).toString('base64url')
+  const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
+  try {
+    const result = await reapPrivateProcessRecord(x.binding, x.policy, {
+      observe: async pid => {
+        if (pid === holder.supervisor.pid) {
+          return { pid, pgid: holder.supervisor.pid!, state: 'Z', command: 'zombie supervisor' }
+        }
+        if (pid === holder.clientPid) {
+          return { pid, pgid: holder.supervisor.pid!, state: 'S',
+            command: [process.execPath, resolve('packages/bench/src/private-client-launcher.mjs'),
+              x.policy.clientScript, wrong].join(' ') }
+        }
+        return null
+      },
+    })
+    assert.equal(result, 'cleanup_unconfirmed')
+    assert.equal(existsSync(recordPath), true)
+    assert.equal(alive(holder.supervisor.pid!), true)
+    assert.equal(alive(holder.clientPid), true)
+  } finally {
+    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+    await waitGone(holder.supervisor.pid!).catch(() => undefined)
+    await waitGone(holder.clientPid).catch(() => undefined)
+    cleanup(x.root)
+  }
+})
+
+test('a v1 record is unlinked without a signal only when its recorded group is actually ESRCH', { timeout: 10_000 }, async () => {
+  const x = setup()
+  const holder = await groupedHolder(x.root)
+  const recordPath = privateProcessRecordPath(x.binding, x.policy)
+  try {
+    const supervisorPid = holder.supervisor.pid!
+    const clientPid = holder.clientPid
+    process.kill(-supervisorPid, 'SIGKILL')
+    await waitGone(supervisorPid)
+    await waitGone(clientPid)
+    writeFileSync(recordPath, JSON.stringify({
+      version: 1, bindingTag: trialBindingTag(x.binding), nonceHash: nonceHash(x.binding),
+      supervisorPid, pgid: supervisorPid, clientPid, clientExitCode: null,
+      clientScript: x.policy.clientScript, startedAt: Date.now(),
+    }), { mode: 0o600 })
+    const result = await reapPrivateProcessRecord(x.binding, x.policy, { observe: async () => null })
+    assert.equal(result, 'removed')
+    assert.equal(existsSync(recordPath), false)
+  } finally {
+    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
     cleanup(x.root)
   }
 })

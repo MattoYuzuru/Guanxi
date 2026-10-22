@@ -56,8 +56,7 @@ export class PrivateProcessError extends Error {
   constructor(code: PrivateTrialReason) { super(code); this.name = 'PrivateProcessError'; this.code = code }
 }
 
-export interface PrivateProcessRecord {
-  version: 1
+interface PrivateProcessRecordBase {
   bindingTag: string
   nonceHash: string
   supervisorPid: number
@@ -67,6 +66,14 @@ export interface PrivateProcessRecord {
   clientScript: string
   startedAt: number
 }
+/** Legacy record: no cleanup-generation token, so no client fallback is allowed. */
+export interface PrivateProcessRecordV1 extends PrivateProcessRecordBase { version: 1 }
+/** Current record: only the fresh spawn token hash is durable; the token stays in client argv. */
+export interface PrivateProcessRecordV2 extends PrivateProcessRecordBase {
+  version: 2
+  clientTokenHash: string
+}
+export type PrivateProcessRecord = PrivateProcessRecordV1 | PrivateProcessRecordV2
 
 const activeBindings = new Map<string, symbol>()
 const recordPattern = /^[a-f0-9]{64}\.json$/
@@ -166,16 +173,25 @@ function readRecord(path: string, policy: PrivateProcessPolicy): RecordRead {
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > policy.maximumRecordBytes ||
     (stat.mode & 0o077) !== 0) return { status: 'invalid' }
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<PrivateProcessRecord>
-    if (parsed.version !== 1 || typeof parsed.bindingTag !== 'string' || !/^[a-f0-9]{64}$/.test(parsed.bindingTag) ||
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<PrivateProcessRecord> & Record<string, unknown>
+    const version = parsed.version
+    if (version !== 1 && version !== 2) return { status: 'invalid' }
+    if (typeof parsed.bindingTag !== 'string' || !/^[a-f0-9]{64}$/.test(parsed.bindingTag) ||
       typeof parsed.nonceHash !== 'string' || !/^[a-f0-9]{64}$/.test(parsed.nonceHash) ||
       !Number.isSafeInteger(parsed.supervisorPid) || parsed.supervisorPid! <= 1 ||
-      !Number.isSafeInteger(parsed.pgid) || parsed.pgid! <= 1 ||
+      !Number.isSafeInteger(parsed.pgid) || parsed.pgid! <= 1 || parsed.pgid !== parsed.supervisorPid ||
       (parsed.clientPid !== null && (!Number.isSafeInteger(parsed.clientPid) || parsed.clientPid! <= 1)) ||
       (parsed.clientExitCode !== null && parsed.clientExitCode !== undefined && !Number.isSafeInteger(parsed.clientExitCode)) ||
       typeof parsed.clientScript !== 'string' || parsed.clientScript !== policy.clientScript ||
       !Number.isSafeInteger(parsed.startedAt) || parsed.startedAt! < 0) return { status: 'invalid' }
-    return { status: 'ok', record: parsed as PrivateProcessRecord }
+    if (version === 2) {
+      if (typeof parsed.clientTokenHash !== 'string' || !/^[a-f0-9]{64}$/.test(parsed.clientTokenHash)) {
+        return { status: 'invalid' }
+      }
+    } else if ('clientTokenHash' in parsed) {
+      return { status: 'invalid' }
+    }
+    return { status: 'ok', record: { ...parsed, clientExitCode: parsed.clientExitCode ?? null } as PrivateProcessRecord }
   } catch { return { status: 'invalid' } }
 }
 
@@ -189,6 +205,20 @@ function unlinkRecord(path: string): boolean {
     const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
     return code === 'ENOENT'
   }
+}
+
+/** Remove only a record whose validated identity still describes this parent's spawn. */
+function unlinkOwnedRecord(path: string, binding: TrialBinding, policy: PrivateProcessPolicy,
+  supervisorPid: number, clientPid?: number | null): boolean {
+  const read = readRecord(path, policy)
+  if (read.status === 'absent') return true
+  if (read.status !== 'ok') return false
+  const record = read.record
+  if (record.bindingTag !== trialBindingTag(binding) || record.nonceHash !== nonceHash(binding) ||
+    record.clientScript !== policy.clientScript || record.supervisorPid !== supervisorPid ||
+    record.pgid !== supervisorPid) return false
+  if (clientPid !== undefined && record.clientPid !== clientPid) return false
+  return unlinkRecord(path)
 }
 
 function groupStatus(pgid: number): 'alive' | 'gone' | 'unknown' {
@@ -216,47 +246,77 @@ function ps(args: string[]): Promise<string> {
       (error, stdout) => { if (error) reject(error); else resolvePromise(stdout) })
   })
 }
-export interface ObservedProcess { pid: number; pgid: number; command: string }
+export interface ObservedProcess { pid: number; pgid: number; state?: string; command: string }
+export type ProcessObservation =
+  | { readonly status: 'observed'; readonly process: ObservedProcess }
+  | { readonly status: 'absent' }
+  | { readonly status: 'unknown' }
 export interface PrivateProcessInspection {
   /** Test/deployment seam for the local process-table query; production defaults to /bin/ps. */
-  observe?(pid: number): Promise<ObservedProcess | null>
+  observe?(pid: number): Promise<ProcessObservation | ObservedProcess | null>
 }
-type Observed = ObservedProcess
-function parseObserved(output: string): Observed | null {
+function parseObserved(output: string): ObservedProcess | null {
   const line = output.trim().split('\n')[0]
   if (!line) return null
-  const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line)
+  const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line)
   if (!match) return null
-  return { pid: Number(match[1]), pgid: Number(match[2]), command: match[3]! }
+  return { pid: Number(match[1]), pgid: Number(match[2]), state: match[3], command: match[4]! }
 }
-async function observe(pid: number): Promise<Observed | null> {
-  try { return parseObserved(await ps(['-ww', '-p', String(pid), '-o', 'pid=,pgid=,command='])) } catch { return null }
+function pidState(pid: number): 'alive' | 'gone' | 'unknown' {
+  try { process.kill(pid, 0); return 'alive' } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
+    return code === 'ESRCH' ? 'gone' : 'unknown'
+  }
 }
-type Observer = (pid: number) => Promise<ObservedProcess | null>
+async function observe(pid: number): Promise<ProcessObservation> {
+  const state = pidState(pid)
+  if (state === 'gone') return { status: 'absent' }
+  if (state === 'unknown') return { status: 'unknown' }
+  try {
+    const observed = parseObserved(await ps(['-ww', '-p', String(pid), '-o', 'pid=,pgid=,state=,command=']))
+    return observed ? { status: 'observed', process: observed } : { status: 'unknown' }
+  } catch { return { status: 'unknown' } }
+}
+type Observer = (pid: number) => Promise<ProcessObservation | ObservedProcess | null>
+function isObservation(value: ProcessObservation | ObservedProcess): value is ProcessObservation {
+  return 'status' in value && (value.status === 'observed' || value.status === 'absent' || value.status === 'unknown')
+}
+async function inspectProcess(inspect: Observer, pid: number | null): Promise<ProcessObservation> {
+  if (pid === null) return { status: 'absent' }
+  try {
+    const value = await inspect(pid)
+    if (value === null) return { status: 'absent' }
+    return isObservation(value) ? value : { status: 'observed', process: value }
+  } catch { return { status: 'unknown' } }
+}
+function processState(state: string | undefined): 'live' | 'zombie' | 'unknown' {
+  // Injected legacy seams omit state; production always parses it. An absent
+  // known state is fail-closed, while macOS/BSD state modifiers remain live.
+  if (state === undefined) return 'live'
+  if (state.length === 0) return 'unknown'
+  if (state.startsWith('Z')) return 'zombie'
+  return /^[A-Za-z][+<>]*$/.test(state) ? 'live' : 'unknown'
+}
 function tokens(command: string): string[] { return command.trim().split(/\s+/).filter(Boolean) }
-function isSupervisor(observed: Observed, record: PrivateProcessRecord, policy: PrivateProcessPolicy, path: string): boolean {
+function isSupervisor(observed: ObservedProcess, record: PrivateProcessRecord, policy: PrivateProcessPolicy, path: string): boolean {
   if (observed.pid !== record.supervisorPid || observed.pgid !== record.pgid) return false
   const expected = [process.execPath, supervisorPath, policy.clientScript, path,
     String(policy.killGraceMs), record.bindingTag, record.nonceHash]
   return JSON.stringify(tokens(observed.command)) === JSON.stringify(expected)
 }
-function isClient(observed: Observed, record: PrivateProcessRecord, policy: PrivateProcessPolicy): boolean {
+/**
+ * The client argv carries only the fresh 256-bit cleanup generation. Exact
+ * four-token equality plus the recorded hash proves the generation; it grants
+ * no capability and is never written to the record or a log.
+ */
+function isClient(observed: ObservedProcess, record: PrivateProcessRecordV2, policy: PrivateProcessPolicy): boolean {
   if (observed.pgid !== record.pgid) return false
-  return JSON.stringify(tokens(observed.command)) === JSON.stringify([process.execPath, launcherPath, policy.clientScript])
-}
-async function findClient(record: PrivateProcessRecord, policy: PrivateProcessPolicy, inspect: Observer): Promise<number | null> {
-  if (record.clientPid !== null) {
-    const observed = await inspect(record.clientPid)
-    return observed && isClient(observed, record, policy) ? observed.pid : null
-  }
-  try {
-    const output = await ps(['-ax', '-o', 'pid=,pgid=,command='])
-    for (const line of output.split('\n')) {
-      const observed = parseObserved(line)
-      if (observed && isClient(observed, record, policy)) return observed.pid
-    }
-  } catch { /* unknown identity */ }
-  return null
+  const parts = tokens(observed.command)
+  if (parts.length !== 4) return false
+  if (JSON.stringify(parts.slice(0, 3)) !== JSON.stringify([process.execPath, launcherPath, policy.clientScript])) return false
+  const token = parts[3]!
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return false
+  return createHash('sha256').update(token).digest('hex') === record.clientTokenHash
 }
 
 /** Parent-side verification of an existing record; never signals without exact identity. */
@@ -271,16 +331,30 @@ export async function reapPrivateProcessRecord(binding: TrialBinding, policyInpu
   const record = read.record
   if (record.bindingTag !== trialBindingTag(binding) || record.nonceHash !== nonceHash(binding) ||
     record.clientScript !== policy.clientScript) return 'cleanup_unconfirmed'
-  const supervisor = await inspect(record.supervisorPid)
-  if (supervisor && isSupervisor(supervisor, record, policy, path)) {
-    signalGroup(record.pgid, 'SIGTERM')
-    await sleep(policy.killGraceMs)
-    signalGroup(record.pgid, 'SIGKILL')
-    if (!await groupGone(record.pgid, policy.killGraceMs)) return 'cleanup_unconfirmed'
+  const supervisor = await inspectProcess(inspect, record.supervisorPid)
+  if (supervisor.status === 'unknown') return 'cleanup_unconfirmed'
+  if (supervisor.status === 'observed') {
+    const state = processState(supervisor.process.state)
+    if (state === 'unknown') return 'cleanup_unconfirmed'
+    if (state === 'live') {
+      if (!isSupervisor(supervisor.process, record, policy, path)) return 'cleanup_unconfirmed'
+      signalGroup(record.pgid, 'SIGTERM')
+      await sleep(policy.killGraceMs)
+      signalGroup(record.pgid, 'SIGKILL')
+      if (!await groupGone(record.pgid, policy.killGraceMs)) return 'cleanup_unconfirmed'
+      return unlinkRecord(path) ? 'removed' : 'cleanup_unconfirmed'
+    }
+  }
+  // A missing or zombie supervisor is not proof of death for the group. Legacy
+  // records have no generation proof and may only be removed once the group is
+  // actually gone.
+  if (record.version === 1) {
+    if (groupStatus(record.pgid) !== 'gone') return 'cleanup_unconfirmed'
     return unlinkRecord(path) ? 'removed' : 'cleanup_unconfirmed'
   }
-  const client = await findClient(record, policy, inspect)
-  if (client !== null) {
+  const client = await inspectProcess(inspect, record.clientPid)
+  if (client.status === 'unknown') return 'cleanup_unconfirmed'
+  if (client.status === 'observed' && isClient(client.process, record, policy)) {
     signalGroup(record.pgid, 'SIGKILL')
     if (!await groupGone(record.pgid, policy.killGraceMs)) return 'cleanup_unconfirmed'
     return unlinkRecord(path) ? 'removed' : 'cleanup_unconfirmed'
@@ -386,11 +460,14 @@ export async function runPrivateTrial(options: PrivateTrialOptions): Promise<Pri
     const readyClientPid = ready.clientPid
     if (ready.status !== 'ready' || ready.supervisorPid !== current.pid || ready.pgid !== current.pid ||
       !Number.isSafeInteger(readyClientPid) || (readyClientPid as number) <= 1) fail('child_start_failed')
+    const expectedClientPid = readyClientPid as number
     control.destroy()
     const stored = readRecord(path, policy)
-    if (stored.status !== 'ok' || stored.record.supervisorPid !== current.pid ||
-      stored.record.pgid !== current.pid || stored.record.clientPid !== readyClientPid ||
-      stored.record.bindingTag !== trialBindingTag(binding) || stored.record.nonceHash !== nonceHash(binding)) {
+    if (stored.status !== 'ok' || stored.record.version !== 2 ||
+      stored.record.supervisorPid !== current.pid ||
+      stored.record.pgid !== current.pid || stored.record.clientPid !== expectedClientPid ||
+      stored.record.bindingTag !== trialBindingTag(binding) || stored.record.nonceHash !== nonceHash(binding) ||
+      (ready.clientTokenHash !== undefined && ready.clientTokenHash !== stored.record.clientTokenHash)) {
       fail('cleanup_unconfirmed')
     }
     const input = stdio[4] as Readable | null
@@ -441,7 +518,8 @@ export async function runPrivateTrial(options: PrivateTrialOptions): Promise<Pri
       childExitCode = finalRecord.record.clientExitCode
     }
     const groupCleared = current.pid ? await groupGone(current.pid, policy.killGraceMs) : false
-    const cleanupConfirmed = closed && groupCleared && unlinkRecord(path)
+    const cleanupConfirmed = Boolean(closed && groupCleared && current.pid &&
+      unlinkOwnedRecord(path, binding, policy, current.pid, expectedClientPid))
     const retentionConfirmed = retentionAcks > 0 && retentionFailure === undefined
     const reason: PrivateTrialReason = retentionFailure
       ?? (final === 'channel_input_ended' && responsesDelivered === 0 && childExitCode !== null && childExitCode !== 0
@@ -454,7 +532,8 @@ export async function runPrivateTrial(options: PrivateTrialOptions): Promise<Pri
       const deadline = Date.now() + policy!.killGraceMs + 1_000
       while (!closed && Date.now() < deadline) await sleep(20)
     }
-    const cleanupConfirmed = Boolean(child?.pid && closed && await groupGone(child.pid, policy!.killGraceMs) && unlinkRecord(path))
+    const cleanupConfirmed = Boolean(child?.pid && closed && await groupGone(child.pid, policy!.killGraceMs) &&
+      unlinkOwnedRecord(path, binding, policy!, child.pid))
     releaseIfSettled(cleanupConfirmed || !child?.pid)
     return {
       reason: errorCode(error), responsesDelivered, childExitCode,
