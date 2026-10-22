@@ -19,13 +19,19 @@ async function fits(locator: Locator) {
   })).toBe(true)
 }
 function contrast(foreground: string, background: string) {
-  const luminance = (value: string) => {
-    const channels = value.match(/^rgb\((\d+), (\d+), (\d+)\)$/)?.slice(1).map(Number)
-    if (!channels) throw new Error(`Expected an opaque resolved system color: ${value}`)
+  const color = (value: string) => {
+    const channels = /^rgba?\(/.test(value) ? value.match(/[\d.]+/g)?.map(Number) : undefined
+    if (!channels || channels.length < 3) throw new Error(`Expected a resolved system RGB color: ${value}`)
+    return { channels: channels.slice(0, 3), alpha: channels[3] ?? 1 }
+  }
+  const fg = color(foreground), bg = color(background)
+  expect(bg.alpha).toBe(1)
+  const composited = fg.channels.map((channel, index) => channel * fg.alpha + bg.channels[index]! * (1 - fg.alpha))
+  const luminance = (channels: number[]) => {
     const linear = channels.map(channel => channel / 255 <= 0.04045 ? channel / 255 / 12.92 : ((channel / 255 + 0.055) / 1.055) ** 2.4)
     return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722
   }
-  const [low, high] = [luminance(foreground), luminance(background)].sort((a, b) => a - b)
+  const [low, high] = [luminance(composited), luminance(bg.channels)].sort((a, b) => a - b)
   return (high! + 0.05) / (low! + 0.05)
 }
 async function visibleRing(control: Locator, surface: Locator) {
