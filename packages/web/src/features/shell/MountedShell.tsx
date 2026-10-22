@@ -84,7 +84,10 @@ export function MountedShell({
         }
         onOpenPalette={() => shell.setPaletteOpen(true)}
       >
-        <div className="flex h-full min-h-0 flex-col">
+        {/* The phone flow lets the page scroll, so route content that cannot reflow stays
+            reachable by scrolling inside this host area, as the previous <main> did, instead of
+            widening the document. */}
+        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-x-auto">
           <OllamaHealthNotice health={health} onRetry={onRetry} retrying={retrying} />
           <ErrorBoundary scope="runtime">
             <RuntimeStatus />
