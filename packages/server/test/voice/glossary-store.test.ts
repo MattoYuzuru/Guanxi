@@ -86,6 +86,29 @@ describe('GlossaryStore migrations', () => {
     assert.deepEqual(listIds(reopened, 'acct'), ['hono'])
     assert.equal(reopened.history('acct', 'hono').length, 1)
   })
+
+  it('keys entries and revisions by account', (t) => {
+    const h = harness(t)
+    const primaryKey = (table: string): string[] => {
+      const columns = h.store.db.prepare(`PRAGMA table_info('${table}')`)
+        .all() as unknown as Array<{ name: string; pk: number }>
+      return columns.filter((column) => column.pk > 0)
+        .sort((first, second) => first.pk - second.pk)
+        .map((column) => column.name)
+    }
+    assert.deepEqual(primaryKey('glossary_entries'), ['account_id', 'id'])
+    assert.deepEqual(primaryKey('glossary_revisions'), ['account_id', 'entry_id', 'revision'])
+
+    const foreignKeys = h.store.db.prepare("PRAGMA foreign_key_list('glossary_revisions')")
+      .all() as unknown as Array<{ table: string; from: string; to: string }>
+    assert.deepEqual(
+      foreignKeys.map((key) => [key.table, key.from, key.to]).sort(),
+      [
+        ['glossary_entries', 'account_id', 'account_id'],
+        ['glossary_entries', 'entry_id', 'id'],
+      ],
+    )
+  })
 })
 
 describe('GlossaryStore revisions', () => {
@@ -382,26 +405,54 @@ describe('GlossaryStore collisions and overrides', () => {
 })
 
 describe('GlossaryStore account isolation', () => {
-  it('refuses another account on every entry-scoped method', (t) => {
+  it('reports another account entry as not found on every entry-scoped method', (t) => {
     const h = harness(t, () => 1_000)
     h.store.create('owner', 'account', null, HONO, 'user')
     const before = rowCounts(h.store)
 
-    expectStoreError('account_mismatch', () => h.store.update(
+    expectStoreError('entry_not_found', () => h.store.update(
       'intruder',
       'hono',
       { ...HONO, canonical: 'Hijacked' },
       'user',
     ))
-    expectStoreError('account_mismatch', () => h.store.deactivate('intruder', 'hono'))
-    expectStoreError('account_mismatch', () => h.store.reactivate('intruder', 'hono'))
-    expectStoreError('account_mismatch', () => h.store.revert('intruder', 'hono'))
-    expectStoreError('account_mismatch', () => h.store.history('intruder', 'hono'))
+    expectStoreError('entry_not_found', () => h.store.deactivate('intruder', 'hono'))
+    expectStoreError('entry_not_found', () => h.store.reactivate('intruder', 'hono'))
+    expectStoreError('entry_not_found', () => h.store.revert('intruder', 'hono'))
+    expectStoreError('entry_not_found', () => h.store.history('intruder', 'hono'))
     expectStoreError('entry_not_found', () => h.store.deactivate('intruder', 'missing'))
 
     assert.deepEqual(rowCounts(h.store), before)
     assert.deepEqual(h.store.list('intruder'), [])
     assert.equal(h.store.list('owner')[0]?.entry.canonical, 'Hono')
+  })
+
+  it('allows two accounts to use the same entry id', (t) => {
+    const h = harness(t, () => 1_000)
+    const owned = h.store.create('owner', 'account', null, HONO, 'user')
+    const intruder = h.store.create('intruder', 'account', null, HONO, 'user')
+    assert.equal(owned.accountId, 'owner')
+    assert.equal(intruder.accountId, 'intruder')
+    assert.deepEqual(listIds(h.store, 'owner'), ['hono'])
+    assert.deepEqual(listIds(h.store, 'intruder'), ['hono'])
+
+    h.store.update('intruder', 'hono', { ...HONO, canonical: 'HonoIntruder' }, 'user')
+    assert.equal(h.store.list('owner')[0]?.entry.canonical, 'Hono')
+    assert.equal(h.store.list('intruder')[0]?.entry.canonical, 'HonoIntruder')
+    assert.equal(h.store.history('owner', 'hono').length, 1)
+    assert.equal(h.store.history('intruder', 'hono').length, 2)
+    assert.deepEqual(
+      h.store.history('intruder', 'hono').map((row) => [row.revision, row.op]),
+      [[1, 'create'], [2, 'update']],
+    )
+  })
+
+  it('keeps entry ids unique within one account across projects', (t) => {
+    const h = harness(t, () => 1_000)
+    h.store.create('acct', 'project', 'p1', HONO, 'user')
+    expectStoreError('entry_exists', () => h.store.create('acct', 'project', 'p2', HONO, 'user'))
+    assert.deepEqual(rowCounts(h.store), { entries: 1, revisions: 1 })
+    assert.deepEqual(listIds(h.store, 'acct', { includeInactive: true }), ['hono'])
   })
 })
 

@@ -2,7 +2,8 @@
  * Per-account/per-project glossary storage with an append-only revision chain.
  *
  * The sidecar database is separate from the legacy store and owns its own `v1_migrations` table.
- * Version 1 is frozen: never rewrite it once a user database may have applied it.
+ * Version 1 was revised in the V1-b review before any user database had applied it and is frozen
+ * from here.
  */
 
 import { DatabaseSync } from 'node:sqlite'
@@ -51,7 +52,6 @@ export interface GlossaryListOptions {
 }
 
 export type GlossaryStoreErrorCode =
-  | 'account_mismatch'
   | 'already_active'
   | 'already_inactive'
   | 'entry_exists'
@@ -64,7 +64,7 @@ export type GlossaryStoreErrorCode =
   | 'project_required'
   | 'store_closed'
 
-/** Typed store failure; account isolation is reported separately from a missing entry. */
+/** Typed store failure; another account's id is indistinguishable from a missing entry. */
 export class GlossaryStoreError extends Error {
   readonly code: GlossaryStoreErrorCode
   constructor(code: GlossaryStoreErrorCode, message: string) {
@@ -87,6 +87,7 @@ interface EntryRow {
 }
 
 interface RevisionRow {
+  account_id: string
   entry_id: string
   revision: number
   op: string
@@ -95,11 +96,14 @@ interface RevisionRow {
   created_at: number
 }
 
-/** Version 1. Append-only; later versions may add tables, not edit these bytes. */
+/**
+ * Version 1. Revised in place by the V1-b review before any user database applied it; frozen from
+ * here. Later versions may add tables, not edit these bytes.
+ */
 const MIGRATION_V1 = `
   CREATE TABLE glossary_entries(
-    id TEXT PRIMARY KEY,
     account_id TEXT NOT NULL,
+    id TEXT NOT NULL,
     scope TEXT NOT NULL CHECK(scope IN ('account','project')),
     project_id TEXT,
     entry TEXT NOT NULL,
@@ -107,16 +111,19 @@ const MIGRATION_V1 = `
     revision INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
+    PRIMARY KEY(account_id, id),
     CHECK((scope='project') = (project_id IS NOT NULL))
   );
   CREATE TABLE glossary_revisions(
-    entry_id TEXT NOT NULL REFERENCES glossary_entries(id),
+    account_id TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
     revision INTEGER NOT NULL,
     op TEXT NOT NULL CHECK(op IN ('create','update','deactivate','reactivate','revert')),
     entry TEXT,
     source TEXT NOT NULL CHECK(source IN ('user','import','candidate')),
     created_at INTEGER NOT NULL,
-    PRIMARY KEY(entry_id, revision)
+    PRIMARY KEY(account_id, entry_id, revision),
+    FOREIGN KEY(account_id, entry_id) REFERENCES glossary_entries(account_id, id)
   );
   CREATE INDEX glossary_entries_scope
     ON glossary_entries(account_id, scope, project_id, active);
@@ -251,8 +258,9 @@ export class GlossaryStore {
     const timestamp = this.now()
     const affectedProject = scope === 'project' ? projectId : null
     const stored = this.transaction(() => {
-      const existing = this.db.prepare('SELECT account_id FROM glossary_entries WHERE id=?')
-        .get(normalized.id) as { account_id?: string } | undefined
+      const existing = this.db.prepare(
+        'SELECT account_id FROM glossary_entries WHERE account_id=? AND id=?',
+      ).get(accountId, normalized.id) as { account_id?: string } | undefined
       if (existing !== undefined) {
         throw new GlossaryStoreError('entry_exists', `Glossary entry "${normalized.id}" already exists`)
       }
@@ -269,7 +277,7 @@ export class GlossaryStore {
         timestamp,
         timestamp,
       )
-      this.appendRevision(normalized.id, 1, 'create', normalized, source, timestamp)
+      this.appendRevision(accountId, normalized.id, 1, 'create', normalized, source, timestamp)
       this.validateAffected(accountId, affectedProject)
       return this.requireRow(accountId, normalized.id)
     })
@@ -296,9 +304,10 @@ export class GlossaryStore {
         throw new GlossaryStoreError('entry_inactive', `Glossary entry "${id}" is inactive`)
       }
       const revision = current.revision + 1
-      this.db.prepare('UPDATE glossary_entries SET entry=?, revision=?, updated_at=? WHERE id=?')
-        .run(JSON.stringify(normalized), revision, timestamp, id)
-      this.appendRevision(id, revision, 'update', normalized, source, timestamp)
+      this.db.prepare(
+        'UPDATE glossary_entries SET entry=?, revision=?, updated_at=? WHERE account_id=? AND id=?',
+      ).run(JSON.stringify(normalized), revision, timestamp, accountId, id)
+      this.appendRevision(accountId, id, revision, 'update', normalized, source, timestamp)
       this.validateAffected(accountId, current.scope === 'project' ? current.projectId : null)
       return this.requireRow(accountId, id)
     })
@@ -319,9 +328,10 @@ export class GlossaryStore {
         throw new GlossaryStoreError('already_inactive', `Glossary entry "${id}" is already inactive`)
       }
       const revision = current.revision + 1
-      this.db.prepare('UPDATE glossary_entries SET active=0, revision=?, updated_at=? WHERE id=?')
-        .run(revision, timestamp, id)
-      this.appendRevision(id, revision, 'deactivate', current.entry, 'user', timestamp)
+      this.db.prepare(
+        'UPDATE glossary_entries SET active=0, revision=?, updated_at=? WHERE account_id=? AND id=?',
+      ).run(revision, timestamp, accountId, id)
+      this.appendRevision(accountId, id, revision, 'deactivate', current.entry, 'user', timestamp)
       this.validateAffected(accountId, current.scope === 'project' ? current.projectId : null)
       return this.requireRow(accountId, id)
     })
@@ -342,9 +352,10 @@ export class GlossaryStore {
         throw new GlossaryStoreError('already_active', `Glossary entry "${id}" is already active`)
       }
       const revision = current.revision + 1
-      this.db.prepare('UPDATE glossary_entries SET active=1, revision=?, updated_at=? WHERE id=?')
-        .run(revision, timestamp, id)
-      this.appendRevision(id, revision, 'reactivate', current.entry, 'user', timestamp)
+      this.db.prepare(
+        'UPDATE glossary_entries SET active=1, revision=?, updated_at=? WHERE account_id=? AND id=?',
+      ).run(revision, timestamp, accountId, id)
+      this.appendRevision(accountId, id, revision, 'reactivate', current.entry, 'user', timestamp)
       this.validateAffected(accountId, current.scope === 'project' ? current.projectId : null)
       return this.requireRow(accountId, id)
     })
@@ -367,8 +378,9 @@ export class GlossaryStore {
       const current = this.requireRow(accountId, id)
       const revision = current.revision + 1
       const rows = this.db.prepare(
-        'SELECT * FROM glossary_revisions WHERE entry_id=? AND revision<? ORDER BY revision ASC',
-      ).all(id, current.revision) as unknown as RevisionRow[]
+        `SELECT * FROM glossary_revisions
+          WHERE account_id=? AND entry_id=? AND revision<? ORDER BY revision ASC`,
+      ).all(accountId, id, current.revision) as unknown as RevisionRow[]
       const previous = rows.map(toRevision)
       let target: GlossaryRevision | null = null
       for (const row of previous) {
@@ -378,9 +390,10 @@ export class GlossaryStore {
       const entry = target?.entry ?? current.entry
       const active = target === null ? false : this.replayActive(previous, target.revision)
       this.db.prepare(
-        'UPDATE glossary_entries SET entry=?, active=?, revision=?, updated_at=? WHERE id=?',
-      ).run(JSON.stringify(entry), active ? 1 : 0, revision, timestamp, id)
-      this.appendRevision(id, revision, 'revert', entry, 'user', timestamp)
+        `UPDATE glossary_entries
+          SET entry=?, active=?, revision=?, updated_at=? WHERE account_id=? AND id=?`,
+      ).run(JSON.stringify(entry), active ? 1 : 0, revision, timestamp, accountId, id)
+      this.appendRevision(accountId, id, revision, 'revert', entry, 'user', timestamp)
       this.validateAffected(accountId, current.scope === 'project' ? current.projectId : null)
       return this.requireRow(accountId, id)
     })
@@ -396,8 +409,8 @@ export class GlossaryStore {
     this.ready()
     this.requireRow(accountId, id)
     const rows = this.db.prepare(
-      'SELECT * FROM glossary_revisions WHERE entry_id=? ORDER BY revision ASC',
-    ).all(id) as unknown as RevisionRow[]
+      'SELECT * FROM glossary_revisions WHERE account_id=? AND entry_id=? ORDER BY revision ASC',
+    ).all(accountId, id) as unknown as RevisionRow[]
     return rows.map(toRevision)
   }
 
@@ -446,6 +459,7 @@ export class GlossaryStore {
   }
 
   private appendRevision(
+    accountId: string,
     entryId: string,
     revision: number,
     op: GlossaryRevisionOp,
@@ -454,7 +468,8 @@ export class GlossaryStore {
     timestamp: number,
   ): void {
     this.db.prepare(`INSERT INTO glossary_revisions
-      (entry_id,revision,op,entry,source,created_at) VALUES(?,?,?,?,?,?)`).run(
+      (account_id,entry_id,revision,op,entry,source,created_at) VALUES(?,?,?,?,?,?,?)`).run(
+      accountId,
       entryId,
       revision,
       op,
@@ -498,16 +513,11 @@ export class GlossaryStore {
   }
 
   private requireRow(accountId: string, id: string): StoredGlossaryEntry {
-    const row = this.db.prepare('SELECT * FROM glossary_entries WHERE id=?')
-      .get(id) as unknown as EntryRow | undefined
+    const row = this.db.prepare(
+      'SELECT * FROM glossary_entries WHERE account_id=? AND id=?',
+    ).get(accountId, id) as unknown as EntryRow | undefined
     if (row === undefined) {
       throw new GlossaryStoreError('entry_not_found', `Glossary entry "${id}" not found`)
-    }
-    if (row.account_id !== accountId) {
-      throw new GlossaryStoreError(
-        'account_mismatch',
-        `Glossary entry "${id}" does not belong to account "${accountId}"`,
-      )
     }
     return toStored(row)
   }

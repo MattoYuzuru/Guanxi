@@ -71,10 +71,13 @@ V1-a-only statement under "Limits" that per-project storage and voice-origin mar
 slices.
 
 `store.ts` exports `GlossaryStore` over a separate `<dataDir>/voice.sqlite` sidecar with WAL,
-`foreign_keys=ON`, its own `v1_migrations` table and a frozen version 1. The schema holds
-`glossary_entries` and `glossary_revisions`. Every mutation runs in one `BEGIN IMMEDIATE`
-transaction that also appends exactly one revision row; validation failure rolls the whole
-mutation back. Revisions form a chain of create, update, deactivate, reactivate and revert.
+`foreign_keys=ON`, its own `v1_migrations` table and version 1. Entry ids are per account:
+`glossary_entries` is keyed by `(account_id, id)` and `glossary_revisions` by
+`(account_id, entry_id, revision)`, with a composite foreign key back to the entry. Version 1 was
+revised in place during the V1-b review before any user database applied it and is frozen from
+here. Every mutation runs in one `BEGIN IMMEDIATE` transaction that also appends exactly one
+revision row; validation failure rolls the whole mutation back. Revisions form a chain of create,
+update, deactivate, reactivate and revert.
 `revert` restores the previous revision's entry, and reverting a lone create deactivates the
 entry. `history` returns revisions in ascending order. `list` returns account entries plus,
 when `projectId` is supplied, that project's entries; inactive rows are excluded unless
@@ -85,8 +88,9 @@ change: account-scope mutations check every known project, project-scope mutatio
 project. An active project entry whose canonical term equals an account entry's canonical term
 (case-insensitive) hides the account entry from that project's effective set instead of
 colliding. Any other canonical or variant key collision throws and leaves the database
-unchanged. Entry-scoped methods reject a mismatched account with a typed
-`GlossaryStoreError`.
+unchanged. Entry lookups use `(account_id, id)`, so another account's id is simply
+`entry_not_found`; two accounts may use the same id, while one account cannot repeat an id across
+projects.
 
 `service.ts` exports `GlossaryService`. `effective` returns active project entries first
 (ordered by `created_at`, then `id`), then the active account entries the project does not
