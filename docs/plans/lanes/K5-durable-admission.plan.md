@@ -608,7 +608,6 @@ This document is committed as a docs-only plan on `codex/k5-durable-admission`. 
 the plan before authorizing source changes. The next action after approval is the red test phase,
 then the minimal `process.ts`/store/service implementation, then the independent GPT review.
 
-
 ## Root review and bounded implementation authorization — 2026-10-22
 
 The root reviewed the complete plan against the current K3/K5 call sites at planning commit

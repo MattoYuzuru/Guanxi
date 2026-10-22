@@ -56,7 +56,7 @@ ceiling may be introduced as a substitute for representation or memory work.
   only its first8KiB.
 - `session-log/input-artifacts.ts:254-284`: `write()` copies the whole string/Uint8Array to
   a Buffer and hashes it, then sends it to the pinned helper. `pinned-directory.ts:320-332`
-  already supports AsyncIterable<Uint8Array>, checks the verified cwd first, and streams with
+  already supports `AsyncIterable<Uint8Array>`, checks the verified cwd first, and streams with
   backpressure. Its write/verify path uses bounded chunks; change of helper protocol is not
   needed for the recommended string path.
 - Reads are different: the helper read path collects chunks, concatenates and base64-encodes

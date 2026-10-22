@@ -288,6 +288,23 @@ introduced. This handoff is a subsequent docs-only commit. The inherited unsuppo
 skill symlink still prevents reusable source certificates; direct outcomes retain their actual
 clean pin. Independent review and root's final aggregate checks remain separate obligations.
 
+## Final candidate gates and documentation-only correction
+
+At clean `061681f6`, the independent fixture-race regression passed 1/1
+(`check-e4op9bkt`), and root's five executable gates passed: full types
+`check-jflqp14r`, npm test `check-__cz0d_6`, web browser `check-nup93izu`, catalog browser
+`check-lqukf4b2`, and build `check-v9n3r2kr`. Npm regression scope is core1632
+(1631 pass / one Linux-only priority test skip), kernel107, web353, UI43, UI gates102,
+catalog74, codemod6 and bench137; browser96/96. These are aggregate regression observations,
+not additional new feature tests. No manual cleanup was needed.
+
+Markdown `check-xtytiqe0` then failed on two plan-formatting issues: an unquoted generic
+type and a double blank. The sequence stopped before licenses/source lint. Root's following
+commit changes only those Markdown forms and this evidence; production/test trees stay
+byte-identical to `061681f6`. The final three gates are run on that documentation-corrected
+pin, with the earlier five outcomes kept at their actual pin. A single successful eight-gate
+wrapper at `061681f6` is not claimed. Root still runs all eight after merging into main.
+
 ## Compatibility, rollback and remaining work
 
 Disable the optional F2 grant host/adapters to stop new dispatch; retain additive ledgers
