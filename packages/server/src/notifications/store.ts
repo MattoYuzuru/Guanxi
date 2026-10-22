@@ -555,9 +555,7 @@ export class NotificationStore {
   markRead(accountId: string, id: string): StoredNotification {
     return this.transaction(() => {
       const row = this.ownedNotification(accountId, id)
-      if (row.state === 'acted') {
-        throw new NotificationStoreError('notification_acted', 'Notification was already acted on')
-      }
+      // Reading an acted row is a no-op: it never leaves `acted`, so it cannot re-arm actions.
       if (row.state === 'unread' || row.state === 'snoozed') {
         this.db.prepare('UPDATE notifications SET state=\'read\', snoozed_until=NULL, updated_at=? WHERE id=?')
           .run(this.now(), id)

@@ -303,15 +303,11 @@ test('snooze and markRead cannot revive an acted notification for a second actio
   await executeAction(store, fake.ports, input(notification, 'wake_leads', {}, 'first-wake'))
   assert.equal(store.get('acct-a', notification.id).state, 'acted')
 
-  for (const attempt of [
+  assert.throws(
     () => store.snooze('acct-a', notification.id, T0 + 60_000),
-    () => store.markRead('acct-a', notification.id),
-  ]) {
-    assert.throws(
-      attempt,
-      (error: unknown) => error instanceof NotificationStoreError && error.code === 'notification_acted',
-    )
-  }
+    (error: unknown) => error instanceof NotificationStoreError && error.code === 'notification_acted',
+  )
+  assert.equal(store.markRead('acct-a', notification.id).state, 'acted', 'reading an acted row keeps it acted')
   assert.equal(store.expireSnoozed(T0 + 120_000), 0, 'an acted row must not become unread')
   assert.equal(store.get('acct-a', notification.id).state, 'acted')
 
