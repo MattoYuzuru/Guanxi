@@ -211,7 +211,9 @@ export class RelayStarts {
       return this.status(input.key)
     } catch (error) {
       if (owned) { try { if (ownedRuntimeBase) assertRootsClean(ownedRuntimeBase, [ownedRuntimeBase]); await owned.close() } catch { throw new RelayError('cleanup_unconfirmed') } }
-      throw new RelayError(signal.aborted ? 'relay_stopped' : relayStartCode(error))
+      // A cancellation never hides that an allocator could not prove its own cleanup.
+      const code = relayStartCode(error)
+      throw new RelayError(signal.aborted && code !== 'cleanup_unconfirmed' ? 'relay_stopped' : code)
     }
   }
   async stop(key: string): Promise<RelayStartStatus> {

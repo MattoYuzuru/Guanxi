@@ -11,8 +11,8 @@ import { nativeTools, type NativeToolContext } from '../native-agent/tools.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { byteHash } from './handoff.ts'
 const exec = promisify(execFile)
-const gitEnv = { PATH: '/usr/bin:/bin', HOME: tmpdir(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1' }
-const gitFlags = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'commit.gpgsign=false']
+export const gitEnv = { PATH: '/usr/bin:/bin', HOME: tmpdir(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1' }
+export const gitFlags = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'commit.gpgsign=false']
 /** One long-running cat-file process for a set of objects. Frames are `<oid> <type> <size>\n<content>\n`;
  * blobs are streamed so no fixed maxBuffer applies to object contents. */
 export async function* catObjects(root: string, ids: readonly string[], signal?: AbortSignal): AsyncGenerator<Buffer> {
