@@ -215,15 +215,18 @@ function chunkCases(): ChunkCase[] {
   ]
 }
 
-function excerptOracle(text: string, maxBytes: number): string {
+/**
+ * TEST-ONLY whole-buffer UTF-8 safe prefix: encode the complete value, then
+ * drop only an incomplete trailing code point. It deliberately has no
+ * redaction-marker rule, so ordinary delimiters are checked against the prior
+ * prefix semantics instead of mirroring production's marker parsing.
+ */
+function wholeBufferUtf8Prefix(text: string, maxBytes: number): string {
   const bytes = Buffer.from(text, 'utf8')
   if (bytes.byteLength <= maxBytes) return text
   let end = maxBytes
   while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1
-  let clipped = bytes.subarray(0, end).toString('utf8')
-  const open = clipped.lastIndexOf('\u27E6')
-  if (open >= 0 && clipped.indexOf('\u27E7', open) < 0) clipped = clipped.slice(0, open)
-  return clipped
+  return bytes.subarray(0, end).toString('utf8')
 }
 
 function marker(): string {
@@ -274,7 +277,6 @@ test('hashUtf8Text matches the whole-buffer SHA-256 and byte size for every chun
 })
 
 test('excerpts match the UTF-8 prefix oracle across ASCII, BMP, supplementary and surrogate cases', () => {
-  const patch = marker()
   const texts = [
     '',
     'a',
@@ -284,10 +286,6 @@ test('excerpts match the UTF-8 prefix oracle across ASCII, BMP, supplementary an
     'X\ude00Y\ud83dZ',
     'a'.repeat(8191) + 'ЁЁ',
     '😀'.repeat(3000),
-    patch,
-    'a'.repeat(10) + patch + 'b'.repeat(10),
-    patch + patch,
-    'a'.repeat(10) + patch + 'b'.repeat(10) + patch + 'c'.repeat(10),
     'x\u27E6y',
   ]
   const bounds = [0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 31, 32, 63, 64, 255, 1024,
@@ -295,15 +293,8 @@ test('excerpts match the UTF-8 prefix oracle across ASCII, BMP, supplementary an
   for (const text of texts) {
     for (const bound of bounds) {
       const result = utf8Excerpt(text, bound)
-      assert.equal(result, excerptOracle(text, bound), `text ${JSON.stringify(text)} bound ${bound}`)
+      assert.equal(result, wholeBufferUtf8Prefix(text, bound), `text ${JSON.stringify(text)} bound ${bound}`)
       assert.ok(Buffer.byteLength(result) <= bound, `text ${JSON.stringify(text)} bound ${bound}: excerpt bound`)
-      if (text.includes(patch)) {
-        assert.equal(
-          (result.match(/\u27E6/gu) ?? []).length,
-          (result.match(/\u27E7/gu) ?? []).length,
-          `text ${JSON.stringify(text)} bound ${bound}: split marker`,
-        )
-      }
     }
   }
 })
@@ -323,5 +314,80 @@ test('excerpt marker boundaries clip the whole marker, including a cut close del
     } else {
       assert.equal(result, prefix + patch + suffix.slice(0, bound - markerEnd), `bound ${bound}`)
     }
+  }
+})
+
+test('plain decorative brackets keep the prior whole-buffer UTF-8 prefix', () => {
+  const texts = [
+    'A\u27E6ordinary decoration and more',
+    'A\u27E6REDACTE decoration',
+    'A\u27E6REDACTED',
+    'A\u27E6redacted secret://fixture/a\u27E7',
+  ]
+  const bounds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 31, 64]
+  for (const text of texts) {
+    for (const bound of bounds) {
+      assert.equal(
+        utf8Excerpt(text, bound),
+        wholeBufferUtf8Prefix(text, bound),
+        `text ${JSON.stringify(text)} bound ${bound}`,
+      )
+    }
+    assert.equal(utf8Excerpt(text, Buffer.byteLength(text)), text)
+    assert.equal(utf8Excerpt(text, Buffer.byteLength(text) + 10), text)
+  }
+  const large = 'A\u27E6' + 'x'.repeat(9000)
+  assert.equal(utf8Excerpt(large), wholeBufferUtf8Prefix(large, INPUT_EXCERPT_BYTES))
+
+  // A complete known marker must not make a later ordinary bracket look split.
+  const patch = marker()
+  const mixed = 'a'.repeat(10) + patch + '\u27E6ordinary'
+  const mixedBound = Buffer.byteLength('a'.repeat(10) + patch + '\u27E6ord')
+  assert.equal(utf8Excerpt(mixed, mixedBound), 'a'.repeat(10) + patch + '\u27E6ord')
+})
+
+test('known marker cuts at opening, partial-prefix and interior bounds clip whole', () => {
+  const before = 'a'.repeat(10)
+  const openBytes = Buffer.byteLength('\u27E6')
+  const prefixBytes = Buffer.byteLength('\u27E6REDACTED ')
+  const closeBytes = Buffer.byteLength('\u27E7')
+  const patch = marker()
+  const markerBytes = Buffer.byteLength(patch)
+  const text = before + patch + 'tail'
+  const markerStart = Buffer.byteLength(before)
+  const cases: Array<[number, string]> = [
+    [markerStart, before],
+    [markerStart + 1, before],
+    [markerStart + openBytes, before],
+    [markerStart + openBytes + 1, before],
+    [markerStart + openBytes + 4, before],
+    [markerStart + prefixBytes - 1, before],
+    [markerStart + prefixBytes, before],
+    [markerStart + prefixBytes + 1, before],
+    [markerStart + markerBytes - closeBytes - 1, before],
+    [markerStart + markerBytes - 1, before],
+    [markerStart + markerBytes, before + patch],
+    [markerStart + markerBytes + 1, before + patch + 't'],
+  ]
+  for (const [bound, expected] of cases) {
+    assert.equal(utf8Excerpt(text, bound), expected, `bound ${bound}`)
+  }
+  assert.equal(utf8Excerpt(patch + 'tail', openBytes), '')
+  assert.equal(utf8Excerpt(patch + 'tail', Buffer.byteLength('\u27E6RED')), '')
+})
+
+test('complete decorative, marker-like and marker values remain unchanged', () => {
+  const patch = marker()
+  for (const text of [
+    'A\u27E6ordinary',
+    'A\u27E6REDACTE decoration',
+    'A\u27E6REDACTED',
+    'A\u27E6REDACTED more',
+    patch,
+    'A' + patch + 'tail',
+    '\ud800',
+  ]) {
+    assert.equal(utf8Excerpt(text, Buffer.byteLength(text)), text)
+    assert.equal(utf8Excerpt(text, Buffer.byteLength(text) + 10), text)
   }
 })
