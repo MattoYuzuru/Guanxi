@@ -253,7 +253,7 @@ export function compileGlossary(entries: GlossaryEntry[]): CompiledGlossary {
       if (bucket === undefined) byKey.set(form.key, [compiledForm])
       else bucket.push(compiledForm)
 
-      if (inflectable) {
+      if (inflectable && CYRILLIC_LETTER.test(form.raw)) {
         const inflectBucket = inflectByKey.get(form.key)
         if (inflectBucket === undefined) inflectByKey.set(form.key, [compiledForm])
         else inflectBucket.push(compiledForm)

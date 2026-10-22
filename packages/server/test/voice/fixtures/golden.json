@@ -265,6 +265,31 @@
     "note": "unrelated word is untouched"
   },
   {
+    "input": "про это",
+    "expected": "про это",
+    "note": "PR's folded Latin canonical is not a Cyrillic inflection stem"
+  },
+  {
+    "input": "при этом",
+    "expected": "при этом",
+    "note": "PR's folded Latin canonical is not a Cyrillic inflection stem"
+  },
+  {
+    "input": "пра",
+    "expected": "пра",
+    "note": "PR's folded Latin canonical is not a Cyrillic inflection stem"
+  },
+  {
+    "input": "Про Хоно",
+    "expected": "Про Hono",
+    "note": "only the glossary term changes"
+  },
+  {
+    "input": "прям сейчас",
+    "expected": "прям сейчас",
+    "note": "PR's folded Latin canonical is not a Cyrillic inflection stem"
+  },
+  {
     "input": "хонO",
     "expected": "Hono",
     "note": "mixed Cyrillic and Latin script"
