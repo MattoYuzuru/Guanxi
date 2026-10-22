@@ -1,8 +1,8 @@
 /**
  * Wire contract for the project work ledger (WG1-a, ADR-0032).
  *
- * Evidence accepted over HTTP is limited to human decisions. The node fixes `source` to the local
- * user and stamps `at`, so a caller can never forge harness acceptance results, judge verdicts or
+ * Evidence accepted over HTTP is limited to human decisions. The node fixes `source` to
+ * `user:<account>` and stamps `at`, so a caller can never forge harness acceptance results, judge verdicts or
  * agent claims; those enter through kernel services only. Reading evidence returns every type.
  */
 import { z } from 'zod'
@@ -19,8 +19,6 @@ export const WORK_EVENT_TYPES = [
 ] as const
 /** Event types the REST boundary appends (D-172 human decisions). */
 export const WORK_WIRE_EVENT_TYPES = ['accepted', 'rejected', 'human_decision'] as const
-/** Fixed provenance of every event appended over HTTP. */
-export const WORK_WIRE_EVENT_SOURCE = 'user:local'
 /** Transport budget for one request body. */
 export const WORK_BODY_MAX_BYTES = 2 * 1024 * 1024
 export const WORK_QUERY_MAX_LIMIT = 1000
@@ -140,7 +138,7 @@ export type WorkExportResponse = z.infer<typeof workExportResponseSchema>
 
 export const WORK_ERROR_CODES = [
   'validation_failed', 'json_required', 'origin_denied', 'loopback_only', 'body_too_large',
-  'revision_not_found', 'duplicate_item', 'missing_dependency', 'dependency_cycle', 'invalid_proposal',
+  'revision_not_found', 'item_not_found', 'duplicate_item', 'missing_dependency', 'dependency_cycle', 'invalid_proposal',
   'item_canceled', 'invalid_cursor', 'cursor_mismatch', 'work_unavailable', 'internal_error',
 ] as const
 export const workErrorSchema = z.object({ code: z.enum(WORK_ERROR_CODES) }).strict()
