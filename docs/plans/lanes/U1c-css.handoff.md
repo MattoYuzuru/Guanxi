@@ -154,7 +154,7 @@ file, snapshot or approval record was touched.
   vacuously.
 - This browser case has not been executed by this worker; root's Chromium run is pending.
 
-## New tests / regression envelope
+## Motion override tests and regression envelope
 
 **New:** 1 Chromium test case (the 12-combination explicit/full motion matrix). The H2 browser
 case was replaced and the fourth Node case was expanded; neither increases the case count. The
