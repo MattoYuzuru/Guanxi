@@ -30,6 +30,17 @@ export const QUOTA_ALERT_ACTIONS: Record<Alert['kind'], readonly NotificationAct
   exhausted: ['open', 'wake_leads', 'switch_connection', 'pause_runs', 'snooze', 'accept_recommendation', 'resume_runs'],
 }
 
+/** Successful state-changing actions complete the notification with `acted`. */
+const ACTED_ACTIONS: ReadonlySet<NotificationAction> = new Set([
+  'wake_leads',
+  'switch_connection',
+  'pause_runs',
+  'resume_runs',
+  'choose_action',
+  'add_prompt',
+  'raise_budget',
+])
+
 export interface NotificationSubject {
   type: string
   id: string
@@ -252,6 +263,20 @@ function rowToAction(row: ActionRow): StoredNotificationAction {
   }
 }
 
+/**
+ * Success state for a terminal action. `open` and `accept_recommendation` only read or select
+ * something, so they mark the notification `read` and leave other actions available. `snooze`
+ * keeps its own state; the state-changing actions in `ACTED_ACTIONS` complete the row.
+ */
+function completionState(
+  action: NotificationAction,
+  snoozedUntil: number | undefined,
+): { state: NotificationState; snoozedUntil: number | null } {
+  if (snoozedUntil !== undefined) return { state: 'snoozed', snoozedUntil }
+  if (ACTED_ACTIONS.has(action)) return { state: 'acted', snoozedUntil: null }
+  return { state: 'read', snoozedUntil: null }
+}
+
 /** v1 is append-only: later slices add v2+ and never rewrite these statements. */
 const MIGRATION_V1 = `
   CREATE TABLE quota_window_state(
@@ -302,18 +327,22 @@ export class NotificationStore {
     this.clock = clock
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     this.db = new DatabaseSync(path)
-    chmodSync(path, 0o600)
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
-      CREATE TABLE IF NOT EXISTS nc1_migrations(version INTEGER PRIMARY KEY);`)
-    this.db.exec('BEGIN IMMEDIATE')
     try {
-      if (!this.db.prepare('SELECT version FROM nc1_migrations WHERE version=1').get()) {
-        this.db.exec(MIGRATION_V1)
+      chmodSync(path, 0o600)
+      this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+        CREATE TABLE IF NOT EXISTS nc1_migrations(version INTEGER PRIMARY KEY);`)
+      this.db.exec('BEGIN IMMEDIATE')
+      try {
+        if (!this.db.prepare('SELECT version FROM nc1_migrations WHERE version=1').get()) {
+          this.db.exec(MIGRATION_V1)
+        }
+        this.db.exec('COMMIT')
+      } catch (error) {
+        try { this.db.exec('ROLLBACK') } catch { /* The closed handle below is the fallback boundary. */ }
+        throw error
       }
-      this.db.exec('COMMIT')
     } catch (error) {
-      try { this.db.exec('ROLLBACK') } catch { /* The closed handle below is the fallback boundary. */ }
-      this.db.close()
+      try { this.db.close() } catch { /* Preserve the open failure. */ }
       this.closed = true
       throw error
     }
@@ -475,14 +504,14 @@ export class NotificationStore {
       throw new NotificationStoreError('invalid_input', 'limit must be an integer between 1 and 500')
     }
     const before = options.before
-    let rowIdCursor: { createdAt: number; rowId: number } | null = null
+    let idCursor: { createdAt: number; id: string } | null = null
     if (typeof before === 'number') {
       requireTimestamp(before, 'before')
     } else if (typeof before === 'string' || (before !== null && typeof before === 'object' && !Array.isArray(before))) {
       const cursorId = typeof before === 'string' ? before : before.id
       requireText(cursorId, 'before.id')
-      const row = this.db.prepare('SELECT rowid AS row_id, created_at FROM notifications WHERE id=? AND account_id=?')
-        .get(cursorId, accountId) as { row_id: number; created_at: number } | undefined
+      const row = this.db.prepare('SELECT created_at FROM notifications WHERE id=? AND account_id=?')
+        .get(cursorId, accountId) as { created_at: number } | undefined
       if (!row) throw new NotificationStoreError('notification_not_found', 'Pagination cursor not found')
       const rowCreatedAt = Number(row.created_at)
       if (typeof before === 'object') {
@@ -491,7 +520,7 @@ export class NotificationStore {
           throw new NotificationStoreError('invalid_input', 'Pagination cursor timestamp does not match')
         }
       }
-      rowIdCursor = { createdAt: rowCreatedAt, rowId: Number(row.row_id) }
+      idCursor = { createdAt: rowCreatedAt, id: cursorId }
     } else if (before !== undefined) {
       throw new NotificationStoreError('invalid_input', 'before must be a timestamp, notification id or cursor')
     }
@@ -510,11 +539,11 @@ export class NotificationStore {
     if (typeof before === 'number') {
       sql += ' AND created_at < ?'
       params.push(before)
-    } else if (rowIdCursor !== null) {
-      sql += ' AND (created_at < ? OR (created_at = ? AND rowid < ?))'
-      params.push(rowIdCursor.createdAt, rowIdCursor.createdAt, rowIdCursor.rowId)
+    } else if (idCursor !== null) {
+      sql += ' AND (created_at < ? OR (created_at = ? AND id < ?))'
+      params.push(idCursor.createdAt, idCursor.createdAt, idCursor.id)
     }
-    sql += ' ORDER BY created_at DESC, rowid DESC LIMIT ?'
+    sql += ' ORDER BY created_at DESC, id DESC LIMIT ?'
     params.push(limit)
     return this.db.prepare(sql).all(...params).map(row => rowToNotification(row as unknown as NotificationRow))
   }
@@ -627,9 +656,10 @@ export class NotificationStore {
   }
 
   /**
-   * Finish a started action. `done` marks the notification acted, except for the typed snooze
-   * action, which passes `snoozedUntil` and enters `snoozed`. Terminal rows are immutable so a
-   * late duplicate cannot overwrite the first result. The account is always required.
+   * Finish a started action. `done` marks state-changing actions acted, `open` and
+   * `accept_recommendation` read, and the typed snooze action enters `snoozed`. Terminal rows
+   * are immutable so a late duplicate cannot overwrite the first result. The account is always
+   * required.
    */
   finishAction(
     idempotencyKey: string,
@@ -670,9 +700,9 @@ export class NotificationStore {
         this.db.prepare('UPDATE notification_actions SET status=?, result=?, updated_at=? WHERE idempotency_key=?')
           .run(status, serialized, now, idempotencyKey)
         if (status === 'done') {
-          const nextState = options.snoozedUntil === undefined ? 'acted' : 'snoozed'
+          const next = completionState(rowToAction(row).action, options.snoozedUntil)
           this.db.prepare('UPDATE notifications SET state=?, snoozed_until=?, updated_at=? WHERE id=?')
-            .run(nextState, options.snoozedUntil ?? null, now, row.notification_id)
+            .run(next.state, next.snoozedUntil, now, row.notification_id)
         }
         row.status = status
         row.result = serialized

@@ -210,6 +210,8 @@ test('each typed action routes to its matching port exactly once', async (t) => 
     if (item.action === 'snooze') {
       assert.equal(updated.state, 'snoozed')
       assert.equal(updated.snoozedUntil, T0 + 60_000)
+    } else if (item.action === 'open' || item.action === 'accept_recommendation') {
+      assert.equal(updated.state, 'read')
     } else {
       assert.equal(updated.state, 'acted')
     }
@@ -276,6 +278,21 @@ test('a second key cannot repeat an action on an acted notification', async (t) 
   assert.deepEqual(fake.calls, ['wake_leads:conn-a'])
   assert.equal(store.actionRecord('acct-a', 'second-key'), null)
   assert.equal(store.get('acct-a', notification.id).state, 'acted')
+})
+
+test('open marks the notification read and leaves a state-changing action available', async (t) => {
+  const store = await tempStore(t)
+  const fake = fakePorts()
+  const notification = seedNotification(store, ['open', 'wake_leads'], 'open-then-wake-notification')
+
+  const opened = await executeAction(store, fake.ports, input(notification, 'open', { target: 'connection' }, 'open-key'))
+  assert.deepEqual(opened.result, { ok: 'open' })
+  assert.equal(store.get('acct-a', notification.id).state, 'read')
+
+  const woke = await executeAction(store, fake.ports, input(notification, 'wake_leads', {}, 'wake-after-open'))
+  assert.deepEqual(woke.result, { ok: 'wake_leads' })
+  assert.equal(store.get('acct-a', notification.id).state, 'acted')
+  assert.deepEqual(fake.calls, ['open', 'wake_leads:conn-a'])
 })
 
 test('snooze and markRead cannot revive an acted notification for a second action', async (t) => {

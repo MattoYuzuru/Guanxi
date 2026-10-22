@@ -59,15 +59,19 @@ window state in place. Notification ids are derived from account and idempotency
 
 `list` returns newest-first rows for one account with optional `states`, `limit` (1..500) and
 a `before` cursor. The cursor may be a notification id or a `{ createdAt, id }` object, which
-compares `(created_at, rowid)` and therefore does not lose rows that share one millisecond; a
+compares `(created_at, id)` and therefore does not lose rows that share one millisecond; a
 plain number means strictly older timestamps. `get`, `markRead`, `snooze`, `windowState` (with
 its optional account) and the action paths are account-scoped; a notification id from another
-account raises `NotificationStoreError` with code `account_mismatch`. `snooze` stores
-milliseconds and `expireSnoozed(nowMs)` returns only rows whose deadline passed to `unread`.
-Quota alerts offer `open`, `wake_leads`, `switch_connection`, `pause_runs`, `snooze` and
-`accept_recommendation`; `exhausted` also offers `resume_runs`. Connection ids are treated as
-globally unique and account-owned: v1 uses the requested `(connection_id, window)` window key
-and a global notification idempotency key, so two accounts cannot reuse one connection id.
+account raises `NotificationStoreError` with code `account_mismatch`, and an id from another
+account is not a valid pagination cursor (`notification_not_found`). `snooze` stores
+milliseconds and `expireSnoozed(nowMs)` returns only rows whose deadline passed to `unread`;
+`snooze` and `markRead` refuse an `acted` row with `notification_acted` so it cannot be
+revived. Quota alerts offer `open`, `wake_leads`, `switch_connection`, `pause_runs`, `snooze`
+and `accept_recommendation`; `exhausted` also offers `resume_runs`. Connection ids are treated
+as globally unique and account-owned: v1 uses the requested `(connection_id, window)` window
+key and a global notification idempotency key, so two accounts cannot reuse one connection id.
+A failed open (for example a pre-existing non-database file) closes its `DatabaseSync` before
+rethrowing.
 
 `service.ts` joins the rules to the store. `ingestQuotaFact` loads the previous window state,
 calls `evaluateQuota` with the caller clock and writes the evaluation and its alerts through
@@ -87,10 +91,12 @@ reserves the idempotency key with `beginAction`, calls the matching port and sto
 terminal result with `finishAction`. A notification that is already `acted` rejects a new key,
 and a `started` row for another key rejects the command as `action_in_progress`, so one
 notification cannot run two actions at once. `finishAction` marks the notification `acted` on
-success, except for the typed `snooze` command, which enters `snoozed` with its deadline. A
-terminal duplicate returns the stored result without touching a port; a failed port stores
-only `{ "code": "port_failed" }` and rethrows `NotificationActionError`, never the port
-message.
+success only for state-changing actions (`wake_leads`, `switch_connection`, `pause_runs`,
+`resume_runs`, `choose_action`, `add_prompt`, `raise_budget`); `open` and
+`accept_recommendation` mark it `read` and leave later actions available, and the typed
+`snooze` command enters `snoozed` with its deadline. A terminal duplicate returns the stored
+result without touching a port; a failed port stores only `{ "code": "port_failed" }` and
+rethrows `NotificationActionError`, never the port message.
 
 The reservation plus the process-local in-flight map makes effects at-most-once within one
 process. Same-process calls with one key share a single in-flight promise, so a racing retry
@@ -135,9 +141,9 @@ run ids, prompts and session content never enter the payload.
 nice -n 10 node --test packages/server/test/notifications/*.test.ts
 ```
 
-The command runs 40 tests: 29 new NC1-b tests and the 11 existing NC1-a rule tests as the
-regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the server
-source and test trees.
+The command runs 48 tests: 35 NC1-b tests (29 slice tests plus 6 independent-review tests) and
+the 13 existing NC1-a rule tests as the regression envelope.
+`nice -n 10 npx tsc --noEmit -p packages/server` typechecks the server source and test trees.
 
 ### Still later
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test, type TestContext } from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { DatabaseSync } from 'node:sqlite'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -95,9 +96,26 @@ test('migration v1 is idempotent when the sidecar database is reopened', async (
   )
   assert.equal(String(reopened.db.prepare('PRAGMA journal_mode').get()?.journal_mode).toLowerCase(), 'wal')
   assert.equal(Number(reopened.db.prepare('PRAGMA foreign_keys').get()?.foreign_keys), 1)
+  assert.equal(
+    reopened.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name='notifications_account_state_created'",
+    ).get()?.name,
+    'notifications_account_state_created',
+  )
   assert.equal(reopened.list('acct-a').length, 1)
   assert.deepEqual(reopened.windowState('conn-1', 'five_hour')?.fired, [])
   assert.equal(reopened.list('acct-a')[0]?.idempotencyKey, alert().idempotencyKey)
+})
+
+test('a failed open closes the sqlite handle', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nc1b-bad-open-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'not-a-database.sqlite')
+  await writeFile(path, 'this is not a sqlite database')
+  const close = t.mock.method(DatabaseSync.prototype, 'close')
+
+  assert.throws(() => new NotificationStore(path), /not a database/i)
+  assert.equal(close.mock.callCount(), 1, 'the failed open must close its DatabaseSync')
 })
 
 test('state and notification writes roll back atomically on a duplicate notification id', async (t) => {
@@ -231,6 +249,24 @@ test('every notification-id read and mutation is scoped to its account', async (
   )
 })
 
+test('another account cannot use a notification id as its pagination cursor', async (t) => {
+  const { store } = await tempStore(t)
+  const service = new NotificationService(store, { now: () => T0 + 60_000 })
+  const a = service.ingestQuotaFact('acct-a', fact({ remainingPercent: 19 }))[0]
+  const b = service.ingestQuotaFact('acct-b', fact({ connectionId: 'conn-2', remainingPercent: 19 }))[0]
+  if (!a || !b) assert.fail('fixtures did not insert')
+
+  assert.throws(
+    () => store.list('acct-b', { before: a.id }),
+    (error: unknown) => error instanceof NotificationStoreError && error.code === 'notification_not_found',
+  )
+  assert.throws(
+    () => store.list('acct-b', { before: { createdAt: a.createdAt, id: a.id } }),
+    (error: unknown) => error instanceof NotificationStoreError && error.code === 'notification_not_found',
+  )
+  assert.deepEqual(store.list('acct-b').map(item => item.id), [b.id])
+})
+
 test('snooze returns to unread only when its time passes', async (t) => {
   const { store } = await tempStore(t)
   const service = new NotificationService(store, { now: () => T0 + 60_000 })
@@ -300,6 +336,37 @@ test('list pages rows sharing one timestamp with an id or composite cursor', asy
   assert.equal(secondPage.length, 1)
   assert.deepEqual(compositePage.map(item => item.id), secondPage.map(item => item.id))
   assert.equal(new Set([...firstPage, ...secondPage].map(item => item.id)).size, 3)
+})
+
+test('list breaks same-timestamp ties by id so paging does not depend on rowid', async (t) => {
+  const { store } = await tempStore(t)
+  const insert = (id: string): void => {
+    store.db.prepare(`
+      INSERT INTO notifications(
+        id, account_id, kind, severity, subject_type, subject_id, idempotency_key,
+        facts, actions, state, snoozed_until, created_at, updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,'unread',NULL,?,?)
+    `).run(
+      id,
+      'acct-a',
+      'threshold',
+      'warning',
+      'connection',
+      'conn-1',
+      id,
+      JSON.stringify({ window: 'five_hour', threshold: 20, instanceKey: 'no-reset', ...alert().facts }),
+      JSON.stringify(['open']),
+      T0,
+      T0,
+    )
+  }
+  // Insertion order (rowid) differs from id order, so a rowid tie-break would page differently.
+  for (const id of ['ntf_bbb', 'ntf_aaa', 'ntf_ccc']) insert(id)
+
+  const firstPage = store.list('acct-a', { limit: 2 })
+  assert.deepEqual(firstPage.map(item => item.id), ['ntf_ccc', 'ntf_bbb'])
+  const secondPage = store.list('acct-a', { limit: 2, before: firstPage[1]?.id })
+  assert.deepEqual(secondPage.map(item => item.id), ['ntf_aaa'])
 })
 
 test('actions columns list exactly the actions offered by each quota alert kind', async (t) => {
