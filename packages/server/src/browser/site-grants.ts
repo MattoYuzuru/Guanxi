@@ -39,7 +39,7 @@ export interface SiteGrantInput {
   projectId: string
   /** Project role the grant is scoped to. */
   role: string
-  /** Host or URL-free domain; normalized to its registrable host. */
+  /** Host or URL; stored as the exact lowercase host without widening. */
   domain: string
   source: SiteGrantSource
   syncMode: SiteGrantSyncMode
@@ -107,12 +107,11 @@ export class SiteGrantStoreError extends Error {
 }
 
 /**
- * A small built-in approximation of the Public Suffix List used to derive the registrable
- * host. It is deterministic and dependency-free: known two-label suffixes stay suffixes,
- * every other host uses its last two labels. It is not a complete PSL; the README records
- * that limitation.
+ * Known multi-label public suffixes. They are used only to refuse a grant for the suffix itself;
+ * grants are stored as the exact host and never widened, so this list cannot broaden any grant.
+ * Subdomain grouping would need the real Public Suffix List and is deliberately not implemented.
  */
-const MULTI_LABEL_SUFFIXES: ReadonlySet<string> = new Set([
+const PUBLIC_SUFFIXES: ReadonlySet<string> = new Set([
   'ac.uk', 'co.uk', 'gov.uk', 'ltd.uk', 'me.uk', 'net.uk', 'nhs.uk', 'org.uk', 'plc.uk',
   'com.au', 'edu.au', 'gov.au', 'net.au', 'org.au',
   'co.nz', 'net.nz', 'org.nz',
@@ -124,7 +123,7 @@ const MULTI_LABEL_SUFFIXES: ReadonlySet<string> = new Set([
   'co.za', 'net.za', 'org.za',
   'co.il', 'co.id', 'co.kr', 'co.th',
   'com.ar', 'com.hk', 'com.mx', 'com.my', 'com.ph', 'com.sg', 'com.tw', 'com.vn',
-  // Common private suffixes; this is still an approximation, not the full PSL.
+  // Known private suffixes; used only to refuse a grant for the suffix itself.
   'appspot.com', 'azurewebsites.net', 'blogspot.com', 'cloudfront.net', 'firebaseapp.com',
   'fly.dev', 'github.io', 'gitlab.io', 'glitch.me', 'herokuapp.com', 'netlify.app',
   'onrender.com', 'pages.dev', 'vercel.app', 'web.app', 'workers.dev',
@@ -438,9 +437,10 @@ export class SiteGrantStore {
 }
 
 /**
- * Normalize a host to its registrable domain: lowercase, punycode for IDN, no scheme, port,
- * path, userinfo or trailing dot. Wildcards are refused rather than expanded. This is the
- * deterministic built-in approximation documented above, not a complete Public Suffix List.
+ * Normalize a host to the exact lowercase host the user entered: punycode for IDN, no scheme,
+ * port, path, userinfo or trailing dot. There is no registrable-domain widening: `www.example.com`
+ * and `example.com` are different grants, and a context origin matches a grant only by exact host
+ * equality. Wildcards, IP literals, single-label hosts and a bare public suffix are refused.
  */
 export function normalizeSiteDomain(input: string): string {
   if (typeof input !== 'string') throw new SiteGrantStoreError('invalid_domain', 'Domain must be a string')
@@ -478,24 +478,22 @@ export function normalizeSiteDomain(input: string): string {
   }
   host = (host.startsWith('[') ? host : host.replace(/\.+$/, '')).toLowerCase()
   if (host === '' || host.startsWith('[') || isIpLiteral(host)) {
-    throw new SiteGrantStoreError('invalid_domain', 'Domain must be a registrable host, not an IP address')
+    throw new SiteGrantStoreError('invalid_domain', 'Domain must be a hostname, not an IP address')
   }
 
   const labels = host.split('.')
   if (labels.length < 2) {
-    throw new SiteGrantStoreError('invalid_domain', 'Domain must have a registrable host and a suffix')
+    throw new SiteGrantStoreError('invalid_domain', 'Domain must have at least two labels')
   }
   for (const label of labels) {
     if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) {
       throw new SiteGrantStoreError('invalid_domain', 'Domain contains an invalid label')
     }
   }
-  const suffix = labels.slice(-2).join('.')
-  const suffixLength = MULTI_LABEL_SUFFIXES.has(suffix) ? 2 : 1
-  if (labels.length <= suffixLength) {
-    throw new SiteGrantStoreError('invalid_domain', 'Domain has no registrable label before its suffix')
+  if (PUBLIC_SUFFIXES.has(host)) {
+    throw new SiteGrantStoreError('invalid_domain', 'Domain must not be a public suffix')
   }
-  return labels.slice(-(suffixLength + 1)).join('.')
+  return host
 }
 
 function isIpLiteral(host: string): boolean {

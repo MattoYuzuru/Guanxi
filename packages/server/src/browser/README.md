@@ -121,13 +121,16 @@ return field for cookie values, passwords or tokens. Every input is scanned recu
 ### Domain normalization
 
 `normalizeSiteDomain` accepts a bare host or an http(s) URL, lowercases it, uses the URL parser
-for punycode, strips trailing dots and returns the registrable host. It rejects non-http(s)
-URLs, bare-host ports/paths/userinfo, IP literals, single-label hosts and wildcards (`*`).
+for punycode, strips trailing dots and returns the exact host the user entered. It rejects
+non-http(s) URLs, bare-host ports/paths/userinfo, IP literals, single-label hosts, wildcards (`*`)
+and a bare known public suffix such as `co.uk`.
 
-The suffix table is a deterministic built-in approximation of the Public Suffix List, not a
-complete PSL: `co.uk`, `com.au`, `github.io` and similar known two-label suffixes stay suffixes;
-every other host uses its last two labels. A suffix missing from the table, or a three-label
-suffix, is not split correctly. This is recorded as residual risk rather than hidden.
+There is no registrable-domain broadening. `www.example.com` is stored as `www.example.com`; a
+grant for `example.com` does not cover `www.example.com`, and a grant for `github.com` does not
+cover `gist.github.com`; each host must be granted separately. A context's origin matches a grant
+only by exact host equality. The small public-suffix set is used only to refuse a grant for a
+suffix itself and never to derive a domain. Subdomain grouping, if ever needed, requires the real
+Public Suffix List (residual).
 
 ### Error codes
 
@@ -161,4 +164,5 @@ secret-field rejection and `touch`.
   planted-cookie/injection-page validation from ADR-0035.
 - Routes, contract types and the MCP-shaped agent tool surface.
 - `via` and `fromOrigin` remain host assertions; route/tool validation must enforce them.
-- A complete Public Suffix List instead of the documented approximation.
+- Subdomain grouping for site grants is deliberately absent for now; it would need the real
+  Public Suffix List (later). A grant matches only its exact normalized host.

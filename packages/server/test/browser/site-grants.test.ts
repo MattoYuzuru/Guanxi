@@ -141,22 +141,38 @@ test('wildcard grants are refused and other domain forms are validated', (t) => 
   assert.equal((f.store.db.prepare('SELECT COUNT(*) AS count FROM site_grants').get() as { count: number }).count, 0)
 })
 
-test('domains normalize to the lowercase registrable host without scheme or trailing dot', (t) => {
+test('domains normalize to the exact lowercase host without scheme, port or trailing dot', (t) => {
   const f = fixture(t)
-  assert.equal(normalizeSiteDomain('WWW.Example.COM.'), 'example.com')
-  assert.equal(normalizeSiteDomain('https://WWW.Example.COM:8443/path?q#x'), 'example.com')
-  assert.equal(normalizeSiteDomain('a.b.example.co.uk'), 'example.co.uk')
+  assert.equal(normalizeSiteDomain('WWW.Example.COM.'), 'www.example.com')
+  assert.equal(normalizeSiteDomain('https://WWW.Example.COM:8443/path?q#x'), 'www.example.com')
+  assert.equal(normalizeSiteDomain('a.b.example.co.uk'), 'a.b.example.co.uk')
   assert.equal(normalizeSiteDomain('BÜCHER.example'), 'xn--bcher-kva.example')
   assert.equal(normalizeSiteDomain('agent.github.io'), 'agent.github.io')
+  for (const host of ['shop.com.ua', 'x.spb.ru', 'bob.s3.amazonaws.com', 'me.ngrok.io', 'a.blogspot.co.uk']) {
+    assert.equal(normalizeSiteDomain(host), host)
+  }
 
   const plain = create(f.store, { domain: 'WWW.Example.COM.' })
   const deep = create(f.store, { domain: 'a.b.example.co.uk' })
   const idn = create(f.store, { domain: 'BÜCHER.example' })
   const url = create(f.store, { domain: 'https://WWW.Example.COM:8443/path?q#x' })
-  assert.equal(plain.domain, 'example.com')
-  assert.equal(deep.domain, 'example.co.uk')
+  assert.equal(plain.domain, 'www.example.com')
+  assert.equal(deep.domain, 'a.b.example.co.uk')
   assert.equal(idn.domain, 'xn--bcher-kva.example')
-  assert.equal(url.domain, 'example.com')
+  assert.equal(url.domain, 'www.example.com')
+})
+
+test('a grant stores the exact host and never widens it to a parent domain', (t) => {
+  const f = fixture(t)
+  const root = create(f.store, { domain: 'github.com' })
+  const subdomain = create(f.store, { domain: 'gist.github.com' })
+  assert.equal(root.domain, 'github.com')
+  assert.equal(subdomain.domain, 'gist.github.com')
+  assert.notEqual(root.domain, subdomain.domain)
+  assert.deepEqual(
+    f.store.grantsFor('user-alice', 'project-1', 'editor', NOW).map(grant => grant.domain),
+    ['github.com', 'gist.github.com'],
+  )
 })
 
 test('grant metadata comes from the principal and clock, never from forged input', (t) => {
