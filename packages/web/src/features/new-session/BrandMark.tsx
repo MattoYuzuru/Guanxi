@@ -1,0 +1,15 @@
+/**
+ * The monochrome gx symbol (BRAND: `logo-mono.svg`, `currentColor`). Decorative: the product
+ * name is rendered beside it as ordinary text, as the brand book prescribes until the
+ * production wordmark exists. The geometry is copied unchanged from packages/ui/brand.
+ */
+export function BrandMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 512 512" aria-hidden="true" focusable="false" className={className}>
+      <g fill="currentColor" transform="translate(48 100) scale(2.06)">
+        <path d="M199 113H162Q157 113 153 108L96 43C86 32 78 27 65 27C49 27 37 36 37 51C37 65 49 74 65 73C77 73 85 65 93 56Q98 50 102 55L118 73C121 119 94 153 57 153C35 153 16 147 3 136Q-2 133 2 129L15 116Q19 112 24 116C33 122 43 126 56 125C74 124 85 111 88 93C77 98 69 101 57 100C27 100 4 81 4 52C4 21 29 0 65 0C89 0 109 9 126 28L200 107Q204 113 199 113Z" />
+        <path d="M146 23L162 5Q166 0 172 0H198Q204 0 200 5L163 45Q160 49 157 45L144 31Q141 28 146 23Z" />
+      </g>
+    </svg>
+  )
+}
