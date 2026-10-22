@@ -1,7 +1,8 @@
 # Private trial channel protocol foundation
 
 **Status:** implemented, independently reviewed and locally fixture-validated. This is
-a codec and state machine, not an executable stdio service, socket listener or task image.
+a codec and state machine; the [private process binding](PRIVATE_PROCESS.md) now supplies an
+executable child over anonymous inherited FDs. No socket listener or task image is added.
 
 Frames contain a four-byte unsigned big-endian payload length followed by one UTF-8 JSON
 value. The host supplies an explicit payload-byte ceiling. Decoding tolerates arbitrary
@@ -22,12 +23,18 @@ capability before another gateway call. A close or timeout reaches the active ga
 abort signal. `settled()` waits for that operation's acknowledgement; it does not claim
 uncooperative code has stopped merely because a timer expired. There is no automatic retry.
 
-A successful gateway completion must pass through the host's private `retain` sink before
-the task gets a response. Only assistant text, tool-call IDs/names/arguments and stop reason
-enter that response. Thinking blocks, signatures, usage objects and provider credentials
-are omitted. The module writes no log or trajectory. Gateway errors are mapped through a
-fixed code list; retention, framing or other failures close the channel and expose a fixed
-error frame. The real K2 persistence binding is still required; the sink in tests is a fake.
+A successful gateway completion must pass through the host's private retention port before
+the task gets a response. The production host provides the optional trusted
+`retainAndProject(requestId, result)` port: it scrubs the full completion, durably appends the
+private events through the fenced K2 sink, and returns the public projection derived from the
+stored scrubbed events. The channel writes exactly that returned projection. The older pure
+`retain` host API remains supported for in-memory fixtures, but it cannot provide the
+production same-projection guarantee. Only assistant text, tool-call IDs/names/arguments and
+stop reason enter the response. Thinking blocks, signatures, usage objects and provider
+credentials are omitted. The module writes no log or trajectory. Gateway errors are mapped
+through a fixed code list; retention, framing or other failures close the channel and expose a
+fixed error frame. [PRIVATE_PROCESS.md](PRIVATE_PROCESS.md) describes the real K2 sink and
+process binding; no fake sink is used in the production composition.
 
 The transport owner must bound read buffers, validate peer identity, call `close()` on
 EOF/disconnect and await `settled()` before releasing trial ownership. No Unix peer checks,

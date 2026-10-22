@@ -1,6 +1,8 @@
 # Private trial stream adapter
 
-**Status:** implemented and locally fixture-checked; independent review pending.
+**Status:** implemented and locally fixture-checked; independent review pending. The
+[private process binding](PRIVATE_PROCESS.md) now supplies real inherited FDs; this adapter
+itself remains process-free and listener-free.
 
 `servePrivateTrialStreams` binds the [private protocol](PRIVATE_CHANNEL.md) to one pair of
 coordinator-owned Node byte streams and an existing immutable trial host. It creates no
@@ -26,19 +28,22 @@ the connection while its response finishes writing. Every write waits for the Wr
 with the explicit output timeout bounding stalled delivery. Output error/close, timeout or parent
 abort cancels that wait, destroys both streams and preserves the first fixed transport reason.
 Late write outcomes are consumed. Already-handed-off bytes cannot be revoked by later
-cancellation. `responsesDelivered` counts acknowledged Writable callbacks, including error
-frames; it does not prove peer receipt, task success, verified reward or model capability.
+cancellation. An optional host `onTerminal` hook fires once at the first fixed terminal
+reason, before ownership settlement; it is allowed to start process-group shutdown but cannot
+change the protocol reason or release pending retention. `responsesDelivered` counts
+acknowledged Writable callbacks, including error frames; it does not prove peer receipt, task
+success, verified reward or model capability.
 
 A failed channel can finish its fixed error frame and then closes the transport. All output
 bytes are protocol frames. The adapter emits no diagnostic text, provider exceptions, reasoning,
 stderr or plain log. Only the protocol's public completion fields leave the private retention
 boundary. Stream failure need not attempt another frame on the same broken stream.
 
-Ten synthetic tests cover sequential split-byte requests, framed output, private retention,
-EOF/parent cancellation and delayed acknowledgement, coalesced concurrency, concurrent input
-during a blocked write, clean half-close during delivery, explicit output timeout, late write
-completion, fixed channel/stream failures, malformed/truncated/oversized input, foreign selectors,
-pre-aborted/closed streams and immutable transport policy. The ten existing protocol tests remain
-the regression envelope. No subprocess, Unix peer credentials, container mapping, real K2 sink,
-agent client or public corpus was exercised. Those bindings and the real bounded executor remain
-unfinished; stock paid execution remains disabled.
+Eleven synthetic tests cover sequential split-byte requests, framed output, private retention,
+EOF/parent cancellation and delayed acknowledgement, the one-shot `onTerminal` hook, coalesced
+concurrency, concurrent input during a blocked write, clean half-close during delivery, explicit
+output timeout, late write completion, fixed channel/stream failures, malformed/truncated/
+oversized input, foreign selectors, pre-aborted/closed streams and immutable transport policy.
+The ten existing protocol tests remain the regression envelope. The separate process binding
+exercises a real subprocess and anonymous FDs; this test file does not claim peer credentials,
+container mapping, a real model or a public corpus. Stock paid execution remains disabled.

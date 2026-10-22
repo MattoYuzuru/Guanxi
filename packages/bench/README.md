@@ -11,10 +11,12 @@ server. Harbor and mini-swe-agent run in a separately installed Python process, 
 node bundle. No shared wire contract, server route or migration changes.
 
 The continuation adds a [trial-bound K3 admission gateway](REQUEST_ADMISSION.md) and
-[task-content staging](STAGING.md), plus a [private channel protocol](PRIVATE_CHANNEL.md).
-These have synthetic assertions and independent review;
-they do not supply a real provider meter/price adapter, task image, public corpus or measured
-five-seed experiment. Stock real/paid execution still refuses.
+[task-content staging](STAGING.md), a [private channel protocol](PRIVATE_CHANNEL.md), a
+[private stream adapter](PRIVATE_STREAM.md), a real fenced K2 retention sink, and an
+owned [private process binding](PRIVATE_PROCESS.md). These have synthetic/OS-fixture
+assertions and author-focused checks; independent review is pending for this slice. They do
+not supply a real provider meter/price adapter, task image, public corpus, container boundary
+or measured five-seed experiment. Stock real/paid execution still refuses.
 
 ## Commands
 
@@ -33,8 +35,9 @@ The Mac smoke uses in-memory fake arm results, no SSH, container engine, network
 It writes a private JSON receipt and standalone HTML under `.lane-data/bench/`. Its control
 label is a fixture, not a measured mini-swe-agent score. The actual control integration is
 exercised by the host smoke. Reports use English source text and no app UI, remote fonts,
-scripts or network resources. `htmlReport(plan, trials, true)` removes task identifiers for
-aggregate publication; the default private report lists flipped and excluded task IDs.
+scripts or network resources. The private process fixture is a local Node child with anonymous
+inherited FDs; it proves ownership/cleanup mechanics, not task execution or isolation.
+`htmlReport(plan, trials, true)` removes task identifiers for aggregate publication; the default private report lists flipped and excluded task IDs.
 Reports identify the protocol, model/provider and arm versions and label synthetic fixture
 outcomes. New CLI receipts carry `recordedAt` in UTC; older receipts show an unrecorded time.
 Public mode also omits the experiment identifier.
@@ -94,6 +97,29 @@ container** whose node/project/connection already target that container's `/app`
 K4's versioned stdout and does not export the response text. A completed agent never passes a
 task by itself. The hidden verifier is the only pass gate. Stock task images do not contain
 such a node; the adapter requires this explicit image preparation.
+
+## Private trial binding and process ownership
+
+[PRIVATE_PROCESS.md](PRIVATE_PROCESS.md) describes the bounded T0 slice: an immutable binding
+with a host-generated nonce, a pre-dispatch R1 attempt fence, a real `RunStore.append`/K2
+retention sink, the authoritative scrubbed public projection used by both K2 and the task
+frame, and one supervised local process reached only through anonymous inherited fds 3/4.
+The task cannot select account, connection, model, trial, output policy, cleanup or billing
+facts. The nonce is host correlation, not authentication.
+
+The supervisor is a trusted source-run asset. It writes a `0600` record under a `0700`
+directory, terminates its process group on lifetime EOF, and never unlinks the record. Only a
+live parent or the next reaper removes it, after exact process identity validation and actual
+process-group ESRCH. A missing supervisor/launcher asset fails closed; there is no direct-spawn
+fallback. A future bundle must include both `.mjs` assets. Same-UID cleanup is best-effort, not
+an isolation boundary; a `setsid` descendant is outside the process-group proof.
+
+There is no acknowledgement timeout. Abort or child death may start process-group shutdown
+immediately, but the owning promise and active binding remain owned until the real gateway and
+K2 retention settle. Timers bound process startup/output/shutdown only. A pending retention can
+therefore keep the run promise pending by design. No automatic redispatch/retry is added.
+Per-event fenced K2 appends can leave an idempotent private partial trace; no task response is
+written until every append acknowledges.
 
 ## Corpus and protocol
 

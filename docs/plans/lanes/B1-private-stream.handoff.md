@@ -33,3 +33,13 @@ Independent review must focus on input closure during host awaits, acknowledgeme
 ownership release, half-close during output, one in-flight operation across writes, explicit
 output timeout/late callbacks, fixed errors and no plaintext output. Root owns integration and
 central status updates. This slice does not close B1 or authorize real experiments.
+
+## Review-fix continuation (2026-10-22, append-only)
+
+The historical claims and counts above remain attached to their original pin and are not
+rewritten. The later [B1 trial-binding handoff](B1-trial-binding.handoff.md) adds the real fenced
+K2 retention sink, the authoritative scrubbed public projection, the owned supervised process
+group, the corrected fd 3/4 public-response capability and the ACK-gated ownership lifecycle.
+Its plan corrections, implementation commits, test counts, exact commands, mutation evidence and
+residuals are recorded there. The earlier private-stream independent-review status above is not
+changed by this continuation.

@@ -738,3 +738,35 @@ no successful task response. No private payload export is added.
   single-attempt request and T0 account binding remain. The child cannot declare
   `boundedBilling`, cleanup or peer facts. D-194 still prohibits real bench execution on this
   Mac; no B1 quality claim is made.
+
+## 13. Implementation status (2026-10-22)
+
+**Status:** corrected bounded vertical slice implemented and locally fixture-checked; independent
+root/GPT review and full integration gates remain pending. This does not close B1, does not
+activate ADR-0025 and does not enable paid execution.
+
+Implemented commits:
+
+- `78b5fa3` — this authoritative review-correction section, recorded before code;
+- `e294a9b` — immutable trial binding, pre-dispatch R1 attempt fence and K3 run identity, real
+  structural K2 sink with explicit bounds/idempotency, versioned signature envelope, and the
+  authoritative scrubbed public projection used by both K2 and the task frame;
+- `b61c7f8` — owned supervised process group, trusted source-run supervisor/launcher assets,
+  anonymous fd 3/4 transport, record/reaper ordering, `onTerminal` startup/shutdown hook and
+  ACK-gated ownership with no acknowledgement timeout;
+- a follow-up test commit asserting scrub-before-append, post-append bound recheck and exact
+  reaper token identity (final handoff records its SHA);
+- docs/handoff, including [PRIVATE_PROCESS.md](../../../packages/bench/PRIVATE_PROCESS.md), the
+  appended lane handoff and the corrected channel/stream/bench READMEs.
+
+The real K2 sink imports server APIs type-only; no server/contract/UI package, migration,
+dependency or REST/CLI surface changed. Stock B1 paid execution remains OFF, the actual budget
+hold/single-attempt/account binding is unchanged, and D-194 still prohibits real bench execution
+on this Mac.
+
+Residuals are recorded in the handoff: same-UID cleanup is not isolation, a `setsid` descendant
+is outside the group proof, `/bin/ps` execution was blocked by this worker harness (the reaper
+uses an injected observation seam in tests), the supervisor/launcher are source-run assets that
+a future bundle must include, acknowledgement can leave the owning promise pending by design,
+and per-event K2 appends can leave an idempotent private partial trace with no task response.
+No real model, corpus, container, SSH, paid or quality evidence is claimed.
