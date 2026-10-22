@@ -89,3 +89,38 @@ export interface AgentOutput {
   text: string
   stopReason: string
 }
+
+/** Durable same-node admission is local account coordination, never a vendor cap or lease. */
+export type AdmissionKind = 'run' | 'login'
+export type AdmissionState = 'held' | 'cleanup_unconfirmed'
+export type AdmissionCleanupReason = 'group_timeout' | 'permission_denied' | 'close_error' | 'unsupported_platform'
+export interface AdmissionHolder {
+  holderId: string
+  instanceId: string
+  owner: string
+  adapter: AdapterId
+  billingAccount: string
+  kind: AdmissionKind
+  policyDigest: string
+  createdAt: string
+  state: AdmissionState
+}
+export interface AdmissionRequest {
+  instanceId: string
+  owner: string
+  adapter: AdapterId
+  billingAccount: string
+  kind: AdmissionKind
+  policyDigest: string
+  ceiling: number
+}
+export interface AdmissionGrant {
+  holder: AdmissionHolder
+  /** Run rows committed by this transaction, including the new holder. */
+  admittedRuns: number
+}
+export interface AdmissionOccupancy {
+  held: number
+  cleanupUnconfirmed: number
+  total: number
+}
