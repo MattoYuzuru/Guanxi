@@ -192,8 +192,6 @@ the user's settings and `now`; there is no clock, timer, I/O or process state.
   `criticalBypassesQuietHours` take `{}`, `null`, `[]` and `false`. An explicit `undefined`
   value inside `channelsByKind` is dropped, so that kind uses `defaults`.
 
-### NC1-c test evidence
-
 ## NC1-d: vendor quota and balance fact producers
 
 **Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-d
@@ -249,27 +247,21 @@ with unknown values.
 Both functions parse their input with the existing `quotaObservationSchema` or
 `connectionBalanceSchema`; malformed values throw instead of becoming facts.
 
-### NC1-d test evidence
+## Test evidence (NC1-a to NC1-d)
 
 ```bash
 nice -n 10 node --test packages/server/test/notifications/*.test.ts
+nice -n 10 npx tsc --noEmit -p packages/server
 ```
 
-On integrated main the command runs 86 tests (48 NC1-a/b, 25 NC1-c delivery, 13 NC1-d producers).
-At the NC1-c slice it ran 73: 25 new delivery tests and 48 NC1-a/b as the regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the
-server source and test trees; markdownlint passes on this README and the NC1-c hand-off.
+On integrated main the command runs 86 tests: 48 NC1-a/b, 25 NC1-c delivery and 13 NC1-d
+producer tests. Each slice's hand-off records its own new / regression split.
 
-### Still later
+## Still later
 
-Settings persistence and the notification-settings UI; per-platform OS adapters; Web Push;
-plugin/boot wiring, HTTP routes and `packages/contract` schemas. Actual delivery adapters, not
-planning, remain later work.
-The command runs 61 tests: 13 new NC1-d producer tests and 48 existing NC1-a/NC1-b tests as
-the regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the
-server source and test trees.
+- Settings persistence and the notification-settings UI; per-platform OS adapters; Web Push.
+- Plugin/boot wiring, HTTP routes and `packages/contract` schemas (MS2 wiring lane).
+- Wiring the producers to K5 quota events and K3 balance probe results; Codex window-length
+  evidence; local metering for providers without quota APIs; an automatic Claude producer.
 
-### Still later (NC1-d residuals)
-
-Wiring the producers to K5 quota events and K3 balance probe results in the plugin, Codex
-window-length evidence, local metering for providers without quota APIs, and an automatic
-Claude producer are not in this slice. NC1 is not complete.
+NC1 is not complete.
