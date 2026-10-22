@@ -89,7 +89,7 @@ function DescriptionFixture() {
 
 function RenderDescriptionFixture() {
   const t = useUiText()
-  const triggerRef = useRef<HTMLElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [wrapperActions, setWrapperActions] = useState(0)
   const [renderActions, setRenderActions] = useState(0)
   const [refMatches, setRefMatches] = useState(false)
