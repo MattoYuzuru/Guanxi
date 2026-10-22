@@ -215,9 +215,9 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     if (!previousAttempt) setSaveError(null)
     retryOperation.current = () => { void save(asNew, previousAttempt) }
     try {
-      const attempt: SaveAttempt = previousAttempt ?? await workspaceStep('snapshot-layout', () => {
-        const current = snapshot()
-        const local = engine.current?.snapshot().geometry ?? geometry
+      const captured = previousAttempt ? undefined : await workspaceStep('snapshot-layout', () => ({ current: snapshot(), local: engine.current?.snapshot().geometry ?? geometry }))
+      const attempt: SaveAttempt = previousAttempt ?? await workspaceStep('prepare-layout-save', () => {
+        const { current, local } = captured!
         const scope = layoutScopeForSave(query(mode), saveScopes[mode] ?? layoutSaveScope(current.scope))
         const updated: LayoutDocument = { ...current, scope, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
         const sameScope = layoutScopeKey(current.scope) === layoutScopeKey(scope)
