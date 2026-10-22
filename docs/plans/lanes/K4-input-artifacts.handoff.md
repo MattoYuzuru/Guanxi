@@ -265,3 +265,76 @@ read.
 handoff is the final docs commit on `codex/k4-input-artifacts`. The exact `git rev-parse HEAD`
 and empty `git status --porcelain` are reported to the coordinator after this commit; no source
 edit follows it.
+
+## Independent review fix 2 (2026-10-22): release-failure propagation
+
+Independent re-review of `d0aec89` (`reviews/codex-k4-input-code-20261022.md`, section
+"Independent fix re-review — d0aec89") confirmed one new unrelated P2 in `358ee23`: the broad
+catch in `SessionLog.releaseHandle()` swallowed an open-database `UPDATE session_writers` refusal
+after the in-memory writer entry was already removed. `handle.close()` then looked successful
+while the durable row stayed held and a second live `SessionLog` got `writer_busy`. This section
+appends the narrow fix. All earlier sections and claims are unchanged.
+
+### Fix commit
+
+| Commit | Finding | Change and failing-first evidence |
+| --- | --- | --- |
+| `4f7359c` | P2 open-DB release failure hidden | `releaseHandle()` keeps the synchronous `if (!this.dbOpen()) return` guard for an externally closed database and no longer catches `prepare()`/`run()` errors. The open-DB update failure now propagates exactly as at `419a997`; there is no `await` between the `dbOpen()` check and the UPDATE in one isolate. The new test installs a SQLite `BEFORE UPDATE OF released_at` trigger that aborts the release, asserts `handle.close()` throws `fixture_release_failed`, asserts `session_writers.released_at IS NULL`, and asserts a second `SessionLog` still gets `writer_busy`. The closed-DB regression is strengthened in place with `handle.closed === true` and an idempotent second close; it was not weakened. Before the fix the new test failed with "Missing expected exception", and the independent fixture reported `closeReportedError:false, durableWriterStillHeld:true, otherWriterBusy:true`. |
+
+### Test arithmetic
+
+This round adds **1 new server test** and strengthens the existing closed-DB regression in place
+(no new count). Honest current arithmetic:
+
+- new: **40 server + 7 web = 47** (previous 39 server + 7 web plus this release-failure test);
+- current server selected: **87 tests, 87 pass, 0 fail, 0 skipped** (same 9 files);
+- server regression: **87 - 40 = 47**;
+- web selected envelope: **33 tests, 7 new / 26 regression**, unchanged from the independent
+  review at `419a997` and not rerun here because no web source or web test changed;
+- combined selected total if the unchanged web envelope is included: **120**, with **73**
+  regression (47 server + 26 web);
+- external reviewer fixtures: new release probe **1/1**, the three prior probes **3/3**. These
+  are not repository tests and are not added to the 87/120 counts.
+
+### Commands and evidence
+
+```bash
+nice -n 10 node --test \
+  packages/server/test/session-log-input-artifacts.test.ts \
+  packages/server/test/session-log-version-negotiation.test.ts \
+  packages/server/test/session-log-routes.test.ts \
+  packages/server/test/session-log.test.ts \
+  packages/server/test/native-agent/input-artifacts.test.ts \
+  packages/server/test/artifacts.test.ts \
+  packages/server/test/migration.test.ts \
+  packages/server/test/durable-run-migration.test.ts \
+  packages/server/test/relay/schema.test.ts
+# tests 87 / suites 19 / pass 87 / fail 0 / cancelled 0 / skipped 0
+nice -n 10 node --test packages/server/test/session-log.test.ts
+# red first:  tests 27 / pass 26 / fail 1 — "Missing expected exception"
+# after fix:  tests 27 / pass 27 / fail 0
+nice -n 10 node /Users/yuzuru/Projects/Guanxi-lanes/reviews/k4-release-failure-probe-20261022.ts
+# red:   {"closeReportedError":false,"durableWriterStillHeld":true,"otherWriterBusy":true}
+# green: {"closeReportedError":true,"durableWriterStillHeld":true,"otherWriterBusy":true}
+nice -n 10 node /Users/yuzuru/Projects/Guanxi-lanes/reviews/k4-input-review-probes-20261022.ts
+# tests 3 / pass 3 / fail 0
+nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
+# clean, no output
+```
+
+### Residuals and not claimed
+
+- `handle.close()` marks the handle closed before the UPDATE, so a thrown release leaves the
+  durable row held until expiry or a later `SessionLog.close()` bulk release by this writer id.
+  This matches the original `419a997` ordering; no lease release is claimed when the UPDATE fails.
+- The legacy system-writer `releaseSystemWriter()` catch is unchanged; this fix is limited to
+  normal handle close.
+- No full `npm test`, browser, build, Storybook, license, lint, `agent-dev`, native
+  `agent.test.ts` or sandbox/container check ran in this round. The root still owns those gates
+  and its independent rerun of the new probe plus the three prior probes.
+- `K4-INPUT-ARTIFACTS` remains open; queue artifactization, old-server rollback and calibration
+  claims stay open as recorded above.
+
+**Handoff pin:** this fix is `4f7359c` plus this docs commit on `codex/k4-input-artifacts`.
+The exact `git rev-parse HEAD` and empty `git status --porcelain` are reported to the
+coordinator after this commit; no production edit follows it.
