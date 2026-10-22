@@ -48,7 +48,7 @@ function queueEvent(): SessionEvent {
             byteSize: INPUT_INLINE_BYTES + FULL_TAIL.length,
             mediaType: 'text/plain; charset=utf-8',
             excerpt: ARTIFACT_EXCERPT,
-            excerptBytes: Buffer.byteLength(ARTIFACT_EXCERPT, 'utf8'),
+            excerptBytes: new TextEncoder().encode(ARTIFACT_EXCERPT).byteLength,
           },
         },
       ],

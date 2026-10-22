@@ -147,7 +147,7 @@ test('renders v3 queue items once and bounded on a phone with reduced motion', a
             byteSize: INPUT_INLINE_BYTES + fullTail.length,
             mediaType: 'text/plain; charset=utf-8',
             excerpt: 'PHONE-ARTIFACT-EXCERPT',
-            excerptBytes: Buffer.byteLength('PHONE-ARTIFACT-EXCERPT', 'utf8'),
+            excerptBytes: new TextEncoder().encode('PHONE-ARTIFACT-EXCERPT').byteLength,
           },
         },
       ],
