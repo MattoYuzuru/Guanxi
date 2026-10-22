@@ -28,7 +28,7 @@ no dependency, no third-party code.
 ## Commits
 
 `224285be` plan · `d34d9931` implementation · `7813e668` tests · `6fd92558` docs · `f0b208e4` review fixes ·
-`11d78ae7` merge of main `a64d7d1b` · hand-off commit last.
+`11d78ae7` merge of main `a64d7d1b` · `4a45cab5` hand-off · a final docs-only commit records receipts.
 
 ## Gates (Mac, Node 26, shared lock resource `heavy`)
 
@@ -40,9 +40,9 @@ New is counted from files this slice added; envelope is everything else the comm
 | `npm run lint:md` | pass, 231 files, 706 links |
 | `npm run check:licenses` | pass, 675 packages, 0 not allowed |
 | `agent-dev … npm run test` receipt `check-szgzuvn2` at `11d78ae7`, clean tree | pass; core 1995 tests, 1993 pass, 0 fail, 2 skipped (the two pre-existing Linux-only tests); kernel 107; web 359; ui 74/43; ui-gates 168; bench; codemods 102 |
-| `agent-dev … npm run build` | see Build below |
+| `agent-dev … npm run build` receipt `check-j_8nwcf4` at `11d78ae7` | pass, exit 0 (web, server and cli bundles built; the hand-off file was the only untracked path) |
 | New tests | **56 new** = client 7, runtime 14, process 8, checkout 11, K3 transport 3, end-to-end relay 9, boot 4 |
-| Regression envelope | core 1995 − 56 new = **1939** core, plus the other suites above; targeted relay/K3/Ollama envelope: see below |
+| Regression envelope | core 1995 − 56 new = **1939** core, plus the other suites above. Targeted envelope: **254/254**, 25 existing files (17 relay, 5 connections, Ollama client, kernel plugins, native port wiring; includes the real K3 plus K4 container path in `trusted-start`), receipt `check-jn5yhuzf` at `4a45cab5`, clean tree, 0 fail/cancel/skip |
 
 A first full run after the merge (`check-s4eea_19`) failed 3 X1 indexing tests
 (`indexing/process.test.ts` 1, `indexing/service.test.ts` 2) by 20 s fixture timeouts while the host load
