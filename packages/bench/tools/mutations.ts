@@ -43,6 +43,8 @@ const cases = [
   { id: 'b3a-no-real-credit', file: 'src/relay-measurement.ts', before: 'realEvidenceCredit: 0,', after: "realEvidenceCredit: input.declaredOrigin === 'recorded_observation' ? 1 : 0,", test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-single-use-evidence', file: 'src/relay-protocol.ts', before: 'if (referenced.has(ref) && SINGLE_USE.has(e.kind))', after: 'if (false)', test: 'test/relay-protocol.test.ts' },
   { id: 'b3a-bounds-before-parse', file: 'src/relay-protocol.ts', before: '!bounded(record.evidence, MAX_EVIDENCE)', after: 'false', test: 'test/relay-protocol.test.ts' },
+  { id: 'b3a-item-row-taint', file: 'src/relay-measurement.ts', before: "(c.items.state === 'observed' && c.items.assessments.some(infra))", after: 'false', test: 'test/relay-measurement.test.ts' },
+  { id: 'b3a-probe-row-taint', file: 'src/relay-measurement.ts', before: "(c.probes.state === 'observed' && c.probes.grades.some(infra))", after: 'false', test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-cycle-infra-taint', file: 'src/relay-measurement.ts', before: 'return t.cycles.some(c => c.state', after: 'return false && t.cycles.some(c => c.state', test: 'test/relay-measurement.test.ts' },
 ]
 for (const mutation of cases) {

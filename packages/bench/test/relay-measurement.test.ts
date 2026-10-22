@@ -272,6 +272,16 @@ test('infrastructure taint inside a cycle slot excludes the whole task from the 
   assert.equal(arm(reduce(resign(group)), 'arm-relay').trials.tainted, 1)
   const row = build(); { const s = relayCycle(row).context.samples[0]; for (const k of ['ref', 'actualWindowTokens', 'renderedTokens', 'truncationEvents']) delete s[k]; s.state = 'unknown'; s.reason = 'infra_tainted' }
   assert.equal(arm(reduce(resign(row)), 'arm-relay').trials.tainted, 1)
+  const itemRow = build(); { const a = relayCycle(itemRow).items.assessments[0]; for (const k of ['ref', 'head', 'acceptanceSha256', 'assessedAtMs', 'result']) delete a[k]; a.state = 'unknown'; a.reason = 'infra_tainted' }
+  const ir = reduce(resign(itemRow))
+  assert.equal(arm(ir, 'arm-relay').trials.tainted, 1)
+  assert.ok(ir.pairedRelayVsNaive.state === 'descriptive')
+  if (ir.pairedRelayVsNaive.state === 'descriptive') assert.deepEqual(ir.pairedRelayVsNaive.excluded, [{ task: 'task-a', reason: 'infra' }])
+  const probeRow = build(); { const g = relayCycle(probeRow).probes.grades[1]; for (const k of ['ref', 'result']) delete g[k]; g.state = 'unknown'; g.reason = 'infra_tainted' }
+  const pr = reduce(resign(probeRow))
+  assert.equal(arm(pr, 'arm-relay').trials.tainted, 1)
+  assert.ok(pr.pairedRelayVsNaive.state === 'descriptive')
+  if (pr.pairedRelayVsNaive.state === 'descriptive') assert.deepEqual(pr.pairedRelayVsNaive.excluded, [{ task: 'task-a', reason: 'infra' }])
 })
 
 test('empty or unsupported arms never read as complete; missing trials get their own cycle bucket; unreferenced evidence is flagged', () => {
