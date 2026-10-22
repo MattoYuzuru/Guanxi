@@ -134,6 +134,54 @@ test('IP TLS hostnames are rejected explicitly', () => {
   }
 })
 
+test('TLS hostnames must be canonical RFC 1123 names', () => {
+  const invalid = [
+    'localhost',
+    'LOCALHOST',
+    '1.2.3.4.',
+    '127.0.0.1.',
+    '0x7f000001',
+    '2130706433',
+    '127.1',
+    '0177.0.0.1',
+    'example.123',
+    'h:443',
+    'a b',
+    '-a.example',
+    'a-.example',
+    'a..b',
+    '.example',
+    'example.',
+    'under_score.example',
+    'exa:mple',
+    `${'a'.repeat(64)}.example`,
+    `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(63)}.example`,
+  ]
+  for (const hostname of invalid) {
+    assertMissing(
+      { ...valid, tls: { certPath: '/cert.pem', keyPath: '/key.pem', hostname } },
+      ['tls_hostname_invalid'],
+    )
+  }
+})
+
+test('canonical RFC 1123 TLS hostnames are accepted', () => {
+  for (const hostname of [
+    'guanxi.example',
+    'node.lan',
+    'a-b.example',
+    'sub.node-1.example',
+    '123.example',
+    'xn--bcher-kva.example',
+    `${'a'.repeat(63)}.example`,
+  ]) {
+    assert.doesNotThrow(
+      () => assertBindAllowed({ ...valid, tls: { certPath: '/cert.pem', keyPath: '/key.pem', hostname } }),
+      hostname,
+    )
+  }
+})
+
 test('a complete remote profile passes for wildcard, LAN and hostname binds', () => {
   for (const host of ['0.0.0.0', '::', '192.168.1.20', 'node.lan', 'guanxi.example']) {
     assert.doesNotThrow(() => assertBindAllowed({ ...valid, host }), host)

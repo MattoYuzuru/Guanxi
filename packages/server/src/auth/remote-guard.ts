@@ -20,6 +20,7 @@ export type RemoteBindRequirement =
   | 'tls_required'
   | 'tls_hostname_required'
   | 'tls_hostname_ip_forbidden'
+  | 'tls_hostname_invalid'
   | 'accounts_required'
   | 'allowed_roots_required'
   | 'allowed_roots_must_be_absolute'
@@ -42,6 +43,22 @@ export class RemoteBindError extends Error {
 
 function unbracket(host: string): string {
   return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+}
+
+const RFC1123_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
+const NUMERIC_LABEL = /^[0-9]+$/u
+const HEX_INTEGER_LABEL = /^0x[0-9a-f]+$/u
+
+/**
+ * A canonical TLS hostname: RFC 1123 labels, no trailing dot, a non-numeric last label, and
+ * neither the single name `localhost` nor a bare integer/hex host (e.g. `2130706433`).
+ */
+function isCanonicalHostname(hostname: string): boolean {
+  if (hostname.length === 0 || hostname.length > 253 || hostname === 'localhost') return false
+  const labels = hostname.split('.')
+  if (!labels.every(label => RFC1123_LABEL.test(label))) return false
+  const last = labels[labels.length - 1]!
+  return !NUMERIC_LABEL.test(last) && !HEX_INTEGER_LABEL.test(last)
 }
 
 /** `127.0.0.0/8`, `::1` and `localhost` are loopback and always admitted. */
@@ -69,6 +86,7 @@ export function assertBindAllowed(config: RemoteBindConfig): void {
     const hostname = unbracket(config.tls.hostname.trim()).toLowerCase()
     if (hostname === '') missing.push('tls_hostname_required')
     else if (isIP(hostname) !== 0) missing.push('tls_hostname_ip_forbidden') // WebAuthn forbids IPs
+    else if (!isCanonicalHostname(hostname)) missing.push('tls_hostname_invalid')
   }
 
   if (!config.accountsEnabled) missing.push('accounts_required')

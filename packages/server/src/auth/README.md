@@ -147,16 +147,18 @@ though accounts live in another database and no cross-database reference is poss
 hosts (`127.0.0.0/8`, `::1`, `localhost`) always pass. Every other host, including `0.0.0.0`,
 `::`, LAN addresses and hostnames, must present the full remote security profile:
 
-- usable TLS with a non-empty certificate path, key path and a non-IP hostname (WebAuthn
-  forbids IP addresses);
+- usable TLS with a non-empty certificate path, key path and a canonical RFC 1123 hostname
+  (WebAuthn forbids IP addresses; `localhost`, trailing dots, bare integer/hex hosts, ports and
+  spaces are also refused);
 - accounts enabled;
 - a non-empty `allowedRoots` list of absolute, duplicate-free paths;
 - a configured node credential.
 
 Failure throws `RemoteBindError` with `code: 'remote_bind_forbidden'` and a `missing` array that
 lists every unmet requirement using stable codes: `tls_required`, `tls_hostname_required`,
-`tls_hostname_ip_forbidden`, `accounts_required`, `allowed_roots_required`,
-`allowed_roots_must_be_absolute`, `allowed_roots_duplicate`, `node_credential_required`.
+`tls_hostname_ip_forbidden`, `tls_hostname_invalid`, `accounts_required`,
+`allowed_roots_required`, `allowed_roots_must_be_absolute`, `allowed_roots_duplicate`,
+`node_credential_required`.
 
 ## Non-goals
 
