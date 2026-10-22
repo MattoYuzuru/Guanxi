@@ -105,8 +105,8 @@ export const glossaryEntries: readonly GlossaryEntry[] = [
   },
   {
     key: 'run',
-    en: { term: 'Run', definition: 'A durable unit of task work with one execution fence, an owning Node and a terminal state. Retries create new Attempts, and a Run can delegate work or wait for child Runs; it is not one model call.', example: 'A Run that waits for a child Run keeps its state while no process is executing.' },
-    ru: { term: 'Запуск', definition: 'Долговечная единица работы с одним fencing-токеном, узлом-владельцем и терминальным состоянием. Повторы создают новые попытки; запуск может делегировать работу или ждать дочерние запуски и не равен одному вызову модели.', example: 'Запуск, ожидающий дочерний запуск, сохраняет состояние, пока ни один процесс не выполняется.' },
+    en: { term: 'Run', definition: 'A durable unit of task work with one stable execution slot and a current fencing grant, an owning Node and a terminal state. Retries create new Attempts, and a Run can delegate work or wait for child Runs; it is not one model call.', example: 'A Run that waits for a child Run keeps its state while no process is executing.' },
+    ru: { term: 'Запуск', definition: 'Долговечная единица работы с одним стабильным слотом исполнения и текущим fencing-грантом, узлом-владельцем и терминальным состоянием. Повторы создают новые попытки; запуск может делегировать работу или ждать дочерние запуски и не равен одному вызову модели.', example: 'Запуск, ожидающий дочерний запуск, сохраняет состояние, пока ни один процесс не выполняется.' },
   },
   {
     key: 'attempt',
