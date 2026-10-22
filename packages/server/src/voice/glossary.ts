@@ -81,6 +81,7 @@ interface Match {
 const LATIN_LETTER = /\p{Script=Latin}/u
 const CYRILLIC_LETTER = /\p{Script=Cyrillic}/u
 const LETTER = /\p{L}/u
+const COMBINING_MARK = /\p{M}/u
 
 /** Longest endings first. */
 const RUSSIAN_ENDINGS: readonly string[] = Object.freeze([
@@ -114,6 +115,37 @@ function countLetters(value: string): number {
     if (LETTER.test(character)) count += 1
   }
   return count
+}
+
+interface LowerWithoutMarks {
+  readonly text: string
+  /** Original offset of each comparison character, plus the end offset. */
+  readonly boundaries: readonly number[]
+}
+
+/** Lower-case and strip combining marks while keeping original offsets for the output slice. */
+function lowerWithoutMarks(value: string): LowerWithoutMarks {
+  const characters: string[] = []
+  const boundaries: number[] = []
+  let offset = 0
+  while (offset < value.length) {
+    const base = String.fromCodePoint(value.codePointAt(offset)!)
+    let end = offset + base.length
+    let cluster = base
+    while (end < value.length) {
+      const next = String.fromCodePoint(value.codePointAt(end)!)
+      if (!COMBINING_MARK.test(next)) break
+      cluster += next
+      end += next.length
+    }
+    for (const character of cluster.normalize('NFC').toLowerCase().replace(/\p{M}+/gu, '')) {
+      characters.push(character)
+      boundaries.push(offset)
+    }
+    offset = end
+  }
+  boundaries.push(value.length)
+  return { text: characters.join(''), boundaries }
 }
 
 function isCyrillicOnly(value: string): boolean {
@@ -350,10 +382,11 @@ function inflectionMatch(
   if (!isCyrillicOnly(raw)) return null
 
   const lastRaw = text.slice(last.start, last.end)
-  const lastLower = lastRaw.toLowerCase()
+  const lastLower = lowerWithoutMarks(lastRaw)
   for (const ending of RUSSIAN_ENDINGS) {
-    if (!lastLower.endsWith(ending)) continue
-    const stem = lastRaw.slice(0, lastRaw.length - ending.length)
+    if (!lastLower.text.endsWith(ending)) continue
+    const stemEnd = lastLower.boundaries[lastLower.text.length - ending.length]!
+    const stem = lastRaw.slice(0, stemEnd)
     if (countLetters(stem) < 2) continue
 
     const key = prefixKey + foldKey(stem)
@@ -363,7 +396,7 @@ function inflectionMatch(
     if (form === undefined) continue
     const entry = matcher.entries[form.entryIndex]
     if (entry === undefined) continue
-    const originalEnding = lastRaw.slice(lastRaw.length - ending.length)
+    const originalEnding = lastRaw.slice(stemEnd)
     return {
       entryIndex: form.entryIndex,
       replacement: `${entry.canonical}-${originalEnding}`,

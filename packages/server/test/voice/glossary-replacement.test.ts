@@ -235,6 +235,15 @@ describe('inflection controls', () => {
     assert.equal(applyGlossary(anyLanguage, 'опуса').text, 'опуса')
   })
 
+  it('does not inflect a mixed-script candidate', () => {
+    assert.equal(applyGlossary(glossary, 'PRа').text, 'PRа')
+    assert.equal(applyGlossary(glossary, 'пиаRа').text, 'пиаRа')
+  })
+
+  it('matches an inflection ending after a combining stress mark', () => {
+    assert.equal(applyGlossary(glossary, 'пиара\u0301').text, 'PR-а\u0301')
+  })
+
   it('requires a stem of at least two letters', () => {
     const oneLetter = compileGlossary([
       { id: 'pr', canonical: 'PR', variants: ['п'], language: 'en' },
