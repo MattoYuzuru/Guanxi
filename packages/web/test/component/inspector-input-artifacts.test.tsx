@@ -14,6 +14,7 @@ import {
   type SessionEvent,
 } from '@guanxi/contract'
 import { InspectorPage } from '../../src/features/inspector/InspectorPage.tsx'
+import { inspectorApi } from '../../src/features/inspector/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import { REASONING_TEXT, SESSION_ID, sessionSummary, sessionTrace } from '../fixtures/session-events.ts'
 
@@ -133,6 +134,15 @@ describe('inspector bounded input artifacts', () => {
     expect(document.body.textContent).not.toContain(ARTIFACT_ID)
     expect(screen.getByRole('link', { name: 'Export JSON without reasoning' }).getAttribute('href'))
       .toBe(`/api/sessions/${SESSION_ID}/export?exportVersion=2`)
+  })
+
+  it('serializes export negotiation with an encoded session id and no other query', () => {
+    const href = inspectorApi.exportUrl('session/with space?and#hash')
+    expect(href).toBe(
+      '/api/sessions/session%2Fwith%20space%3Fand%23hash/export?exportVersion=2',
+    )
+    const url = new URL(href, 'http://localhost')
+    expect([...url.searchParams.entries()]).toEqual([['exportVersion', '2']])
   })
 
   it('does not find text beyond the excerpt and reports no hits honestly', async () => {

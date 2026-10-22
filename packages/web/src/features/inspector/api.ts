@@ -56,7 +56,8 @@ export const inspectorApi = {
       sessionSearchResponse,
       signal,
     ),
-  exportUrl: (sessionId: string) => `${SESSION_ROUTES.export(sessionId)}?exportVersion=2`,
+  exportUrl: (sessionId: string) =>
+    `${SESSION_ROUTES.export(sessionId)}?${new URLSearchParams({ exportVersion: '2' })}`,
 
   /** Every persisted event in order, page by page. */
   async allEvents(sessionId: string, signal?: AbortSignal): Promise<SessionEvent[]> {
