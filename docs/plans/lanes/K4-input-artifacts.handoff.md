@@ -79,6 +79,7 @@ approval record/token, user data or infrastructure was edited.
 ## New / regression evidence
 
 **New tests: 43.**
+
 - `packages/server/test/session-log-input-artifacts.test.ts` — 18.
 - `packages/server/test/session-log-version-negotiation.test.ts` — 6.
 - `packages/server/test/native-agent/input-artifacts.test.ts` — 12 (fake provider and injected
@@ -338,3 +339,80 @@ nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
 **Handoff pin:** this fix is `4f7359c` plus this docs commit on `codex/k4-input-artifacts`.
 The exact `git rev-parse HEAD` and empty `git status --porcelain` are reported to the
 coordinator after this commit; no production edit follows it.
+
+## Full-gate follow-up (2026-10-22): two web failures
+
+Root full `npm test` receipt `check-6q052w2n` ended server/core **ALL PASS** and web
+**323/325**. `localized-copy-inventory.test.tsx` flagged `features/inspector/api.ts:59`
+(`dynamic-return "?exportVersion=2"`), and `context-checkpoint.test.tsx:165` asserted
+`document.activeElement` immediately after `findByRole('alert')`; the full run observed
+`activeElement === document.body` while the alert already existed because `ContextPanel`
+moves focus in an asynchronous effect. This section appends only those two bounded web
+fixes. Every earlier section, count and claim is unchanged.
+
+### Fix commits
+
+| Commit | Finding | Change and failing-first evidence |
+| --- | --- | --- |
+| `05861ab` | `localized-copy-inventory` dynamic return | `inspectorApi.exportUrl()` now serializes the protocol query with `new URLSearchParams({ exportVersion: '2' })`, the same pattern as `search()`, instead of a literal protocol string. The relative `SESSION_ROUTES.export(id)` path, encoded session id, exact `exportVersion=2`, and the unchanged `allEvents`/`live` `eventVersion=2` calls are preserved. The existing inspector fixture keeps its exact href assertion, and a new client assertion calls the real `inspectorApi.exportUrl()` with a URL-sensitive session id and checks the exact wire URI plus the sole query entry. No scanner, exemption, cast, alias or locale key changed. Before the fix the inventory test failed with `features/inspector/api.ts:59`, `kind: "dynamic-return"`, `value: "?exportVersion=2"`. |
+| `43728c8` | `context-checkpoint` observed focus before the effect | The same existing test now awaits `waitFor(() => expect(alert).toBe(document.activeElement))` after `findByRole('alert')`, matching the adjacent post-effect focus check at line 145. The focus requirement and target are unchanged; no product code, sleep, deadline or known-flake label was added. To prove the assertion is tied to the product effect, the local unstaged `ContextPanel` focus call was temporarily replaced with `void compactErrorRef.current`; the updated test then failed at line 165 with the `waitFor` timeout, and the call was restored before the commit. |
+
+### Test arithmetic
+
+- new: **+1 web** (`inspector-input-artifacts` encoded export URI case). No server test changed.
+  Cumulative lane new is **40 server + 8 web = 48** (previous 40 server + 7 web).
+- updated in place, not new: the `context-checkpoint` focus assertion; its test count is
+  unchanged.
+- selected envelope actually run: **30 web tests in 5 files, 30 pass, 0 fail, 0 skipped**:
+  `context-checkpoint` 4, `localized-copy-inventory` 5, `inspector-input-artifacts` 7,
+  `inspector` 11, `sse-terminal` 3. The envelope contains **8 lane-new web tests** (7
+  `inspector-input-artifacts` + 1 `sse-terminal` typed-error case) and **22 regression**
+  tests; this round itself adds one new test and updates one existing assertion in place.
+- not rerun here: the earlier 33-test web envelope, the full 325-test web gate, all server
+  tests, browser/build/Storybook, `ui:check` and `check:licenses`. The root owns those.
+
+### Commands and evidence
+
+```bash
+# red before the production edit
+cd packages/web
+nice -n 10 npx vitest run test/component/localized-copy-inventory.test.tsx \
+  test/component/context-checkpoint.test.tsx
+# Test Files 1 failed | 1 passed; Tests 1 failed | 8 passed
+# features/inspector/api.ts:59 dynamic-return "?exportVersion=2"
+
+# focus-sensitivity proof (temporary unstaged product no-op, restored before commit)
+nice -n 10 npx vitest run test/component/context-checkpoint.test.tsx
+# Test Files 1 failed; Tests 1 failed | 3 passed at context-checkpoint.test.tsx:165
+
+# green scope after restoration
+nice -n 10 npx vitest run \
+  test/component/context-checkpoint.test.tsx \
+  test/component/localized-copy-inventory.test.tsx \
+  test/component/inspector-input-artifacts.test.tsx \
+  test/component/inspector.test.tsx \
+  test/component/sse-terminal.test.tsx
+# Test Files 5 passed (5); Tests 30 passed (30)
+nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json
+# clean, no output
+nice -n 10 npx eslint \
+  packages/web/src/features/inspector/api.ts \
+  packages/web/test/component/context-checkpoint.test.tsx \
+  packages/web/test/component/inspector-input-artifacts.test.tsx
+# clean, no output
+```
+
+### Residuals and not claimed
+
+- No `ContextPanel` production behavior changed: the focus effect is untouched and still
+  required by the test; only the observation now waits for that effect.
+- The export URL remains a relative URL built from `SESSION_ROUTES`; the session id is still
+  encoded there, and `URLSearchParams` emits exactly `exportVersion=2`. `allEvents` and `live`
+  still request `eventVersion=2`; no other query parameter was added.
+- No server, store, fence, artifact-data, package/lock, token, manifest, status, approval or
+  snapshot file changed. No locale key or scanner exception was added.
+- The full 325-test web rerun and the other root gates remain unverified here; this section
+  claims only the 30-test scoped envelope above and the two fix commits.
+
+**Handoff pin:** fix commits `05861ab` and `43728c8` precede this docs commit on
+`codex/k4-input-artifacts`; no production edit follows it.
