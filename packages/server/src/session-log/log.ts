@@ -856,6 +856,13 @@ export class SessionLog {
     let after = 0
     while (true) {
       const page = this.read(sessionId, { afterSeq: after, limit: MAX_PAGE, audience })
+      if (page.unsupportedSeq !== null) {
+        throw new SessionEventVersionError(
+          page.unsupportedSeq,
+          SESSION_EVENT_MAX_VERSION,
+          page.requiredVersion ?? SESSION_EVENT_MAX_VERSION,
+        )
+      }
       events.push(...page.events)
       if (!page.hasMore || page.events.length === 0) return events
       after = page.events.at(-1)!.seq
