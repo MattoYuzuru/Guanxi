@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { EtaProjection } from './eta.ts'
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/)
 export const relativePath = z.string().min(1).refine(p => !p.startsWith('/') && !p.includes('\\') && !p.split('/').some(s => s === '..' || s === '.' || !s) && !p.startsWith('-'), 'relative path required')
@@ -36,7 +37,7 @@ export interface Ledger {
   items: Record<string, 'open' | 'verification_requested' | 'done'>;
   head: string; files: string[]; diffstat: string; evidence: Evidence[];
   noProgress: number; tokens: number; moneyMicros: number; unknownCosts: number;
-  errors: number; proposals: string[]; eta: null; withheld?: boolean;
+  errors: number; proposals: string[]; eta: EtaProjection | null; withheld?: boolean;
   baseline: { statuses: string; gates: string; head: string; done?: string[]; passed?: string[] }; pendingCall: string | null;
 }
 export interface Handoff {

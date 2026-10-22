@@ -5,12 +5,13 @@ import { canonical, probes } from '../../src/relay/handoff.ts'
 import { thresholds } from '../../src/relay/budget.ts'
 import type { RelayModel, Reply } from '../../src/relay/model.ts'
 import type { RelayWorkspace } from '../../src/relay/workspace.ts'
+import type { EtaInput } from '../../src/relay/eta.ts'
 import { DEFAULT_RELAY_LIMITS, type Caps, type Plan, type RelayLimits, type Reserves, type WindowObservation } from '../../src/relay/types.ts'
 export const window: WindowObservation = { tokens: 16000, framingTokens: 32, source: 'fixture:loaded-window', observedAt: 1800000000000, confidence: 'high' }
 export const reserves = { turn: 1000, safety: 200, handoff: 1500, tool: 1000, stepMedian: 1000, effective: 14000 }
 export const caps: Caps = { cycles: 10, tokens: 1000000, wallMs: 3600000, moneyMicros: null }
 export const plan: Plan = { revision: 'r1', base: 'a'.repeat(40), goal: 'Implement the fixture task.', items: [{ id: 'one', title: 'fixture item', dependsOn: [], acceptance: ['true'], protectedPaths: ['tests'] }], protectedPaths: ['.github'] }
-export function fixture(options: { path?: string; fault?: (point: string) => void; runFault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; actions?: (prompt: string, calls: number) => string | Promise<string>; narrativeFails?: boolean; probeFails?: boolean; caps?: Partial<Caps>; exact?: boolean; count?: (text: string) => number; reserves?: Partial<Reserves>; limits?: Partial<RelayLimits> } = {}) {
+export function fixture(options: { path?: string; eta?: EtaInput; fault?: (point: string) => void; runFault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; actions?: (prompt: string, calls: number) => string | Promise<string>; narrativeFails?: boolean; probeFails?: boolean; caps?: Partial<Caps>; exact?: boolean; count?: (text: string) => number; reserves?: Partial<Reserves>; limits?: Partial<RelayLimits> } = {}) {
   const f = runFixture(options.path, { fault: options.runFault, logFault: options.logFault })
   const relay = new RelayStore(f.db, f.store, f.scrubber, () => 1800000000000, options.fault)
   const run = f.store.create(), attempt = f.store.start(run.id)
@@ -44,6 +45,6 @@ export function fixture(options: { path?: string; fault?: (point: string) => voi
     verify: async (_p, item) => ({ item, head, ok: true, output: 'fixture pass' }),
     tool: async (_name, args) => String(args.output ?? 'fixture tool result'),
   }
-  const executor = new RelayExecutor(relay, model, workspace, limits, f.scrubber, { ...DEFAULT_RELAY_LIMITS, ...options.limits })
+  const executor = new RelayExecutor(relay, model, workspace, limits, f.scrubber, { ...DEFAULT_RELAY_LIMITS, ...options.limits }, options.eta)
   return { ...f, relay, run, attempt, prompts, model, workspace, executor }
 }

@@ -8,6 +8,78 @@ starts no inference. A trusted execution host initializes an R1 attempt with an 
 plan and delegation caps, then supplies `RelayInput`: a K3 connection/model, a runtime
 meter, reserves, optional execution limits and a workspace. There is no HTTP or UI entry point in this slice.
 
+## ETA projection (R3-a)
+
+The trusted host may additionally supply `RelayInput.eta`. It contains an exact
+model/host/repository cohort, per-item **remaining** duration estimates, completed historical
+estimate/actual observations with source and time, and an explicit sampling policy
+(`simulations`, unsigned 32-bit `seed`, `minSamples`, `maxAgeMs`). The service refuses a model
+that differs from the execution model. Configuration is copied at admission and sampled
+synchronously at cycle start and after final gate observations, before handoff construction.
+This avoids concurrent projection writes changing an in-flight seal hash. Fresh ledgers
+without this configuration retain `null`; recovery retains the last timestamped observation
+until the host supplies fresh configuration.
+
+The forecast bootstraps empirical estimate/actual ratios independently per unfinished item,
+then sums their durations in serial plan order and reports nearest-rank P50/P80 remaining
+milliseconds and finish timestamps. Verified `done` items contribute zero; dependency-blocked
+items still contribute. The host supplies remaining estimates; the estimator never subtracts
+run age or pretends to know when an item began. Recovery requires a fresh host configuration.
+Missing estimates or insufficient recent untainted history return `unknown`, null quantiles
+and a reason. A fully completed plan has zero remaining duration even without history.
+
+Every projection includes its observation time, cohort, sample/exclusion counts, source list,
+oldest/newest sample time, policy and the serial/independent-ratio assumption. Forecasts have
+`low` confidence and `unvalidated` calibration. The optional runtime-counter observation
+compares remaining tokens / observed throughput with the P80 duration: a fresh contradiction
+is explicit, a stale or future observation is marked stale, and an unavailable forecast is
+distinguished from agreement. The `minimumRemainingMs` / `below_runtime_floor` names describe
+a constant-observed-throughput heuristic: observed throughput is a baseline, not a proven
+maximum speed or guaranteed duration bound. This check does not silently rewrite the
+distribution.
+
+Projections use the existing R1-fenced transaction and scrubber, persist in the ledger and
+sealed snapshot, and survive store reconstruction. No migration, public API, UI, model call,
+judge, wake policy or routing change is added. The host still owns measurement collection and
+cohort identity; there is no automatic historical timing collector or calibrated live ETA.
+Fixture quantile assertions do **not** satisfy the R3/B3 gate requiring P80 coverage between
+0.7 and 0.9 across at least 20 real runs. Judge replay precision/recall, night wake rates,
+delegation policy and the six-hour MS1 envelope remain unfinished.
+
+## Judge observations (R3 follow-up)
+
+The trusted host may also supply `RelayInput.judgeSignals`: an explicit
+`JudgeSignalPolicy` and a `collect` function. This is T0 data like the runtime meter and the
+workspace, never parsed from model JSON or HTTP and not a public wire surface. Admission copies
+and freezes the flat policy, checks that `collect` is a function without calling it, and rejects
+invalid configuration with a fixed `judge_config_invalid` error. There are no policy defaults:
+every threshold must come from the host.
+
+When configured, the executor takes one observation at `cycle_start` immediately after
+`store.begin` and the ETA update, before orient or any model call, and one at `pre_seal` after
+the final ETA update and before the fresh narrative and handoff construction. The collector
+receives a detached ledger copy, a detached attempt identity (`id`, `runId`, `epoch`, `token`)
+and the actual run abort signal. It cannot mutate the authoritative ledger or the frozen policy.
+There is no timer or background writer; sampling is synchronous with the cycle.
+
+Only the reviewed `judge-signals.ts` pure module evaluates the observation. On success the
+executor appends exactly one `agent.note` with
+`{relay:'judge_signals', phase, cycle, signals, unknownFacts}` through the existing R1-fenced
+transaction. `unknownFacts` names `heartbeat`, `lease`, `deadline`, `disk` and `tokenBudget` for
+each missing observation field, so an empty `signals` array is not a health claim. The full
+observation and the `protectedPathEdits` / `outOfScopeEdits` values are never persisted or
+logged.
+
+A collector rejection or an invalid observation fails the cycle closed with the fixed
+`judge_observation_unavailable` or `judge_observation_invalid` code respectively; no judge note
+is published and no follow-up model call is made. Cancellation and a revoked/stale fence keep
+the existing loss/cancel semantics instead of being converted into an observer error. Signals
+themselves do not stop, reroute or wake anything; J2/J3, verdicts, routing and the action
+cascade remain future work. A collector that ignores the abort signal and never settles can
+still hold the cycle open; this slice deliberately adds no timeout. Fixture tests prove wiring,
+detached inputs, cancellation/fence behavior and seal consistency only; they are not real host
+observations, a calibrated classifier, or the R3 precision/recall/night-wake gates.
+
 ## Runtime and context
 
 The meter must observe the **actual loaded** context window (with source, observation time
