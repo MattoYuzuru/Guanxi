@@ -90,7 +90,7 @@ try {
     report.descendantPid = child.pid
   }
   writeReport()
-  const count = mode === 'two' ? 2 : 1
+  const count = mode === 'two' || mode === 'two-finalization' ? 2 : 1
   for (let id = 0; id < count; id++) {
     const frame = request(id)
     report.requests.push(frame)
@@ -109,6 +109,11 @@ try {
     if (!response || response.status !== 'ok') break
   }
   closeSync(4)
+  if (mode === 'two-finalization') {
+    // Widen the finalization scheduling window without changing host deadlines.
+    sleep(250)
+    report.finalizationFinished = true
+  }
   writeReport()
   process.exit(0)
 } catch (error) {

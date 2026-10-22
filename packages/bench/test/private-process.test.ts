@@ -192,6 +192,27 @@ test('actual OS fixture uses fds 3/4 for two sequential public completions with 
   } finally { cleanup(x.root) }
 })
 
+test('natural client exit waits for final fixture work before closing its request capability', { timeout: 20_000 }, async () => {
+  const x = setup('two-finalization')
+  const h = hostFixture()
+  try {
+    const outcome = await runPrivateTrial({ binding: x.binding, host: h.host, policy: x.policy })
+    assert.equal(outcome.reason, 'channel_input_ended')
+    assert.equal(outcome.responsesDelivered, 2)
+    assert.equal(outcome.childExitCode, 0)
+    assert.equal(outcome.retentionConfirmed, true)
+    assert.equal(outcome.cleanupConfirmed, true)
+    assert.equal(h.calls(), 2)
+    assert.equal(h.retained(), 2)
+    const report = readJson(x.report)
+    assert.equal(report.finalizationFinished, true)
+    assert.equal(report.responses.length, 2)
+    assert.equal(report.protocolError, null)
+    assert.equal(existsSync(privateProcessRecordPath(x.binding, x.policy)), false)
+    assert.equal(alive(report.pid), false)
+  } finally { cleanup(x.root) }
+})
+
 test('abort kills the owned group immediately but the run stays pending until the real retention ACK; late fulfil and reject are consumed', { timeout: 25_000 }, async () => {
   for (const late of ['fulfil', 'reject']) {
     const x = setup()
