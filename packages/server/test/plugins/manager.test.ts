@@ -6,6 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import {
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -803,4 +804,24 @@ test('rollback failures are attached to the thrown error as a cause chain', asyn
   assert.match(uninstallError.message, /uninstall fault/)
   assert.ok(uninstallError.cause instanceof AggregateError, 'uninstall rollback failure is attached')
   assert.ok(uninstallError.cause.errors.length >= 1)
+})
+
+test('refuses hardlinked source files', async t => {
+  const base = await tempBase(t)
+  const source = await writePlugin(join(base, 'source'), {
+    files: { 'index.js': 'export const value = 1\n', 'shared.js': 'export const shared = 1\n' },
+  })
+  await link(join(source, 'shared.js'), join(source, 'alias.js'))
+  const pluginsDir = join(base, 'plugins')
+  await assert.rejects(manager(pluginsDir).inspect(source), (error: unknown) => {
+    assert.ok(error instanceof SourceIntegrityError)
+    assert.equal(error.code, 'source_hardlink')
+    return true
+  })
+  await assert.rejects(manager(pluginsDir).install(source), (error: unknown) => {
+    assert.ok(error instanceof SourceIntegrityError)
+    assert.equal(error.code, 'source_hardlink')
+    return true
+  })
+  assert.equal(await exists(pluginsDir), false)
 })

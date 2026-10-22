@@ -32,6 +32,7 @@ export type SourceIntegrityErrorCode =
   | 'source_symlink'
   | 'source_outside_root'
   | 'source_not_regular'
+  | 'source_hardlink'
   | 'source_unreadable'
 
 export class SourceIntegrityError extends Error {
@@ -81,6 +82,9 @@ async function hashFile(path: string): Promise<string> {
     const stat = await handle.stat()
     if (!stat.isFile()) {
       throw new SourceIntegrityError('source_not_regular', path, 'only regular files can be installed')
+    }
+    if (stat.nlink > 1) {
+      throw new SourceIntegrityError('source_hardlink', path, 'hard-linked files are not allowed in a plugin source')
     }
     const hash = createHash('sha256')
     const buffer = Buffer.allocUnsafe(64 * 1024)
@@ -149,6 +153,9 @@ export async function listSourceFiles(sourceDir: string): Promise<IntegrityEntry
       if (stat.isDirectory()) {
         await walk(absolute, path)
       } else if (stat.isFile()) {
+        if (stat.nlink > 1) {
+          throw new SourceIntegrityError('source_hardlink', absolute, 'hard-linked files are not allowed in a plugin source')
+        }
         entries.push({ path, sha256: await hashFile(absolute) })
       } else {
         throw new SourceIntegrityError('source_not_regular', absolute, 'only regular files and directories can be installed')
@@ -199,6 +206,9 @@ function hashFileSync(path: string): string {
     const stat = fstatSync(descriptor)
     if (!stat.isFile()) {
       throw new SourceIntegrityError('source_not_regular', path, 'only regular files can be installed')
+    }
+    if (stat.nlink > 1) {
+      throw new SourceIntegrityError('source_hardlink', path, 'hard-linked files are not allowed in a plugin source')
     }
     const hash = createHash('sha256')
     const buffer = Buffer.allocUnsafe(64 * 1024)
@@ -259,6 +269,9 @@ export function listSourceFilesSync(sourceDir: string): IntegrityEntry[] {
       if (stat.isDirectory()) {
         walk(absolute, path)
       } else if (stat.isFile()) {
+        if (stat.nlink > 1) {
+          throw new SourceIntegrityError('source_hardlink', absolute, 'hard-linked files are not allowed in a plugin source')
+        }
         entries.push({ path, sha256: hashFileSync(absolute) })
       } else {
         throw new SourceIntegrityError('source_not_regular', absolute, 'only regular files and directories can be installed')
